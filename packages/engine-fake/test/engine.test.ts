@@ -49,6 +49,7 @@ describe("engine-fake", () => {
     expect(r.protocol).toEqual({ name: "lilos-engine", version: 1 });
     expect(r.capabilities.map((x) => x.id)).toEqual([
       "steer",
+      "image_prompt",
       "mcp_servers",
       "agents",
       "models",
@@ -84,8 +85,43 @@ describe("engine-fake", () => {
     c.close();
   });
 
-  test("prompt rejects image blocks (no image_prompt capability)", async () => {
+  test("AC-2 an image content block is accepted and the answer names it", async () => {
     const c = conn();
+    const seen: { type: string; stream?: string; delta?: string }[] = [];
+    c.onEvent((e) => {
+      const payload = e.payload as { stream?: string; delta?: string };
+      seen.push({ type: e.type, stream: payload.stream, delta: payload.delta });
+    });
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+    })) as { sessionId: string };
+    const res = (await c.request("prompt", {
+      sessionId,
+      content: [
+        { type: "text", text: "what's in this shot" },
+        { type: "image", data: "aGk=", mimeType: "image/png" },
+      ],
+    })) as { stopReason: string };
+    expect(res.stopReason).toBe("end_turn");
+    const text = seen
+      .filter((e) => e.type === "turn.delta" && e.stream === "text")
+      .map((e) => e.delta)
+      .join("");
+    // The fake can't see pixels; it echoes the metadata it was handed,
+    // proving the block crossed the seam ("aGk=" is 2 bytes of "hi").
+    expect(text).toContain("image/png (2 bytes)");
+    c.close();
+  });
+
+  test("an engine without image_prompt still rejects image blocks", async () => {
+    const c = connectFake(
+      new FakeEngine({ tick: 1, capabilities: { image_prompt: false } }),
+    );
+    const r = (await c.request("describe")) as {
+      capabilities: { id: string }[];
+    };
+    expect(r.capabilities.map((x) => x.id)).not.toContain("image_prompt");
     const { sessionId } = (await c.request("session.start", {
       agent: "builder",
       cwd: "/t",

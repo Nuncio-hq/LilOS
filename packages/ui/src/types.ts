@@ -65,8 +65,16 @@ export type Phase =
   | "typing"
   | "done"
   | "stopped";
-/* One file attached in the composer (image, etc.). The chip shows name; mediaType drives previews. */
-export type AttachedFile = { name: string; mediaType: string };
+/**
+ * A file the composer attaches to a send (issue #31). `url` carries the
+ * image's data URL out of PromptInput — the app decodes the base64 payload
+ * from it to ship bytes over the wire, and the chip preview renders it.
+ */
+export type AttachedFile = {
+  name: string;
+  mediaType: string;
+  url?: string;
+};
 export type Reply = {
   from: string;
   time: string;

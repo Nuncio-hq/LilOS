@@ -51,6 +51,8 @@ export function ThreadView({
   onSendQueued,
   pending = [],
   accept,
+  maxFileSize,
+  onAttachError,
   steer = false,
   onRemovePending,
 }: {
@@ -76,6 +78,9 @@ export function ThreadView({
   pending?: string[];
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
   accept?: string;
+  /* Attachment byte cap + where rejections surface (issue #31). */
+  maxFileSize?: number;
+  onAttachError?: (message: string) => void;
   steer?: boolean;
   onRemovePending?: (i: number) => void;
 }) {
@@ -157,6 +162,7 @@ export function ThreadView({
           <Row from={root.from} emp={emp} human={human}>
             <Who id={root.from} time={root.time} emp={emp} human={human} />
             <Body text={root.text} />
+            {root.attachments && <AttachmentChips files={root.attachments} />}
             <div className="text-muted-foreground text-xs">
               opened session{" "}
               <code className="rounded bg-muted px-1">{thread.session}</code>
@@ -270,6 +276,8 @@ export function ThreadView({
         onSend={onSend}
         status={status}
         accept={accept}
+        maxFileSize={maxFileSize}
+        onAttachError={onAttachError}
         onStop={onStop}
         queued={
           <>

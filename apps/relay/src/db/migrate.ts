@@ -79,6 +79,11 @@ const MIGRATIONS: { version: number; statements: string[] }[] = [
       `CREATE INDEX IF NOT EXISTS asks_channel ON asks(channel_id)`,
     ],
   },
+  {
+    // #31: display refs on messages; the bytes are stored outside the row.
+    version: 3,
+    statements: [`ALTER TABLE messages ADD COLUMN attachments TEXT`],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

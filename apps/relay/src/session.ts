@@ -5,6 +5,8 @@ import {
   AsksListParams,
   AsksOpenParams,
   AsksRespondParams,
+  type AttachmentInput,
+  AttachmentsGetParams,
   ChannelSubscribeParams,
   ChannelsOpenDmParams,
   ChannelUnsubscribeParams,
@@ -23,12 +25,18 @@ import {
   type HarnessStatusReport,
   HelloParams,
   type JsonRpcRequest,
+  MAX_ATTACHMENT_BYTES,
+  type MessageAttachment,
   MessagesListParams,
   MessagesPostParams,
   SystemStatusParams,
   TurnsInterruptParams,
   type WelcomeResult,
 } from "@lilos/contracts/app";
+import {
+  type AttachmentStore,
+  createMemoryAttachmentStore,
+} from "./attachments";
 import { createLogTail, type LogTail } from "./logtail";
 import { buildSystemStatus, type RejectedHandshake } from "./status";
 import type { RelayStore } from "./store";
@@ -43,6 +51,8 @@ export interface RelayOptions {
   store: RelayStore;
   /** Per-install token from auth.ts; checked in session.hello. */
   token: string;
+  /** Where attachment bytes land; memory when absent (tests). */
+  attachments?: AttachmentStore;
   protocolVersion?: number;
   relayVersion?: string;
   /** Replay cap on subscribe: a gap larger than this falls back to a snapshot. */
@@ -84,6 +94,7 @@ const JsonRpcCode = {
   notFound: -32004,
   unavailable: -32005,
   conflict: -32009,
+  attachmentTooLarge: -32010,
 } as const;
 
 /** The peer that has `harness.register`ed — the single engine host. */
@@ -138,6 +149,60 @@ export function createRelay(options: RelayOptions): Relay {
   const heartbeatFreshMs = options.heartbeatFreshMs ?? 45_000;
   const logTail = options.logTail ?? createLogTail();
   const log = (message: string) => logTail.log(message);
+  const attachmentStore = options.attachments ?? createMemoryAttachmentStore();
+
+  /**
+   * Validate inline attachments and park their bytes (issue #31): the decoded
+   * body must be clean base64, image/* (schema already enforced), and under
+   * MAX_ATTACHMENT_BYTES — oversize is the typed `attachment_too_large`. All
+   * inputs validate before any blob lands so a bad batch stores nothing.
+   */
+  const storeAttachments = async (
+    inputs: AttachmentInput[] | undefined,
+  ): Promise<MessageAttachment[] | undefined> => {
+    if (!inputs?.length) return undefined;
+    const decoded = inputs.map((input) => {
+      const bytes = Buffer.from(input.dataBase64, "base64");
+      if (bytes.length === 0 || bytes.toString("base64") !== input.dataBase64) {
+        throw new RpcError(
+          JsonRpcCode.invalidParams,
+          "invalid_params",
+          "attachment dataBase64 is not valid base64",
+          { name: input.name },
+        );
+      }
+      if (bytes.length > MAX_ATTACHMENT_BYTES) {
+        throw new RpcError(
+          JsonRpcCode.attachmentTooLarge,
+          "attachment_too_large",
+          `attachment "${input.name || "image"}" is ${bytes.length} bytes — the cap is ${MAX_ATTACHMENT_BYTES}`,
+          {
+            limit: MAX_ATTACHMENT_BYTES,
+            sizeBytes: bytes.length,
+            name: input.name,
+          },
+        );
+      }
+      return { input, bytes };
+    });
+    const refs: MessageAttachment[] = [];
+    for (const { input, bytes } of decoded) {
+      refs.push(
+        await attachmentStore.put({
+          name: input.name,
+          mimeType: input.mimeType,
+          bytes,
+        }),
+      );
+    }
+    return refs;
+  };
+
+  /** Roll back stored blobs when the message write itself failed. */
+  const dropAttachments = (refs: MessageAttachment[] | undefined) => {
+    if (!refs) return;
+    for (const ref of refs) attachmentStore.remove(ref.id).catch(() => {});
+  };
   /** Failed version handshakes — lets system.status name the stale side. */
   const rejectedHandshakes: RejectedHandshake[] = [];
   let host: HostRecord | null = null;
@@ -463,12 +528,24 @@ export function createRelay(options: RelayOptions): Relay {
               "channel not found",
             );
           }
-          const { conversation, rootMessage } = await store.openConversation(
-            parsed.data,
-          );
-          emitMessage(conversation.channelId, rootMessage);
-          emitConversation(conversation.channelId, conversation);
-          respond(peer, id, { conversation, rootMessage });
+          const attachments = await storeAttachments(parsed.data.attachments);
+          try {
+            const { conversation, rootMessage } = await store.openConversation({
+              ...parsed.data,
+              attachments,
+            });
+            emitMessage(conversation.channelId, rootMessage);
+            emitConversation(conversation.channelId, conversation);
+            respond(peer, id, { conversation, rootMessage });
+          } catch (error) {
+            dropAttachments(attachments);
+            if (error instanceof RpcError) throw error;
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "channel or conversation not found",
+            );
+          }
           return;
         }
         case "conversations.update": {
@@ -532,17 +609,37 @@ export function createRelay(options: RelayOptions): Relay {
               "only the registered engine host may post non-user messages",
             );
           }
+          const attachments = await storeAttachments(parsed.data.attachments);
           try {
-            const message = await store.appendMessage(parsed.data);
+            const message = await store.appendMessage({
+              ...parsed.data,
+              attachments,
+            });
             emitMessage(message.channelId, message);
             respond(peer, id, { message });
-          } catch {
+          } catch (error) {
+            dropAttachments(attachments);
+            if (error instanceof RpcError) throw error;
             throw new RpcError(
               JsonRpcCode.notFound,
               "not_found",
               "channel or conversation not found",
             );
           }
+          return;
+        }
+        case "attachments.get": {
+          const parsed = AttachmentsGetParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const stored = await attachmentStore.get(parsed.data.id);
+          if (!stored) {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "attachment not found",
+            );
+          }
+          respond(peer, id, stored);
           return;
         }
         case "channel.subscribe": {

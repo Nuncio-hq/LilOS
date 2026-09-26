@@ -741,6 +741,83 @@ export const STEER_SCENARIOS: Scenario[] = [
 ];
 
 /**
+ * `image_prompt` capability (issue #31): image content blocks ride `prompt`
+ * beside text. The protocol guarantee is that the block is accepted and the
+ * turn completes — what an engine answers about the pixels is its own affair
+ * (engine-fake echoes the metadata it received; a vision model describes it).
+ */
+export const IMAGE_PROMPT_SCENARIOS: Scenario[] = [
+  {
+    id: "describe wires image content blocks under the image_prompt capability",
+    async run(h) {
+      const r = (await h.request("describe")) as {
+        capabilities: { id: string; methods?: string[] }[];
+      };
+      const cap = r.capabilities.find((c) => c.id === "image_prompt");
+      assert(cap, "image_prompt suite runs only against engines declaring it");
+      assert(
+        cap?.methods?.includes("prompt") === true,
+        "the image_prompt descriptor names prompt",
+      );
+    },
+  },
+  {
+    id: "an image content block rides the prompt and the turn completes",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      // 1x1 PNG — tiny but a real image payload.
+      const png =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      const res = (await h.request("prompt", {
+        sessionId,
+        content: [
+          { type: "text", text: "what does this screenshot show" },
+          { type: "image", data: png, mimeType: "image/png" },
+        ],
+      })) as PromptResult;
+      assert(
+        res.stopReason === "end_turn",
+        `image prompt completes end_turn, got ${res.stopReason}`,
+      );
+      const streamed = h.events.some(
+        (e) =>
+          e.sessionId === sessionId &&
+          e.type === "turn.delta" &&
+          e.payload.stream === "text",
+      );
+      assert(streamed, "the image turn streams an answer");
+    },
+  },
+  {
+    id: "an image-only prompt is a valid prompt",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      // Oscar drops a screenshot with no caption — no text block at all.
+      const res = (await h.request("prompt", {
+        sessionId,
+        content: [
+          {
+            type: "image",
+            data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+            mimeType: "image/png",
+          },
+        ],
+      })) as PromptResult;
+      assert(
+        res.stopReason === "end_turn",
+        `image-only prompt completes end_turn, got ${res.stopReason}`,
+      );
+    },
+  },
+];
+
+/**
  * `agents` capability: the hire dialog's data path. Scenarios carry the issue
  * AC number they prove (the dialog itself is another slice's UI work).
  */
@@ -990,7 +1067,11 @@ export const SUITES: {
 }[] = [
   { capability: "core", implemented: true, scenarios: CORE_SCENARIOS },
   { capability: "steer", implemented: true, scenarios: STEER_SCENARIOS },
-  { capability: "image_prompt", implemented: false, scenarios: [] },
+  {
+    capability: "image_prompt",
+    implemented: true,
+    scenarios: IMAGE_PROMPT_SCENARIOS,
+  },
   { capability: "mcp_servers", implemented: false, scenarios: [] },
   { capability: "models", implemented: true, scenarios: MODELS_SCENARIOS },
   { capability: "agents", implemented: true, scenarios: AGENTS_SCENARIOS },

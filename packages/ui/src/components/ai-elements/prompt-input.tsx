@@ -521,6 +521,14 @@ export const PromptInput = ({
         });
         return;
       }
+      // A mixed batch drops only the oversized files; still tell the host so
+      // a lost attachment is never silent (issue #31 patch to AI Elements).
+      if (sized.length < accepted.length) {
+        onError?.({
+          code: "max_file_size",
+          message: "Some files exceed the maximum size and were not added.",
+        });
+      }
 
       setItems((prev) => {
         const capacity =

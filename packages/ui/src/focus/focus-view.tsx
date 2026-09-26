@@ -96,6 +96,8 @@ export function FocusView({
   onRewind,
   onModel,
   accept,
+  maxFileSize,
+  onAttachError,
   say,
   models,
   repoFiles,
@@ -141,6 +143,9 @@ export function FocusView({
   pending?: string[];
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
   accept?: string;
+  /* Attachment byte cap + where rejections surface (issue #31). */
+  maxFileSize?: number;
+  onAttachError?: (message: string) => void;
   steer?: boolean;
   onRemovePending?: (i: number) => void;
 }) {
@@ -529,6 +534,8 @@ export function FocusView({
               }
               onSend={(t, files) => onSend(t, files)}
               accept={accept}
+              maxFileSize={maxFileSize}
+              onAttachError={onAttachError}
             />
           </div>
         </section>

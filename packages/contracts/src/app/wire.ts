@@ -17,6 +17,7 @@ import {
   Employee,
   EmployeeStatus,
   EngineHostStatus,
+  MessageAttachment,
   PendingTurn,
   RespondTo,
   Timestamp,
@@ -61,6 +62,7 @@ export const AppErrorCode = z.enum([
   "conflict",
   "engine_unavailable",
   "engine_error",
+  "attachment_too_large",
   "internal",
 ]);
 export type AppErrorCode = z.infer<typeof AppErrorCode>;
@@ -110,6 +112,7 @@ export const AppMethod = z.enum([
   "conversations.update",
   "messages.list",
   "messages.post",
+  "attachments.get",
   "channel.subscribe",
   "channel.unsubscribe",
   "harness.register",
@@ -230,6 +233,32 @@ export const ChannelsOpenDmParams = z.object({ employeeId: z.string().min(1) });
 export type ChannelsOpenDmParams = z.infer<typeof ChannelsOpenDmParams>;
 export const ChannelResult = z.object({ channel: AppChannel });
 
+/* --------------------------- attachments (#31) --------------------------- */
+
+/** Largest single attachment the relay stores, in decoded bytes. */
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+/** Most attachments one message can carry. */
+export const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+
+/**
+ * A file the client uploads inline with a message. Scope is images only
+ * (#31) — other mime types are `invalid_params`, an oversized decoded body
+ * is the typed `attachment_too_large`. The relay stores the blob and puts
+ * only display refs on the message; bytes come back via `attachments.get`.
+ */
+export const AttachmentInput = z.object({
+  name: z.string().default(""),
+  mimeType: z.string().regex(/^image\//),
+  /** Base64-encoded bytes. */
+  dataBase64: z.string().min(1),
+});
+export type AttachmentInput = z.infer<typeof AttachmentInput>;
+
+const AttachmentsField = z
+  .array(AttachmentInput)
+  .max(MAX_ATTACHMENTS_PER_MESSAGE)
+  .optional();
+
 export const ConversationsListParams = z.object({
   channelId: z.string().min(1).optional(),
   includeArchived: z.boolean().default(false),
@@ -248,6 +277,7 @@ export const ConversationsOpenParams = z.object({
   text: z.string().min(1),
   title: z.string().default(""),
   authorId: z.string().min(1).default("user"),
+  attachments: AttachmentsField,
 });
 export type ConversationsOpenParams = z.infer<typeof ConversationsOpenParams>;
 export const ConversationsOpenResult = z.object({
@@ -290,6 +320,7 @@ export const MessagesPostParams = z.object({
   text: z.string(),
   authorId: z.string().min(1).default("user"),
   authorKind: AuthorKind.default("user"),
+  attachments: AttachmentsField,
 });
 export type MessagesPostParams = z.infer<typeof MessagesPostParams>;
 export const MessageResult = z.object({ message: AppMessage });
@@ -316,6 +347,18 @@ export const ChannelUnsubscribeParams = z.object({
   channelId: z.string().min(1),
 });
 export const OkResult = z.object({ ok: z.literal(true) });
+
+/** Fetch one stored attachment's bytes — the read path behind display refs. */
+export const AttachmentsGetParams = z.object({
+  id: z.string().min(1),
+});
+export type AttachmentsGetParams = z.infer<typeof AttachmentsGetParams>;
+export const AttachmentsGetResult = z.object({
+  attachment: MessageAttachment,
+  /** The stored bytes, base64. */
+  dataBase64: z.string(),
+});
+export type AttachmentsGetResult = z.infer<typeof AttachmentsGetResult>;
 
 /* ------------------------- system status (#33) ------------------------- */
 

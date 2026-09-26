@@ -3,6 +3,7 @@ import type {
   AppChannel,
   AppMessage,
   Ask,
+  AttachmentsGetResult,
   Conversation,
   Employee,
   PendingTurn,
@@ -17,6 +18,7 @@ import {
 } from "@lilos/contracts/app";
 import type {
   AgentDescriptor,
+  ContentBlock,
   EngineEvent,
   EngineRequest,
   EventsSinceResult,
@@ -394,6 +396,35 @@ export class Harness {
       binding.queue.push(message);
       return;
     }
+    // Attachment bytes never ride the message row — the harness fetches each
+    // ref via `attachments.get` and sends ACP-shaped image blocks (issue #31).
+    const images: ContentBlock[] = [];
+    for (const ref of message.attachments ?? []) {
+      try {
+        const stored = await this.opts.relay.request<AttachmentsGetResult>(
+          "attachments.get",
+          { id: ref.id },
+        );
+        images.push({
+          type: "image",
+          data: stored.dataBase64,
+          mimeType: stored.attachment.mimeType,
+        });
+      } catch (error) {
+        this.opts.log.error("attachment fetch failed", {
+          attachmentId: ref.id,
+          error: String(error),
+        });
+        await this.postSystem(
+          binding,
+          `Attachment "${ref.name || ref.id}" could not be loaded — sending the message without it.`,
+        );
+      }
+    }
+    const content: ContentBlock[] = [
+      { type: "text", text: message.text },
+      ...images,
+    ];
     try {
       // Turn lifecycle (`turn.started`/`turn.completed`) arrives as events
       // before the prompt call resolves — they alone own runningTurnId.
@@ -403,7 +434,7 @@ export class Harness {
         "prompt",
         {
           sessionId: binding.sessionId,
-          content: [{ type: "text", text: message.text }],
+          content,
         },
         0,
       );

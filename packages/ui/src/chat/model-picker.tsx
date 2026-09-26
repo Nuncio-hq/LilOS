@@ -119,6 +119,8 @@ export function FocusComposer({
   onSend,
   onStop,
   accept,
+  maxFileSize,
+  onAttachError,
 }: {
   running: boolean;
   status: ChatStatus;
@@ -132,6 +134,10 @@ export function FocusComposer({
   onStop?: () => void;
   /* Same contract as Composer: no accept, no attach control. */
   accept?: string;
+  /* Attachment byte cap before send (#31) — the relay stays authoritative. */
+  maxFileSize?: number;
+  /* Rejected attachments surface through this; without it the error is silent. */
+  onAttachError?: (message: string) => void;
 }) {
   const [draft, setDraft] = useState("");
   return (
@@ -141,6 +147,10 @@ export function FocusComposer({
       <PromptInput
         accept={accept}
         multiple
+        maxFileSize={maxFileSize}
+        onError={
+          onAttachError ? (err) => onAttachError(err.message) : undefined
+        }
         onSubmit={({ text, files }) => {
           const t = text.trim() || draft.trim();
           if (!t && files.length === 0) return;
@@ -149,6 +159,7 @@ export function FocusComposer({
             files.map((f) => ({
               name: f.filename ?? "attachment",
               mediaType: f.mediaType ?? "",
+              url: f.url,
             })),
           );
           setDraft("");

@@ -42,12 +42,12 @@ describe("capability suites vs engine-fake", () => {
 
 test("AC-1 suite registry: core implemented, per-capability suites registered", () => {
   expect(SUITES.find((s) => s.capability === "core")?.implemented).toBe(true);
-  for (const cap of ["steer", "models", "agents"])
+  for (const cap of ["steer", "image_prompt", "models", "agents"])
     expect(
       SUITES.find((s) => s.capability === cap)?.implemented,
       `${cap} suite is implemented`,
     ).toBe(true);
   const pending = SUITES.filter((s) => !s.implemented).map((s) => s.capability);
-  expect(pending).toContain("image_prompt");
+  expect(pending).not.toContain("image_prompt");
   expect(pending.length).toBeGreaterThan(3); // the other capabilities are registered but empty
 });

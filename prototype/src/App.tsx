@@ -53,6 +53,7 @@ import {
   useTheme,
 } from "@lilos/ui"
 import { cn } from "@lilos/ui/lib/utils"
+import { MAX_ATTACHMENT_BYTES } from "@lilos/contracts/app"
 import { engineCreateAgent, engineModels, engineProfiles } from "./engine"
 import { hostAccessors, hostDir, hostDiscover, hostPick } from "./host"
 import { useFakeSurfaces } from "./fake-surfaces"
@@ -352,9 +353,28 @@ type Script = { reasoning: string; steps: Step[]; text: string; todo?: string; p
 const hex = () => Math.random().toString(16).slice(2, 9)
 const CHECKS = ["CI Policy", "Typecheck", "Unit tests", "Lint", "Relay e2e"]
 const EDIT_ASK = /\b(add|fix|change|update|write|implement|refactor|bump|remove|rename|create|make|edit|move|delete|scaffold)\b/i
-function scriptFor(empId: string, prompt: string, followUp = false, branch?: string, repo = "Nuncio-hq/LilOS", cwd?: string): Script {
+/* Decoded byte size of a data URL payload (the prototype's message attachments keep the
+   image's data URL on `AttachedFile.url`; the real app ships the same bytes to the relay). */
+const imageBytes = (f: AttachedFile) => {
+  const b64 = f.url?.startsWith("data:") ? f.url.slice(f.url.indexOf(",") + 1) : ""
+  let n = Math.floor((b64.length * 3) / 4)
+  if (b64.endsWith("==")) n -= 2
+  else if (b64.endsWith("=")) n -= 1
+  return n
+}
+function scriptFor(empId: string, prompt: string, followUp = false, branch?: string, repo = "Nuncio-hq/LilOS", cwd?: string, images?: AttachedFile[]): Script {
   const q = prompt.replace(/\*\*/g, "").replace(/@\w+\s*/g, "").trim().replace(/[?.!]+$/, "")
   const tail = cwd && branch ? `I'm in \`${cwd}\` on ⎇ \`${branch}\`. Tell me what to change and I'll edit there.` : "Still read-only on `main`; nothing edited yet."
+  // Issue #31: a prompt carrying images answers about them first — the reply names the
+  // attachment (name, type, bytes) so Oscar can see the image reached the engine.
+  if (images?.length) {
+    const list = images.map((f) => `${f.name} (${f.mediaType}, ${imageBytes(f)} bytes)`).join(", ")
+    return {
+      reasoning: `Oscar attached ${images.length === 1 ? "an image" : `${images.length} images`} to the prompt: ${list}. Read ${images.length === 1 ? "it" : "them"}, then answer ${q ? `"${q}"` : "about what you see"}.`,
+      steps: [{ tool: "view_image", input: { count: images.length, files: images.map((f) => f.name) }, output: `decoded ${list}` }],
+      text: `Got your image${images.length > 1 ? "s" : ""} — ${list} reached me on the prompt as an image block.${q ? ` On "${q}":` : ""} this fake engine can't see pixels, so I vouch for the hand-off — the screenshot is with the model now.`,
+    }
+  }
   if (branch && /\b(open|create|raise)\b.*\b(pr|pull request)\b/i.test(q)) {
     const n = 12
     const title = "LIL-3: scaffold pnpm monorepo"
@@ -616,13 +636,13 @@ export default function App() {
   }
 
   // wsNew: the workspace of a session created in this same tick (feedsRef has not caught up yet).
-  const runTurn = async (key: string, rootId: string, empId: string, prompt: string, wsNew?: Workspace) => {
+  const runTurn = async (key: string, rootId: string, empId: string, prompt: string, wsNew?: Workspace, files?: AttachedFile[]) => {
     const rid = `r-${Date.now()}`
     const followUp = !!(feedsRef.current[key] ?? []).find((m) => m.kind === "msg" && m.id === rootId && m.thread?.replies.some((r) => r.from === empId))
     const root0 = (feedsRef.current[key] ?? []).find((m) => m.kind === "msg" && m.id === rootId)
     const ws = wsNew ?? (root0?.kind === "msg" ? root0.thread?.ws : undefined)
     const repo = ws ? ws.repo : [...PROJECTS.flatMap((p) => p.channels)].find((c) => c.id === key)?.repo
-    const s = scriptFor(empId, prompt, followUp, ws?.branch ?? branchOf(key, rootId), repo, ws?.cwd)
+    const s = scriptFor(empId, prompt, followUp, ws?.branch ?? branchOf(key, rootId), repo, ws?.cwd, files)
     // New workstream: the engine creates the worktree before session.create { cwd }, shown as the first step of turn 1.
     if (ws?.mode === "new" && ws.worktree && !followUp)
       s.steps = [{ tool: "terminal", input: { command: `git worktree add ${ws.worktree} -b ${ws.branch} ${ws.base}` }, output: `Preparing worktree (new branch '${ws.branch}')\nHEAD is now at ${hex()} (${ws.base})` }, ...s.steps]
@@ -784,7 +804,7 @@ export default function App() {
     const ws = target ? resolveWs(pick, text) : undefined
     const msg: Msg = { kind: "msg", id, from: "oscar", time: nowTime(), text: bold(text), attachments: files?.length ? files : undefined, ...(target ? { thread: { session: newSession(), replies: [], model: emp(target)?.model, ws } } : {}) }
     setFeeds((fs) => ({ ...fs, [feedKey]: [...(fs[feedKey] ?? []), msg] }))
-    if (target) { showThread(id); runTurn(feedKey, id, target, text, ws) }
+    if (target) { showThread(id); runTurn(feedKey, id, target, text, ws, files) }
   }
   // Reply inside a thread = same Hermes session. While a turn runs, Enter buffers into steerBuf: an
   // engine with session.steer lands it at the next tool boundary; one without queues it (queued tray)
@@ -797,7 +817,7 @@ export default function App() {
     }
     mapRoot(feedKey, root.id, (t) => ({ ...t, replies: [...t.replies, { id: `o-${Date.now()}`, from: "oscar", time: nowTime(), text: bold(text), attachments: files?.length ? files : undefined }] }))
     const lead = view.kind === "dm" ? view.id : mentionIn(text)?.id ?? root.thread?.replies.find((r) => emp(r.from))?.from ?? mentionIn(root.text)?.id
-    if (lead) runTurn(feedKey, root.id, lead, text)
+    if (lead) runTurn(feedKey, root.id, lead, text, undefined, files)
   }
   const unqueue = (root: Extract<Msg, { kind: "msg" }>, i: number) =>
     mapRoot(feedKey, root.id, (t) => ({ ...t, queue: (t.queue ?? []).filter((_, j) => j !== i) }))
@@ -906,7 +926,7 @@ export default function App() {
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
       running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
-      pending={pendingSteers[openThread.id] ?? []} accept="image/*" steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
+      pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
     />
   ) : null
 
@@ -950,7 +970,7 @@ export default function App() {
           surfaces={realSurfaces ?? fakeSurfaces}
           models={MODELS} repoFiles={REPO_FILES} host={hostAccessors}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
-          pending={pendingSteers[openThread.id] ?? []} accept="image/*" steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
+          pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />
       ) : (
         <div className={cn("grid min-h-0 min-w-0 grid-cols-1", panelOpen && "xl:grid-cols-[minmax(0,1fr)_420px]")}>
@@ -965,7 +985,7 @@ export default function App() {
               onRename={(id, title) => mapRoot(feedKey, id, (t) => ({ ...t, title }))}
               onArchive={(id, archived) => mapRoot(feedKey, id, (t) => ({ ...t, archived }))}
               onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying session ${m.thread?.session}`) }}
-              accept="image/*"
+              accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say}
             />
           ) : (
           <main className="flex min-h-0 min-w-0 flex-col">
@@ -989,7 +1009,7 @@ export default function App() {
               <ConversationScrollButton />
             </Conversation>
 
-            <Composer placeholder={`Message #${channel.name}. @ an employee to start a thread`} employees={employees.filter((e) => channel.employees.includes(e.id))} hint="An @mention opens a thread = one Hermes session" onSend={(t, files) => sendTop(t, undefined, files)} accept="image/*" />
+            <Composer placeholder={`Message #${channel.name}. @ an employee to start a thread`} employees={employees.filter((e) => channel.employees.includes(e.id))} hint="An @mention opens a thread = one Hermes session" onSend={(t, files) => sendTop(t, undefined, files)} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} />
           </main>
           )}
 

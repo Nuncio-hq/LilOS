@@ -170,6 +170,8 @@ export function EmployeeHome({
   onArchive,
   onRetrySession,
   accept,
+  maxFileSize,
+  onAttachError,
 }: {
   e: Employee;
   feed: Msg[];
@@ -192,6 +194,9 @@ export function EmployeeHome({
   onRetrySession?: (root: Extract<Msg, { kind: "msg" }>) => void;
   /* Composer attachment types the host accepts; absent = no attach UI. */
   accept?: string;
+  /* Attachment byte cap + where rejections surface (issue #31). */
+  maxFileSize?: number;
+  onAttachError?: (message: string) => void;
 }) {
   const pickFolder = folders.find((x) => x.id === pick.folder);
   const [filter, setFilter] = useState("");
@@ -442,6 +447,8 @@ export function EmployeeHome({
         hint={wsHint(pickFolder, pick)}
         onSend={(t, files) => onSend(t, pick, files)}
         accept={accept}
+        maxFileSize={maxFileSize}
+        onAttachError={onAttachError}
         tools={
           <WorkspacePicker
             folders={folders}

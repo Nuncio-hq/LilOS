@@ -5,11 +5,13 @@ import {
   type ApprovalOption,
   type ApprovalOutcome,
   type Capability,
+  type ContentBlock,
   ENGINE_METHODS,
   ENGINE_PROTOCOL,
   type EngineEvent,
   type EngineEventType,
   type EventsSinceParams,
+  IMAGE_PROMPT_CAPABILITY,
   type InterruptParams,
   type KnownCapability,
   type PromptParams,
@@ -53,6 +55,14 @@ interface PendingAsk {
   seq: number;
   resolve: (outcome: { outcome: ApprovalOutcome; answer?: string }) => void;
 }
+
+/** Base64 length -> decoded bytes, without pulling node:buffer into packages. */
+const decodedBytes = (base64: string) => {
+  let n = Math.floor((base64.length * 3) / 4);
+  if (base64.endsWith("==")) n -= 2;
+  else if (base64.endsWith("=")) n -= 1;
+  return n;
+};
 
 interface FakeTurn {
   turnId: string;
@@ -207,6 +217,7 @@ export class FakeEngine {
   private describe() {
     const capabilities: Capability[] = [
       ...(this.capOn("steer") ? [STEER_CAPABILITY] : []),
+      ...(this.capOn("image_prompt") ? [IMAGE_PROMPT_CAPABILITY] : []),
       {
         id: "mcp_servers",
         name: "MCP servers",
@@ -289,7 +300,10 @@ export class FakeEngine {
         RPC_ERRORS.INVALID_STATE,
         `session ${s.id} already has a running turn`,
       );
-    if (p.content.some((b) => b.type === "image")) {
+    const imageBlocks = p.content.filter(
+      (b): b is Extract<ContentBlock, { type: "image" }> => b.type === "image",
+    );
+    if (imageBlocks.length && !this.capOn("image_prompt")) {
       throw new RpcError(
         RPC_ERRORS.INVALID_PARAMS,
         "image blocks require the image_prompt capability",
@@ -299,7 +313,11 @@ export class FakeEngine {
       .filter((b): b is { type: "text"; text: string } => b.type === "text")
       .map((b) => b.text)
       .join("\n");
-    return this.runTurn(s, text);
+    const images = imageBlocks.map((b) => ({
+      mimeType: b.mimeType,
+      sizeBytes: decodedBytes(b.data),
+    }));
+    return this.runTurn(s, text, images);
   }
 
   private interrupt(p: InterruptParams) {
@@ -467,7 +485,11 @@ export class FakeEngine {
 
   // ── the turn loop (ports the prototype's runTurn) ─────────────────────────
 
-  private async runTurn(s: FakeSession, promptText: string) {
+  private async runTurn(
+    s: FakeSession,
+    promptText: string,
+    images?: { mimeType: string; sizeBytes: number }[],
+  ) {
     const turnId = `t${++this.turnCounter}`;
     const script = scriptFor(
       s.agent,
@@ -477,6 +499,7 @@ export class FakeEngine {
       this.nextHex,
       "Nuncio-hq/LilOS",
       s.cwd,
+      images,
     );
     s.turn = { turnId, phase: "reasoning", interrupted: false };
     s.turnCount += 1;

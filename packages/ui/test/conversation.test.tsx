@@ -359,3 +359,25 @@ describe("issue #19 — one conversation from shared pieces", () => {
     ).toBeTruthy();
   });
 });
+
+describe("issue #31 — images sent with the message show in the thread panel", () => {
+  test("AC-1 the thread root's attachments render as chips (with a thumbnail) in the panel", () => {
+    const withImage = {
+      ...root,
+      attachments: [
+        {
+          name: "shot.png",
+          mediaType: "image/png",
+          url: "data:image/png;base64,iVBORw0KGgo=",
+        },
+      ],
+    };
+    const { container } = render(
+      <ThreadView {...panelProps} root={withImage} channel={dmChannel} />,
+    );
+    const chips = container.querySelector("[data-attachments]");
+    expect(chips).toBeTruthy();
+    expect(chips?.textContent).toContain("shot.png");
+    expect(chips?.querySelector("img")?.getAttribute("alt")).toBe("shot.png");
+  });
+});
