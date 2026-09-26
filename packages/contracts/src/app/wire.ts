@@ -13,7 +13,8 @@ import { APP_PROTOCOL_VERSION } from "./version";
 
 /**
  * Wire framing: JSON-RPC 2.0 over one WebSocket endpoint (`/ws`), the same
- * shape Hermes Desktop uses between renderer and engine
+ * shape the reference desktop app (AGENTS.md "Learn from these projects")
+ * uses between renderer and engine
  * (`apps/shared/src/json-rpc-gateway.ts`). The first frame on a socket must
  * be a `session.hello` request carrying the protocol version and the
  * per-install auth token; every other method is rejected until hello
@@ -112,7 +113,7 @@ export const WelcomeResult = z.object({
   protocolVersion: z.int(),
   relayVersion: z.string(),
   /**
-   * Process identity of this relay run (Hermes `replay_epoch` analog). A
+   * Process identity of this relay run (`replay_epoch` analog in the reference gateway). A
    * change across reconnects tells the client its seq watermarks describe a
    * numbering that may no longer exist — it must resync from a snapshot.
    */

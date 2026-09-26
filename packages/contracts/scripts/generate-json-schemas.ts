@@ -6,8 +6,8 @@ import { appProtocol } from "../src/app/registry";
 
 /**
  * Renders Zod contract registries to committed JSON Schema artifacts, the
- * same "declared once, generated for consumers" loop as Hermes
- * `scripts/gen_gateway_contracts.py`. The stale check lives in
+ * same "declared once, generated for consumers" loop as the reference engine gateway
+ * (`scripts/gen_gateway_contracts.py`, see AGENTS.md "Learn from these projects"). The stale check lives in
  * `packages/contracts/test/app-schema.test.ts`: change a schema → regenerate
  * (`bun run --cwd packages/contracts gen`) → the diff is the contract change.
  *
