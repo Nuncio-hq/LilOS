@@ -18,6 +18,7 @@ const SKIP = new Set([".git", "node_modules", ".DS_Store"]);
 const COMPLETE_CAP = 50;
 const TREE_CAP = 5000;
 const READ_CAP = 256 * 1024;
+const MARK_POOL = 16;
 
 /** `.git` is a dir in a plain checkout, a file in a worktree/submodule. */
 const hasGitDir = (abs: string) => existsSync(join(abs, ".git"));
@@ -35,16 +36,24 @@ export async function fsList(params: { path: string }): Promise<FsListResult> {
         ? pathNotFound(params.path, "folder")
         : e;
     });
-  const entries: FsEntry[] = [];
-  for (const d of dirents) {
-    const kind = d.isDirectory() ? "dir" : d.isFile() ? "file" : "other";
-    const entry: FsEntry = { name: d.name, kind };
-    if (kind === "dir" && hasGitDir(join(abs, d.name))) {
-      const mark = await repoMark(join(abs, d.name));
-      if (mark) entry.repo = mark;
+  const entries: FsEntry[] = dirents.map((d) => ({
+    name: d.name,
+    kind: d.isDirectory() ? "dir" : d.isFile() ? "file" : "other",
+  }));
+  // Mark repo children with a bounded pool: one `git` round-trip per repo,
+  // serially, turned a big folder (e.g. $TMPDIR, ~900 repos) into 15s+.
+  const repos = entries.filter(
+    (e) => e.kind === "dir" && hasGitDir(join(abs, e.name)),
+  );
+  let next = 0;
+  const worker = async () => {
+    while (next < repos.length) {
+      const e = repos[next++] as FsEntry;
+      const mark = await repoMark(join(abs, e.name));
+      if (mark) e.repo = mark;
     }
-    entries.push(entry);
-  }
+  };
+  await Promise.all(Array.from({ length: MARK_POOL }, worker));
   entries.sort(
     (a, b) =>
       (a.kind === "dir" ? 0 : 1) - (b.kind === "dir" ? 0 : 1) ||
