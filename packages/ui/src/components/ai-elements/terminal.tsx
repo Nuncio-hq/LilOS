@@ -3,6 +3,7 @@
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import AnsiModule from "ansi-to-react";
+import { escapeCarriageReturn } from "escape-carriage";
 import { CheckIcon, CopyIcon, TerminalIcon, Trash2Icon } from "lucide-react";
 import type { ComponentProps, HTMLAttributes } from "react";
 import {
@@ -198,11 +199,22 @@ export const TerminalContent = ({
   const { output, isStreaming, autoScroll } = useContext(TerminalContext);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  /* zsh-style `\r` redraws leave a run of pad spaces at end-of-line (issue
+     #56 AC-2): under whitespace-pre-wrap that invisible run wraps and the
+     streaming cursor lands a line below the prompt. Resolve `\r`s the same
+     way ansi-to-react does internally, then collapse end-of-line whitespace
+     runs to one cell — the prompt's own trailing space survives; the pad
+     run that pushed the cursor off the line does not. */
+  const rendered = useMemo(
+    () => escapeCarriageReturn(output).replace(/[^\S\n]{2,}$/gm, " "),
+    [output],
+  );
+
   useEffect(() => {
     if (autoScroll && containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  }, [output, autoScroll]);
+  }, [rendered, autoScroll]);
 
   return (
     <div
@@ -215,7 +227,7 @@ export const TerminalContent = ({
     >
       {children ?? (
         <pre className="whitespace-pre-wrap break-words">
-          <Ansi>{output}</Ansi>
+          <Ansi>{rendered}</Ansi>
           {isStreaming && (
             <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-zinc-100" />
           )}

@@ -25,6 +25,8 @@ export const ViewerHello = z.object({
   /** Browser viewport; also the page-space the viewer's input coords map into. */
   page: z.object({ width: z.int().min(1), height: z.int().min(1) }),
   terminal: z.object({ cols: z.int().min(1), rows: z.int().min(1) }),
+  /** Who holds the terminal right now ("user" = a Workbench human typing). */
+  control: z.object({ terminal: z.enum(["agent", "user"]) }),
   /** Current page URL; null until the browser has navigated once. */
   url: z.string().nullable(),
   previews: z.array(PreviewTarget),
@@ -59,6 +61,25 @@ export const ViewerPreviews = z.object({
 });
 export type ViewerPreviews = z.infer<typeof ViewerPreviews>;
 
+/** The remote viewport changed (the pane's `browser.resize` landed). */
+export const ViewerPage = z.object({
+  type: z.literal("page"),
+  page: z.object({ width: z.int().min(1), height: z.int().min(1) }),
+});
+export type ViewerPage = z.infer<typeof ViewerPage>;
+
+/**
+ * Terminal holder changed (issue #56): "user" means a Workbench keystroke
+ * took the terminal — agent `terminal_run`/`terminal_write` calls get
+ * `user_control` until `term.release`. Not a lock: the last viewer leaving
+ * releases it automatically.
+ */
+export const ViewerTermControl = z.object({
+  type: z.literal("term.control"),
+  holder: z.enum(["agent", "user"]),
+});
+export type ViewerTermControl = z.infer<typeof ViewerTermControl>;
+
 /** One tool call the agent made — the Workbench activity feed. */
 export const ViewerActivity = z.object({
   type: z.literal("activity"),
@@ -75,6 +96,8 @@ export const ViewerServerMsg = z.discriminatedUnion("type", [
   ViewerTerm,
   ViewerUrl,
   ViewerPreviews,
+  ViewerPage,
+  ViewerTermControl,
   ViewerActivity,
 ]);
 export type ViewerServerMsg = z.infer<typeof ViewerServerMsg>;
@@ -143,10 +166,26 @@ export const ViewerBrowserNavigate = z.object({
 });
 export type ViewerBrowserNavigate = z.infer<typeof ViewerBrowserNavigate>;
 
+/** Resize the owned page to the viewer pane's pixel size (issue #56 AC-4). */
+export const ViewerBrowserResize = z.object({
+  type: z.literal("browser.resize"),
+  width: z.int().min(1),
+  height: z.int().min(1),
+});
+export type ViewerBrowserResize = z.infer<typeof ViewerBrowserResize>;
+
+/** Hand the terminal back to the agent — the explicit takeover release. */
+export const ViewerTermRelease = z.object({
+  type: z.literal("term.release"),
+});
+export type ViewerTermRelease = z.infer<typeof ViewerTermRelease>;
+
 export const ViewerClientMsg = z.discriminatedUnion("type", [
   ViewerTermInput,
   ViewerTermResize,
   ViewerBrowserInput,
   ViewerBrowserNavigate,
+  ViewerBrowserResize,
+  ViewerTermRelease,
 ]);
 export type ViewerClientMsg = z.infer<typeof ViewerClientMsg>;

@@ -90,14 +90,23 @@ try {
     term: false,
     url: "",
     activity: 0,
+    control: [] as string[],
+    page: null as null | { width: number; height: number },
   };
   ws.onmessage = (e) => {
-    const m = JSON.parse(String(e.data)) as { type: string; url?: string };
+    const m = JSON.parse(String(e.data)) as {
+      type: string;
+      url?: string;
+      holder?: string;
+      page?: { width: number; height: number };
+    };
     if (m.type === "hello") seen.hello = true;
     if (m.type === "frame") seen.frame = true;
     if (m.type === "term") seen.term = true;
     if (m.type === "url") seen.url = m.url ?? "";
     if (m.type === "activity") seen.activity += 1;
+    if (m.type === "term.control") seen.control.push(m.holder ?? "");
+    if (m.type === "page") seen.page = m.page ?? null;
   };
   await new Promise<void>((resolve, reject) => {
     ws.onopen = () => resolve();
@@ -166,6 +175,35 @@ try {
     /VIEWER-TYPED/.test(String(tail.output)),
   );
 
+  // AC-1 (issue #56): that keystroke took the terminal — the agent's next
+  // call gets a clear user_control conflict instead of silently interleaving.
+  check(
+    "takeover announced on the wire (term.control user)",
+    await waitFor(() => seen.control.at(-1) === "user", 3000),
+  );
+  const blocked = await fetch(`${server.url}/tools/terminal_run`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${session.token}`,
+      "x-lilos-session": session.session,
+    },
+    body: JSON.stringify({ command: "echo nope" }),
+  });
+  const blockedBody = (await blocked.json()) as {
+    error?: { code?: string };
+  };
+  check(
+    "agent terminal_run during takeover → 409 user_control",
+    blocked.status === 409 && blockedBody.error?.code === "user_control",
+    `status=${blocked.status} body=${JSON.stringify(blockedBody)}`,
+  );
+  ws.send(JSON.stringify({ type: "term.release" }));
+  check(
+    "term.release hands the terminal back",
+    await waitFor(() => seen.control.at(-1) === "agent", 3000),
+  );
+
   const ran = await tool(
     server.url,
     session.session,
@@ -177,6 +215,58 @@ try {
     "terminal_run captures output",
     /TERM-2/.test(String(ran.output)),
     String(ran.output),
+  );
+
+  // AC-3: a redirect lands on the final URL — the viewer's url event follows.
+  const landed = `${server.url}/landed`;
+  const redir = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch: () =>
+      new Response(null, { status: 302, headers: { location: landed } }),
+  });
+  ws.send(
+    JSON.stringify({
+      type: "browser.navigate",
+      url: `http://127.0.0.1:${redir.port}/go`,
+    }),
+  );
+  check(
+    "url event follows a redirect to the final URL",
+    await waitFor(() => seen.url === landed, 8000),
+    `last url=${seen.url}`,
+  );
+  redir.stop(true);
+
+  // AC-4: the viewer pane's pixels drive the remote page's viewport.
+  ws.send(
+    JSON.stringify({ type: "browser.resize", width: 640, height: 360 }),
+  );
+  let dims = "";
+  for (let i = 0; i < 60; i++) {
+    const r = await tool(
+      server.url,
+      session.session,
+      session.token,
+      "browser_eval",
+      { expression: "innerWidth + 'x' + innerHeight" },
+    );
+    dims = String(r.value);
+    if (dims === "640x360") break;
+    await sleep(150);
+  }
+  check(
+    "browser.resize resizes the remote viewport",
+    dims === "640x360",
+    `innerWidth×innerHeight=${dims}`,
+  );
+  check(
+    "page event carries the new box",
+    await waitFor(
+      () => seen.page?.width === 640 && seen.page?.height === 360,
+      5000,
+    ),
+    `page=${JSON.stringify(seen.page)}`,
   );
 
   await tool(server.url, session.session, session.token, "terminal_write", {

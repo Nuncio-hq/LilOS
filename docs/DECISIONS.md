@@ -88,6 +88,11 @@ PR does not exist.
   { mcpServers }`); the Workbench Terminal/Preview tabs watch the same
   surfaces live and take input. Not: engine-specific UI toolsets (Hermes
   `desktop_ui` / `drive_preview` / `read_terminal`). — #36 · PR #54
+- **D-#56 The terminal has one holder: a Workbench keystroke hands it to
+  the user; `terminal_run`/`terminal_write` then fail `user_control` (HTTP
+  409), in-flight runs too.** Hand-back is explicit (`term.release`) or
+  automatic when the last viewer leaves. Not: silent interleaving, or a
+  UI-only pause badge. — #56
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the

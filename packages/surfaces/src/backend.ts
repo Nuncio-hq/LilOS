@@ -59,7 +59,11 @@ export interface ViewerScope extends SurfaceBackend {
   browserInput(evt: ViewerBrowserInputEvent): void;
   terminalInput(data: string): void;
   terminalResize(cols: number, rows: number): void;
+  /** Resize the owned page to the viewer pane's pixels (issue #56 AC-4). */
+  browserResize(width: number, height: number): void;
   browserNavigate(url: string): void;
+  /** Explicit hand-back of a user-held terminal (issue #56 AC-1). */
+  terminalRelease(): void;
   /** Current snapshot for a just-attached viewer. */
   snapshot(): ViewerSnapshot;
   /** Live events a viewer renders (frames, terminal bytes, url, previews). */
@@ -73,6 +77,8 @@ export interface ViewerScope extends SurfaceBackend {
 export interface ViewerSnapshot {
   page: { width: number; height: number };
   terminal: { cols: number; rows: number };
+  /** Who holds the terminal; "user" blocks terminal_run/terminal_write. */
+  control: { terminal: "agent" | "user" };
   url: string | null;
   previews: PreviewTarget[];
   /** Latest JPEG frame (raw bytes); null until the first screencast lands. */
@@ -86,6 +92,8 @@ export type ViewerScopeEvent =
   | { kind: "term"; data: Uint8Array }
   | { kind: "url"; url: string | null }
   | { kind: "previews"; previews: PreviewTarget[] }
+  | { kind: "page"; page: { width: number; height: number } }
+  | { kind: "term.control"; holder: "agent" | "user" }
   | {
       kind: "activity";
       tool: string;
@@ -107,7 +115,13 @@ export interface SurfaceHost {
 /** Structured failure for backend/dispatch errors (transport maps to HTTP/RPC). */
 export class SurfaceError extends Error {
   constructor(
-    readonly code: "not_found" | "invalid_params" | "unavailable" | "internal",
+    readonly code:
+      | "not_found"
+      | "invalid_params"
+      | "unavailable"
+      | "internal"
+      /** A Workbench user holds the terminal (issue #56) → HTTP 409. */
+      | "user_control",
     message: string,
   ) {
     super(message);

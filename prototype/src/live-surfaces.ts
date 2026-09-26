@@ -52,6 +52,8 @@ export function useLiveSurfaces(attach: LiveAttach | null): LiveSurfaces | undef
     const frame = [...msgs].reverse().find((m) => m.type === "frame")
     const urlMsg = [...msgs].reverse().find((m) => m.type === "url")
     const previewsMsg = [...msgs].reverse().find((m) => m.type === "previews")
+    const pageMsg = [...msgs].reverse().find((m) => m.type === "page")
+    const controlMsg = [...msgs].reverse().find((m) => m.type === "term.control")
     const activity = msgs
       .filter(
         (m): m is Extract<typeof m, { type: "activity" }> =>
@@ -69,13 +71,22 @@ export function useLiveSurfaces(attach: LiveAttach | null): LiveSurfaces | undef
       termText,
       terminal: hello?.type === "hello" ? hello.terminal : { cols: 110, rows: 28 },
       frame: frame && frame.type === "frame" ? `data:image/jpeg;base64,${frame.jpeg}` : null,
-      page: hello?.type === "hello" ? hello.page : { width: 1280, height: 800 },
+      page: pageMsg?.type === "page" ? pageMsg.page : hello?.type === "hello" ? hello.page : { width: 1280, height: 800 },
+      termControl:
+        controlMsg?.type === "term.control"
+          ? controlMsg.holder
+          : hello?.type === "hello"
+            ? hello.control.terminal
+            : "agent",
       url: urlMsg?.type === "url" ? urlMsg.url : helloUrl,
       previews: previewsMsg?.type === "previews" ? previewsMsg.previews : helloPreviews,
       activity,
       sendInput: (data: string) => handle.send({ type: "term.input", data }),
+      releaseTerminal: () => handle.send({ type: "term.release" }),
       resize: (cols: number, rows: number) => handle.send({ type: "term.resize", cols, rows }),
       navigate: (url: string) => handle.send({ type: "browser.navigate", url }),
+      resizeBrowser: (width: number, height: number) =>
+        handle.send({ type: "browser.resize", width, height }),
       input: (evt) => handle.send({ type: "browser.input", event: evt }),
     } satisfies LiveSurfaces
   }, [handle, tick])

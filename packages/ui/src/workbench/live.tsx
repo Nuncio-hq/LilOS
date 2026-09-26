@@ -1,5 +1,5 @@
 import { GlobeIcon } from "lucide-react";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import {
   Terminal,
   TerminalContent,
@@ -28,10 +28,21 @@ export interface LiveSurfaces {
   url: string | null;
   previews: { url: string; via: "scan" | "marker" }[];
   activity: { tool: string; status: string; summary: string; at: number }[];
+  /**
+   * Terminal holder (issue #56 AC-1): "user" while a Workbench keystroke
+   * holds the terminal — the agent's terminal_run/terminal_write get a clear
+   * `user_control` result. Back to "agent" only via `releaseTerminal` or all
+   * viewers leaving.
+   */
+  termControl: "agent" | "user";
+  /** Explicit hand-back of the terminal to the agent. */
+  releaseTerminal(): void;
   /** keystroke / paste → PTY stdin */
   sendInput(data: string): void;
   resize(cols: number, rows: number): void;
   navigate(url: string): void;
+  /** Report the preview pane's pixel size → the remote page resizes (AC-4). */
+  resizeBrowser(width: number, height: number): void;
   input(evt: LiveBrowserInput): void;
 }
 
@@ -89,10 +100,14 @@ function keyToInput(e: React.KeyboardEvent): string | null {
 export function LiveTerminal({
   live,
   cwd,
+  agentName,
 }: {
   live: LiveSurfaces;
   cwd: string;
+  /** The driving employee's name — shown in the takeover banner. */
+  agentName?: string;
 }) {
+  const held = live.termControl === "user";
   return (
     <Terminal
       output={live.termText || "[90mWaiting for terminal output…[0m"}
@@ -104,6 +119,21 @@ export function LiveTerminal({
           <span className="font-mono">{cwd}</span>
           <span className="rounded bg-emerald-800 px-1 text-[10px]">live</span>
         </TerminalTitle>
+        {held && (
+          <span
+            role="status"
+            className="flex items-center gap-2 rounded bg-amber-900/60 px-2 py-0.5 text-[11px] text-amber-100"
+          >
+            You&rsquo;re in control — {agentName ?? "the agent"} waits
+            <button
+              type="button"
+              onClick={live.releaseTerminal}
+              className="rounded bg-amber-100/15 px-1.5 py-0.5 font-medium hover:bg-amber-100/25"
+            >
+              Return control
+            </button>
+          </span>
+        )}
       </TerminalHeader>
       <div
         role="textbox"
@@ -126,6 +156,36 @@ export function LiveTerminal({
 
 export function LivePreview({ live }: { live: LiveSurfaces }) {
   const imgRef = useRef<HTMLImageElement>(null);
+  const paneRef = useRef<HTMLDivElement>(null);
+  // `live` is rebuilt on every socket message — keep the latest callback in a
+  // ref so the observer below doesn't resubscribe per render.
+  const resizeRef = useRef(live.resizeBrowser);
+  resizeRef.current = live.resizeBrowser;
+  /* AC-4 (issue #56): the remote page resizes to this pane's pixels — the
+     real viewport, not a CSS scale — so the screencast fills the pane
+     without letterbox bars. Debounced while a drag resizes the pane. */
+  useEffect(() => {
+    const el = paneRef.current;
+    if (!el) return;
+    let timer = 0;
+    const report = () => {
+      const r = el.getBoundingClientRect();
+      resizeRef.current(
+        Math.max(1, Math.round(r.width)),
+        Math.max(1, Math.round(r.height)),
+      );
+    };
+    report(); // first frames already match the pane
+    const ro = new ResizeObserver(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(report, 150);
+    });
+    ro.observe(el);
+    return () => {
+      window.clearTimeout(timer);
+      ro.disconnect();
+    };
+  }, []);
   // object-contain letterboxes the frame inside the img box — map clicks
   // through the content rect, not the element rect.
   const toPage = (e: { clientX: number; clientY: number }) => {
@@ -145,7 +205,7 @@ export function LivePreview({ live }: { live: LiveSurfaces }) {
   };
   return (
     <WebPreview
-      defaultUrl={live.url ?? ""}
+      url={live.url ?? ""}
       onUrlChange={(u) => {
         if (u.trim()) live.navigate(u.trim());
       }}
@@ -153,19 +213,14 @@ export function LivePreview({ live }: { live: LiveSurfaces }) {
     >
       <WebPreviewNavigation className="p-1.5">
         <WebPreviewUrl />
-        {live.url && (
-          <span
-            className="max-w-40 truncate font-mono text-[10px] text-muted-foreground"
-            title={live.url}
-          >
-            {live.url}
-          </span>
-        )}
         <span className="rounded bg-emerald-800 px-1.5 py-0.5 text-[10px] text-emerald-100">
           live
         </span>
       </WebPreviewNavigation>
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-neutral-950">
+      <div
+        ref={paneRef}
+        className="relative min-h-0 flex-1 overflow-hidden bg-neutral-950"
+      >
         {live.frame ? (
           <img
             ref={imgRef}

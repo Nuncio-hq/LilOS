@@ -58,6 +58,9 @@ describe("AC-4 viewer channel: snapshot then live, input both ways", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(browser.url).toBe("http://localhost:2");
 
+    // typed keystrokes held the terminal — hand it back before the agent runs
+    v.receive(JSON.stringify({ type: "term.release" }));
+
     // agent activity is visible as a feed event
     const p = scope.terminalRun({ command: "true" });
     spawner.last.emit(`${spawner.last.written.join("")}__LILOS_DONE_1__0\n`);

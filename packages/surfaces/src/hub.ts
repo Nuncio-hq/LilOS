@@ -25,6 +25,10 @@ function scopeEventToMsg(e: ViewerScopeEvent): ViewerServerMsg {
       return { type: "url", url: e.url };
     case "previews":
       return { type: "previews", previews: e.previews };
+    case "page":
+      return { type: "page", page: e.page };
+    case "term.control":
+      return { type: "term.control", holder: e.holder };
     case "activity":
       return {
         type: "activity",
@@ -62,6 +66,7 @@ export function attachViewer(
     session: scope.session,
     page: snap.page,
     terminal: snap.terminal,
+    control: snap.control,
     url: snap.url,
     previews: snap.previews,
   });
@@ -94,11 +99,17 @@ export function attachViewer(
         case "term.resize":
           scope.terminalResize(m.cols, m.rows);
           break;
+        case "term.release":
+          scope.terminalRelease();
+          break;
         case "browser.input":
           scope.browserInput(m.event);
           break;
         case "browser.navigate":
           scope.browserNavigate(m.url);
+          break;
+        case "browser.resize":
+          scope.browserResize(m.width, m.height);
           break;
       }
     },
