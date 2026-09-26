@@ -336,3 +336,171 @@ describe("RelayClient", () => {
     expect(subscribe?.params?.afterSeq).toBeUndefined();
   });
 });
+
+describe("relay -> app requests + employee lifecycle (#29)", () => {
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const lastSent = (socket: FakeSocket, id: string) =>
+    socket.sent
+      .map((raw) => JSON.parse(raw) as { id?: string })
+      .find((f) => f.id === id);
+
+  it("answers an inbound request frame through onRequest", async () => {
+    const { client, socket } = makeClient({
+      onRequest: async (method, params) => ({ echo: method, params }),
+    });
+    await connectClient(client, () => socket);
+
+    socket.emit({
+      jsonrpc: "2.0",
+      id: "srv1",
+      method: "agents.list",
+      params: { verbose: true },
+    });
+    await flush();
+    expect(lastSent(socket, "srv1")).toEqual({
+      jsonrpc: "2.0",
+      id: "srv1",
+      result: { echo: "agents.list", params: { verbose: true } },
+    });
+  });
+
+  it("replies -32601 when no request handler is set", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    socket.emit({ jsonrpc: "2.0", id: "srv2", method: "agents.list" });
+    await flush();
+    const reply = lastSent(socket, "srv2") as { error?: { code: number } };
+    expect(reply.error?.code).toBe(-32601);
+  });
+
+  it("passes a thrown handler error's code/message through to the relay", async () => {
+    const { client, socket } = makeClient({
+      onRequest: async () => {
+        const e = new Error("engine not connected") as Error & {
+          code: number;
+        };
+        e.code = -32005;
+        throw e;
+      },
+    });
+    await connectClient(client, () => socket);
+    socket.emit({ jsonrpc: "2.0", id: "srv3", method: "agents.list" });
+    await flush();
+    const reply = lastSent(socket, "srv3") as {
+      error?: { code: number; message: string };
+    };
+    expect(reply.error?.code).toBe(-32005);
+    expect(reply.error?.message).toBe("engine not connected");
+  });
+
+  it("hire/edit/remove helpers keep the employees atom in sync", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+
+    const ada = { id: "e1", name: "Ada", role: "eng", profile: "reviewer" };
+    const hire = client.createEmployee({
+      name: "Ada",
+      role: "eng",
+      profile: "reviewer",
+    });
+    socket.respondTo("employees.create", { employee: ada });
+    expect(await hire).toEqual(ada);
+    expect(client.employees.get()).toEqual([ada]);
+
+    const renamed = { ...ada, name: "Ada Lovelace" };
+    const update = client.updateEmployee("e1", { name: "Ada Lovelace" });
+    socket.respondTo("employees.update", { employee: renamed });
+    expect(await update).toEqual(renamed);
+    expect(client.employees.get()[0]?.name).toBe("Ada Lovelace");
+
+    const remove = client.removeEmployee("e1");
+    socket.respondTo("employees.remove", { ok: true });
+    await remove;
+    expect(client.employees.get()).toEqual([]);
+  });
+
+  it("employee.upserted / employee.removed notifications update the atom", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    const ada = { id: "e1", name: "Ada", role: "eng", profile: "reviewer" };
+
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "employee.upserted",
+      params: { employee: ada },
+    });
+    expect(client.employees.get()).toEqual([ada]);
+
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "employee.upserted",
+      params: { employee: { ...ada, name: "Ada 2" } },
+    });
+    expect(client.employees.get()).toEqual([{ ...ada, name: "Ada 2" }]);
+
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "employee.removed",
+      params: { employeeId: "e1" },
+    });
+    expect(client.employees.get()).toEqual([]);
+  });
+
+  it("channel.removed drops the channel, its conversations, and message state", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "channel.created",
+      params: {
+        channel: {
+          id: "c1",
+          kind: "dm",
+          employeeId: "e1",
+          lastSeq: 0,
+          createdAt: 1,
+        },
+      },
+    });
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "channel.created",
+      params: {
+        channel: {
+          id: "c2",
+          kind: "dm",
+          employeeId: "e2",
+          lastSeq: 0,
+          createdAt: 2,
+        },
+      },
+    });
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "conversation.updated",
+      params: {
+        conversation: {
+          id: "conv1",
+          channelId: "c1",
+          rootMessageId: "m1",
+          engineRef: null,
+          state: "idle",
+          title: "",
+          archived: false,
+          createdAt: 3,
+        },
+      },
+    });
+    const store = client.channelMessages("c1");
+
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "channel.removed",
+      params: { channelId: "c1" },
+    });
+    expect(client.channels.get().map((c) => c.id)).toEqual(["c2"]);
+    expect(client.conversations.get().map((c) => c.id)).toEqual(["conv2"]);
+    expect(store.get().messages).toEqual([]);
+    expect(store.get().synced).toBe(false);
+  });
+});
