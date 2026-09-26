@@ -9,8 +9,18 @@ LLM). One HTTP server, stdlib only. Behaviour keyed on the last user message:
 - contains "Fix the README title" -> tool_call `execute_code` (needs approval
                                      under hermes gateway), then a text turn
                                      once the tool result is in history
+- contains "chmod 777"             -> tool_call `terminal` with that exact
+                                     command — the same call a real model
+                                     makes for the approval/resume prompts —
+                                     emitted once (until a tool result lands),
+                                     then a text turn
 - contains "Explain the relay package" -> tool_call `read_file` (read-only,
                                      no approval), then text
+- contains "Context builder"      -> ~200 numbered lines + LILOS_OK — the
+                                     compression-fill turns must put real
+                                     tokens in history or hermes refuses the
+                                     fold ("summary would grow the
+                                     conversation") and never rotates the ref
 - tools offered + tool result in history -> "LILOS_E2E_OK ..." text
 - default                          -> "LILOS_E2E_OK <echo>" text
 
@@ -33,6 +43,8 @@ NONCE = "7f00d"
 DONE_RE = re.compile(r"LILOS_(TOOL_DONE|FILE_DONE)")
 EDIT = "Fix the README title"
 READ = "Explain the relay package"
+CHMOD = "chmod 777"
+CHMOD_COMMAND = "chmod 777 README.md"
 
 
 def _log(rec):
@@ -57,25 +69,44 @@ def _tool_done(body):
     return False
 
 
+def _has_tool_result(body):
+    return any(
+        m.get("role") == "tool" for m in body.get("messages") or []
+    )
+
+
 def _decide(body):
     last = _last_user(body)
     if "LILOS_SLOW" in last:
         return "slow", "slow reply words for the interrupt window"
     if "LILOS_LONG" in last:
         return "text", " ".join(f"word{i}" for i in range(1200))
+    # Compression fillers: ~200 numbered lines so the summarizable middle is
+    # genuinely bigger than a summary — a tiny history gets the fold refused.
+    if "Context builder" in last:
+        return "text", "\n".join(str(i) for i in range(1, 201)) + "\nLILOS_OK"
     if _tool_done(body):
         return "text", f"LILOS_E2E_OK {NONCE}"
     if body.get("tools"):
         if EDIT in last:
             return "tool_call", "execute_code"
-        if READ in last:
+        # One read: the tool result carries no marker, so without the
+        # has-result guard this re-emits read_file until hermes' own
+        # iteration cap ends the turn.
+        if READ in last and not _has_tool_result(body):
             return "tool_call", "read_file"
+        # chmod's stdout is empty, so no LILOS_TOOL_DONE marker ever lands;
+        # gate on "no tool result yet" instead or this re-emits forever.
+        if CHMOD in last and not _has_tool_result(body):
+            return "tool_call", "terminal"
     return "text", "LILOS_E2E_OK " + last[:40]
 
 
 def _tool_call(name):
     if name == "execute_code":
         args = {"code": f'print("LILOS_TOOL_DONE {NONCE}")'}
+    elif name == "terminal":
+        args = {"command": CHMOD_COMMAND}
     else:
         args = {"path": "README.md"}
     return {
