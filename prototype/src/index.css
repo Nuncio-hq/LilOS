@@ -1,0 +1,223 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.74 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 13%);
+    --input: oklch(1 0 0 / 17%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    }
+  html {
+    @apply font-sans;
+    }
+}
+
+/* Agent transcript prose (focus mode + PR description). Plain CSS so it does not depend on Tailwind
+   scanning streamdown's classes in node_modules. Unlayered on purpose: must beat streamdown's utility classes
+   (text-sm / bg-muted / list-inside) that Tailwind emits in @layer utilities. Modelled on Claude / Cursor / Devin. */
+.lilos-prose { font-size: 15px; line-height: 1.65; color: oklch(0.2 0 0); letter-spacing: -0.003em; }
+.lilos-prose > * { margin-top: 0; margin-bottom: 0; }
+.lilos-prose > * + * { margin-top: 0.7em; }
+.lilos-prose p { margin: 0; }
+.lilos-prose strong { font-weight: 600; color: oklch(0.13 0 0); }
+.lilos-prose h1, .lilos-prose h2, .lilos-prose h3 { font-weight: 600; color: oklch(0.13 0 0); letter-spacing: -0.01em; line-height: 1.3; }
+.lilos-prose h1 { font-size: 1.3em; }
+.lilos-prose h2 { font-size: 1.15em; margin-top: 1.2em; }
+.lilos-prose h3 { font-size: 1.02em; margin-top: 1em; }
+.lilos-prose > :first-child { margin-top: 0; }
+.lilos-prose ul, .lilos-prose ol { padding-left: 1.35em; list-style-position: outside; }
+.lilos-prose ul { list-style-type: disc; }
+.lilos-prose ol { list-style-type: decimal; }
+.lilos-prose li { padding: 0 0 0 0.15em !important; }
+.lilos-prose li + li { margin-top: 0.2em; }
+.lilos-prose li::marker { color: oklch(0.6 0 0); }
+.lilos-prose [data-streamdown="unordered-list"], .lilos-prose [data-streamdown="ordered-list"] { list-style-position: outside; white-space: normal; }
+.lilos-prose code:not(pre code) {
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 0.85em; padding: 0.1em 0.32em; border-radius: 4px; line-height: 1;
+    background: oklch(0.955 0 0); color: oklch(0.2 0 0); border: 0;
+    box-decoration-break: clone; -webkit-box-decoration-break: clone; overflow-wrap: anywhere;
+  }
+.lilos-prose a { color: oklch(0.5 0.17 255); text-decoration: none; }
+.lilos-prose a:hover { text-decoration: underline; }
+.is-user .lilos-prose { color: inherit; }
+/* Compact variant for Slack-style rows (channel feed, DM list, thread panel): same rules, chat density. */
+.lilos-prose.compact { font-size: 14px; line-height: 1.55; }
+.lilos-prose.compact > * + * { margin-top: 0.45em; }
+.lilos-prose.compact li + li { margin-top: 0.1em; }
+.lilos-prose.compact h1, .lilos-prose.compact h2, .lilos-prose.compact h3 { font-size: 1em; margin-top: 0.6em; }
+/* Horizontal tab strips scroll without a visible bar (overflow artefact next to the last tab). */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* ---- Dark mode ----
+   The UI uses tinted status colours (bg-emerald-50, text-amber-900…) that are tuned for white. Rather than
+   sprinkle dark: variants over ~150 call sites, remap them once here: pale fills become translucent tints,
+   deep text becomes the light shade. Unlayered so it beats @layer utilities. Generated from the classes in use. */
+.dark { color-scheme: dark; scrollbar-color: oklch(1 0 0 / 18%) transparent; }
+.dark * { scrollbar-color: oklch(1 0 0 / 18%) transparent; }
+.dark .bg-amber-50 { background-color: oklch(76.9% 0.188 70.08 / 12%); }
+.dark .bg-amber-50\/50 { background-color: oklch(76.9% 0.188 70.08 / 6%); }
+.dark .bg-blue-50 { background-color: oklch(62.3% 0.214 259.815 / 12%); }
+.dark .bg-blue-50\/60 { background-color: oklch(62.3% 0.214 259.815 / 7%); }
+.dark .bg-blue-50\/70 { background-color: oklch(62.3% 0.214 259.815 / 8%); }
+.dark .bg-emerald-50 { background-color: oklch(69.6% 0.17 162.48 / 12%); }
+.dark .bg-emerald-50\/40 { background-color: oklch(69.6% 0.17 162.48 / 5%); }
+.dark .bg-green-100 { background-color: oklch(72.3% 0.219 149.579 / 20%); }
+.dark .bg-red-100 { background-color: oklch(63.7% 0.237 25.331 / 20%); }
+.dark .bg-red-50 { background-color: oklch(63.7% 0.237 25.331 / 12%); }
+.dark .bg-violet-50 { background-color: oklch(60.6% 0.25 292.717 / 12%); }
+.dark .bg-yellow-100 { background-color: oklch(79.5% 0.184 86.047 / 20%); }
+.dark .border-amber-200 { border-color: oklch(76.9% 0.188 70.08 / 30%); }
+.dark .border-amber-300 { border-color: oklch(76.9% 0.188 70.08 / 40%); }
+.dark .border-blue-200 { border-color: oklch(62.3% 0.214 259.815 / 30%); }
+.dark .border-emerald-200 { border-color: oklch(69.6% 0.17 162.48 / 30%); }
+.dark .border-red-200 { border-color: oklch(63.7% 0.237 25.331 / 30%); }
+.dark .border-violet-300 { border-color: oklch(60.6% 0.25 292.717 / 40%); }
+.dark .text-amber-600 { color: oklch(82.8% 0.189 84.429); }
+.dark .text-amber-700 { color: oklch(87.9% 0.169 91.605); }
+.dark .text-amber-900 { color: oklch(87.9% 0.169 91.605); }
+.dark .text-blue-600 { color: oklch(70.7% 0.165 254.624); }
+.dark .text-blue-700 { color: oklch(80.9% 0.105 251.813); }
+.dark .text-blue-700\/80 { color: oklch(80.9% 0.105 251.813 / 80%); }
+.dark .text-blue-900 { color: oklch(80.9% 0.105 251.813); }
+.dark .text-emerald-600 { color: oklch(76.5% 0.177 163.223); }
+.dark .text-emerald-700 { color: oklch(84.5% 0.143 164.978); }
+.dark .text-emerald-700\/80 { color: oklch(84.5% 0.143 164.978 / 80%); }
+.dark .text-emerald-800 { color: oklch(84.5% 0.143 164.978); }
+.dark .text-emerald-900 { color: oklch(84.5% 0.143 164.978); }
+.dark .text-green-600 { color: oklch(79.2% 0.209 151.711); }
+.dark .text-green-700 { color: oklch(87.1% 0.15 154.449); }
+.dark .text-orange-600 { color: oklch(75% 0.183 55.934); }
+.dark .text-red-600 { color: oklch(70.4% 0.191 22.216); }
+.dark .text-red-700 { color: oklch(80.8% 0.114 19.571); }
+.dark .text-violet-600 { color: oklch(70.2% 0.183 293.541); }
+.dark .text-violet-700 { color: oklch(81.1% 0.111 293.571); }
+.dark .text-violet-900 { color: oklch(81.1% 0.111 293.571); }
+.dark .text-yellow-600 { color: oklch(85.2% 0.199 91.936); }
+.dark .text-yellow-700 { color: oklch(90.5% 0.182 98.111); }
+.dark .lilos-prose { color: oklch(0.9 0 0); }
+.dark .lilos-prose strong, .dark .lilos-prose h1, .dark .lilos-prose h2, .dark .lilos-prose h3 { color: oklch(0.97 0 0); }
+.dark .lilos-prose li::marker { color: oklch(0.55 0 0); }
+.dark .lilos-prose code:not(pre code) { background: oklch(1 0 0 / 9%); color: oklch(0.92 0 0); }
+.dark .lilos-prose a { color: oklch(0.75 0.13 250); }
