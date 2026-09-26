@@ -239,9 +239,7 @@ try {
   redir.stop(true);
 
   // AC-4: the viewer pane's pixels drive the remote page's viewport.
-  ws.send(
-    JSON.stringify({ type: "browser.resize", width: 640, height: 360 }),
-  );
+  ws.send(JSON.stringify({ type: "browser.resize", width: 640, height: 360 }));
   let dims = "";
   for (let i = 0; i < 60; i++) {
     const r = await tool(

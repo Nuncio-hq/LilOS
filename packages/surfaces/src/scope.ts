@@ -1,4 +1,3 @@
-import type { AppMessage } from "@lilos/contracts/app";
 import type { ViewerBrowserInputEvent } from "@lilos/contracts/harness";
 import {
   SurfaceError,
@@ -302,7 +301,9 @@ export class SessionSurfaces implements ViewerScope {
           const nl = body.indexOf("\n");
           body = nl >= 0 ? body.slice(nl + 1) : "";
         }
-        done(() => resolve({ output: body.replace(/^\n+|\n+$/g, ""), exitCode }));
+        done(() =>
+          resolve({ output: body.replace(/^\n+|\n+$/g, ""), exitCode }),
+        );
       };
       const timer = setTimeout(() => {
         done(() =>
@@ -392,8 +393,7 @@ export class SessionSurfaces implements ViewerScope {
     if (this.termHolder === holder) return;
     this.termHolder = holder;
     this.emit({ kind: "term.control", holder });
-    if (holder === "user")
-      for (const bail of [...this.runWaiters]) bail();
+    if (holder === "user") for (const bail of [...this.runWaiters]) bail();
   }
   private assertAgentTerminal() {
     if (this.termHolder === "user")

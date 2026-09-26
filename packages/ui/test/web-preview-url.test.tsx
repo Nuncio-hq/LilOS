@@ -12,7 +12,13 @@ import {
    the human last typed. */
 afterEach(cleanup);
 
-const Preview = ({ url, onUrlChange }: { url: string; onUrlChange?: (u: string) => void }) => (
+const Preview = ({
+  url,
+  onUrlChange,
+}: {
+  url: string;
+  onUrlChange?: (u: string) => void;
+}) => (
   <WebPreview url={url} onUrlChange={onUrlChange}>
     <WebPreviewNavigation>
       <WebPreviewUrl />
@@ -44,7 +50,12 @@ describe("AC-3 the Preview address field follows the page's real URL", () => {
     expect(navigated).toEqual(["example.com"]);
 
     // The page landed on the canonical URL — the field reflects it.
-    rerender(<Preview url="https://example.com/" onUrlChange={(u) => navigated.push(u)} />);
+    rerender(
+      <Preview
+        url="https://example.com/"
+        onUrlChange={(u) => navigated.push(u)}
+      />,
+    );
     expect(input.value).toBe("https://example.com/");
   });
 });

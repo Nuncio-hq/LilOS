@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  attachViewer,
-  SessionSurfaces,
-  toolBackend,
-} from "../src/index.js";
+import { attachViewer, SessionSurfaces, toolBackend } from "../src/index.js";
 import { FakeBrowser, FakePtySpawner, serveToolApi } from "./fakes.js";
 
 function setup(shellMode = true) {
@@ -115,9 +111,9 @@ describe("AC-1 typing into the Terminal tab takes the terminal from the agent", 
     try {
       const client = toolBackend({ baseUrl, token: "t", session: "s1" });
       scope.terminalInput("x");
-      await expect(
-        client.terminalRun({ command: "echo hi" }),
-      ).rejects.toThrow(/409/);
+      await expect(client.terminalRun({ command: "echo hi" })).rejects.toThrow(
+        /409/,
+      );
       const res = await fetch(`${baseUrl}/tools/terminal_run`, {
         method: "POST",
         headers: {
