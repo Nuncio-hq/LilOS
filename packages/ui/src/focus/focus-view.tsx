@@ -18,7 +18,12 @@ import {
   Undo2Icon,
 } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
-import { NotSentTray, plain, runningComposer } from "../chat/agent-chat";
+import {
+  ConversationKeepBottom,
+  NotSentTray,
+  plain,
+  runningComposer,
+} from "../chat/agent-chat";
 import { FocusComposer } from "../chat/model-picker";
 import {
   Checkpoint,
@@ -45,7 +50,7 @@ import { Button } from "../components/ui/button";
 import { PHASE_LABEL } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
-import { ReplyCards } from "../thread/thread-view";
+import { openStartRequest, ReplyCards } from "../thread/thread-view";
 import type {
   Channel,
   EmpFn,
@@ -136,6 +141,8 @@ export function FocusView({
     : "ready";
   const todos = thread.todos ?? [];
   const queue = thread.queue ?? [];
+  // The open "asks to start work" card, if any, is the single start-work entry point (issue #15).
+  const startCardOpen = openStartRequest(thread, resolved);
   const liveKey = live
     ? `${live.id}:${live.steps?.length}:${lastStep?.running}`
     : "";
@@ -243,10 +250,27 @@ export function FocusView({
           )}
           {thread.usage && <SessionUsage usage={thread.usage} model={model} />}
           {!work && !isDM && (
-            <Button size="sm" onClick={onStart}>
-              <PlayIcon />
-              <span className="hidden sm:inline">Start work</span>
-            </Button>
+            // Same rule as the thread panel (issue #15): while the request card in the conversation
+            // is open, this button yields to it — disabled + tooltip. Wrapper carries the title so
+            // the disabled button's pointer-events:none doesn't swallow the hover.
+            <span
+              className="inline-flex shrink-0"
+              title={
+                startCardOpen
+                  ? "Answer the request below"
+                  : "New ticket + worktree for this session"
+              }
+            >
+              <Button
+                size="sm"
+                onClick={onStart}
+                disabled={startCardOpen}
+                data-startwork-header
+              >
+                <PlayIcon />
+                <span className="hidden sm:inline">Start work</span>
+              </Button>
+            </span>
           )}
           {pr ? (
             <Button
@@ -333,6 +357,8 @@ export function FocusView({
                       <>
                         <ReplyCards
                           r={r}
+                          i={i}
+                          last={i === thread.replies.length - 1}
                           work={work}
                           repo={channel.repo}
                           emp={emp}
@@ -382,6 +408,11 @@ export function FocusView({
               )}
             </ConversationContent>
             <ConversationScrollButton />
+            {/* Not-sent tray / plan tray / steer chips grow the area below the conversation;
+                re-stick so everything stays visible without scrolling (issue #15). */}
+            <ConversationKeepBottom
+              signal={`${queue.length}:${todos.length}:${pending.length}:${running}:${planOpen}`}
+            />
           </Conversation>
 
           <div className="mx-auto w-full max-w-[46rem] shrink-0 px-3 pb-3">
@@ -482,6 +513,7 @@ export function FocusView({
                 setTab={pickTab}
                 onClose={() => setWbOpen(false)}
                 onStart={onStart}
+                startYields={startCardOpen}
                 onSend={(t) => onSend(t)}
                 say={say}
                 repoFiles={repoFiles}

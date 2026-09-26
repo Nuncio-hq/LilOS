@@ -116,3 +116,157 @@ test("Approval card: Allow once resolves the confirmation in the thread", async 
   await expect(panel.getByText("Allowed once by Oscar")).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+/* ---- Issue #15 ---- */
+
+/* Run the stop-with-undelivered-steer flow in the thread panel of #engineering's seeded m2 thread
+   (long content → the conversation is definitely scrollable, which is the condition that broke). */
+async function stopWithTrayInPanel(page: Page) {
+  await page.goto("/");
+  // m2 is open by default on wide screens; make sure the panel shows the thread tab.
+  const panel = page.locator("aside").last();
+  const box = panel.getByPlaceholder(/Reply to/);
+  await box.fill("walk me through the envelope again");
+  await box.press("Enter");
+  const steer = panel.getByPlaceholder(/is working\. Enter steers this turn/);
+  await expect(steer).toBeVisible({ timeout: 15_000 });
+  await steer.fill("keep it short");
+  await steer.press("Enter");
+  await expect(
+    panel.locator('[data-steerstate="pending"]').first(),
+  ).toBeVisible();
+  await panel.getByRole("button", { name: "Stop" }).click();
+  await expect(panel.locator("[data-notsent]")).toBeVisible({
+    timeout: 10_000,
+  });
+  return panel;
+}
+
+/* After ■ the stopped turn AND the not-sent tray must BOTH be fully visible without scrolling: the
+   stopped pill sits inside the stick-to-bottom scroll area, the tray grows the composer area below
+   it. Root cause was the tray shrinking the scroll viewport without the conversation re-sticking. */
+test("Issue #15: stop+tray — the stopped turn and the tray are both fully visible", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const errors = watchConsole(page);
+  const panel = await stopWithTrayInPanel(page);
+
+  const stopped = panel.getByText("Stopped · session.interrupt").last();
+  await expect(stopped).toBeVisible();
+
+  // The scroll container is the div use-stick-to-bottom scrolls (child of [role=log]).
+  const geometry = () =>
+    page.evaluate(() => {
+      const log = document
+        .querySelector("aside [role=log]")!
+        .querySelector("div") as HTMLElement;
+      const rect = log.getBoundingClientRect();
+      const pill = Array.from(document.querySelectorAll("aside div")).find(
+        (d) =>
+          d.childElementCount === 0 &&
+          d.textContent?.trim() === "Stopped · session.interrupt",
+      )!;
+      const p = pill.getBoundingClientRect();
+      const t = document
+        .querySelector("aside [data-notsent]")!
+        .getBoundingClientRect();
+      return {
+        container: { top: rect.top, bottom: rect.bottom },
+        pill: { top: p.top, bottom: p.bottom },
+        tray: { top: t.top, bottom: t.bottom },
+        viewH: window.innerHeight,
+      };
+    });
+
+  await expect
+    .poll(
+      async () => {
+        const g = await geometry();
+        return (
+          // stopped turn fully inside the scroll container's visible rect…
+          g.pill.top >= g.container.top - 1 &&
+          g.pill.bottom <= g.container.bottom + 1 &&
+          // …and the tray fully inside the window viewport, below the container.
+          g.tray.top >= 0 &&
+          g.tray.bottom <= g.viewH
+        );
+      },
+      { timeout: 5_000 },
+    )
+    .toBe(true);
+  expect(errors).toEqual([]);
+});
+
+/* Issue #15: the destructive remove action reads neutral (muted) with the accessible name "Remove"
+   and shows a tooltip; Send is the solid primary. */
+test("Issue #15: tray actions — Send primary, remove neutral named 'Remove' with tooltip", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const errors = watchConsole(page);
+  const panel = await stopWithTrayInPanel(page);
+
+  const send = panel.locator("[data-notsent-send]").first();
+  const remove = panel.getByRole("button", { name: "Remove", exact: true });
+  await expect(send).toBeVisible();
+  await expect(remove).toBeVisible();
+
+  // Send reads primary (white text on a solid, saturated bg); remove reads neutral (muted) and
+  // turns red on hover. Colours compared as computed strings — Tailwind v4 resolves to oklch, so
+  // assert relationships, not rgb literals.
+  const styles = await page.evaluate(() => {
+    const s = getComputedStyle(
+      document.querySelector("aside [data-notsent-send]")!,
+    );
+    const r = getComputedStyle(
+      document.querySelector("aside [data-notsent-remove]")!,
+    );
+    return {
+      sendBg: s.backgroundColor,
+      sendFg: s.color,
+      removeColor: r.color,
+    };
+  });
+  expect(styles.sendFg).toBe("rgb(255, 255, 255)"); // solid primary button
+  expect(styles.sendBg).not.toBe("rgba(0, 0, 0, 0)");
+  expect(styles.sendBg).not.toBe(styles.sendFg);
+  expect(styles.removeColor).not.toBe(styles.sendBg); // remove is NOT painted like the primary
+  expect(styles.removeColor).not.toBe("rgb(255, 255, 255)");
+
+  // Neutral → red on hover.
+  await remove.hover();
+  await expect
+    .poll(async () => {
+      const c = await page.evaluate(() => {
+        const r = getComputedStyle(
+          document.querySelector("aside [data-notsent-remove]")!,
+        );
+        return r.color;
+      });
+      return c !== styles.removeColor;
+    })
+    .toBe(true);
+
+  // Tooltip appears on hover of the remove icon (Base UI popup = data-slot, no role=tooltip here).
+  await remove.hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
+    "Remove",
+    { timeout: 5_000 },
+  );
+  expect(errors).toEqual([]);
+});
+
+/* Issue #15: the app icon is the LilOS favicon, not Hermes. */
+test("Issue #15: page declares the LilOS favicon link", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/");
+  await expect(
+    page.locator('link[rel="icon"][href="/favicon.ico"]'),
+  ).toHaveCount(1);
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveCount(1);
+  const resp = await page.request.get("/favicon.ico");
+  expect(resp.ok()).toBe(true);
+  expect(errors).toEqual([]);
+});

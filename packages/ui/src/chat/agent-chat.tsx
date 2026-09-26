@@ -3,6 +3,14 @@
    and the running-state composer hints from here, so the two surfaces can never drift. Chat is the important
    part; everything else inherits it. */
 import { CheckIcon, CircleStopIcon, ClockIcon, Trash2Icon } from "lucide-react";
+import { useEffect } from "react";
+import { useStickToBottomContext } from "use-stick-to-bottom";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 
 /* Engine capability read in ONE place (Engine protocol: session.steer). Steer is the default and only
@@ -38,7 +46,9 @@ export function SteerRow({
       data-steerpending={waiting || undefined}
       data-steerstate={state}
       className={cn(
-        "ml-auto flex w-fit max-w-full items-start gap-1.5 rounded-md border bg-amber-100 px-2 py-1 text-amber-950 text-xs",
+        // mt-2 keeps the chip clearly separated from the agent's text above it — it must never read
+        // as part of the agent's output (issue #15). Applies to pending chips and landed rows alike.
+        "ml-auto mt-2 flex w-fit max-w-full items-start gap-1.5 rounded-md border bg-amber-100 px-2 py-1 text-amber-950 text-xs",
         waiting
           ? "border-dashed border-amber-300"
           : "border-solid border-amber-300",
@@ -81,10 +91,31 @@ export function SteerRows({
   );
 }
 
+/* Re-stick the conversation to the bottom when the composer AREA grows — the not-sent tray appearing
+   after ■ (or a pending steer chip changing layout) shrinks the scroll viewport from below, but
+   use-stick-to-bottom's ResizeObserver only watches the content element, so nothing re-scrolls and the
+   stopped turn ends up hidden under the tray (issue #15). This renders inside <Conversation> and uses
+   the library's own scrollToBottom — no intervals, no DOM poking. Pass a signal that changes whenever
+   the area below the conversation changes size (e.g. the tray's item count). */
+export function ConversationKeepBottom({
+  signal,
+}: {
+  signal: number | string;
+}) {
+  const { scrollToBottom } = useStickToBottomContext();
+  useEffect(() => {
+    // Re-locks to the bottom so the last turn + the tray are both fully visible without scrolling.
+    scrollToBottom({ animation: "instant" });
+  }, [signal, scrollToBottom]);
+  return null;
+}
+
 /* Messages that did NOT land because Oscar pressed ■ (session.interrupt). There is no "this turn"
    anymore, so nothing is "sent after this turn" and nothing auto-runs: each item waits with visible,
    keyboard-reachable actions — Send (runs it now as a new prompt in this thread) and remove.
-   thread.queue holds ONLY these. Used by the thread panel composer and the Focus tray. */
+   thread.queue holds ONLY these. Used by the thread panel composer and the Focus tray.
+   Action hierarchy (issue #15): Send is THE primary action (solid blue); remove is a neutral muted
+   icon that only turns red on hover, so the destructive action never reads as the primary one. */
 export function NotSentTray({
   items,
   onSend,
@@ -120,20 +151,28 @@ export function NotSentTray({
               type="button"
               onClick={() => onSend(i)}
               data-notsent-send={i}
-              className="shrink-0 rounded border border-blue-300 bg-background px-1.5 py-0.5 font-medium text-blue-900 hover:bg-blue-100"
+              className="shrink-0 rounded bg-blue-600 px-2 py-0.5 font-medium text-white hover:bg-blue-700"
             >
               Send
             </button>
-            <button
-              type="button"
-              onClick={() => onRemove(i)}
-              aria-label="Remove from not-sent"
-              title="Remove"
-              data-notsent-remove={i}
-              className="shrink-0 rounded p-0.5 text-blue-700 hover:bg-blue-100 hover:text-blue-950"
-            >
-              <Trash2Icon className="size-3.5" />
-            </button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      onClick={() => onRemove(i)}
+                      aria-label="Remove"
+                      data-notsent-remove={i}
+                      className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                    />
+                  }
+                >
+                  <Trash2Icon className="size-3.5" />
+                </TooltipTrigger>
+                <TooltipContent>Remove</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </li>
         ))}
       </ul>

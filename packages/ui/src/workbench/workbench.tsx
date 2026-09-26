@@ -77,6 +77,7 @@ export function Workbench({
   setTab,
   onClose,
   onStart,
+  startYields,
   onSend,
   say,
   repoFiles,
@@ -92,6 +93,8 @@ export function Workbench({
   setTab: (t: WbTab) => void;
   onClose: () => void;
   onStart: () => void;
+  /** True while the "asks to start work" card is open: it is the single entry point (issue #15). */
+  startYields?: boolean;
   onSend: (t: string) => void;
   say: (t: string) => void;
   repoFiles: string[];
@@ -200,10 +203,15 @@ export function Workbench({
                     work gives {lead?.name ?? "the employee"} a ticket +
                     worktree.
                   </p>
-                  <Button size="sm" onClick={onStart}>
-                    <PlayIcon />
-                    Start work
-                  </Button>
+                  <span
+                    className="inline-flex"
+                    title={startYields ? "Answer the request below" : undefined}
+                  >
+                    <Button size="sm" onClick={onStart} disabled={startYields}>
+                      <PlayIcon />
+                      Start work
+                    </Button>
+                  </span>
                 </>
               )}
             </div>
