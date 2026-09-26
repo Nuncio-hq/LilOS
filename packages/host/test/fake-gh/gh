@@ -1,0 +1,82 @@
+#!/usr/bin/env bun
+/**
+ * Deterministic fake `gh` for tests/CI (issue #37). State lives in $GH_FAKE_DIR
+ * (default: `<this dir>/.gh-fake`): `view.json` is the PR that `gh pr view`
+ * answers; `pr comment` appends to its comments and `pr merge` flips it to
+ * MERGED — so the harness's re-read sees the post-action truth, like real gh.
+ * Missing `view.json` = the branch has no PR (exit 1, like real gh).
+ * Every invocation is appended to $GH_FAKE_LOG when that env var is set.
+ */
+import {
+  appendFileSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const dir =
+  process.env.GH_FAKE_DIR ??
+  join(dirname(fileURLToPath(import.meta.url)), ".gh-fake");
+const logFile = process.env.GH_FAKE_LOG;
+const args = process.argv.slice(2);
+if (logFile) appendFileSync(logFile, `${args.join(" ")}\n`);
+
+const fail = (msg: string): never => {
+  console.error(msg);
+  process.exit(1);
+};
+const viewPath = join(dir, "view.json");
+const readView = (): Record<string, any> =>
+  JSON.parse(readFileSync(viewPath, "utf8"));
+const writeView = (v: Record<string, any>) =>
+  writeFileSync(viewPath, JSON.stringify(v, null, 2));
+const flag = (name: string) => args[args.indexOf(name) + 1];
+
+// Matches real gh's message for "the current branch has no PR" — the host maps
+// it to `pr: null` / PR_NOT_FOUND rather than a generic failure.
+const noPr = () => fail('no pull requests found for branch "main"');
+
+switch (`${args[0]} ${args[1]}`) {
+  case "pr view": {
+    if (!existsSync(viewPath)) noPr();
+    process.stdout.write(readFileSync(viewPath, "utf8"));
+    break;
+  }
+  case "pr comment": {
+    if (!existsSync(viewPath)) noPr();
+    const body = flag("--body") ?? fail("comment needs --body");
+    const v = readView();
+    const comments = (v.comments ?? []) as unknown[];
+    comments.push({
+      author: { login: "oscar" },
+      body,
+      createdAt: new Date().toISOString(),
+    });
+    writeView({ ...v, comments });
+    console.log(`${v.url}#issuecomment-9001`);
+    break;
+  }
+  case "pr merge": {
+    if (!existsSync(viewPath)) noPr();
+    const method = ["--squash", "--merge", "--rebase"].find((f) =>
+      args.includes(f),
+    );
+    if (!method) fail("merge needs a method flag");
+    const v = readView();
+    if (v.state !== "OPEN")
+      fail(`pull request #${v.number} is not mergeable (state ${v.state})`);
+    writeView({
+      ...v,
+      state: "MERGED",
+      mergedAt: new Date().toISOString(),
+      mergedBy: { login: "oscar" },
+      mergeCommit: { oid: "f".repeat(40) },
+    });
+    console.log(`${method.slice(2)} merged pull request #${v.number}`);
+    break;
+  }
+  default:
+    fail(`fake gh: unhandled command: ${args.join(" ")}`);
+}
