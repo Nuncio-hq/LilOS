@@ -57,6 +57,33 @@ const PROVIDER = process.env.HERMES_PROVIDER ?? "";
 const MODEL = process.env.HERMES_MODEL ?? "";
 const STUB_MODE = !PROVIDER;
 
+// #50 AC-2 — real-model turns take ~60-120s; the stub answers in ms. One
+// per-event wait covers a slow turn; the scenario cap bounds a scenario that
+// loops asks. `prompt` requests have no timeout of their own — the cap is
+// what turns a stuck scenario into a FAIL line instead of a hung run.
+const WAIT_MS = STUB_MODE ? 15_000 : 120_000;
+const SCENARIO_CAP_MS = STUB_MODE ? 90_000 : 300_000;
+const withCap = <T>(p: Promise<T>): Promise<T> =>
+  Promise.race([
+    p,
+    new Promise<never>((_, rej) =>
+      setTimeout(
+        () =>
+          rej(
+            new Error(`scenario exceeded the ${SCENARIO_CAP_MS / 1000}s cap`),
+          ),
+        SCENARIO_CAP_MS,
+      ).unref(),
+    ),
+  ]);
+
+const BUILDER_HOME = join(
+  process.env.HOME ?? tmpdir(),
+  ".hermes",
+  "profiles",
+  "builder",
+);
+
 const children: { kill(): void }[] = [];
 const killAll = () => {
   for (const c of children) {
@@ -114,12 +141,7 @@ compression:
   protect_first_n: 1
   min_tail_user_messages: 1
 `;
-  const builderHome = join(
-    process.env.HOME ?? tmpdir(),
-    ".hermes",
-    "profiles",
-    "builder",
-  );
+  const builderHome = BUILDER_HOME;
   if (!existsSync(builderHome)) mkdirSync(builderHome, { recursive: true });
   // Sessions run under the builder profile: it needs the same approvals and
   // compression knobs as the home config (profile config wins inside it).
@@ -221,7 +243,7 @@ const engine = new HermesEngine({
   acp: { bin: HERMES_BIN, env },
 });
 const conn = connectInMemory(engine);
-const h = new Harness(conn);
+const h = new Harness(conn, WAIT_MS);
 
 // The conformance suites start sessions as agent "builder": it must be a
 // real Hermes profile. Stub mode pre-provisions it on disk (above); real
@@ -246,12 +268,47 @@ const h = new Harness(conn);
   }
 }
 
+// The approval/steer/resume scenarios need a turn parked on a pending ask —
+// that only exists under `approvals.mode: manual`, whatever the operator's
+// ambient profile does. Pin it on the `builder` profile the scenarios use.
+{
+  const cfg = join(BUILDER_HOME, "config.yaml");
+  let text = existsSync(cfg) ? readFileSync(cfg, "utf8") : "";
+  if (!text) text = "# lilos live-conformance profile\n";
+  const lines = text.split("\n");
+  const i = lines.findIndex((l) => /^approvals:\s*$/.test(l));
+  if (i >= 0) {
+    let j = i + 1;
+    while (j < lines.length && /^[ \t]+\S/.test(lines[j])) j++;
+    const block = lines.slice(i + 1, j);
+    const modeIx = block.findIndex((l) => /^\s*mode:/.test(l));
+    if (modeIx >= 0) block[modeIx] = "  mode: manual";
+    else block.unshift("  mode: manual");
+    const toIx = block.findIndex((l) => /^\s*timeout:/.test(l));
+    if (toIx >= 0) block[toIx] = "  timeout: 300";
+    else block.push("  timeout: 300");
+    lines.splice(i + 1, j - i - 1, ...block);
+  } else {
+    lines.push("", "approvals:", "  mode: manual", "  timeout: 300");
+  }
+  writeFileSync(cfg, lines.join("\n"));
+}
+
+// Scenario cwds must exist with a README the model can actually read/edit —
+// the prompts name the file, and a missing cwd/file invites tool loops.
+for (const dir of ["/tmp/lilos-fake", "/tmp/lilos-conf", "/tmp/lilos-live"]) {
+  mkdirSync(dir, { recursive: true });
+  const readme = join(dir, "README.md");
+  if (!existsSync(readme))
+    writeFileSync(readme, "# LilOS\n\nConformance workspace.\n");
+}
+
 for (const suite of SUITES) {
   if (!suite.implemented) continue;
   for (const s of suite.scenarios as Scenario[]) {
     const t0 = Date.now();
     try {
-      await s.run(h);
+      await withCap(s.run(h));
       report(suite.capability, s, Date.now() - t0);
     } catch (e) {
       report(suite.capability, s, Date.now() - t0, e);
@@ -270,22 +327,33 @@ for (const suite of SUITES) {
       cwd: "/tmp/lilos-live",
     })) as { sessionId: string };
     // Build real history: compression noops until it can fold several turns.
+    // The prompt keeps the stub's LILOS_LONG long reply and asks a real model
+    // for a long numbered list — either way the turns carry real tokens.
     for (let i = 0; i < 4; i++) {
-      await h.request("prompt", {
-        sessionId,
-        content: [{ type: "text", text: `LILOS_LONG turn ${i}` }],
-      });
+      await withCap(
+        h.request("prompt", {
+          sessionId,
+          content: [
+            {
+              type: "text",
+              text: `LILOS_LONG turn ${i} — reply with the numbers ${i * 100 + 1} through ${i * 100 + 100}, one per line, then on the last line write exactly: LILOS_OK`,
+            },
+          ],
+        }),
+      );
     }
     // The LilOS session id is ours; the compress call wants the hermes sid.
     const s = engine.sessionFor(sessionId);
     if (!s) throw new Error(`no engine session for ${sessionId}`);
     const refWait = h.waitEvent(
       h.forSession(sessionId, (e) => e.type === "session.ref.changed"),
-      30_000,
+      STUB_MODE ? 30_000 : 150_000, // compress is an LLM call on a real build
     );
-    const res = (await gateway.request("session.compress", {
-      session_id: s.runtimeSid,
-    })) as { compressed?: boolean; status?: string };
+    const res = (await withCap(
+      gateway.request("session.compress", {
+        session_id: s.runtimeSid,
+      }),
+    )) as { compressed?: boolean; status?: string };
     if (!(res.compressed || res.status === "compressed"))
       throw new Error(
         `session.compress did not compress: ${JSON.stringify(res)}`,
@@ -299,10 +367,12 @@ for (const suite of SUITES) {
     if (!ref || !previousRef || ref === previousRef)
       throw new Error(`ref did not rotate: ${JSON.stringify(ev.payload)}`);
     // The next prompt lands on the rotated ref.
-    const done = (await h.request("prompt", {
-      sessionId,
-      content: [{ type: "text", text: "hello again" }],
-    })) as { stopReason: string };
+    const done = (await withCap(
+      h.request("prompt", {
+        sessionId,
+        content: [{ type: "text", text: "reply with exactly: LILOS_OK" }],
+      }),
+    )) as { stopReason: string };
     if (done.stopReason !== "end_turn")
       throw new Error(`post-compress prompt ended ${done.stopReason}`);
     report("core", { id } as Scenario, Date.now() - t0);
@@ -354,15 +424,17 @@ conn.close();
       );
     });
     const ws = await connectWs(url);
-    const wh = new Harness(ws);
+    const wh = new Harness(ws, WAIT_MS);
     const { sessionId } = (await wh.request("session.start", {
       agent: "builder",
       cwd: "/tmp/lilos-live",
     })) as { sessionId: string };
-    const done = (await wh.request("prompt", {
-      sessionId,
-      content: [{ type: "text", text: "hi" }],
-    })) as { stopReason: string };
+    const done = (await withCap(
+      wh.request("prompt", {
+        sessionId,
+        content: [{ type: "text", text: "reply with exactly: LILOS_OK" }],
+      }),
+    )) as { stopReason: string };
     if (done.stopReason !== "end_turn")
       throw new Error(`smoke prompt ended ${done.stopReason}`);
     ws.close();

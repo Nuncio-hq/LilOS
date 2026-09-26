@@ -369,6 +369,89 @@ describe("engine-hermes AC-5: images & state & errors", () => {
   });
 });
 
+describe("engine-hermes #50: tolerate older Hermes gateways", () => {
+  test("AC-1 session.create retries without a refused optional field, once per gateway", async () => {
+    const gw = new FakeGateway();
+    gw.forbiddenCreateFields = new Set(["cwd_explicit"]); // Oscar's 2026.9.24 build
+    const engine = new HermesEngine({ gateway: gw });
+    const h = new Harness(connectInMemory(engine));
+
+    const { sessionId } = await start(h);
+    expect(sessionId).toBeTruthy();
+    expect(gw.createRejects).toBe(1); // one extra_forbidden, then retried without it
+    expect(gw.createCalls).toHaveLength(2);
+    expect(gw.createCalls[0].cwd_explicit).toBe(true);
+    expect(gw.createCalls[1]).not.toHaveProperty("cwd_explicit");
+
+    // The drop is remembered for the life of the gateway connection.
+    await start(h);
+    expect(gw.createRejects).toBe(1);
+    expect(gw.createCalls).toHaveLength(3);
+    expect(gw.createCalls[2]).not.toHaveProperty("cwd_explicit");
+
+    // And every droppable field is negotiated independently.
+    gw.forbiddenCreateFields = new Set(["source", "close_on_disconnect"]);
+    await start(h);
+    const last = gw.createCalls.at(-1) ?? {};
+    expect(last).not.toHaveProperty("source");
+    expect(last).not.toHaveProperty("close_on_disconnect");
+    expect(last.cwd_explicit).toBeUndefined(); // still remembered
+    expect(last.profile).toBe("builder");
+    expect(last.cwd).toBe("/tmp/lilos-hermes");
+  });
+
+  test("AC-1 a field outside the droppable set fails closed (profile is never stripped)", async () => {
+    const gw = new FakeGateway();
+    gw.forbiddenCreateFields = new Set(["profile"]);
+    const engine = new HermesEngine({ gateway: gw });
+    const h = new Harness(connectInMemory(engine));
+    await expect(start(h)).rejects.toMatchObject({ code: 4000 });
+    // One attempt, full params — nothing silently stripped.
+    expect(gw.createCalls).toHaveLength(1);
+    expect(gw.createCalls[0].profile).toBe("builder");
+  });
+
+  test("AC-3 session.setModel validates against model.options before /model", async () => {
+    const gw = new FakeGateway();
+    // Real Hermes answers `/model <anything>` with a success marker — the
+    // switch is lazy and only fails at the next prompt (the bug on #50).
+    gw.slashAlwaysOk = true;
+    const engine = new HermesEngine({ gateway: gw });
+    const h = new Harness(connectInMemory(engine));
+    const { sessionId } = await start(h);
+
+    await expect(
+      h.request("session.setModel", { sessionId, model: "no-such-model" }),
+    ).rejects.toMatchObject({ code: -32005 });
+    expect(gw.slashCommands).toHaveLength(0); // refused before /model ran
+
+    const ack = (await h.request("session.setModel", {
+      sessionId,
+      model: "stub/stub-model-b",
+    })) as { model: string };
+    expect(ack.model).toBe("stub/stub-model-b");
+    expect(gw.slashCommands).toEqual(["/model stub/stub-model-b"]);
+  });
+
+  test("AC-4 describe() states the minimum Hermes version; create captures the gateway build", async () => {
+    const gw = new FakeGateway();
+    const engine = new HermesEngine({ gateway: gw });
+    const h = new Harness(connectInMemory(engine));
+    const d = (await h.request("describe")) as {
+      capabilities: { id: string; detail?: Record<string, unknown> }[];
+    };
+    const cap = d.capabilities.find((c) => c.id === "hermes_gateway");
+    expect(typeof cap?.detail?.minVersion).toBe("string");
+    expect(String(cap?.detail?.minVersion)).toMatch(/\d/);
+
+    await start(h);
+    const d2 = (await h.request("describe")) as typeof d;
+    const cap2 = d2.capabilities.find((c) => c.id === "hermes_gateway");
+    expect(cap2?.detail?.gatewayVersion).toBe("v0.21.5+test");
+    expect(cap2?.detail?.releaseDate).toBe("2026.9.24");
+  });
+});
+
 describe("engine-hermes #8: agents + models capabilities", () => {
   test("describe declares agents + models with their methods", async () => {
     const { h } = setup();

@@ -77,6 +77,21 @@ export class FakeGateway implements GatewayLike {
   steerStatus: "queued" | "rejected" = "queued";
   /** When set, session.steer rejects with this error code (e.g. 4010 build window). */
   steerError?: number;
+  /**
+   * #50 AC-1 — `session.create` params this gateway's contract forbids
+   * (older Hermes builds: Params models are `extra="forbid"` and answer the
+   * JSON-RPC `4000` extra_forbidden error). Every call is recorded in
+   * `createCalls`; `createRejects` counts the refused attempts.
+   */
+  forbiddenCreateFields = new Set<string>();
+  createCalls: Record<string, unknown>[] = [];
+  createRejects = 0;
+  /**
+   * #50 AC-3 — when true, `slash.exec /model <id>` answers success for ANY
+   * id, mirroring real Hermes (the switch is lazy: it only fails at the next
+   * prompt). Lets tests prove the engine pre-validates via `model.options`.
+   */
+  slashAlwaysOk = false;
 
   private refs = new Map<string, string>();
   private sreqId = 0;
@@ -113,6 +128,20 @@ export class FakeGateway implements GatewayLike {
     const p = (params ?? {}) as Record<string, unknown>;
     switch (method) {
       case "session.create": {
+        this.createCalls.push({ ...p });
+        for (const field of this.forbiddenCreateFields) {
+          if (field in p) {
+            this.createRejects++;
+            // Same wire shape as tui_gateway/contracts/registry.py
+            // validate_params' extra_forbidden rejection.
+            return Promise.reject(
+              new RpcError(
+                4000,
+                `invalid params for session.create: ${field}: Extra inputs are not permitted — the client and the Hermes backend are out of sync (different versions); run \`hermes update\` and restart both`,
+              ),
+            );
+          }
+        }
         const sid = `sid-${this.refs.size + 1}`;
         const ref = `ref-${this.refs.size + 1}`;
         this.refs.set(sid, ref);
@@ -123,7 +152,8 @@ export class FakeGateway implements GatewayLike {
           stored_session_id: ref,
           message_count: 0,
           messages: [],
-          info: {},
+          // SessionLiveInfo — the build's own advertised version.
+          info: { version: "v0.21.5+test", release_date: "2026.9.24" },
         });
       }
       case "prompt.submit":
@@ -220,6 +250,10 @@ export class FakeGateway implements GatewayLike {
           const want = m[1].includes("/")
             ? m[1].slice(m[1].indexOf("/") + 1)
             : m[1];
+          if (this.slashAlwaysOk) {
+            this.sessionModels.set(String(p.session_id), want);
+            return Promise.resolve({ output: `✓ Switched model to ${m[1]}` });
+          }
           const known = this.modelProviders.some((pr) =>
             pr.models.includes(want),
           );
