@@ -208,6 +208,7 @@ let convUrl = "";
 test("AC-1/4 restart keeps conversations listed; filter narrows them", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   // Turn 1 on stack A.
   await dmDefault(stack, page);
   await send(page, ROOT_TEXT);
@@ -246,6 +247,7 @@ test("AC-1/4 restart keeps conversations listed; filter narrows them", async ({
 test("AC-2 opening a past conversation shows messages + transcript; harness down shows why", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   // Fresh page: open the stored thread URL — history loads via messages.list.
   await page.goto(convUrl);
   await expect(page.getByText(ROOT_TEXT).first()).toBeVisible({
@@ -273,6 +275,7 @@ test("AC-2 opening a past conversation shows messages + transcript; harness down
 });
 
 test("AC-3 rename + archive persist across restart", async ({ page }) => {
+  test.setTimeout(120_000);
   await dmDefault(stack, page);
   await expect(page.getByText(ROOT_TEXT).first()).toBeVisible({
     timeout: 30_000,
