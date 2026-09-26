@@ -115,7 +115,7 @@ test.describe.configure({ mode: "serial" });
 async function dmDefault(stack: Stack, page: Page) {
   await page.goto(`${stack.webUrl}/`);
   const aside = page.locator("aside");
-  await expect(aside.getByText("Default", { exact: true })).toBeVisible({
+  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
     timeout: 30_000,
   });
   const dmBtn = page.getByRole("button", {
@@ -129,7 +129,7 @@ async function dmDefault(stack: Stack, page: Page) {
   ) {
     await dmBtn.first().click();
   } else {
-    await aside.getByText("Default", { exact: true }).click();
+    await aside.getByRole("button", { name: /default/i }).click();
   }
   await expect(page).toHaveURL(/\/dm\//);
 }
@@ -164,7 +164,7 @@ test("AC-1 first run auto-hires the `default` engine profile", async ({
 }) => {
   await page.goto(`${stackA.webUrl}/`);
   const aside = page.locator("aside");
-  await expect(aside.getByText("Default", { exact: true })).toBeVisible({
+  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
     timeout: 30_000,
   });
   // No hiring UI — the hire slice is out of scope, so no dead affordance.
@@ -177,7 +177,7 @@ test("AC-2 sidebar shows Employees + status only (no channels/projects/tickets)"
 }) => {
   await page.goto(`${stackA.webUrl}/`);
   const aside = page.locator("aside");
-  await expect(aside.getByText("Default", { exact: true })).toBeVisible({
+  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
     timeout: 30_000,
   });
   await expect(aside.getByText("Employees")).toBeVisible();
@@ -368,7 +368,7 @@ test("AC-7 real-app build: every visible control has a working handler", async (
     await waitForHttp(`http://127.0.0.1:${port}`);
     await page.goto(`http://127.0.0.1:${port}/`);
     const aside = page.locator("aside");
-    await expect(aside.getByText("Default", { exact: true })).toBeVisible({
+    await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
       timeout: 30_000,
     });
     // Click every control on the surfaces a user can reach: sidebar buttons,
@@ -407,7 +407,7 @@ test("AC-7 real-app build: every visible control has a working handler", async (
       await dismissFirstRun.click({ timeout: 5_000 });
     }
     await aside
-      .getByText("Default", { exact: true })
+      .getByRole("button", { name: /default/i })
       .click({ timeout: 10_000 });
     await expect(page).toHaveURL(/\/dm\//);
     await clickAll("main");
@@ -453,7 +453,7 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
   try {
     const win = await app.firstWindow();
     await expect(
-      win.locator("aside").getByText("Default", { exact: true }),
+      win.locator("aside").getByRole("button", { name: /default/i }),
     ).toBeVisible({ timeout: 60_000 });
     await win.screenshot({ path: `${SHOTS}/ac-8-electron.png` });
   } finally {

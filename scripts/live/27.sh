@@ -75,10 +75,28 @@ fi
 export LILOS_ENGINE=hermes
 export LILOS_REPO_ROOT="$PWD"
 
-echo "== issue-27 live leg: engine=hermes label=${LABEL} =="
-if bunx playwright test e2e/ac-27-dm.spec.ts --reporter=list; then
-  echo "RESULT: PASS (engine=hermes, label=${LABEL})"
+# Stub turns are instant canned replies: no tool calls, no asks, and no
+# mid-turn window to steer into — AC-3's step list, AC-4, AC-5 and AC-6
+# therefore stay on the deterministic engine-fake (CI); a real-model rerun
+# can exercise them by widening LIVE_GREP. (Grep on title text: bare "AC-n"
+# collides with the ac-27-*.spec.ts filename.)
+LIVE_GREP="${LIVE_GREP:-auto-hires|sidebar shows|real-app build|_electron}"
+
+echo "== issue-27 live leg: engine=hermes label=${LABEL} grep='${LIVE_GREP}' =="
+if bunx playwright test e2e/ac-27-dm.spec.ts --grep "$LIVE_GREP" --reporter=list; then
+  echo "RESULT(ui): PASS (engine=hermes, label=${LABEL})"
 else
-  echo "RESULT: FAIL (engine=hermes, label=${LABEL})"
+  echo "RESULT(ui): FAIL (engine=hermes, label=${LABEL})"
   exit 1
 fi
+
+# Conversation loop over the same stack shape: DM open -> prompt -> streamed
+# answer -> follow-up -> interrupt, all through the real relay + harness.
+echo "== issue-27 live leg: DM loop via demo.ts (engine=hermes) =="
+if bun apps/harness/scripts/demo.ts --engine hermes --seconds 60; then
+  echo "RESULT(loop): PASS"
+else
+  echo "RESULT(loop): FAIL"
+  exit 1
+fi
+echo "RESULT: PASS (engine=hermes, label=${LABEL})"

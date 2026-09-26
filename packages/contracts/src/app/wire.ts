@@ -592,6 +592,7 @@ export type EmployeeUpsertedEvent = z.infer<typeof EmployeeUpsertedEvent>;
 export const EmployeeRemovedEvent = z.object({ employeeId: z.string().min(1) });
 export type EmployeeRemovedEvent = z.infer<typeof EmployeeRemovedEvent>;
 
+
 export const AskOpenedEvent = z.object({
   channelId: z.string().min(1),
   ask: Ask,

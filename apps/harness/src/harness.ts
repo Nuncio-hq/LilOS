@@ -285,7 +285,9 @@ export class Harness {
           role: agent.description ?? "",
           status: "online",
           profile: agent.id,
-          ...(agent.model ? { model: agent.model } : {}),
+          // No `model` copy: the catalog entry is the engine's default, and a
+          // pinned employee model would override operator-set engine model
+          // flags (HERMES_MODEL / --model) on every session.
           ...(agent.soul ? { instructions: agent.soul } : {}),
         },
       );
@@ -696,10 +698,11 @@ export class Harness {
         break;
       case "session.ref.changed":
         if (binding) {
+          // Keep the rotated runtime ref on the binding only. The
+          // conversation's engineRef stays the stable engine session id —
+          // clients resolve it through the feed (`events.since`, live
+          // `event.sessionId`), which never sees runtime refs.
           binding.ref = event.payload.ref;
-          void this.updateConversation(binding.conversationId, {
-            engineRef: event.payload.ref,
-          }).catch(() => {});
           this.opts.log.info("session ref rotated", {
             sessionId: event.sessionId,
             ref: event.payload.ref,
