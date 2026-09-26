@@ -1,14 +1,12 @@
+import type { DesktopBridge, DesktopBridgeConfig } from "@lilos/contracts/app";
+
 /** Runtime wiring for the app: where the relay and the engine endpoint are. */
-export interface LilosConfig {
-  relayWs: string;
-  relayToken: string;
-  engineWs: string;
-}
+export type LilosConfig = DesktopBridgeConfig;
 
 declare global {
   interface Window {
     /** Injected by the Electron preload (apps/desktop); absent in plain web. */
-    lilos?: { config: LilosConfig; platform?: string };
+    lilos?: DesktopBridge;
   }
 }
 

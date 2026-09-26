@@ -13,9 +13,15 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { employeeBadges } from "./lib/badges";
 import { useAtom } from "./lib/hooks";
 import { toUiEmployee } from "./lib/mapping";
+import {
+  openConversationFromPath,
+  routeForConversation,
+  watchNotifications,
+} from "./lib/notify";
 import {
   bootError,
   booted,
@@ -83,31 +89,58 @@ function AppShell() {
       ),
     [relayState, engineState, engineInfo],
   );
-  // live badges: running turns + open approvals per employee (AC-6 + approvals)
+  // live badges: running turns + open approvals per employee (AC-3, #32)
   const models = useAtom(sessionModels);
   const convs = useAtom(relay.conversations);
   const channels = useAtom(relay.channels);
-  const badges = useMemo(() => {
-    const out: Record<string, { running?: number; approvals?: number }> = {};
-    for (const ch of channels) {
-      if (ch.kind !== "dm") continue;
-      let running = 0;
-      let approvals = 0;
-      for (const c of convs) {
-        if (c.channelId !== ch.id || !c.engineRef) continue;
-        const m = models[c.engineRef];
-        if (!m) continue;
-        if (m.live) running += 1;
-        approvals += m.openRequests.length;
-      }
-      if (running || approvals)
-        out[ch.employeeId] = {
-          running: running || undefined,
-          approvals: approvals || undefined,
-        };
+  const badges = useMemo(
+    () => employeeBadges(channels, convs, models),
+    [channels, convs, models],
+  );
+
+  // Notifications (#32): engine events -> macOS notifications when the
+  // conversation isn't in view; a notification click opens that conversation.
+  useEffect(() => {
+    const bridge = window.lilos;
+    if (!bridge) return;
+    const unsubs: Array<() => void> = [];
+    if (bridge.notifications) {
+      unsubs.push(
+        watchNotifications({
+          onEvent: (fn) => engine.onEvent(fn),
+          context: () => ({
+            conversations: relay.conversations.get(),
+            channels: relay.channels.get(),
+            employees: relay.employees.get(),
+          }),
+          openConversationId: () =>
+            openConversationFromPath(router.state.location.pathname),
+          inForeground: () =>
+            document.visibilityState === "visible" && document.hasFocus(),
+          post: (n) => bridge.notifications?.post(n),
+        }),
+      );
     }
-    return out;
-  }, [channels, convs, models]);
+    if (bridge.onOpenConversation) {
+      unsubs.push(
+        bridge.onOpenConversation((conversationId) => {
+          const params = routeForConversation(conversationId, {
+            conversations: relay.conversations.get(),
+            channels: relay.channels.get(),
+          });
+          if (params) {
+            void navigate({
+              to: "/dm/$employeeId/$conversationId",
+              params,
+            });
+          }
+        }),
+      );
+    }
+    return () => {
+      for (const u of unsubs) u();
+    };
+  }, [navigate]);
 
   return (
     <div className="flex h-dvh min-h-0 bg-background text-foreground">

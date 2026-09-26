@@ -17,6 +17,7 @@
     "@lilos/contracts": "workspace:*"
   },
   "devDependencies": {
+    "@types/bun": "1.4.2",
     "@types/node": "^26.6.2",
     "electron": "44.4.5",
     "typescript": "^7.0.2",

@@ -991,6 +991,8 @@ export class Harness {
         .catch((error) =>
           this.opts.log.error("answer post failed", { error: String(error) }),
         );
+    } else if (event.payload.error) {
+      await this.postSystem(binding, `Error: ${event.payload.error}`);
     } else if (stopReason === "cancelled") {
       await this.postSystem(binding, "Stopped.");
     } else {

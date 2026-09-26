@@ -9,8 +9,20 @@ import {
   plistFileName,
 } from "@lilos/background";
 import { RelayClient } from "@lilos/client-runtime";
-import { app, BrowserWindow, ipcMain, Menu, shell } from "electron";
+import {
+  DESKTOP_NOTIFY_CHANNEL,
+  DESKTOP_OPEN_CONVERSATION_CHANNEL,
+} from "@lilos/contracts/app";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  Notification,
+  shell,
+} from "electron";
 import { diskVersionStore, helperServiceControl } from "./control";
+import { postDesktopNotification } from "./notify";
 
 /**
  * LilOS shell: registers the relay + harness launch agents (AC-1/#34),
@@ -18,6 +30,10 @@ import { diskVersionStore, helperServiceControl } from "./control";
  * window — apps/web, talking to that relay and the harness feed (#27).
  * Quitting never warns — launchd owns the services, so work continues
  * without the app.
+ *
+ * Notifications (#32): the renderer sends validated DesktopNotifications over
+ * `lilos:notify`; main posts a real macOS Notification and, on click, focuses
+ * the window and sends `lilos:open-conversation` with the conversation id.
  */
 
 // `bun build` bakes __dirname to the source path, so resolve locations from
@@ -185,6 +201,32 @@ function appUrl(): { file: string } | { url: string } {
   return { url: "http://localhost:5200" };
 }
 
+let mainWindow: BrowserWindow | undefined;
+
+function openConversation(conversationId: string): void {
+  const win = mainWindow;
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  win.webContents.send(DESKTOP_OPEN_CONVERSATION_CHANNEL, conversationId);
+}
+
+function wireNotifications(): void {
+  ipcMain.on(DESKTOP_NOTIFY_CHANNEL, (_event, raw: unknown) => {
+    if (!Notification.isSupported()) return;
+    postDesktopNotification(raw, {
+      show: (opts) => {
+        const n = new Notification(opts);
+        n.show();
+        return { onClick: (cb) => n.on("click", cb) };
+      },
+      openConversation,
+      onReject: (error) => console.warn("dropping bad notification:", error),
+    });
+  });
+}
+
 function createAppWindow(): void {
   const win = new BrowserWindow({
     width: 1280,
@@ -201,6 +243,10 @@ function createAppWindow(): void {
         `--lilos-engine=${engineWs}`,
       ],
     },
+  });
+  mainWindow = win;
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = undefined;
   });
   // Never open a new window; external links go to the browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -283,6 +329,7 @@ app.whenReady().then(async () => {
       { label: "View", role: "viewMenu" },
     ]),
   );
+  wireNotifications();
   createAppWindow();
 });
 
