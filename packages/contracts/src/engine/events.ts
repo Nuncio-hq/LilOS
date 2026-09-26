@@ -117,10 +117,10 @@ export const RequestResolvedPayload = z.strictObject({
 });
 
 /**
- * The engine re-keyed a session's durable ref (Hermes rotates
- * `stored_session_id` when compression is not in-place). `ref` is what a
- * client stores for resume/reattach — the transport `sessionId` itself stays
- * stable across a rotation, so this event is the only way to notice it.
+ * The engine re-keyed a session's durable ref (some engines rotate the stored
+ * session id when they compact history). `ref` is what a client stores for
+ * resume/reattach — the transport `sessionId` itself stays stable across a
+ * rotation, so this event is the only way to notice it.
  */
 export const SessionRefChangedPayload = z.strictObject({
   ref: z.string().min(1),

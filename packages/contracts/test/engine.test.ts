@@ -71,6 +71,7 @@ describe("engine wire contract", () => {
       "tool.completed",
       "request.opened",
       "request.resolved",
+      "session.ref.changed",
       "turn.steered",
       "turn.completed",
     ]);
