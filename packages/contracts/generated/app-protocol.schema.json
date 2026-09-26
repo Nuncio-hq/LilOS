@@ -311,6 +311,8 @@
         "protocol_version_mismatch",
         "invalid_params",
         "not_found",
+        "forbidden",
+        "conflict",
         "internal"
       ]
     },
@@ -382,7 +384,13 @@
         "messages.list",
         "messages.post",
         "channel.subscribe",
-        "channel.unsubscribe"
+        "channel.unsubscribe",
+        "harness.register",
+        "harness.report",
+        "asks.open",
+        "asks.respond",
+        "asks.list",
+        "turns.interrupt"
       ]
     },
     "AppEventMethod": {
@@ -392,7 +400,11 @@
         "message.created",
         "channel.snapshot",
         "channel.synced",
-        "conversation.updated"
+        "conversation.updated",
+        "channel.created",
+        "ask.opened",
+        "ask.resolved",
+        "turn.interruptRequested"
       ]
     },
     "HelloParams": {
@@ -440,6 +452,30 @@
         "instanceId": {
           "type": "string",
           "minLength": 1
+        },
+        "engineHost": {
+          "type": "object",
+          "properties": {
+            "connected": {
+              "type": "boolean"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "starting",
+                "running",
+                "restarting",
+                "failed",
+                "stopped"
+              ]
+            },
+            "detail": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "connected"
+          ]
         }
       },
       "required": [
@@ -1747,6 +1783,1063 @@
         "ok"
       ]
     },
+    "Ask": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "turnId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "request": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "approval"
+                },
+                "command": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "options": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "once",
+                      "always",
+                      "deny"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "kind",
+                "command",
+                "options"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "question"
+                },
+                "question": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "description": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "freeText": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "kind",
+                "question"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "open",
+            "resolved"
+          ]
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "once",
+            "always",
+            "deny",
+            "cancel",
+            "answer"
+          ]
+        },
+        "answer": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "resolvedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "channelId",
+        "conversationId",
+        "turnId",
+        "requestId",
+        "request",
+        "state",
+        "createdAt"
+      ]
+    },
+    "AskState": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "open",
+        "resolved"
+      ]
+    },
+    "PendingTurn": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "conversation": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rootMessageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "engineRef": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "idle",
+                "active",
+                "closed"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "archived": {
+              "type": "boolean"
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "rootMessageId",
+            "engineRef",
+            "state",
+            "title",
+            "archived",
+            "createdAt"
+          ]
+        },
+        "channel": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "dm"
+              ]
+            },
+            "employeeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lastSeq": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "employeeId",
+            "lastSeq",
+            "createdAt"
+          ]
+        },
+        "message": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "authorId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "text": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "conversationId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "authorKind": {
+              "type": "string",
+              "enum": [
+                "user",
+                "employee",
+                "system"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "authorId",
+            "text",
+            "seq",
+            "createdAt",
+            "conversationId",
+            "authorKind"
+          ]
+        }
+      },
+      "required": [
+        "conversation",
+        "channel",
+        "message"
+      ]
+    },
+    "EngineHostState": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "starting",
+        "running",
+        "restarting",
+        "failed",
+        "stopped"
+      ]
+    },
+    "EngineHostStatus": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "connected": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "running",
+            "restarting",
+            "failed",
+            "stopped"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "connected"
+      ]
+    },
+    "HarnessRegisterParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "HarnessRegisterResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "hostId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pending": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "conversation": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "channelId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "rootMessageId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "engineRef": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "idle",
+                      "active",
+                      "closed"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "archived": {
+                    "type": "boolean"
+                  },
+                  "createdAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "id",
+                  "channelId",
+                  "rootMessageId",
+                  "engineRef",
+                  "state",
+                  "title",
+                  "archived",
+                  "createdAt"
+                ]
+              },
+              "channel": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "dm"
+                    ]
+                  },
+                  "employeeId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "lastSeq": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "createdAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "employeeId",
+                  "lastSeq",
+                  "createdAt"
+                ]
+              },
+              "message": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "channelId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "authorId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "createdAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "conversationId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "authorKind": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "employee",
+                      "system"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "channelId",
+                  "authorId",
+                  "text",
+                  "seq",
+                  "createdAt",
+                  "conversationId",
+                  "authorKind"
+                ]
+              }
+            },
+            "required": [
+              "conversation",
+              "channel",
+              "message"
+            ]
+          }
+        }
+      },
+      "required": [
+        "hostId",
+        "pending"
+      ]
+    },
+    "HarnessReportParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "engine": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "starting",
+                "running",
+                "restarting",
+                "failed",
+                "stopped"
+              ]
+            },
+            "detail": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "state"
+          ]
+        }
+      },
+      "required": [
+        "engine"
+      ]
+    },
+    "AsksOpenParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "turnId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "request": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "approval"
+                },
+                "command": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "options": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "once",
+                      "always",
+                      "deny"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "kind",
+                "command",
+                "options"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "question"
+                },
+                "question": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "description": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "freeText": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "kind",
+                "question"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "channelId",
+        "conversationId",
+        "turnId",
+        "requestId",
+        "request"
+      ]
+    },
+    "AskResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ask": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "conversationId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "turnId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "request": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "approval"
+                    },
+                    "command": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "options": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "once",
+                          "always",
+                          "deny"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "command",
+                    "options"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "question"
+                    },
+                    "question": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "freeText": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "question"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "open",
+                "resolved"
+              ]
+            },
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "once",
+                "always",
+                "deny",
+                "cancel",
+                "answer"
+              ]
+            },
+            "answer": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "resolvedAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "conversationId",
+            "turnId",
+            "requestId",
+            "request",
+            "state",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "ask"
+      ]
+    },
+    "AsksRespondParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "askId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "once",
+            "always",
+            "deny",
+            "cancel",
+            "answer"
+          ]
+        },
+        "answer": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "askId",
+        "outcome"
+      ]
+    },
+    "AsksListParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "open",
+            "resolved"
+          ]
+        }
+      }
+    },
+    "AsksListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "asks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "channelId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "conversationId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "turnId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "requestId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "request": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "approval"
+                      },
+                      "command": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "options": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "once",
+                            "always",
+                            "deny"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "command",
+                      "options"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "question"
+                      },
+                      "question": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "options": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "description": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "freeText": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "question"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "resolved"
+                ]
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "once",
+                  "always",
+                  "deny",
+                  "cancel",
+                  "answer"
+                ]
+              },
+              "answer": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "resolvedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "channelId",
+              "conversationId",
+              "turnId",
+              "requestId",
+              "request",
+              "state",
+              "createdAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "asks"
+      ]
+    },
+    "TurnsInterruptParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "conversationId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "conversationId"
+      ]
+    },
     "MessageCreatedEvent": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -1990,6 +3083,391 @@
       "required": [
         "channelId",
         "conversation"
+      ]
+    },
+    "ChannelCreatedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channel": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "dm"
+              ]
+            },
+            "employeeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lastSeq": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "employeeId",
+            "lastSeq",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "channel"
+      ]
+    },
+    "AskOpenedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ask": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "conversationId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "turnId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "request": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "approval"
+                    },
+                    "command": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "options": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "once",
+                          "always",
+                          "deny"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "command",
+                    "options"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "question"
+                    },
+                    "question": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "freeText": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "question"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "open",
+                "resolved"
+              ]
+            },
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "once",
+                "always",
+                "deny",
+                "cancel",
+                "answer"
+              ]
+            },
+            "answer": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "resolvedAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "conversationId",
+            "turnId",
+            "requestId",
+            "request",
+            "state",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "channelId",
+        "ask"
+      ]
+    },
+    "AskResolvedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ask": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "conversationId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "turnId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "request": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "approval"
+                    },
+                    "command": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "options": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "once",
+                          "always",
+                          "deny"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "command",
+                    "options"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "question"
+                    },
+                    "question": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "freeText": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "question"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "open",
+                "resolved"
+              ]
+            },
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "once",
+                "always",
+                "deny",
+                "cancel",
+                "answer"
+              ]
+            },
+            "answer": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "resolvedAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "conversationId",
+            "turnId",
+            "requestId",
+            "request",
+            "state",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "channelId",
+        "ask"
+      ]
+    },
+    "TurnInterruptRequestedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "channelId",
+        "conversationId"
       ]
     }
   }

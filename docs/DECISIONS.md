@@ -62,6 +62,11 @@ PR does not exist.
   protocol has no profile delete — firing removes only the LilOS employee
   record.** Not: LilOS-owned profile CRUD, or a delete method "for cleanup".
   — #8 · PR #46
+- **D-#26 The harness supervises the engine and is the only thing that talks
+  to it.** It owns launch (`hermes serve` on 127.0.0.1 with a generated
+  token, via `packages/engine-hermes`), crash restart with bounded backoff,
+  conversation↔session binding, final-answer posts, and ask relaying.
+  Not: the app or relay calling an engine directly. — #26 · PR #48
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the

@@ -61,6 +61,8 @@ interface FakeTurn {
 
 interface FakeSession {
   id: string;
+  /** Durable external ref (the engine's stored-session-id analogue); init = id. */
+  ref: string;
   agent: string;
   cwd: string;
   model?: string;
@@ -107,6 +109,7 @@ export class FakeEngine {
   );
   private listeners = new Set<(e: EngineEvent) => void>();
   private sessionCounter = 0;
+  private refCounter = 0;
   private turnCounter = 0;
   private hexCounter = 0;
 
@@ -125,6 +128,21 @@ export class FakeEngine {
   onEvent(fn: (e: EngineEvent) => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
+  }
+
+  /**
+   * Rotate a session's durable ref — engines rotate their stored id on
+   * non-in-place compression; the transport sessionId stays stable, only the
+   * external resume token moves. Emits `session.ref.changed {ref, previousRef}`.
+   * Returns the new ref, or null for an unknown session.
+   */
+  rotateSessionRef(sessionId: string): string | null {
+    const s = this.sessions.get(sessionId);
+    if (!s) return null;
+    const previousRef = s.ref;
+    s.ref = `${s.ref}-r${++this.refCounter}`;
+    this.emit(s, "session.ref.changed", { ref: s.ref, previousRef });
+    return s.ref;
   }
 
   async dispatch(method: string, params: unknown): Promise<unknown> {
@@ -230,6 +248,7 @@ export class FakeEngine {
       );
     const id = `s${++this.sessionCounter}`;
     const s: FakeSession = {
+      ref: id,
       id,
       agent: p.agent,
       cwd: p.cwd,

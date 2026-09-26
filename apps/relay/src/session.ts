@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import {
   APP_PROTOCOL_VERSION,
   type AppErrorCode,
+  AsksListParams,
+  AsksOpenParams,
+  AsksRespondParams,
   ChannelSubscribeParams,
   ChannelsOpenDmParams,
   ChannelUnsubscribeParams,
@@ -10,10 +13,14 @@ import {
   ConversationsUpdateParams,
   EmployeesCreateParams,
   EmployeesUpdateParams,
+  type EngineHostState,
+  HarnessRegisterParams,
+  HarnessReportParams,
   HelloParams,
   type JsonRpcRequest,
   MessagesListParams,
   MessagesPostParams,
+  TurnsInterruptParams,
   type WelcomeResult,
 } from "@lilos/contracts/app";
 import type { RelayStore } from "./store";
@@ -55,8 +62,17 @@ const JsonRpcCode = {
   internal: -32603,
   unauthenticated: -32001,
   protocolVersionMismatch: -32002,
+  forbidden: -32003,
   notFound: -32004,
+  conflict: -32009,
 } as const;
+
+/** The peer that has `harness.register`ed — the single engine host. */
+interface HostRecord {
+  peer: RelayWsPeer;
+  hostId: string;
+  engine?: { state: EngineHostState; detail?: string };
+}
 
 class RpcError extends Error {
   constructor(
@@ -90,12 +106,33 @@ export function createRelay(options: RelayOptions): Relay {
   const snapshotLimit = options.snapshotLimit ?? 200;
   const instanceId = randomUUID();
   const subscribers = new Map<string, Set<RelayWsPeer>>();
+  /** Every peer with a successful `session.hello` — receives broadcasts. */
+  const helloedPeers = new Set<RelayWsPeer>();
+  let host: HostRecord | null = null;
 
   const emit = (channelId: string, method: string, params: unknown) => {
     const peers = subscribers.get(channelId);
     if (!peers) return;
     const frame = JSON.stringify({ jsonrpc: "2.0", method, params });
     for (const peer of peers) peer.send(frame);
+  };
+
+  /** To every helloed peer — used for `channel.created`. */
+  const broadcast = (method: string, params: unknown) => {
+    const frame = JSON.stringify({ jsonrpc: "2.0", method, params });
+    for (const peer of helloedPeers) peer.send(frame);
+  };
+
+  const isHost = (peer: RelayWsPeer) => host !== null && host.peer === peer;
+
+  const requireHost = (peer: RelayWsPeer) => {
+    if (!isHost(peer)) {
+      throw new RpcError(
+        JsonRpcCode.forbidden,
+        "forbidden",
+        "only the registered engine host may call this",
+      );
+    }
   };
 
   const emitMessage = (channelId: string, message: unknown) =>
@@ -175,10 +212,16 @@ export function createRelay(options: RelayOptions): Relay {
             );
           }
           state.helloed = true;
+          helloedPeers.add(peer);
           const welcome: WelcomeResult = {
             protocolVersion,
             relayVersion,
             instanceId,
+            engineHost: {
+              connected: host !== null,
+              state: host?.engine?.state,
+              detail: host?.engine?.detail,
+            },
           };
           respond(peer, id, welcome);
           return;
@@ -217,7 +260,10 @@ export function createRelay(options: RelayOptions): Relay {
         case "channels.openDm": {
           const parsed = ChannelsOpenDmParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
-          const channel = await store.openDmChannel(parsed.data.employeeId);
+          const { channel, created } = await store.openDmChannel(
+            parsed.data.employeeId,
+          );
+          if (created) broadcast("channel.created", { channel });
           respond(peer, id, { channel });
           return;
         }
@@ -253,6 +299,19 @@ export function createRelay(options: RelayOptions): Relay {
         case "conversations.update": {
           const parsed = ConversationsUpdateParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
+          // engineRef/state are owned by the engine host; title/archive are
+          // user-facing fields any client may set.
+          if (
+            (parsed.data.engineRef !== undefined ||
+              parsed.data.state !== undefined) &&
+            !isHost(peer)
+          ) {
+            throw new RpcError(
+              JsonRpcCode.forbidden,
+              "forbidden",
+              "only the registered engine host may write engineRef/state",
+            );
+          }
           const { conversationId, ...patch } = parsed.data;
           const conversation = await store.updateConversation(
             conversationId,
@@ -290,6 +349,14 @@ export function createRelay(options: RelayOptions): Relay {
         case "messages.post": {
           const parsed = MessagesPostParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
+          // Employee/system utterances are produced by the engine host only.
+          if (parsed.data.authorKind !== "user" && !isHost(peer)) {
+            throw new RpcError(
+              JsonRpcCode.forbidden,
+              "forbidden",
+              "only the registered engine host may post non-user messages",
+            );
+          }
           try {
             const message = await store.appendMessage(parsed.data);
             emitMessage(message.channelId, message);
@@ -378,6 +445,127 @@ export function createRelay(options: RelayOptions): Relay {
           subscribers.get(channelId)?.delete(peer);
           state.subscriptions.delete(channelId);
           respond(peer, id, { channelId });
+          return;
+        }
+        case "harness.register": {
+          const parsed = HarnessRegisterParams.safeParse(params ?? {});
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          if (host !== null && host.peer !== peer) {
+            throw new RpcError(
+              JsonRpcCode.conflict,
+              "conflict",
+              "an engine host is already registered",
+            );
+          }
+          if (!host) {
+            host = { peer, hostId: `host_${randomUUID()}` };
+          }
+          respond(peer, id, {
+            hostId: host.hostId,
+            pending: await store.listPendingTurns(),
+          });
+          return;
+        }
+        case "harness.report": {
+          const parsed = HarnessReportParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          requireHost(peer);
+          if (host) host.engine = parsed.data.engine;
+          respond(peer, id, { ok: true });
+          return;
+        }
+        case "asks.open": {
+          const parsed = AsksOpenParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          requireHost(peer);
+          const { ask, created } = await store.createAsk(parsed.data);
+          if (created) {
+            emit(ask.channelId, "ask.opened", {
+              channelId: ask.channelId,
+              ask,
+            });
+          }
+          respond(peer, id, { ask });
+          return;
+        }
+        case "asks.respond": {
+          const parsed = AsksRespondParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const existing = await store.getAsk(parsed.data.askId);
+          if (!existing) {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "ask not found",
+            );
+          }
+          if (existing.state === "resolved") {
+            throw new RpcError(
+              JsonRpcCode.conflict,
+              "conflict",
+              "ask already resolved",
+            );
+          }
+          // The relay doesn't interpret engine asks, but it does enforce the
+          // outcome/kind pairing the engine contract declares, so a malformed
+          // answer can't be stored and replayed.
+          const { kind } = existing.request;
+          const outcome = parsed.data.outcome;
+          const valid =
+            kind === "approval"
+              ? outcome !== "answer"
+              : outcome === "answer" || outcome === "cancel";
+          if (!valid) {
+            throw new RpcError(
+              JsonRpcCode.invalidParams,
+              "invalid_params",
+              `outcome ${outcome} is not valid for a ${kind} ask`,
+            );
+          }
+          if (outcome === "answer" && !parsed.data.answer) {
+            throw new RpcError(
+              JsonRpcCode.invalidParams,
+              "invalid_params",
+              "outcome answer requires an answer",
+            );
+          }
+          const ask = await store.resolveAsk(existing.id, {
+            outcome,
+            answer: parsed.data.answer,
+          });
+          if (ask) {
+            emit(ask.channelId, "ask.resolved", {
+              channelId: ask.channelId,
+              ask,
+            });
+          }
+          respond(peer, id, { ask });
+          return;
+        }
+        case "asks.list": {
+          const parsed = AsksListParams.safeParse(params ?? {});
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          respond(peer, id, { asks: await store.listAsks(parsed.data) });
+          return;
+        }
+        case "turns.interrupt": {
+          const parsed = TurnsInterruptParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const conversation = await store.getConversation(
+            parsed.data.conversationId,
+          );
+          if (!conversation) {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "conversation not found",
+            );
+          }
+          emit(conversation.channelId, "turn.interruptRequested", {
+            channelId: conversation.channelId,
+            conversationId: conversation.id,
+          });
+          respond(peer, id, { ok: true });
           return;
         }
         default:
@@ -472,6 +660,8 @@ export function createRelay(options: RelayOptions): Relay {
             subscribers.get(channelId)?.delete(peer);
           }
           state.subscriptions.clear();
+          helloedPeers.delete(peer);
+          if (host?.peer === peer) host = null;
         },
       };
     },

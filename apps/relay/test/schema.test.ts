@@ -13,6 +13,7 @@ const TRANSCRIPTISH = /transcript|reason|thought|tool(_|calls|_results)|steps/i;
 describe("AC-5 relay stores no engine transcript", () => {
   it("persists exactly the four app tables, none with transcript fields", () => {
     expect(Object.keys(schema).sort()).toEqual([
+      "asks",
       "channels",
       "conversations",
       "employees",

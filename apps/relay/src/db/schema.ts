@@ -91,3 +91,36 @@ export const messages = sqliteTable(
     index("messages_conversation").on(t.conversationId),
   ],
 );
+
+/**
+ * Engine asks surfaced to the user (#26). `request` is the EngineRequest JSON
+ * verbatim; `state` flips to `resolved` when `asks.respond` lands. The
+ * (conversation_id, request_id) pair is unique — re-opening the same engine
+ * request after a replay returns the same row.
+ */
+export const asks = sqliteTable(
+  "asks",
+  {
+    id: text("id").primaryKey(),
+    channelId: text("channel_id")
+      .notNull()
+      .references(() => channels.id),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id),
+    turnId: text("turn_id").notNull(),
+    requestId: text("request_id").notNull(),
+    request: text("request").notNull(),
+    state: text("state", { enum: ["open", "resolved"] })
+      .notNull()
+      .default("open"),
+    outcome: text("outcome"),
+    answer: text("answer"),
+    createdAt: integer("created_at").notNull(),
+    resolvedAt: integer("resolved_at"),
+  },
+  (t) => [
+    uniqueIndex("asks_conversation_request").on(t.conversationId, t.requestId),
+    index("asks_channel").on(t.channelId),
+  ],
+);

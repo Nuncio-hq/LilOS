@@ -2,6 +2,7 @@ import {
   APP_PROTOCOL_VERSION,
   type AppChannel,
   type AppMessage,
+  ChannelCreatedEvent,
   ChannelSnapshotEvent,
   ChannelSyncedEvent,
   type Conversation,
@@ -66,6 +67,13 @@ export interface RelayClientOptions {
   requestTimeoutMs?: number;
   /** Fatal handshake failures (version mismatch, bad token) land here. */
   onFatalError?: (error: RelayError) => void;
+  /**
+   * Every incoming JSON-RPC notification, before the built-in handling — the
+   * harness-level events (ask.opened/ask.resolved, turn.interruptRequested,
+   * channel.created) have no atom yet and are consumed through this hook.
+   * Equivalent to calling `onEvent(fn)` after construction.
+   */
+  onEvent?: (method: string, params: Record<string, unknown>) => void;
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
@@ -105,6 +113,9 @@ export class RelayClient {
 
   private socket: RelaySocket | undefined;
   private nextRequestId = 1;
+  private readonly eventListeners = new Set<
+    (method: string, params: Record<string, unknown>) => void
+  >();
   private readonly pending = new Map<
     RequestId,
     {
@@ -138,6 +149,19 @@ export class RelayClient {
       requestTimeoutMs: options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
       ...options,
     };
+    if (options.onEvent) this.eventListeners.add(options.onEvent);
+  }
+
+  /**
+   * Subscribe to raw protocol notifications (pre-dispatch). Returns an
+   * unsubscribe function. Used by the harness for ask/interrupt/channel
+   * lifecycle events that have no atom.
+   */
+  onEvent(
+    fn: (method: string, params: Record<string, unknown>) => void,
+  ): () => void {
+    this.eventListeners.add(fn);
+    return () => this.eventListeners.delete(fn);
   }
 
   /**
@@ -430,7 +454,22 @@ export class RelayClient {
     method: string,
     params: Record<string, unknown>,
   ): void {
+    for (const fn of this.eventListeners) {
+      try {
+        fn(method, params);
+      } catch {
+        // A consumer hook must never break the client's own dispatch.
+      }
+    }
     switch (method) {
+      case "channel.created": {
+        const event = ChannelCreatedEvent.parse(params);
+        const list = this.channels.get();
+        if (!list.some((c) => c.id === event.channel.id)) {
+          this.channels.set([...list, event.channel]);
+        }
+        return;
+      }
       case "message.created": {
         const event = MessageCreatedEvent.parse(params);
         if (this.catchingUp.has(event.channelId)) {

@@ -1,0 +1,29 @@
+{
+  "name": "@lilos/harness",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/harness.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "demo": "bun run scripts/demo.ts",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lilos/client-runtime": "workspace:*",
+    "@lilos/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@lilos/engine-fake": "workspace:*",
+    "@lilos/relay": "workspace:*",
+    "@types/bun": "1.4.2",
+    "@types/node": "^26.6.2",
+    "@types/ws": "8.18.1",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.4",
+    "ws": "8.21.3"
+  }
+}

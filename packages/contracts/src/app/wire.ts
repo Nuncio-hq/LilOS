@@ -1,12 +1,17 @@
 import { z } from "zod";
+import { ApprovalOutcome, EngineRequest } from "../engine/requests";
 import {
   AppChannel,
   AppMessage,
+  Ask,
+  AskState,
   AuthorKind,
   Conversation,
   ConversationState,
   Employee,
   EmployeeStatus,
+  EngineHostStatus,
+  PendingTurn,
   RespondTo,
 } from "./domain";
 import { APP_PROTOCOL_VERSION } from "./version";
@@ -45,6 +50,8 @@ export const AppErrorCode = z.enum([
   "protocol_version_mismatch",
   "invalid_params",
   "not_found",
+  "forbidden",
+  "conflict",
   "internal",
 ]);
 export type AppErrorCode = z.infer<typeof AppErrorCode>;
@@ -96,6 +103,12 @@ export const AppMethod = z.enum([
   "messages.post",
   "channel.subscribe",
   "channel.unsubscribe",
+  "harness.register",
+  "harness.report",
+  "asks.open",
+  "asks.respond",
+  "asks.list",
+  "turns.interrupt",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -118,6 +131,8 @@ export const WelcomeResult = z.object({
    * numbering that may no longer exist — it must resync from a snapshot.
    */
   instanceId: z.string().min(1),
+  /** Engine host presence, so a client can show it without a second round trip. */
+  engineHost: EngineHostStatus.optional(),
 });
 export type WelcomeResult = z.infer<typeof WelcomeResult>;
 
@@ -251,6 +266,62 @@ export const ChannelUnsubscribeParams = z.object({
 });
 export const OkResult = z.object({ ok: z.literal(true) });
 
+/* ------------------------- harness + asks (#26) ------------------------- */
+
+/**
+ * Registers the calling connection as the engine host. The host is the only
+ * writer allowed to attach `engineRef`/`state` on conversations, post
+ * non-`user` messages, and open asks. A second concurrent registration is
+ * refused with `conflict` — the relay has exactly one engine host. The result
+ * returns `pending`: conversations whose newest message is a user message
+ * (turns the engine still owes), so a restarted host catches up.
+ */
+export const HarnessRegisterParams = z.object({}).strict();
+export const HarnessRegisterResult = z.object({
+  hostId: z.string().min(1),
+  pending: z.array(PendingTurn),
+});
+
+/** Host-only heartbeat of supervised engine state → welcome.engineHost. */
+export const HarnessReportParams = z.object({
+  engine: z.object({
+    state: z.enum(["starting", "running", "restarting", "failed", "stopped"]),
+    detail: z.string().optional(),
+  }),
+});
+
+/** Host-only: surface an engine `request.opened` to the user. */
+export const AsksOpenParams = z.object({
+  channelId: z.string().min(1),
+  conversationId: z.string().min(1),
+  turnId: z.string().min(1),
+  requestId: z.string().min(1),
+  request: EngineRequest,
+});
+export type AsksOpenParams = z.infer<typeof AsksOpenParams>;
+export const AskResult = z.object({ ask: Ask });
+
+export const AsksRespondParams = z.object({
+  askId: z.string().min(1),
+  outcome: ApprovalOutcome,
+  answer: z.string().optional(),
+});
+export type AsksRespondParams = z.infer<typeof AsksRespondParams>;
+
+export const AsksListParams = z.object({
+  channelId: z.string().min(1).optional(),
+  conversationId: z.string().min(1).optional(),
+  state: AskState.optional(),
+});
+export type AsksListParams = z.infer<typeof AsksListParams>;
+export const AsksListResult = z.object({ asks: z.array(Ask) });
+
+/** Any client: request an interrupt of the conversation's running turn. */
+export const TurnsInterruptParams = z.object({
+  conversationId: z.string().min(1),
+});
+export type TurnsInterruptParams = z.infer<typeof TurnsInterruptParams>;
+
 /* -------------------------------- events ------------------------------- */
 
 export const AppEventMethod = z.enum([
@@ -258,6 +329,10 @@ export const AppEventMethod = z.enum([
   "channel.snapshot",
   "channel.synced",
   "conversation.updated",
+  "channel.created",
+  "ask.opened",
+  "ask.resolved",
+  "turn.interruptRequested",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 
@@ -286,5 +361,33 @@ export const ConversationUpdatedEvent = z.object({
   conversation: Conversation,
 });
 export type ConversationUpdatedEvent = z.infer<typeof ConversationUpdatedEvent>;
+
+/** Broadcast to every helloed peer — a client learns of new channels live. */
+export const ChannelCreatedEvent = z.object({ channel: AppChannel });
+export type ChannelCreatedEvent = z.infer<typeof ChannelCreatedEvent>;
+
+export const AskOpenedEvent = z.object({
+  channelId: z.string().min(1),
+  ask: Ask,
+});
+export type AskOpenedEvent = z.infer<typeof AskOpenedEvent>;
+
+export const AskResolvedEvent = z.object({
+  channelId: z.string().min(1),
+  ask: Ask,
+});
+export type AskResolvedEvent = z.infer<typeof AskResolvedEvent>;
+
+/**
+ * A client asked for the conversation's running turn to be interrupted; the
+ * registered engine host relays it to the engine as `interrupt`.
+ */
+export const TurnInterruptRequestedEvent = z.object({
+  channelId: z.string().min(1),
+  conversationId: z.string().min(1),
+});
+export type TurnInterruptRequestedEvent = z.infer<
+  typeof TurnInterruptRequestedEvent
+>;
 
 export { APP_PROTOCOL_VERSION };
