@@ -8,8 +8,8 @@
  *   bun packages/contracts/scripts/gen-schemas.ts          write all
  *   bun packages/contracts/scripts/gen-schemas.ts --check  exit 1 when stale
  *
- * A new registry (e.g. host, #11) slots into GENERATED_DOCS below — flat
- * registries reuse `renderSchemaDoc`; bespoke wire docs add a renderer.
+ * New registries slot into GENERATED_DOCS below — flat registries reuse
+ * `renderSchemaDoc`; bespoke wire docs add a renderer.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -21,6 +21,7 @@ import {
   ENGINE_PROTOCOL,
   EngineEvent,
 } from "../src/engine/index.js";
+import { HOST_API, HOST_METHODS } from "../src/host/index.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -55,6 +56,24 @@ export function renderEngineDoc(): string {
         params: toSchema(EngineEvent),
       },
     },
+  };
+  return `${JSON.stringify(doc, null, 2)}\n`;
+}
+
+/** Host wire doc: methods only (the host API has no notifications — #11). */
+export function renderHostDoc(): string {
+  const doc = {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    title: "LilOS host API",
+    description:
+      "Generated from packages/contracts/src/host by scripts/gen-schemas.ts — do not edit.",
+    protocol: { name: HOST_API.name, version: HOST_API.version },
+    methods: Object.fromEntries(
+      Object.entries(HOST_METHODS).map(([name, m]) => [
+        name,
+        { doc: m.doc, params: toSchema(m.params), result: toSchema(m.result) },
+      ]),
+    ),
   };
   return `${JSON.stringify(doc, null, 2)}\n`;
 }
@@ -100,8 +119,7 @@ export const GENERATED_DOCS: GeneratedDoc[] = [
     file: "app-protocol.schema.json",
     render: () => renderSchemaDoc(appProtocol),
   },
-  // host registry (#11): { file: "host-protocol.schema.json",
-  //   render: () => renderSchemaDoc(hostProtocol) }
+  { file: "host-protocol.schema.json", render: renderHostDoc },
 ];
 
 export function outputPathFor(doc: GeneratedDoc): string {

@@ -8,7 +8,7 @@ import {
   GitBranchIcon,
   XIcon,
 } from "lucide-react";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -27,6 +27,7 @@ export function AddFolderDialog({
   discovered,
   onClose,
   onAdd,
+  onNeedDir,
 }: {
   folders: Folder[];
   projects: string[];
@@ -35,6 +36,10 @@ export function AddFolderDialog({
   discovered: string[];
   onClose: () => void;
   onAdd: (path: string, project: { existing?: string; name: string }) => void;
+  /* Called when the listing needs a dir the `fs` map doesn't have yet — the
+     app answers with a host `fs.list` (real app: the harness). Without it the
+     dialog renders purely off `fs` (mock). */
+  onNeedDir?: (path: string) => void;
 }) {
   const [path, setPath] = useState("~/Desktop/Oscar");
   const [target, setTarget] = useState<string>(defaultProject ?? "__new");
@@ -43,10 +48,17 @@ export function AddFolderDialog({
   const exact = fs[clean];
   // complete.path: list the typed dir, or the parent filtered by the partial last segment
   const listDir = exact ? clean : parentOf(clean);
+  const listed = fs[listDir]?.children;
+  // Lazy listing: ask the host for every dir we navigate to — even one the
+  // `fs` map already holds, since mock seeds must give way to real listings.
+  // The app dedupes repeat requests for the same dir.
+  useEffect(() => {
+    onNeedDir?.(listDir);
+  }, [onNeedDir, listDir]);
   const prefix = exact ? "" : baseName(clean).toLowerCase();
   const entries = (fs[listDir]?.children ?? [])
     .filter((c) => c.toLowerCase().startsWith(prefix))
-    .map((c) => `${listDir}/${c}`);
+    .map((c) => `${listDir === "/" ? "" : listDir}/${c}`);
   const attached = folders.find((f) => f.path === clean);
   const git = exact?.git;
   const suggestedName = baseName(clean);
@@ -156,7 +168,11 @@ export function AddFolderDialog({
             <div className="max-h-56 overflow-y-auto p-1" data-fslist>
               {entries.length === 0 && (
                 <p className="px-2 py-3 text-center text-muted-foreground text-xs">
-                  {fs[listDir] ? "No subfolders" : "No such folder"}
+                  {listed === undefined && onNeedDir
+                    ? "Reading folder…"
+                    : fs[listDir]
+                      ? "No subfolders"
+                      : "No such folder"}
                 </p>
               )}
               {entries.map((e) => {

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Conversation, ConversationContent, ConversationScrollButton } from "@lilos/ui/components/ai-elements/conversation"
 import {
   AddFolderDialog,
@@ -54,6 +54,7 @@ import {
   useTheme,
 } from "@lilos/ui"
 import { cn } from "@lilos/ui/lib/utils"
+import { hostAccessors, hostDir, hostDiscover, hostPick } from "./host"
 
 /* Model: Company → Projects → Channels.
    Channel = shared timeline. A top-level message can open a THREAD.
@@ -575,6 +576,8 @@ export default function App() {
     // New workstream: the engine creates the worktree before session.create { cwd }, shown as the first step of turn 1.
     if (ws?.mode === "new" && ws.worktree && !followUp)
       s.steps = [{ tool: "terminal", input: { command: `git worktree add ${ws.worktree} -b ${ws.branch} ${ws.base}` }, output: `Preparing worktree (new branch '${ws.branch}')\nHEAD is now at ${hex()} (${ws.base})` }, ...s.steps]
+    // session.create { cwd }: the first thing the session does is land in its folder — pwd proves it.
+    if (ws?.cwd && !followUp) s.steps = [{ tool: "terminal", input: { command: "pwd" }, output: ws.cwd }, ...s.steps]
     stops.current[rootId] = false
     setSteerBuf(rootId, steerBuf.current[rootId] ?? [])
     const started0 = Date.now()
@@ -667,11 +670,34 @@ export default function App() {
   const [wsPicks, setWsPicks] = useState<Record<string, WsPick>>({})
   const [newProjects, setNewProjects] = useState<Project[]>([])
   const [addFolderOpen, setAddFolderOpen] = useState(false)
+  // Folder listing served by the host dev middleware (/api/host → packages/host): mock FS seeds
+  // the known Oscar dirs, real listings merge in as the picker asks for them.
+  const [fsMap, setFsMap] = useState<Record<string, FsDir>>(FS)
+  const [discovered, setDiscovered] = useState<string[]>(DISCOVERED)
+  // git.discoverRepos over scan roots (?roots=/tmp overrides for e2e); real hits replace the mock row.
+  useEffect(() => {
+    const roots = new URLSearchParams(location.search).get("roots")?.split(",") ?? ["~/Desktop", "~/Developer", "~/Documents", "~/repos"]
+    hostDiscover(roots).then((d) => {
+      if (d.list.length) { setDiscovered(d.list); setFsMap((m) => ({ ...m, ...d.stubs })) }
+    }).catch(() => {})
+  }, [])
+  // Asked once per dir — a failed fetch drops out of the set so a later
+  // navigation retries (mock seeds stay when the host is down).
+  const requestedDirs = useRef(new Set<string>())
+  const needDir = (p: string) => {
+    if (requestedDirs.current.has(p)) return
+    requestedDirs.current.add(p)
+    void hostDir(p).then((m) => {
+      if (m) setFsMap((f) => ({ ...f, ...m }))
+      else requestedDirs.current.delete(p)
+    })
+  }
   // projects.add_folder { id, path } (existing project) or projects.create { name, folders: [path] } (new one).
-  const addFolder = (path: string, project: { existing?: string; name: string }) => {
-    const d = FS[path]
+  const addFolder = async (path: string, project: { existing?: string; name: string }) => {
+    const d = await hostPick(path).catch(() => null) ?? fsMap[path]
     const id = `f-${slugOf(project.name)}-${baseName(path).toLowerCase()}`.replace(/[^a-z0-9-]/g, "")
     const f: Folder = { id, project: project.name, path, repo: d?.git?.remote, branches: d?.git?.branches ?? [], workstreams: [] }
+    if (d) setFsMap((m) => ({ ...m, [path]: { ...m[path], ...d } }))
     setFolders((fs) => [...fs, f])
     if (!project.existing) setNewProjects((ps) => [...ps, { id: slugOf(project.name) || id, name: project.name, key: project.name.slice(0, 3).toUpperCase(), channels: [] }])
     if (view.kind === "dm") setWsPicks((w) => ({ ...w, [view.id]: { folder: id, base: f.branches[0] ?? "", mode: f.branches.length ? "new" : "direct" } }))
@@ -847,7 +873,7 @@ export default function App() {
           running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
           onRewind={(i) => rewind(openThread, i)} onModel={(m) => setModel(openThread, m)} say={say}
-          models={MODELS} repoFiles={REPO_FILES}
+          models={MODELS} repoFiles={REPO_FILES} host={hostAccessors}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={() => prMerge(openThread)}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*"
         />
@@ -914,7 +940,7 @@ export default function App() {
         <AddFolderDialog
           folders={folders} projects={[...PROJECTS, ...newProjects].map((p) => p.name)}
           defaultProject={view.kind === "channel" ? project?.name : undefined}
-          fs={FS} discovered={DISCOVERED}
+          fs={fsMap} discovered={discovered} onNeedDir={needDir}
           onClose={() => setAddFolderOpen(false)} onAdd={addFolder}
         />
       )}

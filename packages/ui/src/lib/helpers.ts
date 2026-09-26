@@ -14,7 +14,7 @@ export const folderLabel = (
     ? `${f.project} / ${baseName(f.path)}`
     : f.project;
 export const parentOf = (path: string) =>
-  path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "~";
+  path.includes("/") ? path.slice(0, path.lastIndexOf("/")) || "/" : "~";
 export const slugOf = (s: string) =>
   s
     .toLowerCase()
