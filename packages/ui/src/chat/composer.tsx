@@ -1,10 +1,9 @@
 import type { ChatStatus } from "ai";
-import { PaperclipIcon, SquareIcon } from "lucide-react";
+import { SquareIcon } from "lucide-react";
 import { useState } from "react";
 import {
   PromptInput,
   PromptInputBody,
-  PromptInputButton,
   PromptInputFooter,
   PromptInputSubmit,
   PromptInputTextarea,
@@ -73,15 +72,12 @@ export function Composer({
         </PromptInputBody>
         <PromptInputFooter>
           <PromptInputTools className="min-w-0">
-            <PromptInputButton>
-              <PaperclipIcon />
-            </PromptInputButton>
             {tools}
             <span className="hidden truncate text-muted-foreground text-xs sm:inline">
               {hint}
             </span>
           </PromptInputTools>
-          {busy && !draft.trim() ? (
+          {busy && !draft.trim() && onStop ? (
             <PromptInputSubmit
               status={status}
               type="button"

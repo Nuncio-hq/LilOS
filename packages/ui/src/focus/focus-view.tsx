@@ -47,10 +47,11 @@ import {
   QueueSectionTrigger,
 } from "../components/ai-elements/queue";
 import { Button } from "../components/ui/button";
+import { openStartRequest, ReplyCards } from "../conversation/cards";
+import { AgentTurn, PrCard, UserTurn } from "../conversation/turns";
 import { PHASE_LABEL } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
-import { openStartRequest, ReplyCards } from "../thread/thread-view";
 import type {
   Channel,
   EmpFn,
@@ -66,7 +67,6 @@ import type {
 import { sessionArtifacts } from "../workbench/artifacts";
 import { Workbench } from "../workbench/workbench";
 import { SessionUsage } from "./session-usage";
-import { AgentTurn, PrCard, UserTurn } from "./turns";
 
 export function FocusView({
   root,
@@ -105,25 +105,25 @@ export function FocusView({
   emp: EmpFn;
   human: HumanFn;
   resolved: Record<string, string>;
-  setResolved: (r: Record<string, string>) => void;
+  setResolved?: (r: Record<string, string>) => void;
   work: Work | null;
-  onBack: () => void;
-  onNav: () => void;
-  onStart: () => void;
+  onBack?: () => void;
+  onNav?: () => void;
+  onStart?: () => void;
   running: boolean;
   onSend: (t: string) => void;
-  onStop: () => void;
-  onRetry: (empId: string) => void;
-  onUnqueue: (i: number) => void;
-  onSendQueued: (i: number) => void;
-  onRewind: (replyIndex: number) => void;
-  onModel: (m: string) => void;
-  say: (t: string) => void;
-  models: ModelOption[];
-  repoFiles: string[];
-  onPrComment: (t: string) => void;
-  onPrMerge: () => void;
-  pending: string[];
+  onStop?: () => void;
+  onRetry?: (empId: string) => void;
+  onUnqueue?: (i: number) => void;
+  onSendQueued?: (i: number) => void;
+  onRewind?: (replyIndex: number) => void;
+  onModel?: (m: string) => void;
+  say?: (t: string) => void;
+  models?: ModelOption[];
+  repoFiles?: string[];
+  onPrComment?: (t: string) => void;
+  onPrMerge?: () => void;
+  pending?: string[];
 }) {
   const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024);
   const [tab, setTab] = useState<WbTab>(() =>
@@ -131,7 +131,7 @@ export function FocusView({
   );
   const [follow, setFollow] = useState(true);
   const isDM = !!channel.dm;
-  const model = thread.model ?? lead?.model ?? models[0];
+  const model = thread.model ?? lead?.model ?? models?.[0];
   const live = thread.replies.find((r) => r.live);
   const lastStep = live?.steps?.[live.steps.length - 1];
   const status: ChatStatus = running
@@ -141,6 +141,7 @@ export function FocusView({
     : "ready";
   const todos = thread.todos ?? [];
   const queue = thread.queue ?? [];
+  const pendingSteers = pending ?? [];
   // The open "asks to start work" card, if any, is the single start-work entry point (issue #15).
   const startCardOpen = openStartRequest(thread, resolved);
   const liveKey = live
@@ -187,23 +188,27 @@ export function FocusView({
   return (
     <main className="flex min-h-0 min-w-0 flex-col">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b px-2 sm:px-3">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onNav}
-          title="Workspace"
-        >
-          <MenuIcon />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="shrink-0 px-2"
-          onClick={onBack}
-        >
-          <ArrowLeftIcon />
-          <span className="hidden sm:inline">{chLabel}</span>
-        </Button>
+        {onNav && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onNav}
+            title="Workspace"
+          >
+            <MenuIcon />
+          </Button>
+        )}
+        {onBack && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 px-2"
+            onClick={onBack}
+          >
+            <ArrowLeftIcon />
+            <span className="hidden sm:inline">{chLabel}</span>
+          </Button>
+        )}
         <span className="h-5 w-px shrink-0 bg-border" />
         {lead && <HermesAvatar status={lead.status} className="size-7" />}
         <div className="min-w-0">
@@ -248,8 +253,10 @@ export function FocusView({
               {live?.phase ? PHASE_LABEL[live.phase] : "working"}
             </span>
           )}
-          {thread.usage && <SessionUsage usage={thread.usage} model={model} />}
-          {!work && !isDM && (
+          {thread.usage && model && (
+            <SessionUsage usage={thread.usage} model={model} />
+          )}
+          {!work && !isDM && onStart && (
             // Same rule as the thread panel (issue #15): while the request card in the conversation
             // is open, this button yields to it — disabled + tooltip. Wrapper carries the title so
             // the disabled button's pointer-events:none doesn't swallow the hover.
@@ -316,14 +323,16 @@ export function FocusView({
           >
             {wbOpen ? <PanelRightCloseIcon /> : <PanelRightOpenIcon />}
           </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            title="Exit focus"
-            onClick={onBack}
-          >
-            <Minimize2Icon />
-          </Button>
+          {onBack && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              title="Exit focus"
+              onClick={onBack}
+            >
+              <Minimize2Icon />
+            </Button>
+          )}
         </div>
       </header>
 
@@ -352,7 +361,7 @@ export function FocusView({
                     last={i === thread.replies.length - 1}
                     onRetry={onRetry}
                     onOpen={pickTab}
-                    pending={pending}
+                    pending={pendingSteers}
                     cards={
                       <>
                         <ReplyCards
@@ -384,7 +393,7 @@ export function FocusView({
                   />
                 ) : (
                   <Fragment key={r.id ?? i}>
-                    {!running && (
+                    {!running && onRewind && (
                       <Checkpoint className="text-xs">
                         <CheckpointIcon className="size-3.5" />
                         <CheckpointTrigger
@@ -411,7 +420,7 @@ export function FocusView({
             {/* Not-sent tray / plan tray / steer chips grow the area below the conversation;
                 re-stick so everything stays visible without scrolling (issue #15). */}
             <ConversationKeepBottom
-              signal={`${queue.length}:${todos.length}:${pending.length}:${running}:${planOpen}`}
+              signal={`${queue.length}:${todos.length}:${pendingSteers.length}:${running}:${planOpen}`}
             />
           </Conversation>
 

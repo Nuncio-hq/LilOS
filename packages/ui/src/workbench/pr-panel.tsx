@@ -55,9 +55,11 @@ export function PrPanel({
   lead?: Employee;
   session: string;
   human: HumanFn;
-  onComment: (t: string) => void;
-  onMerge: () => void;
-  say: (t: string) => void;
+  /* Controls render only when their handler is passed (issue #19): no onMerge → no merge row,
+     no onComment → no comment form, no say → no toast-only buttons/checkbox. */
+  onComment?: (t: string) => void;
+  onMerge?: () => void;
+  say?: (t: string) => void;
 }) {
   const [tab, setTab] = useState<PrTab>("description");
   const [draft, setDraft] = useState("");
@@ -104,20 +106,22 @@ export function PrPanel({
               title="Copy PR link"
               onClick={() => {
                 navigator.clipboard?.writeText(url);
-                say("PR link copied");
+                say?.("PR link copied");
               }}
             >
               <CopyIcon />
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground"
-              onClick={() => say(`open ${url}`)}
-            >
-              GitHub
-              <ArrowUpRightIcon />
-            </Button>
+            {say && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                onClick={() => say(`open ${url}`)}
+              >
+                GitHub
+                <ArrowUpRightIcon />
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -226,7 +230,7 @@ export function PrPanel({
               </div>
             </div>
           )}
-          {!merged && (
+          {!merged && onMerge && (
             <div className="flex items-center gap-2 border-t bg-muted/30 px-3.5 py-2.5">
               <Button
                 size="sm"
@@ -379,7 +383,7 @@ export function PrPanel({
                     </span>
                   </div>
                   <p className="mt-1 leading-6 text-foreground/90">{c.text}</p>
-                  {c.monitor && (
+                  {c.monitor && say && (
                     <label className="mt-2 flex items-center gap-2 text-[13px] text-muted-foreground">
                       <input
                         type="checkbox"
@@ -399,28 +403,30 @@ export function PrPanel({
                 </div>
               </div>
             ))}
-            <form
-              className="space-y-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (draft.trim()) {
-                  onComment(draft.trim());
-                  setDraft("");
-                }
-              }}
-            >
-              <Textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Add a comment… (Builder picks it up in this session)"
-                className="min-h-20 text-[14px]"
-              />
-              <div className="flex justify-end">
-                <Button size="sm" type="submit" disabled={!draft.trim()}>
-                  Comment
-                </Button>
-              </div>
-            </form>
+            {onComment && (
+              <form
+                className="space-y-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (draft.trim()) {
+                    onComment(draft.trim());
+                    setDraft("");
+                  }
+                }}
+              >
+                <Textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  placeholder="Add a comment… (Builder picks it up in this session)"
+                  className="min-h-20 text-[14px]"
+                />
+                <div className="flex justify-end">
+                  <Button size="sm" type="submit" disabled={!draft.trim()}>
+                    Comment
+                  </Button>
+                </div>
+              </form>
+            )}
           </div>
         )}
       </div>

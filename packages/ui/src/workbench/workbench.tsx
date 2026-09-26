@@ -92,20 +92,22 @@ export function Workbench({
   tab: WbTab;
   setTab: (t: WbTab) => void;
   onClose: () => void;
-  onStart: () => void;
+  onStart?: () => void;
   /** True while the "asks to start work" card is open: it is the single entry point (issue #15). */
   startYields?: boolean;
-  onSend: (t: string) => void;
-  say: (t: string) => void;
-  repoFiles: string[];
+  onSend?: (t: string) => void;
+  say?: (t: string) => void;
+  repoFiles?: string[];
   human: HumanFn;
-  onPrComment: (t: string) => void;
-  onPrMerge: () => void;
+  onPrComment?: (t: string) => void;
+  onPrMerge?: () => void;
 }) {
   const a = sessionArtifacts(thread);
   const [sel, setSel] = useState<string | null>(null);
   const changed = new Map(a.diffs.map((d) => [d.path, d]));
-  const tree = buildTree([...new Set([...repoFiles, ...changed.keys()])]);
+  const tree = buildTree([
+    ...new Set([...(repoFiles ?? []), ...changed.keys()]),
+  ]);
   const folders = new Set<string>();
   a.diffs.forEach((d) => {
     d.path
@@ -203,15 +205,23 @@ export function Workbench({
                     work gives {lead?.name ?? "the employee"} a ticket +
                     worktree.
                   </p>
-                  <span
-                    className="inline-flex"
-                    title={startYields ? "Answer the request below" : undefined}
-                  >
-                    <Button size="sm" onClick={onStart} disabled={startYields}>
-                      <PlayIcon />
-                      Start work
-                    </Button>
-                  </span>
+                  {onStart && (
+                    <span
+                      className="inline-flex"
+                      title={
+                        startYields ? "Answer the request below" : undefined
+                      }
+                    >
+                      <Button
+                        size="sm"
+                        onClick={onStart}
+                        disabled={startYields}
+                      >
+                        <PlayIcon />
+                        Start work
+                      </Button>
+                    </span>
+                  )}
                 </>
               )}
             </div>
@@ -312,7 +322,7 @@ export function Workbench({
                 if (changed.has(p)) {
                   setSel(p);
                   setTab("changes");
-                } else say(`${p} · unchanged in this session`);
+                } else say?.(`${p} · unchanged in this session`);
               }}
               className="border-0 text-xs"
             >
@@ -360,12 +370,14 @@ export function Workbench({
           className="rounded-none border-0"
         >
           <WebPreviewNavigation className="p-1.5">
-            <WebPreviewNavigationButton
-              tooltip="Reload"
-              onClick={() => say("Reload (prototype)")}
-            >
-              <RefreshCcwIcon className="size-4" />
-            </WebPreviewNavigationButton>
+            {say && (
+              <WebPreviewNavigationButton
+                tooltip="Reload"
+                onClick={() => say("Reload (prototype)")}
+              >
+                <RefreshCcwIcon className="size-4" />
+              </WebPreviewNavigationButton>
+            )}
             <WebPreviewUrl />
           </WebPreviewNavigation>
           <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground text-xs">
@@ -373,17 +385,19 @@ export function Workbench({
             <p>
               No dev server running in <span className="font-mono">{cwd}</span>.
             </p>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                onSend(
-                  "Start the dev server in the background and give me the URL",
-                )
-              }
-            >
-              Ask {lead?.name ?? "employee"} to run pnpm dev
-            </Button>
+            {onSend && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  onSend(
+                    "Start the dev server in the background and give me the URL",
+                  )
+                }
+              >
+                Ask {lead?.name ?? "employee"} to run pnpm dev
+              </Button>
+            )}
           </div>
         </WebPreview>
       </TabsContent>

@@ -122,8 +122,10 @@ export function NotSentTray({
   onRemove,
 }: {
   items: string[];
-  onSend: (i: number) => void;
-  onRemove: (i: number) => void;
+  /* Each action renders only with its handler (issue #19); without both the tray is
+     still shown — the items and the "not sent" label are information, not controls. */
+  onSend?: (i: number) => void;
+  onRemove?: (i: number) => void;
 }) {
   if (!items.length) return null;
   return (
@@ -147,32 +149,36 @@ export function NotSentTray({
             >
               {plain(q)}
             </span>
-            <button
-              type="button"
-              onClick={() => onSend(i)}
-              data-notsent-send={i}
-              className="shrink-0 rounded bg-blue-600 px-2 py-0.5 font-medium text-white hover:bg-blue-700"
-            >
-              Send
-            </button>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      onClick={() => onRemove(i)}
-                      aria-label="Remove"
-                      data-notsent-remove={i}
-                      className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
-                    />
-                  }
-                >
-                  <Trash2Icon className="size-3.5" />
-                </TooltipTrigger>
-                <TooltipContent>Remove</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            {onSend && (
+              <button
+                type="button"
+                onClick={() => onSend(i)}
+                data-notsent-send={i}
+                className="shrink-0 rounded bg-blue-600 px-2 py-0.5 font-medium text-white hover:bg-blue-700"
+              >
+                Send
+              </button>
+            )}
+            {onRemove && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        onClick={() => onRemove(i)}
+                        aria-label="Remove"
+                        data-notsent-remove={i}
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                      />
+                    }
+                  >
+                    <Trash2Icon className="size-3.5" />
+                  </TooltipTrigger>
+                  <TooltipContent>Remove</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </li>
         ))}
       </ul>

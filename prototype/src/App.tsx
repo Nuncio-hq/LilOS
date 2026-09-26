@@ -636,8 +636,8 @@ export default function App() {
 
   const threadPanel = openThread?.thread ? (
     <ThreadView
-      root={openThread} thread={openThread.thread} channelName={channel.dm ? `DM · ${channel.name}` : `#${channel.name}`}
-      emp={emp} human={human} resolved={resolved} setResolved={setResolved} focus={focus}
+      root={openThread} thread={openThread.thread} channel={channel}
+      emp={emp} human={human} resolved={resolved} setResolved={setResolved}
       onFocus={() => setFocus(!focus)}
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
       running={threadRunning(openThread)} onSend={(t) => sendInThread(openThread, t)} onStop={() => stopTurn(openThread.id)}
