@@ -32,6 +32,10 @@ export interface HarnessConfig {
     | { kind: "fake"; tick?: number }
     | { kind: "hermes"; provider?: string; model?: string }
     | { kind: "url"; url: string };
+  /** ws port of the client-facing session feed (read-only engine surface). */
+  feedPort: number;
+  /** Capability ids hidden from clients and disabled in the harness driver. */
+  hideCaps: string[];
 }
 
 export const DEFAULT_RELAY_URL = "ws://127.0.0.1:4577/ws";
@@ -76,6 +80,11 @@ export function resolveHarnessConfig(
     homeDir,
     workdir: env.LILOS_WORKDIR ?? join(homeDir, "work"),
     engine,
+    feedPort: Number(env.LILOS_FEED_PORT ?? 4581),
+    hideCaps: (env.LILOS_HIDE_CAPS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
   };
 }
 

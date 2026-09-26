@@ -383,14 +383,6 @@ describe("workspace harness", () => {
       expect(newRef).not.toBeNull();
       expect(newRef).not.toBe(engineRef);
 
-      await waitFor(async () => {
-        const { conversations } = await w.user.request<{
-          conversations: { id: string; engineRef: string | null }[];
-        }>("conversations.list", {});
-        const c = conversations.find((x) => x.id === conversation.id);
-        return c?.engineRef === newRef ? newRef : undefined;
-      }, "engineRef rebind");
-
       await postMessage(w.user, channel.id, conversation.id, "one more thing");
       const answers = await waitFor(async () => {
         const { messages } = await w.user.request<{ messages: AppMessage[] }>(
@@ -401,6 +393,18 @@ describe("workspace harness", () => {
         return list.length >= 2 ? list : undefined;
       }, "second answer after ref rotation");
       expect(answers.length).toBeGreaterThanOrEqual(2);
+
+      // The rotated ref is the engine's durable resume token; the transport
+      // sessionId stays stable across rotations (contracts/engine/events.ts),
+      // so the published engineRef — resolved through `events.since` — must
+      // not move. The rebind lands on the internal binding instead.
+      {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        const c = conversations.find((x) => x.id === conversation.id);
+        expect(c?.engineRef).toBe(engineRef);
+      }
     } finally {
       await w.cleanup();
     }
@@ -840,6 +844,7 @@ describe("employee lifecycle over the harness (#29)", () => {
       }>("agents.list", {});
       expect(agents.map((a) => a.id).sort()).toEqual([
         "builder",
+        "default",
         "marketer",
         "reviewer",
       ]);

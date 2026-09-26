@@ -153,6 +153,7 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
     };
     expect(agents.map((a) => a.id).sort()).toEqual([
       "builder",
+      "default",
       "marketer",
       "reviewer",
     ]);

@@ -30,7 +30,7 @@ export function FirstRun({
     { label: "Connect to the local relay", done: "Connected · local relay" },
     {
       label: "Add your first employee",
-      done: `${employee.id} · ready`,
+      done: `${employee.name} · ready`,
     },
   ];
   return (

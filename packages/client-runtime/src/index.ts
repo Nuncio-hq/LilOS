@@ -6,6 +6,13 @@ export {
   RelayError,
 } from "./client";
 export {
+  EngineClient,
+  type EngineClientOptions,
+  type EngineConnectionState,
+  EngineError,
+  type SessionFeedState,
+} from "./engine";
+export {
   defaultSocketFactory,
   type RelaySocket,
   SOCKET_OPEN,
@@ -17,3 +24,11 @@ export {
   type StatusRow,
   toStatusComponents,
 } from "./status";
+export {
+  reduceSessionEvents,
+  type SessionModel,
+  type TurnModel,
+  type TurnPhase,
+  type TurnRequest,
+  type TurnStep,
+} from "./turn-model";

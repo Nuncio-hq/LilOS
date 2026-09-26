@@ -9,13 +9,15 @@ import {
   plistFileName,
 } from "@lilos/background";
 import { RelayClient } from "@lilos/client-runtime";
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, shell } from "electron";
 import { diskVersionStore, helperServiceControl } from "./control";
 
 /**
- * LilOS shell: registers the relay + harness launch agents (AC-1), shows live
- * status, and reconnects to the relay on every launch (AC-2). Quitting never
- * warns — launchd owns the services, so work continues without the app.
+ * LilOS shell: registers the relay + harness launch agents (AC-1/#34),
+ * reconnects to the relay on every launch (AC-2/#34), then opens the app
+ * window — apps/web, talking to that relay and the harness feed (#27).
+ * Quitting never warns — launchd owns the services, so work continues
+ * without the app.
  */
 
 // `bun build` bakes __dirname to the source path, so resolve locations from
@@ -46,6 +48,20 @@ const relayPort = Number(process.env.LILOS_RELAY_PORT ?? "4577");
 const relayHost = process.env.LILOS_RELAY_HOST ?? "127.0.0.1";
 const relayUrl = `ws://${relayHost}:${relayPort}/ws`;
 const tokenPath = join(relayHome, "relay-token");
+
+// Harness feed ws — the read-only channel the app UI watches sessions on
+// (apps/harness/src/feed.ts, bound on LILOS_FEED_PORT).
+const feedPort = Number(process.env.LILOS_FEED_PORT ?? "4581");
+const engineWs =
+  process.env.LILOS_ENGINE_WS ?? `ws://${relayHost}:${feedPort}/ws`;
+
+function readRelayToken(): string {
+  try {
+    return readFileSync(tokenPath, "utf8").trim();
+  } catch {
+    return "";
+  }
+}
 
 let serviceReports: AgentReport[] = [];
 let lastEnsureError: string | undefined;
@@ -85,14 +101,14 @@ let connectTimer: ReturnType<typeof setTimeout> | undefined;
 let connectAttempt = 0;
 
 function connectRelay(): void {
-  if (!existsSync(tokenPath)) {
+  const token = readRelayToken();
+  if (!token) {
     relayNote = `no token at ${tokenPath} (relay not installed yet)`;
     // The relay agent may still be starting — retry so the app comes up clean
     // on first launch right after registration.
     connectTimer = setTimeout(connectRelay, 3_000);
     return;
   }
-  const token = readFileSync(tokenPath, "utf8").trim();
   relay = new RelayClient({
     url: relayUrl,
     token,
@@ -154,6 +170,68 @@ async function statusSnapshot() {
   };
 }
 
+/* ------------------------------ windows --------------------------------- */
+
+/**
+ * The desktop app URL: explicit env override, else the packaged web bundle
+ * (Contents/Resources/app/web), else a plain file from a sibling build of
+ * apps/web, else the dev server on http://localhost:5200.
+ */
+function appUrl(): { file: string } | { url: string } {
+  if (process.env.LILOS_WEB_FILE) return { file: process.env.LILOS_WEB_FILE };
+  if (process.env.LILOS_WEB_URL) return { url: process.env.LILOS_WEB_URL };
+  const bundled = join(APP_DIR, "web", "index.html");
+  if (existsSync(bundled)) return { file: bundled };
+  return { url: "http://localhost:5200" };
+}
+
+function createAppWindow(): void {
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 840,
+    title: "LilOS",
+    webPreferences: {
+      preload: join(UI_DIR, "preload.cjs"),
+      contextIsolation: true,
+      sandbox: true,
+      // The renderer reads relay/engine endpoints + token from argv.
+      additionalArguments: [
+        `--lilos-relay=${relayUrl}`,
+        `--lilos-token=${readRelayToken()}`,
+        `--lilos-engine=${engineWs}`,
+      ],
+    },
+  });
+  // Never open a new window; external links go to the browser.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  const target = appUrl();
+  if ("file" in target) void win.loadFile(target.file);
+  else void win.loadURL(target.url);
+}
+
+let statusWin: BrowserWindow | undefined;
+
+/** Status surface (#34 AC-2): launch agents + live relay connection. */
+function createStatusWindow(): void {
+  if (statusWin) {
+    statusWin.focus();
+    return;
+  }
+  statusWin = new BrowserWindow({
+    width: 760,
+    height: 560,
+    title: "LilOS Status",
+    webPreferences: { preload: join(UI_DIR, "preload.cjs") },
+  });
+  statusWin.on("closed", () => {
+    statusWin = undefined;
+  });
+  void statusWin.loadFile(join(UI_DIR, "index.html"));
+}
+
 /* -------------------------------- app ----------------------------------- */
 
 async function statusWithLiveAgents() {
@@ -181,17 +259,31 @@ ipcMain.handle("lilos:ensure", () =>
   ensureServices().then(statusWithLiveAgents),
 );
 ipcMain.handle("lilos:open-settings", openLoginItemsSettings);
+ipcMain.handle("lilos:open-status", createStatusWindow);
 
 app.whenReady().then(async () => {
   await ensureServices();
   connectRelay();
-  const win = new BrowserWindow({
-    width: 760,
-    height: 560,
-    title: "LilOS",
-    webPreferences: { preload: join(UI_DIR, "preload.cjs") },
-  });
-  void win.loadFile(join(UI_DIR, "index.html"));
+  // One menu item: the #34 status window stays one click away.
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: "LilOS",
+        submenu: [
+          {
+            label: "Service Status",
+            accelerator: "CmdOrCtrl+,",
+            click: createStatusWindow,
+          },
+          { type: "separator" },
+          { role: "quit" },
+        ],
+      },
+      { label: "Edit", role: "editMenu" },
+      { label: "View", role: "viewMenu" },
+    ]),
+  );
+  createAppWindow();
 });
 
 // Quitting is the AC-2 point: no warning, work continues in the agents.

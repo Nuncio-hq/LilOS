@@ -1,0 +1,32 @@
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import "./index.css";
+import { App } from "./app";
+import { loadConfig } from "./lib/config";
+import {
+  bootError,
+  bootRuntime,
+  watchAsks,
+  watchSessionFeeds,
+} from "./lib/runtime";
+
+async function main() {
+  const el = document.getElementById("root");
+  if (!el) throw new Error("no #root");
+  const root = createRoot(el);
+  try {
+    const cfg = await loadConfig();
+    await bootRuntime(cfg);
+    watchSessionFeeds();
+    watchAsks();
+  } catch (e) {
+    bootError.set((e as Error).message);
+  }
+  root.render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}
+
+void main();
