@@ -105,14 +105,15 @@ describe("AC-1 (#33) system.status probes each leg with state + reason", () => {
     expect(leg(status, "model").reason).toContain("fake-model-1");
   });
 
-  it("harness leg down when nothing registered; engine + model report why", async () => {
+  it("harness leg down when nothing registered; engine + model are blocked", async () => {
     const relay = newRelay();
     const app = await helloed(relay);
     const status = await systemStatus(app.connection, app.frames);
     expect(leg(status, "relay").state).toBe("ok");
     expect(leg(status, "harness").state).toBe("down");
-    expect(leg(status, "engine").state).toBe("down");
-    expect(leg(status, "model").state).toBe("down");
+    // Downstream legs are blocked (#53), not down — they aren't broken.
+    expect(leg(status, "engine").state).toBe("blocked");
+    expect(leg(status, "model").state).toBe("blocked");
     expect(leg(status, "engine").reason.toLowerCase()).toContain("harness");
   });
 
@@ -153,8 +154,24 @@ describe("AC-1 (#33) system.status probes each leg with state + reason", () => {
     host.connection.closed();
     status = await systemStatus(app.connection, app.frames);
     expect(leg(status, "harness").state).toBe("down");
+    // The engine/model legs did not break — they wait on the harness (#53).
+    expect(leg(status, "engine").state).toBe("blocked");
+    expect(leg(status, "model").state).toBe("blocked");
+  });
+
+  it("AC-2 (#53) a failed engine blocks the model leg instead of downing it", async () => {
+    const relay = newRelay();
+    const host = await registerHarness(relay);
+    const app = await helloed(relay);
+    await host.connection.receive(
+      req("harness.report", {
+        engine: { state: "failed", detail: "exit code 1" },
+      }),
+    );
+    const status = await systemStatus(app.connection, app.frames);
     expect(leg(status, "engine").state).toBe("down");
-    expect(leg(status, "model").state).toBe("down");
+    expect(leg(status, "model").state).toBe("blocked");
+    expect(leg(status, "model").reason.toLowerCase()).toContain("engine");
   });
 
   it("engine running without a reported model marks the model leg degraded", async () => {

@@ -332,6 +332,8 @@ export const StatusComponentState = z.enum([
   "ok",
   "connecting",
   "degraded",
+  /** Down only because an upstream leg is down — waiting, not broken (#53). */
+  "blocked",
   "down",
 ]);
 export type StatusComponentState = z.infer<typeof StatusComponentState>;

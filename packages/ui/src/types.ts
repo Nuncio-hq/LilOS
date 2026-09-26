@@ -232,13 +232,22 @@ export type Msg =
 
 /* The chain a session needs: relay → harness → engine → model. One line each for the
    status surface; the app builds the rows (and the Copy diagnostics text) from real
-   health checks later — this shape is the contract. */
-export type ComponentState = "ok" | "connecting" | "degraded" | "down";
+   health checks later — this shape is the contract. `blocked` (#53) means the leg is
+   down only because an upstream leg is down — neutral, and it does not count as an
+   issue. `hint` is the plain next step; `detail` the raw technical line shown collapsed. */
+export type ComponentState =
+  | "ok"
+  | "connecting"
+  | "degraded"
+  | "blocked"
+  | "down";
 export type StatusComponent = {
   id: "relay" | "harness" | "engine" | "model";
   label: string;
   state: ComponentState;
   reason: string;
+  hint?: string;
+  detail?: string;
 };
 
 /* Sidebar badge per employee: running turns (blue) / turns waiting on Oscar (amber). */

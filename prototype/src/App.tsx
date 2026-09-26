@@ -298,22 +298,22 @@ const STATUS: Record<PreviewScenario, StatusComponent[]> = {
   ],
   loading: [],
   reconnecting: [
-    { id: "relay", label: "Relay", state: "connecting", reason: "Connection lost — retrying every 2s · last seen 14s ago" },
-    { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
-    { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
-    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].split(" (")[0]} · responding` },
+    { id: "relay", label: "Relay", state: "connecting", reason: "Reconnecting to relay." },
+    { id: "harness", label: "Harness", state: "blocked", reason: "Waiting for the relay." },
+    { id: "engine", label: "Engine", state: "blocked", reason: "Waiting for the relay." },
+    { id: "model", label: "Model", state: "blocked", reason: "Waiting for the relay." },
   ],
   "harness-down": [
     { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
-    { id: "harness", label: "Harness", state: "down", reason: "Process exited · last heartbeat 2m ago" },
-    { id: "engine", label: "Engine", state: "degraded", reason: "Hermes reachable, no harness to run it" },
-    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].split(" (")[0]} · responding` },
+    { id: "harness", label: "Harness", state: "down", reason: "Harness lost its connection.", hint: "It usually restarts on its own; if not, start it again.", detail: "harness disconnected 2m ago" },
+    { id: "engine", label: "Engine", state: "blocked", reason: "Waiting for the harness." },
+    { id: "model", label: "Model", state: "blocked", reason: "Waiting for the harness." },
   ],
   "engine-down": [
     { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
     { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
-    { id: "engine", label: "Engine", state: "down", reason: "Hermes not responding · IPC timeout after 5s" },
-    { id: "model", label: "Model", state: "degraded", reason: "Last turn unanswered · engine unreachable" },
+    { id: "engine", label: "Engine", state: "down", reason: "Engine couldn't start — the engine program wasn't found.", hint: "Check the engine path in Settings, then retry.", detail: "engine hermes failed to start x5: Error: spawn /nonexistent/lilos-engine ENOENT" },
+    { id: "model", label: "Model", state: "blocked", reason: "Waiting for the engine." },
   ],
   "model-error": [
     { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
@@ -558,16 +558,21 @@ export default function App() {
     return feed.map((m) => (m === last && m.kind === "msg" && m.thread ? { ...m, thread: { ...m.thread, alert: al } } : m))
   }, [feed, scenario, alertOff, view.kind])
 
-  /* Live-mode status banner (#33): a version mismatch or a downed leg surfaces
-     here; otherwise the scenario banner drives the preview. */
+  /* Live-mode status banner (#33/#53): a version mismatch or a downed leg surfaces
+     here with the PLAIN reason (never the raw error) plus a View status action that
+     opens the dialog. `blocked` legs never raise a banner — the upstream down leg
+     already did. Otherwise the scenario banner drives the preview. */
   const liveBanner = useMemo<React.ReactNode>(() => {
     if (!liveStatus) return null
+    const viewStatus = { label: "View status", onClick: () => setStatusOpen(true) }
     if (liveStatus.mismatch)
-      return <StatusBanner tone="red">Version mismatch — update the {liveStatus.mismatch.update}. {liveStatus.mismatch.detail}</StatusBanner>
+      return <StatusBanner tone="red" action={viewStatus}>Version mismatch — update the {liveStatus.mismatch.update}.</StatusBanner>
     const down = liveStatus.components.find((c) => c.state === "down")
-    if (down) return <StatusBanner tone="red">{down.label} down — {down.reason}</StatusBanner>
+    if (down) return <StatusBanner tone="red" action={viewStatus}>{down.reason}</StatusBanner>
     const degraded = liveStatus.components.find((c) => c.state === "degraded")
-    if (degraded) return <StatusBanner tone="amber">{degraded.label} degraded — {degraded.reason}</StatusBanner>
+    if (degraded) return <StatusBanner tone="amber" action={viewStatus}>{degraded.reason}</StatusBanner>
+    const connecting = liveStatus.components.find((c) => c.id === "relay" && c.state === "connecting")
+    if (connecting) return <StatusBanner tone="amber">Lost the connection to the local relay — reconnecting. Messages queue until it's back.</StatusBanner>
     return null
   }, [liveStatus])
 
@@ -578,9 +583,9 @@ export default function App() {
       case "reconnecting":
         return <StatusBanner tone="amber">Lost the connection to the local relay — reconnecting every 2s. Messages queue until it's back.</StatusBanner>
       case "harness-down":
-        return <StatusBanner tone="red">Harness down — employees can't run tools or touch files until it restarts.</StatusBanner>
+        return <StatusBanner tone="red" action={{ label: "View status", onClick: () => setStatusOpen(true) }}>Harness down — employees can't run tools or touch files until it restarts.</StatusBanner>
       case "engine-down":
-        return <StatusBanner tone="red">Engine down — Hermes isn't responding. Turns pause; your drafts are safe.</StatusBanner>
+        return <StatusBanner tone="red" action={{ label: "View status", onClick: () => setStatusOpen(true) }}>Engine down — Hermes isn't responding. Turns pause; your drafts are safe.</StatusBanner>
       case "version-mismatch":
         return <StatusBanner tone="red" action={{ label: "Copy update command", onClick: () => { void navigator.clipboard.writeText("brew upgrade lilos"); say("Copied: brew upgrade lilos") } }}>Protocol v2 required — this app speaks v1. Update LilOS to reconnect to the local relay.</StatusBanner>
       default:

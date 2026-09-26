@@ -1,10 +1,13 @@
 import {
   ActivityIcon,
   CheckCircle2Icon,
+  CircleMinusIcon,
   CopyIcon,
   CpuIcon,
   FileWarningIcon,
+  LoaderCircleIcon,
   RadioIcon,
+  TriangleAlertIcon,
   WrenchIcon,
   XCircleIcon,
   XIcon,
@@ -16,12 +19,15 @@ import type { ComponentState, StatusComponent } from "../types";
 
 /* System status: the chain a session needs — relay → harness → engine → model — each with
    a state and a one-line reason. StatusRow sits at the bottom of the sidebar and opens
-   StatusDialog. The app passes rows + the diagnostics text; this file only renders. */
+   StatusDialog. The app passes rows + the diagnostics text; this file only renders.
+   `blocked` (#53): the leg waits on an upstream failure — neutral gray, and it never
+   counts as an issue in the summary. */
 
 const STATE_STYLE: Record<ComponentState, { dot: string; chip: string }> = {
   ok: { dot: "bg-emerald-500", chip: "text-emerald-700" },
   connecting: { dot: "bg-amber-500 animate-pulse", chip: "text-amber-700" },
   degraded: { dot: "bg-amber-500", chip: "text-amber-700" },
+  blocked: { dot: "bg-slate-400", chip: "text-slate-500" },
   down: { dot: "bg-red-500", chip: "text-red-700" },
 };
 
@@ -32,8 +38,27 @@ const COMPONENT_ICON = {
   model: FileWarningIcon,
 } as const;
 
+const STATE_ICON: Record<
+  ComponentState,
+  { icon: typeof CheckCircle2Icon; className: string }
+> = {
+  ok: { icon: CheckCircle2Icon, className: "text-emerald-600" },
+  connecting: {
+    icon: LoaderCircleIcon,
+    className: "animate-spin text-amber-600",
+  },
+  degraded: { icon: TriangleAlertIcon, className: "text-amber-600" },
+  blocked: { icon: CircleMinusIcon, className: "text-slate-400" },
+  down: { icon: XCircleIcon, className: "text-red-600" },
+};
+
+/** A leg counts as an issue only when it is itself unhealthy — `blocked`
+    just waits on a leg upstream of it (#53). */
+const isIssue = (c: StatusComponent) =>
+  c.state !== "ok" && c.state !== "blocked";
+
 export function statusSummary(components: StatusComponent[]) {
-  const bad = components.filter((c) => c.state !== "ok");
+  const bad = components.filter(isIssue);
   return bad.length === 0
     ? "All systems normal"
     : `${bad.length} issue${bad.length > 1 ? "s" : ""} · ${bad[0].label} ${bad[0].state}`;
@@ -46,7 +71,7 @@ export function StatusRow({
   components: StatusComponent[];
   onOpen: () => void;
 }) {
-  const bad = components.filter((c) => c.state !== "ok");
+  const bad = components.filter(isIssue);
   const worst = bad[0];
   const state: ComponentState = worst?.state ?? "ok";
   return (
@@ -110,7 +135,7 @@ export function StatusDialog({
             {components.map((c) => {
               const Icon = COMPONENT_ICON[c.id];
               const st = STATE_STYLE[c.state];
-              const Down = c.state === "down" ? XCircleIcon : CheckCircle2Icon;
+              const StateIcon = STATE_ICON[c.state].icon;
               return (
                 <div key={c.id} className="flex items-start gap-3 px-4 py-3">
                   <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -126,18 +151,31 @@ export function StatusDialog({
                         <span className={cn("size-1.5 rounded-full", st.dot)} />
                         {c.state}
                       </span>
-                      <Down
+                      <StateIcon
                         className={cn(
                           "ml-auto size-4 shrink-0",
-                          c.state === "down"
-                            ? "text-red-600"
-                            : "text-emerald-600",
+                          STATE_ICON[c.state].className,
                         )}
                       />
                     </div>
                     <p className="mt-0.5 text-muted-foreground text-xs">
                       {c.reason}
                     </p>
+                    {c.hint && (
+                      <p className="mt-0.5 text-foreground/80 text-xs">
+                        {c.hint}
+                      </p>
+                    )}
+                    {c.detail && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer select-none text-muted-foreground text-xs">
+                          Details
+                        </summary>
+                        <pre className="mt-1 whitespace-pre-wrap break-all rounded bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                          {c.detail}
+                        </pre>
+                      </details>
+                    )}
                   </div>
                 </div>
               );
