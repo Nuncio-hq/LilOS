@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import process from "node:process";
 import { LILOS_TOOLS } from "@lilos/contracts/harness";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -55,6 +56,20 @@ export async function serveMcpStdio(backend: SurfaceBackend): Promise<void> {
 export async function serveMcpStdioFromEnv(
   env: Record<string, string | undefined>,
 ): Promise<void> {
+  // Optional spawn marker: when set, append one line proving this process was
+  // spawned (by whom + which session). The live check uses it to confirm an
+  // engine really launched `lilos mcp` from session.start's mcpServers.
+  const markerLog = env.LILOS_MCP_SPAWN_LOG;
+  if (markerLog) {
+    try {
+      appendFileSync(
+        markerLog,
+        `${new Date().toISOString()} session=${env.LILOS_SESSION ?? "?"} pid=${process.pid}\n`,
+      );
+    } catch {
+      // best-effort marker only
+    }
+  }
   const resolved = surfacesEnv(env);
   if ("error" in resolved) {
     process.stderr.write(`lilos mcp: ${resolved.error}\n`);
