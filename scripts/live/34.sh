@@ -18,9 +18,9 @@
 #   - `launchctl print` shows relay+harness registered as Login-Item agents
 #     (AC-1) — the quit/reboot legs themselves are manual (see the PR body).
 #
-# Order matters: the AC-4 sleep leg runs while exactly one conversation is
-# bound, so the fake engine's per-process session ids (s1, s2, ...) can't
-# collide during rebind. Prints one PASS/FAIL line per criterion.
+# engine-fake namespaces session ids per process start (#61: s-<run>-<n>), so
+# rebinds after the AC-4/AC-5 kills can never collide with the old process's
+# ids. Prints one PASS/FAIL line per criterion.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 

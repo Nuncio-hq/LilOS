@@ -104,6 +104,14 @@ export interface FakeEngineOptions {
    * answers METHOD_NOT_FOUND.
    */
   capabilities?: Partial<Record<KnownCapability, boolean>>;
+  /**
+   * Session-id namespace for this engine run, defaults to a random token per
+   * instance: a restarted process can never re-issue an id a previous run
+   * already used (#61 — an `events.since` on a stale id then misses instead of
+   * aliasing a stranger's session). Pass a fixed value when a test needs
+   * deterministic ids.
+   */
+  sessionNamespace?: string;
 }
 
 /**
@@ -121,6 +129,7 @@ export class FakeEngine {
     SEED_AGENTS.map((a) => [a.id, a]),
   );
   private listeners = new Set<(e: EngineEvent) => void>();
+  private readonly sessionNamespace: string;
   private sessionCounter = 0;
   private refCounter = 0;
   private turnCounter = 0;
@@ -129,6 +138,7 @@ export class FakeEngine {
   constructor(opts: FakeEngineOptions = {}) {
     this.tick = opts.tick ?? 25;
     this.caps = opts.capabilities ?? {};
+    this.sessionNamespace = opts.sessionNamespace ?? randomNamespace();
   }
 
   private readonly caps: Partial<Record<KnownCapability, boolean>>;
@@ -260,7 +270,7 @@ export class FakeEngine {
         RPC_ERRORS.AGENT_NOT_FOUND,
         `no agent ${p.agent} — hire it via agents.create first`,
       );
-    const id = `s${++this.sessionCounter}`;
+    const id = `s-${this.sessionNamespace}-${++this.sessionCounter}`;
     const s: FakeSession = {
       ref: id,
       id,
@@ -738,3 +748,6 @@ export class FakeEngine {
 class Interrupted extends Error {}
 
 const words = (t: string) => t.split(/(?<=\s)/);
+
+/** Runtime-neutral randomness (no process APIs — packages stay portable). */
+const randomNamespace = () => crypto.randomUUID().slice(0, 8);
