@@ -36,11 +36,28 @@ fi
 STUB_PORT=8399
 STUB_PID=""
 CONFIG_TOUCHED=""
+kill_stale_engine() {
+  # Orphans from a previous/aborted run (relay, harness, engine serve.ts and
+  # the `hermes serve` python backend — hermes refuses a second backend).
+  pkill -f "apps/harness/src/index.ts" 2>/dev/null
+  pkill -f "apps/harness/scripts/demo.ts" 2>/dev/null
+  pkill -f "apps/relay/src/index.ts" 2>/dev/null
+  pkill -f "packages/engine-hermes/scripts/serve.ts" 2>/dev/null
+  pkill -f "hermes_bootstrap.*serve --host" 2>/dev/null
+  true
+}
 cleanup() {
   [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null
   [ -n "$CONFIG_TOUCHED" ] && cp "$CONFIG_TOUCHED" ~/.hermes/config.yaml
+  kill_stale_engine
 }
 trap cleanup EXIT
+
+if pgrep -f "serve --host 127.0.0.1 --port" >/dev/null 2>&1; then
+  echo "note: a 'hermes serve' backend is already running; hermes refuses a second one — stopping it."
+  kill_stale_engine
+  sleep 1
+fi
 
 if [ "$LABEL" = "stub" ]; then
   bun scripts/live/openai-stub.ts "$STUB_PORT" >/tmp/openai-stub.log 2>&1 &

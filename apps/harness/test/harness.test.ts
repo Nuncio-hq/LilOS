@@ -215,6 +215,39 @@ describe("workspace harness", () => {
     }
   });
 
+  it("AC-1b hires the employee onto the engine before session.start", async () => {
+    const w = await setupWorld();
+    try {
+      // No `profile` on the employee: the engine has no agent named after it
+      // yet, so the harness must `agents.create` one or session.start fails.
+      const { employee } = await w.user.request<{ employee: { id: string } }>(
+        "employees.create",
+        { name: "Grace", role: "reviewer" },
+      );
+      const { channel } = await w.user.request<{
+        channel: { id: string };
+      }>("channels.openDm", { employeeId: employee.id });
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Summarize the repo layout",
+      });
+      const answer = await waitFor(async () => {
+        const { messages } = await w.user.request<{
+          messages: AppMessage[];
+        }>("messages.list", { channelId: channel.id, limit: 50 });
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+      }, "hired employee answer");
+      expect(answer.text.length).toBeGreaterThan(0);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("AC-4 round-trips an approval ask end to end", async () => {
     const w = await setupWorld();
     try {

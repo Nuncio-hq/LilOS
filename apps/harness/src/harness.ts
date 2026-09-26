@@ -13,6 +13,7 @@ import {
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
 import type {
+  AgentDescriptor,
   EngineEvent,
   EngineRequest,
   EventsSinceResult,
@@ -58,8 +59,15 @@ export interface HarnessOptions {
   /** Working directory engine sessions run in (a project repo or a work dir). */
   workdir: string;
   log: Logger;
-  /** Engine `session.start` params for an employee. */
-  sessionParamsFor?: (employee: Employee | undefined) => {
+  /**
+   * Engine `session.start` params for an employee. `agentId` is the
+   * engine-side agent the harness hired via `agents.create` (D-#8) —
+   * implementations should use it as `agent`.
+   */
+  sessionParamsFor?: (
+    employee: Employee | undefined,
+    agentId: string,
+  ) => {
     agent: string;
     model?: string;
   };
@@ -229,15 +237,16 @@ export class Harness {
     const employee = await this.resolveEmployee(conv);
     const conn = this.engine;
     if (!conn) return;
-    const started = await conn.request<{ sessionId: string }>(
+    const agent = await this.ensureAgent(conn, employee);
+    const started = await conn.request<{ sessionId: string; ref?: string }>(
       "session.start",
-      this.sessionParams(employee),
+      this.sessionParams(employee, agent),
     );
     this.unbind(binding);
     const rebound: SessionBinding = {
       ...binding,
       sessionId: started.sessionId,
-      ref: started.sessionId,
+      ref: started.ref ?? started.sessionId,
       lastSeq: 0,
       runningTurnId: undefined,
       textByTurn: new Map(),
@@ -391,15 +400,16 @@ export class Harness {
     }
 
     const employee = await this.resolveEmployee(conv);
-    const started = await conn.request<{ sessionId: string }>(
+    const agent = await this.ensureAgent(conn, employee);
+    const started = await conn.request<{ sessionId: string; ref?: string }>(
       "session.start",
-      this.sessionParams(employee),
+      this.sessionParams(employee, agent),
     );
     const binding: SessionBinding = {
       conversationId: conv.id,
       channelId,
       sessionId: started.sessionId,
-      ref: started.sessionId,
+      ref: started.ref ?? started.sessionId,
       lastSeq: 0,
       queue: [],
       textByTurn: new Map(),
@@ -660,9 +670,71 @@ export class Harness {
 
   /* ------------------------------- helpers ------------------------------ */
 
-  private sessionParams(employee: Employee | undefined) {
-    const base = this.opts.sessionParamsFor?.(employee) ?? {
-      agent: employee?.profile || employee?.name || "default",
+  /**
+   * The `agents` capability (D-#8): `session.start.agent` must be an
+   * engine-registered agent id, so the harness hires the LilOS employee onto
+   * the engine — `agents.list` for an existing profile, `agents.create`
+   * otherwise. Engines without the capability (the method errors) take the
+   * employee name verbatim.
+   */
+  private async ensureAgent(
+    conn: EngineConnection,
+    employee: Employee | undefined,
+  ): Promise<string> {
+    // `profile` is the employee's engine-agent handle; name is the fallback.
+    const preferred = employee?.profile || employee?.name || "default";
+    const want = preferred.toLowerCase();
+    try {
+      const list = async () =>
+        (await conn.request<{ agents: AgentDescriptor[] }>("agents.list", {}))
+          .agents;
+      // Engines may normalize agent ids (Hermes lowercases profile names),
+      // so match case-insensitively and always send back the engine's id.
+      const match = (agents: AgentDescriptor[]) =>
+        agents.find(
+          (a) =>
+            a.id === preferred ||
+            a.id.toLowerCase() === want ||
+            a.id === employee?.id ||
+            a.name.toLowerCase() === want,
+        );
+      const agents = await list();
+      const found = match(agents);
+      if (found) return found.id;
+      // Hire under the engine's default agent when it reports one — Hermes
+      // clones that profile (config, providers, skills) so the employee can
+      // actually run; engines ignoring `detail` are unaffected.
+      const cloneFrom =
+        agents.find((a) => a.detail?.isDefault === true)?.id ?? undefined;
+      const create = (model?: string) =>
+        conn.request<{ agent: AgentDescriptor }>("agents.create", {
+          name: preferred,
+          ...(employee?.instructions ? { soul: employee.instructions } : {}),
+          ...(model ? { model } : {}),
+          ...(cloneFrom ? { detail: { clone_from: cloneFrom } } : {}),
+        });
+      try {
+        return (await create(employee?.model || undefined)).agent.id;
+      } catch {
+        // The create may have partially succeeded (profile created but the
+        // response lookup failed on a normalized id) or raced — re-list
+        // before retrying unpinned.
+        const retry = match(await list());
+        if (retry) return retry.id;
+        return (await create()).agent.id;
+      }
+    } catch (error) {
+      this.opts.log.debug(
+        "agents capability unavailable; using employee name",
+        { error: String(error) },
+      );
+      return preferred;
+    }
+  }
+
+  private sessionParams(employee: Employee | undefined, agentId: string) {
+    const base = this.opts.sessionParamsFor?.(employee, agentId) ?? {
+      agent: agentId,
       ...(employee?.model ? { model: employee.model } : {}),
     };
     return { ...base, cwd: this.opts.workdir };
