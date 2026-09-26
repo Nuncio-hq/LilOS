@@ -39,6 +39,10 @@ const flag = (name: string) => args[args.indexOf(name) + 1];
 const noPr = () => fail('no pull requests found for branch "main"');
 
 switch (`${args[0]} ${args[1]}`) {
+  case "auth status": {
+    console.log("github.com\n  ✓ Logged in to github.com as fake-gh");
+    break;
+  }
   case "pr view": {
     if (!existsSync(viewPath)) noPr();
     process.stdout.write(readFileSync(viewPath, "utf8"));
@@ -67,6 +71,9 @@ switch (`${args[0]} ${args[1]}`) {
     const v = readView();
     if (v.state !== "OPEN")
       fail(`pull request #${v.number} is not mergeable (state ${v.state})`);
+    // Real `gh pr merge` refuses a conflicting PR the same way.
+    if (v.mergeable === "CONFLICTING")
+      fail(`pull request #${v.number} is not mergeable: conflicts with base`);
     writeView({
       ...v,
       state: "MERGED",

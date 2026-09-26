@@ -1,4 +1,12 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
+
+const repo = dirname(fileURLToPath(import.meta.url));
+/* The stateful fake `gh` (issue #37) goes on the dev server's PATH; the host
+   API shells out to it for forge.* calls and reads/writes e2e/.gh-fake. */
+const fakeGh = join(repo, "packages/host/test/fake-gh");
+const ghFakeDir = join(repo, "e2e/.gh-fake");
 
 /**
  * E2E smoke for the prototype: boots the vite dev server, loads the home
@@ -20,5 +28,10 @@ export default defineConfig({
     url: "http://127.0.0.1:5199",
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
+    env: {
+      PATH: `${fakeGh}:${process.env.PATH}`,
+      GH_FAKE_DIR: ghFakeDir,
+      GH_FAKE_LOG: join(ghFakeDir, "gh.log"),
+    },
   },
 });

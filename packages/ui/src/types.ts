@@ -93,6 +93,8 @@ export type Usage = {
 export type CheckRun = {
   name: string;
   status: "pending" | "passed" | "failed" | "skipped";
+  /** CI detail link when the forge reports one. */
+  url?: string;
 };
 export type PrComment = {
   from: string;
@@ -100,14 +102,18 @@ export type PrComment = {
   text: string;
   monitor?: boolean;
 };
-/* A pull request the employee opened from its worktree (terminal `gh pr create`). Not a Hermes contract:
-   the engine reads it back from GitHub (gh pr view --json …) and pushes updates on the session. */
+/** gh merge methods offered by the PR tab's confirmation (issue #37). */
+export type MergeMethod = "squash" | "merge" | "rebase";
+/* A pull request an employee opened from its worktree. Read back from the
+   forge by the host API (`forge.pr` → `gh pr view`), never by an engine. */
 export type PullRequest = {
   number: number;
   repo: string;
   title: string;
   body: string;
-  status: "open" | "merged";
+  status: "open" | "merged" | "closed";
+  /** GitHub mergeability when the forge reports it (issue #37). */
+  mergeable?: "mergeable" | "conflicting" | "unknown";
   merged?: { by: string; at: string; sha: string };
   author: string;
   base: string;
@@ -247,3 +253,26 @@ export type ModelOption = string;
 
 /* Workbench tab ids (Focus). */
 export type WbTab = "changes" | "files" | "terminal" | "preview" | "pr";
+
+/* Live host accessors for a session's real cwd (fs/git issue #11, forge #37).
+   An accessor resolves null when the host is unreachable → the caller falls
+   back to mock data; `forge.pr` resolving `{ pr: null }` is the host's real
+   answer "this checkout has no PR" (controls render only when handlers exist,
+   D-#19). */
+export type HostAccessors = {
+  tree: (cwd: string) => Promise<string[] | null>;
+  diff: (cwd: string) => Promise<Diff[] | null>;
+  read: (
+    cwd: string,
+    path: string,
+  ) => Promise<{
+    content: string;
+    binary: boolean;
+    truncated: boolean;
+  } | null>;
+  pr?: (cwd: string) => Promise<{ pr: PullRequest | null } | null>;
+  /** Posts a comment via `gh`; resolves the comment URL; throws on failure. */
+  prComment?: (cwd: string, body: string) => Promise<string>;
+  /** Merges via `gh`; resolves the re-read PR; throws on failure. */
+  prMerge?: (cwd: string, method: MergeMethod) => Promise<PullRequest>;
+};

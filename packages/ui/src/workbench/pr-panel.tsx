@@ -7,6 +7,7 @@ import {
   CircleXIcon,
   CopyIcon,
   GitMergeIcon,
+  GitPullRequestClosedIcon,
   GitPullRequestIcon,
   MessageSquareTextIcon,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import type {
   Employee,
   GitCommit,
   HumanFn,
+  MergeMethod,
   PullRequest,
 } from "../types";
 import { DiffStat, DiffView } from "./diff-view";
@@ -56,15 +58,42 @@ export function PrPanel({
   session: string;
   human: HumanFn;
   /* Controls render only when their handler is passed (issue #19): no onMerge → no merge row,
-     no onComment → no comment form, no say → no toast-only buttons/checkbox. */
-  onComment?: (t: string) => void;
-  onMerge?: () => void;
+     no onComment → no comment form, no say → no toast-only buttons/checkbox. Handlers may return
+     a promise (the forge round-trips `gh`); the panel stays busy until it settles. */
+  onComment?: (t: string) => void | Promise<void>;
+  onMerge?: (method: MergeMethod) => void | Promise<void>;
   say?: (t: string) => void;
 }) {
   const [tab, setTab] = useState<PrTab>("description");
   const [draft, setDraft] = useState("");
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [method, setMethod] = useState<MergeMethod>("squash");
+  const [busy, setBusy] = useState<"comment" | "merge" | null>(null);
   const merged = pr.status === "merged";
+  const closed = pr.status === "closed";
+  const conflicting = pr.mergeable === "conflicting";
+  const MERGE_METHODS: { id: MergeMethod; label: string }[] = [
+    { id: "squash", label: "Squash and merge" },
+    { id: "merge", label: "Create a merge commit" },
+    { id: "rebase", label: "Rebase and merge" },
+  ];
+  const runMerge = () => {
+    if (!onMerge) return;
+    setBusy("merge");
+    void Promise.resolve(onMerge(method)).finally(() => {
+      setBusy(null);
+      setConfirming(false);
+    });
+  };
+  const runComment = () => {
+    if (!onComment || !draft.trim()) return;
+    const t = draft.trim();
+    setBusy("comment");
+    void Promise.resolve(onComment(t))
+      .then(() => setDraft(""))
+      .finally(() => setBusy(null));
+  };
   const n = (s: CheckRun["status"]) =>
     pr.checks.filter((c) => c.status === s).length;
   const pending = n("pending"),
@@ -89,15 +118,19 @@ export function PrPanel({
               "inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 font-medium text-[13px]",
               merged
                 ? "bg-violet-500/12 text-violet-700"
-                : "bg-emerald-500/12 text-emerald-700",
+                : closed
+                  ? "bg-zinc-500/12 text-zinc-600"
+                  : "bg-emerald-500/12 text-emerald-700",
             )}
           >
             {merged ? (
               <GitMergeIcon className="size-3.5" />
+            ) : closed ? (
+              <GitPullRequestClosedIcon className="size-3.5" />
             ) : (
               <GitPullRequestIcon className="size-3.5" />
             )}
-            {merged ? "Merged" : "Open"}
+            {merged ? "Merged" : closed ? "Closed" : "Open"}
           </span>
           <div className="ml-auto flex items-center gap-1 text-[13px] text-muted-foreground">
             <Button
@@ -179,6 +212,8 @@ export function PrPanel({
           >
             {merged ? (
               <GitMergeIcon className="size-4 text-violet-600" />
+            ) : closed ? (
+              <GitPullRequestClosedIcon className="size-4 text-zinc-500" />
             ) : failed ? (
               <CircleXIcon className="size-4 text-red-600" />
             ) : pending ? (
@@ -189,11 +224,13 @@ export function PrPanel({
             <span>
               {merged
                 ? `Merged into ${pr.base}`
-                : failed
-                  ? `${failed} check${failed > 1 ? "s" : ""} failing`
-                  : pending
-                    ? `Checks running · ${pr.checks.length - pending}/${pr.checks.length} done`
-                    : "Ready to merge"}
+                : closed
+                  ? `Closed · ${pr.base} unchanged`
+                  : failed
+                    ? `${failed} check${failed > 1 ? "s" : ""} failing`
+                    : pending
+                      ? `Checks running · ${pr.checks.length - pending}/${pr.checks.length} done`
+                      : "Ready to merge"}
             </span>
             {merged && pr.merged && (
               <span className="font-normal text-[13px] text-muted-foreground">
@@ -216,8 +253,28 @@ export function PrPanel({
           {mergeOpen && (
             <div className="space-y-2 border-t px-3.5 py-3 text-[13px]">
               <div className="flex items-center gap-2">
-                <CircleCheckIcon className="size-4 text-emerald-600" />
-                No conflicts with <span className="font-mono">{pr.base}</span>
+                {conflicting ? (
+                  <>
+                    <CircleXIcon className="size-4 text-red-600" />
+                    <span>
+                      This branch has conflicts with{" "}
+                      <span className="font-mono">{pr.base}</span>
+                    </span>
+                  </>
+                ) : pr.mergeable === "unknown" ? (
+                  <>
+                    <CircleDashedIcon className="size-4 text-muted-foreground" />
+                    <span>GitHub is still checking mergeability…</span>
+                  </>
+                ) : (
+                  <>
+                    <CircleCheckIcon className="size-4 text-emerald-600" />
+                    <span>
+                      No conflicts with{" "}
+                      <span className="font-mono">{pr.base}</span>
+                    </span>
+                  </>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 {pending
@@ -230,23 +287,73 @@ export function PrPanel({
               </div>
             </div>
           )}
-          {!merged && onMerge && (
-            <div className="flex items-center gap-2 border-t bg-muted/30 px-3.5 py-2.5">
-              <Button
-                size="sm"
-                disabled={pending > 0 || failed > 0}
-                onClick={onMerge}
-              >
-                <GitMergeIcon />
-                Squash and merge
-              </Button>
-              <span className="text-muted-foreground text-xs">
-                {pending
-                  ? "Waiting for checks"
-                  : failed
-                    ? `${author} is fixing CI in ${session}`
-                    : "You have write access on this repo."}
-              </span>
+          {!merged && !closed && onMerge && (
+            <div className="border-t bg-muted/30 px-3.5 py-2.5">
+              {confirming ? (
+                /* AC-3 (#37): merging always confirms the base branch and the
+                   method before `gh pr merge` runs. */
+                <div className="space-y-2.5" data-mergeconfirm>
+                  <div className="text-[13px]">
+                    Merge <span className="font-mono">#{pr.number}</span> into{" "}
+                    <span className="font-mono font-medium">{pr.base}</span>?
+                  </div>
+                  <div className="space-y-1">
+                    {MERGE_METHODS.map((m) => (
+                      <label
+                        key={m.id}
+                        className="flex items-center gap-2 text-[13px]"
+                      >
+                        <input
+                          type="radio"
+                          name="merge-method"
+                          className="size-3.5 accent-foreground"
+                          checked={method === m.id}
+                          onChange={() => setMethod(m.id)}
+                        />
+                        {m.label}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      disabled={busy !== null}
+                      onClick={runMerge}
+                    >
+                      <GitMergeIcon />
+                      {busy === "merge" ? "Merging…" : "Confirm merge"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy !== null}
+                      onClick={() => setConfirming(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    disabled={pending > 0 || failed > 0 || conflicting}
+                    onClick={() => setConfirming(true)}
+                  >
+                    <GitMergeIcon />
+                    Squash and merge
+                  </Button>
+                  <span className="text-muted-foreground text-xs">
+                    {conflicting
+                      ? `Resolve the conflicts with ${pr.base} first`
+                      : pending
+                        ? "Waiting for checks"
+                        : failed
+                          ? `${author} is fixing CI in ${session}`
+                          : "You have write access on this repo."}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -408,10 +515,7 @@ export function PrPanel({
                 className="space-y-2"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  if (draft.trim()) {
-                    onComment(draft.trim());
-                    setDraft("");
-                  }
+                  runComment();
                 }}
               >
                 <Textarea
@@ -421,8 +525,12 @@ export function PrPanel({
                   className="min-h-20 text-[14px]"
                 />
                 <div className="flex justify-end">
-                  <Button size="sm" type="submit" disabled={!draft.trim()}>
-                    Comment
+                  <Button
+                    size="sm"
+                    type="submit"
+                    disabled={!draft.trim() || busy !== null}
+                  >
+                    {busy === "comment" ? "Posting…" : "Comment"}
                   </Button>
                 </div>
               </form>

@@ -60,7 +60,17 @@ import {
   TabsTrigger,
 } from "../components/ui/tabs";
 import { plural } from "../lib/helpers";
-import type { Diff, Employee, HumanFn, Thread, WbTab, Work } from "../types";
+import type {
+  Diff,
+  Employee,
+  HostAccessors,
+  HumanFn,
+  MergeMethod,
+  PullRequest,
+  Thread,
+  WbTab,
+  Work,
+} from "../types";
 import type { TreeNode } from "./artifacts";
 import { buildTree, sessionArtifacts } from "./artifacts";
 import { DiffView } from "./diff-view";
@@ -102,22 +112,11 @@ export function Workbench({
   onSend?: (t: string) => void;
   say?: (t: string) => void;
   repoFiles?: string[];
-  /** Live host accessors for the session's real cwd (issue #11). */
-  host?: {
-    tree: (cwd: string) => Promise<string[] | null>;
-    diff: (cwd: string) => Promise<Diff[] | null>;
-    read: (
-      cwd: string,
-      path: string,
-    ) => Promise<{
-      content: string;
-      binary: boolean;
-      truncated: boolean;
-    } | null>;
-  };
+  /** Live host accessors for the session's real cwd (issue #11 fs/git, #37 forge). */
+  host?: HostAccessors;
   human: HumanFn;
-  onPrComment?: (t: string) => void;
-  onPrMerge?: () => void;
+  onPrComment?: (t: string) => void | Promise<void>;
+  onPrMerge?: (method: MergeMethod) => void | Promise<void>;
 }) {
   const a = sessionArtifacts(thread);
   const [sel, setSel] = useState<string | null>(null);
@@ -133,22 +132,35 @@ export function Workbench({
     diffs: Diff[];
   } | null>(null);
   const [livePending, setLivePending] = useState(false);
+  /* The conversation's PR: the forge (host API, issue #37) resolves the PR for
+     the session checkout's branch via `gh`. Outer null = host unreachable →
+     the session-carried `thread.pr` stays (mock). */
+  const [livePr, setLivePr] = useState<{ pr: PullRequest | null } | null>(null);
+  const reloadPr = async () => {
+    if (!host?.pr || !liveCwd) return;
+    const r = await host.pr(liveCwd).catch(() => null);
+    if (r) setLivePr(r);
+  };
   // Read the session folder live when a host is wired; null entries = host
   // unreachable / path not a repo → fall back to the session-derived mock.
   useEffect(() => {
     setViewFile(null);
     if (!host || !liveCwd) {
       setLive(null);
+      setLivePr(null);
       return;
     }
     const cwd = liveCwd;
     let off = false;
     setLivePending(true);
-    void Promise.all([host.tree(cwd), host.diff(cwd)]).then(([files, d]) => {
-      if (off) return;
-      setLive(files === null ? null : { files, diffs: d ?? [] });
-      setLivePending(false);
-    });
+    void Promise.all([host.tree(cwd), host.diff(cwd), host.pr?.(cwd)]).then(
+      ([files, d, pr]) => {
+        if (off) return;
+        setLive(files === null ? null : { files, diffs: d ?? [] });
+        if (pr) setLivePr(pr);
+        setLivePending(false);
+      },
+    );
     return () => {
       off = true;
     };
@@ -198,6 +210,43 @@ export function Workbench({
         {n}
       </span>
     );
+
+  /* PR tab (issue #37): the forge's real PR wins over the session-carried
+     thread.pr once the host answers. Comment/merge route to `gh` only when a
+     real PR was resolved — otherwise the app's own handlers stay (D-#19:
+     no handler → no control). */
+  const prShown = livePr?.pr ?? thread.pr;
+  const liveForge = livePr?.pr != null && liveCwd != null;
+  const ghError = (e: unknown) =>
+    (e instanceof Error ? e.message : String(e)).slice(0, 160);
+  const prComment =
+    liveForge && host?.prComment && liveCwd
+      ? async (t: string) => {
+          try {
+            await host.prComment?.(liveCwd, t);
+            await reloadPr();
+            say?.("Comment posted via gh");
+          } catch (e) {
+            say?.(`Comment failed — ${ghError(e)}`);
+          }
+        }
+      : onPrComment;
+  const prMerge =
+    liveForge && host?.prMerge && liveCwd
+      ? async (m: MergeMethod) => {
+          try {
+            const pr = await host.prMerge?.(liveCwd, m);
+            if (pr) setLivePr({ pr });
+            say?.(
+              pr?.status === "merged"
+                ? `Merged #${pr.number} into ${pr.base} · gh pr merge --${m}`
+                : `gh pr merge returned but the PR is ${pr?.status}`,
+            );
+          } catch (e) {
+            say?.(`Merge failed — ${ghError(e)}`);
+          }
+        }
+      : onPrMerge;
   return (
     <Tabs
       value={tab}
@@ -228,16 +277,18 @@ export function Workbench({
             <GlobeIcon />
             Preview
           </TabsTrigger>
-          {thread.pr && (
+          {prShown && (
             <TabsTrigger value="pr">
               <GitPullRequestIcon
                 className={
-                  thread.pr.status === "merged"
+                  prShown.status === "merged"
                     ? "text-violet-600"
-                    : "text-emerald-600"
+                    : prShown.status === "closed"
+                      ? "text-zinc-500"
+                      : "text-emerald-600"
                 }
               />
-              PR #{thread.pr.number}
+              PR #{prShown.number}
             </TabsTrigger>
           )}
         </TabsList>
@@ -535,17 +586,17 @@ export function Workbench({
         </WebPreview>
       </TabsContent>
 
-      {thread.pr && (
+      {prShown && (
         <TabsContent value="pr" className="min-h-0 flex-1">
           <PrPanel
-            pr={thread.pr}
-            diffs={a.diffs}
+            pr={prShown}
+            diffs={diffs}
             commits={a.commits}
             lead={lead}
             session={thread.session}
             human={human}
-            onComment={onPrComment}
-            onMerge={onPrMerge}
+            onComment={prComment}
+            onMerge={prMerge}
             say={say}
           />
         </TabsContent>

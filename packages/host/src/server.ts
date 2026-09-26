@@ -1,5 +1,6 @@
 import { HOST_API, HOST_ERRORS, HOST_METHODS } from "@lilos/contracts/host";
 import { HostError } from "./errors.js";
+import { forgeComment, forgeMerge, forgePr } from "./forge.js";
 import { fsComplete, fsList, fsRead, fsTree } from "./fs.js";
 import {
   gitBranches,
@@ -25,6 +26,9 @@ const HANDLERS: Record<keyof typeof HOST_METHODS, Handler> = {
   "git.status": gitStatus,
   "git.diff": gitDiff,
   "git.discoverRepos": gitDiscoverRepos,
+  "forge.pr": forgePr,
+  "forge.comment": forgeComment,
+  "forge.merge": forgeMerge,
 };
 
 /**

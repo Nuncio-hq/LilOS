@@ -773,12 +773,13 @@ export default function App() {
     mapRoot(feedKey, root.id, (t) => ({ ...t, model }))
     say(`Next turn uses ${model.split(" ")[0]}`)
   }
-  // PR actions from the PR tab. Real app: engine runs `gh pr comment|merge` with the human's GitHub grant.
+  // PR actions from the PR tab when the session isn't on a real checkout (the
+  // Workbench uses hostAccessors.pr* → forge.* → `gh` when it is, issue #37).
   const prComment = (root: Extract<Msg, { kind: "msg" }>, text: string) =>
     mapRoot(feedKey, root.id, (t) => (t.pr ? { ...t, pr: { ...t.pr, comments: [...t.pr.comments, { from: "oscar", time: nowTime(), text }] } } : t))
-  const prMerge = (root: Extract<Msg, { kind: "msg" }>) => {
+  const prMerge = (root: Extract<Msg, { kind: "msg" }>, method: string) => {
     mapRoot(feedKey, root.id, (t) => (t.pr ? { ...t, pr: { ...t.pr, status: "merged", merged: { by: "Oscar", at: nowTime(), sha: hex() } }, todos: t.todos?.map((x) => (x.content === "Open PR for Reviewer" ? { ...x, status: "completed" } : x)) } : t))
-    say(`Merged #${root.thread?.pr?.number} into ${root.thread?.pr?.base} · gh pr merge --squash`)
+    say(`Merged #${root.thread?.pr?.number} into ${root.thread?.pr?.base} · gh pr merge --${method}`)
   }
   const retry = (root: Extract<Msg, { kind: "msg" }>, empId: string) => {
     const lastAsk = [...(root.thread?.replies ?? [])].reverse().find((r) => !emp(r.from))?.text ?? root.text
@@ -885,7 +886,7 @@ export default function App() {
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
           onRewind={(i) => rewind(openThread, i)} onModel={(m) => setModel(openThread, m)} say={say}
           models={MODELS} repoFiles={REPO_FILES} host={hostAccessors}
-          onPrComment={(t) => prComment(openThread, t)} onPrMerge={() => prMerge(openThread)}
+          onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />
       ) : (

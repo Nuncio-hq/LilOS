@@ -1,7 +1,7 @@
 /**
  * Protocol identity for the LilOS host API. The host answers questions about
- * the machine a session runs on (its filesystem and git checkouts); it is
- * implemented by the harness (apps/harness, #26), never by an engine.
+ * the machine a session runs on (its filesystem, git checkouts and forge);
+ * it is implemented by the harness (apps/harness, #26), never by an engine.
  */
 export const HOST_API = { name: "lilos-host", version: 1 } as const;
 
@@ -19,5 +19,10 @@ export const HOST_ERRORS = {
   PATH_NOT_FOUND: -32101,
   /** Path exists but is not inside a git work tree. */
   NOT_A_REPO: -32102,
+  /** No pull request exists for the checkout's branch / requested number. */
+  PR_NOT_FOUND: -32103,
+  /** `gh` CLI failed: missing, unauthenticated, or the forge rejected the op
+      (stderr is carried in error data `detail`). */
+  GH_FAILED: -32104,
 } as const;
 export type HostErrorCode = (typeof HOST_ERRORS)[keyof typeof HOST_ERRORS];

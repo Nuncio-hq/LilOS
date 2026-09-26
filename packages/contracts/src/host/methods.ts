@@ -1,5 +1,13 @@
 import { type ZodType, z } from "zod";
 import {
+  ForgeCommentParams,
+  ForgeCommentResult,
+  ForgeMergeParams,
+  ForgeMergeResult,
+  ForgePrParams,
+  ForgePrResult,
+} from "./forge";
+import {
   FsCompleteParams,
   FsCompleteResult,
   FsListParams,
@@ -89,5 +97,20 @@ export const HOST_METHODS = {
     params: GitDiscoverParams,
     result: GitDiscoverResult,
     doc: "Scan roots for `.git` dirs; returns repo paths with head + remote.",
+  },
+  "forge.pr": {
+    params: ForgePrParams,
+    result: ForgePrResult,
+    doc: "PR for the checkout's branch (title/body/checks/comments/state) via `gh`.",
+  },
+  "forge.comment": {
+    params: ForgeCommentParams,
+    result: ForgeCommentResult,
+    doc: "Post a PR comment via `gh` — the signed-in user's auth, no stored token.",
+  },
+  "forge.merge": {
+    params: ForgeMergeParams,
+    result: ForgeMergeResult,
+    doc: "Merge the PR via `gh` (squash|merge|rebase); returns the re-read PR, never stdout trust.",
   },
 } as const satisfies Record<string, HostMethodContract>;

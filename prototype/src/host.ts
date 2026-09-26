@@ -1,4 +1,4 @@
-import type { Diff, FsDir } from "@lilos/ui"
+import type { CheckRun, Diff, FsDir, MergeMethod, PullRequest } from "@lilos/ui"
 
 /* Host API client for the prototype: POST /api/host carries one JSON-RPC frame to the
    dev middleware (vite.config.ts → host-plugin.ts), which runs packages/host on this
@@ -87,6 +87,50 @@ export async function hostDiscover(roots: string[]): Promise<{ list: string[]; s
   return { list: r.repos.map((x) => x.path), stubs }
 }
 
+/* Forge wire shape (@lilos/contracts forge.pr result, minus {root,branch}). */
+type WirePr = {
+  number: number
+  url: string
+  repo: string
+  title: string
+  body: string
+  state: "open" | "merged" | "closed"
+  author: string
+  base: string
+  head: string
+  openedAt: string
+  merged?: { by: string; at: string; sha: string }
+  mergeable: "mergeable" | "conflicting" | "unknown"
+  checks: { name: string; status: CheckRun["status"] }[]
+  comments: { author: string; at: string; body: string }[]
+}
+
+/* Relative time for comment headers ("2h", "3d") — keeps the panel quiet. */
+const rel = (iso: string) => {
+  const s = (Date.now() - Date.parse(iso)) / 1000
+  if (!(s >= 0)) return "just now"
+  if (s < 60) return "just now"
+  if (s < 3600) return `${Math.floor(s / 60)}m`
+  if (s < 86400) return `${Math.floor(s / 3600)}h`
+  return `${Math.floor(s / 86400)}d`
+}
+
+const mapPr = (w: WirePr): PullRequest => ({
+  number: w.number,
+  repo: w.repo,
+  title: w.title,
+  body: w.body,
+  author: w.author,
+  base: w.base,
+  head: w.head,
+  status: w.state,
+  mergeable: w.mergeable,
+  merged: w.merged ? { by: w.merged.by, at: rel(w.merged.at), sha: w.merged.sha } : undefined,
+  opened: rel(w.openedAt),
+  checks: w.checks.map((c) => ({ name: c.name, status: c.status })),
+  comments: w.comments.map((c) => ({ from: c.author, time: rel(c.at), text: c.body })),
+})
+
 /* Workbench accessors (null = host unreachable → fall back to the mock). */
 export const hostAccessors = {
   tree: (cwd: string) =>
@@ -95,4 +139,16 @@ export const hostAccessors = {
     host<{ files: Diff[] }>("git.diff", { path: cwd }).then((r) => r.files).catch(() => null),
   read: (cwd: string, path: string) =>
     host<{ content: string; binary: boolean; truncated: boolean }>("fs.read", { path: `${cwd}/${path}` }).catch(() => null),
+  /* forge.pr → {pr} for the checkout's branch; outer null = host unreachable,
+     pr: null = real checkout with no PR for its branch (issue #37). */
+  pr: (cwd: string) =>
+    host<{ pr: WirePr | null }>("forge.pr", { path: cwd })
+      .then((r) => ({ pr: r.pr ? mapPr(r.pr) : null }))
+      .catch(() => null),
+  /* forge.comment → the new comment's URL (errors bubble to the panel). */
+  prComment: (cwd: string, body: string) =>
+    host<{ url: string }>("forge.comment", { path: cwd, body }).then((r) => r.url),
+  /* forge.merge → the re-read PR (never stdout trust). */
+  prMerge: (cwd: string, method: MergeMethod) =>
+    host<{ pr: WirePr }>("forge.merge", { path: cwd, method }).then((r) => mapPr(r.pr)),
 }

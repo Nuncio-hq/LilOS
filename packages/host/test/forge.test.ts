@@ -22,10 +22,7 @@ import { callHost } from "../src/index";
  * real code path (packages/host → execFile gh → JSON out) is exercised end to
  * end; only GitHub itself is stubbed. Real leg: scripts/live/37-forge.sh.
  */
-const FAKE_GH_DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "fake-gh",
-);
+const FAKE_GH_DIR = join(dirname(fileURLToPath(import.meta.url)), "fake-gh");
 chmodSync(join(FAKE_GH_DIR, "gh"), 0o755);
 
 const PR_VIEW = {
@@ -205,10 +202,10 @@ describe("forge host api (fake gh)", () => {
     expect(again.pr?.state).toBe("merged");
   });
 
-  it("AC-3 forge.merge honours merge/rebase methods and fails on a second merge", async () => {
-    writePr();
+  it("AC-3 forge.merge honours merge/rebase; a conflicting PR fails GH_FAILED", async () => {
     await callHost("forge.merge", { path: repo, method: "rebase" });
     expect(readLog()).toContain("--rebase");
+    writePr({ mergeable: "CONFLICTING" });
     await expect(
       callHost("forge.merge", { path: repo, method: "merge" }),
     ).rejects.toMatchObject({ code: HOST_ERRORS.GH_FAILED });
@@ -226,9 +223,9 @@ describe("forge host api (fake gh)", () => {
 
   it("AC-4 forge calls are host API, not engine — FakeEngine rejects them", async () => {
     const engine = new FakeEngine({ tick: 1 });
-    await expect(
-      engine.dispatch("forge.pr", { path: repo }),
-    ).rejects.toThrow(/unknown method/);
+    await expect(engine.dispatch("forge.pr", { path: repo })).rejects.toThrow(
+      /unknown method/,
+    );
     const d = (await callHost("host.describe", {})) as { methods: string[] };
     for (const m of ["forge.pr", "forge.comment", "forge.merge"]) {
       expect(d.methods).toContain(m);
@@ -236,8 +233,10 @@ describe("forge host api (fake gh)", () => {
   });
 
   it("forge.pr by explicit number resolves that PR", async () => {
-    const r = (await callHost("forge.pr", { path: repo, number: 7 })) as
-      PrResult;
+    const r = (await callHost("forge.pr", {
+      path: repo,
+      number: 7,
+    })) as PrResult;
     expect(r.pr?.number).toBe(7);
   });
 });

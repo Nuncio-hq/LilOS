@@ -572,6 +572,428 @@
         ],
         "additionalProperties": false
       }
+    },
+    "forge.pr": {
+      "doc": "PR for the checkout's branch (title/body/checks/comments/state) via `gh`.",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "root": {
+            "type": "string"
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pr": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "number": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "url": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "merged",
+                      "closed"
+                    ]
+                  },
+                  "author": {
+                    "type": "string"
+                  },
+                  "base": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "head": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "openedAt": {
+                    "type": "string"
+                  },
+                  "merged": {
+                    "type": "object",
+                    "properties": {
+                      "by": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "sha": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "by",
+                      "at",
+                      "sha"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "mergeable": {
+                    "type": "string",
+                    "enum": [
+                      "mergeable",
+                      "conflicting",
+                      "unknown"
+                    ]
+                  },
+                  "checks": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "passed",
+                            "failed",
+                            "skipped"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "comments": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "author": {
+                          "type": "string"
+                        },
+                        "at": {
+                          "type": "string"
+                        },
+                        "body": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "author",
+                        "at",
+                        "body"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "number",
+                  "url",
+                  "repo",
+                  "title",
+                  "body",
+                  "state",
+                  "author",
+                  "base",
+                  "head",
+                  "openedAt",
+                  "mergeable",
+                  "checks",
+                  "comments"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "root",
+          "branch",
+          "pr"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "forge.comment": {
+      "doc": "Post a PR comment via `gh` — the signed-in user's auth, no stored token.",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "path",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "forge.merge": {
+      "doc": "Merge the PR via `gh` (squash|merge|rebase); returns the re-read PR, never stdout trust.",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "squash",
+              "merge",
+              "rebase"
+            ]
+          },
+          "deleteBranch": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "method"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "merged": {
+            "type": "boolean"
+          },
+          "pr": {
+            "type": "object",
+            "properties": {
+              "number": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "url": {
+                "type": "string",
+                "minLength": 1
+              },
+              "repo": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "merged",
+                  "closed"
+                ]
+              },
+              "author": {
+                "type": "string"
+              },
+              "base": {
+                "type": "string",
+                "minLength": 1
+              },
+              "head": {
+                "type": "string",
+                "minLength": 1
+              },
+              "openedAt": {
+                "type": "string"
+              },
+              "merged": {
+                "type": "object",
+                "properties": {
+                  "by": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "at": {
+                    "type": "string"
+                  },
+                  "sha": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "by",
+                  "at",
+                  "sha"
+                ],
+                "additionalProperties": false
+              },
+              "mergeable": {
+                "type": "string",
+                "enum": [
+                  "mergeable",
+                  "conflicting",
+                  "unknown"
+                ]
+              },
+              "checks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "passed",
+                        "failed",
+                        "skipped"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "comments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "author": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "body": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "author",
+                    "at",
+                    "body"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "number",
+              "url",
+              "repo",
+              "title",
+              "body",
+              "state",
+              "author",
+              "base",
+              "head",
+              "openedAt",
+              "mergeable",
+              "checks",
+              "comments"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "merged",
+          "pr"
+        ],
+        "additionalProperties": false
+      }
     }
   }
 }
