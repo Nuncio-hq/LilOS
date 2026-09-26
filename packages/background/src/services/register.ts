@@ -17,9 +17,14 @@ export interface ServiceControl {
   unregister(plistName: string): Promise<void>;
 }
 
+/**
+ * Pin of the bundle version each agent was last registered with — per agent,
+ * so an agent that fails to register is retried on next launch without
+ * churning the healthy ones (their pins already match).
+ */
 export interface VersionStore {
-  read(): Promise<string | null>;
-  write(version: string): Promise<void>;
+  read(agent: string): Promise<string | null>;
+  write(agent: string, version: string): Promise<void>;
 }
 
 export type AgentAction = "registered" | "replaced" | "already" | "failed";
@@ -38,14 +43,14 @@ export async function ensureLaunchAgents(opts: {
   bundleVersion: string;
   versions: VersionStore;
 }): Promise<AgentReport[]> {
-  const lastVersion = await opts.versions.read();
-  const versionChanged = lastVersion !== opts.bundleVersion;
   const reports: AgentReport[] = [];
 
   for (const agent of opts.agents) {
     const plist = plistFileName(agent);
     try {
       const before = await opts.control.status(plist);
+      const versionChanged =
+        (await opts.versions.read(agent.label)) !== opts.bundleVersion;
       let action: AgentAction = "registered";
       if (
         versionChanged &&
@@ -61,6 +66,7 @@ export async function ensureLaunchAgents(opts: {
         await opts.control.register(plist);
       }
       const status = await opts.control.status(plist);
+      await opts.versions.write(agent.label, opts.bundleVersion);
       reports.push({ plist, label: agent.label, status, action });
     } catch (e) {
       reports.push({
@@ -71,9 +77,6 @@ export async function ensureLaunchAgents(opts: {
         error: e instanceof Error ? e.message : String(e),
       });
     }
-  }
-  if (reports.every((r) => r.action !== "failed")) {
-    await opts.versions.write(opts.bundleVersion);
   }
   return reports;
 }

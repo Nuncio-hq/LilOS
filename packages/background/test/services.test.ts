@@ -32,17 +32,17 @@ function fakeControl(
   };
 }
 
-function memStore(v: string | null = null): VersionStore & {
-  readonly v: string | null;
-} {
-  const s = {
-    v,
-    read: async () => s.v,
-    write: async (nv: string) => {
-      s.v = nv;
+function memStore(
+  initial: Record<string, string> = {},
+): VersionStore & { readonly all: Record<string, string> } {
+  const all = { ...initial };
+  return {
+    all,
+    read: async (agent: string) => all[agent] ?? null,
+    write: async (agent: string, v: string) => {
+      all[agent] = v;
     },
   };
-  return s;
 }
 
 describe("launch agents (AC-1)", () => {
@@ -75,7 +75,10 @@ describe("launch agents (AC-1)", () => {
     expect(control.calls).toContain(
       `register ${HARNESS_AGENT.label}.plist`,
     );
-    expect(versions.v).toBe("1");
+    expect(versions.all).toEqual({
+      "com.nuncio.lilos.relay": "1",
+      "com.nuncio.lilos.harness": "1",
+    });
   });
 
   it("AC-1 a bundle version change unregisters before re-registering (SP1 stale-pin rule)", async () => {
@@ -83,7 +86,10 @@ describe("launch agents (AC-1)", () => {
       "com.nuncio.lilos.relay.plist": "enabled",
       "com.nuncio.lilos.harness.plist": "enabled",
     });
-    const versions = memStore("1");
+    const versions = memStore({
+      "com.nuncio.lilos.relay": "1",
+      "com.nuncio.lilos.harness": "1",
+    });
     const reports = await ensureLaunchAgents({
       control,
       agents: LILOS_AGENTS,
@@ -98,7 +104,10 @@ describe("launch agents (AC-1)", () => {
         calls.lastIndexOf(`register ${label}.plist`),
       );
     }
-    expect(versions.v).toBe("2");
+    expect(versions.all).toEqual({
+      "com.nuncio.lilos.relay": "2",
+      "com.nuncio.lilos.harness": "2",
+    });
   });
 
   it("AC-1 same version + already enabled → no churn", async () => {
@@ -106,7 +115,10 @@ describe("launch agents (AC-1)", () => {
       "com.nuncio.lilos.relay.plist": "enabled",
       "com.nuncio.lilos.harness.plist": "enabled",
     });
-    const versions = memStore("1");
+    const versions = memStore({
+      "com.nuncio.lilos.relay": "1",
+      "com.nuncio.lilos.harness": "1",
+    });
     const reports = await ensureLaunchAgents({
       control,
       agents: LILOS_AGENTS,
@@ -115,6 +127,32 @@ describe("launch agents (AC-1)", () => {
     });
     expect(reports.map((r) => r.action)).toEqual(["already", "already"]);
     expect(control.calls.filter((c) => c.startsWith("unregister"))).toHaveLength(0);
+  });
+
+  it("AC-1 a failing agent retries without churning the healthy one", async () => {
+    // Regression (VM finding): an all-or-nothing version pin meant one broken
+    // agent restarted the healthy relay on every launch — dropping in-flight
+    // relay state. Pins are per-agent: relay stays pinned, harness retried.
+    const control = fakeControl({
+      "com.nuncio.lilos.relay.plist": "enabled",
+    });
+    control.register = async (plist) => {
+      control.calls.push(`register ${plist}`);
+      if (plist.includes("harness")) throw new Error("plist not in bundle");
+    };
+    const versions = memStore({ "com.nuncio.lilos.relay": "1" });
+    const reports = await ensureLaunchAgents({
+      control,
+      agents: LILOS_AGENTS,
+      bundleVersion: "1",
+      versions,
+    });
+    expect(reports.map((r) => r.action)).toEqual(["already", "failed"]);
+    expect(
+      control.calls.filter((c) => c.includes("unregister")),
+    ).toHaveLength(0);
+    expect(versions.all["com.nuncio.lilos.relay"]).toBe("1");
+    expect(versions.all["com.nuncio.lilos.harness"]).toBeUndefined();
   });
 
   it("AC-1 a helper failure is reported, not thrown, and the version is not pinned", async () => {
@@ -130,6 +168,6 @@ describe("launch agents (AC-1)", () => {
       versions,
     });
     expect(reports.every((r) => r.action === "failed")).toBe(true);
-    expect(versions.v).toBeNull();
+    expect(versions.all).toEqual({});
   });
 });

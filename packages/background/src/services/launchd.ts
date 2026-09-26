@@ -12,7 +12,11 @@ export interface LaunchAgentSpec {
   label: string;
   /** Path *inside the app bundle* to the service binary. */
   bundleProgram: string;
-  /** Absolute log paths (launchd opens them for the agent). */
+  /**
+   * Absolute log paths (launchd opens them for the agent). launchd does no
+   * `~` expansion, so these must stay under /tmp — the user's home is not
+   * knowable when the plist ships inside the bundle.
+   */
   stdoutPath: string;
   stderrPath: string;
   environment?: Record<string, string>;
@@ -20,20 +24,20 @@ export interface LaunchAgentSpec {
 
 /** The two services LilOS registers (this slice's contract with launchd). */
 export const LILOS_BUNDLE_ID = "com.nuncio.lilos";
-export const LILOS_LOG_DIR = "~/Library/Logs/LilOS";
+export const LILOS_LOG_DIR = "/tmp";
 
 export const RELAY_AGENT: LaunchAgentSpec = {
   label: `${LILOS_BUNDLE_ID}.relay`,
   bundleProgram: "Contents/MacOS/lilos-relay",
-  stdoutPath: `${LILOS_LOG_DIR}/relay.stdout.log`,
-  stderrPath: `${LILOS_LOG_DIR}/relay.stderr.log`,
+  stdoutPath: `${LILOS_LOG_DIR}/${LILOS_BUNDLE_ID}.relay.stdout.log`,
+  stderrPath: `${LILOS_LOG_DIR}/${LILOS_BUNDLE_ID}.relay.stderr.log`,
 };
 
 export const HARNESS_AGENT: LaunchAgentSpec = {
   label: `${LILOS_BUNDLE_ID}.harness`,
   bundleProgram: "Contents/MacOS/lilos-harness",
-  stdoutPath: `${LILOS_LOG_DIR}/harness.stdout.log`,
-  stderrPath: `${LILOS_LOG_DIR}/harness.stderr.log`,
+  stdoutPath: `${LILOS_LOG_DIR}/${LILOS_BUNDLE_ID}.harness.stdout.log`,
+  stderrPath: `${LILOS_LOG_DIR}/${LILOS_BUNDLE_ID}.harness.stderr.log`,
 };
 
 export const LILOS_AGENTS: readonly LaunchAgentSpec[] = [
