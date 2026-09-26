@@ -1,0 +1,3 @@
+Routing to the machine dashboard (profile 'spike23' preselected). Use --isolated for a dedicated per-profile server.
+HERMES_BACKEND_READY port=9119
+  Hermes backend listening on 127.0.0.1:9119

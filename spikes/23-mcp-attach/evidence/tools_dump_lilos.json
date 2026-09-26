@@ -1,0 +1,124 @@
+[
+ {
+  "type": "function",
+  "function": {
+   "name": "mcp__lilos__app_launch",
+   "description": "Launch an app inside the LilOS desktop and attach it to this session's workspace.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "app_name": {
+      "type": "string",
+      "description": "Registered app name, e.g. 'notes' or 'kanban'."
+     }
+    },
+    "required": [
+     "app_name"
+    ],
+    "additionalProperties": false
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "mcp__lilos__browser_navigate",
+   "description": "Open a URL in this LilOS session's dedicated browser tab. The tab is owned by the session and visible in the workbench pane.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "url": {
+      "type": "string",
+      "description": "Absolute URL to open, including scheme."
+     }
+    },
+    "required": [
+     "url"
+    ],
+    "additionalProperties": false
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "mcp__lilos__browser_snapshot",
+   "description": "Read the current state of this session's browser tab: URL, title, and the visible text content.",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false,
+    "required": []
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "mcp__lilos__file_stage",
+   "description": "Stage a file into this session's scratch area so other tools (or teammates) can pick it up.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "path": {
+      "type": "string",
+      "description": "File name relative to the session scratch dir."
+     },
+     "contents": {
+      "type": "string",
+      "description": "UTF-8 text contents to write."
+     }
+    },
+    "required": [
+     "path",
+     "contents"
+    ],
+    "additionalProperties": false
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "mcp__lilos__notify",
+   "description": "Post a short notification into the LilOS channel this session is bound to.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "message": {
+      "type": "string",
+      "description": "Plain-text message to post."
+     }
+    },
+    "required": [
+     "message"
+    ],
+    "additionalProperties": false
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "mcp__lilos__terminal_run",
+   "description": "Run a shell command in this session's terminal pane. Output streams live to the channel and is returned here.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "command": {
+      "type": "string",
+      "description": "Shell command to execute."
+     },
+     "timeout_seconds": {
+      "type": "integer",
+      "description": "Kill the command after this many seconds (default 30)."
+     }
+    },
+    "required": [
+     "command"
+    ],
+    "additionalProperties": false
+   }
+  }
+ }
+]

@@ -1,0 +1,96 @@
+From: spike #23 (LilOS engine-hermes spike)
+Subject: [PATCH] tui_gateway: accept mcp_servers on session.create
+
+Proposal ONLY — do not open upstream without the maintainers' ack. Mirrors
+what ACP `session/new {mcpServers}` already does in
+`acp_adapter/server.py::_register_session_mcp_servers` (runtime
+`register_mcp_servers` + per-agent `mcp-<name>` toolset expansion), but for
+the WS/stdio `session.create` path so a host can scope an MCP server to ONE
+session instead of the whole profile.
+
+Wire shape mirrors ACP `McpServerStdio | McpServerHttp | McpServerSse`:
+stdio `{name, command, args?, env?}`; remote `{name, url, headers?}`.
+
+Key design points:
+- `SessionCreateParams` gains `mcp_servers` (extra=forbid, so it must be
+  declared); entries validate into the same config dict shape
+  `register_mcp_servers` consumes (see `acp_adapter/server.py::_mcp_server_config`).
+- The list is stored on the session record (`session["session_mcp_servers"]`)
+  at create; NOT written to profile config — config writes stay with
+  `mcp.servers.add` / `profiles.configure`.
+- At agent build (`_make_agent`), after `_load_enabled_toolsets(platform)`
+  resolves the profile surface, the session's servers are registered into
+  the session's profile scope (existing `_mcp_registry_scope()` /
+  `register_mcp_servers` machinery — identical to the ACP path) and
+  `mcp-<name>` toolset names are appended to this agent's
+  `enabled_toolsets`. Other sessions of the same profile never see them:
+  `enabled_mcp_server_names` reads config+plugins only.
+- Trust: session-supplied servers inherit the calling profile's
+  `mcp_servers.<name>.trust` policy when the name matches a configured
+  server; unknown names default to `untrusted` (write-capable calls then
+  require approval via `_trust_gate_check`).
+- Resume/load parity would need the same field on SessionResumeParams;
+  left out here since persisted session rows can't safely replay an MCP
+  client-supplied command on resume without re-prompting (server binaries
+  may have changed). Hosts should re-send `mcp_servers` on `session.resume`
+  if we extend this.
+
+diff --git a/tui_gateway/contracts/sessions.py b/tui_gateway/contracts/sessions.py
+--- a/tui_gateway/contracts/sessions.py
++++ b/tui_gateway/contracts/sessions.py
+@@ class SessionCreateParams(ProfileParams):
+     close_on_disconnect: bool = False
+     hidden: bool = False
+     room_plumbing: bool = False
+     follow_profile_config: bool = False
++    # Session-scoped MCP servers (ACP session/new parity): register at
++    # create time and expose only to this session's agent via mcp-<name>
++    # toolsets. Never persisted to profile config.
++    mcp_servers: list[dict] | None = None
+
+diff --git a/tui_gateway/methods_session.py b/tui_gateway/methods_session.py
+@@ def _create_session(...):
+     ...
++    # Stash on the deferred session record; consumed by _make_agent (server.py).
++    session_mcp_servers = params.get("mcp_servers") or None
+@@
+     ... _deferred_session_record(..., session_mcp_servers=session_mcp_servers, ...)
+
+diff --git a/tui_gateway/server.py b/tui_gateway/server.py
+@@ def _init_session(...):
+     "profile_home": profile_home,
++    "session_mcp_servers": <from create params>,
+@@ def _make_agent(...):
+     platform = _resolve_agent_platform(platform_override)
++    session = _sessions.get(sid)  # already done below; reuse
++    session_mcp = (session or {}).get("session_mcp_servers")
++    if session_mcp:
++        # Same mechanism as acp_adapter/server.py::_register_session_mcp_servers:
++        # runtime registration keyed to the session's profile scope (no config
++        # write), then this agent's toolsets gain mcp-<name> only.
++        try:
++            from tools.mcp_tool_discovery import register_mcp_servers
++            configs = {s["name"]: _session_mcp_config(s) for s in session_mcp}
++            register_mcp_servers(configs)   # scope = session profile_home (bound by caller)
++            extra_toolsets = [f"mcp-{s['name']}" for s in session_mcp if s.get("name")]
++        except Exception:
++            logger.warning("session %s: session mcp_servers registration failed", sid, exc_info=True)
++            extra_toolsets = []
++    else:
++        extra_toolsets = []
+     agent = AIAgent(
+         ...
+-        enabled_toolsets=_load_enabled_toolsets(platform),
++        enabled_toolsets=(_load_enabled_toolsets(platform) or []) + extra_toolsets or None,
+         ...
+
++def _session_mcp_config(entry: dict) -> dict:
++    """ACP-style server entry -> config dict for register_mcp_servers.
++    Accepts stdio {name, command, args?, env?} and remote {name, url, headers?};
++    anything else is rejected (a session cannot silently widen trust/transport)."""
++    if entry.get("command"):
++        return {"command": entry["command"], "args": list(entry.get("args") or []),
++                "env": dict(entry.get("env") or {})}
++    if entry.get("url"):
++        return {"url": entry["url"], "headers": dict(entry.get("headers") or {})}
++    raise ValueError(f"mcp_servers entry {entry.get('name')!r} needs command or url")
