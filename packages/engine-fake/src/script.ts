@@ -33,6 +33,12 @@ export interface FakeScript {
 const EDIT_ASK =
   /\b(add|fix|change|update|write|implement|refactor|bump|remove|rename|create|make|edit|move|delete|scaffold)\b/i;
 
+/** What a prompt's image blocks carried — no pixel data crosses into a fake. */
+export interface FakeImage {
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export function scriptFor(
   agent: string,
   prompt: string,
@@ -41,6 +47,7 @@ export function scriptFor(
   nextHex: () => string,
   repo = "Nuncio-hq/LilOS",
   cwd = ".",
+  images?: FakeImage[],
 ): FakeScript {
   const q = prompt
     .replace(/\*\*/g, "")
@@ -144,6 +151,29 @@ export function scriptFor(
       reasoning: `Driving the session's surfaces via the LilOS MCP tools: ${surf[1].trim()}.`,
       steps,
       text: `Ran the surface ops. Outputs are on each tool call.`,
+    };
+  }
+
+  // Issue #31: image prompts get their own script so the answer names what
+  // arrived (mimeType + bytes) — the reference AC-2 can assert.
+  if (images?.length) {
+    const list = images
+      .map((img) => `${img.mimeType} (${img.sizeBytes} bytes)`)
+      .join(", ");
+    return {
+      reasoning: `Oscar attached ${images.length === 1 ? "an image" : `${images.length} images`} to the prompt: ${list}. It rode in as image content blocks; answer about ${q ? `"${q}"` : "it"} citing what arrived.`,
+      steps: [
+        {
+          tool: "view_image",
+          input: {
+            count: images.length,
+            mimeTypes: images.map((img) => img.mimeType),
+            bytes: images.reduce((sum, img) => sum + img.sizeBytes, 0),
+          },
+          output: `decoded ${list}`,
+        },
+      ],
+      text: `Got your image${images.length > 1 ? "s" : ""} — ${list} came through as a prompt content block.${q ? ` On "${q}":` : ""} a vision model describes the pixels; this fake proves the hand-off.`,
     };
   }
 

@@ -5,9 +5,11 @@
  */
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import packageJson from "../package.json";
 import { createApp } from "./app";
+import { createFileAttachmentStore } from "./attachments";
 import { loadOrCreateInstallToken } from "./auth";
 import { resolveRelayConfig } from "./config";
 import { createDrizzleStore } from "./db/drizzle-store";
@@ -25,7 +27,15 @@ sqlite.exec("PRAGMA foreign_keys = ON");
 applyMigrations(sqlite);
 
 const store = createDrizzleStore(drizzle(sqlite, { schema }));
-const relay = createRelay({ store, token, relayVersion: packageJson.version });
+const attachments = createFileAttachmentStore(
+  join(config.homeDir, "attachments"),
+);
+const relay = createRelay({
+  store,
+  token,
+  relayVersion: packageJson.version,
+  attachments,
+});
 const app = createApp({
   instanceId: relay.instanceId,
   relayVersion: packageJson.version,

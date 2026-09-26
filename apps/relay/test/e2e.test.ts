@@ -75,7 +75,8 @@ async function startRelay(env: Record<string, string> = {}): Promise<{
   token: string;
   url: string;
 }> {
-  const home = mkdtempSync(join(tmpdir(), "lilos-relay-test-"));
+  const home =
+    env.LILOS_RELAY_HOME ?? mkdtempSync(join(tmpdir(), "lilos-relay-test-"));
   homes.push(home);
   const child = spawn(BUN, ["run", "src/index.ts"], {
     cwd: RELAY_DIR,
@@ -265,6 +266,69 @@ describe("relay e2e (real Bun process + bun:sqlite)", () => {
     ]);
     alice.close();
     bob.close();
+  }, 30_000);
+
+  it("AC-3 attachments survive a relay restart: refs on sqlite, bytes on disk", async () => {
+    const first = await startRelay();
+    const bob = new RelayClient({
+      url: first.url,
+      token: first.token,
+      socketFactory: wsFactory().factory,
+      autoReconnect: false,
+      client: { name: "e2e-attachments" },
+    });
+    await bob.connect();
+    const { employee } = await bob.request<{ employee: { id: string } }>(
+      "employees.create",
+      { name: "Ada", role: "engineer" },
+    );
+    const { channel } = await bob.request<{ channel: { id: string } }>(
+      "channels.openDm",
+      { employeeId: employee.id },
+    );
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const { message } = await bob.request<{
+      message: { attachments?: { id: string; sizeBytes: number }[] };
+    }>("messages.post", {
+      channelId: channel.id,
+      text: "screenshot",
+      attachments: [
+        { name: "shot.png", mimeType: "image/png", dataBase64: png },
+      ],
+    });
+    const refId = message.attachments?.[0]?.id;
+    expect(refId).toBeTruthy();
+    bob.close();
+    spawned[spawned.length - 1]?.kill("SIGKILL");
+
+    // Fresh process over the same home: the ref comes back via sqlite,
+    // the bytes via the file blob store.
+    const second = await startRelay({ LILOS_RELAY_HOME: first.home });
+    const back = new RelayClient({
+      url: second.url,
+      token: first.token,
+      socketFactory: wsFactory().factory,
+      autoReconnect: false,
+      client: { name: "e2e-attachments-2" },
+    });
+    await back.connect();
+    const { messages: list } = await back.request<{
+      messages: { attachments?: { id: string }[]; text: string }[];
+    }>("messages.list", { channelId: channel.id });
+    const restored = list.find((m) => m.attachments?.[0]?.id === refId);
+    expect(restored).toBeTruthy();
+    const got = await back.request<{
+      attachment: { id: string; name: string; mimeType: string };
+      dataBase64: string;
+    }>("attachments.get", { id: refId });
+    expect(got.attachment).toMatchObject({
+      id: refId,
+      name: "shot.png",
+      mimeType: "image/png",
+    });
+    expect(got.dataBase64).toBe(png);
+    back.close();
   }, 30_000);
 
   it("AC-4 live: a newer client is told to update the server", async () => {

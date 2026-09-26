@@ -607,6 +607,56 @@ describe("workspace harness", () => {
       await w.cleanup();
     }
   });
+
+  it("AC-2 a posted image reaches the engine as a prompt content block and the answer references it", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "describe the repo",
+      });
+      // Oscar sends a screenshot: base64 bytes on messages.post.
+      const png =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      const { message } = await w.user.request<{ message: AppMessage }>(
+        "messages.post",
+        {
+          channelId: channel.id,
+          conversationId: conversation.id,
+          text: "what does this screenshot show",
+          authorKind: "user",
+          attachments: [
+            { name: "shot.png", mimeType: "image/png", dataBase64: png },
+          ],
+        },
+      );
+      // The app-facing message carries a display ref only — no bytes.
+      expect(message.attachments?.[0]?.mimeType).toBe("image/png");
+      expect(message.attachments?.[0]?.sizeBytes).toBe(70);
+      expect(JSON.stringify(message)).not.toContain(png);
+
+      // The engine's answer references what came through in the image block:
+      // engine-fake echoes the decoded mimeType + byte size it was handed.
+      const answer = await waitFor(async () => {
+        const { messages } = await w.user.request<{
+          messages: AppMessage[];
+        }>("messages.list", { channelId: channel.id, limit: 50 });
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" &&
+            m.conversationId === conversation.id &&
+            m.text.includes("image/png"),
+        );
+      }, "answer referencing the image");
+      expect(answer.text).toContain("image/png (70 bytes)");
+      expect(answer.text).toContain("prompt content block");
+    } finally {
+      await w.cleanup();
+    }
+  });
 });
 
 describe("engine supervisor (AC-2)", () => {

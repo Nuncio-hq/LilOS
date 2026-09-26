@@ -9,6 +9,7 @@ import type {
   ConversationState,
   Employee,
   EmployeeStatus,
+  MessageAttachment,
   PendingTurn,
   RespondTo,
 } from "@lilos/contracts/app";
@@ -39,6 +40,8 @@ export interface OpenConversationInput {
   title: string;
   text: string;
   authorId: string;
+  /** Display refs only — bytes already stored via the AttachmentStore. */
+  attachments?: MessageAttachment[];
 }
 
 export interface AppendMessageInput {
@@ -47,6 +50,8 @@ export interface AppendMessageInput {
   authorId: string;
   authorKind: AuthorKind;
   text: string;
+  /** Display refs only — bytes already stored via the AttachmentStore. */
+  attachments?: MessageAttachment[];
 }
 
 export interface ListMessagesQuery {
@@ -186,6 +191,7 @@ export function createMemoryStore(): RelayStore {
       text: input.text,
       seq,
       createdAt: now(),
+      attachments: input.attachments,
     };
     messages.set(message.id, message);
     return message;
@@ -292,6 +298,7 @@ export function createMemoryStore(): RelayStore {
         authorId: input.authorId,
         authorKind: "user",
         text: input.text,
+        attachments: input.attachments,
       });
       conversation.rootMessageId = rootMessage.id;
       return { conversation, rootMessage };

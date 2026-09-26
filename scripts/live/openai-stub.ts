@@ -28,8 +28,32 @@ Bun.serve({
       });
     }
     if (url.pathname === "/v1/chat/completions" && req.method === "POST") {
-      const body = (await req.json()) as { model?: string; stream?: boolean };
+      const body = (await req.json()) as {
+        model?: string;
+        stream?: boolean;
+        messages?: { content?: unknown }[];
+      };
       const model = body.model ?? "stub-model";
+      // Live-image runs (issue #31): record whether the request carried image
+      // parts so the runner can prove the screenshot reached the model side.
+      if (process.env.STUB_REQUEST_LOG) {
+        const parts = (body.messages ?? []).flatMap((m) =>
+          Array.isArray(m.content) ? m.content : [],
+        );
+        const images = parts.filter(
+          (p) =>
+            typeof p === "object" &&
+            p !== null &&
+            (p as { type?: string }).type === "image_url",
+        );
+        const textSample = (body.messages ?? [])
+          .map((m) => (typeof m.content === "string" ? m.content : ""))
+          .join(" ")
+          .slice(0, 300);
+        const line = `${JSON.stringify({ image_parts: images.length, content_blocks: parts.length, text_sample: textSample })}\n`;
+        const { appendFileSync } = await import("node:fs");
+        appendFileSync(process.env.STUB_REQUEST_LOG, line);
+      }
       if (body.stream) {
         const frame = (delta: object, finish: string | null) =>
           `data: ${JSON.stringify({

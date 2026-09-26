@@ -82,6 +82,8 @@ export const messages = sqliteTable(
       enum: ["user", "employee", "system"],
     }).notNull(),
     text: text("text").notNull(),
+    /** Display refs JSON (`MessageAttachment[]`); bytes live outside the row. */
+    attachments: text("attachments"),
     /** Monotonic per channel; replay cursor (`afterSeq`) points here. */
     seq: integer("seq").notNull(),
     createdAt: integer("created_at").notNull(),

@@ -56,6 +56,8 @@ export function Composer({
   tools,
   queued,
   accept,
+  maxFileSize,
+  onAttachError,
 }: {
   placeholder: string;
   employees: Employee[];
@@ -68,6 +70,12 @@ export function Composer({
   /* What the host accepts as attachments (e.g. "image/*"). Without it the paperclip
      and chips don't render — the control needs its enabling prop. */
   accept?: string;
+  /* Attachment byte cap enforced before send (#31); the relay's own cap is the
+     authoritative copy — this one just fails fast. */
+  maxFileSize?: number;
+  /* Rejected attachment surfaced to the host (e.g. oversize) — no handler, no
+     error surface: the toast is the app's job (D-#19). */
+  onAttachError?: (message: string) => void;
 }) {
   const [draft, setDraft] = useState("");
   const mentionOpen = employees.length > 0 && /@\w*$/.test(draft);
@@ -98,6 +106,10 @@ export function Composer({
       <PromptInput
         accept={accept}
         multiple
+        maxFileSize={maxFileSize}
+        onError={
+          onAttachError ? (err) => onAttachError(err.message) : undefined
+        }
         onSubmit={({ text, files }) => {
           const t = text.trim() || draft.trim();
           if (!t && files.length === 0) return;
@@ -106,6 +118,7 @@ export function Composer({
             files.map((f) => ({
               name: f.filename ?? "attachment",
               mediaType: f.mediaType ?? "",
+              url: f.url,
             })),
           );
           setDraft("");

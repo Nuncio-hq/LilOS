@@ -1,5 +1,6 @@
-import type { AppErrorCode } from "@lilos/contracts/app";
+import { type AppErrorCode, MAX_ATTACHMENT_BYTES } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
+import { createMemoryAttachmentStore } from "../src/attachments";
 import { createRelay, type RelayWsPeer } from "../src/session";
 import { createMemoryStore } from "../src/store";
 
@@ -297,6 +298,160 @@ describe("relay session", () => {
       req("messages.post", { channelId: channel.id, text: "after-unsub" }),
     );
     expect(eventsNamed(frames, "message.created")).toHaveLength(0);
+  });
+
+  it("AC-3 attachments park bytes, messages carry refs, attachments.get returns the bytes; oversize is a typed error", async () => {
+    const relay = newRelay();
+    const { frames, connection } = await helloed(relay);
+    const { channel } = await setupChannel(frames, connection);
+
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    await connection.receive(
+      req("messages.post", {
+        channelId: channel.id,
+        text: "what does this show",
+        attachments: [
+          { name: "shot.png", mimeType: "image/png", dataBase64: png },
+        ],
+      }),
+    );
+    const posted = (
+      resultOf(frames, `t${nextId - 1}`).result as {
+        message: {
+          text: string;
+          attachments?: {
+            id: string;
+            name: string;
+            mimeType: string;
+            sizeBytes: number;
+          }[];
+        };
+      }
+    ).message;
+    // The message record holds a display reference — never the bytes.
+    expect(posted.attachments).toHaveLength(1);
+    const ref = posted.attachments?.[0];
+    expect(ref).toMatchObject({
+      name: "shot.png",
+      mimeType: "image/png",
+      sizeBytes: 70,
+    });
+    expect(JSON.stringify(posted)).not.toContain(png);
+
+    // The broadcast copy carries the same ref, no bytes.
+    frames.length = 0;
+    await connection.receive(
+      req("channel.subscribe", { channelId: channel.id }),
+    );
+    await connection.receive(
+      req("messages.post", {
+        channelId: channel.id,
+        text: "and this one",
+        attachments: [
+          { name: "shot2.png", mimeType: "image/png", dataBase64: png },
+        ],
+      }),
+    );
+    const broadcast = eventsNamed(frames, "message.created").map(
+      (e) =>
+        (
+          e.params as {
+            message: {
+              attachments?: { id: string; name: string }[];
+              text: string;
+            };
+          }
+        ).message,
+    );
+    const liveMsg = broadcast.find((m) => m.text === "and this one");
+    expect(liveMsg?.attachments?.[0]?.name).toBe("shot2.png");
+
+    // attachments.get round-trips the stored bytes.
+    await connection.receive(req("attachments.get", { id: ref?.id }));
+    const got = resultOf(frames, `t${nextId - 1}`).result as {
+      attachment: { id: string; mimeType: string };
+      dataBase64: string;
+    };
+    expect(got.attachment.id).toBe(ref?.id);
+    expect(got.dataBase64).toBe(png);
+
+    // conversations.open accepts attachments the same way (first message of a DM).
+    await connection.receive(
+      req("conversations.open", {
+        channelId: channel.id,
+        text: "here's the screenshot",
+        attachments: [
+          { name: "shot.png", mimeType: "image/png", dataBase64: png },
+        ],
+      }),
+    );
+    const { rootMessage } = resultOf(frames, `t${nextId - 1}`).result as {
+      rootMessage: { attachments?: { name: string }[] };
+    };
+    expect(rootMessage.attachments?.[0]?.name).toBe("shot.png");
+  });
+
+  it("AC-3 oversize attachments fail with attachment_too_large before anything is stored", async () => {
+    const store = createMemoryAttachmentStore();
+    const relay = createRelay({
+      store: createMemoryStore(),
+      token: TOKEN,
+      attachments: store,
+    });
+    const { frames, connection } = await helloed(relay);
+    const { channel } = await setupChannel(frames, connection);
+
+    const big = Buffer.alloc(MAX_ATTACHMENT_BYTES + 1, 0x61).toString("base64");
+    await connection.receive(
+      req("messages.post", {
+        channelId: channel.id,
+        text: "big",
+        attachments: [
+          { name: "big.png", mimeType: "image/png", dataBase64: big },
+        ],
+      }),
+    );
+    const err = errorOf(frames, `t${nextId - 1}`);
+    expect(err.data?.code).toBe("attachment_too_large" satisfies AppErrorCode);
+    expect(err.data?.sizeBytes).toBe(MAX_ATTACHMENT_BYTES + 1);
+    expect(err.data?.limit).toBe(MAX_ATTACHMENT_BYTES);
+    // Nothing was parked: the store stays empty.
+    await expect(store.get("att_anything")).resolves.toBeNull();
+
+    // A non-image mime is rejected by the schema (invalid_params).
+    await connection.receive(
+      req("messages.post", {
+        channelId: channel.id,
+        text: "doc",
+        attachments: [
+          { name: "a.pdf", mimeType: "application/pdf", dataBase64: "Zm9v" },
+        ],
+      }),
+    );
+    expect(errorOf(frames, `t${nextId - 1}`).data?.code).toBe("invalid_params");
+
+    // Corrupt base64 is invalid_params too.
+    await connection.receive(
+      req("messages.post", {
+        channelId: channel.id,
+        text: "broken",
+        attachments: [
+          {
+            name: "x.png",
+            mimeType: "image/png",
+            dataBase64: "!!!not-base64!!!",
+          },
+        ],
+      }),
+    );
+    expect(errorOf(frames, `t${nextId - 1}`).data?.code).toBe("invalid_params");
+
+    // attachments.get on an unknown id is not_found.
+    await connection.receive(req("attachments.get", { id: "att_nope" }));
+    expect(errorOf(frames, `t${nextId - 1}`).data?.code).toBe(
+      "not_found" satisfies AppErrorCode,
+    );
   });
 
   it("returns not_found for unknown ids", async () => {

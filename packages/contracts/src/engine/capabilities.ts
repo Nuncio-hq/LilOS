@@ -54,3 +54,15 @@ export const STEER_CAPABILITY: Capability = {
     "Text sent mid-turn lands at the next tool boundary of the running turn.",
   methods: ["session.steer"],
 };
+
+/**
+ * The canonical `image_prompt` descriptor (issue #31): `prompt` accepts
+ * image content blocks (`{type:"image", data, mimeType}`) alongside text.
+ * Engines not declaring it reject image blocks with invalid-params.
+ */
+export const IMAGE_PROMPT_CAPABILITY: Capability = {
+  id: "image_prompt",
+  name: "Image prompts",
+  description: "prompt accepts image content blocks (base64 data + mimeType).",
+  methods: ["prompt"],
+};

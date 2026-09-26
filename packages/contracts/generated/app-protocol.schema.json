@@ -315,6 +315,7 @@
         "conflict",
         "engine_unavailable",
         "engine_error",
+        "attachment_too_large",
         "internal"
       ]
     },
@@ -385,6 +386,7 @@
         "conversations.update",
         "messages.list",
         "messages.post",
+        "attachments.get",
         "channel.subscribe",
         "channel.unsubscribe",
         "harness.register",
@@ -1203,6 +1205,31 @@
           "default": "user",
           "type": "string",
           "minLength": 1
+        },
+        "attachments": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "default": "",
+                "type": "string"
+              },
+              "mimeType": {
+                "type": "string",
+                "pattern": "^image\\/"
+              },
+              "dataBase64": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "mimeType",
+              "dataBase64"
+            ]
+          }
         }
       },
       "required": [
@@ -1317,6 +1344,36 @@
                 "employee",
                 "system"
               ]
+            },
+            "attachments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sizeBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "mimeType",
+                  "sizeBytes"
+                ]
+              }
             }
           },
           "required": [
@@ -1519,6 +1576,36 @@
             "employee",
             "system"
           ]
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              },
+              "mimeType": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sizeBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "mimeType",
+              "sizeBytes"
+            ]
+          }
         }
       },
       "required": [
@@ -1616,6 +1703,36 @@
                   "employee",
                   "system"
                 ]
+              },
+              "attachments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "mimeType": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "sizeBytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "mimeType",
+                    "sizeBytes"
+                  ]
+                }
               }
             },
             "required": [
@@ -1669,6 +1786,31 @@
             "employee",
             "system"
           ]
+        },
+        "attachments": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "default": "",
+                "type": "string"
+              },
+              "mimeType": {
+                "type": "string",
+                "pattern": "^image\\/"
+              },
+              "dataBase64": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "mimeType",
+              "dataBase64"
+            ]
+          }
         }
       },
       "required": [
@@ -1726,6 +1868,36 @@
                 "employee",
                 "system"
               ]
+            },
+            "attachments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sizeBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "mimeType",
+                  "sizeBytes"
+                ]
+              }
             }
           },
           "required": [
@@ -1742,6 +1914,109 @@
       },
       "required": [
         "message"
+      ]
+    },
+    "AttachmentInput": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "default": "",
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string",
+          "pattern": "^image\\/"
+        },
+        "dataBase64": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "mimeType",
+        "dataBase64"
+      ]
+    },
+    "MessageAttachment": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "mimeType",
+        "sizeBytes"
+      ]
+    },
+    "AttachmentsGetParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "AttachmentsGetResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "attachment": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string"
+            },
+            "mimeType": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sizeBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "mimeType",
+            "sizeBytes"
+          ]
+        },
+        "dataBase64": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "attachment",
+        "dataBase64"
       ]
     },
     "ChannelSubscribeParams": {
@@ -2106,6 +2381,36 @@
                 "employee",
                 "system"
               ]
+            },
+            "attachments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sizeBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "mimeType",
+                  "sizeBytes"
+                ]
+              }
             }
           },
           "required": [
@@ -2334,6 +2639,36 @@
                       "employee",
                       "system"
                     ]
+                  },
+                  "attachments": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "mimeType": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "sizeBytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "mimeType",
+                        "sizeBytes"
+                      ]
+                    }
                   }
                 },
                 "required": [
@@ -3265,6 +3600,36 @@
                 "employee",
                 "system"
               ]
+            },
+            "attachments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sizeBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "mimeType",
+                  "sizeBytes"
+                ]
+              }
             }
           },
           "required": [
@@ -3340,6 +3705,36 @@
                   "employee",
                   "system"
                 ]
+              },
+              "attachments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "mimeType": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "sizeBytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "mimeType",
+                    "sizeBytes"
+                  ]
+                }
               }
             },
             "required": [

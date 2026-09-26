@@ -78,12 +78,29 @@ export type Conversation = z.infer<typeof Conversation>;
 export const AuthorKind = z.enum(["user", "employee", "system"]);
 export type AuthorKind = z.infer<typeof AuthorKind>;
 
+/**
+ * Display-only reference to a stored attachment (issue #31): the relay keeps
+ * the bytes behind `attachments.get`, so message records, history pages and
+ * replay frames carry only this ref — never the blob.
+ */
+export const MessageAttachment = z.object({
+  id: z.string().min(1),
+  /** Original filename; pasted images can carry a generic one. */
+  name: z.string(),
+  mimeType: z.string().min(1),
+  /** Decoded byte size. */
+  sizeBytes: z.int().min(0),
+});
+export type MessageAttachment = z.infer<typeof MessageAttachment>;
+
 /** A visible message the relay stores — extends the base channel envelope. */
 export const AppMessage = z.object({
   ...ChannelMessage.shape,
   /** Thread this message belongs to; `null` = top-level channel message. */
   conversationId: z.string().min(1).nullable(),
   authorKind: AuthorKind,
+  /** Attachment refs for display; bytes are fetched per id. */
+  attachments: z.array(MessageAttachment).optional(),
 });
 export type AppMessage = z.infer<typeof AppMessage>;
 
