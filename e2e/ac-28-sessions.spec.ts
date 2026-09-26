@@ -167,7 +167,7 @@ async function dmDefault(stack: Procs, page: Page) {
   await page.goto(`${stack.webUrl}/`);
   const aside = page.locator("aside");
   await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
+    timeout: 60_000, // the first run spawns the engine; suite runs are parallel
   });
   const dmBtn = page.getByRole("button", {
     name: /open dm|set up later|message/i,

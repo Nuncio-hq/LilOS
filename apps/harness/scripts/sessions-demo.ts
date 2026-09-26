@@ -48,6 +48,7 @@ const check = (id: string, ok: boolean, note: string) => {
 const out = (line: string) => console.log(`[demo28] ${line}`);
 const fail = (line: string): never => {
   console.error(`[demo28] FAIL ${line}`);
+  cleanup();
   process.exit(1);
 };
 
