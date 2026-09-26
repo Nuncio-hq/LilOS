@@ -49,6 +49,7 @@ export class EngineSupervisor {
   private stopping = false;
   private crashCount = 0;
   private startedAt = 0;
+  private reconnecting = false;
   private starting?: Promise<void>;
 
   constructor(options: EngineSupervisorOptions) {
@@ -179,6 +180,16 @@ export class EngineSupervisor {
   }
 
   private onConnected(conn: EngineConnection, reconnect: boolean) {
+    // A connect that resolved while the process was exiting (or while a
+    // stop/failure verdict landed) must not be published — drop it.
+    if (
+      this.stopping ||
+      (!this.procAlive && this.launched?.process !== undefined) ||
+      this.state.current === "failed"
+    ) {
+      conn.close();
+      return;
+    }
     this.startedAt = Date.now();
     this.state.conn = conn;
     conn.onClose?.((reason) => {
@@ -197,33 +208,39 @@ export class EngineSupervisor {
 
   /** Socket dropped but the process is alive: bounded reconnect on same url. */
   private async reconnect(url: string): Promise<void> {
-    const attempts = this.opts.reconnectAttempts;
-    for (let i = 1; i <= attempts; i++) {
-      if (this.stopping || !this.procAlive) return;
-      try {
-        const conn = await this.opts.connect(url);
-        this.opts.log.info("engine reconnected", { attempt: i });
-        this.onConnected(conn, /*reconnect*/ true);
-        return;
-      } catch (error) {
-        this.opts.log.warn("engine reconnect failed", {
-          attempt: i,
-          of: attempts,
-          error: String(error),
-        });
-        if (i < attempts) {
-          await sleep(this.opts.minBackoffMs, () => this.stopping);
+    if (this.reconnecting) return; // one reconnect loop per outage
+    this.reconnecting = true;
+    try {
+      const attempts = this.opts.reconnectAttempts;
+      for (let i = 1; i <= attempts; i++) {
+        if (this.stopping || !this.procAlive) return;
+        try {
+          const conn = await this.opts.connect(url);
+          this.opts.log.info("engine reconnected", { attempt: i });
+          this.onConnected(conn, /*reconnect*/ true);
+          return;
+        } catch (error) {
+          this.opts.log.warn("engine reconnect failed", {
+            attempt: i,
+            of: attempts,
+            error: String(error),
+          });
+          if (i < attempts) {
+            await sleep(this.opts.minBackoffMs, () => this.stopping);
+          }
         }
       }
+      if (this.stopping || !this.procAlive) return;
+      // Socket dead but process alive: count it as a crash and relaunch.
+      this.crashCount += 1;
+      if (this.crashCount >= this.opts.maxConsecutiveCrashes) {
+        this.set("failed", "engine unreachable after reconnect budget");
+        return;
+      }
+      this.relaunchAfter(this.backoff(), "reconnect budget exhausted");
+    } finally {
+      this.reconnecting = false;
     }
-    if (this.stopping || !this.procAlive) return;
-    // Socket is dead but the process is alive: count it as a crash and relaunch.
-    this.crashCount += 1;
-    if (this.crashCount >= this.opts.maxConsecutiveCrashes) {
-      this.set("failed", "engine unreachable after reconnect budget");
-      return;
-    }
-    this.relaunchAfter(this.backoff(), "reconnect budget exhausted");
   }
 
   private relaunchAfter(waitMs: number, detail: string) {

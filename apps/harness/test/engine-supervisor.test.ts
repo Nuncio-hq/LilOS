@@ -156,6 +156,63 @@ describe("AC-5 engine supervision", () => {
     await w.supervisor.stop();
   });
 
+  it("AC-5b a reconnect that resolves while the process died does not resurrect a dead engine", async () => {
+    // kill -9 ordering: the socket drop and the proc exit race. If the
+    // in-flight reconnect's connect() resolves after the proc exit landed,
+    // that conn belongs to a dead process — it must be closed, and the
+    // relaunch path must own recovery (never `running` on a corpse).
+    const w = world({ maxConsecutiveCrashes: 2, reconnectAttempts: 3 });
+    const deferred: Array<() => void> = [];
+    const supervisor = new EngineSupervisor({
+      launcher: w.launcher,
+      connect: () =>
+        new Promise<EngineConnection>((resolve) => {
+          deferred.push(() => {
+            const c = fakeConn();
+            w.conns.push(c);
+            resolve(c);
+          });
+        }),
+      onConnection: (conn, reconnect) =>
+        w.connections.push({ conn, reconnect }),
+      onState: (state) => w.states.push(state),
+      log: createMemoryLogger(),
+      minBackoffMs: 1,
+      maxBackoffMs: 4,
+      maxConsecutiveCrashes: 2,
+      stableAfterMs: 60_000,
+    });
+    const flushConnects = async () => {
+      for (let i = 0; i < 50 && deferred.length === 0; i++)
+        await new Promise((r) => setTimeout(r, 1));
+      deferred.splice(0).forEach((r) => r());
+    };
+    const started = supervisor.start();
+    await flushConnects();
+    await started;
+    expect(supervisor.state.current).toBe("running");
+
+    // Proc dies and socket drops at the same instant; reconnect's connect()
+    // resolves AFTER the exit landed.
+    w.conns[0]!.drop();
+    w.procs[0]!.die(1);
+    await flushConnects(); // stale reconnect "succeeds" late
+    await tick();
+    await tick();
+
+    // The dead-proc conn was closed, not published; relaunch (crashCount 1)
+    // owns recovery and lands a live second engine.
+    await flushConnects(); // relaunch's connect resolves
+    await tick();
+    expect(w.procs).toHaveLength(2);
+    expect(supervisor.state.current).toBe("running");
+    // Exactly two conns ever published: initial + relaunch. The stale
+    // reconnect conn was dropped — it never reaches onConnection.
+    expect(w.connections).toHaveLength(2);
+    expect(w.connections.map((c) => c.reconnect)).toEqual([false, false]);
+    await supervisor.stop();
+  });
+
   it("does not restart after stop()", async () => {
     const w = world();
     await w.supervisor.start();

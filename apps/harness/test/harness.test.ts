@@ -443,6 +443,19 @@ describe("workspace harness", () => {
       });
       await supervisor.start();
       try {
+        // The new engine doesn't know s-old → resync rebinds with an empty
+        // queue: the conversation must settle idle, not park on "active".
+        await waitFor(
+          async () => {
+            const { conversations } = await w.user.request<{
+              conversations: { id: string; state: string }[];
+            }>("conversations.list", {});
+            const c = conversations.find((x) => x.id === conversation.id);
+            return c?.state === "idle" ? c : undefined;
+          },
+          "rebind with empty queue settles idle",
+          8_000,
+        );
         await postMessage(w.user, channel.id, conversation.id, "follow up");
         await waitFor(
           async () => {

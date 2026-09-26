@@ -314,9 +314,12 @@ export class Harness {
     };
     this.bindings.set(binding.conversationId, rebound);
     this.conversationBySession.set(started.sessionId, binding.conversationId);
+    // Idle, not active: a rebind with an empty queue has nothing running —
+    // "active" would leave the conversation spinning forever. Requeued
+    // messages flip it back to active via their own turn.started.
     await this.updateConversation(binding.conversationId, {
       engineRef: started.sessionId,
-      state: "active",
+      state: "idle",
     });
     const queued = binding.queue.splice(0);
     for (const message of queued) this.enqueueOrPrompt(rebound, message);
