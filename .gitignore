@@ -7,3 +7,6 @@ playwright-report/
 .DS_Store
 *.tsbuildinfo
 tsconfig.*.tsbuildinfo
+spikes/21-smappservice/node_modules/
+spikes/21-smappservice/build/
+spikes/21-smappservice/dist/

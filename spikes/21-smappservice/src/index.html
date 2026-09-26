@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>LilOSSpike</title>
+    <style>
+      body { font-family: -apple-system, sans-serif; margin: 24px; color: #222; }
+      h1 { font-size: 20px; }
+      .card { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+      .status { font-weight: 600; }
+      button { margin-right: 8px; padding: 6px 12px; }
+      pre { background: #f5f5f5; padding: 8px; border-radius: 6px; font-size: 11px; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>LilOSSpike — background services (issue #21)</h1>
+    <p>App version: <span id="version">?</span> — quit this window and the agents below keep running.</p>
+    <div class="card" id="card-relay">
+      <div><b>relay</b> — <span class="status" id="status-relay">?</span></div>
+      <button onclick="act('relay','register')">Register</button>
+      <button onclick="act('relay','unregister')">Unregister</button>
+      <button onclick="refresh()">Refresh</button>
+      <pre id="hb-relay"></pre>
+    </div>
+    <div class="card" id="card-harness">
+      <div><b>harness</b> — <span class="status" id="status-harness">?</span></div>
+      <button onclick="act('harness','register')">Register</button>
+      <button onclick="act('harness','unregister')">Unregister</button>
+      <button onclick="refresh()">Refresh</button>
+      <pre id="hb-harness"></pre>
+    </div>
+    <button onclick="window.spike.openSettings()">Open Login Items Settings</button>
+    <script>
+      async function act(name, verb) {
+        const r = await window.spike[verb](name);
+        document.getElementById(`status-${name}`).textContent =
+          r.ok ? r.stdout : `error: ${r.stderr || r.stdout}`;
+        refresh();
+      }
+      async function refresh() {
+        for (const name of ["relay", "harness"]) {
+          const s = await window.spike.status(name);
+          if (s.ok) document.getElementById(`status-${name}`).textContent = s.stdout;
+          document.getElementById(`hb-${name}`).textContent =
+            await window.spike.heartbeat(name);
+        }
+        document.getElementById("version").textContent = await window.spike.version();
+      }
+      refresh();
+      setInterval(refresh, 5000);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "lilos-smappservice-spike",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Issue #21 spike: two launch agents (relay, harness) bundled in a signed Electron app",
+  "main": "src/main.js",
+  "scripts": {
+    "build": "scripts/build.sh"
+  },
+  "devDependencies": {
+    "electron": "44.4.5"
+  }
+}
