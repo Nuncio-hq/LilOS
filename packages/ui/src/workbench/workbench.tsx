@@ -12,7 +12,7 @@ import {
   RefreshCcwIcon,
   SquareTerminalIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Commit,
   CommitActions,
@@ -60,14 +60,17 @@ import {
   TabsTrigger,
 } from "../components/ui/tabs";
 import { plural } from "../lib/helpers";
-import type { Employee, HumanFn, Thread, WbTab, Work } from "../types";
+import type { Diff, Employee, HumanFn, Thread, WbTab, Work } from "../types";
+import type { TreeNode } from "./artifacts";
 import { buildTree, sessionArtifacts } from "./artifacts";
 import { DiffView } from "./diff-view";
 import { TreeNodes } from "./file-tree-nodes";
 import { PrPanel } from "./pr-panel";
 
-/* Right-hand workbench of Focus, derived only from the session's steps:
-   Changes (inline_diff), Files, Terminal, Preview, PR. repoFiles is the app's mock repo listing. */
+/* Right-hand workbench of Focus, derived from the session's steps, or — when the session
+   runs in a real folder on this machine (work.path) and host accessors are wired — from the
+   live fs/git host API: Files = fs.tree, Changes = git.diff, file view = fs.read.
+   repoFiles is the app's mock repo listing (fallback when no host answers). */
 export function Workbench({
   thread,
   work,
@@ -81,6 +84,7 @@ export function Workbench({
   onSend,
   say,
   repoFiles,
+  host,
   human,
   onPrComment,
   onPrMerge,
@@ -98,18 +102,64 @@ export function Workbench({
   onSend?: (t: string) => void;
   say?: (t: string) => void;
   repoFiles?: string[];
+  /** Live host accessors for the session's real cwd (issue #11). */
+  host?: {
+    tree: (cwd: string) => Promise<string[] | null>;
+    diff: (cwd: string) => Promise<Diff[] | null>;
+    read: (
+      cwd: string,
+      path: string,
+    ) => Promise<{
+      content: string;
+      binary: boolean;
+      truncated: boolean;
+    } | null>;
+  };
   human: HumanFn;
   onPrComment?: (t: string) => void;
   onPrMerge?: () => void;
 }) {
   const a = sessionArtifacts(thread);
   const [sel, setSel] = useState<string | null>(null);
-  const changed = new Map(a.diffs.map((d) => [d.path, d]));
+  const [viewFile, setViewFile] = useState<{
+    path: string;
+    content: string;
+    binary: boolean;
+    truncated: boolean;
+  } | null>(null);
+  const liveCwd = work?.path;
+  const [live, setLive] = useState<{
+    files: string[];
+    diffs: Diff[];
+  } | null>(null);
+  const [livePending, setLivePending] = useState(false);
+  // Read the session folder live when a host is wired; null entries = host
+  // unreachable / path not a repo → fall back to the session-derived mock.
+  useEffect(() => {
+    setViewFile(null);
+    if (!host || !liveCwd) {
+      setLive(null);
+      return;
+    }
+    const cwd = liveCwd;
+    let off = false;
+    setLivePending(true);
+    void Promise.all([host.tree(cwd), host.diff(cwd)]).then(([files, d]) => {
+      if (off) return;
+      setLive(files === null ? null : { files, diffs: d ?? [] });
+      setLivePending(false);
+    });
+    return () => {
+      off = true;
+    };
+  }, [liveCwd]);
+  const diffs = live?.diffs ?? a.diffs;
+  const changed = new Map(diffs.map((d) => [d.path, d]));
   const tree = buildTree([
-    ...new Set([...(repoFiles ?? []), ...changed.keys()]),
+    ...new Set([...(live?.files ?? repoFiles ?? []), ...changed.keys()]),
   ]);
   const folders = new Set<string>();
-  a.diffs.forEach((d) => {
+  diffs.forEach((d) => {
     d.path
       .split("/")
       .slice(0, -1)
@@ -117,10 +167,31 @@ export function Workbench({
         folders.add(arr.slice(0, i + 1).join("/"));
       });
   });
+  // Folder names expand the tree, file names read the file (or open its diff).
+  const dirs = new Set<string>();
+  const walkDirs = (n: TreeNode) => {
+    for (const c of n.children.values())
+      if (c.children.size > 0) {
+        dirs.add(c.path);
+        walkDirs(c);
+      }
+  };
+  walkDirs(tree);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const expandedSeed = new Set(["packages", "apps", ...folders]);
+  useEffect(() => {
+    setExpanded((e) => {
+      const n = new Set(e);
+      for (const f of expandedSeed) n.add(f);
+      return n;
+    });
+  }, [live]);
   const cwd =
     work?.path ??
     (work?.branch ? `.lilos/wt/${work.ticket.toLowerCase()}` : "main");
-  const shown = sel ? a.diffs.filter((d) => d.path === sel) : a.diffs;
+  const shown = sel ? diffs.filter((d) => d.path === sel) : diffs;
+  const addT = diffs.reduce((s, d) => s + d.add, 0);
+  const delT = diffs.reduce((s, d) => s + d.del, 0);
   const count = (n: number) =>
     n > 0 && (
       <span className="rounded bg-muted px-1 font-mono text-[10px] text-muted-foreground">
@@ -140,7 +211,7 @@ export function Workbench({
         >
           <TabsTrigger value="changes">
             <FileDiffIcon />
-            Changes{count(a.diffs.length)}
+            Changes{count(diffs.length)}
           </TabsTrigger>
           <TabsTrigger value="files">
             <FolderGit2Icon />
@@ -183,10 +254,15 @@ export function Workbench({
 
       <TabsContent value="changes" className="min-h-0 flex-1">
         <ScrollArea className="h-full">
-          {a.diffs.length === 0 ? (
+          {diffs.length === 0 ? (
             <div className="flex flex-col items-center gap-2 p-8 text-center text-muted-foreground text-xs">
               <EyeIcon className="size-5" />
-              {work?.branch ? (
+              {live ? (
+                <p>
+                  Clean working tree in <span className="font-mono">{cwd}</span>
+                  .
+                </p>
+              ) : work?.branch ? (
                 <p>
                   No edits yet on{" "}
                   <span className="font-mono">⎇ {work.branch}</span>.
@@ -229,10 +305,10 @@ export function Workbench({
             <div className="space-y-3 p-3">
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <span className="font-medium">
-                  {plural(a.diffs.length, "file")} changed
+                  {plural(diffs.length, "file")} changed
                 </span>
-                <span className="font-mono text-emerald-600">+{a.add}</span>
-                <span className="font-mono text-red-600">−{a.del}</span>
+                <span className="font-mono text-emerald-600">+{addT}</span>
+                <span className="font-mono text-red-600">−{delT}</span>
                 {work?.branch && (
                   <span className="flex items-center gap-1 text-muted-foreground">
                     <GitBranchIcon className="size-3" />
@@ -309,25 +385,82 @@ export function Workbench({
             <div className="mb-2 flex items-center gap-1.5 text-muted-foreground text-xs">
               <FolderGit2Icon className="size-3.5" />
               <span className="font-mono">{cwd}</span>
-              {a.diffs.length > 0 && (
+              {diffs.length > 0 && (
                 <span>
-                  · {plural(a.diffs.length, "file")} touched by this session
+                  · {plural(diffs.length, "file")}{" "}
+                  {live ? "changed" : "touched by this session"}
                 </span>
               )}
             </div>
-            <FileTree
-              defaultExpanded={new Set(["packages", "apps", ...folders])}
-              selectedPath={sel ?? undefined}
-              onSelect={(p) => {
-                if (changed.has(p)) {
-                  setSel(p);
-                  setTab("changes");
-                } else say?.(`${p} · unchanged in this session`);
-              }}
-              className="border-0 text-xs"
-            >
-              <TreeNodes node={tree} changed={changed} />
-            </FileTree>
+            {livePending ? (
+              <div className="py-6 text-center text-muted-foreground text-xs">
+                Reading <span className="font-mono">{cwd}</span>…
+              </div>
+            ) : viewFile ? (
+              <div data-fileview className="space-y-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => setViewFile(null)}
+                  >
+                    ← Files
+                  </Button>
+                  <span className="min-w-0 truncate font-mono text-muted-foreground">
+                    {viewFile.path}
+                  </span>
+                </div>
+                {viewFile.binary ? (
+                  <p className="py-4 text-center text-muted-foreground text-xs">
+                    Binary file — not shown.
+                  </p>
+                ) : (
+                  <pre className="max-h-[60vh] overflow-auto rounded-lg border bg-muted/30 p-3 font-mono text-[11px] leading-5">
+                    {viewFile.content}
+                    {viewFile.truncated && (
+                      <div className="pt-2 text-muted-foreground">
+                        … truncated
+                      </div>
+                    )}
+                  </pre>
+                )}
+              </div>
+            ) : (
+              <FileTree
+                expanded={expanded}
+                onExpandedChange={setExpanded}
+                selectedPath={sel ?? undefined}
+                onSelect={(p) => {
+                  if (dirs.has(p)) {
+                    setExpanded((e) => {
+                      const n = new Set(e);
+                      if (n.has(p)) n.delete(p);
+                      else n.add(p);
+                      return n;
+                    });
+                  } else if (changed.has(p)) {
+                    setSel(p);
+                    setTab("changes");
+                  } else if (host && liveCwd) {
+                    void host.read(liveCwd, p).then((r) =>
+                      setViewFile(
+                        r
+                          ? { path: p, ...r }
+                          : {
+                              path: p,
+                              content: "",
+                              binary: true,
+                              truncated: false,
+                            },
+                      ),
+                    );
+                  } else say?.(`${p} · unchanged in this session`);
+                }}
+                className="border-0 text-xs"
+              >
+                <TreeNodes node={tree} changed={changed} />
+              </FileTree>
+            )}
           </div>
         </ScrollArea>
       </TabsContent>

@@ -55,6 +55,7 @@ import { HermesAvatar } from "../shell/avatars";
 import type {
   AttachedFile,
   Channel,
+  Diff,
   EmpFn,
   Employee,
   HumanFn,
@@ -95,6 +96,7 @@ export function FocusView({
   say,
   models,
   repoFiles,
+  host,
   onPrComment,
   onPrMerge,
   pending,
@@ -123,6 +125,19 @@ export function FocusView({
   say?: (t: string) => void;
   models?: ModelOption[];
   repoFiles?: string[];
+  /** Live host accessors forwarded to the Workbench (issue #11). */
+  host?: {
+    tree: (cwd: string) => Promise<string[] | null>;
+    diff: (cwd: string) => Promise<Diff[] | null>;
+    read: (
+      cwd: string,
+      path: string,
+    ) => Promise<{
+      content: string;
+      binary: boolean;
+      truncated: boolean;
+    } | null>;
+  };
   onPrComment?: (t: string) => void;
   onPrMerge?: () => void;
   pending?: string[];
@@ -533,6 +548,7 @@ export function FocusView({
                 onSend={(t) => onSend(t)}
                 say={say}
                 repoFiles={repoFiles}
+                host={host}
                 human={human}
                 onPrComment={onPrComment}
                 onPrMerge={onPrMerge}
