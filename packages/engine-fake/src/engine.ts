@@ -61,6 +61,8 @@ interface FakeTurn {
 
 interface FakeSession {
   id: string;
+  /** Durable external ref (Hermes's stored_session_id analogue); init = id. */
+  ref: string;
   agent: string;
   cwd: string;
   model?: string;
@@ -107,6 +109,7 @@ export class FakeEngine {
   );
   private listeners = new Set<(e: EngineEvent) => void>();
   private sessionCounter = 0;
+  private refCounter = 0;
   private turnCounter = 0;
   private hexCounter = 0;
 
@@ -128,24 +131,18 @@ export class FakeEngine {
   }
 
   /**
-   * Rotate a session's external reference — the #22 verdict case where an
-   * orphan reattach lands the session under a fresh handle. The session
-   * (log, seq, open asks, running turn) survives; only the handle moves,
-   * and calls against the old ref start failing with SESSION_NOT_FOUND.
+   * Rotate a session's durable ref — Hermes rotates `stored_session_id` on
+   * non-in-place compression; the transport sessionId stays stable, only the
+   * external resume token moves. Emits `session.ref.changed {ref, previousRef}`.
    * Returns the new ref, or null for an unknown session.
    */
-  rotateSessionRef(sessionId: string, reason = "ref rotated"): string | null {
+  rotateSessionRef(sessionId: string): string | null {
     const s = this.sessions.get(sessionId);
     if (!s) return null;
-    const next = `s${++this.sessionCounter}`;
-    this.sessions.delete(sessionId);
-    s.id = next;
-    this.sessions.set(next, s);
-    this.emit(s, "session.ref.changed", {
-      previousSessionId: sessionId,
-      reason,
-    });
-    return next;
+    const previousRef = s.ref;
+    s.ref = `${s.ref}-r${++this.refCounter}`;
+    this.emit(s, "session.ref.changed", { ref: s.ref, previousRef });
+    return s.ref;
   }
 
   async dispatch(method: string, params: unknown): Promise<unknown> {
@@ -251,6 +248,7 @@ export class FakeEngine {
       );
     const id = `s${++this.sessionCounter}`;
     const s: FakeSession = {
+      ref: id,
       id,
       agent: p.agent,
       cwd: p.cwd,

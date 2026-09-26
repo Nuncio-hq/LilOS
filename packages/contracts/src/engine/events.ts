@@ -141,15 +141,14 @@ export const TurnCompletedPayload = z.strictObject({
 });
 
 /**
- * The engine rotated a session's external reference (e.g. after an orphan
- * reattach assigned a fresh handle, per the #22 sleep/wake verdict). The
- * event's `sessionId` is the NEW reference; `previousSessionId` is the one
- * the harness must rebind away from. `seq` continues the session's counter —
- * the stream is uninterrupted, only the handle changed.
+ * The engine re-keyed a session's durable ref (Hermes rotates
+ * `stored_session_id` when compression is not in-place). `ref` is what a
+ * client stores for resume/reattach — the transport `sessionId` itself stays
+ * stable across a rotation, so this event is the only way to notice it.
  */
 export const SessionRefChangedPayload = z.strictObject({
-  previousSessionId: SessionId,
-  reason: z.string().optional(),
+  ref: z.string().min(1),
+  previousRef: z.string().min(1),
 });
 
 /** type -> payload map. The registry below is generated from this union. */
@@ -165,12 +164,6 @@ export const EngineEvent = z.discriminatedUnion("type", [
     sessionId: SessionId,
     type: z.literal("session.state"),
     payload: SessionStatePayload,
-  }),
-  z.strictObject({
-    seq: Seq,
-    sessionId: SessionId,
-    type: z.literal("session.ref.changed"),
-    payload: SessionRefChangedPayload,
   }),
   z.strictObject({
     seq: Seq,
