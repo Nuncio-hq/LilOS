@@ -236,13 +236,16 @@ export function createRelay(options: RelayOptions): Relay {
   };
 
   /** A response frame (no `method`, has `result`|`error`) answers a forwarded call. */
-  const resolveHostCall = (frame: {
-    id: unknown;
-    result?: unknown;
-    error?: unknown;
-  }) => {
+  const resolveHostCall = (
+    peer: RelayWsPeer,
+    frame: {
+      id: unknown;
+      result?: unknown;
+      error?: unknown;
+    },
+  ) => {
     const call = hostCalls.get(String(frame.id));
-    if (!call) return;
+    if (!call || call.hostPeer !== peer) return;
     hostCalls.delete(String(frame.id));
     clearTimeout(call.timer);
     const error = frame.error as
@@ -874,6 +877,7 @@ export function createRelay(options: RelayOptions): Relay {
             ("result" in candidate || "error" in candidate)
           ) {
             resolveHostCall(
+              peer,
               candidate as { id: unknown; result?: unknown; error?: unknown },
             );
             return;

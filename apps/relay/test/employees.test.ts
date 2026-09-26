@@ -342,6 +342,24 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
     expect(errorData(user.frames, lastId())).toBe("engine_unavailable");
   });
 
+  it("a non-host peer cannot resolve a forwarded call", async () => {
+    const relay = newRelay();
+    await engineHost(relay);
+    const user = await helloed(relay);
+
+    await user.connection.receive(req("agents.list"));
+    const callerId = lastId();
+    // Race a forged response in from the caller itself before the host answers.
+    await user.connection.receive(
+      JSON.stringify({ jsonrpc: "2.0", id: "hr-1", result: { agents: [] } }),
+    );
+    await tick();
+    const { agents } = resultOf(user.frames, callerId).result as {
+      agents: { id: string }[];
+    };
+    expect(agents.map((a) => a.id)).toContain("builder");
+  });
+
   it("an engine-side error reaches the caller as engine_error", async () => {
     const relay = newRelay();
     await engineHost(relay);
