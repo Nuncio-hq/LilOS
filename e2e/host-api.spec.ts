@@ -61,14 +61,16 @@ test("AC-1..4 picker + session cwd + Workbench Files/Changes over host API", asy
   // ── AC-1: folder picker lists real dirs + marks repos ──
   await page.locator("[data-ws='folder']").click();
   await page.getByText("Add a folder…").click();
-  // "Found on this Mac" = git.discoverRepos result
-  await expect(page.locator(`[data-discovered="${repoReal}"]`)).toBeVisible({
-    timeout: 15_000,
-  });
-  // Type the repo's parent: fs.list lazy-loads it, the row shows a git mark.
+  // "Found on this Mac" = git.discoverRepos result (paths may come back
+  // `~`-collapsed, so match the row by its basename).
+  await expect(
+    page.locator(`[data-discovered$="/${basename(repoReal)}"]`),
+  ).toBeVisible({ timeout: 15_000 });
+  // Type the repo's parent: fs.list lazy-loads each hop (the parent, then the
+  // dir itself) and the repo row carries a git mark.
   await page.locator("[data-pathinput]").fill(`${dirname(repoReal)}/`);
   const row = page.locator(`[data-fsrow="${basename(repoReal)}"]`);
-  await expect(row).toBeVisible({ timeout: 15_000 });
+  await expect(row).toBeVisible({ timeout: 30_000 });
   await expect(row.locator("svg").first()).toBeVisible();
   await row.click();
   await expect(page.locator("[data-folderinfo]")).toContainText("Git repo");
@@ -87,7 +89,7 @@ test("AC-1..4 picker + session cwd + Workbench Files/Changes over host API", asy
 
   // ── AC-1 cont.: Terminal shows `$ pwd` → the picked folder ──
   await page.getByRole("tab", { name: /Terminal/ }).click();
-  const termOut = page.locator("pre.whitespace-pre-wrap");
+  const termOut = page.locator("pre.whitespace-pre-wrap").first();
   await expect(termOut).toContainText("$ pwd", { timeout: 30_000 });
   await expect(termOut).toContainText(repoReal);
 

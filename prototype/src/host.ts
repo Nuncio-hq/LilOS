@@ -24,7 +24,9 @@ type ListResult = {
 const dirCache = new Map<string, Promise<Record<string, FsDir> | null>>()
 
 /* fs.list → FsDir rows: the dir's children + a git-marked stub per repo child. The dir's
-   own mark (branches) is fetched too, so picking it fills the folder card for real. */
+   own mark (branches) is fetched too, so picking it fills the folder card for real.
+   The host collapses paths under its home to `~`, but the dialog looks rows up by the
+   path it asked for — so the row is keyed by both the result path and the request path. */
 export function hostDir(path: string): Promise<Record<string, FsDir> | null> {
   let p = dirCache.get(path)
   if (!p) {
@@ -52,9 +54,14 @@ export function hostDir(path: string): Promise<Record<string, FsDir> | null> {
           ? { git: { branches: self.branches.length ? self.branches : [self.current ?? "HEAD"], remote: self.remote ?? undefined } }
           : {}),
       }
+      if (r.path !== path) out[path] = out[r.path]
       return out
-    })().catch(() => null) // cached: a missing dir stays missing this session
+    })().catch(() => null)
     dirCache.set(path, p)
+    // A failed listing is not cached — the next onNeedDir retries.
+    void p.then((m) => {
+      if (m === null) dirCache.delete(path)
+    })
   }
   return p
 }
