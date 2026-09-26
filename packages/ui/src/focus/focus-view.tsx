@@ -69,6 +69,7 @@ import type {
   Work,
 } from "../types";
 import { sessionArtifacts } from "../workbench/artifacts";
+import type { LiveSurfaces } from "../workbench/live";
 import { Workbench } from "../workbench/workbench";
 import { SessionUsage } from "./session-usage";
 
@@ -101,6 +102,7 @@ export function FocusView({
   host,
   onPrComment,
   onPrMerge,
+  surfaces,
   pending,
   steer = false,
   onRemovePending,
@@ -133,6 +135,8 @@ export function FocusView({
   host?: HostAccessors;
   onPrComment?: (t: string) => void | Promise<void>;
   onPrMerge?: (method: MergeMethod) => void | Promise<void>;
+  /** Live harness surfaces for Workbench Terminal/Preview tabs (issue #36). */
+  surfaces?: LiveSurfaces;
   /* Mid-turn sends: pending-steer chips when `steer` is declared, the queued tray without it. */
   pending?: string[];
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
@@ -553,6 +557,7 @@ export function FocusView({
                 human={human}
                 onPrComment={onPrComment}
                 onPrMerge={onPrMerge}
+                live={surfaces}
               />
             </aside>
           </>

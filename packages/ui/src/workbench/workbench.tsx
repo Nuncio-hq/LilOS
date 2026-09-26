@@ -75,6 +75,7 @@ import type { TreeNode } from "./artifacts";
 import { buildTree, sessionArtifacts } from "./artifacts";
 import { DiffView } from "./diff-view";
 import { TreeNodes } from "./file-tree-nodes";
+import { LivePreview, type LiveSurfaces, LiveTerminal } from "./live";
 import { PrPanel } from "./pr-panel";
 
 /* Right-hand workbench of Focus, derived from the session's steps, or — when the session
@@ -98,6 +99,7 @@ export function Workbench({
   human,
   onPrComment,
   onPrMerge,
+  live,
 }: {
   thread: Thread;
   work: Work | null;
@@ -117,6 +119,8 @@ export function Workbench({
   human: HumanFn;
   onPrComment?: (t: string) => void | Promise<void>;
   onPrMerge?: (method: MergeMethod) => void | Promise<void>;
+  /** Live harness surfaces (issue #36): replaces the mock Terminal/Preview tabs. */
+  live?: LiveSurfaces;
 }) {
   const a = sessionArtifacts(thread);
   const [sel, setSel] = useState<string | null>(null);
@@ -127,7 +131,7 @@ export function Workbench({
     truncated: boolean;
   } | null>(null);
   const liveCwd = work?.path;
-  const [live, setLive] = useState<{
+  const [hostFiles, setHostFiles] = useState<{
     files: string[];
     diffs: Diff[];
   } | null>(null);
@@ -146,7 +150,7 @@ export function Workbench({
   useEffect(() => {
     setViewFile(null);
     if (!host || !liveCwd) {
-      setLive(null);
+      setHostFiles(null);
       setLivePr(null);
       return;
     }
@@ -156,7 +160,7 @@ export function Workbench({
     void Promise.all([host.tree(cwd), host.diff(cwd), host.pr?.(cwd)]).then(
       ([files, d, pr]) => {
         if (off) return;
-        setLive(files === null ? null : { files, diffs: d ?? [] });
+        setHostFiles(files === null ? null : { files, diffs: d ?? [] });
         if (pr) setLivePr(pr);
         setLivePending(false);
       },
@@ -165,10 +169,10 @@ export function Workbench({
       off = true;
     };
   }, [liveCwd]);
-  const diffs = live?.diffs ?? a.diffs;
+  const diffs = hostFiles?.diffs ?? a.diffs;
   const changed = new Map(diffs.map((d) => [d.path, d]));
   const tree = buildTree([
-    ...new Set([...(live?.files ?? repoFiles ?? []), ...changed.keys()]),
+    ...new Set([...(hostFiles?.files ?? repoFiles ?? []), ...changed.keys()]),
   ]);
   const folders = new Set<string>();
   diffs.forEach((d) => {
@@ -197,7 +201,7 @@ export function Workbench({
       for (const f of expandedSeed) n.add(f);
       return n;
     });
-  }, [live]);
+  }, [hostFiles]);
   const cwd =
     work?.path ??
     (work?.branch ? `.lilos/wt/${work.ticket.toLowerCase()}` : "main");
@@ -439,7 +443,7 @@ export function Workbench({
               {diffs.length > 0 && (
                 <span>
                   · {plural(diffs.length, "file")}{" "}
-                  {live ? "changed" : "touched by this session"}
+                  {hostFiles ? "changed" : "touched by this session"}
                 </span>
               )}
             </div>
@@ -517,73 +521,82 @@ export function Workbench({
       </TabsContent>
 
       <TabsContent value="terminal" className="flex min-h-0 flex-1 flex-col">
-        <Terminal
-          output={
-            a.termOut || "\u001b[90mNo commands yet in this session.\u001b[0m"
-          }
-          isStreaming={a.termRunning}
-          className="min-h-0 flex-1 rounded-none border-0"
-        >
-          <TerminalHeader className="py-1.5">
-            <TerminalTitle className="text-xs">
-              <span className="font-mono">{cwd}</span>
-              {!work?.branch && (
-                <span className="rounded bg-zinc-800 px-1 text-[10px]">
-                  read-only
-                </span>
-              )}
-            </TerminalTitle>
-            <div className="flex items-center gap-1">
-              <TerminalStatus>
-                <Shimmer as="span" duration={1}>
-                  running
-                </Shimmer>
-              </TerminalStatus>
-              <TerminalActions>
-                <TerminalCopyButton />
-              </TerminalActions>
-            </div>
-          </TerminalHeader>
-          <TerminalContent className="max-h-none min-h-0 flex-1 text-xs" />
-        </Terminal>
+        {live ? (
+          <LiveTerminal live={live} cwd={cwd} />
+        ) : (
+          <Terminal
+            output={
+              a.termOut || "\u001b[90mNo commands yet in this session.\u001b[0m"
+            }
+            isStreaming={a.termRunning}
+            className="min-h-0 flex-1 rounded-none border-0"
+          >
+            <TerminalHeader className="py-1.5">
+              <TerminalTitle className="text-xs">
+                <span className="font-mono">{cwd}</span>
+                {!work?.branch && (
+                  <span className="rounded bg-zinc-800 px-1 text-[10px]">
+                    read-only
+                  </span>
+                )}
+              </TerminalTitle>
+              <div className="flex items-center gap-1">
+                <TerminalStatus>
+                  <Shimmer as="span" duration={1}>
+                    running
+                  </Shimmer>
+                </TerminalStatus>
+                <TerminalActions>
+                  <TerminalCopyButton />
+                </TerminalActions>
+              </div>
+            </TerminalHeader>
+            <TerminalContent className="max-h-none min-h-0 flex-1 text-xs" />
+          </Terminal>
+        )}
       </TabsContent>
 
       <TabsContent value="preview" className="flex min-h-0 flex-1 flex-col">
-        <WebPreview
-          defaultUrl="http://localhost:5173"
-          className="rounded-none border-0"
-        >
-          <WebPreviewNavigation className="p-1.5">
-            {say && (
-              <WebPreviewNavigationButton
-                tooltip="Reload"
-                onClick={() => say("Reload (prototype)")}
-              >
-                <RefreshCcwIcon className="size-4" />
-              </WebPreviewNavigationButton>
-            )}
-            <WebPreviewUrl />
-          </WebPreviewNavigation>
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground text-xs">
-            <GlobeIcon className="size-5" />
-            <p>
-              No dev server running in <span className="font-mono">{cwd}</span>.
-            </p>
-            {onSend && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  onSend(
-                    "Start the dev server in the background and give me the URL",
-                  )
-                }
-              >
-                Ask {lead?.name ?? "employee"} to run pnpm dev
-              </Button>
-            )}
-          </div>
-        </WebPreview>
+        {live ? (
+          <LivePreview live={live} />
+        ) : (
+          <WebPreview
+            defaultUrl="http://localhost:5173"
+            className="rounded-none border-0"
+          >
+            <WebPreviewNavigation className="p-1.5">
+              {say && (
+                <WebPreviewNavigationButton
+                  tooltip="Reload"
+                  onClick={() => say("Reload (prototype)")}
+                >
+                  <RefreshCcwIcon className="size-4" />
+                </WebPreviewNavigationButton>
+              )}
+              <WebPreviewUrl />
+            </WebPreviewNavigation>
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground text-xs">
+              <GlobeIcon className="size-5" />
+              <p>
+                No dev server running in{" "}
+                <span className="font-mono">{cwd}</span>.
+              </p>
+              {onSend && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    onSend(
+                      "Start the dev server in the background and give me the URL",
+                    )
+                  }
+                >
+                  Ask {lead?.name ?? "employee"} to run pnpm dev
+                </Button>
+              )}
+            </div>
+          </WebPreview>
+        )}
       </TabsContent>
 
       {prShown && (
