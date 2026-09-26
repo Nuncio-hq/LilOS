@@ -295,7 +295,7 @@ const h = new Harness(conn, WAIT_MS);
   };
   // Merge `k: v` pairs into a top-level `key:` block (created if absent).
   const upsertBlock = (key: string, kv: [string, string][]) => {
-    const i = lines.findIndex((l) => new RegExp(`^${key}:\s*$`).test(l));
+    const i = lines.findIndex((l) => new RegExp(`^${key}:\\s*$`).test(l));
     if (i < 0) {
       lines.push("", `${key}:`, ...kv.map(([k, v]) => `  ${k}: ${v}`));
       return;
@@ -397,7 +397,11 @@ for (const suite of SUITES) {
     // "pending" is the compute-host path; the ref rotation then arrives
     // asynchronously via session.info — refWait still covers it.
     if (
-      !(res.compressed || res.status === "compressed" || res.status === "pending")
+      !(
+        res.compressed ||
+        res.status === "compressed" ||
+        res.status === "pending"
+      )
     )
       throw new Error(
         `session.compress did not compress: ${JSON.stringify(res)}`,
