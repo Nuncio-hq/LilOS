@@ -103,8 +103,9 @@ export class ChromiumBrowser implements BrowserDriver {
       return;
     }
     const cur = page.viewportSize();
-    if (cur && cur.width === size.width && cur.height === size.height) return;
-    await page.setViewportSize(size);
+    if (!cur || cur.width !== size.width || cur.height !== size.height) {
+      await page.setViewportSize(size);
+    }
     this.vp = { ...size };
   }
 

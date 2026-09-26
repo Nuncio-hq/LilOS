@@ -217,50 +217,34 @@ test.describe
       const img = page.locator("img[alt='live preview']");
       await expect(img).toBeVisible({ timeout: 20_000 });
       const pane = img.locator("..");
-      const box = await pane.boundingBox();
-      expect(box).not.toBeNull();
-      const wantW = Math.round(box?.width ?? 0);
-      const wantH = Math.round(box?.height ?? 0);
+      /* Compare against the pane's size at poll time, not a snapshot: the
+         pane can still settle (sibling specs, panel animation) after the
+         first measure, and the app re-reports on every ResizeObserver tick. */
+      const paneSize = async () => {
+        const b = await pane.boundingBox();
+        return { w: Math.round(b?.width ?? 0), h: Math.round(b?.height ?? 0) };
+      };
+      const remote = async (expression: string) =>
+        (await tool("browser_eval", { expression })).body.result?.value;
+      const fits = async () => {
+        const want = await paneSize();
+        const [w, h] = [
+          await remote("innerWidth"),
+          await remote("innerHeight"),
+        ];
+        const frame = await img.evaluate(
+          (i: HTMLImageElement) => i.naturalWidth,
+        );
+        return w === want.w && h === want.h && frame === want.w && want.w > 0;
+      };
 
-      // The remote page really resizes to the pane's pixels.
-      await expect
-        .poll(
-          async () =>
-            (await tool("browser_eval", { expression: "innerWidth" })).body
-              .result?.value,
-          { timeout: 20_000 },
-        )
-        .toBe(wantW);
-      await expect
-        .poll(
-          async () =>
-            (await tool("browser_eval", { expression: "innerHeight" })).body
-              .result?.value,
-        )
-        .toBe(wantH);
-
-      // Frames arrive at pane size → object-contain fills the box exactly.
-      await expect
-        .poll(
-          async () => img.evaluate((i: HTMLImageElement) => i.naturalWidth),
-          {
-            timeout: 20_000,
-          },
-        )
-        .toBe(wantW);
+      // The remote page really resizes to the pane's pixels, and frames
+      // arrive at pane size → object-contain fills the box exactly.
+      await expect.poll(fits, { timeout: 20_000 }).toBe(true);
 
       // A pane resize propagates again.
       await page.setViewportSize({ width: 1000, height: 640 });
-      const box2 = await pane.boundingBox();
-      const wantW2 = Math.round(box2?.width ?? 0);
-      await expect
-        .poll(
-          async () =>
-            (await tool("browser_eval", { expression: "innerWidth" })).body
-              .result?.value,
-          { timeout: 20_000 },
-        )
-        .toBe(wantW2);
+      await expect.poll(fits, { timeout: 20_000 }).toBe(true);
       await page.screenshot({ path: `${SHOT}/ac-4-viewport-fit.png` });
     });
   });

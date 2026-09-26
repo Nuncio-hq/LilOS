@@ -65,6 +65,7 @@ export class SessionSurfaces implements ViewerScope {
   private readonly runWaiters = new Set<() => void>();
   /** The pane size the owned page should render at (issue #56 AC-4). */
   private viewportSize = DEFAULT_PAGE;
+  private resizing?: Promise<void>;
 
   constructor(opts: SurfaceScopeOptions) {
     this.session = opts.session;
@@ -418,11 +419,28 @@ export class SessionSurfaces implements ViewerScope {
       this.emit({ kind: "page", page: this.viewportSize });
       return;
     }
-    if (b.viewport.width === width && b.viewport.height === height) return;
-    void b
-      .resize({ width, height })
-      .then(() => this.emit({ kind: "page", page: b.viewport }))
-      .catch(() => {});
+    // Serialize and always converge on the LATEST requested size: comparing
+    // against `b.viewport` while an earlier resize is still in flight let a
+    // transient size (pane mid-layout) land last and stick.
+    if (this.resizing) return;
+    this.resizing = (async () => {
+      while (
+        b.viewport.width !== this.viewportSize.width ||
+        b.viewport.height !== this.viewportSize.height
+      ) {
+        const want = { ...this.viewportSize };
+        await b.resize(want).catch(() => {});
+        // Driver didn't land it (refused/closed): stop, never spin.
+        if (
+          b.viewport.width !== want.width ||
+          b.viewport.height !== want.height
+        )
+          break;
+      }
+      this.emit({ kind: "page", page: b.viewport });
+    })().finally(() => {
+      this.resizing = undefined;
+    });
   }
   browserNavigate(url: string) {
     void this.requireBrowser().then((b) => b.navigate(url));
