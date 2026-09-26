@@ -1,0 +1,199 @@
+import {
+  BellIcon,
+  ChevronRightIcon,
+  FolderGit2Icon,
+  FolderIcon,
+  InboxIcon,
+  ShieldAlertIcon,
+  TicketIcon,
+  UserPlusIcon,
+  XIcon,
+} from "lucide-react";
+import { Avatar, AvatarFallback } from "../components/ui/avatar";
+import { Button } from "../components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "../components/ui/collapsible";
+import { ScrollArea } from "../components/ui/scroll-area";
+import { cn } from "../lib/utils";
+import { ChannelItem, NavItem, Section } from "../sidebar/nav";
+import type { Channel, Employee, Project, Theme } from "../types";
+import { HermesAvatar } from "./avatars";
+import { ThemeToggle } from "./theme-toggle";
+
+/* The company sidebar: nav, company channels, projects (with folders + channels), employees, me-row.
+   All data (company channels, projects, folders, employees) comes in as props. */
+export function Sidebar({
+  navOpen,
+  hiddenWhenClosed,
+  companyChannels,
+  projects,
+  folders,
+  employees,
+  view,
+  theme,
+  isProjectDefaultOpen,
+  onSetTheme,
+  onCloseNav,
+  onGoChannel,
+  onGoDM,
+  onOpenTickets,
+  onAddFolder,
+  onHire,
+}: {
+  navOpen: boolean;
+  hiddenWhenClosed: boolean;
+  companyChannels: Channel[];
+  projects: Project[];
+  folders: import("../types").Folder[];
+  employees: Employee[];
+  view: { kind: "channel" | "dm"; id: string };
+  theme: Theme;
+  onSetTheme: (t: Theme) => void;
+  isProjectDefaultOpen: (p: Project) => boolean;
+  onCloseNav: () => void;
+  onGoChannel: (id: string) => void;
+  onGoDM: (id: string) => void;
+  onOpenTickets: () => void;
+  onAddFolder: () => void;
+  onHire: () => void;
+}) {
+  return (
+    <aside
+      className={cn(
+        "min-h-0 flex-col border-r bg-sidebar text-sidebar-foreground",
+        navOpen
+          ? "fixed inset-y-0 left-0 z-40 flex w-[264px] shadow-2xl"
+          : hiddenWhenClosed
+            ? "hidden"
+            : "hidden lg:flex",
+      )}
+    >
+      <div className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+        <div className="grid size-7 place-items-center rounded-md bg-foreground font-bold text-background text-xs">
+          OC
+        </div>
+        <div className="font-semibold">Oscar Co</div>
+        <Button variant="ghost" size="icon-sm" className="ml-auto">
+          <BellIcon />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="lg:hidden"
+          onClick={onCloseNav}
+        >
+          <XIcon />
+        </Button>
+      </div>
+      <ScrollArea className="min-h-0 flex-1">
+        <nav className="space-y-0.5 p-2">
+          <NavItem icon={<InboxIcon />} label="Inbox" />
+          <NavItem
+            icon={<ShieldAlertIcon />}
+            label="Needs you"
+            count={2}
+            tone="amber"
+          />
+          <NavItem
+            icon={<TicketIcon />}
+            label="Tickets"
+            onClick={onOpenTickets}
+          />
+        </nav>
+
+        <Section title="Company" />
+        <div className="px-2">
+          {companyChannels.map((c) => (
+            <ChannelItem
+              key={c.id}
+              c={c}
+              active={view.kind === "channel" && c.id === view.id}
+              onClick={() => onGoChannel(c.id)}
+            />
+          ))}
+        </div>
+
+        <Section title="Projects" onAdd={onAddFolder} />
+        <div className="space-y-1 px-2">
+          {projects.map((p) => (
+            <Collapsible key={p.id} defaultOpen={isProjectDefaultOpen(p)}>
+              <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 font-medium hover:bg-sidebar-accent">
+                <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform group-data-[panel-open]:rotate-90" />
+                <FolderGit2Icon className="size-4 text-muted-foreground" />
+                {p.name}
+                <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                  {p.key}
+                </span>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="ml-4 border-l pl-2">
+                {folders
+                  .filter((f) => f.project === p.name)
+                  .map((f) => (
+                    <div
+                      key={f.id}
+                      className="flex items-center gap-1.5 px-2 py-1 text-muted-foreground text-xs"
+                      title={f.path}
+                      data-sidebar-folder
+                    >
+                      <FolderIcon className="size-3.5 shrink-0" />
+                      <span className="truncate font-mono">
+                        {f.path.replace(/^~\/Desktop\/Oscar\//, "…/")}
+                      </span>
+                    </div>
+                  ))}
+                {p.channels.map((c) => (
+                  <ChannelItem
+                    key={c.id}
+                    c={c}
+                    active={view.kind === "channel" && c.id === view.id}
+                    onClick={() => onGoChannel(c.id)}
+                  />
+                ))}
+              </CollapsibleContent>
+            </Collapsible>
+          ))}
+        </div>
+
+        <Section title="Employees" onAdd={onHire} />
+        <div className="px-2 pb-4">
+          {employees.map((e) => (
+            <button
+              key={e.id}
+              onClick={() => onGoDM(e.id)}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md px-2 py-1.5 hover:bg-sidebar-accent",
+                view.kind === "dm" &&
+                  view.id === e.id &&
+                  "bg-sidebar-accent font-medium",
+              )}
+            >
+              <HermesAvatar status={e.status} className="size-5" />
+              {e.name}
+              <span className="ml-auto text-muted-foreground text-xs">
+                {e.role}
+              </span>
+            </button>
+          ))}
+          <button
+            onClick={onHire}
+            className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+          >
+            <UserPlusIcon className="size-4" /> Hire employee
+          </button>
+        </div>
+      </ScrollArea>
+      <div className="flex shrink-0 items-center gap-2 border-t px-3 py-2.5">
+        <Avatar className="size-6">
+          <AvatarFallback className="bg-blue-600 text-[11px] text-white">
+            O
+          </AvatarFallback>
+        </Avatar>
+        <span className="min-w-0 truncate font-medium text-sm">Oscar</span>
+        <ThemeToggle theme={theme} setTheme={onSetTheme} />
+      </div>
+    </aside>
+  );
+}

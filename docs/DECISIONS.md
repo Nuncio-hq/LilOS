@@ -42,3 +42,7 @@ PR does not exist.
   depend only on `contracts`.** Types crossing a boundary live only in
   `packages/contracts` (Zod). Not: Hermes-specific types in app code.
   The engine seam design itself is #5, not decided here. — #3 · PR #14
+- **D-#12 UI lives in `packages/ui` (`@lilos/ui`); prototype = packages/ui +
+  mock data + fake engine + app wiring.** Presentational only: props in,
+  callbacks out; UI domain types in `packages/ui/src/types.ts`.
+  Not: copying prototype components into `apps/web` (drift). — #12 · PR #16
