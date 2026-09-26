@@ -13,17 +13,18 @@ generic engine protocol; Hermes is the first engine but is never glued in.
 The engine owns sessions, memory, skills, and profiles. LilOS owns only its
 own domain objects: company, channels, messages, tickets, employee records.
 
-Stage: **prototype**. `prototype/` is the source of truth for UI/UX: the real
-app must match it, and a UI/UX change lands in the prototype first. Its mock
-data is not a contract.
+Stage: **prototype**. `prototype/` is the UI/UX source of truth: a UI change
+lands in `packages/ui` and shows in the prototype first. Mock data is not a
+contract.
 
 ## Repo map
 
 | Path | What |
 |---|---|
-| `prototype/` | UX prototype (UI source of truth): `src/App.tsx` + mock data |
+| `prototype/` | UX prototype (UI source of truth): mock data + fake engine + wiring in `src/App.tsx` |
+| `packages/ui/` | `@lilos/ui`: every UI component (shadcn, AI Elements, LilOS surfaces); props in, callbacks out |
 | `packages/contracts/` | Zod schemas for everything crossing a boundary (vitest tests in `test/`) |
-| `e2e/` | Playwright E2E (screenshots to `test-results/`) |
+| `e2e/` | Playwright E2E |
 | `docs/DECISIONS.md` | Decisions in force now (see Decisions) |
 | `IDEA.md` | One-line origin note |
 
@@ -52,8 +53,8 @@ prototype/    packages/ui + mock data
 - Bun-only APIs (`bun:sqlite`, `Bun.serve`) only at app entry points;
   `packages/*` stay runtime-neutral.
 - Organize code by feature folder; split a file past ~400 lines.
-- Biome lints/formats everything except `prototype/src` and assets (vendored
-  shadcn/AI Elements stay untouched; typecheck + build still cover them).
+- Biome lints/formats everything except `prototype/src`, assets, and vendored
+  shadcn/AI Elements in `packages/ui` (typecheck + build still cover them).
 - CI never calls a real LLM; `engine-fake` is the deterministic engine.
 
 ## Learn from these projects
@@ -76,7 +77,6 @@ reads diffs; he accepts or rejects the *product* he can see and try.
 - You own correctness end to end: implementation, tests, review, and docs.
 - "Done" means Oscar can try it without reading code, with evidence it works.
 - Talk to him in plain product language: what changed, how to try it.
-  Mention internals only when he must decide about them.
 - Oscar chats in Vietnamese. Everything in the repo (code, docs, issues,
   PRs, commits) is in English.
 
