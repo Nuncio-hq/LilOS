@@ -48,7 +48,6 @@ PR does not exist.
   local / `openai-codex` cloud); hand-offs state which was used; if both
   fail, tell Oscar.** Not: silently falling back to mock. — #3 · PR #14
 
-<<<<<<< HEAD
 ## Engine
 - **D-#6 The engine protocol is JSON-RPC 2.0 over an ACP-shaped core
   (`session.start`/`prompt`/`interrupt`/`request.respond`/`events.since`),
@@ -58,8 +57,8 @@ PR does not exist.
   the app renders from capabilities.**
   Not: Hermes-specific names or types in `contracts`/`engine-fake`/
   `engine-conformance`, `if engine == "..."` branches, server-to-client
-  request frames. — #6
-=======
+  request frames. — #6 · PR #39
+
 ## UX
 - **D-#19 A control renders only when its handler is passed; the app shows
   only working surfaces (no placeholder buttons).** Conversation UI = shared
@@ -67,7 +66,6 @@ PR does not exist.
   (`ThreadView`, `FocusView`); frame-only features are pieces the frame adds,
   not props of `AgentTurn`. Not: variant/mode props inside `AgentTurn`, a god
   component accumulating optional props. — #19 · PR #40
->>>>>>> d6accc1 (docs(decisions): D-#19 — controls need handlers; shared pieces + thin frames)
 
 ## Structure
 - **D-#3 One-way deps: `apps/*` → `packages/*`, never back; engine packages
