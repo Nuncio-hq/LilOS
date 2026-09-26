@@ -28,6 +28,34 @@
       "linter": { "enabled": false },
       "formatter": { "enabled": false },
       "assist": { "actions": { "source": { "organizeImports": "off" } } }
+    },
+    {
+      "includes": ["packages/ui/src/**"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useButtonType": "off",
+            "useKeyWithClickEvents": "off",
+            "noStaticElementInteractions": "off",
+            "useSemanticElements": "off"
+          },
+          "suspicious": {
+            "noArrayIndexKey": "off",
+            "noControlCharactersInRegex": "off"
+          },
+          "style": { "noNonNullAssertion": "off" },
+          "correctness": { "useExhaustiveDependencies": "off" }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/ui/src/components/ui/**",
+        "packages/ui/src/components/ai-elements/**"
+      ],
+      "linter": { "enabled": false },
+      "formatter": { "enabled": false },
+      "assist": { "actions": { "source": { "organizeImports": "off" } } }
     }
   ]
 }

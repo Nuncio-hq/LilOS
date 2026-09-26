@@ -16,7 +16,7 @@
   },
   "scripts": {
     "verify": "biome check . && bun run typecheck && bun run test:unit && bun run build:prototype && bun run test:e2e",
-    "typecheck": "tsc -b prototype packages/contracts",
+    "typecheck": "tsc -b prototype packages/contracts packages/ui",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
     "build:prototype": "bun run --cwd prototype build",
