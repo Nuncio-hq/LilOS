@@ -57,9 +57,9 @@ import {
 
 /**
  * Registry of every app-protocol schema, consumed by
- * `packages/contracts/scripts/generate-json-schemas.ts` to render the
- * generated JSON Schema artifact. Issue #6 (engine protocol) reuses the same
- * generator once it lands — it registers its own map there.
+ * `packages/contracts/scripts/gen-schemas.ts` to render the generated JSON
+ * Schema artifact (registries of other protocols register alongside it in
+ * `GENERATED_DOCS` there).
  */
 export const appProtocolSchemas = {
   RequestId,

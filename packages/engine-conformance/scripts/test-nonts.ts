@@ -12,7 +12,13 @@ import { fileURLToPath } from "node:url";
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SERVE = join(PKG, "..", "engine-fake", "scripts", "serve.ts");
 const CLIENT = join(PKG, "clients", "python", "drive.py");
-const SCHEMA = join(PKG, "..", "contracts", "schema", "engine-protocol.json");
+const SCHEMA = join(
+  PKG,
+  "..",
+  "contracts",
+  "generated",
+  "engine-protocol.schema.json",
+);
 
 const server = spawn("bun", [SERVE, "--port", "0", "--tick", "5"], {
   stdio: ["ignore", "pipe", "inherit"],

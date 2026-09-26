@@ -12,8 +12,7 @@
   },
   "scripts": {
     "typecheck": "tsc -b",
-    "test": "vitest run",
-    "gen": "bun run scripts/generate-json-schemas.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "zod": "^4.1.11"
