@@ -124,6 +124,11 @@ export interface WatchNotificationsOpts {
   openConversationId: () => string | null;
   /** True when the app window is visible and focused. */
   inForeground: () => boolean;
+  /**
+   * Whether a request is still open — consulted only on the retry path, so an
+   * ask resolved in the retry window doesn't post stale.
+   */
+  isRequestOpen?: (requestId: string) => boolean;
   post: (n: DesktopNotification) => void;
   /**
    * The conversation gets its engineRef via a relay write that can land a
@@ -165,16 +170,26 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
 
   const deliver = (e: EngineEvent): void => {
     if (!notifyable(e)) return;
-    const n = notificationForEvent(e, opts.context());
+    const ctx = opts.context();
+    const n = notificationForEvent(e, ctx);
     if (!n) {
-      // No conversation mapping yet — relay write may land just behind a
-      // fast engine's events; retry the lookup once, then drop.
+      // A mapped conversation means the event classified as uninteresting
+      // (e.g. cancelled turn) — only an unmapped one is worth retrying, since
+      // the relay write may land just behind a fast engine's events.
+      if (conversationOf(e.sessionId, ctx)) return;
       const key = `${e.sessionId}:${e.seq}`;
       if (!pending.has(key)) {
         pending.set(
           key,
           setTimeout(() => {
             pending.delete(key);
+            // A request resolved in the retry window would post stale.
+            if (
+              e.type === "request.opened" &&
+              opts.isRequestOpen &&
+              !opts.isRequestOpen(e.payload.requestId)
+            )
+              return;
             const retry = notificationForEvent(e, opts.context());
             if (retry && !inView(retry.conversationId) && !dupFailed(retry))
               opts.post(retry);

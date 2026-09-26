@@ -280,6 +280,73 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
       vi.useRealTimers();
     }
   });
+
+  it("drops a request.opened that already resolved in the retry window", async () => {
+    vi.useFakeTimers();
+    try {
+      const posted: DesktopNotification[] = [];
+      const listeners = new Set<(e: EngineEvent) => void>();
+      const convs: Conversation[] = [];
+      let open = true;
+      watchNotifications({
+        onEvent: (fn) => {
+          listeners.add(fn);
+          return () => listeners.delete(fn);
+        },
+        context: () => ctx(...convs),
+        openConversationId: () => null,
+        inForeground: () => true,
+        isRequestOpen: () => open,
+        post: (n) => posted.push(n),
+        retryMs: 100,
+      });
+      for (const fn of listeners)
+        fn(
+          ev("request.opened", "s-fast", {
+            turnId: "t1",
+            requestId: "r1",
+            request: approval,
+          }),
+        );
+      open = false;
+      convs.push(conv("c-fast", "s-fast"));
+      await vi.advanceTimersByTimeAsync(150);
+      expect(posted).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never retries a cancelled turn once its conversation is known", async () => {
+    vi.useFakeTimers();
+    try {
+      const posted: DesktopNotification[] = [];
+      const listeners = new Set<(e: EngineEvent) => void>();
+      watchNotifications({
+        onEvent: (fn) => {
+          listeners.add(fn);
+          return () => listeners.delete(fn);
+        },
+        context: () => ctx(conv("c1", "s1")),
+        openConversationId: () => null,
+        inForeground: () => true,
+        post: (n) => posted.push(n),
+        retryMs: 100,
+      });
+      for (const fn of listeners)
+        fn(
+          ev("turn.completed", "s1", {
+            turnId: "t1",
+            stopReason: "cancelled",
+          }),
+        );
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(posted).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("AC-2 open the exact conversation", () => {

@@ -113,6 +113,10 @@ function AppShell() {
             channels: relay.channels.get(),
             employees: relay.employees.get(),
           }),
+          isRequestOpen: (requestId) =>
+            Object.values(sessionModels.get()).some((m) =>
+              m.openRequests.some((r) => r.requestId === requestId),
+            ),
           openConversationId: () =>
             openConversationFromPath(router.state.location.pathname),
           inForeground: () =>

@@ -206,6 +206,8 @@ let mainWindow: BrowserWindow | undefined;
 function openConversation(conversationId: string): void {
   const win = mainWindow;
   if (!win) return;
+  // A Cmd+H-hidden app won't raise on win.focus() alone.
+  app.focus({ steal: true });
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
@@ -213,7 +215,8 @@ function openConversation(conversationId: string): void {
 }
 
 function wireNotifications(): void {
-  ipcMain.on(DESKTOP_NOTIFY_CHANNEL, (_event, raw: unknown) => {
+  ipcMain.on(DESKTOP_NOTIFY_CHANNEL, (event, raw: unknown) => {
+    if (event.sender !== mainWindow?.webContents) return;
     if (!Notification.isSupported()) return;
     postDesktopNotification(raw, {
       show: (opts) => {
