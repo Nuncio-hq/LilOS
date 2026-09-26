@@ -159,19 +159,20 @@ test("Issue #15: stop+tray — the stopped turn and the tray are both fully visi
   // The scroll container is the div use-stick-to-bottom scrolls (child of [role=log]).
   const geometry = () =>
     page.evaluate(() => {
-      const log = document
-        .querySelector("aside [role=log]")!
-        .querySelector("div") as HTMLElement;
+      const logParent = document.querySelector("aside [role=log]");
+      if (!logParent) throw new Error("log element missing");
+      const log = logParent.querySelector("div") as HTMLElement;
       const rect = log.getBoundingClientRect();
       const pill = Array.from(document.querySelectorAll("aside div")).find(
         (d) =>
           d.childElementCount === 0 &&
           d.textContent?.trim() === "Stopped · session.interrupt",
-      )!;
+      );
+      if (!pill) throw new Error("interrupt pill missing");
       const p = pill.getBoundingClientRect();
-      const t = document
-        .querySelector("aside [data-notsent]")!
-        .getBoundingClientRect();
+      const notSent = document.querySelector("aside [data-notsent]");
+      if (!notSent) throw new Error("notsent element missing");
+      const t = notSent.getBoundingClientRect();
       return {
         container: { top: rect.top, bottom: rect.bottom },
         pill: { top: p.top, bottom: p.bottom },
@@ -217,12 +218,11 @@ test("Issue #15: tray actions — Send primary, remove neutral named 'Remove' wi
   // turns red on hover. Colours compared as computed strings — Tailwind v4 resolves to oklch, so
   // assert relationships, not rgb literals.
   const styles = await page.evaluate(() => {
-    const s = getComputedStyle(
-      document.querySelector("aside [data-notsent-send]")!,
-    );
-    const r = getComputedStyle(
-      document.querySelector("aside [data-notsent-remove]")!,
-    );
+    const sendEl = document.querySelector("aside [data-notsent-send]");
+    const removeEl = document.querySelector("aside [data-notsent-remove]");
+    if (!sendEl || !removeEl) throw new Error("notsent buttons missing");
+    const s = getComputedStyle(sendEl);
+    const r = getComputedStyle(removeEl);
     return {
       sendBg: s.backgroundColor,
       sendFg: s.color,
@@ -240,9 +240,9 @@ test("Issue #15: tray actions — Send primary, remove neutral named 'Remove' wi
   await expect
     .poll(async () => {
       const c = await page.evaluate(() => {
-        const r = getComputedStyle(
-          document.querySelector("aside [data-notsent-remove]")!,
-        );
+        const el = document.querySelector("aside [data-notsent-remove]");
+        if (!el) throw new Error("notsent remove missing");
+        const r = getComputedStyle(el);
         return r.color;
       });
       return c !== styles.removeColor;
