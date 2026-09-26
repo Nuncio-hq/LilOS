@@ -373,11 +373,7 @@ export class FakeEngine {
 
   private agentsDescribe(p: AgentsDescribeParams) {
     const a = this.agents.get(p.id);
-    if (!a)
-      throw new RpcError(
-        RPC_ERRORS.AGENT_NOT_FOUND,
-        `no agent ${p.id}`,
-      );
+    if (!a) throw new RpcError(RPC_ERRORS.AGENT_NOT_FOUND, `no agent ${p.id}`);
     return { agent: { ...a } satisfies AgentDescriptor };
   }
 
@@ -387,14 +383,8 @@ export class FakeEngine {
         RPC_ERRORS.INVALID_STATE,
         `agent ${p.name} already exists`,
       );
-    if (
-      p.model !== undefined &&
-      !MODEL_CATALOG.some((m) => m.id === p.model)
-    )
-      throw new RpcError(
-        RPC_ERRORS.MODEL_NOT_FOUND,
-        `no model ${p.model}`,
-      );
+    if (p.model !== undefined && !MODEL_CATALOG.some((m) => m.id === p.model))
+      throw new RpcError(RPC_ERRORS.MODEL_NOT_FOUND, `no model ${p.model}`);
     const agent: FakeAgent = {
       id: p.name,
       name: p.name,
@@ -408,7 +398,10 @@ export class FakeEngine {
   }
 
   private modelsList() {
-    return { models: MODEL_CATALOG.map((m) => ({ ...m })), default: DEFAULT_MODEL };
+    return {
+      models: MODEL_CATALOG.map((m) => ({ ...m })),
+      default: DEFAULT_MODEL,
+    };
   }
 
   private sessionSetModel(p: SessionSetModelParams) {

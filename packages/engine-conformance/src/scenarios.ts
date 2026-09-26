@@ -495,10 +495,7 @@ export const AGENTS_SCENARIOS: Scenario[] = [
       const cap = d.capabilities.find((c) => c.id === "agents");
       assert(cap, "engine must declare the agents capability");
       for (const m of ["agents.list", "agents.describe", "agents.create"])
-        assert(
-          cap.methods?.includes(m),
-          `agents capability must enable ${m}`,
-        );
+        assert(cap.methods?.includes(m), `agents capability must enable ${m}`);
       const r = (await h.request("agents.list")) as { agents: AgentRow[] };
       assert(
         Array.isArray(r.agents) && r.agents.length >= 1,
@@ -615,10 +612,7 @@ export const MODELS_SCENARIOS: Scenario[] = [
       const cap = d.capabilities.find((c) => c.id === "models");
       assert(cap, "engine must declare the models capability");
       for (const m of ["models.list", "session.setModel"])
-        assert(
-          cap.methods?.includes(m),
-          `models capability must enable ${m}`,
-        );
+        assert(cap.methods?.includes(m), `models capability must enable ${m}`);
       const r = (await h.request("models.list")) as {
         models: ModelRow[];
         default?: string;
@@ -676,8 +670,7 @@ export const MODELS_SCENARIOS: Scenario[] = [
         h.forSession(sessionId, (e) => e.type === "turn.started"),
       );
       assert(
-        started.type === "turn.started" &&
-          started.payload.model === picked.id,
+        started.type === "turn.started" && started.payload.model === picked.id,
         `turn.started.model must be the picked model, got ${JSON.stringify(started.payload)}`,
       );
       const res = await result;
