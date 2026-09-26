@@ -1,12 +1,12 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
 import {
   ensureLaunchAgents,
   LILOS_AGENTS,
   plistFileName,
 } from "@lilos/background";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   diskVersionStore,
   type HelperExec,
@@ -16,7 +16,8 @@ import {
 
 const tmpDirs: string[] = [];
 afterEach(() => {
-  for (const d of tmpDirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  for (const d of tmpDirs.splice(0))
+    rmSync(d, { recursive: true, force: true });
 });
 
 /** Fake `lilos-svc` CLI: keeps a status word per plist. */
@@ -27,15 +28,15 @@ function fakeHelper(initial: Record<string, string> = {}) {
     calls.push(args);
     const [verb, plist] = args;
     if (verb === "status") {
-      const s = statuses.get(plist!) ?? "notRegistered";
+      const s = statuses.get(plist) ?? "notRegistered";
       return { stdout: `${plist} status=${s}`, stderr: "", code: 0 };
     }
     if (verb === "register") {
-      statuses.set(plist!, "enabled");
+      statuses.set(plist, "enabled");
       return { stdout: `ok ${plist} status=enabled`, stderr: "", code: 0 };
     }
     if (verb === "unregister") {
-      statuses.set(plist!, "notRegistered");
+      statuses.set(plist, "notRegistered");
       return {
         stdout: `ok ${plist} status=notRegistered`,
         stderr: "",
@@ -81,8 +82,8 @@ describe("AC-1 service registration via lilos-svc", () => {
 
   it("bundle version bump unregisters before re-registering (SP1)", async () => {
     const { exec, calls } = fakeHelper({
-      [plistFileName(LILOS_AGENTS[0]!)]: "enabled",
-      [plistFileName(LILOS_AGENTS[1]!)]: "enabled",
+      [plistFileName(LILOS_AGENTS[0])]: "enabled",
+      [plistFileName(LILOS_AGENTS[1])]: "enabled",
     });
     const store = diskVersionStore(tmpFile());
     for (const agent of LILOS_AGENTS) await store.write(agent.label, "1");
@@ -94,9 +95,7 @@ describe("AC-1 service registration via lilos-svc", () => {
     });
     for (const agent of LILOS_AGENTS) {
       const plist = plistFileName(agent);
-      const un = calls.findIndex(
-        ([v, p]) => v === "unregister" && p === plist,
-      );
+      const un = calls.findIndex(([v, p]) => v === "unregister" && p === plist);
       const re =
         calls
           .map((c, i) => ({ c, i }))
@@ -120,7 +119,7 @@ describe("AC-1 service registration via lilos-svc", () => {
       versions: diskVersionStore(file),
     });
     expect(reports.every((r) => r.action === "failed")).toBe(true);
-    expect(reports[0]!.error).toContain("SMAppService denied");
+    expect(reports[0]?.error).toContain("SMAppService denied");
   });
 
   it("version store round-trips per agent and survives a missing file", async () => {

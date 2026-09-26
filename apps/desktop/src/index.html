@@ -12,8 +12,8 @@
       }
       @media (prefers-color-scheme: dark) {
         body { color: #eee; background: #16181d; }
-        .card { border-color: #3a3f4a !important; }
-        pre { background: #1e2128 !important; }
+        .card { border-color: #3a3f4a; }
+        pre { background: #1e2128; }
       }
       h1 { font-size: 22px; margin-bottom: 4px; }
       .sub { color: #777; font-size: 13px; margin-top: 0; }
@@ -54,8 +54,8 @@
       <div>Login item: <span id="svc-harness">?</span></div>
     </div>
 
-    <button onclick="ensure()">Re-check services</button>
-    <button onclick="window.lilos.openSettings()">Open Login Items Settings</button>
+    <button id="recheck" type="button">Re-check services</button>
+    <button id="open-settings" type="button">Open Login Items Settings</button>
     <p class="quiet">Approve “LilOS” under System Settings → Login Items once; then the services launch at login and survive quits and reboots.</p>
     <pre id="raw"></pre>
 
@@ -67,7 +67,7 @@
         stateEl(`svc-${name}`).textContent =
           st + (a?.action ? ` (${a.action})` : "") + (a?.error ? ` — ${a.error}` : "");
         stateEl(`dot-${name}`).className =
-          "dot " + (st === "enabled" ? "on" : st === "requiresApproval" ? "pending" : "off");
+          `dot ${st === "enabled" ? "on" : st === "requiresApproval" ? "pending" : "off"}`;
       }
       async function render() {
         const s = await window.lilos.status();
@@ -87,11 +87,13 @@
           ? `registration error: ${s.ensureError}`
           : "";
       }
-      async function ensure() {
-        const s = await window.lilos.ensure();
+      document.getElementById("recheck").addEventListener("click", async () => {
+        await window.lilos.ensure();
         render();
-        return s;
-      }
+      });
+      document
+        .getElementById("open-settings")
+        .addEventListener("click", () => window.lilos.openSettings());
       render();
       setInterval(render, 3000);
     </script>

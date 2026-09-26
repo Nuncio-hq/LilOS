@@ -34,11 +34,9 @@ export function createCaffeinateGuard(
   let count = 0;
   let proc: ChildProcess | undefined;
   const launch = () => {
-    const p = spawnImpl(
-      "caffeinate",
-      ["-i", "-w", String(process.pid)],
-      { stdio: "ignore" },
-    );
+    const p = spawnImpl("caffeinate", ["-i", "-w", String(process.pid)], {
+      stdio: "ignore",
+    });
     proc = p;
     p.on("exit", () => {
       if (proc === p) proc = undefined;

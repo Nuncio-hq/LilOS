@@ -12,11 +12,12 @@ export type HelperExec = (
 export const realExec: HelperExec = (bin, args) =>
   new Promise((resolve) => {
     execFile(bin, args, { timeout: 30_000 }, (error, stdout, stderr) => {
-      const code = typeof (error as { code?: unknown })?.code === "number"
-        ? ((error as { code: number }).code ?? 1)
-        : error
-          ? 1
-          : 0;
+      const code =
+        typeof (error as { code?: unknown })?.code === "number"
+          ? ((error as { code: number }).code ?? 1)
+          : error
+            ? 1
+            : 0;
       resolve({
         stdout: stdout.trim(),
         stderr: stderr.trim() || (error ? error.message : ""),
@@ -56,7 +57,9 @@ export function helperServiceControl(
         );
       }
       if (!res.status) {
-        throw new Error(`lilos-svc status ${plist}: unparsable "${res.stdout}"`);
+        throw new Error(
+          `lilos-svc status ${plist}: unparsable "${res.stdout}"`,
+        );
       }
       return res.status;
     },

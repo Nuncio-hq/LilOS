@@ -58,7 +58,10 @@ export function renderLaunchAgentPlist(spec: LaunchAgentSpec): string {
     ? `\t<key>EnvironmentVariables</key>\n\t<dict>\n${Object.entries(
         spec.environment,
       )
-        .map(([k, v]) => `\t\t<key>${esc(k)}</key>\n\t\t<string>${esc(v)}</string>`)
+        .map(
+          ([k, v]) =>
+            `\t\t<key>${esc(k)}</key>\n\t\t<string>${esc(v)}</string>`,
+        )
         .join("\n")}\n\t</dict>\n`
     : "";
   return `<?xml version="1.0" encoding="UTF-8"?>

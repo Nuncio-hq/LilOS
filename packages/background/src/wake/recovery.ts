@@ -149,8 +149,6 @@ export async function recoverInFlight(
   const start = now();
   // `events.since` calls are independent — recover in parallel so a slow
   // engine can't push later sessions past the orphan grace.
-  const verdicts = await Promise.all(
-    watched.map((w) => recoverTurn(conn, w)),
-  );
+  const verdicts = await Promise.all(watched.map((w) => recoverTurn(conn, w)));
   return { verdicts, withinGrace: now() - start <= grace };
 }

@@ -1,4 +1,4 @@
-import { plistFileName, type LaunchAgentSpec } from "./launchd.js";
+import { type LaunchAgentSpec, plistFileName } from "./launchd.js";
 
 /**
  * Registration orchestration (AC-1). The desktop app calls this on launch;

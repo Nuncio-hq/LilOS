@@ -9,7 +9,7 @@ import {
   plistFileName,
 } from "@lilos/background";
 import { RelayClient } from "@lilos/client-runtime";
-import { BrowserWindow, app, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import { diskVersionStore, helperServiceControl } from "./control";
 
 /**

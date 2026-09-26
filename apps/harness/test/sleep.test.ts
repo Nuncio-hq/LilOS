@@ -1,10 +1,7 @@
 import type { spawn as nodeSpawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { createMemoryLogger } from "../src/log.js";
-import {
-  createCaffeinateGuard,
-  type SleepGuard,
-} from "../src/sleep.js";
+import { createCaffeinateGuard, type SleepGuard } from "../src/sleep.js";
 
 type SpawnedArgs = { command: string; argv: string[] };
 
@@ -55,12 +52,12 @@ describe("AC-3 keep-awake (idle-sleep assertion)", () => {
     guard.acquire();
     expect(guard.held).toBe(true);
     expect(spawned).toHaveLength(1);
-    expect(spawned[0]!.command).toBe("caffeinate");
-    expect(spawned[0]!.argv).toContain("-i");
+    expect(spawned[0]?.command).toBe("caffeinate");
+    expect(spawned[0]?.argv).toContain("-i");
 
     guard.release();
     expect(guard.held).toBe(false);
-    expect(spawned[0]!.killed).toBe(true);
+    expect(spawned[0]?.killed).toBe(true);
   });
 
   it("shares one assertion across overlapping turns", () => {
@@ -72,20 +69,20 @@ describe("AC-3 keep-awake (idle-sleep assertion)", () => {
 
     guard.release(); // A ends, B still running
     expect(guard.held).toBe(true);
-    expect(spawned[0]!.killed).toBe(false);
+    expect(spawned[0]?.killed).toBe(false);
 
     guard.release(); // B ends
     expect(guard.held).toBe(false);
-    expect(spawned[0]!.killed).toBe(true);
+    expect(spawned[0]?.killed).toBe(true);
   });
 
   it("dies with the harness so a crashed harness cannot wedge sleep (-w)", () => {
     const { spawn, spawned } = fakeSpawn();
     const guard = createCaffeinateGuard(log, { spawn });
     guard.acquire();
-    const wIndex = spawned[0]!.argv.indexOf("-w");
+    const wIndex = spawned[0]?.argv.indexOf("-w");
     expect(wIndex).toBeGreaterThan(-1);
-    expect(spawned[0]!.argv[wIndex + 1]).toBe(String(process.pid));
+    expect(spawned[0]?.argv[wIndex + 1]).toBe(String(process.pid));
     guard.release();
   });
 
@@ -93,7 +90,7 @@ describe("AC-3 keep-awake (idle-sleep assertion)", () => {
     const { spawn, spawned } = fakeSpawn();
     const guard = createCaffeinateGuard(log, { spawn });
     guard.acquire();
-    spawned[0]!.emit("exit", 1); // caffeinate crashed, turn still running
+    spawned[0]?.emit("exit", 1); // caffeinate crashed, turn still running
     expect(guard.held).toBe(true);
     expect(spawned).toHaveLength(2);
     guard.release();

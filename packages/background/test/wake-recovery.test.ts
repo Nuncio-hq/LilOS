@@ -1,4 +1,4 @@
-import { RPC_ERRORS, type EngineEvent } from "@lilos/contracts/engine";
+import { type EngineEvent, RPC_ERRORS } from "@lilos/contracts/engine";
 import { describe, expect, it } from "vitest";
 import {
   ManualClock,
@@ -16,7 +16,9 @@ describe("recoverTurn (AC-4)", () => {
 
   it("AC-4 turn still running after wake → resumed with the missed events", async () => {
     const conn = stubEngine(() => ({
-      events: [ev(6, "turn.delta", { turnId: "t7", stream: "text", delta: "hi" })],
+      events: [
+        ev(6, "turn.delta", { turnId: "t7", stream: "text", delta: "hi" }),
+      ],
       latestSeq: 6,
       truncated: false,
       openRequests: [],
@@ -103,7 +105,7 @@ describe("recoverTurn (AC-4)", () => {
 
 describe("recoverInFlight (AC-4/AC-5)", () => {
   it("AC-4 every watched turn gets a verdict within the orphan grace", async () => {
-    const conn = stubEngine((method, params) => ({
+    const conn = stubEngine((_method, params) => ({
       events: [
         ev(9, "turn.completed", {
           turnId: (params as { sessionId: string }).sessionId,

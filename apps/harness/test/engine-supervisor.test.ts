@@ -46,13 +46,15 @@ interface World {
   launcher: EngineLauncher;
 }
 
-function world(extra: {
-  minBackoffMs?: number;
-  maxBackoffMs?: number;
-  stableAfterMs?: number;
-  reconnectAttempts?: number;
-  maxConsecutiveCrashes?: number;
-} = {}): World {
+function world(
+  extra: {
+    minBackoffMs?: number;
+    maxBackoffMs?: number;
+    stableAfterMs?: number;
+    reconnectAttempts?: number;
+    maxConsecutiveCrashes?: number;
+  } = {},
+): World {
   const procs: ReturnType<typeof fakeProc>[] = [];
   const conns: ReturnType<typeof fakeConn>[] = [];
   const connections: World["connections"] = [];
@@ -97,7 +99,7 @@ describe("AC-5 engine supervision", () => {
     expect(w.states).toContain("running");
     expect(w.procs).toHaveLength(1);
 
-    w.procs[0]!.die(1);
+    w.procs[0]?.die(1);
     await tick();
 
     expect(w.launcher.name).toBe("fake-engine");
@@ -114,7 +116,7 @@ describe("AC-5 engine supervision", () => {
     await w.supervisor.start();
     expect(w.procs).toHaveLength(1);
 
-    w.conns[0]!.drop("idle timeout");
+    w.conns[0]?.drop("idle timeout");
     await tick();
 
     // Process never died: no relaunch, just a fresh connection.
@@ -127,11 +129,11 @@ describe("AC-5 engine supervision", () => {
   it("gives up with state failed after the crash budget", async () => {
     const w = world({ maxConsecutiveCrashes: 2 });
     await w.supervisor.start();
-    w.procs[0]!.die(1);
+    w.procs[0]?.die(1);
     await tick();
     expect(w.procs).toHaveLength(2);
 
-    w.procs[1]!.die(1);
+    w.procs[1]?.die(1);
     await tick();
 
     expect(w.states.at(-1)).toBe("failed");
@@ -185,7 +187,7 @@ describe("AC-5 engine supervision", () => {
     const flushConnects = async () => {
       for (let i = 0; i < 50 && deferred.length === 0; i++)
         await new Promise((r) => setTimeout(r, 1));
-      deferred.splice(0).forEach((r) => r());
+      for (const r of deferred.splice(0)) r();
     };
     const started = supervisor.start();
     await flushConnects();
@@ -194,8 +196,8 @@ describe("AC-5 engine supervision", () => {
 
     // Proc dies and socket drops at the same instant; reconnect's connect()
     // resolves AFTER the exit landed.
-    w.conns[0]!.drop();
-    w.procs[0]!.die(1);
+    w.conns[0]?.drop();
+    w.procs[0]?.die(1);
     await flushConnects(); // stale reconnect "succeeds" late
     await tick();
     await tick();
@@ -218,7 +220,7 @@ describe("AC-5 engine supervision", () => {
     await w.supervisor.start();
     await w.supervisor.stop();
 
-    w.procs[0]!.die(0);
+    w.procs[0]?.die(0);
     await tick();
     expect(w.procs).toHaveLength(1);
     expect(w.states.at(-1)).toBe("stopped");

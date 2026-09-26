@@ -72,9 +72,7 @@ describe("launch agents (AC-1)", () => {
       versions,
     });
     expect(reports.map((r) => r.action)).toEqual(["registered", "registered"]);
-    expect(control.calls).toContain(
-      `register ${HARNESS_AGENT.label}.plist`,
-    );
+    expect(control.calls).toContain(`register ${HARNESS_AGENT.label}.plist`);
     expect(versions.all).toEqual({
       "com.nuncio.lilos.relay": "1",
       "com.nuncio.lilos.harness": "1",
@@ -98,7 +96,10 @@ describe("launch agents (AC-1)", () => {
     });
     expect(reports.map((r) => r.action)).toEqual(["replaced", "replaced"]);
     // SP1: unregister MUST precede register or launchd keeps the stale bundle pin.
-    for (const label of ["com.nuncio.lilos.relay", "com.nuncio.lilos.harness"]) {
+    for (const label of [
+      "com.nuncio.lilos.relay",
+      "com.nuncio.lilos.harness",
+    ]) {
       const calls = control.calls.filter((c) => c.endsWith(`${label}.plist`));
       expect(calls.indexOf(`unregister ${label}.plist`)).toBeLessThan(
         calls.lastIndexOf(`register ${label}.plist`),
@@ -126,7 +127,9 @@ describe("launch agents (AC-1)", () => {
       versions,
     });
     expect(reports.map((r) => r.action)).toEqual(["already", "already"]);
-    expect(control.calls.filter((c) => c.startsWith("unregister"))).toHaveLength(0);
+    expect(
+      control.calls.filter((c) => c.startsWith("unregister")),
+    ).toHaveLength(0);
   });
 
   it("AC-1 a failing agent retries without churning the healthy one", async () => {
@@ -148,9 +151,9 @@ describe("launch agents (AC-1)", () => {
       versions,
     });
     expect(reports.map((r) => r.action)).toEqual(["already", "failed"]);
-    expect(
-      control.calls.filter((c) => c.includes("unregister")),
-    ).toHaveLength(0);
+    expect(control.calls.filter((c) => c.includes("unregister"))).toHaveLength(
+      0,
+    );
     expect(versions.all["com.nuncio.lilos.relay"]).toBe("1");
     expect(versions.all["com.nuncio.lilos.harness"]).toBeUndefined();
   });

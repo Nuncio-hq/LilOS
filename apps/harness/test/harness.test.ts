@@ -493,7 +493,10 @@ describe("workspace harness", () => {
       // no snapshot.turn and no turn.completed. Reattach forces a resync.
       const sessions = (
         w.engine as unknown as {
-          sessions: Map<string, { turn?: unknown; openRequests: Map<string, unknown> }>;
+          sessions: Map<
+            string,
+            { turn?: unknown; openRequests: Map<string, unknown> }
+          >;
         }
       ).sessions;
       const engineRef = await waitFor(async () => {
@@ -506,9 +509,9 @@ describe("workspace harness", () => {
         );
       }, "engineRef");
       const sess = sessions.get(engineRef as string);
-      expect(sess).toBeDefined();
-      sess!.turn = undefined;
-      sess!.openRequests.clear();
+      if (!sess) throw new Error("fake engine lost the session");
+      sess.turn = undefined;
+      sess.openRequests.clear();
 
       w.harness.attachEngine(
         connectFake(w.engine) as unknown as EngineConnection,
@@ -539,12 +542,13 @@ describe("workspace harness", () => {
     const w = await setupWorld();
     try {
       const { channel } = await openDmConversation(w.user);
-      const { conversation } = await w.user.request<{
-        conversation: { id: string };
-      }>("conversations.open", {
-        channelId: channel.id,
-        text: "Summarize the repo layout",
-      });
+      await w.user.request<{ conversation: { id: string } }>(
+        "conversations.open",
+        {
+          channelId: channel.id,
+          text: "Summarize the repo layout",
+        },
+      );
       await waitFor(async () => {
         const { messages } = await w.user.request<{ messages: AppMessage[] }>(
           "messages.list",

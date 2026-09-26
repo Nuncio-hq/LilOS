@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,11 +31,11 @@ copyFileSync(join(ROOT, "src", "preload.cjs"), join(APP_DIR, "preload.cjs"));
 copyFileSync(join(ROOT, "src", "index.html"), join(APP_DIR, "index.html"));
 writeFileSync(
   join(APP_DIR, "package.json"),
-  JSON.stringify(
+  `${JSON.stringify(
     { name: "lilos-desktop", version: "0.0.0-dev", main: "main.cjs" },
     null,
     2,
-  ) + "\n",
+  )}\n`,
 );
 
 if (!existsSync(join(BUILD, "lilos-svc"))) {
@@ -53,7 +53,9 @@ if (!existsSync(join(BUILD, "lilos-svc"))) {
       { stdio: "inherit" },
     );
   } catch {
-    console.warn("lilos-svc build failed (non-macOS?); status will read 'unknown'");
+    console.warn(
+      "lilos-svc build failed (non-macOS?); status will read 'unknown'",
+    );
   }
 }
 

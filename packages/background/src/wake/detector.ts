@@ -1,4 +1,4 @@
-import { type CancelTimer, type Clock } from "../clock.js";
+import type { CancelTimer, Clock } from "../clock.js";
 
 export interface WakeDetectorOptions {
   /** Schedules the heartbeat (the event-loop view of time). */

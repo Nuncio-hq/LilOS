@@ -5,7 +5,6 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
-  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -135,11 +134,11 @@ copyFileSync(join(ROOT, "src", "preload.cjs"), join(APP_DIR, "preload.cjs"));
 copyFileSync(join(ROOT, "src", "index.html"), join(APP_DIR, "index.html"));
 writeFileSync(
   join(APP_DIR, "package.json"),
-  JSON.stringify(
+  `${JSON.stringify(
     { name: "lilos-desktop", version: `1.0.${VERSION}`, main: "main.cjs" },
     null,
     2,
-  ) + "\n",
+  )}\n`,
 );
 
 console.log(`==> assemble ${APP} from ${ELECTRON_APP}`);
@@ -203,9 +202,7 @@ for (const bin of [
   chmodSync(join(APP, "Contents", "MacOS", bin), 0o755);
 }
 
-console.log(
-  `==> sign (${IDENTITY === "-" ? "ad-hoc" : IDENTITY})`,
-);
+console.log(`==> sign (${IDENTITY === "-" ? "ad-hoc" : IDENTITY})`);
 if (IDENTITY === "-") {
   run("codesign", ["--force", "--deep", "--sign", "-", APP]);
 } else {
