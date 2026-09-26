@@ -15,11 +15,17 @@ import { expect, type Page, test } from "@playwright/test";
    involved (the prototype's fake engine has no fs capability). The fixture is a
    temp git repo: one commit, then a modified file and an untracked file. */
 
+let scanRoot = "";
 let repo = "";
 let repoReal = "";
 
 test.beforeAll(() => {
-  repo = mkdtempSync(join(tmpdir(), "lilos-e2e-"));
+  // Isolated parent dir: discovery and the picker list the repo's parent, so
+  // the result must not depend on what else lives in the machine's shared tmp
+  // dir (discovery and listings are capped).
+  scanRoot = mkdtempSync(join(tmpdir(), "lilos-e2e-root-"));
+  repo = join(scanRoot, "lilos-e2e-repo");
+  mkdirSync(repo);
   repoReal = realpathSync(repo); // git canonicalizes /var → /private/var on macOS
   const git = (args: string[]) =>
     execFileSync("git", args, { cwd: repo, encoding: "utf8" });
@@ -34,7 +40,7 @@ test.beforeAll(() => {
   writeFileSync(join(repo, "a.txt"), "one\ntwo\n"); // modified
   writeFileSync(join(repo, "notes.md"), "# scratch\n"); // untracked
 });
-test.afterAll(() => rmSync(repo, { recursive: true, force: true }));
+test.afterAll(() => rmSync(scanRoot, { recursive: true, force: true }));
 
 function watchConsole(page: Page) {
   const errors: string[] = [];

@@ -12,11 +12,16 @@ import { callHost, handleHostFrame } from "../src/index";
  * modified file, an untracked file, and a nested subdir repo of its own.
  */
 let dir = "";
+// Isolated scan root: `git.discoverRepos` must not depend on what else lives
+// in the machine's shared tmp dir (it stops at DISCOVER_CAP repos).
+let scanRoot = "";
 const git = (args: string[]) =>
   execFileSync("git", args, { cwd: dir, encoding: "utf8" });
 
 beforeAll(() => {
-  dir = mkdtempSync(join(tmpdir(), "lilos-host-"));
+  scanRoot = mkdtempSync(join(tmpdir(), "lilos-host-"));
+  dir = join(scanRoot, "repo");
+  mkdirSync(dir);
   git(["init", "-b", "main"]);
   git(["config", "user.email", "t@t"]);
   git(["config", "user.name", "t"]);
@@ -33,7 +38,7 @@ beforeAll(() => {
   mkdirSync(join(dir, "subrepo"));
   execFileSync("git", ["init", "-b", "main"], { cwd: join(dir, "subrepo") });
 });
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+afterAll(() => rmSync(scanRoot, { recursive: true, force: true }));
 
 describe("host api (temp git repo)", () => {
   it("AC-1 fs.list marks git repos and lists real folders", async () => {
@@ -74,7 +79,7 @@ describe("host api (temp git repo)", () => {
     // `plain` is inside the outer repo → still a repo (its root is the outer)
     expect(no.isRepo).toBe(true);
     const outside = (await callHost("git.isRepo", {
-      path: tmpdir(),
+      path: scanRoot,
     })) as { isRepo: boolean };
     expect(outside.isRepo).toBe(false);
   });
@@ -146,7 +151,7 @@ describe("host api (temp git repo)", () => {
 
   it("AC-1 git.discoverRepos finds repo roots under scan roots", async () => {
     const r = (await callHost("git.discoverRepos", {
-      roots: [join(dir, "..")],
+      roots: [scanRoot],
       depth: 2,
     })) as { repos: { path: string }[] };
     expect(r.repos.some((p) => p.path === dir)).toBe(true);
