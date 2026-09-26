@@ -14,7 +14,9 @@
   },
   "dependencies": {
     "@lilos/client-runtime": "workspace:*",
-    "@lilos/contracts": "workspace:*"
+    "@lilos/contracts": "workspace:*",
+    "@lilos/surfaces": "workspace:*",
+    "playwright": "1.63.0"
   },
   "devDependencies": {
     "@lilos/engine-fake": "workspace:*",

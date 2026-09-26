@@ -1,5 +1,5 @@
-import { GlobeIcon, SquareTerminalIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { GlobeIcon } from "lucide-react";
+import { useRef } from "react";
 import {
   Terminal,
   TerminalContent,
@@ -41,7 +41,7 @@ export type LiveBrowserInput =
       event: "down" | "up" | "move";
       x: number;
       y: number;
-      button?: "left" | "middle" | "right";
+      button: "left" | "middle" | "right";
     }
   | { kind: "wheel"; x: number; y: number; dx: number; dy: number }
   | {

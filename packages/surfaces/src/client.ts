@@ -108,6 +108,8 @@ export interface OpenViewerOptions {
   url: string;
   token: string;
   session: string;
+  /** Called for each validated server message (also lands in `messages`). */
+  onMessage?: (msg: ViewerServerMsgT) => void;
   socketFactory?: (url: string) => {
     readyState: number;
     send(d: string): void;
@@ -153,7 +155,10 @@ export function openViewer(opts: OpenViewerOptions): Promise<ViewerHandle> {
       if (typeof text !== "string") return;
       try {
         const msg = ViewerServerMsg.safeParse(JSON.parse(text));
-        if (msg.success) messages.push(msg.data);
+        if (msg.success) {
+          messages.push(msg.data);
+          opts.onMessage?.(msg.data);
+        }
       } catch {
         // malformed frame — ignore
       }

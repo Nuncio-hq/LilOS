@@ -66,6 +66,8 @@ export interface ViewerScope extends SurfaceBackend {
   subscribe(listener: (msg: ViewerScopeEvent) => void): () => void;
   /** Viewer count bookkeeping drives screencast on/off (cast only while watched). */
   readonly viewerCount: number;
+  /** Tears down the owned browser + PTY (session end / host shutdown). */
+  close(): Promise<void>;
 }
 
 export interface ViewerSnapshot {

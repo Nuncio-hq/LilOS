@@ -20,6 +20,8 @@
       "dependencies": {
         "@lilos/client-runtime": "workspace:*",
         "@lilos/contracts": "workspace:*",
+        "@lilos/surfaces": "workspace:*",
+        "playwright": "1.63.0",
       },
       "devDependencies": {
         "@lilos/engine-fake": "workspace:*",
@@ -199,6 +201,7 @@
         "@lilos/client-runtime": "workspace:*",
         "@lilos/contracts": "workspace:*",
         "@lilos/host": "workspace:*",
+        "@lilos/surfaces": "workspace:*",
         "@lilos/ui": "workspace:*",
         "@radix-ui/react-use-controllable-state": "^1.2.6",
         "ai": "^7.0.114",

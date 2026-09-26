@@ -1,3 +1,4 @@
+import process from "node:process";
 import { LILOS_TOOLS } from "@lilos/contracts/harness";
 import { toolBackend } from "./client.js";
 import { surfacesEnv } from "./config.js";

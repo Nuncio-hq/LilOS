@@ -1,3 +1,4 @@
+import process from "node:process";
 import { LILOS_TOOLS } from "@lilos/contracts/harness";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
