@@ -400,8 +400,15 @@ test("AC-7 real-app build: every visible control has a working handler", async (
       }
     };
     await clickAll("aside");
-    // Navigate into the DM on the SAME origin (the built app, not dev).
-    await aside.getByText("Default", { exact: true }).click();
+    // Navigate into the DM. If the sweep left the first-run card up (its
+    // buttons live outside aside), dismiss it with its own control.
+    const dismissFirstRun = page.getByRole("button", { name: /Set up later/ });
+    if (await dismissFirstRun.isVisible().catch(() => false)) {
+      await dismissFirstRun.click({ timeout: 5_000 });
+    }
+    await aside
+      .getByText("Default", { exact: true })
+      .click({ timeout: 10_000 });
     await expect(page).toHaveURL(/\/dm\//);
     await clickAll("main");
     // The app still works: the composer accepts a message.
@@ -430,7 +437,11 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
     );
   });
   const app = await _electron.launch({
-    args: [desktopDir],
+    // Linux CI has no suid chrome-sandbox helper; disable it there only.
+    args:
+      process.platform === "linux"
+        ? [desktopDir, "--no-sandbox"]
+        : [desktopDir],
     env: {
       ...process.env,
       LILOS_RELAY_WS: stackA.relayWs,
