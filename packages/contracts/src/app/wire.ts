@@ -13,6 +13,7 @@ import {
   EngineHostStatus,
   PendingTurn,
   RespondTo,
+  Timestamp,
 } from "./domain";
 import { APP_PROTOCOL_VERSION } from "./version";
 
@@ -109,6 +110,7 @@ export const AppMethod = z.enum([
   "asks.respond",
   "asks.list",
   "turns.interrupt",
+  "system.status",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -266,6 +268,84 @@ export const ChannelUnsubscribeParams = z.object({
 });
 export const OkResult = z.object({ ok: z.literal(true) });
 
+/* ------------------------- system status (#33) ------------------------- */
+
+/** The chain a session needs, mirrored by the status UI's row ids. */
+export const StatusComponentId = z.enum([
+  "relay",
+  "harness",
+  "engine",
+  "model",
+]);
+export type StatusComponentId = z.infer<typeof StatusComponentId>;
+
+export const StatusComponentState = z.enum([
+  "ok",
+  "connecting",
+  "degraded",
+  "down",
+]);
+export type StatusComponentState = z.infer<typeof StatusComponentState>;
+
+/** One row of the status surface: what is checked and why it is not ok. */
+export const StatusComponent = z.object({
+  id: StatusComponentId,
+  label: z.string().min(1),
+  state: StatusComponentState,
+  reason: z.string(),
+});
+export type StatusComponent = z.infer<typeof StatusComponent>;
+
+/** A protocol-version gap the user can act on — names which side to update. */
+export const StatusMismatch = z.object({
+  update: z.enum(["app", "relay", "harness"]),
+  detail: z.string().min(1),
+});
+export type StatusMismatch = z.infer<typeof StatusMismatch>;
+
+export const SystemStatusParams = z
+  .object({
+    /** Log lines per component to include under `logs`; 0 = none. */
+    logLines: z.int().min(0).max(200).default(0),
+  })
+  .strict();
+export type SystemStatusParams = z.infer<typeof SystemStatusParams>;
+
+/**
+ * `system.status` — the one health call on the app protocol. The relay
+ * aggregates what it can prove itself (its own socket + the registered host's
+ * reports) instead of one endpoint per component. Log lines, when requested,
+ * are redacted of tokens/secrets before they leave the relay.
+ */
+export const SystemStatusResult = z.object({
+  protocolVersion: z.int(),
+  generatedAt: Timestamp,
+  /** relay, harness, engine, model — in that order. */
+  components: z.array(StatusComponent),
+  versions: z.object({
+    relay: z.string(),
+    harness: z.string().optional(),
+    relayProtocol: z.int(),
+    harnessProtocol: z.int().optional(),
+  }),
+  engine: z
+    .object({
+      name: z.string().optional(),
+      version: z.string().optional(),
+      rssBytes: z.int().min(0).optional(),
+      sessions: z.int().min(0).optional(),
+    })
+    .optional(),
+  mismatch: StatusMismatch.optional(),
+  logs: z
+    .object({
+      relay: z.array(z.string()),
+      harness: z.array(z.string()),
+    })
+    .optional(),
+});
+export type SystemStatusResult = z.infer<typeof SystemStatusResult>;
+
 /* ------------------------- harness + asks (#26) ------------------------- */
 
 /**
@@ -276,18 +356,55 @@ export const OkResult = z.object({ ok: z.literal(true) });
  * returns `pending`: conversations whose newest message is a user message
  * (turns the engine still owes), so a restarted host catches up.
  */
-export const HarnessRegisterParams = z.object({}).strict();
+/**
+ * Registers the calling connection as the engine host. Same version handshake
+ * as `session.hello` (issue #33): a `protocolVersion` that differs from the
+ * relay's fails with `protocol_version_mismatch` naming the stale side, so a
+ * mismatched harness never registers half-spoken.
+ */
+export const HarnessRegisterParams = z
+  .object({
+    protocolVersion: z.int().min(1),
+    /** Harness build version — shown in status + diagnostics. */
+    version: z.string().min(1).default("0.0.0"),
+  })
+  .strict();
 export const HarnessRegisterResult = z.object({
   hostId: z.string().min(1),
   pending: z.array(PendingTurn),
 });
 
-/** Host-only heartbeat of supervised engine state → welcome.engineHost. */
+/**
+ * Telemetry the engine host can attach to `harness.report` (issue #33): all
+ * optional so a heartbeat-only report stays valid. The relay re-redacts
+ * `logTail` before serving it — the harness is not the redaction boundary.
+ */
+export const HarnessStatusReport = z.object({
+  harnessVersion: z.string().optional(),
+  /** Engine identity from its `describe` handshake. */
+  engineName: z.string().optional(),
+  engineVersion: z.string().optional(),
+  engineProtocol: z.int().optional(),
+  /** Model the harness will launch sessions with. */
+  model: z.string().optional(),
+  /** RSS of the supervised engine process, bytes. */
+  engineRssBytes: z.int().min(0).optional(),
+  /** Sessions the harness believes are live. */
+  sessions: z.int().min(0).optional(),
+  /** ms epoch of the last successful engine probe. */
+  probedAt: Timestamp.optional(),
+  /** Recent harness log lines (newest last). */
+  logTail: z.array(z.string()).max(200).optional(),
+});
+export type HarnessStatusReport = z.infer<typeof HarnessStatusReport>;
+
+/** Host-only heartbeat of supervised engine state + optional status telemetry. */
 export const HarnessReportParams = z.object({
   engine: z.object({
     state: z.enum(["starting", "running", "restarting", "failed", "stopped"]),
     detail: z.string().optional(),
   }),
+  status: HarnessStatusReport.optional(),
 });
 
 /** Host-only: surface an engine `request.opened` to the user. */

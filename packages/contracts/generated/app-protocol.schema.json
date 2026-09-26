@@ -390,7 +390,8 @@
         "asks.open",
         "asks.respond",
         "asks.list",
-        "turns.interrupt"
+        "turns.interrupt",
+        "system.status"
       ]
     },
     "AppEventMethod": {
@@ -2141,7 +2142,21 @@
     "HarnessRegisterParams": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
-      "properties": {},
+      "properties": {
+        "protocolVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "version": {
+          "default": "0.0.0",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "protocolVersion"
+      ],
       "additionalProperties": false
     },
     "HarnessRegisterResult": {
@@ -2347,10 +2362,340 @@
           "required": [
             "state"
           ]
+        },
+        "status": {
+          "type": "object",
+          "properties": {
+            "harnessVersion": {
+              "type": "string"
+            },
+            "engineName": {
+              "type": "string"
+            },
+            "engineVersion": {
+              "type": "string"
+            },
+            "engineProtocol": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "model": {
+              "type": "string"
+            },
+            "engineRssBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "sessions": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "probedAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "logTail": {
+              "maxItems": 200,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
       },
       "required": [
         "engine"
+      ]
+    },
+    "HarnessStatusReport": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "harnessVersion": {
+          "type": "string"
+        },
+        "engineName": {
+          "type": "string"
+        },
+        "engineVersion": {
+          "type": "string"
+        },
+        "engineProtocol": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "model": {
+          "type": "string"
+        },
+        "engineRssBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sessions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "probedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "logTail": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "StatusComponent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "enum": [
+            "relay",
+            "harness",
+            "engine",
+            "model"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "connecting",
+            "degraded",
+            "down"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "state",
+        "reason"
+      ]
+    },
+    "StatusComponentId": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "relay",
+        "harness",
+        "engine",
+        "model"
+      ]
+    },
+    "StatusComponentState": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "ok",
+        "connecting",
+        "degraded",
+        "down"
+      ]
+    },
+    "StatusMismatch": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "update": {
+          "type": "string",
+          "enum": [
+            "app",
+            "relay",
+            "harness"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "update",
+        "detail"
+      ]
+    },
+    "SystemStatusParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "logLines": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 200
+        }
+      },
+      "additionalProperties": false
+    },
+    "SystemStatusResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "generatedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": [
+                  "relay",
+                  "harness",
+                  "engine",
+                  "model"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "connecting",
+                  "degraded",
+                  "down"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "state",
+              "reason"
+            ]
+          }
+        },
+        "versions": {
+          "type": "object",
+          "properties": {
+            "relay": {
+              "type": "string"
+            },
+            "harness": {
+              "type": "string"
+            },
+            "relayProtocol": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "harnessProtocol": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "relay",
+            "relayProtocol"
+          ]
+        },
+        "engine": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "rssBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "sessions": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "mismatch": {
+          "type": "object",
+          "properties": {
+            "update": {
+              "type": "string",
+              "enum": [
+                "app",
+                "relay",
+                "harness"
+              ]
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "update",
+            "detail"
+          ]
+        },
+        "logs": {
+          "type": "object",
+          "properties": {
+            "relay": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "harness": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "relay",
+            "harness"
+          ]
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "generatedAt",
+        "components",
+        "versions"
       ]
     },
     "AsksOpenParams": {

@@ -13,6 +13,7 @@ import {
   MessageCreatedEvent,
   type RequestId,
   type RpcError,
+  SystemStatusResult,
   type WelcomeResult,
 } from "@lilos/contracts/app";
 import { atom, type WritableAtom } from "nanostores";
@@ -22,6 +23,7 @@ import {
   SOCKET_OPEN,
   type SocketFactory,
 } from "./socket";
+import type { StatusPollState } from "./status";
 
 export type RelayConnectionState =
   | "idle"
@@ -97,6 +99,12 @@ export class RelayClient {
   readonly employees: WritableAtom<Employee[]> = atom([]);
   readonly channels: WritableAtom<AppChannel[]> = atom([]);
   readonly conversations: WritableAtom<Conversation[]> = atom([]);
+  /** Latest system.status poll + the transport state it was taken under. */
+  readonly status: WritableAtom<StatusPollState> = atom<StatusPollState>({
+    connection: "idle",
+  });
+  /** Fatal handshake failure (version mismatch, bad token) once raised. */
+  readonly fatal: WritableAtom<RelayError | undefined> = atom(undefined);
 
   private readonly options: Required<
     Pick<
@@ -150,6 +158,9 @@ export class RelayClient {
       ...options,
     };
     if (options.onEvent) this.eventListeners.add(options.onEvent);
+    this.state.listen((connection) => {
+      this.status.set({ ...this.status.get(), connection });
+    });
   }
 
   /**
@@ -182,9 +193,65 @@ export class RelayClient {
       })
       .catch((error: Error) => {
         this.connectPromise = undefined;
+        if (
+          error instanceof RelayError &&
+          (error.code === "protocol_version_mismatch" ||
+            error.code === "unauthenticated")
+        ) {
+          this.fatal.set(error);
+        }
         throw error;
       });
     return this.connectPromise;
+  }
+
+  /**
+   * The one aggregate health call (issue #33). `logLines > 0` asks the relay
+   * to include redacted log tails — that's the diagnostics bundle payload.
+   */
+  async systemStatus(params?: {
+    logLines?: number;
+  }): Promise<SystemStatusResult> {
+    return SystemStatusResult.parse(
+      await this.request("system.status", { logLines: params?.logLines ?? 0 }),
+    );
+  }
+
+  /** Poll `system.status` once and publish it to the `status` atom. */
+  async refreshSystemStatus(logLines = 0): Promise<void> {
+    try {
+      const result = await this.systemStatus({ logLines });
+      this.status.set({
+        connection: this.state.get(),
+        result,
+        fetchedAt: Date.now(),
+      });
+    } catch (e) {
+      this.status.set({
+        connection: this.state.get(),
+        error: e instanceof Error ? e.message : "status poll failed",
+      });
+    }
+  }
+
+  /**
+   * Refresh on connect/reconnect and on `intervalMs`; returns a stopper.
+   * Failures land on the atom as `error` — the rows fall back to the
+   * synthesized transport states instead of going blank.
+   */
+  startStatusPolling(intervalMs = 15_000, logLines = 0): () => void {
+    void this.refreshSystemStatus(logLines);
+    const unsub = this.state.listen((state) => {
+      if (state === "ready") void this.refreshSystemStatus(logLines);
+    });
+    const timer = setInterval(() => {
+      if (this.state.get() === "ready") void this.refreshSystemStatus(logLines);
+      else this.status.set({ connection: this.state.get() });
+    }, intervalMs);
+    return () => {
+      unsub();
+      clearInterval(timer);
+    };
   }
 
   close(): void {
@@ -603,6 +670,7 @@ export class RelayClient {
             // Fatal handshake failures are config, not transient: stop retrying.
             this.connectPromise = undefined;
             this.state.set("closed");
+            this.fatal.set(relayError);
             this.options.onFatalError?.(relayError);
             return;
           }

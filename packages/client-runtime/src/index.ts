@@ -11,3 +11,8 @@ export {
   SOCKET_OPEN,
   type SocketFactory,
 } from "./socket";
+export {
+  formatDiagnostics,
+  type StatusPollState,
+  toStatusComponents,
+} from "./status";

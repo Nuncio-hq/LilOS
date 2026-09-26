@@ -165,6 +165,8 @@
       "dependencies": {
         "@base-ui/react": "^1.8.0",
         "@fontsource-variable/geist": "^5.3.0",
+        "@lilos/client-runtime": "workspace:*",
+        "@lilos/contracts": "workspace:*",
         "@lilos/host": "workspace:*",
         "@lilos/ui": "workspace:*",
         "@radix-ui/react-use-controllable-state": "^1.2.6",
