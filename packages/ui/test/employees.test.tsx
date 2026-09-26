@@ -185,9 +185,62 @@ describe("AC-3/AC-4 EditEmployeeDialog", () => {
       getAllByRole("button", { name: /remove from company/i })[0]!,
     );
     // The confirm copy promises the engine profile is kept.
-    getByText(/profile.*(kept|stays)/i);
+    getByText(/its sessions, memory, and skills/i);
     const confirm = getAllByRole("button", { name: /remove from company/i });
     fireEvent.click(confirm[confirm.length - 1]!);
     expect(removed).toBe(1);
+  });
+});
+
+describe("issue #64 remove confirmation", () => {
+  const openConfirm = (onRemove = () => {}) =>
+    render(
+      <EditEmployeeDialog
+        e={EMPLOYEE}
+        onClose={() => {}}
+        onSave={() => {}}
+        onRemove={onRemove}
+      />,
+    );
+
+  test("AC-1 the profile id renders as code, with no literal backticks", () => {
+    const { getByRole } = openConfirm();
+    fireEvent.click(getByRole("button", { name: /remove from company/i }));
+    const alert = getByRole("alert");
+    expect(alert.textContent).not.toContain("`");
+    expect(within(alert).getByText("reviewer").tagName).toBe("CODE");
+  });
+
+  test("AC-2 the confirmation says what goes and what stays", () => {
+    const { getByRole } = openConfirm();
+    fireEvent.click(getByRole("button", { name: /remove from company/i }));
+    const text = getByRole("alert").textContent ?? "";
+    for (const gone of ["company record", "channel memberships", "DMs"]) {
+      expect(text).toMatch(new RegExp(gone, "i"));
+    }
+    for (const stay of ["engine profile", "sessions", "memory", "skills"]) {
+      expect(text).toMatch(new RegExp(stay, "i"));
+    }
+  });
+
+  test("AC-3 exactly one Cancel while pending; Save disabled; Cancel backs out", () => {
+    let removed = 0;
+    const { getByRole, getAllByRole } = openConfirm(() => removed++);
+    fireEvent.click(getByRole("button", { name: /remove from company/i }));
+    const cancels = getAllByRole("button", { name: /^cancel$/i });
+    expect(cancels).toHaveLength(1);
+    expect(
+      (getByRole("button", { name: /^save$/i }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    // The single Cancel returns to the edit form; nothing is removed.
+    fireEvent.click(cancels[0]!);
+    expect(removed).toBe(0);
+    expect(
+      getByRole("button", { name: /remove from company/i }),
+    ).toBeTruthy();
+    expect(
+      (getByRole("button", { name: /^save$/i }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 });
