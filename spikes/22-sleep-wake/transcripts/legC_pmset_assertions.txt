@@ -1,0 +1,59 @@
+2026-09-26 10:30:39 -0700 
+Assertion status system-wide:
+   BackgroundTask                 0
+   ApplePushServiceTask           0
+   UserIsActive                   1
+   PreventUserIdleDisplaySleep    0
+   SoftwareUpdateTask             0
+   PreventSystemSleep             0
+   ExternalMedia                  0
+   PreventUserIdleSystemSleep     1
+   NetworkClientActive            0
+Listed by owning process:
+   pid 97(powerd): [0x0000000e00018009] 00:50:22 PreventUserIdleSystemSleep named: "Powerd - Prevent sleep while display is on"  
+   pid 97(powerd): [0x0000000e0009800a] 00:50:22 UserIsActive named: "com.apple.powerd.ws.initialize"  
+   pid 188(WindowServer): [0x0000001600098037] 00:50:14 UserIsActive named: "com.apple.iohideventsystem.queue.tickle.nxevent service:IOHIDSystem pid:566 process:Dock"  
+Kernel Assertions: 0x4=USB
+   id=501  level=255 0x4=USB creat= description=com.apple.usb.externaldevice.0b900000 owner=Virtual USB Keyboard
+=== during caffeinate -i ===
+2026-09-26 10:30:40 -0700 
+Assertion status system-wide:
+   BackgroundTask                 0
+   ApplePushServiceTask           0
+   UserIsActive                   1
+   PreventUserIdleDisplaySleep    0
+   SoftwareUpdateTask             0
+   PreventSystemSleep             0
+   ExternalMedia                  0
+   PreventUserIdleSystemSleep     1
+   NetworkClientActive            0
+Listed by owning process:
+   pid 7733(caffeinate): [0x00000bdc0001826f] 00:00:01 PreventUserIdleSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting for 60 secs
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+	Timeout will fire in 59 secs Action=TimeoutActionRelease
+   pid 97(powerd): [0x0000000e00018009] 00:50:23 PreventUserIdleSystemSleep named: "Powerd - Prevent sleep while display is on"  
+   pid 97(powerd): [0x0000000e0009800a] 00:50:23 UserIsActive named: "com.apple.powerd.ws.initialize"  
+   pid 188(WindowServer): [0x0000001600098037] 00:50:15 UserIsActive named: "com.apple.iohideventsystem.queue.tickle.nxevent service:IOHIDSystem pid:566 process:Dock"  
+Kernel Assertions: 0x4=USB
+   id=501  level=255 0x4=USB creat= description=com.apple.usb.externaldevice.0b900000 owner=Virtual USB Keyboard
+ sleep                0 (sleep prevented by caffeinate, powerd)
+=== after caffeinate exits ===
+2026-09-26 10:30:41 -0700 
+Assertion status system-wide:
+   BackgroundTask                 0
+   ApplePushServiceTask           0
+   UserIsActive                   1
+   PreventUserIdleDisplaySleep    0
+   SoftwareUpdateTask             0
+   PreventSystemSleep             0
+   ExternalMedia                  0
+   PreventUserIdleSystemSleep     1
+   NetworkClientActive            0
+Listed by owning process:
+   pid 97(powerd): [0x0000000e00018009] 00:50:24 PreventUserIdleSystemSleep named: "Powerd - Prevent sleep while display is on"  
+   pid 97(powerd): [0x0000000e0009800a] 00:50:24 UserIsActive named: "com.apple.powerd.ws.initialize"  
+   pid 188(WindowServer): [0x0000001600098037] 00:50:16 UserIsActive named: "com.apple.iohideventsystem.queue.tickle.nxevent service:IOHIDSystem pid:566 process:Dock"  
+Kernel Assertions: 0x4=USB
+   id=501  level=255 0x4=USB creat= description=com.apple.usb.externaldevice.0b900000 owner=Virtual USB Keyboard
+ sleep                0 (sleep prevented by powerd)
