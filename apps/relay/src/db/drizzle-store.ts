@@ -51,7 +51,6 @@ const messageToRow = (message: AppMessage) => ({
     : null,
 });
 
-
 type AskRow = typeof schema.asks.$inferSelect;
 const rowToAsk = (row: AskRow): Ask => ({
   id: row.id,
