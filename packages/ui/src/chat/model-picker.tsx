@@ -1,11 +1,5 @@
 import type { ChatStatus } from "ai";
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  CpuIcon,
-  PaperclipIcon,
-  SquareIcon,
-} from "lucide-react";
+import { CheckIcon, ChevronDownIcon, CpuIcon, SquareIcon } from "lucide-react";
 import { useState } from "react";
 import {
   ModelSelector,
@@ -107,11 +101,12 @@ export function FocusComposer({
   status: ChatStatus;
   placeholder: string;
   hint: string;
-  model: string;
-  models: ModelOption[];
-  onModel: (m: string) => void;
+  model?: string;
+  models?: ModelOption[];
+  /* No onModel → no model picker: the control needs its handler (issue #19). */
+  onModel?: (m: string) => void;
   onSend: (t: string) => void;
-  onStop: () => void;
+  onStop?: () => void;
 }) {
   const [draft, setDraft] = useState("");
   return (
@@ -135,16 +130,19 @@ export function FocusComposer({
         </PromptInputBody>
         <PromptInputFooter>
           <PromptInputTools className="min-w-0">
-            <PromptInputButton>
-              <PaperclipIcon />
-            </PromptInputButton>
-            <ModelPicker model={model} models={models} onModel={onModel} />
+            {onModel && models?.length ? (
+              <ModelPicker
+                model={model ?? models[0]}
+                models={models}
+                onModel={onModel}
+              />
+            ) : null}
             <span className="hidden truncate text-muted-foreground text-xs md:inline">
               {hint}
             </span>
           </PromptInputTools>
           <div className="flex shrink-0 items-center gap-1">
-            {running && !draft.trim() ? (
+            {running && !draft.trim() && onStop ? (
               <PromptInputSubmit
                 status={status}
                 type="button"

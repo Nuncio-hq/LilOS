@@ -57,7 +57,15 @@ PR does not exist.
   the app renders from capabilities.**
   Not: Hermes-specific names or types in `contracts`/`engine-fake`/
   `engine-conformance`, `if engine == "..."` branches, server-to-client
-  request frames. — #6
+  request frames. — #6 · PR #39
+
+## UX
+- **D-#19 A control renders only when its handler is passed; the app shows
+  only working surfaces (no placeholder buttons).** Conversation UI = shared
+  pieces (`AgentTurn`, `UserTurn`, cards, composers) + thin frames
+  (`ThreadView`, `FocusView`); frame-only features are pieces the frame adds,
+  not props of `AgentTurn`. Not: variant/mode props inside `AgentTurn`, a god
+  component accumulating optional props. — #19 · PR #40
 
 ## Structure
 - **D-#3 One-way deps: `apps/*` → `packages/*`, never back; engine packages

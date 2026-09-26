@@ -1,12 +1,17 @@
 import {
+  CheckIcon,
+  ChevronDownIcon,
   ChevronRightIcon,
   CircleCheckIcon,
   CircleDashedIcon,
+  CircleDotIcon,
   CopyIcon,
   GitMergeIcon,
   GitPullRequestIcon,
+  LockIcon,
   RefreshCcwIcon,
 } from "lucide-react";
+import { useState } from "react";
 import { SteerRows } from "../chat/agent-chat";
 import {
   Message,
@@ -21,11 +26,24 @@ import {
   ReasoningTrigger,
 } from "../components/ai-elements/reasoning";
 import { Shimmer } from "../components/ai-elements/shimmer";
+import { Task, TaskContent, TaskTrigger } from "../components/ai-elements/task";
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from "../components/ai-elements/tool";
 import { plural } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
-import type { EmpFn, HumanFn, PullRequest, Reply, WbTab } from "../types";
-import { StepRow } from "../workbench/step-row";
+import type { EmpFn, HumanFn, PullRequest, Reply, Step, WbTab } from "../types";
+
+/* The conversation's turns — ONE implementation used by both frames (issue #19):
+   ThreadView renders it for channel threads and DM sessions, FocusView for Focus.
+   Optional controls render only when their handler is passed:
+   Retry → onRetry, the "N files changed" link → onOpen (opens a workbench tab — the thread
+   panel has no workbench, so the count stays plain text there), card content → cards. */
 
 export function UserTurn({
   from,
@@ -41,7 +59,7 @@ export function UserTurn({
   human: HumanFn;
 }) {
   return (
-    <Message from="user" className="max-w-[80%] gap-1">
+    <Message from="user" className="max-w-[80%] gap-1" data-userturn>
       <MessageContent className="rounded-2xl px-4 py-2.5 text-[15px] leading-[1.6]">
         <MessageResponse className="lilos-prose break-words">
           {text}
@@ -55,6 +73,63 @@ export function UserTurn({
   );
 }
 
+/* All tool calls of a turn collapse into ONE Task block (the panel style Oscar picked in
+   #19): a "N steps" trigger — or the running tool's name — that expands into one Tool card
+   per step. While the turn is in the tools phase the block is forced open. */
+export function TurnSteps({
+  steps,
+  autoOpen,
+}: {
+  steps: Step[];
+  autoOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const running = steps.some((s) => s.running);
+  return (
+    <Task
+      className="mb-1"
+      open={open || !!autoOpen}
+      onOpenChange={setOpen}
+      data-tasksteps
+    >
+      <TaskTrigger title={plural(steps.length, "step")}>
+        <div className="flex w-fit cursor-pointer items-center gap-1.5 text-muted-foreground text-xs transition-colors hover:text-foreground">
+          {running ? (
+            <CircleDotIcon className="size-3.5 animate-pulse text-amber-500" />
+          ) : (
+            <CheckIcon className="size-3.5 text-emerald-600" />
+          )}
+          <span>
+            {running
+              ? `${steps[steps.length - 1].tool}…`
+              : plural(steps.length, "step")}
+          </span>
+          <LockIcon className="size-3" />
+          <ChevronDownIcon className="size-3.5 transition-transform group-data-[panel-open]:rotate-180" />
+        </div>
+      </TaskTrigger>
+      <TaskContent className="[&>div]:mt-2">
+        {steps.map((s, j) => (
+          <Tool key={j} className="mb-0 bg-background">
+            <ToolHeader
+              title={s.tool}
+              type={`tool-${s.tool}`}
+              state={s.running ? "input-available" : "output-available"}
+            />
+            <ToolContent>
+              <ToolInput input={s.input} />
+              <ToolOutput
+                output={s.output || undefined}
+                errorText={undefined}
+              />
+            </ToolContent>
+          </Tool>
+        ))}
+      </TaskContent>
+    </Task>
+  );
+}
+
 export function AgentTurn({
   r,
   emp,
@@ -62,22 +137,26 @@ export function AgentTurn({
   onRetry,
   onOpen,
   cards,
-  pending,
+  pending = [],
 }: {
   r: Reply;
   emp: EmpFn;
+  /** True on the last reply of the thread — Retry only makes sense there. */
   last: boolean;
-  onRetry: (empId: string) => void;
-  onOpen: (t: WbTab) => void;
-  cards: React.ReactNode;
-  pending: string[];
+  /** When absent the turn shows no Retry action. */
+  onRetry?: (empId: string) => void;
+  /** When absent the "N files changed" footer is plain text, not a link. */
+  onOpen?: (t: WbTab) => void;
+  /** Frame-attached pieces under the turn (approval card, start-work card, PR card). */
+  cards?: React.ReactNode;
+  pending?: string[];
 }) {
   const e = emp(r.from);
   const steps = r.steps ?? [];
   const files = new Set(steps.filter((s) => s.diff).map((s) => s.diff!.path))
     .size;
   return (
-    <Message from="assistant" className="max-w-full gap-2.5">
+    <Message from="assistant" className="max-w-full gap-2.5" data-agentturn>
       <div className="flex items-center gap-2 text-[13px]">
         <HermesAvatar className="size-5" />
         <span className="font-semibold">{e?.name}</span>
@@ -106,11 +185,7 @@ export function AgentTurn({
         </Reasoning>
       )}
       {steps.length > 0 && (
-        <div className="flex flex-col">
-          {steps.map((s, j) => (
-            <StepRow key={j} s={s} />
-          ))}
-        </div>
+        <TurnSteps steps={steps} autoOpen={r.live && r.phase === "tools"} />
       )}
       {r.live && r.phase === "tools" && !steps.some((s) => s.running) && (
         <Shimmer as="span" duration={1} className="pl-4 text-[13px]">
@@ -129,7 +204,6 @@ export function AgentTurn({
           </MessageResponse>
         </MessageContent>
       ) : null}
-      {/* Steer rows from the shared agent-chat component (pending + delivered, identical to the panel). */}
       <SteerRows steers={r.steers} pending={pending} live={r.live} />
       {r.phase === "stopped" && (
         <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
@@ -141,15 +215,18 @@ export function AgentTurn({
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-muted-foreground">
           {r.dur !== undefined && <span>Worked for {r.dur}s</span>}
           {steps.length > 0 && <span>· {plural(steps.length, "step")}</span>}
-          {files > 0 && (
-            <button
-              type="button"
-              className="underline-offset-2 hover:text-foreground hover:underline"
-              onClick={() => onOpen("changes")}
-            >
-              · {plural(files, "file")} changed
-            </button>
-          )}
+          {files > 0 &&
+            (onOpen ? (
+              <button
+                type="button"
+                className="underline-offset-2 hover:text-foreground hover:underline"
+                onClick={() => onOpen("changes")}
+              >
+                · {plural(files, "file")} changed
+              </button>
+            ) : (
+              <span>· {plural(files, "file")} changed</span>
+            ))}
           <MessageActions className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
             {r.text && (
               <MessageAction
@@ -160,7 +237,7 @@ export function AgentTurn({
                 <CopyIcon className="size-3.5" />
               </MessageAction>
             )}
-            {last && (
+            {last && onRetry && (
               <MessageAction
                 tooltip="Retry turn"
                 label="Retry"

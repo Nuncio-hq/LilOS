@@ -7,6 +7,9 @@
 export * from "./chat/agent-chat";
 export { Composer } from "./chat/composer";
 export { FocusComposer, ModelLogo, ModelPicker } from "./chat/model-picker";
+// conversation (shared by the thread panel and Focus — issue #19)
+export { ReplyCards } from "./conversation/cards";
+export { AgentTurn, PrCard, TurnSteps, UserTurn } from "./conversation/turns";
 export { AddFolderDialog } from "./dialogs/add-folder-dialog";
 // dialogs
 export { Field } from "./dialogs/field";
@@ -22,7 +25,6 @@ export { ThreadSummary } from "./feed/thread-summary";
 // focus mode
 export { FocusView } from "./focus/focus-view";
 export { SessionUsage } from "./focus/session-usage";
-export { AgentTurn, PrCard, UserTurn } from "./focus/turns";
 export * from "./lib/helpers";
 // shell
 export { HermesAvatar, HumanAvatar } from "./shell/avatars";
@@ -35,7 +37,7 @@ export { useTheme } from "./shell/use-theme";
 // sidebar
 export { ChannelItem, NavItem, Section } from "./sidebar/nav";
 // thread panel
-export { ReplyCards, ThreadView } from "./thread/thread-view";
+export { ThreadView } from "./thread/thread-view";
 export * from "./types";
 export type { TreeNode } from "./workbench/artifacts";
 export { buildTree, sessionArtifacts } from "./workbench/artifacts";

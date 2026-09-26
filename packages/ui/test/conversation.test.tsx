@@ -1,0 +1,357 @@
+// @vitest-environment happy-dom
+/* AC tests for issue #19: ONE conversation implementation shared by the channel thread panel,
+   DM session panel and Focus — plus the "a control renders only when its handler is passed" rule. */
+import { cleanup, fireEvent, render, within } from "@testing-library/react";
+import { afterEach, describe, expect, test } from "vitest";
+import { FocusView } from "../src/focus/focus-view";
+import { ThreadView } from "../src/thread/thread-view";
+import type {
+  Channel,
+  EmpFn,
+  HumanFn,
+  Msg,
+  PullRequest,
+  Reply,
+  Thread,
+} from "../src/types";
+
+/* happy-dom does not implement every browser API the vendored components touch. */
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+if (typeof Element.prototype.scrollTo === "undefined") {
+  Element.prototype.scrollTo = () => {};
+}
+if (typeof Element.prototype.scrollIntoView === "undefined") {
+  Element.prototype.scrollIntoView = () => {};
+}
+// The workbench opens at >=1024px; force it so the PR tab actually mounts.
+Object.defineProperty(window, "innerWidth", { value: 1400, writable: true });
+afterEach(cleanup);
+
+const BUILDER = {
+  id: "builder",
+  name: "Builder",
+  role: "Engineer",
+  status: "online" as const,
+  profile: "p",
+  model: "gpt-test-1",
+  now: "",
+  instructions: "",
+  respondTo: "anyone" as const,
+};
+const emp: EmpFn = (id) => (id === "builder" ? BUILDER : undefined);
+const human: HumanFn = (id) =>
+  id === "oscar" ? { name: "Oscar", color: "bg-blue-600" } : undefined;
+
+const root: Extract<Msg, { kind: "msg" }> = {
+  kind: "msg",
+  id: "m1",
+  from: "oscar",
+  time: "10:00",
+  text: "@builder walk me through the envelope contract",
+};
+
+/* A finished agent turn: reasoning + 3 tool steps + text + duration. No `diff` step, so the
+   turn is byte-identical across frames (the files-changed affordance opens the workbench,
+   which exists only in Focus). */
+const stepTurn: Reply = {
+  id: "r1",
+  from: "builder",
+  time: "10:04",
+  reasoning: "Let me trace the envelope path.",
+  thought: 4,
+  steps: [
+    {
+      tool: "read",
+      input: { path: "packages/contracts/envelope.ts" },
+      output: "…",
+    },
+    { tool: "terminal", input: { command: "bun test" }, output: "ok" },
+    { tool: "edit", input: { path: "envelope.ts" }, output: "done" },
+  ],
+  text: "Typecheck is clean across 4 packages.",
+  phase: "done",
+  dur: 21,
+};
+const humanTurn: Reply = {
+  id: "r2",
+  from: "oscar",
+  time: "10:05",
+  text: "and the PR?",
+};
+/* Last reply carries both cards: an approval request and an asks-to-start-work card. */
+const cardTurn: Reply = {
+  id: "r3",
+  from: "builder",
+  time: "10:06",
+  text: "",
+  approval: { id: "a1", command: "bun publish", note: "Needs a network write" },
+  startProposal: { title: "Cut release 0.1" },
+};
+const thread: Thread = {
+  session: "s_abc123",
+  replies: [stepTurn, humanTurn, cardTurn],
+  queue: ["looks good, ship it"],
+};
+const channel: Channel = {
+  id: "eng",
+  name: "engineering",
+  employees: ["builder"],
+  repo: "Nuncio-hq/LilOS",
+};
+const dmChannel: Channel = {
+  id: "dm-builder",
+  name: "Builder",
+  employees: ["builder"],
+  dm: true,
+};
+const pr: PullRequest = {
+  number: 12,
+  repo: "Nuncio-hq/LilOS",
+  title: "Envelope contract",
+  body: "…",
+  status: "open",
+  author: "builder",
+  base: "main",
+  head: "lil-1",
+  opened: "10:00",
+  checks: [{ name: "verify", status: "passed" }],
+  comments: [],
+};
+
+const panelProps = {
+  root,
+  thread,
+  emp,
+  human,
+  running: false,
+  work: null,
+  resolved: {},
+  repo: channel.repo,
+  onSend: () => {},
+} as const;
+const focusProps = {
+  root,
+  thread,
+  channel,
+  emp,
+  human,
+  running: false,
+  work: null,
+  resolved: {},
+  onSend: () => {},
+} as const;
+
+/* Generated ids (aria-controls etc.) differ per mount; structure/text/classes must not. */
+const canon = (el: Element) =>
+  el.innerHTML
+    .replace(
+      /\s(id|aria-controls|aria-labelledby|aria-describedby|for)="[^"]*"/g,
+      "",
+    )
+    .trim();
+const agentTurns = (c: HTMLElement) =>
+  Array.from(c.querySelectorAll("[data-agentturn]"));
+
+/* All tool steps of a turn collapse into ONE block with a single trigger; expanding it reveals
+   every step's tool card. */
+function expectTaskBlock(turn: Element, steps: number) {
+  const blocks = turn.querySelectorAll("[data-tasksteps]");
+  expect(blocks.length).toBe(1);
+  const block = blocks[0];
+  const trigger = block.querySelector(
+    ":scope > [data-slot='collapsible-trigger']",
+  )!;
+  expect(trigger.textContent).toContain(`${steps} steps`);
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  const tools = block.querySelectorAll(
+    "[data-slot='collapsible-content'] [data-slot='collapsible']",
+  );
+  expect(tools.length).toBe(steps);
+  for (const s of stepTurn.steps!) expect(block.textContent).toContain(s.tool);
+}
+
+describe("issue #19 — one conversation from shared pieces", () => {
+  test("AC-1 channel thread, DM thread and Focus render the same reply with the same AgentTurn component", () => {
+    const panel = render(<ThreadView {...panelProps} channel={channel} />);
+    const dm = render(<ThreadView {...panelProps} channel={dmChannel} />);
+    const focus = render(<FocusView {...focusProps} />);
+    const counts = [panel.container, dm.container, focus.container].map(
+      (c) => agentTurns(c).length,
+    );
+    // stepTurn + cardTurn come from the employee → two agent turns per frame
+    expect(counts).toEqual([2, 2, 2]);
+    const [panelTurn] = agentTurns(panel.container);
+    const [dmTurn] = agentTurns(dm.container);
+    const [focusTurn] = agentTurns(focus.container);
+    expect(canon(panelTurn)).toBe(canon(focusTurn));
+    expect(canon(dmTurn)).toBe(canon(focusTurn));
+  });
+
+  test("AC-2 tool steps render as one collapsible Task block in both frames", () => {
+    const panel = render(<ThreadView {...panelProps} channel={channel} />);
+    const dm = render(<ThreadView {...panelProps} channel={dmChannel} />);
+    const focus = render(<FocusView {...focusProps} />);
+    for (const c of [panel.container, dm.container, focus.container]) {
+      const turn = agentTurns(c)[0];
+      expect(turn).toBeTruthy();
+      expectTaskBlock(turn, stepTurn.steps!.length);
+    }
+  });
+
+  test("AC-3 DM detection has one source (channel.dm); the name prefix is gone", () => {
+    // A channel merely NAMED like a DM is a channel thread.
+    const notDm = render(
+      <ThreadView
+        {...panelProps}
+        channel={{ id: "x", name: "DM tooling", employees: [], repo: "r" }}
+      />,
+    );
+    expect(within(notDm.container).getByText("Thread")).toBeTruthy();
+    expect(within(notDm.container).getByText(/#DM tooling/)).toBeTruthy();
+    cleanup();
+    // dm:true → Session frame, DM label, no Start work affordance.
+    const dm = render(<ThreadView {...panelProps} channel={dmChannel} />);
+    expect(within(dm.container).getByText("Session")).toBeTruthy();
+    expect(within(dm.container).getByText(/DM · Builder/)).toBeTruthy();
+    expect(
+      within(dm.container).queryByRole("button", { name: /Start work/ }),
+    ).toBeNull();
+  });
+
+  test("AC-4 optional controls render only when their handler is passed", () => {
+    /* No optional handlers anywhere: only required props. The conversation still renders
+       (turns, card titles, step block) but none of the optional controls exist. */
+    const quietPanel = render(<ThreadView {...panelProps} channel={channel} />);
+    const qp = within(quietPanel.container);
+    for (const name of [
+      /Start work/,
+      /^Focus$/,
+      /^Retry$/,
+      /Review & start/,
+      /Not yet/,
+      /Allow once/,
+      /Always here/,
+      /Deny/,
+    ])
+      expect(qp.queryByRole("button", { name })).toBeNull();
+    // the cards still render their information — only the actions are gone
+    expect(
+      qp.getByText("Approval needed · only Oscar can answer"),
+    ).toBeTruthy();
+    expect(qp.getByText(/Builder asks to start work/)).toBeTruthy();
+    // not-sent tray lists items but its Send/Remove actions need handlers
+    expect(quietPanel.container.querySelector("[data-notsent]")).toBeTruthy();
+    expect(
+      quietPanel.container.querySelector("[data-notsent-send]"),
+    ).toBeNull();
+    expect(
+      quietPanel.container.querySelector("[data-notsent-remove]"),
+    ).toBeNull();
+
+    const quietFocus = render(
+      <FocusView
+        {...focusProps}
+        thread={{ ...thread, pr }}
+        work={{ ticket: "LIL-9", branch: "lil-9-x", title: "x" }}
+      />,
+    );
+    const qf = within(quietFocus.container);
+    for (const name of [
+      /Start work/,
+      /Squash and merge/,
+      /gpt-test-1/, // model picker trigger shows the model name
+      /Review & start/,
+      /Allow once/,
+      /Restore to here/,
+    ])
+      expect(qf.queryByRole("button", { name })).toBeNull();
+    expect(qf.queryByText(/Add a comment/)).toBeNull();
+    // icon buttons whose only accessible handle is the title
+    expect(
+      quietFocus.container.querySelector('[title="Exit focus"]'),
+    ).toBeNull();
+    expect(
+      quietFocus.container.querySelector('[title="Workspace"]'),
+    ).toBeNull();
+
+    // Same frames WITH the handlers → the controls exist (the gates are real, not deletion).
+    const wiredPanel = render(
+      <ThreadView
+        {...panelProps}
+        channel={channel}
+        onFocus={() => {}}
+        onStart={() => {}}
+        onStop={() => {}}
+        onRetry={() => {}}
+        onUnqueue={() => {}}
+        onSendQueued={() => {}}
+        setResolved={() => {}}
+      />,
+    );
+    const wp = within(wiredPanel.container);
+    expect(wp.getByRole("button", { name: /Start work/ })).toBeTruthy();
+    expect(wp.getByRole("button", { name: "Focus" })).toBeTruthy();
+    expect(wp.getByRole("button", { name: /Allow once/ })).toBeTruthy();
+    expect(wp.getByRole("button", { name: /Not yet/ })).toBeTruthy();
+    expect(
+      wiredPanel.container.querySelector("[data-notsent-send]"),
+    ).toBeTruthy();
+    // Retry renders on the last agent turn when onRetry is passed.
+    const threadRetryLast: Thread = {
+      ...thread,
+      replies: [cardTurn, humanTurn, stepTurn],
+      queue: [],
+    };
+    const wiredRetry = render(
+      <ThreadView
+        {...panelProps}
+        thread={threadRetryLast}
+        channel={channel}
+        onRetry={() => {}}
+      />,
+    );
+    const turns = agentTurns(wiredRetry.container);
+    expect(
+      within(turns[turns.length - 1] as HTMLElement).getByRole("button", {
+        name: "Retry",
+      }),
+    ).toBeTruthy();
+
+    const wiredFocus = render(
+      <FocusView
+        {...focusProps}
+        thread={{ ...thread, pr }}
+        onBack={() => {}}
+        onNav={() => {}}
+        onStart={() => {}}
+        onStop={() => {}}
+        onRetry={() => {}}
+        onRewind={() => {}}
+        onModel={() => {}}
+        onUnqueue={() => {}}
+        onSendQueued={() => {}}
+        setResolved={() => {}}
+        say={() => {}}
+        models={["gpt-test-1", "claude-test-2"]}
+        repoFiles={["README.md"]}
+        onPrComment={() => {}}
+        onPrMerge={() => {}}
+      />,
+    );
+    const wf = within(wiredFocus.container);
+    expect(wf.getByRole("button", { name: /Restore to here/ })).toBeTruthy();
+    expect(wf.getByRole("button", { name: /gpt-test-1/ })).toBeTruthy();
+    expect(wf.getByRole("button", { name: /Squash and merge/ })).toBeTruthy();
+    expect(
+      wiredFocus.container.querySelector('[title="Exit focus"]'),
+    ).toBeTruthy();
+  });
+});
