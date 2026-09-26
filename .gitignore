@@ -7,3 +7,4 @@ playwright-report/
 .DS_Store
 *.tsbuildinfo
 tsconfig.*.tsbuildinfo
+e2e/.gh-fake/

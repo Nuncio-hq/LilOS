@@ -56,10 +56,11 @@ import { HermesAvatar } from "../shell/avatars";
 import type {
   AttachedFile,
   Channel,
-  Diff,
   EmpFn,
   Employee,
+  HostAccessors,
   HumanFn,
+  MergeMethod,
   ModelOption,
   Msg,
   Project,
@@ -128,21 +129,10 @@ export function FocusView({
   say?: (t: string) => void;
   models?: ModelOption[];
   repoFiles?: string[];
-  /** Live host accessors forwarded to the Workbench (issue #11). */
-  host?: {
-    tree: (cwd: string) => Promise<string[] | null>;
-    diff: (cwd: string) => Promise<Diff[] | null>;
-    read: (
-      cwd: string,
-      path: string,
-    ) => Promise<{
-      content: string;
-      binary: boolean;
-      truncated: boolean;
-    } | null>;
-  };
-  onPrComment?: (t: string) => void;
-  onPrMerge?: () => void;
+  /** Live host accessors forwarded to the Workbench (issue #11 fs/git, #37 forge). */
+  host?: HostAccessors;
+  onPrComment?: (t: string) => void | Promise<void>;
+  onPrMerge?: (method: MergeMethod) => void | Promise<void>;
   /* Mid-turn sends: pending-steer chips when `steer` is declared, the queued tray without it. */
   pending?: string[];
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */

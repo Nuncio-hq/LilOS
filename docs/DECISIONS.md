@@ -68,6 +68,10 @@ PR does not exist.
   harness (`packages/host`), never by an engine; the wire is JSON-RPC 2.0 like
   the engine and app protocols.** Not: fs/git tools on the engine protocol, or a
   per-app reimplementation of the calls. — #11
+- **D-#37 Forge ops (PR view/comment/merge) are host API methods (`forge.*`)
+  shelling out to `gh` with the signed-in user's auth; the merge result is the
+  re-read PR state, not gh's stdout.** Not: a GitHub token stored by LilOS, or
+  forge on the engine. — #37
 
 ## UX
 - **D-#19 A control renders only when its handler is passed; the app shows
