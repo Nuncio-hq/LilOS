@@ -79,8 +79,9 @@ test.beforeAll(() => {
   git(["add", "."]);
   git(["commit", "-m", "init"]);
   // Reset the fake forge: OPEN PR, empty invocation log.
+  // (trailing newline keeps the generated fixture biome-clean)
   mkdirSync(fakeDir, { recursive: true });
-  writeFileSync(viewPath, JSON.stringify(PR_VIEW, null, 2));
+  writeFileSync(viewPath, `${JSON.stringify(PR_VIEW, null, 2)}\n`);
   rmSync(logFile, { force: true });
 });
 test.afterAll(() => rmSync(repo, { recursive: true, force: true }));

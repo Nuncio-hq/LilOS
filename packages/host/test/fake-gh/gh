@@ -31,7 +31,7 @@ const viewPath = join(dir, "view.json");
 const readView = (): Record<string, any> =>
   JSON.parse(readFileSync(viewPath, "utf8"));
 const writeView = (v: Record<string, any>) =>
-  writeFileSync(viewPath, JSON.stringify(v, null, 2));
+  writeFileSync(viewPath, `${JSON.stringify(v, null, 2)}\n`);
 const flag = (name: string) => args[args.indexOf(name) + 1];
 
 // Matches real gh's message for "the current branch has no PR" — the host maps
