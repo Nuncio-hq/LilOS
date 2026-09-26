@@ -115,7 +115,9 @@ test("AC-1..4 picker + session cwd + Workbench Files/Changes over host API", asy
 
   // ── AC-3: Changes tab = working-tree diff (stat + patch) ──
   await page.getByRole("tab", { name: /Changes/ }).click();
-  await expect(page.getByText("2 files changed", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("2 files changed", { exact: true }),
+  ).toBeVisible();
   const mod = page.locator("[data-diff='a.txt']");
   await expect(mod).toBeVisible();
   await expect(mod).toContainText("+1");
