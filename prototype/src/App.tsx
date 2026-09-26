@@ -547,6 +547,14 @@ export default function App() {
   // running turn at the next tool boundary; OFF = it waits in the client-side queue (prompt.submit later).
   const [steerCap, setSteerCap] = useState(true)
   const steerBuf = useRef<Record<string, string[]>>({})
+  // Mirror of steerBuf in React state so a pending steer renders immediately inside the running turn
+  // (as a "Steer pending" chip where the "Oscar steered" row will appear). steerBuf stays the async
+  // source of truth for the turn loop; every mutation goes through setSteerBuf to keep the two in sync.
+  const [pendingSteers, setPendingSteers] = useState<Record<string, string[]>>({})
+  const setSteerBuf = (rootId: string, list: string[]) => {
+    steerBuf.current[rootId] = list
+    setPendingSteers((p) => ({ ...p, [rootId]: list }))
+  }
 
   const emp: EmpFn = (id) => employees.find((e) => e.id === id)
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 2200) }
@@ -594,7 +602,7 @@ export default function App() {
     if (ws?.mode === "new" && ws.worktree && !followUp)
       s.steps = [{ tool: "terminal", input: { command: `git worktree add ${ws.worktree} -b ${ws.branch} ${ws.base}` }, output: `Preparing worktree (new branch '${ws.branch}')\nHEAD is now at ${hex()} (${ws.base})` }, ...s.steps]
     stops.current[rootId] = false
-    steerBuf.current[rootId] = steerBuf.current[rootId] ?? []
+    setSteerBuf(rootId, steerBuf.current[rootId] ?? [])
     const started0 = Date.now()
     mapRoot(key, rootId, (t) => ({
       ...t,
@@ -611,7 +619,7 @@ export default function App() {
     const applySteers = () => {
       const q = steerBuf.current[rootId] ?? []
       if (!q.length) return
-      steerBuf.current[rootId] = []
+      setSteerBuf(rootId, [])
       applied.push(...q)
       set((r) => ({ ...r, steers: [...(r.steers ?? []), ...q.map(plain)] }))
     }
@@ -650,19 +658,41 @@ export default function App() {
       set((r) => ({ ...r, phase: "stopped", live: false, steps: (r.steps ?? []).map((x) => ({ ...x, running: false })) }))
       mapRoot(key, rootId, (t) => ({ ...t, todos: s.todo ? (t.todos ?? []).map((x) => (x.content === s.todo ? { ...x, status: "cancelled" } : x)) : t.todos }))
     }
+    // session.interrupt (■): undelivered steers must not silently land in a LATER turn —
+    // hand them to the visible, removable client-side queue (QueuedTray) where Oscar controls them.
+    if (stops.current[rootId]) {
+      const pend = steerBuf.current[rootId] ?? []
+      if (pend.length) {
+        setSteerBuf(rootId, [])
+        mapRoot(key, rootId, (t) => ({ ...t, queue: [...(t.queue ?? []), ...pend] }))
+      }
+    }
     // Follow-ups run next, in order. A steer that never hit a tool boundary becomes the next prompt
     // (never lost); then the client-side queue (used when the engine has no session.steer).
     const m = (feedsRef.current[key] ?? []).find((x) => x.kind === "msg" && x.id === rootId)
     const steered = (steerBuf.current[rootId] ?? [])[0]
     const next = steered ?? (m?.kind === "msg" ? m.thread?.queue?.[0] : undefined)
     if (next && !stops.current[rootId]) {
-      if (steered) steerBuf.current[rootId] = (steerBuf.current[rootId] ?? []).slice(1)
+      if (steered) setSteerBuf(rootId, (steerBuf.current[rootId] ?? []).slice(1))
       mapRoot(key, rootId, (t) => ({ ...t, queue: steered ? (t.queue ?? []) : (t.queue ?? []).slice(1), replies: [...t.replies, { id: `o-${Date.now()}`, from: "oscar", time: nowTime(), text: next }] }))
       await new Promise((r) => setTimeout(r, 50))
       return runTurn(key, rootId, empId, next)
     }
   }
   const stopTurn = (rootId: string) => { stops.current[rootId] = true }
+  // A pending steer chip appears mid-turn with no following stream delta to trigger stick-to-bottom,
+  // so pin the conversation to the bottom while a steer waits (the chip is the last row of the live turn).
+  const hasPending = Object.values(pendingSteers).some((l) => l.length > 0)
+  useEffect(() => {
+    if (!hasPending) return
+    const pin = () => document.querySelectorAll("[data-steerpending]").forEach((chip) => {
+      for (let el = chip.parentElement as HTMLElement | null; el; el = el.parentElement)
+        if (/auto|scroll/.test(getComputedStyle(el).overflowY)) { el.scrollTop = el.scrollHeight; break }
+    })
+    pin()
+    const id = setInterval(pin, 60)
+    return () => clearInterval(id)
+  }, [pendingSteers, hasPending])
   const threadRunning = (m?: Extract<Msg, { kind: "msg" }>) => !!m?.thread?.replies.some((r) => r.live)
 
   const mentionIn = (text: string) => employees.find((e) => channel.employees.includes(e.id) && new RegExp(`@${e.name}\\b`, "i").test(text))
@@ -715,7 +745,7 @@ export default function App() {
   // boundary; otherwise it queues client-side and is submitted (prompt.submit) when the turn ends.
   const sendInThread = (root: Extract<Msg, { kind: "msg" }>, text: string) => {
     if (threadRunning(root)) {
-      if (steerCap) steerBuf.current[root.id] = [...(steerBuf.current[root.id] ?? []), bold(text)]
+      if (steerCap) setSteerBuf(root.id, [...(steerBuf.current[root.id] ?? []), bold(text)])
       else mapRoot(feedKey, root.id, (t) => ({ ...t, queue: [...(t.queue ?? []), bold(text)] }))
       return
     }
@@ -780,7 +810,7 @@ export default function App() {
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
       running={threadRunning(openThread)} onSend={(t) => sendInThread(openThread, t)} onStop={() => stopTurn(openThread.id)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)}
-      steerCap={steerCap} onSteerCap={setSteerCap}
+      steerCap={steerCap} onSteerCap={setSteerCap} pending={pendingSteers[openThread.id] ?? []}
     />
   ) : null
 
@@ -858,7 +888,7 @@ export default function App() {
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)}
           onRewind={(i) => rewind(openThread, i)} onModel={(m) => setModel(openThread, m)} say={say}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={() => prMerge(openThread)}
-          steerCap={steerCap} onSteerCap={setSteerCap}
+          steerCap={steerCap} onSteerCap={setSteerCap} pending={pendingSteers[openThread.id] ?? []}
         />
       ) : (
         <div className={cn("grid min-h-0 min-w-0 grid-cols-1", panelOpen && "xl:grid-cols-[minmax(0,1fr)_420px]")}>
@@ -1051,13 +1081,13 @@ function HireCard({ draft, by, emp, done, onReview, onReject }: { draft: HireDra
   )
 }
 
-function ThreadView({ root, thread, channelName, emp, resolved, setResolved, focus, onFocus, work, repo, onStart, running, onSend, onStop, onRetry, onUnqueue, steerCap, onSteerCap }: {
+function ThreadView({ root, thread, channelName, emp, resolved, setResolved, focus, onFocus, work, repo, onStart, running, onSend, onStop, onRetry, onUnqueue, steerCap, onSteerCap, pending }: {
   root: Extract<Msg, { kind: "msg" }>; thread: Thread; channelName: string; emp: EmpFn
   resolved: Record<string, string>; setResolved: (r: Record<string, string>) => void
   focus: boolean; onFocus: () => void
   work: Work | null; repo?: string; onStart: () => void
   running: boolean; onSend: (text: string) => void; onStop: () => void; onRetry: (empId: string) => void; onUnqueue: (i: number) => void
-  steerCap: boolean; onSteerCap: (v: boolean) => void
+  steerCap: boolean; onSteerCap: (v: boolean) => void; pending: string[]
 }) {
   const [openSteps, setOpenSteps] = useState<Record<number, boolean>>({})
   const lead = thread.replies.find((r) => emp(r.from))
@@ -1126,6 +1156,11 @@ function ThreadView({ root, thread, channelName, emp, resolved, setResolved, foc
                 {r.steers?.map((s, k) => (
                   <div key={k} className="flex w-fit max-w-full items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-900 text-xs">
                     <span className="shrink-0 font-medium">Oscar steered</span><span className="min-w-0">{s}</span>
+                  </div>
+                ))}
+                {r.live && pending.map((s, k) => (
+                  <div key={`p${k}`} data-steerpending className="flex w-fit max-w-full items-start gap-1.5 rounded-md border border-dashed border-amber-300 bg-amber-50/40 px-2 py-1 text-amber-900/70 text-xs">
+                    <span className="shrink-0 font-medium">Steer pending</span><span className="min-w-0">{plain(s)}</span>
                   </div>
                 ))}
                 {r.phase === "stopped" && <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">Stopped · session.interrupt</div>}
@@ -1723,14 +1758,14 @@ function PrPanel({ pr, diffs, commits, lead, session, onComment, onMerge, say }:
   )
 }
 
-function FocusView({ root, thread, channel, project, lead, emp, resolved, setResolved, work, onBack, onNav, onStart, running, onSend, onStop, onRetry, onUnqueue, onRewind, onModel, say, onPrComment, onPrMerge, steerCap, onSteerCap }: {
+function FocusView({ root, thread, channel, project, lead, emp, resolved, setResolved, work, onBack, onNav, onStart, running, onSend, onStop, onRetry, onUnqueue, onRewind, onModel, say, onPrComment, onPrMerge, steerCap, onSteerCap, pending }: {
   root: Extract<Msg, { kind: "msg" }>; thread: Thread; channel: Channel; project?: Project; lead?: Employee; emp: EmpFn
   resolved: Record<string, string>; setResolved: (r: Record<string, string>) => void; work: Work | null
   onBack: () => void; onNav: () => void; onStart: () => void; running: boolean
   onSend: (t: string) => void; onStop: () => void; onRetry: (empId: string) => void
   onUnqueue: (i: number) => void; onRewind: (replyIndex: number) => void; onModel: (m: string) => void; say: (t: string) => void
   onPrComment: (t: string) => void; onPrMerge: () => void
-  steerCap: boolean; onSteerCap: (v: boolean) => void
+  steerCap: boolean; onSteerCap: (v: boolean) => void; pending: string[]
 }) {
   const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024)
   const [tab, setTab] = useState<WbTab>(() => (sessionArtifacts(thread).diffs.length ? "changes" : "terminal"))
@@ -1807,7 +1842,7 @@ function FocusView({ root, thread, channel, project, lead, emp, resolved, setRes
             <ConversationContent className="mx-auto w-full max-w-[46rem] gap-7 px-5 py-8">
               <UserTurn from={root.from} time={root.time} text={root.text} note={`opened session ${thread.session}`} />
               {thread.replies.map((r, i) => emp(r.from) ? (
-                <AgentTurn key={r.id ?? i} r={r} emp={emp} last={i === thread.replies.length - 1} onRetry={onRetry} onOpen={pickTab}
+                <AgentTurn key={r.id ?? i} r={r} emp={emp} last={i === thread.replies.length - 1} onRetry={onRetry} onOpen={pickTab} pending={pending}
                   cards={<>
                     <ReplyCards r={r} work={work} repo={channel.repo} emp={emp} resolved={resolved} setResolved={setResolved} onStart={onStart} />
                     {pr && !r.live && r.steps?.some((s) => String(s.input.command ?? "").startsWith("gh pr create")) && <PrCard pr={pr} author={lead?.name ?? pr.author} onOpen={() => pickTab("pr")} />}
@@ -1931,8 +1966,8 @@ function UserTurn({ from, time, text, note }: { from: string; time: string; text
   )
 }
 
-function AgentTurn({ r, emp, last, onRetry, onOpen, cards }: {
-  r: Reply; emp: EmpFn; last: boolean; onRetry: (empId: string) => void; onOpen: (t: WbTab) => void; cards: React.ReactNode
+function AgentTurn({ r, emp, last, onRetry, onOpen, cards, pending }: {
+  r: Reply; emp: EmpFn; last: boolean; onRetry: (empId: string) => void; onOpen: (t: WbTab) => void; cards: React.ReactNode; pending: string[]
 }) {
   const e = emp(r.from)
   const steps = r.steps ?? []
@@ -1953,6 +1988,11 @@ function AgentTurn({ r, emp, last, onRetry, onOpen, cards }: {
       {r.steers?.map((s, k) => (
         <div key={k} className="flex w-fit max-w-full items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-900 text-xs">
           <span className="shrink-0 font-medium">Oscar steered</span><span className="min-w-0">{s}</span>
+        </div>
+      ))}
+      {r.live && pending.map((s, k) => (
+        <div key={`p${k}`} data-steerpending className="flex w-fit max-w-full items-start gap-1.5 rounded-md border border-dashed border-amber-300 bg-amber-50/40 px-2 py-1 text-amber-900/70 text-xs">
+          <span className="shrink-0 font-medium">Steer pending</span><span className="min-w-0">{plain(s)}</span>
         </div>
       ))}
       {r.phase === "stopped" && <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">Stopped · session.interrupt</div>}
