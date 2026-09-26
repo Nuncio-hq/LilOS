@@ -11,7 +11,17 @@ import {
  */
 
 export interface EngineConnection {
-  request<T = unknown>(method: string, params?: unknown): Promise<T>;
+  /**
+   * `timeoutMs` overrides the client default; `0` disables the timeout.
+   * `prompt` resolves only when the turn finishes, so callers pass 0 —
+   * progress and completion arrive as events and a socket drop still fails
+   * the call.
+   */
+  request<T = unknown>(
+    method: string,
+    params?: unknown,
+    timeoutMs?: number,
+  ): Promise<T>;
   onEvent(fn: (event: EngineEvent) => void): () => void;
   /** Socket dropped (not a deliberate close()). In-proc transports may omit it. */
   onClose?(fn: (reason?: string) => void): void;
@@ -123,16 +133,24 @@ export function connectEngineWs(
   });
 
   const connection: EngineConnection = {
-    request<T>(method: string, params?: unknown): Promise<T> {
+    request<T>(
+      method: string,
+      params?: unknown,
+      timeoutMs?: number,
+    ): Promise<T> {
       if (closed || socket.readyState !== 1) {
         return Promise.reject(new Error("engine connection not open"));
       }
       const id = nextId++;
+      const effective = timeoutMs ?? timeout;
       return new Promise<T>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          pending.delete(String(id));
-          reject(new Error(`engine request ${method} timed out`));
-        }, timeout);
+        const timer =
+          effective > 0
+            ? setTimeout(() => {
+                pending.delete(String(id));
+                reject(new Error(`engine request ${method} timed out`));
+              }, effective)
+            : undefined;
         pending.set(String(id), {
           resolve: (v) => {
             clearTimeout(timer);

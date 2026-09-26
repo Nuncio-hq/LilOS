@@ -14,8 +14,8 @@
  *   HERMES_PROVIDER / HERMES_MODEL for the hermes leg.
  */
 import { type ChildProcess, spawn } from "node:child_process";
-import { createServer } from "node:net";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RelayClient } from "@lilos/client-runtime";
@@ -47,7 +47,9 @@ const port = await new Promise<number>((resolve, reject) => {
   srv.listen(0, "127.0.0.1", () => {
     const addr = srv.address();
     srv.close(() =>
-      typeof addr === "object" && addr ? resolve(addr.port) : reject(new Error("no port")),
+      typeof addr === "object" && addr
+        ? resolve(addr.port)
+        : reject(new Error("no port")),
     );
   });
 });

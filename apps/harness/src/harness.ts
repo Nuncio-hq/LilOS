@@ -324,10 +324,16 @@ export class Harness {
     try {
       // Turn lifecycle (`turn.started`/`turn.completed`) arrives as events
       // before the prompt call resolves — they alone own runningTurnId.
-      await conn.request<{ turnId: string }>("prompt", {
-        sessionId: binding.sessionId,
-        content: [{ type: "text", text: message.text }],
-      });
+      // No RPC timeout: a turn can run for minutes; completion is an event,
+      // and a socket drop still rejects this call.
+      await conn.request<{ turnId: string }>(
+        "prompt",
+        {
+          sessionId: binding.sessionId,
+          content: [{ type: "text", text: message.text }],
+        },
+        0,
+      );
     } catch (error) {
       if (engineErrorCode(error) === INVALID_STATE) {
         binding.queue.push(message);
