@@ -27,6 +27,7 @@ import {
   PendingTurn,
   RespondTo,
 } from "./domain";
+import { UpdateFeed, UpdateRelease } from "./update";
 import { APP_PROTOCOL_VERSION } from "./version";
 import {
   AppErrorCode,
@@ -192,6 +193,9 @@ export const appProtocolSchemas = {
   EmployeeUpsertedEvent,
   EmployeeRemovedEvent,
   ConversationModelRequestedEvent,
+  /* release / update feed (#35) */
+  UpdateRelease,
+  UpdateFeed,
   /* engine passthrough surfaces (app -> relay -> engine host) */
   AgentDescriptor,
   AgentsListParams,
