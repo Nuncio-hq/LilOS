@@ -236,9 +236,7 @@ describe("issue #64 remove confirmation", () => {
     // The single Cancel returns to the edit form; nothing is removed.
     fireEvent.click(cancels[0]!);
     expect(removed).toBe(0);
-    expect(
-      getByRole("button", { name: /remove from company/i }),
-    ).toBeTruthy();
+    expect(getByRole("button", { name: /remove from company/i })).toBeTruthy();
     expect(
       (getByRole("button", { name: /^save$/i }) as HTMLButtonElement).disabled,
     ).toBe(false);
