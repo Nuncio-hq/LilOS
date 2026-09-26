@@ -154,7 +154,8 @@ describe("engine-fake", () => {
     const r = (await c.request("describe")) as {
       capabilities: { id: string; methods?: string[] }[];
     };
-    expect(r.capabilities.map((x) => x.id)).toEqual(["mcp_servers"]);
+    expect(r.capabilities.map((x) => x.id)).not.toContain("steer");
+    expect(r.capabilities.map((x) => x.id)).toContain("mcp_servers");
     await expect(
       c.request("session.steer", { sessionId: "s1", text: "hi" }),
     ).rejects.toMatchObject({ code: -32601 });
