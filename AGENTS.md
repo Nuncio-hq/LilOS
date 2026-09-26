@@ -23,7 +23,8 @@ contract.
 |---|---|
 | `prototype/` | UX prototype (UI source of truth): mock data + fake engine + wiring in `src/App.tsx` |
 | `packages/ui/` | `@lilos/ui`: every UI component (shadcn, AI Elements, LilOS surfaces); props in, callbacks out |
-| `packages/contracts/` | Zod schemas for everything crossing a boundary (vitest tests in `test/`) |
+| `packages/contracts/` | Zod schemas for everything crossing a boundary |
+| `packages/host/` | `@lilos/host`: fs + git reads on the session machine, served by the harness (runtime-neutral) |
 | `e2e/` | Playwright E2E |
 | `docs/DECISIONS.md` | Decisions in force now (see Decisions) |
 | `IDEA.md` | One-line origin note |
@@ -41,8 +42,8 @@ Router + nanostores; desktop Electron (later); lint/format Biome; tests
 Vitest + Playwright; CI GitHub Actions (setup-bun) → `bun run verify`.
 
 ```
-apps/web apps/relay apps/harness apps/desktop   (created by the slice that needs them)
-packages/contracts packages/ui packages/client-runtime packages/engine-*
+apps/web apps/relay apps/harness apps/desktop   (created by the slice needing them)
+packages/contracts packages/ui packages/client-runtime packages/host packages/engine-*
 prototype/    packages/ui + mock data
 ```
 

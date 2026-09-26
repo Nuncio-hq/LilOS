@@ -82,6 +82,20 @@
         "vitest": "^3.2.4",
       },
     },
+    "packages/host": {
+      "name": "@lilos/host",
+      "version": "0.0.0",
+      "dependencies": {
+        "@lilos/contracts": "workspace:*",
+        "zod": "^4.1.11",
+      },
+      "devDependencies": {
+        "@lilos/engine-fake": "workspace:*",
+        "@types/node": "^26.6.2",
+        "typescript": "^7.0.2",
+        "vitest": "^3.2.4",
+      },
+    },
     "packages/ui": {
       "name": "@lilos/ui",
       "version": "0.0.0",
@@ -119,6 +133,7 @@
       "dependencies": {
         "@base-ui/react": "^1.8.0",
         "@fontsource-variable/geist": "^5.3.0",
+        "@lilos/host": "workspace:*",
         "@lilos/ui": "workspace:*",
         "@radix-ui/react-use-controllable-state": "^1.2.6",
         "ai": "^7.0.114",
@@ -322,6 +337,8 @@
     "@lilos/engine-conformance": ["@lilos/engine-conformance@workspace:packages/engine-conformance"],
 
     "@lilos/engine-fake": ["@lilos/engine-fake@workspace:packages/engine-fake"],
+
+    "@lilos/host": ["@lilos/host@workspace:packages/host"],
 
     "@lilos/prototype": ["@lilos/prototype@workspace:prototype"],
 

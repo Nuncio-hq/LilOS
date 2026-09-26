@@ -63,6 +63,12 @@ PR does not exist.
   record.** Not: LilOS-owned profile CRUD, or a delete method "for cleanup".
   — #8 · PR #46
 
+## Host
+- **D-#11 Host reads (fs/git about the machine a session runs on) are served by the
+  harness (`packages/host`), never by an engine; the wire is JSON-RPC 2.0 like
+  the engine and app protocols.** Not: fs/git tools on the engine protocol, or a
+  per-app reimplementation of the calls. — #11
+
 ## UX
 - **D-#19 A control renders only when its handler is passed; the app shows
   only working surfaces (no placeholder buttons).** Conversation UI = shared
