@@ -17,6 +17,9 @@ import { applyMigrations } from "./db/migrate";
 import * as schema from "./db/schema";
 import { createRelay } from "./session";
 
+/** Release version — stamped at bundle build time (#35); repo builds report package.json's. */
+const releaseVersion = process.env.LILOS_RELEASE_VERSION ?? packageJson.version;
+
 const config = resolveRelayConfig();
 mkdirSync(config.homeDir, { recursive: true, mode: 0o700 });
 
@@ -33,12 +36,12 @@ const attachments = createFileAttachmentStore(
 const relay = createRelay({
   store,
   token,
-  relayVersion: packageJson.version,
+  relayVersion: releaseVersion,
   attachments,
 });
 const app = createApp({
   instanceId: relay.instanceId,
-  relayVersion: packageJson.version,
+  relayVersion: releaseVersion,
 });
 
 type RelayPeer = ReturnType<typeof relay.connect>;

@@ -12,7 +12,7 @@
       }
       @media (prefers-color-scheme: dark) {
         body { color: #eee; background: #16181d; }
-        .card { border-color: #3a3f4a; }
+        .card, .step { border-color: #3a3f4a; }
         pre { background: #1e2128; }
       }
       h1 { font-size: 22px; margin-bottom: 4px; }
@@ -33,11 +33,42 @@
       button { padding: 6px 14px; margin-right: 8px; border-radius: 6px; border: 1px solid #ccc; background: transparent; color: inherit; cursor: pointer; }
       pre { background: #f5f5f5; padding: 10px; border-radius: 8px; font-size: 11px; white-space: pre-wrap; word-break: break-all; }
       .quiet { color: #777; font-size: 12px; }
+      /* First-run steps (#35 AC-2): numbered, one active at a time. */
+      #steps { padding: 14px 16px; }
+      .step { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+      .n {
+        width: 22px; height: 22px; border-radius: 50%;
+        border: 2px solid #bbb; display: inline-flex;
+        align-items: center; justify-content: center;
+        font-size: 12px; font-weight: 700; color: #777;
+      }
+      .step.done .n { border-color: #1a7f37; background: #1a7f37; color: #fff; }
+      .step.now .n { border-color: #b07200; color: #b07200; }
+      .step .t { font-size: 14px; }
+      .step.now .t { font-weight: 600; }
+      .step.done .t { color: #777; }
     </style>
   </head>
   <body>
     <h1>LilOS</h1>
     <p class="sub">v<span id="version">?</span> — your employees keep working even when you quit this app.</p>
+
+    <div class="card" id="steps">
+      <div class="step" id="step-approve">
+        <span class="n">1</span>
+        <span class="t">Allow LilOS background items</span>
+      </div>
+      <div class="step" id="step-connect">
+        <span class="n">2</span>
+        <span class="t">Connect to your local relay</span>
+      </div>
+      <div class="step" id="step-open">
+        <span class="n">3</span>
+        <span class="t">Open LilOS — your <b>default</b> employee is waiting</span>
+      </div>
+      <button id="open-settings" type="button">Open Login Items Settings</button>
+      <p class="quiet" id="gate-note">Approve “LilOS” under System Settings → Login Items once; this page continues on its own.</p>
+    </div>
 
     <div class="card">
       <div><b>Relay</b> <span id="relay-state" class="warn">…</span></div>
@@ -54,13 +85,20 @@
       <div>Login item: <span id="svc-harness">?</span></div>
     </div>
 
+    <div class="card">
+      <div><b>Updates</b> <span id="update-state" class="quiet">idle</span></div>
+      <div class="quiet" id="update-detail">LilOS keeps itself current — app, relay and harness move together.</div>
+      <button id="check-update" type="button">Check now</button>
+    </div>
+
     <button id="recheck" type="button">Re-check services</button>
-    <button id="open-settings" type="button">Open Login Items Settings</button>
-    <p class="quiet">Approve “LilOS” under System Settings → Login Items once; then the services launch at login and survive quits and reboots.</p>
     <pre id="raw"></pre>
 
     <script>
       const stateEl = (id) => document.getElementById(id);
+      const mark = (id, cls) => {
+        stateEl(id).className = `step ${cls}`;
+      };
       function agentCard(name, agents) {
         const a = agents.find((x) => x.label === `com.nuncio.lilos.${name}`);
         const st = a ? a.status : "missing";
@@ -69,6 +107,15 @@
         stateEl(`dot-${name}`).className =
           `dot ${st === "enabled" ? "on" : st === "requiresApproval" ? "pending" : "off"}`;
       }
+      const UPDATE_LABEL = {
+        downloading: "downloading…",
+        applying: "installing on next quit…",
+        verifying: "verifying new version…",
+        updated: "updated",
+        "rolled-back": "rolled back — staying on this version",
+        failed: "update failed",
+        skipped: "skipped",
+      };
       async function render() {
         const s = await window.lilos.status();
         stateEl("version").textContent = s.version;
@@ -86,6 +133,22 @@
         stateEl("raw").textContent = s.ensureError
           ? `registration error: ${s.ensureError}`
           : "";
+
+        // Update card
+        const u = s.update;
+        stateEl("update-state").textContent = u?.phase
+          ? `${UPDATE_LABEL[u.phase] ?? u.phase}${u.version ? ` → ${u.version}` : ""}`
+          : "idle";
+        stateEl("update-detail").textContent = u?.detail ??
+          "LilOS keeps itself current — app, relay and harness move together.";
+
+        // First-run steps: approve → connect → ready. When every step is done
+        // the app window takes over (main opens it as the gate passes).
+        const needsApproval = s.agents.some((a) => a.status === "requiresApproval");
+        mark("step-approve", needsApproval ? "now" : "done");
+        mark("step-connect", needsApproval ? "" : ready ? "done" : "now");
+        mark("step-open", ready ? "now" : "");
+        if (!needsApproval && ready) mark("step-open", "done");
       }
       document.getElementById("recheck").addEventListener("click", async () => {
         await window.lilos.ensure();
@@ -94,8 +157,11 @@
       document
         .getElementById("open-settings")
         .addEventListener("click", () => window.lilos.openSettings());
+      document
+        .getElementById("check-update")
+        .addEventListener("click", () => window.lilos.checkUpdate());
       render();
-      setInterval(render, 3000);
+      setInterval(render, 2000);
     </script>
   </body>
 </html>

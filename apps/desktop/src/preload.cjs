@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require("electron");
  * The only Node-adjacent code in any LilOS window. One bridge serves both:
  * - the app window (apps/web) reads `lilos.config` — relay/engine endpoints +
  *   token handed over via additionalArguments — and `lilos.openStatus()`.
- * - the status window (src/index.html) uses the service IPC methods.
+ * - the status window (src/index.html) uses the service/update IPC methods.
  * contextIsolation is on; nothing else crosses.
  */
 const arg = (key) =>
@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld("lilos", {
   ensure: () => ipcRenderer.invoke("lilos:ensure"),
   openSettings: () => ipcRenderer.invoke("lilos:open-settings"),
   openStatus: () => ipcRenderer.invoke("lilos:open-status"),
+  openApp: () => ipcRenderer.invoke("lilos:open-app"),
+  checkUpdate: () => ipcRenderer.invoke("lilos:check-update"),
   // #32 notifications: renderer posts a DesktopNotification; a click on the
   // macOS notification delivers the conversation id back over
   // lilos:open-conversation.

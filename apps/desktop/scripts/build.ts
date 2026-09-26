@@ -31,6 +31,13 @@ import { fileURLToPath } from "node:url";
 
 const VERSION = process.argv[2] ?? "1";
 const IDENTITY = process.argv[3] ?? "-";
+// One release version shared by app + relay + harness (#35): stamped into
+// each binary so a bundle's components always agree in `system.status`.
+const RELEASE_VERSION = `1.0.${VERSION}`;
+const stamp = [
+  "--define",
+  `process.env.LILOS_RELEASE_VERSION:${JSON.stringify(RELEASE_VERSION)}`,
+];
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = join(ROOT, "..", "..");
 const BUILD = join(ROOT, "build");
@@ -82,6 +89,7 @@ run("bun", [
   join(REPO, "apps", "relay", "src", "index.ts"),
   "--compile",
   "--target=bun-darwin-arm64",
+  ...stamp,
   "--outfile",
   join(BUILD, "lilos-relay"),
 ]);
@@ -101,6 +109,7 @@ if (!skipHarness) {
     harnessEntry,
     "--compile",
     "--target=bun-darwin-arm64",
+    ...stamp,
     "--outfile",
     join(BUILD, "lilos-harness"),
   ]);
@@ -112,6 +121,7 @@ if (!skipHarness) {
     join(REPO, "packages", "engine-fake", "scripts", "serve.ts"),
     "--compile",
     "--target=bun-darwin-arm64",
+    ...stamp,
     "--outfile",
     join(BUILD, "lilos-engine-fake"),
   ]);
@@ -138,8 +148,10 @@ writeFileSync(
     {
       name: "lilos-desktop",
       productName: "LilOS",
-      version: `1.0.${VERSION}`,
+      version: RELEASE_VERSION,
       main: "main.cjs",
+      // The updater compares feeds against this monotonic build (#35).
+      lilosBuild: Number(VERSION),
     },
     null,
     2,
@@ -185,6 +197,14 @@ mkdirSync(join(APP, "Contents", "Resources", "app"), { recursive: true });
 cpSync(APP_DIR, join(APP, "Contents", "Resources", "app"), {
   recursive: true,
 });
+// apps/web bundle (#27): when a sibling web build exists it ships inside the
+// app so the DM surface opens offline.
+const WEB_DIST = join(REPO, "apps", "web", "dist");
+if (existsSync(join(WEB_DIST, "index.html"))) {
+  cpSync(WEB_DIST, join(APP, "Contents", "Resources", "app", "web"), {
+    recursive: true,
+  });
+}
 
 mkdirSync(join(APP, "Contents", "Library", "LaunchAgents"), {
   recursive: true,

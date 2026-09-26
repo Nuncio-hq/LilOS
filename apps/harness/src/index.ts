@@ -20,6 +20,9 @@ import { StatusReporter, teeLogger } from "./status";
 
 const config = resolveHarnessConfig();
 mkdirSync(config.workdir, { recursive: true });
+
+/** Release version — stamped at bundle build time (#35); repo builds report package.json's. */
+const releaseVersion = process.env.LILOS_RELEASE_VERSION ?? packageJson.version;
 const log = teeLogger(
   createFileLogger({ file: join(config.homeDir, "harness.log") }),
 );
@@ -27,7 +30,7 @@ const log = teeLogger(
 const relay = new RelayClient({
   url: config.relayUrl,
   token: config.relayToken,
-  client: { name: "lilos-harness", version: packageJson.version },
+  client: { name: "lilos-harness", version: releaseVersion },
 });
 const harness = new Harness({
   relay,
@@ -36,7 +39,7 @@ const harness = new Harness({
   log,
   hideCaps: config.hideCaps,
   onNeedEngine: () => supervisor.ensureRunning(),
-  version: packageJson.version,
+  version: releaseVersion,
 });
 
 const repoRoot = process.env.LILOS_REPO_ROOT ?? process.cwd();
@@ -61,7 +64,7 @@ void supervisor.start();
 const stopStatusReporter = new StatusReporter({
   send: (params) => relay.request("harness.report", params),
   supervisor,
-  version: packageJson.version,
+  version: releaseVersion,
   model: "model" in config.engine ? config.engine.model : undefined,
   liveSessions: () => harness.liveSessionCount,
   logTail: () => [...log.lines],
