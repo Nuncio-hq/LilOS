@@ -173,7 +173,7 @@ describe("workspace harness", () => {
         socketFactory: socketFor(w.relay),
       });
       const welcome = (await squatter.connect()) as WelcomeResult;
-      expect(welcome.engineHost.connected).toBe(true);
+      expect(welcome.engineHost?.connected).toBe(true);
       await expect(squatter.request("harness.register", {})).rejects.toThrow();
       squatter.close();
 
