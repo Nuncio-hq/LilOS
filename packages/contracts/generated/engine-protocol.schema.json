@@ -624,6 +624,9 @@
                         "turnId": {
                           "type": "string",
                           "minLength": 1
+                        },
+                        "model": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -1432,6 +1435,9 @@
                   "cache"
                 ],
                 "additionalProperties": false
+              },
+              "model": {
+                "type": "string"
               }
             },
             "required": [
@@ -1517,6 +1523,307 @@
         },
         "required": [
           "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "agents.list": {
+      "doc": "List the engine's hireable agents (profiles) for the hire dialog.",
+      "capability": "agents",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "skillCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "soul": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "agents"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "agents.describe": {
+      "doc": "One agent's full descriptor, including its persona text.",
+      "capability": "agents",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "skillCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "soul": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "agents.create": {
+      "doc": "Register a new agent profile on the engine. No delete exists by design.",
+      "capability": "agents",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "soul": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "skillCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "soul": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "models.list": {
+      "doc": "List the engine's selectable models for the model picker.",
+      "capability": "models",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "default": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "models"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "session.setModel": {
+      "doc": "Pin a model on a session; the next turn uses it (see turn.started.model).",
+      "capability": "models",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "sessionId",
+          "model"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "model"
         ],
         "additionalProperties": false
       }
@@ -1643,6 +1950,9 @@
                   "turnId": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "model": {
+                    "type": "string"
                   }
                 },
                 "required": [

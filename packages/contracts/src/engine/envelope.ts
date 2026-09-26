@@ -57,6 +57,8 @@ export const RPC_ERRORS = {
   SESSION_NOT_FOUND: -32001,
   REQUEST_NOT_FOUND: -32002,
   INVALID_STATE: -32003,
+  AGENT_NOT_FOUND: -32004,
+  MODEL_NOT_FOUND: -32005,
 } as const;
 export type RpcErrorCode = (typeof RPC_ERRORS)[keyof typeof RPC_ERRORS];
 

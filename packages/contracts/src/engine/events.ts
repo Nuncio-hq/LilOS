@@ -50,7 +50,11 @@ export const SessionStatePayload = z.strictObject({
   reason: z.string().optional(),
 });
 
-export const TurnStartedPayload = z.strictObject({ turnId: TurnId });
+export const TurnStartedPayload = z.strictObject({
+  turnId: TurnId,
+  /** Model this turn runs on (engines with the models capability set it). */
+  model: z.string().optional(),
+});
 
 export const TurnDeltaPayload = z.strictObject({
   turnId: TurnId,

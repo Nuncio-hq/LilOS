@@ -1,8 +1,22 @@
 import { z } from "zod";
+import {
+  AgentsCreateParams,
+  AgentsCreateResult,
+  AgentsDescribeParams,
+  AgentsDescribeResult,
+  AgentsListParams,
+  AgentsListResult,
+} from "./agents.js";
 import { Capability } from "./capabilities.js";
 import { ContentBlock } from "./content.js";
 import { EngineEvent, SessionState, StopReason, Usage } from "./events.js";
 import { McpServer } from "./mcp.js";
+import {
+  ModelsListParams,
+  ModelsListResult,
+  SessionSetModelParams,
+  SessionSetModelResult,
+} from "./models.js";
 import { ENGINE_PROTOCOL } from "./protocol.js";
 import { ApprovalOutcome, OpenRequest } from "./requests.js";
 
@@ -105,6 +119,8 @@ export const SessionSnapshot = z.object({
     })
     .optional(),
   usage: Usage.optional(),
+  /** Model the session is currently pinned to, when the engine tracks it. */
+  model: z.string().optional(),
 });
 export type SessionSnapshot = z.infer<typeof SessionSnapshot>;
 
@@ -187,6 +203,36 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
     result: SessionSteerResult,
     doc: "Inject text into the running turn, delivered at the next tool boundary.",
     capability: "steer",
+  },
+  "agents.list": {
+    params: AgentsListParams,
+    result: AgentsListResult,
+    doc: "List the engine's hireable agents (profiles) for the hire dialog.",
+    capability: "agents",
+  },
+  "agents.describe": {
+    params: AgentsDescribeParams,
+    result: AgentsDescribeResult,
+    doc: "One agent's full descriptor, including its persona text.",
+    capability: "agents",
+  },
+  "agents.create": {
+    params: AgentsCreateParams,
+    result: AgentsCreateResult,
+    doc: "Register a new agent profile on the engine. No delete exists by design.",
+    capability: "agents",
+  },
+  "models.list": {
+    params: ModelsListParams,
+    result: ModelsListResult,
+    doc: "List the engine's selectable models for the model picker.",
+    capability: "models",
+  },
+  "session.setModel": {
+    params: SessionSetModelParams,
+    result: SessionSetModelResult,
+    doc: "Pin a model on a session; the next turn uses it (see turn.started.model).",
+    capability: "models",
   },
 };
 export type EngineMethodName = keyof typeof ENGINE_METHODS;

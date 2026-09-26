@@ -22,15 +22,19 @@ describe("core suite vs engine-fake (in-memory transport)", () => {
 });
 
 describe("capability suites vs engine-fake", () => {
-  const steer = SUITES.find((x) => x.capability === "steer");
-  if (!steer) throw new Error("steer suite must be registered");
-  for (const s of steer.scenarios) {
-    test(`AC-1 ${s.id}`, async () => {
-      const h = make();
-      try {
-        await s.run(h);
-      } finally {
-        h.close();
+  for (const suite of SUITES.filter(
+    (x) => x.implemented && x.capability !== "core",
+  )) {
+    describe(suite.capability, () => {
+      for (const s of suite.scenarios) {
+        test(s.id, async () => {
+          const h = make();
+          try {
+            await s.run(h);
+          } finally {
+            h.close();
+          }
+        });
       }
     });
   }
@@ -38,6 +42,11 @@ describe("capability suites vs engine-fake", () => {
 
 test("AC-1 suite registry: core implemented, per-capability suites registered", () => {
   expect(SUITES.find((s) => s.capability === "core")?.implemented).toBe(true);
+  for (const cap of ["steer", "models", "agents"])
+    expect(
+      SUITES.find((s) => s.capability === cap)?.implemented,
+      `${cap} suite is implemented`,
+    ).toBe(true);
   const pending = SUITES.filter((s) => !s.implemented).map((s) => s.capability);
   expect(pending).toContain("image_prompt");
   expect(pending.length).toBeGreaterThan(3); // the other capabilities are registered but empty

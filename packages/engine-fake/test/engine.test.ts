@@ -47,7 +47,12 @@ describe("engine-fake", () => {
       capabilities: { id: string }[];
     };
     expect(r.protocol).toEqual({ name: "lilos-engine", version: 1 });
-    expect(r.capabilities.map((x) => x.id)).toEqual(["steer", "mcp_servers"]);
+    expect(r.capabilities.map((x) => x.id)).toEqual([
+      "steer",
+      "mcp_servers",
+      "agents",
+      "models",
+    ]);
     c.close();
   });
 
