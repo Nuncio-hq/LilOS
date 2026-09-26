@@ -154,9 +154,7 @@ const hermes = await startHermesServe({
 const gateway = await HermesGateway.connect(
   `ws://127.0.0.1:${hermes.port}/api/ws?token=${hermes.token}`,
 );
-console.log(
-  `handshake server_requests: ${gateway.serverRequests.join(",")}`,
-);
+console.log(`handshake server_requests: ${gateway.serverRequests.join(",")}`);
 const engine = new HermesEngine({
   gateway,
   provider,
@@ -182,14 +180,15 @@ for (const suite of SUITES) {
 // ── 2: compression rotates the stored session id -> session.ref.changed ─
 {
   const t0 = Date.now();
-  const id = "compression: session.compress -> session.ref.changed -> next prompt lands";
+  const id =
+    "compression: session.compress -> session.ref.changed -> next prompt lands";
   try {
     const { sessionId } = (await h.request("session.start", {
       agent: "builder",
       cwd: "/tmp/lilos-live",
     })) as { sessionId: string };
     // Build real history: compression noops until it can fold several turns.
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       await h.request("prompt", {
         sessionId,
         content: [{ type: "text", text: `LILOS_LONG turn ${i}` }],
@@ -206,7 +205,9 @@ for (const suite of SUITES) {
       session_id: s.runtimeSid,
     })) as { compressed?: boolean; status?: string };
     if (!(res.compressed || res.status === "compressed"))
-      throw new Error(`session.compress did not compress: ${JSON.stringify(res)}`);
+      throw new Error(
+        `session.compress did not compress: ${JSON.stringify(res)}`,
+      );
     const ev = await refWait;
     if (ev.type !== "session.ref.changed") throw new Error("unreachable");
     const { ref, previousRef } = ev.payload as {

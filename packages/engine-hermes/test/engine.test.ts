@@ -1,7 +1,7 @@
+import type { EngineEvent } from "@lilos/contracts/engine";
 import { Harness } from "@lilos/engine-conformance";
 import { describe, expect, test } from "vitest";
 import { HermesEngine } from "../src/engine.js";
-import type { EngineEvent } from "@lilos/contracts/engine";
 import { connectInMemory } from "../src/transport.js";
 import { FakeGateway } from "./fake-gateway.js";
 
@@ -36,7 +36,9 @@ function promptAsync(h: Harness, sessionId: string, text = "hi") {
 
 const ev = (e: EngineEvent, t: string, extra?: Record<string, unknown>) => {
   const p = e.payload as Record<string, unknown>;
-  return e.type === t && Object.entries(extra ?? {}).every(([k, v]) => p[k] === v);
+  return (
+    e.type === t && Object.entries(extra ?? {}).every(([k, v]) => p[k] === v)
+  );
 };
 
 describe("engine-hermes AC-1: live turn maps hermes events", () => {
@@ -69,9 +71,13 @@ describe("engine-hermes AC-1: live turn maps hermes events", () => {
     expect(types).toContain("tool.started");
     expect(types).toContain("tool.completed");
     const done = h.events.find((e) => e.type === "turn.completed");
-    expect((done?.payload as { usage?: { input: number } }).usage?.input).toBe(10);
+    if (!done) throw new Error("turn.completed missing");
+    const usage = (done.payload as { usage?: { input: number } }).usage;
+    expect(usage?.input).toBe(10);
     // seq monotonic from 1
-    h.events.forEach((e, i) => expect(e.seq).toBe(i + 1));
+    h.events.forEach((e, i) => {
+      expect(e.seq).toBe(i + 1);
+    });
   });
 });
 
@@ -90,7 +96,9 @@ describe("engine-hermes AC-2: approvals & clarifies", () => {
       tool_name: "terminal",
     });
     const opened = await h.waitEvent((e) => e.type === "request.opened");
-    const req = (opened.payload as { request: { kind: string; options?: string[] } }).request;
+    const req = (
+      opened.payload as { request: { kind: string; options?: string[] } }
+    ).request;
     expect(req.kind).toBe("approval");
     // `session` has no protocol equivalent -> dropped
     expect(req.options).toEqual(["once", "always", "deny"]);
@@ -99,7 +107,10 @@ describe("engine-hermes AC-2: approvals & clarifies", () => {
     const snap = (await h.request("events.since", {
       sessionId,
       after: 0,
-    })) as { snapshot: { state: string }; openRequests: { requestId: string }[] };
+    })) as {
+      snapshot: { state: string };
+      openRequests: { requestId: string }[];
+    };
     expect(snap.snapshot.state).toBe("waiting");
     expect(snap.openRequests.map((r) => r.requestId)).toContain(requestId);
 
@@ -216,9 +227,7 @@ describe("engine-hermes AC-2: approvals & clarifies", () => {
     const opened = await h.waitEvent((e) => e.type === "request.opened");
     const wireId = (opened.payload as { requestId: string }).requestId;
     gw.cancelRequest(wireId, "approval", "superseded");
-    const resolved = await h.waitEvent(
-      (e) => e.type === "request.resolved",
-    );
+    const resolved = await h.waitEvent((e) => e.type === "request.resolved");
     expect((resolved.payload as { outcome: string }).outcome).toBe("cancel");
     ask.catch(() => {}); // srq left unanswered by design
     gw.complete(gw.lastSid);
@@ -229,7 +238,7 @@ describe("engine-hermes AC-2: approvals & clarifies", () => {
 describe("engine-hermes AC-3: ref rotation on compression", () => {
   test("AC-3a session.info stored_session_id -> session.ref.changed", async () => {
     const { gw, h } = setup();
-    const { sessionId } = await start(h);
+    await start(h);
     const oldRef = gw.lastRef;
     gw.emit(gw.lastSid, "session.info", { stored_session_id: "ref-new" });
     const e = await h.waitEvent((x) => x.type === "session.ref.changed");
@@ -248,8 +257,9 @@ describe("engine-hermes AC-3: ref rotation on compression", () => {
     await p;
     const e = h.events.find((x) => x.type === "session.ref.changed");
     expect(e).toBeTruthy();
-    expect((e?.payload as { ref: string }).ref).toBe("ref-rotated");
-    expect((e?.payload as { previousRef: string }).previousRef).toBe(oldRef);
+    const p2 = e?.payload as { ref: string; previousRef: string };
+    expect(p2.ref).toBe("ref-rotated");
+    expect(p2.previousRef).toBe(oldRef);
   });
 });
 
@@ -320,9 +330,7 @@ describe("engine-hermes AC-5: images & state & errors", () => {
       h.request("session.start", {
         agent: "a",
         cwd: "/tmp/x",
-        mcpServers: [
-          { name: "fs", command: "mcp-fs", args: [] },
-        ],
+        mcpServers: [{ name: "fs", command: "mcp-fs", args: [] }],
       }),
     ).rejects.toMatchObject({ code: -32602 });
   });

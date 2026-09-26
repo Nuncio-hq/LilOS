@@ -132,7 +132,8 @@ export class HermesEngine {
       {
         id: "image_prompt",
         name: "Image prompts",
-        description: "Image blocks attach via `image.attach_bytes` (WS) or native ACP blocks.",
+        description:
+          "Image blocks attach via `image.attach_bytes` (WS) or native ACP blocks.",
         methods: ["prompt"],
       },
       {
@@ -170,7 +171,7 @@ export class HermesEngine {
         cwd_explicit: true,
         source: "lilos",
         close_on_disconnect: true,
-        ...(p.model ?? this.opts.model
+        ...((p.model ?? this.opts.model)
           ? { model: p.model ?? this.opts.model }
           : {}),
         ...(this.opts.provider ? { provider: this.opts.provider } : {}),
@@ -319,8 +320,7 @@ export class HermesEngine {
     const ask = s.openRequests.get(p.requestId);
     if (!ask) throw requestNotFound(p.requestId);
     const bad = resolveOutcomeValid(ask, p.outcome);
-    if (bad)
-      throw new RpcError(RPC_ERRORS.INVALID_PARAMS, bad);
+    if (bad) throw new RpcError(RPC_ERRORS.INVALID_PARAMS, bad);
     if (p.outcome === "answer" && p.answer === undefined)
       throw new RpcError(
         RPC_ERRORS.INVALID_PARAMS,
@@ -550,7 +550,11 @@ export class HermesEngine {
         const r = (await this.opts.gateway.request("session.title", {
           session_id: s.runtimeSid,
         })) as { session_key?: unknown };
-        if (typeof r.session_key === "string" && r.session_key && r.session_key !== s.ref) {
+        if (
+          typeof r.session_key === "string" &&
+          r.session_key &&
+          r.session_key !== s.ref
+        ) {
           const prev = s.ref;
           s.ref = r.session_key;
           s.emit("session.ref.changed", { ref: s.ref, previousRef: prev });

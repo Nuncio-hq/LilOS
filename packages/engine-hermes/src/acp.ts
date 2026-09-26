@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type {
@@ -60,24 +60,32 @@ export class AcpDriver {
   async open(
     p: SessionStartParams,
   ): Promise<{ runtimeSid: string; ref: string }> {
-    const env = { ...(process.env as Record<string, string>), ...this.opts.env };
+    const env = {
+      ...(process.env as Record<string, string>),
+      ...this.opts.env,
+    };
     this.proc = spawn(this.opts.bin, ["acp", ...(this.opts.args ?? [])], {
       env,
       cwd: p.cwd,
       stdio: ["pipe", "pipe", "inherit"],
     });
-    const stdin = Writable.toWeb(this.proc.stdin!);
-    const stdout = Readable.toWeb(this.proc.stdout!);
+    const proc = this.proc;
+    if (!proc.stdin || !proc.stdout)
+      throw new Error("hermes acp stdio not piped");
+    const stdin = Writable.toWeb(proc.stdin);
+    const stdout = Readable.toWeb(proc.stdout);
     const stream = acp.ndJsonStream(stdin as never, stdout as never);
 
     const app = acp
       .client({ name: "lilos/engine-hermes" })
-      .onRequest("session/request_permission", async (ctx) =>
-        this.onPermission(this.session!, ctx.params),
-      )
-      .onNotification("session/update", (ctx) =>
-        this.onUpdate(this.session!, ctx.params),
-      );
+      .onRequest("session/request_permission", async (ctx) => {
+        const s = this.session;
+        if (!s) return { outcome: { outcome: "cancelled" as const } };
+        return this.onPermission(s, ctx.params);
+      })
+      .onNotification("session/update", (ctx) => {
+        if (this.session) this.onUpdate(this.session, ctx.params);
+      });
     this.conn = app.connect(stream);
 
     await this.conn.agent.request("initialize", {
@@ -216,7 +224,13 @@ export class AcpDriver {
     };
     const wireId = `acp-${++AcpDriver.reqCounter}`;
     // No wire send: the promise return IS the answer.
-    const answered = this.engine.openAsk(s, wireId, request, "approval", () => {});
+    const answered = this.engine.openAsk(
+      s,
+      wireId,
+      request,
+      "approval",
+      () => {},
+    );
     const { outcome } = await answered;
     if (outcome === "cancel") return { outcome: { outcome: "cancelled" } };
     const pick = (kind: string) =>
@@ -330,5 +344,10 @@ function toAcpMcp(m: McpServer): acp.McpServer {
       headers: m.headers,
     } as never;
   }
-  return { name: m.name, command: m.command, args: m.args, env: m.env } as never;
+  return {
+    name: m.name,
+    command: m.command,
+    args: m.args,
+    env: m.env,
+  } as never;
 }

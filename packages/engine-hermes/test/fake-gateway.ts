@@ -115,9 +115,7 @@ export class FakeGateway implements GatewayLike {
           count: this.attachedImages.length,
         });
       default:
-        return Promise.reject(
-          new RpcError(-32601, `no method ${method}`),
-        );
+        return Promise.reject(new RpcError(-32601, `no method ${method}`));
     }
   }
 
@@ -125,7 +123,9 @@ export class FakeGateway implements GatewayLike {
     const p = this.sreqPending.get(id);
     if (p) {
       this.sreqPending.delete(id);
-      p(body as { result?: unknown; error?: { code: number; message: string } });
+      p(
+        body as { result?: unknown; error?: { code: number; message: string } },
+      );
     }
   }
 

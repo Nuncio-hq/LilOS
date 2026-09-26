@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 
 export interface HermesServeOptions {
@@ -37,7 +37,8 @@ export async function startHermesServe(
   opts: HermesServeOptions,
 ): Promise<HermesServeHandle> {
   const token = opts.token ?? `lilos-${randomBytes(16).toString("hex")}`;
-  const portFlag = opts.port === undefined ? ["--port", "0"] : ["--port", String(opts.port)];
+  const portFlag =
+    opts.port === undefined ? ["--port", "0"] : ["--port", String(opts.port)];
   const env = {
     ...(process.env as Record<string, string>),
     ...opts.env,
@@ -45,7 +46,14 @@ export async function startHermesServe(
   };
   const child = spawn(
     opts.bin,
-    ["serve", "--host", "127.0.0.1", ...portFlag, "--skip-build", ...(opts.args ?? [])],
+    [
+      "serve",
+      "--host",
+      "127.0.0.1",
+      ...portFlag,
+      "--skip-build",
+      ...(opts.args ?? []),
+    ],
     { env, cwd: opts.cwd, stdio: ["ignore", "pipe", "pipe"] },
   );
 
@@ -92,7 +100,7 @@ export async function startHermesServe(
   const health = await fetch(`${url}/api/health`, {
     signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
   }).catch(() => null);
-  if (!health || !health.ok) {
+  if (!health?.ok) {
     child.kill("SIGTERM");
     throw new Error(
       `hermes serve failed health check on ${url}/api/health\n${logs}`,

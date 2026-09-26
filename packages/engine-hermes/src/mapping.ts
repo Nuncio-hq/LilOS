@@ -27,9 +27,10 @@ export function mapUsage(u: unknown): Usage | undefined {
 }
 
 /** Hermes `TurnStatus` -> protocol `StopReason`. */
-export function mapStopReason(
-  status: unknown,
-): { stopReason: StopReason; error?: string } {
+export function mapStopReason(status: unknown): {
+  stopReason: StopReason;
+  error?: string;
+} {
   switch (status) {
     case "interrupted":
       return { stopReason: "cancelled" };
@@ -121,20 +122,16 @@ export function mapClarifyParams(
   if (typeof params.question === "string" && params.question) {
     out.push({
       qid: "",
-      request: toRequest(
-        params.question,
-        params.choices,
-        params.multi_select,
-      ),
+      request: toRequest(params.question, params.choices, params.multi_select),
     });
   }
   return out;
 }
 
 /** LilOS approval outcome -> Hermes `ApprovalResult`. cancel maps to deny. */
-export function approvalOutcomeToResult(
-  outcome: ApprovalOutcome,
-): { choice: string } {
+export function approvalOutcomeToResult(outcome: ApprovalOutcome): {
+  choice: string;
+} {
   switch (outcome) {
     case "once":
       return { choice: "once" };
@@ -195,5 +192,9 @@ export function mapToolStatus(payload: Record<string, unknown>): {
       patch: payload.inline_diff,
     };
   }
-  return { status, ...(output !== undefined ? { output } : {}), ...(diff ? { diff } : {}) };
+  return {
+    status,
+    ...(output !== undefined ? { output } : {}),
+    ...(diff ? { diff } : {}),
+  };
 }
