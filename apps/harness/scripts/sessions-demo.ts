@@ -161,7 +161,7 @@ const newUser = () =>
     token: relayToken,
     client: { name: "lilos-demo28-user", version: "0" },
   });
-let user = newUser();
+const user = newUser();
 await user.connect().catch((e) => fail(`connect: ${e}`));
 
 // The harness hires a first employee at boot — find it (retry while it
@@ -194,10 +194,10 @@ out(`dm channel ${channel.id} for employee ${emp.id}`);
 
 // Latest employee-authored message count for a conversation.
 const employeeMsgs = async (conversationId: string) => {
-  const res = await user.request<{ messages: AppMessage[] }>(
-    "messages.list",
-    { channelId: channel.id, conversationId },
-  );
+  const res = await user.request<{ messages: AppMessage[] }>("messages.list", {
+    channelId: channel.id,
+    conversationId,
+  });
   return res.messages.filter((m) => m.authorKind === "employee");
 };
 
@@ -270,10 +270,10 @@ check(
 
 // AC-2 leg — the reopened thread carries user + employee messages.
 {
-  const res = await user.request<{ messages: AppMessage[] }>(
-    "messages.list",
-    { channelId: channel.id, conversationId: conv.id },
-  );
+  const res = await user.request<{ messages: AppMessage[] }>("messages.list", {
+    channelId: channel.id,
+    conversationId: conv.id,
+  });
   const kinds = new Set(res.messages.map((m) => m.authorKind));
   check(
     "AC-2",
