@@ -83,10 +83,23 @@ export function EditEmployeeDialog({
                 approval={{ id: "remove" }}
               >
                 <ConfirmationTitle className="text-xs">
-                  Remove {e.name} from the company? The engine profile `
-                  {e.profile}` stays put — its sessions, memory and skills are
-                  untouched.
+                  Remove {e.name} from the company?
                 </ConfirmationTitle>
+                <div className="space-y-1 text-muted-foreground text-xs">
+                  <div>
+                    <span className="font-medium text-foreground">Goes:</span>{" "}
+                    the company record, channel memberships, and DMs with{" "}
+                    {e.name}.
+                  </div>
+                  <div>
+                    <span className="font-medium text-foreground">Stays:</span>{" "}
+                    the engine profile{" "}
+                    <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
+                      {e.profile}
+                    </code>{" "}
+                    — its sessions, memory, and skills.
+                  </div>
+                </div>
                 <ConfirmationRequest>
                   <ConfirmationActions>
                     <ConfirmationAction
@@ -121,15 +134,19 @@ export function EditEmployeeDialog({
           <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
             <UserIcon className="size-3.5" />@{e.id}
           </span>
-          <Button variant="ghost" className="ml-auto" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            disabled={!name.trim()}
-            onClick={() => onSave(name.trim(), role.trim())}
-          >
-            Save
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            {!confirming && (
+              <Button variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+            )}
+            <Button
+              disabled={!name.trim() || confirming}
+              onClick={() => onSave(name.trim(), role.trim())}
+            >
+              Save
+            </Button>
+          </div>
         </div>
       </div>
     </div>

@@ -236,9 +236,9 @@ test("AC-5 employee management: edit name + role, remove keeps profile, missing 
     .getByRole("button", { name: "Remove from company" })
     .first()
     .click();
-  await expect(
-    page.getByText(/engine profile `builder` stays put/),
-  ).toBeVisible();
+  await expect(page.locator("[role=alert]")).toContainText(
+    "its sessions, memory, and skills",
+  );
   await page
     .locator("[role=alert]")
     .getByRole("button", { name: "Remove from company" })
@@ -246,7 +246,7 @@ test("AC-5 employee management: edit name + role, remove keeps profile, missing 
   await expect(sidebar(page).getByRole("button", { name: /Wren/ })).toHaveCount(
     0,
   );
-  await expect(page.getByText(/profile `builder` kept/)).toBeVisible();
+  await expect(page.getByText(/profile builder kept/)).toBeVisible();
   expect(errors).toEqual([]);
 });
 

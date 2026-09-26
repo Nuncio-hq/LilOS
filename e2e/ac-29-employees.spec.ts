@@ -158,7 +158,7 @@ test.describe
       await page.getByRole("button", { name: "Edit" }).click();
       await page.getByRole("button", { name: /Remove from company/ }).click();
       await expect(
-        page.getByText(/stays put — its sessions, memory and skills/),
+        page.getByText(/its sessions, memory, and skills/),
       ).toBeVisible();
       await page
         .getByRole("button", { name: "Remove from company" })
