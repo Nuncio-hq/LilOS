@@ -483,7 +483,13 @@ export function PrPanel({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
                     <span className="font-medium">
-                      {c.from === "oscar" ? "Oscar" : author}
+                      {/* Real forge comments carry the gh login; mock ones an
+                          employee id — show the comment's own author. */}
+                      {c.from === "oscar"
+                        ? "Oscar"
+                        : c.from === lead?.id
+                          ? author
+                          : (human(c.from)?.name ?? c.from)}
                     </span>
                     <span className="text-[12px] text-muted-foreground">
                       {c.time}
