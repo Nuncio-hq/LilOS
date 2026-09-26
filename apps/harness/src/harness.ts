@@ -84,6 +84,8 @@ export class Harness {
     { sessionId: string; requestId: string }
   >();
   private readonly delivered = new Set<string>(); // relay message ids claimed
+  /** Messages that arrived while the engine was down; drained on attach. */
+  private readonly early = new Map<string, AppMessage[]>();
   private readonly channelSeen = new Map<string, number>();
   private readonly unsubs: Array<() => void> = [];
 
@@ -140,6 +142,15 @@ export class Harness {
     this.unsubs.push(conn.onEvent((e) => this.onEngineEvent(e)));
     // Resync every bound session: replay events past the watermark, re-open
     // asks, adopt a turn already running (harness restart mid-turn).
+    // Messages held while the engine was down become turns now.
+    for (const convId of this.early.keys()) {
+      void this.flushEarly(convId).catch((error) =>
+        this.opts.log.warn("early message flush failed", {
+          conversationId: convId,
+          error: String(error),
+        }),
+      );
+    }
     for (const binding of this.bindings.values()) {
       void this.resyncBinding(binding).catch((error) =>
         this.opts.log.warn("session resync failed", {
@@ -262,8 +273,34 @@ export class Harness {
       return;
     }
     const binding = await this.bindingFor(conv, message.channelId);
-    if (!binding) return; // engine down; retried on next supervisor connect
+    if (!binding) {
+      // Engine still starting/restarting: hold the message; attachEngine
+      // flushes this queue once a connection exists (the dedupe set above
+      // would otherwise drop it forever).
+      const waiting = this.early.get(conv.id) ?? [];
+      waiting.push(message);
+      this.early.set(conv.id, waiting);
+      this.opts.log.debug("message held for engine", {
+        conversationId: conv.id,
+        waiting: waiting.length,
+      });
+      return;
+    }
     this.enqueueOrPrompt(binding, message);
+  }
+
+  private async flushEarly(convId: string): Promise<void> {
+    const waiting = this.early.get(convId);
+    if (!waiting?.length) return;
+    const conv = await this.findConversation(convId);
+    if (!conv || conv.archived || conv.state === "closed") {
+      this.early.delete(convId);
+      return;
+    }
+    const binding = await this.bindingFor(conv, waiting[0]?.channelId ?? "");
+    if (!binding) return; // engine went away again; next attach retries
+    this.early.delete(convId);
+    for (const message of waiting) this.enqueueOrPrompt(binding, message);
   }
 
   private enqueueOrPrompt(binding: SessionBinding, message: AppMessage) {
@@ -619,7 +656,7 @@ export class Harness {
 
   private sessionParams(employee: Employee | undefined) {
     const base = this.opts.sessionParamsFor?.(employee) ?? {
-      agent: employee?.profile ?? employee?.name ?? "default",
+      agent: employee?.profile || employee?.name || "default",
       ...(employee?.model ? { model: employee.model } : {}),
     };
     return { ...base, cwd: this.opts.workdir };
