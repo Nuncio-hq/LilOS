@@ -118,6 +118,8 @@ async function boot(tag: string, home?: string): Promise<Procs> {
     "bun",
     [
       path.join(webDir, "node_modules", ".bin", "vite"),
+      "--config",
+      path.join(webDir, "vite.ac28.config.ts"),
       "--host",
       "127.0.0.1",
       "--port",
