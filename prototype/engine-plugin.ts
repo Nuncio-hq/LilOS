@@ -12,6 +12,15 @@ export function engineApiPlugin(): Plugin {
     name: "lilos-engine-api",
     configureServer(server) {
       let dispatch: ((frame: string) => Promise<string | null>) | null = null;
+      // Warm the SSR graph once, in order: two plugins' first concurrent
+      // ssrLoadModule calls (@lilos/host + @lilos/engine-fake share
+      // @lilos/contracts) can leave a request hanging forever.
+      server.httpServer?.once("listening", () => {
+        void server
+          .ssrLoadModule("@lilos/host")
+          .then(() => server.ssrLoadModule("@lilos/engine-fake"))
+          .catch(() => {});
+      });
       server.middlewares.use("/api/engine", (req, res) => {
         if (req.method !== "POST") {
           res.statusCode = 405;
