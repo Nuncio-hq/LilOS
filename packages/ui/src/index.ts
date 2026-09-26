@@ -17,20 +17,37 @@ export { HireDialog } from "./dialogs/hire-dialog";
 export { StartWorkDialog } from "./dialogs/start-work-dialog";
 export { WorkspacePicker, wsHint } from "./dialogs/workspace-picker";
 // employees
+export { EditEmployeeDialog } from "./employee/employee-edit";
 export { EmployeeCard, EmployeeHome } from "./employee/employee-home";
 export { HireCardInline } from "./feed/hire-card";
 // channel feed
-export { Body, EventRow, FeedList, Row, Who } from "./feed/row";
+export {
+  AttachmentChips,
+  Body,
+  EventRow,
+  FeedList,
+  Row,
+  Who,
+} from "./feed/row";
 export { ThreadSummary } from "./feed/thread-summary";
+// first run
+export { FirstRun } from "./first-run/first-run";
 // focus mode
 export { FocusView } from "./focus/focus-view";
 export { SessionUsage } from "./focus/session-usage";
 export * from "./lib/helpers";
 // shell
 export { HermesAvatar, HumanAvatar } from "./shell/avatars";
+export { StatusBanner } from "./shell/banner";
 export { ChannelHeader } from "./shell/channel-header";
+export {
+  PreviewMenu,
+  type PreviewScenario,
+  SCENARIOS,
+} from "./shell/preview-menu";
 export { RightPanel, TicketsList } from "./shell/right-panel";
 export { Sidebar } from "./shell/sidebar";
+export { StatusDialog, StatusRow, statusSummary } from "./shell/status";
 export { ThemeToggle } from "./shell/theme-toggle";
 export { useTheme } from "./shell/use-theme";
 

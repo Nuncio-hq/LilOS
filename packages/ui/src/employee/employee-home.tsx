@@ -1,14 +1,23 @@
 import {
+  AlertTriangleIcon,
+  ArchiveIcon,
   ChevronRightIcon,
   CircleDotIcon,
+  EllipsisIcon,
   FolderIcon,
   GitBranchIcon,
   LockIcon,
   MenuIcon,
   MessageSquareIcon,
+  MoonIcon,
   PanelRightIcon,
+  PencilIcon,
+  RotateCcwIcon,
+  SearchIcon,
+  TriangleAlertIcon,
   UserIcon,
 } from "lucide-react";
+import { useState } from "react";
 import { Composer } from "../chat/composer";
 import {
   Conversation,
@@ -16,18 +25,123 @@ import {
   ConversationEmptyState,
   ConversationScrollButton,
 } from "../components/ai-elements/conversation";
-import { Suggestion, Suggestions } from "../components/ai-elements/suggestion";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
+import { Input } from "../components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 import { WorkspacePicker, wsHint } from "../dialogs/workspace-picker";
-import { Body, Row, Who } from "../feed/row";
+import { AttachmentChips, Body, Row, Who } from "../feed/row";
 import { PHASE_LABEL, preview, RESPOND } from "../lib/helpers";
+import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
-import type { EmpFn, Employee, Folder, HumanFn, Msg, WsPick } from "../types";
+import type {
+  AttachedFile,
+  EmpFn,
+  Employee,
+  Folder,
+  HermesProfile,
+  HumanFn,
+  Msg,
+  SessionAlert,
+  WsPick,
+} from "../types";
 
-/* Employee screen (DM). Left: the conversation list — each top-level message is ONE Hermes session.
-   Right panel: the open session as a thread. Composer at the bottom always starts a NEW session.
-   `suggestions` is the app's per-employee suggestion list (mock data stays in the app). */
+/* The ⋯ menu on a DM session row: rename / archive (or unarchive). */
+function SessionMenu({
+  archived,
+  onRename,
+  onArchive,
+}: {
+  archived?: boolean;
+  onRename: () => void;
+  onArchive: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            aria-label="Session actions"
+            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          />
+        }
+      >
+        <EllipsisIcon className="size-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem onClick={onRename}>
+          <PencilIcon />
+          Rename session
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onArchive}>
+          {archived ? <RotateCcwIcon /> : <ArchiveIcon />}
+          {archived ? "Unarchive session" : "Archive session"}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/* A designed failure state on one session in the list (model error, sleep interrupt). */
+function SessionAlertRow({
+  alert,
+  onRetry,
+}: {
+  alert: SessionAlert;
+  onRetry?: () => void;
+}) {
+  const warm = alert.kind === "sleep";
+  return (
+    <div
+      data-session-alert
+      className={cn(
+        "mt-1 flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs",
+        warm
+          ? "border-amber-200 bg-amber-50 text-amber-900"
+          : "border-red-200 bg-red-50 text-red-900",
+      )}
+    >
+      {warm ? (
+        <MoonIcon className="size-3.5 shrink-0" />
+      ) : (
+        <TriangleAlertIcon className="size-3.5 shrink-0" />
+      )}
+      <span className="min-w-0 flex-1">{alert.text}</span>
+      {alert.retry && onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className={cn(
+            "flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 font-medium text-white",
+            warm
+              ? "bg-amber-600 hover:bg-amber-700"
+              : "bg-red-600 hover:bg-red-700",
+          )}
+        >
+          <RotateCcwIcon className="size-3" />
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* Employee screen (DM). Left: the conversation list — each top-level message is ONE Hermes session,
+   with rename / archive / filter and designed failure states (alert card + Retry). Right panel: the
+   open session as a thread. Composer at the bottom always starts a NEW session. */
 export function EmployeeHome({
   e,
   feed,
@@ -44,7 +158,10 @@ export function EmployeeHome({
   pick,
   setPick,
   onAddFolder,
-  suggestions,
+  loading,
+  onRename,
+  onArchive,
+  onRetrySession,
 }: {
   e: Employee;
   feed: Msg[];
@@ -54,19 +171,136 @@ export function EmployeeHome({
   onNav: () => void;
   onProfile: () => void;
   onOpen: (id: string) => void;
-  onSend: (t: string, pick?: WsPick) => void;
+  onSend: (t: string, pick?: WsPick, files?: AttachedFile[]) => void;
   panelOpen: boolean;
   onPanel: () => void;
   folders: Folder[];
   pick: WsPick;
   setPick: (p: WsPick) => void;
   onAddFolder: () => void;
-  suggestions: string[];
+  loading?: boolean;
+  onRename?: (id: string, title: string) => void;
+  onArchive?: (id: string, archived: boolean) => void;
+  onRetrySession?: (root: Extract<Msg, { kind: "msg" }>) => void;
 }) {
   const pickFolder = folders.find((x) => x.id === pick.folder);
-  const roots = feed.filter(
+  const [filter, setFilter] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const sessions = feed.filter(
     (m): m is Extract<Msg, { kind: "msg" }> => m.kind === "msg" && !!m.thread,
   );
+  // Filter matches the session title (renamed) or the first message.
+  const q = filter.trim().toLowerCase();
+  const matches = (m: Extract<Msg, { kind: "msg" }>) =>
+    !q || `${m.thread?.title ?? ""}\n${m.text}`.toLowerCase().includes(q);
+  const roots = sessions.filter((m) => !m.thread!.archived && matches(m));
+  const archived = sessions.filter((m) => m.thread!.archived && matches(m));
+
+  const sessionRow = (m: Extract<Msg, { kind: "msg" }>, isArchived = false) => {
+    const t = m.thread!;
+    const last = t.replies[t.replies.length - 1];
+    const running = t.replies.some((r) => r.live);
+    const firstAnswer = t.replies.find((r) => emp(r.from) && r.text);
+    return (
+      <div
+        key={m.id}
+        data-session={m.id}
+        data-archived={isArchived || undefined}
+      >
+        <Row from={m.from} emp={emp} human={human} active={m.id === threadId}>
+          <div className="flex items-center gap-1">
+            {editing === m.id ? (
+              <Input
+                aria-label="Session title"
+                value={draft}
+                autoFocus
+                className="h-7 flex-1 text-sm"
+                onChange={(ev) => setDraft(ev.target.value)}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" && draft.trim()) {
+                    onRename?.(m.id, draft.trim());
+                    setEditing(null);
+                  }
+                  if (ev.key === "Escape") setEditing(null);
+                }}
+                onBlur={() => {
+                  if (draft.trim()) onRename?.(m.id, draft.trim());
+                  setEditing(null);
+                }}
+              />
+            ) : (
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate font-medium",
+                  isArchived && "text-muted-foreground",
+                )}
+              >
+                {t.title ?? preview(m.text)}
+              </span>
+            )}
+            <SessionMenu
+              archived={isArchived}
+              onRename={() => {
+                setDraft(t.title ?? preview(m.text));
+                setEditing(m.id);
+              }}
+              onArchive={() => onArchive?.(m.id, !isArchived)}
+            />
+          </div>
+          <Who id={m.from} time={m.time} emp={emp} human={human} />
+          <Body text={m.text} />
+          {m.attachments && <AttachmentChips files={m.attachments} />}
+          {firstAnswer && (
+            <p className="line-clamp-2 border-l-2 pl-2.5 text-[13px] leading-5 text-muted-foreground">
+              {preview(firstAnswer.text)}
+            </p>
+          )}
+          {t.alert && (
+            <SessionAlertRow
+              alert={t.alert}
+              onRetry={onRetrySession ? () => onRetrySession(m) : undefined}
+            />
+          )}
+          <button
+            onClick={() => onOpen(m.id)}
+            className="mt-1 flex w-fit max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border bg-background px-2 py-1.5 text-left text-xs hover:border-foreground/30 [&>*]:shrink-0 [&>*]:whitespace-nowrap"
+          >
+            <HermesAvatar className="size-5" />
+            <span className="font-medium text-blue-600">
+              {t.replies.length} {t.replies.length === 1 ? "reply" : "replies"}
+            </span>
+            <code className="rounded bg-muted px-1 text-muted-foreground">
+              {t.session}
+            </code>
+            {t.ws && (
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <FolderIcon className="size-3" />
+                {t.ws.project}
+                <GitBranchIcon className="size-3" />
+                <span className="font-mono text-emerald-700">
+                  {t.ws.branch}
+                </span>
+              </span>
+            )}
+            {running ? (
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <CircleDotIcon className="size-3 animate-pulse text-amber-500" />
+                {last?.phase ? PHASE_LABEL[last.phase] : "working"}
+              </span>
+            ) : (
+              last && (
+                <span className="text-muted-foreground">last {last.time}</span>
+              )
+            )}
+            <ChevronRightIcon className="size-3.5 text-muted-foreground" />
+          </button>
+        </Row>
+      </div>
+    );
+  };
+
   return (
     <main className="flex min-h-0 min-w-0 flex-col">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3 sm:gap-3 sm:px-5">
@@ -105,98 +339,83 @@ export function EmployeeHome({
           )}
         </div>
       </header>
-      <div className="flex shrink-0 items-center gap-2 border-b bg-muted/30 px-3 py-1.5 text-muted-foreground text-xs sm:px-5">
-        <LockIcon className="size-3 shrink-0" />
-        <span className="min-w-0 truncate">
+      <div className="flex shrink-0 items-center gap-2 border-b bg-muted/30 px-3 py-1.5 sm:px-5">
+        <LockIcon className="size-3 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate text-muted-foreground text-xs">
           Private to you. Each message you send here opens its own Hermes
           session; {e.name} replies in its thread.
         </span>
+        {sessions.length > 0 && (
+          <div className="relative w-44 shrink-0 sm:w-56">
+            <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={filter}
+              onChange={(ev) => setFilter(ev.target.value)}
+              placeholder="Filter sessions"
+              className="h-7 pl-7 text-xs"
+            />
+          </div>
+        )}
       </div>
       <Conversation className="min-h-0">
         <ConversationContent className="min-h-full justify-end gap-0 p-0 py-3">
-          {roots.length === 0 ? (
+          {loading ? (
+            <div data-loading-sessions>
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  data-session-skeleton
+                  className="grid grid-cols-[36px_minmax(0,1fr)] gap-3 px-3 py-2 sm:px-5"
+                >
+                  <div className="size-9 animate-pulse rounded-full bg-muted" />
+                  <div className="space-y-2">
+                    <div className="h-3.5 w-1/3 animate-pulse rounded bg-muted" />
+                    <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+                    <div className="h-6 w-44 animate-pulse rounded-lg bg-muted" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : roots.length === 0 && archived.length === 0 ? (
             <ConversationEmptyState
               icon={<HermesAvatar className="size-12" />}
-              title={`Start a session with ${e.name}`}
-              description="Your first message opens a new Hermes session. Replies stay in its thread."
+              title={
+                q
+                  ? `No sessions match “${filter}”`
+                  : `Start a session with ${e.name}`
+              }
+              description={
+                q
+                  ? "Titles and first messages are searched. Clear the filter to see everything."
+                  : "Your first message opens a new Hermes session. Replies stay in its thread."
+              }
             />
           ) : (
-            roots.map((m) => {
-              const t = m.thread!;
-              const last = t.replies[t.replies.length - 1];
-              const running = t.replies.some((r) => r.live);
-              const firstAnswer = t.replies.find((r) => emp(r.from) && r.text);
-              return (
-                <Row
-                  key={m.id}
-                  from={m.from}
-                  emp={emp}
-                  human={human}
-                  active={m.id === threadId}
-                >
-                  <Who id={m.from} time={m.time} emp={emp} human={human} />
-                  <Body text={m.text} />
-                  {firstAnswer && (
-                    <p className="line-clamp-2 border-l-2 pl-2.5 text-[13px] leading-5 text-muted-foreground">
-                      {preview(firstAnswer.text)}
-                    </p>
-                  )}
+            <>
+              {roots.map((m) => sessionRow(m))}
+              {archived.length > 0 && (
+                <div className="px-3 sm:px-5">
                   <button
-                    onClick={() => onOpen(m.id)}
-                    className="mt-1 flex w-fit max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border bg-background px-2 py-1.5 text-left text-xs hover:border-foreground/30 [&>*]:shrink-0 [&>*]:whitespace-nowrap"
+                    onClick={() => setShowArchived(!showArchived)}
+                    className="flex items-center gap-1.5 rounded-md py-1 text-muted-foreground text-xs hover:text-foreground"
                   >
-                    <HermesAvatar className="size-5" />
-                    <span className="font-medium text-blue-600">
-                      {t.replies.length}{" "}
-                      {t.replies.length === 1 ? "reply" : "replies"}
-                    </span>
-                    <code className="rounded bg-muted px-1 text-muted-foreground">
-                      {t.session}
-                    </code>
-                    {t.ws && (
-                      <span className="flex items-center gap-1 text-muted-foreground">
-                        <FolderIcon className="size-3" />
-                        {t.ws.project}
-                        <GitBranchIcon className="size-3" />
-                        <span className="font-mono text-emerald-700">
-                          {t.ws.branch}
-                        </span>
-                      </span>
-                    )}
-                    {running ? (
-                      <span className="flex items-center gap-1 text-muted-foreground">
-                        <CircleDotIcon className="size-3 animate-pulse text-amber-500" />
-                        {last?.phase ? PHASE_LABEL[last.phase] : "working"}
-                      </span>
-                    ) : (
-                      last && (
-                        <span className="text-muted-foreground">
-                          last {last.time}
-                        </span>
-                      )
-                    )}
-                    <ChevronRightIcon className="size-3.5 text-muted-foreground" />
+                    <ChevronRightIcon
+                      className={cn(
+                        "size-3.5 transition-transform",
+                        showArchived && "rotate-90",
+                      )}
+                    />
+                    <ArchiveIcon className="size-3.5" />
+                    Archived ({archived.length})
                   </button>
-                </Row>
-              );
-            })
+                  {showArchived && archived.map((m) => sessionRow(m, true))}
+                </div>
+              )}
+            </>
           )}
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>
-      <div className="shrink-0 px-2 sm:px-3">
-        <Suggestions className="items-center py-1">
-          <span className="text-muted-foreground text-xs">New session:</span>
-          {suggestions.map((s) => (
-            <Suggestion
-              key={s}
-              suggestion={s}
-              onClick={(t) => onSend(t, pick)}
-              className="h-7 text-xs"
-            />
-          ))}
-        </Suggestions>
-      </div>
       <Composer
         placeholder={
           pickFolder
@@ -205,7 +424,7 @@ export function EmployeeHome({
         }
         employees={[]}
         hint={wsHint(pickFolder, pick)}
-        onSend={(t) => onSend(t, pick)}
+        onSend={(t, files) => onSend(t, pick, files)}
         tools={
           <WorkspacePicker
             folders={folders}
@@ -219,8 +438,22 @@ export function EmployeeHome({
   );
 }
 
-/* Profile card in the right panel. */
-export function EmployeeCard({ e, onDM }: { e: Employee; onDM: () => void }) {
+/* Profile card in the right panel. Edit/remove are app actions passed in; when the linked
+   Hermes profile is not on this harness the card shows the missing state + Switch profile. */
+export function EmployeeCard({
+  e,
+  profiles,
+  onDM,
+  onEdit,
+  onSwitchProfile,
+}: {
+  e: Employee;
+  profiles: HermesProfile[];
+  onDM: () => void;
+  onEdit?: () => void;
+  onSwitchProfile?: (profileId: string) => void;
+}) {
+  const missing = !profiles.some((p) => p.id === e.profile);
   return (
     <div className="space-y-3 p-3">
       <div className="rounded-xl border bg-background p-4">
@@ -232,15 +465,18 @@ export function EmployeeCard({ e, onDM }: { e: Employee; onDM: () => void }) {
               {e.role} · owned by Oscar
             </div>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="ml-auto"
-            onClick={onDM}
-          >
-            <MessageSquareIcon />
-            Message
-          </Button>
+          <div className="ml-auto flex gap-1">
+            {onEdit && (
+              <Button size="sm" variant="ghost" onClick={onEdit}>
+                <PencilIcon />
+                Edit
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={onDM}>
+              <MessageSquareIcon />
+              Message
+            </Button>
+          </div>
         </div>
         <dl className="mt-4 grid grid-cols-[96px_1fr] gap-x-3 gap-y-1.5">
           <dt className="text-muted-foreground">Engine</dt>
@@ -254,6 +490,33 @@ export function EmployeeCard({ e, onDM }: { e: Employee; onDM: () => void }) {
           <dt className="text-muted-foreground">Now</dt>
           <dd>{e.now}</dd>
         </dl>
+        {missing && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900 text-xs">
+            <div className="flex items-center gap-1.5 font-medium">
+              <AlertTriangleIcon className="size-3.5 shrink-0" />
+              Profile missing
+            </div>
+            <p className="mt-1">
+              Profile <code>{e.profile}</code> isn't on this harness. The
+              employee can't run until you point it at a profile that exists —
+              its memory and skills come along unchanged.
+            </p>
+            {onSwitchProfile && (
+              <Select onValueChange={(v) => onSwitchProfile(String(v))}>
+                <SelectTrigger size="sm" className="mt-2 w-full">
+                  <SelectValue placeholder="Switch profile…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {profiles.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.id} · {p.skills} skills
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        )}
       </div>
       <div className="rounded-xl border bg-background p-4">
         <div className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wide">

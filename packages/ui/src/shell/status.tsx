@@ -1,0 +1,167 @@
+import {
+  ActivityIcon,
+  CheckCircle2Icon,
+  CopyIcon,
+  CpuIcon,
+  FileWarningIcon,
+  RadioIcon,
+  WrenchIcon,
+  XCircleIcon,
+  XIcon,
+} from "lucide-react";
+import { Button } from "../components/ui/button";
+import { ScrollArea } from "../components/ui/scroll-area";
+import { cn } from "../lib/utils";
+import type { ComponentState, StatusComponent } from "../types";
+
+/* System status: the chain a session needs — relay → harness → engine → model — each with
+   a state and a one-line reason. StatusRow sits at the bottom of the sidebar and opens
+   StatusDialog. The app passes rows + the diagnostics text; this file only renders. */
+
+const STATE_STYLE: Record<ComponentState, { dot: string; chip: string }> = {
+  ok: { dot: "bg-emerald-500", chip: "text-emerald-700" },
+  connecting: { dot: "bg-amber-500 animate-pulse", chip: "text-amber-700" },
+  degraded: { dot: "bg-amber-500", chip: "text-amber-700" },
+  down: { dot: "bg-red-500", chip: "text-red-700" },
+};
+
+const COMPONENT_ICON = {
+  relay: RadioIcon,
+  harness: WrenchIcon,
+  engine: CpuIcon,
+  model: FileWarningIcon,
+} as const;
+
+export function statusSummary(components: StatusComponent[]) {
+  const bad = components.filter((c) => c.state !== "ok");
+  return bad.length === 0
+    ? "All systems normal"
+    : `${bad.length} issue${bad.length > 1 ? "s" : ""} · ${bad[0].label} ${bad[0].state}`;
+}
+
+export function StatusRow({
+  components,
+  onOpen,
+}: {
+  components: StatusComponent[];
+  onOpen: () => void;
+}) {
+  const bad = components.filter((c) => c.state !== "ok");
+  const worst = bad[0];
+  const state: ComponentState = worst?.state ?? "ok";
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label="System status"
+      className="flex w-full items-center gap-2 border-t px-4 py-2 text-left text-xs hover:bg-sidebar-accent"
+    >
+      <span
+        className={cn("size-2 shrink-0 rounded-full", STATE_STYLE[state].dot)}
+      />
+      <span className="min-w-0 truncate">{statusSummary(components)}</span>
+      <ActivityIcon className="ml-auto size-3.5 shrink-0 text-muted-foreground" />
+    </button>
+  );
+}
+
+export function StatusDialog({
+  components,
+  diagnostics,
+  onClose,
+  onCopied,
+}: {
+  components: StatusComponent[];
+  diagnostics: string;
+  onClose: () => void;
+  onCopied: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-6"
+      onClick={onClose}
+      onKeyDown={(e) => e.key === "Escape" && onClose()}
+    >
+      <div
+        role="dialog"
+        aria-label="System status"
+        className="w-full max-w-md overflow-hidden rounded-2xl border bg-background shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 border-b p-4">
+          <ActivityIcon className="size-5 text-muted-foreground" />
+          <div className="flex-1">
+            <div className="font-semibold">System status</div>
+            <div className="text-muted-foreground text-xs">
+              relay → harness → engine → model — what a session needs to run
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <XIcon />
+          </Button>
+        </div>
+        <ScrollArea className="max-h-[60dvh]">
+          <div className="divide-y">
+            {components.map((c) => {
+              const Icon = COMPONENT_ICON[c.id];
+              const st = STATE_STYLE[c.state];
+              const Down = c.state === "down" ? XCircleIcon : CheckCircle2Icon;
+              return (
+                <div key={c.id} className="flex items-start gap-3 px-4 py-3">
+                  <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">{c.label}</span>
+                      <span
+                        className={cn(
+                          "flex items-center gap-1 font-medium text-xs",
+                          st.chip,
+                        )}
+                      >
+                        <span className={cn("size-1.5 rounded-full", st.dot)} />
+                        {c.state}
+                      </span>
+                      <Down
+                        className={cn(
+                          "ml-auto size-4 shrink-0",
+                          c.state === "down"
+                            ? "text-red-600"
+                            : "text-emerald-600",
+                        )}
+                      />
+                    </div>
+                    <p className="mt-0.5 text-muted-foreground text-xs">
+                      {c.reason}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </ScrollArea>
+        <div className="flex items-center gap-2 border-t bg-muted/30 p-3">
+          <code className="hidden min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs sm:block">
+            lilos status --verbose
+          </code>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            onClick={() => {
+              navigator.clipboard.writeText(diagnostics);
+              onCopied();
+            }}
+          >
+            <CopyIcon />
+            Copy diagnostics
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

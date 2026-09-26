@@ -1,5 +1,11 @@
 import type { ChatStatus } from "ai";
-import { CheckIcon, ChevronDownIcon, CpuIcon, SquareIcon } from "lucide-react";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  CpuIcon,
+  PaperclipIcon,
+  SquareIcon,
+} from "lucide-react";
 import { useState } from "react";
 import {
   ModelSelector,
@@ -15,14 +21,17 @@ import {
 } from "../components/ai-elements/model-selector";
 import {
   PromptInput,
+  PromptInputAttachment,
+  PromptInputAttachments,
   PromptInputBody,
   PromptInputButton,
   PromptInputFooter,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
+  usePromptInputAttachments,
 } from "../components/ai-elements/prompt-input";
-import type { ModelOption } from "../types";
+import type { AttachedFile, ModelOption } from "../types";
 
 export function ModelLogo({ model }: { model: string }) {
   const p = model.startsWith("qwen")
@@ -86,6 +95,19 @@ export function ModelPicker({
   );
 }
 
+/* Same attach UX as the main composer: the paperclip opens PromptInput's file dialog. */
+function FocusAttachButton() {
+  const attachments = usePromptInputAttachments();
+  return (
+    <PromptInputButton
+      onClick={attachments.openFileDialog}
+      aria-label="Attach files"
+    >
+      <PaperclipIcon />
+    </PromptInputButton>
+  );
+}
+
 export function FocusComposer({
   running,
   status,
@@ -105,7 +127,7 @@ export function FocusComposer({
   models?: ModelOption[];
   /* No onModel → no model picker: the control needs its handler (issue #19). */
   onModel?: (m: string) => void;
-  onSend: (t: string) => void;
+  onSend: (t: string, files?: AttachedFile[]) => void;
   onStop?: () => void;
 }) {
   const [draft, setDraft] = useState("");
@@ -114,12 +136,24 @@ export function FocusComposer({
     // the running-state placeholder/hint come from the shared runningComposer in agent-chat.tsx).
     <div>
       <PromptInput
-        onSubmit={({ text }) => {
+        accept="image/*"
+        multiple
+        onSubmit={({ text, files }) => {
           const t = text.trim() || draft.trim();
-          if (t) onSend(t);
+          if (!t && files.length === 0) return;
+          onSend(
+            t,
+            files.map((f) => ({
+              name: f.filename ?? "attachment",
+              mediaType: f.mediaType ?? "",
+            })),
+          );
           setDraft("");
         }}
       >
+        <PromptInputAttachments className="px-3 pt-3 pb-0">
+          {(file) => <PromptInputAttachment data={file} />}
+        </PromptInputAttachments>
         <PromptInputBody>
           <PromptInputTextarea
             value={draft}
@@ -130,6 +164,7 @@ export function FocusComposer({
         </PromptInputBody>
         <PromptInputFooter>
           <PromptInputTools className="min-w-0">
+            <FocusAttachButton />
             {onModel && models?.length ? (
               <ModelPicker
                 model={model ?? models[0]}

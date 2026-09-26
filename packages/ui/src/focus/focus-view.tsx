@@ -53,6 +53,7 @@ import { PHASE_LABEL } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import type {
+  AttachedFile,
   Channel,
   EmpFn,
   Employee,
@@ -111,7 +112,7 @@ export function FocusView({
   onNav?: () => void;
   onStart?: () => void;
   running: boolean;
-  onSend: (t: string) => void;
+  onSend: (t: string, files?: AttachedFile[]) => void;
   onStop?: () => void;
   onRetry?: (empId: string) => void;
   onUnqueue?: (i: number) => void;
@@ -501,7 +502,7 @@ export function FocusView({
                       ? `Edits go to ⎇ ${work.branch}`
                       : "Read-only on main"
               }
-              onSend={(t) => onSend(t)}
+              onSend={(t, files) => onSend(t, files)}
             />
           </div>
         </section>
