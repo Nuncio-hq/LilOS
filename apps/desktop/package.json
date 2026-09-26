@@ -1,0 +1,25 @@
+{
+  "name": "@lilos/desktop",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "build/app/main.cjs",
+  "scripts": {
+    "dev": "bun scripts/dev.ts",
+    "build": "bun scripts/build.ts",
+    "check": "scripts/check.sh",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lilos/background": "workspace:*",
+    "@lilos/client-runtime": "workspace:*",
+    "@lilos/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "electron": "44.4.5",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.4"
+  }
+}

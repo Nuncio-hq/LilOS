@@ -5,6 +5,7 @@
       "**",
       "!**/node_modules",
       "!**/dist",
+      "!apps/desktop/build",
       "!**/test-results",
       "!**/playwright-report",
       "!**/bun.lock",

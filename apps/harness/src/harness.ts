@@ -220,6 +220,9 @@ export class Harness {
   }
 
   private applyReplay(binding: SessionBinding, replay: EventsSinceResult) {
+    // The turn we were running before the gap; if replay neither shows it
+    // still running nor carries its turn.completed, it died silently.
+    const watchedTurnId = binding.runningTurnId;
     if (replay.truncated) {
       this.opts.log.warn("engine event log truncated; state is lossy", {
         sessionId: binding.sessionId,
@@ -238,6 +241,40 @@ export class Harness {
       ).catch(() => {});
     }
     for (const event of replay.events) this.onEngineEvent(event);
+    // AC-4: a turn that vanished across sleep/restart must end as
+    // `interrupted` with Retry — never a spinner. Lost iff the replay shows
+    // it neither still running nor terminated by a replayed turn.completed.
+    const finishedInReplay = replay.events.some(
+      (e) => e.type === "turn.completed" && e.payload.turnId === watchedTurnId,
+    );
+    if (
+      watchedTurnId &&
+      replay.snapshot.turn?.turnId !== watchedTurnId &&
+      !finishedInReplay
+    ) {
+      void this.markTurnInterrupted(binding, watchedTurnId);
+    }
+  }
+
+  /** End a turn that vanished across a gap — surface interrupted + Retry. */
+  private async markTurnInterrupted(
+    binding: SessionBinding,
+    turnId: string,
+  ): Promise<void> {
+    // Only release the sleep hold/clear the slot when the lost turn still
+    // owns it — a different adopted turn must keep its own hold.
+    if (binding.runningTurnId === turnId) {
+      binding.runningTurnId = undefined;
+      binding.textByTurn.delete(turnId);
+      this.opts.sleep.release();
+      await this.updateConversation(binding.conversationId, {
+        state: "idle",
+      });
+    }
+    await this.postSystem(
+      binding,
+      "Turn interrupted — the Mac slept or the engine restarted. Retry.",
+    );
   }
 
   /** One rebind at a time per conversation — resync and prompt-failure paths race here. */
@@ -261,6 +298,11 @@ export class Harness {
       "session.start",
       this.sessionParams(employee, agent),
     );
+    // Session lost on the engine (fresh engine/orphan grace expired): a turn
+    // that was running ended silently — surface interrupted + Retry (AC-4).
+    if (binding.runningTurnId) {
+      await this.markTurnInterrupted(binding, binding.runningTurnId);
+    }
     this.unbind(binding);
     const rebound: SessionBinding = {
       ...binding,
@@ -272,9 +314,12 @@ export class Harness {
     };
     this.bindings.set(binding.conversationId, rebound);
     this.conversationBySession.set(started.sessionId, binding.conversationId);
+    // Idle, not active: a rebind with an empty queue has nothing running —
+    // "active" would leave the conversation spinning forever. Requeued
+    // messages flip it back to active via their own turn.started.
     await this.updateConversation(binding.conversationId, {
       engineRef: started.sessionId,
-      state: "active",
+      state: "idle",
     });
     const queued = binding.queue.splice(0);
     for (const message of queued) this.enqueueOrPrompt(rebound, message);
@@ -859,9 +904,16 @@ export class Harness {
   ): Promise<Conversation | undefined> {
     const found = this.conversationFromAtom(conversationId);
     if (found) return found;
-    // A conversation can land on the relay a tick after its first message.
+    // conversation.updated is a live-only emit; a subscribe that lands after
+    // the open races it away — so query the relay directly instead of only
+    // trusting the atom. (AC-2/AC-4: first DM on a fresh channel, or events
+    // missed while asleep, must still bind.)
     try {
-      await this.opts.relay.request("conversations.list", {});
+      const listed = await this.opts.relay.request<{
+        conversations: Conversation[];
+      }>("conversations.list", {});
+      const hit = listed.conversations.find((c) => c.id === conversationId);
+      if (hit) return hit;
     } catch {
       // list refresh failure falls through to atom data
     }

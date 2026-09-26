@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>LilOS</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        margin: 28px;
+        color: #222;
+      }
+      @media (prefers-color-scheme: dark) {
+        body { color: #eee; background: #16181d; }
+        .card { border-color: #3a3f4a; }
+        pre { background: #1e2128; }
+      }
+      h1 { font-size: 22px; margin-bottom: 4px; }
+      .sub { color: #777; font-size: 13px; margin-top: 0; }
+      .card {
+        border: 1px solid #d8d8d8;
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin: 12px 0;
+      }
+      .ok { color: #1a7f37; font-weight: 600; }
+      .warn { color: #b07200; font-weight: 600; }
+      .err { color: #c00; font-weight: 600; }
+      .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+      .dot.on { background: #1a7f37; }
+      .dot.off { background: #c00; }
+      .dot.pending { background: #b07200; }
+      button { padding: 6px 14px; margin-right: 8px; border-radius: 6px; border: 1px solid #ccc; background: transparent; color: inherit; cursor: pointer; }
+      pre { background: #f5f5f5; padding: 10px; border-radius: 8px; font-size: 11px; white-space: pre-wrap; word-break: break-all; }
+      .quiet { color: #777; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>LilOS</h1>
+    <p class="sub">v<span id="version">?</span> — your employees keep working even when you quit this app.</p>
+
+    <div class="card">
+      <div><b>Relay</b> <span id="relay-state" class="warn">…</span></div>
+      <div class="quiet" id="relay-detail">connecting…</div>
+    </div>
+
+    <div class="card" id="card-relay">
+      <div><span class="dot off" id="dot-relay"></span><b>lilos-relay</b> <span class="quiet">com.nuncio.lilos.relay</span></div>
+      <div>Login item: <span id="svc-relay">?</span></div>
+    </div>
+
+    <div class="card" id="card-harness">
+      <div><span class="dot off" id="dot-harness"></span><b>lilos-harness</b> <span class="quiet">com.nuncio.lilos.harness</span></div>
+      <div>Login item: <span id="svc-harness">?</span></div>
+    </div>
+
+    <button id="recheck" type="button">Re-check services</button>
+    <button id="open-settings" type="button">Open Login Items Settings</button>
+    <p class="quiet">Approve “LilOS” under System Settings → Login Items once; then the services launch at login and survive quits and reboots.</p>
+    <pre id="raw"></pre>
+
+    <script>
+      const stateEl = (id) => document.getElementById(id);
+      function agentCard(name, agents) {
+        const a = agents.find((x) => x.label === `com.nuncio.lilos.${name}`);
+        const st = a ? a.status : "missing";
+        stateEl(`svc-${name}`).textContent =
+          st + (a?.action ? ` (${a.action})` : "") + (a?.error ? ` — ${a.error}` : "");
+        stateEl(`dot-${name}`).className =
+          `dot ${st === "enabled" ? "on" : st === "requiresApproval" ? "pending" : "off"}`;
+      }
+      async function render() {
+        const s = await window.lilos.status();
+        stateEl("version").textContent = s.version;
+        agentCard("relay", s.agents);
+        agentCard("harness", s.agents);
+        const r = s.relay;
+        const ready = r.state === "ready";
+        stateEl("relay-state").textContent = r.state + (r.note ? ` — ${r.note}` : "");
+        stateEl("relay-state").className = ready ? "ok" : "warn";
+        stateEl("relay-detail").textContent = ready
+          ? `relay ${r.relayVersion} · instance ${r.instanceId?.slice(0, 8)}… · engine host: ${
+              r.engineHost?.connected ? r.engineHost.state ?? "connected" : "none"
+            } · employees: ${r.employees ?? 0}`
+          : `${r.url} — ${r.note || "waiting"}`;
+        stateEl("raw").textContent = s.ensureError
+          ? `registration error: ${s.ensureError}`
+          : "";
+      }
+      document.getElementById("recheck").addEventListener("click", async () => {
+        await window.lilos.ensure();
+        render();
+      });
+      document
+        .getElementById("open-settings")
+        .addEventListener("click", () => window.lilos.openSettings());
+      render();
+      setInterval(render, 3000);
+    </script>
+  </body>
+</html>

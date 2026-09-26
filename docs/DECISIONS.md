@@ -44,6 +44,18 @@ PR does not exist.
 - **D-#3 Desktop: Electron (later slice).** Chromium parity with web;
   Playwright can drive it on macOS. Not: Tauri (WKWebView drift, no macOS
   WebDriver). — #3 · PR #14
+- **D-#34 Relay + harness are launchd agents registered via
+  `SMAppService.agent(plistName:)` with bundled helper binaries** (Login
+  Items approval only; upgrade = `unregister()` → `register()` on version
+  change). Not: user-facing `launchctl` steps, LaunchDaemons, or
+  app-process children that die on quit. — #34 · PR #57
+- **D-#34 Keep-awake is `caffeinate -i -w <harness pid>` held only while a
+  turn runs.** Not: a permanent assertion, or changing `pmset` defaults. —
+  #34 · PR #57
+- **D-#34 Wake recovery: a clock-drift watchdog detects sleep; a turn lost
+  across sleep or engine restart ends `interrupted` with a Retry note.**
+  Not: a spinner that never settles, or silently dropping the turn. — #34 ·
+  PR #57
 
 ## Testing
 - **D-#3 CI (GitHub Actions, setup-bun) runs `bun run verify` with

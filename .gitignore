@@ -4,6 +4,7 @@ dist/
 .env
 test-results/
 playwright-report/
+apps/desktop/build/
 .DS_Store
 *.tsbuildinfo
 tsconfig.*.tsbuildinfo
