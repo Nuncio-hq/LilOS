@@ -18,15 +18,15 @@ PR does not exist.
   `packages/*` stay runtime-neutral.** Not: Bun APIs everywhere. — #3 · PR #14
 - **D-#25 The relay is its own process, local first** (binds 127.0.0.1,
   per-install token); remote = change the address, not the code.
-  Not: embedded in apps/web, or remote-first. — #25 · PR #TBD
+  Not: embedded in apps/web, or remote-first. — #25 · PR #41
 
 ## Data
 - **D-#25 The relay owns visible messages; the engine owns transcripts**
   (tools, reasoning). Not: a transcript copy in LilOS — no drift, no
-  sensitive reasoning data at rest here. — #25 · PR #TBD
+  sensitive reasoning data at rest here. — #25 · PR #41
 - **D-#25 A DM is a private channel with exactly one employee; each
   conversation is one engine session** (`engineRef`, set by the harness).
-  Not: group DMs, or threads detached from sessions. — #25 · PR #TBD
+  Not: group DMs, or threads detached from sessions. — #25 · PR #41
 
 ## Web
 - **D-#3 Web: React 19 + Vite + Tailwind v4 + shadcn (base-nova) + AI
