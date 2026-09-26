@@ -54,6 +54,7 @@ import {
 } from "@lilos/ui"
 import { cn } from "@lilos/ui/lib/utils"
 import { hostAccessors, hostDir, hostDiscover, hostPick } from "./host"
+import { useLiveStatus } from "./live-status"
 
 /* Model: Company → Projects → Channels.
    Channel = shared timeline. A top-level message can open a THREAD.
@@ -477,6 +478,9 @@ export default function App() {
      realApp toggle hides demo-only chrome, and the surfaces driven by a scenario. */
   const [scenario, setScenario] = useState<PreviewScenario>("normal")
   const [realApp, setRealApp] = useState(false)
+  /* Live status (#33): ?statusRelay=ws://…&statusToken=… swaps the scenario
+     status mock for the real system.status poll from the relay. */
+  const liveStatus = useLiveStatus()
   const [statusOpen, setStatusOpen] = useState(false)
   const [firstDone, setFirstDone] = useState(false)
   const [editEmp, setEditEmp] = useState<string | null>(null)
@@ -534,8 +538,22 @@ export default function App() {
     return feed.map((m) => (m === last && m.kind === "msg" && m.thread ? { ...m, thread: { ...m.thread, alert: al } } : m))
   }, [feed, scenario, alertOff, view.kind])
 
+  /* Live-mode status banner (#33): a version mismatch or a downed leg surfaces
+     here; otherwise the scenario banner drives the preview. */
+  const liveBanner = useMemo<React.ReactNode>(() => {
+    if (!liveStatus) return null
+    if (liveStatus.mismatch)
+      return <StatusBanner tone="red">Version mismatch — update the {liveStatus.mismatch.update}. {liveStatus.mismatch.detail}</StatusBanner>
+    const down = liveStatus.components.find((c) => c.state === "down")
+    if (down) return <StatusBanner tone="red">{down.label} down — {down.reason}</StatusBanner>
+    const degraded = liveStatus.components.find((c) => c.state === "degraded")
+    if (degraded) return <StatusBanner tone="amber">{degraded.label} degraded — {degraded.reason}</StatusBanner>
+    return null
+  }, [liveStatus])
+
   // The banner for the current scenario — a bar above the conversation (null = no banner).
   const banner = useMemo<React.ReactNode>(() => {
+    if (liveStatus) return liveBanner
     switch (scenario) {
       case "reconnecting":
         return <StatusBanner tone="amber">Lost the connection to the local relay — reconnecting every 2s. Messages queue until it's back.</StatusBanner>
@@ -548,7 +566,7 @@ export default function App() {
       default:
         return null
     }
-  }, [scenario])
+  }, [liveStatus, liveBanner, scenario])
 
   const goChannel = (id: string) => { setView({ kind: "channel", id }); setThreadId(null); setFocus(false); setNavOpen(false) }
   const goDM = (id: string) => {
@@ -862,7 +880,7 @@ export default function App() {
         view={view}
         theme={theme}
         badges={badges}
-        status={STATUS[scenario]}
+        status={liveStatus?.components ?? STATUS[scenario]}
         onOpenStatus={() => setStatusOpen(true)}
         realApp={realApp || scenario === "first-run"}
         preview={<PrototypePreviewMenu scenario={scenario} realApp={realApp} onScenario={pickScenario} onRealApp={setRealApp} />}
@@ -965,8 +983,8 @@ export default function App() {
       )}
       {statusOpen && (
         <StatusDialog
-          components={STATUS[scenario]}
-          diagnostics={STATUS[scenario].map((c) => `${c.id}: ${c.state} — ${c.reason}`).join("\n")}
+          components={liveStatus?.components ?? STATUS[scenario]}
+          diagnostics={liveStatus?.diagnostics ?? STATUS[scenario].map((c) => `${c.id}: ${c.state} — ${c.reason}`).join("\n")}
           onClose={() => setStatusOpen(false)}
           onCopied={() => say("Diagnostics copied")}
         />

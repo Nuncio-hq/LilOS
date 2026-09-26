@@ -69,6 +69,8 @@ const server = Bun.serve({
 });
 
 const address = `${server.hostname}:${server.port}`;
+relay.log(`listening on http://${address} (ws: /ws)`);
+relay.log(`home: ${config.homeDir}`);
 console.log(`[relay] listening on http://${address} (ws: /ws)`);
 console.log(`[relay] home: ${config.homeDir}`);
 console.log(`[relay] instanceId: ${relay.instanceId}`);

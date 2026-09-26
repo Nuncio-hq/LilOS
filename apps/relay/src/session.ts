@@ -16,13 +16,17 @@ import {
   type EngineHostState,
   HarnessRegisterParams,
   HarnessReportParams,
+  type HarnessStatusReport,
   HelloParams,
   type JsonRpcRequest,
   MessagesListParams,
   MessagesPostParams,
+  SystemStatusParams,
   TurnsInterruptParams,
   type WelcomeResult,
 } from "@lilos/contracts/app";
+import { createLogTail, type LogTail } from "./logtail";
+import { buildSystemStatus, type RejectedHandshake } from "./status";
 import type { RelayStore } from "./store";
 
 /** Minimal ws peer surface — Bun's ServerWebSocket and test doubles fit this. */
@@ -41,6 +45,12 @@ export interface RelayOptions {
   maxReplay?: number;
   /** Snapshot window when the client has no usable cursor. */
   snapshotLimit?: number;
+  /** system.status: a harness heartbeat older than this marks it degraded. */
+  heartbeatFreshMs?: number;
+  /** Injectable clock (tests). */
+  now?: () => number;
+  /** Log sink the relay lifecycle is written to; defaults to a fresh tail. */
+  logTail?: LogTail;
 }
 
 export interface RelayConnection {
@@ -51,6 +61,8 @@ export interface RelayConnection {
 export interface Relay {
   instanceId: string;
   connect(peer: RelayWsPeer): RelayConnection;
+  /** Write a line to the relay log tail (surfaced by system.status logs). */
+  log(message: string): void;
 }
 
 /** Numeric JSON-RPC error codes; the app-level AppErrorCode rides in `data.code`. */
@@ -71,7 +83,14 @@ const JsonRpcCode = {
 interface HostRecord {
   peer: RelayWsPeer;
   hostId: string;
+  /** Claimed build + protocol versions from the register handshake. */
+  version: string;
+  protocolVersion: number;
+  registeredAt: number;
+  lastReportAt?: number;
   engine?: { state: EngineHostState; detail?: string };
+  /** Latest telemetry payload from harness.report.status. */
+  status?: HarnessStatusReport;
 }
 
 class RpcError extends Error {
@@ -108,7 +127,19 @@ export function createRelay(options: RelayOptions): Relay {
   const subscribers = new Map<string, Set<RelayWsPeer>>();
   /** Every peer with a successful `session.hello` — receives broadcasts. */
   const helloedPeers = new Set<RelayWsPeer>();
+  const now = options.now ?? (() => Date.now());
+  const heartbeatFreshMs = options.heartbeatFreshMs ?? 45_000;
+  const logTail = options.logTail ?? createLogTail();
+  const log = (message: string) => logTail.log(message);
+  /** Failed version handshakes — lets system.status name the stale side. */
+  const rejectedHandshakes: RejectedHandshake[] = [];
   let host: HostRecord | null = null;
+  let lastHostDisconnectedAt: number | undefined;
+
+  const recordRejection = (rejection: RejectedHandshake) => {
+    rejectedHandshakes.push(rejection);
+    if (rejectedHandshakes.length > 20) rejectedHandshakes.shift();
+  };
 
   const emit = (channelId: string, method: string, params: unknown) => {
     const peers = subscribers.get(channelId);
@@ -192,6 +223,7 @@ export function createRelay(options: RelayOptions): Relay {
           if (!parsed.success) throw badParams(parsed.error.issues);
           const hello = parsed.data;
           if (hello.token !== options.token) {
+            log("session.hello rejected: bad token");
             throw new RpcError(
               JsonRpcCode.unauthenticated,
               "unauthenticated",
@@ -199,6 +231,14 @@ export function createRelay(options: RelayOptions): Relay {
             );
           }
           if (hello.protocolVersion !== protocolVersion) {
+            recordRejection({
+              kind: "hello",
+              claimed: hello.protocolVersion,
+              at: now(),
+            });
+            log(
+              `session.hello rejected: client spoke protocol ${hello.protocolVersion}, relay is ${protocolVersion}`,
+            );
             throw new RpcError(
               JsonRpcCode.protocolVersionMismatch,
               "protocol_version_mismatch",
@@ -213,6 +253,9 @@ export function createRelay(options: RelayOptions): Relay {
           }
           state.helloed = true;
           helloedPeers.add(peer);
+          log(
+            `session.hello accepted (client ${hello.client?.name ?? "app"} ${hello.client?.version ?? ""})`.trim(),
+          );
           const welcome: WelcomeResult = {
             protocolVersion,
             relayVersion,
@@ -450,7 +493,33 @@ export function createRelay(options: RelayOptions): Relay {
         case "harness.register": {
           const parsed = HarnessRegisterParams.safeParse(params ?? {});
           if (!parsed.success) throw badParams(parsed.error.issues);
+          // Same handshake rule as session.hello (issue #33): a mismatched
+          // harness fails loudly here instead of registering half-spoken.
+          if (parsed.data.protocolVersion !== protocolVersion) {
+            recordRejection({
+              kind: "register",
+              claimed: parsed.data.protocolVersion,
+              at: now(),
+            });
+            log(
+              `harness.register rejected: spoke protocol ${parsed.data.protocolVersion} v${parsed.data.version}, relay is ${protocolVersion}`,
+            );
+            throw new RpcError(
+              JsonRpcCode.protocolVersionMismatch,
+              "protocol_version_mismatch",
+              "protocol version mismatch",
+              {
+                update:
+                  parsed.data.protocolVersion > protocolVersion
+                    ? "relay"
+                    : "harness",
+                clientVersion: parsed.data.protocolVersion,
+                serverVersion: protocolVersion,
+              },
+            );
+          }
           if (host !== null && host.peer !== peer) {
+            log("harness.register rejected: another host is registered");
             throw new RpcError(
               JsonRpcCode.conflict,
               "conflict",
@@ -458,8 +527,18 @@ export function createRelay(options: RelayOptions): Relay {
             );
           }
           if (!host) {
-            host = { peer, hostId: `host_${randomUUID()}` };
+            host = {
+              peer,
+              hostId: `host_${randomUUID()}`,
+              version: parsed.data.version,
+              protocolVersion: parsed.data.protocolVersion,
+              registeredAt: now(),
+            };
+          } else {
+            host.version = parsed.data.version;
+            host.protocolVersion = parsed.data.protocolVersion;
           }
+          log(`harness.register accepted (${host.hostId} v${host.version})`);
           respond(peer, id, {
             hostId: host.hostId,
             pending: await store.listPendingTurns(),
@@ -470,8 +549,38 @@ export function createRelay(options: RelayOptions): Relay {
           const parsed = HarnessReportParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
           requireHost(peer);
-          if (host) host.engine = parsed.data.engine;
+          if (host) {
+            if (host.engine?.state !== parsed.data.engine.state) {
+              log(
+                `engine state ${host.engine?.state ?? "unknown"} -> ${parsed.data.engine.state}${parsed.data.engine.detail ? ` (${parsed.data.engine.detail})` : ""}`,
+              );
+            }
+            host.engine = parsed.data.engine;
+            host.lastReportAt = now();
+            if (parsed.data.status) host.status = parsed.data.status;
+          }
           respond(peer, id, { ok: true });
+          return;
+        }
+        case "system.status": {
+          const parsed = SystemStatusParams.safeParse(params ?? {});
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          respond(
+            peer,
+            id,
+            buildSystemStatus({
+              protocolVersion,
+              relayVersion,
+              now: now(),
+              heartbeatFreshMs,
+              host,
+              lastHostDisconnectedAt,
+              rejected: rejectedHandshakes,
+              relayLogTail: (n) => logTail.tail(n),
+              logLines: parsed.data.logLines,
+              secrets: [options.token],
+            }),
+          );
           return;
         }
         case "asks.open": {
@@ -599,6 +708,7 @@ export function createRelay(options: RelayOptions): Relay {
 
   return {
     instanceId,
+    log,
     connect(peer: RelayWsPeer): RelayConnection {
       const state = { helloed: false, subscriptions: new Set<string>() };
       return {
@@ -661,7 +771,11 @@ export function createRelay(options: RelayOptions): Relay {
           }
           state.subscriptions.clear();
           helloedPeers.delete(peer);
-          if (host?.peer === peer) host = null;
+          if (host?.peer === peer) {
+            log(`harness ${host.hostId} disconnected`);
+            host = null;
+            lastHostDisconnectedAt = now();
+          }
         },
       };
     },
