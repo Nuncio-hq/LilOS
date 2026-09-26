@@ -18,6 +18,7 @@ describe("unified JSON Schema generator", () => {
     expect(GENERATED_DOCS.map((d) => d.file)).toEqual([
       "engine-protocol.schema.json",
       "app-protocol.schema.json",
+      "host-protocol.schema.json",
     ]);
     for (const doc of GENERATED_DOCS) {
       expect(outputPathFor(doc)).toBe(join(GENERATED_DIR, doc.file));
