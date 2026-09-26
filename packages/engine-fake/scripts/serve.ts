@@ -2,10 +2,12 @@
  * WebSocket entry point — the only place engine-fake touches Bun APIs
  * (AGENTS.md: Bun-only APIs live at entry points, packages stay neutral).
  *
- *   bun packages/engine-fake/scripts/serve.ts [--port N] [--tick MS]
+ *   bun packages/engine-fake/scripts/serve.ts [--port N] [--tick MS] [--no-steer]
  *
  * Serves the protocol at ws://127.0.0.1:PORT/ws and prints
- * `LISTENING ws://...` on stdout once up.
+ * `LISTENING ws://...` on stdout once up. `--no-steer` serves an engine that
+ * does not declare the steer capability (`describe` omits it, `session.steer`
+ * answers METHOD_NOT_FOUND) — the queued-composer path's counterpart.
  */
 import { FakeEngine } from "../src/engine.js";
 import { eventFrame, handleJsonRpc } from "../src/transport.js";
@@ -14,8 +16,12 @@ const arg = (name: string, dflt: number) => {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 ? Number(process.argv[i + 1]) : dflt;
 };
+const flag = (name: string) => process.argv.includes(`--${name}`);
 
-const engine = new FakeEngine({ tick: arg("tick", 25) });
+const engine = new FakeEngine({
+  tick: arg("tick", 25),
+  capabilities: { steer: !flag("no-steer") },
+});
 const clients = new Set<{ send: (s: string) => void }>();
 engine.onEvent((e) => {
   const frame = eventFrame(e);

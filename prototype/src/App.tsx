@@ -7,7 +7,6 @@ import {
   EditEmployeeDialog,
   EmployeeCard,
   EmployeeHome,
-  ENGINE_STEER,
   FeedList,
   FirstRun,
   FocusView,
@@ -454,8 +453,16 @@ export default function App() {
   const [selfStart, setSelfStart] = useState<Record<string, boolean>>({})
   const [feeds, setFeeds] = useState<Record<string, Msg[]>>(() => ({ ...FEEDS, ...DM_FEEDS }))
   const stops = useRef<Record<string, boolean>>({})
-  // Session.steer (ENGINE_STEER in @lilos/ui, read in one place): a message sent mid-turn is delivered
-  // into the running turn at the next tool boundary. This is the default and only behavior — no toggle UI.
+  // The engine's declared steer capability: the real app reads describe().capabilities once at connect.
+  // The prototype's built-in engine declares it; ?steer=off simulates an engine without it — mid-turn
+  // sends then queue in the tray and run as the next prompt instead of steering (issue #9, AC-2).
+  const [canSteer] = useState(
+    () =>
+      new URLSearchParams(window.location.search).get("steer") !== "off",
+  )
+  // session.steer: a message sent mid-turn goes into this buffer. When the engine declares steer,
+  // the turn loop applies it at the next tool boundary; without it the buffer IS the queue — it
+  // auto-runs as the next prompt when the turn ends. Either way a mid-turn send is never lost.
   const steerBuf = useRef<Record<string, string[]>>({})
   // Mirror of steerBuf in React state so a pending steer renders immediately inside the running turn
   // (as a "Steer pending" chip where the "Oscar steered" row will appear). steerBuf stays the async
@@ -594,6 +601,8 @@ export default function App() {
     // rows inside this turn and folded into the final reply.
     const applied: string[] = []
     const applySteers = () => {
+      // Engine without session.steer: nothing lands mid-turn; the buffer stays queued until the turn ends.
+      if (!canSteer) return
       const q = steerBuf.current[rootId] ?? []
       if (!q.length) return
       setSteerBuf(rootId, [])
@@ -729,14 +738,13 @@ export default function App() {
     setFeeds((fs) => ({ ...fs, [feedKey]: [...(fs[feedKey] ?? []), msg] }))
     if (target) { showThread(id); runTurn(feedKey, id, target, text, ws) }
   }
-  // Reply inside a thread = same Hermes session. While a turn runs, Enter ALWAYS steers (session.steer):
-  // the message lands in the running turn at the next tool boundary. ENGINE_STEER=false (an engine without
-  // session.steer, future) is the only way a mid-turn send takes the queue path; there is no toggle UI.
+  // Reply inside a thread = same Hermes session. While a turn runs, Enter buffers into steerBuf: an
+  // engine with session.steer lands it at the next tool boundary; one without queues it (queued tray)
+  // and it runs as the next prompt when the turn ends — "typing mid-turn queues" (issue #9, AC-2).
   const sendInThread = (root: Extract<Msg, { kind: "msg" }>, text: string, files?: AttachedFile[]) => {
     const at = files?.length ? ` ${files.map((f) => `📎 ${f.name}`).join(" ")}` : ""
     if (threadRunning(root)) {
-      if (ENGINE_STEER) setSteerBuf(root.id, [...(steerBuf.current[root.id] ?? []), bold(text) + at])
-      else mapRoot(feedKey, root.id, (t) => ({ ...t, queue: [...(t.queue ?? []), bold(text) + at] }))
+      setSteerBuf(root.id, [...(steerBuf.current[root.id] ?? []), bold(text) + at])
       return
     }
     mapRoot(feedKey, root.id, (t) => ({ ...t, replies: [...t.replies, { id: `o-${Date.now()}`, from: "oscar", time: nowTime(), text: bold(text), attachments: files?.length ? files : undefined }] }))
@@ -745,6 +753,9 @@ export default function App() {
   }
   const unqueue = (root: Extract<Msg, { kind: "msg" }>, i: number) =>
     mapRoot(feedKey, root.id, (t) => ({ ...t, queue: (t.queue ?? []).filter((_, j) => j !== i) }))
+  // Queued tray's remove (steer absent): drop the mid-turn send before it runs as the next prompt.
+  const removePending = (rootId: string, i: number) =>
+    setSteerBuf(rootId, (steerBuf.current[rootId] ?? []).filter((_, j) => j !== i))
   // The not-sent tray's "Send": a message that didn't land before ■ runs NOW as a new prompt in the same
   // thread/session (prompt.submit), not at some later turn boundary. Nothing auto-sends on its own.
   const sendQueuedNow = (root: Extract<Msg, { kind: "msg" }>, i: number) => {
@@ -832,7 +843,7 @@ export default function App() {
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
       running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
-      pending={pendingSteers[openThread.id] ?? []} accept="image/*"
+      pending={pendingSteers[openThread.id] ?? []} accept="image/*" steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
     />
   ) : null
 
@@ -875,7 +886,7 @@ export default function App() {
           onRewind={(i) => rewind(openThread, i)} onModel={(m) => setModel(openThread, m)} say={say}
           models={MODELS} repoFiles={REPO_FILES} host={hostAccessors}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={() => prMerge(openThread)}
-          pending={pendingSteers[openThread.id] ?? []} accept="image/*"
+          pending={pendingSteers[openThread.id] ?? []} accept="image/*" steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />
       ) : (
         <div className={cn("grid min-h-0 min-w-0 grid-cols-1", panelOpen && "xl:grid-cols-[minmax(0,1fr)_420px]")}>

@@ -148,7 +148,12 @@ export const SessionSteerParams = z.strictObject({
 });
 export type SessionSteerParams = z.infer<typeof SessionSteerParams>;
 export const SessionSteerResult = z.object({
-  /** "steered" lands at the next tool boundary of the running turn. */
+  /**
+   * "steered": accepted — lands at the next tool boundary, or becomes the
+   * next turn's input when the turn ends first (a steer is never lost).
+   * "not_running": no turn is running and the text was NOT consumed — the
+   * client sends it as `prompt` instead.
+   */
   status: z.enum(["steered", "not_running"]),
 });
 export type SessionSteerResult = z.infer<typeof SessionSteerResult>;
@@ -201,7 +206,7 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
   "session.steer": {
     params: SessionSteerParams,
     result: SessionSteerResult,
-    doc: "Inject text into the running turn, delivered at the next tool boundary.",
+    doc: "Inject text into the running turn: lands at the next tool boundary as turn.steered, or becomes the next turn's input when the turn ends first. not_running = nothing was consumed; send prompt instead.",
     capability: "steer",
   },
   "agents.list": {

@@ -22,6 +22,7 @@ import {
   ConversationKeepBottom,
   NotSentTray,
   plain,
+  QueuedTray,
   runningComposer,
 } from "../chat/agent-chat";
 import { FocusComposer } from "../chat/model-picker";
@@ -100,6 +101,8 @@ export function FocusView({
   onPrComment,
   onPrMerge,
   pending,
+  steer = false,
+  onRemovePending,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -140,9 +143,12 @@ export function FocusView({
   };
   onPrComment?: (t: string) => void;
   onPrMerge?: () => void;
+  /* Mid-turn sends: pending-steer chips when `steer` is declared, the queued tray without it. */
   pending?: string[];
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
   accept?: string;
+  steer?: boolean;
+  onRemovePending?: (i: number) => void;
 }) {
   const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024);
   const [tab, setTab] = useState<WbTab>(() =>
@@ -381,7 +387,7 @@ export function FocusView({
                     last={i === thread.replies.length - 1}
                     onRetry={onRetry}
                     onOpen={pickTab}
-                    pending={pendingSteers}
+                    pending={steer ? pendingSteers : []}
                     cards={
                       <>
                         <ReplyCards
@@ -494,8 +500,13 @@ export function FocusView({
                 </QueueSection>
               </Queue>
             )}
-            {/* Not-sent tray from the shared agent-chat component — same markup as the thread panel,
-                above the composer there too. queue holds ONLY messages ■ stopped before they landed. */}
+            {/* Queued mid-turn sends (engine without steer, issue #9) and the not-sent tray —
+                same markup as the thread panel, above the composer there too. queue holds ONLY
+                messages ■ stopped before they landed. */}
+            <QueuedTray
+              items={steer ? [] : pendingSteers}
+              onRemove={onRemovePending}
+            />
             <NotSentTray
               items={queue}
               onSend={onSendQueued}
@@ -510,12 +521,12 @@ export function FocusView({
               onStop={onStop}
               placeholder={
                 running
-                  ? runningComposer(lead?.name ?? "Employee").placeholder
+                  ? runningComposer(lead?.name ?? "Employee", steer).placeholder
                   : `Continue session ${thread.session} with ${lead?.name ?? "the employee"}…`
               }
               hint={
                 running
-                  ? runningComposer(lead?.name ?? "Employee").hint
+                  ? runningComposer(lead?.name ?? "Employee", steer).hint
                   : pr?.status === "merged"
                     ? `#${pr.number} merged, ⎇ ${pr.head} deleted · next edit starts a new branch from main`
                     : work?.branch

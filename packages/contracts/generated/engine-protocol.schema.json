@@ -1488,7 +1488,7 @@
       }
     },
     "session.steer": {
-      "doc": "Inject text into the running turn, delivered at the next tool boundary.",
+      "doc": "Inject text into the running turn: lands at the next tool boundary as turn.steered, or becomes the next turn's input when the turn ends first. not_running = nothing was consumed; send prompt instead.",
       "capability": "steer",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

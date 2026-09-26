@@ -11,6 +11,7 @@ import {
   type EngineEventType,
   type EventsSinceParams,
   type InterruptParams,
+  type KnownCapability,
   type PromptParams,
   type RequestRespondParams,
   RPC_ERRORS,
@@ -19,6 +20,7 @@ import {
   type SessionState,
   type SessionSteerParams,
   type SessionStopParams,
+  STEER_CAPABILITY,
   type Usage,
 } from "@lilos/contracts/engine";
 import {
@@ -81,6 +83,12 @@ interface FakeSession {
 export interface FakeEngineOptions {
   /** Base delay per boundary in ms; tests pass ~2, the WS script can stay default. */
   tick?: number;
+  /**
+   * Capability switches, on by default — `{ steer: false }` serves an engine
+   * that does not declare `steer`: `describe` omits it and `session.steer`
+   * answers METHOD_NOT_FOUND.
+   */
+  capabilities?: Partial<Record<KnownCapability, boolean>>;
 }
 
 /**
@@ -104,6 +112,13 @@ export class FakeEngine {
 
   constructor(opts: FakeEngineOptions = {}) {
     this.tick = opts.tick ?? 25;
+    this.caps = opts.capabilities ?? {};
+  }
+
+  private readonly caps: Partial<Record<KnownCapability, boolean>>;
+  /** A capability is on unless the options explicitly set it false. */
+  private capOn(cap: string): boolean {
+    return this.caps[cap as KnownCapability] !== false;
   }
 
   /** Subscribe to every session's event stream (notifications out). */
@@ -118,6 +133,12 @@ export class FakeEngine {
       throw new RpcError(
         RPC_ERRORS.METHOD_NOT_FOUND,
         `unknown method: ${method}`,
+      );
+    // A method gated by a capability the engine did not declare behaves as absent.
+    if (contract.capability && !this.capOn(contract.capability))
+      throw new RpcError(
+        RPC_ERRORS.METHOD_NOT_FOUND,
+        `capability not declared: ${contract.capability}`,
       );
     const parsed = contract.params.safeParse(params ?? {});
     if (!parsed.success)
@@ -164,12 +185,7 @@ export class FakeEngine {
 
   private describe() {
     const capabilities: Capability[] = [
-      {
-        id: "steer",
-        name: "Session steer",
-        description: "Text sent mid-turn lands at the next tool boundary.",
-        methods: ["session.steer"],
-      },
+      ...(this.capOn("steer") ? [STEER_CAPABILITY] : []),
       {
         id: "mcp_servers",
         name: "MCP servers",
@@ -355,12 +371,11 @@ export class FakeEngine {
     const s = this.require(p.sessionId);
     if (s.state === "closed")
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
-    const running = !!s.turn;
+    if (!s.turn)
+      // not_running consumes nothing — the client sends the text as prompt.
+      return { status: "not_running" as const };
     s.steers.push(p.text);
-    this.pumpSteers(s);
-    return {
-      status: running ? ("steered" as const) : ("not_running" as const),
-    };
+    return { status: "steered" as const };
   }
 
   private agentsList() {
