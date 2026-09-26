@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import { Conversation, ConversationContent, ConversationScrollButton } from "@lilos/ui/components/ai-elements/conversation"
 import {
   AddFolderDialog,
@@ -514,19 +514,9 @@ export default function App() {
     }
   }
   const stopTurn = (rootId: string) => { stops.current[rootId] = true }
-  // A pending steer chip appears mid-turn with no following stream delta to trigger stick-to-bottom,
-  // so pin the conversation to the bottom while a steer waits (the chip is the last row of the live turn).
-  const hasPending = Object.values(pendingSteers).some((l) => l.length > 0)
-  useEffect(() => {
-    if (!hasPending) return
-    const pin = () => document.querySelectorAll("[data-steerpending]").forEach((chip) => {
-      for (let el = chip.parentElement as HTMLElement | null; el; el = el.parentElement)
-        if (/auto|scroll/.test(getComputedStyle(el).overflowY)) { el.scrollTop = el.scrollHeight; break }
-    })
-    pin()
-    const id = setInterval(pin, 60)
-    return () => clearInterval(id)
-  }, [pendingSteers, hasPending])
+  // Re-sticking the conversation when a pending steer chip or the not-sent tray appears is handled
+  // inside @lilos/ui (ConversationKeepBottom, in ThreadView/FocusView) via use-stick-to-bottom's own
+  // scrollToBottom — the old interval pin here is gone (issue #15).
   const threadRunning = (m?: Extract<Msg, { kind: "msg" }>) => !!m?.thread?.replies.some((r) => r.live)
 
   const mentionIn = (text: string) => employees.find((e) => channel.employees.includes(e.id) && new RegExp(`@${e.name}\\b`, "i").test(text))

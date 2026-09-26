@@ -8,7 +8,10 @@
       "!**/test-results",
       "!**/playwright-report",
       "!**/bun.lock",
-      "!**/*.svg"
+      "!**/*.svg",
+      "!**/*.png",
+      "!**/*.ico",
+      "!**/*.icns"
     ]
   },
   "formatter": {
