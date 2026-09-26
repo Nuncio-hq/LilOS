@@ -21,6 +21,7 @@ chat_completions api_mode has no native reasoning-delta path).
 import argparse
 import json
 import re
+import sys
 import threading
 import time
 import uuid
@@ -133,6 +134,15 @@ def _json_completion(body, kind, text):
                       "total_tokens": 110}}
 
 
+class _Server(ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        # Interrupted turns and keepalive probes drop sockets mid-stream;
+        # only log real handler bugs.
+        if isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
+
+
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -198,4 +208,4 @@ if __name__ == "__main__":
     a = ap.parse_args()
     STATE["log"] = a.log
     print(f"openai_stub on 127.0.0.1:{a.port}", flush=True)
-    ThreadingHTTPServer(("127.0.0.1", a.port), H).serve_forever()
+    _Server(("127.0.0.1", a.port), H).serve_forever()
