@@ -37,6 +37,17 @@ PR does not exist.
   local / `openai-codex` cloud); hand-offs state which was used; if both
   fail, tell Oscar.** Not: silently falling back to mock. — #3 · PR #14
 
+## Engine
+- **D-#6 The engine protocol is JSON-RPC 2.0 over an ACP-shaped core
+  (`session.start`/`prompt`/`interrupt`/`request.respond`/`events.since`),
+  declared once in Zod and generated to JSON Schema for non-TS clients; every
+  event carries `seq`; engine asks ride `request.opened` events so they replay
+  after reconnect; engines advertise behavior as capability descriptors, and
+  the app renders from capabilities.**
+  Not: Hermes-specific names or types in `contracts`/`engine-fake`/
+  `engine-conformance`, `if engine == "..."` branches, server-to-client
+  request frames. — #6
+
 ## Structure
 - **D-#3 One-way deps: `apps/*` → `packages/*`, never back; engine packages
   depend only on `contracts`.** Types crossing a boundary live only in

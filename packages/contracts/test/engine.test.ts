@@ -1,0 +1,153 @@
+import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, test } from "vitest";
+import {
+  renderEngineSchema,
+  stalePaths,
+} from "../scripts/gen-engine-schema.js";
+import {
+  ENGINE_EVENT_TYPES,
+  ENGINE_METHODS,
+  ENGINE_PROTOCOL,
+  EngineEvent,
+  PromptParams,
+  SessionStartParams,
+} from "../src/engine/index.js";
+
+const ENGINE_SRC = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "src",
+  "engine",
+);
+
+describe("engine wire contract", () => {
+  test("protocol identity is name+version pinned", () => {
+    expect(ENGINE_PROTOCOL).toEqual({ name: "lilos-engine", version: 1 });
+  });
+
+  test("core methods are all declared with params+result", () => {
+    expect(Object.keys(ENGINE_METHODS)).toEqual([
+      "describe",
+      "session.start",
+      "prompt",
+      "interrupt",
+      "request.respond",
+      "events.since",
+      "session.stop",
+      "session.steer",
+    ]);
+    for (const [name, m] of Object.entries(ENGINE_METHODS)) {
+      expect(m.doc.length, name).toBeGreaterThan(0);
+      expect(m.params.safeParse({}).success !== undefined, name).toBe(true);
+      expect(m.result, name).toBeDefined();
+    }
+    expect(ENGINE_METHODS["session.steer"].capability).toBe("steer");
+  });
+
+  test("events v1 registry covers the replayable surface", () => {
+    expect(ENGINE_EVENT_TYPES).toEqual([
+      "session.started",
+      "session.state",
+      "turn.started",
+      "turn.delta",
+      "tool.started",
+      "tool.completed",
+      "request.opened",
+      "request.resolved",
+      "turn.steered",
+      "turn.completed",
+    ]);
+  });
+
+  test("params are strict and carry the #18 additions", () => {
+    const start = SessionStartParams.parse({
+      agent: "fake",
+      cwd: "/tmp",
+      mcpServers: [{ name: "lilos", command: "lilos-mcp", args: [], env: [] }],
+    });
+    expect(start.mcpServers).toHaveLength(1);
+    const prompt = PromptParams.parse({
+      sessionId: "s1",
+      content: [
+        { type: "text", text: "hi" },
+        { type: "image", data: "aGk=", mimeType: "image/png" },
+      ],
+    });
+    expect(prompt.content).toHaveLength(2);
+    expect(
+      SessionStartParams.safeParse({ agent: "x", cwd: "/t", heresy: 1 })
+        .success,
+    ).toBe(false);
+  });
+
+  test("event frames validate by discriminated union", () => {
+    const frame = {
+      seq: 7,
+      sessionId: "s1",
+      type: "request.opened",
+      payload: {
+        turnId: "t1",
+        requestId: "r1",
+        request: {
+          kind: "approval",
+          command: "rm -rf /tmp/x",
+          options: ["once", "deny"],
+        },
+      },
+    };
+    const ev = EngineEvent.parse(frame);
+    if (ev.type !== "request.opened")
+      throw new Error("expected request.opened");
+    expect(ev.payload.requestId).toBe("r1");
+    expect(EngineEvent.safeParse({ ...frame, type: "nope" }).success).toBe(
+      false,
+    );
+    expect(EngineEvent.safeParse({ ...frame, seq: 0 }).success).toBe(false);
+  });
+
+  test("AC-2 generated JSON Schema exists and is fresh", () => {
+    expect(stalePaths()).toEqual([]);
+    expect(renderEngineSchema()).toContain('"lilos-engine"');
+  });
+
+  test("AC-2 stale-schema check fails when output differs from source", () => {
+    const out = stalePaths();
+    expect(out).toEqual([]);
+    const file = join(ENGINE_SRC, "..", "..", "schema", "engine-protocol.json");
+    const original = readFileSync(file, "utf8");
+    try {
+      writeFileSync(file, '{"stale":true}\n');
+      expect(stalePaths()).toEqual([file]);
+    } finally {
+      writeFileSync(file, original);
+    }
+    expect(stalePaths()).toEqual([]);
+  });
+
+  test("AC-4 the seam carries no vendor names", () => {
+    const root = join(ENGINE_SRC, "..", "..", "..");
+    const needle = /h[e]rmes/i; // self-excluding pattern — this file must pass too
+    const dirs = ["contracts", "engine-fake", "engine-conformance"]
+      .map((p) => join(root, p))
+      .filter((p) => statSync(p, { throwIfNoEntry: false }));
+    expect(dirs.length).toBeGreaterThan(0);
+    const hits: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir)) {
+        const p = join(dir, e);
+        if (statSync(p).isDirectory()) {
+          if (e !== "node_modules") walk(p);
+        } else if (
+          /\.(ts|json|py|md)$/.test(e) &&
+          needle.test(readFileSync(p, "utf8"))
+        ) {
+          hits.push(p);
+        }
+      }
+    };
+    for (const d of dirs) walk(d);
+    expect(hits).toEqual([]);
+  });
+});

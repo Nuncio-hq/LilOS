@@ -1,0 +1,539 @@
+import {
+  type ApprovalOption,
+  type ApprovalOutcome,
+  type Capability,
+  ENGINE_METHODS,
+  ENGINE_PROTOCOL,
+  type EngineEvent,
+  type EngineEventType,
+  type EventsSinceParams,
+  type InterruptParams,
+  type PromptParams,
+  type RequestRespondParams,
+  RPC_ERRORS,
+  type SessionStartParams,
+  type SessionState,
+  type SessionSteerParams,
+  type SessionStopParams,
+  type Usage,
+} from "@lilos/contracts/engine";
+import { type FakeScript, type FakeStep, scriptFor } from "./script.js";
+
+/** Transport-agnostic failure; the transports translate it into a JSON-RPC error object. */
+export class RpcError extends Error {
+  constructor(
+    readonly code: number,
+    message: string,
+    readonly data?: unknown,
+  ) {
+    super(message);
+  }
+}
+
+interface PendingAsk {
+  turnId: string;
+  requestId: string;
+  request: Extract<
+    EngineEvent,
+    { type: "request.opened" }
+  >["payload"]["request"];
+  seq: number;
+  resolve: (outcome: { outcome: ApprovalOutcome; answer?: string }) => void;
+}
+
+interface FakeTurn {
+  turnId: string;
+  phase: "reasoning" | "tools" | "text" | "waiting";
+  interrupted: boolean;
+}
+
+interface FakeSession {
+  id: string;
+  agent: string;
+  cwd: string;
+  model?: string;
+  mcpServers: unknown[];
+  branch: string;
+  seq: number;
+  log: EngineEvent[];
+  state: SessionState;
+  openRequests: Map<string, PendingAsk>;
+  /** True once an approval was answered "always" — fake remembers for the session. */
+  alwaysApproved: boolean;
+  usage: Usage;
+  steers: string[];
+  turn?: FakeTurn;
+  turnCount: number;
+  toolCounter: number;
+  requestCounter: number;
+}
+
+export interface FakeEngineOptions {
+  /** Base delay per boundary in ms; tests pass ~2, the WS script can stay default. */
+  tick?: number;
+}
+
+/**
+ * The deterministic stand-in engine: the prototype's canned turns driven over
+ * the wire protocol. Sessions are always edit-capable (a synthetic branch per
+ * session, mirroring the prototype's "Start work" worktree), so an edit-ask
+ * prompt produces a mutating step that asks for approval — the conformance
+ * suite exercises that path.
+ */
+export class FakeEngine {
+  private readonly tick: number;
+  private sessions = new Map<string, FakeSession>();
+  private listeners = new Set<(e: EngineEvent) => void>();
+  private sessionCounter = 0;
+  private turnCounter = 0;
+  private hexCounter = 0;
+
+  constructor(opts: FakeEngineOptions = {}) {
+    this.tick = opts.tick ?? 25;
+  }
+
+  /** Subscribe to every session's event stream (notifications out). */
+  onEvent(fn: (e: EngineEvent) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  async dispatch(method: string, params: unknown): Promise<unknown> {
+    const contract = ENGINE_METHODS[method];
+    if (!contract)
+      throw new RpcError(
+        RPC_ERRORS.METHOD_NOT_FOUND,
+        `unknown method: ${method}`,
+      );
+    const parsed = contract.params.safeParse(params ?? {});
+    if (!parsed.success)
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        `invalid params: ${parsed.error.message}`,
+      );
+    switch (method) {
+      case "describe":
+        return this.describe();
+      case "session.start":
+        return this.sessionStart(parsed.data as SessionStartParams);
+      case "prompt":
+        return this.prompt(parsed.data as PromptParams);
+      case "interrupt":
+        return this.interrupt(parsed.data as InterruptParams);
+      case "request.respond":
+        return this.requestRespond(parsed.data as RequestRespondParams);
+      case "events.since":
+        return this.eventsSince(parsed.data as EventsSinceParams);
+      case "session.stop":
+        return this.sessionStop(parsed.data as SessionStopParams);
+      case "session.steer":
+        return this.sessionSteer(parsed.data as SessionSteerParams);
+      default:
+        throw new RpcError(
+          RPC_ERRORS.METHOD_NOT_FOUND,
+          `unhandled method: ${method}`,
+        );
+    }
+  }
+
+  // ── methods ──────────────────────────────────────────────────────────────
+
+  private describe() {
+    const capabilities: Capability[] = [
+      {
+        id: "steer",
+        name: "Session steer",
+        description: "Text sent mid-turn lands at the next tool boundary.",
+        methods: ["session.steer"],
+      },
+      {
+        id: "mcp_servers",
+        name: "MCP servers",
+        description: "Accepts stdio MCP servers on session.start (ACP shape).",
+        detail: { transports: ["stdio"] },
+      },
+    ];
+    return {
+      name: "engine-fake",
+      version: "0.0.0",
+      protocol: ENGINE_PROTOCOL,
+      capabilities,
+    };
+  }
+
+  private sessionStart(p: SessionStartParams) {
+    if ((p.mcpServers ?? []).some((s) => "type" in s)) {
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        "engine-fake accepts stdio mcpServers only",
+      );
+    }
+    const id = `s${++this.sessionCounter}`;
+    const s: FakeSession = {
+      id,
+      agent: p.agent,
+      cwd: p.cwd,
+      model: p.model,
+      mcpServers: p.mcpServers ?? [],
+      branch: `work/${p.agent}-${id}`,
+      seq: 0,
+      log: [],
+      state: "idle",
+      openRequests: new Map(),
+      alwaysApproved: false,
+      usage: { input: 0, output: 0, reasoning: 0, cache: 0 },
+      steers: [],
+      turnCount: 0,
+      toolCounter: 0,
+      requestCounter: 0,
+    };
+    this.sessions.set(id, s);
+    this.emit(s, "session.started", {
+      agent: p.agent,
+      cwd: p.cwd,
+      model: p.model,
+    });
+    this.setState(s, "idle");
+    return { sessionId: id };
+  }
+
+  private prompt(p: PromptParams) {
+    const s = this.require(p.sessionId);
+    if (s.state === "closed")
+      throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    if (s.turn)
+      throw new RpcError(
+        RPC_ERRORS.INVALID_STATE,
+        `session ${s.id} already has a running turn`,
+      );
+    if (p.content.some((b) => b.type === "image")) {
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        "image blocks require the image_prompt capability",
+      );
+    }
+    const text = p.content
+      .filter((b): b is { type: "text"; text: string } => b.type === "text")
+      .map((b) => b.text)
+      .join("\n");
+    return this.runTurn(s, text);
+  }
+
+  private interrupt(p: InterruptParams) {
+    const s = this.require(p.sessionId);
+    if (!s.turn) return { interrupted: false };
+    s.turn.interrupted = true;
+    for (const ask of s.openRequests.values())
+      ask.resolve({ outcome: "cancel" });
+    return { interrupted: true };
+  }
+
+  private requestRespond(p: RequestRespondParams) {
+    const s = this.require(p.sessionId);
+    const ask = s.openRequests.get(p.requestId);
+    if (!ask)
+      throw new RpcError(
+        RPC_ERRORS.REQUEST_NOT_FOUND,
+        `no open request ${p.requestId}`,
+      );
+    if (ask.request.kind === "approval" && p.outcome === "answer") {
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        "an approval takes once/always/deny/cancel, not answer",
+      );
+    }
+    if (
+      ask.request.kind === "approval" &&
+      !(ask.request.options as ApprovalOutcome[]).includes(p.outcome)
+    ) {
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        `outcome ${p.outcome} not in offered options`,
+      );
+    }
+    if (
+      ask.request.kind === "question" &&
+      p.outcome !== "answer" &&
+      p.outcome !== "cancel"
+    ) {
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        "a question takes answer or cancel",
+      );
+    }
+    if (p.outcome === "answer" && p.answer === undefined) {
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        "outcome answer needs an answer field",
+      );
+    }
+    if (ask.request.kind === "approval" && p.outcome === "always")
+      s.alwaysApproved = true;
+    s.openRequests.delete(p.requestId);
+    this.emit(s, "request.resolved", {
+      requestId: p.requestId,
+      outcome: p.outcome,
+      answer: p.answer,
+    });
+    ask.resolve({ outcome: p.outcome, answer: p.answer });
+    return { accepted: true as const };
+  }
+
+  private eventsSince(p: EventsSinceParams) {
+    const s = this.require(p.sessionId);
+    return {
+      events: s.log.filter((e) => e.seq > p.after),
+      latestSeq: s.seq,
+      truncated: false,
+      openRequests: [...s.openRequests.values()].map((a) => ({
+        requestId: a.requestId,
+        turnId: a.turnId,
+        request: a.request,
+        seq: a.seq,
+      })),
+      snapshot: this.snapshot(s),
+    };
+  }
+
+  private sessionStop(p: SessionStopParams) {
+    const s = this.require(p.sessionId);
+    if (s.state === "closed") return { stopped: false };
+    const t = s.turn;
+    if (t) t.interrupted = true;
+    for (const ask of s.openRequests.values())
+      ask.resolve({ outcome: "cancel" });
+    s.state = "closed";
+    this.emit(s, "session.state", { state: "closed" });
+    return { stopped: true };
+  }
+
+  private sessionSteer(p: SessionSteerParams) {
+    const s = this.require(p.sessionId);
+    if (s.state === "closed")
+      throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    const running = !!s.turn;
+    s.steers.push(p.text);
+    this.pumpSteers(s);
+    return {
+      status: running ? ("steered" as const) : ("not_running" as const),
+    };
+  }
+
+  // ── the turn loop (ports the prototype's runTurn) ─────────────────────────
+
+  private async runTurn(s: FakeSession, promptText: string) {
+    const turnId = `t${++this.turnCounter}`;
+    const script = scriptFor(
+      s.agent,
+      promptText,
+      s.turnCount > 0,
+      s.branch,
+      this.nextHex,
+      "Nuncio-hq/LilOS",
+      s.cwd,
+    );
+    s.turn = { turnId, phase: "reasoning", interrupted: false };
+    s.turnCount += 1;
+    this.emit(s, "turn.started", { turnId });
+    this.setState(s, "running");
+    try {
+      for (const w of words(script.reasoning)) {
+        await this.sleep(s);
+        this.emit(s, "turn.delta", { turnId, stream: "reasoning", delta: w });
+      }
+      s.turn.phase = "tools";
+      for (const step of script.steps) {
+        this.drainSteers(s, turnId);
+        const toolCallId = `c${++s.toolCounter}`;
+        this.emit(s, "tool.started", {
+          turnId,
+          toolCallId,
+          tool: step.tool,
+          input: step.input,
+        });
+        const outcome =
+          this.needsApproval(step) && !s.alwaysApproved
+            ? await this.awaitApproval(s, turnId, step)
+            : "once";
+        if (outcome === "deny" || outcome === "cancel") {
+          this.emit(s, "tool.completed", {
+            turnId,
+            toolCallId,
+            tool: step.tool,
+            status: outcome === "deny" ? "denied" : "cancelled",
+          });
+          if (outcome === "cancel") throw new Interrupted();
+          return this.finishTurn(s, turnId, "end_turn", script, promptText);
+        }
+        await this.sleep(s);
+        this.emit(s, "tool.completed", {
+          turnId,
+          toolCallId,
+          tool: step.tool,
+          status: "completed",
+          output: step.output,
+          diff: step.diff,
+          commit: step.commit,
+        });
+      }
+      this.drainSteers(s, turnId);
+      s.turn.phase = "text";
+      for (const w of words(script.text)) {
+        await this.sleep(s);
+        this.emit(s, "turn.delta", { turnId, stream: "text", delta: w });
+      }
+      return this.finishTurn(s, turnId, "end_turn", script, promptText);
+    } catch (e) {
+      if (!(e instanceof Interrupted)) throw e;
+      this.cancelOpen(s);
+      this.emit(s, "turn.completed", { turnId, stopReason: "cancelled" });
+      if (s.state !== "closed") this.setState(s, "idle");
+      s.turn = undefined;
+      this.pumpSteers(s);
+      return { turnId, stopReason: "cancelled" as const };
+    }
+  }
+
+  private finishTurn(
+    s: FakeSession,
+    turnId: string,
+    stopReason: "end_turn" | "cancelled",
+    script: FakeScript,
+    promptText: string,
+  ) {
+    s.usage = {
+      input: s.usage.input + 9000 + promptText.length * 4,
+      output: s.usage.output + Math.floor(script.text.length / 4),
+      reasoning: s.usage.reasoning + Math.floor(script.reasoning.length / 4),
+      cache: s.usage.cache + 6000,
+    };
+    this.emit(s, "turn.completed", { turnId, stopReason, usage: s.usage });
+    if (s.state !== "closed") this.setState(s, "idle");
+    s.turn = undefined;
+    // A steer that never hit a boundary becomes the next turn's input — never lost.
+    this.pumpSteers(s);
+    return { turnId, stopReason, usage: s.usage };
+  }
+
+  /** If the session is idle and steers are queued, the next one becomes a turn. */
+  private pumpSteers(s: FakeSession) {
+    if (!s.turn && s.state !== "closed" && s.steers.length) {
+      const next = s.steers.shift();
+      if (next !== undefined) void this.runTurn(s, next);
+    }
+  }
+
+  private drainSteers(s: FakeSession, turnId: string) {
+    for (const text of s.steers.splice(0))
+      this.emit(s, "turn.steered", { turnId, text });
+  }
+
+  private async awaitApproval(
+    s: FakeSession,
+    turnId: string,
+    step: FakeStep,
+  ): Promise<ApprovalOutcome> {
+    const requestId = `r${++s.requestCounter}`;
+    const command =
+      typeof step.input.command === "string"
+        ? step.input.command
+        : `${step.tool} ${JSON.stringify(step.input)}`;
+    const request = {
+      kind: "approval" as const,
+      command,
+      description: `${step.tool} wants to run: ${command}`,
+      options: ["once", "always", "deny"] as ApprovalOption[],
+    };
+    const promise = new Promise<{ outcome: ApprovalOutcome; answer?: string }>(
+      (resolve) => {
+        s.openRequests.set(requestId, {
+          turnId,
+          requestId,
+          request,
+          seq: s.seq + 1,
+          resolve,
+        });
+      },
+    );
+    this.emit(s, "request.opened", { turnId, requestId, request });
+    const t = s.turn;
+    if (t) t.phase = "waiting";
+    this.setState(s, "waiting");
+    const { outcome } = await promise;
+    if (s.turn && !s.turn.interrupted) {
+      s.turn.phase = "tools";
+      this.setState(s, "running");
+    }
+    return outcome;
+  }
+
+  private cancelOpen(s: FakeSession) {
+    for (const [requestId, ask] of s.openRequests) {
+      this.emit(s, "request.resolved", {
+        requestId,
+        outcome: "cancel" as const,
+      });
+      ask.resolve({ outcome: "cancel" });
+    }
+    s.openRequests.clear();
+  }
+
+  private snapshot(s: FakeSession) {
+    return {
+      sessionId: s.id,
+      state: s.state,
+      turn: s.turn ? { turnId: s.turn.turnId, phase: s.turn.phase } : undefined,
+      usage: s.usage,
+    };
+  }
+
+  private needsApproval(step: FakeStep): boolean {
+    if (step.tool === "patch" || step.tool === "write_file") return true;
+    if (step.tool === "terminal" && typeof step.input.command === "string") {
+      return /^(git\s+(commit|push|worktree)|gh\s)/.test(step.input.command);
+    }
+    return false;
+  }
+
+  private async sleep(s: FakeSession): Promise<void> {
+    await new Promise((r) => setTimeout(r, this.tick));
+    if (s.turn?.interrupted) throw new Interrupted();
+  }
+
+  private setState(s: FakeSession, state: SessionState) {
+    if (s.state === state) return;
+    s.state = state;
+    this.emit(s, "session.state", { state });
+  }
+
+  private emit(
+    s: FakeSession,
+    type: EngineEventType,
+    payload: EngineEvent["payload"],
+  ) {
+    const event = {
+      seq: ++s.seq,
+      sessionId: s.id,
+      type,
+      payload,
+    } as EngineEvent;
+    s.log.push(event);
+    for (const fn of this.listeners) fn(event);
+  }
+
+  private require(sessionId: string): FakeSession {
+    const s = this.sessions.get(sessionId);
+    if (!s)
+      throw new RpcError(
+        RPC_ERRORS.SESSION_NOT_FOUND,
+        `no session ${sessionId}`,
+      );
+    return s;
+  }
+
+  private nextHex = () => (++this.hexCounter).toString(16).padStart(7, "0");
+}
+
+class Interrupted extends Error {}
+
+const words = (t: string) => t.split(/(?<=\s)/);
