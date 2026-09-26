@@ -4,7 +4,8 @@ import {
   AgentsDescribeParams,
   AgentsListParams,
 } from "../engine/agents";
-import { ModelsListParams } from "../engine/models";
+import { Capability } from "../engine/capabilities";
+import { ModelOption, ModelsListParams } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
 import {
   AppChannel,
@@ -121,6 +122,7 @@ export const AppMethod = z.enum([
   "asks.respond",
   "asks.list",
   "turns.interrupt",
+  "conversations.setModel",
   "system.status",
   "employees.remove",
   /* engine passthrough: forwarded verbatim to the registered engine host */
@@ -292,6 +294,8 @@ export const ConversationsUpdateParams = z.object({
   archived: z.boolean().optional(),
   state: ConversationState.optional(),
   engineRef: z.string().min(1).optional(),
+  /** Host-only: the model the engine acked / will apply at session.start. */
+  model: z.string().min(1).optional(),
 });
 export type ConversationsUpdateParams = z.infer<
   typeof ConversationsUpdateParams
@@ -321,6 +325,8 @@ export const MessagesPostParams = z.object({
   authorId: z.string().min(1).default("user"),
   authorKind: AuthorKind.default("user"),
   attachments: AttachmentsField,
+  /** Engine `turn.started.model` — set by the host on employee answers. */
+  model: z.string().min(1).optional(),
 });
 export type MessagesPostParams = z.infer<typeof MessagesPostParams>;
 export const MessageResult = z.object({ message: AppMessage });
@@ -428,6 +434,10 @@ export const SystemStatusResult = z.object({
       version: z.string().optional(),
       rssBytes: z.int().min(0).optional(),
       sessions: z.int().min(0).optional(),
+      /** What the engine advertises — the picker's model set (issue #30). */
+      capabilities: z.array(Capability).optional(),
+      models: z.array(ModelOption).optional(),
+      defaultModel: z.string().optional(),
     })
     .optional(),
   mismatch: StatusMismatch.optional(),
@@ -481,6 +491,15 @@ export const HarnessStatusReport = z.object({
   engineProtocol: z.int().optional(),
   /** Model the harness will launch sessions with. */
   model: z.string().optional(),
+  /**
+   * The engine's `describe` capabilities + `models.list` answer, verbatim
+   * (issue #30): the relay serves them on `welcome.engineHost` so clients
+   * render the picker only when the `models` capability is declared.
+   */
+  capabilities: z.array(Capability).optional(),
+  models: z.array(ModelOption).optional(),
+  /** The engine's default model id (`models.list.default`). */
+  defaultModel: z.string().optional(),
   /** RSS of the supervised engine process, bytes. */
   engineRssBytes: z.int().min(0).optional(),
   /** Sessions the harness believes are live. */
@@ -533,6 +552,23 @@ export const TurnsInterruptParams = z.object({
 });
 export type TurnsInterruptParams = z.infer<typeof TurnsInterruptParams>;
 
+/**
+ * Any client: pin the model for the conversation's next turn (issue #30).
+ * The relay does NOT store it here — it emits `conversation.modelRequested`
+ * so the registered engine host can run `session.setModel`; the host writes
+ * the acked id onto the conversation via `conversations.update`.
+ */
+export const ConversationsSetModelParams = z
+  .object({
+    conversationId: z.string().min(1),
+    /** Model id from the engine's `models.list` answer. */
+    model: z.string().min(1),
+  })
+  .strict();
+export type ConversationsSetModelParams = z.infer<
+  typeof ConversationsSetModelParams
+>;
+
 /* -------------------------------- events ------------------------------- */
 
 export const AppEventMethod = z.enum([
@@ -547,6 +583,7 @@ export const AppEventMethod = z.enum([
   "channel.removed",
   "employee.upserted",
   "employee.removed",
+  "conversation.modelRequested",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 
@@ -614,6 +651,20 @@ export const TurnInterruptRequestedEvent = z.object({
 });
 export type TurnInterruptRequestedEvent = z.infer<
   typeof TurnInterruptRequestedEvent
+>;
+
+/**
+ * A client pinned a model on a conversation (`conversations.setModel`); the
+ * registered engine host answers with `session.setModel` (or stores the pin
+ * for `session.start` when no engine session is bound yet).
+ */
+export const ConversationModelRequestedEvent = z.object({
+  channelId: z.string().min(1),
+  conversationId: z.string().min(1),
+  model: z.string().min(1),
+});
+export type ConversationModelRequestedEvent = z.infer<
+  typeof ConversationModelRequestedEvent
 >;
 
 export { APP_PROTOCOL_VERSION };

@@ -7,6 +7,7 @@ import {
   runningComposer,
 } from "../chat/agent-chat";
 import { Composer } from "../chat/composer";
+import { ModelPicker } from "../chat/model-picker";
 import {
   Conversation,
   ConversationContent,
@@ -22,6 +23,7 @@ import type {
   Channel,
   EmpFn,
   HumanFn,
+  ModelOption,
   Msg,
   Thread,
   Work,
@@ -55,6 +57,8 @@ export function ThreadView({
   onAttachError,
   steer = false,
   onRemovePending,
+  models,
+  onModel,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -70,6 +74,9 @@ export function ThreadView({
   running: boolean;
   onSend: (text: string, files?: AttachedFile[]) => void;
   onStop?: () => void;
+  /* Engine-reported models + pick handler (issue #30); no onModel → no picker (D-#19). */
+  models?: ModelOption[];
+  onModel?: (m: string) => void;
   onRetry?: (empId: string) => void;
   onUnqueue?: (i: number) => void;
   onSendQueued?: (i: number) => void;
@@ -279,6 +286,15 @@ export function ThreadView({
         maxFileSize={maxFileSize}
         onAttachError={onAttachError}
         onStop={onStop}
+        tools={
+          onModel && models?.length ? (
+            <ModelPicker
+              model={thread.model ?? leadEmp?.model ?? models[0].id}
+              models={models}
+              onModel={onModel}
+            />
+          ) : undefined
+        }
         queued={
           <>
             {/* Without steer, mid-turn sends queue here and auto-run at turn end (issue #9). */}

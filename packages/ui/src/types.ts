@@ -78,6 +78,8 @@ export type AttachedFile = {
 export type Reply = {
   from: string;
   time: string;
+  /** Model that produced this turn (engine `turn.started.model`). */
+  model?: string;
   text: string;
   steps?: Step[];
   streaming?: string;
@@ -271,8 +273,9 @@ export type HumanFn = (id: string) => Human | undefined;
 /* Theme: light / dark / follow the OS. State lives in the app; ThemeToggle is presentational. */
 export type Theme = "light" | "dark" | "system";
 
-/* Model id shown in pickers/hire dialog (the list itself is app data, passed in). */
-export type ModelOption = string;
+/* One selectable model, as the engine reports it via `models.list` (issue #30):
+   the picker groups rows by `provider`; `name` is the friendlier label when present. */
+export type ModelOption = { id: string; name?: string; provider?: string };
 
 /* Workbench tab ids (Focus). */
 export type WbTab = "changes" | "files" | "terminal" | "preview" | "pr";

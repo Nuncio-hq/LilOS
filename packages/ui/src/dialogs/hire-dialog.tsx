@@ -133,7 +133,7 @@ export function HireDialog({
                   setD({
                     name: "",
                     role: "",
-                    model: models[0],
+                    model: models[0]?.id ?? "",
                     instructions: "",
                   })
                 }
@@ -229,16 +229,16 @@ export function HireDialog({
                     <div className="grid gap-1.5 sm:grid-cols-2">
                       {models.map((m) => (
                         <button
-                          key={m}
-                          onClick={() => setD({ ...d, model: m })}
+                          key={m.id}
+                          onClick={() => setD({ ...d, model: m.id })}
                           className={cn(
                             "rounded-md border px-2.5 py-1.5 text-left text-xs",
-                            d.model === m
+                            d.model === m.id
                               ? "border-foreground bg-muted font-medium"
                               : "hover:bg-muted/50",
                           )}
                         >
-                          {m}
+                          {m.name ?? m.id}
                         </button>
                       ))}
                     </div>

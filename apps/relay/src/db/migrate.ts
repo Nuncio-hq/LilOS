@@ -84,6 +84,15 @@ const MIGRATIONS: { version: number; statements: string[] }[] = [
     version: 3,
     statements: [`ALTER TABLE messages ADD COLUMN attachments TEXT`],
   },
+  {
+    // issue #30: the pinned model on a conversation, and the answering model
+    // stamped on each employee message.
+    version: 4,
+    statements: [
+      `ALTER TABLE conversations ADD COLUMN model TEXT`,
+      `ALTER TABLE messages ADD COLUMN model TEXT`,
+    ],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

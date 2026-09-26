@@ -241,13 +241,17 @@ export class FakeEngine {
           "List, describe, and create engine profiles; sessions start as one.",
         methods: ["agents.list", "agents.describe", "agents.create"],
       },
-      {
-        id: "models",
-        name: "Model picker",
-        description:
-          "List selectable models and pin a session's model for its next turn.",
-        methods: ["models.list", "session.setModel"],
-      },
+      ...(this.capOn("models")
+        ? [
+            {
+              id: "models",
+              name: "Model picker",
+              description:
+                "List selectable models and pin a session's model for its next turn.",
+              methods: ["models.list", "session.setModel"],
+            },
+          ]
+        : []),
     ];
     return {
       name: "engine-fake",

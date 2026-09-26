@@ -155,7 +155,7 @@ export function FocusView({
   );
   const [follow, setFollow] = useState(true);
   const isDM = !!channel.dm;
-  const model = thread.model ?? lead?.model ?? models?.[0];
+  const model = thread.model ?? lead?.model ?? models?.[0]?.id;
   const live = thread.replies.find((r) => r.live);
   const lastStep = live?.steps?.[live.steps.length - 1];
   const status: ChatStatus = running

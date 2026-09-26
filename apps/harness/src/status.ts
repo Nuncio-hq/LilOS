@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import type { HarnessStatusReport } from "@lilos/contracts/app";
-import type { DescribeResult } from "@lilos/contracts/engine";
+import type { DescribeResult, ModelsListResult } from "@lilos/contracts/engine";
 import type { EngineConnection } from "./engine/client";
 import type { EngineHostState } from "./engine/supervisor";
 import type { Logger } from "./log";
@@ -62,6 +62,8 @@ export function readRssBytesPs(pid: number): number | undefined {
 export class StatusReporter {
   private readonly opts;
   private lastProbe?: { at: number; result: DescribeResult };
+  /** The engine's `models.list` answer — only probed when `models` is declared. */
+  private lastModels?: ModelsListResult;
 
   constructor(options: StatusReporterOptions) {
     this.opts = {
@@ -86,6 +88,20 @@ export class StatusReporter {
           this.opts.probeTimeoutMs,
         )) as DescribeResult;
         this.lastProbe = { at: this.opts.now(), result };
+        // The picker reads models off this report (issue #30): probe
+        // models.list only when the engine declares the capability.
+        if (result.capabilities.some((c) => c.id === "models")) {
+          try {
+            this.lastModels = await withTimeout(
+              conn.request<ModelsListResult>("models.list", {}),
+              this.opts.probeTimeoutMs,
+            );
+          } catch {
+            this.lastModels = undefined;
+          }
+        } else {
+          this.lastModels = undefined;
+        }
       } catch {
         // A wedged probe still lets the heartbeat below carry state.
       }
@@ -102,6 +118,9 @@ export class StatusReporter {
       engineName: this.lastProbe?.result.name,
       engineVersion: this.lastProbe?.result.version,
       engineProtocol: this.lastProbe?.result.protocol.version,
+      capabilities: this.lastProbe?.result.capabilities,
+      models: this.lastModels?.models,
+      defaultModel: this.lastModels?.default,
       engineRssBytes,
       sessions: this.opts.liveSessions?.(),
       probedAt: this.lastProbe?.at,
