@@ -17,9 +17,10 @@
     "typescript": "^7.0.2",
     "vitest": "^3.2.4"
   },
+  "trustedDependencies": ["electron"],
   "scripts": {
     "verify": "biome check . && bun run schema:check && bun run typecheck && bun run test:unit && bun run test:nonts && bun run build:prototype && bun run test:e2e",
-    "typecheck": "tsc -b prototype packages/contracts packages/ui packages/engine-fake packages/engine-conformance packages/client-runtime packages/engine-hermes packages/host packages/surfaces apps/relay apps/harness apps/lilos apps/desktop packages/background",
+    "typecheck": "tsc -b prototype packages/contracts packages/ui packages/engine-fake packages/engine-conformance packages/client-runtime packages/engine-hermes packages/host packages/surfaces apps/relay apps/harness apps/lilos apps/web apps/desktop packages/background",
     "schema:gen": "bun packages/contracts/scripts/gen-schemas.ts",
     "schema:check": "bun packages/contracts/scripts/gen-schemas.ts --check",
     "test:nonts": "bun packages/engine-conformance/scripts/test-nonts.ts",

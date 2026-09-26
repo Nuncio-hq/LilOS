@@ -1,0 +1,409 @@
+import type { ChannelMessagesState, SessionModel } from "@lilos/client-runtime";
+import type { AppMessage, Ask, Conversation } from "@lilos/contracts/app";
+import type { ApprovalOutcome } from "@lilos/contracts/engine";
+import { EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
+import type { Channel, Msg, Reply, Thread } from "@lilos/ui/types";
+import { useNavigate, useParams } from "@tanstack/react-router";
+import { atom } from "nanostores";
+import { useEffect, useMemo, useState } from "react";
+import {
+  archiveConversation,
+  clearPending,
+  hasCapability,
+  interruptSession,
+  pendingStart,
+  renameConversation,
+  respondToRequest,
+  sendDm,
+} from "../lib/actions";
+import { useAtom } from "../lib/hooks";
+import {
+  conversationReplies,
+  mergeTurns,
+  toFeed,
+  toUiEmployee,
+} from "../lib/mapping";
+import {
+  asks as asksAtom,
+  navOpen,
+  relay,
+  sessionModels,
+} from "../lib/runtime";
+
+const EMPTY_MESSAGES = atom<ChannelMessagesState>({
+  channelId: "",
+  synced: true,
+  lastSeq: 0,
+  messages: [],
+});
+
+const OUTCOME_LABEL: Record<ApprovalOutcome, string> = {
+  once: "Allowed once by Oscar",
+  always: "Always allowed here",
+  deny: "Denied by Oscar",
+  cancel: "Cancelled",
+  answer: "Answered",
+};
+
+function outcomeFromLabel(v: string): ApprovalOutcome {
+  if (v.startsWith("Denied")) return "deny";
+  if (v.startsWith("Always")) return "always";
+  if (v.startsWith("Cancelled")) return "cancel";
+  if (v.startsWith("Answered")) return "answer";
+  return "once";
+}
+
+const human = (id: string) =>
+  id === "user" ? { name: "You", color: "#6b7280" } : undefined;
+
+/**
+ * `/dm/$employeeId(/$conversationId)` — the DM home: session list + composer
+ * (EmployeeHome) and, when a session is open, the thread panel (ThreadView).
+ * Data: relay messages + conversations; live turn overlay from the engine
+ * feed keyed by conversation.engineRef.
+ */
+export function DmPage() {
+  const { employeeId, conversationId } = useParams({ strict: false }) as {
+    employeeId: string;
+    conversationId?: string;
+  };
+  const navigate = useNavigate();
+
+  const employees = useAtom(relay.employees);
+  const channels = useAtom(relay.channels);
+  const conversations = useAtom(relay.conversations);
+  const models = useAtom(sessionModels);
+  const allAsks = useAtom(asksAtom);
+  const pending = useAtom(pendingStart);
+  const [profileOpen, setProfileOpen] = useState(false);
+
+  const employee = employees.find((e) => e.id === employeeId);
+  const channel = channels.find(
+    (c) => c.kind === "dm" && c.employeeId === employeeId,
+  );
+  const msgState = useAtom(
+    channel ? relay.channelMessages(channel.id) : EMPTY_MESSAGES,
+  );
+  const messages: AppMessage[] = msgState.messages;
+
+  const uiEmp = employee ? toUiEmployee(employee) : undefined;
+  const empFn = (id: string) => {
+    const e = employees.find((x) => x.id === id);
+    return e ? toUiEmployee(e) : undefined;
+  };
+
+  /* DM conversations for this employee, oldest -> newest. */
+  const convs = useMemo(
+    () =>
+      conversations
+        .filter((c) => channel && c.channelId === channel.id)
+        .sort((a, b) => a.createdAt - b.createdAt),
+    [conversations, channel],
+  );
+
+  const repliesOf = (conv: Conversation): Reply[] =>
+    conversationReplies(
+      messages.filter((m) => m.id !== conv.rootMessageId),
+      conv.id,
+    );
+
+  const modelFor = (conv: Conversation): SessionModel | undefined =>
+    conv.engineRef ? models[conv.engineRef] : undefined;
+
+  const convAsks = (conv: Conversation): Ask[] =>
+    allAsks.filter((a) => a.conversationId === conv.id);
+
+  const feed: Msg[] = convs.flatMap((conv) => {
+    const root = messages.find((m) => m.id === conv.rootMessageId);
+    if (!root) return [];
+    const model = modelFor(conv);
+    return [
+      toFeed(
+        root,
+        conv,
+        mergeTurns(repliesOf(conv), model, employeeId, convAsks(conv)),
+      ),
+    ];
+  });
+
+  const openConv = convs.find((c) => c.id === conversationId);
+
+  // "submitted" marker clears once the engine turn is actually running.
+  const openModel = openConv?.engineRef
+    ? models[openConv.engineRef]
+    : undefined;
+  useEffect(() => {
+    if (openConv && openModel?.live) clearPending(openConv.id);
+  }, [openConv, openModel]);
+
+  if (!employee || !uiEmp) {
+    return (
+      <div className="grid min-w-0 flex-1 place-items-center text-muted-foreground text-sm">
+        Loading…
+      </div>
+    );
+  }
+
+  const uiChannel: Channel = {
+    id: channel?.id ?? "",
+    name: uiEmp.name,
+    dm: true,
+    employees: [employeeId],
+  };
+
+  const openThread = (id: string) => {
+    const conv = convs.find((c) => c.rootMessageId === id);
+    if (conv)
+      void navigate({
+        to: "/dm/$employeeId/$conversationId",
+        params: { employeeId, conversationId: conv.id },
+      });
+  };
+
+  const send = (text: string) => {
+    void sendDm(employeeId, text).then((conv) =>
+      navigate({
+        to: "/dm/$employeeId/$conversationId",
+        params: { employeeId, conversationId: conv.id },
+      }),
+    );
+  };
+
+  /* thread panel ---------------------------------------------------------- */
+
+  let threadEl = null;
+  if (openConv) {
+    const conv = openConv;
+    const model = modelFor(conv);
+    const root = messages.find((m) => m.id === conv.rootMessageId);
+    const modelLive = model?.live;
+    const asksHere = convAsks(conv);
+
+    const resolved: Record<string, string> = {};
+    for (const a of asksHere) {
+      if (a.state === "resolved" && a.outcome)
+        resolved[a.id] = OUTCOME_LABEL[a.outcome];
+    }
+    const engineRef = conv.engineRef;
+    const replies = mergeTurns(repliesOf(conv), model, employeeId, asksHere);
+    // An open question ask gets a real answer card (asks.respond).
+    const openQuestion = asksHere.find(
+      (a) => a.state === "open" && a.request.kind === "question",
+    );
+
+    const thread: Thread = {
+      session: engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
+      title: conv.title ?? undefined,
+      archived: conv.archived,
+      replies,
+      usage: model?.turns.at(-1)?.usage as Thread["usage"],
+    };
+    const running = !!modelLive || pending[conv.id] === true;
+    const steer = hasCapability("steer");
+    const rootMsg: Msg = root
+      ? {
+          kind: "msg",
+          id: root.id,
+          from: root.authorId,
+          time: new Date(root.createdAt).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          text: root.text,
+          thread,
+        }
+      : { kind: "msg", id: conv.id, from: "user", time: "", text: "", thread };
+
+    threadEl = (
+      <div className="flex min-h-0 w-[420px] shrink-0 flex-col border-l xl:w-[460px]">
+        <ThreadView
+          root={rootMsg}
+          thread={thread}
+          channel={uiChannel}
+          emp={empFn}
+          human={human}
+          resolved={resolved}
+          setResolved={(r) => {
+            // reply cards report {askId: label}; map label -> outcome
+            const diff = Object.entries(r).find(([k, v]) => resolved[k] !== v);
+            if (diff) {
+              void respondToRequest(diff[0], outcomeFromLabel(diff[1]));
+            }
+          }}
+          running={running}
+          steer={steer}
+          onSend={(text) => void sendDm(employeeId, text, conv.id)}
+          onStop={running ? () => void interruptSession(conv.id) : undefined}
+          onFocus={undefined}
+          work={null}
+        />
+        {openQuestion && (
+          <QuestionCard
+            ask={openQuestion}
+            onAnswer={(answer) =>
+              void respondToRequest(openQuestion.id, "answer", answer)
+            }
+            onCancel={() => void respondToRequest(openQuestion.id, "cancel")}
+          />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1">
+      <EmployeeHome
+        e={uiEmp}
+        feed={feed}
+        threadId={openConv?.rootMessageId ?? null}
+        emp={empFn}
+        human={human}
+        onNav={() => navOpen.set(true)}
+        onProfile={() => setProfileOpen((v) => !v)}
+        onOpen={openThread}
+        onSend={send}
+        panelOpen={!!openConv}
+        onPanel={() => {
+          const last = convs.at(-1);
+          if (last)
+            void navigate({
+              to: "/dm/$employeeId/$conversationId",
+              params: { employeeId, conversationId: last.id },
+            });
+        }}
+        folders={[]}
+        pick={NO_WS}
+        setPick={() => {}}
+        loading={!channel}
+        onRename={(id, title) => {
+          const conv = convs.find((c) => c.rootMessageId === id);
+          if (conv) void renameConversation(conv.id, title);
+        }}
+        onArchive={(id, archived) => {
+          const conv = convs.find((c) => c.rootMessageId === id);
+          if (conv) void archiveConversation(conv.id, archived);
+        }}
+      />
+      {threadEl}
+      {profileOpen && (
+        <EmployeeProfileCard
+          name={uiEmp.name}
+          profile={uiEmp.profile}
+          model={uiEmp.model}
+          instructions={uiEmp.instructions}
+          onClose={() => setProfileOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function QuestionCard({
+  ask,
+  onAnswer,
+  onCancel,
+}: {
+  ask: Ask;
+  onAnswer: (answer: string) => void;
+  onCancel: () => void;
+}) {
+  const [answer, setAnswer] = useState("");
+  const q = ask.request;
+  if (q.kind !== "question") return null;
+  const options = q.options ?? [];
+  return (
+    <div
+      data-question-card
+      className="border-t bg-amber-50/60 p-3 text-xs dark:bg-amber-950/20"
+    >
+      <div className="font-medium text-foreground">{q.question}</div>
+      {options.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {options.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              title={o.description}
+              className="rounded-md border px-2 py-1 hover:bg-muted"
+              onClick={() => onAnswer(o.id)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {(options.length === 0 || q.freeText) && (
+        <input
+          value={answer}
+          onChange={(e) => setAnswer(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && answer.trim()) onAnswer(answer.trim());
+          }}
+          placeholder="Type an answer…"
+          className="mt-2 w-full rounded-md border bg-background px-2 py-1"
+        />
+      )}
+      <div className="mt-2 flex gap-1.5">
+        {(options.length === 0 || q.freeText) && (
+          <button
+            type="button"
+            className="rounded-md bg-foreground px-2 py-1 text-background"
+            onClick={() => answer.trim() && onAnswer(answer.trim())}
+          >
+            Answer
+          </button>
+        )}
+        <button
+          type="button"
+          className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted"
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EmployeeProfileCard({
+  name,
+  profile,
+  model,
+  instructions,
+  onClose,
+}: {
+  name: string;
+  profile: string;
+  model: string;
+  instructions: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-background/60 p-6">
+      <div className="w-full max-w-sm rounded-xl border bg-background p-5 shadow-2xl">
+        <div className="font-semibold">{name}</div>
+        <dl className="mt-3 space-y-1.5 text-xs">
+          <div className="flex gap-2">
+            <dt className="w-20 text-muted-foreground">Profile</dt>
+            <dd className="font-mono">{profile}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="w-20 text-muted-foreground">Model</dt>
+            <dd className="font-mono">{model || "engine default"}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="w-20 text-muted-foreground">Soul</dt>
+            <dd className="min-w-0 flex-1">{instructions || "—"}</dd>
+          </div>
+        </dl>
+        <button
+          type="button"
+          className="mt-4 w-full rounded-md border px-2 py-1.5 text-sm hover:bg-muted"
+          onClick={onClose}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}

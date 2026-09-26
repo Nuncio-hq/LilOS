@@ -19,6 +19,7 @@ import {
 import type {
   AgentDescriptor,
   ContentBlock,
+  DescribeResult,
   EngineEvent,
   EngineRequest,
   EventsSinceResult,
@@ -80,6 +81,8 @@ export interface HarnessOptions {
   onNeedEngine?: () => void;
   /** Harness build version reported in `harness.register` (#33 handshake). */
   version?: string;
+  /** Capability ids hidden from clients and skipped by the driver (dev/e2e). */
+  hideCaps?: string[];
 }
 
 const INVALID_STATE = -32003;
@@ -106,6 +109,12 @@ export class Harness {
   private readonly channelSeen = new Map<string, number>();
   private readonly channelWatch = new Map<string, () => void>(); // channelId -> store unsub
   private readonly unsubs: Array<() => void> = [];
+  /** Latest `describe` result (hideCaps already filtered out). */
+  private describeResult?: DescribeResult;
+  /** Feed subscribers fan out every engine event to attached clients. */
+  private readonly feedListeners = new Set<(event: EngineEvent) => void>();
+  /** First-run auto-hire ran (or employees already existed). */
+  private hired = false;
 
   /** Live engine sessions the harness owns (status reports this — #33). */
   get liveSessionCount(): number {
@@ -169,6 +178,9 @@ export class Harness {
     this.engine?.close();
     this.engine = conn;
     this.unsubs.push(conn.onEvent((e) => this.onEngineEvent(e)));
+    void this.describeAndHire(conn).catch((error) =>
+      this.opts.log.warn("describe/hire failed", { error: String(error) }),
+    );
     // Resync every bound session: replay events past the watermark, re-open
     // asks, adopt a turn already running (harness restart mid-turn).
     // Messages held while the engine was down become turns now.
@@ -200,6 +212,90 @@ export class Harness {
       .catch((error) =>
         this.opts.log.warn("harness.report failed", { error: String(error) }),
       );
+  }
+
+  /* ---------------- client session feed (read-only) ---------------------- */
+
+  /** Engine identity + capabilities as clients see them (hideCaps applied). */
+  engineDescribe(): DescribeResult | undefined {
+    return this.describeResult;
+  }
+
+  /** `events.since` passthrough — replay a session's event log for a client. */
+  async eventsSince(
+    sessionId: string,
+    after: number,
+  ): Promise<EventsSinceResult> {
+    const conn = this.engine;
+    if (!conn) throw new Error("engine not connected");
+    return conn.request<EventsSinceResult>("events.since", {
+      sessionId,
+      after,
+    });
+  }
+
+  /** Subscribe to every engine event the harness sees (feed fan-out). */
+  subscribeEngineEvents(fn: (event: EngineEvent) => void): () => void {
+    this.feedListeners.add(fn);
+    return () => this.feedListeners.delete(fn);
+  }
+
+  private hasCapability(id: string): boolean {
+    return this.describeResult?.capabilities.some((c) => c.id === id) ?? false;
+  }
+
+  /**
+   * On (re)connect: cache `describe` (minus hidden capabilities) and hire the
+   * `default` engine profile as the first employee when the roster is empty.
+   */
+  private async describeAndHire(conn: EngineConnection): Promise<void> {
+    try {
+      const d = await conn.request<DescribeResult>("describe", {});
+      const hide = new Set(this.opts.hideCaps ?? []);
+      this.describeResult = {
+        ...d,
+        capabilities: d.capabilities.filter((c) => !hide.has(c.id)),
+      };
+    } catch (error) {
+      this.describeResult = undefined;
+      this.opts.log.warn("engine describe failed", {
+        error: String(error),
+      });
+    }
+    if (this.hired) return;
+    this.hired = true;
+    try {
+      // connect() is idempotent: no-op when already up, waits when the
+      // engine attached before harness.start() finished the handshake.
+      await this.opts.relay.connect();
+      const { employees } = await this.opts.relay.request<{
+        employees: Employee[];
+      }>("employees.list", {});
+      if (employees.length > 0) return;
+      const { agents } = await conn.request<{ agents: AgentDescriptor[] }>(
+        "agents.list",
+        {},
+      );
+      const agent = agents.find((a) => a.id === "default") ?? agents[0];
+      if (!agent) return;
+      const created = await this.opts.relay.request<{ employee: Employee }>(
+        "employees.create",
+        {
+          name: agent.name,
+          role: agent.description ?? "",
+          status: "online",
+          profile: agent.id,
+          ...(agent.model ? { model: agent.model } : {}),
+          ...(agent.soul ? { instructions: agent.soul } : {}),
+        },
+      );
+      this.opts.log.info("hired first employee", {
+        employeeId: created.employee.id,
+        agent: agent.id,
+      });
+    } catch (error) {
+      this.opts.log.warn("first-run hire failed", { error: String(error) });
+    }
   }
 
   private async resyncBinding(binding: SessionBinding): Promise<void> {
@@ -380,6 +476,26 @@ export class Harness {
 
   private enqueueOrPrompt(binding: SessionBinding, message: AppMessage) {
     if (binding.runningTurnId) {
+      // Capability `steer` (#9): a mid-turn user message steers the running
+      // turn; without it the message queues as the next prompt.
+      const conn = this.engine;
+      if (conn && this.hasCapability("steer")) {
+        void conn
+          .request<{ status: "steered" | "not_running" }>("session.steer", {
+            sessionId: binding.sessionId,
+            text: message.text,
+          })
+          .then((res) => {
+            if (res.status !== "steered") binding.queue.push(message);
+          })
+          .catch((error) => {
+            this.opts.log.warn("steer failed; queued instead", {
+              error: String(error),
+            });
+            binding.queue.push(message);
+          });
+        return;
+      }
       binding.queue.push(message);
       this.opts.log.debug("queued behind running turn", {
         conversationId: binding.conversationId,
@@ -521,6 +637,13 @@ export class Harness {
   /* ------------------------- engine -> relay ---------------------------- */
 
   private onEngineEvent(event: EngineEvent) {
+    for (const fn of this.feedListeners) {
+      try {
+        fn(event);
+      } catch {
+        // a feed subscriber must never break event dispatch
+      }
+    }
     const convId = this.conversationBySession.get(event.sessionId);
     const binding = convId ? this.bindings.get(convId) : undefined;
     if (binding && event.seq > binding.lastSeq) binding.lastSeq = event.seq;
@@ -939,18 +1062,19 @@ export class Harness {
     // the open races it away — so query the relay directly instead of only
     // trusting the atom. (AC-2/AC-4: first DM on a fresh channel, or events
     // missed while asleep, must still bind.)
+||||||| parent of d581ebe (harness: read-only client feed ws, steer capability gating, first-run auto-hire (#27))
+    // A conversation can land on the relay a tick after its first message.
     try {
       const listed = await this.opts.relay.request<{
         conversations: Conversation[];
       }>("conversations.list", {});
       const hit = listed.conversations.find((c) => c.id === conversationId);
       if (hit) return hit;
+||||||| parent of d581ebe (harness: read-only client feed ws, steer capability gating, first-run auto-hire (#27))
+      await this.opts.relay.request("conversations.list", {});
     } catch {
-      // list refresh failure falls through to atom data
+      return undefined;
     }
-    return this.opts.relay.conversations
-      .get()
-      .find((c) => c.id === conversationId);
   }
 
   private async updateConversation(

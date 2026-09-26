@@ -71,7 +71,8 @@ export function Sidebar({
   onGoDM: (id: string) => void;
   onOpenTickets: () => void;
   onAddFolder: () => void;
-  onHire: () => void;
+  /* Hiring lands in its own slice — omit the handler, hide the affordance. */
+  onHire?: () => void;
   /* Per-employee counts: running turns / turns waiting on Oscar's approval. */
   badges?: Record<string, EmpBadge>;
   /* The status surface — a control renders only when its handler is passed. */
@@ -98,13 +99,15 @@ export function Sidebar({
           OC
         </div>
         <div className="font-semibold">Oscar Co</div>
-        <Button variant="ghost" size="icon-sm" className="ml-auto">
-          <BellIcon />
-        </Button>
+        {!realApp && (
+          <Button variant="ghost" size="icon-sm" className="ml-auto">
+            <BellIcon />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"
-          className="lg:hidden"
+          className={cn("lg:hidden", realApp && "ml-auto")}
           onClick={onCloseNav}
         >
           <XIcon />
@@ -226,12 +229,14 @@ export function Sidebar({
               </button>
             );
           })}
-          <button
-            onClick={onHire}
-            className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
-          >
-            <UserPlusIcon className="size-4" /> Hire employee
-          </button>
+          {onHire && (
+            <button
+              onClick={onHire}
+              className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+            >
+              <UserPlusIcon className="size-4" /> Hire employee
+            </button>
+          )}
         </div>
       </ScrollArea>
       {status && onOpenStatus && (

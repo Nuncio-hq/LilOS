@@ -34,7 +34,7 @@ export function WorkspacePicker({
   folders: Folder[];
   pick: WsPick;
   setPick: (p: WsPick) => void;
-  onAddFolder: () => void;
+  onAddFolder?: () => void;
 }) {
   const f = folders.find((x) => x.id === pick.folder);
   const chip =
@@ -93,10 +93,12 @@ export function WorkspacePicker({
             No folder · just chat
             {!pick.folder && <CheckIcon className="ml-auto" />}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onAddFolder}>
-            <FolderPlusIcon />
-            Add a folder…
-          </DropdownMenuItem>
+          {onAddFolder && (
+            <DropdownMenuItem onClick={onAddFolder}>
+              <FolderPlusIcon />
+              Add a folder…
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 

@@ -12,6 +12,7 @@ import packageJson from "../package.json";
 import { launcherFor, resolveHarnessConfig } from "./config";
 import { connectEngineWs } from "./engine/client";
 import { EngineSupervisor } from "./engine/supervisor";
+import { createFeedHandler } from "./feed";
 import { Harness } from "./harness";
 import { createFileLogger } from "./log";
 import { createSleepGuard } from "./sleep";
@@ -33,6 +34,7 @@ const harness = new Harness({
   sleep: createSleepGuard(process.platform, log),
   workdir: config.workdir,
   log,
+  hideCaps: config.hideCaps,
   onNeedEngine: () => supervisor.ensureRunning(),
   version: packageJson.version,
 });
@@ -79,10 +81,42 @@ const wakeWatch = watchWake({
   },
 });
 
+// Client session feed: read-only engine-protocol surface for apps (the app
+// never talks to the engine itself — describe/events.since + live events).
+const feed = createFeedHandler(harness);
+type FeedData = { send: (frame: string) => void };
+const feedServer = Bun.serve<FeedData>({
+  hostname: "127.0.0.1",
+  port: config.feedPort,
+  fetch(req, server) {
+    if (
+      new URL(req.url).pathname === "/ws" &&
+      server.upgrade(req, { data: { send: () => {} } })
+    ) {
+      return undefined;
+    }
+    return new Response("lilos harness feed\n", { status: 200 });
+  },
+  websocket: {
+    open(ws) {
+      ws.data.send = (frame) => ws.send(frame);
+      feed.attach(ws.data.send);
+    },
+    close(ws) {
+      feed.detach(ws.data.send);
+    },
+    async message(ws, message) {
+      await feed.handleFrame(String(message), ws.data.send);
+    },
+  },
+});
+
 const shutdown = async () => {
   log.info("shutting down");
   stopStatusReporter();
   wakeWatch.stop();
+  feedServer.stop();
+  feed.close();
   await supervisor.stop();
   await harness.stop();
   process.exit(0);
@@ -92,5 +126,6 @@ process.on("SIGTERM", shutdown);
 log.info("harness up", {
   relay: config.relayUrl,
   engine: config.engine.kind,
+  feed: `ws://127.0.0.1:${config.feedPort}/ws`,
   workdir: config.workdir,
 });

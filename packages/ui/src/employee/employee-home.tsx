@@ -187,7 +187,8 @@ export function EmployeeHome({
   folders: Folder[];
   pick: WsPick;
   setPick: (p: WsPick) => void;
-  onAddFolder: () => void;
+  /* Folder picking lands with the workspace slice (#11) — omit to hide it. */
+  onAddFolder?: () => void;
   loading?: boolean;
   onRename?: (id: string, title: string) => void;
   onArchive?: (id: string, archived: boolean) => void;
@@ -450,12 +451,14 @@ export function EmployeeHome({
         maxFileSize={maxFileSize}
         onAttachError={onAttachError}
         tools={
-          <WorkspacePicker
-            folders={folders}
-            pick={pick}
-            setPick={setPick}
-            onAddFolder={onAddFolder}
-          />
+          folders.length || onAddFolder ? (
+            <WorkspacePicker
+              folders={folders}
+              pick={pick}
+              setPick={setPick}
+              onAddFolder={onAddFolder}
+            />
+          ) : undefined
         }
       />
     </main>

@@ -15,6 +15,14 @@ export interface FakeAgent {
 
 export const SEED_AGENTS: FakeAgent[] = [
   {
+    id: "default",
+    name: "Default",
+    description: "The stock employee profile: general builder on fake-large.",
+    model: "fake-large",
+    skillCount: 9,
+    soul: "You are the default employee. Read first, show your work, keep diffs small.",
+  },
+  {
     id: "builder",
     name: "Builder",
     description: "General builder: edits, tests, commits on its own branch.",
