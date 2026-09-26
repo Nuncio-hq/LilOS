@@ -51,6 +51,7 @@ describe("AC-1 app protocol contracts", () => {
         protocolVersion: 1,
         relayVersion: "0.0.0",
         instanceId: "inst_1",
+        engineHost: { connected: false },
       }),
     ).toMatchObject({ instanceId: "inst_1" });
   });

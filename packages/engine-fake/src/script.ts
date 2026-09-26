@@ -49,6 +49,104 @@ export function scriptFor(
     .replace(/[?.!]+$/, "");
   const tail = `I'm in \`${cwd}\` on ⎇ \`${branch}\`. Tell me what to change and I'll edit there.`;
 
+  // `surfaces:` — the fake's way to really drive the app's surfaces for the
+  // harness demos (#36): `surfaces: open <url>; run <cmd>; read; previews;
+  // say <text>` becomes mcp__lilos__* steps that the engine executes against
+  // the session's attached MCP server for real.
+  const surf = /^surfaces:\s*(.*)$/is.exec(q);
+  if (surf) {
+    const steps: FakeStep[] = [];
+    for (const raw of surf[1].split(";")) {
+      const op = raw.trim();
+      const m = /^(\w[\w-]*)\s*(.*)$/s.exec(op);
+      if (!m) continue;
+      const [, verb, rest] = m;
+      const arg = rest.trim();
+      const tool = (name: string) => `mcp__lilos__${name}`;
+      switch (verb) {
+        case "open":
+          steps.push({
+            tool: tool("browser_open"),
+            input: { url: arg },
+            output: "",
+          });
+          break;
+        case "click":
+          steps.push({
+            tool: tool("browser_click"),
+            input: { selector: arg },
+            output: "",
+          });
+          break;
+        case "type": {
+          const tm = /^(\S+)\s+(.*)$/s.exec(arg);
+          steps.push({
+            tool: tool("browser_type"),
+            input: tm ? { selector: tm[1], text: tm[2] } : { text: arg },
+            output: "",
+          });
+          break;
+        }
+        case "read":
+          steps.push({ tool: tool("browser_read"), input: {}, output: "" });
+          break;
+        case "scroll":
+          steps.push({
+            tool: tool("browser_scroll"),
+            input: { dy: Number(arg) || 300 },
+            output: "",
+          });
+          break;
+        case "eval":
+          steps.push({
+            tool: tool("browser_eval"),
+            input: { expression: arg },
+            output: "",
+          });
+          break;
+        case "run":
+          steps.push({
+            tool: tool("terminal_run"),
+            input: { command: arg },
+            output: "",
+          });
+          break;
+        case "write":
+          steps.push({
+            tool: tool("terminal_write"),
+            input: { data: arg },
+            output: "",
+          });
+          break;
+        case "term":
+          steps.push({ tool: tool("terminal_read"), input: {}, output: "" });
+          break;
+        case "previews":
+          steps.push({ tool: tool("previews_list"), input: {}, output: "" });
+          break;
+        case "say":
+          steps.push({
+            tool: tool("app_post_message"),
+            input: { text: arg },
+            output: "",
+          });
+          break;
+        case "conv":
+          steps.push({
+            tool: tool("app_read_conversation"),
+            input: {},
+            output: "",
+          });
+          break;
+      }
+    }
+    return {
+      reasoning: `Driving the session's surfaces via the LilOS MCP tools: ${surf[1].trim()}.`,
+      steps,
+      text: `Ran the surface ops. Outputs are on each tool call.`,
+    };
+  }
+
   if (/\b(open|create|raise)\b.*\b(pr|pull request)\b/i.test(q)) {
     const n = 12;
     const title = "LIL-3: scaffold pnpm monorepo";

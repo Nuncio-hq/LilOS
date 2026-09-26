@@ -19,6 +19,7 @@ describe("unified JSON Schema generator", () => {
       "engine-protocol.schema.json",
       "app-protocol.schema.json",
       "host-protocol.schema.json",
+      "harness-protocol.schema.json",
     ]);
     for (const doc of GENERATED_DOCS) {
       expect(outputPathFor(doc)).toBe(join(GENERATED_DIR, doc.file));

@@ -54,7 +54,9 @@ import {
 } from "@lilos/ui"
 import { cn } from "@lilos/ui/lib/utils"
 import { hostAccessors, hostDir, hostDiscover, hostPick } from "./host"
+import { useFakeSurfaces } from "./fake-surfaces"
 import { useLiveStatus } from "./live-status"
+import { liveAttachFromLocation, useLiveSurfaces } from "./live-surfaces"
 
 /* Model: Company → Projects → Channels.
    Channel = shared timeline. A top-level message can open a THREAD.
@@ -687,6 +689,11 @@ export default function App() {
   // inside @lilos/ui (ConversationKeepBottom, in ThreadView/FocusView) via use-stick-to-bottom's own
   // scrollToBottom — the old interval pin here is gone (issue #15).
   const threadRunning = (m?: Extract<Msg, { kind: "msg" }>) => !!m?.thread?.replies.some((r) => r.live)
+  // Live harness surfaces shown in Workbench Terminal/Preview while a turn runs (issue #36, prototype fake).
+  const fakeSurfaces = useFakeSurfaces(threadRunning(openThread))
+  // Real harness attach when ?surfaces=…&session=…&token=… is present (AC-4):
+  // the Workbench Terminal/Preview tabs then show the live session, not a mock.
+  const realSurfaces = useLiveSurfaces(useMemo(liveAttachFromLocation, []))
 
   const mentionIn = (text: string) => employees.find((e) => channel.employees.includes(e.id) && new RegExp(`@${e.name}\\b`, "i").test(text))
   const bold = (text: string) => employees.reduce((t, e) => t.replace(new RegExp(`(?<!\\*)@${e.name}\\b`, "gi"), `**@${e.name}**`), text)
@@ -903,6 +910,7 @@ export default function App() {
           running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
           onRewind={(i) => rewind(openThread, i)} onModel={(m) => setModel(openThread, m)} say={say}
+          surfaces={realSurfaces ?? fakeSurfaces}
           models={MODELS} repoFiles={REPO_FILES} host={hostAccessors}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}

@@ -21,6 +21,7 @@ import {
   ENGINE_PROTOCOL,
   EngineEvent,
 } from "../src/engine/index.js";
+import { harnessProtocol } from "../src/harness/registry.js";
 import { HOST_API, HOST_METHODS } from "../src/host/index.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -120,6 +121,10 @@ export const GENERATED_DOCS: GeneratedDoc[] = [
     render: () => renderSchemaDoc(appProtocol),
   },
   { file: "host-protocol.schema.json", render: renderHostDoc },
+  {
+    file: "harness-protocol.schema.json",
+    render: () => renderSchemaDoc(harnessProtocol),
+  },
 ];
 
 export function outputPathFor(doc: GeneratedDoc): string {

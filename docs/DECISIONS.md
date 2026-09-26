@@ -67,6 +67,11 @@ PR does not exist.
   token, via `packages/engine-hermes`), crash restart with bounded backoff,
   conversation↔session binding, final-answer posts, and ask relaying.
   Not: the app or relay calling an engine directly. — #26 · PR #48
+- **D-#36 Agents use app surfaces through the LilOS MCP server + `lilos` CLI
+  owned by the harness** (attached per session via `session.start
+  { mcpServers }`); the Workbench Terminal/Preview tabs watch the same
+  surfaces live and take input. Not: engine-specific UI toolsets (Hermes
+  `desktop_ui` / `drive_preview` / `read_terminal`). — #36 · PR #54
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the
