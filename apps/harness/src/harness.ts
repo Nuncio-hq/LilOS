@@ -8,6 +8,7 @@ import type {
   PendingTurn,
 } from "@lilos/contracts/app";
 import {
+  APP_PROTOCOL_VERSION,
   AskResolvedEvent,
   ChannelCreatedEvent,
   TurnInterruptRequestedEvent,
@@ -73,6 +74,8 @@ export interface HarnessOptions {
   };
   /** Wake hook: a new user message while the engine is down asks the supervisor to self-heal. */
   onNeedEngine?: () => void;
+  /** Harness build version reported in `harness.register` (#33 handshake). */
+  version?: string;
 }
 
 const INVALID_STATE = -32003;
@@ -97,6 +100,11 @@ export class Harness {
   private readonly channelSeen = new Map<string, number>();
   private readonly unsubs: Array<() => void> = [];
 
+  /** Live engine sessions the harness owns (status reports this — #33). */
+  get liveSessionCount(): number {
+    return this.conversationBySession.size;
+  }
+
   constructor(private readonly opts: HarnessOptions) {}
 
   /* ------------------------------- startup ------------------------------ */
@@ -115,7 +123,10 @@ export class Harness {
     const reg = await this.opts.relay.request<{
       hostId: string;
       pending: PendingTurn[];
-    }>("harness.register", {});
+    }>("harness.register", {
+      protocolVersion: APP_PROTOCOL_VERSION,
+      version: this.opts.version ?? "0",
+    });
     this.hostId = reg.hostId;
     this.opts.log.info("registered as engine host", {
       hostId: reg.hostId,

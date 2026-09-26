@@ -93,7 +93,9 @@ describe("relay harness surface (#26)", () => {
     const host = await helloed(relay);
     expect(host.welcome.engineHost.connected).toBe(false);
 
-    await host.connection.receive(req("harness.register", {}));
+    await host.connection.receive(
+      req("harness.register", { protocolVersion: 1, version: "0.0.0-test" }),
+    );
     const registered = resultOf(host.frames, lastId()).result as {
       hostId: string;
       pending: unknown[];
@@ -103,7 +105,9 @@ describe("relay harness surface (#26)", () => {
 
     const late = await helloed(relay);
     expect(late.welcome.engineHost.connected).toBe(true);
-    await late.connection.receive(req("harness.register", {}));
+    await late.connection.receive(
+      req("harness.register", { protocolVersion: 1, version: "0.0.0-test" }),
+    );
     expect(errorData(late.frames, lastId())).toBe("conflict");
   });
 
@@ -115,7 +119,9 @@ describe("relay harness surface (#26)", () => {
       host.frames,
     );
     host.frames.length = 0;
-    await host.connection.receive(req("harness.register", {}));
+    await host.connection.receive(
+      req("harness.register", { protocolVersion: 1, version: "0.0.0-test" }),
+    );
     const { pending } = resultOf(host.frames, lastId()).result as {
       pending: { conversation: { id: string }; message: { text: string } }[];
     };
@@ -189,7 +195,9 @@ describe("relay harness surface (#26)", () => {
       host.connection,
       host.frames,
     );
-    await host.connection.receive(req("harness.register", {}));
+    await host.connection.receive(
+      req("harness.register", { protocolVersion: 1, version: "0.0.0-test" }),
+    );
     await watcher.connection.receive(
       req("channel.subscribe", { channelId: channel.id }),
     );

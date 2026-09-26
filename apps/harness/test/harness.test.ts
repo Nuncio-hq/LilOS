@@ -174,7 +174,12 @@ describe("workspace harness", () => {
       });
       const welcome = (await squatter.connect()) as WelcomeResult;
       expect(welcome.engineHost?.connected).toBe(true);
-      await expect(squatter.request("harness.register", {})).rejects.toThrow();
+      await expect(
+        squatter.request("harness.register", {
+          protocolVersion: 1,
+          version: "0.0.0-test",
+        }),
+      ).rejects.toThrow();
       squatter.close();
 
       // The user message became an engine session: engineRef lands on the

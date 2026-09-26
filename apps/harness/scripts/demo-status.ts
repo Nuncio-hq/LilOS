@@ -34,7 +34,7 @@ const token =
 const engineKind = process.env.LILOS_ENGINE ?? "fake";
 const model =
   process.env.LILOS_MODEL ??
-  (engineKind === "hermes" ? process.env.HERMES_MODEL : "fake-model-1");
+  (engineKind === "hermes" ? process.env.HERMES_MODEL : "fake-small");
 const demoSessions = Number.parseInt(
   process.env.LILOS_DEMO_SESSIONS ?? "0",
   10,
@@ -94,11 +94,22 @@ const supervisor = new EngineSupervisor({
     // against the fresh connection rather than reporting stale ids.
     conn.onClose?.(() => live.clear());
     void (async () => {
+      /* Engines (D-#8) only start sessions for hired agents — create the demo
+         agent first, then bind the returned engine-side id. */
+      let agentId = "status-demo";
+      try {
+        const created = await conn.request<{
+          agent: { id: string };
+        }>("agents.create", { name: "status-demo", model });
+        agentId = created.agent.id;
+      } catch {
+        /* Engine without agents.create (url/command) — use the name as-is. */
+      }
       while (live.size < demoSessions) {
         try {
           const { sessionId } = await conn.request<{ sessionId: string }>(
             "session.start",
-            { agent: "status-demo", cwd: repoRoot, model },
+            { agent: agentId, cwd: repoRoot, model },
           );
           live.add(sessionId);
           log.info("demo engine session started", { sessionId });

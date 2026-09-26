@@ -139,7 +139,7 @@ test.describe("AC-1-4 (#33) live system status", () => {
       await expect(dialog).toContainText("running engine-fake");
       await expect(dialog).toContainText("MB");
       await expect(dialog).toContainText("2 sessions");
-      await expect(dialog).toContainText("running fake-model-1");
+      await expect(dialog).toContainText("running fake-small");
       await page.screenshot({
         path: join(SHOTS, "ac1-healthy.png"),
         fullPage: true,
