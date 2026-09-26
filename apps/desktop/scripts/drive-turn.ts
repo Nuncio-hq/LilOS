@@ -16,8 +16,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { RelayClient } from "@lilos/client-runtime";
 
-const TOKEN_PATH = join(homedir(), ".lilos", "relay-token");
-const STATE_PATH = join(homedir(), ".lilos", "drive-turn.json");
+const LILOS_HOME = process.env.LILOS_HOME ?? join(homedir(), ".lilos");
+const TOKEN_PATH = join(LILOS_HOME, "relay-token");
+const STATE_PATH = join(LILOS_HOME, "drive-turn.json");
 const RELAY_URL = process.env.LILOS_RELAY_URL ?? "ws://127.0.0.1:4577/ws";
 
 interface State {
