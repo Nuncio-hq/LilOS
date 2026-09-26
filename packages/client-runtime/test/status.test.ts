@@ -115,7 +115,8 @@ describe("AC-1 (#33) client maps wire status to UI rows", () => {
   it("shows relay connecting while the socket is not ready", () => {
     const rows = toStatusComponents({ connection: "connecting" });
     expect(rows[0].state).toBe("connecting");
-    expect(rows.slice(1).every((r) => r.state === "down")).toBe(true);
+    // #53: downstream legs wait on the relay — blocked, not down.
+    expect(rows.slice(1).every((r) => r.state === "blocked")).toBe(true);
     expect(rows[1].reason.toLowerCase()).toContain("relay");
   });
 
@@ -135,6 +136,122 @@ describe("AC-1 (#33) client maps wire status to UI rows", () => {
     expect(rows[0].id).toBe("relay");
     expect(rows[0].state).toBe("down");
     expect(rows[0].reason.toLowerCase()).toContain("update the app");
+  });
+});
+
+describe("AC-1 (#53) raw reasons map to a plain reason + next step", () => {
+  const BROKEN: SystemStatusResult = {
+    ...RESULT,
+    components: [
+      { id: "relay", label: "Relay", state: "ok", reason: "answering" },
+      {
+        id: "harness",
+        label: "Harness",
+        state: "ok",
+        reason: "connected v0.1.0",
+      },
+      {
+        id: "engine",
+        label: "Engine",
+        state: "down",
+        reason:
+          "engine broken-engine failed to start x5: Error: spawn /nonexistent/lilos-engine ENOENT",
+      },
+      {
+        id: "model",
+        label: "Model",
+        state: "blocked",
+        reason: "waiting for the engine",
+      },
+    ],
+  };
+
+  it("shows a plain reason + hint and keeps the raw text in detail", () => {
+    const rows = toStatusComponents({ result: BROKEN, connection: "ready" });
+    const engine = rows.find((r) => r.id === "engine");
+    expect(engine?.state).toBe("down");
+    expect(engine?.reason).not.toContain("ENOENT");
+    expect(engine?.reason).not.toContain("spawn");
+    expect(engine?.reason.toLowerCase()).toContain("wasn't found");
+    expect(engine?.hint?.toLowerCase()).toContain("settings");
+    // The raw error is preserved for the collapsed details line.
+    expect(engine?.detail).toContain("ENOENT");
+  });
+
+  it("an unknown raw error still gets a plain reason + generic next step", () => {
+    const weird: SystemStatusResult = {
+      ...BROKEN,
+      components: [
+        BROKEN.components[0],
+        BROKEN.components[1],
+        {
+          id: "engine",
+          label: "Engine",
+          state: "down",
+          reason: "engine x blew up: Error: frobnicate(stack) at line 9",
+        },
+        BROKEN.components[3],
+      ],
+    };
+    const engine = toStatusComponents({
+      result: weird,
+      connection: "ready",
+    }).find((r) => r.id === "engine");
+    expect(engine?.reason).not.toContain("Error:");
+    expect(engine?.hint?.length).toBeGreaterThan(0);
+    expect(engine?.detail).toContain("frobnicate");
+  });
+
+  it("Copy diagnostics keeps the raw reason", () => {
+    const text = formatDiagnostics({ result: BROKEN, connection: "ready" });
+    expect(text).toContain("ENOENT");
+    expect(text).toContain("failed to start");
+  });
+
+  it("ok rows pass through untouched", () => {
+    const rows = toStatusComponents({ result: RESULT, connection: "ready" });
+    expect(rows.every((r) => r.state === "ok")).toBe(true);
+    expect(rows.find((r) => r.id === "engine")?.detail).toBeUndefined();
+    expect(rows.find((r) => r.id === "engine")?.hint).toBeUndefined();
+  });
+});
+
+describe("AC-2 (#53) legs waiting on a down upstream leg are blocked", () => {
+  it("relay unreachable marks harness/engine/model blocked — one issue", () => {
+    const rows = toStatusComponents({ connection: "closed" });
+    expect(rows[0].state).toBe("down");
+    expect(rows.slice(1).every((r) => r.state === "blocked")).toBe(true);
+    expect(rows[1].reason.toLowerCase()).toContain("waiting");
+  });
+
+  it("a wire blocked row passes through with plain wording", () => {
+    const rows = toStatusComponents({
+      result: {
+        ...RESULT,
+        components: [
+          RESULT.components[0],
+          RESULT.components[1],
+          {
+            id: "engine",
+            label: "Engine",
+            state: "down",
+            reason: "engine exited (code 1)",
+          },
+          {
+            id: "model",
+            label: "Model",
+            state: "blocked",
+            reason: "waiting for the engine",
+          },
+        ],
+      },
+      connection: "ready",
+    });
+    const model = rows.find((r) => r.id === "model");
+    expect(model?.state).toBe("blocked");
+    expect(model?.reason.toLowerCase()).toContain("waiting");
+    expect(model?.hint).toBeUndefined();
+    expect(model?.detail).toBeUndefined();
   });
 });
 

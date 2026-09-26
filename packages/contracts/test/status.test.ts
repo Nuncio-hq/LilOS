@@ -54,7 +54,9 @@ describe("AC-1 (#33) system.status result carries one row per leg", () => {
       "model",
     ]);
     for (const c of parsed.components) {
-      expect(["ok", "connecting", "degraded", "down"]).toContain(c.state);
+      expect(["ok", "connecting", "degraded", "blocked", "down"]).toContain(
+        c.state,
+      );
       expect(c.reason.length).toBeGreaterThan(0);
     }
   });
@@ -65,6 +67,17 @@ describe("AC-1 (#33) system.status result carries one row per leg", () => {
     ).toBe(false);
     expect(
       StatusComponent.safeParse({ ...component("relay", "vibing") }).success,
+    ).toBe(false);
+  });
+});
+
+describe("AC-2 (#53) blocked is a real leg state on the wire", () => {
+  it("parses a blocked component — down only because an upstream leg is", () => {
+    const parsed = StatusComponent.parse(component("model", "blocked"));
+    expect(parsed.state).toBe("blocked");
+    // Unknown states still fail.
+    expect(
+      StatusComponent.safeParse({ ...component("model", "paused") }).success,
     ).toBe(false);
   });
 });

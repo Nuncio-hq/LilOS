@@ -111,11 +111,12 @@ export function buildSystemStatus(input: StatusInput): SystemStatusResult {
   // — engine: the lifecycle the host reports —
   let engineOk = false;
   if (!host) {
+    // Not broken itself: blocked waiting on the harness leg (#53).
     components.push(
       component(
         "engine",
         "Engine",
-        "down",
+        "blocked",
         "waiting for a harness to register",
       ),
     );
@@ -190,11 +191,13 @@ export function buildSystemStatus(input: StatusInput): SystemStatusResult {
 
   // — model: what the harness will run sessions on —
   if (!engineOk) {
+    // Waiting on an upstream leg is `blocked`, not `down` (#53): the model
+    // itself is not the failure and should not count as an issue.
     components.push(
       component(
         "model",
         "Model",
-        "down",
+        "blocked",
         host ? "waiting for the engine" : "waiting for a harness to register",
       ),
     );

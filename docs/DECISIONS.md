@@ -107,6 +107,13 @@ PR does not exist.
   not props of `AgentTurn`. Not: variant/mode props inside `AgentTurn`, a god
   component accumulating optional props. — #19 · PR #40
 
+## Status
+- **D-#33 `system.status` legs carry `{state, reason}`; `blocked` (#53) means
+  down only because an upstream leg is down — neutral, never counted as an
+  issue. Wire reasons stay raw for diagnostics; the plain-language mapping
+  lives once in `packages/client-runtime`.** Not: friendly strings composed in
+  the relay or in UI components. — #33 · #53
+
 ## Structure
 - **D-#3 One-way deps: `apps/*` → `packages/*`, never back; engine packages
   depend only on `contracts`.** Types crossing a boundary live only in

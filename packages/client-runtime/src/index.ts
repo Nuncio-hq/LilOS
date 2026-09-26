@@ -14,5 +14,6 @@ export {
 export {
   formatDiagnostics,
   type StatusPollState,
+  type StatusRow,
   toStatusComponents,
 } from "./status";

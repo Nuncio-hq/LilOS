@@ -162,13 +162,14 @@ test.describe("AC-1-4 (#33) live system status", () => {
       await waitFor(broken, "registered with relay");
       await page.goto(liveUrl(relay.port, relay.token));
 
-      // Engine leg: launcher fails repeatedly → supervisor reports "failed".
+      // Engine leg: launcher fails repeatedly → supervisor reports "failed"
+      // (shown as the plain reason since #53; raw text sits in the Details line).
       const dialog = await openDialog(page);
       await expect(dialog).toContainText("engine", { timeout: 60_000 });
       await expect(dialog.getByText("down").first()).toBeVisible({
         timeout: 60_000,
       });
-      await expect(dialog).toContainText("failed", { timeout: 60_000 });
+      await expect(dialog).toContainText("couldn't start", { timeout: 60_000 });
       await page.screenshot({
         path: join(SHOTS, "ac1-engine-down.png"),
         fullPage: true,
@@ -178,7 +179,9 @@ test.describe("AC-1-4 (#33) live system status", () => {
       // harness/engine/model rows all fall.
       broken.child.kill("SIGKILL");
       await expect(dialog).toContainText("Harness", {});
-      await expect(dialog).toContainText("disconnected", { timeout: 30_000 });
+      await expect(dialog).toContainText("lost its connection", {
+        timeout: 30_000,
+      });
       await page.screenshot({
         path: join(SHOTS, "ac1-harness-down.png"),
         fullPage: true,
@@ -245,6 +248,11 @@ test.describe("AC-1-4 (#33) live system status", () => {
         { port: relay.port, token: relay.token },
       );
       const dialog = await openDialog(page);
+      await expect(dialog).toContainText("different protocol version", {
+        timeout: 30_000,
+      });
+      // The raw rejection stays available, collapsed behind Details (#53).
+      await dialog.getByText("Details").click();
       await expect(dialog).toContainText("harness spoke protocol 9", {
         timeout: 30_000,
       });
