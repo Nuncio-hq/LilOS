@@ -9,6 +9,7 @@
       "!**/playwright-report",
       "!**/bun.lock",
       "!packages/contracts/schema",
+      "!packages/contracts/generated/**",
       "!**/*.svg",
       "!**/*.png",
       "!**/*.ico",
