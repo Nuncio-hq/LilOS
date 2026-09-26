@@ -9,10 +9,9 @@ A Slack-style "CompanyOS" where the employees are AI agents. One company
 sidebar: company channels → projects (each with its own channels, e.g.
 `#engineering` bound to a repo) → employees. An @mention or a DM opens a
 thread, and each thread is one engine session. Engines plug in through a
-generic engine protocol. Hermes is the first engine, but it is never glued in.
-The engine owns sessions, memory, skills, and profiles. LilOS only owns its
-own domain objects: company, channels, messages, tickets, and employee
-records.
+generic engine protocol; Hermes is the first engine but is never glued in.
+The engine owns sessions, memory, skills, and profiles. LilOS owns only its
+own domain objects: company, channels, messages, tickets, employee records.
 
 Stage: **prototype**. `prototype/` is the source of truth for UI/UX: the real
 app must match it, and a UI/UX change lands in the prototype first. Its mock
@@ -22,36 +21,62 @@ data is not a contract.
 
 | Path | What |
 |---|---|
-| `prototype/` | Live UX prototype: Vite 8 + React 19 + Tailwind v4 + shadcn (base-nova) + AI Elements. One `src/App.tsx` with mock data at the top. |
-| `docs/DECISIONS.md` | Decisions in force now (see Decisions). Created with the first decision. |
+| `prototype/` | UX prototype (UI source of truth): `src/App.tsx` + mock data |
+| `packages/contracts/` | Zod schemas for everything crossing a boundary (vitest tests in `test/`) |
+| `e2e/` | Playwright E2E (screenshots to `test-results/`) |
+| `docs/DECISIONS.md` | Decisions in force now (see Decisions) |
 | `IDEA.md` | One-line origin note |
 
-Run the prototype: `cd prototype && npm install && npx vite --port 5180`.
-Check it: `cd prototype && npm run build` (runs `tsc -b` and `vite build`; it must pass).
+Setup: `bun install` (Bun per `.bun-version`). Prototype: `bun run
+prototype:dev`. Verify all: `bun run verify` (biome, typecheck, vitest,
+prototype build, Playwright).
+
+## Stack & Structure
+
+Runtime/PM **Bun** (workspaces; pinned `packageManager` + `.bun-version`);
+server **Hono** on Bun; DB SQLite (`bun:sqlite`) via Drizzle; web React 19 +
+Vite + Tailwind v4 + shadcn (base-nova) + AI Elements (mandatory) + TanStack
+Router + nanostores; desktop Electron (later); lint/format Biome; tests
+Vitest + Playwright; CI GitHub Actions (setup-bun) → `bun run verify`.
+
+```
+apps/web apps/relay apps/harness apps/desktop   (created by the slice that needs them)
+packages/contracts packages/ui packages/client-runtime packages/engine-*
+prototype/    packages/ui + mock data
+```
+
+- One-way deps: `apps/*` import `packages/*`, never the reverse. Engine
+  packages depend only on `contracts`.
+- The web app never talks to an engine directly; only through relay/harness.
+- Types that cross a boundary are defined only in `packages/contracts`.
+- Bun-only APIs (`bun:sqlite`, `Bun.serve`) only at app entry points;
+  `packages/*` stay runtime-neutral.
+- Organize code by feature folder; split a file past ~400 lines.
+- Biome lints/formats everything except `prototype/src` and assets (vendored
+  shadcn/AI Elements stay untouched; typecheck + build still cover them).
+- CI never calls a real LLM; `engine-fake` is the deterministic engine.
 
 ## Learn from these projects
 
-Before you design a seam, read how these projects solve it. All three are MIT
-licensed: port ideas and code with an attribution comment. Don't port their
-frameworks (T3/Synara use Effect-TS) or anything they own that we don't.
-Cite the files you read in the issue.
+Before you design a seam, read how these solve it and cite the files in the
+issue. All MIT: port ideas/code with an attribution comment, never their
+frameworks (T3/Synara use Effect-TS).
 
 | Project | Borrow | Start at |
 |---|---|---|
-| T3 Code `pingdotgg/t3code` | client/server split, seq-based sync (snapshot + replay), provider adapter + capabilities, `contracts` / `client-runtime` split | `docs/internals/`, `packages/contracts/src/providerRuntime.ts`, `apps/server/src/provider/Services/ProviderAdapter.ts` |
-| Synara `Emanuele-web04/synara` | ACP adapter, adapter conformance tests, mock/conformance agents | `apps/server/src/provider/acp/`, `apps/server/src/provider/providerAdapterConformance.ts`, `apps/server/scripts/acp-mock-agent.ts` |
-| Hermes Desktop `NousResearch/hermes-agent` | a renderer over a headless engine, JSON-RPC client with reconnect replay, a wire contract declared once and generated for TS | `apps/shared/src/json-rpc-gateway.ts`, `tui_gateway/contracts/`, `scripts/gen_gateway_contracts.py` |
+| T3 Code `pingdotgg/t3code` | client/server split, seq sync (snapshot + replay), provider adapter + capabilities, `contracts`/`client-runtime` split | `docs/internals/`, `packages/contracts/src/providerRuntime.ts`, `apps/server/src/provider/Services/ProviderAdapter.ts` |
+| Synara `Emanuele-web04/synara` | ACP adapter, adapter conformance tests, mock agents | `apps/server/src/provider/acp/`, `apps/server/src/provider/providerAdapterConformance.ts`, `apps/server/scripts/acp-mock-agent.ts` |
+| Hermes Desktop `NousResearch/hermes-agent` | renderer over a headless engine, JSON-RPC client with reconnect replay, wire contract declared once and generated for TS | `apps/shared/src/json-rpc-gateway.ts`, `tui_gateway/contracts/`, `scripts/gen_gateway_contracts.py` |
 
 ## Who you work for
 
-Oscar is the **client**, not a reviewer. He doesn't write code and rarely reads
-diffs. He accepts or rejects the *product* that he can see and try. That means:
+Oscar is the **client**, not a reviewer: he doesn't write code and rarely
+reads diffs; he accepts or rejects the *product* he can see and try.
 
 - You own correctness end to end: implementation, tests, review, and docs.
-- "Done" means Oscar can try it without reading code, and you have shown
-  evidence that it works.
-- Talk to him in plain product language: what changed for the user, and how to
-  try it. Mention internals only when he has to make a decision about them.
+- "Done" means Oscar can try it without reading code, with evidence it works.
+- Talk to him in plain product language: what changed, how to try it.
+  Mention internals only when he must decide about them.
 - Oscar chats in Vietnamese. Everything in the repo (code, docs, issues,
   PRs, commits) is in English.
 
@@ -59,21 +84,17 @@ diffs. He accepts or rejects the *product* that he can see and try. That means:
 
 Repo: `Nuncio-hq/LilOS`. Use the `gh` CLI.
 
-- **Feature** = a parent issue that describes the product outcome. Its
-  sub-issues are vertical slices.
-- **What to work on next**: any open slice labelled `agent-ready`. There is no
-  priority order. Features give the grouping, and you finish slices inside a
-  feature before you start a new feature. `agent-ready` means the issue has
-  acceptance criteria and a verify plan. If it lacks them, it is not ready.
-  Don't take it. Ask instead.
+- **Feature** = parent issue describing a product outcome; sub-issues are
+  vertical slices.
+- **What to work on next**: any open slice labelled `agent-ready` (has
+  acceptance criteria + verify plan; if not, ask, don't take it). No priority
+  order; finish slices inside a feature before starting a new one.
 - **Now**: when you take a slice, label it `in-progress` and assign it. Hold
-  one `in-progress` slice at a time. Keep **one** comment titled `Status` on the
-  issue and edit it in place (Now / Next / Blocked). Don't post a series of
-  log comments.
-- **Done**: the slice is closed by its merged PR, and the hand-off note is on
-  that PR. When the last slice closes, close the feature.
-- Found work outside the current slice? Open a new issue for it. Don't widen
-  your PR.
+  one `in-progress` slice at a time. Keep **one** comment titled `Status` on
+  the issue and edit it in place (Now / Next / Blocked); no log-comment series.
+- **Done**: the slice closes with its merged PR (hand-off note there); when
+  the last slice closes, close the feature.
+- Work outside the slice? Open a new issue; don't widen your PR.
 
 ## Verify loop
 
@@ -89,41 +110,34 @@ seam (Hermes RPC, sessions, worktrees) is always Normal.
 
 ### The 7 steps (Normal tier)
 
-1. **Understand**: read the issue. Its acceptance criteria describe what a
-   user sees ("open DM → send → reply shows in the right-hand thread"). If they
-   are vague, sharpen them on the issue first. Ask Oscar only when the ask is
-   genuinely ambiguous.
-2. **Plan**: write the plan in the issue's `Status` comment. If the slice is
-   too big for one PR, split it into more sub-issues.
+1. **Understand**: read the issue. Acceptance criteria describe what a user
+   sees ("open DM → send → reply shows in the thread"). Sharpen vague ones on
+   the issue first; ask Oscar only when genuinely ambiguous.
+2. **Plan**: write the plan in the issue's `Status` comment; split slices that
+   are too big for one PR into more sub-issues.
 3. **Implement**: tests with the code; show a failing test turning green.
-4. **Verify**: run the repo's verify command and capture one screenshot per
-   acceptance criterion. Until `npm run verify` exists, use `npm run build`
-   plus screenshots of the running prototype.
-5. **Review**: a second agent with fresh context reviews against the
-   acceptance criteria (product behavior first, then code). Fix what it finds.
-6. **Document**: update the docs the change makes stale, and add/update the
-   `docs/DECISIONS.md` entry if you made an architectural decision (see
-   Decisions and Docs).
+4. **Verify**: run `bun run verify`; one screenshot per acceptance criterion.
+5. **Review**: a second agent with fresh context reviews against the criteria
+   (product behavior first, then code). Fix what it finds.
+6. **Document**: fix docs the change makes stale; add/update the
+   `docs/DECISIONS.md` entry for any architectural decision.
 7. **Hand off**: a PR note Oscar can act on without reading code: how to try
-   it, what changed, the checklist of criteria with screenshots, what is not
-   done yet, and `Closes #N`.
+   it, what changed, criteria checklist with screenshots, what's not done,
+   `Closes #N`.
 
-Oscar only does step 7: he tries the product and accepts it or sends it back.
-A checklist of acceptance criteria plus screenshots is enough evidence for him.
+Oscar only does step 7: he tries it and accepts or sends it back. A criteria
+checklist plus screenshots is enough evidence.
 
 ## Decisions
 
-**A decision is real only if it has an issue and a merged PR.** A decision
-without both was never implemented and does not exist in the app. That holds
-even if it was agreed in chat, in a brainstorm, or in an old doc. Don't build
-on it. Open an issue for it.
+**A decision is real only if it has an issue and a merged PR.** One agreed in
+chat, a brainstorm, or an old doc without both was never implemented; don't
+build on it — open an issue. Discussion, alternatives, and evidence live in
+the **issue**; `docs/DECISIONS.md` is the **one** index of decisions in force
+now, not a history log.
 
-- The discussion, the alternatives, and the evidence live in the **issue**.
-- `docs/DECISIONS.md` is the **one** index of decisions that are in force now.
-  It is not a history log. The history and the reasons stay in the linked
-  issue/PR. Create the file with the first decision.
-- Each entry is 1–3 lines. The ID is the issue number. Say what was rejected,
-  so nobody proposes it again:
+- Each entry is 1–3 lines, ID = issue number. Say what was rejected so nobody
+  proposes it again:
 
   ```markdown
   ## Engine
@@ -131,26 +145,25 @@ on it. Open an issue for it.
     Not: own session DB (drift). — #12 · PR #15
   ```
 
-- Group entries by area (`Engine`, `Data`, `Stack`, `UX`, ...). Before you
-  touch an area, read that area's section.
-- Add or change an entry only in the **same PR** that implements the decision.
-  Proposed or undecided ideas never go in. They stay in the issue.
-- Only record decisions that a later agent could otherwise undo by accident
-  (architecture, protocol, data ownership, stack). Implementation choices
-  inside one slice don't go in.
-- Superseding a decision: rewrite the entry in place and move the old choice
-  to `Not: ... (was #old)`. Keep the file under ~4k characters.
+- Group entries by area (`Engine`, `Data`, `Stack`, `UX`, ...); read that
+  area's section before touching it.
+- Add/change an entry only in the **same PR** that implements the decision.
+  Proposed or undecided ideas stay in the issue.
+- Record only decisions a later agent could undo by accident (architecture,
+  protocol, data ownership, stack), not choices inside one slice.
+- Superseding: rewrite the entry in place, move the old choice to
+  `Not: ... (was #old)`. Keep the file under ~4k characters.
 
 ## Docs
 
-The repo keeps only knowledge that outlives a single issue. Everything else
-(plans, progress, logs, research notes) goes in issues and PRs.
+The repo keeps only knowledge that outlives a single issue; plans, progress,
+logs, and research notes go in issues and PRs.
 
-- The permanent docs are `AGENTS.md` (rules, auto-loaded), `docs/DECISIONS.md`
-  (what's in force), and (once real code exists outside `prototype/`)
-  `docs/ARCHITECTURE.md` (how the pieces fit). Read them in that order, and
-  only as deep as the task needs. Open an issue only when you need the *why*.
+- Permanent docs: `AGENTS.md` (rules, auto-loaded), `docs/DECISIONS.md`
+  (in force), and `docs/ARCHITECTURE.md` (how pieces fit; once real code
+  exists outside `prototype/`). Read in that order, only as deep as needed;
+  open an issue only when you need the *why*.
 - Update an existing doc before creating one; create one only when two issues
-  need the same knowledge. A PR that makes a doc wrong fixes it in the same PR.
-  Delete docs that are no longer true.
+  need the same knowledge. A PR that makes a doc wrong fixes it in the same
+  PR; delete docs that are no longer true.
 - Keep this file under ~8.5k characters; move detail out and link it.
