@@ -162,6 +162,7 @@ export function ThreadView({
           <Row from={root.from} emp={emp} human={human}>
             <Who id={root.from} time={root.time} emp={emp} human={human} />
             <Body text={root.text} />
+            {root.attachments && <AttachmentChips files={root.attachments} />}
             <div className="text-muted-foreground text-xs">
               opened session{" "}
               <code className="rounded bg-muted px-1">{thread.session}</code>
