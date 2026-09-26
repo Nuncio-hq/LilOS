@@ -314,11 +314,11 @@ test("AC-7 composer attachments: pick, drop and paste show a chip before send", 
   await page.evaluate(() => {
     const dt = new DataTransfer();
     dt.items.add(new File(["x"], "dropped.png", { type: "image/png" }));
-    document
-      .querySelector("main form")!
-      .dispatchEvent(
-        new DragEvent("drop", { dataTransfer: dt, bubbles: true }),
-      );
+    const form = document.querySelector("main form");
+    if (!form) throw new Error("form missing");
+    form.dispatchEvent(
+      new DragEvent("drop", { dataTransfer: dt, bubbles: true }),
+    );
   });
   await expect(main.getByText("dropped.png")).toBeVisible();
 
@@ -326,11 +326,11 @@ test("AC-7 composer attachments: pick, drop and paste show a chip before send", 
   await page.evaluate(() => {
     const dt = new DataTransfer();
     dt.items.add(new File(["y"], "pasted.png", { type: "image/png" }));
-    document
-      .querySelector("main textarea")!
-      .dispatchEvent(
-        new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }),
-      );
+    const ta = document.querySelector("main textarea");
+    if (!ta) throw new Error("textarea missing");
+    ta.dispatchEvent(
+      new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }),
+    );
   });
   await expect(main.getByText("pasted.png")).toBeVisible();
 

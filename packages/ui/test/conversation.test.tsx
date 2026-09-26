@@ -166,7 +166,8 @@ function expectTaskBlock(turn: Element, steps: number) {
   const block = blocks[0];
   const trigger = block.querySelector(
     ":scope > [data-slot='collapsible-trigger']",
-  )!;
+  );
+  if (!trigger) throw new Error("collapsible trigger missing");
   expect(trigger.textContent).toContain(`${steps} steps`);
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(trigger);
@@ -175,7 +176,9 @@ function expectTaskBlock(turn: Element, steps: number) {
     "[data-slot='collapsible-content'] [data-slot='collapsible']",
   );
   expect(tools.length).toBe(steps);
-  for (const s of stepTurn.steps!) expect(block.textContent).toContain(s.tool);
+  const stepList = stepTurn.steps;
+  if (!stepList) throw new Error("stepTurn.steps missing");
+  for (const s of stepList) expect(block.textContent).toContain(s.tool);
 }
 
 describe("issue #19 — one conversation from shared pieces", () => {
@@ -202,7 +205,8 @@ describe("issue #19 — one conversation from shared pieces", () => {
     for (const c of [panel.container, dm.container, focus.container]) {
       const turn = agentTurns(c)[0];
       expect(turn).toBeTruthy();
-      expectTaskBlock(turn, stepTurn.steps!.length);
+      if (!stepTurn.steps) throw new Error("stepTurn.steps missing");
+      expectTaskBlock(turn, stepTurn.steps.length);
     }
   });
 
