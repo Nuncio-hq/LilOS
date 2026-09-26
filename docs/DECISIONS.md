@@ -45,4 +45,4 @@ PR does not exist.
 - **D-#12 UI lives in `packages/ui` (`@lilos/ui`); prototype = packages/ui +
   mock data + fake engine + app wiring.** Presentational only: props in,
   callbacks out; UI domain types in `packages/ui/src/types.ts`.
-  Not: copying prototype components into `apps/web` (drift). — #12 · PR #TBD
+  Not: copying prototype components into `apps/web` (drift). — #12 · PR #16
