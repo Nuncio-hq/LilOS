@@ -251,13 +251,17 @@ test("AC-5 typing mid-turn steers (capability `steer`); stop interrupts", async 
   // An edit-ask prompt holds the turn open on an approval — deterministic
   // running state for both legs.
   await send(page, "Add a release note to the readme");
+  // Send the steer while the turn is parked on the approval — it is
+  // provably running, so the steer lands inside it instead of racing
+  // session creation and becoming a follow-up turn (which the fake's
+  // scripts never echo back).
+  await expect(page.getByText("Approval needed").first()).toBeVisible({
+    timeout: 60_000,
+  });
   await expect(page.getByText("Enter steers · ■ stop")).toBeVisible({
     timeout: 30_000,
   });
   await send(page, "also mention bananas");
-  await expect(page.getByText("Approval needed").first()).toBeVisible({
-    timeout: 60_000,
-  });
   await allowAll(page);
   // The steer lands inside the turn it interrupted (turn.steered chip).
   await expect(page.locator("[data-agentturn]").last()).toContainText(
