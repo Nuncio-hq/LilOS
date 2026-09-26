@@ -337,7 +337,7 @@ test("AC-7 composer attachments: pick, drop and paste show a chip before send", 
   // Send: composer chips clear, the sent session row shows all three attachment names.
   await main.getByPlaceholder(/New session with Builder/).fill("see attached");
   await main.getByPlaceholder(/New session with Builder/).press("Enter");
-  const sent = page.locator("[data-attachments]");
+  const sent = main.locator("[data-attachments]");
   await expect(sent).toContainText("picked.png");
   await expect(sent).toContainText("dropped.png");
   await expect(sent).toContainText("pasted.png");

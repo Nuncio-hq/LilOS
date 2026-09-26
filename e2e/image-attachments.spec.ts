@@ -117,13 +117,16 @@ test("AC-2 the employee's answer references the image that came through", async 
     .fill("what does this show");
   await main.getByPlaceholder(/New session with Builder/).press("Enter");
 
-  // The thread opens: Oscar's turn shows the attachment chip with a thumbnail…
-  const thread = page.locator("[data-attachments]");
-  await expect(thread).toContainText("shot.png");
-  await expect(thread.locator('img[alt="shot.png"]')).toBeVisible();
+  // The thread opens: Oscar's turn shows the attachment chip with a thumbnail,
+  // in the session feed AND in the thread panel (the thread root)…
+  const panel = page.getByRole("tabpanel", { name: "Thread" });
+  for (const where of [page.getByRole("main"), panel]) {
+    const chips = where.locator("[data-attachments]");
+    await expect(chips).toContainText("shot.png");
+    await expect(chips.locator('img[alt="shot.png"]')).toBeVisible();
+  }
 
   // …and the employee's answer (in the thread panel) names what arrived.
-  const panel = page.getByRole("tabpanel", { name: "Thread" });
   const reply = panel.getByText(/reached me on the prompt as an image block/);
   await expect(reply).toBeVisible({ timeout: 30_000 });
   await expect(
