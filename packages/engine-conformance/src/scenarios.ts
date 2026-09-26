@@ -241,6 +241,31 @@ export const CORE_SCENARIOS: Scenario[] = [
         res.stopReason === "end_turn" && typeof res.turnId === "string",
         "prompt must resolve {turnId, stopReason}",
       );
+    },
+  },
+  {
+    id: "prompt.ref echoes back on turn.started (#28 dedupe key)",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request("prompt", {
+        ...textPrompt(sessionId, READ_PROMPT),
+        ref: "msg_deadbeef",
+      }) as Promise<PromptResult>;
+      const started = await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "turn.started"),
+      );
+      assert(
+        started.type === "turn.started" &&
+          (started.payload as { ref?: string }).ref === "msg_deadbeef",
+        `turn.started must echo prompt.ref, got ${JSON.stringify(started.payload)}`,
+      );
+      await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "turn.completed"),
+      );
+      await result;
       const events = h.events.filter((e) => e.sessionId === sessionId);
       assertMonotonic(events);
       assert(
@@ -1105,6 +1130,40 @@ export const MODELS_SCENARIOS: Scenario[] = [
 ];
 
 /**
+ * `session_meta` capability (#28): rename/archive in the UI map to the
+ * engine's own title/hidden so engine-side tooling sees the same names.
+ */
+const SESSION_META_SCENARIOS: Scenario[] = [
+  {
+    id: "session.setTitle returns the new title, session.setHidden the flag",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const titled = (await h.request("session.setTitle", {
+        sessionId,
+        title: "Quarterly plan",
+      })) as { title: string };
+      assert(
+        titled.title === "Quarterly plan",
+        `setTitle must echo the new title, got ${JSON.stringify(titled)}`,
+      );
+      const hidden = (await h.request("session.setHidden", {
+        sessionId,
+        hidden: true,
+      })) as { hidden: boolean };
+      assert(hidden.hidden === true, "setHidden(true) must return true");
+      const shown = (await h.request("session.setHidden", {
+        sessionId,
+        hidden: false,
+      })) as { hidden: boolean };
+      assert(shown.hidden === false, "setHidden(false) must return false");
+    },
+  },
+];
+
+/**
  * Suite registry: `core` always runs; each capability the engine declares on
  * `describe` adds its suite. Pending suites are registered so engines (and CI)
  * can list them; they are intentionally empty until the capability lands.
@@ -1124,6 +1183,11 @@ export const SUITES: {
   { capability: "mcp_servers", implemented: false, scenarios: [] },
   { capability: "models", implemented: true, scenarios: MODELS_SCENARIOS },
   { capability: "agents", implemented: true, scenarios: AGENTS_SCENARIOS },
+  {
+    capability: "session_meta",
+    implemented: true,
+    scenarios: SESSION_META_SCENARIOS,
+  },
   { capability: "usage", implemented: false, scenarios: [] },
   { capability: "plan", implemented: false, scenarios: [] },
   { capability: "rewind", implemented: false, scenarios: [] },

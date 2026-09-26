@@ -81,6 +81,7 @@ describe("engine-fake", () => {
       "mcp_servers",
       "agents",
       "models",
+      "session_meta",
     ]);
     c.close();
   });

@@ -14,6 +14,7 @@ import {
   ChannelCreatedEvent,
   ChannelRemovedEvent,
   ConversationModelRequestedEvent,
+  ConversationUpdatedEvent,
   ENGINE_PASSTHROUGH_METHODS,
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
@@ -60,6 +61,10 @@ interface SessionBinding {
   modelByTurn: Map<string, string>;
   /** User messages queued while a turn runs (delivered in order). */
   queue: AppMessage[];
+  /** Relay message ids the engine consumed (replayed `turn.started.ref`). */
+  consumed: Set<string>;
+  /** turnId -> relay message id that prompted it — the answer's dedupe key. */
+  turnSource: Map<string, string>;
 }
 
 export interface HarnessOptions {
@@ -112,6 +117,23 @@ export class Harness {
   private readonly channelSeen = new Map<string, number>();
   private readonly channelWatch = new Map<string, () => void>(); // channelId -> store unsub
   private readonly unsubs: Array<() => void> = [];
+  /**
+   * FIFO of relay writes made while the socket was down — flushed in order
+   * after every `harness.register`, BEFORE pending turns are re-delivered,
+   * so a queued answer lands before its conversation looks pending (#28).
+   */
+  private readonly outbox: {
+    label: string;
+    run: () => Promise<unknown>;
+  }[] = [];
+  private flushingOutbox = false;
+  private registering = false;
+  private registerAgain = false;
+  /** Last relay-side title/archive seen per conversation (meta mirror diff). */
+  private readonly metaSeen = new Map<
+    string,
+    { title: string; archived: boolean }
+  >();
   /** Latest `describe` result (hideCaps already filtered out). */
   private describeResult?: DescribeResult;
   /** Feed subscribers fan out every engine event to attached clients. */
@@ -131,39 +153,70 @@ export class Harness {
   async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
-    const welcome = await this.opts.relay.connect();
-    this.opts.log.info("relay connected", {
-      instanceId: welcome.instanceId,
-      engineHost: welcome.engineHost,
-    });
     this.unsubs.push(
       this.opts.relay.onEvent((m, p) => this.onRelayEvent(m, p)),
     );
     // App-side `agents.*`/`models.*` calls arrive as relay-forwarded
     // requests (ENGINE_PASSTHROUGH_METHODS); they run on the engine.
     this.opts.relay.setRequestHandler((m, p) => this.onRelayRequest(m, p));
-    const reg = await this.opts.relay.request<{
-      hostId: string;
-      pending: PendingTurn[];
-    }>("harness.register", {
-      protocolVersion: APP_PROTOCOL_VERSION,
-      version: this.opts.version ?? "0",
+    // Every relay "ready" (first connect AND every reconnect) re-registers:
+    // a new socket is a new peer, so the host slot must be reclaimed before
+    // host-gated writes (answers, asks, watermarks) are accepted again.
+    this.unsubs.push(
+      this.opts.relay.state.listen((state) => {
+        if (state === "ready") void this.onRelayReady();
+      }),
+    );
+    const welcome = await this.opts.relay.connect();
+    this.opts.log.info("relay connected", {
+      instanceId: welcome.instanceId,
+      engineHost: welcome.engineHost,
     });
-    this.hostId = reg.hostId;
-    this.opts.log.info("registered as engine host", {
-      hostId: reg.hostId,
-      pending: reg.pending.length,
-    });
-    for (const channel of this.opts.relay.channels.get()) {
-      this.watchChannel(channel.id);
+  }
+
+  private async onRelayReady(): Promise<void> {
+    if (!this.started) return;
+    if (this.registering) {
+      this.registerAgain = true;
+      return;
     }
-    for (const turn of reg.pending) {
-      void this.deliver(turn.message).catch((error) =>
-        this.opts.log.error("pending turn delivery failed", {
-          messageId: turn.message.id,
-          error: String(error),
-        }),
-      );
+    this.registering = true;
+    try {
+      do {
+        this.registerAgain = false;
+        const reg = await this.opts.relay.request<{
+          hostId: string;
+          pending: PendingTurn[];
+        }>("harness.register", {
+          protocolVersion: APP_PROTOCOL_VERSION,
+          version: this.opts.version ?? "0",
+        });
+        this.hostId = reg.hostId;
+        this.opts.log.info("registered as engine host", {
+          hostId: reg.hostId,
+          pending: reg.pending.length,
+        });
+        // Queued writes land before any re-delivery: a pending turn whose
+        // answer was in flight flushes first, and the watermark makes the
+        // already-prompted tail ineligible a second time.
+        await this.flushOutbox();
+        await this.reconcileAsks();
+        for (const channel of this.opts.relay.channels.get()) {
+          this.watchChannel(channel.id);
+        }
+        for (const turn of reg.pending) {
+          for (const message of turn.messages ?? [turn.message]) {
+            void this.deliver(message).catch((error) =>
+              this.opts.log.error("pending turn delivery failed", {
+                messageId: message.id,
+                error: String(error),
+              }),
+            );
+          }
+        }
+      } while (this.registerAgain);
+    } finally {
+      this.registering = false;
     }
   }
 
@@ -322,6 +375,51 @@ export class Harness {
     }
   }
 
+  /**
+   * One relay write. Transient failures (socket down/timeout) queue into the
+   * outbox and replay in order on the next registration; permanent failures
+   * (not_found/forbidden) are dropped with a log.
+   */
+  private relayWrite(label: string, run: () => Promise<unknown>): void {
+    if (this.outbox.length > 0) {
+      // Keep FIFO order: never overtake a queued write.
+      this.outbox.push({ label, run });
+      return;
+    }
+    void run().catch((error) => {
+      if (isTransientRelayError(error)) {
+        this.outbox.push({ label, run });
+      } else {
+        this.opts.log.warn(`${label} dropped`, { error: String(error) });
+      }
+    });
+  }
+
+  private async flushOutbox(): Promise<void> {
+    if (this.flushingOutbox) return;
+    this.flushingOutbox = true;
+    try {
+      while (this.outbox.length > 0) {
+        const entry = this.outbox[0];
+        try {
+          await entry.run();
+          this.outbox.shift();
+        } catch (error) {
+          if (!isTransientRelayError(error)) {
+            this.opts.log.warn(`${entry.label} dropped on retry`, {
+              error: String(error),
+            });
+            this.outbox.shift();
+            continue;
+          }
+          break; // socket down again — retry on the next register
+        }
+      }
+    } finally {
+      this.flushingOutbox = false;
+    }
+  }
+
   private applyReplay(binding: SessionBinding, replay: EventsSinceResult) {
     // The turn we were running before the gap; if replay neither shows it
     // still running nor carries its turn.completed, it died silently.
@@ -427,6 +525,50 @@ export class Harness {
     });
     const queued = binding.queue.splice(0);
     for (const message of queued) this.enqueueOrPrompt(rebound, message);
+    this.mirrorMeta(rebound, conv);
+  }
+
+  /**
+   * Best-effort mirror of the app's title/archive onto the engine session
+   * (capability `session_meta`, #28 AC-3). Engines without it keep working —
+   * the relay record is the source of truth either way.
+   */
+  private mirrorMeta(
+    binding: SessionBinding,
+    conv: { title: string; archived: boolean } | undefined,
+  ): void {
+    if (!conv) return;
+    const seen = this.metaSeen.get(binding.conversationId);
+    this.metaSeen.set(binding.conversationId, {
+      title: conv.title,
+      archived: conv.archived,
+    });
+    const conn = this.engine;
+    if (!conn || !this.hasCapability("session_meta")) return;
+    if (!seen || seen.title !== conv.title) {
+      void conn
+        .request("session.setTitle", {
+          sessionId: binding.sessionId,
+          title: conv.title,
+        })
+        .catch((error) =>
+          this.opts.log.warn("session.setTitle failed", {
+            error: String(error),
+          }),
+        );
+    }
+    if (!seen || seen.archived !== conv.archived) {
+      void conn
+        .request("session.setHidden", {
+          sessionId: binding.sessionId,
+          hidden: conv.archived,
+        })
+        .catch((error) =>
+          this.opts.log.warn("session.setHidden failed", {
+            error: String(error),
+          }),
+        );
+    }
   }
 
   /* ------------------------- message -> engine -------------------------- */
@@ -463,6 +605,12 @@ export class Harness {
       });
       return;
     }
+    // Watermark guard: a redelivery (register pending list, channel replay)
+    // of a message the engine already took must not prompt it again.
+    const fresh = this.conversationFromAtom(conv.id) ?? conv;
+    if (message.seq <= fresh.deliveredSeq || binding.consumed.has(message.id)) {
+      return;
+    }
     this.enqueueOrPrompt(binding, message);
   }
 
@@ -481,6 +629,13 @@ export class Harness {
   }
 
   private enqueueOrPrompt(binding: SessionBinding, message: AppMessage) {
+    // In-flight guard: replayed `turn.started` refs populate `consumed`, and
+    // claiming the id here means a message can't be prompted twice even when
+    // two delivery paths (register pending + channel replay) race before the
+    // first turn.started lands. The queue-drain path bypasses this by design:
+    // entries here failed or steered out, so a fresh send is the point.
+    if (binding.consumed.has(message.id)) return;
+    binding.consumed.add(message.id);
     if (binding.runningTurnId) {
       // Capability `steer` (#9): a mid-turn user message steers the running
       // turn; without it the message queues as the next prompt.
@@ -492,16 +647,23 @@ export class Harness {
             text: message.text,
           })
           .then((res) => {
-            if (res.status !== "steered") binding.queue.push(message);
+            if (res.status === "steered") {
+              this.markDelivered(binding, message);
+            } else {
+              binding.consumed.delete(message.id);
+              binding.queue.push(message);
+            }
           })
           .catch((error) => {
             this.opts.log.warn("steer failed; queued instead", {
               error: String(error),
             });
+            binding.consumed.delete(message.id);
             binding.queue.push(message);
           });
         return;
       }
+      binding.consumed.delete(message.id);
       binding.queue.push(message);
       this.opts.log.debug("queued behind running turn", {
         conversationId: binding.conversationId,
@@ -515,6 +677,7 @@ export class Harness {
   private async sendPrompt(binding: SessionBinding, message: AppMessage) {
     const conn = this.engine;
     if (!conn) {
+      binding.consumed.delete(message.id);
       binding.queue.push(message);
       return;
     }
@@ -557,15 +720,33 @@ export class Harness {
         {
           sessionId: binding.sessionId,
           content,
+          // The relay message id rides to the engine and back on
+          // `turn.started` — that's what makes a replayed turn prove which
+          // user message it consumed, and what its answer dedupes under.
+          ref: message.id,
         },
         0,
       );
+      this.markDelivered(binding, message);
     } catch (error) {
+      // Going back on the queue releases the in-flight claim — a rebind
+      // drains the queue through enqueueOrPrompt, which dedupes on it.
+      if (engineErrorCode(error) === undefined) {
+        // Transport failure (socket dropped / engine died mid-prompt): the
+        // engine may still have taken the turn — its replayed
+        // `turn.started.ref` reclaims the message on resync, and the answer
+        // dedupes on the same key either way.
+        binding.consumed.delete(message.id);
+        binding.queue.unshift(message);
+        return;
+      }
       if (engineErrorCode(error) === INVALID_STATE) {
+        binding.consumed.delete(message.id);
         binding.queue.push(message);
         return;
       }
       if (engineErrorCode(error) === SESSION_NOT_FOUND) {
+        binding.consumed.delete(message.id);
         binding.queue.unshift(message);
         await this.rebindConversation(binding);
         return;
@@ -577,8 +758,23 @@ export class Harness {
       await this.postSystem(
         binding,
         `Engine error: ${error instanceof Error ? error.message : String(error)}`,
+        `sys:${binding.conversationId}:${message.id}:engine-error`,
       );
     }
+  }
+
+  /**
+   * Advance the conversation's delivery watermark: this user message reached
+   * the engine, so a re-registering harness must not owe it again. Queued
+   * messages stay under the watermark until they actually send.
+   */
+  private markDelivered(binding: SessionBinding, message: AppMessage): void {
+    this.relayWrite(`deliveredSeq ${message.id}`, () =>
+      this.opts.relay.request("conversations.update", {
+        conversationId: binding.conversationId,
+        deliveredSeq: message.seq,
+      }),
+    );
   }
 
   private async bindingFor(
@@ -607,6 +803,8 @@ export class Harness {
           queue: [],
           textByTurn: new Map(),
           modelByTurn: new Map(),
+          consumed: new Set(),
+          turnSource: new Map(),
         };
         this.bindings.set(conv.id, binding);
         this.conversationBySession.set(conv.engineRef, conv.id);
@@ -632,6 +830,8 @@ export class Harness {
       queue: [],
       textByTurn: new Map(),
       modelByTurn: new Map(),
+      consumed: new Set(),
+      turnSource: new Map(),
     };
     this.bindings.set(conv.id, binding);
     this.conversationBySession.set(started.sessionId, conv.id);
@@ -663,6 +863,13 @@ export class Harness {
         if (event.payload.model) {
           binding.modelByTurn.set(event.payload.turnId, event.payload.model);
         }
+        // `ref` proves which relay message this turn consumed — recorded so a
+        // pending-tail redelivery can't re-prompt it, and so the turn's answer
+        // posts under a dedupe key stable across reconnects.
+        if (event.payload.ref) {
+          binding.consumed.add(event.payload.ref);
+          binding.turnSource.set(event.payload.turnId, event.payload.ref);
+        }
         this.opts.sleep.acquire();
         this.updateConversation(binding.conversationId, {
           state: "active",
@@ -682,6 +889,7 @@ export class Harness {
           void this.postSystem(
             binding,
             `⚙ ${event.payload.tool}${toolHint(event.payload.input)}`,
+            `tool:${binding.conversationId}:${event.payload.toolCallId}`,
           );
         }
         break;
@@ -733,18 +941,57 @@ export class Harness {
     request: EngineRequest,
   ): Promise<void> {
     const key = `${binding.sessionId}:${requestId}`;
-    const result = await this.opts.relay.request<{ ask: Ask }>("asks.open", {
-      channelId: binding.channelId,
-      conversationId: binding.conversationId,
-      turnId,
-      requestId,
-      request,
-    });
-    this.askByRequest.set(key, result.ask.id);
-    this.requestByAsk.set(result.ask.id, {
-      sessionId: binding.sessionId,
-      requestId,
-    });
+    const open = async () => {
+      const result = await this.opts.relay.request<{ ask: Ask }>("asks.open", {
+        channelId: binding.channelId,
+        conversationId: binding.conversationId,
+        turnId,
+        requestId,
+        request,
+      });
+      this.askByRequest.set(key, result.ask.id);
+      this.requestByAsk.set(result.ask.id, {
+        sessionId: binding.sessionId,
+        requestId,
+      });
+    };
+    try {
+      await open();
+    } catch (error) {
+      if (!isTransientRelayError(error)) throw error;
+      // Socket mid-reconnect: the ask lands when the outbox flushes (the
+      // request_id unique key makes a replayed open idempotent).
+      this.relayWrite(`asks.open ${requestId}`, open);
+    }
+  }
+
+  /**
+   * After a relay reconnect, asks the user resolved while the socket was down
+   * never reached us (`ask.resolved` is fire-and-forget). Re-list resolved
+   * asks and forward the ones still mapped to an engine request.
+   */
+  private async reconcileAsks(): Promise<void> {
+    let resolved: Ask[];
+    try {
+      const res = await this.opts.relay.request<{ asks: Ask[] }>("asks.list", {
+        state: "resolved",
+      });
+      resolved = res.asks;
+    } catch (error) {
+      this.opts.log.warn("asks reconcile failed", { error: String(error) });
+      return;
+    }
+    for (const ask of resolved) {
+      try {
+        if (this.requestByAsk.has(ask.id) && ask.outcome)
+          await this.onAskResolved(ask);
+      } catch (error) {
+        this.opts.log.warn("ask reconcile respond failed", {
+          askId: ask.id,
+          error: String(error),
+        });
+      }
+    }
   }
 
   /** Engine resolved an ask itself (cancel/steer) → close the relay ask. */
@@ -758,17 +1005,13 @@ export class Harness {
     this.askByRequest.delete(`${sessionId}:${requestId}`);
     if (!askId) return;
     this.requestByAsk.delete(askId);
-    await this.opts.relay
-      .request("asks.respond", {
+    this.relayWrite(`asks.respond ${requestId}`, () =>
+      this.opts.relay.request("asks.respond", {
         askId,
         outcome,
         ...(answer ? { answer } : {}),
-      })
-      .catch((error) =>
-        this.opts.log.warn("asks.respond (engine-resolved) failed", {
-          error: String(error),
-        }),
-      );
+      }),
+    );
   }
 
   /* --------------------------- relay -> engine -------------------------- */
@@ -789,6 +1032,35 @@ export class Harness {
       case "ask.resolved": {
         const parsed = AskResolvedEvent.safeParse(params);
         if (parsed.success) void this.onAskResolved(parsed.data.ask);
+        break;
+      }
+      case "conversation.updated": {
+        // User-initiated rename/archive (host writes only touch
+        // engineRef/state/deliveredSeq): mirror onto the engine session when
+        // it advertises `session_meta` (#28 AC-3).
+        const parsed = ConversationUpdatedEvent.safeParse(params);
+        if (!parsed.success) break;
+        const conv = parsed.data.conversation;
+        const seen = this.metaSeen.get(conv.id);
+        const binding = this.bindings.get(conv.id);
+        if (!binding) {
+          // No session yet — record the baseline so a later event diffs right.
+          if (!seen) {
+            this.metaSeen.set(conv.id, {
+              title: conv.title,
+              archived: conv.archived,
+            });
+          }
+          break;
+        }
+        if (
+          seen &&
+          seen.title === conv.title &&
+          seen.archived === conv.archived
+        ) {
+          break;
+        }
+        this.mirrorMeta(binding, conv);
         break;
       }
       case "turn.interruptRequested": {
@@ -979,28 +1251,43 @@ export class Harness {
       this.conversationFromAtom(binding.conversationId),
     );
     const hasAnswer = text.trim().length > 0 && !!employeeId;
+    // The answer dedupes under the user message that prompted the turn
+    // (turn.started.ref); re-prompts of the same message — a rebind redelivery
+    // — hit the same key instead of posting a duplicate.
+    const source = binding.turnSource.get(turnId) ?? turnId;
     if (hasAnswer) {
-      await this.opts.relay
-        .request("messages.post", {
+      this.relayWrite(`answer ${turnId}`, () =>
+        this.opts.relay.request("messages.post", {
           channelId: binding.channelId,
           conversationId: binding.conversationId,
           authorKind: "employee",
           authorId: employeeId,
           text: text.trim(),
           ...(model ? { model } : {}),
-        })
-        .catch((error) =>
-          this.opts.log.error("answer post failed", { error: String(error) }),
-        );
+          dedupeKey: `answer:${binding.conversationId}:${source}`,
+        }),
+      );
     }
     // An errored turn must leave a trace even when text streamed before it —
     // in-view conversations never notify, so this is the only failure signal.
     if (event.payload.error) {
-      await this.postSystem(binding, `Error: ${event.payload.error}`);
+      await this.postSystem(
+        binding,
+        `Error: ${event.payload.error}`,
+        `sys:${binding.conversationId}:${source}:error`,
+      );
     } else if (!hasAnswer && stopReason === "cancelled") {
-      await this.postSystem(binding, "Stopped.");
+      await this.postSystem(
+        binding,
+        "Stopped.",
+        `sys:${binding.conversationId}:${source}:stopped`,
+      );
     } else if (!hasAnswer) {
-      await this.postSystem(binding, "(the engine ended the turn silently)");
+      await this.postSystem(
+        binding,
+        "(the engine ended the turn silently)",
+        `sys:${binding.conversationId}:${source}:silent`,
+      );
     }
     this.updateConversation(binding.conversationId, { state: "idle" }).catch(
       () => {},
@@ -1155,6 +1442,7 @@ export class Harness {
       engineRef?: string;
       state?: "idle" | "active" | "closed";
       model?: string;
+      deliveredSeq?: number;
     },
   ) {
     await this.opts.relay.request("conversations.update", {
@@ -1163,18 +1451,36 @@ export class Harness {
     });
   }
 
-  private async postSystem(binding: SessionBinding, text: string) {
-    await this.opts.relay
-      .request("messages.post", {
+  private async postSystem(
+    binding: SessionBinding,
+    text: string,
+    dedupeKey?: string,
+  ) {
+    this.relayWrite(`system note "${text.slice(0, 24)}"`, () =>
+      this.opts.relay.request("messages.post", {
         channelId: binding.channelId,
         conversationId: binding.conversationId,
         authorKind: "system",
         text,
-      })
-      .catch((error) =>
-        this.opts.log.warn("system post failed", { error: String(error) }),
-      );
+        ...(dedupeKey ? { dedupeKey } : {}),
+      }),
+    );
   }
+}
+
+/** Socket-level failures retry through the outbox; the rest are real. */
+const TRANSIENT_CODES = new Set([
+  "not_connected",
+  "timeout",
+  "socket_closed",
+  "closed",
+]);
+function isTransientRelayError(error: unknown): boolean {
+  if (error instanceof Error && "code" in error) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" && TRANSIENT_CODES.has(code)) return true;
+  }
+  return false;
 }
 
 const toolHint = (input: unknown): string => {

@@ -64,6 +64,12 @@ export const PromptParams = z.strictObject({
   sessionId: SessionId,
   /** ACP ContentBlock list: text always allowed, image under image_prompt. */
   content: z.array(ContentBlock).min(1),
+  /**
+   * Opaque client tag echoed back on the turn's `turn.started` event — how a
+   * replaying client proves which of its messages the turn consumed (the
+   * harness passes the relay message id).
+   */
+  ref: z.string().min(1).optional(),
 });
 export type PromptParams = z.infer<typeof PromptParams>;
 
@@ -158,6 +164,27 @@ export const SessionSteerResult = z.object({
 });
 export type SessionSteerResult = z.infer<typeof SessionSteerResult>;
 
+// ── session.setTitle / session.setHidden (capability: session_meta) ────────
+export const SessionSetTitleParams = z.strictObject({
+  sessionId: SessionId,
+  title: z.string().min(1),
+});
+export type SessionSetTitleParams = z.infer<typeof SessionSetTitleParams>;
+export const SessionSetTitleResult = z.object({ title: z.string() });
+export type SessionSetTitleResult = z.infer<typeof SessionSetTitleResult>;
+
+/**
+ * "Hidden" = out of the engine's default session list but still resumable —
+ * the engine-side counterpart of the app's `archived` flag.
+ */
+export const SessionSetHiddenParams = z.strictObject({
+  sessionId: SessionId,
+  hidden: z.boolean(),
+});
+export type SessionSetHiddenParams = z.infer<typeof SessionSetHiddenParams>;
+export const SessionSetHiddenResult = z.object({ hidden: z.boolean() });
+export type SessionSetHiddenResult = z.infer<typeof SessionSetHiddenResult>;
+
 // ── the table ────────────────────────────────────────────────────────────────
 export interface EngineMethodContract {
   params: z.ZodType;
@@ -238,6 +265,18 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
     result: SessionSetModelResult,
     doc: "Pin a model on a session; the next turn uses it (see turn.started.model).",
     capability: "models",
+  },
+  "session.setTitle": {
+    params: SessionSetTitleParams,
+    result: SessionSetTitleResult,
+    doc: "Set the engine session's display title — the harness mirrors the app's rename so the engine's own lists stay consistent.",
+    capability: "session_meta",
+  },
+  "session.setHidden": {
+    params: SessionSetHiddenParams,
+    result: SessionSetHiddenResult,
+    doc: "Move the engine session out of / back into its default list — the engine-side counterpart of archive/unarchive.",
+    capability: "session_meta",
   },
 };
 export type EngineMethodName = keyof typeof ENGINE_METHODS;

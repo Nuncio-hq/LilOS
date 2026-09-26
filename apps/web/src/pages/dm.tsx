@@ -1,4 +1,8 @@
-import type { ChannelMessagesState, SessionModel } from "@lilos/client-runtime";
+import type {
+  ChannelMessagesState,
+  SessionFeedState,
+  SessionModel,
+} from "@lilos/client-runtime";
 import type { AppMessage, Ask, Conversation } from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
 import { EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
@@ -25,6 +29,7 @@ import {
 } from "../lib/mapping";
 import {
   asks as asksAtom,
+  engine,
   navOpen,
   relay,
   sessionModels,
@@ -35,6 +40,14 @@ const EMPTY_MESSAGES = atom<ChannelMessagesState>({
   synced: true,
   lastSeq: 0,
   messages: [],
+});
+
+const EMPTY_FEED = atom<SessionFeedState>({
+  sessionId: "",
+  synced: false,
+  latestSeq: 0,
+  events: [],
+  openRequests: [],
 });
 
 const OUTCOME_LABEL: Record<ApprovalOutcome, string> = {
@@ -71,10 +84,11 @@ export function DmPage() {
 
   const employees = useAtom(relay.employees);
   const channels = useAtom(relay.channels);
-  const conversations = useAtom(relay.conversations);
+  const summaries = useAtom(relay.conversationSummaries);
   const models = useAtom(sessionModels);
   const allAsks = useAtom(asksAtom);
   const pending = useAtom(pendingStart);
+  const engineState = useAtom(engine.state);
   const [profileOpen, setProfileOpen] = useState(false);
 
   const employee = employees.find((e) => e.id === employeeId);
@@ -86,26 +100,98 @@ export function DmPage() {
   );
   const messages: AppMessage[] = msgState.messages;
 
+  /* DM conversations for this employee — backed by the summaries endpoint so
+     rows older than the channel snapshot window still list (#28 AC-1). */
+  const convs = useMemo(
+    () =>
+      summaries
+        .map((s) => s.conversation)
+        .filter((c) => channel && c.channelId === channel.id)
+        .sort((a, b) => a.createdAt - b.createdAt),
+    [summaries, channel],
+  );
+  const openConv = convs.find((c) => c.id === conversationId);
+
+  /* The open thread needs its whole visible history, not just the channel
+     window (#28 AC-2): page messages.list scoped to the conversation. */
+  const channelId = channel?.id;
+  const [threadMsgs, setThreadMsgs] = useState<AppMessage[]>([]);
+  useEffect(() => {
+    setThreadMsgs([]);
+    if (!conversationId || !channelId) return;
+    let dead = false;
+    void (async () => {
+      const all: AppMessage[] = [];
+      for (;;) {
+        const page = await relay.request<{
+          messages: AppMessage[];
+        }>("messages.list", {
+          channelId,
+          conversationId,
+          afterSeq: all.at(-1)?.seq ?? 0,
+          limit: 200,
+        });
+        all.push(...page.messages);
+        if (page.messages.length < 200) break;
+      }
+      if (!dead) setThreadMsgs(all);
+    })().catch(() => {});
+    return () => {
+      dead = true;
+    };
+  }, [conversationId, channelId]);
+
+  /* Fetched history + live arrivals, deduped by id. */
+  const threadPool = useMemo(() => {
+    const seen = new Set<string>();
+    const out: AppMessage[] = [];
+    for (const m of [...threadMsgs, ...messages]) {
+      if (m.conversationId !== openConv?.id || seen.has(m.id)) continue;
+      seen.add(m.id);
+      out.push(m);
+    }
+    return out;
+  }, [threadMsgs, messages, openConv?.id]);
+
+  const openFeed = useAtom(
+    openConv?.engineRef ? engine.sessionFeed(openConv.engineRef) : EMPTY_FEED,
+  );
+
   const uiEmp = employee ? toUiEmployee(employee) : undefined;
   const empFn = (id: string) => {
     const e = employees.find((x) => x.id === id);
     return e ? toUiEmployee(e) : undefined;
   };
 
-  /* DM conversations for this employee, oldest -> newest. */
-  const convs = useMemo(
-    () =>
-      conversations
-        .filter((c) => channel && c.channelId === channel.id)
-        .sort((a, b) => a.createdAt - b.createdAt),
-    [conversations, channel],
-  );
+  const summaryOf = (conv: Conversation) =>
+    summaries.find((s) => s.conversation.id === conv.id);
 
-  const repliesOf = (conv: Conversation): Reply[] =>
-    conversationReplies(
-      messages.filter((m) => m.id !== conv.rootMessageId),
+  /* Replies for a list row: real messages inside the snapshot window, padded
+     to the summary's count with the answer preview on top when it isn't. */
+  const repliesOf = (conv: Conversation): Reply[] => {
+    const s = summaryOf(conv);
+    const want = s ? s.messageCount - 1 : undefined;
+    const known = conversationReplies(
+      (conv.id === conversationId ? threadPool : messages).filter(
+        (m) => m.conversationId === conv.id && m.id !== conv.rootMessageId,
+      ),
       conv.id,
     );
+    if (want === undefined || known.length >= want) return known;
+    const out = [...known];
+    if (s?.firstAnswer && !out.some((r) => r.id === s.firstAnswer?.id)) {
+      const [preview] = conversationReplies([s.firstAnswer], conv.id);
+      if (preview) out.unshift(preview);
+    }
+    while (out.length < want)
+      out.push({
+        id: `history-${conv.id}-${out.length}`,
+        from: "user",
+        time: "",
+        text: "",
+      });
+    return out;
+  };
 
   const modelFor = (conv: Conversation): SessionModel | undefined =>
     conv.engineRef ? models[conv.engineRef] : undefined;
@@ -114,7 +200,9 @@ export function DmPage() {
     allAsks.filter((a) => a.conversationId === conv.id);
 
   const feed: Msg[] = convs.flatMap((conv) => {
-    const root = messages.find((m) => m.id === conv.rootMessageId);
+    const root =
+      summaryOf(conv)?.root ??
+      messages.find((m) => m.id === conv.rootMessageId);
     if (!root) return [];
     const model = modelFor(conv);
     return [
@@ -125,8 +213,6 @@ export function DmPage() {
       ),
     ];
   });
-
-  const openConv = convs.find((c) => c.id === conversationId);
 
   // "submitted" marker clears once the engine turn is actually running.
   const openModel = openConv?.engineRef
@@ -175,9 +261,22 @@ export function DmPage() {
   if (openConv) {
     const conv = openConv;
     const model = modelFor(conv);
-    const root = messages.find((m) => m.id === conv.rootMessageId);
+    const root =
+      threadPool.find((m) => m.id === conv.rootMessageId) ??
+      summaryOf(conv)?.root;
     const modelLive = model?.live;
     const asksHere = convAsks(conv);
+    /* Visible messages are the relay's; the working transcript is the engine
+       feed's — when it can't replay, say why instead of going silent (#28). */
+    const transcriptNote =
+      conv.engineRef && (!openFeed.synced || openFeed.error)
+        ? `Working transcript unavailable — ${
+            openFeed.error ??
+            (engineState !== "ready"
+              ? "the engine feed is disconnected (harness down or restarting)"
+              : "still syncing")
+          }`
+        : undefined;
 
     const resolved: Record<string, string> = {};
     for (const a of asksHere) {
@@ -185,7 +284,15 @@ export function DmPage() {
         resolved[a.id] = OUTCOME_LABEL[a.outcome];
     }
     const engineRef = conv.engineRef;
-    const replies = mergeTurns(repliesOf(conv), model, employeeId, asksHere);
+    const replies = mergeTurns(
+      conversationReplies(
+        threadPool.filter((m) => m.id !== conv.rootMessageId),
+        conv.id,
+      ),
+      model,
+      employeeId,
+      asksHere,
+    );
     // An open question ask gets a real answer card (asks.respond).
     const openQuestion = asksHere.find(
       (a) => a.state === "open" && a.request.kind === "question",
@@ -232,6 +339,7 @@ export function DmPage() {
           }}
           running={running}
           steer={steer}
+          transcriptNote={transcriptNote}
           onSend={(text) => void sendDm(employeeId, text, conv.id)}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           onFocus={undefined}

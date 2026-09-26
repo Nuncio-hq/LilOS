@@ -18,17 +18,41 @@ export const navOpen = atom(false);
 export let relay: RelayClient;
 export let engine: EngineClient;
 
-/** Create the two transport clients and connect them. Called once by main. */
+/**
+ * Create the two transport clients and connect them. The relay is required —
+ * it owns the visible chat; the engine feed is best-effort: when the harness
+ * is down the app still opens, and threads show their messages plus a "why
+ * the transcript is missing" line instead of dying at boot (#28 AC-2).
+ */
 export async function bootRuntime(cfg: LilosConfig): Promise<void> {
   relay = new RelayClient({ url: cfg.relayWs, token: cfg.relayToken });
   engine = new EngineClient({ url: cfg.engineWs });
   try {
-    await Promise.all([relay.connect(), engine.connect()]);
+    await relay.connect();
   } catch (e) {
     bootError.set((e as Error).message);
     throw e;
   }
+  keepEngineAlive();
   booted.set(true);
+}
+
+/**
+ * EngineClient retries drops *after* a first success but not a failed first
+ * connect — keep a retry loop here until it latches, then it owns reconnects.
+ */
+function keepEngineAlive(): void {
+  const attempt = () => {
+    if (engine.state.get() === "closed") return; // deliberate teardown
+    engine
+      .connect()
+      .catch(() => {})
+      .finally(() => {
+        const s = engine.state.get();
+        if (s !== "ready" && s !== "reconnecting") setTimeout(attempt, 2_000);
+      });
+  };
+  attempt();
 }
 
 const modelCache = new Map<string, ReadableAtom<SessionModel>>();

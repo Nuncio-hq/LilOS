@@ -59,6 +59,7 @@ export function ThreadView({
   onRemovePending,
   models,
   onModel,
+  transcriptNote,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -90,6 +91,9 @@ export function ThreadView({
   onAttachError?: (message: string) => void;
   steer?: boolean;
   onRemovePending?: (i: number) => void;
+  /* Why the working transcript can't be shown (harness down, engine restarted) —
+     rendered as a muted note where the transcript would be (issue #28). */
+  transcriptNote?: string;
 }) {
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
@@ -218,6 +222,14 @@ export function ThreadView({
                 {r.attachments && <AttachmentChips files={r.attachments} />}
               </Row>
             ),
+          )}
+          {transcriptNote && (
+            <div
+              data-transcript-note
+              className="mx-3 my-2 rounded-lg border border-dashed px-3 py-2 text-muted-foreground text-xs sm:mx-5"
+            >
+              {transcriptNote}
+            </div>
           )}
           {work?.by && (
             <div className="mx-3 my-2 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 text-xs sm:mx-5">

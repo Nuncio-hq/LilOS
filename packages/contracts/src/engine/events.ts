@@ -54,6 +54,8 @@ export const TurnStartedPayload = z.strictObject({
   turnId: TurnId,
   /** Model this turn runs on (engines with the models capability set it). */
   model: z.string().optional(),
+  /** Echo of `prompt.ref` when the client tagged the prompt. */
+  ref: z.string().optional(),
 });
 
 export const TurnDeltaPayload = z.strictObject({

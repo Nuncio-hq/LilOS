@@ -7,6 +7,7 @@ import {
   ChannelSnapshotEvent,
   ChannelSyncedEvent,
   type Conversation,
+  type ConversationSummary,
   ConversationUpdatedEvent,
   type Employee,
   type EmployeePatch,
@@ -118,6 +119,14 @@ export class RelayClient {
   readonly employees: WritableAtom<Employee[]> = atom([]);
   readonly channels: WritableAtom<AppChannel[]> = atom([]);
   readonly conversations: WritableAtom<Conversation[]> = atom([]);
+  /**
+   * Per-conversation list rows (title, root, answer preview, state) that
+   * survive the channel snapshot window — refreshed on connect and patched
+   * by conversation/message notifications (#28).
+   */
+  readonly conversationSummaries: WritableAtom<ConversationSummary[]> = atom(
+    [],
+  );
   /** Latest system.status poll + the transport state it was taken under. */
   readonly status: WritableAtom<StatusPollState> = atom<StatusPollState>({
     connection: "idle",
@@ -528,17 +537,25 @@ export class RelayClient {
 
   private async refreshDirectory(): Promise<void> {
     try {
-      const [employees, channels, conversations] = await Promise.all([
-        this.request<{ employees: Employee[] }>("employees.list", {}),
-        this.request<{ channels: AppChannel[] }>("channels.list", {}),
-        this.request<{ conversations: Conversation[] }>(
-          "conversations.list",
-          {},
-        ),
-      ]);
+      const [employees, channels, conversations, summaries] = await Promise.all(
+        [
+          this.request<{ employees: Employee[] }>("employees.list", {}),
+          this.request<{ channels: AppChannel[] }>("channels.list", {}),
+          // Archived included: the DM list renders its own Archived section.
+          this.request<{ conversations: Conversation[] }>(
+            "conversations.list",
+            { includeArchived: true },
+          ),
+          this.request<{ summaries: ConversationSummary[] }>(
+            "conversations.summaries",
+            { includeArchived: true },
+          ),
+        ],
+      );
       this.employees.set(employees.employees);
       this.channels.set(channels.channels);
       this.conversations.set(conversations.conversations);
+      this.conversationSummaries.set(summaries.summaries);
     } catch {
       // Directory refresh is best-effort on reconnect; stores keep stale data.
     }
@@ -726,6 +743,7 @@ export class RelayClient {
           this.parked.set(event.channelId, list);
           return;
         }
+        this.patchSummaryForMessage(event.message);
         this.dispatchIfNewer(event.channelId, event.message);
         return;
       }
@@ -766,8 +784,63 @@ export class RelayClient {
                 c.id === event.conversation.id ? event.conversation : c,
               );
         this.conversations.set(next);
+        const summaries = this.conversationSummaries.get();
+        const sIdx = summaries.findIndex(
+          (s) => s.conversation.id === event.conversation.id,
+        );
+        if (sIdx === -1) {
+          // A conversation this client has never summarized — refresh so the
+          // DM list gains the row (root + preview) without waiting for a
+          // restart.
+          void this.refreshSummaries();
+        } else {
+          this.conversationSummaries.set(
+            summaries.map((s) =>
+              s.conversation.id === event.conversation.id
+                ? { ...s, conversation: event.conversation }
+                : s,
+            ),
+          );
+        }
         return;
       }
+    }
+  }
+
+  /** Keep one summary row current as its conversation accrues messages. */
+  private patchSummaryForMessage(message: AppMessage): void {
+    const convId = message.conversationId;
+    if (!convId) return;
+    const summaries = this.conversationSummaries.get();
+    const idx = summaries.findIndex((s) => s.conversation.id === convId);
+    if (idx === -1) {
+      void this.refreshSummaries();
+      return;
+    }
+    const isAnswer = message.authorKind !== "user";
+    this.conversationSummaries.set(
+      summaries.map((s) =>
+        s.conversation.id === convId
+          ? {
+              ...s,
+              last: message,
+              messageCount: s.messageCount + 1,
+              firstAnswer: s.firstAnswer ?? (isAnswer ? message : undefined),
+            }
+          : s,
+      ),
+    );
+  }
+
+  private async refreshSummaries(): Promise<void> {
+    try {
+      const res = await this.request<{ summaries: ConversationSummary[] }>(
+        "conversations.summaries",
+        { includeArchived: true },
+      );
+      this.conversationSummaries.set(res.summaries);
+    } catch {
+      /* best-effort — the full refresh runs on the next (re)connect */
     }
   }
 
@@ -776,6 +849,11 @@ export class RelayClient {
     this.channels.set(this.channels.get().filter((c) => c.id !== channelId));
     this.conversations.set(
       this.conversations.get().filter((c) => c.channelId !== channelId),
+    );
+    this.conversationSummaries.set(
+      this.conversationSummaries
+        .get()
+        .filter((s) => s.conversation.channelId !== channelId),
     );
     this.subscribedChannels.delete(channelId);
     this.catchingUp.delete(channelId);
@@ -789,6 +867,7 @@ export class RelayClient {
     });
     this.channelStates.delete(channelId);
   }
+
 
   /** Dispatch only when seq advances the channel watermark (dedupe). */
   private dispatchIfNewer(channelId: string, message: AppMessage): void {

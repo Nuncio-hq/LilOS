@@ -59,6 +59,12 @@ export interface SessionFeedState {
   events: EngineEvent[];
   openRequests: OpenRequest[];
   snapshot?: SessionSnapshot;
+  /**
+   * Why the working transcript can't be shown right now (#28 AC-2):
+   * feed socket down, session unknown to the engine, or a replay failure.
+   * Cleared on the next successful resync.
+   */
+  error?: string;
 }
 
 /**
@@ -352,24 +358,33 @@ export class EngineClient {
     feed: WritableAtom<SessionFeedState>,
   ): Promise<void> {
     const state = feed.get();
-    const res = await this.request<EventsSinceResult>("events.since", {
-      sessionId: state.sessionId,
-      after: state.latestSeq,
-    });
-    const merged = [...state.events];
-    for (const e of res.events) {
-      if (e.seq > state.latestSeq && !merged.some((m) => m.seq === e.seq))
-        merged.push(e);
+    try {
+      const res = await this.request<EventsSinceResult>("events.since", {
+        sessionId: state.sessionId,
+        after: state.latestSeq,
+      });
+      const merged = [...state.events];
+      for (const e of res.events) {
+        if (e.seq > state.latestSeq && !merged.some((m) => m.seq === e.seq))
+          merged.push(e);
+      }
+      merged.sort((a, b) => a.seq - b.seq);
+      feed.set({
+        sessionId: state.sessionId,
+        synced: true,
+        latestSeq: res.latestSeq,
+        events: merged,
+        openRequests: res.openRequests,
+        snapshot: res.snapshot,
+        error: undefined,
+      });
+    } catch (error) {
+      feed.set({
+        ...state,
+        error: feedErrorText(error),
+      });
+      throw error;
     }
-    merged.sort((a, b) => a.seq - b.seq);
-    feed.set({
-      sessionId: state.sessionId,
-      synced: true,
-      latestSeq: res.latestSeq,
-      events: merged,
-      openRequests: res.openRequests,
-      snapshot: res.snapshot,
-    });
   }
 
   private dropSocket(_error: EngineError): void {
@@ -418,3 +433,14 @@ export class EngineClient {
 
 /** ids used by tests to assert events the client accepted. */
 export const ENGINE_EVENT_NAMES = ENGINE_EVENT_TYPES;
+
+/** Why a session feed can't replay — phrased for the thread panel. */
+function feedErrorText(error: unknown): string {
+  const code =
+    error instanceof EngineError ? (error.code ?? "") : String(error);
+  if (code === "not_connected" || code === "socket_closed")
+    return "the engine feed is disconnected (harness down or restarting)";
+  if (code.includes("session_not_found") || code === "-32001")
+    return "the engine no longer has this session (its log was evicted or the process restarted)";
+  return `transcript replay failed: ${error instanceof Error ? error.message : String(error)}`;
+}

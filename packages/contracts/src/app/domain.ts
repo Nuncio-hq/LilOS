@@ -79,6 +79,13 @@ export const Conversation = z.object({
    */
   model: z.string().min(1).optional(),
   archived: z.boolean(),
+  /**
+   * Host-owned watermark: highest user-message seq the harness has handed to
+   * the engine. User messages beyond it are the owed turns — this is what
+   * survives a restart when a message queued mid-turn sits behind the
+   * previous turn's answer in seq order.
+   */
+  deliveredSeq: z.int().min(0).default(0),
   createdAt: Timestamp,
 });
 export type Conversation = z.infer<typeof Conversation>;
@@ -153,9 +160,36 @@ export type Ask = z.infer<typeof Ask>;
 export const PendingTurn = z.object({
   conversation: Conversation,
   channel: AppChannel,
+  /** Newest undelivered user message — `messages.at(-1)`. */
   message: AppMessage,
+  /**
+   * Every user message past `conversation.deliveredSeq`, oldest first
+   * (`message` included). A message sent while the previous turn ran can sit
+   * behind that turn's answer in seq order, so the watermark — not the
+   * newest message — decides what a restarting harness still owes.
+   */
+  messages: z.array(AppMessage).min(1),
 });
 export type PendingTurn = z.infer<typeof PendingTurn>;
+
+/**
+ * Everything the session list renders for one conversation, so rows survive
+ * beyond the channel's snapshot window: the conversation itself plus the
+ * messages a row needs (root text, first answer, latest activity) without
+ * paging the whole thread.
+ */
+export const ConversationSummary = z.object({
+  conversation: Conversation,
+  /** The user message that opened the thread. */
+  root: AppMessage,
+  /** First non-user message in the thread — the "answer preview". */
+  firstAnswer: AppMessage.optional(),
+  /** Newest message in the thread (any author). */
+  last: AppMessage,
+  /** Total messages in the thread, root included. */
+  messageCount: z.int().min(1),
+});
+export type ConversationSummary = z.infer<typeof ConversationSummary>;
 
 /**
  * Engine state as reported by the registered engine host via

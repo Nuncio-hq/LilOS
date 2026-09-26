@@ -82,6 +82,11 @@ const waitFor = async <T>(
 interface World {
   relay: Relay;
   engine: FakeEngine;
+  engineConn: EngineConnection;
+  engineCalls: { method: string; params: unknown }[];
+  /** Every socket the harness's RelayClient has opened — close() drops it. */
+  relaySockets: RelaySocket[];
+  harnessRelay: RelayClient;
   harness: Harness;
   sleep: ReturnType<typeof createFakeSleepGuard>;
   user: RelayClient;
@@ -93,12 +98,30 @@ async function setupWorld(tick = 1, attachEngine = true): Promise<World> {
   const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
   const engine = new FakeEngine({ tick });
   const engineConn = connectFake(engine) as unknown as EngineConnection;
+  const engineCalls: { method: string; params: unknown }[] = [];
+  const origRequest = engineConn.request.bind(engineConn);
+  engineConn.request = <T = unknown>(
+    method: string,
+    params?: unknown,
+  ): Promise<T> => {
+    engineCalls.push({ method, params });
+    return origRequest<T>(method, params);
+  };
+  const relaySockets: RelaySocket[] = [];
+  const capturingFactory =
+    (inner: SocketFactory): SocketFactory =>
+    (url: string) => {
+      const s = inner(url);
+      relaySockets.push(s);
+      return s;
+    };
   const sleep = createFakeSleepGuard();
   const log = createMemoryLogger();
   const harnessRelay = new RelayClient({
     url: "mem://harness",
     token: TOKEN,
-    socketFactory: socketFor(relay),
+    socketFactory: capturingFactory(socketFor(relay)),
+    reconnectMinDelayMs: 20,
   });
   const harness = new Harness({
     relay: harnessRelay,
@@ -117,6 +140,10 @@ async function setupWorld(tick = 1, attachEngine = true): Promise<World> {
   return {
     relay,
     engine,
+    engineConn,
+    engineCalls,
+    relaySockets,
+    harnessRelay,
     harness,
     sleep,
     user,
@@ -127,6 +154,12 @@ async function setupWorld(tick = 1, attachEngine = true): Promise<World> {
     },
   };
 }
+
+const listConvMessages = (user: RelayClient, channelId: string) =>
+  user.request<{ messages: AppMessage[] }>("messages.list", {
+    channelId,
+    limit: 200,
+  });
 
 /** Open a DM + conversation as the user; returns ids. */
 async function openDmConversation(user: RelayClient) {
@@ -925,6 +958,176 @@ describe("employee lifecycle over the harness (#29)", () => {
           ),
         "session closed after employees.remove",
       );
+    } finally {
+      await w.cleanup();
+    }
+  });
+});
+
+
+describe("sessions replay + meta (#28)", () => {
+  it("AC-3 rename/archive on the conversation mirror to the engine via session_meta", async () => {
+    const w = await setupWorld();
+    try {
+      const describe = await w.engineConn.request<{
+        capabilities: { id: string }[];
+      }>("describe", {});
+      expect(describe.capabilities.map((c) => c.id)).toContain("session_meta");
+
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Summarize the repo layout",
+      });
+      const engineRef = await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        return (
+          conversations.find((c) => c.id === conversation.id)?.engineRef ??
+          undefined
+        );
+      }, "engineRef");
+
+      await w.user.request("conversations.update", {
+        conversationId: conversation.id,
+        title: "Quarterly plan",
+      });
+      const setTitle = await waitFor(
+        () => w.engineCalls.find((c) => c.method === "session.setTitle"),
+        "session.setTitle call",
+      );
+      expect(setTitle.params).toMatchObject({
+        sessionId: engineRef,
+        title: "Quarterly plan",
+      });
+
+      await w.user.request("conversations.update", {
+        conversationId: conversation.id,
+        archived: true,
+      });
+      const setHidden = await waitFor(
+        () => w.engineCalls.find((c) => c.method === "session.setHidden"),
+        "session.setHidden call",
+      );
+      expect(setHidden.params).toMatchObject({
+        sessionId: engineRef,
+        hidden: true,
+      });
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-5 drop the harness's relay socket mid-turn: the answer lands once after reconnect", {
+    timeout: 15_000,
+  }, async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page", // approval-gated turn: pauses on ask
+      });
+      const ask = await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks[0];
+      }, "approval ask");
+
+      // Kill the harness's relay connection mid-turn (socket[0] is its first),
+      // then answer while it may still be down: if the resolution's
+      // notification was lost, the re-register reconcile picks it up.
+      w.relaySockets[0].close();
+      await w.user.request("asks.respond", {
+        askId: ask.id,
+        outcome: "once",
+      });
+
+      await waitFor(
+        () => (w.harnessRelay.state.get() === "ready" ? true : undefined),
+        "harness re-registered",
+      );
+      await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        for (const a of asks)
+          await w.user.request("asks.respond", {
+            askId: a.id,
+            outcome: "once",
+          });
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+      }, "employee answer after reconnect");
+
+      const { messages } = await listConvMessages(w.user, channel.id);
+      const answers = messages.filter(
+        (m) =>
+          m.authorKind === "employee" && m.conversationId === conversation.id,
+      );
+      expect(answers).toHaveLength(1);
+      expect(answers[0].text.length).toBeGreaterThan(0);
+
+      // The engine saw the prompt exactly once — no re-prompt on re-register.
+      const prompts = w.engineCalls.filter(
+        (c) =>
+          c.method === "prompt" &&
+          JSON.stringify(c.params).includes("Add a footer"),
+      );
+      expect(prompts).toHaveLength(1);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-5b user message posted while the harness is offline delivers exactly once", {
+    timeout: 15_000,
+  }, async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Summarize the repo layout",
+      });
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.authorKind === "employee");
+      }, "first answer");
+
+      w.relaySockets.at(-1)?.close();
+      // The message lands in the relay while the harness can't hear it.
+      await postMessage(w.user, channel.id, conversation.id, "one more thing");
+
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        const list = messages.filter((m) => m.authorKind === "employee");
+        return list.length >= 2 ? list : undefined;
+      }, "second answer after reconnect");
+      const { messages } = await listConvMessages(w.user, channel.id);
+      expect(messages.filter((m) => m.authorKind === "employee")).toHaveLength(
+        2,
+      );
+      expect(
+        w.engineCalls.filter(
+          (c) =>
+            c.method === "prompt" &&
+            JSON.stringify(c.params).includes("one more thing"),
+        ),
+      ).toHaveLength(1);
     } finally {
       await w.cleanup();
     }

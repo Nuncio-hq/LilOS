@@ -3,6 +3,7 @@ import type {
   AppMessage,
   Ask,
   Conversation,
+  ConversationSummary,
   Employee,
   MessageAttachment,
   PendingTurn,
@@ -69,7 +70,22 @@ const rowToAsk = (row: AskRow): Ask => ({
 export function createDrizzleStore(db: Db): RelayStore {
   const now = () => Date.now();
 
-  const appendMessageTx = (input: AppendMessageInput): AppMessage => {
+  const appendMessageTx = (
+    input: AppendMessageInput,
+  ): { message: AppMessage; created: boolean } => {
+    if (input.dedupeKey) {
+      const existing = db
+        .select()
+        .from(schema.messages)
+        .where(
+          and(
+            eq(schema.messages.channelId, input.channelId),
+            eq(schema.messages.dedupeKey, input.dedupeKey),
+          ),
+        )
+        .get();
+      if (existing) return { message: rowToMessage(existing), created: false };
+    }
     const bumped = db
       .update(schema.channels)
       .set({ lastSeq: sql`${schema.channels.lastSeq} + 1` })
@@ -87,7 +103,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         throw new Error(`unknown conversation ${input.conversationId}`);
       }
     }
-    const message: AppMessage = {
+    const message = {
       id: newId("msg"),
       channelId: input.channelId,
       conversationId: input.conversationId ?? null,
@@ -95,13 +111,23 @@ export function createDrizzleStore(db: Db): RelayStore {
       authorKind: input.authorKind,
       text: input.text,
       ...(input.model !== undefined ? { model: input.model } : {}),
+      dedupeKey: input.dedupeKey ?? null,
       seq: bumped.seq,
       createdAt: now(),
       attachments: input.attachments,
     };
     db.insert(schema.messages).values(messageToRow(message)).run();
-    return message;
+    const { dedupeKey: _dedupeKey, ...appMessage } = message;
+    return { message: appMessage, created: true };
   };
+
+  const conversationMessages = (conversationId: string) =>
+    db
+      .select()
+      .from(schema.messages)
+      .where(eq(schema.messages.conversationId, conversationId))
+      .orderBy(asc(schema.messages.seq))
+      .all();
 
   return {
     async listEmployees() {
@@ -265,6 +291,34 @@ export function createDrizzleStore(db: Db): RelayStore {
         .get();
       return row ? rowToConversation(row) : null;
     },
+    async listConversationSummaries({
+      channelId,
+      includeArchived,
+    }: ListConversationsQuery) {
+      const convs = await this.listConversations({
+        channelId,
+        includeArchived,
+      });
+      const summaries: ConversationSummary[] = [];
+      for (const conversation of convs) {
+        const convMessages = conversationMessages(conversation.id).map(
+          rowToMessage,
+        );
+        const root = convMessages.find(
+          (m) => m.id === conversation.rootMessageId,
+        );
+        const last = convMessages.at(-1);
+        if (!root || !last) continue;
+        summaries.push({
+          conversation,
+          root,
+          firstAnswer: convMessages.find((m) => m.authorKind !== "user"),
+          last,
+          messageCount: convMessages.length,
+        });
+      }
+      return summaries;
+    },
     async openConversation(input: OpenConversationInput) {
       return db.transaction((tx) => {
         const conversationId = newId("conv");
@@ -300,6 +354,7 @@ export function createDrizzleStore(db: Db): RelayStore {
           state: "idle",
           title: input.title,
           archived: false,
+          deliveredSeq: 0,
           createdAt: now(),
         };
         tx.insert(schema.conversations).values(conversation).run();
@@ -311,6 +366,19 @@ export function createDrizzleStore(db: Db): RelayStore {
       });
     },
     async updateConversation(id, patch: ConversationPatch) {
+      if (patch.deliveredSeq !== undefined) {
+        // Forward-only watermark (see memory store): clamp before writing.
+        const current = db
+          .select({ deliveredSeq: schema.conversations.deliveredSeq })
+          .from(schema.conversations)
+          .where(eq(schema.conversations.id, id))
+          .get();
+        if (!current) return null;
+        patch = {
+          ...patch,
+          deliveredSeq: Math.max(current.deliveredSeq, patch.deliveredSeq),
+        };
+      }
       const updated = db
         .update(schema.conversations)
         .set(patch)
@@ -321,7 +389,7 @@ export function createDrizzleStore(db: Db): RelayStore {
     },
     async listMessages(
       channelId: string,
-      { afterSeq, limit }: ListMessagesQuery,
+      { conversationId, afterSeq, limit }: ListMessagesQuery,
     ): Promise<ListMessagesPage> {
       const channel = db
         .select()
@@ -329,24 +397,25 @@ export function createDrizzleStore(db: Db): RelayStore {
         .where(eq(schema.channels.id, channelId))
         .get();
       if (!channel) throw new Error(`unknown channel ${channelId}`);
+      const scope = conversationId
+        ? and(
+            eq(schema.messages.channelId, channelId),
+            eq(schema.messages.conversationId, conversationId),
+          )
+        : eq(schema.messages.channelId, channelId);
       const rows =
         afterSeq !== undefined
           ? db
               .select()
               .from(schema.messages)
-              .where(
-                and(
-                  eq(schema.messages.channelId, channelId),
-                  gt(schema.messages.seq, afterSeq),
-                ),
-              )
+              .where(and(scope, gt(schema.messages.seq, afterSeq)))
               .orderBy(asc(schema.messages.seq))
               .limit(limit ?? -1)
               .all()
           : db
               .select()
               .from(schema.messages)
-              .where(eq(schema.messages.channelId, channelId))
+              .where(scope)
               .orderBy(desc(schema.messages.seq))
               .limit(limit ?? -1)
               .all()
@@ -434,14 +503,13 @@ export function createDrizzleStore(db: Db): RelayStore {
         .all();
       const pending: PendingTurn[] = [];
       for (const conversation of convs) {
-        const last = db
-          .select()
-          .from(schema.messages)
-          .where(eq(schema.messages.conversationId, conversation.id))
-          .orderBy(desc(schema.messages.seq))
-          .limit(1)
-          .get();
-        if (last?.authorKind !== "user") continue;
+        const owed = conversationMessages(conversation.id)
+          .map(rowToMessage)
+          .filter(
+            (m) => m.authorKind === "user" && m.seq > conversation.deliveredSeq,
+          );
+        const message = owed.at(-1);
+        if (!message) continue;
         const channel = db
           .select()
           .from(schema.channels)
@@ -451,7 +519,8 @@ export function createDrizzleStore(db: Db): RelayStore {
         pending.push({
           conversation: rowToConversation(conversation),
           channel,
-          message: rowToMessage(last),
+          message,
+          messages: owed,
         });
       }
       pending.sort((a, b) => a.message.seq - b.message.seq);
