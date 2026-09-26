@@ -201,12 +201,51 @@ export function splitModelRef(
 const MODEL_OK = /✓|switched/i;
 const BUSY = /busy|running|in progress/i;
 
+/**
+ * Union of every provider's model ids from `model.options`; undefined when
+ * the gateway can't enumerate them (older builds) — then the slash output
+ * marker is the only signal and we keep relying on it.
+ */
+async function knownModelIds(
+  gw: GatewayLike,
+): Promise<Set<string> | undefined> {
+  try {
+    const r = (await gw.request("model.options", {})) as {
+      providers?: ModelOptionsProvider[];
+    };
+    const ids = new Set<string>();
+    for (const prov of r.providers ?? []) {
+      const list = Array.isArray(prov.models) ? prov.models : [];
+      for (const m of list) {
+        const id = str(m);
+        if (id) ids.add(id);
+      }
+    }
+    return ids.size ? ids : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** `slash.exec /model <id>` — the TUI's own session-scoped switch. */
 export async function setSessionModel(
   gw: GatewayLike,
   runtimeSid: string,
   model: string,
 ): Promise<{ model: string }> {
+  // #50 AC-3: `/model` on Hermes switches lazily — it answers success for an
+  // id the session can't actually use and the failure only surfaces at the
+  // next prompt. Validate against `model.options` first so an unknown id is
+  // MODEL_NOT_FOUND here, where the caller can react.
+  const known = await knownModelIds(gw);
+  if (known) {
+    const bare = splitModelRef(model).model ?? model;
+    if (!known.has(bare) && !known.has(model))
+      throw new RpcError(
+        RPC_ERRORS.MODEL_NOT_FOUND,
+        `no model ${model} — see models.list`,
+      );
+  }
   const r = (await gw.request("slash.exec", {
     session_id: runtimeSid,
     command: `/model ${model}`,

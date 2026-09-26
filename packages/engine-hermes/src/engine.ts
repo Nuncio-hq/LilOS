@@ -49,6 +49,38 @@ import {
   Session,
 } from "./session.js";
 
+/**
+ * Oldest Hermes build the engine is verified against (#50 AC-4): v0.21.5 on
+ * the 2026.9.24 release line — the build Oscar's Mac runs. Newer optional
+ * `session.create` fields are negotiated per gateway, so a build between the
+ * minimum and current keeps working; anything older is unverified.
+ */
+export const MIN_HERMES_VERSION = "v0.21.5 (2026.9.24)";
+
+/**
+ * `session.create` params a gateway may not declare: its Params models are
+ * `extra="forbid"` and answer JSON-RPC `4000` "invalid params for
+ * session.create: <field>: Extra inputs are not permitted". Dropping these
+ * degrades metadata/precedence hints, not session semantics. Fields that
+ * carry meaning — `profile`, `cwd`, `model`, `provider` — are never dropped:
+ * a gateway refusing them fails the start instead of running a wrong one.
+ */
+const DROPPABLE_CREATE_FIELDS = new Set([
+  "cwd_explicit",
+  "source",
+  "title",
+  "close_on_disconnect",
+]);
+const EXTRA_FORBIDDEN_RE =
+  /invalid params for [\w.]+: ([\w.]+): Extra inputs are not permitted/i;
+
+/** The field a Hermes extra_forbidden rejection names (4000 or -32602). */
+function extraForbiddenField(e: unknown): string | undefined {
+  if (!(e instanceof RpcError)) return undefined;
+  if (e.code !== 4000 && e.code !== RPC_ERRORS.INVALID_PARAMS) return undefined;
+  return EXTRA_FORBIDDEN_RE.exec(e.message)?.[1];
+}
+
 export interface HermesEngineOptions {
   /** Connected `hermes serve` gateway (ws path). */
   gateway: GatewayLike;
@@ -74,6 +106,10 @@ export class HermesEngine {
   private sessionCounter = 0;
   private turnCounter = 0;
   private acpDrivers = new Map<string, AcpDriver>();
+  /** #50 AC-1 — `session.create` fields this gateway already refused. */
+  private droppedCreateFields = new Set<string>();
+  /** Build the gateway advertised in `session.create`'s `info` (#50 AC-4). */
+  private gatewayInfo: { version?: string; releaseDate?: string } = {};
 
   constructor(private opts: HermesEngineOptions) {
     opts.gateway.onEvent((e) => this.onGatewayEvent(e));
@@ -192,6 +228,21 @@ export class HermesEngine {
         methods: ["session.start"],
       });
     }
+    capabilities.push({
+      id: "hermes_gateway",
+      name: "Hermes gateway",
+      description: `Requires Hermes ${MIN_HERMES_VERSION} or newer; newer session.create fields are negotiated per gateway.`,
+      detail: {
+        minVersion: MIN_HERMES_VERSION,
+        ...(this.gatewayInfo.version
+          ? { gatewayVersion: this.gatewayInfo.version }
+          : {}),
+        ...(this.gatewayInfo.releaseDate
+          ? { releaseDate: this.gatewayInfo.releaseDate }
+          : {}),
+        droppedCreateFields: [...this.droppedCreateFields],
+      },
+    });
     return {
       name: "engine-hermes",
       version: this.opts.version ?? "0.0.0",
@@ -211,7 +262,7 @@ export class HermesEngine {
       this.opts.provider,
     );
     if (mcp.length === 0) {
-      const r = (await this.opts.gateway.request("session.create", {
+      const r = (await this.createSessionCompat({
         profile: p.agent,
         title: `${p.agent} · LilOS`,
         cwd: p.cwd,
@@ -276,6 +327,51 @@ export class HermesEngine {
     });
     s.setState("idle");
     return { sessionId: id };
+  }
+
+  /**
+   * #50 AC-1 — negotiate `session.create` against the connected gateway's
+   * declared contract. A field the build doesn't declare answers a 4000
+   * extra_forbidden rejection naming it; drop it when it's known-optional
+   * and retry, remembering the drop for the life of this engine (the
+   * contract can't change under one `hermes serve` process). Also captures
+   * the gateway build from the result's `info` for describe().
+   */
+  private async createSessionCompat(params: Record<string, unknown>) {
+    const send: Record<string, unknown> = { ...params };
+    for (const f of this.droppedCreateFields) delete send[f];
+    // Bounded: one retry per refused field, and only droppable ones retry.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      try {
+        const r = (await this.opts.gateway.request("session.create", send)) as {
+          info?: { version?: unknown; release_date?: unknown };
+        };
+        const info = r?.info;
+        if (info && typeof info === "object") {
+          this.gatewayInfo = {
+            version:
+              typeof info.version === "string" ? info.version : undefined,
+            releaseDate:
+              typeof info.release_date === "string"
+                ? info.release_date
+                : undefined,
+          };
+        }
+        return r;
+      } catch (e) {
+        const field = extraForbiddenField(e);
+        if (field && field in send && DROPPABLE_CREATE_FIELDS.has(field)) {
+          delete send[field];
+          this.droppedCreateFields.add(field);
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new RpcError(
+      RPC_ERRORS.INTERNAL_ERROR,
+      "session.create still rejected after dropping refused optional fields",
+    );
   }
 
   private async prompt(p: PromptParams) {
