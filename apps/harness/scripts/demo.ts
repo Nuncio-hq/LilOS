@@ -70,13 +70,17 @@ const launch = (name: string, cmd: string[], env: Record<string, string>) => {
     String(d)
       .trimEnd()
       .split("\n")
-      .forEach((l) => console.log(`  [${name}] ${l}`)),
+      .forEach((l) => {
+        console.log(`  [${name}] ${l}`);
+      }),
   );
   child.stderr?.on("data", (d) =>
     String(d)
       .trimEnd()
       .split("\n")
-      .forEach((l) => console.error(`  [${name}!] ${l}`)),
+      .forEach((l) => {
+        console.error(`  [${name}!] ${l}`);
+      }),
   );
   return child;
 };
