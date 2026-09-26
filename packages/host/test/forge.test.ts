@@ -13,7 +13,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HOST_ERRORS } from "@lilos/contracts/host";
 import { FakeEngine } from "@lilos/engine-fake";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
 import { callHost } from "../src/index";
 
 /**
@@ -102,6 +110,8 @@ beforeEach(() => {
   writePr();
 });
 
+afterEach(() => rmSync(ghDir, { recursive: true, force: true }));
+
 afterAll(() => {
   for (const k of ["PATH", "GH_FAKE_DIR", "GH_FAKE_LOG"] as const) {
     if (env[k] === undefined) delete process.env[k];
@@ -167,6 +177,7 @@ describe("forge host api (fake gh)", () => {
     await expect(callHost("forge.pr", { path: plain })).rejects.toMatchObject({
       code: HOST_ERRORS.NOT_A_REPO,
     });
+    rmSync(plain, { recursive: true, force: true });
   });
 
   it("AC-2 forge.comment posts the body via gh and it shows on the PR", async () => {
