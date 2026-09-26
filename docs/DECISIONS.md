@@ -58,6 +58,10 @@ PR does not exist.
   Not: Hermes-specific names or types in `contracts`/`engine-fake`/
   `engine-conformance`, `if engine == "..."` branches, server-to-client
   request frames. — #6 · PR #39
+- **D-#8 Hiring and the model picker speak `agents.*` / `models.*`; the
+  protocol has no profile delete — firing removes only the LilOS employee
+  record.** Not: LilOS-owned profile CRUD, or a delete method "for cleanup".
+  — #8 · PR #46
 
 ## UX
 - **D-#19 A control renders only when its handler is passed; the app shows

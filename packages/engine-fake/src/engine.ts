@@ -1,4 +1,7 @@
 import {
+  type AgentDescriptor,
+  type AgentsCreateParams,
+  type AgentsDescribeParams,
   type ApprovalOption,
   type ApprovalOutcome,
   type Capability,
@@ -11,12 +14,19 @@ import {
   type PromptParams,
   type RequestRespondParams,
   RPC_ERRORS,
+  type SessionSetModelParams,
   type SessionStartParams,
   type SessionState,
   type SessionSteerParams,
   type SessionStopParams,
   type Usage,
 } from "@lilos/contracts/engine";
+import {
+  DEFAULT_MODEL,
+  type FakeAgent,
+  MODEL_CATALOG,
+  SEED_AGENTS,
+} from "./catalog.js";
 import { type FakeScript, type FakeStep, scriptFor } from "./script.js";
 
 /** Transport-agnostic failure; the transports translate it into a JSON-RPC error object. */
@@ -83,6 +93,10 @@ export interface FakeEngineOptions {
 export class FakeEngine {
   private readonly tick: number;
   private sessions = new Map<string, FakeSession>();
+  /** The fake's agent catalog — created agents persist for the process life. */
+  private agents = new Map<string, FakeAgent>(
+    SEED_AGENTS.map((a) => [a.id, a]),
+  );
   private listeners = new Set<(e: EngineEvent) => void>();
   private sessionCounter = 0;
   private turnCounter = 0;
@@ -128,6 +142,16 @@ export class FakeEngine {
         return this.sessionStop(parsed.data as SessionStopParams);
       case "session.steer":
         return this.sessionSteer(parsed.data as SessionSteerParams);
+      case "agents.list":
+        return this.agentsList();
+      case "agents.describe":
+        return this.agentsDescribe(parsed.data as AgentsDescribeParams);
+      case "agents.create":
+        return this.agentsCreate(parsed.data as AgentsCreateParams);
+      case "models.list":
+        return this.modelsList();
+      case "session.setModel":
+        return this.sessionSetModel(parsed.data as SessionSetModelParams);
       default:
         throw new RpcError(
           RPC_ERRORS.METHOD_NOT_FOUND,
@@ -152,6 +176,20 @@ export class FakeEngine {
         description: "Accepts stdio MCP servers on session.start (ACP shape).",
         detail: { transports: ["stdio"] },
       },
+      {
+        id: "agents",
+        name: "Hireable agents",
+        description:
+          "List, describe, and create engine profiles; sessions start as one.",
+        methods: ["agents.list", "agents.describe", "agents.create"],
+      },
+      {
+        id: "models",
+        name: "Model picker",
+        description:
+          "List selectable models and pin a session's model for its next turn.",
+        methods: ["models.list", "session.setModel"],
+      },
     ];
     return {
       name: "engine-fake",
@@ -168,12 +206,18 @@ export class FakeEngine {
         "engine-fake accepts stdio mcpServers only",
       );
     }
+    const spec = this.agents.get(p.agent);
+    if (!spec)
+      throw new RpcError(
+        RPC_ERRORS.AGENT_NOT_FOUND,
+        `no agent ${p.agent} — hire it via agents.create first`,
+      );
     const id = `s${++this.sessionCounter}`;
     const s: FakeSession = {
       id,
       agent: p.agent,
       cwd: p.cwd,
-      model: p.model,
+      model: p.model ?? spec.model,
       mcpServers: p.mcpServers ?? [],
       branch: `work/${p.agent}-${id}`,
       seq: 0,
@@ -191,7 +235,7 @@ export class FakeEngine {
     this.emit(s, "session.started", {
       agent: p.agent,
       cwd: p.cwd,
-      model: p.model,
+      model: s.model,
     });
     this.setState(s, "idle");
     return { sessionId: id };
@@ -319,6 +363,60 @@ export class FakeEngine {
     };
   }
 
+  private agentsList() {
+    // Roster rows stay light: the persona text is describe-only.
+    const agents = [...this.agents.values()].map(
+      ({ soul: _soul, ...row }): AgentDescriptor => row,
+    );
+    return { agents };
+  }
+
+  private agentsDescribe(p: AgentsDescribeParams) {
+    const a = this.agents.get(p.id);
+    if (!a) throw new RpcError(RPC_ERRORS.AGENT_NOT_FOUND, `no agent ${p.id}`);
+    return { agent: { ...a } satisfies AgentDescriptor };
+  }
+
+  private agentsCreate(p: AgentsCreateParams) {
+    if (this.agents.has(p.name))
+      throw new RpcError(
+        RPC_ERRORS.INVALID_STATE,
+        `agent ${p.name} already exists`,
+      );
+    if (p.model !== undefined && !MODEL_CATALOG.some((m) => m.id === p.model))
+      throw new RpcError(RPC_ERRORS.MODEL_NOT_FOUND, `no model ${p.model}`);
+    const agent: FakeAgent = {
+      id: p.name,
+      name: p.name,
+      description: p.description ?? "",
+      model: p.model ?? DEFAULT_MODEL,
+      skillCount: 0,
+      soul: p.soul ?? "",
+    };
+    this.agents.set(agent.id, agent);
+    return { agent: { ...agent } satisfies AgentDescriptor };
+  }
+
+  private modelsList() {
+    return {
+      models: MODEL_CATALOG.map((m) => ({ ...m })),
+      default: DEFAULT_MODEL,
+    };
+  }
+
+  private sessionSetModel(p: SessionSetModelParams) {
+    const s = this.require(p.sessionId);
+    if (s.state === "closed")
+      throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    if (!MODEL_CATALOG.some((m) => m.id === p.model))
+      throw new RpcError(
+        RPC_ERRORS.MODEL_NOT_FOUND,
+        `no model ${p.model} — see models.list`,
+      );
+    s.model = p.model;
+    return { model: s.model };
+  }
+
   // ── the turn loop (ports the prototype's runTurn) ─────────────────────────
 
   private async runTurn(s: FakeSession, promptText: string) {
@@ -334,7 +432,7 @@ export class FakeEngine {
     );
     s.turn = { turnId, phase: "reasoning", interrupted: false };
     s.turnCount += 1;
-    this.emit(s, "turn.started", { turnId });
+    this.emit(s, "turn.started", { turnId, model: s.model });
     this.setState(s, "running");
     try {
       for (const w of words(script.reasoning)) {
@@ -484,6 +582,7 @@ export class FakeEngine {
       state: s.state,
       turn: s.turn ? { turnId: s.turn.turnId, phase: s.turn.phase } : undefined,
       usage: s.usage,
+      model: s.model,
     };
   }
 
