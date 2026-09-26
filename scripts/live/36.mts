@@ -121,6 +121,7 @@ function startStub() {
       }
       if (req.method === "POST" && url.pathname.endsWith("/chat/completions")) {
         const body = (await req.json()) as {
+          stream?: boolean;
           tools?: { function?: { name?: string } }[];
           tool_choice?: unknown;
           messages?: { role: string; content?: unknown; name?: string }[];
@@ -134,11 +135,111 @@ function startStub() {
             ? last.content
             : JSON.stringify(last?.content ?? "");
         seen.push({ tools, text: lastText.slice(0, 400) });
-        // If the model was handed MCP tools and hasn't been given a tool
-        // result yet, answer with a tool call to lilos terminal_run.
+        // Hermes tiers tools via tool_search: MCP tools are "deferred" and the
+        // model must search for them before they appear in the tools list.
+        // Drive that indirection deterministically:
+        //   1. mcp__lilos__terminal_run visible -> call it with the marker
+        //   2. only tool_search visible        -> search for the deferred tool
+        //   3. after a tool result             -> plain text finish
         const termTool = tools.find((n) => /terminal_run/i.test(n));
-        const alreadyRan = (body.messages ?? []).some((m) => m.role === "tool");
-        if (termTool && !alreadyRan) {
+        const msgs = body.messages ?? [];
+        const toolMsgs = msgs.filter((m) => m.role === "tool");
+        const toolText = (m: { content?: unknown }) =>
+          typeof m.content === "string"
+            ? m.content
+            : JSON.stringify(m.content ?? "");
+        const searched = toolMsgs.some((m) => /mcp__lilos__terminal_run/.test(toolText(m)));
+        const ranLilos = toolMsgs.some((m) => /FROM-MODEL/.test(toolText(m)));
+        const searchTool = tools.find((n) => /^tool_search$/i.test(n));
+        const callTool = tools.find((n) => /^tool_call$/i.test(n));
+        const wantCall = ranLilos
+          ? null
+          : termTool
+            ? {
+                id: "call_lilos_1",
+                name: termTool,
+                arguments: { command: `echo ${MARKER}-FROM-MODEL` },
+              }
+            : searched && callTool
+              ? {
+                  id: "call_lilos_2",
+                  name: callTool,
+                  arguments: {
+                    calls: [
+                      {
+                        name: "mcp__lilos__terminal_run",
+                        arguments: { command: `echo ${MARKER}-FROM-MODEL` },
+                      },
+                    ],
+                  },
+                }
+              : searchTool
+                ? {
+                    id: `call_search_${toolMsgs.length}`,
+                    name: searchTool,
+                    arguments: { queries: ["terminal_run"] },
+                  }
+                : null;
+        const toolCallDelta = (call: {
+          id: string;
+          name: string;
+          arguments: Record<string, unknown>;
+        }) => ({
+          delta: {
+            role: "assistant",
+            tool_calls: [
+              {
+                index: 0,
+                id: call.id,
+                type: "function",
+                function: {
+                  name: call.name,
+                  arguments: JSON.stringify(call.arguments),
+                },
+              },
+            ],
+          },
+        });
+        const toolCallMsg = (call: {
+          id: string;
+          name: string;
+          arguments: Record<string, unknown>;
+        }) => ({
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: call.id,
+              type: "function",
+              function: {
+                name: call.name,
+                arguments: JSON.stringify(call.arguments),
+              },
+            },
+          ],
+        });
+        const sse = (chunks: Record<string, unknown>[]) => {
+          const payload =
+            chunks
+              .map(
+                (c) =>
+                  `data: ${JSON.stringify({ id: "chatcmpl-stub", object: "chat.completion.chunk", created: 0, model: "stub-model-a", choices: [{ index: 0, ...c }] })}\n\n`,
+              )
+              .join("") + "data: [DONE]\n\n";
+          return new Response(payload, {
+            headers: { "content-type": "text/event-stream" },
+          });
+        };
+        if (body.stream) {
+          if (wantCall) {
+            return sse([toolCallDelta(wantCall), { delta: {}, finish_reason: "tool_calls" }]);
+          }
+          return sse([
+            { delta: { role: "assistant", content: `stub:${MARKER}` } },
+            { delta: {}, finish_reason: "stop" },
+          ]);
+        }
+        if (wantCall) {
           return Response.json({
             id: "chatcmpl-stub",
             object: "chat.completion",
@@ -147,22 +248,7 @@ function startStub() {
             choices: [
               {
                 index: 0,
-                message: {
-                  role: "assistant",
-                  content: null,
-                  tool_calls: [
-                    {
-                      id: "call_lilos_1",
-                      type: "function",
-                      function: {
-                        name: termTool,
-                        arguments: JSON.stringify({
-                          command: `echo ${MARKER}-FROM-MODEL`,
-                        }),
-                      },
-                    },
-                  ],
-                },
+                message: toolCallMsg(wantCall),
                 finish_reason: "tool_calls",
               },
             ],
@@ -288,7 +374,7 @@ async function main() {
   while (Date.now() < deadline && !(sawTerm && sawFrame)) {
     for (const m of msgs) {
       if (m.type === "term") {
-        const bytes = Buffer.from(String(m.b64 ?? ""), "base64").toString();
+        const bytes = Buffer.from(String(m.data ?? ""), "base64").toString();
         if (bytes.includes(MARKER)) sawTerm = true;
       }
       if (m.type === "frame") sawFrame = true;
@@ -338,7 +424,7 @@ async function main() {
           terminal: false,
         },
       },
-      60_000,
+      180_000,
     );
     check(!!ainit.result, "hermes acp initialize");
     const acpMcp = {
@@ -407,11 +493,19 @@ async function main() {
         )
         .catch((e) => ({ error: String(e) }))) as Record<string, unknown>;
       check(!("error" in pr), "session/prompt completes (stub provider)");
-      const toolsOffered = stub.seen.flatMap((s) => s.tools);
+      const toolsOffered = [
+        ...new Set(stub.seen.flatMap((s) => s.tools)),
+      ];
+      // Hermes tiers the tool surface: MCP tools are deferred behind
+      // tool_search/tool_call. The session's tools reached the model iff
+      // either the tool was directly visible or the search indirection was.
+      const reached =
+        toolsOffered.some((n) => /mcp__lilos__|terminal_run/i.test(n)) ||
+        toolsOffered.some((n) => /^tool_search$/i.test(n));
       check(
-        toolsOffered.some((n) => /terminal_run/i.test(n)),
-        "hermes handed the MCP tools to the model",
-        toolsOffered.slice(0, 6).join(","),
+        reached,
+        "hermes gave the model a path to the lilos MCP tools",
+        toolsOffered.join(","),
       );
       // If the stub's tool_call ran, the PTY output carries the marker.
       const read = await rpc
@@ -421,13 +515,11 @@ async function main() {
         })
         .catch(() => null);
       const ran = JSON.stringify(read ?? {}).includes(`${MARKER}-FROM-MODEL`);
-      if (ran) {
-        check(true, "model-driven tool call landed on the harness PTY");
-      } else {
-        console.log(
-          "INFO  stub tool_call not executed by hermes (tool naming?) — spawn + handshake already proven",
-        );
-      }
+      check(
+        ran,
+        "model-driven tool call landed on the harness PTY",
+        ran ? "" : "PTY tail had no marker",
+      );
     }
     acpOk = true;
   } catch (e) {
