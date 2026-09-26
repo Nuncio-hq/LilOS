@@ -53,7 +53,6 @@ import {
   SquareIcon,
   SquareTerminalIcon,
   TicketIcon,
-  Trash2Icon,
   Undo2Icon,
   UserIcon,
   UserPlusIcon,
@@ -103,13 +102,16 @@ import {
   ModelSelectorItem, ModelSelectorList, ModelSelectorLogo, ModelSelectorName, ModelSelectorTrigger,
 } from "@/components/ai-elements/model-selector"
 import {
-  Queue, QueueItem, QueueItemAction, QueueItemActions, QueueItemContent, QueueItemIndicator, QueueList,
+  Queue, QueueItem, QueueItemContent, QueueItemIndicator, QueueList,
   QueueSection, QueueSectionContent, QueueSectionLabel, QueueSectionTrigger,
 } from "@/components/ai-elements/queue"
 import { Terminal, TerminalActions, TerminalContent, TerminalCopyButton, TerminalHeader, TerminalStatus, TerminalTitle } from "@/components/ai-elements/terminal"
 import { WebPreview, WebPreviewBody, WebPreviewNavigation, WebPreviewNavigationButton, WebPreviewUrl } from "@/components/ai-elements/web-preview"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+// The one shared agent-chat implementation (steer rows, not-sent tray, composer state copy). Both the
+// thread panel and Focus render chat from here; the chat is the important part, everything inherits it.
+import { ENGINE_STEER, NotSentTray, runningComposer, SteerRows, plain } from "@/agent-chat"
 
 /* Model: Company → Projects → Channels.
    Channel = shared timeline. A top-level message can open a THREAD.
@@ -543,9 +545,8 @@ export default function App() {
   const [selfStart, setSelfStart] = useState<Record<string, boolean>>({})
   const [feeds, setFeeds] = useState<Record<string, Msg[]>>(() => ({ ...FEEDS, ...DM_FEEDS }))
   const stops = useRef<Record<string, boolean>>({})
-  // Engine capability (fake engine): session.steer. ON = a message sent mid-turn is delivered into the
-  // running turn at the next tool boundary; OFF = it waits in the client-side queue (prompt.submit later).
-  const [steerCap, setSteerCap] = useState(true)
+  // Session.steer (ENGINE_STEER in agent-chat.tsx, read in one place): a message sent mid-turn is delivered
+  // into the running turn at the next tool boundary. This is the default and only behavior — no toggle UI.
   const steerBuf = useRef<Record<string, string[]>>({})
   // Mirror of steerBuf in React state so a pending steer renders immediately inside the running turn
   // (as a "Steer pending" chip where the "Oscar steered" row will appear). steerBuf stays the async
@@ -659,7 +660,8 @@ export default function App() {
       mapRoot(key, rootId, (t) => ({ ...t, todos: s.todo ? (t.todos ?? []).map((x) => (x.content === s.todo ? { ...x, status: "cancelled" } : x)) : t.todos }))
     }
     // session.interrupt (■): undelivered steers must not silently land in a LATER turn —
-    // hand them to the visible, removable client-side queue (QueuedTray) where Oscar controls them.
+    // hand them to the visible not-sent tray (agent-chat NotSentTray): Send runs it now, remove discards it.
+    // thread.queue holds ONLY these post-stop items; nothing auto-runs after a stop.
     if (stops.current[rootId]) {
       const pend = steerBuf.current[rootId] ?? []
       if (pend.length) {
@@ -667,16 +669,14 @@ export default function App() {
         mapRoot(key, rootId, (t) => ({ ...t, queue: [...(t.queue ?? []), ...pend] }))
       }
     }
-    // Follow-ups run next, in order. A steer that never hit a tool boundary becomes the next prompt
-    // (never lost); then the client-side queue (used when the engine has no session.steer).
-    const m = (feedsRef.current[key] ?? []).find((x) => x.kind === "msg" && x.id === rootId)
+    // A steer that never hit a tool boundary becomes the next prompt (never lost). The thread queue is
+    // only ever post-stop not-sent items, which Oscar sends by hand — so only the steer buffer auto-runs.
     const steered = (steerBuf.current[rootId] ?? [])[0]
-    const next = steered ?? (m?.kind === "msg" ? m.thread?.queue?.[0] : undefined)
-    if (next && !stops.current[rootId]) {
-      if (steered) setSteerBuf(rootId, (steerBuf.current[rootId] ?? []).slice(1))
-      mapRoot(key, rootId, (t) => ({ ...t, queue: steered ? (t.queue ?? []) : (t.queue ?? []).slice(1), replies: [...t.replies, { id: `o-${Date.now()}`, from: "oscar", time: nowTime(), text: next }] }))
+    if (steered && !stops.current[rootId]) {
+      setSteerBuf(rootId, (steerBuf.current[rootId] ?? []).slice(1))
+      mapRoot(key, rootId, (t) => ({ ...t, replies: [...t.replies, { id: `o-${Date.now()}`, from: "oscar", time: nowTime(), text: steered }] }))
       await new Promise((r) => setTimeout(r, 50))
-      return runTurn(key, rootId, empId, next)
+      return runTurn(key, rootId, empId, steered)
     }
   }
   const stopTurn = (rootId: string) => { stops.current[rootId] = true }
@@ -740,12 +740,12 @@ export default function App() {
     setFeeds((fs) => ({ ...fs, [feedKey]: [...(fs[feedKey] ?? []), msg] }))
     if (target) { showThread(id); runTurn(feedKey, id, target, text, ws) }
   }
-  // Reply inside a thread = same Hermes session. While a turn runs: if the engine supports steer
-  // (session.steer, prototype toggle) the message is delivered into the running turn at the next tool
-  // boundary; otherwise it queues client-side and is submitted (prompt.submit) when the turn ends.
+  // Reply inside a thread = same Hermes session. While a turn runs, Enter ALWAYS steers (session.steer):
+  // the message lands in the running turn at the next tool boundary. ENGINE_STEER=false (an engine without
+  // session.steer, future) is the only way a mid-turn send takes the queue path; there is no toggle UI.
   const sendInThread = (root: Extract<Msg, { kind: "msg" }>, text: string) => {
     if (threadRunning(root)) {
-      if (steerCap) setSteerBuf(root.id, [...(steerBuf.current[root.id] ?? []), bold(text)])
+      if (ENGINE_STEER) setSteerBuf(root.id, [...(steerBuf.current[root.id] ?? []), bold(text)])
       else mapRoot(feedKey, root.id, (t) => ({ ...t, queue: [...(t.queue ?? []), bold(text)] }))
       return
     }
@@ -755,6 +755,14 @@ export default function App() {
   }
   const unqueue = (root: Extract<Msg, { kind: "msg" }>, i: number) =>
     mapRoot(feedKey, root.id, (t) => ({ ...t, queue: (t.queue ?? []).filter((_, j) => j !== i) }))
+  // The not-sent tray's "Send": a message that didn't land before ■ runs NOW as a new prompt in the same
+  // thread/session (prompt.submit), not at some later turn boundary. Nothing auto-sends on its own.
+  const sendQueuedNow = (root: Extract<Msg, { kind: "msg" }>, i: number) => {
+    const item = root.thread?.queue?.[i]
+    if (!item || threadRunning(root)) return
+    unqueue(root, i)
+    sendInThread(root, item)
+  }
   // session.undo: drop the last exchange; real Hermes also rewinds files via rollback.restore to the turn checkpoint
   const rewind = (root: Extract<Msg, { kind: "msg" }>, replyIndex: number) => {
     mapRoot(feedKey, root.id, (t) => ({ ...t, replies: t.replies.slice(0, replyIndex) }))
@@ -809,8 +817,8 @@ export default function App() {
       onFocus={() => setFocus(!focus)}
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
       running={threadRunning(openThread)} onSend={(t) => sendInThread(openThread, t)} onStop={() => stopTurn(openThread.id)}
-      onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)}
-      steerCap={steerCap} onSteerCap={setSteerCap} pending={pendingSteers[openThread.id] ?? []}
+      onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
+      pending={pendingSteers[openThread.id] ?? []}
     />
   ) : null
 
@@ -885,10 +893,10 @@ export default function App() {
           resolved={resolved} setResolved={setResolved} work={workOf(openThread)}
           onBack={() => setFocus(false)} onNav={() => setNavOpen(true)} onStart={() => setStartFor(openThread.id)}
           running={threadRunning(openThread)} onSend={(t) => sendInThread(openThread, t)} onStop={() => stopTurn(openThread.id)}
-          onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)}
+          onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
           onRewind={(i) => rewind(openThread, i)} onModel={(m) => setModel(openThread, m)} say={say}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={() => prMerge(openThread)}
-          steerCap={steerCap} onSteerCap={setSteerCap} pending={pendingSteers[openThread.id] ?? []}
+          pending={pendingSteers[openThread.id] ?? []}
         />
       ) : (
         <div className={cn("grid min-h-0 min-w-0 grid-cols-1", panelOpen && "xl:grid-cols-[minmax(0,1fr)_420px]")}>
@@ -1081,13 +1089,13 @@ function HireCard({ draft, by, emp, done, onReview, onReject }: { draft: HireDra
   )
 }
 
-function ThreadView({ root, thread, channelName, emp, resolved, setResolved, focus, onFocus, work, repo, onStart, running, onSend, onStop, onRetry, onUnqueue, steerCap, onSteerCap, pending }: {
+function ThreadView({ root, thread, channelName, emp, resolved, setResolved, focus, onFocus, work, repo, onStart, running, onSend, onStop, onRetry, onUnqueue, onSendQueued, pending }: {
   root: Extract<Msg, { kind: "msg" }>; thread: Thread; channelName: string; emp: EmpFn
   resolved: Record<string, string>; setResolved: (r: Record<string, string>) => void
   focus: boolean; onFocus: () => void
   work: Work | null; repo?: string; onStart: () => void
-  running: boolean; onSend: (text: string) => void; onStop: () => void; onRetry: (empId: string) => void; onUnqueue: (i: number) => void
-  steerCap: boolean; onSteerCap: (v: boolean) => void; pending: string[]
+  running: boolean; onSend: (text: string) => void; onStop: () => void; onRetry: (empId: string) => void
+  onUnqueue: (i: number) => void; onSendQueued: (i: number) => void; pending: string[]
 }) {
   const [openSteps, setOpenSteps] = useState<Record<number, boolean>>({})
   const lead = thread.replies.find((r) => emp(r.from))
@@ -1153,16 +1161,8 @@ function ThreadView({ root, thread, channelName, emp, resolved, setResolved, foc
                 )}
                 {r.live && r.phase === "submitted" && <Shimmer className="text-sm">Opening Hermes session…</Shimmer>}
                 {r.streaming ? <Shimmer>{r.streaming}</Shimmer> : r.text ? <Body text={r.text} /> : null}
-                {r.steers?.map((s, k) => (
-                  <div key={k} className="flex w-fit max-w-full items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-900 text-xs">
-                    <span className="shrink-0 font-medium">Oscar steered</span><span className="min-w-0">{s}</span>
-                  </div>
-                ))}
-                {r.live && pending.map((s, k) => (
-                  <div key={`p${k}`} data-steerpending className="flex w-fit max-w-full items-start gap-1.5 rounded-md border border-dashed border-amber-300 bg-amber-50/40 px-2 py-1 text-amber-900/70 text-xs">
-                    <span className="shrink-0 font-medium">Steer pending</span><span className="min-w-0">{plain(s)}</span>
-                  </div>
-                ))}
+                {/* Steer rows from the shared agent-chat component (pending + delivered, identical to Focus). */}
+                <SteerRows steers={r.steers} pending={pending} live={r.live} />
                 {r.phase === "stopped" && <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">Stopped · session.interrupt</div>}
                 {isEmp && !r.live && !r.streaming && r.text && (
                   <MessageActions className="absolute top-1 right-3 gap-0 rounded-md border bg-background p-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
@@ -1188,11 +1188,10 @@ function ThreadView({ root, thread, channelName, emp, resolved, setResolved, foc
         <ConversationScrollButton />
       </Conversation>
       <Composer
-        placeholder={running ? (steerCap ? `${leadEmp?.name ?? "Employee"} is working. Enter steers this turn…` : `${leadEmp?.name ?? "Employee"} is working. Your message waits in the queue…`) : `Reply to ${leadEmp?.name ?? "the thread"} in this session…`} employees={[]}
-        hint={running ? (steerCap ? "Enter steers · ■ = stop" : "Enter queues · ■ = stop") : work?.branch ? `Edits go to ⎇ ${work.branch}` : work ? "Ticket only. No repo on this channel." : repo ? "Read-only on main. Start work to edit code." : `session ${thread.session}`}
+        placeholder={running ? runningComposer(leadEmp?.name ?? "Employee").placeholder : `Reply to ${leadEmp?.name ?? "the thread"} in this session…`} employees={[]}
+        hint={running ? runningComposer(leadEmp?.name ?? "Employee").hint : work?.branch ? `Edits go to ⎇ ${work.branch}` : work ? "Ticket only. No repo on this channel." : repo ? "Read-only on main. Start work to edit code." : `session ${thread.session}`}
         onSend={onSend} status={status} onStop={onStop}
-        tools={<SteerToggle cap={steerCap} setCap={onSteerCap} />}
-        queued={<QueuedTray queue={thread.queue ?? []} onRemove={onUnqueue} />}
+        queued={<NotSentTray items={thread.queue ?? []} onSend={onSendQueued} onRemove={onUnqueue} />}
       />
     </div>
   )
@@ -1251,10 +1250,9 @@ function ReplyCards({ r, work, repo, emp, resolved, setResolved, onStart }: {
 
 /* ================= Focus mode: the thread becomes an agent workbench (Codex / Claude Code style) =================
    Left: transcript of the ONE Hermes session (turns, reasoning, tool rows, checkpoints, plan + queue, composer).
-   Right: workbench derived only from that session's tool calls — Changes (inline_diff), Files, Terminal, Tests, Preview. */
+   Right: workbench derived only from that session's tool calls — Changes (inline_diff), Files, Terminal, Preview, PR. */
 
 const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, "")
-const plain = (s: string) => s.replace(/\*\*|`/g, "").replace(/\s+/g, " ").trim()
 type WbTab = "changes" | "files" | "terminal" | "preview" | "pr"
 
 const REPO_FILES = [
@@ -1370,21 +1368,8 @@ function StepRow({ s }: { s: Step }) {
   )
 }
 
-/* Engine capability pill in the composer tools: fake-engine session.steer. ON = a message sent while
-   the employee works is delivered into the running turn ("Oscar steered"). OFF = it queues, as before. */
-function SteerToggle({ cap, setCap }: { cap: boolean; setCap: (v: boolean) => void }) {
-  return (
-    <button type="button" role="switch" aria-checked={cap} data-steertoggle
-      title={cap ? "Engine supports steer · click to disable (messages queue instead)" : "Engine without steer · click to enable (messages steer the running turn)"}
-      onClick={() => setCap(!cap)}
-      className={cn("flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs", cap ? "text-foreground hover:bg-muted" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
-      <span className={cn("relative h-3.5 w-6 shrink-0 rounded-full transition-colors", cap ? "bg-emerald-500" : "bg-muted-foreground/30")}>
-        <span className={cn("absolute top-0.5 size-2.5 rounded-full bg-white transition-all", cap ? "left-3" : "left-0.5")} />
-      </span>
-      steer
-    </button>
-  )
-}
+/* Engine capability pill removed (issue #4): steer is the default and only behavior for a mid-turn send;
+   the capability lives in one constant (ENGINE_STEER, agent-chat.tsx). No toggle UI until a real setting. */
 
 function ModelLogo({ model }: { model: string }) {
   const p = model.startsWith("qwen") ? "alibaba" : model.startsWith("claude") ? "anthropic" : model.startsWith("gpt") ? "openai" : null
@@ -1416,15 +1401,14 @@ function ModelPicker({ model, onModel }: { model: string; onModel: (m: string) =
   )
 }
 
-function FocusComposer({ running, status, placeholder, hint, model, onModel, onSend, onStop, steerCap, onSteerCap }: {
+function FocusComposer({ running, status, placeholder, hint, model, onModel, onSend, onStop }: {
   running: boolean; status: ChatStatus; placeholder: string; hint: string
   model: string; onModel: (m: string) => void; onSend: (t: string) => void; onStop: () => void
-  steerCap: boolean; onSteerCap: (v: boolean) => void
 }) {
   const [draft, setDraft] = useState("")
   return (
-    // While the employee works, Enter steers the turn if the engine supports session.steer (prototype
-    // toggle); otherwise it queues (sent after the turn).
+    // While the employee works, Enter steers the turn (session.steer — the default and only behavior;
+    // the running-state placeholder/hint come from the shared runningComposer in agent-chat.tsx).
     <div>
       <PromptInput onSubmit={({ text }) => { const t = text.trim() || draft.trim(); if (t) onSend(t); setDraft("") }}>
         <PromptInputBody>
@@ -1434,7 +1418,6 @@ function FocusComposer({ running, status, placeholder, hint, model, onModel, onS
           <PromptInputTools className="min-w-0">
             <PromptInputButton><PaperclipIcon /></PromptInputButton>
             <ModelPicker model={model} onModel={onModel} />
-            <SteerToggle cap={steerCap} setCap={onSteerCap} />
             <span className="hidden truncate text-muted-foreground text-xs md:inline">{hint}</span>
           </PromptInputTools>
           <div className="flex shrink-0 items-center gap-1">
@@ -1758,14 +1741,15 @@ function PrPanel({ pr, diffs, commits, lead, session, onComment, onMerge, say }:
   )
 }
 
-function FocusView({ root, thread, channel, project, lead, emp, resolved, setResolved, work, onBack, onNav, onStart, running, onSend, onStop, onRetry, onUnqueue, onRewind, onModel, say, onPrComment, onPrMerge, steerCap, onSteerCap, pending }: {
+function FocusView({ root, thread, channel, project, lead, emp, resolved, setResolved, work, onBack, onNav, onStart, running, onSend, onStop, onRetry, onUnqueue, onSendQueued, onRewind, onModel, say, onPrComment, onPrMerge, pending }: {
   root: Extract<Msg, { kind: "msg" }>; thread: Thread; channel: Channel; project?: Project; lead?: Employee; emp: EmpFn
   resolved: Record<string, string>; setResolved: (r: Record<string, string>) => void; work: Work | null
   onBack: () => void; onNav: () => void; onStart: () => void; running: boolean
   onSend: (t: string) => void; onStop: () => void; onRetry: (empId: string) => void
-  onUnqueue: (i: number) => void; onRewind: (replyIndex: number) => void; onModel: (m: string) => void; say: (t: string) => void
+  onUnqueue: (i: number) => void; onSendQueued: (i: number) => void
+  onRewind: (replyIndex: number) => void; onModel: (m: string) => void; say: (t: string) => void
   onPrComment: (t: string) => void; onPrMerge: () => void
-  steerCap: boolean; onSteerCap: (v: boolean) => void; pending: string[]
+  pending: string[]
 }) {
   const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024)
   const [tab, setTab] = useState<WbTab>(() => (sessionArtifacts(thread).diffs.length ? "changes" : "terminal"))
@@ -1865,60 +1849,38 @@ function FocusView({ root, thread, channel, project, lead, emp, resolved, setRes
           </Conversation>
 
           <div className="mx-auto w-full max-w-[46rem] shrink-0 px-3 pb-3">
-            {(todos.length > 0 || queue.length > 0) && (
+            {todos.length > 0 && (
               <Queue className="mb-2 gap-1 py-1.5 shadow-none">
-                {todos.length > 0 && (
-                  <QueueSection open={planOpen} onOpenChange={setPlanOpen}>
-                    <QueueSectionTrigger className="py-1.5 text-xs">
-                      <QueueSectionLabel label={`Plan · ${doneTodos}/${todos.length} done`} icon={<ListTodoIcon className="size-3.5" />} />
-                      {todos.find((t) => t.status === "in_progress") && <span className="ml-2 min-w-0 truncate text-amber-700">{todos.find((t) => t.status === "in_progress")!.content}</span>}
-                    </QueueSectionTrigger>
-                    <QueueSectionContent>
-                      <QueueList className="mt-1">
-                        {todos.map((t) => {
-                          const off = t.status === "completed" || t.status === "cancelled"
-                          return (
-                            <QueueItem key={t.content} className="py-0.5">
-                              <div className="flex items-center gap-2">
-                                {t.status === "in_progress" ? <CircleDotIcon className="size-2.5 shrink-0 animate-pulse text-amber-500" /> : off ? <CheckIcon className="size-2.5 shrink-0 text-emerald-600" /> : <QueueItemIndicator />}
-                                <QueueItemContent className={cn("text-xs", off ? "text-muted-foreground line-through decoration-muted-foreground/40" : "text-foreground")}>{t.content}</QueueItemContent>
-                              </div>
-                            </QueueItem>
-                          )
-                        })}
-                      </QueueList>
-                    </QueueSectionContent>
-                  </QueueSection>
-                )}
-                {queue.length > 0 && (
-                  <QueueSection>
-                    <QueueSectionTrigger className="bg-blue-50 py-1.5 text-blue-900 text-xs hover:bg-blue-100">
-                      <QueueSectionLabel count={queue.length} label="queued · sent after this turn" icon={<ListTodoIcon className="size-3.5" />} />
-                    </QueueSectionTrigger>
-                    <QueueSectionContent>
-                      <QueueList className="mt-1">
-                        {queue.map((q, i) => (
-                          <QueueItem key={i} className="py-0.5">
+                <QueueSection open={planOpen} onOpenChange={setPlanOpen}>
+                  <QueueSectionTrigger className="py-1.5 text-xs">
+                    <QueueSectionLabel label={`Plan · ${doneTodos}/${todos.length} done`} icon={<ListTodoIcon className="size-3.5" />} />
+                    {todos.find((t) => t.status === "in_progress") && <span className="ml-2 min-w-0 truncate text-amber-700">{todos.find((t) => t.status === "in_progress")!.content}</span>}
+                  </QueueSectionTrigger>
+                  <QueueSectionContent>
+                    <QueueList className="mt-1">
+                      {todos.map((t) => {
+                        const off = t.status === "completed" || t.status === "cancelled"
+                        return (
+                          <QueueItem key={t.content} className="py-0.5">
                             <div className="flex items-center gap-2">
-                              <span className="shrink-0 font-mono text-[10px] text-blue-700">{i + 1}</span>
-                              <QueueItemContent className="text-foreground text-xs">{plain(q)}</QueueItemContent>
-                              <QueueItemActions>
-                                <QueueItemAction title="Remove" onClick={() => onUnqueue(i)}><Trash2Icon className="size-3" /></QueueItemAction>
-                              </QueueItemActions>
+                              {t.status === "in_progress" ? <CircleDotIcon className="size-2.5 shrink-0 animate-pulse text-amber-500" /> : off ? <CheckIcon className="size-2.5 shrink-0 text-emerald-600" /> : <QueueItemIndicator />}
+                              <QueueItemContent className={cn("text-xs", off ? "text-muted-foreground line-through decoration-muted-foreground/40" : "text-foreground")}>{t.content}</QueueItemContent>
                             </div>
                           </QueueItem>
-                        ))}
-                      </QueueList>
-                    </QueueSectionContent>
-                  </QueueSection>
-                )}
+                        )
+                      })}
+                    </QueueList>
+                  </QueueSectionContent>
+                </QueueSection>
               </Queue>
             )}
+            {/* Not-sent tray from the shared agent-chat component — same markup as the thread panel,
+                above the composer there too. queue holds ONLY messages ■ stopped before they landed. */}
+            <NotSentTray items={queue} onSend={onSendQueued} onRemove={onUnqueue} />
             <FocusComposer
               running={running} status={status} model={model} onModel={onModel} onStop={onStop}
-              steerCap={steerCap} onSteerCap={onSteerCap}
-              placeholder={running ? (steerCap ? `${lead?.name ?? "Employee"} is working. Enter steers this turn…` : `${lead?.name ?? "Employee"} is working. Your message waits in the queue…`) : `Continue session ${thread.session} with ${lead?.name ?? "the employee"}…`}
-              hint={running ? (steerCap ? "Enter steers · ■ stop" : "Enter queues · ■ stop") : pr?.status === "merged" ? `#${pr.number} merged, ⎇ ${pr.head} deleted · next edit starts a new branch from main` : work?.branch ? `Edits go to ⎇ ${work.branch}` : "Read-only on main"}
+              placeholder={running ? runningComposer(lead?.name ?? "Employee").placeholder : `Continue session ${thread.session} with ${lead?.name ?? "the employee"}…`}
+              hint={running ? runningComposer(lead?.name ?? "Employee").hint : pr?.status === "merged" ? `#${pr.number} merged, ⎇ ${pr.head} deleted · next edit starts a new branch from main` : work?.branch ? `Edits go to ⎇ ${work.branch}` : "Read-only on main"}
               onSend={(t) => onSend(t)}
             />
           </div>
@@ -1985,16 +1947,8 @@ function AgentTurn({ r, emp, last, onRetry, onOpen, cards, pending }: {
       {r.live && r.phase === "tools" && !steps.some((s) => s.running) && <Shimmer as="span" duration={1} className="pl-4 text-[13px]">Working…</Shimmer>}
       {r.live && r.phase === "submitted" && <Shimmer className="text-[15px]">Opening Hermes session…</Shimmer>}
       {r.streaming ? <Shimmer>{r.streaming}</Shimmer> : r.text ? <MessageContent className="w-full"><MessageResponse className="lilos-prose break-words">{r.text}</MessageResponse></MessageContent> : null}
-      {r.steers?.map((s, k) => (
-        <div key={k} className="flex w-fit max-w-full items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-900 text-xs">
-          <span className="shrink-0 font-medium">Oscar steered</span><span className="min-w-0">{s}</span>
-        </div>
-      ))}
-      {r.live && pending.map((s, k) => (
-        <div key={`p${k}`} data-steerpending className="flex w-fit max-w-full items-start gap-1.5 rounded-md border border-dashed border-amber-300 bg-amber-50/40 px-2 py-1 text-amber-900/70 text-xs">
-          <span className="shrink-0 font-medium">Steer pending</span><span className="min-w-0">{plain(s)}</span>
-        </div>
-      ))}
+      {/* Steer rows from the shared agent-chat component (pending + delivered, identical to the panel). */}
+      <SteerRows steers={r.steers} pending={pending} live={r.live} />
       {r.phase === "stopped" && <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">Stopped · session.interrupt</div>}
       {cards}
       {!r.live && !r.streaming && (r.text || steps.length > 0) && (
@@ -2414,21 +2368,8 @@ function AddFolderDialog({ folders, projects, defaultProject, onClose, onAdd }: 
   )
 }
 
-/* Queued follow-ups shown above a composer: sent in order when the running turn ends. */
-function QueuedTray({ queue, onRemove }: { queue: string[]; onRemove: (i: number) => void }) {
-  if (!queue.length) return null
-  return (
-    <div className="mb-1.5 rounded-lg border border-blue-200 bg-blue-50/60 px-2.5 py-1.5 text-xs" data-queued>
-      <div className="mb-0.5 flex items-center gap-1.5 font-medium text-blue-900"><ListTodoIcon className="size-3.5" />{queue.length} queued · sent after this turn</div>
-      {queue.map((q, i) => (
-        <div key={i} className="group/q flex items-center gap-2 py-0.5">
-          <span className="font-mono text-[10px] text-blue-700">{i + 1}</span><span className="min-w-0 flex-1 truncate">{plain(q)}</span>
-          <button type="button" title="Remove" onClick={() => onRemove(i)} className="text-muted-foreground opacity-0 hover:text-foreground group-hover/q:opacity-100"><Trash2Icon className="size-3" /></button>
-        </div>
-      ))}
-    </div>
-  )
-}
+/* QueuedTray removed (issue #4): the queue now holds only messages that did NOT land because Oscar pressed
+   ■; both surfaces render them with the shared NotSentTray from agent-chat.tsx (Send + remove). */
 
 function Composer({ placeholder, employees, hint, onSend, status = "ready", onStop, tools, queued }: {
   placeholder: string; employees: Employee[]; hint: string
