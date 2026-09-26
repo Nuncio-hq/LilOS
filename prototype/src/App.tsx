@@ -18,7 +18,6 @@ import {
   FileCodeIcon,
   FileDiffIcon,
   FilePenIcon,
-  FlaskConicalIcon,
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
@@ -108,10 +107,6 @@ import {
   QueueSection, QueueSectionContent, QueueSectionLabel, QueueSectionTrigger,
 } from "@/components/ai-elements/queue"
 import { Terminal, TerminalActions, TerminalContent, TerminalCopyButton, TerminalHeader, TerminalStatus, TerminalTitle } from "@/components/ai-elements/terminal"
-import {
-  Test, TestResults, TestResultsContent, TestResultsDuration, TestResultsHeader,
-  TestResultsProgress, TestResultsSummary, TestSuite, TestSuiteContent, TestSuiteName,
-} from "@/components/ai-elements/test-results"
 import { WebPreview, WebPreviewBody, WebPreviewNavigation, WebPreviewNavigationButton, WebPreviewUrl } from "@/components/ai-elements/web-preview"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
@@ -127,12 +122,11 @@ type Employee = { id: string; name: string; role: string; status: Status; profil
 type Channel = { id: string; name: string; repo?: string; unread?: number; employees: string[]; dm?: boolean }
 type Project = { id: string; name: string; key: string; channels: Channel[] }
 type Diff = { path: string; status: "added" | "modified" | "deleted"; add: number; del: number; patch: string }
-type TestCase = { name: string; status: "passed" | "failed" | "skipped"; duration?: number; error?: string }
-type TestRun = { passed: number; failed: number; skipped: number; duration: number; suites: { name: string; tests: TestCase[] }[] }
 type GitCommit = { hash: string; message: string; files: { path: string; status: Diff["status"]; add: number; del: number }[] }
 /* A step = one Hermes tool call (tool.start → tool.complete). The workbench is derived only from steps:
-   inline_diff → Changes, terminal output → Terminal, test runs → Tests, git commit → Commits. */
-type Step = { tool: string; input: Record<string, unknown>; output: string; running?: boolean; diff?: Diff; tests?: TestRun; commit?: GitCommit }
+   inline_diff → Changes, terminal output → Terminal, git commit → Commits. Test output lives in Terminal;
+   pass/fail on a PR lives in PR → Checks (no structured Tests tab — no engine feeds it). */
+type Step = { tool: string; input: Record<string, unknown>; output: string; running?: boolean; diff?: Diff; commit?: GitCommit }
 /* Hermes todo tool (todo.updated) statuses */
 type Todo = { content: string; status: "pending" | "in_progress" | "completed" | "cancelled" }
 /* phase mirrors the Hermes turn events: message.start → submitted, reasoning.delta → thinking,
@@ -280,11 +274,6 @@ const FEEDS: Record<string, Msg[]> = {
               { tool: "write_file", input: { path: "packages/contracts/src/envelope.ts" }, output: "58 lines", diff: { path: "packages/contracts/src/envelope.ts", status: "added", add: 12, del: 0, patch: "@@ -0,0 +1,12 @@\n+import { z } from \"zod\"\n+\n+export const Envelope = z.object({\n+  seq: z.number().int().nonnegative(),\n+  kind: z.string(),\n+  body: z.unknown(),\n+  at: z.string().datetime(),\n+})\n+\n+export type Envelope = z.infer<typeof Envelope>\n+\n+export const isAfter = (a: Envelope, seq: number) => a.seq > seq" } },
               {
                 tool: "terminal", input: { command: "pnpm -r test" }, output: "\u001b[32m✓\u001b[0m contracts (4)\n\u001b[32m✓\u001b[0m client-runtime (3)\n\u001b[33m↓\u001b[0m relay (1 skipped)\n\nTests  7 passed | 1 skipped (8)\nTime   1.42s",
-                tests: { passed: 7, failed: 0, skipped: 1, duration: 1420, suites: [
-                  { name: "packages/contracts", tests: [{ name: "Envelope parses a valid event", status: "passed", duration: 4 }, { name: "rejects negative seq", status: "passed", duration: 2 }, { name: "isAfter compares seq", status: "passed", duration: 1 }, { name: "datetime is ISO", status: "passed", duration: 3 }] },
-                  { name: "packages/client-runtime", tests: [{ name: "has no DOM globals", status: "passed", duration: 12 }, { name: "reducer is pure", status: "passed", duration: 5 }, { name: "replays after seq", status: "passed", duration: 8 }] },
-                  { name: "apps/relay", tests: [{ name: "accepts a harness socket", status: "skipped" }] },
-                ] },
               },
               {
                 tool: "terminal", input: { command: "git commit -am \"LIL-3: scaffold pnpm monorepo\"" }, output: "[lil-3-monorepo 3fa91c2] LIL-3: scaffold pnpm monorepo\n 3 files changed, 18 insertions(+), 1 deletion(-)",
@@ -438,11 +427,6 @@ function scriptFor(empId: string, prompt: string, followUp = false, branch?: str
         { tool: "write_file", input: { path: "docs/decisions/0002-notes.md" }, output: "9 lines", diff: { path: "docs/decisions/0002-notes.md", status: "added", add: 5, del: 0, patch: `@@ -0,0 +1,5 @@\n+# 0002 ${q}\n+\n+Status: proposed\n+\n+Why: asked by Oscar in session.` } },
         {
           tool: "terminal", input: { command: "pnpm -r test" }, output: "\u001b[32m✓\u001b[0m contracts (4)\n\u001b[32m✓\u001b[0m client-runtime (3)\n\u001b[33m↓\u001b[0m relay (1 skipped)\n\nTests  7 passed | 1 skipped (8)\nTime   1.38s",
-          tests: { passed: 7, failed: 0, skipped: 1, duration: 1380, suites: [
-            { name: "packages/contracts", tests: [{ name: "Envelope parses a valid event", status: "passed", duration: 4 }, { name: "rejects negative seq", status: "passed", duration: 2 }, { name: "isAfter compares seq", status: "passed", duration: 1 }, { name: "datetime is ISO", status: "passed", duration: 3 }] },
-            { name: "packages/client-runtime", tests: [{ name: "has no DOM globals", status: "passed", duration: 11 }, { name: "reducer is pure", status: "passed", duration: 5 }, { name: "replays after seq", status: "passed", duration: 7 }] },
-            { name: "apps/relay", tests: [{ name: "accepts a harness socket", status: "skipped" }] },
-          ] },
         },
         { tool: "terminal", input: { command: `git commit -am "${q}"` }, output: `[${branch} ${h}] ${q}\n 2 files changed, 8 insertions(+)`, commit: { hash: h, message: q, files: [{ path: "README.md", status: "modified", add: 3, del: 0 }, { path: "docs/decisions/0002-notes.md", status: "added", add: 5, del: 0 }] } },
       ],
@@ -559,6 +543,10 @@ export default function App() {
   const [selfStart, setSelfStart] = useState<Record<string, boolean>>({})
   const [feeds, setFeeds] = useState<Record<string, Msg[]>>(() => ({ ...FEEDS, ...DM_FEEDS }))
   const stops = useRef<Record<string, boolean>>({})
+  // Engine capability (fake engine): session.steer. ON = a message sent mid-turn is delivered into the
+  // running turn at the next tool boundary; OFF = it waits in the client-side queue (prompt.submit later).
+  const [steerCap, setSteerCap] = useState(true)
+  const steerBuf = useRef<Record<string, string[]>>({})
 
   const emp: EmpFn = (id) => employees.find((e) => e.id === id)
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 2200) }
@@ -606,6 +594,7 @@ export default function App() {
     if (ws?.mode === "new" && ws.worktree && !followUp)
       s.steps = [{ tool: "terminal", input: { command: `git worktree add ${ws.worktree} -b ${ws.branch} ${ws.base}` }, output: `Preparing worktree (new branch '${ws.branch}')\nHEAD is now at ${hex()} (${ws.base})` }, ...s.steps]
     stops.current[rootId] = false
+    steerBuf.current[rootId] = steerBuf.current[rootId] ?? []
     const started0 = Date.now()
     mapRoot(key, rootId, (t) => ({
       ...t,
@@ -616,6 +605,16 @@ export default function App() {
     const tick = async (ms: number) => { await new Promise((r) => setTimeout(r, ms)); if (stops.current[rootId]) throw new Error("stop") }
     const set = (fn: (r: Reply) => Reply) => mapReply(key, rootId, rid, fn)
     const words = (t: string) => t.split(/(?<=\s)/)
+    // session.steer: messages Oscar sent mid-turn land at the next tool boundary, shown as "Oscar steered"
+    // rows inside this turn and folded into the final reply.
+    const applied: string[] = []
+    const applySteers = () => {
+      const q = steerBuf.current[rootId] ?? []
+      if (!q.length) return
+      steerBuf.current[rootId] = []
+      applied.push(...q)
+      set((r) => ({ ...r, steers: [...(r.steers ?? []), ...q.map(plain)] }))
+    }
     try {
       await tick(700)
       set((r) => ({ ...r, phase: "thinking", reasoning: "" }))
@@ -623,10 +622,13 @@ export default function App() {
       for (const w of words(s.reasoning)) { await tick(45); set((r) => ({ ...r, reasoning: (r.reasoning ?? "") + w })) }
       set((r) => ({ ...r, phase: "tools", thought: Math.max(1, Math.round((Date.now() - t0) / 1000)) }))
       for (const st of s.steps) {
-        set((r) => ({ ...r, steps: [...(r.steps ?? []), { ...st, output: "", running: true, diff: undefined, tests: undefined, commit: undefined }] }))
+        applySteers() // boundary: the next tool call is about to start
+        set((r) => ({ ...r, steps: [...(r.steps ?? []), { ...st, output: "", running: true, diff: undefined, commit: undefined }] }))
         await tick(650)
         set((r) => ({ ...r, steps: (r.steps ?? []).map((x, i, a) => (i === a.length - 1 ? { ...st } : x)) }))
       }
+      applySteers() // last boundary: nothing more lands between tools, so apply before message.delta
+      if (applied.length) s.text += `\n\nFolded in your steer: *“${plain(applied.join(" "))}”.*`
       set((r) => ({ ...r, phase: "typing" }))
       for (const w of words(s.text)) { await tick(28); set((r) => ({ ...r, text: r.text + w })) }
       set((r) => ({ ...r, phase: "done", live: false, dur: Math.round((Date.now() - started0) / 1000) }))
@@ -648,11 +650,14 @@ export default function App() {
       set((r) => ({ ...r, phase: "stopped", live: false, steps: (r.steps ?? []).map((x) => ({ ...x, running: false })) }))
       mapRoot(key, rootId, (t) => ({ ...t, todos: s.todo ? (t.todos ?? []).map((x) => (x.content === s.todo ? { ...x, status: "cancelled" } : x)) : t.todos }))
     }
-    // Queued follow-ups run next, in order (client-side queue → prompt.submit on the same session)
+    // Follow-ups run next, in order. A steer that never hit a tool boundary becomes the next prompt
+    // (never lost); then the client-side queue (used when the engine has no session.steer).
     const m = (feedsRef.current[key] ?? []).find((x) => x.kind === "msg" && x.id === rootId)
-    const next = m?.kind === "msg" ? m.thread?.queue?.[0] : undefined
+    const steered = (steerBuf.current[rootId] ?? [])[0]
+    const next = steered ?? (m?.kind === "msg" ? m.thread?.queue?.[0] : undefined)
     if (next && !stops.current[rootId]) {
-      mapRoot(key, rootId, (t) => ({ ...t, queue: (t.queue ?? []).slice(1), replies: [...t.replies, { id: `o-${Date.now()}`, from: "oscar", time: nowTime(), text: next }] }))
+      if (steered) steerBuf.current[rootId] = (steerBuf.current[rootId] ?? []).slice(1)
+      mapRoot(key, rootId, (t) => ({ ...t, queue: steered ? (t.queue ?? []) : (t.queue ?? []).slice(1), replies: [...t.replies, { id: `o-${Date.now()}`, from: "oscar", time: nowTime(), text: next }] }))
       await new Promise((r) => setTimeout(r, 50))
       return runTurn(key, rootId, empId, next)
     }
@@ -705,11 +710,13 @@ export default function App() {
     setFeeds((fs) => ({ ...fs, [feedKey]: [...(fs[feedKey] ?? []), msg] }))
     if (target) { showThread(id); runTurn(feedKey, id, target, text, ws) }
   }
-  // Reply inside a thread = same Hermes session. While a turn runs the message is queued client-side and
-  // submitted (prompt.submit) when the turn ends. No session.steer for now.
+  // Reply inside a thread = same Hermes session. While a turn runs: if the engine supports steer
+  // (session.steer, prototype toggle) the message is delivered into the running turn at the next tool
+  // boundary; otherwise it queues client-side and is submitted (prompt.submit) when the turn ends.
   const sendInThread = (root: Extract<Msg, { kind: "msg" }>, text: string) => {
     if (threadRunning(root)) {
-      mapRoot(feedKey, root.id, (t) => ({ ...t, queue: [...(t.queue ?? []), bold(text)] }))
+      if (steerCap) steerBuf.current[root.id] = [...(steerBuf.current[root.id] ?? []), bold(text)]
+      else mapRoot(feedKey, root.id, (t) => ({ ...t, queue: [...(t.queue ?? []), bold(text)] }))
       return
     }
     mapRoot(feedKey, root.id, (t) => ({ ...t, replies: [...t.replies, { id: `o-${Date.now()}`, from: "oscar", time: nowTime(), text: bold(text) }] }))
@@ -773,6 +780,7 @@ export default function App() {
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
       running={threadRunning(openThread)} onSend={(t) => sendInThread(openThread, t)} onStop={() => stopTurn(openThread.id)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)}
+      steerCap={steerCap} onSteerCap={setSteerCap}
     />
   ) : null
 
@@ -850,6 +858,7 @@ export default function App() {
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)}
           onRewind={(i) => rewind(openThread, i)} onModel={(m) => setModel(openThread, m)} say={say}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={() => prMerge(openThread)}
+          steerCap={steerCap} onSteerCap={setSteerCap}
         />
       ) : (
         <div className={cn("grid min-h-0 min-w-0 grid-cols-1", panelOpen && "xl:grid-cols-[minmax(0,1fr)_420px]")}>
@@ -1042,12 +1051,13 @@ function HireCard({ draft, by, emp, done, onReview, onReject }: { draft: HireDra
   )
 }
 
-function ThreadView({ root, thread, channelName, emp, resolved, setResolved, focus, onFocus, work, repo, onStart, running, onSend, onStop, onRetry, onUnqueue }: {
+function ThreadView({ root, thread, channelName, emp, resolved, setResolved, focus, onFocus, work, repo, onStart, running, onSend, onStop, onRetry, onUnqueue, steerCap, onSteerCap }: {
   root: Extract<Msg, { kind: "msg" }>; thread: Thread; channelName: string; emp: EmpFn
   resolved: Record<string, string>; setResolved: (r: Record<string, string>) => void
   focus: boolean; onFocus: () => void
   work: Work | null; repo?: string; onStart: () => void
   running: boolean; onSend: (text: string) => void; onStop: () => void; onRetry: (empId: string) => void; onUnqueue: (i: number) => void
+  steerCap: boolean; onSteerCap: (v: boolean) => void
 }) {
   const [openSteps, setOpenSteps] = useState<Record<number, boolean>>({})
   const lead = thread.replies.find((r) => emp(r.from))
@@ -1143,9 +1153,10 @@ function ThreadView({ root, thread, channelName, emp, resolved, setResolved, foc
         <ConversationScrollButton />
       </Conversation>
       <Composer
-        placeholder={running ? `${leadEmp?.name ?? "Employee"} is working. Your message waits in the queue…` : `Reply to ${leadEmp?.name ?? "the thread"} in this session…`} employees={[]}
-        hint={running ? "Enter = queue · ■ = stop" : work?.branch ? `Edits go to ⎇ ${work.branch}` : work ? "Ticket only. No repo on this channel." : repo ? "Read-only on main. Start work to edit code." : `session ${thread.session}`}
+        placeholder={running ? (steerCap ? `${leadEmp?.name ?? "Employee"} is working. Enter steers this turn…` : `${leadEmp?.name ?? "Employee"} is working. Your message waits in the queue…`) : `Reply to ${leadEmp?.name ?? "the thread"} in this session…`} employees={[]}
+        hint={running ? (steerCap ? "Enter steers · ■ = stop" : "Enter queues · ■ = stop") : work?.branch ? `Edits go to ⎇ ${work.branch}` : work ? "Ticket only. No repo on this channel." : repo ? "Read-only on main. Start work to edit code." : `session ${thread.session}`}
         onSend={onSend} status={status} onStop={onStop}
+        tools={<SteerToggle cap={steerCap} setCap={onSteerCap} />}
         queued={<QueuedTray queue={thread.queue ?? []} onRemove={onUnqueue} />}
       />
     </div>
@@ -1209,7 +1220,7 @@ function ReplyCards({ r, work, repo, emp, resolved, setResolved, onStart }: {
 
 const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, "")
 const plain = (s: string) => s.replace(/\*\*|`/g, "").replace(/\s+/g, " ").trim()
-type WbTab = "changes" | "files" | "terminal" | "tests" | "preview" | "pr"
+type WbTab = "changes" | "files" | "terminal" | "preview" | "pr"
 
 const REPO_FILES = [
   "README.md", "package.json", "pnpm-workspace.yaml", "tsconfig.base.json",
@@ -1229,11 +1240,10 @@ function sessionArtifacts(thread: Thread) {
   }
   const term = steps.filter((s) => s.tool === "terminal")
   const termOut = term.map((s) => `\u001b[36m$ ${String(s.input.command ?? "")}\u001b[0m\n${s.output}${s.output ? "\n" : ""}`).join("\n")
-  const tests = [...steps].reverse().find((s) => s.tests)?.tests
   const commits = steps.filter((s) => s.commit).map((s) => s.commit!).reverse()
   const add = [...diffs.values()].reduce((n, d) => n + d.add, 0)
   const del = [...diffs.values()].reduce((n, d) => n + d.del, 0)
-  return { diffs: [...diffs.values()], termOut, termRunning: term.some((s) => s.running), tests, commits, add, del }
+  return { diffs: [...diffs.values()], termOut, termRunning: term.some((s) => s.running), commits, add, del }
 }
 
 const STEP_VERB: Record<string, string> = { terminal: "Ran", read_file: "Read", write_file: "Wrote", patch: "Edited", search_files: "Searched", web_search: "Searched web" }
@@ -1310,7 +1320,6 @@ function StepRow({ s }: { s: Step }) {
         <code className="min-w-0 truncate font-mono text-[12.5px] text-foreground/70">{arg}</code>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-[12px]">
           {s.diff && <DiffStat add={s.diff.add} del={s.diff.del} />}
-          {s.tests && <span className={s.tests.failed ? "text-red-600" : "text-emerald-600"}>{s.tests.passed} passed{s.tests.failed ? ` · ${s.tests.failed} failed` : ""}</span>}
           {s.commit && <span className="text-muted-foreground">{s.commit.hash}</span>}
           {hasBody && <ChevronRightIcon className={cn("size-3.5 text-muted-foreground transition-transform", open && "rotate-90")} />}
         </span>
@@ -1323,6 +1332,22 @@ function StepRow({ s }: { s: Step }) {
         </div>
       )}
     </div>
+  )
+}
+
+/* Engine capability pill in the composer tools: fake-engine session.steer. ON = a message sent while
+   the employee works is delivered into the running turn ("Oscar steered"). OFF = it queues, as before. */
+function SteerToggle({ cap, setCap }: { cap: boolean; setCap: (v: boolean) => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={cap} data-steertoggle
+      title={cap ? "Engine supports steer · click to disable (messages queue instead)" : "Engine without steer · click to enable (messages steer the running turn)"}
+      onClick={() => setCap(!cap)}
+      className={cn("flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs", cap ? "text-foreground hover:bg-muted" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
+      <span className={cn("relative h-3.5 w-6 shrink-0 rounded-full transition-colors", cap ? "bg-emerald-500" : "bg-muted-foreground/30")}>
+        <span className={cn("absolute top-0.5 size-2.5 rounded-full bg-white transition-all", cap ? "left-3" : "left-0.5")} />
+      </span>
+      steer
+    </button>
   )
 }
 
@@ -1356,14 +1381,15 @@ function ModelPicker({ model, onModel }: { model: string; onModel: (m: string) =
   )
 }
 
-function FocusComposer({ running, status, placeholder, hint, model, onModel, onSend, onStop }: {
+function FocusComposer({ running, status, placeholder, hint, model, onModel, onSend, onStop, steerCap, onSteerCap }: {
   running: boolean; status: ChatStatus; placeholder: string; hint: string
   model: string; onModel: (m: string) => void; onSend: (t: string) => void; onStop: () => void
-  tools?: React.ReactNode
+  steerCap: boolean; onSteerCap: (v: boolean) => void
 }) {
   const [draft, setDraft] = useState("")
   return (
-    // While the employee works, Enter queues (sent after the turn). No steer for now.
+    // While the employee works, Enter steers the turn if the engine supports session.steer (prototype
+    // toggle); otherwise it queues (sent after the turn).
     <div>
       <PromptInput onSubmit={({ text }) => { const t = text.trim() || draft.trim(); if (t) onSend(t); setDraft("") }}>
         <PromptInputBody>
@@ -1373,6 +1399,7 @@ function FocusComposer({ running, status, placeholder, hint, model, onModel, onS
           <PromptInputTools className="min-w-0">
             <PromptInputButton><PaperclipIcon /></PromptInputButton>
             <ModelPicker model={model} onModel={onModel} />
+            <SteerToggle cap={steerCap} setCap={onSteerCap} />
             <span className="hidden truncate text-muted-foreground text-xs md:inline">{hint}</span>
           </PromptInputTools>
           <div className="flex shrink-0 items-center gap-1">
@@ -1438,7 +1465,6 @@ function Workbench({ thread, work, isDM, lead, tab, setTab, onClose, onStart, on
           <TabsTrigger value="changes"><FileDiffIcon />Changes{count(a.diffs.length)}</TabsTrigger>
           <TabsTrigger value="files"><FolderGit2Icon />Files</TabsTrigger>
           <TabsTrigger value="terminal"><SquareTerminalIcon />Terminal{a.termRunning && <CircleDotIcon className="size-3 animate-pulse text-amber-500" />}</TabsTrigger>
-          <TabsTrigger value="tests"><FlaskConicalIcon />Tests{a.tests && <span className={cn("size-1.5 rounded-full", a.tests.failed ? "bg-red-500" : "bg-emerald-500")} />}</TabsTrigger>
           <TabsTrigger value="preview"><GlobeIcon />Preview</TabsTrigger>
           {thread.pr && <TabsTrigger value="pr"><GitPullRequestIcon className={thread.pr.status === "merged" ? "text-violet-600" : "text-emerald-600"} />PR #{thread.pr.number}</TabsTrigger>}
         </TabsList>
@@ -1523,32 +1549,6 @@ function Workbench({ thread, work, isDM, lead, tab, setTab, onClose, onStart, on
         </Terminal>
       </TabsContent>
 
-      <TabsContent value="tests" className="min-h-0 flex-1">
-        <ScrollArea className="h-full">
-          {a.tests ? (
-            <div className="p-3">
-              <TestResults summary={{ passed: a.tests.passed, failed: a.tests.failed, skipped: a.tests.skipped, total: a.tests.passed + a.tests.failed + a.tests.skipped, duration: a.tests.duration }}>
-                <TestResultsHeader className="py-2"><TestResultsSummary /><TestResultsDuration /></TestResultsHeader>
-                <TestResultsContent>
-                  <TestResultsProgress />
-                  {a.tests.suites.map((s) => (
-                    <TestSuite key={s.name} name={s.name} status={s.tests.some((t) => t.status === "failed") ? "failed" : s.tests.every((t) => t.status === "skipped") ? "skipped" : "passed"} defaultOpen={s.tests.some((t) => t.status !== "passed")}>
-                      <TestSuiteName className="py-2 font-mono text-xs" />
-                      <TestSuiteContent>{s.tests.map((t) => <Test key={t.name} name={t.name} status={t.status} duration={t.duration} className="py-1.5 text-xs" />)}</TestSuiteContent>
-                    </TestSuite>
-                  ))}
-                </TestResultsContent>
-              </TestResults>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-2 p-8 text-center text-muted-foreground text-xs">
-              <FlaskConicalIcon className="size-5" /><p>No test run in this session yet.</p>
-              <Button size="sm" variant="outline" onClick={() => onSend("Run the test suite and summarise failures")}>Ask {lead?.name ?? "employee"} to run tests</Button>
-            </div>
-          )}
-        </ScrollArea>
-      </TabsContent>
-
       <TabsContent value="preview" className="flex min-h-0 flex-1 flex-col">
         <WebPreview defaultUrl="http://localhost:5173" className="rounded-none border-0">
           <WebPreviewNavigation className="p-1.5">
@@ -1565,7 +1565,7 @@ function Workbench({ thread, work, isDM, lead, tab, setTab, onClose, onStart, on
 
       {thread.pr && (
         <TabsContent value="pr" className="min-h-0 flex-1">
-          <PrPanel pr={thread.pr} diffs={a.diffs} commits={a.commits} tests={a.tests} lead={lead} session={thread.session} onComment={onPrComment} onMerge={onPrMerge} say={say} />
+          <PrPanel pr={thread.pr} diffs={a.diffs} commits={a.commits} lead={lead} session={thread.session} onComment={onPrComment} onMerge={onPrMerge} say={say} />
         </TabsContent>
       )}
     </Tabs>
@@ -1580,8 +1580,8 @@ const CHECK_ICON: Record<CheckRun["status"], React.ReactNode> = {
   failed: <CircleXIcon className="size-4 text-red-600" />,
   skipped: <CircleMinusIcon className="size-4 text-muted-foreground" />,
 }
-function PrPanel({ pr, diffs, commits, tests, lead, session, onComment, onMerge, say }: {
-  pr: PullRequest; diffs: Diff[]; commits: GitCommit[]; tests?: TestRun; lead?: Employee; session: string
+function PrPanel({ pr, diffs, commits, lead, session, onComment, onMerge, say }: {
+  pr: PullRequest; diffs: Diff[]; commits: GitCommit[]; lead?: Employee; session: string
   onComment: (t: string) => void; onMerge: () => void; say: (t: string) => void
 }) {
   const [tab, setTab] = useState<PrTab>("description")
@@ -1638,7 +1638,6 @@ function PrPanel({ pr, diffs, commits, tests, lead, session, onComment, onMerge,
             <div className="space-y-2 border-t px-3.5 py-3 text-[13px]">
               <div className="flex items-center gap-2"><CircleCheckIcon className="size-4 text-emerald-600" />No conflicts with <span className="font-mono">{pr.base}</span></div>
               <div className="flex items-center gap-2">{pending ? CHECK_ICON.pending : failed ? CHECK_ICON.failed : CHECK_ICON.passed}{pr.checks.length - pending - failed} of {pr.checks.length} checks finished{failed ? `, ${failed} failing` : ""}</div>
-              {tests && <div className="flex items-center gap-2"><FlaskConicalIcon className="size-4 text-muted-foreground" />Local run in session: {tests.passed} passed, {tests.skipped} skipped</div>}
             </div>
           )}
           {!merged && (
@@ -1724,13 +1723,14 @@ function PrPanel({ pr, diffs, commits, tests, lead, session, onComment, onMerge,
   )
 }
 
-function FocusView({ root, thread, channel, project, lead, emp, resolved, setResolved, work, onBack, onNav, onStart, running, onSend, onStop, onRetry, onUnqueue, onRewind, onModel, say, onPrComment, onPrMerge }: {
+function FocusView({ root, thread, channel, project, lead, emp, resolved, setResolved, work, onBack, onNav, onStart, running, onSend, onStop, onRetry, onUnqueue, onRewind, onModel, say, onPrComment, onPrMerge, steerCap, onSteerCap }: {
   root: Extract<Msg, { kind: "msg" }>; thread: Thread; channel: Channel; project?: Project; lead?: Employee; emp: EmpFn
   resolved: Record<string, string>; setResolved: (r: Record<string, string>) => void; work: Work | null
   onBack: () => void; onNav: () => void; onStart: () => void; running: boolean
   onSend: (t: string) => void; onStop: () => void; onRetry: (empId: string) => void
   onUnqueue: (i: number) => void; onRewind: (replyIndex: number) => void; onModel: (m: string) => void; say: (t: string) => void
   onPrComment: (t: string) => void; onPrMerge: () => void
+  steerCap: boolean; onSteerCap: (v: boolean) => void
 }) {
   const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024)
   const [tab, setTab] = useState<WbTab>(() => (sessionArtifacts(thread).diffs.length ? "changes" : "terminal"))
@@ -1755,7 +1755,6 @@ function FocusView({ root, thread, channel, project, lead, emp, resolved, setRes
   useEffect(() => {
     if (!follow || !lastStep) return
     if (lastStep.diff) setTab("changes")
-    else if (lastStep.tests) setTab("tests")
     else if (lastStep.tool === "terminal") setTab("terminal")
   }, [liveKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const pickTab = (t: WbTab) => { setTab(t); setFollow(false); setWbOpen(true) }
@@ -1882,8 +1881,9 @@ function FocusView({ root, thread, channel, project, lead, emp, resolved, setRes
             )}
             <FocusComposer
               running={running} status={status} model={model} onModel={onModel} onStop={onStop}
-              placeholder={running ? `${lead?.name ?? "Employee"} is working. Your message waits in the queue…` : `Continue session ${thread.session} with ${lead?.name ?? "the employee"}…`}
-              hint={running ? "Enter = queue · ■ stop" : pr?.status === "merged" ? `#${pr.number} merged, ⎇ ${pr.head} deleted · next edit starts a new branch from main` : work?.branch ? `Edits go to ⎇ ${work.branch}` : "Read-only on main"}
+              steerCap={steerCap} onSteerCap={onSteerCap}
+              placeholder={running ? (steerCap ? `${lead?.name ?? "Employee"} is working. Enter steers this turn…` : `${lead?.name ?? "Employee"} is working. Your message waits in the queue…`) : `Continue session ${thread.session} with ${lead?.name ?? "the employee"}…`}
+              hint={running ? (steerCap ? "Enter steers · ■ stop" : "Enter queues · ■ stop") : pr?.status === "merged" ? `#${pr.number} merged, ⎇ ${pr.head} deleted · next edit starts a new branch from main` : work?.branch ? `Edits go to ⎇ ${work.branch}` : "Read-only on main"}
               onSend={(t) => onSend(t)}
             />
           </div>
@@ -1962,7 +1962,6 @@ function AgentTurn({ r, emp, last, onRetry, onOpen, cards }: {
           {r.dur !== undefined && <span>Worked for {r.dur}s</span>}
           {steps.length > 0 && <span>· {plural(steps.length, "step")}</span>}
           {files > 0 && <button type="button" className="underline-offset-2 hover:text-foreground hover:underline" onClick={() => onOpen("changes")}>· {plural(files, "file")} changed</button>}
-          {(() => { const t = [...steps].reverse().find((s) => s.tests)?.tests; return t && <button type="button" className="underline-offset-2 hover:text-foreground hover:underline" onClick={() => onOpen("tests")}>· {t.failed ? `${t.failed} failed · ` : ""}{t.passed} passed{t.skipped ? ` · ${t.skipped} skipped` : ""}</button> })()}
           <MessageActions className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
             {r.text && <MessageAction tooltip="Copy" label="Copy" onClick={() => navigator.clipboard?.writeText(r.text)}><CopyIcon className="size-3.5" /></MessageAction>}
             {last && <MessageAction tooltip="Retry turn" label="Retry" onClick={() => onRetry(r.from)}><RefreshCcwIcon className="size-3.5" /></MessageAction>}
