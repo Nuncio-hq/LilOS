@@ -57,7 +57,7 @@ export function AddFolderDialog({
   const prefix = exact ? "" : baseName(clean).toLowerCase();
   const entries = (fs[listDir]?.children ?? [])
     .filter((c) => c.toLowerCase().startsWith(prefix))
-    .map((c) => `${listDir}/${c}`);
+    .map((c) => `${listDir === "/" ? "" : listDir}/${c}`);
   const attached = folders.find((f) => f.path === clean);
   const git = exact?.git;
   const suggestedName = baseName(clean);

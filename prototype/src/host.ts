@@ -34,10 +34,13 @@ export function hostDir(path: string): Promise<Record<string, FsDir> | null> {
       const r = await host<ListResult>("fs.list", { path })
       const out: Record<string, FsDir> = {}
       const children: string[] = []
+      // Key everything by the requested path: the host may return the dir
+      // `~`-collapsed, but the dialog looks rows up in the namespace it typed.
+      const dir = path === "/" ? "" : path
       for (const e of r.entries) {
         if (e.kind !== "dir" || e.name.startsWith(".")) continue
         children.push(e.name)
-        out[`${r.path}/${e.name}`] = e.repo
+        out[`${dir}/${e.name}`] = e.repo
           ? { git: { branches: [e.repo.head ?? "HEAD"], remote: e.repo.remote ?? undefined } }
           : {}
       }
@@ -48,13 +51,13 @@ export function hostDir(path: string): Promise<Record<string, FsDir> | null> {
             : null,
         )
         .catch(() => null)
-      out[r.path] = {
+      out[path] = {
         children,
         ...(self
           ? { git: { branches: self.branches.length ? self.branches : [self.current ?? "HEAD"], remote: self.remote ?? undefined } }
           : {}),
       }
-      if (r.path !== path) out[path] = out[r.path]
+      if (r.path !== path) out[r.path] = out[path]
       return out
     })().catch(() => null)
     dirCache.set(path, p)
