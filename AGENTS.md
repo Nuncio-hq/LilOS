@@ -5,15 +5,18 @@ file. `CLAUDE.md` is a symlink to it. Edit `AGENTS.md`, never the link.
 
 ## What LilOS is
 
-A Slack-style "CompanyOS" where the employees are AI agents running on the
-Hermes harness. One company sidebar: company channels → projects (each with its
-own channels, e.g. `#engineering` bound to a repo) → employees. An @mention or a
-DM opens a thread, and each thread is one Hermes session. Hermes owns sessions,
-memory, skills, and profiles. LilOS only owns its own domain objects: company,
-channels, messages, tickets, and employee records.
+A Slack-style "CompanyOS" where the employees are AI agents. One company
+sidebar: company channels → projects (each with its own channels, e.g.
+`#engineering` bound to a repo) → employees. An @mention or a DM opens a
+thread, and each thread is one engine session. Engines plug in through a
+generic engine protocol. Hermes is the first engine, but it is never glued in.
+The engine owns sessions, memory, skills, and profiles. LilOS only owns its
+own domain objects: company, channels, messages, tickets, and employee
+records.
 
-Stage: **prototype**. The product direction is still being brainstormed and is
-not locked. Don't treat the prototype's mock data as a contract.
+Stage: **prototype**. `prototype/` is the source of truth for UI/UX: the real
+app must match it, and a UI/UX change lands in the prototype first. Its mock
+data is not a contract.
 
 ## Repo map
 
@@ -25,6 +28,19 @@ not locked. Don't treat the prototype's mock data as a contract.
 
 Run the prototype: `cd prototype && npm install && npx vite --port 5180`.
 Check it: `cd prototype && npm run build` (runs `tsc -b` and `vite build`; it must pass).
+
+## Learn from these projects
+
+Before you design a seam, read how these projects solve it. All three are MIT
+licensed: port ideas and code with an attribution comment. Don't port their
+frameworks (T3/Synara use Effect-TS) or anything they own that we don't.
+Cite the files you read in the issue.
+
+| Project | Borrow | Start at |
+|---|---|---|
+| T3 Code `pingdotgg/t3code` | client/server split, seq-based sync (snapshot + replay), provider adapter + capabilities, `contracts` / `client-runtime` split | `docs/internals/`, `packages/contracts/src/providerRuntime.ts`, `apps/server/src/provider/Services/ProviderAdapter.ts` |
+| Synara `Emanuele-web04/synara` | ACP adapter, adapter conformance tests, mock/conformance agents | `apps/server/src/provider/acp/`, `apps/server/src/provider/providerAdapterConformance.ts`, `apps/server/scripts/acp-mock-agent.ts` |
+| Hermes Desktop `NousResearch/hermes-agent` | a renderer over a headless engine, JSON-RPC client with reconnect replay, a wire contract declared once and generated for TS | `apps/shared/src/json-rpc-gateway.ts`, `tui_gateway/contracts/`, `scripts/gen_gateway_contracts.py` |
 
 ## Who you work for
 
@@ -122,10 +138,8 @@ on it. Open an issue for it.
 - Only record decisions that a later agent could otherwise undo by accident
   (architecture, protocol, data ownership, stack). Implementation choices
   inside one slice don't go in.
-- Superseding a decision: rewrite the entry in place with the new issue/PR,
-  and move the old choice to `Not: ... (was #old)`. Don't keep dead entries.
-- Keep the file under ~4k characters. If it grows past that, the extra
-  description belongs in `docs/ARCHITECTURE.md`.
+- Superseding a decision: rewrite the entry in place and move the old choice
+  to `Not: ... (was #old)`. Keep the file under ~4k characters.
 
 ## Docs
 
@@ -136,9 +150,7 @@ The repo keeps only knowledge that outlives a single issue. Everything else
   (what's in force), and (once real code exists outside `prototype/`)
   `docs/ARCHITECTURE.md` (how the pieces fit). Read them in that order, and
   only as deep as the task needs. Open an issue only when you need the *why*.
-- Update an existing doc before you create a new one. Create a new doc only
-  when at least two issues need the same knowledge.
-- A PR that makes a doc wrong fixes that doc in the same PR. Delete docs that
-  are no longer true. Don't mark them deprecated.
-- Keep this file under ~8k characters. If it grows, move detail into the doc it
-  belongs to and leave a link here.
+- Update an existing doc before creating one; create one only when two issues
+  need the same knowledge. A PR that makes a doc wrong fixes it in the same PR.
+  Delete docs that are no longer true.
+- Keep this file under ~8.5k characters; move detail out and link it.
