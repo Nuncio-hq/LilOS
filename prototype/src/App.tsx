@@ -896,7 +896,7 @@ export default function App() {
     setEditEmp(null)
     if (selectedEmp === id) setPanelTab("thread")
     if (view.kind === "dm" && view.id === id) goChannel("general")
-    say(`Removed ${e.name} · profile \`${e.profile}\` kept`)
+    say(`Removed ${e.name} · profile ${e.profile} kept`)
   }
   const switchProfile = (id: string, profileId: string) => {
     setEmployees((es) => es.map((e) => (e.id === id ? { ...e, profile: profileId } : e)))
