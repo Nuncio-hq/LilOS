@@ -681,8 +681,16 @@ export default function App() {
       if (d.list.length) { setDiscovered(d.list); setFsMap((m) => ({ ...m, ...d.stubs })) }
     }).catch(() => {})
   }, [])
+  // Asked once per dir — a failed fetch drops out of the set so a later
+  // navigation retries (mock seeds stay when the host is down).
+  const requestedDirs = useRef(new Set<string>())
   const needDir = (p: string) => {
-    void hostDir(p).then((m) => { if (m) setFsMap((f) => ({ ...f, ...m })) })
+    if (requestedDirs.current.has(p)) return
+    requestedDirs.current.add(p)
+    void hostDir(p).then((m) => {
+      if (m) setFsMap((f) => ({ ...f, ...m }))
+      else requestedDirs.current.delete(p)
+    })
   }
   // projects.add_folder { id, path } (existing project) or projects.create { name, folders: [path] } (new one).
   const addFolder = async (path: string, project: { existing?: string; name: string }) => {

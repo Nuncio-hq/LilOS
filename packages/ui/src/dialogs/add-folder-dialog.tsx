@@ -49,11 +49,12 @@ export function AddFolderDialog({
   // complete.path: list the typed dir, or the parent filtered by the partial last segment
   const listDir = exact ? clean : parentOf(clean);
   const listed = fs[listDir]?.children;
-  // Lazy listing: ask the host for any dir the map doesn't hold yet (covers
-  // repo stubs that carry a git mark but no children).
+  // Lazy listing: ask the host for every dir we navigate to — even one the
+  // `fs` map already holds, since mock seeds must give way to real listings.
+  // The app dedupes repeat requests for the same dir.
   useEffect(() => {
-    if (onNeedDir && listed === undefined) onNeedDir(listDir);
-  }, [onNeedDir, listDir, listed]);
+    onNeedDir?.(listDir);
+  }, [onNeedDir, listDir]);
   const prefix = exact ? "" : baseName(clean).toLowerCase();
   const entries = (fs[listDir]?.children ?? [])
     .filter((c) => c.toLowerCase().startsWith(prefix))
