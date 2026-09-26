@@ -28,7 +28,6 @@ import {
   type Human,
   type HumanFn,
   type Msg,
-  type ModelOption,
   type Project,
   type Reply,
   type Step,
@@ -856,7 +855,7 @@ export default function App() {
   // turn's reply carries it back as `turn.started.model` (AC-2).
   const setModel = (root: Extract<Msg, { kind: "msg" }>, model: string) => {
     mapRoot(feedKey, root.id, (t) => ({ ...t, model }))
-    say(`Next turn uses ${MODELS.find((m) => m.id === model)?.name ?? model}`)
+    say(`Next turn uses ${MODEL_OPTS.find((m) => m.id === model)?.name ?? model}`)
   }
   // PR actions from the PR tab when the session isn't on a real checkout (the
   // Workbench uses hostAccessors.pr* → forge.* → `gh` when it is, issue #37).
@@ -944,7 +943,7 @@ export default function App() {
       running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
-      models={canModels ? MODELS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined}
+      models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined}
     />
   ) : null
 
@@ -986,7 +985,7 @@ export default function App() {
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
           onRewind={(i) => rewind(openThread, i)} onModel={canModels ? (m) => setModel(openThread, m) : undefined} say={say}
           surfaces={realSurfaces ?? fakeSurfaces}
-          models={canModels ? MODELS : undefined} repoFiles={REPO_FILES} host={hostAccessors}
+          models={canModels ? MODEL_OPTS : undefined} repoFiles={REPO_FILES} host={hostAccessors}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />

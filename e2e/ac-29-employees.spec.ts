@@ -111,7 +111,7 @@ test.describe
         .locator("textarea")
         .last()
         .fill("You are Auditor. You check process and cite clauses.");
-      await page.getByRole("button", { name: "fake-reasoning" }).click();
+      await page.getByRole("button", { name: "Fake Reasoning" }).click();
       await page.getByRole("button", { name: /Hire Auditor/ }).click();
 
       // Employee exists in the sidebar…

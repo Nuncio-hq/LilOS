@@ -1,10 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /* Issue #30: the composer model picker. AC-1 the list is the engine's models.list answer,
-   grouped by provider (prototype: MODELS stands in for the catalog). AC-2 the pick applies
-   to the NEXT turn: the reply footer shows the model the engine stamped on turn.started.
-   AC-3 an engine without the `models` capability (prototype: `?models=off`) renders no
-   picker at all. Console errors must be 0. */
+   grouped by provider — in the dev server `/api/engine` runs a real engine-fake, so the
+   picker shows its fake-* catalog (mock MODELS is the offline fallback). AC-2 the pick
+   applies to the NEXT turn: the reply footer shows the model the engine stamped on
+   turn.started. AC-3 an engine without the `models` capability (prototype: `?models=off`)
+   renders no picker at all. Console errors must be 0. */
 
 function watchConsole(page: Page) {
   const errors: string[] = [];
@@ -37,19 +38,15 @@ test("AC-1 picker lists engine models grouped by provider", async ({
   const errors = watchConsole(page);
   await page.goto("/");
   await sendDM(page, "Check the relay reconnect plan");
-  await trigger(page, /Qwen 3\.8 Flash-Next/).click();
-  // One group per provider, every catalog row listed under its group.
-  for (const provider of ["alibaba", "anthropic", "openai", "cognition"]) {
-    await expect(
-      page.locator("[cmdk-group-heading]", { hasText: provider }),
-    ).toBeVisible();
-  }
-  const group = (provider: string) =>
-    page.getByRole("group", { name: provider });
-  await expect(group("alibaba").getByText(/Flash-Next/)).toBeVisible();
-  await expect(group("anthropic").getByText(/Opus 5\.5/)).toBeVisible();
-  await expect(group("openai").getByText(/GPT-5\.5/)).toBeVisible();
-  await expect(group("cognition").getByText(/Devin/)).toBeVisible();
+  // Trigger shows the conversation's current model — the mock employee default id,
+  // present whether the catalog has loaded yet or not.
+  await trigger(page, /flash-next/i).click();
+  // The live catalog (engine-fake via /api/engine) lands under its provider group.
+  const fake = page.getByRole("group", { name: "fake" });
+  await expect(fake).toBeVisible();
+  await expect(fake.getByText("Fake Small")).toBeVisible();
+  await expect(fake.getByText("Fake Large")).toBeVisible();
+  await expect(fake.getByText("Fake Reasoning")).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -64,16 +61,16 @@ test("AC-2 the next turn runs on the picked model (turn metadata)", async ({
   await expect(page.getByText(/· qwen3\.8-flash-next/).first()).toBeVisible({
     timeout: 60_000,
   });
-  await trigger(page, /Qwen 3\.8 Flash-Next/).click();
-  await page.getByRole("option", { name: /GPT-5\.5/ }).click();
+  await trigger(page, /flash-next/i).click();
+  await page.getByRole("option", { name: /Fake Reasoning/ }).click();
   // The pick acks on the thread and the trigger now shows it.
-  await expect(trigger(page, /GPT-5\.5 · subscription/)).toBeVisible();
+  await expect(trigger(page, /Fake Reasoning/)).toBeVisible();
   // A fresh prompt (turn 2) now runs on the picked model.
   const box = page.getByPlaceholder(/Reply to Builder/);
   await box.fill("and the harness?");
   await box.press("Enter");
-  // turn.started.model lands on the finished turn's footer: "· gpt-5.5".
-  await expect(page.getByText(/· gpt-5\.5/).first()).toBeVisible({
+  // turn.started.model lands on the finished turn's footer: "· fake-reasoning".
+  await expect(page.getByText(/· fake-reasoning/).first()).toBeVisible({
     timeout: 60_000,
   });
   expect(errors).toEqual([]);
