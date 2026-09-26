@@ -148,7 +148,7 @@ export function fakeEngineLauncher(options: {
   return commandLauncher({
     name: "engine-fake",
     command: [
-      options.bun ?? process.execPath,
+      options.bun ?? "bun",
       join(
         options.repoRoot,
         "packages/engine-fake/scripts/serve.ts",
@@ -177,7 +177,7 @@ export function hermesEngineLauncher(options: {
   log: Logger;
 }): EngineLauncher {
   const command = [
-    options.bun ?? process.execPath,
+    options.bun ?? "bun",
     join(options.repoRoot, "packages/engine-hermes/scripts/serve.ts"),
     "--port",
     "0",

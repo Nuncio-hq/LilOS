@@ -87,6 +87,11 @@ export class EngineSupervisor {
     return this.starting;
   }
 
+  /** The supervised engine process (undefined for external engines). */
+  get process(): EngineProcess | undefined {
+    return this.launched?.process;
+  }
+
   /** Self-heal on demand (e.g. a new user message lands while down). */
   ensureRunning(): void {
     const s = this.state.current;
@@ -162,7 +167,7 @@ export class EngineSupervisor {
   private onConnected(conn: EngineConnection, reconnect: boolean) {
     this.startedAt = Date.now();
     this.state.conn = conn;
-    conn.onClose((reason) => {
+    conn.onClose?.((reason) => {
       if (this.stopping) return;
       this.opts.log.warn("engine socket dropped", { reason });
       if (this.procAlive && this.launched?.url) {

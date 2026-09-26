@@ -140,17 +140,6 @@ export const TurnCompletedPayload = z.strictObject({
   error: z.string().optional(),
 });
 
-/**
- * The engine re-keyed a session's durable ref (Hermes rotates
- * `stored_session_id` when compression is not in-place). `ref` is what a
- * client stores for resume/reattach — the transport `sessionId` itself stays
- * stable across a rotation, so this event is the only way to notice it.
- */
-export const SessionRefChangedPayload = z.strictObject({
-  ref: z.string().min(1),
-  previousRef: z.string().min(1),
-});
-
 /** type -> payload map. The registry below is generated from this union. */
 export const EngineEvent = z.discriminatedUnion("type", [
   z.strictObject({

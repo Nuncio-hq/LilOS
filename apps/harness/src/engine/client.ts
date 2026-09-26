@@ -13,8 +13,8 @@ import {
 export interface EngineConnection {
   request<T = unknown>(method: string, params?: unknown): Promise<T>;
   onEvent(fn: (event: EngineEvent) => void): () => void;
-  /** Socket dropped (not a deliberate close()). */
-  onClose(fn: (reason?: string) => void): void;
+  /** Socket dropped (not a deliberate close()). In-proc transports may omit it. */
+  onClose?(fn: (reason?: string) => void): void;
   close(): void;
 }
 
