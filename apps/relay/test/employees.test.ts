@@ -109,7 +109,9 @@ async function engineHost(
   await connection.receive(
     req("session.hello", { protocolVersion: 1, token: TOKEN }),
   );
-  await connection.receive(req("harness.register", {}));
+  await connection.receive(
+    req("harness.register", { protocolVersion: 1, version: "0.0.0-test" }),
+  );
   frames.length = 0;
   return { frames, requests, connection, engine };
 }
