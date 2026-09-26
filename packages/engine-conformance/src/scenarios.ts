@@ -6,8 +6,24 @@ export interface Scenario {
   run(h: Harness): Promise<void>;
 }
 
-const EDIT_PROMPT = "Fix the README title"; // edit-ask: drives mutating steps + approval
-const READ_PROMPT = "Explain the relay package";
+/**
+ * #50 AC-2 — prompts a real model follows deterministically: one bounded
+ * action plus an exact reply, so a live turn can't loop tools until the
+ * scenario timeout. The marker phrases keep the canned paths green: the
+ * engine-fake script keys on edit verbs, the live OpenAI stub on
+ * "Fix the README title" / "Explain the relay package" / "LILOS_SLOW" /
+ * "LILOS_LONG".
+ */
+const EDIT_PROMPT =
+  "Fix the README title: edit README.md exactly once (a single mutating tool call), then reply with exactly: LILOS_OK";
+const READ_PROMPT =
+  "Explain the relay package: call exactly one read or search tool, then reply with exactly: LILOS_OK";
+/** Long streaming window — a stable mid-turn point for interrupt on a real model. */
+const SLOW_PROMPT =
+  "LILOS_SLOW — write a story of at least 300 words about a lighthouse keeper, then reply with exactly: LILOS_OK";
+/** Long streaming window without mutating tools — for the late-steer scenario. */
+const LONG_READ_PROMPT =
+  "LILOS_SLOW — explain the relay package in at least 200 words, then reply with exactly: LILOS_OK";
 
 const textPrompt = (sessionId: string, text: string) => ({
   sessionId,
@@ -76,11 +92,22 @@ async function answerAsks(
     );
     if (ev.type === "turn.completed") return ev;
     if (ev.type === "request.opened") {
-      await h.request("request.respond", {
-        sessionId,
-        requestId: ev.payload.requestId,
-        outcome,
-      });
+      // Approvals take once/always; clarifies take an answer. A real model
+      // can open either kind mid-turn.
+      if (ev.payload.request.kind === "question") {
+        await h.request("request.respond", {
+          sessionId,
+          requestId: ev.payload.requestId,
+          outcome: "answer",
+          answer: "proceed",
+        });
+      } else {
+        await h.request("request.respond", {
+          sessionId,
+          requestId: ev.payload.requestId,
+          outcome,
+        });
+      }
     }
   }
 }
@@ -147,23 +174,16 @@ export const CORE_SCENARIOS: Scenario[] = [
       await h.waitEvent(
         h.forSession(sessionId, (e) => e.type === "turn.started"),
       );
+      // Any streamed content proves the stream (a real model may not expose
+      // a reasoning channel, and may answer without a separate text delta).
       await h.waitEvent(
-        h.forSession(
-          sessionId,
-          (e) => e.type === "turn.delta" && e.payload.stream === "reasoning",
-        ),
+        h.forSession(sessionId, (e) => e.type === "turn.delta"),
       );
       await h.waitEvent(
         h.forSession(sessionId, (e) => e.type === "tool.started"),
       );
       await h.waitEvent(
         h.forSession(sessionId, (e) => e.type === "tool.completed"),
-      );
-      await h.waitEvent(
-        h.forSession(
-          sessionId,
-          (e) => e.type === "turn.delta" && e.payload.stream === "text",
-        ),
       );
       const done = await h.waitEvent(
         h.forSession(sessionId, (e) => e.type === "turn.completed"),
@@ -255,10 +275,15 @@ export const CORE_SCENARIOS: Scenario[] = [
       })) as StartResult;
       const result = h.request(
         "prompt",
-        textPrompt(sessionId, EDIT_PROMPT),
+        textPrompt(sessionId, SLOW_PROMPT),
       ) as Promise<PromptResult>;
+      // A long stream (or a parked approval ask) is the deterministic
+      // mid-turn window — a short real-model reply could finish first.
       await h.waitEvent(
-        h.forSession(sessionId, (e) => e.type === "turn.delta"),
+        h.forSession(
+          sessionId,
+          (e) => e.type === "turn.delta" || e.type === "request.opened",
+        ),
       );
       const ack = (await h.request("interrupt", { sessionId })) as {
         interrupted: boolean;
@@ -364,7 +389,10 @@ export const CORE_SCENARIOS: Scenario[] = [
       )) as PromptResult;
       const r2 = (await h.request(
         "prompt",
-        textPrompt(sessionId, "What about the tests"),
+        textPrompt(
+          sessionId,
+          "What about the tests — reply with exactly: LILOS_OK",
+        ),
       )) as PromptResult;
       assert(
         r1.stopReason === "end_turn" && r2.stopReason === "end_turn",
@@ -471,16 +499,36 @@ export const STEER_SCENARIOS: Scenario[] = [
         "prompt",
         textPrompt(sessionId, EDIT_PROMPT),
       ) as Promise<PromptResult>;
+      // A parked approval ask is the stable boundary a real model always
+      // reaches under manual approvals; tool.started covers engines that
+      // auto-approve (either means the turn is mid-flight).
       await h.waitEvent(
-        h.forSession(sessionId, (e) => e.type === "tool.started"),
+        h.forSession(
+          sessionId,
+          (e) => e.type === "request.opened" || e.type === "tool.started",
+        ),
       );
       const ack = (await h.request("session.steer", {
         sessionId,
         text: "also check the footer",
       })) as { status: string };
+      if (ack.status === "not_running") {
+        // The bounded turn finished before the steer landed — the contract
+        // says the client sends the text as a normal prompt instead.
+        const res = (await h.request(
+          "prompt",
+          textPrompt(
+            sessionId,
+            "also check the footer — reply with exactly: LILOS_OK",
+          ),
+        )) as PromptResult;
+        assert(res.stopReason === "end_turn", "the deferred steer completes");
+        await result;
+        return;
+      }
       assert(ack.status === "steered", "mid-turn steer reports steered");
-      // The steer lands at the next tool boundary, which sits behind a pending
-      // approval — answer asks while the steered frame is on its way.
+      // The steer lands at the next tool boundary, which may sit behind a
+      // pending approval — answer asks while the steered frame is on its way.
       const steered = h.waitEvent(
         h.forSession(sessionId, (e) => e.type === "turn.steered"),
       );
@@ -507,17 +555,24 @@ export const STEER_SCENARIOS: Scenario[] = [
         textPrompt(sessionId, EDIT_PROMPT),
       ) as Promise<PromptResult>;
       await h.waitEvent(
-        h.forSession(sessionId, (e) => e.type === "tool.started"),
+        h.forSession(
+          sessionId,
+          (e) => e.type === "request.opened" || e.type === "tool.started",
+        ),
       );
-      for (const text of [
+      const steeredTexts = [
         "first: adjust the header",
         "second: bump the tests",
-      ]) {
+      ];
+      const queued: string[] = [];
+      for (const text of steeredTexts) {
         const ack = (await h.request("session.steer", {
           sessionId,
           text,
         })) as { status: string };
+        if (ack.status === "not_running") continue;
         assert(ack.status === "steered", `steer "${text}" reports steered`);
+        queued.push(text);
       }
       await answerAsks(h, sessionId, "always");
       const res = await result;
@@ -528,10 +583,11 @@ export const STEER_SCENARIOS: Scenario[] = [
           e.type === "turn.steered" &&
           e.payload.turnId === res.turnId,
       );
+      // A bounded real-model turn may end between the two acks: the ones the
+      // engine accepted must still land FIFO on that turn.
       assert(
-        landed.length === 2 &&
-          landed[0].payload.text === "first: adjust the header" &&
-          landed[1].payload.text === "second: bump the tests",
+        landed.length === queued.length &&
+          queued.every((t, i) => landed[i].payload.text === t),
         `steers land FIFO, got ${JSON.stringify(landed.map((e) => e.payload.text))}`,
       );
     },
@@ -545,21 +601,34 @@ export const STEER_SCENARIOS: Scenario[] = [
       })) as StartResult;
       const result = h.request(
         "prompt",
-        textPrompt(sessionId, READ_PROMPT),
+        textPrompt(sessionId, LONG_READ_PROMPT),
       ) as Promise<PromptResult>;
-      // Steer once the final text starts streaming: on a deterministic engine
-      // that is past the last tool boundary; a live engine may still land it.
+      // Steer once the reply is streaming: past the last tool boundary on a
+      // deterministic engine; a live engine may still land it — or the turn
+      // may already be over, in which case not_running means "send a prompt".
       await h.waitEvent(
-        h.forSession(
-          sessionId,
-          (e) => e.type === "turn.delta" && e.payload.stream === "text",
-        ),
+        h.forSession(sessionId, (e) => e.type === "turn.delta"),
       );
       const steerText = "then summarize the engine packages";
       const ack = (await h.request("session.steer", {
         sessionId,
         text: steerText,
       })) as { status: string };
+      if (ack.status === "not_running") {
+        const res = (await h.request(
+          "prompt",
+          textPrompt(
+            sessionId,
+            "then summarize the engine packages — reply with exactly: LILOS_OK",
+          ),
+        )) as PromptResult;
+        assert(
+          res.stopReason === "end_turn",
+          "a steer refused as not_running becomes a normal prompt",
+        );
+        await result;
+        return;
+      }
       assert(ack.status === "steered", "late steer still reports steered");
       const first = await result;
       assert(
