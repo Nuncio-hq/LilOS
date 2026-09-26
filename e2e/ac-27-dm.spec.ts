@@ -425,8 +425,9 @@ test("AC-7 real-app build: every visible control has a working handler", async (
 
 test("AC-8 `_electron` shell renders the same DM app", async () => {
   test.setTimeout(180_000);
-  // Build the Electron main + preload bundles, then launch against stackA.
-  const build = spawn("bun", ["run", "build"], {
+  // Build the Electron payload (main + preload + status page), then launch
+  // against stackA — the shell points its app window at the dev server.
+  const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
     cwd: desktopDir,
     env: { ...process.env },
     stdio: "inherit",
@@ -436,6 +437,7 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
       c === 0 ? resolve() : reject(new Error(`desktop build exit ${c}`)),
     );
   });
+  const portOf = (ws: string) => new URL(ws).port;
   const app = await _electron.launch({
     // Linux CI has no suid chrome-sandbox helper; disable it there only.
     args:
@@ -444,9 +446,9 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
         : [desktopDir],
     env: {
       ...process.env,
-      LILOS_RELAY_WS: stackA.relayWs,
-      LILOS_RELAY_TOKEN: stackA.relayToken,
-      LILOS_ENGINE_WS: stackA.feedWs,
+      LILOS_RELAY_HOME: stackA.home,
+      LILOS_RELAY_PORT: portOf(stackA.relayWs),
+      LILOS_FEED_PORT: portOf(stackA.feedWs),
       LILOS_WEB_URL: stackA.webUrl,
     },
   });

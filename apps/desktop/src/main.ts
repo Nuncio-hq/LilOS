@@ -178,8 +178,7 @@ async function statusSnapshot() {
  * apps/web, else the dev server on http://localhost:5200.
  */
 function appUrl(): { file: string } | { url: string } {
-  if (process.env.LILOS_WEB_FILE)
-    return { file: process.env.LILOS_WEB_FILE };
+  if (process.env.LILOS_WEB_FILE) return { file: process.env.LILOS_WEB_FILE };
   if (process.env.LILOS_WEB_URL) return { url: process.env.LILOS_WEB_URL };
   const bundled = join(APP_DIR, "web", "index.html");
   if (existsSync(bundled)) return { file: bundled };

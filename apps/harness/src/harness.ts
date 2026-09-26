@@ -1065,16 +1065,12 @@ export class Harness {
     // the open races it away — so query the relay directly instead of only
     // trusting the atom. (AC-2/AC-4: first DM on a fresh channel, or events
     // missed while asleep, must still bind.)
-||||||| parent of d581ebe (harness: read-only client feed ws, steer capability gating, first-run auto-hire (#27))
-    // A conversation can land on the relay a tick after its first message.
     try {
       const listed = await this.opts.relay.request<{
         conversations: Conversation[];
       }>("conversations.list", {});
       const hit = listed.conversations.find((c) => c.id === conversationId);
       if (hit) return hit;
-||||||| parent of d581ebe (harness: read-only client feed ws, steer capability gating, first-run auto-hire (#27))
-      await this.opts.relay.request("conversations.list", {});
     } catch {
       return undefined;
     }
