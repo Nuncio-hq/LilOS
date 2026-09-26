@@ -313,6 +313,8 @@
         "not_found",
         "forbidden",
         "conflict",
+        "engine_unavailable",
+        "engine_error",
         "internal"
       ]
     },
@@ -391,7 +393,12 @@
         "asks.respond",
         "asks.list",
         "turns.interrupt",
-        "system.status"
+        "system.status",
+        "employees.remove",
+        "agents.list",
+        "agents.describe",
+        "agents.create",
+        "models.list"
       ]
     },
     "AppEventMethod": {
@@ -405,7 +412,10 @@
         "channel.created",
         "ask.opened",
         "ask.resolved",
-        "turn.interruptRequested"
+        "turn.interruptRequested",
+        "channel.removed",
+        "employee.upserted",
+        "employee.removed"
       ]
     },
     "HelloParams": {
@@ -778,6 +788,19 @@
             "selected",
             "anyone"
           ]
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "EmployeesRemoveParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -3813,6 +3836,381 @@
       "required": [
         "channelId",
         "conversationId"
+      ]
+    },
+    "ChannelRemovedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "channelId"
+      ]
+    },
+    "EmployeeUpsertedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "employee": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "role": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "online",
+                "busy",
+                "offline"
+              ]
+            },
+            "profile": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "now": {
+              "type": "string"
+            },
+            "instructions": {
+              "type": "string"
+            },
+            "respondTo": {
+              "type": "string",
+              "enum": [
+                "me",
+                "selected",
+                "anyone"
+              ]
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "role",
+            "status",
+            "profile",
+            "model",
+            "now",
+            "instructions",
+            "respondTo",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "employee"
+      ]
+    },
+    "EmployeeRemovedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "employeeId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "employeeId"
+      ]
+    },
+    "AgentDescriptor": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "skillCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "soul": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "AgentsListParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "AgentsListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "agents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "skillCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "soul": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        }
+      },
+      "required": [
+        "agents"
+      ]
+    },
+    "AgentsDescribeParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "AgentsDescribeResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "agent": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "skillCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "soul": {
+              "type": "string"
+            },
+            "detail": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ]
+        }
+      },
+      "required": [
+        "agent"
+      ]
+    },
+    "AgentsCreateParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "soul": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "AgentsCreateResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "agent": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "skillCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "soul": {
+              "type": "string"
+            },
+            "detail": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ]
+        }
+      },
+      "required": [
+        "agent"
+      ]
+    },
+    "ModelsListParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ModelsListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
+        },
+        "default": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "models"
       ]
     }
   }

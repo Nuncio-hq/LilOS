@@ -89,7 +89,7 @@ interface World {
   cleanup: () => Promise<void>;
 }
 
-async function setupWorld(tick = 1): Promise<World> {
+async function setupWorld(tick = 1, attachEngine = true): Promise<World> {
   const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
   const engine = new FakeEngine({ tick });
   const engineConn = connectFake(engine) as unknown as EngineConnection;
@@ -106,7 +106,7 @@ async function setupWorld(tick = 1): Promise<World> {
     workdir: "/tmp/lilos-test",
     log,
   });
-  harness.attachEngine(engineConn);
+  if (attachEngine) harness.attachEngine(engineConn);
   await harness.start();
   const user = new RelayClient({
     url: "mem://user",
@@ -564,5 +564,100 @@ describe("engine supervisor (AC-2)", () => {
     expect(supervisor.state.current).toBe("failed");
     expect(states.filter((s) => s === "restarting").length).toBe(2);
     expect(states[states.length - 1]).toBe("failed");
+  });
+});
+
+describe("employee lifecycle over the harness (#29)", () => {
+  it("AC-1/2 user agents.* + models.* calls reach the engine through the harness", async () => {
+    const w = await setupWorld();
+    try {
+      const { agents } = await w.user.request<{
+        agents: { id: string; soul?: string }[];
+      }>("agents.list", {});
+      expect(agents.map((a) => a.id).sort()).toEqual([
+        "builder",
+        "marketer",
+        "reviewer",
+      ]);
+      expect(agents[0]?.soul).toBeUndefined();
+
+      const { models } = await w.user.request<{ models: { id: string }[] }>(
+        "models.list",
+        {},
+      );
+      expect(models.map((m) => m.id)).toContain("fake-small");
+
+      const { agent } = await w.user.request<{ agent: { id: string } }>(
+        "agents.create",
+        { name: "tester", soul: "You are Tester.", model: "fake-small" },
+      );
+      expect(agent.id).toBe("tester");
+      const again = await w.user.request<{ agents: { id: string }[] }>(
+        "agents.list",
+        {},
+      );
+      expect(again.agents.map((a) => a.id)).toContain("tester");
+      const described = await w.user.request<{ agent: { soul?: string } }>(
+        "agents.describe",
+        { id: "tester" },
+      );
+      expect(described.agent.soul).toBe("You are Tester.");
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("agents.* with no attached engine -> engine_unavailable", async () => {
+    const w = await setupWorld(1, false);
+    try {
+      await expect(w.user.request("agents.list", {})).rejects.toMatchObject({
+        code: "engine_unavailable",
+      });
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-4 employees.remove stops the bound session and drops the binding", async () => {
+    const w = await setupWorld();
+    try {
+      const { employee, channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Summarize the repo layout",
+      });
+      await postMessage(w.user, channel.id, conversation.id, "hi");
+
+      // The turn binds the conversation to an engine session.
+      await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        return (
+          conversations.find((c) => c.id === conversation.id)?.engineRef ??
+          undefined
+        );
+      }, "conversation engineRef");
+
+      const engineEvents: { type: string; payload?: unknown }[] = [];
+      w.engine.onEvent((e) => engineEvents.push(e));
+
+      await w.user.request("employees.remove", { id: employee.id });
+
+      // channel.removed reached the harness: the engine session is stopped.
+      await waitFor(
+        () =>
+          engineEvents.find(
+            (e) =>
+              e.type === "session.state" &&
+              (e.payload as { state?: string })?.state === "closed",
+          ),
+        "session closed after employees.remove",
+      );
+    } finally {
+      await w.cleanup();
+    }
   });
 });

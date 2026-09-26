@@ -12,8 +12,12 @@ import {
   ConversationsOpenParams,
   ConversationsUpdateParams,
   EmployeesCreateParams,
+  EmployeesRemoveParams,
   EmployeesUpdateParams,
+  ENGINE_PASSTHROUGH_METHODS,
+  ENGINE_PASSTHROUGH_PARAMS,
   type EngineHostState,
+  type EnginePassthroughMethod,
   HarnessRegisterParams,
   HarnessReportParams,
   type HarnessStatusReport,
@@ -51,6 +55,8 @@ export interface RelayOptions {
   now?: () => number;
   /** Log sink the relay lifecycle is written to; defaults to a fresh tail. */
   logTail?: LogTail;
+  /** How long a forwarded engine call may go unanswered (default 15s). */
+  hostCallTimeoutMs?: number;
 }
 
 export interface RelayConnection {
@@ -76,6 +82,7 @@ const JsonRpcCode = {
   protocolVersionMismatch: -32002,
   forbidden: -32003,
   notFound: -32004,
+  unavailable: -32005,
   conflict: -32009,
 } as const;
 
@@ -141,6 +148,19 @@ export function createRelay(options: RelayOptions): Relay {
     if (rejectedHandshakes.length > 20) rejectedHandshakes.shift();
   };
 
+  /** In-flight `agents.*`/`models.*` calls forwarded to the engine host. */
+  const hostCalls = new Map<
+    string,
+    {
+      caller: RelayWsPeer;
+      callerId: JsonRpcRequest["id"];
+      hostPeer: RelayWsPeer;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
+  let hostCallSeq = 0;
+  const hostCallTimeoutMs = options.hostCallTimeoutMs ?? 15_000;
+
   const emit = (channelId: string, method: string, params: unknown) => {
     const peers = subscribers.get(channelId);
     if (!peers) return;
@@ -171,6 +191,85 @@ export function createRelay(options: RelayOptions): Relay {
 
   const emitConversation = (channelId: string, conversation: unknown) =>
     emit(channelId, "conversation.updated", { channelId, conversation });
+
+  /**
+   * Forward a passthrough call to the registered engine host as a fresh
+   * JSON-RPC request (`hr-N`); the host's response frame is correlated back
+   * to the caller in `receive()`. No host → `engine_unavailable`.
+   */
+  const forwardToHost = (
+    caller: RelayWsPeer,
+    callerId: JsonRpcRequest["id"],
+    method: string,
+    params: unknown,
+  ) => {
+    if (!host) {
+      throw new RpcError(
+        JsonRpcCode.unavailable,
+        "engine_unavailable",
+        "no engine host connected",
+      );
+    }
+    const hostReqId = `hr-${++hostCallSeq}`;
+    const timer = setTimeout(() => {
+      const call = hostCalls.get(hostReqId);
+      hostCalls.delete(hostReqId);
+      if (call) {
+        respondError(
+          call.caller,
+          call.callerId,
+          JsonRpcCode.unavailable,
+          "engine_unavailable",
+          "engine host did not answer in time",
+        );
+      }
+    }, hostCallTimeoutMs);
+    hostCalls.set(hostReqId, { caller, callerId, hostPeer: host.peer, timer });
+    host.peer.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: hostReqId,
+        method,
+        params: params ?? {},
+      }),
+    );
+  };
+
+  /** A response frame (no `method`, has `result`|`error`) answers a forwarded call. */
+  const resolveHostCall = (
+    peer: RelayWsPeer,
+    frame: {
+      id: unknown;
+      result?: unknown;
+      error?: unknown;
+    },
+  ) => {
+    const call = hostCalls.get(String(frame.id));
+    if (!call || call.hostPeer !== peer) return;
+    hostCalls.delete(String(frame.id));
+    clearTimeout(call.timer);
+    const error = frame.error as
+      | { code?: unknown; message?: unknown; data?: unknown }
+      | undefined;
+    if (error) {
+      const numeric =
+        typeof error.code === "number" ? error.code : JsonRpcCode.internal;
+      respondError(
+        call.caller,
+        call.callerId,
+        numeric,
+        numeric === JsonRpcCode.unavailable
+          ? "engine_unavailable"
+          : "engine_error",
+        typeof error.message === "string"
+          ? error.message
+          : "engine call failed",
+        { engine: error.data },
+      );
+      return;
+    }
+    respond(call.caller, call.callerId, frame.result ?? null);
+  };
 
   const respond = (
     peer: RelayWsPeer,
@@ -217,6 +316,19 @@ export function createRelay(options: RelayOptions): Relay {
     }
 
     try {
+      const passthrough = (
+        ENGINE_PASSTHROUGH_METHODS as readonly string[]
+      ).includes(method)
+        ? (method as EnginePassthroughMethod)
+        : undefined;
+      if (passthrough) {
+        const parsed = ENGINE_PASSTHROUGH_PARAMS[passthrough].safeParse(
+          params ?? {},
+        );
+        if (!parsed.success) throw badParams(parsed.error.issues);
+        forwardToHost(peer, id, passthrough, parsed.data);
+        return;
+      }
       switch (method) {
         case "session.hello": {
           const parsed = HelloParams.safeParse(params);
@@ -276,9 +388,9 @@ export function createRelay(options: RelayOptions): Relay {
         case "employees.create": {
           const parsed = EmployeesCreateParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
-          respond(peer, id, {
-            employee: await store.createEmployee(parsed.data),
-          });
+          const employee = await store.createEmployee(parsed.data);
+          broadcast("employee.upserted", { employee });
+          respond(peer, id, { employee });
           return;
         }
         case "employees.update": {
@@ -293,7 +405,27 @@ export function createRelay(options: RelayOptions): Relay {
               "employee not found",
             );
           }
+          broadcast("employee.upserted", { employee });
           respond(peer, id, { employee });
+          return;
+        }
+        case "employees.remove": {
+          const parsed = EmployeesRemoveParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const removed = await store.removeEmployee(parsed.data.id);
+          if (!removed) {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "employee not found",
+            );
+          }
+          for (const channelId of removed.channelIds) {
+            subscribers.delete(channelId);
+            broadcast("channel.removed", { channelId });
+          }
+          broadcast("employee.removed", { employeeId: parsed.data.id });
+          respond(peer, id, { ok: true });
           return;
         }
         case "channels.list": {
@@ -737,6 +869,19 @@ export function createRelay(options: RelayOptions): Relay {
             return;
           }
           const candidate = raw as Record<string, unknown>;
+          // A response frame (result|error, no method) resolves a call the
+          // relay forwarded to the engine host for some other peer.
+          if (
+            typeof candidate.method !== "string" &&
+            candidate.id !== undefined &&
+            ("result" in candidate || "error" in candidate)
+          ) {
+            resolveHostCall(
+              peer,
+              candidate as { id: unknown; result?: unknown; error?: unknown },
+            );
+            return;
+          }
           if (
             typeof candidate.method !== "string" ||
             candidate.id === undefined
@@ -775,6 +920,23 @@ export function createRelay(options: RelayOptions): Relay {
             log(`harness ${host.hostId} disconnected`);
             host = null;
             lastHostDisconnectedAt = now();
+          }
+          // Fail or drop every forwarded call this peer is a party to.
+          for (const [reqId, call] of hostCalls) {
+            if (call.hostPeer === peer) {
+              hostCalls.delete(reqId);
+              clearTimeout(call.timer);
+              respondError(
+                call.caller,
+                call.callerId,
+                JsonRpcCode.unavailable,
+                "engine_unavailable",
+                "engine host disconnected",
+              );
+            } else if (call.caller === peer) {
+              hostCalls.delete(reqId);
+              clearTimeout(call.timer);
+            }
           }
         },
       };

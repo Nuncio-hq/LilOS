@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { buildSchemaDoc } from "../scripts/gen-schemas.js";
 import {
+  AppEventMethod,
   AppMessage,
+  AppMethod,
+  ChannelRemovedEvent,
   ChannelSubscribeParams,
   Employee,
+  EmployeeRemovedEvent,
+  EmployeesRemoveParams,
+  EmployeeUpsertedEvent,
+  ENGINE_PASSTHROUGH_METHODS,
   HelloParams,
   JsonRpcNotification,
   JsonRpcRequest,
@@ -144,5 +151,52 @@ describe("AC-4 version mismatch error shape", () => {
         serverVersion: 2,
       }).update,
     ).toBe("server");
+  });
+});
+
+describe("#29 employee lifecycle + engine passthrough contracts", () => {
+  it("declares employees.remove and the engine-passthrough method set", () => {
+    expect(EmployeesRemoveParams.parse({ id: "emp_1" })).toEqual({
+      id: "emp_1",
+    });
+    expect(EmployeesRemoveParams.safeParse({ id: "" }).success).toBe(false);
+    for (const method of [
+      "employees.remove",
+      "agents.list",
+      "agents.describe",
+      "agents.create",
+      "models.list",
+    ]) {
+      expect(AppMethod.safeParse(method).success).toBe(true);
+    }
+    expect(ENGINE_PASSTHROUGH_METHODS).toEqual([
+      "agents.list",
+      "agents.describe",
+      "agents.create",
+      "models.list",
+    ]);
+  });
+
+  it("declares employee + channel lifecycle events", () => {
+    for (const method of [
+      "channel.removed",
+      "employee.upserted",
+      "employee.removed",
+    ]) {
+      expect(AppEventMethod.safeParse(method).success).toBe(true);
+    }
+    expect(EmployeeUpsertedEvent.parse({ employee })).toEqual({ employee });
+    expect(EmployeeRemovedEvent.parse({ employeeId: "emp_1" })).toEqual({
+      employeeId: "emp_1",
+    });
+    expect(ChannelRemovedEvent.parse({ channelId: "ch_1" })).toEqual({
+      channelId: "ch_1",
+    });
+  });
+
+  it("keeps the no-delete shape: no profile-delete method exists anywhere", () => {
+    for (const method of AppMethod.options) {
+      expect(method).not.toMatch(/agents\.(remove|delete)|profiles\.delete/);
+    }
   });
 });

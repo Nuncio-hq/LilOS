@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  AgentsCreateParams,
+  AgentsDescribeParams,
+  AgentsListParams,
+} from "../engine/agents";
+import { ModelsListParams } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
 import {
   AppChannel,
@@ -53,6 +59,8 @@ export const AppErrorCode = z.enum([
   "not_found",
   "forbidden",
   "conflict",
+  "engine_unavailable",
+  "engine_error",
   "internal",
 ]);
 export type AppErrorCode = z.infer<typeof AppErrorCode>;
@@ -111,8 +119,39 @@ export const AppMethod = z.enum([
   "asks.list",
   "turns.interrupt",
   "system.status",
+  "employees.remove",
+  /* engine passthrough: forwarded verbatim to the registered engine host */
+  "agents.list",
+  "agents.describe",
+  "agents.create",
+  "models.list",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
+
+/**
+ * Engine-protocol methods the relay forwards verbatim to the registered
+ * engine host (`harness.register`) as a JSON-RPC request and relays the
+ * response back — the app never opens an engine socket. The params schemas
+ * are the engine's own, re-used here so the relay validates before
+ * forwarding. No host, a host disconnect, or a host-side timeout answers
+ * `engine_unavailable`; an engine-side error answer surfaces `engine_error`.
+ */
+export const ENGINE_PASSTHROUGH_METHODS = [
+  "agents.list",
+  "agents.describe",
+  "agents.create",
+  "models.list",
+] as const;
+export type EnginePassthroughMethod =
+  (typeof ENGINE_PASSTHROUGH_METHODS)[number];
+
+/** Params schema per passthrough method, for the relay's validate-then-forward gate. */
+export const ENGINE_PASSTHROUGH_PARAMS = {
+  "agents.list": AgentsListParams,
+  "agents.describe": AgentsDescribeParams,
+  "agents.create": AgentsCreateParams,
+  "models.list": ModelsListParams,
+} as const satisfies Record<EnginePassthroughMethod, z.ZodType>;
 
 export const HelloParams = z.object({
   protocolVersion: z.int().min(1),
@@ -164,12 +203,22 @@ export const EmployeesCreateParams = z.object({
   respondTo: RespondTo.default("me"),
 });
 export type EmployeesCreateParams = z.infer<typeof EmployeesCreateParams>;
+/** Caller-facing shape: `.default()` fields are optional on the wire. */
+export type EmployeesCreateParamsInput = z.input<typeof EmployeesCreateParams>;
 
 export const EmployeesUpdateParams = z.object({
   id: z.string().min(1),
   ...EmployeePatch.shape,
 });
 export type EmployeesUpdateParams = z.infer<typeof EmployeesUpdateParams>;
+
+/**
+ * Remove deletes only the LilOS record (employee + its DM channel,
+ * conversations, messages, asks). The linked engine profile is never
+ * touched — engines own profiles; there is no profile-delete call anywhere.
+ */
+export const EmployeesRemoveParams = z.object({ id: z.string().min(1) });
+export type EmployeesRemoveParams = z.infer<typeof EmployeesRemoveParams>;
 
 export const EmployeeResult = z.object({ employee: Employee });
 
@@ -450,6 +499,9 @@ export const AppEventMethod = z.enum([
   "ask.opened",
   "ask.resolved",
   "turn.interruptRequested",
+  "channel.removed",
+  "employee.upserted",
+  "employee.removed",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 
@@ -482,6 +534,18 @@ export type ConversationUpdatedEvent = z.infer<typeof ConversationUpdatedEvent>;
 /** Broadcast to every helloed peer — a client learns of new channels live. */
 export const ChannelCreatedEvent = z.object({ channel: AppChannel });
 export type ChannelCreatedEvent = z.infer<typeof ChannelCreatedEvent>;
+
+/** Broadcast when a channel is deleted (e.g. its employee was removed). */
+export const ChannelRemovedEvent = z.object({ channelId: z.string().min(1) });
+export type ChannelRemovedEvent = z.infer<typeof ChannelRemovedEvent>;
+
+/** Broadcast on employees.create / employees.update so all clients upsert. */
+export const EmployeeUpsertedEvent = z.object({ employee: Employee });
+export type EmployeeUpsertedEvent = z.infer<typeof EmployeeUpsertedEvent>;
+
+/** Broadcast on employees.remove so all clients drop the record. */
+export const EmployeeRemovedEvent = z.object({ employeeId: z.string().min(1) });
+export type EmployeeRemovedEvent = z.infer<typeof EmployeeRemovedEvent>;
 
 export const AskOpenedEvent = z.object({
   channelId: z.string().min(1),

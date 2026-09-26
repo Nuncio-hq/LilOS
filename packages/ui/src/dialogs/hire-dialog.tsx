@@ -4,19 +4,15 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { Textarea } from "../components/ui/textarea";
-import { RESPOND } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
-import type {
-  HermesProfile,
-  HireDraft,
-  ModelOption,
-  RespondTo,
-} from "../types";
+import type { EngineProfile, HireDraft, ModelOption } from "../types";
 import { Field } from "./field";
 
-/* Hire dialog. All lists (templates, Hermes profiles, models, channels) are app data passed in —
-   this component only renders and reports the hire via onHire. */
+/* Hire dialog. All lists (templates, engine profiles, models, channels) are app data passed in —
+   this component only renders and reports the hire via onHire. `profile` is
+   the picked engine profile id, or null when a new profile should be created
+   on the engine from the draft. */
 export function HireDialog({
   initial,
   templates,
@@ -29,11 +25,11 @@ export function HireDialog({
 }: {
   initial: HireDraft;
   templates: HireDraft[];
-  profiles: HermesProfile[];
+  profiles: EngineProfile[];
   models: ModelOption[];
   allChannels: { id: string; label: string }[];
   onClose: () => void;
-  onHire: (d: HireDraft, r: RespondTo, chs: string[]) => void;
+  onHire: (d: HireDraft, profile: string | null, chs: string[]) => void;
   usedProfiles: string[];
 }) {
   const [d, setD] = useState<HireDraft>(initial);
@@ -42,17 +38,16 @@ export function HireDialog({
       ? "new"
       : "existing",
   );
-  const [picked, setPicked] = useState<HermesProfile | null>(null);
-  const pick = (p: HermesProfile) => {
+  const [picked, setPicked] = useState<EngineProfile | null>(null);
+  const pick = (p: EngineProfile) => {
     setPicked(p);
     setD({
-      name: p.id[0].toUpperCase() + p.id.slice(1),
+      name: p.name ?? p.id[0].toUpperCase() + p.id.slice(1),
       role: d.role,
       model: p.model,
       instructions: p.soul,
     });
   };
-  const [respondTo, setRespondTo] = useState<RespondTo>("me");
   const [chs, setChs] = useState<string[]>(["engineering"]);
   const drafted = !templates.some((t) => t.name === initial.name);
   const slug = d.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "employee";
@@ -89,7 +84,7 @@ export function HireDialog({
           {mode === "existing" ? (
             <>
               <div className="px-2 pb-1 text-muted-foreground text-xs uppercase tracking-wide">
-                Hermes profiles
+                Engine profiles
               </div>
               {profiles.map((p) => {
                 const used = usedProfiles.includes(p.id);
@@ -168,12 +163,12 @@ export function HireDialog({
                       Uses profile <code>{picked.id}</code> as-is
                     </>
                   ) : (
-                    "Pick a Hermes profile on the left"
+                    "Pick an engine profile on the left"
                   )
                 ) : drafted ? (
                   "Drafted by Builder · review before hiring"
                 ) : (
-                  "Creates a new Hermes profile"
+                  "Creates a new engine profile"
                 )}
               </div>
             </div>
@@ -200,7 +195,7 @@ export function HireDialog({
                 </Field>
               </div>
               {mode === "existing" ? (
-                <Field label="From the profile (edit in Hermes)">
+                <Field label="From the profile (managed by the engine)">
                   {picked ? (
                     <dl className="grid grid-cols-[72px_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-lg border bg-muted/30 p-3 text-xs">
                       <dt className="text-muted-foreground">Profile</dt>
@@ -250,28 +245,6 @@ export function HireDialog({
                   </Field>
                 </>
               )}
-              <Field label="Who can direct this employee">
-                <div className="flex flex-wrap gap-1.5">
-                  {(Object.keys(RESPOND) as RespondTo[]).map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => setRespondTo(r)}
-                      className={cn(
-                        "rounded-md border px-2.5 py-1.5 text-xs",
-                        respondTo === r
-                          ? "border-foreground bg-muted font-medium"
-                          : "hover:bg-muted/50",
-                      )}
-                    >
-                      {RESPOND[r]}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-1 text-muted-foreground text-xs">
-                  Everyone can read its replies. Other people's @mentions become
-                  requests you approve.
-                </p>
-              </Field>
               <Field label="Join channels">
                 <div className="flex flex-wrap gap-1.5">
                   {allChannels.map((c) => {
@@ -304,14 +277,20 @@ export function HireDialog({
             <code className="hidden min-w-0 truncate rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs sm:block">
               {mode === "existing"
                 ? `link profile ${picked?.id ?? "…"} → employee @${slug}`
-                : `hermes profile create ${slug} → SOUL.md → model`}
+                : `agents.create ${slug} → persona → model`}
             </code>
             <Button variant="ghost" className="ml-auto" onClick={onClose}>
               Cancel
             </Button>
             <Button
               disabled={!d.name || (mode === "existing" && !picked)}
-              onClick={() => onHire(d, respondTo, chs)}
+              onClick={() =>
+                onHire(
+                  d,
+                  mode === "existing" ? (picked?.id ?? null) : null,
+                  chs,
+                )
+              }
             >
               <UserPlusIcon />
               Hire {d.name}

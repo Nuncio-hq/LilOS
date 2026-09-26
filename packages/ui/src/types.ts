@@ -205,8 +205,14 @@ export type TicketRow = {
   ch: string;
   branch?: string;
 };
-export type HermesProfile = {
+/**
+ * An engine profile as the engine reports it (`agents.list`/`agents.describe`).
+ * Engine-agnostic: the id is the profile handle the engine starts sessions
+ * with; `name` is its display name when the engine sets one.
+ */
+export type EngineProfile = {
   id: string;
+  name?: string;
   model: string;
   soul: string;
   skills: number;

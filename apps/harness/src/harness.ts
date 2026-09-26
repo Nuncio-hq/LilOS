@@ -11,6 +11,8 @@ import {
   APP_PROTOCOL_VERSION,
   AskResolvedEvent,
   ChannelCreatedEvent,
+  ChannelRemovedEvent,
+  ENGINE_PASSTHROUGH_METHODS,
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
 import type {
@@ -80,6 +82,8 @@ export interface HarnessOptions {
 
 const INVALID_STATE = -32003;
 const REQUEST_NOT_FOUND = -32002;
+/** Tells the relay to answer the caller `engine_unavailable` (not error). */
+const ENGINE_UNAVAILABLE = -32005;
 
 export class Harness {
   private engine?: EngineConnection;
@@ -98,6 +102,7 @@ export class Harness {
   /** Messages that arrived while the engine was down; drained on attach. */
   private readonly early = new Map<string, AppMessage[]>();
   private readonly channelSeen = new Map<string, number>();
+  private readonly channelWatch = new Map<string, () => void>(); // channelId -> store unsub
   private readonly unsubs: Array<() => void> = [];
 
   /** Live engine sessions the harness owns (status reports this — #33). */
@@ -120,6 +125,9 @@ export class Harness {
     this.unsubs.push(
       this.opts.relay.onEvent((m, p) => this.onRelayEvent(m, p)),
     );
+    // App-side `agents.*`/`models.*` calls arrive as relay-forwarded
+    // requests (ENGINE_PASSTHROUGH_METHODS); they run on the engine.
+    this.opts.relay.setRequestHandler((m, p) => this.onRelayRequest(m, p));
     const reg = await this.opts.relay.request<{
       hostId: string;
       pending: PendingTurn[];
@@ -562,6 +570,11 @@ export class Harness {
         if (parsed.success) this.watchChannel(parsed.data.channel.id);
         break;
       }
+      case "channel.removed": {
+        const parsed = ChannelRemovedEvent.safeParse(params);
+        if (parsed.success) void this.onChannelRemoved(parsed.data.channelId);
+        break;
+      }
       case "ask.resolved": {
         const parsed = AskResolvedEvent.safeParse(params);
         if (parsed.success) void this.onAskResolved(parsed.data.ask);
@@ -576,6 +589,59 @@ export class Harness {
       }
       default:
         break;
+    }
+  }
+
+  /**
+   * The relay asks the harness to answer engine calls on its behalf
+   * (harness = the only engine talker, D-#26). Only the declared passthrough
+   * set is honored; anything else is a JSON-RPC method-not-found.
+   */
+  private onRelayRequest(method: string, params: Record<string, unknown>) {
+    if (!(ENGINE_PASSTHROUGH_METHODS as readonly string[]).includes(method)) {
+      throw Object.assign(new Error(`harness does not answer ${method}`), {
+        code: -32601,
+      });
+    }
+    const conn = this.engine;
+    if (!conn) {
+      throw Object.assign(new Error("engine not connected"), {
+        code: ENGINE_UNAVAILABLE,
+      });
+    }
+    return conn.request(method, params);
+  }
+
+  /**
+   * `channel.removed` (an employee was removed): stop the bound engine
+   * session, drop bindings, queued early messages, asks and the watch.
+   */
+  private async onChannelRemoved(channelId: string) {
+    this.channelWatch.get(channelId)?.();
+    this.channelWatch.delete(channelId);
+    this.channelSeen.delete(channelId);
+    const conn = this.engine;
+    for (const binding of [...this.bindings.values()]) {
+      if (binding.channelId !== channelId) continue;
+      this.unbind(binding);
+      this.early.delete(binding.conversationId);
+      for (const key of [...this.askByRequest.keys()]) {
+        if (key.startsWith(`${binding.sessionId}:`)) {
+          const askId = this.askByRequest.get(key);
+          this.askByRequest.delete(key);
+          if (askId) this.requestByAsk.delete(askId);
+        }
+      }
+      if (conn) {
+        try {
+          await conn.request("session.stop", { sessionId: binding.sessionId });
+        } catch (error) {
+          this.opts.log.warn("session.stop on removed channel failed", {
+            sessionId: binding.sessionId,
+            error: String(error),
+          });
+        }
+      }
     }
   }
 
@@ -597,6 +663,7 @@ export class Harness {
         );
       }
     });
+    this.channelWatch.set(channelId, unsub);
     this.unsubs.push(unsub);
   }
 

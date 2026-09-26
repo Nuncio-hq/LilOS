@@ -3,11 +3,15 @@ import {
   type AppChannel,
   type AppMessage,
   ChannelCreatedEvent,
+  ChannelRemovedEvent,
   ChannelSnapshotEvent,
   ChannelSyncedEvent,
   type Conversation,
   ConversationUpdatedEvent,
   type Employee,
+  type EmployeePatch,
+  type EmployeesCreateParamsInput,
+  EmployeeUpsertedEvent,
   JsonRpcNotification,
   JsonRpcResponse,
   MessageCreatedEvent,
@@ -16,6 +20,11 @@ import {
   SystemStatusResult,
   type WelcomeResult,
 } from "@lilos/contracts/app";
+import type {
+  AgentDescriptor,
+  AgentsCreateParams,
+  ModelsListResult,
+} from "@lilos/contracts/engine";
 import { atom, type WritableAtom } from "nanostores";
 import {
   defaultSocketFactory,
@@ -76,6 +85,16 @@ export interface RelayClientOptions {
    * Equivalent to calling `onEvent(fn)` after construction.
    */
   onEvent?: (method: string, params: Record<string, unknown>) => void;
+  /**
+   * Answers requests the relay sends TO this client — the engine
+   * passthrough (`agents.*`/`models.*`) is forwarded this way to the
+   * harness, which sets the handler that dispatches into the engine.
+   * A thrown error's numeric `code`/`data` ride back to the caller.
+   */
+  onRequest?: (
+    method: string,
+    params: Record<string, unknown>,
+  ) => Promise<unknown> | unknown;
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
@@ -120,6 +139,9 @@ export class RelayClient {
     RelayClientOptions;
 
   private socket: RelaySocket | undefined;
+  private requestHandler:
+    | ((method: string, params: Record<string, unknown>) => Promise<unknown>)
+    | undefined;
   private nextRequestId = 1;
   private readonly eventListeners = new Set<
     (method: string, params: Record<string, unknown>) => void
@@ -161,6 +183,24 @@ export class RelayClient {
     this.state.listen((connection) => {
       this.status.set({ ...this.status.get(), connection });
     });
+    if (options.onRequest) {
+      this.requestHandler = async (m, p) => await options.onRequest?.(m, p);
+    }
+  }
+
+  /**
+   * Set/replace the handler answering relay → client requests. The harness
+   * installs one that forwards `agents.*`/`models.*` into the engine.
+   */
+  setRequestHandler(
+    fn:
+      | ((
+          method: string,
+          params: Record<string, unknown>,
+        ) => Promise<unknown> | unknown)
+      | undefined,
+  ): void {
+    this.requestHandler = fn ? async (m, p) => await fn(m, p) : undefined;
   }
 
   /**
@@ -260,6 +300,69 @@ export class RelayClient {
     this.dropSocket(new RelayError("relay client closed", "closed"));
     this.connectPromise = undefined;
     this.state.set("closed");
+  }
+
+  /* ------------------- employee + engine convenience calls ------------------- */
+
+  async createEmployee(input: EmployeesCreateParamsInput): Promise<Employee> {
+    const { employee } = await this.request<{ employee: Employee }>(
+      "employees.create",
+      input as Record<string, unknown>,
+    );
+    const list = this.employees.get();
+    if (!list.some((e) => e.id === employee.id)) {
+      this.employees.set([...list, employee]);
+    }
+    return employee;
+  }
+
+  async updateEmployee(id: string, patch: EmployeePatch): Promise<Employee> {
+    const { employee } = await this.request<{ employee: Employee }>(
+      "employees.update",
+      { id, ...patch } as Record<string, unknown>,
+    );
+    this.employees.set(
+      this.employees.get().map((e) => (e.id === id ? employee : e)),
+    );
+    return employee;
+  }
+
+  /**
+   * Remove deletes only the LilOS record; the engine profile is untouched
+   * (engines own profiles — there is no profile-delete call anywhere).
+   */
+  async removeEmployee(id: string): Promise<void> {
+    await this.request("employees.remove", { id });
+    this.employees.set(this.employees.get().filter((e) => e.id !== id));
+  }
+
+  /** Engine roster + model catalog, forwarded through the relay to the host. */
+  async listAgents(): Promise<AgentDescriptor[]> {
+    const { agents } = await this.request<{ agents: AgentDescriptor[] }>(
+      "agents.list",
+      {},
+    );
+    return agents;
+  }
+
+  async describeAgent(id: string): Promise<AgentDescriptor> {
+    const { agent } = await this.request<{ agent: AgentDescriptor }>(
+      "agents.describe",
+      { id },
+    );
+    return agent;
+  }
+
+  async createAgent(params: AgentsCreateParams): Promise<AgentDescriptor> {
+    const { agent } = await this.request<{ agent: AgentDescriptor }>(
+      "agents.create",
+      params as Record<string, unknown>,
+    );
+    return agent;
+  }
+
+  async listModels(): Promise<ModelsListResult> {
+    return await this.request<ModelsListResult>("models.list", {});
   }
 
   async request<T>(
@@ -485,6 +588,16 @@ export class RelayClient {
       return;
     }
     if (typeof raw.method === "string") {
+      // method + id = a request the relay asks this client to answer
+      // (engine passthrough); method alone = a notification.
+      if (raw.id !== undefined) {
+        void this.handleRequest(
+          raw.id as RequestId,
+          raw.method,
+          (raw.params ?? {}) as Record<string, unknown>,
+        );
+        return;
+      }
       const asNotification = JsonRpcNotification.safeParse(parsed);
       if (asNotification.success) {
         this.handleNotification(
@@ -492,6 +605,45 @@ export class RelayClient {
           asNotification.data.params ?? {},
         );
       }
+    }
+  }
+
+  private async handleRequest(
+    id: RequestId,
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<void> {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== SOCKET_OPEN) return;
+    const handler = this.requestHandler;
+    if (!handler) {
+      socket.send(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32601, message: `no handler for ${method}` },
+        }),
+      );
+      return;
+    }
+    try {
+      const result = await handler(method, params);
+      socket.send(
+        JSON.stringify({ jsonrpc: "2.0", id, result: result ?? null }),
+      );
+    } catch (error) {
+      const e = error as { code?: unknown; data?: unknown };
+      socket.send(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          error: {
+            code: typeof e.code === "number" ? e.code : -32603,
+            message: error instanceof Error ? error.message : "request failed",
+            ...(e.data !== undefined ? { data: e.data } : {}),
+          },
+        }),
+      );
     }
   }
 
@@ -534,6 +686,33 @@ export class RelayClient {
         const list = this.channels.get();
         if (!list.some((c) => c.id === event.channel.id)) {
           this.channels.set([...list, event.channel]);
+        }
+        return;
+      }
+      case "channel.removed": {
+        const event = ChannelRemovedEvent.parse(params);
+        this.dropChannel(event.channelId);
+        return;
+      }
+      case "employee.upserted": {
+        const event = EmployeeUpsertedEvent.parse(params);
+        const list = this.employees.get();
+        const idx = list.findIndex((e) => e.id === event.employee.id);
+        this.employees.set(
+          idx === -1
+            ? [...list, event.employee]
+            : list.map((e) =>
+                e.id === event.employee.id ? event.employee : e,
+              ),
+        );
+        return;
+      }
+      case "employee.removed": {
+        const { employeeId } = params as { employeeId?: string };
+        if (typeof employeeId === "string") {
+          this.employees.set(
+            this.employees.get().filter((e) => e.id !== employeeId),
+          );
         }
         return;
       }
@@ -590,6 +769,25 @@ export class RelayClient {
         return;
       }
     }
+  }
+
+  /** Drop a deleted channel: atom, per-channel message state, replay state. */
+  private dropChannel(channelId: string): void {
+    this.channels.set(this.channels.get().filter((c) => c.id !== channelId));
+    this.conversations.set(
+      this.conversations.get().filter((c) => c.channelId !== channelId),
+    );
+    this.subscribedChannels.delete(channelId);
+    this.catchingUp.delete(channelId);
+    this.watermarks.delete(channelId);
+    this.parked.delete(channelId);
+    this.channelStates.get(channelId)?.set({
+      channelId,
+      synced: false,
+      lastSeq: 0,
+      messages: [],
+    });
+    this.channelStates.delete(channelId);
   }
 
   /** Dispatch only when seq advances the channel watermark (dedupe). */

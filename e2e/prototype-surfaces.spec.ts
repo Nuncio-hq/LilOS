@@ -230,14 +230,14 @@ test("AC-5 employee management: edit name + role, remove keeps profile, missing 
     sidebar(page).getByRole("button", { name: /Staff Engineer/ }),
   ).toBeVisible();
 
-  // Remove from company: the confirm copy states the Hermes profile is kept.
+  // Remove from company: the confirm copy states the engine profile is kept.
   await panel.getByRole("button", { name: "Edit" }).click();
   await page
     .getByRole("button", { name: "Remove from company" })
     .first()
     .click();
   await expect(
-    page.getByText(/Hermes profile `builder` is kept/),
+    page.getByText(/engine profile `builder` stays put/),
   ).toBeVisible();
   await page
     .locator("[role=alert]")
@@ -260,11 +260,11 @@ test("AC-5 profile missing: card shows the state with Switch profile", async ({
   await page.getByRole("button", { name: "Profile" }).click();
   const panel = page.locator("aside").last();
 
-  await expect(panel.getByText(/isn't on this harness/)).toBeVisible();
+  await expect(panel.getByText(/isn't on the engine/)).toBeVisible();
   await panel.getByRole("combobox").click();
-  await page.getByRole("option", { name: /research/ }).click();
-  await expect(panel.getByText(/isn't on this harness/)).toHaveCount(0);
-  await expect(panel.getByText("research", { exact: true })).toBeVisible();
+  await page.getByRole("option", { name: /\bbuilder\b/ }).click();
+  await expect(panel.getByText(/isn't on the engine/)).toHaveCount(0);
+  await expect(panel.getByText("builder", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
