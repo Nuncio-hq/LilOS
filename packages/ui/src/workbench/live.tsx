@@ -126,13 +126,21 @@ export function LiveTerminal({
 
 export function LivePreview({ live }: { live: LiveSurfaces }) {
   const imgRef = useRef<HTMLImageElement>(null);
-  const toPage = (e: React.MouseEvent) => {
+  // object-contain letterboxes the frame inside the img box — map clicks
+  // through the content rect, not the element rect.
+  const toPage = (e: { clientX: number; clientY: number }) => {
     const img = imgRef.current;
     if (!img) return { x: 0, y: 0 };
     const r = img.getBoundingClientRect();
+    const srcAspect = live.page.width / live.page.height;
+    const boxAspect = r.width / r.height;
+    const cw = boxAspect > srcAspect ? r.height * srcAspect : r.width;
+    const ch = boxAspect > srcAspect ? r.height : r.width / srcAspect;
+    const ox = r.left + (r.width - cw) / 2;
+    const oy = r.top + (r.height - ch) / 2;
     return {
-      x: Math.round(((e.clientX - r.left) / r.width) * live.page.width),
-      y: Math.round(((e.clientY - r.top) / r.height) * live.page.height),
+      x: Math.round(((e.clientX - ox) / cw) * live.page.width),
+      y: Math.round(((e.clientY - oy) / ch) * live.page.height),
     };
   };
   return (
