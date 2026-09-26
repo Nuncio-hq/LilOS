@@ -96,6 +96,15 @@ export interface RelayStore {
     id: string,
     patch: EmployeePatchInput,
   ): Promise<Employee | null>;
+  /**
+   * Deletes the employee plus its whole LilOS-side graph (DM channel,
+   * conversations, messages, asks) in one step. The engine profile is never
+   * touched — engines own profiles; the relay only drops its own records.
+   * Returns the deleted row + removed channel ids, or null when unknown.
+   */
+  removeEmployee(
+    id: string,
+  ): Promise<{ employee: Employee; channelIds: string[] } | null>;
 
   listChannels(): Promise<AppChannel[]>;
   getChannel(id: string): Promise<AppChannel | null>;
@@ -203,6 +212,35 @@ export function createMemoryStore(): RelayStore {
       if (!employee) return null;
       Object.assign(employee, patch);
       return employee;
+    },
+    async removeEmployee(id) {
+      const employee = employees.get(id);
+      if (!employee) return null;
+      const removedChannels = [...channels.values()].filter(
+        (c) => c.employeeId === id,
+      );
+      const channelIds = new Set(removedChannels.map((c) => c.id));
+      const conversationIds = new Set(
+        [...conversations.values()]
+          .filter((c) => channelIds.has(c.channelId))
+          .map((c) => c.id),
+      );
+      for (const [aid, ask] of asks) {
+        if (
+          channelIds.has(ask.channelId) ||
+          conversationIds.has(ask.conversationId)
+        )
+          asks.delete(aid);
+      }
+      for (const [mid, message] of messages) {
+        if (channelIds.has(message.channelId)) messages.delete(mid);
+      }
+      for (const [cid, conversation] of conversations) {
+        if (channelIds.has(conversation.channelId)) conversations.delete(cid);
+      }
+      for (const cid of channelIds) channels.delete(cid);
+      employees.delete(id);
+      return { employee, channelIds: [...channelIds] };
     },
     async listChannels() {
       return [...channels.values()].sort((a, b) => a.createdAt - b.createdAt);

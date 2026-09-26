@@ -27,6 +27,10 @@ PR does not exist.
 - **D-#25 A DM is a private channel with exactly one employee; each
   conversation is one engine session** (`engineRef`, set by the harness).
   Not: group DMs, or threads detached from sessions. — #25 · PR #41
+- **D-#29 LilOS never deletes an engine profile; an employee is only the
+  LilOS record pointing at engine runtime state.** Remove-from-company
+  deletes channels/conversations/the record; `agents.*` has no delete.
+  Not: delete profile on remove. — #29
 
 ## Web
 - **D-#3 Web: React 19 + Vite + Tailwind v4 + shadcn (base-nova) + AI

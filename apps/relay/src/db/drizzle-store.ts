@@ -7,7 +7,7 @@ import type {
   PendingTurn,
 } from "@lilos/contracts/app";
 import { ApprovalOutcome, EngineRequest } from "@lilos/contracts/engine";
-import { and, asc, desc, eq, gt, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import type {
   AppendMessageInput,
@@ -110,6 +110,46 @@ export function createDrizzleStore(db: Db): RelayStore {
         .returning()
         .get();
       return updated ?? null;
+    },
+    async removeEmployee(id) {
+      return db.transaction((tx) => {
+        const employee = tx
+          .select()
+          .from(schema.employees)
+          .where(eq(schema.employees.id, id))
+          .get();
+        if (!employee) return null;
+        const channelIds = tx
+          .select({ id: schema.channels.id })
+          .from(schema.channels)
+          .where(eq(schema.channels.employeeId, id))
+          .all()
+          .map((r) => r.id);
+        if (channelIds.length > 0) {
+          // conversations.rootMessageId ↔ messages.conversationId are mutual
+          // FKs (openConversation mirrors this order on insert): detach
+          // messages from their conversations, then delete conversations,
+          // then the now-free messages.
+          tx.update(schema.messages)
+            .set({ conversationId: null })
+            .where(inArray(schema.messages.channelId, channelIds))
+            .run();
+          tx.delete(schema.asks)
+            .where(inArray(schema.asks.channelId, channelIds))
+            .run();
+          tx.delete(schema.conversations)
+            .where(inArray(schema.conversations.channelId, channelIds))
+            .run();
+          tx.delete(schema.messages)
+            .where(inArray(schema.messages.channelId, channelIds))
+            .run();
+          tx.delete(schema.channels)
+            .where(inArray(schema.channels.id, channelIds))
+            .run();
+        }
+        tx.delete(schema.employees).where(eq(schema.employees.id, id)).run();
+        return { employee, channelIds };
+      });
     },
     async listChannels() {
       return db

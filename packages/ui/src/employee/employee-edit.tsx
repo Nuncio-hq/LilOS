@@ -14,7 +14,7 @@ import { HermesAvatar } from "../shell/avatars";
 import type { Employee } from "../types";
 
 /* Edit an employee's company record (display name + role) and remove it from the company.
-   Removal is destructive in the app but keeps the Hermes profile — the confirm copy says so.
+   Removal is destructive in the app but keeps the engine profile — the confirm copy says so.
    Same overlay convention as HireDialog; Confirmation = AI Elements. */
 export function EditEmployeeDialog({
   e,
@@ -83,9 +83,9 @@ export function EditEmployeeDialog({
                 approval={{ id: "remove" }}
               >
                 <ConfirmationTitle className="text-xs">
-                  Remove {e.name} from the company? The Hermes profile `
-                  {e.profile}` is kept on this Mac — its sessions, memory and
-                  skills are untouched.
+                  Remove {e.name} from the company? The engine profile `
+                  {e.profile}` stays put — its sessions, memory and skills are
+                  untouched.
                 </ConfirmationTitle>
                 <ConfirmationRequest>
                   <ConfirmationActions>

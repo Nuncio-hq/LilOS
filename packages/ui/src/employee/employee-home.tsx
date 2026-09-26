@@ -44,15 +44,15 @@ import {
 import { AttachmentChips } from "../conversation/turns";
 import { WorkspacePicker, wsHint } from "../dialogs/workspace-picker";
 import { Body, Row, Who } from "../feed/row";
-import { PHASE_LABEL, preview, RESPOND } from "../lib/helpers";
+import { PHASE_LABEL, preview } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import type {
   AttachedFile,
   EmpFn,
   Employee,
+  EngineProfile,
   Folder,
-  HermesProfile,
   HumanFn,
   Msg,
   SessionAlert,
@@ -146,7 +146,7 @@ function SessionAlertRow({
   );
 }
 
-/* Employee screen (DM). Left: the conversation list — each top-level message is ONE Hermes session,
+/* Employee screen (DM). Left: the conversation list — each top-level message is ONE engine session,
    with rename / archive / filter and designed failure states (alert card + Retry). Right panel: the
    open session as a thread. Composer at the bottom always starts a NEW session. */
 export function EmployeeHome({
@@ -358,7 +358,7 @@ export function EmployeeHome({
       <div className="flex shrink-0 items-center gap-2 border-b bg-muted/30 px-3 py-1.5 sm:px-5">
         <LockIcon className="size-3 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate text-muted-foreground text-xs">
-          Private to you. Each message you send here opens its own Hermes
+          Private to you. Each message you send here opens its own engine
           session; {e.name} replies in its thread.
         </span>
         {sessions.length > 0 && (
@@ -403,7 +403,7 @@ export function EmployeeHome({
               description={
                 q
                   ? "Titles and first messages are searched. Clear the filter to see everything."
-                  : "Your first message opens a new Hermes session. Replies stay in its thread."
+                  : "Your first message opens a new engine session. Replies stay in its thread."
               }
             />
           ) : (
@@ -456,16 +456,19 @@ export function EmployeeHome({
 }
 
 /* Profile card in the right panel. Edit/remove are app actions passed in; when the linked
-   Hermes profile is not on this harness the card shows the missing state + Switch profile. */
+   engine profile is not on the engine the card shows the missing state + Switch profile. */
 export function EmployeeCard({
   e,
   profiles,
+  engineName,
   onDM,
   onEdit,
   onSwitchProfile,
 }: {
   e: Employee;
-  profiles: HermesProfile[];
+  profiles: EngineProfile[];
+  /** The engine's own name (`engine-fake`, `hermes`, ...) for the Engine row. */
+  engineName?: string;
   onDM: () => void;
   onEdit?: () => void;
   onSwitchProfile?: (profileId: string) => void;
@@ -497,13 +500,11 @@ export function EmployeeCard({
         </div>
         <dl className="mt-4 grid grid-cols-[96px_1fr] gap-x-3 gap-y-1.5">
           <dt className="text-muted-foreground">Engine</dt>
-          <dd>Hermes</dd>
+          <dd>{engineName ?? "engine"}</dd>
           <dt className="text-muted-foreground">Profile</dt>
           <dd className="font-mono text-xs">{e.profile}</dd>
           <dt className="text-muted-foreground">Model</dt>
           <dd>{e.model}</dd>
-          <dt className="text-muted-foreground">Responds to</dt>
-          <dd>{RESPOND[e.respondTo]}</dd>
           <dt className="text-muted-foreground">Now</dt>
           <dd>{e.now}</dd>
         </dl>
@@ -514,9 +515,9 @@ export function EmployeeCard({
               Profile missing
             </div>
             <p className="mt-1">
-              Profile <code>{e.profile}</code> isn't on this harness. The
-              employee can't run until you point it at a profile that exists —
-              its memory and skills come along unchanged.
+              Profile <code>{e.profile}</code> isn't on the engine. The employee
+              can't run until you point it at a profile that exists — its memory
+              and skills come along unchanged.
             </p>
             {onSwitchProfile && (
               <Select onValueChange={(v) => onSwitchProfile(String(v))}>
@@ -542,8 +543,8 @@ export function EmployeeCard({
         <p>{e.instructions}</p>
       </div>
       <p className="text-muted-foreground text-xs">
-        Persona, memory and skills live in the Hermes profile. LilOS stores only
-        the company record: role, channels, who may direct it.
+        Persona, memory and skills live in the engine profile. LilOS stores only
+        the company record: role and channels.
       </p>
     </div>
   );

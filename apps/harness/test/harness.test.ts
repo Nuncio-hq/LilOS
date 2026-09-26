@@ -638,7 +638,7 @@ describe("employee lifecycle over the harness (#29)", () => {
         return conversations.find((c) => c.id === conversation.id)?.engineRef;
       }, "conversation engineRef");
 
-      const engineEvents: { type: string; data?: unknown }[] = [];
+      const engineEvents: { type: string; payload?: unknown }[] = [];
       w.engine.onEvent((e) => engineEvents.push(e));
 
       await w.user.request("employees.remove", { id: employee.id });
@@ -649,7 +649,7 @@ describe("employee lifecycle over the harness (#29)", () => {
           engineEvents.find(
             (e) =>
               e.type === "session.state" &&
-              (e.data as { state?: string })?.state === "closed",
+              (e.payload as { state?: string })?.state === "closed",
           ),
         "session closed after employees.remove",
       );

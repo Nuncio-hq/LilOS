@@ -23,13 +23,13 @@ import {
   type EmpFn,
   type FsDir,
   type HireDraft,
-  type HermesProfile,
+  type EngineProfile,
+  type ModelOption,
   type Human,
   type HumanFn,
   type Msg,
   type Project,
   type Reply,
-  type RespondTo,
   type Step,
   type GitCommit,
   type CheckRun,
@@ -53,6 +53,7 @@ import {
   useTheme,
 } from "@lilos/ui"
 import { cn } from "@lilos/ui/lib/utils"
+import { engineCreateAgent, engineModels, engineProfiles } from "./engine"
 import { hostAccessors, hostDir, hostDiscover, hostPick } from "./host"
 import { useFakeSurfaces } from "./fake-surfaces"
 import { useLiveStatus } from "./live-status"
@@ -117,8 +118,9 @@ const TEMPLATES: HireDraft[] = [
   { name: "Researcher", role: "Research", model: MODELS[0], instructions: "You research questions with cited sources and a one-paragraph answer first." },
 ]
 
-// Mock of `hermes profile list` on the harness machine. Real list comes from the harness later.
-const HERMES_PROFILES: HermesProfile[] = [
+// Fallback profile/model lists for when the dev engine endpoint isn't serving
+// (prototype/src/engine.ts → /api/engine → a real `@lilos/engine-fake`).
+const MOCK_PROFILES: EngineProfile[] = [
   { id: "default", model: MODELS[1], soul: "General assistant. Oscar's main Hermes.", skills: 42 },
   { id: "builder", model: MODELS[0], soul: "You are Builder, a full-stack engineer…", skills: 18 },
   { id: "reviewer", model: MODELS[1], soul: "You review diffs for correctness and boundaries…", skills: 9 },
@@ -488,6 +490,22 @@ export default function App() {
   const [editEmp, setEditEmp] = useState<string | null>(null)
   // Employees removed from the company stay in `removed` so their past messages keep a name/avatar.
   const [removed, setRemoved] = useState<Record<string, Employee>>({})
+  // Engine state: when the dev `/api/engine` endpoint answers, real profiles/models
+  // replace the mock lists below; `engineName` labels the Engine row on the card.
+  const [liveProfiles, setLiveProfiles] = useState<EngineProfile[] | null>(null)
+  const [liveModels, setLiveModels] = useState<ModelOption[] | null>(null)
+  const [engineName, setEngineName] = useState<string | null>(null)
+  const PROFILES = liveProfiles ?? MOCK_PROFILES
+  const MODEL_OPTS = liveModels ?? MODELS
+  useEffect(() => {
+    void Promise.all([engineProfiles(), engineModels()]).then(([ps, ms]) => {
+      if (ps) {
+        setLiveProfiles(ps)
+        setEngineName("engine-fake")
+      }
+      if (ms && ms.length > 0) setLiveModels(ms)
+    })
+  }, [])
   // Retry on a session alert dismisses it for this scenario visit.
   const [alertOff, setAlertOff] = useState(0)
   const pickScenario = (id: PreviewScenario) => {
@@ -812,13 +830,27 @@ export default function App() {
   }
   const showEmp = (id: string) => { setSelectedEmp(id); setPanelTab("employee"); setPanelOpen(true); setFocus(false) }
 
-  const hire = (d: HireDraft, respondTo: RespondTo, chs: string[]) => {
+  // Hire: `profile` is an existing engine profile id, or null to create one on
+  // the engine first (agents.create) — the engine profile is never owned or
+  // deleted by LilOS.
+  const hire = async (d: HireDraft, profile: string | null, chs: string[]) => {
     const id = d.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")
-    setEmployees((es) => [...es, { id, name: d.name, role: d.role, status: "online", profile: id, model: d.model, now: "just hired · idle", instructions: d.instructions, respondTo }])
+    let profileId = profile ?? id
+    if (profile === null && liveProfiles !== null) {
+      try {
+        await engineCreateAgent({ id, name: d.name, soul: d.instructions, model: d.model })
+        engineProfiles().then((ps) => ps && setLiveProfiles(ps))
+      } catch {
+        say(`Engine rejected profile ${id}`)
+        return
+      }
+    }
+    if (profile === null && liveProfiles === null) profileId = id
+    setEmployees((es) => [...es, { id, name: d.name, role: d.role, status: "online", profile: profileId, model: d.model, now: "just hired · idle", instructions: d.instructions, respondTo: "me" }])
     chs.forEach((c) => { const ch = PROJECTS.flatMap((p) => p.channels).find((x) => x.id === c); if (ch && !ch.employees.includes(id)) ch.employees.push(id) })
     setHireOpen(null)
     if (view.kind === "channel" && view.id === "general") setResolved((r) => ({ ...r, g2: `Hired ${d.name}` }))
-    say(`Hired ${d.name}: hermes profile create ${id}`)
+    say(profile === null ? `Hired ${d.name} · engine profile ${id} created` : `Hired ${d.name} · profile ${profileId}`)
     showEmp(id)
   }
 
@@ -960,7 +992,7 @@ export default function App() {
             <RightPanel
               tab={panelTab} onTab={setPanelTab} onClose={() => setPanelOpen(false)}
               threadPanel={threadPanel}
-              employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} profiles={HERMES_PROFILES} onDM={() => goDM(selectedEmp)} onEdit={() => setEditEmp(selectedEmp)} onSwitchProfile={(p) => switchProfile(selectedEmp, p)} /> : null}
+              employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} profiles={PROFILES} engineName={engineName ?? undefined} onDM={() => goDM(selectedEmp)} onEdit={() => setEditEmp(selectedEmp)} onSwitchProfile={(p) => switchProfile(selectedEmp, p)} /> : null}
               tickets={tickets} emp={emp} dm={!!channel.dm}
             />
           )}
@@ -984,7 +1016,7 @@ export default function App() {
       )}
       {hireOpen && (
         <HireDialog
-          initial={hireOpen} templates={TEMPLATES} profiles={HERMES_PROFILES} models={MODELS}
+          initial={hireOpen} templates={TEMPLATES} profiles={PROFILES} models={MODEL_OPTS}
           allChannels={PROJECTS.flatMap((p) => p.channels.map((c) => ({ id: c.id, label: `${p.name} / #${c.name}` })))}
           onClose={() => setHireOpen(null)} onHire={hire} usedProfiles={employees.map((e) => e.profile)}
         />

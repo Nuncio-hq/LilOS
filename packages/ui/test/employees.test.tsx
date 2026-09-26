@@ -123,9 +123,7 @@ describe("AC-1/AC-6 HireDialog", () => {
     fireEvent.change(second.getByPlaceholderText("Tester"), {
       target: { value: "Ada Lovelace" },
     });
-    fireEvent.click(
-      second.getByRole("button", { name: /Hire Ada Lovelace/ }),
-    );
+    fireEvent.click(second.getByRole("button", { name: /Hire Ada Lovelace/ }));
     expect(hired).toEqual([null]);
   });
 });
@@ -133,7 +131,7 @@ describe("AC-1/AC-6 HireDialog", () => {
 describe("AC-5 EmployeeCard profile-missing state", () => {
   test("shows 'Profile missing' + Switch profile when the profile is gone", () => {
     const switches: string[] = [];
-    const { getByText, getByRole } = render(
+    const { getByText } = render(
       <EmployeeCard
         e={{ ...EMPLOYEE, profile: "ghost" }}
         profiles={PROFILES}
@@ -183,7 +181,9 @@ describe("AC-3/AC-4 EditEmployeeDialog", () => {
     fireEvent.click(getAllByRole("button", { name: /^save$/i })[0]!);
     expect(saves).toEqual([["Ada Lovelace", "Principal"]]);
 
-    fireEvent.click(getAllByRole("button", { name: /remove from company/i })[0]!);
+    fireEvent.click(
+      getAllByRole("button", { name: /remove from company/i })[0]!,
+    );
     // The confirm copy promises the engine profile is kept.
     getByText(/profile.*(kept|stays)/i);
     const confirm = getAllByRole("button", { name: /remove from company/i });

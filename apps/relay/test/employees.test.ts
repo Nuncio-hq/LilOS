@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { FakeEngine, handleJsonRpc } from "@lilos/engine-fake";
+import { describe, expect, it } from "vitest";
 import { createRelay, type RelayWsPeer } from "../src/session";
 import { createMemoryStore } from "../src/store";
 
@@ -53,6 +53,18 @@ let nextId = 0;
 const req = (method: string, params: Record<string, unknown> = {}) =>
   JSON.stringify({ jsonrpc: "2.0", id: `t${nextId++}`, method, params });
 const lastId = () => `t${nextId - 1}`;
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** Send a request and wait for the (possibly host-forwarded) response frame. */
+const call = async (
+  connection: { receive(d: string): Promise<void> },
+  frames: unknown[],
+  method: string,
+  params: Record<string, unknown> = {},
+) => {
+  await connection.receive(req(method, params));
+  await tick();
+  return resultOf(frames, lastId());
+};
 
 const newRelay = () =>
   createRelay({ store: createMemoryStore(), token: TOKEN });
@@ -127,8 +139,8 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
     const host = await engineHost(relay);
     const user = await helloed(relay);
 
-    await user.connection.receive(req("agents.list"));
-    const { agents } = resultOf(user.frames, lastId()).result as {
+    const { agents } = (await call(user.connection, user.frames, "agents.list"))
+      .result as {
       agents: {
         id: string;
         name: string;
@@ -145,14 +157,17 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
     expect(agents.find((a) => a.id === "builder")?.skillCount).toBe(9);
     expect(agents[0]?.soul).toBeUndefined(); // persona text is describe-only
 
-    await user.connection.receive(req("agents.describe", { id: "builder" }));
-    const { agent } = resultOf(user.frames, lastId()).result as {
+    const { agent } = (
+      await call(user.connection, user.frames, "agents.describe", {
+        id: "builder",
+      })
+    ).result as {
       agent: { id: string; soul?: string };
     };
     expect(agent.soul).toContain("Builder");
 
-    await user.connection.receive(req("models.list"));
-    const { models } = resultOf(user.frames, lastId()).result as {
+    const { models } = (await call(user.connection, user.frames, "models.list"))
+      .result as {
       models: { id: string }[];
     };
     expect(models.map((m) => m.id)).toContain("fake-large");
@@ -169,15 +184,14 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
     await engineHost(relay);
     const user = await helloed(relay);
 
-    await user.connection.receive(
-      req("agents.create", {
+    const { agent } = (
+      await call(user.connection, user.frames, "agents.create", {
         name: "tester",
         description: "QA",
         soul: "You are Tester. Break things kindly.",
         model: "fake-small",
-      }),
-    );
-    const { agent } = resultOf(user.frames, lastId()).result as {
+      })
+    ).result as {
       agent: { id: string; name: string };
     };
     expect(agent).toMatchObject({ id: "tester", name: "tester" });
@@ -194,8 +208,8 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
     };
     expect(employee.profile).toBe("tester");
 
-    await user.connection.receive(req("agents.list"));
-    const { agents } = resultOf(user.frames, lastId()).result as {
+    const { agents } = (await call(user.connection, user.frames, "agents.list"))
+      .result as {
       agents: { id: string }[];
     };
     expect(agents.map((a) => a.id)).toContain("tester");
@@ -248,9 +262,7 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
       req("channel.subscribe", { channelId: channel.id }),
     );
 
-    await user.connection.receive(
-      req("employees.remove", { id: employee.id }),
-    );
+    await user.connection.receive(req("employees.remove", { id: employee.id }));
     expect(resultOf(user.frames, lastId()).result).toEqual({ ok: true });
 
     await user.connection.receive(req("employees.list"));
@@ -270,8 +282,8 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
     ).toEqual([]);
 
     // The engine profile is untouched — removal never calls into the engine.
-    await user.connection.receive(req("agents.list"));
-    const { agents } = resultOf(user.frames, lastId()).result as {
+    const { agents } = (await call(user.connection, user.frames, "agents.list"))
+      .result as {
       agents: { id: string }[];
     };
     expect(agents.map((a) => a.id)).toContain("reviewer");
@@ -292,9 +304,7 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
     expect(eventsNamed(watcher.frames, "employee.upserted").length).toBe(2);
 
     watcher.frames.length = 0;
-    await user.connection.receive(
-      req("employees.remove", { id: employee.id }),
-    );
+    await user.connection.receive(req("employees.remove", { id: employee.id }));
     const removed = eventsNamed(watcher.frames, "employee.removed");
     expect(removed).toHaveLength(1);
     expect(removed[0]?.params).toEqual({ employeeId: employee.id });
@@ -316,7 +326,7 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
   it("agents.* without a registered host → engine_unavailable", async () => {
     const relay = newRelay();
     const user = await helloed(relay);
-    await user.connection.receive(req("agents.list"));
+    await call(user.connection, user.frames, "agents.list");
     expect(errorData(user.frames, lastId())).toBe("engine_unavailable");
   });
 
@@ -326,7 +336,7 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
     const user = await helloed(relay);
     await host.connection.closed();
 
-    await user.connection.receive(req("agents.list"));
+    await call(user.connection, user.frames, "agents.list");
     expect(errorData(user.frames, lastId())).toBe("engine_unavailable");
   });
 
@@ -334,9 +344,9 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
     const relay = newRelay();
     await engineHost(relay);
     const user = await helloed(relay);
-    await user.connection.receive(
-      req("agents.describe", { id: "ghost" }),
-    );
+    await call(user.connection, user.frames, "agents.describe", {
+      id: "ghost",
+    });
     expect(errorData(user.frames, lastId())).toBe("engine_error");
   });
 

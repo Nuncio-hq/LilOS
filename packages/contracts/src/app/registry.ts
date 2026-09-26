@@ -1,4 +1,14 @@
 import type { z } from "zod";
+import {
+  AgentDescriptor,
+  AgentsCreateParams,
+  AgentsCreateResult,
+  AgentsDescribeParams,
+  AgentsDescribeResult,
+  AgentsListParams,
+  AgentsListResult,
+} from "../engine/agents";
+import { ModelsListParams, ModelsListResult } from "../engine/models";
 import { ChannelMessage } from "../index";
 import {
   AppChannel,
@@ -30,6 +40,7 @@ import {
   AsksOpenParams,
   AsksRespondParams,
   ChannelCreatedEvent,
+  ChannelRemovedEvent,
   ChannelResult,
   ChannelSnapshotEvent,
   ChannelSubscribeParams,
@@ -47,11 +58,14 @@ import {
   ConversationsUpdateParams,
   ConversationUpdatedEvent,
   EmployeePatch,
+  EmployeeRemovedEvent,
   EmployeeResult,
   EmployeesCreateParams,
   EmployeesListParams,
   EmployeesListResult,
+  EmployeesRemoveParams,
   EmployeesUpdateParams,
+  EmployeeUpsertedEvent,
   HarnessRegisterParams,
   HarnessRegisterResult,
   HarnessReportParams,
@@ -107,6 +121,7 @@ export const appProtocolSchemas = {
   EmployeesListResult,
   EmployeesCreateParams,
   EmployeesUpdateParams,
+  EmployeesRemoveParams,
   EmployeeResult,
   AppChannel,
   ChannelKind,
@@ -162,6 +177,19 @@ export const appProtocolSchemas = {
   AskOpenedEvent,
   AskResolvedEvent,
   TurnInterruptRequestedEvent,
+  ChannelRemovedEvent,
+  EmployeeUpsertedEvent,
+  EmployeeRemovedEvent,
+  /* engine passthrough surfaces (app -> relay -> engine host) */
+  AgentDescriptor,
+  AgentsListParams,
+  AgentsListResult,
+  AgentsDescribeParams,
+  AgentsDescribeResult,
+  AgentsCreateParams,
+  AgentsCreateResult,
+  ModelsListParams,
+  ModelsListResult,
 } satisfies Record<string, z.ZodType>;
 
 export const appProtocol = {

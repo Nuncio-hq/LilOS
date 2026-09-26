@@ -339,6 +339,19 @@ describe("RelayClient", () => {
 
 describe("relay -> app requests + employee lifecycle (#29)", () => {
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const empFixture = (over: Record<string, unknown> = {}) => ({
+    id: "e1",
+    name: "Ada",
+    role: "eng",
+    status: "online" as const,
+    profile: "reviewer",
+    model: "fake-large",
+    now: "idle",
+    instructions: "",
+    respondTo: "me" as const,
+    createdAt: 1,
+    ...over,
+  });
   const lastSent = (socket: FakeSocket, id: string) =>
     socket.sent
       .map((raw) => JSON.parse(raw) as { id?: string })
@@ -397,7 +410,7 @@ describe("relay -> app requests + employee lifecycle (#29)", () => {
     const { client, socket } = makeClient();
     await connectClient(client, () => socket);
 
-    const ada = { id: "e1", name: "Ada", role: "eng", profile: "reviewer" };
+    const ada = empFixture();
     const hire = client.createEmployee({
       name: "Ada",
       role: "eng",
@@ -422,7 +435,7 @@ describe("relay -> app requests + employee lifecycle (#29)", () => {
   it("employee.upserted / employee.removed notifications update the atom", async () => {
     const { client, socket } = makeClient();
     await connectClient(client, () => socket);
-    const ada = { id: "e1", name: "Ada", role: "eng", profile: "reviewer" };
+    const ada = empFixture();
 
     socket.emit({
       jsonrpc: "2.0",
@@ -479,6 +492,7 @@ describe("relay -> app requests + employee lifecycle (#29)", () => {
       jsonrpc: "2.0",
       method: "conversation.updated",
       params: {
+        channelId: "c1",
         conversation: {
           id: "conv1",
           channelId: "c1",
@@ -488,6 +502,23 @@ describe("relay -> app requests + employee lifecycle (#29)", () => {
           title: "",
           archived: false,
           createdAt: 3,
+        },
+      },
+    });
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "conversation.updated",
+      params: {
+        channelId: "c2",
+        conversation: {
+          id: "conv2",
+          channelId: "c2",
+          rootMessageId: "m2",
+          engineRef: null,
+          state: "idle",
+          title: "",
+          archived: false,
+          createdAt: 4,
         },
       },
     });
