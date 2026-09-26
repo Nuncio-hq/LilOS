@@ -1,3 +1,4 @@
+import type { RelayClient } from "@lilos/client-runtime";
 import type {
   AppChannel,
   AppMessage,
@@ -11,14 +12,13 @@ import {
   ChannelCreatedEvent,
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
-import type { RelayClient } from "@lilos/client-runtime";
 import type {
   EngineEvent,
   EngineRequest,
   EventsSinceResult,
 } from "@lilos/contracts/engine";
 import type { EngineConnection } from "./engine/client";
-import { SESSION_NOT_FOUND, engineErrorCode } from "./engine/client";
+import { engineErrorCode, SESSION_NOT_FOUND } from "./engine/client";
 import type { EngineHostState } from "./engine/supervisor";
 import type { Logger } from "./log";
 import type { SleepGuard } from "./sleep";
@@ -99,7 +99,9 @@ export class Harness {
       instanceId: welcome.instanceId,
       engineHost: welcome.engineHost,
     });
-    this.unsubs.push(this.opts.relay.onEvent((m, p) => this.onRelayEvent(m, p)));
+    this.unsubs.push(
+      this.opts.relay.onEvent((m, p) => this.onRelayEvent(m, p)),
+    );
     const reg = await this.opts.relay.request<{
       hostId: string;
       pending: PendingTurn[];
@@ -152,7 +154,9 @@ export class Harness {
   onEngineStateChange(state: EngineHostState, detail?: string): void {
     if (!this.hostId) return;
     this.opts.relay
-      .request("harness.report", { engine: { state, ...(detail ? { detail } : {}) } })
+      .request("harness.report", {
+        engine: { state, ...(detail ? { detail } : {}) },
+      })
       .catch((error) =>
         this.opts.log.warn("harness.report failed", { error: String(error) }),
       );
@@ -472,7 +476,11 @@ export class Harness {
     if (!askId) return;
     this.requestByAsk.delete(askId);
     await this.opts.relay
-      .request("asks.respond", { askId, outcome, ...(answer ? { answer } : {}) })
+      .request("asks.respond", {
+        askId,
+        outcome,
+        ...(answer ? { answer } : {}),
+      })
       .catch((error) =>
         this.opts.log.warn("asks.respond (engine-resolved) failed", {
           error: String(error),
@@ -515,10 +523,7 @@ export class Harness {
       const seen = this.channelSeen.get(channelId) ?? 0;
       const fresh = state.messages.filter((m) => m.seq > seen);
       if (fresh.length === 0) return;
-      this.channelSeen.set(
-        channelId,
-        Math.max(...fresh.map((m) => m.seq)),
-      );
+      this.channelSeen.set(channelId, Math.max(...fresh.map((m) => m.seq)));
       for (const message of fresh) {
         void this.deliver(message).catch((error) =>
           this.opts.log.error("delivery failed", {

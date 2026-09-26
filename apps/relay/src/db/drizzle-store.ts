@@ -374,7 +374,7 @@ export function createDrizzleStore(db: Db): RelayStore {
           .orderBy(desc(schema.messages.seq))
           .limit(1)
           .get();
-        if (!last || last.authorKind !== "user") continue;
+        if (last?.authorKind !== "user") continue;
         const channel = db
           .select()
           .from(schema.channels)

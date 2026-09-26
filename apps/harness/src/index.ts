@@ -7,7 +7,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { RelayClient } from "@lilos/client-runtime";
-import { resolveHarnessConfig, launcherFor } from "./config";
+import { launcherFor, resolveHarnessConfig } from "./config";
 import { connectEngineWs } from "./engine/client";
 import { EngineSupervisor } from "./engine/supervisor";
 import { Harness } from "./harness";

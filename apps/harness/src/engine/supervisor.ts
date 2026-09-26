@@ -1,10 +1,6 @@
-import type { EngineConnection } from "./client";
-import type {
-  EngineLauncher,
-  EngineProcess,
-  LaunchedEngine,
-} from "./launcher";
 import type { Logger } from "../log";
+import type { EngineConnection } from "./client";
+import type { EngineLauncher, EngineProcess, LaunchedEngine } from "./launcher";
 
 /**
  * Engine lifecycle supervision (AC-2): start the engine, restart it on crash

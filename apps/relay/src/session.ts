@@ -533,10 +533,12 @@ export function createRelay(options: RelayOptions): Relay {
             outcome,
             answer: parsed.data.answer,
           });
-          emit(ask!.channelId, "ask.resolved", {
-            channelId: ask!.channelId,
-            ask,
-          });
+          if (ask) {
+            emit(ask.channelId, "ask.resolved", {
+              channelId: ask.channelId,
+              ask,
+            });
+          }
           respond(peer, id, { ask });
           return;
         }

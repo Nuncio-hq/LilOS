@@ -23,7 +23,12 @@ export interface HarnessConfig {
   /** Engine sessions' cwd (a repo/workspace the agents edit). */
   workdir: string;
   engine:
-    | { kind: "command"; command: string[]; readyPattern?: RegExp; url?: string }
+    | {
+        kind: "command";
+        command: string[];
+        readyPattern?: RegExp;
+        url?: string;
+      }
     | { kind: "fake"; tick?: number }
     | { kind: "hermes"; provider?: string; model?: string }
     | { kind: "url"; url: string };
@@ -37,7 +42,8 @@ export function resolveHarnessConfig(
   const relayHome = env.LILOS_RELAY_HOME ?? join(homedir(), ".lilos");
   const relayToken =
     env.LILOS_RELAY_TOKEN ?? readToken(join(relayHome, "relay-token"));
-  const homeDir = env.LILOS_HARNESS_HOME ?? join(homedir(), ".lilos", "harness");
+  const homeDir =
+    env.LILOS_HARNESS_HOME ?? join(homedir(), ".lilos", "harness");
   mkdirSync(homeDir, { recursive: true, mode: 0o700 });
   const engineKind = env.LILOS_ENGINE ?? "fake";
   const engine: HarnessConfig["engine"] =
@@ -46,9 +52,7 @@ export function resolveHarnessConfig(
       : engineKind === "hermes"
         ? {
             kind: "hermes",
-            ...(env.HERMES_PROVIDER
-              ? { provider: env.HERMES_PROVIDER }
-              : {}),
+            ...(env.HERMES_PROVIDER ? { provider: env.HERMES_PROVIDER } : {}),
             ...(env.HERMES_MODEL ? { model: env.HERMES_MODEL } : {}),
           }
         : engineKind === "command"
@@ -58,9 +62,7 @@ export function resolveHarnessConfig(
                 env.LILOS_ENGINE_COMMAND,
                 "LILOS_ENGINE_COMMAND",
               ).split(" "),
-              ...(env.LILOS_ENGINE_URL
-                ? { url: env.LILOS_ENGINE_URL }
-                : {}),
+              ...(env.LILOS_ENGINE_URL ? { url: env.LILOS_ENGINE_URL } : {}),
             }
           : {
               kind: "fake",
@@ -94,9 +96,7 @@ export function launcherFor(
     case "hermes":
       return hermesEngineLauncher({
         repoRoot,
-        ...(config.engine.provider
-          ? { provider: config.engine.provider }
-          : {}),
+        ...(config.engine.provider ? { provider: config.engine.provider } : {}),
         ...(config.engine.model ? { model: config.engine.model } : {}),
         log,
       });

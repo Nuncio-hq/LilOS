@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import { join } from "node:path";
 import type { Logger } from "../log";
 
@@ -149,10 +149,7 @@ export function fakeEngineLauncher(options: {
     name: "engine-fake",
     command: [
       options.bun ?? "bun",
-      join(
-        options.repoRoot,
-        "packages/engine-fake/scripts/serve.ts",
-      ),
+      join(options.repoRoot, "packages/engine-fake/scripts/serve.ts"),
       "--port",
       "0",
       "--tick",

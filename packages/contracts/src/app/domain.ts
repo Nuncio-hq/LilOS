@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { ChannelMessage } from "../index";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
+import { ChannelMessage } from "../index";
 
 /**
  * App-protocol domain objects (issue #25): the records the relay owns and

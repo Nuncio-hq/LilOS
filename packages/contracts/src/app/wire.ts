@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ApprovalOutcome, EngineRequest } from "../engine/requests";
 import {
   AppChannel,
   AppMessage,
@@ -13,7 +14,6 @@ import {
   PendingTurn,
   RespondTo,
 } from "./domain";
-import { ApprovalOutcome, EngineRequest } from "../engine/requests";
 import { APP_PROTOCOL_VERSION } from "./version";
 
 /**

@@ -1,13 +1,16 @@
-import { describe, expect, it } from "vitest";
-import { FakeEngine, connectFake } from "@lilos/engine-fake";
-import { RelayClient } from "@lilos/client-runtime";
 import type { RelaySocket, SocketFactory } from "@lilos/client-runtime";
-import type { Ask, AppMessage, WelcomeResult } from "@lilos/contracts/app";
+import { RelayClient } from "@lilos/client-runtime";
+import type { AppMessage, Ask, WelcomeResult } from "@lilos/contracts/app";
+import { connectFake, FakeEngine } from "@lilos/engine-fake";
+import { describe, expect, it } from "vitest";
 import { createRelay } from "../../relay/src/session";
 import { createMemoryStore } from "../../relay/src/store";
 import { connectEngineWs, type EngineConnection } from "../src/engine/client";
 import { fakeEngineLauncher } from "../src/engine/launcher";
-import { EngineSupervisor, type EngineHostState } from "../src/engine/supervisor";
+import {
+  type EngineHostState,
+  EngineSupervisor,
+} from "../src/engine/supervisor";
 import { Harness } from "../src/harness";
 import { createMemoryLogger } from "../src/log";
 import { createFakeSleepGuard } from "../src/sleep";
@@ -23,40 +26,42 @@ const TOKEN = "test-token";
 type Relay = ReturnType<typeof createRelay>;
 
 /** A RelaySocket that talks straight into a relay.connect() peer. */
-const socketFor = (relay: Relay): SocketFactory => () => {
-  const listeners = new Map<string, Array<(e?: unknown) => void>>();
-  const emit = (type: string, e?: unknown) =>
-    queueMicrotask(() =>
-      (listeners.get(type) ?? []).forEach((fn) => fn(e)),
-    );
-  let peer: { receive(f: string): Promise<void>; closed(): void };
-  let readyState = 0;
-  const socket = {
-    get readyState() {
-      return readyState;
-    },
-    send: (frame: string) => {
-      void peer.receive(frame);
-    },
-    close: () => {
-      readyState = 3;
-      peer.closed();
-      emit("close", { code: 1000, reason: "closed" });
-    },
-    addEventListener(type: string, fn: (e?: unknown) => void) {
-      listeners.set(type, [...(listeners.get(type) ?? []), fn]);
-    },
-  } as unknown as RelaySocket;
-  peer = relay.connect({
-    send: (frame) => emit("message", { data: frame }),
-    close: (code, reason) => emit("close", { code, reason }),
-  });
-  queueMicrotask(() => {
-    readyState = 1;
-    emit("open");
-  });
-  return socket;
-};
+const socketFor =
+  (relay: Relay): SocketFactory =>
+  () => {
+    const listeners = new Map<string, Array<(e?: unknown) => void>>();
+    const emit = (type: string, e?: unknown) =>
+      queueMicrotask(() =>
+        (listeners.get(type) ?? []).forEach((fn) => void fn(e)),
+      );
+    let peer: { receive(f: string): Promise<void>; closed(): void };
+    let readyState = 0;
+    const socket = {
+      get readyState() {
+        return readyState;
+      },
+      send: (frame: string) => {
+        void peer.receive(frame);
+      },
+      close: () => {
+        readyState = 3;
+        peer.closed();
+        emit("close", { code: 1000, reason: "closed" });
+      },
+      addEventListener(type: string, fn: (e?: unknown) => void) {
+        listeners.set(type, [...(listeners.get(type) ?? []), fn]);
+      },
+    } as unknown as RelaySocket;
+    peer = relay.connect({
+      send: (frame) => emit("message", { data: frame }),
+      close: (code, reason) => emit("close", { code, reason }),
+    });
+    queueMicrotask(() => {
+      readyState = 1;
+      emit("open");
+    });
+    return socket;
+  };
 
 const waitFor = async <T>(
   fn: () => T | undefined | Promise<T | undefined>,
@@ -200,7 +205,8 @@ describe("workspace harness", () => {
           messages: AppMessage[];
         }>("messages.list", { channelId: channel.id, limit: 50 });
         return messages.find(
-          (m) => m.authorKind === "employee" && m.conversationId === conversation.id,
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
         );
       }, "employee answer");
       expect(answer.text.length).toBeGreaterThan(0);
@@ -242,12 +248,16 @@ describe("workspace harness", () => {
           state: "open",
         });
         for (const a of asks)
-          await w.user.request("asks.respond", { askId: a.id, outcome: "once" });
+          await w.user.request("asks.respond", {
+            askId: a.id,
+            outcome: "once",
+          });
         const { messages } = await w.user.request<{
           messages: AppMessage[];
         }>("messages.list", { channelId: channel.id, limit: 50 });
         return messages.find(
-          (m) => m.authorKind === "employee" && m.conversationId === conversation.id,
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
         );
       }, "post-approval answer");
     } finally {
@@ -273,7 +283,7 @@ describe("workspace harness", () => {
     const connPromise = connectEngineWs("ws://fake", {
       socketFactory: () => {
         queueMicrotask(() =>
-          (listeners.get("open") ?? []).forEach((fn) => fn()),
+          (listeners.get("open") ?? []).forEach((fn) => void fn()),
         );
         socket.readyState = 1;
         return socket;
@@ -296,9 +306,9 @@ describe("workspace harness", () => {
         },
       },
     });
-    (listeners.get("message") ?? []).forEach((fn) =>
-      fn({ data: sudoFrame }),
-    );
+    (listeners.get("message") ?? []).forEach((fn) => {
+      void fn({ data: sudoFrame });
+    });
     expect(received).toHaveLength(0);
     expect(invalid.length).toBeGreaterThan(0);
     conn.close();
@@ -358,7 +368,9 @@ describe("workspace harness", () => {
     }
   });
 
-  it("AC-5b survives an engine-process restart: prompt still lands after rebind", { timeout: 15_000 }, async () => {
+  it("AC-5b survives an engine-process restart: prompt still lands after rebind", {
+    timeout: 15_000,
+  }, async () => {
     // Full loop through the supervisor's relaunch: old session dies with the
     // process, harness rebinds a fresh engine session on next prompt.
     const w = await setupWorld();
@@ -394,14 +406,17 @@ describe("workspace harness", () => {
       await supervisor.start();
       try {
         await postMessage(w.user, channel.id, conversation.id, "follow up");
-        await waitFor(async () => {
-          const { messages } = await w.user.request<{ messages: AppMessage[] }>(
-            "messages.list",
-            { channelId: channel.id, limit: 50 },
-          );
-          const list = messages.filter((m) => m.authorKind === "employee");
-          return list.length >= 2 ? list : undefined;
-        }, "answer on the restarted engine", 8_000);
+        await waitFor(
+          async () => {
+            const { messages } = await w.user.request<{
+              messages: AppMessage[];
+            }>("messages.list", { channelId: channel.id, limit: 50 });
+            const list = messages.filter((m) => m.authorKind === "employee");
+            return list.length >= 2 ? list : undefined;
+          },
+          "answer on the restarted engine",
+          8_000,
+        );
       } finally {
         await supervisor.stop();
       }
@@ -426,10 +441,7 @@ describe("workspace harness", () => {
         w.user.request<{ asks: Ask[] }>("asks.list", {
           state: "open",
         });
-      const open = await waitFor(
-        async () => (await asks()).asks[0],
-        "approval ask",
-      );
+      await waitFor(async () => (await asks()).asks[0], "approval ask");
       expect(w.sleep.held).toBe(true);
       // Answer every ask the script raises; the assertion must drop only once
       // the whole turn is done.
@@ -450,7 +462,9 @@ describe("workspace harness", () => {
 });
 
 describe("engine supervisor (AC-2)", () => {
-  it("starts the engine process, restarts on crash with bounded backoff, reports state", { timeout: 15_000 }, async () => {
+  it("starts the engine process, restarts on crash with bounded backoff, reports state", {
+    timeout: 15_000,
+  }, async () => {
     const log = createMemoryLogger();
     const states: EngineHostState[] = [];
     const conns: EngineConnection[] = [];

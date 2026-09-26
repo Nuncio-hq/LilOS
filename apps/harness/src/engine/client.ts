@@ -41,7 +41,10 @@ export interface EngineSocket {
   send(data: string): void;
   close(code?: number, reason?: string): void;
   addEventListener(type: "open", fn: () => void): void;
-  addEventListener(type: "message", fn: (event: { data: unknown }) => void): void;
+  addEventListener(
+    type: "message",
+    fn: (event: { data: unknown }) => void,
+  ): void;
   addEventListener(
     type: "close",
     fn: (event: { code: number; reason: string }) => void,
@@ -52,9 +55,8 @@ export interface EngineSocket {
 export type EngineSocketFactory = (url: string) => EngineSocket;
 
 const defaultFactory: EngineSocketFactory = (url) => {
-  const Impl = (
-    globalThis as { WebSocket?: new (u: string) => EngineSocket }
-  ).WebSocket;
+  const Impl = (globalThis as { WebSocket?: new (u: string) => EngineSocket })
+    .WebSocket;
   if (!Impl) {
     throw new Error("no WebSocket implementation — pass socketFactory");
   }
@@ -185,10 +187,7 @@ export function connectEngineWs(
       result?: unknown;
       error?: { code: number; message: string; data?: unknown };
     };
-    if (
-      frame.id !== undefined &&
-      ("result" in frame || "error" in frame)
-    ) {
+    if (frame.id !== undefined && ("result" in frame || "error" in frame)) {
       const entry = pending.get(String(frame.id));
       if (!entry) return;
       pending.delete(String(frame.id));
