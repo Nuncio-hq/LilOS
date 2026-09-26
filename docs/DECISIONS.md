@@ -48,14 +48,14 @@ PR does not exist.
   `SMAppService.agent(plistName:)` with bundled helper binaries** (Login
   Items approval only; upgrade = `unregister()` → `register()` on version
   change). Not: user-facing `launchctl` steps, LaunchDaemons, or
-  app-process children that die on quit. — #34 · PR #TBD
+  app-process children that die on quit. — #34 · PR #57
 - **D-#34 Keep-awake is `caffeinate -i -w <harness pid>` held only while a
   turn runs.** Not: a permanent assertion, or changing `pmset` defaults. —
-  #34 · PR #TBD
+  #34 · PR #57
 - **D-#34 Wake recovery: a clock-drift watchdog detects sleep; a turn lost
   across sleep or engine restart ends `interrupted` with a Retry note.**
   Not: a spinner that never settles, or silently dropping the turn. — #34 ·
-  PR #TBD
+  PR #57
 
 ## Testing
 - **D-#3 CI (GitHub Actions, setup-bun) runs `bun run verify` with
