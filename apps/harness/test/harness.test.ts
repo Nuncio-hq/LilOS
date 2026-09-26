@@ -635,7 +635,10 @@ describe("employee lifecycle over the harness (#29)", () => {
         const { conversations } = await w.user.request<{
           conversations: { id: string; engineRef: string | null }[];
         }>("conversations.list", {});
-        return conversations.find((c) => c.id === conversation.id)?.engineRef;
+        return (
+          conversations.find((c) => c.id === conversation.id)?.engineRef ??
+          undefined
+        );
       }, "conversation engineRef");
 
       const engineEvents: { type: string; payload?: unknown }[] = [];
