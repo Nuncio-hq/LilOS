@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@lilos/background": "workspace:*",
     "@lilos/client-runtime": "workspace:*",
     "@lilos/contracts": "workspace:*",
     "@lilos/surfaces": "workspace:*",

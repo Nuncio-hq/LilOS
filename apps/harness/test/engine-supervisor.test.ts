@@ -139,6 +139,23 @@ describe("AC-5 engine supervision", () => {
     await w.supervisor.stop();
   });
 
+  it("AC-4 reconnects the same endpoint immediately on wake (no waiting for TCP timeout)", async () => {
+    const w = world();
+    await w.supervisor.start();
+    expect(w.procs).toHaveLength(1);
+    expect(w.conns).toHaveLength(1);
+
+    w.supervisor.notifyWake();
+    await tick();
+
+    // Socket presumed dead after sleep: closed and reconnected to the same
+    // engine URL without relaunching the still-alive process.
+    expect(w.procs).toHaveLength(1);
+    expect(w.conns).toHaveLength(2);
+    expect(w.connections.at(-1)?.reconnect).toBe(true);
+    await w.supervisor.stop();
+  });
+
   it("does not restart after stop()", async () => {
     const w = world();
     await w.supervisor.start();

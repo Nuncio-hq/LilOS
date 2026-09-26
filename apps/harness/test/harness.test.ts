@@ -464,6 +464,99 @@ describe("workspace harness", () => {
     }
   });
 
+  it("AC-4 ends a turn lost across sleep as interrupted with a Retry note, never a spinner", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page", // parks mid-turn on an approval ask
+      });
+      await waitFor(() => w.sleep.held || undefined, "turn running");
+
+      // Sleep dropped the turn but kept the session: the fake's replay shows
+      // no snapshot.turn and no turn.completed. Reattach forces a resync.
+      const sessions = (
+        w.engine as unknown as {
+          sessions: Map<string, { turn?: unknown; openRequests: Map<string, unknown> }>;
+        }
+      ).sessions;
+      const engineRef = await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        return (
+          conversations.find((c) => c.id === conversation.id)?.engineRef ??
+          undefined
+        );
+      }, "engineRef");
+      const sess = sessions.get(engineRef as string);
+      expect(sess).toBeDefined();
+      sess!.turn = undefined;
+      sess!.openRequests.clear();
+
+      w.harness.attachEngine(
+        connectFake(w.engine) as unknown as EngineConnection,
+      );
+
+      const note = await waitFor(async () => {
+        const { messages } = await w.user.request<{ messages: AppMessage[] }>(
+          "messages.list",
+          { channelId: channel.id, limit: 50 },
+        );
+        return messages.find((m) => m.text.includes("interrupted"));
+      }, "interrupted note");
+      expect(note.text).toContain("Retry");
+      await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; state: string }[];
+        }>("conversations.list", {});
+        const c = conversations.find((x) => x.id === conversation.id);
+        return c?.state === "idle" ? c : undefined;
+      }, "conversation back to idle");
+      expect(w.sleep.held).toBe(false);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-4b does not double-report a turn that already ended cleanly", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Summarize the repo layout",
+      });
+      await waitFor(async () => {
+        const { messages } = await w.user.request<{ messages: AppMessage[] }>(
+          "messages.list",
+          { channelId: channel.id, limit: 50 },
+        );
+        return messages.find((m) => m.authorKind === "employee");
+      }, "answer");
+
+      // Reattach: replay carries the finished turn's turn.completed, so no
+      // interrupted note may appear.
+      w.harness.attachEngine(
+        connectFake(w.engine) as unknown as EngineConnection,
+      );
+      const { messages } = await w.user.request<{ messages: AppMessage[] }>(
+        "messages.list",
+        { channelId: channel.id, limit: 50 },
+      );
+      expect(messages.filter((m) => m.text.includes("interrupted"))).toEqual(
+        [],
+      );
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("AC-6 holds the idle-sleep assertion only while a turn runs", async () => {
     const w = await setupWorld();
     try {

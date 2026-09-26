@@ -1,3 +1,4 @@
+import type { spawn as nodeSpawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { createMemoryLogger } from "../src/log.js";
 import {
@@ -9,7 +10,7 @@ type SpawnedArgs = { command: string; argv: string[] };
 
 /** Minimal ChildProcess stand-in recording argv and kills. */
 function fakeSpawn(): {
-  spawn: (command: string, argv: string[]) => unknown;
+  spawn: typeof nodeSpawn;
   spawned: (SpawnedArgs & {
     killed: boolean;
     emit: (event: "exit" | "error", arg?: unknown) => void;
@@ -40,7 +41,7 @@ function fakeSpawn(): {
     spawned.push(child);
     return child;
   };
-  return { spawn: spawn as never, spawned };
+  return { spawn: spawn as unknown as typeof nodeSpawn, spawned };
 }
 
 describe("AC-3 keep-awake (idle-sleep assertion)", () => {

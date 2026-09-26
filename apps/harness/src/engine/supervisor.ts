@@ -94,6 +94,24 @@ export class EngineSupervisor {
     if (s === "failed" || s === "stopped") void this.start();
   }
 
+  /**
+   * The machine woke from sleep (SP2/#34): the socket is presumed dead —
+   * close it (a deliberate close fires no onClose) and reconnect immediately
+   * instead of waiting for a TCP timeout.
+   */
+  notifyWake(): void {
+    if (this.stopping) return;
+    const conn = this.state.conn;
+    if (!conn) return;
+    this.state.conn = undefined;
+    conn.close();
+    if (this.procAlive && this.launched?.url) {
+      void this.reconnect(this.launched.url);
+    } else if (!this.starting) {
+      this.relaunchAfter(this.backoff(), "woke from sleep");
+    }
+  }
+
   private backoff(): number {
     const min = this.opts.minBackoffMs;
     const max = this.opts.maxBackoffMs;

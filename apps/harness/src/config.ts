@@ -83,6 +83,7 @@ export function launcherFor(
   config: HarnessConfig,
   repoRoot: string,
   log: Logger,
+  fakeServeBin?: string,
 ): EngineLauncher {
   switch (config.engine.kind) {
     case "fake":
@@ -91,6 +92,7 @@ export function launcherFor(
         ...(config.engine.tick !== undefined
           ? { tick: config.engine.tick }
           : {}),
+        ...(fakeServeBin ? { serveBin: fakeServeBin } : {}),
         log,
       });
     case "hermes":

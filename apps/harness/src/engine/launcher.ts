@@ -138,18 +138,28 @@ export function commandLauncher(
   };
 }
 
-/** `bun packages/engine-fake/scripts/serve.ts --port 0` — the CI engine. */
+/**
+ * `bun packages/engine-fake/scripts/serve.ts --port 0` — the CI engine.
+ * `serveBin` points at a pre-compiled serve binary (the packaged app bundles
+ * one at Contents/MacOS/lilos-engine-fake where no repo or bun exists).
+ */
 export function fakeEngineLauncher(options: {
   repoRoot: string;
   tick?: number;
   bun?: string;
+  /** Pre-compiled fake-engine binary; replaces the `bun serve.ts` command. */
+  serveBin?: string;
   log: Logger;
 }): EngineLauncher {
   return commandLauncher({
     name: "engine-fake",
     command: [
-      options.bun ?? "bun",
-      join(options.repoRoot, "packages/engine-fake/scripts/serve.ts"),
+      ...(options.serveBin
+        ? [options.serveBin]
+        : [
+            options.bun ?? "bun",
+            join(options.repoRoot, "packages/engine-fake/scripts/serve.ts"),
+          ]),
       "--port",
       "0",
       "--tick",
