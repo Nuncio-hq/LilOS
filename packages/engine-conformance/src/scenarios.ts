@@ -17,6 +17,24 @@ const textPrompt = (sessionId: string, text: string) => ({
 interface StartResult {
   sessionId: string;
 }
+interface DescribeResultShape {
+  name: string;
+  version: string;
+  capabilities: { id: string; methods?: string[] }[];
+}
+interface AgentRow {
+  id: string;
+  name: string;
+  description?: string;
+  model?: string;
+  skillCount?: number;
+  soul?: string;
+}
+interface ModelRow {
+  id: string;
+  name?: string;
+  provider?: string;
+}
 interface PromptResult {
   turnId: string;
   stopReason: string;
@@ -466,6 +484,251 @@ export const STEER_SCENARIOS: Scenario[] = [
 ];
 
 /**
+ * `agents` capability: the hire dialog's data path. Scenarios carry the issue
+ * AC number they prove (the dialog itself is another slice's UI work).
+ */
+export const AGENTS_SCENARIOS: Scenario[] = [
+  {
+    id: "AC-1 agents.list returns hireable agent descriptors",
+    async run(h) {
+      const d = (await h.request("describe")) as DescribeResultShape;
+      const cap = d.capabilities.find((c) => c.id === "agents");
+      assert(cap, "engine must declare the agents capability");
+      for (const m of ["agents.list", "agents.describe", "agents.create"])
+        assert(
+          cap.methods?.includes(m),
+          `agents capability must enable ${m}`,
+        );
+      const r = (await h.request("agents.list")) as { agents: AgentRow[] };
+      assert(
+        Array.isArray(r.agents) && r.agents.length >= 1,
+        "agents.list needs at least one agent",
+      );
+      for (const a of r.agents) {
+        assert(
+          typeof a.id === "string" && a.id.length > 0,
+          `agent row needs a non-empty id: ${JSON.stringify(a)}`,
+        );
+        assert(
+          typeof a.name === "string" && a.name.length > 0,
+          `agent row needs a display name: ${JSON.stringify(a)}`,
+        );
+        if (a.skillCount !== undefined)
+          assert(
+            Number.isInteger(a.skillCount) && a.skillCount >= 0,
+            "skillCount is a non-negative int",
+          );
+      }
+      const again = (await h.request("agents.list")) as { agents: AgentRow[] };
+      assert(
+        again.agents.map((a) => a.id).join() ===
+          r.agents.map((a) => a.id).join(),
+        "agent ids are stable across calls",
+      );
+    },
+  },
+  {
+    id: "AC-1 agents.describe returns the persona; unknown ids are refused",
+    async run(h) {
+      const { agents } = (await h.request("agents.list")) as {
+        agents: AgentRow[];
+      };
+      const r = (await h.request("agents.describe", { id: agents[0].id })) as {
+        agent: AgentRow;
+      };
+      assert(
+        r.agent?.id === agents[0].id,
+        "describe returns the same agent id",
+      );
+      assert(
+        r.agent.soul === undefined || typeof r.agent.soul === "string",
+        "soul is a string when present",
+      );
+      assert(
+        (await errorCode(h, "agents.describe", { id: "no-such-agent" })) ===
+          -32004,
+        "agents.describe unknown id -> AGENT_NOT_FOUND (-32004)",
+      );
+      assert(
+        (await errorCode(h, "session.start", {
+          agent: "no-such-agent",
+          cwd: "/tmp/lilos-conf",
+        })) === -32004,
+        "session.start unknown agent -> AGENT_NOT_FOUND (-32004)",
+      );
+    },
+  },
+  {
+    id: "AC-2 agents.create registers a real agent (list + describe see it)",
+    async run(h) {
+      // Distinct per run: engines must persist created profiles (no delete
+      // exists), so a fixed name would collide on rerun.
+      const name = `lilos-conformance-${Math.random().toString(36).slice(2, 8)}`;
+      const created = (await h.request("agents.create", {
+        name,
+        description: "conformance probe agent",
+        soul: "A deterministic conformance agent.",
+      })) as { agent: AgentRow };
+      assert(
+        typeof created.agent?.id === "string" && created.agent.id.length > 0,
+        "create returns the registered descriptor",
+      );
+      const { agents } = (await h.request("agents.list")) as {
+        agents: AgentRow[];
+      };
+      assert(
+        agents.some((a) => a.id === created.agent.id || a.name === name),
+        "agents.list sees the created agent",
+      );
+      const d = (await h.request("agents.describe", {
+        id: created.agent.id,
+      })) as { agent: AgentRow };
+      assert(d.agent.name === name, "agents.describe sees the created agent");
+      const code = await errorCode(h, "agents.create", { name });
+      assert(
+        code === -32003 || code === -32602,
+        `duplicate name create must fail (-32003/-32602), got ${code}`,
+      );
+    },
+  },
+  {
+    id: "AC-4 the protocol has no profile delete",
+    async run(h) {
+      for (const m of ["agents.delete", "agents.remove", "agent.delete"])
+        assert(
+          (await errorCode(h, m, { id: "x" })) === -32601,
+          `${m} must not exist — LilOS never deletes profiles`,
+        );
+    },
+  },
+];
+
+/**
+ * `models` capability: the model picker's data path and the "next turn uses
+ * the picked one" guarantee (via `turn.started.model`).
+ */
+export const MODELS_SCENARIOS: Scenario[] = [
+  {
+    id: "AC-3 models.list returns the selectable model set",
+    async run(h) {
+      const d = (await h.request("describe")) as DescribeResultShape;
+      const cap = d.capabilities.find((c) => c.id === "models");
+      assert(cap, "engine must declare the models capability");
+      for (const m of ["models.list", "session.setModel"])
+        assert(
+          cap.methods?.includes(m),
+          `models capability must enable ${m}`,
+        );
+      const r = (await h.request("models.list")) as {
+        models: ModelRow[];
+        default?: string;
+      };
+      assert(
+        Array.isArray(r.models) && r.models.length >= 1,
+        "models.list needs at least one model",
+      );
+      for (const m of r.models)
+        assert(
+          typeof m.id === "string" && m.id.length > 0,
+          `model option needs a non-empty id: ${JSON.stringify(m)}`,
+        );
+      if (r.default !== undefined)
+        assert(
+          r.models.some((m) => m.id === r.default),
+          "default must be one of the listed ids",
+        );
+    },
+  },
+  {
+    id: "AC-3 session.setModel makes the next turn use the picked model",
+    async run(h) {
+      const { models, default: dflt } = (await h.request("models.list")) as {
+        models: ModelRow[];
+        default?: string;
+      };
+      const picked = models.find((m) => m.id !== dflt) ?? models[0];
+      // When the engine also declares `agents`, start as a real agent id.
+      const d = (await h.request("describe")) as DescribeResultShape;
+      let agent = "builder";
+      if (d.capabilities.some((c) => c.id === "agents")) {
+        const { agents } = (await h.request("agents.list")) as {
+          agents: AgentRow[];
+        };
+        agent = agents[0].id;
+      }
+      const { sessionId } = (await h.request("session.start", {
+        agent,
+        cwd: "/tmp/lilos-conf",
+      })) as StartResult;
+      const ack = (await h.request("session.setModel", {
+        sessionId,
+        model: picked.id,
+      })) as { model: string };
+      assert(
+        ack.model === picked.id,
+        `setModel echoes the pinned model, got ${ack.model}`,
+      );
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, READ_PROMPT),
+      ) as Promise<PromptResult>;
+      const started = await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "turn.started"),
+      );
+      assert(
+        started.type === "turn.started" &&
+          started.payload.model === picked.id,
+        `turn.started.model must be the picked model, got ${JSON.stringify(started.payload)}`,
+      );
+      const res = await result;
+      assert(res.stopReason === "end_turn", "the turn still completes");
+    },
+  },
+  {
+    id: "AC-3 session.setModel errors map to codes",
+    async run(h) {
+      assert(
+        (await errorCode(h, "session.setModel", {
+          sessionId: "nope",
+          model: "x",
+        })) === -32001,
+        "unknown session -> SESSION_NOT_FOUND (-32001)",
+      );
+      const d = (await h.request("describe")) as DescribeResultShape;
+      let agent = "builder";
+      if (d.capabilities.some((c) => c.id === "agents")) {
+        const { agents } = (await h.request("agents.list")) as {
+          agents: AgentRow[];
+        };
+        agent = agents[0].id;
+      }
+      const { sessionId } = (await h.request("session.start", {
+        agent,
+        cwd: "/tmp/lilos-conf",
+      })) as StartResult;
+      assert(
+        (await errorCode(h, "session.setModel", {
+          sessionId,
+          model: "no-such-model",
+        })) === -32005,
+        "unknown model -> MODEL_NOT_FOUND (-32005)",
+      );
+      await h.request("session.stop", { sessionId });
+      const { models } = (await h.request("models.list")) as {
+        models: ModelRow[];
+      };
+      assert(
+        (await errorCode(h, "session.setModel", {
+          sessionId,
+          model: models[0].id,
+        })) === -32003,
+        "closed session -> INVALID_STATE (-32003)",
+      );
+    },
+  },
+];
+
+/**
  * Suite registry: `core` always runs; each capability the engine declares on
  * `describe` adds its suite. Pending suites are registered so engines (and CI)
  * can list them; they are intentionally empty until the capability lands.
@@ -479,8 +742,8 @@ export const SUITES: {
   { capability: "steer", implemented: true, scenarios: STEER_SCENARIOS },
   { capability: "image_prompt", implemented: false, scenarios: [] },
   { capability: "mcp_servers", implemented: false, scenarios: [] },
-  { capability: "models", implemented: false, scenarios: [] },
-  { capability: "agents", implemented: false, scenarios: [] },
+  { capability: "models", implemented: true, scenarios: MODELS_SCENARIOS },
+  { capability: "agents", implemented: true, scenarios: AGENTS_SCENARIOS },
   { capability: "usage", implemented: false, scenarios: [] },
   { capability: "plan", implemented: false, scenarios: [] },
   { capability: "rewind", implemented: false, scenarios: [] },

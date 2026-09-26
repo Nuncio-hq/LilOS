@@ -33,6 +33,11 @@ describe("engine wire contract", () => {
       "events.since",
       "session.stop",
       "session.steer",
+      "agents.list",
+      "agents.describe",
+      "agents.create",
+      "models.list",
+      "session.setModel",
     ]);
     for (const [name, m] of Object.entries(ENGINE_METHODS)) {
       expect(m.doc.length, name).toBeGreaterThan(0);
@@ -40,6 +45,20 @@ describe("engine wire contract", () => {
       expect(m.result, name).toBeDefined();
     }
     expect(ENGINE_METHODS["session.steer"].capability).toBe("steer");
+    expect(ENGINE_METHODS["agents.list"].capability).toBe("agents");
+    expect(ENGINE_METHODS["agents.describe"].capability).toBe("agents");
+    expect(ENGINE_METHODS["agents.create"].capability).toBe("agents");
+    expect(ENGINE_METHODS["models.list"].capability).toBe("models");
+    expect(ENGINE_METHODS["session.setModel"].capability).toBe("models");
+  });
+
+  test("AC-4 the protocol has no profile-delete method", () => {
+    // LilOS never deletes an engine profile; firing only removes the LilOS
+    // employee record. Nothing in the method table may delete/destroy agents.
+    const killers = Object.keys(ENGINE_METHODS).filter((n) =>
+      /delete|remove|destroy|unregister/i.test(n),
+    );
+    expect(killers).toEqual([]);
   });
 
   test("events v1 registry covers the replayable surface", () => {
