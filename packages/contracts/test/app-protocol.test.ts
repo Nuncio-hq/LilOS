@@ -1,11 +1,5 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import {
-  buildSchemaDoc,
-  outputPathFor,
-  PROTOCOLS,
-  renderSchemaDoc,
-} from "../scripts/generate-json-schemas";
+import { buildSchemaDoc } from "../scripts/gen-schemas.js";
 import {
   AppMessage,
   ChannelSubscribeParams,
@@ -17,6 +11,7 @@ import {
   ProtocolVersionMismatch,
   WelcomeResult,
 } from "../src/app";
+import { appProtocol } from "../src/app/registry";
 
 const employee = {
   id: "emp_ada",
@@ -112,7 +107,7 @@ describe("AC-1 app protocol contracts", () => {
   });
 
   it("generates a deterministic JSON Schema doc containing every registered schema", () => {
-    const doc = buildSchemaDoc(PROTOCOLS[0]) as {
+    const doc = buildSchemaDoc(appProtocol) as {
       protocolVersion: number;
       definitions: Record<string, unknown>;
     };
@@ -126,11 +121,8 @@ describe("AC-1 app protocol contracts", () => {
     }
   });
 
-  it("AC-1 stale check: committed JSON Schema matches a fresh generation", () => {
-    const committed = readFileSync(outputPathFor(PROTOCOLS[0]), "utf8");
-    // Regenerate instead of editing by hand: bun run --cwd packages/contracts gen
-    expect(committed).toBe(renderSchemaDoc(PROTOCOLS[0]));
-  });
+  // The committed-vs-fresh stale check moved to schema-gen.test.ts with the
+  // unified generator (#42): regenerate with `bun run schema:gen`.
 });
 
 describe("AC-4 version mismatch error shape", () => {

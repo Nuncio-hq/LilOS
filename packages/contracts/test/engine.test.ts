@@ -1,11 +1,7 @@
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import {
-  renderEngineSchema,
-  stalePaths,
-} from "../scripts/gen-engine-schema.js";
 import {
   ENGINE_EVENT_TYPES,
   ENGINE_METHODS,
@@ -107,24 +103,8 @@ describe("engine wire contract", () => {
     expect(EngineEvent.safeParse({ ...frame, seq: 0 }).success).toBe(false);
   });
 
-  test("AC-2 generated JSON Schema exists and is fresh", () => {
-    expect(stalePaths()).toEqual([]);
-    expect(renderEngineSchema()).toContain('"lilos-engine"');
-  });
-
-  test("AC-2 stale-schema check fails when output differs from source", () => {
-    const out = stalePaths();
-    expect(out).toEqual([]);
-    const file = join(ENGINE_SRC, "..", "..", "schema", "engine-protocol.json");
-    const original = readFileSync(file, "utf8");
-    try {
-      writeFileSync(file, '{"stale":true}\n');
-      expect(stalePaths()).toEqual([file]);
-    } finally {
-      writeFileSync(file, original);
-    }
-    expect(stalePaths()).toEqual([]);
-  });
+  // The generated-schema stale checks moved to schema-gen.test.ts with the
+  // unified generator (#42) — one check covers every registry.
 
   test("AC-4 the seam carries no vendor names", () => {
     const root = join(ENGINE_SRC, "..", "..", "..");

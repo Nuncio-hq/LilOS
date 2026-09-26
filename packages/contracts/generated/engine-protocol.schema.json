@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "LilOS engine protocol",
-  "description": "Generated from packages/contracts/src/engine by gen-engine-schema.ts — do not edit.",
+  "description": "Generated from packages/contracts/src/engine by scripts/gen-schemas.ts — do not edit.",
   "protocol": {
     "name": "lilos-engine",
     "version": 1

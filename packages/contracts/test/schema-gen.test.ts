@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +34,13 @@ describe("unified JSON Schema generator", () => {
       try {
         writeFileSync(path, '{"stale":true}\n');
         expect(stalePaths()).toEqual([path]);
+        // And the wired `bun run schema:check` really exits non-zero on it.
+        const res = spawnSync(
+          "bun",
+          ["packages/contracts/scripts/gen-schemas.ts", "--check"],
+          { cwd: ROOT },
+        );
+        expect(res.status).toBe(1);
       } finally {
         writeFileSync(path, original);
       }
@@ -47,13 +55,7 @@ describe("unified JSON Schema generator", () => {
     expect(Object.keys(doc.methods)).toContain("session.start");
     // test-nonts.ts hands this exact file to clients/python/drive.py.
     const runner = readFileSync(
-      join(
-        ROOT,
-        "packages",
-        "engine-conformance",
-        "scripts",
-        "test-nonts.ts",
-      ),
+      join(ROOT, "packages", "engine-conformance", "scripts", "test-nonts.ts"),
       "utf8",
     );
     expect(runner).toContain("engine-protocol.schema.json");
@@ -64,9 +66,11 @@ describe("unified JSON Schema generator", () => {
       expect(existsSync(join(PKG, "scripts", dead))).toBe(false);
     }
     const biome = readFileSync(join(ROOT, "biome.json"), "utf8");
-    expect(biome).toContain("!packages/contracts/generated/**");
+    expect(biome).toContain("!packages/contracts/generated");
     expect(biome).not.toContain("!packages/contracts/schema");
-    const rootPkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+    const rootPkg = JSON.parse(
+      readFileSync(join(ROOT, "package.json"), "utf8"),
+    );
     expect(rootPkg.scripts["schema:gen"]).toContain("gen-schemas.ts");
     expect(rootPkg.scripts["schema:check"]).toContain("gen-schemas.ts");
     const contractsPkg = JSON.parse(

@@ -8,7 +8,7 @@ import { ApprovalOutcome, OpenRequest } from "./requests.js";
 
 /**
  * The engine method map — the single declaration of the wire (method name ->
- * params/result schema). `packages/contracts/scripts/gen-engine-schema.ts`
+ * params/result schema). `packages/contracts/scripts/gen-schemas.ts`
  * renders this table to JSON Schema; engines and the conformance suite read it
  * here. Adding a method is: schema pair + one entry (+ a capability when it is
  * not core). Params are strict: unknown keys are the caller's bug and answer

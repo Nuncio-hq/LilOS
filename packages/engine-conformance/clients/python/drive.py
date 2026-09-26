@@ -2,12 +2,12 @@
 """AC-3: drive engine-fake over WebSocket using only the generated JSON Schema.
 
 Python standard library only — no pip installs — so it runs anywhere CI does.
-Reads packages/contracts/schema/engine-protocol.json, builds request params
-from the schema (skeleton + the script's chosen values), and plays a full
-session: describe -> session.start -> prompt -> request.opened ->
+Reads packages/contracts/generated/engine-protocol.schema.json, builds request
+params from the schema (skeleton + the script's chosen values), and plays a
+full session: describe -> session.start -> prompt -> request.opened ->
 request.respond -> turn.completed -> events.since -> session.stop.
 
-Usage: drive.py --url ws://127.0.0.1:PORT/ws --schema <engine-protocol.json>
+Usage: drive.py --url ws://127.0.0.1:PORT/ws --schema <engine-protocol.schema.json>
 Exits 0 with PASS lines on success, non-zero on any protocol violation.
 """
 
