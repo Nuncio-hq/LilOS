@@ -1,0 +1,39 @@
+{
+  "scan_dev_server": {
+    "url": "http://localhost:8942",
+    "detect_ms": 82
+  },
+  "explicit_marker": {
+    "url": "http://localhost:8943/my-preview",
+    "detect_ms": 15
+  },
+  "lsof_poll_A": {
+    "ms": 410,
+    "tries": 2
+  },
+  "lsof_poll_B": {
+    "ms": 415,
+    "tries": 2
+  },
+  "lsof_poll_silent_C": {
+    "ms": null,
+    "tries": 28
+  },
+  "all_events": [
+    {
+      "url": "http://localhost:8943/my-preview",
+      "via": "marker",
+      "at": 1790442720489
+    },
+    {
+      "url": "http://localhost",
+      "via": "marker",
+      "at": 1790442720500
+    },
+    {
+      "url": "http://localhost:8942",
+      "via": "scan",
+      "at": 1790442720554
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "name": "lilos-spike-24-harness",
+  "private": true,
+  "type": "module",
+  "description": "Spike #24: harness-owned headless Chromium (CDP screencast) + PTY + MCP tools + live viewer. Throwaway code.",
+  "scripts": {
+    "harness": "node src/harness.mjs",
+    "mcp": "node src/mcp-server.mjs",
+    "agent-demo": "node src/agent-demo.mjs",
+    "measure": "node src/measure.mjs",
+    "preview-test": "node src/preview-test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "jpeg-js": "0.4.4",
+    "node-pty": "1.1.0",
+    "playwright": "1.63.0",
+    "ws": "8.21.3"
+  }
+}

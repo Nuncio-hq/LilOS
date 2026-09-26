@@ -1,0 +1,26 @@
+{
+  "seconds": 12,
+  "frames": 1361,
+  "undecodableFrames": 0,
+  "e2e_visual_ms": {
+    "p50": 34,
+    "p95": 64,
+    "max": 71
+  },
+  "frame_gap_ms": {
+    "p50": 17,
+    "p95": 25,
+    "mean": 16.7
+  },
+  "transport_age_ms": {
+    "p50": 0,
+    "p95": 1,
+    "max": 2
+  },
+  "click_to_pixel_ms": {
+    "n": 20,
+    "p50": 50,
+    "p95": 83,
+    "max": 83
+  }
+}
