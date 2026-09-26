@@ -73,6 +73,10 @@ export class FakeGateway implements GatewayLike {
   /** session_id -> model set via slash.exec /model. */
   sessionModels = new Map<string, string>();
   slashCommands: string[] = [];
+  /** When set, session.steer resolves with this status instead of "queued". */
+  steerStatus: "queued" | "rejected" = "queued";
+  /** When set, session.steer rejects with this error code (e.g. 4010 build window). */
+  steerError?: number;
 
   private refs = new Map<string, string>();
   private sreqId = 0;
@@ -128,6 +132,12 @@ export class FakeGateway implements GatewayLike {
       case "session.interrupt":
         return Promise.resolve({ status: "interrupted" });
       case "session.steer":
+        if (this.steerError)
+          return Promise.reject(
+            new RpcError(this.steerError, "agent not built yet"),
+          );
+        if (this.steerStatus === "rejected")
+          return Promise.resolve({ status: "rejected" });
         this.steers.push(String(p.text));
         return Promise.resolve({ status: "queued", text: p.text });
       case "session.close":

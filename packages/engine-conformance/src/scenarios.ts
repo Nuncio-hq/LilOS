@@ -447,6 +447,20 @@ export const CORE_SCENARIOS: Scenario[] = [
 /** Capability suites beyond core. Only scenarios for capabilities engine-fake declares are implemented. */
 export const STEER_SCENARIOS: Scenario[] = [
   {
+    id: "describe wires session.steer under the steer capability",
+    async run(h) {
+      const r = (await h.request("describe")) as {
+        capabilities: { id: string; methods?: string[] }[];
+      };
+      const steer = r.capabilities.find((c) => c.id === "steer");
+      assert(steer, "steer suite runs only against engines declaring steer");
+      assert(
+        steer?.methods?.includes("session.steer") === true,
+        "the steer descriptor names session.steer",
+      );
+    },
+  },
+  {
     id: "steer lands at a tool boundary",
     async run(h) {
       const { sessionId } = (await h.request("session.start", {
@@ -479,6 +493,180 @@ export const STEER_SCENARIOS: Scenario[] = [
       );
       const res = await result;
       assert(res.stopReason === "end_turn", "steered turn still completes");
+    },
+  },
+  {
+    id: "several steers land in order at one boundary",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, EDIT_PROMPT),
+      ) as Promise<PromptResult>;
+      await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "tool.started"),
+      );
+      for (const text of [
+        "first: adjust the header",
+        "second: bump the tests",
+      ]) {
+        const ack = (await h.request("session.steer", {
+          sessionId,
+          text,
+        })) as { status: string };
+        assert(ack.status === "steered", `steer "${text}" reports steered`);
+      }
+      await answerAsks(h, sessionId, "always");
+      const res = await result;
+      assert(res.stopReason === "end_turn", "steered turn still completes");
+      const landed = h.events.filter(
+        (e): e is Extract<EngineEvent, { type: "turn.steered" }> =>
+          e.sessionId === sessionId &&
+          e.type === "turn.steered" &&
+          e.payload.turnId === res.turnId,
+      );
+      assert(
+        landed.length === 2 &&
+          landed[0].payload.text === "first: adjust the header" &&
+          landed[1].payload.text === "second: bump the tests",
+        `steers land FIFO, got ${JSON.stringify(landed.map((e) => e.payload.text))}`,
+      );
+    },
+  },
+  {
+    id: "a steer accepted late in the turn is never lost",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, READ_PROMPT),
+      ) as Promise<PromptResult>;
+      // Steer once the final text starts streaming: on a deterministic engine
+      // that is past the last tool boundary; a live engine may still land it.
+      await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) => e.type === "turn.delta" && e.payload.stream === "text",
+        ),
+      );
+      const steerText = "then summarize the engine packages";
+      const ack = (await h.request("session.steer", {
+        sessionId,
+        text: steerText,
+      })) as { status: string };
+      assert(ack.status === "steered", "late steer still reports steered");
+      const first = await result;
+      assert(
+        first.stopReason === "end_turn",
+        "the turn the steer was sent during still completes",
+      );
+      // The contract is "never lost": either it landed inside the turn as a
+      // turn.steered event, or the engine runs it as the next turn on its own.
+      const landedInTurn = h.events.some(
+        (e) =>
+          e.sessionId === sessionId &&
+          e.type === "turn.steered" &&
+          e.payload.turnId === first.turnId &&
+          e.payload.text === steerText,
+      );
+      if (landedInTurn) return;
+      const next = await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) => e.type === "turn.started" && e.payload.turnId !== first.turnId,
+        ),
+      );
+      assert(
+        next.type === "turn.started" && next.payload.turnId !== first.turnId,
+        "the missed steer gets its own turn",
+      );
+      const done = await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) =>
+            e.type === "turn.completed" &&
+            e.payload.turnId === next.payload.turnId,
+        ),
+      );
+      assert(
+        done.type === "turn.completed" &&
+          done.payload.stopReason === "end_turn",
+        "the follow-up steer turn completes",
+      );
+    },
+  },
+  {
+    id: "steer on an idle session reports not_running and consumes nothing",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const ack = (await h.request("session.steer", {
+        sessionId,
+        text: "nobody is working on this",
+      })) as { status: string };
+      assert(ack.status === "not_running", "idle steer reports not_running");
+      // not_running consumed nothing — the client is expected to send prompt.
+      // A consumed steer would have started a turn on its own.
+      await new Promise((r) => setTimeout(r, 50));
+      assert(
+        !h.events.some(
+          (e) => e.sessionId === sessionId && e.type === "turn.started",
+        ),
+        "a not_running steer must not start a turn",
+      );
+      const res = (await h.request(
+        "prompt",
+        textPrompt(sessionId, READ_PROMPT),
+      )) as PromptResult;
+      assert(
+        res.stopReason === "end_turn",
+        "the client can still prompt the idle session",
+      );
+      assert(
+        h.events.filter(
+          (e) => e.sessionId === sessionId && e.type === "turn.started",
+        ).length === 1,
+        "only the prompt's turn ever ran",
+      );
+    },
+  },
+  {
+    id: "steer errors follow the protocol codes",
+    async run(h) {
+      assert(
+        (await errorCode(h, "session.steer", {
+          sessionId: "no-such-session",
+          text: "hello",
+        })) === -32001,
+        "steer on an unknown session -> SESSION_NOT_FOUND",
+      );
+      assert(
+        (await errorCode(h, "session.steer", {
+          sessionId: "no-such-session",
+          text: "",
+        })) === -32602,
+        "empty steer text -> INVALID_PARAMS",
+      );
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      await h.request("session.stop", { sessionId });
+      assert(
+        (await errorCode(h, "session.steer", {
+          sessionId,
+          text: "too late",
+        })) === -32003,
+        "steer on a closed session -> INVALID_STATE",
+      );
     },
   },
 ];

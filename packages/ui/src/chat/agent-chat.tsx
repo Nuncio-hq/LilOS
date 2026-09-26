@@ -13,11 +13,11 @@ import {
 } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 
-/* Engine capability read in ONE place (Engine protocol: session.steer). Steer is the default and only
-   behavior: a message sent while the employee works lands in the running turn at the next tool boundary.
-   A future engine without session.steer (or a user setting) flips this single constant and mid-turn
-   sends take the queue path instead — no UI for that yet. Not: a capability toggle in the composer. */
-export const ENGINE_STEER = true;
+/* Steer is a declared engine capability (Engine protocol: session.steer), not a constant: the host
+   reads describe().capabilities once and passes `steer` to ThreadView/FocusView. When the engine
+   declares it, a mid-turn send lands in the running turn at the next tool boundary (pending chip →
+   landed row); without it, mid-turn sends queue in the QueuedTray and run as the next prompt — no
+   steer affordance renders (issue #9). Not: a capability toggle in the composer. */
 
 /* Strip markdown markers for chips/trays (single copy shared by the app and these components). */
 export const plain = (s: string) =>
@@ -186,9 +186,75 @@ export function NotSentTray({
   );
 }
 
-/* Running-state composer copy, one source for both surfaces: while the employee works, Enter always
-   steers (ENGINE_STEER is the only mode). Idle hints stay surface-specific at the call sites. */
-export const runningComposer = (name: string) => ({
-  placeholder: `${name} is working. Enter steers this turn…`,
-  hint: "Enter steers · ■ stop",
+/* Messages typed while the employee works on an engine WITHOUT the steer capability (issue #9):
+   they cannot land mid-turn, so they queue and auto-send as the next prompt when the turn ends —
+   the same "typing mid-turn queues" behavior the wire-level not_running path needs. Unlike the
+   not-sent tray there is no Send action (sending now is impossible mid-turn); Remove is the only
+   per-item control. Amber, like the pending steer chips: same "waiting on the turn" family. */
+export function QueuedTray({
+  items,
+  onRemove,
+}: {
+  items: string[];
+  /* Renders only with its handler, like NotSentTray. */
+  onRemove?: (i: number) => void;
+}) {
+  if (!items.length) return null;
+  return (
+    <div
+      className="mb-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs"
+      data-queued
+    >
+      <div className="mb-1 flex items-center gap-1.5 font-medium text-amber-900">
+        <ClockIcon className="size-3.5 shrink-0" />
+        {items.length} queued · {items.length === 1 ? "sends" : "send"} when
+        this turn ends
+      </div>
+      <ul>
+        {items.map((q, i) => (
+          <li key={i} className="flex items-center gap-2 py-0.5">
+            <span className="shrink-0 font-mono text-[10px] text-amber-700">
+              {i + 1}
+            </span>
+            <span
+              className="min-w-0 flex-1 truncate text-amber-950"
+              title={plain(q)}
+            >
+              {plain(q)}
+            </span>
+            {onRemove && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        onClick={() => onRemove(i)}
+                        aria-label="Remove"
+                        data-queued-remove={i}
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                      />
+                    }
+                  >
+                    <Trash2Icon className="size-3.5" />
+                  </TooltipTrigger>
+                  <TooltipContent>Remove</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/* Running-state composer copy, one source for both surfaces: whether Enter steers the running turn
+   or queues for after it depends on the engine's declared steer capability (issue #9). Idle hints
+   stay surface-specific at the call sites. */
+export const runningComposer = (name: string, steer: boolean) => ({
+  placeholder: steer
+    ? `${name} is working. Enter steers this turn…`
+    : `${name} is working. Enter queues it for when the turn ends…`,
+  hint: steer ? "Enter steers · ■ stop" : "Enter queues · ■ stop",
 });

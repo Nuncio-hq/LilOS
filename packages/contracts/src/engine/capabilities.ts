@@ -37,3 +37,20 @@ export const KNOWN_CAPABILITIES = [
   "rewind",
 ] as const;
 export type KnownCapability = (typeof KNOWN_CAPABILITIES)[number];
+
+/**
+ * The canonical `steer` descriptor (issue #9): engine-fake returns it verbatim
+ * and other engines keep the same id/name/methods, adding engine-specific
+ * description/detail where useful. `session.steer` injects text into the
+ * running turn: it lands at the next tool boundary as a `turn.steered` event.
+ * An accepted steer is never lost — when the turn ends before the next
+ * boundary, the text becomes the next turn's input. A `not_running` result
+ * means the engine consumed nothing: send `prompt` instead.
+ */
+export const STEER_CAPABILITY: Capability = {
+  id: "steer",
+  name: "Session steer",
+  description:
+    "Text sent mid-turn lands at the next tool boundary of the running turn.",
+  methods: ["session.steer"],
+};

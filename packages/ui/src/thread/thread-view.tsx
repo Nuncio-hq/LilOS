@@ -3,6 +3,7 @@ import { CheckIcon, Maximize2Icon, PlayIcon } from "lucide-react";
 import {
   ConversationKeepBottom,
   NotSentTray,
+  QueuedTray,
   runningComposer,
 } from "../chat/agent-chat";
 import { Composer } from "../chat/composer";
@@ -50,6 +51,8 @@ export function ThreadView({
   onSendQueued,
   pending = [],
   accept,
+  steer = false,
+  onRemovePending,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -68,9 +71,13 @@ export function ThreadView({
   onRetry?: (empId: string) => void;
   onUnqueue?: (i: number) => void;
   onSendQueued?: (i: number) => void;
+  /* Messages sent while the turn runs. `steer` (engine declared session.steer) renders them as
+     pending-steer chips inside the turn; without it they show in the queued tray instead (issue #9). */
   pending?: string[];
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
   accept?: string;
+  steer?: boolean;
+  onRemovePending?: (i: number) => void;
 }) {
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
@@ -175,7 +182,7 @@ export function ThreadView({
                   emp={emp}
                   last={i === thread.replies.length - 1}
                   onRetry={onRetry}
-                  pending={pending}
+                  pending={steer ? pending : []}
                   cards={
                     <ReplyCards
                       r={r}
@@ -245,13 +252,13 @@ export function ThreadView({
       <Composer
         placeholder={
           running
-            ? runningComposer(leadEmp?.name ?? "Employee").placeholder
+            ? runningComposer(leadEmp?.name ?? "Employee", steer).placeholder
             : `Reply to ${leadEmp?.name ?? "the thread"} in this session…`
         }
         employees={[]}
         hint={
           running
-            ? runningComposer(leadEmp?.name ?? "Employee").hint
+            ? runningComposer(leadEmp?.name ?? "Employee", steer).hint
             : work?.branch
               ? `Edits go to ⎇ ${work.branch}`
               : work
@@ -265,11 +272,18 @@ export function ThreadView({
         accept={accept}
         onStop={onStop}
         queued={
-          <NotSentTray
-            items={thread.queue ?? []}
-            onSend={onSendQueued}
-            onRemove={onUnqueue}
-          />
+          <>
+            {/* Without steer, mid-turn sends queue here and auto-run at turn end (issue #9). */}
+            <QueuedTray
+              items={steer ? [] : pending}
+              onRemove={onRemovePending}
+            />
+            <NotSentTray
+              items={thread.queue ?? []}
+              onSend={onSendQueued}
+              onRemove={onUnqueue}
+            />
+          </>
         }
       />
     </div>

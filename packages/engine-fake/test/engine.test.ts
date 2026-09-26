@@ -128,6 +128,40 @@ describe("engine-fake", () => {
     c.close();
   });
 
+  test("AC-2 steer on an idle session reports not_running and starts no turn", async () => {
+    const c = conn();
+    const seen: string[] = [];
+    c.onEvent((e) => seen.push(e.type));
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+    })) as { sessionId: string };
+    const ack = (await c.request("session.steer", {
+      sessionId,
+      text: "nobody home",
+    })) as { status: string };
+    expect(ack.status).toBe("not_running");
+    await new Promise((r) => setTimeout(r, 30));
+    expect(seen).not.toContain("turn.started");
+    // The session is untouched: a normal prompt still works and runs its turn.
+    await promptText(c, sessionId, "Explain the relay package");
+    expect(seen.filter((t) => t === "turn.started").length).toBe(1);
+    c.close();
+  });
+
+  test("AC-2 without the steer capability the method is unknown and describe omits it", async () => {
+    const c = connectFake(new FakeEngine({ capabilities: { steer: false } }));
+    const r = (await c.request("describe")) as {
+      capabilities: { id: string; methods?: string[] }[];
+    };
+    expect(r.capabilities.map((x) => x.id)).not.toContain("steer");
+    expect(r.capabilities.map((x) => x.id)).toContain("mcp_servers");
+    await expect(
+      c.request("session.steer", { sessionId: "s1", text: "hi" }),
+    ).rejects.toMatchObject({ code: -32601 });
+    c.close();
+  });
+
   test("handleJsonRpc: parse error, notification silence, batch rejection", async () => {
     const engine = new FakeEngine({ tick: 1 });
     expect(await handleJsonRpc(engine, "{nope")).toContain('"code":-32700');

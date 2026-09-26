@@ -435,10 +435,19 @@ export class HermesEngine {
         s.emit("turn.steered", { turnId, text: p.text });
       return { status };
     }
-    const r = (await this.opts.gateway.request("session.steer", {
-      session_id: s.runtimeSid,
-      text: p.text,
-    })) as { status?: unknown };
+    let r: { status?: unknown };
+    try {
+      r = (await this.opts.gateway.request("session.steer", {
+        session_id: s.runtimeSid,
+        text: p.text,
+      })) as { status?: unknown };
+    } catch (e) {
+      // Hermes 4010 = agent still building after session.create — no turn can
+      // be running, so contract-wise the steer was not consumed.
+      if (e instanceof RpcError && e.code === 4010)
+        return { status: "not_running" as const };
+      throw e;
+    }
     if (r.status === "queued" || r.status === "redirected") {
       s.emit("turn.steered", {
         turnId: s.turn?.turnId ?? s.lastTurnId,
