@@ -545,7 +545,7 @@ export class Harness {
     });
     const conn = this.engine;
     if (!conn || !this.hasCapability("session_meta")) return;
-    if (!seen || seen.title !== conv.title) {
+    if (conv.title && (!seen || seen.title !== conv.title)) {
       void conn
         .request("session.setTitle", {
           sessionId: binding.sessionId,
@@ -577,7 +577,6 @@ export class Harness {
     if (message.authorKind !== "user") return;
     if (!message.conversationId) return;
     if (this.delivered.has(message.id)) return;
-    this.delivered.add(message.id);
 
     this.opts.log.info("user message", {
       conversationId: message.conversationId,
@@ -585,12 +584,16 @@ export class Harness {
     });
     this.opts.onNeedEngine?.();
     const conv = await this.findConversation(message.conversationId);
-    if (!conv || conv.archived || conv.state === "closed") {
+    // Lookup failed (relay flapped mid-RPC): leave `delivered` unset so the
+    // register-time pending list can redeliver the message later.
+    if (!conv) return;
+    if (conv.archived || conv.state === "closed") {
       this.opts.log.warn("dropping message for unknown/closed conversation", {
         conversationId: message.conversationId,
       });
       return;
     }
+    this.delivered.add(message.id);
     const binding = await this.bindingFor(conv, message.channelId);
     if (!binding) {
       // Engine still starting/restarting: hold the message; attachEngine

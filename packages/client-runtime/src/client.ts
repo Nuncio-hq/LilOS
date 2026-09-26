@@ -868,7 +868,6 @@ export class RelayClient {
     this.channelStates.delete(channelId);
   }
 
-
   /** Dispatch only when seq advances the channel watermark (dedupe). */
   private dispatchIfNewer(channelId: string, message: AppMessage): void {
     const watermark = this.watermarks.get(channelId) ?? 0;

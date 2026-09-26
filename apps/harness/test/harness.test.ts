@@ -964,7 +964,6 @@ describe("employee lifecycle over the harness (#29)", () => {
   });
 });
 
-
 describe("sessions replay + meta (#28)", () => {
   it("AC-3 rename/archive on the conversation mirror to the engine via session_meta", async () => {
     const w = await setupWorld();
