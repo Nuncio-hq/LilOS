@@ -5,6 +5,7 @@ import {
   MessageResponse,
 } from "../components/ai-elements/message";
 import { Badge } from "../components/ui/badge";
+import { AttachmentChips } from "../conversation/turns";
 import { cn } from "../lib/utils";
 import { HermesAvatar, HumanAvatar } from "../shell/avatars";
 import type { EmpFn, HireDraft, HumanFn, Msg, Work } from "../types";
@@ -146,6 +147,7 @@ export function FeedList({
           >
             <Who id={m.from} time={m.time} emp={emp} human={human} />
             <Body text={m.text} />
+            {m.attachments && <AttachmentChips files={m.attachments} />}
             {m.hire && (
               <HireCardInline
                 draft={m.hire}

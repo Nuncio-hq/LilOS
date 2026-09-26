@@ -13,10 +13,18 @@ import {
 } from "../components/ai-elements/conversation";
 import { Button } from "../components/ui/button";
 import { openStartRequest, ReplyCards } from "../conversation/cards";
-import { AgentTurn } from "../conversation/turns";
+import { AgentTurn, AttachmentChips } from "../conversation/turns";
 import { Body, Row, Who } from "../feed/row";
 import { SessionUsage } from "../focus/session-usage";
-import type { Channel, EmpFn, HumanFn, Msg, Thread, Work } from "../types";
+import type {
+  AttachedFile,
+  Channel,
+  EmpFn,
+  HumanFn,
+  Msg,
+  Thread,
+  Work,
+} from "../types";
 import { WorkspaceBadge, WsBadge } from "../workbench/ws-badges";
 
 /* The right-panel frame around the conversation — channel threads AND DM sessions (issue #19).
@@ -41,6 +49,7 @@ export function ThreadView({
   onUnqueue,
   onSendQueued,
   pending = [],
+  accept,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -54,12 +63,14 @@ export function ThreadView({
   repo?: string;
   onStart?: () => void;
   running: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string, files?: AttachedFile[]) => void;
   onStop?: () => void;
   onRetry?: (empId: string) => void;
   onUnqueue?: (i: number) => void;
   onSendQueued?: (i: number) => void;
   pending?: string[];
+  /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
+  accept?: string;
 }) {
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
@@ -184,6 +195,7 @@ export function ThreadView({
               <Row key={r.id ?? i} from={r.from} emp={emp} human={human}>
                 <Who id={r.from} time={r.time} emp={emp} human={human} />
                 <Body text={r.text} />
+                {r.attachments && <AttachmentChips files={r.attachments} />}
               </Row>
             ),
           )}
@@ -250,6 +262,7 @@ export function ThreadView({
         }
         onSend={onSend}
         status={status}
+        accept={accept}
         onStop={onStop}
         queued={
           <NotSentTray

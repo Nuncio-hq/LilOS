@@ -65,6 +65,8 @@ export type Phase =
   | "typing"
   | "done"
   | "stopped";
+/* One file attached in the composer (image, etc.). The chip shows name; mediaType drives previews. */
+export type AttachedFile = { name: string; mediaType: string };
 export type Reply = {
   from: string;
   time: string;
@@ -80,6 +82,7 @@ export type Reply = {
   id?: string;
   steers?: string[];
   dur?: number;
+  attachments?: AttachedFile[];
 };
 export type Usage = {
   input: number;
@@ -113,10 +116,22 @@ export type PullRequest = {
   checks: CheckRun[];
   comments: PrComment[];
 };
+/* A designed failure/notice attached to a session (model error, sleep interrupt, …).
+   retry:true means the session can be re-prompted in place. */
+export type SessionAlert = {
+  kind: "model" | "sleep" | "generic";
+  text: string;
+  retry?: boolean;
+};
 export type Thread = {
   session: string;
   ticket?: string;
   branch?: string;
+  /* User-visible session title (renamed by the user; unset = first message is the name). */
+  title?: string;
+  /* Archived sessions hide from the DM list until the Archived disclosure is opened. */
+  archived?: boolean;
+  alert?: SessionAlert;
   replies: Reply[];
   usage?: Usage;
   todos?: Todo[];
@@ -199,8 +214,23 @@ export type Msg =
       text: string;
       thread?: Thread;
       hire?: HireDraft;
+      attachments?: AttachedFile[];
     }
   | { kind: "event"; id: string; text: string; ticket: string };
+
+/* The chain a session needs: relay → harness → engine → model. One line each for the
+   status surface; the app builds the rows (and the Copy diagnostics text) from real
+   health checks later — this shape is the contract. */
+export type ComponentState = "ok" | "connecting" | "degraded" | "down";
+export type StatusComponent = {
+  id: "relay" | "harness" | "engine" | "model";
+  label: string;
+  state: ComponentState;
+  reason: string;
+};
+
+/* Sidebar badge per employee: running turns (blue) / turns waiting on Oscar (amber). */
+export type EmpBadge = { running?: number; approvals?: number };
 
 /* People (non-employee) as display metadata for avatars/names. Passed IN from the app. */
 export type Human = { name: string; color: string; guest?: boolean };

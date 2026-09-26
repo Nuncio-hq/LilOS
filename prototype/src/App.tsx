@@ -1,17 +1,25 @@
-import { useRef, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { Conversation, ConversationContent, ConversationScrollButton } from "@lilos/ui/components/ai-elements/conversation"
 import {
   AddFolderDialog,
   ChannelHeader,
   Composer,
+  EditEmployeeDialog,
   EmployeeCard,
   EmployeeHome,
   ENGINE_STEER,
   FeedList,
+  FirstRun,
   FocusView,
   HireDialog,
+  type PreviewScenario,
+  PrototypePreviewMenu,
+  StatusBanner,
+  StatusDialog,
   type Folder,
+  type AttachedFile,
   type Channel,
+  type EmpBadge,
   type Employee,
   type EmpFn,
   type FsDir,
@@ -30,6 +38,8 @@ import {
   type Thread,
   type TicketRow,
   type Work,
+  type SessionAlert,
+  type StatusComponent,
   type WsPick,
   type Workspace,
   NO_WS,
@@ -261,10 +271,75 @@ const DM_FEEDS: Record<string, Msg[]> = {
   ],
 }
 
-const SUGGESTIONS: Record<string, string[]> = {
-  builder: ["What's blocking the relay?", "Explain packages/contracts", "Review my last commit"],
-  reviewer: ["Check LIL-2 for boundary leaks", "What tests are missing?", "Review the relay schema"],
-  marketer: ["Draft 3 taglines for LilOS", "Who are our first 10 users?", "Plan the launch week"],
+
+/* First run: the relay handshake creates one employee from the machine's default Hermes profile —
+   `default` is already there before Oscar types anything. */
+const DEFAULT_EMP: Employee = { id: "default", name: "Default", role: "Assistant", status: "online", profile: "default", model: MODELS[1], now: "idle", instructions: "General assistant created from this Mac's default Hermes profile.", respondTo: "me" }
+
+/* System status per preview scenario. Each component has a state + one-line reason;
+   the dialog's "Copy diagnostics" ships the same lines as plain text. */
+const STATUS: Record<PreviewScenario, StatusComponent[]> = {
+  normal: [
+    { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
+    { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
+    { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
+    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].split(" (")[0]} · responding` },
+  ],
+  "first-run": [
+    { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
+    { id: "harness", label: "Harness", state: "ok", reason: "Running · 1 session" },
+    { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
+    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].split(" (")[0]} · responding` },
+  ],
+  loading: [],
+  reconnecting: [
+    { id: "relay", label: "Relay", state: "connecting", reason: "Connection lost — retrying every 2s · last seen 14s ago" },
+    { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
+    { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
+    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].split(" (")[0]} · responding` },
+  ],
+  "harness-down": [
+    { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
+    { id: "harness", label: "Harness", state: "down", reason: "Process exited · last heartbeat 2m ago" },
+    { id: "engine", label: "Engine", state: "degraded", reason: "Hermes reachable, no harness to run it" },
+    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].split(" (")[0]} · responding` },
+  ],
+  "engine-down": [
+    { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
+    { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
+    { id: "engine", label: "Engine", state: "down", reason: "Hermes not responding · IPC timeout after 5s" },
+    { id: "model", label: "Model", state: "degraded", reason: "Last turn unanswered · engine unreachable" },
+  ],
+  "model-error": [
+    { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
+    { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
+    { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
+    { id: "model", label: "Model", state: "degraded", reason: `${MODELS[0].split(" ")[0]}: HPC not responding` },
+  ],
+  sleep: [
+    { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
+    { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
+    { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
+    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].split(" (")[0]} · responding` },
+  ],
+  "version-mismatch": [
+    { id: "relay", label: "Relay", state: "down", reason: "Protocol v2 required — this app speaks v1" },
+    { id: "harness", label: "Harness", state: "degraded", reason: "Unreachable until the relay reconnects" },
+    { id: "engine", label: "Engine", state: "degraded", reason: "Last known: Hermes 0.9 · ready" },
+    { id: "model", label: "Model", state: "degraded", reason: "Last known: responding" },
+  ],
+  "profile-missing": [
+    { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
+    { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
+    { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
+    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].split(" (")[0]} · responding` },
+  ],
+}
+
+/* Session-level failure states (on the DM session row, with Retry where a retry makes sense). */
+const SESSION_ALERTS: Partial<Record<PreviewScenario, SessionAlert>> = {
+  "model-error": { kind: "model", text: `Model error · ${MODELS[0].split(" ")[0]}: provider returned 429 (rate limited)`, retry: true },
+  sleep: { kind: "sleep", text: "Interrupted — the Mac slept mid-turn. The reply may be incomplete.", retry: true },
 }
 
 // Canned turn used by the prototype's fake engine. Real app: Hermes events over /api/ws.
@@ -390,9 +465,48 @@ export default function App() {
     setPendingSteers((p) => ({ ...p, [rootId]: list }))
   }
 
-  const emp: EmpFn = (id) => employees.find((e) => e.id === id)
+  /* Prototype preview states: which scenario the Preview menu puts the app into, whether the
+     realApp toggle hides demo-only chrome, and the surfaces driven by a scenario. */
+  const [scenario, setScenario] = useState<PreviewScenario>("normal")
+  const [realApp, setRealApp] = useState(false)
+  const [statusOpen, setStatusOpen] = useState(false)
+  const [firstDone, setFirstDone] = useState(false)
+  const [editEmp, setEditEmp] = useState<string | null>(null)
+  // Employees removed from the company stay in `removed` so their past messages keep a name/avatar.
+  const [removed, setRemoved] = useState<Record<string, Employee>>({})
+  // Retry on a session alert dismisses it for this scenario visit.
+  const [alertOff, setAlertOff] = useState(0)
+  const pickScenario = (id: PreviewScenario) => {
+    setAlertOff(0)
+    if (id === "first-run") setFirstDone(false)
+    if (id === "profile-missing")
+      setEmployees((es) => es.map((e) => (e.id === "marketer" ? { ...e, profile: "ghost" } : e)))
+    else
+      setEmployees((es) => es.map((e) => (e.profile === "ghost" ? { ...e, profile: "marketer" } : e)))
+    setScenario(id)
+  }
+
+  const emp: EmpFn = (id) => employees.find((e) => e.id === id) ?? removed[id] ?? (id === "default" ? DEFAULT_EMP : undefined)
   const human: HumanFn = (id) => HUMANS[id]
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 2200) }
+
+  // Per-employee sidebar badges: a blue count for live turns, amber for turns waiting on approval.
+  const badges = useMemo(() => {
+    const b: Record<string, EmpBadge> = {}
+    for (const msgs of Object.values(feeds))
+      for (const m of msgs)
+        if (m.kind === "msg" && m.thread)
+          for (const r of m.thread.replies) {
+            const e = employees.find((x) => x.id === r.from)
+            if (!e) continue
+            const cur = b[e.id] ?? {}
+            if (r.live) cur.running = (cur.running ?? 0) + 1
+            if (r.approval && !resolved[r.approval.id]) cur.approvals = (cur.approvals ?? 0) + 1
+            b[e.id] = cur
+          }
+    return b
+  }, [feeds, employees, resolved])
+
 
   const channel: Channel =
     view.kind === "dm"
@@ -402,6 +516,31 @@ export default function App() {
   const feedKey = channel.id
   const feed: Msg[] = feeds[feedKey] ?? []
   const openThread = feed.find((m): m is Extract<Msg, { kind: "msg" }> => m.kind === "msg" && m.id === threadId && !!m.thread)
+
+  // Scenario alert: stamped on the last session row of the open DM (the session-level failure states).
+  const shownFeed = useMemo(() => {
+    const al = SESSION_ALERTS[scenario]
+    if (!al || alertOff || view.kind !== "dm") return feed
+    const last = [...feed].reverse().find((m) => m.kind === "msg" && m.thread)
+    if (!last) return feed
+    return feed.map((m) => (m === last && m.kind === "msg" && m.thread ? { ...m, thread: { ...m.thread, alert: al } } : m))
+  }, [feed, scenario, alertOff, view.kind])
+
+  // The banner for the current scenario — a bar above the conversation (null = no banner).
+  const banner = useMemo<React.ReactNode>(() => {
+    switch (scenario) {
+      case "reconnecting":
+        return <StatusBanner tone="amber">Lost the connection to the local relay — reconnecting every 2s. Messages queue until it's back.</StatusBanner>
+      case "harness-down":
+        return <StatusBanner tone="red">Harness down — employees can't run tools or touch files until it restarts.</StatusBanner>
+      case "engine-down":
+        return <StatusBanner tone="red">Engine down — Hermes isn't responding. Turns pause; your drafts are safe.</StatusBanner>
+      case "version-mismatch":
+        return <StatusBanner tone="red" action={{ label: "Copy update command", onClick: () => { void navigator.clipboard.writeText("brew upgrade lilos"); say("Copied: brew upgrade lilos") } }}>Protocol v2 required — this app speaks v1. Update LilOS to reconnect to the local relay.</StatusBanner>
+      default:
+        return null
+    }
+  }, [scenario])
 
   const goChannel = (id: string) => { setView({ kind: "channel", id }); setThreadId(null); setFocus(false); setNavOpen(false) }
   const goDM = (id: string) => {
@@ -556,24 +695,25 @@ export default function App() {
     setFolders((fs) => fs.map((x) => (x.id === f0.id ? { ...x, workstreams: [...x.workstreams, { branch, path: worktree, from: pick.base }] } : x)))
     return { folder: f.id, project: f.project, repo: f.repo, mode: "new", base: pick.base, branch, cwd: `${f.path}/${worktree}`, worktree }
   }
-  const sendTop = (text: string, pick?: WsPick) => {
+  const sendTop = (text: string, pick?: WsPick, files?: AttachedFile[]) => {
     const target = view.kind === "dm" ? view.id : mentionIn(text)?.id
     const id = `s-${Date.now()}`
     const ws = target ? resolveWs(pick, text) : undefined
-    const msg: Msg = { kind: "msg", id, from: "oscar", time: nowTime(), text: bold(text), ...(target ? { thread: { session: newSession(), replies: [], model: emp(target)?.model, ws } } : {}) }
+    const msg: Msg = { kind: "msg", id, from: "oscar", time: nowTime(), text: bold(text), attachments: files?.length ? files : undefined, ...(target ? { thread: { session: newSession(), replies: [], model: emp(target)?.model, ws } } : {}) }
     setFeeds((fs) => ({ ...fs, [feedKey]: [...(fs[feedKey] ?? []), msg] }))
     if (target) { showThread(id); runTurn(feedKey, id, target, text, ws) }
   }
   // Reply inside a thread = same Hermes session. While a turn runs, Enter ALWAYS steers (session.steer):
   // the message lands in the running turn at the next tool boundary. ENGINE_STEER=false (an engine without
   // session.steer, future) is the only way a mid-turn send takes the queue path; there is no toggle UI.
-  const sendInThread = (root: Extract<Msg, { kind: "msg" }>, text: string) => {
+  const sendInThread = (root: Extract<Msg, { kind: "msg" }>, text: string, files?: AttachedFile[]) => {
+    const at = files?.length ? ` ${files.map((f) => `📎 ${f.name}`).join(" ")}` : ""
     if (threadRunning(root)) {
-      if (ENGINE_STEER) setSteerBuf(root.id, [...(steerBuf.current[root.id] ?? []), bold(text)])
-      else mapRoot(feedKey, root.id, (t) => ({ ...t, queue: [...(t.queue ?? []), bold(text)] }))
+      if (ENGINE_STEER) setSteerBuf(root.id, [...(steerBuf.current[root.id] ?? []), bold(text) + at])
+      else mapRoot(feedKey, root.id, (t) => ({ ...t, queue: [...(t.queue ?? []), bold(text) + at] }))
       return
     }
-    mapRoot(feedKey, root.id, (t) => ({ ...t, replies: [...t.replies, { id: `o-${Date.now()}`, from: "oscar", time: nowTime(), text: bold(text) }] }))
+    mapRoot(feedKey, root.id, (t) => ({ ...t, replies: [...t.replies, { id: `o-${Date.now()}`, from: "oscar", time: nowTime(), text: bold(text), attachments: files?.length ? files : undefined }] }))
     const lead = view.kind === "dm" ? view.id : mentionIn(text)?.id ?? root.thread?.replies.find((r) => emp(r.from))?.from ?? mentionIn(root.text)?.id
     if (lead) runTurn(feedKey, root.id, lead, text)
   }
@@ -619,6 +759,30 @@ export default function App() {
     showEmp(id)
   }
 
+  const saveEmployee = (id: string, name: string, role: string) => {
+    setEmployees((es) => es.map((e) => (e.id === id ? { ...e, name, role } : e)))
+    setEditEmp(null)
+    say(`Saved ${name}`)
+  }
+  // Remove from company: the employee leaves sidebar/channels/DMs, but the Hermes profile (and its
+  // sessions, memory, skills) stays on the harness — the dialog copy says so before confirming.
+  const removeEmployee = (id: string) => {
+    const e = emp(id)
+    if (!e) return
+    setEmployees((es) => es.filter((x) => x.id !== id))
+    setRemoved((r) => ({ ...r, [id]: e }))
+    for (const p of PROJECTS) for (const c of p.channels) c.employees = c.employees.filter((x) => x !== id)
+    COMPANY_CHANNELS.forEach((c) => { c.employees = c.employees.filter((x) => x !== id) })
+    setEditEmp(null)
+    if (selectedEmp === id) setPanelTab("thread")
+    if (view.kind === "dm" && view.id === id) goChannel("general")
+    say(`Removed ${e.name} · profile \`${e.profile}\` kept`)
+  }
+  const switchProfile = (id: string, profileId: string) => {
+    setEmployees((es) => es.map((e) => (e.id === id ? { ...e, profile: profileId } : e)))
+    say(`${emp(id)?.name ?? id} now uses profile \`${profileId}\``)
+  }
+
   const workOf = (m: Extract<Msg, { kind: "msg" }>): Work | null =>
     started[m.id] ?? (m.thread?.ticket ? { ticket: m.thread.ticket, branch: m.thread.branch, title: "" }
       : m.thread?.ws ? { ticket: "", branch: m.thread.ws.branch, title: "", path: m.thread.ws.cwd } : null)
@@ -640,9 +804,9 @@ export default function App() {
       emp={emp} human={human} resolved={resolved} setResolved={setResolved}
       onFocus={() => setFocus(!focus)}
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
-      running={threadRunning(openThread)} onSend={(t) => sendInThread(openThread, t)} onStop={() => stopTurn(openThread.id)}
+      running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
-      pending={pendingSteers[openThread.id] ?? []}
+      pending={pendingSteers[openThread.id] ?? []} accept="image/*"
     />
   ) : null
 
@@ -656,9 +820,14 @@ export default function App() {
         companyChannels={COMPANY_CHANNELS}
         projects={[...PROJECTS, ...newProjects]}
         folders={folders}
-        employees={employees}
+        employees={scenario === "first-run" ? [DEFAULT_EMP] : employees}
         view={view}
         theme={theme}
+        badges={badges}
+        status={STATUS[scenario]}
+        onOpenStatus={() => setStatusOpen(true)}
+        realApp={realApp || scenario === "first-run"}
+        preview={<PrototypePreviewMenu scenario={scenario} realApp={realApp} onScenario={pickScenario} onRealApp={setRealApp} />}
         isProjectDefaultOpen={(p) => p.id === "lilos" || newProjects.includes(p)}
         onSetTheme={setTheme}
         onCloseNav={() => setNavOpen(false)}
@@ -675,22 +844,27 @@ export default function App() {
           lead={emp(view.kind === "dm" ? view.id : openThread.thread.replies.find((r) => emp(r.from))?.from ?? mentionIn(openThread.text)?.id ?? "")}
           resolved={resolved} setResolved={setResolved} work={workOf(openThread)}
           onBack={() => setFocus(false)} onNav={() => setNavOpen(true)} onStart={() => setStartFor(openThread.id)}
-          running={threadRunning(openThread)} onSend={(t) => sendInThread(openThread, t)} onStop={() => stopTurn(openThread.id)}
+          running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
           onRewind={(i) => rewind(openThread, i)} onModel={(m) => setModel(openThread, m)} say={say}
           models={MODELS} repoFiles={REPO_FILES}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={() => prMerge(openThread)}
-          pending={pendingSteers[openThread.id] ?? []}
+          pending={pendingSteers[openThread.id] ?? []} accept="image/*"
         />
       ) : (
         <div className={cn("grid min-h-0 min-w-0 grid-cols-1", panelOpen && "xl:grid-cols-[minmax(0,1fr)_420px]")}>
+          {banner && <div className="col-span-full">{banner}</div>}
           {channel.dm && emp(view.id) ? (
             <EmployeeHome
-              e={emp(view.id)!} feed={feed} threadId={threadId} emp={emp} human={human}
+              e={emp(view.id)!} feed={shownFeed} threadId={threadId} emp={emp} human={human}
               onNav={() => setNavOpen(true)} onProfile={() => showEmp(view.id)} onOpen={showThread}
               onSend={sendTop} panelOpen={panelOpen} onPanel={() => setPanelOpen(true)} folders={folders}
               pick={wsPicks[view.id] ?? NO_WS} setPick={(p) => setWsPicks((w) => ({ ...w, [view.id]: p }))} onAddFolder={() => setAddFolderOpen(true)}
-              suggestions={SUGGESTIONS[view.id] ?? SUGGESTIONS.builder}
+              loading={scenario === "loading"}
+              onRename={(id, title) => mapRoot(feedKey, id, (t) => ({ ...t, title }))}
+              onArchive={(id, archived) => mapRoot(feedKey, id, (t) => ({ ...t, archived }))}
+              onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying session ${m.thread?.session}`) }}
+              accept="image/*"
             />
           ) : (
           <main className="flex min-h-0 min-w-0 flex-col">
@@ -714,7 +888,7 @@ export default function App() {
               <ConversationScrollButton />
             </Conversation>
 
-            <Composer placeholder={`Message #${channel.name}. @ an employee to start a thread`} employees={employees.filter((e) => channel.employees.includes(e.id))} hint="An @mention opens a thread = one Hermes session" onSend={sendTop} />
+            <Composer placeholder={`Message #${channel.name}. @ an employee to start a thread`} employees={employees.filter((e) => channel.employees.includes(e.id))} hint="An @mention opens a thread = one Hermes session" onSend={(t, files) => sendTop(t, undefined, files)} accept="image/*" />
           </main>
           )}
 
@@ -722,7 +896,7 @@ export default function App() {
             <RightPanel
               tab={panelTab} onTab={setPanelTab} onClose={() => setPanelOpen(false)}
               threadPanel={threadPanel}
-              employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} onDM={() => goDM(selectedEmp)} /> : null}
+              employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} profiles={HERMES_PROFILES} onDM={() => goDM(selectedEmp)} onEdit={() => setEditEmp(selectedEmp)} onSwitchProfile={(p) => switchProfile(selectedEmp, p)} /> : null}
               tickets={tickets} emp={emp} dm={!!channel.dm}
             />
           )}
@@ -749,6 +923,29 @@ export default function App() {
           initial={hireOpen} templates={TEMPLATES} profiles={HERMES_PROFILES} models={MODELS}
           allChannels={PROJECTS.flatMap((p) => p.channels.map((c) => ({ id: c.id, label: `${p.name} / #${c.name}` })))}
           onClose={() => setHireOpen(null)} onHire={hire} usedProfiles={employees.map((e) => e.profile)}
+        />
+      )}
+      {statusOpen && (
+        <StatusDialog
+          components={STATUS[scenario]}
+          diagnostics={STATUS[scenario].map((c) => `${c.id}: ${c.state} — ${c.reason}`).join("\n")}
+          onClose={() => setStatusOpen(false)}
+          onCopied={() => say("Diagnostics copied")}
+        />
+      )}
+      {scenario === "first-run" && !firstDone && (
+        <FirstRun
+          employee={DEFAULT_EMP}
+          onOpenDM={() => { setFirstDone(true); goDM("default") }}
+          onSkip={() => setFirstDone(true)}
+        />
+      )}
+      {editEmp && emp(editEmp) && (
+        <EditEmployeeDialog
+          e={emp(editEmp)!}
+          onClose={() => setEditEmp(null)}
+          onSave={(name, role) => saveEmployee(editEmp, name, role)}
+          onRemove={() => removeEmployee(editEmp)}
         />
       )}
       {toast && <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-foreground px-4 py-2 text-background text-sm shadow-lg">{toast}</div>}

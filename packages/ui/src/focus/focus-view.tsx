@@ -53,6 +53,7 @@ import { PHASE_LABEL } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import type {
+  AttachedFile,
   Channel,
   EmpFn,
   Employee,
@@ -90,6 +91,7 @@ export function FocusView({
   onSendQueued,
   onRewind,
   onModel,
+  accept,
   say,
   models,
   repoFiles,
@@ -111,7 +113,7 @@ export function FocusView({
   onNav?: () => void;
   onStart?: () => void;
   running: boolean;
-  onSend: (t: string) => void;
+  onSend: (t: string, files?: AttachedFile[]) => void;
   onStop?: () => void;
   onRetry?: (empId: string) => void;
   onUnqueue?: (i: number) => void;
@@ -124,6 +126,8 @@ export function FocusView({
   onPrComment?: (t: string) => void;
   onPrMerge?: () => void;
   pending?: string[];
+  /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
+  accept?: string;
 }) {
   const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024);
   const [tab, setTab] = useState<WbTab>(() =>
@@ -351,6 +355,7 @@ export function FocusView({
                 text={root.text}
                 note={`opened session ${thread.session}`}
                 human={human}
+                attachments={root.attachments}
               />
               {thread.replies.map((r, i) =>
                 emp(r.from) ? (
@@ -411,6 +416,7 @@ export function FocusView({
                       time={r.time}
                       text={r.text}
                       human={human}
+                      attachments={r.attachments}
                     />
                   </Fragment>
                 ),
@@ -501,7 +507,8 @@ export function FocusView({
                       ? `Edits go to ⎇ ${work.branch}`
                       : "Read-only on main"
               }
-              onSend={(t) => onSend(t)}
+              onSend={(t, files) => onSend(t, files)}
+              accept={accept}
             />
           </div>
         </section>
