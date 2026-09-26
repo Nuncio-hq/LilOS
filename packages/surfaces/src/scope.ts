@@ -383,6 +383,7 @@ export class SessionSurfaces implements ViewerScope {
    * explicit (`term.release`) or automatic when the last viewer leaves.
    */
   terminalInput(data: string) {
+    if (data === "") return;
     this.setTermControl("user");
     this.pty?.write(data);
   }

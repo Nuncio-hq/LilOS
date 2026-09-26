@@ -96,12 +96,16 @@ export class ChromiumBrowser implements BrowserDriver {
   }
 
   async resize(size: { width: number; height: number }): Promise<void> {
-    // Set before ensure() so a not-yet-launched page opens at this size.
-    this.vp = { ...size };
-    const page = await this.ensure();
+    const page = this.page && !this.page.isClosed() ? this.page : undefined;
+    if (!page) {
+      // Not launched yet — ensure() creates the context at this size.
+      this.vp = { ...size };
+      return;
+    }
     const cur = page.viewportSize();
     if (cur && cur.width === size.width && cur.height === size.height) return;
     await page.setViewportSize(size);
+    this.vp = { ...size };
   }
 
   async click(selector: string): Promise<void> {

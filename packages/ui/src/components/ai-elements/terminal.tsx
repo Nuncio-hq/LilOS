@@ -203,10 +203,14 @@ export const TerminalContent = ({
      #56 AC-2): under whitespace-pre-wrap that invisible run wraps and the
      streaming cursor lands a line below the prompt. Resolve `\r`s the same
      way ansi-to-react does internally, then collapse end-of-line whitespace
-     runs to one cell — the prompt's own trailing space survives; the pad
-     run that pushed the cursor off the line does not. */
+     runs to one cell — even ahead of trailing ANSI sequences — so the
+     prompt's own trailing space survives but the pad run does not. */
   const rendered = useMemo(
-    () => escapeCarriageReturn(output).replace(/[^\S\n]{2,}$/gm, " "),
+    () =>
+      escapeCarriageReturn(output).replace(
+        /[^\S\n]{2,}((?:\x1b\[[0-9;?]*[A-Za-z])*)$/gm,
+        " $1",
+      ),
     [output],
   );
 

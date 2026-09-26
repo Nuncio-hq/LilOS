@@ -101,6 +101,25 @@ describe("AC-1 typing into the Terminal tab takes the terminal from the agent", 
     ).resolves.toMatchObject({ exitCode: 0 });
   });
 
+  it("with two viewers, one typing then leaving keeps the hold until an explicit release", async () => {
+    const { scope, peer } = setup();
+    const sent2: Record<string, unknown>[] = [];
+    const a = attachViewer(scope, peer);
+    const b = attachViewer(scope, {
+      send: (t) => sent2.push(JSON.parse(t)),
+    });
+    a.receive(JSON.stringify({ type: "term.input", data: "x" }));
+    a.detach();
+    // B is still attached → the hold survives A's detach.
+    expect(scope.snapshot().control).toEqual({ terminal: "user" });
+    await expect(
+      scope.terminalRun({ command: "echo nope" }),
+    ).rejects.toMatchObject({ code: "user_control" });
+    b.receive(JSON.stringify({ type: "term.release" }));
+    expect(scope.snapshot().control).toEqual({ terminal: "agent" });
+    b.detach();
+  });
+
   it("over the tool HTTP API a held terminal answers 409 user_control", async () => {
     const { scope } = setup();
     const { server, baseUrl } = await serveToolApi({

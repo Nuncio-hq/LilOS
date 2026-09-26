@@ -21,4 +21,13 @@ describe("AC-2 terminal cursor sits after the prompt", () => {
     // The streaming cursor is rendered inline right after the output.
     expect(pre?.querySelector(".animate-pulse")).not.toBeNull();
   });
+
+  it("a pad run followed by a trailing ANSI sequence still collapses", () => {
+    // e.g. zsh clears to EOL after padding: `pad…\x1b[K`. The ANSI must stay
+    // (the renderer needs it) but the whitespace must not wrap.
+    const output = `ls\n${" ".repeat(80)}\x1b[K\r$ `;
+    const { container } = render(<Terminal output={output} isStreaming />);
+    const pre = container.querySelector("pre");
+    expect(pre?.textContent?.endsWith("$ ")).toBe(true);
+  });
 });

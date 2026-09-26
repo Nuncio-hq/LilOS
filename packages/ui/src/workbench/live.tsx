@@ -70,7 +70,8 @@ export type LiveBrowserInput =
 
 /** keystroke → PTY bytes, per terminal convention. */
 function keyToInput(e: React.KeyboardEvent): string | null {
-  if (e.metaKey || e.ctrlKey) {
+  if (e.metaKey) return null; // Cmd chords stay browser-native (copy etc.)
+  if (e.ctrlKey) {
     if (e.key.length === 1)
       return String.fromCharCode(e.key.toUpperCase().charCodeAt(0) - 64);
     return null;
@@ -160,7 +161,9 @@ export function LivePreview({ live }: { live: LiveSurfaces }) {
   // `live` is rebuilt on every socket message — keep the latest callback in a
   // ref so the observer below doesn't resubscribe per render.
   const resizeRef = useRef(live.resizeBrowser);
-  resizeRef.current = live.resizeBrowser;
+  useEffect(() => {
+    resizeRef.current = live.resizeBrowser;
+  });
   /* AC-4 (issue #56): the remote page resizes to this pane's pixels — the
      real viewport, not a CSS scale — so the screencast fills the pane
      without letterbox bars. Debounced while a drag resizes the pane. */
