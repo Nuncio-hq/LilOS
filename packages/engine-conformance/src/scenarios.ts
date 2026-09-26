@@ -26,7 +26,7 @@ const LONG_READ_PROMPT =
   "LILOS_SLOW — explain the relay package in at least 200 words, then reply with exactly: LILOS_OK";
 
 /**
- * #63 AC-1/AC-2 — a real Hermes never asks approval for a file edit; it asks
+ * #63 AC-1/AC-2 — a real engine never asks approval for a file edit; it asks
  * for a terminal command its dangerous-command detector flags
  * (`tools/approval_detection.py` DANGEROUS_PATTERNS — `chmod 777` matches
  * "world/other-writable permissions", enforced by `check_all_command_guards`
@@ -54,13 +54,13 @@ export const SCENARIO_LIVE_PROMPTS: Record<string, string> = {
 /**
  * #63 AC-3 — bounded compression history: six turns of ~200-line replies give
  * `session.compress` a summarizable middle big enough to actually shrink
- * (hermes refuses a fold whose summary is larger than what it replaces —
+ * (the engine refuses a fold whose summary is larger than what it replaces —
  * observed on the stub run), while staying far below a real model's turn
  * budget. On the stub each turn returns a canned long reply — same size,
  * deterministic.
  */
 export const COMPRESS_FILLER_TURNS = 6;
-// The fold must shrink the transcript or hermes refuses the candidate
+// The fold must shrink the transcript or the engine refuses the candidate
 // ("summary would grow the conversation" -> removed: 0 -> no rotation ->
 // session.ref.changed never fires). Each turn's answer is ~200 lines /
 // ~300 tokens, so the summarizable middle is ~2K tokens against a

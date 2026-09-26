@@ -8,11 +8,11 @@ import {
 } from "../src/scenarios.js";
 
 // #63 — the approval/resume/compression live triggers. These tests pin the
-// scenario wiring a real Hermes needs; behaviour itself is covered by the
-// per-scenario suite runs (fake in CI, stub + real model via live:hermes).
+// scenario wiring a real engine needs; behaviour itself is covered by the
+// per-scenario suite runs (fake in CI, stub + real model via live run).
 
 describe("#63 live-engine triggers", () => {
-  test("AC-1 approval prompt names a verbatim command hermes' dangerous-command detector gates", () => {
+  test("AC-1 approval prompt names a verbatim command the dangerous-command detector gates", () => {
     // tools/approval_detection.py DANGEROUS_PATTERNS: `chmod 777` matches
     // "world/other-writable permissions"; under approvals.mode: manual the
     // terminal guard opens an approval request. A file edit never gates.
@@ -36,7 +36,7 @@ describe("#63 live-engine triggers", () => {
         "resume mid-turn: events.since replays and returns open requests"
       ],
     ).toBe(APPROVAL_PROMPT);
-    // Both scenarios exist in the core suite that live:hermes runs.
+    // Both scenarios exist in the core suite that the live runner runs.
     const ids = CORE_SCENARIOS.map((s) => s.id);
     expect(ids).toContain(
       "approval: request.opened -> request.respond -> tool completes",
@@ -46,10 +46,10 @@ describe("#63 live-engine triggers", () => {
     );
   });
 
-  test("AC-3 compression history is bounded — no long-output drives", () => {
+  test("AC-3 compression history is bounded — few turns of bounded replies", () => {
     // A real model must finish history-building fast: few turns, each with a
-    // small bounded reply (no LILOS_LONG/LILOS_SLOW drives), yet enough
-    // messages for compress to have a foldable window under pinned protects.
+    // bounded reply (no LILOS_LONG/LILOS_SLOW drives), yet enough messages
+    // for compress to have a foldable window under pinned protects.
     expect(COMPRESS_FILLER_TURNS).toBeGreaterThanOrEqual(4);
     expect(COMPRESS_FILLER_TURNS).toBeLessThanOrEqual(8);
     for (let i = 0; i < COMPRESS_FILLER_TURNS; i++) {
