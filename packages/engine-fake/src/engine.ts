@@ -29,6 +29,7 @@ import {
   MODEL_CATALOG,
   SEED_AGENTS,
 } from "./catalog.js";
+import { type McpClient, startMcpServer } from "./mcp.js";
 import { type FakeScript, type FakeStep, scriptFor } from "./script.js";
 
 /** Transport-agnostic failure; the transports translate it into a JSON-RPC error object. */
@@ -67,6 +68,8 @@ interface FakeSession {
   cwd: string;
   model?: string;
   mcpServers: unknown[];
+  /** Spawned lazily on first mcp__<server>__<tool> step — a session that never drives surfaces costs zero children. */
+  mcpClients: Map<string, McpClient>;
   branch: string;
   seq: number;
   log: EngineEvent[];
@@ -254,6 +257,7 @@ export class FakeEngine {
       cwd: p.cwd,
       model: p.model ?? spec.model,
       mcpServers: p.mcpServers ?? [],
+      mcpClients: new Map(),
       branch: `work/${p.agent}-${id}`,
       seq: 0,
       log: [],
@@ -381,9 +385,19 @@ export class FakeEngine {
     if (t) t.interrupted = true;
     for (const ask of s.openRequests.values())
       ask.resolve({ outcome: "cancel" });
+    for (const c of s.mcpClients.values()) c.close();
+    s.mcpClients.clear();
     s.state = "closed";
     this.emit(s, "session.state", { state: "closed" });
     return { stopped: true };
+  }
+
+  /** Every attached MCP child across sessions — test cleanup + shutdown. */
+  closeAllMcp() {
+    for (const s of this.sessions.values()) {
+      for (const c of s.mcpClients.values()) c.close();
+      s.mcpClients.clear();
+    }
   }
 
   private sessionSteer(p: SessionSteerParams) {
@@ -483,8 +497,9 @@ export class FakeEngine {
           tool: step.tool,
           input: step.input,
         });
+        const mcpMatch = /^mcp__(\w+)__(\w+)$/.exec(step.tool);
         const outcome =
-          this.needsApproval(step) && !s.alwaysApproved
+          this.needsApproval(step) && !s.alwaysApproved && !mcpMatch
             ? await this.awaitApproval(s, turnId, step)
             : "once";
         if (outcome === "deny" || outcome === "cancel") {
@@ -498,6 +513,23 @@ export class FakeEngine {
           return this.finishTurn(s, turnId, "end_turn", script, promptText);
         }
         await this.sleep(s);
+        // mcp__<server>__<tool> steps really run: the fake spawns the attached
+        // stdio MCP server (lazily) and calls it over the wire.
+        if (mcpMatch) {
+          try {
+            const client = await this.mcpClient(s, mcpMatch[1]);
+            step.output = await client.callTool(mcpMatch[2], step.input);
+          } catch (e) {
+            this.emit(s, "tool.completed", {
+              turnId,
+              toolCallId,
+              tool: step.tool,
+              status: "failed",
+              output: e instanceof Error ? e.message : String(e),
+            });
+            continue;
+          }
+        }
         this.emit(s, "tool.completed", {
           turnId,
           toolCallId,
@@ -558,6 +590,19 @@ export class FakeEngine {
   private drainSteers(s: FakeSession, turnId: string) {
     for (const text of s.steers.splice(0))
       this.emit(s, "turn.steered", { turnId, text });
+  }
+
+  private async mcpClient(s: FakeSession, name: string): Promise<McpClient> {
+    const existing = s.mcpClients.get(name);
+    if (existing) return existing;
+    const spec = (s.mcpServers as { name?: string }[]).find(
+      (x) => x.name === name,
+    );
+    if (!spec || "type" in spec)
+      throw new Error(`session has no stdio mcp server '${name}'`);
+    const client = await startMcpServer(spec as never);
+    s.mcpClients.set(name, client);
+    return client;
   }
 
   private async awaitApproval(

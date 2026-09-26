@@ -1,0 +1,22 @@
+{
+  "name": "lilos",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "bin": {
+    "lilos": "./src/cli.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@lilos/surfaces": "workspace:*"
+  },
+  "devDependencies": {
+    "@lilos/contracts": "workspace:*",
+    "@lilos/engine-fake": "workspace:*",
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.4"
+  }
+}
