@@ -1,0 +1,26 @@
+{
+  "name": "lilos",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "prototype"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.5",
+    "@playwright/test": "^1.56.1",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "verify": "biome check . && bun run typecheck && bun run test:unit && bun run build:prototype && bun run test:e2e",
+    "typecheck": "tsc -b prototype packages/contracts",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "build:prototype": "bun run --cwd prototype build",
+    "prototype:dev": "bun run --cwd prototype dev",
+    "format": "biome check --write ."
+  }
+}

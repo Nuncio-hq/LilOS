@@ -3,5 +3,7 @@ dist/
 .env.local
 .env
 test-results/
+playwright-report/
 .DS_Store
 *.tsbuildinfo
+tsconfig.*.tsbuildinfo
