@@ -1,0 +1,1996 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LilOS app protocol",
+  "protocolVersion": 1,
+  "definitions": {
+    "RequestId": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      ]
+    },
+    "JsonRpcRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "jsonrpc": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          ]
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "params": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method"
+      ]
+    },
+    "JsonRpcNotification": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "jsonrpc": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "params": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "method"
+      ]
+    },
+    "JsonRpcResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "type": "string",
+              "const": "2.0"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              ]
+            },
+            "result": {}
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "result"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "type": "string",
+              "const": "2.0"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              ]
+            },
+            "error": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "message": {
+                  "type": "string"
+                },
+                "data": {}
+              },
+              "required": [
+                "code",
+                "message"
+              ]
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "error"
+          ]
+        }
+      ]
+    },
+    "AppFrame": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "type": "string",
+              "const": "2.0"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              ]
+            },
+            "method": {
+              "type": "string",
+              "minLength": 1
+            },
+            "params": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "method"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "jsonrpc": {
+              "type": "string",
+              "const": "2.0"
+            },
+            "method": {
+              "type": "string",
+              "minLength": 1
+            },
+            "params": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method"
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "jsonrpc": {
+                  "type": "string",
+                  "const": "2.0"
+                },
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  ]
+                },
+                "result": {}
+              },
+              "required": [
+                "jsonrpc",
+                "id",
+                "result"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "jsonrpc": {
+                  "type": "string",
+                  "const": "2.0"
+                },
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  ]
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              },
+              "required": [
+                "jsonrpc",
+                "id",
+                "error"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "AppErrorCode": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "unauthenticated",
+        "protocol_version_mismatch",
+        "invalid_params",
+        "not_found",
+        "internal"
+      ]
+    },
+    "ProtocolVersionMismatch": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "const": "protocol_version_mismatch"
+        },
+        "update": {
+          "type": "string",
+          "enum": [
+            "client",
+            "server"
+          ]
+        },
+        "clientVersion": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "serverVersion": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "code",
+        "update",
+        "clientVersion",
+        "serverVersion"
+      ]
+    },
+    "RpcError": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "message": {
+          "type": "string"
+        },
+        "data": {}
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "AppMethod": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "session.hello",
+        "employees.list",
+        "employees.create",
+        "employees.update",
+        "channels.list",
+        "channels.openDm",
+        "conversations.list",
+        "conversations.open",
+        "conversations.update",
+        "messages.list",
+        "messages.post",
+        "channel.subscribe",
+        "channel.unsubscribe"
+      ]
+    },
+    "AppEventMethod": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "message.created",
+        "channel.snapshot",
+        "channel.synced",
+        "conversation.updated"
+      ]
+    },
+    "HelloParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "token": {
+          "type": "string",
+          "minLength": 1
+        },
+        "client": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "token"
+      ]
+    },
+    "WelcomeResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "relayVersion": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "relayVersion",
+        "instanceId"
+      ]
+    },
+    "Employee": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "online",
+            "busy",
+            "offline"
+          ]
+        },
+        "profile": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "now": {
+          "type": "string"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "respondTo": {
+          "type": "string",
+          "enum": [
+            "me",
+            "selected",
+            "anyone"
+          ]
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "role",
+        "status",
+        "profile",
+        "model",
+        "now",
+        "instructions",
+        "respondTo",
+        "createdAt"
+      ]
+    },
+    "EmployeeStatus": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "online",
+        "busy",
+        "offline"
+      ]
+    },
+    "RespondTo": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "me",
+        "selected",
+        "anyone"
+      ]
+    },
+    "EmployeePatch": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "online",
+            "busy",
+            "offline"
+          ]
+        },
+        "profile": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "now": {
+          "type": "string"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "respondTo": {
+          "type": "string",
+          "enum": [
+            "me",
+            "selected",
+            "anyone"
+          ]
+        }
+      }
+    },
+    "EmployeesListParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "EmployeesListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "employees": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "role": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "online",
+                  "busy",
+                  "offline"
+                ]
+              },
+              "profile": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "now": {
+                "type": "string"
+              },
+              "instructions": {
+                "type": "string"
+              },
+              "respondTo": {
+                "type": "string",
+                "enum": [
+                  "me",
+                  "selected",
+                  "anyone"
+                ]
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "role",
+              "status",
+              "profile",
+              "model",
+              "now",
+              "instructions",
+              "respondTo",
+              "createdAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "employees"
+      ]
+    },
+    "EmployeesCreateParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "default": "",
+          "type": "string"
+        },
+        "status": {
+          "default": "offline",
+          "type": "string",
+          "enum": [
+            "online",
+            "busy",
+            "offline"
+          ]
+        },
+        "profile": {
+          "default": "",
+          "type": "string"
+        },
+        "model": {
+          "default": "",
+          "type": "string"
+        },
+        "now": {
+          "default": "",
+          "type": "string"
+        },
+        "instructions": {
+          "default": "",
+          "type": "string"
+        },
+        "respondTo": {
+          "default": "me",
+          "type": "string",
+          "enum": [
+            "me",
+            "selected",
+            "anyone"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "EmployeesUpdateParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "online",
+            "busy",
+            "offline"
+          ]
+        },
+        "profile": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "now": {
+          "type": "string"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "respondTo": {
+          "type": "string",
+          "enum": [
+            "me",
+            "selected",
+            "anyone"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "EmployeeResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "employee": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "role": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "online",
+                "busy",
+                "offline"
+              ]
+            },
+            "profile": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "now": {
+              "type": "string"
+            },
+            "instructions": {
+              "type": "string"
+            },
+            "respondTo": {
+              "type": "string",
+              "enum": [
+                "me",
+                "selected",
+                "anyone"
+              ]
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "role",
+            "status",
+            "profile",
+            "model",
+            "now",
+            "instructions",
+            "respondTo",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "employee"
+      ]
+    },
+    "AppChannel": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "dm"
+          ]
+        },
+        "employeeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lastSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "employeeId",
+        "lastSeq",
+        "createdAt"
+      ]
+    },
+    "ChannelKind": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "dm"
+      ]
+    },
+    "ChannelsListParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ChannelsListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "dm"
+                ]
+              },
+              "employeeId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "lastSeq": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "employeeId",
+              "lastSeq",
+              "createdAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "channels"
+      ]
+    },
+    "ChannelsOpenDmParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "employeeId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "employeeId"
+      ]
+    },
+    "ChannelResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channel": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "dm"
+              ]
+            },
+            "employeeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lastSeq": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "employeeId",
+            "lastSeq",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "channel"
+      ]
+    },
+    "Conversation": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rootMessageId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "engineRef": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "active",
+            "closed"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "channelId",
+        "rootMessageId",
+        "engineRef",
+        "state",
+        "title",
+        "archived",
+        "createdAt"
+      ]
+    },
+    "ConversationState": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "idle",
+        "active",
+        "closed"
+      ]
+    },
+    "ConversationsListParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "includeArchived": {
+          "default": false,
+          "type": "boolean"
+        }
+      }
+    },
+    "ConversationsListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "conversations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "channelId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "rootMessageId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "engineRef": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "idle",
+                  "active",
+                  "closed"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "archived": {
+                "type": "boolean"
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "channelId",
+              "rootMessageId",
+              "engineRef",
+              "state",
+              "title",
+              "archived",
+              "createdAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "conversations"
+      ]
+    },
+    "ConversationsOpenParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "default": "",
+          "type": "string"
+        },
+        "authorId": {
+          "default": "user",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "channelId",
+        "text"
+      ]
+    },
+    "ConversationsOpenResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "conversation": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rootMessageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "engineRef": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "idle",
+                "active",
+                "closed"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "archived": {
+              "type": "boolean"
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "rootMessageId",
+            "engineRef",
+            "state",
+            "title",
+            "archived",
+            "createdAt"
+          ]
+        },
+        "rootMessage": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "authorId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "text": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "conversationId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "authorKind": {
+              "type": "string",
+              "enum": [
+                "user",
+                "employee",
+                "system"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "authorId",
+            "text",
+            "seq",
+            "createdAt",
+            "conversationId",
+            "authorKind"
+          ]
+        }
+      },
+      "required": [
+        "conversation",
+        "rootMessage"
+      ]
+    },
+    "ConversationsUpdateParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "conversationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "active",
+            "closed"
+          ]
+        },
+        "engineRef": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "conversationId"
+      ]
+    },
+    "ConversationResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "conversation": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rootMessageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "engineRef": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "idle",
+                "active",
+                "closed"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "archived": {
+              "type": "boolean"
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "rootMessageId",
+            "engineRef",
+            "state",
+            "title",
+            "archived",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "conversation"
+      ]
+    },
+    "ChannelMessage": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authorId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "channelId",
+        "authorId",
+        "text",
+        "seq",
+        "createdAt"
+      ]
+    },
+    "AppMessage": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authorId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "conversationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authorKind": {
+          "type": "string",
+          "enum": [
+            "user",
+            "employee",
+            "system"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "channelId",
+        "authorId",
+        "text",
+        "seq",
+        "createdAt",
+        "conversationId",
+        "authorKind"
+      ]
+    },
+    "AuthorKind": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "user",
+        "employee",
+        "system"
+      ]
+    },
+    "MessagesListParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "afterSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "channelId"
+      ]
+    },
+    "MessagesListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "channelId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "authorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "conversationId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "authorKind": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "employee",
+                  "system"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "channelId",
+              "authorId",
+              "text",
+              "seq",
+              "createdAt",
+              "conversationId",
+              "authorKind"
+            ]
+          }
+        },
+        "lastSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "messages",
+        "lastSeq"
+      ]
+    },
+    "MessagesPostParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string"
+        },
+        "authorId": {
+          "default": "user",
+          "type": "string",
+          "minLength": 1
+        },
+        "authorKind": {
+          "default": "user",
+          "type": "string",
+          "enum": [
+            "user",
+            "employee",
+            "system"
+          ]
+        }
+      },
+      "required": [
+        "channelId",
+        "text"
+      ]
+    },
+    "MessageResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "authorId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "text": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "conversationId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "authorKind": {
+              "type": "string",
+              "enum": [
+                "user",
+                "employee",
+                "system"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "authorId",
+            "text",
+            "seq",
+            "createdAt",
+            "conversationId",
+            "authorKind"
+          ]
+        }
+      },
+      "required": [
+        "message"
+      ]
+    },
+    "ChannelSubscribeParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "afterSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "channelId"
+      ]
+    },
+    "ChannelSubscribeResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lastSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "channelId",
+        "lastSeq"
+      ]
+    },
+    "ChannelUnsubscribeParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "channelId"
+      ]
+    },
+    "OkResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    },
+    "MessageCreatedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "authorId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "text": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "conversationId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "authorKind": {
+              "type": "string",
+              "enum": [
+                "user",
+                "employee",
+                "system"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "authorId",
+            "text",
+            "seq",
+            "createdAt",
+            "conversationId",
+            "authorKind"
+          ]
+        }
+      },
+      "required": [
+        "channelId",
+        "message"
+      ]
+    },
+    "ChannelSnapshotEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "channelId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "authorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "conversationId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "authorKind": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "employee",
+                  "system"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "channelId",
+              "authorId",
+              "text",
+              "seq",
+              "createdAt",
+              "conversationId",
+              "authorKind"
+            ]
+          }
+        },
+        "lastSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "channelId",
+        "messages",
+        "lastSeq"
+      ]
+    },
+    "ChannelSyncedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lastSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "channelId",
+        "lastSeq"
+      ]
+    },
+    "ConversationUpdatedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conversation": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rootMessageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "engineRef": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "idle",
+                "active",
+                "closed"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "archived": {
+              "type": "boolean"
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "rootMessageId",
+            "engineRef",
+            "state",
+            "title",
+            "archived",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "channelId",
+        "conversation"
+      ]
+    }
+  }
+}
