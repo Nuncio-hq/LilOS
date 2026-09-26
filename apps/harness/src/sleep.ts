@@ -15,10 +15,45 @@ export interface SleepGuard {
   readonly held: boolean;
 }
 
-/** `caffeinate -i` prevents idle sleep for the life of the helper process. */
-export function createCaffeinateGuard(log: Logger): SleepGuard {
+export interface CaffeinateGuardOptions {
+  /** spawn seam for tests; production uses node:child_process.spawn. */
+  spawn?: typeof spawn;
+}
+
+/**
+ * `caffeinate -i` prevents idle sleep for the life of the helper process;
+ * `-w <harness pid>` ties it to this process so a harness crash can never
+ * leave the Mac sleepless with zero turns running (AC-3).
+ */
+export function createCaffeinateGuard(
+  log: Logger,
+  options: CaffeinateGuardOptions = {},
+): SleepGuard {
+  const spawnImpl = options.spawn ?? spawn;
+  const spawnFailed = new WeakSet<ChildProcess>();
   let count = 0;
   let proc: ChildProcess | undefined;
+  const launch = () => {
+    const p = spawnImpl(
+      "caffeinate",
+      ["-i", "-w", String(process.pid)],
+      { stdio: "ignore" },
+    );
+    proc = p;
+    p.on("exit", () => {
+      if (proc === p) proc = undefined;
+      // Still busy: re-assert, unless this child never started ('error' can
+      // be followed by 'exit' — a respawn there would loop on non-darwin).
+      if (count > 0 && !proc && !spawnFailed.has(p)) launch();
+    });
+    p.on("error", (error) => {
+      spawnFailed.add(p);
+      log.warn("caffeinate failed to start", { error: String(error) });
+      if (proc === p) proc = undefined;
+    });
+    p.unref();
+    log.debug("sleep assertion acquired");
+  };
   const drop = () => {
     const p = proc;
     proc = undefined;
@@ -31,18 +66,7 @@ export function createCaffeinateGuard(log: Logger): SleepGuard {
   return {
     acquire() {
       count += 1;
-      if (count === 1 && !proc) {
-        proc = spawn("caffeinate", ["-i"], { stdio: "ignore" });
-        proc.on("exit", () => {
-          proc = undefined;
-        });
-        proc.on("error", (error) => {
-          log.warn("caffeinate failed to start", { error: String(error) });
-          proc = undefined;
-        });
-        proc.unref();
-        log.debug("sleep assertion acquired");
-      }
+      if (!proc) launch();
     },
     release() {
       count = Math.max(0, count - 1);
