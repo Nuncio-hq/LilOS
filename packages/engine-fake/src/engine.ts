@@ -61,7 +61,7 @@ interface FakeTurn {
 
 interface FakeSession {
   id: string;
-  /** Durable external ref (Hermes's stored_session_id analogue); init = id. */
+  /** Durable external ref (the engine's stored-session-id analogue); init = id. */
   ref: string;
   agent: string;
   cwd: string;
@@ -131,7 +131,7 @@ export class FakeEngine {
   }
 
   /**
-   * Rotate a session's durable ref — Hermes rotates `stored_session_id` on
+   * Rotate a session's durable ref — engines rotate their stored id on
    * non-in-place compression; the transport sessionId stays stable, only the
    * external resume token moves. Emits `session.ref.changed {ref, previousRef}`.
    * Returns the new ref, or null for an unknown session.

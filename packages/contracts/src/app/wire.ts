@@ -132,7 +132,7 @@ export const WelcomeResult = z.object({
    */
   instanceId: z.string().min(1),
   /** Engine host presence, so a client can show it without a second round trip. */
-  engineHost: EngineHostStatus,
+  engineHost: EngineHostStatus.optional(),
 });
 export type WelcomeResult = z.infer<typeof WelcomeResult>;
 

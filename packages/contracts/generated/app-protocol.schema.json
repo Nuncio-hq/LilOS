@@ -481,8 +481,7 @@
       "required": [
         "protocolVersion",
         "relayVersion",
-        "instanceId",
-        "engineHost"
+        "instanceId"
       ]
     },
     "Employee": {
