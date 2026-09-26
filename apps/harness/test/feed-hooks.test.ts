@@ -290,6 +290,7 @@ describe("steer capability gating", () => {
         }>("conversations.list", {});
         return conversations.find((c) => c.id === conversation.id)?.engineRef;
       }, "engineRef");
+      if (!sessionId) throw new Error("engineRef never set");
       // Steers drain at the next step boundary — unblock the open approval.
       await answeredConvs(w, conversation.id);
       await waitFor(async () => {
