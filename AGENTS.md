@@ -21,16 +21,15 @@ data is not a contract.
 
 | Path | What |
 |---|---|
-| `prototype/` | Live UX prototype: Vite 8 + React 19 + Tailwind v4 + shadcn (base-nova) + AI Elements. One `src/App.tsx` with mock data at the top. |
+| `prototype/` | UX prototype (UI source of truth): `src/App.tsx` + mock data |
 | `packages/contracts/` | Zod schemas for everything crossing a boundary (vitest tests in `test/`) |
 | `e2e/` | Playwright E2E (screenshots to `test-results/`) |
 | `docs/DECISIONS.md` | Decisions in force now (see Decisions) |
 | `IDEA.md` | One-line origin note |
 
-Prototype dev: `bunx vite prototype --port 5180` or
-`bun run prototype:dev`. Verify everything: `bun run verify` (biome +
-typecheck + vitest + prototype build + Playwright screenshot).
-Setup once: `bun install` (Bun 1.4.2, see `.bun-version`).
+Setup: `bun install` (Bun per `.bun-version`). Prototype: `bun run
+prototype:dev`. Verify all: `bun run verify` (biome, typecheck, vitest,
+prototype build, Playwright).
 
 ## Stack & Structure
 
@@ -53,20 +52,21 @@ prototype/    packages/ui + mock data
 - Bun-only APIs (`bun:sqlite`, `Bun.serve`) only at app entry points;
   `packages/*` stay runtime-neutral.
 - Organize code by feature folder; split a file past ~400 lines.
-- `prototype/` is the UI source of truth: a UI/UX change lands there first,
-  Oscar accepts, then it is implemented on `packages/ui`.
-- Biome lints/forms everything except `prototype/src` and assets (vendored
+- Biome lints/formats everything except `prototype/src` and assets (vendored
   shadcn/AI Elements stay untouched; typecheck + build still cover them).
 - CI never calls a real LLM; `engine-fake` is the deterministic engine.
 
 ## Learn from these projects
 
-Before you design a seam, read how T3 Code (`pingdotgg/t3code`), Synara
-(`Emanuele-web04/synara`), and Hermes Desktop (`NousResearch/hermes-agent`)
-solve it — see `docs/REFERENCE-PROJECTS.md` for what to borrow and where to
-start. All MIT: port ideas/code with an attribution comment. Don't port their
-frameworks (T3/Synara use Effect-TS) or anything they own that we don't.
-Cite the files you read in the issue.
+Before you design a seam, read how these solve it and cite the files in the
+issue. All MIT: port ideas/code with an attribution comment, never their
+frameworks (T3/Synara use Effect-TS).
+
+| Project | Borrow | Start at |
+|---|---|---|
+| T3 Code `pingdotgg/t3code` | client/server split, seq sync (snapshot + replay), provider adapter + capabilities, `contracts`/`client-runtime` split | `docs/internals/`, `packages/contracts/src/providerRuntime.ts`, `apps/server/src/provider/Services/ProviderAdapter.ts` |
+| Synara `Emanuele-web04/synara` | ACP adapter, adapter conformance tests, mock agents | `apps/server/src/provider/acp/`, `apps/server/src/provider/providerAdapterConformance.ts`, `apps/server/scripts/acp-mock-agent.ts` |
+| Hermes Desktop `NousResearch/hermes-agent` | renderer over a headless engine, JSON-RPC client with reconnect replay, wire contract declared once and generated for TS | `apps/shared/src/json-rpc-gateway.ts`, `tui_gateway/contracts/`, `scripts/gen_gateway_contracts.py` |
 
 ## Who you work for
 
@@ -94,7 +94,7 @@ Repo: `Nuncio-hq/LilOS`. Use the `gh` CLI.
   the issue and edit it in place (Now / Next / Blocked); no log-comment series.
 - **Done**: the slice closes with its merged PR (hand-off note there); when
   the last slice closes, close the feature.
-- Found work outside the current slice? Open a new issue. Don't widen your PR.
+- Work outside the slice? Open a new issue; don't widen your PR.
 
 ## Verify loop
 
@@ -125,8 +125,8 @@ seam (Hermes RPC, sessions, worktrees) is always Normal.
    it, what changed, criteria checklist with screenshots, what's not done,
    `Closes #N`.
 
-Oscar only does step 7: he tries the product and accepts it or sends it back.
-A checklist of acceptance criteria plus screenshots is enough evidence for him.
+Oscar only does step 7: he tries it and accepts or sends it back. A criteria
+checklist plus screenshots is enough evidence.
 
 ## Decisions
 
@@ -150,8 +150,7 @@ now, not a history log.
 - Add/change an entry only in the **same PR** that implements the decision.
   Proposed or undecided ideas stay in the issue.
 - Record only decisions a later agent could undo by accident (architecture,
-  protocol, data ownership, stack). Implementation choices inside one slice
-  don't go in.
+  protocol, data ownership, stack), not choices inside one slice.
 - Superseding: rewrite the entry in place, move the old choice to
   `Not: ... (was #old)`. Keep the file under ~4k characters.
 
@@ -167,4 +166,4 @@ logs, and research notes go in issues and PRs.
 - Update an existing doc before creating one; create one only when two issues
   need the same knowledge. A PR that makes a doc wrong fixes it in the same
   PR; delete docs that are no longer true.
-- Keep this file under ~8k characters; move detail out and link it.
+- Keep this file under ~8.5k characters; move detail out and link it.
