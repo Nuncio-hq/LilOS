@@ -312,7 +312,7 @@ export function Workbench({
           {diffs.length === 0 ? (
             <div className="flex flex-col items-center gap-2 p-8 text-center text-muted-foreground text-xs">
               <EyeIcon className="size-5" />
-              {live ? (
+              {hostFiles ? (
                 <p>
                   Clean working tree in <span className="font-mono">{cwd}</span>
                   .

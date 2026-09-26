@@ -21,8 +21,8 @@ import {
   ENGINE_PROTOCOL,
   EngineEvent,
 } from "../src/engine/index.js";
-import { HOST_API, HOST_METHODS } from "../src/host/index.js";
 import { harnessProtocol } from "../src/harness/registry.js";
+import { HOST_API, HOST_METHODS } from "../src/host/index.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

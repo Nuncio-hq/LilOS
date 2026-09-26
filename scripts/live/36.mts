@@ -1,4 +1,8 @@
 #!/usr/bin/env bun
+import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 /**
  * Issue #36 live check — LilOS MCP + CLI surfaces against the real stack.
  *
@@ -30,10 +34,6 @@
  */
 import { serveSurfaces } from "../../apps/harness/src/surfaces/server.ts";
 import { SURFACES_ENV } from "../../packages/surfaces/src/config.ts";
-import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, existsSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 const ROOT = new URL("../..", import.meta.url).pathname;
 const MARKER = `LIVE36-${Math.random().toString(36).slice(2, 8)}`;
@@ -42,17 +42,10 @@ const REAL_MODEL = (process.env.HERMES_MODEL || "").trim();
 const results: [boolean, string, string][] = [];
 const check = (ok: boolean, name: string, detail = "") => {
   results.push([ok, name, detail]);
-  console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
+  console.log(
+    `${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`,
+  );
 };
-
-function freePort(): Promise<number> {
-  return new Promise((r) => {
-    const s = Bun.serve({ port: 0, fetch: () => new Response("x") });
-    const p = s.port;
-    s.stop(true);
-    r(p);
-  });
-}
 
 // ── tiny stdio JSON-RPC client (MCP + ACP are both ndjson over pipes) ────────
 
@@ -144,9 +137,7 @@ function startStub() {
         // If the model was handed MCP tools and hasn't been given a tool
         // result yet, answer with a tool call to lilos terminal_run.
         const termTool = tools.find((n) => /terminal_run/i.test(n));
-        const alreadyRan = (body.messages ?? []).some(
-          (m) => m.role === "tool",
-        );
+        const alreadyRan = (body.messages ?? []).some((m) => m.role === "tool");
         if (termTool && !alreadyRan) {
           return Response.json({
             id: "chatcmpl-stub",
@@ -194,7 +185,11 @@ function startStub() {
       return new Response("not found", { status: 404 });
     },
   });
-  return { url: `http://127.0.0.1:${srv.port}`, seen, stop: () => srv.stop(true) };
+  return {
+    url: `http://127.0.0.1:${srv.port}`,
+    seen,
+    stop: () => srv.stop(true),
+  };
 }
 
 async function main() {
@@ -208,9 +203,12 @@ async function main() {
   const page = Bun.serve({
     port: 0,
     fetch: () =>
-      new Response(`<html><body><h1>live-36 page ${MARKER}</h1></body></html>`, {
-        headers: { "content-type": "text/html" },
-      }),
+      new Response(
+        `<html><body><h1>live-36 page ${MARKER}</h1></body></html>`,
+        {
+          headers: { "content-type": "text/html" },
+        },
+      ),
   });
   const handle = await (
     await fetch(`${surfaces.url}/surfaces/sessions`, {
@@ -262,10 +260,10 @@ async function main() {
   await rpc.request("notifications/initialized", {}).catch(() => {});
   const list = await rpc.request("tools/list", {});
   const toolNames = (
-    ((list.result as { tools?: { name: string }[] })?.tools ?? []).map(
-      (t) => t.name,
-    )
-  ).join(",");
+    (list.result as { tools?: { name: string }[] })?.tools ?? []
+  )
+    .map((t) => t.name)
+    .join(",");
   check(
     /browser_open/.test(toolNames) && /terminal_run/.test(toolNames),
     "MCP tools/list exposes browser + terminal tools",
@@ -387,7 +385,11 @@ async function main() {
           120_000,
         )
         .catch((e) => ({ error: String(e) }));
-      check(!("error" in pr), "session/prompt completes", JSON.stringify(pr).slice(0, 200));
+      check(
+        !("error" in pr),
+        "session/prompt completes",
+        JSON.stringify(pr).slice(0, 200),
+      );
     } else if (sessionId && stub) {
       const pr = (await arpc
         .request(
@@ -446,7 +448,9 @@ async function main() {
   const fails = results.filter(([ok]) => !ok);
   console.log(
     `\nlive-36: ${results.length - fails.length}/${results.length} passed` +
-      (fails.length ? ` — FAILURES: ${fails.map((f) => f[1]).join(" | ")}` : "") +
+      (fails.length
+        ? ` — FAILURES: ${fails.map((f) => f[1]).join(" | ")}`
+        : "") +
       (acpOk && !REAL_PROVIDER
         ? "\nLIVE_ENGINE_UNAVAILABLE: stub provider; set HERMES_PROVIDER+HERMES_MODEL for a real model run"
         : ""),
