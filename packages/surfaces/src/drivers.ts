@@ -7,6 +7,7 @@ import type { ViewerBrowserInputEvent } from "@lilos/contracts/harness";
  */
 export interface BrowserDriver {
   readonly url: string | null;
+  /** The page's current viewport in pixels — changes via `resize`. */
   readonly viewport: { width: number; height: number };
   open(url: string): Promise<{ url: string; title: string }>;
   click(selector: string): Promise<void>;
@@ -17,6 +18,12 @@ export interface BrowserDriver {
   /** Pixel-space input — the viewer takeover path (CDP Input.dispatch*). */
   input(evt: ViewerBrowserInputEvent): void;
   navigate(url: string): void;
+  /**
+   * Real viewport resize (issue #56 AC-4) — the page's own dimensions change
+   * (`page.setViewportSize`-equivalent), so the viewer's pane fits without
+   * letterboxing instead of CSS-scaling a fixed-size page.
+   */
+  resize(size: { width: number; height: number }): Promise<void>;
   /** Screencast on/off — the hub drives this from viewer count. */
   setCasting(on: boolean): void;
   onFrame(cb: (jpeg: Uint8Array) => void): void;

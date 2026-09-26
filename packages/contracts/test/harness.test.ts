@@ -56,6 +56,7 @@ describe("AC-4 viewer wire contracts", () => {
       session: "s1",
       page: { width: 1280, height: 800 },
       terminal: { cols: 110, rows: 28 },
+      control: { terminal: "agent" },
       url: null,
       previews: [],
     });
@@ -70,6 +71,16 @@ describe("AC-4 viewer wire contracts", () => {
     expect(ViewerServerMsg.parse({ type: "term", data: "bHM=" }).type).toBe(
       "term",
     );
+    // issue #56: holder flips + pane-driven viewport on the wire
+    expect(
+      ViewerServerMsg.parse({ type: "term.control", holder: "user" }).type,
+    ).toBe("term.control");
+    expect(
+      ViewerServerMsg.parse({
+        type: "page",
+        page: { width: 640, height: 360 },
+      }).type,
+    ).toBe("page");
   });
 
   it("parses viewer takeover input messages", () => {
@@ -92,6 +103,17 @@ describe("AC-4 viewer wire contracts", () => {
         url: "http://localhost:5173",
       }).type,
     ).toBe("browser.navigate");
+    // issue #56: explicit hand-back + pane-size report
+    expect(ViewerClientMsg.parse({ type: "term.release" }).type).toBe(
+      "term.release",
+    );
+    expect(
+      ViewerClientMsg.parse({
+        type: "browser.resize",
+        width: 640,
+        height: 360,
+      }).type,
+    ).toBe("browser.resize");
   });
 });
 

@@ -36,7 +36,11 @@ const SPECIAL_KEYS: Record<string, { code: string; vk: number }> = {
 };
 
 export class ChromiumBrowser implements BrowserDriver {
-  readonly viewport = VIEWPORT;
+  private vp = { ...VIEWPORT };
+  /** The page's live viewport — follows `resize` (issue #56 AC-4). */
+  get viewport() {
+    return this.vp;
+  }
   private browser?: Browser;
   private context?: BrowserContext;
   private page?: Page;
@@ -51,7 +55,7 @@ export class ChromiumBrowser implements BrowserDriver {
     this.starting ??= (async () => {
       this.browser = await chromium.launch({ headless: true });
       this.context = await this.browser.newContext({
-        viewport: VIEWPORT,
+        viewport: this.vp,
         deviceScaleFactor: 1,
       });
       this.page = await this.context.newPage();
@@ -89,6 +93,19 @@ export class ChromiumBrowser implements BrowserDriver {
 
   navigate(url: string): void {
     this.open(url).catch(() => {});
+  }
+
+  async resize(size: { width: number; height: number }): Promise<void> {
+    const page = this.page && !this.page.isClosed() ? this.page : undefined;
+    if (!page) {
+      // Not launched yet — ensure() creates the context at this size.
+      this.vp = { ...size };
+      return;
+    }
+    const cur = page.viewportSize();
+    if (cur && cur.width === size.width && cur.height === size.height) return;
+    await page.setViewportSize(size);
+    this.vp = { ...size };
   }
 
   async click(selector: string): Promise<void> {

@@ -134,7 +134,9 @@ export function toolApiHandler(
               ? 400
               : e.code === "unavailable"
                 ? 503
-                : 500;
+                : e.code === "user_control"
+                  ? 409
+                  : 500;
         return jsonError(status, e.code, e.message);
       }
       return jsonError(

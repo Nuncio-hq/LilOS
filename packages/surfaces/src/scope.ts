@@ -1,4 +1,3 @@
-import type { AppMessage } from "@lilos/contracts/app";
 import type { ViewerBrowserInputEvent } from "@lilos/contracts/harness";
 import {
   SurfaceError,
@@ -26,6 +25,9 @@ import { PreviewScanner, stripAnsi } from "./previews.js";
 
 const MARKER_PREFIX = "__LILOS_DONE_";
 const DEFAULT_RUN_TIMEOUT_MS = 30_000;
+const DEFAULT_PAGE = { width: 1280, height: 800 };
+const USER_CONTROL_MSG =
+  "the user has control of this terminal (a Workbench keystroke took it) — wait for them to hand it back";
 
 export class SessionSurfaces implements ViewerScope {
   readonly session: string;
@@ -51,6 +53,18 @@ export class SessionSurfaces implements ViewerScope {
   private lastFrame: Uint8Array | null = null;
   private runCounter = 0;
   private closed = false;
+  /**
+   * Terminal holder (issue #56 AC-1): a viewer keystroke hands it to "user";
+   * while held, terminal_run/terminal_write fail with `user_control` and any
+   * in-flight run is failed too — the agent never silently mixes input with
+   * a human's typing. "user" until an explicit release or the last viewer
+   * detaching.
+   */
+  private termHolder: "agent" | "user" = "agent";
+  /** Bail-outs for in-flight terminal_run waits — takeover fails them. */
+  private readonly runWaiters = new Set<() => void>();
+  /** The pane size the owned page should render at (issue #56 AC-4). */
+  private viewportSize = DEFAULT_PAGE;
 
   constructor(opts: SurfaceScopeOptions) {
     this.session = opts.session;
@@ -103,14 +117,19 @@ export class SessionSurfaces implements ViewerScope {
     if (this.listeners.size === 1) this.browser?.setCasting(true);
     return () => {
       this.listeners.delete(listener);
-      if (this.listeners.size === 0) this.browser?.setCasting(false);
+      if (this.listeners.size === 0) {
+        this.browser?.setCasting(false);
+        // Nobody left to type — a held terminal must not lock the agent out.
+        this.setTermControl("agent");
+      }
     };
   }
 
   snapshot(): ViewerSnapshot {
     return {
-      page: this.browser?.viewport ?? { width: 1280, height: 800 },
+      page: this.browser?.viewport ?? this.viewportSize,
       terminal: { cols: this.cols, rows: this.rows },
+      control: { terminal: this.termHolder },
       url: this.browser?.url ?? null,
       previews: this.scanner.list(),
       lastFrame: this.lastFrame,
@@ -156,7 +175,7 @@ export class SessionSurfaces implements ViewerScope {
         "unavailable",
         "no browser attached to this session's surfaces",
       );
-    this.browserPromise ??= this.createBrowser().then((b) => {
+    this.browserPromise ??= this.createBrowser().then(async (b) => {
       b.onFrame((jpeg) => {
         this.lastFrame = jpeg;
         this.emit({ kind: "frame", jpeg, capturedAt: Date.now() });
@@ -164,6 +183,14 @@ export class SessionSurfaces implements ViewerScope {
       b.onUrl((url) => this.emit({ kind: "url", url }));
       if (this.listeners.size > 0) b.setCasting(true);
       this.browser = b;
+      // A pane resize reported before the browser existed lands now.
+      if (
+        b.viewport.width !== this.viewportSize.width ||
+        b.viewport.height !== this.viewportSize.height
+      ) {
+        await b.resize(this.viewportSize).catch(() => {});
+        this.emit({ kind: "page", page: b.viewport });
+      }
       return b;
     });
     this.browserPromise.catch(() => {
@@ -224,16 +251,17 @@ export class SessionSurfaces implements ViewerScope {
    * everything between the sent line's echo and it as the command's output.
    */
   terminalRun(p: { command: string; timeoutMs?: number }) {
-    const id = ++this.runCounter;
-    const marker = `${MARKER_PREFIX}${id}__`;
-    const timeout = p.timeoutMs ?? this.runTimeout;
-    return this.tracked("terminal_run", p.command, () =>
-      this.runMarked(
+    return this.tracked("terminal_run", p.command, () => {
+      this.assertAgentTerminal();
+      const id = ++this.runCounter;
+      const marker = `${MARKER_PREFIX}${id}__`;
+      const timeout = p.timeoutMs ?? this.runTimeout;
+      return this.runMarked(
         `${p.command}\nprintf '${marker}%s\\n' "$?"\n`,
         marker,
         timeout,
-      ),
-    );
+      );
+    });
   }
 
   private runMarked(
@@ -244,6 +272,16 @@ export class SessionSurfaces implements ViewerScope {
     return new Promise((resolve, reject) => {
       const decoder = new TextDecoder();
       let buf = "";
+      const done = (fn: () => void) => {
+        clearTimeout(timer);
+        this.termTaps.delete(listener);
+        this.runWaiters.delete(bail);
+        fn();
+      };
+      // A human keystroke mid-run collides with the capture — fail the call
+      // so the agent learns the user has the terminal instead of racing it.
+      const bail = () =>
+        done(() => reject(new SurfaceError("user_control", USER_CONTROL_MSG)));
       const listener = (data: Uint8Array) => {
         buf += decoder.decode(data, { stream: true });
         // last match wins: the sent line echoes the marker literally first
@@ -252,8 +290,6 @@ export class SessionSurfaces implements ViewerScope {
         const rest = buf.slice(idx + marker.length);
         const m = /^(-?\d+)/.exec(rest);
         if (!m) return;
-        clearTimeout(timer);
-        this.termTaps.delete(listener);
         const exitCode = Number.parseInt(m[1], 10);
         // body = echo of the sent text + command output (up to the marker).
         // Strip the echoed send verbatim when it matches; else drop the
@@ -265,30 +301,33 @@ export class SessionSurfaces implements ViewerScope {
           const nl = body.indexOf("\n");
           body = nl >= 0 ? body.slice(nl + 1) : "";
         }
-        resolve({ output: body.replace(/^\n+|\n+$/g, ""), exitCode });
+        done(() =>
+          resolve({ output: body.replace(/^\n+|\n+$/g, ""), exitCode }),
+        );
       };
       const timer = setTimeout(() => {
-        this.termTaps.delete(listener);
-        reject(
-          new SurfaceError(
-            "internal",
-            `terminal_run timed out after ${timeoutMs}ms`,
+        done(() =>
+          reject(
+            new SurfaceError(
+              "internal",
+              `terminal_run timed out after ${timeoutMs}ms`,
+            ),
           ),
         );
       }, timeoutMs);
       this.termTaps.add(listener);
+      this.runWaiters.add(bail);
       try {
         this.pty?.write(sentText);
       } catch (e) {
-        clearTimeout(timer);
-        this.termTaps.delete(listener);
-        reject(e);
+        done(() => reject(e));
       }
     });
   }
 
   terminalWrite(p: { data: string }) {
     return this.tracked("terminal_write", "", () => {
+      this.assertAgentTerminal();
       this.pty?.write(p.data);
       return { ok: true as const };
     });
@@ -337,14 +376,53 @@ export class SessionSurfaces implements ViewerScope {
 
   /* ------------------------------ viewer input ------------------------------ */
 
+  /**
+   * Takeover (issue #56 AC-1): a keystroke into the Workbench terminal hands
+   * control to the user. The agent's next terminal_run/terminal_write gets a
+   * clear `user_control` result — never silent interleaving. Release is
+   * explicit (`term.release`) or automatic when the last viewer leaves.
+   */
   terminalInput(data: string) {
+    if (data === "") return;
+    this.setTermControl("user");
     this.pty?.write(data);
+  }
+  terminalRelease() {
+    this.setTermControl("agent");
+  }
+  private setTermControl(holder: "agent" | "user") {
+    if (this.termHolder === holder) return;
+    this.termHolder = holder;
+    this.emit({ kind: "term.control", holder });
+    if (holder === "user") for (const bail of [...this.runWaiters]) bail();
+  }
+  private assertAgentTerminal() {
+    if (this.termHolder === "user")
+      throw new SurfaceError("user_control", USER_CONTROL_MSG);
   }
   terminalResize(cols: number, rows: number) {
     this.pty?.resize(cols, rows);
   }
   browserInput(evt: ViewerBrowserInputEvent) {
     void this.browser?.input(evt);
+  }
+  /**
+   * Viewport fit (issue #56 AC-4): the owned page resizes to the viewer
+   * pane's pixels — real viewport change, not a CSS scale — so the screencast
+   * fills the pane without letterbox bars.
+   */
+  browserResize(width: number, height: number) {
+    this.viewportSize = { width, height };
+    const b = this.browser;
+    if (!b) {
+      this.emit({ kind: "page", page: this.viewportSize });
+      return;
+    }
+    if (b.viewport.width === width && b.viewport.height === height) return;
+    void b
+      .resize({ width, height })
+      .then(() => this.emit({ kind: "page", page: b.viewport }))
+      .catch(() => {});
   }
   browserNavigate(url: string) {
     void this.requireBrowser().then((b) => b.navigate(url));

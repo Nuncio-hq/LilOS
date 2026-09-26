@@ -112,6 +112,9 @@ export class FakeBrowser implements BrowserDriver {
     this.url = url;
     for (const cb of this.urlCbs) cb(url);
   }
+  async resize(size: { width: number; height: number }): Promise<void> {
+    this.viewport = { ...size };
+  }
   setCasting(on: boolean): void {
     this.casting = on;
   }

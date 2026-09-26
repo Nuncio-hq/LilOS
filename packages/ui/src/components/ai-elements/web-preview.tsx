@@ -42,7 +42,14 @@ const useWebPreview = () => {
 };
 
 export type WebPreviewProps = ComponentProps<"div"> & {
+  /** Uncontrolled initial URL. */
   defaultUrl?: string;
+  /**
+   * Controlled URL — the field follows it as the source of truth changes
+   * (issue #56 AC-3: the live surface feeds the page's real URL, so a
+   * redirect or agent navigation replaces the typed text).
+   */
+  url?: string;
   onUrlChange?: (url: string) => void;
 };
 
@@ -50,15 +57,17 @@ export const WebPreview = ({
   className,
   children,
   defaultUrl = "",
+  url: controlledUrl,
   onUrlChange,
   ...props
 }: WebPreviewProps) => {
-  const [url, setUrl] = useState(defaultUrl);
+  const [innerUrl, setInnerUrl] = useState(defaultUrl);
+  const url = controlledUrl ?? innerUrl;
   const [consoleOpen, setConsoleOpen] = useState(false);
 
   const handleUrlChange = useCallback(
     (newUrl: string) => {
-      setUrl(newUrl);
+      setInnerUrl(newUrl);
       onUrlChange?.(newUrl);
     },
     [onUrlChange]

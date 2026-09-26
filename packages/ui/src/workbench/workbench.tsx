@@ -522,7 +522,7 @@ export function Workbench({
 
       <TabsContent value="terminal" className="flex min-h-0 flex-1 flex-col">
         {live ? (
-          <LiveTerminal live={live} cwd={cwd} />
+          <LiveTerminal live={live} cwd={cwd} agentName={lead?.name} />
         ) : (
           <Terminal
             output={
