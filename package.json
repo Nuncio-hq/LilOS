@@ -19,7 +19,7 @@
   },
   "scripts": {
     "verify": "biome check . && bun run schema:check && bun run typecheck && bun run test:unit && bun run test:nonts && bun run build:prototype && bun run test:e2e",
-    "typecheck": "tsc -b prototype packages/contracts packages/ui packages/engine-fake packages/engine-conformance packages/client-runtime apps/relay",
+    "typecheck": "tsc -b prototype packages/contracts packages/ui packages/engine-fake packages/engine-conformance packages/client-runtime packages/engine-hermes apps/relay",
     "schema:gen": "bun packages/contracts/scripts/gen-schemas.ts",
     "schema:check": "bun packages/contracts/scripts/gen-schemas.ts --check",
     "test:nonts": "bun packages/engine-conformance/scripts/test-nonts.ts",
@@ -27,6 +27,7 @@
     "test:e2e": "playwright test",
     "build:prototype": "bun run --cwd prototype build",
     "prototype:dev": "bun run --cwd prototype dev",
-    "format": "biome check --write ."
+    "format": "biome check --write .",
+    "live:hermes": "bun packages/engine-hermes/scripts/live-hermes.ts"
   }
 }

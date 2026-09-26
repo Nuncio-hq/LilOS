@@ -112,6 +112,17 @@ export const RequestResolvedPayload = z.strictObject({
   answer: z.string().optional(),
 });
 
+/**
+ * The engine re-keyed a session's durable ref (Hermes rotates
+ * `stored_session_id` when compression is not in-place). `ref` is what a
+ * client stores for resume/reattach — the transport `sessionId` itself stays
+ * stable across a rotation, so this event is the only way to notice it.
+ */
+export const SessionRefChangedPayload = z.strictObject({
+  ref: z.string().min(1),
+  previousRef: z.string().min(1),
+});
+
 /** A steer that landed at a tool boundary inside the running turn. */
 export const TurnSteeredPayload = z.strictObject({
   turnId: TurnId,
@@ -174,6 +185,12 @@ export const EngineEvent = z.discriminatedUnion("type", [
     sessionId: SessionId,
     type: z.literal("request.resolved"),
     payload: RequestResolvedPayload,
+  }),
+  z.strictObject({
+    seq: Seq,
+    sessionId: SessionId,
+    type: z.literal("session.ref.changed"),
+    payload: SessionRefChangedPayload,
   }),
   z.strictObject({
     seq: Seq,
