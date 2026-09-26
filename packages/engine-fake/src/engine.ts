@@ -127,6 +127,27 @@ export class FakeEngine {
     return () => this.listeners.delete(fn);
   }
 
+  /**
+   * Rotate a session's external reference — the #22 verdict case where an
+   * orphan reattach lands the session under a fresh handle. The session
+   * (log, seq, open asks, running turn) survives; only the handle moves,
+   * and calls against the old ref start failing with SESSION_NOT_FOUND.
+   * Returns the new ref, or null for an unknown session.
+   */
+  rotateSessionRef(sessionId: string, reason = "ref rotated"): string | null {
+    const s = this.sessions.get(sessionId);
+    if (!s) return null;
+    const next = `s${++this.sessionCounter}`;
+    this.sessions.delete(sessionId);
+    s.id = next;
+    this.sessions.set(next, s);
+    this.emit(s, "session.ref.changed", {
+      previousSessionId: sessionId,
+      reason,
+    });
+    return next;
+  }
+
   async dispatch(method: string, params: unknown): Promise<unknown> {
     const contract = ENGINE_METHODS[method];
     if (!contract)

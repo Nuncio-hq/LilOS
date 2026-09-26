@@ -58,6 +58,27 @@ const MIGRATIONS: { version: number; statements: string[] }[] = [
         ON conversations(channel_id)`,
     ],
   },
+  {
+    version: 2,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS asks (
+        id TEXT PRIMARY KEY,
+        channel_id TEXT NOT NULL REFERENCES channels(id),
+        conversation_id TEXT NOT NULL REFERENCES conversations(id),
+        turn_id TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        request TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'open',
+        outcome TEXT,
+        answer TEXT,
+        created_at INTEGER NOT NULL,
+        resolved_at INTEGER
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS asks_conversation_request
+        ON asks(conversation_id, request_id)`,
+      `CREATE INDEX IF NOT EXISTS asks_channel ON asks(channel_id)`,
+    ],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

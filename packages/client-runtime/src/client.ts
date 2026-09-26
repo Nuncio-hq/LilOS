@@ -2,6 +2,7 @@ import {
   APP_PROTOCOL_VERSION,
   type AppChannel,
   type AppMessage,
+  ChannelCreatedEvent,
   ChannelSnapshotEvent,
   ChannelSyncedEvent,
   type Conversation,
@@ -66,6 +67,12 @@ export interface RelayClientOptions {
   requestTimeoutMs?: number;
   /** Fatal handshake failures (version mismatch, bad token) land here. */
   onFatalError?: (error: RelayError) => void;
+  /**
+   * Every incoming JSON-RPC notification, before the built-in handling — the
+   * harness-level events (ask.opened/ask.resolved, turn.interruptRequested,
+   * channel.created) have no atom yet and are consumed through this hook.
+   */
+  onEvent?: (method: string, params: Record<string, unknown>) => void;
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
@@ -430,7 +437,20 @@ export class RelayClient {
     method: string,
     params: Record<string, unknown>,
   ): void {
+    try {
+      this.options.onEvent?.(method, params);
+    } catch {
+      // A consumer hook must never break the client's own dispatch.
+    }
     switch (method) {
+      case "channel.created": {
+        const event = ChannelCreatedEvent.parse(params);
+        const list = this.channels.get();
+        if (!list.some((c) => c.id === event.channel.id)) {
+          this.channels.set([...list, event.channel]);
+        }
+        return;
+      }
       case "message.created": {
         const event = MessageCreatedEvent.parse(params);
         if (this.catchingUp.has(event.channelId)) {

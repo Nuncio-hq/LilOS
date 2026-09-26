@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ChannelMessage } from "../index";
+import { ApprovalOutcome, EngineRequest } from "../engine/requests";
 
 /**
  * App-protocol domain objects (issue #25): the records the relay owns and
@@ -85,3 +86,65 @@ export const AppMessage = z.object({
   authorKind: AuthorKind,
 });
 export type AppMessage = z.infer<typeof AppMessage>;
+
+/* ------------------------------ asks (#26) ------------------------------ */
+
+/**
+ * An engine ask (`request.opened`) surfaced on the relay so the app can answer
+ * it. `request` is the engine's EngineRequest verbatim — the relay passes it
+ * through and never interprets it; kinds outside the engine's
+ * approval/question union cannot be represented here by construction.
+ */
+export const AskState = z.enum(["open", "resolved"]);
+export type AskState = z.infer<typeof AskState>;
+
+export const Ask = z.object({
+  id: z.string().min(1),
+  channelId: z.string().min(1),
+  conversationId: z.string().min(1),
+  /** Engine turn the ask belongs to (opaque to the relay). */
+  turnId: z.string().min(1),
+  /** Engine request id the harness echoes back in `request.respond`. */
+  requestId: z.string().min(1),
+  request: EngineRequest,
+  state: AskState,
+  outcome: ApprovalOutcome.optional(),
+  answer: z.string().optional(),
+  createdAt: Timestamp,
+  resolvedAt: Timestamp.optional(),
+});
+export type Ask = z.infer<typeof Ask>;
+
+/**
+ * A user-authored turn awaiting the engine: a conversation whose newest
+ * message is a user message the harness has not answered yet. Returned by
+ * `harness.register` so a restarting harness catches up.
+ */
+export const PendingTurn = z.object({
+  conversation: Conversation,
+  channel: AppChannel,
+  message: AppMessage,
+});
+export type PendingTurn = z.infer<typeof PendingTurn>;
+
+/**
+ * Engine state as reported by the registered engine host via
+ * `harness.report` (supervisor lifecycle names, not engine SessionState).
+ */
+export const EngineHostState = z.enum([
+  "starting",
+  "running",
+  "restarting",
+  "failed",
+  "stopped",
+]);
+export type EngineHostState = z.infer<typeof EngineHostState>;
+
+export const EngineHostStatus = z.object({
+  /** Whether an engine host is registered on this relay right now. */
+  connected: z.boolean(),
+  state: EngineHostState.optional(),
+  /** Freeform one-liner, e.g. crash detail or engine name. */
+  detail: z.string().optional(),
+});
+export type EngineHostStatus = z.infer<typeof EngineHostState>;

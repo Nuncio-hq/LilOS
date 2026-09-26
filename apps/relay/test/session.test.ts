@@ -149,6 +149,9 @@ describe("relay session", () => {
     ).channel;
     expect(again.id).toBe(channel.id);
 
+    // Non-user messages and engineRef/state writes need the engine host role.
+    await connection.receive(req("harness.register"));
+
     // Open a conversation: root message gets seq 1.
     await connection.receive(
       req("conversations.open", {

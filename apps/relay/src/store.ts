@@ -2,13 +2,17 @@ import { randomUUID } from "node:crypto";
 import type {
   AppChannel,
   AppMessage,
+  Ask,
+  AskState,
   AuthorKind,
   Conversation,
   ConversationState,
   Employee,
   EmployeeStatus,
+  PendingTurn,
   RespondTo,
 } from "@lilos/contracts/app";
+import type { ApprovalOutcome, EngineRequest } from "@lilos/contracts/engine";
 
 export interface NewEmployee {
   name: string;
@@ -60,6 +64,25 @@ export interface ListConversationsQuery {
   includeArchived: boolean;
 }
 
+export interface NewAsk {
+  channelId: string;
+  conversationId: string;
+  turnId: string;
+  requestId: string;
+  request: EngineRequest;
+}
+
+export interface ResolveAskInput {
+  outcome: ApprovalOutcome;
+  answer?: string;
+}
+
+export interface ListAsksQuery {
+  channelId?: string;
+  conversationId?: string;
+  state?: AskState;
+}
+
 /**
  * What the ws layer needs from persistence. Implemented by Drizzle+SQLite in
  * production (`db/drizzle-store.ts`) and by memory in tests — the protocol
@@ -77,7 +100,9 @@ export interface RelayStore {
   listChannels(): Promise<AppChannel[]>;
   getChannel(id: string): Promise<AppChannel | null>;
   /** Get-or-create the DM channel with this employee. */
-  openDmChannel(employeeId: string): Promise<AppChannel>;
+  openDmChannel(
+    employeeId: string,
+  ): Promise<{ channel: AppChannel; created: boolean }>;
 
   listConversations(query: ListConversationsQuery): Promise<Conversation[]>;
   getConversation(id: string): Promise<Conversation | null>;
@@ -96,6 +121,22 @@ export interface RelayStore {
   ): Promise<ListMessagesPage>;
   /** Appends with the channel's next seq (atomic with the counter bump). */
   appendMessage(input: AppendMessageInput): Promise<AppMessage>;
+
+  /**
+   * Idempotent on (conversationId, requestId): re-opening the same engine
+   * request returns the existing ask unchanged (the harness may re-open after
+   * a reconnect replay).
+   */
+  createAsk(input: NewAsk): Promise<{ ask: Ask; created: boolean }>;
+  getAsk(id: string): Promise<Ask | null>;
+  resolveAsk(id: string, resolution: ResolveAskInput): Promise<Ask | null>;
+  listAsks(query: ListAsksQuery): Promise<Ask[]>;
+
+  /**
+   * Conversations whose newest message is user-authored — the turns the
+   * engine host still owes. Surfaced by `harness.register`.
+   */
+  listPendingTurns(): Promise<PendingTurn[]>;
 }
 
 export function newId(prefix: string): string {
@@ -108,6 +149,7 @@ export function createMemoryStore(): RelayStore {
   const channels = new Map<string, AppChannel>();
   const conversations = new Map<string, Conversation>();
   const messages = new Map<string, AppMessage>();
+  const asks = new Map<string, Ask>();
 
   const now = () => Date.now();
   const channelMessages = (channelId: string) =>
@@ -172,7 +214,7 @@ export function createMemoryStore(): RelayStore {
       const existing = [...channels.values()].find(
         (c) => c.kind === "dm" && c.employeeId === employeeId,
       );
-      if (existing) return existing;
+      if (existing) return { channel: existing, created: false };
       const employee = employees.get(employeeId);
       if (!employee) throw new Error(`unknown employee ${employeeId}`);
       const channel: AppChannel = {
@@ -183,7 +225,7 @@ export function createMemoryStore(): RelayStore {
         createdAt: now(),
       };
       channels.set(channel.id, channel);
-      return channel;
+      return { channel, created: true };
     },
     async listConversations({ channelId, includeArchived }) {
       return [...conversations.values()]
@@ -236,6 +278,63 @@ export function createMemoryStore(): RelayStore {
     },
     async appendMessage(input) {
       return appendMessage(input);
+    },
+    async createAsk(input) {
+      const existing = [...asks.values()].find(
+        (a) =>
+          a.conversationId === input.conversationId &&
+          a.requestId === input.requestId,
+      );
+      if (existing) return { ask: existing, created: false };
+      const ask: Ask = {
+        id: newId("ask"),
+        channelId: input.channelId,
+        conversationId: input.conversationId,
+        turnId: input.turnId,
+        requestId: input.requestId,
+        request: input.request,
+        state: "open",
+        createdAt: now(),
+      };
+      asks.set(ask.id, ask);
+      return { ask, created: true };
+    },
+    async getAsk(id) {
+      return asks.get(id) ?? null;
+    },
+    async resolveAsk(id, resolution) {
+      const ask = asks.get(id);
+      if (!ask) return null;
+      ask.state = "resolved";
+      ask.outcome = resolution.outcome;
+      ask.answer = resolution.answer;
+      ask.resolvedAt = now();
+      return ask;
+    },
+    async listAsks({ channelId, conversationId, state }) {
+      return [...asks.values()]
+        .filter((a) => (channelId ? a.channelId === channelId : true))
+        .filter((a) =>
+          conversationId ? a.conversationId === conversationId : true,
+        )
+        .filter((a) => (state ? a.state === state : true))
+        .sort((a, b) => a.createdAt - b.createdAt);
+    },
+    async listPendingTurns() {
+      const pending: PendingTurn[] = [];
+      for (const conversation of conversations.values()) {
+        if (conversation.archived || conversation.state === "closed") continue;
+        const channel = channels.get(conversation.channelId);
+        if (!channel) continue;
+        const last = channelMessages(conversation.channelId)
+          .filter((m) => m.conversationId === conversation.id)
+          .at(-1);
+        if (last && last.authorKind === "user") {
+          pending.push({ conversation, channel, message: last });
+        }
+      }
+      pending.sort((a, b) => a.message.seq - b.message.seq);
+      return pending;
     },
   };
 }

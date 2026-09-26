@@ -1,24 +1,45 @@
 import type {
   AppChannel,
   AppMessage,
+  Ask,
   Conversation,
   Employee,
+  PendingTurn,
 } from "@lilos/contracts/app";
-import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
+import { EngineRequest } from "@lilos/contracts/engine";
+import { and, asc, desc, eq, gt, ne, sql } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import type {
   AppendMessageInput,
   ConversationPatch,
+  ListAsksQuery,
   ListConversationsQuery,
   ListMessagesPage,
   ListMessagesQuery,
+  NewAsk,
   OpenConversationInput,
   RelayStore,
+  ResolveAskInput,
 } from "../store";
 import { newId } from "../store";
 import * as schema from "./schema";
 
 type Db = BunSQLiteDatabase<typeof schema>;
+
+type AskRow = typeof schema.asks.$inferSelect;
+const rowToAsk = (row: AskRow): Ask => ({
+  id: row.id,
+  channelId: row.channelId,
+  conversationId: row.conversationId,
+  turnId: row.turnId,
+  requestId: row.requestId,
+  request: EngineRequest.parse(JSON.parse(row.request)),
+  state: row.state,
+  outcome: row.outcome ?? undefined,
+  answer: row.answer ?? undefined,
+  createdAt: row.createdAt,
+  resolvedAt: row.resolvedAt ?? undefined,
+});
 
 export function createDrizzleStore(db: Db): RelayStore {
   const now = () => Date.now();
@@ -117,7 +138,7 @@ export function createDrizzleStore(db: Db): RelayStore {
           ),
         )
         .get();
-      if (existing) return existing;
+      if (existing) return { channel: existing, created: false };
       const employee = db
         .select()
         .from(schema.employees)
@@ -134,7 +155,8 @@ export function createDrizzleStore(db: Db): RelayStore {
       try {
         db.insert(schema.channels).values(channel).run();
       } catch {
-        // Another insert won the get-or-create race; return it.
+        // Another insert won the get-or-create race; return it — and let the
+        // winner own the `channel.created` broadcast (created: false here).
         const raced = db
           .select()
           .from(schema.channels)
@@ -146,9 +168,9 @@ export function createDrizzleStore(db: Db): RelayStore {
           )
           .get();
         if (!raced) throw new Error(`openDmChannel failed for ${employeeId}`);
-        return raced;
+        return { channel: raced, created: false };
       }
-      return channel;
+      return { channel, created: true };
     },
     async listConversations({
       channelId,
@@ -266,6 +288,103 @@ export function createDrizzleStore(db: Db): RelayStore {
     },
     async appendMessage(input) {
       return db.transaction(() => appendMessageTx(input));
+    },
+    async createAsk(input: NewAsk) {
+      const existing = db
+        .select()
+        .from(schema.asks)
+        .where(
+          and(
+            eq(schema.asks.conversationId, input.conversationId),
+            eq(schema.asks.requestId, input.requestId),
+          ),
+        )
+        .get();
+      if (existing) return { ask: rowToAsk(existing), created: false };
+      const row: AskRow = {
+        id: newId("ask"),
+        channelId: input.channelId,
+        conversationId: input.conversationId,
+        turnId: input.turnId,
+        requestId: input.requestId,
+        request: JSON.stringify(input.request),
+        state: "open",
+        outcome: null,
+        answer: null,
+        createdAt: now(),
+        resolvedAt: null,
+      };
+      db.insert(schema.asks).values(row).run();
+      return { ask: rowToAsk(row), created: true };
+    },
+    async getAsk(id) {
+      const row = db
+        .select()
+        .from(schema.asks)
+        .where(eq(schema.asks.id, id))
+        .get();
+      return row ? rowToAsk(row) : null;
+    },
+    async resolveAsk(id, resolution: ResolveAskInput) {
+      const updated = db
+        .update(schema.asks)
+        .set({
+          state: "resolved",
+          outcome: resolution.outcome,
+          answer: resolution.answer ?? null,
+          resolvedAt: now(),
+        })
+        .where(eq(schema.asks.id, id))
+        .returning()
+        .get();
+      return updated ? rowToAsk(updated) : null;
+    },
+    async listAsks({ channelId, conversationId, state }: ListAsksQuery) {
+      const conditions = [];
+      if (channelId) conditions.push(eq(schema.asks.channelId, channelId));
+      if (conversationId)
+        conditions.push(eq(schema.asks.conversationId, conversationId));
+      if (state) conditions.push(eq(schema.asks.state, state));
+      const base = db.select().from(schema.asks);
+      const rows = conditions.length
+        ? base
+            .where(and(...conditions))
+            .orderBy(asc(schema.asks.createdAt))
+            .all()
+        : base.orderBy(asc(schema.asks.createdAt)).all();
+      return rows.map(rowToAsk);
+    },
+    async listPendingTurns(): Promise<PendingTurn[]> {
+      const convs = db
+        .select()
+        .from(schema.conversations)
+        .where(
+          and(
+            eq(schema.conversations.archived, false),
+            ne(schema.conversations.state, "closed"),
+          ),
+        )
+        .all();
+      const pending: PendingTurn[] = [];
+      for (const conversation of convs) {
+        const last = db
+          .select()
+          .from(schema.messages)
+          .where(eq(schema.messages.conversationId, conversation.id))
+          .orderBy(desc(schema.messages.seq))
+          .limit(1)
+          .get();
+        if (!last || last.authorKind !== "user") continue;
+        const channel = db
+          .select()
+          .from(schema.channels)
+          .where(eq(schema.channels.id, conversation.channelId))
+          .get();
+        if (!channel) continue;
+        pending.push({ conversation, channel, message: last });
+      }
+      pending.sort((a, b) => a.message.seq - b.message.seq);
+      return pending;
     },
   };
 }
