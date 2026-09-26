@@ -6,7 +6,7 @@ import type {
   Employee,
   PendingTurn,
 } from "@lilos/contracts/app";
-import { EngineRequest } from "@lilos/contracts/engine";
+import { ApprovalOutcome, EngineRequest } from "@lilos/contracts/engine";
 import { and, asc, desc, eq, gt, ne, sql } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import type {
@@ -35,7 +35,7 @@ const rowToAsk = (row: AskRow): Ask => ({
   requestId: row.requestId,
   request: EngineRequest.parse(JSON.parse(row.request)),
   state: row.state,
-  outcome: row.outcome ?? undefined,
+  outcome: ApprovalOutcome.optional().parse(row.outcome ?? undefined),
   answer: row.answer ?? undefined,
   createdAt: row.createdAt,
   resolvedAt: row.resolvedAt ?? undefined,
