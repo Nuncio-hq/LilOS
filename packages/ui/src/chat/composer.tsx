@@ -55,6 +55,7 @@ export function Composer({
   onStop,
   tools,
   queued,
+  accept,
 }: {
   placeholder: string;
   employees: Employee[];
@@ -64,6 +65,9 @@ export function Composer({
   onStop?: () => void;
   tools?: React.ReactNode;
   queued?: React.ReactNode;
+  /* What the host accepts as attachments (e.g. "image/*"). Without it the paperclip
+     and chips don't render — the control needs its enabling prop. */
+  accept?: string;
 }) {
   const [draft, setDraft] = useState("");
   const mentionOpen = employees.length > 0 && /@\w*$/.test(draft);
@@ -92,7 +96,7 @@ export function Composer({
       {/* AI Elements prompt-input owns attach UX: pick (hidden input + paperclip), drop on
           the form, paste into the textarea, Backspace-on-empty removes the last chip. */}
       <PromptInput
-        accept="image/*"
+        accept={accept}
         multiple
         onSubmit={({ text, files }) => {
           const t = text.trim() || draft.trim();
@@ -107,9 +111,11 @@ export function Composer({
           setDraft("");
         }}
       >
-        <PromptInputAttachments className="px-3 pt-3 pb-0">
-          {(file) => <PromptInputAttachment data={file} />}
-        </PromptInputAttachments>
+        {accept && (
+          <PromptInputAttachments className="px-3 pt-3 pb-0">
+            {(file) => <PromptInputAttachment data={file} />}
+          </PromptInputAttachments>
+        )}
         <PromptInputBody>
           <PromptInputTextarea
             value={draft}
@@ -120,7 +126,7 @@ export function Composer({
         </PromptInputBody>
         <PromptInputFooter>
           <PromptInputTools className="min-w-0">
-            <AttachButton />
+            {accept && <AttachButton />}
             {tools}
             <span className="hidden truncate text-muted-foreground text-xs sm:inline">
               {hint}

@@ -9,6 +9,7 @@ import {
   GitMergeIcon,
   GitPullRequestIcon,
   LockIcon,
+  PaperclipIcon,
   RefreshCcwIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -37,7 +38,15 @@ import {
 import { plural } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
-import type { EmpFn, HumanFn, PullRequest, Reply, Step, WbTab } from "../types";
+import type {
+  AttachedFile,
+  EmpFn,
+  HumanFn,
+  PullRequest,
+  Reply,
+  Step,
+  WbTab,
+} from "../types";
 
 /* The conversation's turns — ONE implementation used by both frames (issue #19):
    ThreadView renders it for channel threads and DM sessions, FocusView for Focus.
@@ -45,18 +54,39 @@ import type { EmpFn, HumanFn, PullRequest, Reply, Step, WbTab } from "../types";
    Retry → onRetry, the "N files changed" link → onOpen (opens a workbench tab — the thread
    panel has no workbench, so the count stays plain text there), card content → cards. */
 
+/* Files sent with a message, shown as chips under the body — the same shape the composer
+   shows before send, so an attached image reads the same in both places. */
+export function AttachmentChips({ files }: { files: AttachedFile[] }) {
+  if (!files.length) return null;
+  return (
+    <div data-attachments className="flex flex-wrap gap-1.5 pt-1">
+      {files.map((f, i) => (
+        <span
+          key={i}
+          className="inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-xs"
+        >
+          <PaperclipIcon className="size-3 text-muted-foreground" />
+          <span className="max-w-48 truncate font-medium">{f.name}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function UserTurn({
   from,
   time,
   text,
   note,
   human,
+  attachments,
 }: {
   from: string;
   time: string;
   text: string;
   note?: string;
   human: HumanFn;
+  attachments?: AttachedFile[];
 }) {
   return (
     <Message from="user" className="max-w-[80%] gap-1" data-userturn>
@@ -64,6 +94,7 @@ export function UserTurn({
         <MessageResponse className="lilos-prose break-words">
           {text}
         </MessageResponse>
+        {attachments && <AttachmentChips files={attachments} />}
       </MessageContent>
       <div className="ml-auto text-[12px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
         {human(from)?.name ?? from} · {time}

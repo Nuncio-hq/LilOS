@@ -40,7 +40,7 @@ export const SCENARIOS: { id: PreviewScenario; label: string }[] = [
   { id: "profile-missing", label: "Profile missing" },
 ];
 
-export function PreviewMenu({
+export function PrototypePreviewMenu({
   scenario,
   realApp,
   onScenario,

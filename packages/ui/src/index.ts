@@ -9,7 +9,13 @@ export { Composer } from "./chat/composer";
 export { FocusComposer, ModelLogo, ModelPicker } from "./chat/model-picker";
 // conversation (shared by the thread panel and Focus — issue #19)
 export { ReplyCards } from "./conversation/cards";
-export { AgentTurn, PrCard, TurnSteps, UserTurn } from "./conversation/turns";
+export {
+  AgentTurn,
+  AttachmentChips,
+  PrCard,
+  TurnSteps,
+  UserTurn,
+} from "./conversation/turns";
 export { AddFolderDialog } from "./dialogs/add-folder-dialog";
 // dialogs
 export { Field } from "./dialogs/field";
@@ -21,14 +27,7 @@ export { EditEmployeeDialog } from "./employee/employee-edit";
 export { EmployeeCard, EmployeeHome } from "./employee/employee-home";
 export { HireCardInline } from "./feed/hire-card";
 // channel feed
-export {
-  AttachmentChips,
-  Body,
-  EventRow,
-  FeedList,
-  Row,
-  Who,
-} from "./feed/row";
+export { Body, EventRow, FeedList, Row, Who } from "./feed/row";
 export { ThreadSummary } from "./feed/thread-summary";
 // first run
 export { FirstRun } from "./first-run/first-run";
@@ -41,8 +40,8 @@ export { HermesAvatar, HumanAvatar } from "./shell/avatars";
 export { StatusBanner } from "./shell/banner";
 export { ChannelHeader } from "./shell/channel-header";
 export {
-  PreviewMenu,
   type PreviewScenario,
+  PrototypePreviewMenu,
   SCENARIOS,
 } from "./shell/preview-menu";
 export { RightPanel, TicketsList } from "./shell/right-panel";

@@ -13,7 +13,7 @@ import {
   FocusView,
   HireDialog,
   type PreviewScenario,
-  PreviewMenu,
+  PrototypePreviewMenu,
   StatusBanner,
   StatusDialog,
   type Folder,
@@ -804,9 +804,9 @@ export default function App() {
       emp={emp} human={human} resolved={resolved} setResolved={setResolved}
       onFocus={() => setFocus(!focus)}
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
-      running={threadRunning(openThread)} onSend={(t) => sendInThread(openThread, t)} onStop={() => stopTurn(openThread.id)}
+      running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
-      pending={pendingSteers[openThread.id] ?? []}
+      pending={pendingSteers[openThread.id] ?? []} accept="image/*"
     />
   ) : null
 
@@ -827,7 +827,7 @@ export default function App() {
         status={STATUS[scenario]}
         onOpenStatus={() => setStatusOpen(true)}
         realApp={realApp || scenario === "first-run"}
-        preview={<PreviewMenu scenario={scenario} realApp={realApp} onScenario={pickScenario} onRealApp={setRealApp} />}
+        preview={<PrototypePreviewMenu scenario={scenario} realApp={realApp} onScenario={pickScenario} onRealApp={setRealApp} />}
         isProjectDefaultOpen={(p) => p.id === "lilos" || newProjects.includes(p)}
         onSetTheme={setTheme}
         onCloseNav={() => setNavOpen(false)}
@@ -844,12 +844,12 @@ export default function App() {
           lead={emp(view.kind === "dm" ? view.id : openThread.thread.replies.find((r) => emp(r.from))?.from ?? mentionIn(openThread.text)?.id ?? "")}
           resolved={resolved} setResolved={setResolved} work={workOf(openThread)}
           onBack={() => setFocus(false)} onNav={() => setNavOpen(true)} onStart={() => setStartFor(openThread.id)}
-          running={threadRunning(openThread)} onSend={(t) => sendInThread(openThread, t)} onStop={() => stopTurn(openThread.id)}
+          running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
           onRewind={(i) => rewind(openThread, i)} onModel={(m) => setModel(openThread, m)} say={say}
           models={MODELS} repoFiles={REPO_FILES}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={() => prMerge(openThread)}
-          pending={pendingSteers[openThread.id] ?? []}
+          pending={pendingSteers[openThread.id] ?? []} accept="image/*"
         />
       ) : (
         <div className={cn("grid min-h-0 min-w-0 grid-cols-1", panelOpen && "xl:grid-cols-[minmax(0,1fr)_420px]")}>
@@ -864,6 +864,7 @@ export default function App() {
               onRename={(id, title) => mapRoot(feedKey, id, (t) => ({ ...t, title }))}
               onArchive={(id, archived) => mapRoot(feedKey, id, (t) => ({ ...t, archived }))}
               onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying session ${m.thread?.session}`) }}
+              accept="image/*"
             />
           ) : (
           <main className="flex min-h-0 min-w-0 flex-col">
@@ -887,7 +888,7 @@ export default function App() {
               <ConversationScrollButton />
             </Conversation>
 
-            <Composer placeholder={`Message #${channel.name}. @ an employee to start a thread`} employees={employees.filter((e) => channel.employees.includes(e.id))} hint="An @mention opens a thread = one Hermes session" onSend={(t, files) => sendTop(t, undefined, files)} />
+            <Composer placeholder={`Message #${channel.name}. @ an employee to start a thread`} employees={employees.filter((e) => channel.employees.includes(e.id))} hint="An @mention opens a thread = one Hermes session" onSend={(t, files) => sendTop(t, undefined, files)} accept="image/*" />
           </main>
           )}
 

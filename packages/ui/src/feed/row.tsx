@@ -1,20 +1,14 @@
-import { MessageSquareIcon, PaperclipIcon, TicketIcon } from "lucide-react";
+import { MessageSquareIcon, TicketIcon } from "lucide-react";
 import {
   Message,
   MessageContent,
   MessageResponse,
 } from "../components/ai-elements/message";
 import { Badge } from "../components/ui/badge";
+import { AttachmentChips } from "../conversation/turns";
 import { cn } from "../lib/utils";
 import { HermesAvatar, HumanAvatar } from "../shell/avatars";
-import type {
-  AttachedFile,
-  EmpFn,
-  HireDraft,
-  HumanFn,
-  Msg,
-  Work,
-} from "../types";
+import type { EmpFn, HireDraft, HumanFn, Msg, Work } from "../types";
 import { HireCardInline } from "./hire-card";
 import { ThreadSummary } from "./thread-summary";
 
@@ -93,25 +87,6 @@ export function Body({ text }: { text: string }) {
         {text}
       </MessageResponse>
     </MessageContent>
-  );
-}
-
-/* Files sent with a message, shown as chips under the body — the same shape the composer
-   shows before send, so an attached image reads the same in both places. */
-export function AttachmentChips({ files }: { files: AttachedFile[] }) {
-  if (!files.length) return null;
-  return (
-    <div data-attachments className="flex flex-wrap gap-1.5 pt-1">
-      {files.map((f, i) => (
-        <span
-          key={i}
-          className="inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-xs"
-        >
-          <PaperclipIcon className="size-3 text-muted-foreground" />
-          <span className="max-w-48 truncate font-medium">{f.name}</span>
-        </span>
-      ))}
-    </div>
   );
 }
 

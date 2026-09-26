@@ -118,6 +118,7 @@ export function FocusComposer({
   onModel,
   onSend,
   onStop,
+  accept,
 }: {
   running: boolean;
   status: ChatStatus;
@@ -129,6 +130,8 @@ export function FocusComposer({
   onModel?: (m: string) => void;
   onSend: (t: string, files?: AttachedFile[]) => void;
   onStop?: () => void;
+  /* Same contract as Composer: no accept, no attach control. */
+  accept?: string;
 }) {
   const [draft, setDraft] = useState("");
   return (
@@ -136,7 +139,7 @@ export function FocusComposer({
     // the running-state placeholder/hint come from the shared runningComposer in agent-chat.tsx).
     <div>
       <PromptInput
-        accept="image/*"
+        accept={accept}
         multiple
         onSubmit={({ text, files }) => {
           const t = text.trim() || draft.trim();
@@ -151,9 +154,11 @@ export function FocusComposer({
           setDraft("");
         }}
       >
-        <PromptInputAttachments className="px-3 pt-3 pb-0">
-          {(file) => <PromptInputAttachment data={file} />}
-        </PromptInputAttachments>
+        {accept && (
+          <PromptInputAttachments className="px-3 pt-3 pb-0">
+            {(file) => <PromptInputAttachment data={file} />}
+          </PromptInputAttachments>
+        )}
         <PromptInputBody>
           <PromptInputTextarea
             value={draft}
@@ -164,7 +169,7 @@ export function FocusComposer({
         </PromptInputBody>
         <PromptInputFooter>
           <PromptInputTools className="min-w-0">
-            <FocusAttachButton />
+            {accept && <FocusAttachButton />}
             {onModel && models?.length ? (
               <ModelPicker
                 model={model ?? models[0]}

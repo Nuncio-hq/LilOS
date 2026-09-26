@@ -41,8 +41,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
+import { AttachmentChips } from "../conversation/turns";
 import { WorkspacePicker, wsHint } from "../dialogs/workspace-picker";
-import { AttachmentChips, Body, Row, Who } from "../feed/row";
+import { Body, Row, Who } from "../feed/row";
 import { PHASE_LABEL, preview, RESPOND } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
@@ -58,16 +59,18 @@ import type {
   WsPick,
 } from "../types";
 
-/* The ⋯ menu on a DM session row: rename / archive (or unarchive). */
+/* The ⋯ menu on a DM session row: rename / archive (or unarchive). Each item renders
+   only when its handler is passed; with neither there is no menu at all. */
 function SessionMenu({
   archived,
   onRename,
   onArchive,
 }: {
   archived?: boolean;
-  onRename: () => void;
-  onArchive: () => void;
+  onRename?: () => void;
+  onArchive?: () => void;
 }) {
+  if (!onRename && !onArchive) return null;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -82,14 +85,18 @@ function SessionMenu({
         <EllipsisIcon className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
-        <DropdownMenuItem onClick={onRename}>
-          <PencilIcon />
-          Rename session
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onArchive}>
-          {archived ? <RotateCcwIcon /> : <ArchiveIcon />}
-          {archived ? "Unarchive session" : "Archive session"}
-        </DropdownMenuItem>
+        {onRename && (
+          <DropdownMenuItem onClick={onRename}>
+            <PencilIcon />
+            Rename session
+          </DropdownMenuItem>
+        )}
+        {onArchive && (
+          <DropdownMenuItem onClick={onArchive}>
+            {archived ? <RotateCcwIcon /> : <ArchiveIcon />}
+            {archived ? "Unarchive session" : "Archive session"}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -162,6 +169,7 @@ export function EmployeeHome({
   onRename,
   onArchive,
   onRetrySession,
+  accept,
 }: {
   e: Employee;
   feed: Msg[];
@@ -182,6 +190,8 @@ export function EmployeeHome({
   onRename?: (id: string, title: string) => void;
   onArchive?: (id: string, archived: boolean) => void;
   onRetrySession?: (root: Extract<Msg, { kind: "msg" }>) => void;
+  /* Composer attachment types the host accepts; absent = no attach UI. */
+  accept?: string;
 }) {
   const pickFolder = folders.find((x) => x.id === pick.folder);
   const [filter, setFilter] = useState("");
@@ -242,11 +252,17 @@ export function EmployeeHome({
             )}
             <SessionMenu
               archived={isArchived}
-              onRename={() => {
-                setDraft(t.title ?? preview(m.text));
-                setEditing(m.id);
-              }}
-              onArchive={() => onArchive?.(m.id, !isArchived)}
+              onRename={
+                onRename
+                  ? () => {
+                      setDraft(t.title ?? preview(m.text));
+                      setEditing(m.id);
+                    }
+                  : undefined
+              }
+              onArchive={
+                onArchive ? () => onArchive(m.id, !isArchived) : undefined
+              }
             />
           </div>
           <Who id={m.from} time={m.time} emp={emp} human={human} />
@@ -425,6 +441,7 @@ export function EmployeeHome({
         employees={[]}
         hint={wsHint(pickFolder, pick)}
         onSend={(t, files) => onSend(t, pick, files)}
+        accept={accept}
         tools={
           <WorkspacePicker
             folders={folders}
