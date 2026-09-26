@@ -148,7 +148,9 @@ function startStub() {
           typeof m.content === "string"
             ? m.content
             : JSON.stringify(m.content ?? "");
-        const searched = toolMsgs.some((m) => /mcp__lilos__terminal_run/.test(toolText(m)));
+        const searched = toolMsgs.some((m) =>
+          /mcp__lilos__terminal_run/.test(toolText(m)),
+        );
         const ranLilos = toolMsgs.some((m) => /FROM-MODEL/.test(toolText(m)));
         const searchTool = tools.find((n) => /^tool_search$/i.test(n));
         const callTool = tools.find((n) => /^tool_call$/i.test(n));
@@ -232,7 +234,10 @@ function startStub() {
         };
         if (body.stream) {
           if (wantCall) {
-            return sse([toolCallDelta(wantCall), { delta: {}, finish_reason: "tool_calls" }]);
+            return sse([
+              toolCallDelta(wantCall),
+              { delta: {}, finish_reason: "tool_calls" },
+            ]);
           }
           return sse([
             { delta: { role: "assistant", content: `stub:${MARKER}` } },
@@ -493,9 +498,7 @@ async function main() {
         )
         .catch((e) => ({ error: String(e) }))) as Record<string, unknown>;
       check(!("error" in pr), "session/prompt completes (stub provider)");
-      const toolsOffered = [
-        ...new Set(stub.seen.flatMap((s) => s.tools)),
-      ];
+      const toolsOffered = [...new Set(stub.seen.flatMap((s) => s.tools))];
       // Hermes tiers the tool surface: MCP tools are deferred behind
       // tool_search/tool_call. The session's tools reached the model iff
       // either the tool was directly visible or the search indirection was.
