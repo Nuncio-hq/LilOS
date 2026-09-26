@@ -21,7 +21,10 @@ async function promptText(
 describe("engine-fake", () => {
   test("is deterministic: same input, same event stream", async () => {
     const collect = async () => {
-      const c = conn();
+      // Same namespace seed → identical session ids across runs (#61).
+      const c = connectFake(
+        new FakeEngine({ tick: 1, sessionNamespace: "det" }),
+      );
       const log: string[] = [];
       c.onEvent((e) => log.push(JSON.stringify(e)));
       const { sessionId } = (await c.request("session.start", {
@@ -38,6 +41,31 @@ describe("engine-fake", () => {
     const b = await collect();
     expect(a).toEqual(b);
     expect(a.length).toBeGreaterThan(10);
+  });
+
+  test("AC-1 session ids are namespaced per engine run, never reused after restart", async () => {
+    const start = async (c: ReturnType<typeof conn>) =>
+      (
+        (await c.request("session.start", { agent: "builder", cwd: "/t" })) as {
+          sessionId: string;
+        }
+      ).sessionId;
+    // Each FakeEngine is one engine run (#61): a restarted engine must never
+    // hand out an id a previous run already used, or a stale events.since /
+    // prompt could alias onto a stranger's fresh session.
+    const run1 = conn();
+    const run2 = conn();
+    const [r1a, r1b] = [await start(run1), await start(run1)];
+    const r2a = await start(run2);
+    expect(r1a).not.toBe(r1b);
+    expect([r1a, r1b]).not.toContain(r2a);
+    run1.close();
+    run2.close();
+
+    // Seedable: a fixed namespace keeps ids fully deterministic for tests.
+    const seeded = () =>
+      connectFake(new FakeEngine({ tick: 1, sessionNamespace: "test" }));
+    expect(await start(seeded())).toBe(await start(seeded()));
   });
 
   test("describe advertises lilos-engine protocol + capabilities", async () => {

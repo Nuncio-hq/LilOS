@@ -477,6 +477,110 @@ describe("workspace harness", () => {
     }
   });
 
+  it("AC-2 session ids never collide across engine restarts (#61)", {
+    timeout: 30_000,
+  }, async () => {
+    // Two conversations bound, engine-fake killed and relaunched twice through
+    // the real supervisor + spawned serve.ts: every rebind must mint ids no
+    // earlier process already used, and follow-ups must land in the right
+    // conversation (no aliasing a stranger's session).
+    const w = await setupWorld(1, false);
+    const log = createMemoryLogger();
+    const conns: EngineConnection[] = [];
+    const supervisor = new EngineSupervisor({
+      launcher: fakeEngineLauncher({ repoRoot: process.cwd(), tick: 1, log }),
+      connect: (url) => connectEngineWs(url),
+      onConnection: (conn) => {
+        conns.push(conn);
+        w.harness.attachEngine(conn);
+      },
+      log,
+      minBackoffMs: 10,
+      stableAfterMs: 60_000,
+      maxConsecutiveCrashes: 5,
+    });
+    try {
+      await supervisor.start();
+      const { channel } = await openDmConversation(w.user);
+      const openConv = async (text: string) =>
+        (
+          await w.user.request<{ conversation: { id: string } }>(
+            "conversations.open",
+            { channelId: channel.id, text },
+          )
+        ).conversation;
+      const convA = await openConv("Summarize the repo layout");
+      const convB = await openConv("Describe the engine seam");
+
+      const refsFor = async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        const byId = new Map(conversations.map((c) => [c.id, c.engineRef]));
+        return { a: byId.get(convA.id), b: byId.get(convB.id) };
+      };
+      const waitForFreshRefs = (stale: (string | null | undefined)[]) =>
+        waitFor(async () => {
+          const refs = await refsFor();
+          // Rebound when both convs hold a ref no earlier run already used.
+          if (
+            !refs.a ||
+            !refs.b ||
+            refs.a === refs.b ||
+            stale.includes(refs.a) ||
+            stale.includes(refs.b)
+          ) {
+            return undefined;
+          }
+          return refs as { a: string; b: string };
+        }, "rebound engineRefs");
+
+      const run1 = await waitForFreshRefs([]);
+
+      // Both root turns settle before the kills — an in-flight turn would end
+      // interrupted instead of producing the answers counted below.
+      const answersIn = async (convId: string) => {
+        const { messages } = await w.user.request<{ messages: AppMessage[] }>(
+          "messages.list",
+          { channelId: channel.id, limit: 100 },
+        );
+        return messages.filter(
+          (m) => m.authorKind === "employee" && m.conversationId === convId,
+        ).length;
+      };
+      await waitFor(
+        async () =>
+          (await answersIn(convA.id)) >= 1 && (await answersIn(convB.id)) >= 1
+            ? true
+            : undefined,
+        "root answers in both conversations",
+      );
+
+      // Restart 1: kill the spawned engine; supervisor relaunches it.
+      supervisor.process?.kill();
+      const run2 = await waitForFreshRefs([run1.a, run1.b]);
+      expect(conns.length).toBeGreaterThanOrEqual(2);
+
+      // Restart 2: same again — three processes, three disjoint id sets.
+      supervisor.process?.kill();
+      await waitForFreshRefs([run1.a, run1.b, run2.a, run2.b]);
+      expect(conns.length).toBeGreaterThanOrEqual(3);
+
+      // No cross-talk: a follow-up to A must answer inside A's conversation,
+      // not leak into B's (the aliased-session failure this fixes).
+      const beforeB = await answersIn(convB.id);
+      await postMessage(w.user, channel.id, convA.id, "ping after restarts");
+      await waitFor(async () => {
+        const n = await answersIn(convA.id);
+        return n >= 2 ? n : undefined; // root turn's answer + follow-up
+      }, "follow-up answer in conversation A");
+      expect(await answersIn(convB.id)).toBe(beforeB);
+    } finally {
+      await supervisor.stop();
+      await w.cleanup();
+    }
+  });
+
   it("AC-4 ends a turn lost across sleep as interrupted with a Retry note, never a spinner", async () => {
     const w = await setupWorld();
     try {
