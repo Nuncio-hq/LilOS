@@ -1,0 +1,334 @@
+import { type ChildProcess, spawn } from "node:child_process";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { expect, type Page, test } from "@playwright/test";
+
+/**
+ * Issue #32 — macOS notifications + per-employee badges. ACs:
+ *   AC-1 notification on done / needs approval / failed, only when that
+ *       conversation is not in view;
+ *   AC-2 clicking a notification opens the exact conversation;
+ *   AC-3 per-employee badge = needs-approval count (priority) or running count.
+ *
+ * CI leg (engine-fake, also runs on Linux): the renderer logic is exercised
+ * through an injected `window.lilos` bridge — the same shape the Electron
+ * preload exposes — so the whole event→notification→route path is real, only
+ * the OS banner + click are stubbed. The real macOS banner + click-through is
+ * recorded on the VM; the live leg (`scripts/live/32.sh`, LILOS_ENGINE=hermes)
+ * re-runs the deterministic part against real `hermes serve`.
+ */
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const repo = path.resolve(here, "..");
+const webDir = path.join(repo, "apps", "web");
+const SHOTS = path.join(repo, "test-results", "ac-32");
+const LIVE = process.env.LILOS_ENGINE === "hermes";
+
+interface Stack {
+  home: string;
+  webUrl: string;
+  relayWs: string;
+  feedWs: string;
+  relayToken: string;
+  stop: () => Promise<void>;
+}
+
+async function waitForHttp(url: string, ms = 30_000): Promise<void> {
+  const start = Date.now();
+  for (;;) {
+    const ok = await fetch(url)
+      .then((r) => r.ok || r.status === 404)
+      .catch(() => false);
+    if (ok) return;
+    if (Date.now() - start > ms)
+      throw new Error(`timed out waiting for ${url}`);
+    await new Promise((r) => setTimeout(r, 200));
+  }
+}
+
+function killProc(proc: ChildProcess): Promise<void> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => {
+      proc.kill("SIGKILL");
+      resolve();
+    }, 8_000);
+    proc.once("exit", () => {
+      clearTimeout(t);
+      resolve();
+    });
+    proc.kill("SIGTERM");
+  });
+}
+
+async function bootStack(
+  tag: string,
+  ports: { relay: number; feed: number; web: number },
+): Promise<Stack> {
+  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
+  const proc = spawn("bun", ["run", "dev"], {
+    cwd: webDir,
+    env: {
+      ...process.env,
+      LILOS_HOME: home,
+      LILOS_RELAY_PORT: String(ports.relay),
+      LILOS_FEED_PORT: String(ports.feed),
+      LILOS_WEB_PORT: String(ports.web),
+    },
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  const webUrl = `http://127.0.0.1:${ports.web}`;
+  try {
+    await waitForHttp(webUrl);
+    const tokenPath = path.join(home, "relay-token");
+    let relayToken = "";
+    for (let i = 0; i < 100 && !relayToken; i++) {
+      try {
+        relayToken = readFileSync(tokenPath, "utf8").trim();
+      } catch {}
+      if (!relayToken) await new Promise((r) => setTimeout(r, 50));
+    }
+    return {
+      home,
+      webUrl,
+      relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
+      feedWs: `ws://127.0.0.1:${ports.feed}/ws`,
+      relayToken,
+      stop: () => killProc(proc),
+    };
+  } catch (e) {
+    proc.kill("SIGKILL");
+    throw e;
+  }
+}
+
+let stack: Stack;
+test.beforeAll(async () => {
+  test.setTimeout(120_000);
+  stack = await bootStack("ac32", { relay: 4579, feed: 4584, web: 5205 });
+});
+test.afterAll(async () => {
+  await stack?.stop();
+});
+test.describe.configure({ mode: "serial" });
+
+interface PostedNote {
+  conversationId: string;
+  kind: string;
+  title: string;
+  body: string;
+}
+
+type BridgeWindow = Window & {
+  __lilosPosts?: PostedNote[];
+  __lilosOpenConv?: ((id: string) => void) | null;
+  lilos?: unknown;
+};
+
+/** Inject the Electron `window.lilos` bridge: record posts, expose the
+ * open-conversation callback so the test can simulate a notification click. */
+async function injectBridge(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as BridgeWindow;
+    w.__lilosPosts = [];
+    w.__lilosOpenConv = null;
+    w.lilos = {
+      notifications: {
+        post: (n: PostedNote) => (w.__lilosPosts ?? []).push(n),
+      },
+      onOpenConversation: (cb: (id: string) => void) => {
+        w.__lilosOpenConv = cb;
+        return () => {};
+      },
+    };
+  });
+}
+
+const posts = (page: Page) =>
+  page.evaluate(() => (window as BridgeWindow).__lilosPosts ?? []);
+
+const postKeys = (page: Page) =>
+  page.evaluate(() =>
+    ((window as BridgeWindow).__lilosPosts ?? []).map(
+      (n) => `${n.conversationId}:${n.kind}`,
+    ),
+  );
+
+const clickNotification = (page: Page, conversationId: string) =>
+  page.evaluate((id) => {
+    (window as BridgeWindow).__lilosOpenConv?.(id);
+  }, conversationId);
+
+/** Wait until the injected bridge recorded a post for `convId` of `kind`. */
+async function waitForPost(
+  page: Page,
+  convId: string,
+  kind: string,
+  ms = 60_000,
+) {
+  await expect
+    .poll(() => postKeys(page), { timeout: ms })
+    .toContain(`${convId}:${kind}`);
+}
+
+async function dmDefault(page: Page) {
+  await page.goto(`${stack.webUrl}/`);
+  const aside = page.locator("aside");
+  // Under real hermes the first-run hire waits on the engine's agent catalog
+  // — the "Hiring your first employee…" placeholder clears only then. The
+  // auto-hired agent is always profile id `default`; its display name is
+  // "Default" on engine-fake and "default" on hermes.
+  const employeeRow = aside.getByText(/^default$/i);
+  await expect(employeeRow).toBeVisible({ timeout: LIVE ? 120_000 : 30_000 });
+  const dmBtn = page.getByRole("button", {
+    name: /open dm|set up later|message/i,
+  });
+  if (
+    await dmBtn
+      .first()
+      .isVisible()
+      .catch(() => false)
+  ) {
+    await dmBtn.first().click();
+  } else {
+    await employeeRow.click();
+  }
+  await expect(page).toHaveURL(/\/dm\//);
+}
+
+const send = async (page: Page, text: string) => {
+  const box = page.locator("textarea").last();
+  await box.fill(text);
+  await box.press("Enter");
+};
+
+/** After send() the URL becomes /dm/<emp>/<conv> — return the pair. */
+const convFromUrl = async (page: Page) => {
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 15_000 });
+  const m = /\/dm\/([^/]+)\/([^/]+)/.exec(new URL(page.url()).pathname);
+  if (!m) throw new Error(`not on a conversation page: ${page.url()}`);
+  return { employeeId: decodeURIComponent(m[1]), conversationId: m[2] };
+};
+
+const convUrl = (employeeId: string, conversationId: string) =>
+  `${stack.webUrl}/dm/${encodeURIComponent(employeeId)}/${conversationId}`;
+
+test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens the conversation, badges count", async ({
+  page,
+}) => {
+  test.skip(LIVE, "fake-only leg — live leg runs via scripts/live/32.sh");
+  test.setTimeout(240_000);
+  await injectBridge(page);
+  await dmDefault(page);
+
+  // ── conv A: completes while in view → no notification ────────────────
+  await send(page, "Say hello then list files");
+  const convA = await convFromUrl(page);
+  await expect(page.locator("[data-agentturn]").first()).toContainText(
+    /envelope|file|Done|answer/i,
+    { timeout: 90_000 },
+  );
+  // Turn fully done (badge cleared) + a beat for any stray event → the
+  // in-view suppression really suppressed, not just raced.
+  const aside = page.locator("aside");
+  await expect(aside.locator("[data-badge-running]")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  await page.waitForTimeout(500);
+  expect(await posts(page)).toEqual([]); // AC-1 suppression
+
+  // ── conv B: opens an approval while conv A is in view → ask badge + ask
+  await page.goto(`${stack.webUrl}/dm/${convA.employeeId}`);
+  await send(page, "Add a release note to the readme");
+  const convB = await convFromUrl(page);
+  await page.goto(convUrl(convA.employeeId, convA.conversationId));
+
+  // AC-3: approvals badge on the employee while the ask waits.
+  await expect(aside.locator("[data-badge-approvals]")).toHaveText("1", {
+    timeout: 60_000,
+  });
+  await page.screenshot({ path: `${SHOTS}/ac-3-badge-approvals.png` });
+
+  await waitForPost(page, convB.conversationId, "ask");
+  const askPost = (await posts(page)).find(
+    (n) => n.conversationId === convB.conversationId,
+  );
+  expect(askPost?.title).toContain("approval");
+  expect(askPost?.body).toBeTruthy();
+
+  // AC-2: a notification click opens that exact conversation.
+  await clickNotification(page, convB.conversationId);
+  await expect(page).toHaveURL(
+    new RegExp(`/dm/${convA.employeeId}/${convB.conversationId}`),
+  );
+  await expect(page.getByText("Approval needed").first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.screenshot({ path: `${SHOTS}/ac-2-click-through.png` });
+  await page.getByRole("button", { name: "Allow once" }).first().click();
+
+  // ── conv C: finishes out of view → done notification + running badge ─
+  await page.goto(`${stack.webUrl}/dm/${convA.employeeId}`);
+  await send(page, "Say hi to Carol");
+  const convC = await convFromUrl(page);
+  await page.goto(convUrl(convA.employeeId, convA.conversationId));
+  // While it runs the blue running badge shows.
+  await expect(aside.locator("[data-badge-running]")).toBeVisible({
+    timeout: 60_000,
+  });
+  await waitForPost(page, convC.conversationId, "done");
+
+  // ── conv D: fails out of view → failed notification ──────────────────
+  await page.goto(`${stack.webUrl}/dm/${convA.employeeId}`);
+  await send(page, "fail now please");
+  const convD = await convFromUrl(page);
+  await page.goto(convUrl(convA.employeeId, convA.conversationId));
+  await waitForPost(page, convD.conversationId, "failed");
+  const failPost = (await posts(page)).find(
+    (n) => n.conversationId === convD.conversationId,
+  );
+  expect(failPost?.body).toContain("engine-fake");
+
+  // Clicking the failed notification opens conv D with its error visible.
+  await clickNotification(page, convD.conversationId);
+  await expect(page).toHaveURL(
+    new RegExp(`/dm/${convA.employeeId}/${convD.conversationId}`),
+  );
+  await expect(page.getByText(/Error: engine-fake/)).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.screenshot({ path: `${SHOTS}/ac-32-final.png` });
+});
+
+/**
+ * Live leg (`scripts/live/32.sh`, LILOS_ENGINE=hermes): the deterministic part
+ * — a real engine turn finishing out of view posts a notification and the
+ * click opens that conversation. Approvals/failures can't be forced
+ * deterministically through a real model, so those legs stay in the
+ * engine-fake suite (same engine-protocol events; the notification path is
+ * engine-agnostic).
+ */
+test("AC-32 live: done notification + click-through under real hermes", async ({
+  page,
+}) => {
+  test.skip(!LIVE, "live leg — run via scripts/live/32.sh");
+  test.setTimeout(300_000);
+  await injectBridge(page);
+  await dmDefault(page);
+
+  await send(page, "Reply with exactly the word: ok");
+  const convA = await convFromUrl(page);
+
+  // A second conversation finishes while we look at the first.
+  await page.goto(`${stack.webUrl}/dm/${convA.employeeId}`);
+  await send(page, "Reply with exactly the word: done");
+  const convB = await convFromUrl(page);
+  await page.goto(convUrl(convA.employeeId, convA.conversationId));
+
+  await waitForPost(page, convB.conversationId, "done", 240_000);
+  await clickNotification(page, convB.conversationId);
+  await expect(page).toHaveURL(
+    new RegExp(`/dm/${convA.employeeId}/${convB.conversationId}`),
+  );
+});
