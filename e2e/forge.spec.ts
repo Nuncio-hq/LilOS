@@ -64,11 +64,16 @@ const PR_VIEW = {
   ],
 };
 
+let scanRoot = "";
 let repo = "";
 let repoReal = "";
 
 test.beforeAll(() => {
-  repo = mkdtempSync(join(tmpdir(), "lilos-forge-e2e-"));
+  // Isolated parent dir: discovery + the picker list the repo's parent, so the
+  // test must not depend on how crowded the machine's shared tmp dir is.
+  scanRoot = mkdtempSync(join(tmpdir(), "lilos-forge-root-"));
+  repo = join(scanRoot, "lilos-forge-e2e-repo");
+  mkdirSync(repo);
   repoReal = realpathSync(repo);
   const git = (args: string[]) =>
     execFileSync("git", args, { cwd: repo, encoding: "utf8" });
@@ -84,7 +89,7 @@ test.beforeAll(() => {
   writeFileSync(viewPath, `${JSON.stringify(PR_VIEW, null, 2)}\n`);
   rmSync(logFile, { force: true });
 });
-test.afterAll(() => rmSync(repo, { recursive: true, force: true }));
+test.afterAll(() => rmSync(scanRoot, { recursive: true, force: true }));
 
 function watchConsole(page: Page) {
   const errors: string[] = [];
