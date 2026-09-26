@@ -43,6 +43,36 @@ export class FakeGateway implements GatewayLike {
   attachedImages: Record<string, unknown>[] = [];
   closedSessions: string[] = [];
   steers: string[] = [];
+  /** profiles.* backing store — a LilOS agent IS a hermes profile. */
+  profiles = new Map<
+    string,
+    {
+      name: string;
+      description?: string;
+      soul?: string;
+      model?: string;
+      skill_count?: number;
+    }
+  >([
+    [
+      "builder",
+      {
+        name: "builder",
+        description: "seed builder",
+        soul: "You are Builder.",
+        model: "stub-model-a",
+        skill_count: 3,
+      },
+    ],
+  ]);
+  /** model.options backing store. */
+  modelProviders: { slug: string; name: string; models: string[] }[] = [
+    { slug: "stub", name: "Stub", models: ["stub-model-a", "stub-model-b"] },
+  ];
+  defaultModel = "stub-model-a";
+  /** session_id -> model set via slash.exec /model. */
+  sessionModels = new Map<string, string>();
+  slashCommands: string[] = [];
 
   private refs = new Map<string, string>();
   private sreqId = 0;
@@ -114,6 +144,82 @@ export class FakeGateway implements GatewayLike {
           attached: true,
           count: this.attachedImages.length,
         });
+      case "profiles.list":
+        return Promise.resolve({
+          profiles: [...this.profiles.values()].map((pr) => ({
+            name: pr.name,
+            path: `/profiles/${pr.name}`,
+            description: pr.description ?? "",
+            model: pr.model ?? null,
+            skill_count: pr.skill_count ?? 0,
+            previous_names: [],
+          })),
+          bot_mode_protocol: true,
+        });
+      case "profiles.describe": {
+        const pr = this.profiles.get(String(p.name));
+        if (!pr)
+          return Promise.reject(
+            new RpcError(-32602, `no profile ${String(p.name)}`),
+          );
+        return Promise.resolve({
+          name: pr.name,
+          description: pr.description ?? "",
+          soul: pr.soul ?? "",
+          model: { provider: "stub", default: pr.model ?? "" },
+          skills: Array.from({ length: pr.skill_count ?? 0 }, (_, i) => ({
+            name: `skill-${i}`,
+          })),
+          toolsets: [],
+          mcp_servers: [],
+        });
+      }
+      case "profiles.create": {
+        const name = String(p.name ?? "");
+        if (this.profiles.has(name))
+          return Promise.reject(new RpcError(-32602, `profile ${name} exists`));
+        this.profiles.set(name, {
+          name,
+          ...(typeof p.description === "string"
+            ? { description: p.description }
+            : {}),
+          ...(typeof p.soul === "string" ? { soul: p.soul } : {}),
+          ...(typeof p.model === "string" ? { model: p.model } : {}),
+          skill_count: 0,
+        });
+        return Promise.resolve({
+          ok: true,
+          name,
+          path: `/profiles/${name}`,
+          soul_written: typeof p.soul === "string",
+          model_set: typeof p.model === "string",
+          mirrored: { credentials: false, env: false },
+        });
+      }
+      case "model.options":
+        return Promise.resolve({
+          providers: this.modelProviders,
+          model: this.defaultModel,
+          provider: this.modelProviders[0]?.slug ?? "",
+        });
+      case "slash.exec": {
+        const command = String(p.command ?? "");
+        this.slashCommands.push(command);
+        const m = /^\/model\s+(\S+)/.exec(command);
+        if (m) {
+          const want = m[1].includes("/")
+            ? m[1].slice(m[1].indexOf("/") + 1)
+            : m[1];
+          const known = this.modelProviders.some((pr) =>
+            pr.models.includes(want),
+          );
+          if (!known)
+            return Promise.resolve({ output: `✗ Unknown model: ${want}` });
+          this.sessionModels.set(String(p.session_id), want);
+          return Promise.resolve({ output: `Switched model to ${want}` });
+        }
+        return Promise.resolve({ output: "" });
+      }
       default:
         return Promise.reject(new RpcError(-32601, `no method ${method}`));
     }

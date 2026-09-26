@@ -24,7 +24,13 @@
  * Exits non-zero unless every scenario passes.
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,18 +82,71 @@ if (STUB_MODE) {
     process.env.LILOS_STUB_HOME ??
     join(process.env.HOME ?? tmpdir(), ".hermes", "profiles", "lilos-stub");
   if (!existsSync(home)) mkdirSync(home, { recursive: true });
+  const stubConfig = `model:
+  provider: lilos-stub
+  default: stub-1
+custom_providers:
+  - name: lilos-stub
+    base_url: "http://127.0.0.1:${STUB_PORT}/v1"
+    api_key: "sk-lilos-stub"
+    api_mode: chat_completions
+    models:
+      - stub-1
+      - stub-2
+`;
+  // `builder` must exist BEFORE serve starts (conformance session.start uses
+  // it) and must carry the stub provider itself — profiles.create mirrors
+  // credentials but not custom_providers definitions, and profiles live in
+  // the global ~/.hermes/profiles/, not inside HERMES_HOME.
+  const extraConfig = `tools:
+  tool_search:
+    enabled: "off"
+onboarding:
+  seen:
+    profile_build_offered: true
+approvals:
+  mode: manual
+  timeout: 60
+compression:
+  in_place: false
+  threshold_tokens: 18000
+  protect_last_n: 1
+  protect_first_n: 1
+  min_tail_user_messages: 1
+`;
+  const builderHome = join(
+    process.env.HOME ?? tmpdir(),
+    ".hermes",
+    "profiles",
+    "builder",
+  );
+  if (!existsSync(builderHome)) mkdirSync(builderHome, { recursive: true });
+  // Sessions run under the builder profile: it needs the same approvals and
+  // compression knobs as the home config (profile config wins inside it).
+  writeFileSync(join(builderHome, "config.yaml"), stubConfig + extraConfig);
+  writeFileSync(
+    join(builderHome, "SOUL.md"),
+    "You are Builder. Own the branch, keep diffs small, show your work.\n",
+  );
+  // Sessions also run under the built-in `default` profile (conformance
+  // starts with agents.list[0]), whose home is the real ~/.hermes — register
+  // the stub provider there too or its turns can't resolve `lilos-stub`.
+  const realConfigPath = join(
+    process.env.HOME ?? tmpdir(),
+    ".hermes",
+    "config.yaml",
+  );
+  if (existsSync(realConfigPath)) {
+    const real = readFileSync(realConfigPath, "utf8");
+    if (!/^custom_providers:/m.test(real) && !real.includes("name: lilos-stub"))
+      appendFileSync(
+        realConfigPath,
+        `\ncustom_providers:\n  - name: lilos-stub\n    base_url: "http://127.0.0.1:${STUB_PORT}/v1"\n    api_key: "sk-lilos-stub"\n    api_mode: chat_completions\n    models:\n      - stub-1\n      - stub-2\n`,
+      );
+  }
   writeFileSync(
     join(home, "config.yaml"),
-    `model:
-  provider: "custom:lilos-stub"
-  model: "stub-1"
-providers:
-  lilos-stub:
-    base_url: "http://127.0.0.1:${STUB_PORT}/v1"
-    api_key: "stub"
-    api_mode: chat_completions
-    model: "stub-1"
-tools:
+    `${stubConfig}tools:
   tool_search:
     enabled: "off"
 onboarding:
@@ -105,7 +164,7 @@ compression:
 `,
   );
   env = { HERMES_HOME: home, HERMES_SERVE_TIMEOUT_MS: "240000" };
-  provider = "custom:lilos-stub";
+  provider = "lilos-stub";
   model = "stub-1";
   args = ["--isolated"];
   console.log(`[live] STUB mode — HERMES_HOME=${home} stub port=${STUB_PORT}`);
@@ -163,6 +222,29 @@ const engine = new HermesEngine({
 });
 const conn = connectInMemory(engine);
 const h = new Harness(conn);
+
+// The conformance suites start sessions as agent "builder": it must be a
+// real Hermes profile. Stub mode pre-provisions it on disk (above); real
+// mode creates it via the engine when absent (agents.create mirrors the
+// active profile's credentials).
+{
+  const { agents } = (await h.request("agents.list")) as {
+    agents: { id: string }[];
+  };
+  if (!agents.some((a) => a.id === "builder")) {
+    if (STUB_MODE)
+      throw new Error(
+        "builder profile missing — stub mode should have provisioned it",
+      );
+    await h.request("agents.create", {
+      name: "builder",
+      description: "LilOS conformance seed agent",
+      soul: "You are Builder. Own the branch, keep diffs small, show your work.",
+      ...(model ? { model } : {}),
+    });
+    console.log('[live] seeded "builder" profile via agents.create');
+  }
+}
 
 for (const suite of SUITES) {
   if (!suite.implemented) continue;

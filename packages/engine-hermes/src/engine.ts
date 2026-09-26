@@ -1,4 +1,6 @@
 import {
+  type AgentsCreateParams,
+  type AgentsDescribeParams,
   type ApprovalOutcome,
   type Capability,
   type ContentBlock,
@@ -11,6 +13,7 @@ import {
   type PromptParams,
   type RequestRespondParams,
   RPC_ERRORS,
+  type SessionSetModelParams,
   type SessionStartParams,
   type SessionSteerParams,
   type SessionStopParams,
@@ -18,6 +21,15 @@ import {
   type Usage,
 } from "@lilos/contracts/engine";
 import { AcpDriver, type AcpOptions } from "./acp.js";
+import {
+  createAgent,
+  describeAgent,
+  listAgents,
+  listModels,
+  requireAgent,
+  setSessionModel,
+  splitModelRef,
+} from "./catalog.js";
 import { RpcError } from "./errors.js";
 import type { GatewayLike } from "./gateway.js";
 import {
@@ -40,8 +52,6 @@ import {
 export interface HermesEngineOptions {
   /** Connected `hermes serve` gateway (ws path). */
   gateway: GatewayLike;
-  /** Hermes profile all sessions run under (the LilOS `agent` is a role, not a profile). */
-  profile?: string;
   /** Provider override passed to `session.create` (e.g. "custom:stub"). */
   provider?: string;
   /** Model override passed to `session.create` when the request omits one. */
@@ -110,6 +120,22 @@ export class HermesEngine {
         return this.sessionStop(parsed.data as SessionStopParams);
       case "session.steer":
         return this.sessionSteer(parsed.data as SessionSteerParams);
+      case "agents.list":
+        return listAgents(this.opts.gateway);
+      case "agents.describe":
+        return describeAgent(
+          this.opts.gateway,
+          (parsed.data as AgentsDescribeParams).id,
+        );
+      case "agents.create":
+        return createAgent(
+          this.opts.gateway,
+          parsed.data as AgentsCreateParams,
+        );
+      case "models.list":
+        return listModels(this.opts.gateway, this.opts.provider);
+      case "session.setModel":
+        return this.sessionSetModel(parsed.data as SessionSetModelParams);
       default:
         throw new RpcError(
           RPC_ERRORS.METHOD_NOT_FOUND,
@@ -141,6 +167,20 @@ export class HermesEngine {
         name: "Usage accounting",
         description: "turn.completed carries Hermes token usage.",
       },
+      {
+        id: "agents",
+        name: "Hireable agents",
+        description:
+          "Agents are Hermes profiles: agents.list/describe/create map to profiles.*; session.start runs under the profile.",
+        methods: ["agents.list", "agents.describe", "agents.create"],
+      },
+      {
+        id: "models",
+        name: "Model picker",
+        description:
+          "models.list flattens model.options; session.setModel runs slash.exec /model (session-scoped, next turn picks it up).",
+        methods: ["models.list", "session.setModel"],
+      },
     ];
     if (this.opts.acp) {
       capabilities.push({
@@ -163,18 +203,23 @@ export class HermesEngine {
   private async sessionStart(p: SessionStartParams) {
     const id = `s${++this.sessionCounter}`;
     const mcp = p.mcpServers ?? [];
+    // The LilOS `agent` is a Hermes profile name: refuse unknown ones up front
+    // (AGENT_NOT_FOUND) and run the session under that profile.
+    await requireAgent(this.opts.gateway, p.agent);
+    const modelRef = splitModelRef(
+      p.model ?? this.opts.model,
+      this.opts.provider,
+    );
     if (mcp.length === 0) {
       const r = (await this.opts.gateway.request("session.create", {
-        ...(this.opts.profile ? { profile: this.opts.profile } : {}),
+        profile: p.agent,
         title: `${p.agent} · LilOS`,
         cwd: p.cwd,
         cwd_explicit: true,
         source: "lilos",
         close_on_disconnect: true,
-        ...((p.model ?? this.opts.model)
-          ? { model: p.model ?? this.opts.model }
-          : {}),
-        ...(this.opts.provider ? { provider: this.opts.provider } : {}),
+        ...(modelRef.model ? { model: modelRef.model } : {}),
+        ...(modelRef.provider ? { provider: modelRef.provider } : {}),
       })) as { session_id?: unknown; stored_session_id?: unknown };
       if (typeof r.session_id !== "string" || !r.session_id)
         throw new RpcError(
@@ -259,7 +304,10 @@ export class HermesEngine {
       },
     );
     done.catch(() => {});
-    s.emit("turn.started", { turnId });
+    s.emit("turn.started", {
+      turnId,
+      ...(s.model ? { model: s.model } : {}),
+    });
     s.setState("running");
 
     try {
@@ -411,8 +459,25 @@ export class HermesEngine {
       resolve: () => {},
       reject: () => {},
     };
-    s.emit("turn.started", { turnId });
+    s.emit("turn.started", {
+      turnId,
+      ...(s.model ? { model: s.model } : {}),
+    });
     if (s.state !== "closed") s.setState("running");
+  }
+
+  private async sessionSetModel(p: SessionSetModelParams) {
+    const s = this.require(p.sessionId);
+    if (s.state === "closed")
+      throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    if (s.driver === "acp")
+      throw new RpcError(
+        RPC_ERRORS.METHOD_NOT_FOUND,
+        "session.setModel needs the WS transport (no ACP equivalent yet)",
+      );
+    await setSessionModel(this.opts.gateway, s.runtimeSid, p.model);
+    s.model = p.model;
+    return { model: p.model };
   }
 
   /** ACP path: a session/prompt response IS the turn end (no message.complete). */

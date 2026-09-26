@@ -62,7 +62,8 @@ export class Session {
     readonly id: string,
     readonly agent: string,
     readonly cwd: string,
-    readonly model: string | undefined,
+    /** Current model pin (session.setModel rewrites it). */
+    public model: string | undefined,
     readonly mcpServers: McpServer[],
     readonly driver: DriverKind,
     /** Hermes gateway sid (stable for the connection's life). */

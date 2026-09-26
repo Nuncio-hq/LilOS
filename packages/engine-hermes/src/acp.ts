@@ -64,11 +64,17 @@ export class AcpDriver {
       ...(process.env as Record<string, string>),
       ...this.opts.env,
     };
-    this.proc = spawn(this.opts.bin, ["acp", ...(this.opts.args ?? [])], {
-      env,
-      cwd: p.cwd,
-      stdio: ["pipe", "pipe", "inherit"],
-    });
+    // `agent` is the Hermes profile: `hermes acp --profile <name>` runs the
+    // session under it (WS sessions use `session.create {profile}` instead).
+    this.proc = spawn(
+      this.opts.bin,
+      ["acp", "--profile", p.agent, ...(this.opts.args ?? [])],
+      {
+        env,
+        cwd: p.cwd,
+        stdio: ["pipe", "pipe", "inherit"],
+      },
+    );
     const proc = this.proc;
     if (!proc.stdin || !proc.stdout)
       throw new Error("hermes acp stdio not piped");

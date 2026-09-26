@@ -328,7 +328,7 @@ describe("engine-hermes AC-5: images & state & errors", () => {
     const { h } = setup();
     await expect(
       h.request("session.start", {
-        agent: "a",
+        agent: "builder",
         cwd: "/tmp/x",
         mcpServers: [{ name: "fs", command: "mcp-fs", args: [] }],
       }),
@@ -366,5 +366,99 @@ describe("engine-hermes AC-5: images & state & errors", () => {
         outcome: "once",
       }),
     ).rejects.toMatchObject({ code: -32002 });
+  });
+});
+
+describe("engine-hermes #8: agents + models capabilities", () => {
+  test("describe declares agents + models with their methods", async () => {
+    const { h } = setup();
+    const d = (await h.request("describe")) as {
+      capabilities: { id: string; methods?: string[] }[];
+    };
+    const agents = d.capabilities.find((c) => c.id === "agents");
+    const models = d.capabilities.find((c) => c.id === "models");
+    expect(agents?.methods).toEqual([
+      "agents.list",
+      "agents.describe",
+      "agents.create",
+    ]);
+    expect(models?.methods).toEqual(["models.list", "session.setModel"]);
+  });
+
+  test("agents.* map to profiles.*; unknown ids -> -32004", async () => {
+    const { gw, h } = setup();
+    const { agents } = (await h.request("agents.list")) as {
+      agents: { id: string; name: string; skillCount?: number }[];
+    };
+    expect(agents.map((a) => a.id)).toContain("builder");
+    expect(agents[0].skillCount).toBe(3);
+
+    const d = (await h.request("agents.describe", { id: "builder" })) as {
+      agent: { id: string; soul?: string };
+    };
+    expect(d.agent.soul).toBe("You are Builder.");
+    await expect(
+      h.request("agents.describe", { id: "ghost" }),
+    ).rejects.toMatchObject({ code: -32004 });
+    await expect(
+      h.request("session.start", { agent: "ghost", cwd: "/tmp/x" }),
+    ).rejects.toMatchObject({ code: -32004 });
+
+    const created = (await h.request("agents.create", {
+      name: "reviewer",
+      soul: "You review.",
+      model: "stub-model-b",
+    })) as { agent: { id: string; model?: string } };
+    expect(created.agent.id).toBe("reviewer");
+    expect(created.agent.model).toBe("stub-model-b");
+    expect(gw.profiles.get("reviewer")?.soul).toBe("You review.");
+    await expect(
+      h.request("agents.create", { name: "reviewer" }),
+    ).rejects.toMatchObject({ code: -32003 });
+  });
+
+  test("models.list flattens model.options; default is a listed id", async () => {
+    const { h } = setup();
+    const r = (await h.request("models.list")) as {
+      models: { id: string; provider?: string }[];
+      default?: string;
+    };
+    expect(r.models.map((m) => m.id)).toEqual(["stub-model-a", "stub-model-b"]);
+    expect(r.models[0].provider).toBe("stub");
+    expect(r.default).toBe("stub-model-a");
+  });
+
+  test("session.setModel runs /model and the next turn.started carries it", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const ack = (await h.request("session.setModel", {
+      sessionId,
+      model: "stub-model-b",
+    })) as { model: string };
+    expect(ack.model).toBe("stub-model-b");
+    expect(gw.slashCommands).toEqual(["/model stub-model-b"]);
+    expect(gw.sessionModels.get(gw.lastSid)).toBe("stub-model-b");
+
+    const p = promptAsync(h, sessionId);
+    const started = h.events.find((e) => e.type === "turn.started");
+    if (!started) throw new Error("turn.started missing");
+    expect((started.payload as { model?: string }).model).toBe("stub-model-b");
+    gw.complete(gw.lastSid);
+    await p;
+  });
+
+  test("session.setModel error codes: -32001 / -32005 / -32003", async () => {
+    const { h } = setup();
+    await expect(
+      h.request("session.setModel", { sessionId: "nope", model: "x" }),
+    ).rejects.toMatchObject({ code: -32001 });
+    const { sessionId } = await start(h);
+    await expect(
+      h.request("session.setModel", { sessionId, model: "no-such" }),
+    ).rejects.toMatchObject({ code: -32005 });
+    await h.request("session.stop", { sessionId });
+    await expect(
+      h.request("session.setModel", { sessionId, model: "stub-model-a" }),
+    ).rejects.toMatchObject({ code: -32003 });
   });
 });
