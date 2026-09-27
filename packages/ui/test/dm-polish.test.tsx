@@ -5,13 +5,13 @@
    "needs you" / "Waiting for approval". */
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
-import { TurnSteps } from "../src/conversation/turns";
+import { ModelPicker } from "../src/chat/model-picker";
+import { AgentTurn, TurnSteps } from "../src/conversation/turns";
+import { EmployeeHome } from "../src/employee/employee-home";
 import { Row } from "../src/feed/row";
-import { PHASE_LABEL } from "../src/lib/helpers";
+import { NO_WS, PHASE_LABEL } from "../src/lib/helpers";
 import { HermesAvatar } from "../src/shell/avatars";
 import { Sidebar } from "../src/shell/sidebar";
-import { EmployeeHome } from "../src/employee/employee-home";
-import { NO_WS } from "../src/lib/helpers";
 import type { Employee, Msg } from "../src/types";
 
 if (typeof globalThis.ResizeObserver === "undefined") {
@@ -51,9 +51,9 @@ describe("issue #71", () => {
         <p>notice</p>
       </Row>,
     );
-    const grid = container.firstElementChild!;
-    const content = grid.querySelector(".is-assistant")!;
-    expect(content.className).toContain("col-start-2");
+    const grid = container.firstElementChild;
+    const content = grid?.querySelector(".is-assistant");
+    expect(content?.className).toContain("col-start-2");
   });
 
   test("AC-2 the Hermes avatar bundles its mark and falls back to an initial", () => {
@@ -86,7 +86,7 @@ describe("issue #71", () => {
         setPick={() => {}}
       />,
     );
-    const subtitle = container.querySelector("header .text-xs")!;
+    const subtitle = container.querySelector("header .text-xs");
     expect(subtitle.textContent).not.toContain("now:");
     cleanup();
     const again = render(
@@ -108,7 +108,7 @@ describe("issue #71", () => {
       />,
     );
     expect(
-      again.container.querySelector("header .text-xs")!.textContent,
+      again.container.querySelector("header .text-xs")?.textContent,
     ).toContain("now: shipping #71");
   });
 
@@ -159,7 +159,7 @@ describe("issue #71", () => {
       />,
     );
     expect(
-      home.container.querySelector("[data-session]")!.textContent,
+      home.container.querySelector("[data-session]")?.textContent,
     ).toContain("needs you");
     expect(PHASE_LABEL.waiting).toBe("needs you");
     cleanup();
@@ -184,7 +184,7 @@ describe("issue #71", () => {
       />,
     );
     expect(
-      side.container.querySelector("[data-badge-approvals]")!.textContent,
+      side.container.querySelector("[data-badge-approvals]")?.textContent,
     ).toBe("needs you");
   });
 
@@ -192,10 +192,61 @@ describe("issue #71", () => {
     const { container } = render(
       <TurnSteps
         steps={[{ tool: "patch", input: {}, output: "", running: true }]}
+        autoOpen
         waitingApproval
       />,
     );
     expect(container.textContent).toContain("Waiting for approval");
     expect(container.textContent).not.toContain("Running");
+  });
+
+  test("AC-7 the picker groups by provider display name, not the slug", async () => {
+    render(
+      <ModelPicker
+        model="fake-large"
+        models={[
+          { id: "fake-large", name: "Fake Large", provider: "fake" },
+          { id: "claude-x", name: "Claude X", provider: "anthropic" },
+          { id: "orphan" },
+        ]}
+        onModel={() => {}}
+      />,
+    );
+    const trigger = document.body.querySelector(
+      '[data-slot="model-selector-trigger"]',
+    );
+    expect(trigger).toBeTruthy();
+    (trigger as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    const headings = [...document.body.querySelectorAll("[cmdk-group-heading]")].map(
+      (el) => el.textContent,
+    );
+    expect(headings).toEqual(["Fake", "Anthropic", "Other"]);
+  });
+
+  test("AC-7 the turn footer shows the model's display name", () => {
+    const reply = {
+      id: "r1",
+      from: EMP.id,
+      time: "",
+      text: "done",
+      phase: "done",
+      model: "fake-large",
+    } as const;
+    const emp = (id: string) => (id === EMP.id ? EMP : undefined);
+    const named = render(
+      <AgentTurn
+        r={{ ...reply }}
+        emp={emp}
+        last
+        models={[{ id: "fake-large", name: "Fake Large", provider: "fake" }]}
+      />,
+    );
+    expect(named.container.textContent).toContain("· Fake Large");
+    expect(named.container.textContent).not.toContain("fake-large");
+    cleanup();
+    // No catalog handed down: fall back to the engine's model id.
+    const bare = render(<AgentTurn r={{ ...reply }} emp={emp} last />);
+    expect(bare.container.textContent).toContain("· fake-large");
   });
 });

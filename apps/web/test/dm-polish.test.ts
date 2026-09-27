@@ -59,9 +59,7 @@ describe("issue #71", () => {
     const reply = liveTurnReply(
       turn({
         phase: "waiting",
-        steps: [
-          { id: "s1", tool: "patch", input: {}, status: "running" },
-        ],
+        steps: [{ id: "s1", tool: "patch", input: {}, status: "running" }],
         requests: [{ ...approvalReq }],
       }),
       "emp1",
@@ -80,5 +78,20 @@ describe("issue #71", () => {
       "emp1",
     );
     expect(reply.waitingOn).toBeUndefined();
+  });
+
+  test("AC-7 replies carry the engine model id for the footer", () => {
+    // Posted turn (relay message): AppMessage.model lands on the reply.
+    const replies = conversationReplies(
+      [msg({ authorKind: "employee", authorId: "emp1", text: "done", model: "fake-large" })],
+      "c1",
+    );
+    expect(replies[0].model).toBe("fake-large");
+    // Live/merged turn: the turn.started model id.
+    const reply = liveTurnReply(
+      turn({ phase: "done", text: "done", model: "fake-large" }),
+      "emp1",
+    );
+    expect(reply.model).toBe("fake-large");
   });
 });

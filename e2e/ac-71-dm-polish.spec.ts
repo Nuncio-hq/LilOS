@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { _electron, expect, type Page, test } from "@playwright/test";
 
 /**
- * Issue #71 — desktop DM polish. Each acceptance criterion is a named test
+ * Issue #71 — desktop DM polish (incl. the AC-7 model-display-name scope
+ * add from the issue comments). Each acceptance criterion is a named test
  * against the real stack (apps/relay + apps/harness on engine-fake + vite
  * dev, Electron for AC-5), same harness as e2e/ac-27-dm.spec.ts on offset
  * ports.
@@ -209,13 +210,13 @@ test("AC-4 an approval-blocked session reads `needs you` / `Waiting for approval
     "needs you",
   );
   await page.goto(`${stack.webUrl}/dm/${empId}`);
-  await expect(page.locator("[data-session]").first()).toContainText(
-    "needs you",
-    { timeout: 30_000 },
-  );
+  const waitingRow = page
+    .locator("[data-session]")
+    .filter({ hasText: /release note/i });
+  await expect(waitingRow).toContainText("needs you", { timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-4-needs-you.png` });
   // Back in the session, answering the approval unblocks the turn.
-  await page.locator("[data-session]").first().click();
+  await waitingRow.getByRole("button", { name: /repl(y|ies)/ }).click();
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 30_000,
   });
@@ -224,6 +225,28 @@ test("AC-4 an approval-blocked session reads `needs you` / `Waiting for approval
     timeout: 30_000,
   });
   await page.screenshot({ path: `${SHOTS}/ac-4-resolved.png` });
+});
+
+test("AC-7 model display names — picker groups and the turn footer", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await dmDefault(page);
+  // Composer picker: provider group headings are display names, not slugs.
+  const trigger = page.getByRole("button", { name: /Fake Large|Fake Small/ });
+  await expect(trigger).toBeVisible({ timeout: 30_000 });
+  await trigger.click();
+  const group = page.getByRole("group", { name: "Fake", exact: true });
+  await expect(group).toBeVisible();
+  await expect(group.getByText("Fake Small")).toBeVisible();
+  await expect(page.getByRole("group", { name: "fake", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  // A finished turn's footer names the model, same label as the picker.
+  await send(page, "Say hello then list files");
+  const turn = page.locator("[data-agentturn]").first();
+  await expect(turn).toContainText("· Fake Large", { timeout: 60_000 });
+  await expect(turn).not.toContainText("fake-large");
+  await page.screenshot({ path: `${SHOTS}/ac-7-model-names.png` });
 });
 
 test("AC-5 the Electron app menu is named LilOS", async () => {
@@ -241,7 +264,9 @@ test("AC-5 the Electron app menu is named LilOS", async () => {
   const portOf = (ws: string) => new URL(ws).port;
   const app = await _electron.launch({
     args:
-      process.platform === "linux" ? [desktopDir, "--no-sandbox"] : [desktopDir],
+      process.platform === "linux"
+        ? [desktopDir, "--no-sandbox"]
+        : [desktopDir],
     env: {
       ...process.env,
       LILOS_RELAY_HOME: stack.home,
