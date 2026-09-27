@@ -118,6 +118,7 @@ describe("apply script", () => {
 
   test("AC-3 apply script really swaps and relaunches a healthy update", {
     skip: !darwin,
+    timeout: 20_000,
   }, () => {
     const dir = mkdtempSync(join(tmpdir(), "lilos-up-"));
     const paths = updatePaths(dir);
@@ -157,6 +158,7 @@ describe("apply script", () => {
 
   test("AC-4 rollback: a new app that never writes boot-ok is reverted", {
     skip: !darwin,
+    timeout: 20_000,
   }, () => {
     const dir = mkdtempSync(join(tmpdir(), "lilos-rb-"));
     const paths = updatePaths(dir);
