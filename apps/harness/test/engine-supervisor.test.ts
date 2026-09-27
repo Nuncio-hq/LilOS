@@ -1,21 +1,23 @@
 import { describe, expect, it } from "vitest";
 import type { EngineConnection } from "../src/engine/client.js";
 import type {
+  EngineExit,
   EngineLauncher,
   EngineProcess,
   LaunchedEngine,
 } from "../src/engine/launcher.js";
+import { FatalEngineStart } from "../src/engine/launcher.js";
 import { EngineSupervisor } from "../src/engine/supervisor.js";
 import { createMemoryLogger } from "../src/log.js";
 
 /** Engine child whose lifetime the test drives. */
 function fakeProc(pid: number): {
   proc: EngineProcess;
-  die: (code: number | null) => void;
+  die: (code: number | null, signal?: string) => void;
 } {
-  let die: (code: number | null) => void = () => {};
-  const exited = new Promise<number | null>((r) => {
-    die = r;
+  let die: (code: number | null, signal?: string) => void = () => {};
+  const exited = new Promise<EngineExit>((r) => {
+    die = (code, signal) => r({ code, signal: signal ?? null });
   });
   return {
     proc: { pid, exited, kill: () => die(143) },
@@ -43,6 +45,7 @@ interface World {
   conns: ReturnType<typeof fakeConn>[];
   connections: { conn: EngineConnection; reconnect: boolean }[];
   states: string[];
+  details: string[];
   launcher: EngineLauncher;
 }
 
@@ -59,6 +62,7 @@ function world(
   const conns: ReturnType<typeof fakeConn>[] = [];
   const connections: World["connections"] = [];
   const states: string[] = [];
+  const details: string[] = [];
   const launcher: EngineLauncher = {
     name: "fake-engine",
     start: () => {
@@ -78,7 +82,10 @@ function world(
       return Promise.resolve(c);
     },
     onConnection: (conn, reconnect) => connections.push({ conn, reconnect }),
-    onState: (state) => states.push(state),
+    onState: (state, detail) => {
+      states.push(state);
+      if (detail !== undefined) details.push(detail);
+    },
     log: createMemoryLogger(),
     minBackoffMs: 1,
     maxBackoffMs: 4,
@@ -87,7 +94,7 @@ function world(
     stableAfterMs: 60_000,
     ...extra,
   });
-  return { supervisor, procs, conns, connections, states, launcher };
+  return { supervisor, procs, conns, connections, states, details, launcher };
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 30));
@@ -224,5 +231,61 @@ describe("AC-5 engine supervision", () => {
     await tick();
     expect(w.procs).toHaveLength(1);
     expect(w.states.at(-1)).toBe("stopped");
+  });
+});
+
+describe("AC-2 (#95) exit reasons carry the signal", () => {
+  it("a SIGKILLed engine child reads 'killed by SIGKILL' in restart and failed details", async () => {
+    const w = world({ maxConsecutiveCrashes: 2 });
+    await w.supervisor.start();
+    expect(w.procs).toHaveLength(1);
+
+    w.procs[0]?.die(null, "SIGKILL");
+    await tick();
+    // The restart detail names the signal — the relaunch may already be
+    // running by the time we read, so check the emitted history, not the tail.
+    expect(w.details.join("\n")).toContain("killed by SIGKILL");
+    expect(w.details.join("\n")).not.toContain("code null");
+
+    w.procs[1]?.die(null, "SIGKILL");
+    await tick();
+    expect(w.states.at(-1)).toBe("failed");
+    expect(w.details.at(-1)).toContain("killed by SIGKILL");
+    await w.supervisor.stop();
+  });
+});
+
+describe("AC-1 (#95) a fatal start error stops retries immediately", () => {
+  it("a launcher that rejects with FatalEngineStart lands failed without restarting", async () => {
+    const states: string[] = [];
+    const details: string[] = [];
+    let launches = 0;
+    const supervisor = new EngineSupervisor({
+      launcher: {
+        name: "hermes",
+        start: () => {
+          launches += 1;
+          return Promise.reject(
+            new FatalEngineStart(
+              "Hermes 0.20.2 is too old — LilOS needs 0.21.5 or newer. Run `hermes update`.",
+            ),
+          );
+        },
+      },
+      connect: () => Promise.reject(new Error("unreachable")),
+      onConnection: () => {},
+      onState: (state, detail) => {
+        states.push(state);
+        if (detail !== undefined) details.push(detail);
+      },
+      log: createMemoryLogger(),
+      minBackoffMs: 1,
+      maxBackoffMs: 4,
+    });
+    await supervisor.start();
+    expect(launches).toBe(1); // never retried — it won't fix itself
+    expect(states).toEqual(["starting", "failed"]);
+    expect(details.at(-1)).toContain("Hermes 0.20.2 is too old");
+    await supervisor.stop();
   });
 });

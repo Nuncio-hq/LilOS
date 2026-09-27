@@ -14,3 +14,10 @@ export {
   type HermesConnection,
   handleJsonRpc,
 } from "./transport.js";
+export {
+  HERMES_TOO_OLD_EXIT_CODE,
+  hermesTooOldMessage,
+  isHermesVersionSupported,
+  MIN_HERMES_VERSION,
+  parseHermesVersion,
+} from "./version.js";

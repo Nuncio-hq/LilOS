@@ -1,6 +1,12 @@
 import type { Logger } from "../log";
 import type { EngineConnection } from "./client";
-import type { EngineLauncher, EngineProcess, LaunchedEngine } from "./launcher";
+import {
+  type EngineExit,
+  type EngineLauncher,
+  type EngineProcess,
+  isFatalEngineStart,
+  type LaunchedEngine,
+} from "./launcher";
 
 /**
  * Engine lifecycle supervision (AC-2): start the engine, restart it on crash
@@ -130,6 +136,15 @@ export class EngineSupervisor {
         return;
       } catch (error) {
         if (this.stopping) return;
+        // A fatal verdict (AC-1, #95) won't change on retry — fail now,
+        // without counting it toward the restart budget.
+        if (isFatalEngineStart(error)) {
+          this.set(
+            "failed",
+            `engine ${this.opts.launcher.name} failed to start: ${String(error)}`,
+          );
+          return;
+        }
         this.crashCount += 1;
         if (this.crashCount >= this.opts.maxConsecutiveCrashes) {
           this.set(
@@ -159,23 +174,29 @@ export class EngineSupervisor {
     const proc: EngineProcess | undefined = launched.process;
     this.procAlive = true;
     if (!proc) return;
-    proc.exited.then((code) => {
+    proc.exited.then((exit: EngineExit) => {
       this.procAlive = false;
       if (this.stopping || this.state.current === "stopped") return;
       const uptime = Date.now() - this.startedAt;
       if (uptime > this.opts.stableAfterMs) this.crashCount = 0;
       else this.crashCount += 1;
+      // #95: name the signal when one ended the child — "code null" tells
+      // the user nothing; "killed by SIGKILL" points at a device policy.
+      const why = exit.signal
+        ? `killed by ${exit.signal}`
+        : `code ${exit.code}`;
       this.opts.log.warn("engine process exited", {
-        code,
+        code: exit.code,
+        signal: exit.signal,
         uptimeMs: uptime,
         crashCount: this.crashCount,
       });
       this.state.conn?.close();
       if (this.crashCount >= this.opts.maxConsecutiveCrashes) {
-        this.set("failed", `engine exited x${this.crashCount} (code ${code})`);
+        this.set("failed", `engine exited x${this.crashCount} (${why})`);
         return;
       }
-      this.relaunchAfter(this.backoff(), `engine exited (code ${code})`);
+      this.relaunchAfter(this.backoff(), `engine exited (${why})`);
     });
   }
 
