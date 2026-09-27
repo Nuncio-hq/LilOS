@@ -126,6 +126,8 @@ test.afterAll(async () => {
 });
 
 test.describe.configure({ mode: "serial" });
+// The pick → next-turn footer flow is the AC-4 evidence the PR needs on film.
+test.use({ video: "on" });
 
 function watchConsole(page: Page) {
   const errors: string[] = [];
