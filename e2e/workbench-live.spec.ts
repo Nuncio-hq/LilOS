@@ -248,3 +248,56 @@ test.describe
       await page.screenshot({ path: `${SHOT}/ac-4-viewport-fit.png` });
     });
   });
+
+test.describe
+  .serial("issue #69: sentinels hidden, takeover across the pane", () => {
+    test("AC-1 the Terminal tab never shows sentinel commands or their output", async ({
+      page,
+    }) => {
+      const term = await openWorkbench(page);
+      // The agent runs commands — raw sentinels flow inside the PTY stream, but
+      // the viewer never sees them (snapshot tail + live chunks alike).
+      expect(
+        (await tool("terminal_run", { command: "echo AC-$((3*7))" })).status,
+      ).toBe(200);
+      await expect(term).toContainText("AC-21", { timeout: 20_000 });
+      await expect(term).not.toContainText("__LILOS_DONE_");
+      await expect(term).not.toContainText("printf '__LILOS");
+      await page.screenshot({ path: `${SHOT}/ac69-1-no-sentinels.png` });
+    });
+
+    test("AC-2 while the human holds the terminal the badge reads `you` and the composer says the agent is paused", async ({
+      page,
+    }) => {
+      const term = await openWorkbench(page);
+      const pane = page
+        .locator("div.bg-zinc-950")
+        .filter({ has: page.getByRole("textbox", { name: /Terminal input/ }) })
+        .first();
+      // Agent holds: green `live` badge, ordinary composer placeholder.
+      await expect(pane.getByText("live", { exact: true })).toBeVisible();
+      await expect(
+        page.getByPlaceholder(/Continue session .* with Builder/),
+      ).toBeVisible();
+      void term;
+
+      // Human types → takeover shows across the whole pane, not just the banner.
+      await page.getByRole("textbox", { name: /Terminal input/ }).click();
+      await page.keyboard.type("x");
+      await expect(page.getByText(/in control/i)).toBeVisible();
+      await expect(pane.getByText("you", { exact: true })).toBeVisible();
+      await expect(pane.getByText("live", { exact: true })).toHaveCount(0);
+      await expect(
+        page.getByPlaceholder("Builder is paused while you use the terminal"),
+      ).toBeVisible();
+      await page.screenshot({ path: `${SHOT}/ac69-2-takeover.png` });
+
+      // Hand-back restores the agent badge and composer.
+      await page.keyboard.press("Backspace");
+      await page.getByRole("button", { name: /Return control/i }).click();
+      await expect(pane.getByText("live", { exact: true })).toBeVisible();
+      await expect(
+        page.getByPlaceholder(/Continue session .* with Builder/),
+      ).toBeVisible();
+    });
+  });

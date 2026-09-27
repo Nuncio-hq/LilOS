@@ -118,7 +118,17 @@ export function LiveTerminal({
       <TerminalHeader className="py-1.5">
         <TerminalTitle className="text-xs">
           <span className="font-mono">{cwd}</span>
-          <span className="rounded bg-emerald-800 px-1 text-[10px]">live</span>
+          {/* While the human holds the terminal the badge says so (issue #69
+              AC-2): amber `you`, not green `live`. */}
+          {held ? (
+            <span className="rounded bg-amber-800 px-1 text-[10px] text-amber-100">
+              you
+            </span>
+          ) : (
+            <span className="rounded bg-emerald-800 px-1 text-[10px]">
+              live
+            </span>
+          )}
         </TerminalTitle>
         {held && (
           <span

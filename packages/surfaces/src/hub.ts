@@ -4,6 +4,7 @@ import {
   type ViewerServerMsg,
 } from "@lilos/contracts/harness";
 import type { ViewerScope, ViewerScopeEvent } from "./backend.js";
+import { ViewerTermFilter } from "./sentinels.js";
 
 const b64encode = (b: Uint8Array): string => {
   let s = "";
@@ -76,10 +77,24 @@ export function attachViewer(
       jpeg: b64encode(snap.lastFrame),
       capturedAt: Date.now(),
     });
-  if (snap.termTail.length > 0)
-    send({ type: "term", data: b64encode(snap.termTail) });
+  /* The viewer stream hides the agent's `terminal_run` sentinels (issue #69):
+     backlog tail and live chunks pass through the same per-attach filter, so
+     a marker split across the snapshot/live seam is still caught. The scope's
+     own reads stay raw — the agent needs the markers for exit codes. */
+  const filter = new ViewerTermFilter();
+  if (snap.termTail.length > 0) {
+    const tail = filter.push(snap.termTail);
+    if (tail.length > 0) send({ type: "term", data: b64encode(tail) });
+  }
 
-  const unsubscribe = scope.subscribe((e) => send(scopeEventToMsg(e)));
+  const unsubscribe = scope.subscribe((e) => {
+    if (e.kind === "term") {
+      const data = filter.push(e.data);
+      if (data.length === 0) return;
+      return send({ type: "term", data: b64encode(data) });
+    }
+    send(scopeEventToMsg(e));
+  });
 
   return {
     receive(text) {

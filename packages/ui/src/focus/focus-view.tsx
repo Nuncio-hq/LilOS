@@ -519,9 +519,15 @@ export function FocusView({
               onModel={onModel}
               onStop={onStop}
               placeholder={
-                running
-                  ? runningComposer(lead?.name ?? "Employee", steer).placeholder
-                  : `Continue session ${thread.session} with ${lead?.name ?? "the employee"}…`
+                // Terminal takeover (issue #69 AC-2): while the human holds
+                // the session's terminal, the agent can't run or write there —
+                // the composer says it's paused rather than inviting input.
+                surfaces?.termControl === "user"
+                  ? `${lead?.name ?? "The agent"} is paused while you use the terminal`
+                  : running
+                    ? runningComposer(lead?.name ?? "Employee", steer)
+                        .placeholder
+                    : `Continue session ${thread.session} with ${lead?.name ?? "the employee"}…`
               }
               hint={
                 running

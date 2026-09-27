@@ -23,7 +23,12 @@ import { PreviewScanner, stripAnsi } from "./previews.js";
  * - The PTY respawns itself on exit (`exit` must not kill the session).
  */
 
-const MARKER_PREFIX = "__LILOS_DONE_";
+/**
+ * `terminal_run` marks each command's end with `__LILOS_DONE_<n>__<exit>` so
+ * the agent can read exit codes. Exported for the viewer stream filter
+ * (`sentinels.ts`) — the agent's own reads always see the raw marker.
+ */
+export const MARKER_PREFIX = "__LILOS_DONE_";
 const DEFAULT_RUN_TIMEOUT_MS = 30_000;
 const DEFAULT_PAGE = { width: 1280, height: 800 };
 const USER_CONTROL_MSG =
