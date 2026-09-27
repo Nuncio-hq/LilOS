@@ -1,6 +1,6 @@
 @import "tailwindcss";
 /* Tailwind v4 only scans what it's told about: the UI components now live in packages/ui. */
-@source "../../packages/ui/src";
+@source "../../../packages/ui/src";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";

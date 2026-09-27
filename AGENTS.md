@@ -14,14 +14,14 @@ The engine owns sessions, memory, skills, and profiles. LilOS owns only its
 own domain objects: company, channels, messages, tickets, employee records.
 
 Stage: **prototype**. `prototype/` is the UI/UX source of truth: a UI change
-lands in `packages/ui` and shows in the prototype first. Mock data is not a
+lands in `packages/ui` (`ui-native` for mobile) and shows in the prototype first. Mock data is not a
 contract.
 
 ## Repo map
 
 | Path | What |
 |---|---|
-| `prototype/` | UX prototype (UI source of truth): mock data + fake engine + wiring in `src/App.tsx` |
+| `prototype/web`, `prototype/mobile` | UX prototypes (UI source of truth): mock data + fake engine/Mac + wiring in `src/App.tsx` |
 | `packages/ui/` | `@lilos/ui`: every UI component (shadcn, AI Elements, LilOS surfaces); props in, callbacks out |
 | `packages/contracts/` | Zod schemas for everything crossing a boundary |
 | `packages/host/` | `@lilos/host`: fs + git reads on the session machine, served by the harness (runtime-neutral) |
@@ -44,7 +44,7 @@ Vitest + Playwright; CI GitHub Actions (setup-bun) → `bun run verify`.
 ```
 apps/web apps/relay apps/harness apps/desktop   (created by the slice needing them)
 packages/contracts packages/ui packages/client-runtime packages/host packages/engine-*
-prototype/    packages/ui + mock data
+prototype/web prototype/mobile   packages/ui(-native) + mock data
 ```
 
 - One-way deps: `apps/*` import `packages/*`, never the reverse. Engine
@@ -54,7 +54,7 @@ prototype/    packages/ui + mock data
 - Bun-only APIs (`bun:sqlite`, `Bun.serve`) only at app entry points;
   `packages/*` stay runtime-neutral.
 - Organize code by feature folder; split a file past ~400 lines.
-- Biome lints/formats everything except `prototype/src`, assets, and vendored
+- Biome lints/formats everything except `prototype/web/src`, assets, and vendored
   shadcn/AI Elements in `packages/ui` (typecheck + build still cover them).
 - CI never calls a real LLM; `engine-fake` is the deterministic engine.
 

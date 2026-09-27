@@ -5,6 +5,7 @@ import {
   FolderIcon,
   InboxIcon,
   ShieldAlertIcon,
+  SmartphoneIcon,
   TicketIcon,
   UserPlusIcon,
   XIcon,
@@ -54,6 +55,7 @@ export function Sidebar({
   badges,
   status,
   onOpenStatus,
+  onPairPhone,
   realApp,
   preview,
 }: {
@@ -82,6 +84,8 @@ export function Sidebar({
   /* The status surface — a control renders only when its handler is passed. */
   status?: StatusComponent[];
   onOpenStatus?: () => void;
+  /* Mobile onboarding: opens the Pair phone QR. Omit to hide the row. */
+  onPairPhone?: () => void;
   /* realApp = what the shipped app sidebar will show today: Employees + status only. */
   realApp?: boolean;
   /* Prototype-only slot (e.g. the Preview states menu); omitted in production wiring. */
@@ -249,6 +253,17 @@ export function Sidebar({
           )}
         </div>
       </ScrollArea>
+      {onPairPhone && (
+        <button
+          type="button"
+          onClick={onPairPhone}
+          data-pairphone-open
+          className="flex w-full items-center gap-2 border-t px-4 py-2 text-left text-xs hover:bg-sidebar-accent"
+        >
+          <SmartphoneIcon className="size-3.5 text-muted-foreground" />
+          Pair phone
+        </button>
+      )}
       {status && onOpenStatus && (
         <StatusRow components={status} onOpen={onOpenStatus} />
       )}

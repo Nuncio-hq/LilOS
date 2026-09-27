@@ -6,6 +6,10 @@
       "!**/node_modules",
       "!**/dist",
       "!apps/desktop/build",
+      "!prototype/mobile/ios",
+      "!prototype/mobile/android",
+      "!prototype/mobile/.expo",
+      "!prototype/mobile/uniwind-types.d.ts",
       "!**/test-results",
       "!**/playwright-report",
       "!**/bun.lock",
@@ -29,7 +33,7 @@
   },
   "overrides": [
     {
-      "includes": ["prototype/src/**", "prototype/vite.config.ts"],
+      "includes": ["prototype/web/src/**", "prototype/web/vite.config.ts"],
       "linter": { "enabled": false },
       "formatter": { "enabled": false },
       "assist": { "actions": { "source": { "organizeImports": "off" } } }

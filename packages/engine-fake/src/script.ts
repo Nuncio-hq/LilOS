@@ -1,6 +1,6 @@
 /**
  * Deterministic canned turns — ported from the prototype's fake engine
- * (`prototype/src/App.tsx` scriptFor, attribution per AGENTS.md). Wall-clock
+ * (`prototype/web/src/App.tsx` scriptFor, attribution per AGENTS.md). Wall-clock
  * and Math.random are replaced by an injected counter so byte-for-byte the
  * same prompts produce the same script. `todo`/`pr` side-channels of the
  * prototype are UI concerns and stay out of the wire; their content is
