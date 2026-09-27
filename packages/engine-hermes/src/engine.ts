@@ -13,7 +13,9 @@ import {
   type PromptParams,
   type RequestRespondParams,
   RPC_ERRORS,
+  type SessionSetHiddenParams,
   type SessionSetModelParams,
+  type SessionSetTitleParams,
   type SessionStartParams,
   type SessionSteerParams,
   type SessionStopParams,
@@ -172,6 +174,10 @@ export class HermesEngine {
         return listModels(this.opts.gateway, this.opts.provider);
       case "session.setModel":
         return this.sessionSetModel(parsed.data as SessionSetModelParams);
+      case "session.setTitle":
+        return this.sessionSetTitle(parsed.data as SessionSetTitleParams);
+      case "session.setHidden":
+        return this.sessionSetHidden(parsed.data as SessionSetHiddenParams);
       default:
         throw new RpcError(
           RPC_ERRORS.METHOD_NOT_FOUND,
@@ -216,6 +222,13 @@ export class HermesEngine {
         description:
           "models.list flattens model.options; session.setModel runs slash.exec /model (session-scoped, next turn picks it up).",
         methods: ["models.list", "session.setModel"],
+      },
+      {
+        id: "session_meta",
+        name: "Session metadata",
+        description:
+          "session.setTitle/setHidden map to hermes session.title / session.set_hidden (live id first, else stored key).",
+        methods: ["session.setTitle", "session.setHidden"],
       },
     ];
     if (this.opts.acp) {
@@ -405,6 +418,7 @@ export class HermesEngine {
     s.emit("turn.started", {
       turnId,
       ...(s.model ? { model: s.model } : {}),
+      ...(p.ref ? { ref: p.ref } : {}),
     });
     s.setState("running");
 
@@ -585,6 +599,36 @@ export class HermesEngine {
     await setSessionModel(this.opts.gateway, s.runtimeSid, p.model);
     s.model = p.model;
     return { model: p.model };
+  }
+
+  /**
+   * `session.title` resolves a live runtime id first, then stored ids/keys —
+   * ACP sessions reach it through the stored ref. A title set before the row
+   * exists is queued server-side (`pending: true`), so no ordering care here.
+   */
+  private async sessionSetTitle(p: SessionSetTitleParams) {
+    const s = this.require(p.sessionId);
+    const r = (await this.opts.gateway.request("session.title", {
+      session_id: s.driver === "ws" ? s.runtimeSid : s.ref,
+      title: p.title,
+    })) as { title?: unknown };
+    if (typeof r.title !== "string")
+      throw new RpcError(
+        RPC_ERRORS.INTERNAL_ERROR,
+        "session.title returned no title",
+      );
+    return { title: r.title };
+  }
+
+  /** `session.set_hidden` flags the session out of the default list. */
+  private async sessionSetHidden(p: SessionSetHiddenParams) {
+    const s = this.require(p.sessionId);
+    const r = (await this.opts.gateway.request("session.set_hidden", {
+      session_id: s.driver === "ws" ? s.runtimeSid : s.ref,
+      hidden: p.hidden,
+      profile: s.agent,
+    })) as { hidden?: unknown };
+    return { hidden: r.hidden === true };
   }
 
   /** ACP path: a session/prompt response IS the turn end (no message.complete). */

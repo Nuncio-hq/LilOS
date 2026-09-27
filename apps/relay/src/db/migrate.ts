@@ -93,6 +93,25 @@ const MIGRATIONS: { version: number; statements: string[] }[] = [
       `ALTER TABLE messages ADD COLUMN model TEXT`,
     ],
   },
+  {
+    version: 5,
+    statements: [
+      // #28: exactly-once message writes + the host delivery watermark that
+      // decides which user messages a re-registering harness still owes.
+      `ALTER TABLE messages ADD COLUMN dedupe_key TEXT`,
+      `ALTER TABLE conversations ADD COLUMN delivered_seq INTEGER NOT NULL DEFAULT 0`,
+      // Existing rows predate the watermark: assume every user message up to
+      // the last non-user message was delivered (mirrors the old "newest is
+      // user" pending rule exactly).
+      `UPDATE conversations SET delivered_seq = COALESCE((
+        SELECT MAX(seq) FROM messages
+        WHERE messages.conversation_id = conversations.id
+          AND messages.author_kind != 'user'
+      ), 0)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS messages_dedupe_key
+        ON messages(channel_id, dedupe_key)`,
+    ],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

@@ -35,6 +35,7 @@ export const KNOWN_CAPABILITIES = [
   "usage",
   "plan",
   "rewind",
+  "session_meta",
 ] as const;
 export type KnownCapability = (typeof KNOWN_CAPABILITIES)[number];
 
@@ -65,4 +66,17 @@ export const IMAGE_PROMPT_CAPABILITY: Capability = {
   name: "Image prompts",
   description: "prompt accepts image content blocks (base64 data + mimeType).",
   methods: ["prompt"],
+};
+
+/**
+ * The canonical `session_meta` descriptor (issue #28): the app's rename /
+ * archive writes mirror onto the engine session as title / hidden so the
+ * engine's own session lists stay consistent with the app's.
+ */
+export const SESSION_META_CAPABILITY: Capability = {
+  id: "session_meta",
+  name: "Session metadata",
+  description:
+    "Rename/hide the engine's session (title / hidden) so it tracks the app's conversation.",
+  methods: ["session.setTitle", "session.setHidden"],
 };

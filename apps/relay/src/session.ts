@@ -13,6 +13,7 @@ import {
   ConversationsListParams,
   ConversationsOpenParams,
   ConversationsSetModelParams,
+  ConversationsSummariesParams,
   ConversationsUpdateParams,
   EmployeesCreateParams,
   EmployeesRemoveParams,
@@ -522,6 +523,17 @@ export function createRelay(options: RelayOptions): Relay {
           });
           return;
         }
+        case "conversations.summaries": {
+          const parsed = ConversationsSummariesParams.safeParse(params ?? {});
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          respond(peer, id, {
+            summaries: await store.listConversationSummaries({
+              channelId: parsed.data.channelId,
+              includeArchived: parsed.data.includeArchived,
+            }),
+          });
+          return;
+        }
         case "conversations.open": {
           const parsed = ConversationsOpenParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
@@ -555,19 +567,20 @@ export function createRelay(options: RelayOptions): Relay {
         case "conversations.update": {
           const parsed = ConversationsUpdateParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
-          // engineRef/state/model are owned by the engine host (the model
-          // lands once the engine acks `session.setModel`); title/archive are
-          // user-facing fields any client may set.
+          // engineRef/state/model/deliveredSeq are owned by the engine host
+          // (the model lands once the engine acks `session.setModel`);
+          // title/archive are user-facing fields any client may set.
           if (
             (parsed.data.engineRef !== undefined ||
               parsed.data.state !== undefined ||
-              parsed.data.model !== undefined) &&
+              parsed.data.model !== undefined ||
+              parsed.data.deliveredSeq !== undefined) &&
             !isHost(peer)
           ) {
             throw new RpcError(
               JsonRpcCode.forbidden,
               "forbidden",
-              "only the registered engine host may write engineRef/state/model",
+              "only the registered engine host may write engineRef/state/model/deliveredSeq",
             );
           }
           const { conversationId, ...patch } = parsed.data;
@@ -591,6 +604,7 @@ export function createRelay(options: RelayOptions): Relay {
           if (!parsed.success) throw badParams(parsed.error.issues);
           try {
             const page = await store.listMessages(parsed.data.channelId, {
+              conversationId: parsed.data.conversationId,
               afterSeq: parsed.data.afterSeq,
               limit: parsed.data.limit,
             });
@@ -617,11 +631,15 @@ export function createRelay(options: RelayOptions): Relay {
           }
           const attachments = await storeAttachments(parsed.data.attachments);
           try {
-            const message = await store.appendMessage({
+            const { message, created } = await store.appendMessage({
               ...parsed.data,
               attachments,
             });
-            emitMessage(message.channelId, message);
+            // A dedupe hit is a no-op retry: answer with the stored message,
+            // don't re-emit `message.created` to subscribers (the blobs
+            // stored above for this retry are unreferenced — drop them).
+            if (created) emitMessage(message.channelId, message);
+            else dropAttachments(attachments);
             respond(peer, id, { message });
           } catch (error) {
             dropAttachments(attachments);

@@ -333,6 +333,10 @@
                 }
               ]
             }
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -626,6 +630,9 @@
                           "minLength": 1
                         },
                         "model": {
+                          "type": "string"
+                        },
+                        "ref": {
                           "type": "string"
                         }
                       },
@@ -1827,6 +1834,77 @@
         ],
         "additionalProperties": false
       }
+    },
+    "session.setTitle": {
+      "doc": "Set the engine session's display title — the harness mirrors the app's rename so the engine's own lists stay consistent.",
+      "capability": "session_meta",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "sessionId",
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "session.setHidden": {
+      "doc": "Move the engine session out of / back into its default list — the engine-side counterpart of archive/unarchive.",
+      "capability": "session_meta",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hidden": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sessionId",
+          "hidden"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "hidden": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hidden"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "notifications": {
@@ -1952,6 +2030,9 @@
                     "minLength": 1
                   },
                   "model": {
+                    "type": "string"
+                  },
+                  "ref": {
                     "type": "string"
                   }
                 },

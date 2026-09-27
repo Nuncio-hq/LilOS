@@ -7,6 +7,7 @@ import type {
   AuthorKind,
   Conversation,
   ConversationState,
+  ConversationSummary,
   Employee,
   EmployeeStatus,
   MessageAttachment,
@@ -35,6 +36,7 @@ export interface ConversationPatch {
   engineRef?: string;
   /** The model pinned on the engine session (issue #30). */
   model?: string;
+  deliveredSeq?: number;
 }
 
 export interface OpenConversationInput {
@@ -56,9 +58,12 @@ export interface AppendMessageInput {
   attachments?: MessageAttachment[];
   /** Engine `turn.started.model` on employee answers (issue #30). */
   model?: string;
+  /** Exactly-once key: a retry with a recorded key returns the original message. */
+  dedupeKey?: string;
 }
 
 export interface ListMessagesQuery {
+  conversationId?: string;
   afterSeq?: number;
   limit?: number;
 }
@@ -123,6 +128,13 @@ export interface RelayStore {
   ): Promise<{ channel: AppChannel; created: boolean }>;
 
   listConversations(query: ListConversationsQuery): Promise<Conversation[]>;
+  /**
+   * One row per conversation carrying the messages the session list renders
+   * — the list survives the channel's snapshot window (#28 AC-1).
+   */
+  listConversationSummaries(
+    query: ListConversationsQuery,
+  ): Promise<ConversationSummary[]>;
   getConversation(id: string): Promise<Conversation | null>;
   /** Root message + conversation in one transaction. */
   openConversation(
@@ -137,8 +149,14 @@ export interface RelayStore {
     channelId: string,
     query: ListMessagesQuery,
   ): Promise<ListMessagesPage>;
-  /** Appends with the channel's next seq (atomic with the counter bump). */
-  appendMessage(input: AppendMessageInput): Promise<AppMessage>;
+  /**
+   * Appends with the channel's next seq (atomic with the counter bump).
+   * `dedupeKey` makes the write idempotent: `created: false` returns the
+   * message the first call stored.
+   */
+  appendMessage(
+    input: AppendMessageInput,
+  ): Promise<{ message: AppMessage; created: boolean }>;
 
   /**
    * Idempotent on (conversationId, requestId): re-opening the same engine
@@ -151,8 +169,8 @@ export interface RelayStore {
   listAsks(query: ListAsksQuery): Promise<Ask[]>;
 
   /**
-   * Conversations whose newest message is user-authored — the turns the
-   * engine host still owes. Surfaced by `harness.register`.
+   * User messages past each conversation's `deliveredSeq` watermark — the
+   * turns the engine host still owes. Surfaced by `harness.register`.
    */
   listPendingTurns(): Promise<PendingTurn[]>;
 }
@@ -170,12 +188,16 @@ export function createMemoryStore(): RelayStore {
   const asks = new Map<string, Ask>();
 
   const now = () => Date.now();
+  /** (channelId, dedupeKey) -> stored message id; side table so the wire type stays clean. */
+  const dedupe = new Map<string, string>();
   const channelMessages = (channelId: string) =>
     [...messages.values()]
       .filter((m) => m.channelId === channelId)
       .sort((a, b) => a.seq - b.seq);
 
-  const appendMessage = (input: AppendMessageInput): AppMessage => {
+  const appendMessage = (
+    input: AppendMessageInput,
+  ): { message: AppMessage; created: boolean } => {
     const channel = channels.get(input.channelId);
     if (!channel) throw new Error(`unknown channel ${input.channelId}`);
     if (input.conversationId) {
@@ -183,6 +205,11 @@ export function createMemoryStore(): RelayStore {
       if (!conversation || conversation.channelId !== input.channelId) {
         throw new Error(`unknown conversation ${input.conversationId}`);
       }
+    }
+    if (input.dedupeKey) {
+      const existingId = dedupe.get(`${input.channelId}|${input.dedupeKey}`);
+      const existing = existingId ? messages.get(existingId) : undefined;
+      if (existing) return { message: existing, created: false };
     }
     const seq = channel.lastSeq + 1;
     channel.lastSeq = seq;
@@ -199,8 +226,16 @@ export function createMemoryStore(): RelayStore {
       attachments: input.attachments,
     };
     messages.set(message.id, message);
-    return message;
+    if (input.dedupeKey) {
+      dedupe.set(`${input.channelId}|${input.dedupeKey}`, message.id);
+    }
+    return { message, created: true };
   };
+
+  const conversationMessages = (conversationId: string) =>
+    [...messages.values()]
+      .filter((m) => m.conversationId === conversationId)
+      .sort((a, b) => a.seq - b.seq);
 
   return {
     async listEmployees() {
@@ -285,6 +320,29 @@ export function createMemoryStore(): RelayStore {
     async getConversation(id) {
       return conversations.get(id) ?? null;
     },
+    async listConversationSummaries({ channelId, includeArchived }) {
+      const convs = [...conversations.values()]
+        .filter((c) => (channelId ? c.channelId === channelId : true))
+        .filter((c) => (includeArchived ? true : !c.archived))
+        .sort((a, b) => a.createdAt - b.createdAt);
+      const summaries: ConversationSummary[] = [];
+      for (const conversation of convs) {
+        const convMessages = conversationMessages(conversation.id);
+        const root = convMessages.find(
+          (m) => m.id === conversation.rootMessageId,
+        );
+        const last = convMessages.at(-1);
+        if (!root || !last) continue;
+        summaries.push({
+          conversation,
+          root,
+          firstAnswer: convMessages.find((m) => m.authorKind !== "user"),
+          last,
+          messageCount: convMessages.length,
+        });
+      }
+      return summaries;
+    },
     async openConversation(input) {
       const conversation: Conversation = {
         id: newId("conv"),
@@ -294,10 +352,11 @@ export function createMemoryStore(): RelayStore {
         state: "idle",
         title: input.title,
         archived: false,
+        deliveredSeq: 0,
         createdAt: now(),
       };
       conversations.set(conversation.id, conversation);
-      const rootMessage = appendMessage({
+      const { message: rootMessage } = appendMessage({
         channelId: input.channelId,
         conversationId: conversation.id,
         authorId: input.authorId,
@@ -311,13 +370,23 @@ export function createMemoryStore(): RelayStore {
     async updateConversation(id, patch) {
       const conversation = conversations.get(id);
       if (!conversation) return null;
+      // The delivery watermark only moves forward — a slower write must not
+      // re-owe a later message its prompt.
+      if (patch.deliveredSeq !== undefined) {
+        patch.deliveredSeq = Math.max(
+          conversation.deliveredSeq,
+          patch.deliveredSeq,
+        );
+      }
       Object.assign(conversation, patch);
       return conversation;
     },
-    async listMessages(channelId, { afterSeq, limit }) {
+    async listMessages(channelId, { conversationId, afterSeq, limit }) {
       const channel = channels.get(channelId);
       if (!channel) throw new Error(`unknown channel ${channelId}`);
-      let list = channelMessages(channelId);
+      let list = conversationId
+        ? conversationMessages(conversationId)
+        : channelMessages(channelId);
       if (afterSeq !== undefined) {
         list = list.filter((m) => m.seq > afterSeq);
         if (limit !== undefined) list = list.slice(0, limit);
@@ -376,11 +445,12 @@ export function createMemoryStore(): RelayStore {
         if (conversation.archived || conversation.state === "closed") continue;
         const channel = channels.get(conversation.channelId);
         if (!channel) continue;
-        const last = channelMessages(conversation.channelId)
-          .filter((m) => m.conversationId === conversation.id)
-          .at(-1);
-        if (last && last.authorKind === "user") {
-          pending.push({ conversation, channel, message: last });
+        const owed = conversationMessages(conversation.id).filter(
+          (m) => m.authorKind === "user" && m.seq > conversation.deliveredSeq,
+        );
+        const message = owed.at(-1);
+        if (message) {
+          pending.push({ conversation, channel, message, messages: owed });
         }
       }
       pending.sort((a, b) => a.message.seq - b.message.seq);

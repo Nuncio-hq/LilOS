@@ -38,6 +38,8 @@ describe("engine wire contract", () => {
       "agents.create",
       "models.list",
       "session.setModel",
+      "session.setTitle",
+      "session.setHidden",
     ]);
     for (const [name, m] of Object.entries(ENGINE_METHODS)) {
       expect(m.doc.length, name).toBeGreaterThan(0);
@@ -50,6 +52,8 @@ describe("engine wire contract", () => {
     expect(ENGINE_METHODS["agents.create"].capability).toBe("agents");
     expect(ENGINE_METHODS["models.list"].capability).toBe("models");
     expect(ENGINE_METHODS["session.setModel"].capability).toBe("models");
+    expect(ENGINE_METHODS["session.setTitle"].capability).toBe("session_meta");
+    expect(ENGINE_METHODS["session.setHidden"].capability).toBe("session_meta");
   });
 
   test("AC-4 the protocol has no profile-delete method", () => {

@@ -29,6 +29,7 @@ const conv = (
   state: "active",
   title: "",
   archived: false,
+  deliveredSeq: 0,
   createdAt: 0,
 });
 

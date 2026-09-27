@@ -17,7 +17,10 @@ import {
   type PromptParams,
   type RequestRespondParams,
   RPC_ERRORS,
+  SESSION_META_CAPABILITY,
+  type SessionSetHiddenParams,
   type SessionSetModelParams,
+  type SessionSetTitleParams,
   type SessionStartParams,
   type SessionState,
   type SessionSteerParams,
@@ -87,6 +90,9 @@ interface FakeSession {
   openRequests: Map<string, PendingAsk>;
   /** True once an approval was answered "always" — fake remembers for the session. */
   alwaysApproved: boolean;
+  /** session_meta (#28): user-visible title + archive flag, mirrored from LilOS. */
+  title: string;
+  hidden: boolean;
   usage: Usage;
   steers: string[];
   turn?: FakeTurn;
@@ -214,6 +220,10 @@ export class FakeEngine {
         return this.modelsList();
       case "session.setModel":
         return this.sessionSetModel(parsed.data as SessionSetModelParams);
+      case "session.setTitle":
+        return this.sessionSetTitle(parsed.data as SessionSetTitleParams);
+      case "session.setHidden":
+        return this.sessionSetHidden(parsed.data as SessionSetHiddenParams);
       default:
         throw new RpcError(
           RPC_ERRORS.METHOD_NOT_FOUND,
@@ -252,6 +262,7 @@ export class FakeEngine {
             },
           ]
         : []),
+      ...(this.capOn("session_meta") ? [SESSION_META_CAPABILITY] : []),
     ];
     return {
       name: "engine-fake",
@@ -289,6 +300,8 @@ export class FakeEngine {
       state: "idle",
       openRequests: new Map(),
       alwaysApproved: false,
+      title: "",
+      hidden: false,
       usage: { input: 0, output: 0, reasoning: 0, cache: 0 },
       steers: [],
       turnCount: 0,
@@ -331,7 +344,7 @@ export class FakeEngine {
       mimeType: b.mimeType,
       sizeBytes: decodedBytes(b.data),
     }));
-    return this.runTurn(s, text, images);
+    return this.runTurn(s, text, images, p.ref);
   }
 
   private interrupt(p: InterruptParams) {
@@ -497,12 +510,25 @@ export class FakeEngine {
     return { model: s.model };
   }
 
+  private sessionSetTitle(p: SessionSetTitleParams) {
+    const s = this.require(p.sessionId);
+    s.title = p.title;
+    return { title: s.title };
+  }
+
+  private sessionSetHidden(p: SessionSetHiddenParams) {
+    const s = this.require(p.sessionId);
+    s.hidden = p.hidden;
+    return { hidden: s.hidden };
+  }
+
   // ── the turn loop (ports the prototype's runTurn) ─────────────────────────
 
   private async runTurn(
     s: FakeSession,
     promptText: string,
     images?: { mimeType: string; sizeBytes: number }[],
+    ref?: string,
   ) {
     const turnId = `t${++this.turnCounter}`;
     const script = scriptFor(
@@ -517,7 +543,11 @@ export class FakeEngine {
     );
     s.turn = { turnId, phase: "reasoning", interrupted: false };
     s.turnCount += 1;
-    this.emit(s, "turn.started", { turnId, model: s.model });
+    this.emit(s, "turn.started", {
+      turnId,
+      model: s.model,
+      ...(ref ? { ref } : {}),
+    });
     this.setState(s, "running");
     try {
       // Deterministic failure path (#32): a prompt starting with "fail" ends
@@ -613,9 +643,11 @@ export class FakeEngine {
     } catch (e) {
       if (!(e instanceof Interrupted)) throw e;
       this.cancelOpen(s);
+      // Clear the turn BEFORE turn.completed — observers reacting to the
+      // event (e.g. draining a queued prompt) must see the session free.
+      s.turn = undefined;
       this.emit(s, "turn.completed", { turnId, stopReason: "cancelled" });
       if (s.state !== "closed") this.setState(s, "idle");
-      s.turn = undefined;
       this.pumpSteers(s);
       return { turnId, stopReason: "cancelled" as const };
     }
@@ -634,9 +666,11 @@ export class FakeEngine {
       reasoning: s.usage.reasoning + Math.floor(script.reasoning.length / 4),
       cache: s.usage.cache + 6000,
     };
+    // Clear the turn BEFORE turn.completed — observers reacting to the
+    // event (e.g. draining a queued prompt) must see the session free.
+    s.turn = undefined;
     this.emit(s, "turn.completed", { turnId, stopReason, usage: s.usage });
     if (s.state !== "closed") this.setState(s, "idle");
-    s.turn = undefined;
     // A steer that never hit a boundary becomes the next turn's input — never lost.
     this.pumpSteers(s);
     return { turnId, stopReason, usage: s.usage };

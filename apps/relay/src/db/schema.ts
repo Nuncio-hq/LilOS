@@ -64,6 +64,8 @@ export const conversations = sqliteTable(
     model: text("model"),
     title: text("title").notNull().default(""),
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    /** Host watermark: highest user-message seq handed to the engine (#28). */
+    deliveredSeq: integer("delivered_seq").notNull().default(0),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [index("conversations_channel").on(t.channelId)],
@@ -90,10 +92,13 @@ export const messages = sqliteTable(
     model: text("model"),
     /** Monotonic per channel; replay cursor (`afterSeq`) points here. */
     seq: integer("seq").notNull(),
+    /** Exactly-once write key (#28): retries return the original row. */
+    dedupeKey: text("dedupe_key"),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [
     uniqueIndex("messages_channel_seq").on(t.channelId, t.seq),
+    uniqueIndex("messages_dedupe_key").on(t.channelId, t.dedupeKey),
     index("messages_conversation").on(t.conversationId),
   ],
 );

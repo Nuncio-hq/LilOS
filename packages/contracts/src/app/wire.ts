@@ -15,6 +15,7 @@ import {
   AuthorKind,
   Conversation,
   ConversationState,
+  ConversationSummary,
   Employee,
   EmployeeStatus,
   EngineHostStatus,
@@ -109,6 +110,7 @@ export const AppMethod = z.enum([
   "channels.list",
   "channels.openDm",
   "conversations.list",
+  "conversations.summaries",
   "conversations.open",
   "conversations.update",
   "messages.list",
@@ -271,6 +273,22 @@ export const ConversationsListResult = z.object({
 });
 
 /**
+ * Session-list read: one row per conversation carrying the messages the row
+ * renders, so the list survives the channel's snapshot window. Results order
+ * follows `conversations.list` (createdAt asc).
+ */
+export const ConversationsSummariesParams = z.object({
+  channelId: z.string().min(1).optional(),
+  includeArchived: z.boolean().default(false),
+});
+export type ConversationsSummariesParams = z.infer<
+  typeof ConversationsSummariesParams
+>;
+export const ConversationsSummariesResult = z.object({
+  summaries: z.array(ConversationSummary),
+});
+
+/**
  * Opens a thread in a channel with its root message; the returned
  * conversation is `idle` until the harness attaches `engineRef`.
  */
@@ -287,7 +305,10 @@ export const ConversationsOpenResult = z.object({
   rootMessage: AppMessage,
 });
 
-/** Harness-facing: attach `engineRef`, flip `state`, rename, archive. */
+/**
+ * Update a conversation: `title`/`archived` by any client; `state`,
+ * `engineRef` and the `deliveredSeq` watermark are host-only writes.
+ */
 export const ConversationsUpdateParams = z.object({
   conversationId: z.string().min(1),
   title: z.string().optional(),
@@ -296,6 +317,7 @@ export const ConversationsUpdateParams = z.object({
   engineRef: z.string().min(1).optional(),
   /** Host-only: the model the engine acked / will apply at session.start. */
   model: z.string().min(1).optional(),
+  deliveredSeq: z.int().min(0).optional(),
 });
 export type ConversationsUpdateParams = z.infer<
   typeof ConversationsUpdateParams
@@ -309,6 +331,8 @@ export const ConversationResult = z.object({ conversation: Conversation });
  */
 export const MessagesListParams = z.object({
   channelId: z.string().min(1),
+  /** Restrict to one thread — full thread history regardless of the snapshot window. */
+  conversationId: z.string().min(1).optional(),
   afterSeq: z.int().min(0).optional(),
   limit: z.int().min(1).optional(),
 });
@@ -327,6 +351,12 @@ export const MessagesPostParams = z.object({
   attachments: AttachmentsField,
   /** Engine `turn.started.model` — set by the host on employee answers. */
   model: z.string().min(1).optional(),
+  /**
+   * Exactly-once key for retried writes: a re-post with a key the channel
+   * already recorded returns the original message instead of duplicating it
+   * (no `message.created` re-emitted either).
+   */
+  dedupeKey: z.string().min(1).max(200).optional(),
 });
 export type MessagesPostParams = z.infer<typeof MessagesPostParams>;
 export const MessageResult = z.object({ message: AppMessage });

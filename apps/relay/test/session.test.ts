@@ -491,3 +491,324 @@ describe("relay session", () => {
     ).toEqual([]);
   });
 });
+
+describe("sessions history (#28)", () => {
+  /** A host peer registered on the relay (for engine-owned writes). */
+  async function hostOf(relay: ReturnType<typeof createRelay>) {
+    const host = connectPeer(relay);
+    await host.connection.receive(
+      req("session.hello", { protocolVersion: 1, token: TOKEN }),
+    );
+    await host.connection.receive(
+      req("harness.register", { protocolVersion: 1, version: "t" }),
+    );
+    return host;
+  }
+
+  const postAs = (
+    connection: { receive(d: string): Promise<void> },
+    channelId: string,
+    conversationId: string,
+    text: string,
+    authorKind: string,
+    dedupeKey?: string,
+  ) =>
+    connection.receive(
+      req("messages.post", {
+        channelId,
+        conversationId,
+        text,
+        authorKind,
+        ...(dedupeKey ? { dedupeKey } : {}),
+      }),
+    );
+
+  const summariesOf = async (
+    connection: { receive(d: string): Promise<void> },
+    frames: unknown[],
+    params: Record<string, unknown> = {},
+  ) => {
+    await connection.receive(req("conversations.summaries", params));
+    return (
+      resultOf(frames, `t${nextId - 1}`).result as {
+        summaries: {
+          conversation: {
+            id: string;
+            title: string | null;
+            archived: boolean;
+            state: string;
+          };
+          root: { id: string; text: string };
+          firstAnswer?: { text: string };
+          last: { text: string };
+          messageCount: number;
+        }[];
+      }
+    ).summaries;
+  };
+
+  it("AC-1 conversations.summaries returns title, root, answer preview, state, count", async () => {
+    const relay = newRelay();
+    const { frames, connection } = await helloed(relay);
+    const { employee, channel } = await setupChannel(frames, connection);
+    const host = await hostOf(relay);
+
+    await connection.receive(
+      req("conversations.open", {
+        channelId: channel.id,
+        text: "deploy the thing",
+        title: "deploy",
+      }),
+    );
+    const { conversation } = resultOf(frames, `t${nextId - 1}`).result as {
+      conversation: { id: string; rootMessageId: string };
+    };
+    await postAs(
+      host.connection,
+      channel.id,
+      conversation.id,
+      "on it",
+      "employee",
+    );
+    await postAs(
+      host.connection,
+      channel.id,
+      conversation.id,
+      "looks done",
+      "employee",
+    );
+
+    const summaries = await summariesOf(connection, frames);
+    expect(summaries).toHaveLength(1);
+    const [s] = summaries;
+    expect(s.conversation.id).toBe(conversation.id);
+    expect(s.conversation.title).toBe("deploy");
+    expect(s.conversation.state).toBe("idle");
+    expect(s.root.id).toBe(conversation.rootMessageId);
+    expect(s.root.text).toBe("deploy the thing");
+    expect(s.firstAnswer?.text).toBe("on it");
+    expect(s.last.text).toBe("looks done");
+    expect(s.messageCount).toBe(3);
+    expect(employee.name).toBe("Ada");
+  });
+
+  it("AC-1b summaries hide archived by default, includeArchived shows them", async () => {
+    const relay = newRelay();
+    const { frames, connection } = await helloed(relay);
+    const { channel } = await setupChannel(frames, connection);
+    await connection.receive(
+      req("conversations.open", { channelId: channel.id, text: "old work" }),
+    );
+    const { conversation } = resultOf(frames, `t${nextId - 1}`).result as {
+      conversation: { id: string };
+    };
+    await connection.receive(
+      req("conversations.update", {
+        conversationId: conversation.id,
+        archived: true,
+      }),
+    );
+
+    expect(await summariesOf(connection, frames)).toHaveLength(0);
+    const all = await summariesOf(connection, frames, {
+      includeArchived: true,
+    });
+    expect(all).toHaveLength(1);
+    expect(all[0].conversation.archived).toBe(true);
+  });
+
+  it("AC-2 messages.list with conversationId returns that thread's full history", async () => {
+    const relay = newRelay();
+    const { frames, connection } = await helloed(relay);
+    const { channel } = await setupChannel(frames, connection);
+    await connection.receive(
+      req("conversations.open", { channelId: channel.id, text: "first" }),
+    );
+    const convA = (
+      resultOf(frames, `t${nextId - 1}`).result as {
+        conversation: { id: string };
+      }
+    ).conversation;
+    await connection.receive(
+      req("conversations.open", { channelId: channel.id, text: "second" }),
+    );
+    const convB = (
+      resultOf(frames, `t${nextId - 1}`).result as {
+        conversation: { id: string };
+      }
+    ).conversation;
+    await connection.receive(
+      req("messages.post", {
+        channelId: channel.id,
+        conversationId: convA.id,
+        text: "a-reply",
+      }),
+    );
+    await connection.receive(
+      req("messages.post", {
+        channelId: channel.id,
+        conversationId: convB.id,
+        text: "b-reply",
+      }),
+    );
+
+    await connection.receive(
+      req("messages.list", {
+        channelId: channel.id,
+        conversationId: convA.id,
+      }),
+    );
+    const page = resultOf(frames, `t${nextId - 1}`).result as {
+      messages: { text: string; conversationId: string }[];
+    };
+    expect(page.messages.map((m) => m.text)).toEqual(["first", "a-reply"]);
+    expect(page.messages.every((m) => m.conversationId === convA.id)).toBe(
+      true,
+    );
+  });
+
+  it("AC-3 deliveredSeq is a host-only write, like engineRef/state", async () => {
+    const relay = newRelay();
+    const { frames, connection } = await helloed(relay);
+    const { channel } = await setupChannel(frames, connection);
+    await connection.receive(
+      req("conversations.open", { channelId: channel.id, text: "x" }),
+    );
+    const { conversation } = resultOf(frames, `t${nextId - 1}`).result as {
+      conversation: { id: string; deliveredSeq: number };
+    };
+    expect(conversation.deliveredSeq).toBe(0);
+    await connection.receive(
+      req("conversations.update", {
+        conversationId: conversation.id,
+        deliveredSeq: 1,
+      }),
+    );
+    expect(errorOf(frames, `t${nextId - 1}`).data?.code).toBe(
+      "forbidden" satisfies AppErrorCode,
+    );
+  });
+
+  it("AC-5 messages.post dedupeKey returns the original and never re-emits", async () => {
+    const relay = newRelay();
+    const { frames, connection } = await helloed(relay);
+    const { channel } = await setupChannel(frames, connection);
+    await connection.receive(
+      req("conversations.open", { channelId: channel.id, text: "hi" }),
+    );
+    const { conversation } = resultOf(frames, `t${nextId - 1}`).result as {
+      conversation: { id: string };
+    };
+    frames.length = 0;
+
+    await postAs(
+      connection,
+      channel.id,
+      conversation.id,
+      "answer one",
+      "user",
+      "k1",
+    );
+    const first = (
+      resultOf(frames, `t${nextId - 1}`).result as {
+        message: { id: string; seq: number; text: string };
+      }
+    ).message;
+    const emitted = eventsNamed(frames, "message.created").length;
+
+    // Retry with the same key but a different body → original wins, once.
+    await postAs(
+      connection,
+      channel.id,
+      conversation.id,
+      "answer one (retry)",
+      "user",
+      "k1",
+    );
+    const second = (
+      resultOf(frames, `t${nextId - 1}`).result as {
+        message: { id: string; seq: number; text: string };
+      }
+    ).message;
+    expect(second.id).toBe(first.id);
+    expect(second.seq).toBe(first.seq);
+    expect(second.text).toBe("answer one");
+    // No second message.created to subscribers / live peers.
+    expect(eventsNamed(frames, "message.created").length).toBe(emitted);
+  });
+
+  it("AC-5b pending = user messages past deliveredSeq; the watermark clears them", async () => {
+    const relay = newRelay();
+    const { frames, connection } = await helloed(relay);
+    const { channel } = await setupChannel(frames, connection);
+    const host = await hostOf(relay);
+    await connection.receive(
+      req("conversations.open", { channelId: channel.id, text: "run it" }),
+    );
+    const { conversation } = resultOf(frames, `t${nextId - 1}`).result as {
+      conversation: { id: string; deliveredSeq: number };
+    };
+    // A queued mid-turn message + an answer: pending must still owe both
+    // user messages, even though the newest is the answer.
+    await postAs(connection, channel.id, conversation.id, "and this", "user");
+    await postAs(
+      host.connection,
+      channel.id,
+      conversation.id,
+      "partial answer",
+      "employee",
+    );
+    await postAs(connection, channel.id, conversation.id, "one more", "user");
+
+    /** Register a fresh host (harness restart); returns pending + releases the slot. */
+    const pendingOf = async () => {
+      const fresh = connectPeer(relay);
+      await fresh.connection.receive(
+        req("session.hello", { protocolVersion: 1, token: TOKEN }),
+      );
+      await fresh.connection.receive(
+        req("harness.register", { protocolVersion: 1, version: "t2" }),
+      );
+      const pending = (
+        resultOf(fresh.frames, `t${nextId - 1}`).result as {
+          pending: {
+            conversation: { id: string };
+            message: { text: string };
+            messages: { text: string }[];
+          }[];
+        }
+      ).pending;
+      return { pending, connection: fresh.connection };
+    };
+
+    // Harness restart: the old host peer closed (socket drop), a new one
+    // re-registers and gets the owed tail.
+    host.connection.closed();
+    const first = await pendingOf();
+    expect(first.pending).toHaveLength(1);
+    expect(first.pending[0].conversation.id).toBe(conversation.id);
+    expect(first.pending[0].messages.map((m) => m.text)).toEqual([
+      "run it",
+      "and this",
+      "one more",
+    ]);
+    expect(first.pending[0].message.text).toBe("one more");
+
+    // The host marked the root delivered; only the tail stays owed.
+    await first.connection.receive(
+      req("conversations.update", {
+        conversationId: conversation.id,
+        deliveredSeq: 1,
+      }),
+    );
+    first.connection.closed();
+
+    const second = await pendingOf();
+    second.connection.closed();
+    expect(second.pending).toHaveLength(1);
+    expect(second.pending[0].messages.map((m) => m.text)).toEqual([
+      "and this",
+      "one more",
+    ]);
+  });
+});
