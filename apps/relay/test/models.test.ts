@@ -172,6 +172,121 @@ describe("model pick relay surface (#30)", () => {
     expect(updated.model).toBe("fake-small");
   });
 
+  it("AC-2 the whole pick (provider, effort, fast) rides conversation.modelRequested", async () => {
+    const relay = newRelay();
+    const user = await helloed(relay);
+    const { channel, conversation } = await dmWithConversation(
+      user.connection,
+      user.frames,
+    );
+    const host = await helloed(relay);
+    await host.connection.receive(
+      req("channel.subscribe", { channelId: channel.id }),
+    );
+
+    user.frames.length = 0;
+    host.frames.length = 0;
+    await user.connection.receive(
+      req("conversations.setModel", {
+        conversationId: conversation.id,
+        model: "devin/claude-opus-5",
+        provider: "devin",
+        effort: "xhigh",
+        fast: true,
+      }),
+    );
+    expect(resultOf(user.frames, lastId()).error).toBeUndefined();
+    const events = eventsNamed(host.frames, "conversation.modelRequested");
+    expect(events).toHaveLength(1);
+    // AC-8: a "/" id arrives verbatim, never re-split into provider/model.
+    expect(events[0].params).toEqual({
+      channelId: channel.id,
+      conversationId: conversation.id,
+      model: "devin/claude-opus-5",
+      provider: "devin",
+      effort: "xhigh",
+      fast: true,
+    });
+  });
+
+  it("AC-5 conversations.open stamps the composer's pick for session.start", async () => {
+    const relay = newRelay();
+    const user = await helloed(relay);
+    await user.connection.receive(
+      req("employees.create", { name: "Ada", role: "eng" }),
+    );
+    const { employee } = resultOf(user.frames, lastId()).result as {
+      employee: { id: string };
+    };
+    await user.connection.receive(
+      req("channels.openDm", { employeeId: employee.id }),
+    );
+    const { channel } = resultOf(user.frames, lastId()).result as {
+      channel: { id: string };
+    };
+    user.frames.length = 0;
+    await user.connection.receive(
+      req("conversations.open", {
+        channelId: channel.id,
+        text: "hi",
+        model: "fake-reasoning",
+        provider: "fake",
+        effort: "xhigh",
+        fast: true,
+      }),
+    );
+    const { conversation } = resultOf(user.frames, lastId()).result as {
+      conversation: {
+        id: string;
+        model?: string;
+        provider?: string;
+        effort?: string;
+        fast?: boolean;
+      };
+    };
+    // Stamped at creation: the harness reads them in session.start params.
+    expect(conversation).toMatchObject({
+      model: "fake-reasoning",
+      provider: "fake",
+      effort: "xhigh",
+      fast: true,
+    });
+  });
+
+  it("AC-7 the hide list is relay-owned: settings.get/set round-trip + broadcast", async () => {
+    const relay = newRelay();
+    const alice = await helloed(relay);
+    const bob = await helloed(relay);
+
+    await alice.connection.receive(
+      req("settings.get", { key: "modelVisibility" }),
+    );
+    expect(
+      (resultOf(alice.frames, lastId()).result as { value: unknown }).value,
+    ).toBeNull();
+
+    bob.frames.length = 0;
+    const hidden = { providers: ["xai"], models: ["fake::fake-small"] };
+    await alice.connection.receive(
+      req("settings.set", { key: "modelVisibility", value: hidden }),
+    );
+    expect(resultOf(alice.frames, lastId()).error).toBeUndefined();
+    // Every other connected client hears the write.
+    const changes = eventsNamed(bob.frames, "settings.changed");
+    expect(changes).toHaveLength(1);
+    expect(changes[0].params).toEqual({
+      key: "modelVisibility",
+      value: hidden,
+    });
+
+    await bob.connection.receive(
+      req("settings.get", { key: "modelVisibility" }),
+    );
+    expect(
+      (resultOf(bob.frames, lastId()).result as { value: unknown }).value,
+    ).toEqual(hidden);
+  });
+
   it("welcome.engineHost and system.status carry the heartbeat's catalog", async () => {
     const relay = newRelay();
     const host = await helloed(relay);

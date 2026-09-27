@@ -146,11 +146,13 @@ export function choiceFor(model: string, models: ModelOption[]): ModelChoice {
 }
 
 /* A session's current pick: what the session pinned, else the employee's
-   default model with that model's default effort (never last session's pick). */
+   default model — or the engine's own default when the employee unpins it —
+   with that model's default effort (never last session's pick). */
 export function sessionChoice(
   t: Pick<Thread, "model" | "provider" | "effort" | "fast">,
   employeeModel: string | undefined,
   models: ModelOption[],
+  defaultModel?: string,
 ): ModelChoice {
   if (t.model)
     return {
@@ -159,7 +161,10 @@ export function sessionChoice(
       effort: t.effort ?? defaultEffort(findModel(models, t as ModelChoice)),
       fast: t.fast,
     };
-  return choiceFor(employeeModel ?? models[0]?.id ?? "", models);
+  return choiceFor(
+    employeeModel || defaultModel || models[0]?.id || "",
+    models,
+  );
 }
 
 function findModel(models: ModelOption[], c: ModelChoice) {
@@ -175,6 +180,12 @@ function findModel(models: ModelOption[], c: ModelChoice) {
    searchable model list. Everything applies from the next turn. The slider has
    exactly the steps the engine reported for THIS model; a model without
    `efforts` gets no slider. Refresh / Edit models render only with handlers. */
+const samePick = (a: ModelChoice, b: ModelChoice) =>
+  a.model === b.model &&
+  a.provider === b.provider &&
+  a.effort === b.effort &&
+  !!a.fast === !!b.fast;
+
 export function ModelPicker({
   value,
   models,
@@ -192,14 +203,30 @@ export function ModelPicker({
   const [view, setView] = useState<"main" | "models">("main");
   const [editing, setEditing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const cur = findModel(models, value);
+  /* The pick writes are async (relay round-trip). While the popover is open,
+     the shown state is the user's latest edit — composing off the `value`
+     prop would drop an earlier toggle that hasn't echoed back yet. The draft
+     is dropped the moment the prop actually moves (the echo, or an external
+     change): the parent stays authoritative. */
+  const [picked, setPicked] = useState<ModelChoice | null>(null);
+  const [prev, setPrev] = useState(value);
+  if (!samePick(value, prev)) {
+    setPrev(value);
+    if (picked) setPicked(null);
+  }
+  const shown0 = picked ?? value;
+  const cur = findModel(models, shown0);
   const efforts = cur?.efforts ?? [];
   const effort =
-    value.effort && efforts.includes(value.effort)
-      ? value.effort
+    shown0.effort && efforts.includes(shown0.effort)
+      ? shown0.effort
       : defaultEffort(cur);
   const idx = effort ? efforts.indexOf(effort) : -1;
-  const fast = !!(cur?.fast && value.fast);
+  const fast = !!(cur?.fast && shown0.fast);
+  const choose = (c: ModelChoice) => {
+    setPicked(c);
+    onChoice(c);
+  };
   const pName = (p: string) => providerName(p, providers);
   const logoOf = (p?: string) => providers?.find((x) => x.id === p)?.logo;
 
@@ -213,11 +240,11 @@ export function ModelPicker({
 
   const pickModel = (m: ModelOption) => {
     const keep = effort && m.efforts?.includes(effort);
-    onChoice({
+    choose({
       model: m.id,
       provider: m.provider,
       effort: keep ? effort : defaultEffort(m),
-      fast: m.fast ? value.fast : undefined,
+      fast: m.fast ? shown0.fast : undefined,
     });
     setView("main");
   };
@@ -237,7 +264,10 @@ export function ModelPicker({
         open={open}
         onOpenChange={(o) => {
           setOpen(o);
-          if (!o) setView("main");
+          if (!o) {
+            setView("main");
+            setPicked(null);
+          }
         }}
       >
         <PopoverTrigger
@@ -279,7 +309,7 @@ export function ModelPicker({
                     aria-label="Fast mode"
                     aria-pressed={fast}
                     title={fast ? "Fast mode on" : "Fast mode off"}
-                    onClick={() => onChoice({ ...value, effort, fast: !fast })}
+                    onClick={() => choose({ ...shown0, effort, fast: !fast })}
                     className={cn(
                       "grid size-7 place-items-center rounded-md hover:bg-muted",
                       fast ? "text-amber-500" : "text-muted-foreground",
@@ -314,7 +344,7 @@ export function ModelPicker({
                     efforts={efforts}
                     index={idx}
                     label={effortLabel}
-                    onPick={(e) => onChoice({ ...value, effort: e, fast })}
+                    onPick={(e) => choose({ ...shown0, effort: e, fast })}
                   />
                 </div>
               ) : (

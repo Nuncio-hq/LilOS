@@ -2,6 +2,7 @@ import {
   type AgentDescriptor,
   type AgentsCreateParams,
   type ModelOption,
+  type ModelProvider,
   RPC_ERRORS,
 } from "@lilos/contracts/engine";
 import { RpcError } from "./errors.js";
@@ -134,47 +135,101 @@ export async function createAgent(
   return describeAgent(gw, p.name);
 }
 
+interface ModelOptionsCapabilities {
+  fast?: unknown;
+  reasoning?: unknown;
+  can_disable_reasoning?: unknown;
+}
+
 interface ModelOptionsProvider {
   slug?: unknown;
   name?: unknown;
   models?: unknown;
+  /** {modelId: {fast, reasoning, can_disable_reasoning}} — inventory.py
+      `_apply_capabilities`; `supported_efforts` is deliberately not
+      forwarded upstream. */
+  capabilities?: Record<string, ModelOptionsCapabilities> | unknown;
+  /** Rows with `authenticated: false` carry no credential — they list for
+      re-auth affordance, not picking. Absent on older gateways = keep. */
+  authenticated?: unknown;
 }
+
+/**
+ * Hermes' ordered effort ladder (`agent/reasoning_effort.py::EFFORT_LADDER`),
+ * low → high. The gateway reports per-model `reasoning` booleans but no level
+ * list, so a reasoning-capable model gets the full ladder (issue #92 AC-2).
+ */
+export const HERMES_EFFORT_LADDER = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+] as const;
 
 export async function listModels(
   gw: GatewayLike,
-  provider?: string,
+  opts: { refresh?: boolean } = {},
 ): Promise<{
   models: ModelOption[];
+  providers: ModelProvider[];
   default?: string;
 }> {
-  const r = (await gw.request("model.options", {})) as {
+  const r = (await gw.request("model.options", {
+    ...(opts.refresh ? { refresh: true } : {}),
+  })) as {
     providers?: ModelOptionsProvider[];
     model?: unknown;
     provider?: unknown;
   };
-  // The selectable set is the engine's provider's models: `model.options`
-  // lists every provider Hermes knows, but only the ambient one is actually
-  // usable by sessions this engine starts (a session.create provider pin is
-  // what opts.provider feeds).
-  const want = provider ?? str(r.provider);
-  const provs = (r.providers ?? []).filter(
-    (p) => !want || (str(p.slug) ?? str(p.name)) === want,
-  );
-  const rows = provs.length > 0 ? provs : (r.providers ?? []);
+  /* #92 AC-1: every authenticated provider row — a pick from another
+     provider switches the session's provider, not just the model. */
+  const rows = (r.providers ?? []).filter((p) => p.authenticated !== false);
   const seen = new Set<string>();
   const models: ModelOption[] = [];
+  const providers: ModelProvider[] = [];
   for (const prov of rows) {
     const slug = str(prov.slug) ?? str(prov.name);
+    if (!slug) continue;
+    providers.push({
+      id: slug,
+      ...(str(prov.name) ? { name: str(prov.name) } : {}),
+    });
+    const caps =
+      typeof prov.capabilities === "object" && prov.capabilities !== null
+        ? (prov.capabilities as Record<string, ModelOptionsCapabilities>)
+        : {};
     const list = Array.isArray(prov.models) ? prov.models : [];
     for (const m of list) {
-      const id = str(m);
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      models.push({ id, name: id, ...(slug ? { provider: slug } : {}) });
+      /* A model entry is either a bare id string or a `{id}`-ish row; the id
+         is opaque and may itself contain `/` (aggregator rows) — never split
+         or rejoin it (issue #92 AC-8). */
+      const id = typeof m === "string" ? str(m) : undefined;
+      if (!id) continue;
+      const key = `${slug}::${id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const cap = caps[id];
+      const efforts =
+        cap?.reasoning === true
+          ? cap.can_disable_reasoning === false
+            ? HERMES_EFFORT_LADDER.filter((e) => e !== "none")
+            : [...HERMES_EFFORT_LADDER]
+          : undefined;
+      models.push({
+        id,
+        name: id,
+        provider: slug,
+        ...(efforts ? { efforts } : {}),
+        ...(cap?.fast === true ? { fast: true } : {}),
+      });
     }
   }
   const dflt = str(r.model);
-  return { models, ...(dflt ? { default: dflt } : {}) };
+  return { models, providers, ...(dflt ? { default: dflt } : {}) };
 }
 
 /**
@@ -198,72 +253,125 @@ export function splitModelRef(
   };
 }
 
-const MODEL_OK = /✓|switched/i;
-const BUSY = /busy|running|in progress/i;
-
 /**
- * Union of every provider's model ids from `model.options`; undefined when
- * the gateway can't enumerate them (older builds) — then the slash output
- * marker is the only signal and we keep relying on it.
+ * Model ids the gateway can enumerate, keyed per provider + globally;
+ * undefined when `model.options` fails (older builds) — the `config.set`
+ * answer is then the only signal, like before.
  */
 async function knownModelIds(
   gw: GatewayLike,
-): Promise<Set<string> | undefined> {
+): Promise<
+  { all: Set<string>; byProvider: Map<string, Set<string>> } | undefined
+> {
   try {
     const r = (await gw.request("model.options", {})) as {
       providers?: ModelOptionsProvider[];
     };
-    const ids = new Set<string>();
+    const all = new Set<string>();
+    const byProvider = new Map<string, Set<string>>();
     for (const prov of r.providers ?? []) {
+      const slug = str(prov.slug) ?? str(prov.name);
       const list = Array.isArray(prov.models) ? prov.models : [];
       for (const m of list) {
         const id = str(m);
-        if (id) ids.add(id);
+        if (!id) continue;
+        all.add(id);
+        if (slug) {
+          const set = byProvider.get(slug) ?? new Set<string>();
+          set.add(id);
+          byProvider.set(slug, set);
+        }
       }
     }
-    return ids.size ? ids : undefined;
+    return all.size ? { all, byProvider } : undefined;
   } catch {
     return undefined;
   }
 }
 
-/** `slash.exec /model <id>` — the TUI's own session-scoped switch. */
+interface ConfigSetResult {
+  key?: unknown;
+  value?: unknown;
+  warning?: unknown;
+  confirm_required?: unknown;
+  confirm_message?: unknown;
+  deferred?: unknown;
+}
+
+/**
+ * `config.set` with the model-confirm handshake answered (issue #92 AC-4):
+ * an expensive-model guard replies `confirm_required: true` and the pick is
+ * re-issued once with `confirm_expensive_model` — the user's picker choice
+ * IS the confirmation, no second ask surfaces in LilOS.
+ */
+async function configSet(
+  gw: GatewayLike,
+  runtimeSid: string,
+  key: string,
+  value: string,
+): Promise<ConfigSetResult> {
+  const send = (confirmed: boolean) =>
+    gw.request("config.set", {
+      key,
+      value,
+      session_id: runtimeSid,
+      ...(confirmed ? { confirm_expensive_model: true } : {}),
+    }) as Promise<ConfigSetResult>;
+  let r = await send(false);
+  if (r?.confirm_required === true) r = await send(true);
+  return r;
+}
+
+/**
+ * Session-scoped model pick via `config.set` (#92): `model` takes
+ * `parse_model_switch_args` flags — `<id> --provider <slug> --reasoning
+ * <level>` switches provider + effort atomically with the model; `fast`
+ * toggles the session's service tier (`on`/`off` → `fast`/`normal`). A
+ * running session defers the model leg to the next turn (`deferred: true`)
+ * and never errors — effort/fast still apply live to the current agent.
+ */
 export async function setSessionModel(
   gw: GatewayLike,
   runtimeSid: string,
-  model: string,
-): Promise<{ model: string }> {
-  // #50 AC-3: `/model` on Hermes switches lazily — it answers success for an
-  // id the session can't actually use and the failure only surfaces at the
-  // next prompt. Validate against `model.options` first so an unknown id is
-  // MODEL_NOT_FOUND here, where the caller can react.
+  pick: { model: string; provider?: string; effort?: string; fast?: boolean },
+): Promise<{
+  model: string;
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
+  deferred?: boolean;
+}> {
+  // #50 AC-3 kept: validate against `model.options` first so an unknown id
+  // is MODEL_NOT_FOUND here, not a lazy failure at the next prompt.
   const known = await knownModelIds(gw);
   if (known) {
-    const bare = splitModelRef(model).model ?? model;
-    if (!known.has(bare) && !known.has(model))
+    const scoped = pick.provider
+      ? known.byProvider.get(pick.provider)
+      : known.all;
+    const ok = scoped ? scoped.has(pick.model) : known.all.has(pick.model);
+    if (!ok)
       throw new RpcError(
         RPC_ERRORS.MODEL_NOT_FOUND,
-        `no model ${model} — see models.list`,
+        `no model ${pick.model} — see models.list`,
       );
   }
-  const r = (await gw.request("slash.exec", {
-    session_id: runtimeSid,
-    command: `/model ${model}`,
-  })) as { output?: unknown; warning?: unknown };
-  const output = `${str(r.output) ?? ""}`.trim();
-  const out = `${output}\n${str(r.warning) ?? ""}`.trim();
-  if (BUSY.test(out))
-    throw new RpcError(
-      RPC_ERRORS.INVALID_STATE,
-      `session is busy — ${out.split("\n")[0]}`,
-    );
-  // `warning` carries soft notices even on success (e.g. the model missing
-  // from the endpoint's /models listing): the switch only failed when the
-  // output lacks the success marker, so check success first.
-  if (!MODEL_OK.test(output))
-    throw new RpcError(
-      RPC_ERRORS.MODEL_NOT_FOUND,
-      out.split("\n")[0] || `no model ${model}`,
-    );
-  return { model };
+  const modelValue = [
+    pick.model,
+    pick.provider ? `--provider ${pick.provider}` : undefined,
+    pick.effort ? `--reasoning ${pick.effort}` : undefined,
+  ]
+    .filter((x): x is string => Boolean(x))
+    .join(" ");
+  const r = await configSet(gw, runtimeSid, "model", modelValue);
+  const applied = str(r.value) ?? pick.model;
+  if (pick.fast !== undefined) {
+    await configSet(gw, runtimeSid, "fast", pick.fast ? "on" : "off");
+  }
+  return {
+    model: applied,
+    ...(pick.provider ? { provider: pick.provider } : {}),
+    ...(pick.effort ? { effort: pick.effort } : {}),
+    ...(pick.fast !== undefined ? { fast: pick.fast } : {}),
+    ...(r.deferred === true ? { deferred: true } : {}),
+  };
 }

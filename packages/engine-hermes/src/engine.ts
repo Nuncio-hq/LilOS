@@ -10,6 +10,7 @@ import {
   type EngineRequest,
   type EventsSinceParams,
   type InterruptParams,
+  type ModelsListParams,
   type PromptParams,
   type RequestRespondParams,
   RPC_ERRORS,
@@ -30,7 +31,6 @@ import {
   listModels,
   requireAgent,
   setSessionModel,
-  splitModelRef,
 } from "./catalog.js";
 import { RpcError } from "./errors.js";
 import type { GatewayLike } from "./gateway.js";
@@ -171,7 +171,9 @@ export class HermesEngine {
           parsed.data as AgentsCreateParams,
         );
       case "models.list":
-        return listModels(this.opts.gateway, this.opts.provider);
+        return listModels(this.opts.gateway, {
+          refresh: (parsed.data as ModelsListParams).refresh,
+        });
       case "session.setModel":
         return this.sessionSetModel(parsed.data as SessionSetModelParams);
       case "session.setTitle":
@@ -220,8 +222,11 @@ export class HermesEngine {
         id: "models",
         name: "Model picker",
         description:
-          "models.list flattens model.options; session.setModel runs slash.exec /model (session-scoped, next turn picks it up).",
+          "models.list flattens model.options (all providers, refreshable); session.setModel runs config.set model/fast — session-scoped, next turn picks it up.",
         methods: ["models.list", "session.setModel"],
+        /* #92: Refresh button / effort slider / ⚡Fast render only on engines
+           that declare them here. */
+        detail: { refreshable: true, effort: true, fast: true },
       },
       {
         id: "session_meta",
@@ -270,10 +275,13 @@ export class HermesEngine {
     // The LilOS `agent` is a Hermes profile name: refuse unknown ones up front
     // (AGENT_NOT_FOUND) and run the session under that profile.
     await requireAgent(this.opts.gateway, p.agent);
-    const modelRef = splitModelRef(
-      p.model ?? this.opts.model,
-      this.opts.provider,
-    );
+    /* #92 AC-8: `p.model` is an opaque id — it may itself contain `/`
+       (aggregator ids like `devin/claude-opus-5`); it is never split into a
+       `provider/model` pair. `p.provider` is a separate wire field. */
+    const model = p.model ?? this.opts.model;
+    const provider = p.provider ?? this.opts.provider;
+    const effort = p.effort;
+    const fast = p.fast;
     if (mcp.length === 0) {
       const r = (await this.createSessionCompat({
         profile: p.agent,
@@ -282,8 +290,10 @@ export class HermesEngine {
         cwd_explicit: true,
         source: "lilos",
         close_on_disconnect: true,
-        ...(modelRef.model ? { model: modelRef.model } : {}),
-        ...(modelRef.provider ? { provider: modelRef.provider } : {}),
+        ...(model ? { model } : {}),
+        ...(provider ? { provider } : {}),
+        ...(effort ? { reasoning_effort: effort } : {}),
+        ...(fast !== undefined ? { fast } : {}),
       })) as { session_id?: unknown; stored_session_id?: unknown };
       if (typeof r.session_id !== "string" || !r.session_id)
         throw new RpcError(
@@ -296,8 +306,11 @@ export class HermesEngine {
         p.cwd,
         // effective model (what session.create got), not the bare request —
         // the ambient default still answers `turn.started.model` (#30).
-        modelRef.model ?? p.model,
+        model,
         mcp,
+        provider,
+        effort,
+        fast,
         "ws",
         r.session_id,
         typeof r.stored_session_id === "string" ? r.stored_session_id : "",
@@ -309,6 +322,9 @@ export class HermesEngine {
         agent: p.agent,
         cwd: p.cwd,
         ...(s.model ? { model: s.model } : {}),
+        ...(s.provider ? { provider: s.provider } : {}),
+        ...(s.effort ? { effort: s.effort } : {}),
+        ...(s.fast !== undefined ? { fast: s.fast } : {}),
       });
       s.setState("idle");
       return { sessionId: id };
@@ -325,8 +341,11 @@ export class HermesEngine {
       id,
       p.agent,
       p.cwd,
-      modelRef.model ?? p.model,
+      model,
       mcp,
+      provider,
+      effort,
+      fast,
       "acp",
       opened.runtimeSid,
       opened.ref,
@@ -339,6 +358,9 @@ export class HermesEngine {
       agent: p.agent,
       cwd: p.cwd,
       ...(s.model ? { model: s.model } : {}),
+      ...(s.provider ? { provider: s.provider } : {}),
+      ...(s.effort ? { effort: s.effort } : {}),
+      ...(s.fast !== undefined ? { fast: s.fast } : {}),
     });
     s.setState("idle");
     return { sessionId: id };
@@ -418,6 +440,9 @@ export class HermesEngine {
     s.emit("turn.started", {
       turnId,
       ...(s.model ? { model: s.model } : {}),
+      ...(s.provider ? { provider: s.provider } : {}),
+      ...(s.effort ? { effort: s.effort } : {}),
+      ...(s.fast !== undefined ? { fast: s.fast } : {}),
       ...(p.ref ? { ref: p.ref } : {}),
     });
     s.setState("running");
@@ -583,6 +608,9 @@ export class HermesEngine {
     s.emit("turn.started", {
       turnId,
       ...(s.model ? { model: s.model } : {}),
+      ...(s.provider ? { provider: s.provider } : {}),
+      ...(s.effort ? { effort: s.effort } : {}),
+      ...(s.fast !== undefined ? { fast: s.fast } : {}),
     });
     if (s.state !== "closed") s.setState("running");
   }
@@ -596,9 +624,27 @@ export class HermesEngine {
         RPC_ERRORS.METHOD_NOT_FOUND,
         "session.setModel needs the WS transport (no ACP equivalent yet)",
       );
-    await setSessionModel(this.opts.gateway, s.runtimeSid, p.model);
-    s.model = p.model;
-    return { model: p.model };
+    /* config.set trio: `<id> --provider <p> --reasoning <e>` + fast on/off.
+       A running session defers the model leg to the next turn (`deferred`);
+       `confirm_required` is answered inside setSessionModel (#92 AC-4). */
+    const ack = await setSessionModel(this.opts.gateway, s.runtimeSid, {
+      model: p.model,
+      provider: p.provider,
+      effort: p.effort,
+      fast: p.fast,
+    });
+    s.model = ack.model;
+    if (ack.provider !== undefined) s.provider = ack.provider;
+    // Hermes keeps the session's reasoning override across a model switch.
+    if (ack.effort !== undefined) s.effort = ack.effort;
+    if (ack.fast !== undefined) s.fast = ack.fast;
+    return {
+      model: ack.model,
+      ...(ack.provider ? { provider: ack.provider } : {}),
+      ...(ack.effort ? { effort: ack.effort } : {}),
+      ...(ack.fast !== undefined ? { fast: ack.fast } : {}),
+      ...(ack.deferred === true ? { deferred: true } : {}),
+    };
   }
 
   /**

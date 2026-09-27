@@ -112,6 +112,24 @@ const MIGRATIONS: { version: number; statements: string[] }[] = [
         ON messages(channel_id, dedupe_key)`,
     ],
   },
+  {
+    // #92: the session pick rides conversations (provider/effort/fast), the
+    // answering metadata rides messages, and the LilOS-owned settings KV
+    // (modelVisibility = the Edit-models hide list) lands as a table.
+    version: 6,
+    statements: [
+      `ALTER TABLE conversations ADD COLUMN provider TEXT`,
+      `ALTER TABLE conversations ADD COLUMN effort TEXT`,
+      `ALTER TABLE conversations ADD COLUMN fast INTEGER`,
+      `ALTER TABLE messages ADD COLUMN provider TEXT`,
+      `ALTER TABLE messages ADD COLUMN effort TEXT`,
+      `ALTER TABLE messages ADD COLUMN fast INTEGER`,
+      `CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )`,
+    ],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

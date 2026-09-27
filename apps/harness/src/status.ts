@@ -120,6 +120,7 @@ export class StatusReporter {
       engineProtocol: this.lastProbe?.result.protocol.version,
       capabilities: this.lastProbe?.result.capabilities,
       models: this.lastModels?.models,
+      providers: this.lastModels?.providers,
       defaultModel: this.lastModels?.default,
       engineRssBytes,
       sessions: this.opts.liveSessions?.(),

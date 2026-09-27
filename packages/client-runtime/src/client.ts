@@ -370,8 +370,8 @@ export class RelayClient {
     return agent;
   }
 
-  async listModels(): Promise<ModelsListResult> {
-    return await this.request<ModelsListResult>("models.list", {});
+  async listModels(params?: { refresh?: boolean }): Promise<ModelsListResult> {
+    return await this.request<ModelsListResult>("models.list", params ?? {});
   }
 
   async request<T>(

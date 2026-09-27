@@ -65,14 +65,71 @@ export class FakeGateway implements GatewayLike {
       },
     ],
   ]);
-  /** model.options backing store. */
-  modelProviders: { slug: string; name: string; models: string[] }[] = [
-    { slug: "stub", name: "Stub", models: ["stub-model-a", "stub-model-b"] },
+  /**
+   * model.options backing store (issue #92): two authenticated providers +
+   * one unauthenticated row the engine must skip (AC-1). `capabilities`
+   * mirrors `inventory.py::_apply_capabilities` — per-model {fast,
+   * reasoning, can_disable_reasoning}; no supported_efforts upstream.
+   */
+  modelProviders: {
+    slug: string;
+    name: string;
+    models: string[];
+    capabilities?: Record<
+      string,
+      { fast?: boolean; reasoning?: boolean; can_disable_reasoning?: boolean }
+    >;
+    authenticated?: boolean;
+  }[] = [
+    {
+      slug: "stub",
+      name: "Stub",
+      models: ["stub-model-a", "stub-model-b"],
+      capabilities: {
+        "stub-model-a": { fast: true, reasoning: true },
+        "stub-model-b": { fast: false, reasoning: false },
+      },
+    },
+    {
+      slug: "devin",
+      name: "Devin",
+      /* An aggregator-style id that itself contains "/" — AC-8. */
+      models: ["devin/claude-opus-5"],
+      capabilities: {
+        "devin/claude-opus-5": {
+          fast: true,
+          reasoning: true,
+          can_disable_reasoning: false,
+        },
+      },
+    },
+    {
+      slug: "ghost",
+      name: "Ghost",
+      models: ["ghost-model"],
+      authenticated: false,
+    },
   ];
   defaultModel = "stub-model-a";
-  /** session_id -> model set via slash.exec /model. */
+  /** session_id -> model set via config.set model. */
   sessionModels = new Map<string, string>();
+  /** session_id -> provider / effort / fast set via config.set (#92). */
+  sessionProviders = new Map<string, string>();
+  sessionEfforts = new Map<string, string>();
+  sessionFast = new Map<string, boolean>();
+  /** config.set calls in order — {key, value, session_id, confirm_expensive_model}. */
+  configSetCalls: Record<string, unknown>[] = [];
+  /** model.options calls in order (records the `refresh` flag, #92 AC-6). */
+  modelOptionsCalls: Record<string, unknown>[] = [];
+  /** sids currently mid-turn: config.set model answers deferred (#92 AC-4). */
+  runningSids = new Set<string>();
+  /** Model ids that require confirm_expensive_model on config.set. */
+  confirmModels = new Set<string>();
   slashCommands: string[] = [];
+  /** Extra provider rows appended on the NEXT model.options refresh:true
+      (the "new model appeared" fixture). */
+  refreshProviders: FakeGateway["modelProviders"] = [];
+  refreshCount = 0;
   /** When set, session.steer resolves with this status instead of "queued". */
   steerStatus: "queued" | "rejected" = "queued";
   /** When set, session.steer rejects with this error code (e.g. 4010 build window). */
@@ -237,11 +294,89 @@ export class FakeGateway implements GatewayLike {
         });
       }
       case "model.options":
+        this.modelOptionsCalls.push({ ...p });
+        if (p.refresh === true) {
+          this.refreshCount++;
+          if (this.refreshProviders.length)
+            this.modelProviders = [
+              ...this.modelProviders,
+              ...this.refreshProviders.splice(0),
+            ];
+        }
         return Promise.resolve({
           providers: this.modelProviders,
           model: this.defaultModel,
           provider: this.modelProviders[0]?.slug ?? "",
         });
+      case "config.set": {
+        /* Mirrors tui_gateway/methods_config_set.py: `model` parses
+           `<id> --provider <slug> --reasoning <level>`; running sessions
+           answer {deferred:true}; a guarded model answers
+           confirm_required until confirm_expensive_model. */
+        const key = String(p.key ?? "");
+        const value = String(p.value ?? "");
+        const sid = String(p.session_id ?? "");
+        this.configSetCalls.push({
+          key,
+          value,
+          session_id: sid,
+          confirm_expensive_model: p.confirm_expensive_model === true,
+        });
+        if (key === "model") {
+          let modelId = "";
+          let provider = "";
+          let reasoning = "";
+          const tokens = value.split(/\s+/).filter(Boolean);
+          for (let i = 0; i < tokens.length; i++) {
+            const t = tokens[i];
+            if (t === "--provider") provider = tokens[++i] ?? "";
+            else if (t === "--reasoning") reasoning = tokens[++i] ?? "";
+            else if (!t.startsWith("--") && !modelId) modelId = t;
+          }
+          if (!modelId)
+            return Promise.reject(new RpcError(4002, "model value required"));
+          if (
+            this.confirmModels.has(modelId) &&
+            p.confirm_expensive_model !== true
+          )
+            return Promise.resolve({
+              key,
+              value: modelId,
+              confirm_required: true,
+              confirm_message: `${modelId} is a paid model — confirm?`,
+              scope: "session",
+            });
+          const deferred = this.runningSids.has(sid);
+          this.sessionModels.set(sid, modelId);
+          if (provider) this.sessionProviders.set(sid, provider);
+          if (reasoning) this.sessionEfforts.set(sid, reasoning);
+          return Promise.resolve({
+            key,
+            value: modelId,
+            scope: "session",
+            ...(deferred ? { deferred: true } : {}),
+          });
+        }
+        if (key === "fast") {
+          const v =
+            value === "on" || value === "fast"
+              ? "fast"
+              : value === "off" || value === "normal"
+                ? "normal"
+                : undefined;
+          if (!v)
+            return Promise.reject(
+              new RpcError(4002, `unknown fast mode: ${value}`),
+            );
+          this.sessionFast.set(sid, v === "fast");
+          return Promise.resolve({ key, value: v, scope: "session" });
+        }
+        if (key === "reasoning") {
+          this.sessionEfforts.set(sid, value);
+          return Promise.resolve({ key, value, scope: "session" });
+        }
+        return Promise.resolve({ key, value });
+      }
       case "slash.exec": {
         const command = String(p.command ?? "");
         this.slashCommands.push(command);

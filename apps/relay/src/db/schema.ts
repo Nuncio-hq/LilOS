@@ -62,6 +62,10 @@ export const conversations = sqliteTable(
       .default("idle"),
     /** Model pinned on the engine session (issue #30); null = engine default. */
     model: text("model"),
+    /** The rest of the session's pick (issue #92): provider slug, effort, fast. */
+    provider: text("provider"),
+    effort: text("effort"),
+    fast: integer("fast", { mode: "boolean" }),
     title: text("title").notNull().default(""),
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),
     /** Host watermark: highest user-message seq handed to the engine (#28). */
@@ -90,6 +94,10 @@ export const messages = sqliteTable(
     attachments: text("attachments"),
     /** Engine `turn.started.model` on employee answers (issue #30). */
     model: text("model"),
+    /** Engine `turn.started` provider / effort / fast on employee answers (#92). */
+    provider: text("provider"),
+    effort: text("effort"),
+    fast: integer("fast", { mode: "boolean" }),
     /** Monotonic per channel; replay cursor (`afterSeq`) points here. */
     seq: integer("seq").notNull(),
     /** Exactly-once write key (#28): retries return the original row. */
@@ -135,3 +143,13 @@ export const asks = sqliteTable(
     index("asks_channel").on(t.channelId),
   ],
 );
+
+/**
+ * LilOS-owned key/value settings (#92): the one home for app-level state the
+ * engine doesn't own — e.g. `modelVisibility` (the Edit-models hide list).
+ * `value` is JSON text; `settings.get`/`settings.set` expose it on the wire.
+ */
+export const settings = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});

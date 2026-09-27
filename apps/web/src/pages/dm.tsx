@@ -6,8 +6,15 @@ import {
 } from "@lilos/client-runtime";
 import type { AppMessage, Ask, Conversation } from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
-import { EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
-import type { Channel, Msg, Reply, Thread } from "@lilos/ui/types";
+import { choiceFor, EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
+import type {
+  Channel,
+  ModelChoice,
+  ModelPickerExtras,
+  Msg,
+  Reply,
+  Thread,
+} from "@lilos/ui/types";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { atom } from "nanostores";
 import { useEffect, useMemo, useState } from "react";
@@ -17,10 +24,12 @@ import {
   hasCapability,
   interruptSession,
   pendingStart,
+  refreshModels,
   renameConversation,
   respondToRequest,
   sendDm,
   setConversationModel,
+  setModelVisibility,
 } from "../lib/actions";
 import { useAtom } from "../lib/hooks";
 import {
@@ -33,7 +42,10 @@ import { humanFor, ME } from "../lib/me";
 import {
   asks as asksAtom,
   engine,
+  engineDefaultModel,
   engineModels,
+  engineProviders,
+  modelVisibility,
   navOpen,
   relay,
   sessionModels,
@@ -92,12 +104,36 @@ export function DmPage() {
   const summaries = useAtom(relay.conversationSummaries);
   const models = useAtom(sessionModels);
   const catalog = useAtom(engineModels);
+  const defaultModel = useAtom(engineDefaultModel);
+  const providers = useAtom(engineProviders);
+  const visibility = useAtom(modelVisibility);
+  const description = useAtom(engine.description);
   const allAsks = useAtom(asksAtom);
   const pending = useAtom(pendingStart);
   const engineState = useAtom(engine.state);
   const statusPoll = useAtom(relay.status);
   const fatal = useAtom(relay.fatal);
   const [profileOpen, setProfileOpen] = useState(false);
+  /* The picker's pick for a session that doesn't exist yet (#92 AC-5): held
+     per employee, stamped on `conversations.open`, cleared once sent. */
+  const [draftPick, setDraftPick] = useState<Record<string, ModelChoice>>({});
+
+  /* Picker extras (#92): Edit models rides the relay-persisted visibility
+     list; Refresh renders only when the engine's `models` capability
+     declares `refreshable` (D-#19 — no control without a handler). */
+  const picker = useMemo<ModelPickerExtras | undefined>(() => {
+    if (!catalog.length) return undefined;
+    const detail = description?.capabilities.find((c) => c.id === "models")
+      ?.detail as { refreshable?: boolean } | undefined;
+    return {
+      providers: providers.length
+        ? providers.map((p) => ({ id: p.id, name: p.name ?? p.id }))
+        : undefined,
+      visibility,
+      onVisibility: (v) => void setModelVisibility(v),
+      ...(detail?.refreshable === true ? { onRefresh: refreshModels } : {}),
+    };
+  }, [catalog, providers, visibility, description]);
 
   /* AC-2 (#85): an engine that's down (Hermes missing, crashed out) shows
      its plain reason above the composer — never silently sendable. */
@@ -274,12 +310,14 @@ export function DmPage() {
   };
 
   const send = (text: string) => {
-    void sendDm(employeeId, text).then((conv) =>
-      navigate({
+    const pick = draftPick[employeeId];
+    void sendDm(employeeId, text, undefined, pick).then((conv) => {
+      setDraftPick(({ [employeeId]: _drop, ...rest }) => rest);
+      void navigate({
         to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: conv.id },
-      }),
-    );
+      });
+    });
   };
 
   /* thread panel ---------------------------------------------------------- */
@@ -331,7 +369,12 @@ export function DmPage() {
       archived: conv.archived,
       replies,
       usage: model?.turns.at(-1)?.usage as Thread["usage"],
+      // The session's pick: the pinned conversation fields win; the session
+      // snapshot fills what a bare `model` pin (pre-#92 rows) never set.
       model: conv.model ?? model?.model,
+      provider: conv.provider ?? model?.provider,
+      effort: conv.effort ?? model?.effort,
+      fast: conv.fast ?? model?.fast,
     };
     const running = !!modelLive || pending[conv.id] === true;
     const steer = hasCapability("steer");
@@ -369,7 +412,13 @@ export function DmPage() {
           steer={steer}
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}
-          onModel={(c) => void setConversationModel(conv.id, c.model)}
+          onModel={
+            catalog.length
+              ? (c) => void setConversationModel(conv.id, c)
+              : undefined
+          }
+          picker={picker}
+          defaultModel={defaultModel}
           onSend={(text) => void sendDm(employeeId, text, conv.id)}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           onFocus={undefined}
@@ -414,6 +463,17 @@ export function DmPage() {
         setPick={() => {}}
         loading={!channel}
         composerNote={composerNote}
+        models={catalog.length ? catalog : undefined}
+        modelChoice={
+          draftPick[employeeId] ??
+          choiceFor(employee.model || defaultModel || "", catalog)
+        }
+        onModel={
+          catalog.length
+            ? (c) => setDraftPick((d) => ({ ...d, [employeeId]: c }))
+            : undefined
+        }
+        picker={picker}
         onRename={(id, title) => {
           const conv = convs.find((c) => c.rootMessageId === id);
           if (conv) void renameConversation(conv.id, title);

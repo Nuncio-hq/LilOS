@@ -57,8 +57,11 @@ interface SessionBinding {
   runningTurnId?: string;
   /** Buffered answer text per running turn. */
   textByTurn: Map<string, string>;
-  /** `turn.started.model` per running turn — stamped on the answer message. */
-  modelByTurn: Map<string, string>;
+  /** The `turn.started` pick per running turn — stamped on the answer (#92). */
+  pickByTurn: Map<
+    string,
+    { model?: string; provider?: string; effort?: string; fast?: boolean }
+  >;
   /** User messages queued while a turn runs (delivered in order). */
   queue: AppMessage[];
   /** Relay message ids the engine consumed (replayed `turn.started.ref`). */
@@ -84,6 +87,9 @@ export interface HarnessOptions {
   ) => {
     agent: string;
     model?: string;
+    provider?: string;
+    effort?: string;
+    fast?: boolean;
   };
   /** Wake hook: a new user message while the engine is down asks the supervisor to self-heal. */
   onNeedEngine?: () => void;
@@ -512,7 +518,7 @@ export class Harness {
       lastSeq: 0,
       runningTurnId: undefined,
       textByTurn: new Map(),
-      modelByTurn: new Map(),
+      pickByTurn: new Map(),
     };
     this.bindings.set(binding.conversationId, rebound);
     this.conversationBySession.set(started.sessionId, binding.conversationId);
@@ -805,7 +811,7 @@ export class Harness {
           lastSeq: 0,
           queue: [],
           textByTurn: new Map(),
-          modelByTurn: new Map(),
+          pickByTurn: new Map(),
           consumed: new Set(),
           turnSource: new Map(),
         };
@@ -832,7 +838,7 @@ export class Harness {
       lastSeq: 0,
       queue: [],
       textByTurn: new Map(),
-      modelByTurn: new Map(),
+      pickByTurn: new Map(),
       consumed: new Set(),
       turnSource: new Map(),
     };
@@ -863,8 +869,24 @@ export class Harness {
         if (!binding) return;
         binding.runningTurnId = event.payload.turnId;
         binding.textByTurn.set(event.payload.turnId, "");
-        if (event.payload.model) {
-          binding.modelByTurn.set(event.payload.turnId, event.payload.model);
+        // The pick the turn actually runs on — engine truth for the footer's
+        // `· model · effort · Fast` (issue #92 AC-4).
+        if (
+          event.payload.model ||
+          event.payload.provider ||
+          event.payload.effort ||
+          event.payload.fast !== undefined
+        ) {
+          binding.pickByTurn.set(event.payload.turnId, {
+            ...(event.payload.model ? { model: event.payload.model } : {}),
+            ...(event.payload.provider
+              ? { provider: event.payload.provider }
+              : {}),
+            ...(event.payload.effort ? { effort: event.payload.effort } : {}),
+            ...(event.payload.fast !== undefined
+              ? { fast: event.payload.fast }
+              : {}),
+          });
         }
         // `ref` proves which relay message this turn consumed — recorded so a
         // pending-tail redelivery can't re-prompt it, and so the turn's answer
@@ -1069,10 +1091,12 @@ export class Harness {
       case "conversation.modelRequested": {
         const parsed = ConversationModelRequestedEvent.safeParse(params);
         if (parsed.success) {
-          void this.onModelRequested(
-            parsed.data.conversationId,
-            parsed.data.model,
-          );
+          void this.onModelRequested(parsed.data.conversationId, {
+            model: parsed.data.model,
+            provider: parsed.data.provider,
+            effort: parsed.data.effort,
+            fast: parsed.data.fast,
+          });
         }
         break;
       }
@@ -1196,17 +1220,42 @@ export class Harness {
    * conversation stores); without one the pin rides on the conversation and
    * `session.start` picks it up via `sessionParams`.
    */
-  private async onModelRequested(conversationId: string, model: string) {
+  private async onModelRequested(
+    conversationId: string,
+    pick: { model: string; provider?: string; effort?: string; fast?: boolean },
+  ) {
     const binding = this.bindings.get(conversationId);
     const conn = this.engine;
-    let pinned = model;
+    /* The whole pick rides session.setModel (#92): a running engine may
+       defer it to the next turn (`deferred`) — the ack's fields are still
+       what the conversation records and the picker then shows. */
+    const patch: {
+      model: string;
+      provider?: string;
+      effort?: string;
+      fast?: boolean;
+    } = {
+      model: pick.model,
+      ...(pick.provider !== undefined ? { provider: pick.provider } : {}),
+      ...(pick.effort !== undefined ? { effort: pick.effort } : {}),
+      ...(pick.fast !== undefined ? { fast: pick.fast } : {}),
+    };
     if (binding && conn) {
       try {
-        const ack = await conn.request<{ model: string }>("session.setModel", {
+        const ack = await conn.request<{
+          model: string;
+          provider?: string;
+          effort?: string;
+          fast?: boolean;
+          deferred?: boolean;
+        }>("session.setModel", {
           sessionId: binding.sessionId,
-          model,
+          ...pick,
         });
-        pinned = ack.model;
+        patch.model = ack.model;
+        if (ack.provider !== undefined) patch.provider = ack.provider;
+        if (ack.effort !== undefined) patch.effort = ack.effort;
+        if (ack.fast !== undefined) patch.fast = ack.fast;
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         this.opts.log.warn("session.setModel failed", {
@@ -1215,17 +1264,16 @@ export class Harness {
         });
         await this.postSystem(
           binding,
-          `Couldn't switch to ${model}: ${detail}`,
+          `Couldn't switch to ${pick.model}: ${detail}`,
         );
         return;
       }
     }
-    await this.updateConversation(conversationId, { model: pinned }).catch(
-      (error) =>
-        this.opts.log.warn("conversation model update failed", {
-          conversationId,
-          error: String(error),
-        }),
+    await this.updateConversation(conversationId, patch).catch((error) =>
+      this.opts.log.warn("conversation model update failed", {
+        conversationId,
+        error: String(error),
+      }),
     );
   }
 
@@ -1237,9 +1285,9 @@ export class Harness {
   ) {
     const { turnId, stopReason } = event.payload;
     const text = binding.textByTurn.get(turnId) ?? "";
-    const model = binding.modelByTurn.get(turnId);
+    const pick = binding.pickByTurn.get(turnId);
     binding.textByTurn.delete(turnId);
-    binding.modelByTurn.delete(turnId);
+    binding.pickByTurn.delete(turnId);
     binding.runningTurnId = undefined;
     this.opts.sleep.release();
 
@@ -1259,7 +1307,10 @@ export class Harness {
           authorKind: "employee",
           authorId: employeeId,
           text: text.trim(),
-          ...(model ? { model } : {}),
+          ...(pick?.model ? { model: pick.model } : {}),
+          ...(pick?.provider ? { provider: pick.provider } : {}),
+          ...(pick?.effort ? { effort: pick.effort } : {}),
+          ...(pick?.fast !== undefined ? { fast: pick.fast } : {}),
           dedupeKey: `answer:${binding.conversationId}:${source}`,
         }),
       );
@@ -1371,9 +1422,21 @@ export class Harness {
       agent: agentId,
       ...(employee?.model ? { model: employee.model } : {}),
     };
-    // A model pinned on the conversation (#30) wins over the profile default.
+    // A pick pinned on the conversation (#30/#92) wins over the profile
+    // default — each field falls back independently so a bare `model` pin
+    // (old rows) still resolves its provider/effort on the engine.
     const model = conv?.model ?? base.model;
-    return { ...base, ...(model ? { model } : {}), cwd: this.opts.workdir };
+    const provider = conv?.provider ?? base.provider;
+    const effort = conv?.effort ?? base.effort;
+    const fast = conv?.fast ?? base.fast;
+    return {
+      ...base,
+      ...(model ? { model } : {}),
+      ...(provider ? { provider } : {}),
+      ...(effort ? { effort } : {}),
+      ...(fast !== undefined ? { fast } : {}),
+      cwd: this.opts.workdir,
+    };
   }
 
   private employeeIdFor(conv: Conversation | undefined) {

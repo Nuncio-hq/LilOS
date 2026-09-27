@@ -99,6 +99,7 @@ export function FocusView({
   onRewind,
   onModel,
   picker,
+  defaultModel,
   accept,
   maxFileSize,
   onAttachError,
@@ -136,6 +137,8 @@ export function FocusView({
   onModel?: (c: ModelChoice) => void;
   /* Refresh / Edit models… / provider names — each renders only with its handler. */
   picker?: ModelPickerExtras;
+  /* The engine's `models.list.default` — the unpinned-employee pick (#92 AC-5). */
+  defaultModel?: string;
   say?: (t: string) => void;
   models?: ModelOption[];
   repoFiles?: string[];
@@ -161,7 +164,7 @@ export function FocusView({
   );
   const [follow, setFollow] = useState(true);
   const isDM = !!channel.dm;
-  const model = thread.model ?? lead?.model ?? models?.[0]?.id;
+  const model = thread.model ?? lead?.model ?? defaultModel ?? models?.[0]?.id;
   const live = thread.replies.find((r) => r.live);
   const lastStep = live?.steps?.[live.steps.length - 1];
   const status: ChatStatus = running
@@ -529,7 +532,7 @@ export function FocusView({
               status={status}
               choice={
                 models?.length
-                  ? sessionChoice(thread, lead?.model, models)
+                  ? sessionChoice(thread, lead?.model, models, defaultModel)
                   : undefined
               }
               models={models}

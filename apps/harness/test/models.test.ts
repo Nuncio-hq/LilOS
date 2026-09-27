@@ -236,6 +236,121 @@ describe("model pick wire path (issue #30)", () => {
     }
   });
 
+  it("AC-4 effort + fast ride the pick; the next turn's answer carries them", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel, conversation } = await openDmConversation(w.user);
+      await waitFor(async () => {
+        const c = await getConversation(w.user, conversation.id);
+        return c && (c as { engineRef?: string | null }).engineRef
+          ? c
+          : undefined;
+      }, "engine session binding");
+
+      await w.user.request("conversations.setModel", {
+        conversationId: conversation.id,
+        model: "fake-reasoning",
+        provider: "fake",
+        effort: "xhigh",
+        fast: true,
+      });
+      await waitFor(async () => {
+        const c = (await getConversation(w.user, conversation.id)) as
+          | {
+              model?: string;
+              provider?: string;
+              effort?: string;
+              fast?: boolean;
+            }
+          | undefined;
+        return c?.model === "fake-reasoning" &&
+          c.effort === "xhigh" &&
+          c.fast === true
+          ? c
+          : undefined;
+      }, "conversation pick fields");
+
+      await w.user.request("messages.post", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        text: "and now?",
+        authorKind: "user",
+      });
+      const answers = await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        const list = messages.filter(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+        return list.length >= 2 ? list : undefined;
+      }, "second answer");
+      const picked = answers[answers.length - 1];
+      // turn.started.model/provider/effort/fast stamp the answer's footer.
+      expect(picked.model).toBe("fake-reasoning");
+      expect(picked.provider).toBe("fake");
+      expect(picked.effort).toBe("xhigh");
+      expect(picked.fast).toBe(true);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-5 conversations.open's pick reaches the very first turn", async () => {
+    const w = await setupWorld();
+    try {
+      const { employee } = await w.user.request<{ employee: { id: string } }>(
+        "employees.create",
+        { name: "Ada", role: "engineer", profile: "builder" },
+      );
+      const { channel } = await w.user.request<{ channel: { id: string } }>(
+        "channels.openDm",
+        { employeeId: employee.id },
+      );
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "hello",
+        model: "fake-reasoning",
+        provider: "fake",
+        effort: "high",
+        fast: true,
+      });
+      // The session didn't exist yet — session.start must have seen the pick.
+      const answer = await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+      }, "first answer");
+      expect(answer.model).toBe("fake-reasoning");
+      expect(answer.effort).toBe("high");
+      expect(answer.fast).toBe(true);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-6 models.list {refresh:true} passes through to the engine", async () => {
+    const w = await setupWorld();
+    try {
+      const before = await w.user.request<{
+        models: { id: string }[];
+        providers?: { id: string }[];
+      }>("models.list", {});
+      expect(before.models.some((m) => m.id === "fake-fresh")).toBe(false);
+      expect(before.providers?.some((p) => p.id === "fake")).toBe(true);
+      const after = await w.user.request<{ models: { id: string }[] }>(
+        "models.list",
+        { refresh: true },
+      );
+      expect(after.models.some((m) => m.id === "fake-fresh")).toBe(true);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("AC-3 an engine without the models capability refuses cleanly (no pin, system note)", async () => {
     const w = await setupWorld({
       engine: new FakeEngine({ tick: 1, capabilities: { models: false } }),

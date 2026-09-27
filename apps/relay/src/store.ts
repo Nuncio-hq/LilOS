@@ -36,6 +36,10 @@ export interface ConversationPatch {
   engineRef?: string;
   /** The model pinned on the engine session (issue #30). */
   model?: string;
+  /** The rest of the session's pick (issue #92). */
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
   deliveredSeq?: number;
 }
 
@@ -46,6 +50,11 @@ export interface OpenConversationInput {
   authorId: string;
   /** Display refs only — bytes already stored via the AttachmentStore. */
   attachments?: MessageAttachment[];
+  /** The composer's pick stamped at open (#92) — `session.start` applies it. */
+  model?: string;
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
 }
 
 export interface AppendMessageInput {
@@ -58,6 +67,10 @@ export interface AppendMessageInput {
   attachments?: MessageAttachment[];
   /** Engine `turn.started.model` on employee answers (issue #30). */
   model?: string;
+  /** Engine `turn.started` provider / effort / fast on employee answers (#92). */
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
   /** Exactly-once key: a retry with a recorded key returns the original message. */
   dedupeKey?: string;
 }
@@ -173,6 +186,14 @@ export interface RelayStore {
    * turns the engine host still owes. Surfaced by `harness.register`.
    */
   listPendingTurns(): Promise<PendingTurn[]>;
+
+  /**
+   * LilOS-owned key/value settings (#92): `settings.get` returns the stored
+   * JSON value or null; `settings.set` upserts it. The Edit-models hide
+   * list (`modelVisibility`) lives here — one list for the whole company.
+   */
+  getSetting(key: string): Promise<unknown | null>;
+  setSetting(key: string, value: unknown): Promise<void>;
 }
 
 export function newId(prefix: string): string {
@@ -186,6 +207,7 @@ export function createMemoryStore(): RelayStore {
   const conversations = new Map<string, Conversation>();
   const messages = new Map<string, AppMessage>();
   const asks = new Map<string, Ask>();
+  const settings = new Map<string, unknown>();
 
   const now = () => Date.now();
   /** (channelId, dedupeKey) -> stored message id; side table so the wire type stays clean. */
@@ -221,6 +243,9 @@ export function createMemoryStore(): RelayStore {
       authorKind: input.authorKind,
       text: input.text,
       ...(input.model !== undefined ? { model: input.model } : {}),
+      ...(input.provider !== undefined ? { provider: input.provider } : {}),
+      ...(input.effort !== undefined ? { effort: input.effort } : {}),
+      ...(input.fast !== undefined ? { fast: input.fast } : {}),
       seq,
       createdAt: now(),
       attachments: input.attachments,
@@ -354,6 +379,10 @@ export function createMemoryStore(): RelayStore {
         archived: false,
         deliveredSeq: 0,
         createdAt: now(),
+        ...(input.model !== undefined ? { model: input.model } : {}),
+        ...(input.provider !== undefined ? { provider: input.provider } : {}),
+        ...(input.effort !== undefined ? { effort: input.effort } : {}),
+        ...(input.fast !== undefined ? { fast: input.fast } : {}),
       };
       conversations.set(conversation.id, conversation);
       const { message: rootMessage } = appendMessage({
@@ -455,6 +484,12 @@ export function createMemoryStore(): RelayStore {
       }
       pending.sort((a, b) => a.message.seq - b.message.seq);
       return pending;
+    },
+    async getSetting(key) {
+      return settings.has(key) ? (settings.get(key) as unknown) : null;
+    },
+    async setSetting(key, value) {
+      settings.set(key, value);
     },
   };
 }

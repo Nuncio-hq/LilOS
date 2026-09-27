@@ -43,6 +43,9 @@ export const SessionStartedPayload = z.strictObject({
   agent: z.string().min(1),
   cwd: z.string().min(1),
   model: z.string().optional(),
+  provider: z.string().optional(),
+  effort: z.string().optional(),
+  fast: z.boolean().optional(),
 });
 
 export const SessionStatePayload = z.strictObject({
@@ -54,6 +57,10 @@ export const TurnStartedPayload = z.strictObject({
   turnId: TurnId,
   /** Model this turn runs on (engines with the models capability set it). */
   model: z.string().optional(),
+  /** The rest of the pick the turn runs on: provider slug, effort, fast. */
+  provider: z.string().optional(),
+  effort: z.string().optional(),
+  fast: z.boolean().optional(),
   /** Echo of `prompt.ref` when the client tagged the prompt. */
   ref: z.string().optional(),
 });

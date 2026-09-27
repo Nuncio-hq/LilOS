@@ -120,6 +120,9 @@ interface ModelRow {
   id: string;
   name?: string;
   provider?: string;
+  efforts?: string[];
+  defaultEffort?: string;
+  fast?: boolean;
 }
 interface PromptResult {
   turnId: string;
@@ -1066,6 +1069,48 @@ export const MODELS_SCENARIOS: Scenario[] = [
           r.models.some((m) => m.id === r.default),
           "default must be one of the listed ids",
         );
+      // #92: per-model data rides the same rows — when present, `efforts` is a
+      // non-empty ordered list, `defaultEffort` one of its stops.
+      for (const m of r.models) {
+        if (m.efforts !== undefined)
+          assert(
+            Array.isArray(m.efforts) && m.efforts.length > 0,
+            `efforts must be a non-empty list: ${JSON.stringify(m)}`,
+          );
+        if (m.defaultEffort !== undefined && m.efforts !== undefined)
+          assert(
+            m.efforts.includes(m.defaultEffort),
+            `defaultEffort must be one of efforts: ${JSON.stringify(m)}`,
+          );
+        if (m.provider !== undefined)
+          assert(
+            typeof m.provider === "string" && m.provider.length > 0,
+            `provider must be a non-empty slug: ${JSON.stringify(m)}`,
+          );
+      }
+    },
+  },
+  {
+    id: "AC-6 models.list honors refresh when the capability declares it",
+    async run(h) {
+      const d = (await h.request("describe")) as {
+        capabilities?: { id: string; detail?: { refreshable?: boolean } }[];
+      };
+      const cap = d.capabilities?.find((c) => c.id === "models");
+      const detail = cap?.detail;
+      if (detail?.refreshable !== true) {
+        // No declared refresh path — the engine may still accept the param,
+        // but conformance only requires it not to break.
+        await h.request("models.list", { refresh: true });
+        return;
+      }
+      const fresh = (await h.request("models.list", {
+        refresh: true,
+      })) as { models: ModelRow[] };
+      assert(
+        Array.isArray(fresh.models) && fresh.models.length >= 1,
+        "a refreshable catalog must still return models on refresh:true",
+      );
     },
   },
   {
