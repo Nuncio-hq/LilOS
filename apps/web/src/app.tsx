@@ -5,6 +5,7 @@ import {
   useTheme,
 } from "@lilos/ui";
 import {
+  createHashHistory,
   createRootRoute,
   createRoute,
   createRouter,
@@ -245,7 +246,12 @@ const threadRoute = createRoute({
 });
 const routeTree = rootRoute.addChildren([indexRoute, dmRoute, threadRoute]);
 
-export const router = createRouter({ routeTree });
+// file:// gives the app a path URL that matches no route; hash history keeps
+// navigation inside the page. Plain-web keeps browser history.
+export const router = createRouter({
+  routeTree,
+  history: window.lilos ? createHashHistory() : undefined,
+});
 
 declare module "@tanstack/react-router" {
   interface Register {

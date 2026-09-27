@@ -41,6 +41,9 @@ function lilosConfig() {
 }
 
 export default defineConfig({
+  // Packaged builds are loaded over file:// — absolute /assets paths would
+  // resolve to the filesystem root. LILOS_WEB_BASE=./ keeps them relative.
+  base: process.env.LILOS_WEB_BASE ?? "/",
   plugins: [react(), tailwindcss(), lilosConfig()],
   resolve: {
     alias: { "@": path.resolve(here, "src") },

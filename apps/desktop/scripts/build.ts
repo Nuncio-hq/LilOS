@@ -205,9 +205,16 @@ mkdirSync(join(APP, "Contents", "Resources", "app"), { recursive: true });
 cpSync(APP_DIR, join(APP, "Contents", "Resources", "app"), {
   recursive: true,
 });
-// apps/web bundle (#27): when a sibling web build exists it ships inside the
-// app so the DM surface opens offline.
+// apps/web bundle (#27): build it with relative asset paths (the app loads it
+// over file://) and ship it so the DM surface opens offline.
 const WEB_DIST = join(REPO, "apps", "web", "dist");
+if (existsSync(join(REPO, "apps", "web", "package.json"))) {
+  execFileSync("bun", ["run", "--cwd", "apps/web", "build"], {
+    cwd: REPO,
+    stdio: "inherit",
+    env: { ...process.env, LILOS_WEB_BASE: "./" },
+  });
+}
 if (existsSync(join(WEB_DIST, "index.html"))) {
   cpSync(WEB_DIST, join(APP, "Contents", "Resources", "app", "web"), {
     recursive: true,
