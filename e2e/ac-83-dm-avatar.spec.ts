@@ -42,7 +42,8 @@ async function waitForHttp(url: string, ms = 30_000): Promise<void> {
       .then((r) => r.ok || r.status === 404)
       .catch(() => false);
     if (ok) return;
-    if (Date.now() - start > ms) throw new Error(`timed out waiting for ${url}`);
+    if (Date.now() - start > ms)
+      throw new Error(`timed out waiting for ${url}`);
     await new Promise((r) => setTimeout(r, 200));
   }
 }
@@ -104,8 +105,7 @@ const PROMPT = "What does the replay contract carry?"; // engine-fake script
    line's top is measured at the "Oscar" span — exact text, since the avatar
    fallback "O" also carries `font-semibold`. */
 const feedRow = (page: Page) => page.locator("[data-session]").first();
-const rowAvatar = (row: Locator) =>
-  row.locator("[data-slot='avatar']").first();
+const rowAvatar = (row: Locator) => row.locator("[data-slot='avatar']").first();
 const nameLine = (row: Locator) => row.getByText("Oscar", { exact: true });
 
 async function dmDefault(page: Page, webUrl: string) {

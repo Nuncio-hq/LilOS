@@ -226,42 +226,16 @@ export function EmployeeHome({
         data-archived={isArchived || undefined}
       >
         <Row from={m.from} emp={emp} human={human} active={m.id === threadId}>
-          <div className="flex items-center gap-1">
-            {editing === m.id ? (
-              <Input
-                aria-label="Session title"
-                value={draft}
-                autoFocus
-                className="h-7 flex-1 text-sm"
-                onChange={(ev) => setDraft(ev.target.value)}
-                onKeyDown={(ev) => {
-                  if (ev.key === "Enter" && draft.trim()) {
-                    onRename?.(m.id, draft.trim());
-                    setEditing(null);
-                  }
-                  if (ev.key === "Escape") setEditing(null);
-                }}
-                onBlur={() => {
-                  if (draft.trim()) onRename?.(m.id, draft.trim());
-                  setEditing(null);
-                }}
-              />
-            ) : (
-              <span
-                className={cn(
-                  "min-w-0 flex-1 truncate font-medium",
-                  isArchived && "text-muted-foreground",
-                )}
-              >
-                {t.title ?? preview(m.text)}
-              </span>
-            )}
+          <div className="flex items-start gap-1">
+            <div className="min-w-0 flex-1">
+              <Who id={m.from} time={m.time} emp={emp} human={human} />
+            </div>
             <SessionMenu
               archived={isArchived}
               onRename={
                 onRename
                   ? () => {
-                      setDraft(t.title ?? preview(m.text));
+                      setDraft(t.title || preview(m.text));
                       setEditing(m.id);
                     }
                   : undefined
@@ -271,7 +245,37 @@ export function EmployeeHome({
               }
             />
           </div>
-          <Who id={m.from} time={m.time} emp={emp} human={human} />
+          {editing === m.id ? (
+            <Input
+              aria-label="Session title"
+              value={draft}
+              autoFocus
+              className="h-7 w-full text-sm"
+              onChange={(ev) => setDraft(ev.target.value)}
+              onKeyDown={(ev) => {
+                if (ev.key === "Enter" && draft.trim()) {
+                  onRename?.(m.id, draft.trim());
+                  setEditing(null);
+                }
+                if (ev.key === "Escape") setEditing(null);
+              }}
+              onBlur={() => {
+                if (draft.trim()) onRename?.(m.id, draft.trim());
+                setEditing(null);
+              }}
+            />
+          ) : (
+            t.title && (
+              <div
+                className={cn(
+                  "truncate font-medium",
+                  isArchived && "text-muted-foreground",
+                )}
+              >
+                {t.title}
+              </div>
+            )
+          )}
           <Body text={m.text} />
           {m.attachments && <AttachmentChips files={m.attachments} />}
           {firstAnswer && (
