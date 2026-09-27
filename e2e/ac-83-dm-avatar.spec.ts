@@ -158,7 +158,10 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
     const tops = async () => {
       const avatar = await rowAvatar(row).boundingBox();
       const name = await nameLine(row).boundingBox();
-      return { avatarTop: avatar!.y, nameTop: name!.y };
+      if (!avatar || !name) {
+        throw new Error("row avatar or name line not laid out");
+      }
+      return { avatarTop: avatar.y, nameTop: name.y };
     };
     let { avatarTop, nameTop } = await tops();
     await page.screenshot({ path: `${SHOTS}/ac-1-feed-row.png` });
@@ -166,11 +169,22 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
     // AC-1: text + reply chip sit in the column to the RIGHT of the avatar.
     const avatarBox = await rowAvatar(row).boundingBox();
     const chipBox = await row.locator("button").last().boundingBox();
-    expect(chipBox!.x).toBeGreaterThanOrEqual(
-      avatarBox!.x + avatarBox!.width - 1,
-    );
+    if (!avatarBox || !chipBox) throw new Error("row boxes missing");
+    expect(chipBox.x).toBeGreaterThanOrEqual(avatarBox.x + avatarBox.width - 1);
     // AC-1: hover (and its background change) doesn't shift the row's layout.
     await row.hover();
+    ({ avatarTop, nameTop } = await tops());
+    expect(Math.abs(nameTop - avatarTop)).toBeLessThanOrEqual(4);
+    // AC-1 selected state: the row is `active` while its session is open —
+    // drop to the plain DM view (idle) and back (selected) and re-measure.
+    const empId = /\/dm\/([^/]+)/.exec(page.url())?.[1];
+    if (!empId) throw new Error(`not on a DM route: ${page.url()}`);
+    await page.goto(`${stack.webUrl}/dm/${empId}`);
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    ({ avatarTop, nameTop } = await tops());
+    expect(Math.abs(nameTop - avatarTop)).toBeLessThanOrEqual(4);
+    await row.locator("button").last().click(); // chip reopens the session
+    await expect(row).toBeVisible({ timeout: 30_000 });
     ({ avatarTop, nameTop } = await tops());
     expect(Math.abs(nameTop - avatarTop)).toBeLessThanOrEqual(4);
   } finally {
@@ -225,7 +239,8 @@ test("AC-3 desktop app: the DM feed row in Electron", async () => {
         rowAvatar(row).boundingBox(),
         nameLine(row).boundingBox(),
       ]);
-      expect(Math.abs(n!.y - a!.y)).toBeLessThanOrEqual(4);
+      if (!a || !n) throw new Error("row avatar or name line not laid out");
+      expect(Math.abs(n.y - a.y)).toBeLessThanOrEqual(4);
     } finally {
       await app.close();
     }

@@ -88,15 +88,18 @@ function home(feed: Msg[] = FEED) {
 describe("issue #83", () => {
   test("AC-1 the avatar's content column opens with the name·time line", () => {
     const { container } = home();
-    const avatar = container.querySelector(
-      "[data-session] [data-slot='avatar']",
-    );
-    expect(avatar).toBeTruthy();
-    // `Row` lays out `grid [avatar | content]`; the avatar cell top-aligns
-    // with the content column's FIRST line — which must be the name·time
-    // header. Any line above it (the old title/actions line) lifts the
-    // avatar a line up. The ⋯ menu rides the name line itself.
-    const content = avatar?.nextElementSibling;
+    const grid = container.querySelector("[data-session] > .grid");
+    // `Row` lays out `grid [avatar | content]` — the avatar-ish child first
+    // (HumanAvatar's root, HermesAvatar's wrapper), the content column last.
+    expect(
+      grid?.firstElementChild?.querySelector("[data-slot='avatar']") ??
+        grid?.firstElementChild?.getAttribute("data-slot"),
+    ).toBeTruthy();
+    // The avatar cell top-aligns with the content column's FIRST line —
+    // which must be the name·time header. Any line above it (the old
+    // title/actions line) lifts the avatar a line up. The ⋯ menu rides the
+    // name line itself.
+    const content = grid?.lastElementChild;
     const line1 = content?.firstElementChild;
     expect(line1?.textContent).toContain("Oscar");
     expect(line1?.textContent).toContain("07:20 PM");
@@ -127,8 +130,8 @@ describe("issue #83", () => {
     ];
     const { container } = home(renamed);
     const content = container.querySelector(
-      "[data-session] [data-slot='avatar']",
-    )?.nextElementSibling;
+      "[data-session] > .grid",
+    )?.lastElementChild;
     const lines = [...(content?.children ?? [])];
     expect(lines[0]?.textContent).toContain("Oscar");
     expect(lines[1]?.textContent).toContain("Repo summary");
