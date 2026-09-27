@@ -335,12 +335,12 @@ out(
 );
 
 /* #92 review — prove the pick reached the wire exactly once and the fast
-   tier survived: the deferred `config.set model` applies at turn start via
-   Hermes' own pending_model_switch; a driver-side replay would run a second
-   switch_model whose request_overrides reset silently drops the fast tier.
-   (Hermes' switch marker is self-replacing, so a marker count can't catch
-   that — the request's service_tier/speed can.) Stub leg only: a real
-   provider can't be introspected, so the real leg relies on second.fast. */
+   tier survived: a double apply (a stale pending_model_switch stash plus a
+   replayed config.set) would run a second switch_model whose
+   request_overrides reset silently drops the fast tier. (Hermes' switch
+   marker is self-replacing, so a marker count can't catch that — the
+   request's service_tier/speed can.) Stub leg only: a real provider can't
+   be introspected, so the real leg relies on second.fast. */
 if (stubLeg) {
   const logFile = process.env.STUB_REQUEST_LOG_FILE;
   const reqs = (logFile ? readFileSync(logFile, "utf8") : "")
@@ -351,7 +351,7 @@ if (stubLeg) {
   const last = picked[picked.length - 1];
   if (!last)
     fail(
-      `no stub request carried model=${pick.model} — the deferred switch never reached the wire (${JSON.stringify(reqs.map((r) => r.model))})`,
+      `no stub request carried model=${pick.model} — the pick never reached the wire (${JSON.stringify(reqs.map((r) => r.model))})`,
     );
   if (pick.fast === true && !last.service_tier && !last.speed)
     fail(
