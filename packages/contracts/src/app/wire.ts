@@ -334,11 +334,13 @@ export const ConversationsUpdateParams = z.object({
   archived: z.boolean().optional(),
   state: ConversationState.optional(),
   engineRef: z.string().min(1).optional(),
-  /** Host-only: the pick the engine acked / will apply at session.start. */
+  /** Host-only: the pick the engine acked / will apply at session.start.
+      `null` clears a field the new pick dropped (e.g. a model with no
+      effort/fast control) so a stale level can't linger (#92). */
   model: z.string().min(1).optional(),
-  provider: z.string().optional(),
-  effort: z.string().optional(),
-  fast: z.boolean().optional(),
+  provider: z.string().nullable().optional(),
+  effort: z.string().nullable().optional(),
+  fast: z.boolean().nullable().optional(),
   deliveredSeq: z.int().min(0).optional(),
 });
 export type ConversationsUpdateParams = z.infer<
@@ -494,6 +496,8 @@ export const SystemStatusResult = z.object({
       capabilities: z.array(Capability).optional(),
       models: z.array(ModelOption).optional(),
       defaultModel: z.string().optional(),
+      /** Provider the engine's default model id belongs to (#92). */
+      defaultProvider: z.string().optional(),
     })
     .optional(),
   mismatch: StatusMismatch.optional(),
@@ -556,8 +560,9 @@ export const HarnessStatusReport = z.object({
   models: z.array(ModelOption).optional(),
   /** Provider rows from the same `models.list` (group headers in the picker). */
   providers: z.array(ModelProvider).optional(),
-  /** The engine's default model id (`models.list.default`). */
+  /** The engine's default model id (`models.list.default`) and its provider. */
   defaultModel: z.string().optional(),
+  defaultProvider: z.string().optional(),
   /** RSS of the supervised engine process, bytes. */
   engineRssBytes: z.int().min(0).optional(),
   /** Sessions the harness believes are live. */
@@ -757,7 +762,10 @@ export type SettingsGetResult = z.infer<typeof SettingsGetResult>;
 
 export const SettingsSetParams = z.strictObject({
   key: z.string().min(1),
-  value: z.unknown(),
+  /* `z.unknown()` alone makes the key optional — an absent `value` parsed
+     clean and hit the store's NOT NULL column as a 500. The write is a
+     value store: the field is required (any JSON, `null` included). */
+  value: z.json(),
 });
 export type SettingsSetParams = z.infer<typeof SettingsSetParams>;
 

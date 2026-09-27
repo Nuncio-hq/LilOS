@@ -92,8 +92,8 @@ PR does not exist.
   hide/show list is LilOS-owned (relay `settings`, one list for all
   employees). Hiring still speaks `agents.*`; the protocol has no profile
   delete.** Not: `splitModelRef`-style splitting, a sticky last-used model
-  for new sessions (the engine owns defaults, D-#85), a hide list in
-  localStorage or engine state, LilOS-owned profile CRUD. — #8 · #92
+  for new sessions (the engine owns defaults, #85), a hide list in
+  localStorage or engine state, LilOS-owned profile CRUD. — #8 · #92 · PR #129
 - **D-#26 The harness supervises the engine and is the only thing that talks
   to it.** It owns launch (`hermes serve` on 127.0.0.1 with a generated
   token, via `packages/engine-hermes`), crash restart with bounded backoff,

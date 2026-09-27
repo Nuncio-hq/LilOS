@@ -52,6 +52,7 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
         engineModels.set(r.models);
         engineProviders.set(r.providers ?? []);
         engineDefaultModel.set(r.default);
+        engineDefaultProvider.set(r.defaultProvider);
       })
       .catch(() => {});
   });
@@ -100,6 +101,10 @@ export const engineModels = atom<ModelOption[]>([]);
     on (#92 AC-5) and the hire-template fallback for a blank model (#115);
     never a LilOS-side default (D-#85). */
 export const engineDefaultModel = atom<string | undefined>(undefined);
+
+/** Provider the engine's default model belongs to — ids are unique only
+    per provider on multi-provider engines (#92). */
+export const engineDefaultProvider = atom<string | undefined>(undefined);
 
 /** Provider rows `models.list` reported — names/logos for picker groups. */
 export const engineProviders = atom<ModelProvider[]>([]);

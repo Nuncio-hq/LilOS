@@ -61,6 +61,7 @@ import {
   asks as asksAtom,
   engine,
   engineDefaultModel,
+  engineDefaultProvider,
   engineModels,
   engineProviders,
   modelVisibility,
@@ -124,6 +125,7 @@ export function DmPage() {
   const models = useAtom(sessionModels);
   const catalog = useAtom(engineModels);
   const defaultModel = useAtom(engineDefaultModel);
+  const defaultProvider = useAtom(engineDefaultProvider);
   const providers = useAtom(engineProviders);
   const visibility = useAtom(modelVisibility);
   const description = useAtom(engine.description);
@@ -481,6 +483,7 @@ export function DmPage() {
           }
           picker={picker}
           defaultModel={defaultModel}
+          defaultProvider={defaultProvider}
           onSend={(text, files) =>
             void sendDm(employeeId, text, conv.id, undefined, files)
           }
@@ -540,7 +543,12 @@ export function DmPage() {
         models={catalog.length ? catalog : undefined}
         modelChoice={
           draftPick[employeeId] ??
-          choiceFor(employee.model || defaultModel || "", catalog)
+          choiceFor(
+            employee.model || defaultModel || "",
+            catalog,
+            /* the engine default's provider disambiguates a shared id */
+            employee.model ? undefined : defaultProvider,
+          )
         }
         onModel={
           catalog.length

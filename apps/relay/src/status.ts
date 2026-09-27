@@ -246,6 +246,7 @@ export function buildSystemStatus(input: StatusInput): SystemStatusResult {
         models: host.status.models,
         providers: host.status.providers,
         defaultModel: host.status.defaultModel,
+        defaultProvider: host.status.defaultProvider,
       }
     : host?.engine
       ? {}

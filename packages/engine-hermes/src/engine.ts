@@ -420,6 +420,24 @@ export class HermesEngine {
         RPC_ERRORS.INVALID_STATE,
         `session ${s.id} already has a running turn`,
       );
+    /* A pick taken mid-turn was parked on `s.pendingPick` (#92 AC-4). Replay
+       it now — the session is idle between turns, so `config.set model`
+       applies live and the held `fast` leg runs AFTER it (model→fast order
+       is load-bearing: `_set_fast` validates the agent's current model).
+       Hermes' own pending-switch stash re-applies the same args at turn
+       start — a redundant, harmless second write. */
+    if (s.driver === "ws" && s.pendingPick) {
+      const ack = await setSessionModel(
+        this.opts.gateway,
+        s.runtimeSid,
+        s.pendingPick,
+      );
+      s.model = ack.model;
+      if (ack.provider !== undefined) s.provider = ack.provider;
+      if (ack.effort !== undefined) s.effort = ack.effort;
+      if (ack.fast !== undefined) s.fast = ack.fast;
+      if (ack.deferred !== true) s.pendingPick = undefined;
+    }
     const images = p.content.filter(
       (b): b is Extract<ContentBlock, { type: "image" }> => b.type === "image",
     );
@@ -624,25 +642,43 @@ export class HermesEngine {
         RPC_ERRORS.METHOD_NOT_FOUND,
         "session.setModel needs the WS transport (no ACP equivalent yet)",
       );
-    /* config.set trio: `<id> --provider <p> --reasoning <e>` + fast on/off.
-       A running session defers the model leg to the next turn (`deferred`);
-       `confirm_required` is answered inside setSessionModel (#92 AC-4). */
+    /* config.set trio: `<id> --provider <p> --reasoning <e> --session` +
+       fast on/off. A running session defers the model leg to the next turn
+       (`deferred`); `confirm_required` is answered inside setSessionModel
+       (#92 AC-4). While a turn runs the fast leg is held off the wire
+       entirely — `_set_fast` validates + mutates the LIVE agent, i.e. the
+       old model mid-turn (4002 `Couldn't switch`, or a tier flip inside the
+       turn). It rides `pendingPick` and lands before the next prompt. */
+    const running = s.turn !== undefined;
     const ack = await setSessionModel(this.opts.gateway, s.runtimeSid, {
       model: p.model,
       provider: p.provider,
       effort: p.effort,
-      fast: p.fast,
+      ...(running ? {} : { fast: p.fast }),
     });
     s.model = ack.model;
     if (ack.provider !== undefined) s.provider = ack.provider;
     // Hermes keeps the session's reasoning override across a model switch.
     if (ack.effort !== undefined) s.effort = ack.effort;
     if (ack.fast !== undefined) s.fast = ack.fast;
+    if (ack.deferred === true || (running && p.fast !== undefined)) {
+      s.pendingPick = {
+        model: ack.model,
+        ...(p.provider !== undefined ? { provider: p.provider } : {}),
+        ...(p.effort !== undefined ? { effort: p.effort } : {}),
+        ...(p.fast !== undefined ? { fast: p.fast } : {}),
+      };
+    } else {
+      s.pendingPick = undefined;
+    }
+    // A held fast leg still reports the intent — it lands with the next
+    // turn (the contract's `deferred` already says "applies next turn").
+    const fast = ack.fast !== undefined ? ack.fast : p.fast;
     return {
       model: ack.model,
       ...(ack.provider ? { provider: ack.provider } : {}),
       ...(ack.effort ? { effort: ack.effort } : {}),
-      ...(ack.fast !== undefined ? { fast: ack.fast } : {}),
+      ...(fast !== undefined ? { fast } : {}),
       ...(ack.deferred === true ? { deferred: true } : {}),
     };
   }
@@ -790,6 +826,19 @@ export class HermesEngine {
           s.ref = stored;
           s.emit("session.ref.changed", { ref: stored, previousRef: prev });
         }
+        /* Engine truth for the footer + picker (#92 AC-4): config.set acks,
+           a deferred pick's commit, and turn boundaries re-emit session.info
+           with what the session ACTUALLY runs — mirror it so `turn.started`
+           and the snapshot never read a stale cached pick. Hermes reports a
+           queued model switch as `pending_model_switch` fields already
+           folded into `model`/`provider` here. `reasoning_effort` "" means
+           provider default (unset); `fast` is the resolved tier boolean. */
+        if (typeof p.model === "string" && p.model) s.model = p.model;
+        if (typeof p.provider === "string" && p.provider)
+          s.provider = p.provider;
+        if (typeof p.reasoning_effort === "string")
+          s.effort = p.reasoning_effort || undefined;
+        if (typeof p.fast === "boolean") s.fast = p.fast;
         break;
       }
       case "message.complete":

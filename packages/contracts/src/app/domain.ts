@@ -228,7 +228,8 @@ export const EngineHostStatus = z.object({
   models: z.array(ModelOption).optional(),
   /** Provider rows from the same `models.list` (group headers in the picker). */
   providers: z.array(ModelProvider).optional(),
-  /** The engine's default model id (`models.list.default`). */
+  /** The engine's default model id (`models.list.default`) and its provider. */
   defaultModel: z.string().optional(),
+  defaultProvider: z.string().optional(),
 });
 export type EngineHostStatus = z.infer<typeof EngineHostStatus>;

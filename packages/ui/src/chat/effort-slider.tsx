@@ -1,5 +1,5 @@
 import { Slider as SliderPrimitive } from "@base-ui/react/slider";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 /* Reasoning-effort control, "neural network" style: the filled part of the
    capsule is a small network of nodes and links; the further right, the
@@ -64,8 +64,11 @@ export function EffortSlider({
   const { nodes, links, signals } = useMemo(network, []);
   const last = efforts.length - 1;
   /* Drag previews locally; `onPick` fires once on commit (release / arrow
-     settle) — the pick is an RPC against the engine, not a per-step hop. */
+     settle) — the pick is an RPC against the engine, not a per-step hop.
+     `start` remembers where the gesture began: the preview moves `index`,
+     so comparing the released stop against it would swallow the pick. */
   const [drag, setDrag] = useState<number | null>(null);
+  const start = useRef<number | null>(null);
   const i = drag ?? Math.max(index, 0);
   const t = last ? i / last : 0;
   const max = i === last;
@@ -88,14 +91,20 @@ export function EffortSlider({
         onValueChange={(v) => {
           const n = Array.isArray(v) ? v[0] : v;
           if (efforts[n] !== undefined) {
+            if (start.current === null) start.current = i;
             setDrag(n);
             onPreview?.(efforts[n]);
           }
         }}
         onValueCommitted={(v) => {
           const n = Array.isArray(v) ? v[0] : v;
+          const from = start.current;
+          start.current = null;
           setDrag(null);
-          if (efforts[n] && n !== index) onPick(efforts[n]);
+          if (!efforts[n]) return;
+          if (from === null || n !== from) onPick(efforts[n]);
+          /* Released where the gesture began: undo the preview so the label
+             returns to the confirmed pick. */ else onPreview?.(efforts[n]);
         }}
       >
         <SliderPrimitive.Control className="relative flex h-7 w-full cursor-pointer touch-none select-none items-center">

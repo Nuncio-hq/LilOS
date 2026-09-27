@@ -430,7 +430,7 @@ describe("engine-hermes #50: tolerate older Hermes gateways", () => {
     expect(ack.model).toBe("stub-model-b");
     expect(ack.provider).toBe("stub");
     expect(gw.configSetCalls.map((c) => `${c.key}=${c.value}`)).toEqual([
-      "model=stub-model-b --provider stub",
+      "model=stub-model-b --provider stub --session",
     ]);
   });
 
@@ -492,10 +492,13 @@ describe("engine-hermes #8: agents + models capabilities", () => {
       name: "reviewer",
       soul: "You review.",
       model: "stub-model-b",
+      provider: "stub",
     })) as { agent: { id: string; model?: string } };
     expect(created.agent.id).toBe("reviewer");
     expect(created.agent.model).toBe("stub-model-b");
+    // AC-8 hire leg: `{provider, id}` — never a joined `provider/model` ref.
     expect(gw.profiles.get("reviewer")?.soul).toBe("You review.");
+    expect(gw.profiles.get("reviewer")?.provider).toBe("stub");
     await expect(
       h.request("agents.create", { name: "reviewer" }),
     ).rejects.toMatchObject({ code: -32003 });
@@ -539,7 +542,6 @@ describe("engine-hermes #8: agents + models capabilities", () => {
       "high",
       "xhigh",
       "max",
-      "ultra",
     ]);
     expect(a?.fast).toBe(true);
     // No reasoning → no slider; no fast tier → no ⚡Fast.
@@ -577,8 +579,10 @@ describe("engine-hermes #8: agents + models capabilities", () => {
     expect(ack.model).toBe("stub-model-b");
     expect(ack.effort).toBe("high");
     expect(ack.fast).toBe(true);
+    /* `config.set model` always carries `--session` — a bare switch would
+       persist to config.yaml and retarget every employee's default (#92). */
     expect(gw.configSetCalls.map((c) => `${c.key}=${c.value}`)).toEqual([
-      "model=stub-model-b --reasoning high",
+      "model=stub-model-b --reasoning high --session",
       "fast=on",
     ]);
     expect(gw.sessionModels.get(gw.lastSid)).toBe("stub-model-b");
@@ -618,7 +622,53 @@ describe("engine-hermes #8: agents + models capabilities", () => {
     expect(calls).toHaveLength(2);
     expect(calls[0].confirm_expensive_model).toBe(false);
     expect(calls[1].confirm_expensive_model).toBe(true);
-    expect(calls[1].value).toBe("stub-model-a --provider stub");
+    expect(calls[1].value).toBe("stub-model-a --provider stub --session");
+  });
+
+  test("AC-4 a mid-turn pick holds the fast leg and replays model→fast at the next prompt", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p1 = promptAsync(h, sessionId);
+    await h.waitEvent((e) => e.type === "turn.started");
+
+    const ack = (await h.request("session.setModel", {
+      sessionId,
+      model: "stub-model-b",
+      provider: "stub",
+      effort: "high",
+      fast: true,
+    })) as { model: string; deferred?: boolean; fast?: boolean };
+    expect(ack.deferred).toBe(true);
+    /* The fast leg never fires mid-turn — real `_set_fast` validates against
+       the still-running OLD model and 4002s (or mutates its tier). */
+    expect(gw.configSetCalls.map((c) => c.key)).toEqual(["model"]);
+    gw.complete(gw.lastSid);
+    await p1;
+
+    /* The next prompt flushes the pending pick first — model leg, then
+       fast, then the prompt itself (deterministic ordering). */
+    const p2 = promptAsync(h, sessionId);
+    await h.waitEvent(
+      (e) =>
+        e.type === "turn.started" &&
+        (e.payload as { model?: string }).model === "stub-model-b",
+    );
+    const lastSubmit = gw.callLog.lastIndexOf("prompt.submit");
+    expect(gw.callLog.slice(lastSubmit - 2, lastSubmit + 1)).toEqual([
+      "config.set:model",
+      "config.set:fast",
+      "prompt.submit",
+    ]);
+    expect(gw.sessionFast.get(gw.lastSid)).toBe(true);
+    const started = h.events.find(
+      (e) =>
+        e.type === "turn.started" &&
+        (e.payload as { model?: string }).model === "stub-model-b",
+    );
+    expect((started?.payload as { fast?: boolean })?.fast).toBe(true);
+    expect((started?.payload as { effort?: string })?.effort).toBe("high");
+    gw.complete(gw.lastSid);
+    await p2;
   });
 
   test("AC-8 a model id containing '/' round-trips verbatim via {provider, id}", async () => {
@@ -632,7 +682,7 @@ describe("engine-hermes #8: agents + models capabilities", () => {
     expect(ack.model).toBe("devin/claude-opus-5");
     expect(ack.provider).toBe("devin");
     expect(gw.configSetCalls[0]?.value).toBe(
-      "devin/claude-opus-5 --provider devin",
+      "devin/claude-opus-5 --provider devin --session",
     );
     expect(gw.sessionModels.get(gw.lastSid)).toBe("devin/claude-opus-5");
     expect(gw.sessionProviders.get(gw.lastSid)).toBe("devin");

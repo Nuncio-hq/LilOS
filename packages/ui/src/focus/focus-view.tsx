@@ -101,6 +101,7 @@ export function FocusView({
   onModel,
   picker,
   defaultModel,
+  defaultProvider,
   accept,
   maxFileSize,
   onAttachError,
@@ -143,6 +144,8 @@ export function FocusView({
   picker?: ModelPickerExtras;
   /* The engine's `models.list.default` — the unpinned-employee pick (#92 AC-5). */
   defaultModel?: string;
+  /* The default's provider — a `{provider?, id}` pair disambiguates a shared id. */
+  defaultProvider?: string;
   say?: (t: string) => void;
   models?: ModelOption[];
   repoFiles?: string[];
@@ -536,7 +539,13 @@ export function FocusView({
               status={status}
               choice={
                 models?.length
-                  ? sessionChoice(thread, lead?.model, models, defaultModel)
+                  ? sessionChoice(
+                      thread,
+                      lead?.model,
+                      models,
+                      defaultModel,
+                      defaultProvider,
+                    )
                   : undefined
               }
               models={models}

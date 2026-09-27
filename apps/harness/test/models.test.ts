@@ -295,6 +295,78 @@ describe("model pick wire path (issue #30)", () => {
     }
   });
 
+  it("AC-4 a mid-turn pick never errors and lands on the next turn (engine defers)", async () => {
+    // Slow turn so the pick lands mid-run: the engine defers the switch —
+    // exactly like Hermes' deferred config.set — the running answer keeps its
+    // starting pick and the next turn carries the new one.
+    const w = await setupWorld({ engine: new FakeEngine({ tick: 20 }) });
+    try {
+      const { channel, conversation } = await openDmConversation(w.user);
+      await waitFor(async () => {
+        const c = await getConversation(w.user, conversation.id);
+        return c && (c as { engineRef?: string | null }).engineRef
+          ? c
+          : undefined;
+      }, "engine session binding");
+
+      const res = await w.user.request<{ ok: boolean }>(
+        "conversations.setModel",
+        {
+          conversationId: conversation.id,
+          model: "fake-reasoning",
+          provider: "fake",
+          effort: "high",
+          fast: true,
+        },
+      );
+      expect(res.ok).toBe(true);
+
+      // The running turn's answer keeps the pick it started on.
+      const first = await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+      }, "first answer");
+      expect(first.model).not.toBe("fake-reasoning");
+
+      // The conversation row already carries the new pick.
+      await waitFor(async () => {
+        const c = (await getConversation(w.user, conversation.id)) as
+          | {
+              model?: string;
+              provider?: string;
+              effort?: string;
+              fast?: boolean;
+            }
+          | undefined;
+        return c?.model === "fake-reasoning" && c.fast === true ? c : undefined;
+      }, "deferred pick on the conversation");
+
+      await w.user.request("messages.post", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        text: "and now?",
+        authorKind: "user",
+      });
+      const answers = await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        const list = messages.filter(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+        return list.length >= 2 ? list : undefined;
+      }, "second answer");
+      const picked = answers[answers.length - 1];
+      expect(picked.model).toBe("fake-reasoning");
+      expect(picked.effort).toBe("high");
+      expect(picked.fast).toBe(true);
+    } finally {
+      await w.cleanup();
+    }
+  }, 20_000);
+
   it("AC-5 conversations.open's pick reaches the very first turn", async () => {
     const w = await setupWorld();
     try {

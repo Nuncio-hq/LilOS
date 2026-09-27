@@ -122,6 +122,7 @@ export class StatusReporter {
       models: this.lastModels?.models,
       providers: this.lastModels?.providers,
       defaultModel: this.lastModels?.default,
+      defaultProvider: this.lastModels?.defaultProvider,
       engineRssBytes,
       sessions: this.opts.liveSessions?.(),
       probedAt: this.lastProbe?.at,

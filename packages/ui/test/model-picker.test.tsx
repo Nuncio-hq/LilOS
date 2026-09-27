@@ -278,4 +278,44 @@ describe("model choice rules", () => {
     expect(isHidden({ id: "gpt-new", provider: "openai" }, v)).toBe(true);
     expect(isHidden(MODELS[0], v)).toBe(false);
   });
+
+  test("the engine's defaultProvider disambiguates a same-id default model", () => {
+    // `opus` exists under two providers; the engine says the default is hpc's.
+    const dupes: ModelOption[] = [
+      { id: "opus", provider: "openai" },
+      { id: "opus", provider: "hpc" },
+    ];
+    expect(sessionChoice({}, undefined, dupes, "opus", "hpc")).toEqual({
+      model: "opus",
+      provider: "hpc",
+      effort: undefined,
+    });
+    // Without it, the first row with the id wins.
+    expect(sessionChoice({}, undefined, dupes, "opus")).toEqual({
+      model: "opus",
+      provider: "openai",
+      effort: undefined,
+    });
+  });
+
+  test("a model whose effort the engine never reported shows Engine default, not a guess", async () => {
+    const withMystery: ModelOption[] = [
+      ...MODELS,
+      { id: "mystery", provider: "hpc", efforts: LADDER },
+    ];
+    render(
+      <ModelPicker
+        value={{ model: "mystery", provider: "hpc" }}
+        models={withMystery}
+        onChoice={() => {}}
+      />,
+    );
+    await open();
+    expect(body().textContent).toContain("Engine default");
+    // The slider is parked on the ladder's middle stop, not a claimed level.
+    const range = body().querySelector(
+      'input[type="range"]',
+    ) as HTMLInputElement;
+    expect(range.getAttribute("aria-valuetext")).toBe("High");
+  });
 });

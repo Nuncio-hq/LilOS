@@ -1719,6 +1719,9 @@
           "model": {
             "type": "string"
           },
+          "provider": {
+            "type": "string"
+          },
           "detail": {
             "type": "object",
             "propertyNames": {
@@ -1841,6 +1844,9 @@
             }
           },
           "default": {
+            "type": "string"
+          },
+          "defaultProvider": {
             "type": "string"
           },
           "providers": {

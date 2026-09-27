@@ -13,6 +13,7 @@ import { USER_ID } from "./me";
 import {
   engine,
   engineDefaultModel,
+  engineDefaultProvider,
   engineModels,
   engineProviders,
   modelVisibility,
@@ -190,6 +191,7 @@ export async function refreshModels(): Promise<void> {
   engineModels.set(r.models);
   engineProviders.set(r.providers ?? []);
   engineDefaultModel.set(r.default);
+  engineDefaultProvider.set(r.defaultProvider);
 }
 
 /** Write the ONE Edit-models hide list (#92 AC-7) — the relay persists and broadcasts it. */

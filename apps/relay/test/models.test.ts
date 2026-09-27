@@ -61,6 +61,7 @@ async function helloed(relay: ReturnType<typeof createRelay>) {
       capabilities?: { id: string }[];
       models?: { id: string }[];
       defaultModel?: string;
+      defaultProvider?: string;
     };
   };
   frames.length = 0;
@@ -170,6 +171,48 @@ describe("model pick relay surface (#30)", () => {
     const { conversation: updated } = resultOf(host.frames, lastId())
       .result as { conversation: { model?: string } };
     expect(updated.model).toBe("fake-small");
+  });
+
+  it("conversations.update clears pick fields on explicit null (#92 AC-4)", async () => {
+    // A follow-up pick that drops effort/fast must not leave the old values
+    // behind: the host writes null and the stored conversation loses them.
+    const relay = newRelay();
+    const user = await helloed(relay);
+    const { conversation } = await dmWithConversation(
+      user.connection,
+      user.frames,
+    );
+    const host = await helloed(relay);
+    await host.connection.receive(
+      req("harness.register", { protocolVersion: 1, version: "0.0.0-test" }),
+    );
+    await host.connection.receive(
+      req("conversations.update", {
+        conversationId: conversation.id,
+        model: "fake-large",
+        provider: "fake",
+        effort: "xhigh",
+        fast: true,
+      }),
+    );
+    host.frames.length = 0;
+    await host.connection.receive(
+      req("conversations.update", {
+        conversationId: conversation.id,
+        model: "fake-small",
+        provider: null,
+        effort: null,
+        fast: null,
+      }),
+    );
+    const { conversation: cleared } = resultOf(host.frames, lastId())
+      .result as {
+      conversation: Record<string, unknown>;
+    };
+    expect(cleared.model).toBe("fake-small");
+    expect("provider" in cleared).toBe(false);
+    expect("effort" in cleared).toBe(false);
+    expect("fast" in cleared).toBe(false);
   });
 
   it("AC-2 the whole pick (provider, effort, fast) rides conversation.modelRequested", async () => {
@@ -287,6 +330,17 @@ describe("model pick relay surface (#30)", () => {
     ).toEqual(hidden);
   });
 
+  it("settings.set without a value is rejected before the store (#92)", async () => {
+    // `z.unknown()` parses an absent field clean and the write used to reach
+    // the NOT NULL column as a 500 — the params declare `value` required.
+    const relay = newRelay();
+    const user = await helloed(relay);
+    await user.connection.receive(
+      req("settings.set", { key: "modelVisibility" }),
+    );
+    expect(resultOf(user.frames, lastId()).error).toBeDefined();
+  });
+
   it("welcome.engineHost and system.status carry the heartbeat's catalog", async () => {
     const relay = newRelay();
     const host = await helloed(relay);
@@ -311,6 +365,9 @@ describe("model pick relay surface (#30)", () => {
             { id: "fake-large", name: "Fake Large", provider: "fake" },
           ],
           defaultModel: "fake-large",
+          /* AC-8/#92: ids are unique only per provider — the ambient one
+             disambiguates a default whose id appears twice. */
+          defaultProvider: "fake",
         },
       }),
     );
@@ -324,12 +381,14 @@ describe("model pick relay surface (#30)", () => {
       "fake-large",
     ]);
     expect(app.welcome.engineHost.defaultModel).toBe("fake-large");
+    expect(app.welcome.engineHost.defaultProvider).toBe("fake");
 
     await app.connection.receive(req("system.status", {}));
     const status = resultOf(app.frames, lastId()).result as {
       engine?: {
         models?: { id: string }[];
         defaultModel?: string;
+        defaultProvider?: string;
         capabilities?: { id: string }[];
       };
     };
@@ -337,6 +396,7 @@ describe("model pick relay surface (#30)", () => {
       "fake-small",
       "fake-large",
     ]);
+    expect(status.engine?.defaultProvider).toBe("fake");
     expect(status.engine?.capabilities?.some((c) => c.id === "models")).toBe(
       true,
     );

@@ -131,18 +131,27 @@ const EFFORT_LABELS: Record<string, string> = {
 export const effortLabel = (e: string) =>
   EFFORT_LABELS[e] ?? e.charAt(0).toUpperCase() + e.slice(1);
 
-/* The model's starting effort: its default, else the middle of its ladder. */
+/* The effort the engine reports for the model — or nothing. The picker
+   shows "Engine default" for the unset case rather than inventing a level
+   (a mid-ladder guess would display an effort the turn never ran with). */
 export function defaultEffort(m?: ModelOption): string | undefined {
   if (!m?.efforts?.length) return undefined;
   if (m.defaultEffort && m.efforts.includes(m.defaultEffort))
     return m.defaultEffort;
-  return m.efforts[Math.floor((m.efforts.length - 1) / 2)];
+  return undefined;
 }
 
 /* The session's pick for an employee default: model + its default effort, fast off. */
-export function choiceFor(model: string, models: ModelOption[]): ModelChoice {
-  const m = models.find((x) => x.id === model);
-  return { model, provider: m?.provider, effort: defaultEffort(m) };
+export function choiceFor(
+  model: string,
+  models: ModelOption[],
+  provider?: string,
+): ModelChoice {
+  const m = models.find(
+    (x) =>
+      x.id === model && (provider === undefined || x.provider === provider),
+  );
+  return { model, provider: provider ?? m?.provider, effort: defaultEffort(m) };
 }
 
 /* A session's current pick: what the session pinned, else the employee's
@@ -153,6 +162,7 @@ export function sessionChoice(
   employeeModel: string | undefined,
   models: ModelOption[],
   defaultModel?: string,
+  defaultProvider?: string,
 ): ModelChoice {
   if (t.model)
     return {
@@ -161,9 +171,13 @@ export function sessionChoice(
       effort: t.effort ?? defaultEffort(findModel(models, t as ModelChoice)),
       fast: t.fast,
     };
+  /* The engine default is `{provider?, id}` — ids are unique only per
+     provider, so its provider disambiguates a shared id. An employee's
+     stored model is a bare id: first match there. */
   return choiceFor(
     employeeModel || defaultModel || models[0]?.id || "",
     models,
+    employeeModel ? undefined : defaultProvider,
   );
 }
 
@@ -221,7 +235,12 @@ export function ModelPicker({
     shown0.effort && efforts.includes(shown0.effort)
       ? shown0.effort
       : defaultEffort(cur);
-  const idx = effort ? efforts.indexOf(effort) : -1;
+  /* Unset effort (engine default in effect): park the thumb mid-ladder — a
+     display position only, `effort` stays undefined for the label. */
+  const idx =
+    effort && efforts.includes(effort)
+      ? efforts.indexOf(effort)
+      : Math.floor(Math.max(efforts.length - 1, 0) / 2);
   const fast = !!(cur?.fast && shown0.fast);
   const choose = (c: ModelChoice) => {
     setPicked(c);
@@ -335,7 +354,11 @@ export function ModelPicker({
                         : "text-muted-foreground text-sm",
                     )}
                   >
-                    {effort ? effortLabel(effort) : "Not adjustable"}
+                    {effort
+                      ? effortLabel(effort)
+                      : efforts.length
+                        ? "Engine default"
+                        : "Not adjustable"}
                   </div>
                 </div>
                 <span className="size-7" />

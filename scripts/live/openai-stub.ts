@@ -16,7 +16,9 @@ const reply =
 
 const sse = (chunks: string[]) => chunks.join("");
 
-Bun.serve({
+const server = Bun.serve({
+  /* `0` = kernel picks a free port — live scripts pass it and read the
+     bound port off this line so a stale process can't shadow the stub. */
   port,
   hostname: "127.0.0.1",
   async fetch(req) {
@@ -91,4 +93,4 @@ Bun.serve({
     return new Response("openai-stub", { status: 404 });
   },
 });
-console.log(`openai-stub listening on http://127.0.0.1:${port}/v1`);
+console.log(`openai-stub listening on http://127.0.0.1:${server.port}/v1`);

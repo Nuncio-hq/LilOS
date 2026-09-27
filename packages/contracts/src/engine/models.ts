@@ -51,6 +51,9 @@ export const ModelsListResult = z.object({
   models: z.array(ModelOption),
   /** The engine's default model id, when it has one. */
   default: z.string().optional(),
+  /** The provider `default` belongs to — ids are only unique per provider
+      on multi-provider engines (issue #92). */
+  defaultProvider: z.string().optional(),
   /** Provider rows for grouped pickers, in the engine's own order. */
   providers: z.array(ModelProvider).optional(),
 });
@@ -63,7 +66,8 @@ export const SessionSetModelParams = z.strictObject({
   model: z.string().min(1),
   /** Provider slug when the same id exists under several providers. */
   provider: z.string().optional(),
-  /** Reasoning-effort level from the model's `efforts` list. */
+  /** Reasoning-effort level from the model's `efforts` list. Absent = no
+      effort override — the session keeps the engine's configured level. */
   effort: z.string().optional(),
   /** Fast/priority tier on (`true`) or off (`false`); absent keeps the
       session's current tier. */

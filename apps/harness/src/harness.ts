@@ -1253,16 +1253,20 @@ export class Harness {
     /* The whole pick rides session.setModel (#92): a running engine may
        defer it to the next turn (`deferred`) — the ack's fields are still
        what the conversation records and the picker then shows. */
+    /* The pick is the whole intended state: a field the new model drops
+       (provider on a single-provider engine, effort on a non-reasoning
+       model, fast on a model with no tier) writes NULL so the old pick
+       can't linger on the conversation row or the footer (#92 AC-4). */
     const patch: {
       model: string;
-      provider?: string;
-      effort?: string;
-      fast?: boolean;
+      provider?: string | null;
+      effort?: string | null;
+      fast?: boolean | null;
     } = {
       model: pick.model,
-      ...(pick.provider !== undefined ? { provider: pick.provider } : {}),
-      ...(pick.effort !== undefined ? { effort: pick.effort } : {}),
-      ...(pick.fast !== undefined ? { fast: pick.fast } : {}),
+      provider: pick.provider ?? null,
+      effort: pick.effort ?? null,
+      fast: pick.fast ?? null,
     };
     if (binding && conn) {
       try {
@@ -1276,6 +1280,8 @@ export class Harness {
           sessionId: binding.sessionId,
           ...pick,
         });
+        /* A deferred ack keeps the requested fields — they're the pick the
+           next turn runs with, which is what the picker should show. */
         patch.model = ack.model;
         if (ack.provider !== undefined) patch.provider = ack.provider;
         if (ack.effort !== undefined) patch.effort = ack.effort;
@@ -1525,6 +1531,9 @@ export class Harness {
       engineRef?: string;
       state?: "idle" | "active" | "closed";
       model?: string;
+      provider?: string | null;
+      effort?: string | null;
+      fast?: boolean | null;
       deliveredSeq?: number;
     },
   ) {

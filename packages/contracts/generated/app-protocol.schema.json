@@ -588,6 +588,9 @@
             },
             "defaultModel": {
               "type": "string"
+            },
+            "defaultProvider": {
+              "type": "string"
             }
           },
           "required": [
@@ -1638,13 +1641,22 @@
           "minLength": 1
         },
         "provider": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "effort": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "fast": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "deliveredSeq": {
           "type": "integer",
@@ -3010,6 +3022,9 @@
         },
         "defaultModel": {
           "type": "string"
+        },
+        "defaultProvider": {
+          "type": "string"
         }
       },
       "required": [
@@ -3527,6 +3542,9 @@
             "defaultModel": {
               "type": "string"
             },
+            "defaultProvider": {
+              "type": "string"
+            },
             "engineRssBytes": {
               "type": "integer",
               "minimum": 0,
@@ -3673,6 +3691,9 @@
           }
         },
         "defaultModel": {
+          "type": "string"
+        },
+        "defaultProvider": {
           "type": "string"
         },
         "engineRssBytes": {
@@ -3969,6 +3990,9 @@
               }
             },
             "defaultModel": {
+              "type": "string"
+            },
+            "defaultProvider": {
               "type": "string"
             }
           }
@@ -5405,13 +5429,48 @@
           "type": "string",
           "minLength": 1
         },
-        "value": {}
+        "value": {
+          "$ref": "#/$defs/__schema0"
+        }
       },
       "required": [
         "key",
         "value"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              }
+            }
+          ]
+        }
+      }
     },
     "SettingsSetResult": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5696,6 +5755,9 @@
         "model": {
           "type": "string"
         },
+        "provider": {
+          "type": "string"
+        },
         "detail": {
           "type": "object",
           "propertyNames": {
@@ -5811,6 +5873,9 @@
           }
         },
         "default": {
+          "type": "string"
+        },
+        "defaultProvider": {
           "type": "string"
         },
         "providers": {

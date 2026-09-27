@@ -130,7 +130,9 @@ export async function createAgent(
       RPC_ERRORS.INVALID_STATE,
       `agent ${p.name} already exists — LilOS never overwrites a profile`,
     );
-  const { model, provider } = splitModelRef(p.model);
+  /* The model ref is `{provider?, id}` end to end (D-#8): `model` is the
+     opaque id — it may itself contain `/` — and `provider` is a separate
+     field. No `provider/model` join ever reaches `profiles.create`. */
   const detail = p.detail ?? {};
   await gw.request("profiles.create", {
     name: p.name,
@@ -138,8 +140,8 @@ export async function createAgent(
     ...(p.soul ? { soul: p.soul } : {}),
     // LilOS employees are addressed by profile name — no CLI alias shortcut.
     no_alias: true,
-    ...(model ? { model } : {}),
-    ...(provider ? { provider } : {}),
+    ...(p.model ? { model: p.model } : {}),
+    ...(p.provider ? { provider: p.provider } : {}),
     ...(typeof detail.clone_from === "string"
       ? { clone_from: detail.clone_from }
       : {}),
@@ -168,8 +170,10 @@ interface ModelOptionsProvider {
 
 /**
  * Hermes' ordered effort ladder (`agent/reasoning_effort.py::EFFORT_LADDER`),
- * low → high. The gateway reports per-model `reasoning` booleans but no level
- * list, so a reasoning-capable model gets the full ladder (issue #92 AC-2).
+ * low → high — minus `ultra`, which Hermes documents as internal ("no wire
+ * accepts it; every declared set stops at max"). The gateway reports
+ * per-model `reasoning` booleans but no level list, so a reasoning-capable
+ * model gets the full ladder (issue #92 AC-2).
  */
 export const HERMES_EFFORT_LADDER = [
   "none",
@@ -179,7 +183,6 @@ export const HERMES_EFFORT_LADDER = [
   "high",
   "xhigh",
   "max",
-  "ultra",
 ] as const;
 
 export async function listModels(
@@ -189,6 +192,7 @@ export async function listModels(
   models: ModelOption[];
   providers: ModelProvider[];
   default?: string;
+  defaultProvider?: string;
 }> {
   const r = (await gw.request("model.options", {
     ...(opts.refresh ? { refresh: true } : {}),
@@ -241,27 +245,14 @@ export async function listModels(
     }
   }
   const dflt = str(r.model);
-  return { models, providers, ...(dflt ? { default: dflt } : {}) };
-}
-
-/**
- * Split a `provider/model` ref into the fields `session.create` /
- * `profiles.create` take. Bare names keep the ambient provider.
- */
-export function splitModelRef(
-  ref: string | undefined,
-  ambientProvider?: string,
-): { model?: string; provider?: string } {
-  if (!ref) return ambientProvider ? { provider: ambientProvider } : {};
-  const slash = ref.indexOf("/");
-  if (slash > 0)
-    return {
-      provider: ref.slice(0, slash),
-      model: ref.slice(slash + 1),
-    };
+  const dfltProvider = str(r.provider);
   return {
-    model: ref,
-    ...(ambientProvider ? { provider: ambientProvider } : {}),
+    models,
+    providers,
+    ...(dflt ? { default: dflt } : {}),
+    /* model.options reports the ambient provider separately — carry it so a
+       same-id-under-two-providers default still resolves to the right row. */
+    ...(dfltProvider ? { defaultProvider: dfltProvider } : {}),
   };
 }
 
@@ -339,11 +330,16 @@ async function configSet(
 
 /**
  * Session-scoped model pick via `config.set` (#92): `model` takes
- * `parse_model_switch_args` flags — `<id> --provider <slug> --reasoning
- * <level>` switches provider + effort atomically with the model; `fast`
- * toggles the session's service tier (`on`/`off` → `fast`/`normal`). A
- * running session defers the model leg to the next turn (`deferred: true`)
- * and never errors — effort/fast still apply live to the current agent.
+ * `parse_model_flags` args — `<id> --provider <slug> --reasoning <level>`
+ * switches provider + effort atomically with the model; `--session` keeps
+ * the pick off `config.yaml` (Hermes' `resolve_persist_behavior` persists a
+ * bare switch on a fresh install or with `persist_switch_by_default`, which
+ * would silently retarget every employee's default). `fast` toggles the
+ * session's service tier (`on`/`off` → `priority`/normal). A running
+ * session defers the model leg to the next turn (`deferred: true`); the
+ * fast leg is held with it — `_set_fast` validates and mutates the LIVE
+ * agent, which is still the old model mid-turn (a wrong-model 4002 or a
+ * mid-turn tier flip). The caller replays it once the session is idle.
  */
 export async function setSessionModel(
   gw: GatewayLike,
@@ -383,17 +379,19 @@ export async function setSessionModel(
     pick.model,
     pick.provider ? `--provider ${pick.provider}` : undefined,
     pick.effort ? `--reasoning ${pick.effort}` : undefined,
+    "--session",
   ]
-    .filter((x): x is string => Boolean(x))
+    .filter(Boolean)
     .join(" ");
   const r = await configSet(gw, runtimeSid, "model", modelValue);
   const applied = str(r.value) ?? pick.model;
-  /* The fast leg is a second config.set: when it rejects after the model
-     already switched, throwing would leave the persisted pin on the OLD
-     model while the engine runs the new one. Report the truth instead —
-     model applied, fast off — and the next footer shows what really runs. */
+  /* The fast leg is a second config.set. When the model leg was deferred
+     (a turn is running), it's skipped here and replayed before the next
+     prompt — see the doc comment. When it rejects after a live switch,
+     throwing would leave the persisted pin on the OLD model while the
+     engine runs the new one: report the truth (fast off) instead. */
   let fast = pick.fast;
-  if (pick.fast !== undefined) {
+  if (pick.fast !== undefined && r.deferred !== true) {
     try {
       await configSet(gw, runtimeSid, "fast", pick.fast ? "on" : "off");
     } catch {

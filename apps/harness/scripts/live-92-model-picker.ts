@@ -8,6 +8,11 @@
  *   default   — `hermes serve` against a deterministic OpenAI stub (STUB)
  *   real      — HERMES_PROVIDER + HERMES_MODEL env -> your signed-in engine
  *
+ * The engine runs on a throwaway HERMES_HOME the shell prepared (the real
+ * ~/.hermes is never touched). Children launch detached so cleanup kills
+ * each process GROUP — the harness's `hermes serve` grandchild dies with
+ * its parent; nothing the user had running is signalled.
+ *
  * Exits 0 only when every check passes; prints a PASS/FAIL summary.
  */
 import { type ChildProcess, spawn } from "node:child_process";
@@ -34,18 +39,23 @@ const fail = (line: string): never => {
   process.exit(1);
 };
 
-const port = await new Promise<number>((resolve, reject) => {
-  const srv = createServer();
-  srv.once("error", reject);
-  srv.listen(0, "127.0.0.1", () => {
-    const addr = srv.address();
-    srv.close(() =>
-      typeof addr === "object" && addr
-        ? resolve(addr.port)
-        : reject(new Error("no port")),
-    );
+const freePort = () =>
+  new Promise<number>((resolve, reject) => {
+    const srv = createServer();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const addr = srv.address();
+      srv.close(() =>
+        typeof addr === "object" && addr
+          ? resolve(addr.port)
+          : reject(new Error("no port")),
+      );
+    });
   });
-});
+const port = await freePort();
+// The harness feed binds a fixed port by default — a packaged LilOS.app left
+// running on the same Mac would collide, so this run takes a free one.
+const feedPort = await freePort();
 
 const relayHome = mkdtempSync(join(tmpdir(), "lilos92-relay-"));
 const harnessHome = mkdtempSync(join(tmpdir(), "lilos92-harness-"));
@@ -56,6 +66,9 @@ const launch = (name: string, cmd: string[], env: Record<string, string>) => {
     cwd: repoRoot,
     env: { ...process.env, ...env },
     stdio: ["ignore", "pipe", "pipe"],
+    /* own process group: SIGTERM to -pid reaps the whole subtree the child
+       spawned (engine-hermes' `hermes serve` included). */
+    detached: true,
   });
   procs.push(child);
   child.stdout?.on("data", (d) =>
@@ -77,7 +90,15 @@ const launch = (name: string, cmd: string[], env: Record<string, string>) => {
   return child;
 };
 const cleanup = () => {
-  for (const p of procs) p.kill("SIGTERM");
+  for (const p of procs) {
+    // Kill the child's process group (detached above) — grandchildren like
+    // `hermes serve` go with it. pid fallback if the group is already gone.
+    try {
+      if (p.pid) process.kill(-p.pid, "SIGTERM");
+    } catch {
+      p.kill("SIGTERM");
+    }
+  }
   rmSync(relayHome, { recursive: true, force: true });
   rmSync(harnessHome, { recursive: true, force: true });
 };
@@ -110,6 +131,7 @@ launch("harness", ["bun", "apps/harness/src/index.ts"], {
   LILOS_HARNESS_HOME: harnessHome,
   LILOS_WORKDIR: join(harnessHome, "work"),
   LILOS_ENGINE: engineKind,
+  LILOS_FEED_PORT: String(feedPort),
   LILOS_REPO_ROOT: repoRoot,
 });
 out(`harness launched (engine=${engineKind})`);
@@ -251,9 +273,16 @@ const first = await answer(conversation.id);
 out(`turn 1 answered (model=${first.model ?? "?"})`);
 
 // ── AC-2/3/4 live: pick model + provider + effort + fast; next turn ────
+// Stub leg: stay on lilos-stub (other providers would call a real API), and
+// prefer the model whose id contains "/" — that exercises AC-8 for real.
+// Live leg: prefer a different provider than the ambient one (the switch is
+// the point), falling back to any other model.
+const stubLeg = process.env.HERMES_PROVIDER === "lilos-stub";
 const alt =
-  models.find((m) => m.id !== first.model) ??
-  models.at(1) ??
+  (stubLeg
+    ? (models.find((m) => m.provider === "lilos-stub" && m.id.includes("/")) ??
+      models.find((m) => m.provider === "lilos-stub"))
+    : (models.find((m) => m.id !== first.model) ?? models.at(1))) ??
   fail("catalog has no alternate model to pick");
 const pick: {
   conversationId: string;

@@ -51,6 +51,7 @@ export class FakeGateway implements GatewayLike {
       description?: string;
       soul?: string;
       model?: string;
+      provider?: string;
       skill_count?: number;
     }
   >([
@@ -119,6 +120,9 @@ export class FakeGateway implements GatewayLike {
   sessionFast = new Map<string, boolean>();
   /** config.set calls in order — {key, value, session_id, confirm_expensive_model}. */
   configSetCalls: Record<string, unknown>[] = [];
+  /** `method[:key]` in arrival order — order-sensitive assertions, e.g.
+      model→fast→prompt.submit for a deferred pick (#92 AC-4). */
+  callLog: string[] = [];
   /** model.options calls in order (records the `refresh` flag, #92 AC-6). */
   modelOptionsCalls: Record<string, unknown>[] = [];
   /** sids currently mid-turn: config.set model answers deferred (#92 AC-4). */
@@ -183,6 +187,9 @@ export class FakeGateway implements GatewayLike {
 
   request(method: string, params: unknown = {}): Promise<unknown> {
     const p = (params ?? {}) as Record<string, unknown>;
+    this.callLog.push(
+      method === "config.set" ? `config.set:${String(p.key ?? "")}` : method,
+    );
     switch (method) {
       case "session.create": {
         this.createCalls.push({ ...p });
@@ -215,6 +222,9 @@ export class FakeGateway implements GatewayLike {
       }
       case "prompt.submit":
         this.lastPrompt = p;
+        /* Mid-turn state is real: config.set model/fast on a running sid
+           answers deferred/4002 until `complete()` (#92 AC-4). */
+        this.runningSids.add(String(p.session_id));
         return Promise.resolve({ status: "streaming", user_row_id: "u1" });
       case "session.interrupt":
         return Promise.resolve({ status: "interrupted" });
@@ -263,7 +273,7 @@ export class FakeGateway implements GatewayLike {
           name: pr.name,
           description: pr.description ?? "",
           soul: pr.soul ?? "",
-          model: { provider: "stub", default: pr.model ?? "" },
+          model: { provider: pr.provider ?? "stub", default: pr.model ?? "" },
           skills: Array.from({ length: pr.skill_count ?? 0 }, (_, i) => ({
             name: `skill-${i}`,
           })),
@@ -282,6 +292,7 @@ export class FakeGateway implements GatewayLike {
             : {}),
           ...(typeof p.soul === "string" ? { soul: p.soul } : {}),
           ...(typeof p.model === "string" ? { model: p.model } : {}),
+          ...(typeof p.provider === "string" ? { provider: p.provider } : {}),
           skill_count: 0,
         });
         return Promise.resolve({
@@ -368,6 +379,15 @@ export class FakeGateway implements GatewayLike {
             return Promise.reject(
               new RpcError(4002, `unknown fast mode: ${value}`),
             );
+          /* A fast flip on a running session answers 4002 — real Hermes
+             validates against the OLD model's tier mid-turn (#92 review). */
+          if (this.runningSids.has(sid))
+            return Promise.reject(
+              new RpcError(
+                4002,
+                "fast mode cannot change while a turn is running",
+              ),
+            );
           this.sessionFast.set(sid, v === "fast");
           return Promise.resolve({ key, value: v, scope: "session" });
         }
@@ -443,6 +463,7 @@ export class FakeGateway implements GatewayLike {
     sid: string,
     opts: { text?: string; status?: string; error?: string } = {},
   ) {
+    this.runningSids.delete(sid);
     this.emit(sid, "message.complete", {
       text: opts.text ?? "done",
       status: opts.status ?? "complete",

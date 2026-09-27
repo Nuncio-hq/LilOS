@@ -449,6 +449,7 @@ export function createRelay(options: RelayOptions): Relay {
               models: host?.status?.models,
               providers: host?.status?.providers,
               defaultModel: host?.status?.defaultModel,
+              defaultProvider: host?.status?.defaultProvider,
             },
           };
           respond(peer, id, welcome);

@@ -57,6 +57,16 @@ export class Session {
   /** Hermes tool_call id -> LilOS toolCallId (stable per session). */
   toolIds = new Map<string, string>();
   toolCounter = 0;
+  /**
+   * A pick taken while a turn was running (#92 AC-4): `config.set model`
+   * deferred to the next turn (`deferred`), and the `fast` leg was held with
+   * it because `_set_fast` validates + mutates the LIVE agent — mid-turn
+   * that's the OLD model (a wrong-model 4002 or a mid-turn tier flip).
+   * `prompt()` replays the whole pick, model leg first, before submitting.
+   */
+  pendingPick:
+    | { model: string; provider?: string; effort?: string; fast?: boolean }
+    | undefined;
 
   constructor(
     readonly id: string,
