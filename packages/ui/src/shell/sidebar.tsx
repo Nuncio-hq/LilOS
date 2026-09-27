@@ -229,12 +229,12 @@ export function Sidebar({
                   className="size-5"
                 />
                 <span className="min-w-0 truncate">{e.name}</span>
-                <span className="ml-auto flex shrink-0 items-center gap-1">
+                <span className="ml-auto flex min-w-0 items-center gap-1">
                   {!!b?.approvals && (
                     <span
                       data-badge-approvals
                       title={`${b.approvals} waiting on your approval`}
-                      className="rounded-full bg-amber-500 px-1.5 text-[11px] text-white"
+                      className="shrink-0 rounded-full bg-amber-500 px-1.5 text-[11px] text-white"
                     >
                       {b.approvals === 1
                         ? "needs you"
@@ -245,12 +245,12 @@ export function Sidebar({
                     <span
                       data-badge-running
                       title={`${b.running} running`}
-                      className="rounded-full bg-blue-600 px-1.5 text-[11px] text-white"
+                      className="shrink-0 rounded-full bg-blue-600 px-1.5 text-[11px] text-white"
                     >
                       {b.running}
                     </span>
                   )}
-                  <span className="text-muted-foreground text-xs">
+                  <span className="max-w-[7rem] min-w-0 truncate text-muted-foreground text-xs">
                     {e.role}
                   </span>
                 </span>
