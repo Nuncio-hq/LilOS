@@ -50,6 +50,7 @@ const conv = (id: string, engineRef: string | null): Conversation => ({
   state: "active",
   title: "Ship the thing",
   archived: false,
+  deliveredSeq: 0,
   createdAt: 0,
 });
 
