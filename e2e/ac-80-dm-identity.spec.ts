@@ -3,7 +3,13 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { _electron, expect, type Locator, type Page, test } from "@playwright/test";
+import {
+  _electron,
+  expect,
+  type Locator,
+  type Page,
+  test,
+} from "@playwright/test";
 
 /**
  * Issue #80 — DM identity + streaming markdown. AC-1 asserts the user's
@@ -139,7 +145,11 @@ test.describe.configure({ mode: "serial" });
 test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", async ({
   page,
 }) => {
-  const stack = await bootStack("ac80a", { relay: 4610, feed: 4611, web: 5210 });
+  const stack = await bootStack("ac80a", {
+    relay: 4610,
+    feed: 4611,
+    web: 5210,
+  });
   try {
     await dmDefault(page, stack.webUrl);
     await send(page, PROMPT);
