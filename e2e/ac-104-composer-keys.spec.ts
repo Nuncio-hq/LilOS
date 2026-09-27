@@ -332,17 +332,37 @@ test("AC-7 prototype: Esc stops the turn; ↑ recalls; Esc closes the @ menu", a
   await sendProtoDM(page, "Check the relay reconnect plan");
   const steer = page.getByPlaceholder(/is working\. Enter steers this turn/);
   await expect(steer).toBeVisible({ timeout: 15_000 });
+
+  // A mid-turn send lands in the steer buffer, not the replies — ↑ must still
+  // recall it (parity with the real app, where the steer IS a user message).
+  await steer.fill("also the flaky e2e retry counts");
+  await steer.press("Enter");
+  await expect(page.locator('[data-steerstate="pending"]').first()).toBeVisible(
+    { timeout: 10_000 },
+  );
   await steer.click();
+  await page.keyboard.press("ArrowUp");
+  await expect(steer).toHaveValue("also the flaky e2e retry counts");
+
+  // Esc stops the turn (same as ■) and keeps the recalled draft.
   await page.keyboard.press("Escape");
   await expect(page.getByText(STOPPED).first()).toBeVisible({
     timeout: 15_000,
   });
-
   const box = page.getByPlaceholder(/Reply to Builder/);
-  await box.click();
-  await page.keyboard.press("ArrowUp");
-  await expect(box).toHaveValue("Check the relay reconnect plan");
+  await expect(box).toHaveValue("also the flaky e2e retry counts");
   await page.screenshot({ path: `${SHOTS}/ac-7-prototype.png` });
+
+  // A fresh send after the stop is the newest message — ↑ recalls it now.
+  await box.fill("a second, plain message");
+  await box.press("Enter");
+  await expect(page.getByText("a second, plain message").first()).toBeVisible({
+    timeout: 15_000,
+  });
+  const composer = page.locator("textarea").last();
+  await composer.click();
+  await page.keyboard.press("ArrowUp");
+  await expect(composer).toHaveValue("a second, plain message");
 
   // The `@` employee menu in the channel composer: Esc closes it first.
   await page.goto("/");

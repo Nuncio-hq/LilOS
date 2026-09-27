@@ -15,6 +15,7 @@ import type { KeyboardEventHandler } from "react";
    purpose: a visible tooltip must not swallow a stop. */
 const OPEN_OVERLAY = [
   '[data-slot="popover-content"][data-open]',
+  '[data-slot="popover-content"][data-closed]',
   '[data-slot="dropdown-menu-content"][data-open]',
   '[data-slot="select-content"][data-open]',
   '[data-slot="hover-card-content"][data-open]',
@@ -26,7 +27,7 @@ const OPEN_OVERLAY = [
   '[role="listbox"]',
 ].join(", ");
 
-export const overlayOpen = () => !!document.querySelector(OPEN_OVERLAY);
+const overlayOpen = () => !!document.querySelector(OPEN_OVERLAY);
 
 export function composerKeyDown({
   running,
@@ -47,6 +48,9 @@ export function composerKeyDown({
   onDismissOverlay?: () => void;
 }): KeyboardEventHandler<HTMLTextAreaElement> {
   return (e) => {
+    // IME composition in progress: Esc cancels the composition and ↑ walks the
+    // candidate list — never stop the turn or recall on keys the IME owns.
+    if (e.nativeEvent.isComposing) return;
     if (e.key === "Escape") {
       if (onDismissOverlay) {
         e.preventDefault();

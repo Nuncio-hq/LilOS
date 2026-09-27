@@ -538,7 +538,15 @@ function EmployeeProfileCard({
 }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-background/60 p-6">
-      <div className="w-full max-w-sm rounded-xl border bg-background p-5 shadow-2xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${name} profile`}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onClose();
+        }}
+        className="w-full max-w-sm rounded-xl border bg-background p-5 shadow-2xl"
+      >
         <div className="font-semibold">{name}</div>
         <dl className="mt-3 space-y-1.5 text-xs">
           <div className="flex gap-2">

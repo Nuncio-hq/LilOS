@@ -824,16 +824,29 @@ export default function App() {
   const stopTurn = (rootId: string) => { stops.current[rootId] = true }
 
   /* ↑ recall (issue #104): the message Oscar sent last — inside the open
-     thread (his latest reply, else the root he opened it with) and top-level
-     for the home/channel composer. `unbold` hands back what he typed, not
-     the stored `**@mention**` styling. */
-  const unbold = (t: string) => t.replace(/\*\*(@[^*\n]+?)\*\*/g, "$1")
+     thread and top-level for the home/channel composer. A mid-turn send is
+     still HIS message, so besides human replies the candidates include steers
+     already folded into a reply (`r.steers`), steers still pending
+     (`steerBuf`), and the post-stop not-sent tray (`thread.queue` — those beat
+     the old replies only until a post-stop reply lands). `unbold` hands back
+     what he typed, not the stored `**@mention**` styling or `📎` suffix. */
+  const unbold = (t: string) =>
+    t.replace(/\*\*(@[^*\n]+?)\*\*/g, "$1").replace(/(\s*📎\s*[^\n]+)+$/, "")
   const lastSentIn = (m?: Extract<Msg, { kind: "msg" }>) => {
     if (!m) return undefined
-    const t =
-      [...(m.thread?.replies ?? [])].reverse().find((r) => human(r.from))?.text ??
-      (human(m.from) ? m.text : undefined)
-    return t === undefined ? undefined : unbold(t)
+    const t = m.thread
+    const sent: string[] = []
+    // Queue entries were typed mid-turn, before any post-stop reply — so they
+    // count only when the latest reply isn't one of Oscar's own post-stop sends.
+    const lastReply = t?.replies.at(-1)
+    if (t && lastReply && !human(lastReply.from)) sent.push(...(t.queue ?? []))
+    for (const r of t?.replies ?? []) {
+      sent.push(...(r.steers ?? []))
+      if (human(r.from)) sent.push(r.text)
+    }
+    sent.push(...(steerBuf.current[m.id] ?? []))
+    const last = sent.at(-1) ?? (human(m.from) ? m.text : undefined)
+    return last === undefined ? undefined : unbold(last)
   }
   const lastTopMsg = [...feed].reverse().find((x) => x.kind === "msg" && human(x.from))
   const lastSentTop = lastTopMsg?.kind === "msg" ? unbold(lastTopMsg.text) : undefined

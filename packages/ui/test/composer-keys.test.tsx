@@ -77,6 +77,23 @@ describe("issue #104 composer keys", () => {
     );
     fireEvent.keyDown(box(d.container), { key: "Escape" });
     expect(onStop).not.toHaveBeenCalled();
+
+    // IME mid-composition (e.g. Telex input): Esc cancels the composition —
+    // it must not reach onStop.
+    const f = render(
+      <Composer
+        placeholder="Reply…"
+        employees={[]}
+        hint=""
+        status="streaming"
+        onStop={onStop}
+      />,
+    );
+    fireEvent.keyDown(box(f.container), {
+      key: "Escape",
+      isComposing: true,
+    });
+    expect(onStop).not.toHaveBeenCalled();
   });
 
   test("AC-3 Esc closes the open `@` menu first and only the next Esc stops the turn", () => {
