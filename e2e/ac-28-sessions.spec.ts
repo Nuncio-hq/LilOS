@@ -305,6 +305,9 @@ test("AC-1/4 restart keeps conversations listed; filter narrows them", async ({
       .getByText(/repo|layout|readme/i)
       .last(),
   ).toBeVisible({ timeout: 60_000 });
+  // The reply preview can land in the home feed before the send's async
+  // navigate commits — wait for the thread URL instead of racing it (#103).
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_/, { timeout: 10_000 });
   convUrl = page.url();
 
   // Full app restart — same LILOS_HOME, new processes. Detach the page
