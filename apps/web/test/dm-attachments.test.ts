@@ -117,10 +117,26 @@ describe("describeSendError (AC-4)", () => {
     ).toContain("too large");
   });
 
-  test("invalid_params names the image-only rule", () => {
+  test("invalid_params names the image-only rule only for attachments", () => {
+    // Attachment validation failures carry issues on the `attachments` path.
+    expect(
+      describeSendError(
+        new RelayError("invalid params", "invalid_params", {
+          issues: [{ path: ["attachments", 0, "mimeType"] }],
+        }),
+      ),
+    ).toContain("images");
+    // Any other bad params get the generic line, not a misleading one.
+    expect(
+      describeSendError(
+        new RelayError("invalid params", "invalid_params", {
+          issues: [{ path: ["channelId"] }],
+        }),
+      ),
+    ).toBe("Couldn't send that. Try again.");
     expect(
       describeSendError(new RelayError("bad params", "invalid_params")),
-    ).toContain("images");
+    ).toBe("Couldn't send that. Try again.");
   });
 
   test("unreachable relay and unknown errors get generic lines", () => {

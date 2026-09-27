@@ -51,6 +51,12 @@ export async function sendDm(
 ): Promise<Conversation | undefined> {
   try {
     const attachments = toAttachmentInputs(files);
+    // A file whose blob → data conversion failed can't cross the wire —
+    // refuse the send rather than post the message missing its image.
+    if (files?.length && (attachments?.length ?? 0) < files.length) {
+      say("An image couldn't be read — nothing was sent. Re-attach it.");
+      return undefined;
+    }
     const channel = await openDmChannel(employeeId);
     if (conversationId) {
       await relay.request("messages.post", {
@@ -89,8 +95,21 @@ export function describeSendError(e: unknown): string {
   if (e instanceof RelayError) {
     if (e.code === "attachment_too_large")
       return "That image is too large to attach (10 MB max per file).";
-    if (e.code === "invalid_params")
-      return `Only images, up to ${MAX_ATTACHMENTS_PER_MESSAGE} at once.`;
+    if (e.code === "invalid_params") {
+      // Only map attachment validation failures to the images line —
+      // unrelated invalid_params errors deserve the generic message.
+      const issues = (e.data as { issues?: { path?: unknown[] }[] } | undefined)
+        ?.issues;
+      if (
+        Array.isArray(issues) &&
+        issues.some(
+          (i) => Array.isArray(i?.path) && i.path.includes("attachments"),
+        )
+      ) {
+        return `Only images, up to ${MAX_ATTACHMENTS_PER_MESSAGE} at once.`;
+      }
+      return "Couldn't send that. Try again.";
+    }
     if (e.code === "not_connected" || e.code === "timeout")
       return "Couldn't reach the relay — try again.";
   }

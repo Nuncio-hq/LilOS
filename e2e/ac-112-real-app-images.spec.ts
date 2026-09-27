@@ -527,3 +527,120 @@ test("AC-5 engine-fake receives the image as a prompt content block", async ({
   ).toContainText("image/png (78 bytes)", { timeout: 15_000 });
   await page.screenshot({ path: `${SHOTS}/ac5-engine.png` });
 });
+
+test("AC-2b an image-only send (no typed text) opens a session and replies", async ({
+  page,
+}) => {
+  await dmDefault(page, stack.base);
+  // Chip only — no text in the composer at all.
+  await attach(page, "pick", "only.png");
+  await page.locator("main form").evaluate((f: HTMLFormElement) => {
+    f.requestSubmit();
+  });
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  // The message rendered with its thumbnail and the engine answered it —
+  // the fake only prints "prompt content block" for a real image block.
+  await expect(
+    page.locator('[data-attachments] img[alt="only.png"]').first(),
+  ).toBeVisible();
+  await expect(
+    page.locator("text=/prompt content block/i").last(),
+  ).toContainText("image/png", { timeout: 30_000 });
+
+  // Wire check: the root message carried attachments with empty text.
+  const dmUrl = page.url().match(/\/dm\/([^/]+)\/([^/]+)$/);
+  if (!dmUrl) throw new Error("not on a conversation");
+  const [, emp, conv] = dmUrl;
+  const chan = await rpc(stack.home, RELAY, [
+    { method: "channels.openDm", params: { employeeId: emp } },
+  ]);
+  const channelId = (chan[0] as { channel: { id: string } }).channel.id;
+  const listed = await rpc(stack.home, RELAY, [
+    { method: "messages.list", params: { channelId, conversationId: conv } },
+  ]);
+  const rootOnly = (
+    listed[0] as {
+      messages: {
+        id: string;
+        text: string;
+        attachments?: { name: string }[];
+      }[];
+    }
+  ).messages.find((m) => m.attachments?.[0]?.name === "only.png");
+  expect(rootOnly?.text).toBe("");
+
+  // Same again as a reply in the open thread.
+  await attach(page, "pick", "only-reply.png", "thread");
+  await formOf(page, "thread").evaluate((f: HTMLFormElement) =>
+    f.requestSubmit(),
+  );
+  await expect(
+    page.locator("[data-attachments]", { hasText: "only-reply.png" }),
+  ).toBeVisible();
+  await expect(
+    page.locator("text=/prompt content block/i").last(),
+  ).toContainText("image/png", { timeout: 30_000 });
+  await page.screenshot({ path: `${SHOTS}/ac2b-image-only.png` });
+});
+
+test("AC-5b a mid-turn image queues as the next prompt instead of steering", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await dmDefault(page, stack.base);
+  // An edit prompt parks the fake on an approval — the turn is provably
+  // running, so the next message meets the steer-or-queue fork.
+  await page
+    .locator("main textarea")
+    .pressSequentially("Add a release note to the readme", { delay: 10 });
+  await page.locator("main form").evaluate((f: HTMLFormElement) => {
+    f.requestSubmit();
+  });
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  await expect(page.getByText("Approval needed").first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.getByText("Enter steers · ■ stop")).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // Mid-turn message WITH an image: `session.steer` is text-only, so the
+  // harness must queue it and prompt it (with the image block) next.
+  await attach(page, "pick", "midturn.png", "thread");
+  await page
+    .locator("textarea")
+    .last()
+    .pressSequentially("carry this image too", { delay: 10 });
+  await formOf(page, "thread").evaluate((f: HTMLFormElement) =>
+    f.requestSubmit(),
+  );
+
+  // Unblock the parked turn; the queued image message runs as its own turn.
+  // Same approval loop as ac-27 — the edit script can raise several asks.
+  for (let i = 0; i < 6; i++) {
+    const allow = page.getByRole("button", { name: "Allow once" });
+    if (
+      !(await allow
+        .first()
+        .isVisible()
+        .catch(() => false))
+    )
+      break;
+    await allow.first().click();
+    await page.waitForTimeout(400);
+  }
+  // The fake echoes the image block AND the message's own text — the image
+  // reached the engine on the queued message's prompt, not folded into the
+  // steered turn.
+  const imageAnswer = page
+    .locator("[data-agentturn]")
+    .filter({ hasText: "prompt content block" })
+    .last();
+  await expect(imageAnswer).toContainText("image/png", {
+    timeout: 120_000,
+  });
+  await expect(imageAnswer).toContainText("carry this image too");
+  // No steer ever landed — a steered text shows as an "Oscar steered" chip.
+  await expect(page.getByText("Oscar steered")).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/ac5b-queued-image.png` });
+});
