@@ -901,7 +901,8 @@ export default function App() {
     })
   }
   // projects.add_folder { id, path } (existing project) or projects.create { name, folders: [path] } (new one).
-  const addFolder = async (path: string, project: { existing?: string; name: string }) => {
+  const addFolder = async (path: string, p?: { existing?: string; name: string }) => {
+    const project = p ?? { name: baseName(path) }
     const d = await hostPick(path).catch(() => null) ?? fsMap[path]
     const id = `f-${slugOf(project.name)}-${baseName(path).toLowerCase()}`.replace(/[^a-z0-9-]/g, "")
     const f: Folder = { id, project: project.name, path, repo: d?.git?.remote, branches: d?.git?.branches ?? [], workstreams: [] }
@@ -1136,6 +1137,7 @@ export default function App() {
               onNav={() => setNavOpen(true)} onProfile={() => showEmp(view.id)} onOpen={showThread}
               onSend={sendTop} lastSent={lastSentTop} panelOpen={panelOpen} onPanel={() => setPanelOpen(true)} folders={folders}
               pick={wsPicks[view.id] ?? NO_WS} setPick={(p) => setWsPicks((w) => ({ ...w, [view.id]: p }))} onAddFolder={() => setAddFolderOpen(true)}
+              onWorktree={(p) => setWsPicks((w) => ({ ...w, [view.id]: p }))}
               loading={scenario === "loading"}
               onRename={(id, title) => mapRoot(feedKey, id, (t) => ({ ...t, title }))}
               onArchive={(id, archived) => {

@@ -30,11 +30,16 @@ export function WorkspacePicker({
   pick,
   setPick,
   onAddFolder,
+  onWorktree,
 }: {
   folders: Folder[];
   pick: WsPick;
   setPick: (p: WsPick) => void;
   onAddFolder?: () => void;
+  /* Workstream/worktree picks (#10) render only when this handler is passed
+     (D-#19); without it the picker is direct-mode only and folders pick
+     `mode: "direct"` (issue #113). */
+  onWorktree?: (p: WsPick) => void;
 }) {
   const f = folders.find((x) => x.id === pick.folder);
   const chip =
@@ -65,11 +70,14 @@ export function WorkspacePicker({
             {folders.map((x) => (
               <DropdownMenuItem
                 key={x.id}
+                disabled={x.missing}
+                data-wsfolder={x.id}
+                {...(x.missing ? { "data-missing": "" } : {})}
                 onClick={() =>
                   setPick({
                     folder: x.id,
                     base: x.branches[0] ?? "",
-                    mode: x.branches.length ? "new" : "direct",
+                    mode: onWorktree && x.branches.length ? "new" : "direct",
                   })
                 }
                 className="items-start"
@@ -78,6 +86,11 @@ export function WorkspacePicker({
                 <span className="min-w-0 flex-1">
                   <span className="block font-medium">
                     {folderLabel(x, folders)}
+                    {x.missing && (
+                      <span className="ml-1.5 font-normal text-muted-foreground text-xs">
+                        · missing
+                      </span>
+                    )}
                   </span>
                   <span className="block truncate font-mono text-[11px] text-muted-foreground">
                     {x.path}
@@ -112,7 +125,18 @@ export function WorkspacePicker({
           direct · no git
         </span>
       )}
-      {f && f.branches.length > 0 && (
+      {f && f.branches.length > 0 && !onWorktree && (
+        <span
+          className="flex h-7 items-center gap-1.5 px-2 text-muted-foreground text-xs"
+          data-ws="branch"
+          title="Direct mode: edits land on the checked-out branch"
+        >
+          <PencilLineIcon className="size-3.5" />
+          <span className="shrink-0 font-mono">{f.branches[0]}</span>
+          <span className="hidden shrink-0 lg:inline">· direct</span>
+        </span>
+      )}
+      {f && f.branches.length > 0 && onWorktree && (
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -141,7 +165,7 @@ export function WorkspacePicker({
                 <DropdownMenuItem
                   key={`n-${b}`}
                   onClick={() =>
-                    setPick({
+                    onWorktree({
                       ...pick,
                       mode: "new",
                       base: b,
@@ -169,7 +193,7 @@ export function WorkspacePicker({
                     <DropdownMenuItem
                       key={`w-${w.branch}`}
                       onClick={() =>
-                        setPick({
+                        onWorktree({
                           ...pick,
                           mode: "existing",
                           existing: w.branch,
@@ -225,7 +249,7 @@ export function WorkspacePicker({
   );
 }
 
-export const wsHint = (f: Folder | undefined, p: WsPick) =>
+export const wsHint = (f: Folder | undefined, p: WsPick, directOnly = false) =>
   !f
     ? "Chat only · no folder. Enter opens a new session"
     : !f.branches.length
@@ -234,4 +258,6 @@ export const wsHint = (f: Folder | undefined, p: WsPick) =>
         ? `Enter opens a session in a new worktree off ${p.base}`
         : p.mode === "existing"
           ? `Enter opens a session in ${f.workstreams.find((w) => w.branch === p.existing)?.path ?? "the worktree"}`
-          : `Enter opens a session in ${f.path} · edits land on ${p.base} directly`;
+          : directOnly
+            ? `Enter opens a session in ${f.path} · edits land on the checked-out branch (${p.base})`
+            : `Enter opens a session in ${f.path} · edits land on ${p.base} directly`;

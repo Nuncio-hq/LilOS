@@ -31,6 +31,10 @@ PR does not exist.
   LilOS record pointing at engine runtime state.** Remove-from-company
   deletes channels/conversations/the record; `agents.*` has no delete.
   Not: delete profile on remove. — #29
+- **D-#113 A DM conversation owns its folder: `conversations.open` carries
+  `cwd`, the relay stores it (nullable), and the engine sees it only as
+  `cwd` on `session.start`.** Not: a per-employee fixed workdir, or folder
+  moves inside a session (#10). — #113
 
 ## Web
 - **D-#3 Web: React 19 + Vite + Tailwind v4 + shadcn (base-nova) + AI
@@ -117,8 +121,9 @@ PR does not exist.
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the
   harness (`packages/host`), never by an engine; the wire is JSON-RPC 2.0 like
-  the engine and app protocols.** Not: fs/git tools on the engine protocol, or a
-  per-app reimplementation of the calls. — #11
+  the engine and app protocols. The real app reaches them as `POST /host` on the
+  harness's loopback feed port, behind the install token (#113).** Not: fs/git
+  tools on the engine protocol, or a per-app reimplementation of the calls. — #11
 - **D-#37 Forge ops (PR view/comment/merge) are host API methods (`forge.*`)
   shelling out to `gh` with the signed-in user's auth; the merge result is the
   re-read PR state, not gh's stdout.** Not: a GitHub token stored by LilOS, or

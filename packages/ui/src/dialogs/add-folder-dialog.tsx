@@ -30,12 +30,15 @@ export function AddFolderDialog({
   onNeedDir,
 }: {
   folders: Folder[];
-  projects: string[];
+  /* Project targets (prototype #18). Absent = plain "add a folder"
+     (the real app until channels exist, #113): the section hides and the
+     footer becomes `folders.add { path }`. */
+  projects?: string[];
   defaultProject?: string;
   fs: Record<string, FsDir>;
   discovered: string[];
   onClose: () => void;
-  onAdd: (path: string, project: { existing?: string; name: string }) => void;
+  onAdd: (path: string, project?: { existing?: string; name: string }) => void;
   /* Called when the listing needs a dir the `fs` map doesn't have yet — the
      app answers with a host `fs.list` (real app: the harness). Without it the
      dialog renders purely off `fs` (mock). */
@@ -205,7 +208,7 @@ export function AddFolderDialog({
                         variant="secondary"
                         className="h-4 px-1.5 text-[10px]"
                       >
-                        {on.project}
+                        {on.project || "added"}
                       </Badge>
                     )}
                     {(d?.children?.length ?? 0) > 0 && (
@@ -235,7 +238,11 @@ export function AddFolderDialog({
               <div className="min-w-0">
                 <div className="truncate font-medium">{baseName(clean)}</div>
                 {attached ? (
-                  <div>Already in {attached.project}.</div>
+                  <div>
+                    {attached.project
+                      ? `Already in ${attached.project}.`
+                      : "Already added."}
+                  </div>
                 ) : git ? (
                   <div>
                     Git repo
@@ -265,63 +272,69 @@ export function AddFolderDialog({
             </div>
           )}
 
-          <div>
-            <div className="mb-1.5 text-muted-foreground text-xs">Project</div>
-            <div className="grid gap-1.5 sm:grid-cols-2">
-              {projects.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setTarget(p)}
-                  data-project={p}
+          {projects && (
+            <div>
+              <div className="mb-1.5 text-muted-foreground text-xs">
+                Project
+              </div>
+              <div className="grid gap-1.5 sm:grid-cols-2">
+                {projects.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setTarget(p)}
+                    data-project={p}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg border px-3 py-2 text-left",
+                      target === p
+                        ? "border-foreground bg-muted/50"
+                        : "hover:border-foreground/30",
+                    )}
+                  >
+                    <FolderGit2Icon className="size-4 text-muted-foreground" />
+                    <span className="font-medium">{p}</span>
+                    <span className="ml-auto text-muted-foreground text-xs">
+                      {plural(
+                        folders.filter((f) => f.project === p).length,
+                        "folder",
+                      )}
+                    </span>
+                    {target === p && <CheckIcon className="size-4" />}
+                  </button>
+                ))}
+                <div
                   className={cn(
-                    "flex items-center gap-2 rounded-lg border px-3 py-2 text-left",
-                    target === p
-                      ? "border-foreground bg-muted/50"
+                    "flex items-center gap-2 rounded-lg border px-3 py-1 sm:col-span-2",
+                    target === "__new"
+                      ? "border-foreground bg-muted/50 [&_input]:bg-transparent dark:[&_input]:bg-transparent"
                       : "hover:border-foreground/30",
                   )}
+                  onClick={() => setTarget("__new")}
+                  data-project="__new"
                 >
-                  <FolderGit2Icon className="size-4 text-muted-foreground" />
-                  <span className="font-medium">{p}</span>
-                  <span className="ml-auto text-muted-foreground text-xs">
-                    {plural(
-                      folders.filter((f) => f.project === p).length,
-                      "folder",
-                    )}
-                  </span>
-                  {target === p && <CheckIcon className="size-4" />}
-                </button>
-              ))}
-              <div
-                className={cn(
-                  "flex items-center gap-2 rounded-lg border px-3 py-1 sm:col-span-2",
-                  target === "__new"
-                    ? "border-foreground bg-muted/50 [&_input]:bg-transparent dark:[&_input]:bg-transparent"
-                    : "hover:border-foreground/30",
-                )}
-                onClick={() => setTarget("__new")}
-                data-project="__new"
-              >
-                <FolderPlusIcon className="size-4 shrink-0 text-muted-foreground" />
-                <Input
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  onFocus={() => setTarget("__new")}
-                  placeholder={`New project · ${suggestedName}`}
-                  className="h-7 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-                />
+                  <FolderPlusIcon className="size-4 shrink-0 text-muted-foreground" />
+                  <Input
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    onFocus={() => setTarget("__new")}
+                    placeholder={`New project · ${suggestedName}`}
+                    className="h-7 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+                  />
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t px-5 py-3">
           <span
             className="min-w-0 flex-1 basis-60 truncate font-mono text-[11px] text-muted-foreground"
             title="Hermes call"
           >
-            {target === "__new"
-              ? `projects.create { name: "${projName}", folders: ["${clean}"] }`
-              : `projects.add_folder { id: "${slugOf(projName)}", path: "${clean}" }`}
+            {projects === undefined
+              ? `folders.add { path: "${clean}" }`
+              : target === "__new"
+                ? `projects.create { name: "${projName}", folders: ["${clean}"] }`
+                : `projects.add_folder { id: "${slugOf(projName)}", path: "${clean}" }`}
           </span>
           <Button
             variant="outline"
@@ -335,16 +348,22 @@ export function AddFolderDialog({
             size="sm"
             disabled={!canAdd}
             onClick={() =>
-              onAdd(
-                clean,
-                target === "__new"
-                  ? { name: projName }
-                  : { existing: target, name: target },
-              )
+              projects === undefined
+                ? onAdd(clean)
+                : onAdd(
+                    clean,
+                    target === "__new"
+                      ? { name: projName }
+                      : { existing: target, name: target },
+                  )
             }
             data-addbtn
           >
-            {target === "__new" ? `Create ${projName}` : `Add to ${projName}`}
+            {projects === undefined
+              ? "Add folder"
+              : target === "__new"
+                ? `Create ${projName}`
+                : `Add to ${projName}`}
           </Button>
         </div>
       </div>

@@ -11,13 +11,14 @@ import * as schema from "../src/db/schema";
 const TRANSCRIPTISH = /transcript|reason|thought|tool(_|calls|_results)|steps/i;
 
 describe("AC-5 relay stores no engine transcript", () => {
-  it("persists exactly the four app tables, none with transcript fields", () => {
+  it("persists exactly the app tables, none with transcript fields", () => {
     expect(Object.keys(schema).sort()).toEqual([
       "asks",
       "channels",
       "conversations",
       "employees",
       "messages",
+      "recentFolders",
     ]);
     for (const [name, table] of Object.entries(schema)) {
       for (const column of Object.keys(

@@ -17,12 +17,16 @@ export function WsBadge({ ws }: { ws: Workspace }) {
     >
       <FolderIcon className="size-3 shrink-0" />
       <span className="shrink-0">{f?.project}</span>
-      {ws.mode === "direct" ? (
-        <PencilLineIcon className="size-3 shrink-0" />
-      ) : (
-        <GitBranchIcon className="size-3 shrink-0" />
+      {ws.branch && (
+        <>
+          {ws.mode === "direct" ? (
+            <PencilLineIcon className="size-3 shrink-0" />
+          ) : (
+            <GitBranchIcon className="size-3 shrink-0" />
+          )}
+          <span className="truncate font-mono">{ws.branch}</span>
+        </>
       )}
-      <span className="truncate font-mono">{ws.branch}</span>
       <span className="shrink-0 text-emerald-700/80">
         · {ws.mode === "direct" ? "direct" : "worktree"}
       </span>

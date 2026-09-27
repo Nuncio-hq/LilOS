@@ -7,9 +7,10 @@ import type {
   Employee,
   MessageAttachment,
   PendingTurn,
+  RecentFolder,
 } from "@lilos/contracts/app";
 import { ApprovalOutcome, EngineRequest } from "@lilos/contracts/engine";
-import { and, asc, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, max, ne, sql } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import type {
   AppendMessageInput,
@@ -34,6 +35,7 @@ type ConversationRow = typeof schema.conversations.$inferSelect;
 const rowToConversation = (row: ConversationRow): Conversation => ({
   ...row,
   model: row.model ?? undefined,
+  cwd: row.cwd ?? undefined,
 });
 
 type MessageRow = typeof schema.messages.$inferSelect;
@@ -69,6 +71,17 @@ const rowToAsk = (row: AskRow): Ask => ({
 
 export function createDrizzleStore(db: Db): RelayStore {
   const now = () => Date.now();
+
+  /* Monotonic recents tick (#113): newest-first ordering stays stable even
+     when two picks land inside the same millisecond. `q` is the db or its
+     sync transaction handle (both run `.get()` synchronously). */
+  const nextFolderStamp = (q: { select: Db["select"] }): number => {
+    const top = q
+      .select({ m: max(schema.recentFolders.lastUsedAt) })
+      .from(schema.recentFolders)
+      .get();
+    return Math.max(now(), (top?.m ?? 0) + 1);
+  };
 
   const appendMessageTx = (
     input: AppendMessageInput,
@@ -319,6 +332,27 @@ export function createDrizzleStore(db: Db): RelayStore {
       }
       return summaries;
     },
+    async listRecentFolders(): Promise<RecentFolder[]> {
+      return db
+        .select()
+        .from(schema.recentFolders)
+        .orderBy(
+          desc(schema.recentFolders.lastUsedAt),
+          desc(schema.recentFolders.path),
+        )
+        .all();
+    },
+    async addRecentFolder(path: string): Promise<RecentFolder> {
+      const folder = { path, lastUsedAt: nextFolderStamp(db) };
+      db.insert(schema.recentFolders)
+        .values(folder)
+        .onConflictDoUpdate({
+          target: schema.recentFolders.path,
+          set: { lastUsedAt: folder.lastUsedAt },
+        })
+        .run();
+      return folder;
+    },
     async openConversation(input: OpenConversationInput) {
       return db.transaction((tx) => {
         const conversationId = newId("conv");
@@ -353,11 +387,22 @@ export function createDrizzleStore(db: Db): RelayStore {
           engineRef: null,
           state: "idle",
           title: input.title,
+          ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
           archived: false,
           deliveredSeq: 0,
           createdAt: now(),
         };
         tx.insert(schema.conversations).values(conversation).run();
+        if (input.cwd !== undefined) {
+          const stamp = nextFolderStamp(tx);
+          tx.insert(schema.recentFolders)
+            .values({ path: input.cwd, lastUsedAt: stamp })
+            .onConflictDoUpdate({
+              target: schema.recentFolders.path,
+              set: { lastUsedAt: stamp },
+            })
+            .run();
+        }
         tx.update(schema.messages)
           .set({ conversationId })
           .where(eq(schema.messages.id, rootMessage.id))

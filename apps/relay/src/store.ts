@@ -12,6 +12,7 @@ import type {
   EmployeeStatus,
   MessageAttachment,
   PendingTurn,
+  RecentFolder,
   RespondTo,
 } from "@lilos/contracts/app";
 import type { ApprovalOutcome, EngineRequest } from "@lilos/contracts/engine";
@@ -46,6 +47,8 @@ export interface OpenConversationInput {
   authorId: string;
   /** Display refs only — bytes already stored via the AttachmentStore. */
   attachments?: MessageAttachment[];
+  /** Folder the session works in (#113); also bumps the recents list. */
+  cwd?: string;
 }
 
 export interface AppendMessageInput {
@@ -129,6 +132,12 @@ export interface RelayStore {
 
   listConversations(query: ListConversationsQuery): Promise<Conversation[]>;
   /**
+   * Session-folder recents (#113): one shared list, newest-first. `add` is
+   * an upsert on `path`; `openConversation` bumps the same row for `cwd`.
+   */
+  listRecentFolders(): Promise<RecentFolder[]>;
+  addRecentFolder(path: string): Promise<RecentFolder>;
+  /**
    * One row per conversation carrying the messages the session list renders
    * — the list survives the channel's snapshot window (#28 AC-1).
    */
@@ -186,6 +195,19 @@ export function createMemoryStore(): RelayStore {
   const conversations = new Map<string, Conversation>();
   const messages = new Map<string, AppMessage>();
   const asks = new Map<string, Ask>();
+  const folders = new Map<string, RecentFolder>();
+
+  /** Strictly increasing recents tick — survives same-ms calls in tests. */
+  const folderTick = () =>
+    Math.max(
+      now(),
+      Math.max(0, ...[...folders.values()].map((f) => f.lastUsedAt)) + 1,
+    );
+  const touchFolder = (path: string): RecentFolder => {
+    const folder = { path, lastUsedAt: folderTick() };
+    folders.set(path, folder);
+    return folder;
+  };
 
   const now = () => Date.now();
   /** (channelId, dedupeKey) -> stored message id; side table so the wire type stays clean. */
@@ -317,6 +339,12 @@ export function createMemoryStore(): RelayStore {
         .filter((c) => (includeArchived ? true : !c.archived))
         .sort((a, b) => a.createdAt - b.createdAt);
     },
+    async listRecentFolders() {
+      return [...folders.values()].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+    },
+    async addRecentFolder(path) {
+      return touchFolder(path);
+    },
     async getConversation(id) {
       return conversations.get(id) ?? null;
     },
@@ -350,12 +378,14 @@ export function createMemoryStore(): RelayStore {
         rootMessageId: "",
         engineRef: null,
         state: "idle",
+        ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
         title: input.title,
         archived: false,
         deliveredSeq: 0,
         createdAt: now(),
       };
       conversations.set(conversation.id, conversation);
+      if (input.cwd !== undefined) touchFolder(input.cwd);
       const { message: rootMessage } = appendMessage({
         channelId: input.channelId,
         conversationId: conversation.id,

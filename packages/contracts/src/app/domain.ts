@@ -78,6 +78,12 @@ export const Conversation = z.object({
    * at `session.start` before a binding exists. Absent = engine default.
    */
   model: z.string().min(1).optional(),
+  /**
+   * The folder the session works in (issue #113), picked at open time. The
+   * engine only ever sees it as `session.start { cwd }`; absent = the
+   * harness's default workdir.
+   */
+  cwd: z.string().min(1).optional(),
   archived: z.boolean(),
   /**
    * Host-owned watermark: highest user-message seq the harness has handed to
@@ -89,6 +95,17 @@ export const Conversation = z.object({
   createdAt: Timestamp,
 });
 export type Conversation = z.infer<typeof Conversation>;
+
+/**
+ * A folder the user picked (or ran a session in) — the picker's recents
+ * (#113). LilOS-owned: stored by the relay, shared across employees, survives
+ * restarts; existence/branch info is probed live via the host API.
+ */
+export const RecentFolder = z.object({
+  path: z.string().min(1),
+  lastUsedAt: Timestamp,
+});
+export type RecentFolder = z.infer<typeof RecentFolder>;
 
 export const AuthorKind = z.enum(["user", "employee", "system"]);
 export type AuthorKind = z.infer<typeof AuthorKind>;

@@ -9,6 +9,7 @@ import type { Ask } from "@lilos/contracts/app";
 import type { ModelOption } from "@lilos/contracts/engine";
 import { atom, computed, type ReadableAtom } from "nanostores";
 import type { LilosConfig } from "./config";
+import { initHost } from "./host";
 
 export const booted = atom(false);
 export const bootError = atom<string | null>(null);
@@ -28,6 +29,9 @@ export let engine: EngineClient;
 export async function bootRuntime(cfg: LilosConfig): Promise<void> {
   relay = new RelayClient({ url: cfg.relayWs, token: cfg.relayToken });
   engine = new EngineClient({ url: cfg.engineWs });
+  // #113: the harness serves the host API on the feed port; folder picking
+  // and the thread header's branch badge ride it.
+  initHost(cfg);
   try {
     await relay.connect();
   } catch (e) {
