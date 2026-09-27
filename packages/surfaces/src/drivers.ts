@@ -9,6 +9,12 @@ export interface BrowserDriver {
   readonly url: string | null;
   /** The page's current viewport in pixels — changes via `resize`. */
   readonly viewport: { width: number; height: number };
+  /**
+   * True when the driver can't serve ops anymore (page/browser gone). A
+   * slow-but-live driver reports false — its calls may be retried rather
+   * than rebuilt (#84).
+   */
+  readonly closed: boolean;
   open(url: string): Promise<{ url: string; title: string }>;
   click(selector: string): Promise<void>;
   type(text: string, selector?: string): Promise<void>;
@@ -66,4 +72,9 @@ export interface SurfaceScopeOptions {
   /** Scrollback cap; default 400 KB like the spike's ring. */
   termTailBytes?: number;
   runTimeoutMs?: number;
+  /**
+   * Bound on one browser driver op (resize); a wedged call drops and
+   * rebuilds the driver instead of pinning the resize serializer (#84).
+   */
+  browserOpTimeoutMs?: number;
 }

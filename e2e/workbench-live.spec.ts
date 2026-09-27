@@ -226,6 +226,7 @@ test.describe
       };
       const remote = async (expression: string) =>
         (await tool("browser_eval", { expression })).body.result?.value;
+      let lastFits = "never sampled";
       const fits = async () => {
         const want = await paneSize();
         const [w, h] = [
@@ -235,6 +236,7 @@ test.describe
         const frame = await img.evaluate(
           (i: HTMLImageElement) => i.naturalWidth,
         );
+        lastFits = `want=${want.w}x${want.h} remote=${w}x${h} frame=${frame}`;
         return w === want.w && h === want.h && frame === want.w && want.w > 0;
       };
 
@@ -244,7 +246,11 @@ test.describe
 
       // A pane resize propagates again.
       await page.setViewportSize({ width: 1000, height: 640 });
-      await expect.poll(fits, { timeout: 20_000 }).toBe(true);
+      try {
+        await expect.poll(fits, { timeout: 20_000 }).toBe(true);
+      } catch (e) {
+        throw new Error(`${(e as Error).message}\nlast fits: ${lastFits}`);
+      }
       await page.screenshot({ path: `${SHOT}/ac-4-viewport-fit.png` });
     });
   });

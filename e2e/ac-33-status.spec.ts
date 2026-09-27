@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 /**
  * ACs 1-4 (issue #33) — the live status chain end to end: a real relay, the
@@ -73,6 +74,7 @@ function startHarness(env: {
   token: string;
   engine?: string;
   sessions?: number;
+  tag?: string;
 }) {
   const proc = spawnLogged(
     [BUN, join(REPO, "apps/harness/scripts/demo-status.ts")],
@@ -82,6 +84,7 @@ function startHarness(env: {
       LILOS_ENGINE: env.engine ?? "fake",
       LILOS_DEMO_SESSIONS: String(env.sessions ?? 0),
       LILOS_STATUS_INTERVAL_MS: "800",
+      ...(env.tag ? { LILOS_ENGINE_TAG: env.tag } : {}),
     },
   );
   return proc;
@@ -118,10 +121,12 @@ test.describe("AC-1-4 (#33) live system status", () => {
     page,
   }) => {
     const relay = await startRelay("healthy");
+    const tag = engineTag("ac33a");
     const harness = startHarness({
       relayUrl: `ws://127.0.0.1:${relay.port}/ws`,
       token: relay.token,
       sessions: 2,
+      tag,
     });
     try {
       await waitFor(harness, "registered with relay");
@@ -146,6 +151,7 @@ test.describe("AC-1-4 (#33) live system status", () => {
       });
     } finally {
       cleanup([relay.proc, harness], [relay.home]);
+      await expectNoEngineLeak(tag);
     }
   });
 
@@ -273,10 +279,12 @@ test.describe("AC-1-4 (#33) live system status", () => {
     page,
   }) => {
     const relay = await startRelay("diag");
+    const tag = engineTag("ac33d");
     const harness = startHarness({
       relayUrl: `ws://127.0.0.1:${relay.port}/ws`,
       token: relay.token,
       sessions: 1,
+      tag,
     });
     try {
       await waitFor(harness, "registered with relay");
@@ -303,6 +311,7 @@ test.describe("AC-1-4 (#33) live system status", () => {
       });
     } finally {
       cleanup([relay.proc, harness], [relay.home]);
+      await expectNoEngineLeak(tag);
     }
   });
 });

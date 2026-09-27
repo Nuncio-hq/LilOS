@@ -3,11 +3,17 @@
  * (AGENTS.md: Bun-only APIs live at entry points, packages stay neutral).
  *
  *   bun packages/engine-fake/scripts/serve.ts [--port N] [--tick MS] [--no-steer]
+ *                                        [--watch-stdin] [--tag MARKER]
  *
  * Serves the protocol at ws://127.0.0.1:PORT/ws and prints
  * `LISTENING ws://...` on stdout once up. `--no-steer` serves an engine that
  * does not declare the steer capability (`describe` omits it, `session.steer`
  * answers METHOD_NOT_FOUND) — the queued-composer path's counterpart.
+ *
+ * `--watch-stdin` (set by the harness launcher): exit when stdin closes — the
+ * pipe's write end dies with the harness process, even on SIGKILL, so the
+ * engine never outlives its launcher (#84). `--tag` is a plain argv marker so
+ * e2e teardown can pgrep for engines a specific boot leaked.
  */
 import { FakeEngine } from "../src/engine.js";
 import { eventFrame, handleJsonRpc } from "../src/transport.js";
@@ -27,6 +33,15 @@ engine.onEvent((e) => {
   const frame = eventFrame(e);
   for (const ws of clients) ws.send(frame);
 });
+
+if (flag("watch-stdin")) {
+  // stdin is a pipe whose write end is held by the harness; when that process
+  // dies the fd closes and the read side sees EOF — exit with it.
+  process.stdin.resume();
+  process.stdin.once("end", () => process.exit(0));
+  process.stdin.once("close", () => process.exit(0));
+  process.stdin.once("error", () => process.exit(0));
+}
 
 const server = Bun.serve({
   port: arg("port", 0),

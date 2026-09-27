@@ -41,6 +41,11 @@ export class ChromiumBrowser implements BrowserDriver {
   get viewport() {
     return this.vp;
   }
+
+  /** Gone = closed page or no page yet surviving to serve ops (#84). */
+  get closed() {
+    return !this.page || this.page.isClosed();
+  }
   private browser?: Browser;
   private context?: BrowserContext;
   private page?: Page;

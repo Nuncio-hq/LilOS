@@ -363,24 +363,47 @@ export class EngineClient {
         sessionId: state.sessionId,
         after: state.latestSeq,
       });
-      const merged = [...state.events];
+      // Re-read: live events can land while the replay is in flight. The
+      // replay is authoritative only through `res.latestSeq` — merging onto
+      // the fresh state (not the pre-await snapshot) keeps those live events
+      // and the watermark they already moved.
+      const cur = feed.get();
+      const merged = [...cur.events];
       for (const e of res.events) {
-        if (e.seq > state.latestSeq && !merged.some((m) => m.seq === e.seq))
-          merged.push(e);
+        if (!merged.some((m) => m.seq === e.seq)) merged.push(e);
       }
       merged.sort((a, b) => a.seq - b.seq);
+      // `res.openRequests` is the set as of `res.latestSeq`; live events past
+      // that watermark already folded into `cur` — re-fold them on top of the
+      // replayed set so an ask that opened mid-replay isn't dropped.
+      const openRequests = [...res.openRequests];
+      const openIds = new Set(openRequests.map((r) => r.requestId));
+      for (const e of merged) {
+        if (e.seq <= res.latestSeq) continue;
+        if (e.type === "request.opened") {
+          const { turnId, requestId, request } = e.payload;
+          if (openIds.has(requestId)) continue;
+          openIds.add(requestId);
+          openRequests.push({ requestId, turnId, request, seq: e.seq });
+        } else if (e.type === "request.resolved") {
+          const { requestId } = e.payload;
+          const i = openRequests.findIndex((r) => r.requestId === requestId);
+          if (i >= 0) openRequests.splice(i, 1);
+          openIds.delete(requestId);
+        }
+      }
       feed.set({
-        sessionId: state.sessionId,
+        sessionId: cur.sessionId,
         synced: true,
-        latestSeq: res.latestSeq,
+        latestSeq: Math.max(res.latestSeq, cur.latestSeq),
         events: merged,
-        openRequests: res.openRequests,
+        openRequests,
         snapshot: res.snapshot,
         error: undefined,
       });
     } catch (error) {
       feed.set({
-        ...state,
+        ...feed.get(),
         error: feedErrorText(error),
       });
       throw error;
