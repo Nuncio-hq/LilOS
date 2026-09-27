@@ -41,7 +41,9 @@ interface Stack {
 async function waitForHttp(url: string, ms = 120_000): Promise<void> {
   const start = Date.now();
   for (;;) {
-    const ok = await fetch(url)
+    // A wedged fetch (accepted socket, starved handler) hangs the loop for
+    // the whole budget otherwise — cap each attempt so retries stay cheap.
+    const ok = await fetch(url, { signal: AbortSignal.timeout(5_000) })
       .then((r) => r.ok || r.status === 404)
       .catch(() => false);
     if (ok) return;
