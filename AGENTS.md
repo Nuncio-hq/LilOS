@@ -57,6 +57,9 @@ prototype/    packages/ui + mock data
 - Biome lints/formats everything except `prototype/src`, assets, and vendored
   shadcn/AI Elements in `packages/ui` (typecheck + build still cover them).
 - CI never calls a real LLM; `engine-fake` is the deterministic engine.
+- Mobile (iOS first) is in design: #88. Before touching relay reach/auth,
+  pairing, notifications, or anything the phone will show, read its
+  "Backend implications" (assumed, not decided).
 
 ## Learn from these projects
 
