@@ -302,3 +302,59 @@ describe("AC-1/4 (#33) systemStatus roundtrip + polling atom", () => {
     client.close();
   });
 });
+
+describe("AC-2 (#85) a missing Hermes reads plainly", () => {
+  const NO_HERMES: SystemStatusResult = {
+    ...RESULT,
+    components: [
+      RESULT.components[0],
+      RESULT.components[1],
+      {
+        id: "engine",
+        label: "Engine",
+        state: "down",
+        reason:
+          "engine hermes failed to start x5: Hermes not found at /gone/hermes (HERMES_BIN is set to it)",
+      },
+      RESULT.components[3],
+    ],
+  };
+
+  it("the plain reason names the path Hermes was expected at", () => {
+    const engine = toStatusComponents({
+      result: NO_HERMES,
+      connection: "ready",
+    }).find((r) => r.id === "engine");
+    expect(engine?.state).toBe("down");
+    expect(engine?.reason).toBe(
+      "Hermes not found at /gone/hermes (HERMES_BIN is set to it).",
+    );
+    expect(engine?.hint).toMatch(/hermes-bin|HERMES_BIN/i);
+    // The supervisor wrapper stays available under the collapsed detail.
+    expect(engine?.detail).toContain("failed to start x5");
+  });
+
+  it("a discovery sweep that found nothing still reads plainly", () => {
+    const result: SystemStatusResult = {
+      ...NO_HERMES,
+      components: [
+        NO_HERMES.components[0],
+        NO_HERMES.components[1],
+        {
+          id: "engine",
+          label: "Engine",
+          state: "down",
+          reason:
+            "engine hermes failed to start x5: Hermes not found — looked in ~/.local/bin/hermes, /opt/homebrew/bin/hermes, /usr/bin/hermes",
+        },
+        NO_HERMES.components[3],
+      ],
+    };
+    const engine = toStatusComponents({ result, connection: "ready" }).find(
+      (r) => r.id === "engine",
+    );
+    expect(engine?.reason).toMatch(/^Hermes not found/);
+    expect(engine?.reason).toContain("looked in");
+    expect(engine?.hint?.length).toBeGreaterThan(0);
+  });
+});

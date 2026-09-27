@@ -58,6 +58,7 @@ export function Sidebar({
   onPairPhone,
   realApp,
   preview,
+  buildLabel,
 }: {
   navOpen: boolean;
   hiddenWhenClosed: boolean;
@@ -90,6 +91,9 @@ export function Sidebar({
   realApp?: boolean;
   /* Prototype-only slot (e.g. the Preview states menu); omitted in production wiring. */
   preview?: React.ReactNode;
+  /* "dev · fake engine" on builds that boot the deterministic engine (#85,
+     AC-4) — a dev bundle must never look like a signed release. */
+  buildLabel?: string;
 }) {
   return (
     <aside
@@ -99,14 +103,24 @@ export function Sidebar({
           ? "fixed inset-y-0 left-0 z-40 flex w-[264px] shadow-2xl"
           : hiddenWhenClosed
             ? "hidden"
-            : "hidden lg:flex",
+            : // Same fixed width as the overlay variant — content-sized here
+              // would let header extras (e.g. the build label) squeeze the feed.
+              "hidden w-[264px] shrink-0 lg:flex",
       )}
     >
       <div className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
         <div className="grid size-7 place-items-center rounded-md bg-foreground font-bold text-background text-xs">
           OC
         </div>
-        <div className="font-semibold">Oscar Co</div>
+        <div className="min-w-0 truncate font-semibold">Oscar Co</div>
+        {buildLabel && (
+          <span
+            data-build-label
+            className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-[10px] text-amber-700 dark:text-amber-400"
+          >
+            {buildLabel}
+          </span>
+        )}
         {!realApp && (
           <Button variant="ghost" size="icon-sm" className="ml-auto">
             <BellIcon />
@@ -215,12 +229,12 @@ export function Sidebar({
                   className="size-5"
                 />
                 <span className="min-w-0 truncate">{e.name}</span>
-                <span className="ml-auto flex shrink-0 items-center gap-1">
+                <span className="ml-auto flex min-w-0 items-center gap-1">
                   {!!b?.approvals && (
                     <span
                       data-badge-approvals
                       title={`${b.approvals} waiting on your approval`}
-                      className="rounded-full bg-amber-500 px-1.5 text-[11px] text-white"
+                      className="shrink-0 rounded-full bg-amber-500 px-1.5 text-[11px] text-white"
                     >
                       {b.approvals === 1
                         ? "needs you"
@@ -231,12 +245,12 @@ export function Sidebar({
                     <span
                       data-badge-running
                       title={`${b.running} running`}
-                      className="rounded-full bg-blue-600 px-1.5 text-[11px] text-white"
+                      className="shrink-0 rounded-full bg-blue-600 px-1.5 text-[11px] text-white"
                     >
                       {b.running}
                     </span>
                   )}
-                  <span className="text-muted-foreground text-xs">
+                  <span className="max-w-[7rem] min-w-0 truncate text-muted-foreground text-xs">
                     {e.role}
                   </span>
                 </span>

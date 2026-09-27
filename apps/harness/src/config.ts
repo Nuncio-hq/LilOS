@@ -49,7 +49,11 @@ export function resolveHarnessConfig(
   const homeDir =
     env.LILOS_HARNESS_HOME ?? join(homedir(), ".lilos", "harness");
   mkdirSync(homeDir, { recursive: true, mode: 0o700 });
-  const engineKind = env.LILOS_ENGINE ?? "fake";
+  // #85: the real engine is the default. LILOS_ENGINE_DEFAULT is stamped at
+  // bundle build time (`--define`), which is why it must read process.env
+  // literally rather than the env parameter.
+  const engineKind =
+    env.LILOS_ENGINE ?? process.env.LILOS_ENGINE_DEFAULT ?? "hermes";
   const engine: HarnessConfig["engine"] =
     engineKind === "url"
       ? { kind: "url", url: required(env.LILOS_ENGINE_URL, "LILOS_ENGINE_URL") }
@@ -68,12 +72,19 @@ export function resolveHarnessConfig(
               ).split(" "),
               ...(env.LILOS_ENGINE_URL ? { url: env.LILOS_ENGINE_URL } : {}),
             }
-          : {
-              kind: "fake",
-              ...(env.ENGINE_FAKE_TICK
-                ? { tick: Number(env.ENGINE_FAKE_TICK) }
-                : {}),
-            };
+          : engineKind === "fake"
+            ? {
+                kind: "fake",
+                ...(env.ENGINE_FAKE_TICK
+                  ? { tick: Number(env.ENGINE_FAKE_TICK) }
+                  : {}),
+              }
+            : (() => {
+                // An unknown kind must never quietly become the fake engine.
+                throw new Error(
+                  `unknown LILOS_ENGINE "${engineKind}" — expected hermes | fake | url | command`,
+                );
+              })();
   return {
     relayUrl: env.LILOS_RELAY_URL ?? DEFAULT_RELAY_URL,
     relayToken,
@@ -92,7 +103,8 @@ export function launcherFor(
   config: HarnessConfig,
   repoRoot: string,
   log: Logger,
-  fakeServeBin?: string,
+  /** Binaries bundled next to the harness exec (packaged app only). */
+  serveBins: { fake?: string; hermes?: string } = {},
 ): EngineLauncher {
   switch (config.engine.kind) {
     case "fake":
@@ -101,12 +113,13 @@ export function launcherFor(
         ...(config.engine.tick !== undefined
           ? { tick: config.engine.tick }
           : {}),
-        ...(fakeServeBin ? { serveBin: fakeServeBin } : {}),
+        ...(serveBins.fake ? { serveBin: serveBins.fake } : {}),
         log,
       });
     case "hermes":
       return hermesEngineLauncher({
         repoRoot,
+        ...(serveBins.hermes ? { serveBin: serveBins.hermes } : {}),
         ...(config.engine.provider ? { provider: config.engine.provider } : {}),
         ...(config.engine.model ? { model: config.engine.model } : {}),
         log,

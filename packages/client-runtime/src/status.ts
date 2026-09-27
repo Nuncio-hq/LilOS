@@ -58,6 +58,16 @@ const PLAIN_RULES: {
     }),
   },
   {
+    // #85: Hermes discovery failures are already plain sentences — surface
+    // them verbatim ("Hermes not found at …"), minus the supervisor's
+    // "engine hermes failed to start x5:" prefix (kept in `detail`).
+    match: /Hermes not found[^\n]*/,
+    plain: (_c, m) => ({
+      reason: sentence(m[0]),
+      hint: "Install Hermes, or point LilOS at it with HERMES_BIN or ~/.lilos/hermes-bin — then restart the app.",
+    }),
+  },
+  {
     match: /ENOENT|posix_spawn|no such file|not found|spawn failed/i,
     plain: (c) => ({
       reason: `${c.label} couldn't start — the ${

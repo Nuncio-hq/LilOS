@@ -201,10 +201,11 @@ export function buildSystemStatus(input: StatusInput): SystemStatusResult {
         host ? "waiting for the engine" : "waiting for a harness to register",
       ),
     );
-  } else if (host?.status?.model) {
-    components.push(
-      component("model", "Model", "ok", `running ${host.status.model}`),
-    );
+  } else if (host?.status?.model ?? host?.status?.defaultModel) {
+    // `model` is a LilOS-side override (HERMES_MODEL); `defaultModel` is the
+    // engine's own configured default — the engine owns it either way (#85).
+    const model = host?.status?.model ?? host?.status?.defaultModel;
+    components.push(component("model", "Model", "ok", `running ${model}`));
   } else {
     components.push(
       component(

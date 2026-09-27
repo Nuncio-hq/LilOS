@@ -1,7 +1,8 @@
-import type {
-  ChannelMessagesState,
-  SessionFeedState,
-  SessionModel,
+import {
+  type ChannelMessagesState,
+  type SessionFeedState,
+  type SessionModel,
+  toStatusComponents,
 } from "@lilos/client-runtime";
 import type { AppMessage, Ask, Conversation } from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
@@ -94,7 +95,21 @@ export function DmPage() {
   const allAsks = useAtom(asksAtom);
   const pending = useAtom(pendingStart);
   const engineState = useAtom(engine.state);
+  const statusPoll = useAtom(relay.status);
+  const fatal = useAtom(relay.fatal);
   const [profileOpen, setProfileOpen] = useState(false);
+
+  /* AC-2 (#85): an engine that's down (Hermes missing, crashed out) shows
+     its plain reason above the composer — never silently sendable. */
+  const composerNote = useMemo(() => {
+    const row = toStatusComponents({
+      result: statusPoll.result,
+      connection: "ready",
+      fatal,
+    }).find((c) => c.id === "engine");
+    if (row?.state !== "down" || !row.reason) return undefined;
+    return row.hint ? `${row.reason} ${row.hint}` : row.reason;
+  }, [statusPoll, fatal]);
 
   const employee = employees.find((e) => e.id === employeeId);
   const channel = channels.find(
@@ -391,6 +406,7 @@ export function DmPage() {
         pick={NO_WS}
         setPick={() => {}}
         loading={!channel}
+        composerNote={composerNote}
         onRename={(id, title) => {
           const conv = convs.find((c) => c.rootMessageId === id);
           if (conv) void renameConversation(conv.id, title);

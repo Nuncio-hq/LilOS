@@ -17,7 +17,7 @@ import {
   TriangleAlertIcon,
   UserIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Composer } from "../chat/composer";
 import { choiceFor, ModelPicker } from "../chat/model-picker";
 import {
@@ -180,6 +180,7 @@ export function EmployeeHome({
   modelChoice,
   onModel,
   picker,
+  composerNote,
 }: {
   e: Employee;
   feed: Msg[];
@@ -212,6 +213,9 @@ export function EmployeeHome({
   modelChoice?: ModelChoice;
   onModel?: (c: ModelChoice) => void;
   picker?: ModelPickerExtras;
+  /* Plain reason the engine is unavailable ("Hermes not found at …", #85);
+     renders above the composer so a dead engine never looks sendable. */
+  composerNote?: ReactNode;
 }) {
   const pickFolder = folders.find((x) => x.id === pick.folder);
   const [filter, setFilter] = useState("");
@@ -476,6 +480,17 @@ export function EmployeeHome({
         accept={accept}
         maxFileSize={maxFileSize}
         onAttachError={onAttachError}
+        queued={
+          composerNote ? (
+            <div
+              data-composer-note
+              className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-50/60 px-3 py-2 text-amber-900 text-xs dark:bg-amber-950/20 dark:text-amber-200"
+            >
+              <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+              <span>{composerNote}</span>
+            </div>
+          ) : undefined
+        }
         tools={
           <>
             {folders.length || onAddFolder ? (
