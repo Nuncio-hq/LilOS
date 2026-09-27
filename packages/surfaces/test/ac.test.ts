@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   callTool,
   SESSION_HEADER,
@@ -14,6 +14,8 @@ function makeScope(overrides: {
   browser?: FakeBrowser;
   appOps?: ReturnType<typeof fakeAppOps>;
   spawner?: FakePtySpawner;
+  createBrowser?: () => Promise<FakeBrowser>;
+  browserOpTimeoutMs?: number;
 }) {
   const spawner = overrides.spawner ?? new FakePtySpawner();
   const browser = overrides.browser ?? new FakeBrowser();
@@ -21,8 +23,11 @@ function makeScope(overrides: {
     session: "s1",
     cwd: "/tmp",
     spawnPty: spawner.spawn,
-    createBrowser: async () => browser,
-    appOps: overrides.appOps,
+    createBrowser: overrides.createBrowser ?? (async () => browser),
+    ...(overrides.appOps ? { appOps: overrides.appOps } : {}),
+    ...(overrides.browserOpTimeoutMs !== undefined
+      ? { browserOpTimeoutMs: overrides.browserOpTimeoutMs }
+      : {}),
   });
   return { scope, spawner, browser };
 }
@@ -56,6 +61,43 @@ describe("AC-1 harness owns browser and PTY, alive with no viewers", () => {
     const p = scope.terminalRun({ command: "true" });
     spawner.last.emit(`${spawner.last.written.join("")}__LILOS_DONE_1__0\n`);
     await expect(p).resolves.toMatchObject({ exitCode: 0 });
+  });
+});
+
+describe("AC-4 (#84) a wedged driver call must not pin the resize serializer", () => {
+  it("times out the stalled resize, rebuilds the browser, and converges on the latest size", async () => {
+    // The losing ordering from the e2e flake: playwright's setViewportSize
+    // stalls under load → every later browserResize returns early on the
+    // pinned serializer → the pane-fit poll sees stale dims forever.
+    const browsers: FakeBrowser[] = [];
+    const scope = new SessionSurfaces({
+      session: "s1",
+      cwd: "/tmp",
+      spawnPty: new FakePtySpawner().spawn,
+      browserOpTimeoutMs: 50,
+      createBrowser: async () => {
+        const b = new FakeBrowser();
+        if (browsers.length === 0) {
+          // First browser wedges inside resize and never resolves.
+          b.resize = () => new Promise<void>(() => {});
+        }
+        browsers.push(b);
+        return b;
+      },
+    });
+
+    await scope.browserOpen({ url: "http://localhost:1" });
+    scope.browserResize(800, 600); // wedges on browser 1
+    scope.browserResize(1000, 640); // must still land
+
+    await vi.waitFor(
+      () => {
+        expect(browsers.length).toBeGreaterThanOrEqual(2);
+        expect(browsers[0]?.closed).toBe(true);
+        expect(browsers[1]?.viewport).toEqual({ width: 1000, height: 640 });
+      },
+      { timeout: 5_000 },
+    );
   });
 });
 

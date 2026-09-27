@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, expect, type Page, test } from "@playwright/test";
+import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 /**
  * Issue #27 — desktop DM end to end. Each acceptance criterion is a named
@@ -15,6 +16,11 @@ import { _electron, expect, type Page, test } from "@playwright/test";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
+// --repeat-each spreads a file's repeats across worker processes; each boots
+// the stack again, so ports are offset per worker or relays race one port (#84).
+const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
+const wport = (p: number) => p + WORKER * 100;
+
 const webDir = path.join(repo, "apps", "web");
 const desktopDir = path.join(repo, "apps", "desktop");
 
@@ -41,16 +47,29 @@ async function waitForHttp(url: string, ms = 30_000): Promise<void> {
 }
 
 function killProc(proc: ChildProcess): Promise<void> {
+  // `bun run dev` stacks intermediate shim layers between `proc` and the
+  // real dev-stack children, and bun doesn't forward signals through them —
+  // signal the whole process group (the spawn is `detached`) or the stack
+  // orphans and keeps its ports bound, poisoning the next boot (#84).
+  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
+    try {
+      if (proc.pid) process.kill(-proc.pid, sig);
+    } catch {
+      try {
+        proc.kill(sig);
+      } catch {}
+    }
+  };
   return new Promise((resolve) => {
     const t = setTimeout(() => {
-      proc.kill("SIGKILL");
+      killGroup("SIGKILL");
       resolve();
     }, 8_000);
     proc.once("exit", () => {
       clearTimeout(t);
       resolve();
     });
-    proc.kill("SIGTERM");
+    killGroup("SIGTERM");
   });
 }
 
@@ -61,11 +80,14 @@ async function bootStack(
   extraEnv: Record<string, string> = {},
 ): Promise<Stack> {
   const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
+  const leakTag = engineTag(tag);
   const proc = spawn("bun", ["run", "dev"], {
     cwd: webDir,
+    detached: true,
     env: {
       ...process.env,
       LILOS_HOME: home,
+      LILOS_ENGINE_TAG: leakTag,
       LILOS_RELAY_PORT: String(ports.relay),
       LILOS_FEED_PORT: String(ports.feed),
       LILOS_WEB_PORT: String(ports.web),
@@ -100,7 +122,10 @@ async function bootStack(
       relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
       feedWs: `ws://127.0.0.1:${ports.feed}/ws`,
       relayToken,
-      stop: () => killProc(proc),
+      stop: async () => {
+        await killProc(proc);
+        await expectNoEngineLeak(leakTag);
+      },
     };
   } catch (e) {
     proc.kill("SIGKILL");
@@ -113,7 +138,11 @@ const SHOTS = path.join(repo, "test-results", "ac-27");
 let stackA: Stack; // engine-fake advertising every capability (incl. steer)
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stackA = await bootStack("main", { relay: 4578, feed: 4582, web: 5201 });
+  stackA = await bootStack("main", {
+    relay: wport(4643),
+    feed: wport(4647),
+    web: wport(5241),
+  });
 });
 test.afterAll(async () => {
   await stackA?.stop();
@@ -293,7 +322,7 @@ test("AC-5b without the `steer` capability, mid-turn typing queues", async ({
   test.setTimeout(180_000);
   const stackB = await bootStack(
     "nosteer",
-    { relay: 4585, feed: 4586, web: 5203 },
+    { relay: wport(4653), feed: wport(4654), web: wport(5245) },
     { LILOS_HIDE_CAPS: "steer" },
   );
   try {
@@ -367,7 +396,7 @@ test("AC-7 real-app build: every visible control has a working handler", async (
       c === 0 ? resolve() : reject(new Error(`vite build exit ${c}`)),
     );
   });
-  const port = 5204;
+  const port = 5246;
   const preview = spawn(
     path.join(webDir, "node_modules", ".bin", "vite"),
     ["preview", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
@@ -476,7 +505,21 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
     await expect(
       win.locator("aside").getByRole("button", { name: /default/i }),
     ).toBeVisible({ timeout: 60_000 });
-    await win.screenshot({ path: `${SHOTS}/ac-8-electron.png` });
+    // Page.captureScreenshot intermittently fails on Electron under Xvfb load
+    // (CI: "Unable to capture screenshot") — retry the artifact write a few
+    // times. The assertion above already proved the AC; this is the evidence.
+    let shotErr: unknown;
+    for (let i = 0; i < 4; i++) {
+      try {
+        await win.screenshot({ path: `${SHOTS}/ac-8-electron.png` });
+        shotErr = undefined;
+        break;
+      } catch (e) {
+        shotErr = e;
+        await win.waitForTimeout(500);
+      }
+    }
+    if (shotErr) throw shotErr;
   } finally {
     await app.close();
   }

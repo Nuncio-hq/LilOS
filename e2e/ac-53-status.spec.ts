@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 /**
  * ACs 1-4 (issue #53) — the live status chain speaks Oscar: each downed leg
@@ -69,6 +70,7 @@ function startHarness(env: {
   relayUrl: string;
   token: string;
   engine?: string;
+  tag?: string;
 }) {
   return spawnLogged([BUN, join(REPO, "apps/harness/scripts/demo-status.ts")], {
     LILOS_RELAY_URL: env.relayUrl,
@@ -76,6 +78,7 @@ function startHarness(env: {
     LILOS_ENGINE: env.engine ?? "fake",
     LILOS_DEMO_SESSIONS: "0",
     LILOS_STATUS_INTERVAL_MS: "800",
+    ...(env.tag ? { LILOS_ENGINE_TAG: env.tag } : {}),
   });
 }
 
@@ -114,6 +117,7 @@ test.describe("AC-1-4 (#53) plain-language status + blocked legs", () => {
       relayUrl: `ws://127.0.0.1:${relay.port}/ws`,
       token: relay.token,
       engine: "broken",
+      tag: engineTag("ac53a"),
     });
     try {
       await waitFor(broken, "registered with relay");
@@ -176,9 +180,11 @@ test.describe("AC-1-4 (#53) plain-language status + blocked legs", () => {
     page,
   }) => {
     const relay = await startRelay("harness");
+    const tag = engineTag("ac53b");
     const harness = startHarness({
       relayUrl: `ws://127.0.0.1:${relay.port}/ws`,
       token: relay.token,
+      tag,
     });
     try {
       await waitFor(harness, "registered with relay");
@@ -204,6 +210,7 @@ test.describe("AC-1-4 (#53) plain-language status + blocked legs", () => {
       });
     } finally {
       cleanup([relay.proc, harness], [relay.home]);
+      await expectNoEngineLeak(tag);
     }
   });
 
@@ -211,9 +218,11 @@ test.describe("AC-1-4 (#53) plain-language status + blocked legs", () => {
     page,
   }) => {
     const relay = await startRelay("relay");
+    const tag = engineTag("ac53c");
     const harness = startHarness({
       relayUrl: `ws://127.0.0.1:${relay.port}/ws`,
       token: relay.token,
+      tag,
     });
     try {
       await waitFor(harness, "registered with relay");
@@ -242,6 +251,68 @@ test.describe("AC-1-4 (#53) plain-language status + blocked legs", () => {
       await expect(dialog).toContainText("Waiting for the relay");
     } finally {
       cleanup([relay.proc, harness], [relay.home]);
+      await expectNoEngineLeak(tag);
+    }
+  });
+
+  test("AC-2 regression (#84): relay restart drops host — harness re-registers and status heals", async ({
+    page,
+  }) => {
+    const relay = await startRelay("restart");
+    const tag = engineTag("ac53d");
+    const harness = startHarness({
+      relayUrl: `ws://127.0.0.1:${relay.port}/ws`,
+      token: relay.token,
+      tag,
+    });
+    let relay2: Proc | undefined;
+    try {
+      await waitFor(harness, "registered with relay");
+      await page.goto(liveUrl(relay.port, relay.token));
+      await expect(
+        page.getByRole("button", { name: "System status" }),
+      ).toContainText("All systems normal", { timeout: 30_000 });
+
+      // A relay restart drops every host registration (relay state is
+      // in-memory). The harness's socket reconnects, but unless it
+      // re-registers on reconnect the relay keeps host=null forever and the
+      // page wedges on "harness down". Respawn the relay on the same
+      // home+port so the existing token stays valid.
+      relay.proc.child.kill("SIGKILL");
+      // Prove the page actually observed the outage — otherwise the heal
+      // assertion below passes on the stale "All systems normal" label.
+      // Poll across the whole restart window: "reconnecting" while the
+      // relay is down, "issue"/"harness down" once the new relay is up but
+      // the harness has not re-registered yet.
+      const sawOutage = expect
+        .poll(async () => {
+          // allInnerTexts never waits — the status chrome can unmount
+          // briefly while the page's own socket is down.
+          const banner = await page
+            .locator("[data-status-banner]")
+            .allInnerTexts()
+            .catch(() => [] as string[]);
+          const btn = await page
+            .getByRole("button", { name: "System status" })
+            .allInnerTexts()
+            .catch(() => [] as string[]);
+          return [...banner, ...btn].join(" ");
+        })
+        .toMatch(/reconnecting|issue|harness down/i, { timeout: 30_000 });
+      relay2 = spawnLogged([BUN, join(REPO, "apps/relay/src/index.ts")], {
+        LILOS_RELAY_HOME: relay.home,
+        LILOS_RELAY_PORT: relay.port,
+      });
+      await waitFor(relay2, "listening on http://");
+      await sawOutage;
+
+      // The harness re-registers on reconnect → host is set → status heals.
+      await expect(
+        page.getByRole("button", { name: "System status" }),
+      ).toContainText("All systems normal", { timeout: 30_000 });
+    } finally {
+      cleanup([relay.proc, harness, ...(relay2 ? [relay2] : [])], [relay.home]);
+      await expectNoEngineLeak(tag);
     }
   });
 });

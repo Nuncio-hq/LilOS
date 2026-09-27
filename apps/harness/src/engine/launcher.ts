@@ -70,7 +70,10 @@ export function commandLauncher(
         const child = spawn(bin, args, {
           cwd: options.cwd,
           env: { ...process.env, ...options.env } as NodeJS.ProcessEnv,
-          stdio: ["ignore", "pipe", "pipe"],
+          // stdin stays an open pipe: engines that watch it (serve.ts
+          // --watch-stdin) see EOF the moment this process dies — even via
+          // SIGKILL, which skips every shutdown handler (#84).
+          stdio: ["pipe", "pipe", "pipe"],
         });
         const exited = new Promise<number | null>((r) => {
           child.once("exit", (code) => r(code));
@@ -152,6 +155,10 @@ export function fakeServeCommand(options: {
   bun?: string;
   /** Pre-compiled fake-engine binary; replaces the `bun serve.ts` command. */
   serveBin?: string;
+  /**
+   * Argv marker for e2e leak assertions (`pgrep -f "--tag <tag>">`).
+   */
+  tag?: string;
 }): string[] {
   const script = join(
     options.repoRoot,
@@ -166,7 +173,16 @@ export function fakeServeCommand(options: {
             "The fake engine is not part of this build — it ships in dev bundles only. Remove LILOS_ENGINE=fake or use a dev build.",
           );
         })();
-  return [...serve, "--port", "0", "--tick", String(options.tick ?? 25)];
+  return [
+    ...serve,
+    "--port",
+    "0",
+    "--tick",
+    String(options.tick ?? 25),
+    // Die with the harness: stdin EOF means the launcher process is gone.
+    "--watch-stdin",
+    ...(options.tag ? ["--tag", options.tag] : []),
+  ];
 }
 
 /** `fake serve` through the command launcher — the CI/dev engine. */
@@ -175,6 +191,7 @@ export function fakeEngineLauncher(options: {
   tick?: number;
   bun?: string;
   serveBin?: string;
+  tag?: string;
   log: Logger;
 }): EngineLauncher {
   return {

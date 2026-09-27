@@ -35,14 +35,37 @@ const kids: Subprocess[] = [];
 const killAll = () => {
   for (const k of kids) k.kill();
 };
-process.on("SIGINT", () => {
+let shuttingDown = false;
+/**
+ * Wait for children to exit before this process exits: a SIGTERM'd child
+ * (vite especially) still holds its port while it drains, and if the
+ * umbrella exits first a respawned stack races the half-dead child on
+ * --strictPort and never serves (#84). Wedged children get SIGKILL after a
+ * grace period rather than hanging the shutdown.
+ */
+const shutdown = async (code: number) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
   killAll();
-  process.exit(0);
-});
-process.on("SIGTERM", () => {
-  killAll();
-  process.exit(0);
-});
+  await Promise.race([
+    Promise.allSettled(kids.map((k) => k.exited)),
+    Bun.sleep(5_000).then(() => {
+      for (const k of kids) if (k.exitCode === null) k.kill("SIGKILL");
+    }),
+  ]);
+  process.exit(code);
+};
+process.on("SIGINT", () => void shutdown(0));
+process.on("SIGTERM", () => void shutdown(0));
+
+// `bun run <script>` spawns this file as a child process and does NOT
+// forward signals, so a SIGTERM/SIGKILL aimed at the `bun run dev` shim
+// orphans us — and our relay/harness/vite children keep their ports bound,
+// poisoning the next stack's boot (#84). Die when we get reparented.
+const ppid0 = process.ppid;
+setInterval(() => {
+  if (process.ppid !== ppid0) void shutdown(0);
+}, 300).unref();
 
 const webDir = path.resolve(here, "..");
 
@@ -60,6 +83,14 @@ function run(
   });
   kids.push(p);
   console.log(`[stack] ${name}: ${cmd.join(" ")}`);
+  // A supervised child dying means this stack is dead — exit so callers
+  // fail on the process exit instead of waiting on ports that never come.
+  p.exited.then((code) => {
+    if (!shuttingDown) {
+      console.error(`[stack] ${name} exited (code ${code})`);
+      void shutdown(1);
+    }
+  });
   return p;
 }
 
@@ -74,25 +105,27 @@ const tokenPath = path.join(HOME, "relay-token");
 for (let i = 0; i < 100 && !existsSync(tokenPath); i++) {
   await Bun.sleep(50);
 }
+// Bound each poll: a half-dead predecessor can hold the port bound but
+// unanswering, and an unbounded fetch would hang this boot forever (#84).
 let relayUp = false;
 for (let i = 0; i < 200 && !relayUp; i++) {
-  relayUp = await fetch(`http://127.0.0.1:${RELAY_PORT}/`)
+  relayUp = await fetch(`http://127.0.0.1:${RELAY_PORT}/`, {
+    signal: AbortSignal.timeout(1_000),
+  })
     .then((r) => r.status > 0)
     .catch(() => false);
   if (!relayUp) await Bun.sleep(100);
 }
 if (!relayUp) {
   console.error("[stack] relay never opened its socket");
-  killAll();
-  process.exit(1);
+  await shutdown(1);
 }
 const token = existsSync(tokenPath)
   ? readFileSync(tokenPath, "utf8").trim()
   : "";
 if (!token) {
   console.error("[stack] relay did not write its token file");
-  killAll();
-  process.exit(1);
+  await shutdown(1);
 }
 console.log(`[stack] relay ready on :${RELAY_PORT} (home ${HOME})`);
 
@@ -114,15 +147,16 @@ run("harness", ["bun", "run", "apps/harness/src/index.ts"], harnessEnv);
 // engine spawn can take a few seconds on a fresh checkout)
 let feedUp = false;
 for (let i = 0; i < 300 && !feedUp; i++) {
-  feedUp = await fetch(`http://127.0.0.1:${FEED_PORT}/`)
+  feedUp = await fetch(`http://127.0.0.1:${FEED_PORT}/`, {
+    signal: AbortSignal.timeout(1_000),
+  })
     .then((r) => r.ok)
     .catch(() => false);
   if (!feedUp) await Bun.sleep(100);
 }
 if (!feedUp) {
   console.error("[stack] harness feed never came up");
-  killAll();
-  process.exit(1);
+  await shutdown(1);
 }
 
 run(
@@ -153,5 +187,9 @@ LilOS dev stack
   })
 `);
 
-await relay.exited;
-killAll();
+// The stack is only alive while every child is: a dead vite (e.g. its
+// --strictPort was still held by the previous stack's draining child)
+// otherwise leaves an umbrella that serves nothing and hangs callers
+// waiting for the web URL (#84).
+await Promise.race(kids.map((k) => k.exited));
+await shutdown(1);

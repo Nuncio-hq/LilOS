@@ -6,6 +6,14 @@
  */
 import { serveSurfaces } from "../src/surfaces/server";
 
+// stdin is a pipe whose write end is held by the spawning test; when that
+// process dies the fd closes and the read side sees EOF — exit with it,
+// even when the parent went away via SIGKILL (no handler runs there).
+process.stdin.resume();
+process.stdin.once("end", () => process.exit(0));
+process.stdin.once("close", () => process.exit(0));
+process.stdin.once("error", () => process.exit(0));
+
 const server = await serveSurfaces(0);
 const res = await fetch(`${server.url}/surfaces/sessions`, {
   method: "POST",

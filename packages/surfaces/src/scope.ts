@@ -30,6 +30,7 @@ import { PreviewScanner, stripAnsi } from "./previews.js";
  */
 export const MARKER_PREFIX = "__LILOS_DONE_";
 const DEFAULT_RUN_TIMEOUT_MS = 30_000;
+const DEFAULT_BROWSER_OP_TIMEOUT_MS = 5_000;
 const DEFAULT_PAGE = { width: 1280, height: 800 };
 const USER_CONTROL_MSG =
   "the user has control of this terminal (a Workbench keystroke took it) — wait for them to hand it back";
@@ -45,6 +46,7 @@ export class SessionSurfaces implements ViewerScope {
   private readonly rows: number;
   private readonly tailCap: number;
   private readonly runTimeout: number;
+  private readonly browserOpTimeoutMs: number;
 
   private browser?: BrowserDriver;
   private browserPromise?: Promise<BrowserDriver>;
@@ -82,6 +84,8 @@ export class SessionSurfaces implements ViewerScope {
     this.rows = opts.rows ?? 28;
     this.tailCap = opts.termTailBytes ?? 400 * 1024;
     this.runTimeout = opts.runTimeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
+    this.browserOpTimeoutMs =
+      opts.browserOpTimeoutMs ?? DEFAULT_BROWSER_OP_TIMEOUT_MS;
     this.spawnTerm();
   }
 
@@ -181,28 +185,66 @@ export class SessionSurfaces implements ViewerScope {
         "unavailable",
         "no browser attached to this session's surfaces",
       );
-    this.browserPromise ??= this.createBrowser().then(async (b) => {
-      b.onFrame((jpeg) => {
-        this.lastFrame = jpeg;
-        this.emit({ kind: "frame", jpeg, capturedAt: Date.now() });
+    if (!this.browserPromise) {
+      const p = this.createBrowser().then(async (b) => {
+        b.onFrame((jpeg) => {
+          this.lastFrame = jpeg;
+          this.emit({ kind: "frame", jpeg, capturedAt: Date.now() });
+        });
+        b.onUrl((url) => this.emit({ kind: "url", url }));
+        if (this.listeners.size > 0) b.setCasting(true);
+        if (this.browserPromise !== p) {
+          // Dropped mid-launch by dropBrowser — don't adopt or leak it.
+          await b.close().catch(() => {});
+          throw new SurfaceError(
+            "unavailable",
+            "browser launch superseded by a rebuild",
+          );
+        }
+        this.browser = b;
+        // A pane resize reported before the browser existed lands now.
+        this.kickBrowserResize();
+        return b;
       });
-      b.onUrl((url) => this.emit({ kind: "url", url }));
-      if (this.listeners.size > 0) b.setCasting(true);
-      this.browser = b;
-      // A pane resize reported before the browser existed lands now.
-      if (
-        b.viewport.width !== this.viewportSize.width ||
-        b.viewport.height !== this.viewportSize.height
-      ) {
-        await b.resize(this.viewportSize).catch(() => {});
-        this.emit({ kind: "page", page: b.viewport });
-      }
-      return b;
-    });
-    this.browserPromise.catch(() => {
-      this.browserPromise = undefined;
-    });
+      this.browserPromise = p;
+      p.catch(() => {
+        if (this.browserPromise === p) this.browserPromise = undefined;
+      });
+    }
     return this.browserPromise;
+  }
+
+  /** Close and forget a wedged driver; the next op lazily rebuilds it. */
+  private async dropBrowser(b: BrowserDriver): Promise<void> {
+    if (this.browser === b) this.browser = undefined;
+    // A still-pending launch self-closes via the identity guard above.
+    this.browserPromise = undefined;
+    // A wedged driver can hang close() too — bound it the same way.
+    await this.withBrowserOpTimeout(b.close()).catch(() => {});
+  }
+
+  private withBrowserOpTimeout<T>(p: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const t = setTimeout(
+        () =>
+          reject(
+            new Error(
+              `browser op timed out after ${this.browserOpTimeoutMs}ms`,
+            ),
+          ),
+        this.browserOpTimeoutMs,
+      );
+      p.then(
+        (v) => {
+          clearTimeout(t);
+          resolve(v);
+        },
+        (e) => {
+          clearTimeout(t);
+          reject(e instanceof Error ? e : new Error(String(e)));
+        },
+      );
+    });
   }
 
   browserOpen(p: { url: string }) {
@@ -419,32 +461,74 @@ export class SessionSurfaces implements ViewerScope {
    */
   browserResize(width: number, height: number) {
     this.viewportSize = { width, height };
-    const b = this.browser;
-    if (!b) {
+    if (!this.browser) {
+      // Not launched yet — the size applies when the browser is created.
       this.emit({ kind: "page", page: this.viewportSize });
       return;
     }
-    // Serialize and always converge on the LATEST requested size: comparing
-    // against `b.viewport` while an earlier resize is still in flight let a
-    // transient size (pane mid-layout) land last and stick.
+    this.kickBrowserResize();
+  }
+
+  /**
+   * Serialize and always converge on the LATEST requested size: comparing
+   * against `b.viewport` while an earlier resize is still in flight let a
+   * transient size (pane mid-layout) land last and stick (#74).
+   */
+  private kickBrowserResize() {
     if (this.resizing) return;
-    this.resizing = (async () => {
-      while (
-        b.viewport.width !== this.viewportSize.width ||
-        b.viewport.height !== this.viewportSize.height
-      ) {
-        const want = { ...this.viewportSize };
-        await b.resize(want).catch(() => {});
-        // Driver didn't land it (refused/closed): stop, never spin.
-        if (
-          b.viewport.width !== want.width ||
-          b.viewport.height !== want.height
-        )
-          break;
+    this.resizing = this.convergeBrowser()
+      .catch(() => {})
+      .finally(() => {
+        this.resizing = undefined;
+      });
+  }
+
+  private async convergeBrowser() {
+    // Converge until the remote matches the latest pane size or the budget
+    // is spent; a give-up is not permanent — the next pane report retries.
+    const deadline = Date.now() + Math.max(4 * this.browserOpTimeoutMs, 25_000);
+    const nap = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let wedges = 0;
+    for (;;) {
+      if (!this.createBrowser && !this.browser) break; // none can ever exist
+      // Bound the wait on a still-pending/failing launch — a slow launch
+      // (contended CI) must not pin the serializer; it's re-awaited next pass.
+      const b = await Promise.race([
+        this.requireBrowser().catch(() => undefined),
+        nap(this.browserOpTimeoutMs).then(() => undefined),
+      ]);
+      if (!b) {
+        if (Date.now() >= deadline) break;
+        continue;
       }
-      this.emit({ kind: "page", page: b.viewport });
-    })().finally(() => {
-      this.resizing = undefined;
+      const want = this.viewportSize;
+      if (b.viewport.width === want.width && b.viewport.height === want.height)
+        break;
+      let wedged = false;
+      try {
+        await this.withBrowserOpTimeout(b.resize({ ...want }));
+      } catch {
+        wedged = true;
+      }
+      if (
+        b.viewport.width === want.width &&
+        b.viewport.height === want.height
+      ) {
+        wedges = 0;
+        continue; // landed — re-check the latest target
+      }
+      if (Date.now() >= deadline) break;
+      // Dead driver, or a live one that keeps wedging calls — rebuild.
+      // A single slow call is re-issued instead: cheaper than a rebuild.
+      if (wedged && (b.closed || ++wedges > 2)) {
+        await this.dropBrowser(b);
+        continue;
+      }
+      await nap(150);
+    }
+    this.emit({
+      kind: "page",
+      page: this.browser?.viewport ?? this.viewportSize,
     });
   }
   browserNavigate(url: string) {

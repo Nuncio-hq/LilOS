@@ -41,6 +41,11 @@ export class ChromiumBrowser implements BrowserDriver {
   get viewport() {
     return this.vp;
   }
+
+  /** Gone = closed page or no page yet surviving to serve ops (#84). */
+  get closed() {
+    return !this.page || this.page.isClosed();
+  }
   private browser?: Browser;
   private context?: BrowserContext;
   private page?: Page;
@@ -105,6 +110,24 @@ export class ChromiumBrowser implements BrowserDriver {
     const cur = page.viewportSize();
     if (!cur || cur.width !== size.width || cur.height !== size.height) {
       await page.setViewportSize(size);
+      // Screencast frames only emit on compositor damage — a static page can
+      // skip re-raster on a viewport resize, leaving the viewer on a frame
+      // captured at the old size (#84: remote resized, frame stayed stale for
+      // the whole poll). Push one fresh capture so a resize always lands a
+      // new-size frame.
+      if (this.casting) {
+        const cdp = this.cdp;
+        cdp
+          ?.send("Page.captureScreenshot", { format: "jpeg" })
+          .then((r) => {
+            const data = (r as { data?: string }).data;
+            if (data)
+              this.frameCb?.(
+                Uint8Array.from(atob(data), (c) => c.charCodeAt(0)),
+              );
+          })
+          .catch(() => {});
+      }
     }
     this.vp = { ...size };
   }
