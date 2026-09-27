@@ -867,6 +867,7 @@ export class Harness {
         this.bindings.set(conv.id, binding);
         this.conversationBySession.set(conv.engineRef, conv.id);
         this.applyReplay(binding, replay);
+        this.rebuildHeldPick(binding, conv, replay.snapshot);
         return binding;
       } catch (error) {
         if (engineErrorCode(error) !== SESSION_NOT_FOUND) throw error;
@@ -1400,7 +1401,10 @@ export class Harness {
       await this.postSystem(
         binding,
         `⚡ Fast isn't available for ${ack.model} — the pick runs without it.`,
-        `sys:${binding.conversationId}:pick-fast:${ack.model}`,
+        /* Unique key: a repeat refusal on the same model must still post —
+           the picker showing ⚡ on a turn that ran without it is the bug
+           the note exists for (#92 review). */
+        `sys:${binding.conversationId}:pick-fast:${ack.model}:${Date.now()}`,
       );
     }
     return patch;
@@ -1423,6 +1427,39 @@ export class Harness {
       next.catch(() => {}),
     );
     return next;
+  }
+
+  /**
+   * Reattach after a harness restart: a pick written while the harness was
+   * down sits only on the row — the session snapshot still shows the old
+   * model while the UI shows the new one. When they differ, hold the row's
+   * pick (prev = what the session actually runs) so it applies before the
+   * next prompt; a failed apply restores the snapshot's values (#92).
+   */
+  private rebuildHeldPick(
+    binding: SessionBinding,
+    conv: Conversation,
+    snap: EventsSinceResult["snapshot"],
+  ) {
+    if (!conv.model) return;
+    const rowPick: ModelPick = { model: conv.model };
+    if (conv.provider) rowPick.provider = conv.provider;
+    if (conv.effort) rowPick.effort = conv.effort;
+    if (conv.fast !== undefined) rowPick.fast = conv.fast;
+    if (
+      snap.model === rowPick.model &&
+      snap.provider === rowPick.provider &&
+      snap.effort === rowPick.effort &&
+      snap.fast === rowPick.fast
+    )
+      return;
+    binding.heldPickPrev = {
+      model: snap.model ?? null,
+      provider: snap.provider ?? null,
+      effort: snap.effort ?? null,
+      fast: snap.fast ?? null,
+    };
+    binding.heldPick = rowPick;
   }
 
   private async doApplyHeldPick(binding: SessionBinding) {
@@ -1451,7 +1488,8 @@ export class Harness {
       await this.postSystem(
         binding,
         `Couldn't switch to ${pick.model}: ${detail}`,
-        `sys:${binding.conversationId}:pick-failed:${pick.model}`,
+        // Unique key: every failed apply surfaces, not just the first (#92).
+        `sys:${binding.conversationId}:pick-failed:${pick.model}:${Date.now()}`,
       );
     }
   }

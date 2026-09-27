@@ -108,7 +108,10 @@ cleanup() {
       REAL_NOW="$(shasum -a 256 "$HOME/.hermes/auth.json" | cut -d' ' -f1)"
     if [ "$TEMP_HASH" != "$AUTH_SNAPSHOT" ]; then
       if [ "$REAL_NOW" = "$AUTH_SNAPSHOT" ]; then
-        cp "$HERMES_HOME/auth.json" "$HOME/.hermes/auth.json"
+        # Atomic write-back: copy next to the target, then rename into place
+        # so a crash can't leave a truncated auth.json behind.
+        cp "$HERMES_HOME/auth.json" "$HOME/.hermes/auth.json.lilos92-tmp" &&
+          mv "$HOME/.hermes/auth.json.lilos92-tmp" "$HOME/.hermes/auth.json"
         echo "(auth.json rotated during the run — synced back to ~/.hermes)"
       else
         cp "$HERMES_HOME/auth.json" "$HOME/.hermes/auth.json.lilos92-conflict"

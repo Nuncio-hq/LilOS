@@ -581,4 +581,86 @@ describe("model pick wire path (issue #30)", () => {
       await w.cleanup();
     }
   }, 20_000);
+
+  it("AC-4 a pick held across a harness restart applies from the row on reattach", async () => {
+    /* Harness dies after the pick's intent lands on the row but before the
+       held apply runs; the engine keeps the session (orphan grace). On
+       reattach the replayed snapshot shows the old model while the row
+       shows the pick — the rebuilt held pick applies before the next
+       prompt (#92 review). */
+    const w = await setupWorld({ engine: new FakeEngine({ tick: 20 }) });
+    let harness2: Harness | undefined;
+    try {
+      const { channel, conversation } = await openDmConversation(w.user);
+      await waitFor(async () => {
+        const c = (await getConversation(w.user, conversation.id)) as
+          | { state?: string }
+          | undefined;
+        return c?.state === "active" ? c : undefined;
+      }, "turn running");
+
+      await w.user.request("conversations.setModel", {
+        conversationId: conversation.id,
+        model: "fake-reasoning",
+        provider: "fake",
+        effort: "high",
+      });
+      await waitFor(async () => {
+        const c = (await getConversation(w.user, conversation.id)) as
+          | { model?: string }
+          | undefined;
+        return c?.model === "fake-reasoning" ? c : undefined;
+      }, "held pick intent on the conversation");
+
+      // Kill the harness mid-turn; the in-process engine keeps the session.
+      await w.harness.stop();
+      if (!w.engine) throw new Error("engine missing");
+      harness2 = new Harness({
+        relay: new RelayClient({
+          url: "mem://harness2",
+          token: TOKEN,
+          socketFactory: socketFor(w.relay),
+        }),
+        sleep: createFakeSleepGuard(),
+        workdir: "/tmp/lilos-test",
+        log: createMemoryLogger(),
+      });
+      harness2.attachEngine(
+        connectFake(w.engine) as unknown as EngineConnection,
+      );
+      await harness2.start();
+
+      // Reattach replays the first turn's completion on the OLD model.
+      const first = await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+      }, "first answer after reattach");
+      expect(first.model).not.toBe("fake-reasoning");
+
+      await w.user.request("messages.post", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        text: "and now?",
+        authorKind: "user",
+      });
+      const answers = await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        const list = messages.filter(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+        return list.length >= 2 ? list : undefined;
+      }, "second answer after reattach");
+      // The row's pick was held on reattach and applied before this prompt.
+      const picked = answers[answers.length - 1];
+      expect(picked.model).toBe("fake-reasoning");
+      expect(picked.effort).toBe("high");
+    } finally {
+      await harness2?.stop();
+      await w.cleanup();
+    }
+  }, 20_000);
 });
