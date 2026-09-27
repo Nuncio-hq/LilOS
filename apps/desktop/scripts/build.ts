@@ -64,10 +64,26 @@ if (process.platform !== "darwin") {
   process.exit(1);
 }
 if (!existsSync(ELECTRON_APP)) {
-  console.error(
-    `Electron binary not at ${ELECTRON_APP} — run \`bun install\` first.`,
-  );
-  process.exit(1);
+  // Bun skips electron's postinstall on fresh CI machines; fetch the dist
+  // bundle ourselves (install.js is the package's own downloader).
+  console.log("==> electron dist missing — running electron/install.js");
+  try {
+    execFileSync("node", [join(ROOT, "node_modules/electron/install.js")], {
+      cwd: join(ROOT, "node_modules/electron"),
+      stdio: "inherit",
+    });
+  } catch {
+    execFileSync("bun", [join(ROOT, "node_modules/electron/install.js")], {
+      cwd: join(ROOT, "node_modules/electron"),
+      stdio: "inherit",
+    });
+  }
+  if (!existsSync(ELECTRON_APP)) {
+    console.error(
+      `Electron binary still not at ${ELECTRON_APP} — run \`bun install\` first.`,
+    );
+    process.exit(1);
+  }
 }
 
 console.log("==> render launch-agent plists");
