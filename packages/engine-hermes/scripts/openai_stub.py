@@ -16,11 +16,10 @@ LLM). One HTTP server, stdlib only. Behaviour keyed on the last user message:
                                      then a text turn
 - contains "Explain the relay package" -> tool_call `read_file` (read-only,
                                      no approval), then text
-- contains "Context builder"      -> ~200 numbered lines + LILOS_OK — the
-                                     compression-fill turns must put real
-                                     tokens in history or hermes refuses the
-                                     fold ("summary would grow the
-                                     conversation") and never rotates the ref
+- contains "Context builder"      -> "LILOS_OK" — since #76 the foldable
+                                     mass is pasted in the USER turn (a real
+                                     model only acks it), so the stub mirrors
+                                     that instead of emitting long replies
 - tools offered + tool result in history -> "LILOS_E2E_OK ..." text
 - default                          -> "LILOS_E2E_OK <echo>" text
 
@@ -81,10 +80,11 @@ def _decide(body):
         return "slow", "slow reply words for the interrupt window"
     if "LILOS_LONG" in last:
         return "text", " ".join(f"word{i}" for i in range(1200))
-    # Compression fillers: ~200 numbered lines so the summarizable middle is
-    # genuinely bigger than a summary — a tiny history gets the fold refused.
+    # Compression fillers (#76): the foldable mass is the pasted text in the
+    # user turn itself; a real model answers with a bare ack, so do the same.
+    # This also fires for the aux summary call, which embeds the region.
     if "Context builder" in last:
-        return "text", "\n".join(str(i) for i in range(1, 201)) + "\nLILOS_OK"
+        return "text", "LILOS_OK"
     if _tool_done(body):
         return "text", f"LILOS_E2E_OK {NONCE}"
     if body.get("tools"):

@@ -52,21 +52,48 @@ export const SCENARIO_LIVE_PROMPTS: Record<string, string> = {
 };
 
 /**
- * #63 AC-3 — bounded compression history: six turns of ~200-line replies give
- * `session.compress` a summarizable middle big enough to actually shrink
- * (the engine refuses a fold whose summary is larger than what it replaces —
- * observed on the stub run), while staying far below a real model's turn
- * budget. On the stub each turn returns a canned long reply — same size,
- * deterministic.
+ * #76 AC-1 — foldable mass rides in the PASTED user text, not the model's
+ * reply: a real model answers an acknowledge prompt in a few tokens, and the
+ * engine refuses any fold whose summary would not shrink the transcript
+ * (commit-site anti-growth guard -> `removed: 0` -> no ref rotation; the
+ * observed failure this issue fixes). The summary re-quotes folded user
+ * messages verbatim only up to a capped per-message/total budget and the
+ * anchor index is likewise capped, so ~64KB of paste per turn stays foldable
+ * even against the largest possible summary plus a verbatim tail window. The
+ * model is only asked for `LILOS_OK`, so the leg is fast on a real build and
+ * identical on the stub.
  */
 export const COMPRESS_FILLER_TURNS = 6;
-// The fold must shrink the transcript or the engine refuses the candidate
-// ("summary would grow the conversation" -> removed: 0 -> no rotation ->
-// session.ref.changed never fires). Each turn's answer is ~200 lines /
-// ~300 tokens, so the summarizable middle is ~2K tokens against a
-// ~300-token summary.
+/** Bytes of pasted foldable mass per filler turn (~16K rough tokens). */
+export const COMPRESS_FILLER_BYTES = 64 * 1024;
+
+// Deterministic word stream — identical bytes on every run, in tests and on
+// the stub — spelled to stay out of the summary's mechanical anchor index
+// (no digits, `#id`s, urls, paths, `@handle`s, hex runs or capitalized
+// Error words, which a real engine harvests and re-quotes verbatim).
+const FILLER_LEXICON =
+  "amber anvil apron arrow aspen atlas autumn beacon birch breeze brook canyon cedar cipher cliff clover cobalt comet copper coral creek cricket crystal cypress dagger dawn delta desert dolphin ember fable falcon feather flint forest forge fossil garnet glacier grove harbor hazel heron hollow island ivory jasper juniper lagoon laurel lilac linen lunar magma maple marble meadow mercury mesa mistral moss nectar north oaken olive onyx opal orchard otter paddle pebble pepper pine plume quartz raven reef river robin saddle saffron sage salmon silver solar summit timber topaz tulip umber velvet violet walnut willow winter wren yellow zephyr".split(
+    " ",
+  );
+
+const fillerBlock = (turn: number): string => {
+  // xorshift32 keyed by turn — no Math.random: every caller sees the same paste.
+  let x = Math.imul(turn + 1, 0x9e3779b9);
+  const parts: string[] = [];
+  let bytes = 0;
+  while (bytes < COMPRESS_FILLER_BYTES) {
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    const w = FILLER_LEXICON[(x >>> 0) % FILLER_LEXICON.length];
+    parts.push(w);
+    bytes += w.length + 1;
+  }
+  return parts.join(" ");
+};
+
 export const compressFillerPrompt = (i: number): string =>
-  `Context builder ${i}: reply with the numbers ${i * 200 + 1} through ${i * 200 + 200}, one per line, then on the last line write exactly: LILOS_OK`;
+  `Context builder ${i}: the block below is pasted reference text for this session — acknowledge it, do not summarize or repeat it. Reply with exactly: LILOS_OK\n\n${fillerBlock(i)}`;
 
 const textPrompt = (sessionId: string, text: string) => ({
   sessionId,
