@@ -35,6 +35,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  COMPRESS_FILLER_TURNS,
+  compressFillerPrompt,
   connectWs,
   Harness,
   type Scenario,
@@ -268,29 +270,58 @@ const h = new Harness(conn, WAIT_MS);
   }
 }
 
-// The approval/steer/resume scenarios need a turn parked on a pending ask —
-// that only exists under `approvals.mode: manual`, whatever the operator's
-// ambient profile does. Pin it on the `builder` profile the scenarios use.
+// #63 — pin everything the live legs need on the `builder` profile the
+// scenarios use, whatever the operator's ambient profile does:
+//   approvals.mode: manual — a parked ask only exists under manual approval.
+//   compression.in_place: false + tiny protects — default `in_place: true`
+//     rewrites history WITHOUT rotating the session id, so
+//     `session.ref.changed` can never fire (the real-model timeout on #58);
+//     and default protects (first 3 / last 20) make a short test history a
+//     structural no-op.
+//   command_allowlist scrubbed — a stale "always" answer would auto-approve
+//     the trigger command on reruns and `request.opened` never fires.
 {
   const cfg = join(BUILDER_HOME, "config.yaml");
   let text = existsSync(cfg) ? readFileSync(cfg, "utf8") : "";
   if (!text) text = "# lilos live-conformance profile\n";
   const lines = text.split("\n");
-  const i = lines.findIndex((l) => /^approvals:\s*$/.test(l));
-  if (i >= 0) {
+  // Drop a top-level `key:` line and its indented block (list or map).
+  const dropKey = (key: string) => {
+    const i = lines.findIndex((l) => new RegExp(`^${key}:`).test(l));
+    if (i < 0) return;
+    let j = i + 1;
+    while (j < lines.length && /^[ \t]+\S/.test(lines[j])) j++;
+    lines.splice(i, j - i);
+  };
+  // Merge `k: v` pairs into a top-level `key:` block (created if absent).
+  const upsertBlock = (key: string, kv: [string, string][]) => {
+    const i = lines.findIndex((l) => new RegExp(`^${key}:\\s*$`).test(l));
+    if (i < 0) {
+      lines.push("", `${key}:`, ...kv.map(([k, v]) => `  ${k}: ${v}`));
+      return;
+    }
     let j = i + 1;
     while (j < lines.length && /^[ \t]+\S/.test(lines[j])) j++;
     const block = lines.slice(i + 1, j);
-    const modeIx = block.findIndex((l) => /^\s*mode:/.test(l));
-    if (modeIx >= 0) block[modeIx] = "  mode: manual";
-    else block.unshift("  mode: manual");
-    const toIx = block.findIndex((l) => /^\s*timeout:/.test(l));
-    if (toIx >= 0) block[toIx] = "  timeout: 300";
-    else block.push("  timeout: 300");
+    for (const [k, v] of kv) {
+      const ix = block.findIndex((l) => new RegExp(`^\\s*${k}:`).test(l));
+      if (ix >= 0) block[ix] = `  ${k}: ${v}`;
+      else block.push(`  ${k}: ${v}`);
+    }
     lines.splice(i + 1, j - i - 1, ...block);
-  } else {
-    lines.push("", "approvals:", "  mode: manual", "  timeout: 300");
-  }
+  };
+  dropKey("command_allowlist");
+  upsertBlock("approvals", [
+    ["mode", "manual"],
+    ["timeout", "300"],
+  ]);
+  upsertBlock("compression", [
+    ["in_place", "false"],
+    ["threshold_tokens", "18000"],
+    ["protect_first_n", "1"],
+    ["protect_last_n", "1"],
+    ["min_tail_user_messages", "1"],
+  ]);
   writeFileSync(cfg, lines.join("\n"));
 }
 
@@ -326,19 +357,15 @@ for (const suite of SUITES) {
       agent: "builder",
       cwd: "/tmp/lilos-live",
     })) as { sessionId: string };
-    // Build real history: compression noops until it can fold several turns.
-    // The prompt keeps the stub's LILOS_LONG long reply and asks a real model
-    // for a long numbered list — either way the turns carry real tokens.
-    for (let i = 0; i < 4; i++) {
+    // #63 AC-3 — bounded history: a handful of short turns is enough for
+    // compress to fold under the pinned protects, and each is a small reply
+    // a real model finishes in seconds (the 4×100-number drive is what blew
+    // the scenario cap on the real-model leg).
+    for (let i = 0; i < COMPRESS_FILLER_TURNS; i++) {
       await withCap(
         h.request("prompt", {
           sessionId,
-          content: [
-            {
-              type: "text",
-              text: `LILOS_LONG turn ${i} — reply with the numbers ${i * 100 + 1} through ${i * 100 + 100}, one per line, then on the last line write exactly: LILOS_OK`,
-            },
-          ],
+          content: [{ type: "text", text: compressFillerPrompt(i) }],
         }),
       );
     }
@@ -353,8 +380,29 @@ for (const suite of SUITES) {
       gateway.request("session.compress", {
         session_id: s.runtimeSid,
       }),
-    )) as { compressed?: boolean; status?: string };
-    if (!(res.compressed || res.status === "compressed"))
+    )) as {
+      compressed?: boolean;
+      status?: string;
+      removed?: number;
+      before_messages?: number;
+      after_messages?: number;
+      info?: { stored_session_id?: string };
+    };
+    // Logged unconditionally — on a real-model run this is the first place to
+    // look when ref.changed doesn't arrive (removed: 0 = nothing folded,
+    // in_place on = no rotation).
+    console.log(
+      `[live] compress -> status=${res.status} compressed=${res.compressed} removed=${res.removed} msgs=${res.before_messages}->${res.after_messages} stored=${res.info?.stored_session_id ?? "?"}`,
+    );
+    // "pending" is the compute-host path; the ref rotation then arrives
+    // asynchronously via session.info — refWait still covers it.
+    if (
+      !(
+        res.compressed ||
+        res.status === "compressed" ||
+        res.status === "pending"
+      )
+    )
       throw new Error(
         `session.compress did not compress: ${JSON.stringify(res)}`,
       );

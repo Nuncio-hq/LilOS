@@ -12,7 +12,7 @@ export interface Scenario {
  * scenario timeout. The marker phrases keep the canned paths green: the
  * engine-fake script keys on edit verbs, the live OpenAI stub on
  * "Fix the README title" / "Explain the relay package" / "LILOS_SLOW" /
- * "LILOS_LONG".
+ * "LILOS_LONG" / "chmod 777".
  */
 const EDIT_PROMPT =
   "Fix the README title: edit README.md exactly once (a single mutating tool call), then reply with exactly: LILOS_OK";
@@ -24,6 +24,49 @@ const SLOW_PROMPT =
 /** Long streaming window without mutating tools — for the late-steer scenario. */
 const LONG_READ_PROMPT =
   "LILOS_SLOW — explain the relay package in at least 200 words, then reply with exactly: LILOS_OK";
+
+/**
+ * #63 AC-1/AC-2 — a real engine never asks approval for a file edit; it asks
+ * for a terminal command its dangerous-command detector flags
+ * (`tools/approval_detection.py` DANGEROUS_PATTERNS — `chmod 777` matches
+ * "world/other-writable permissions", enforced by `check_all_command_guards`
+ * under `approvals.mode: manual` in a gateway context, which emits the
+ * `srq-*` approval request). The prompt makes the model run that command
+ * verbatim in the scratch cwd; the leading "Change" keeps engine-fake on its
+ * mutating script (those steps ask approval too), and `openai_stub.py` emits
+ * the same `terminal` tool call a real model sends.
+ */
+export const APPROVAL_PROMPT =
+  "Change permissions on README.md: run this terminal command verbatim — `chmod 777 README.md` — then reply with exactly: LILOS_OK";
+
+/**
+ * The prompt each live-trigger scenario drives, keyed by scenario id; the
+ * scenario bodies read `SCENARIO_LIVE_PROMPTS[this.id]` so this table *is*
+ * the wiring AC-1/AC-2 test.
+ */
+export const SCENARIO_LIVE_PROMPTS: Record<string, string> = {
+  "approval: request.opened -> request.respond -> tool completes":
+    APPROVAL_PROMPT,
+  "resume mid-turn: events.since replays and returns open requests":
+    APPROVAL_PROMPT,
+};
+
+/**
+ * #63 AC-3 — bounded compression history: six turns of ~200-line replies give
+ * `session.compress` a summarizable middle big enough to actually shrink
+ * (the engine refuses a fold whose summary is larger than what it replaces —
+ * observed on the stub run), while staying far below a real model's turn
+ * budget. On the stub each turn returns a canned long reply — same size,
+ * deterministic.
+ */
+export const COMPRESS_FILLER_TURNS = 6;
+// The fold must shrink the transcript or the engine refuses the candidate
+// ("summary would grow the conversation" -> removed: 0 -> no rotation ->
+// session.ref.changed never fires). Each turn's answer is ~200 lines /
+// ~300 tokens, so the summarizable middle is ~2K tokens against a
+// ~300-token summary.
+export const compressFillerPrompt = (i: number): string =>
+  `Context builder ${i}: reply with the numbers ${i * 200 + 1} through ${i * 200 + 200}, one per line, then on the last line write exactly: LILOS_OK`;
 
 const textPrompt = (sessionId: string, text: string) => ({
   sessionId,
@@ -218,7 +261,7 @@ export const CORE_SCENARIOS: Scenario[] = [
       })) as StartResult;
       const result = h.request(
         "prompt",
-        textPrompt(sessionId, EDIT_PROMPT),
+        textPrompt(sessionId, SCENARIO_LIVE_PROMPTS[this.id]),
       ) as Promise<PromptResult>;
       const opened = await h.waitEvent(
         h.forSession(sessionId, (e) => e.type === "request.opened"),
@@ -245,8 +288,10 @@ export const CORE_SCENARIOS: Scenario[] = [
             e.type === "request.resolved" && e.payload.requestId === requestId,
         ),
       );
-      // "once" covers only this ask; later mutating steps ask again — answer "always".
-      const done = await answerAsks(h, sessionId, "always");
+      // "once" covers only this ask; later gated steps ask again and get
+      // "once" too — "always" would persist the pattern to the profile's
+      // `command_allowlist`, auto-approving it on every later run (#63).
+      const done = await answerAsks(h, sessionId, "once");
       const res = await result;
       assert(
         done.type === "turn.completed" &&
@@ -324,7 +369,7 @@ export const CORE_SCENARIOS: Scenario[] = [
       })) as StartResult;
       const result = h.request(
         "prompt",
-        textPrompt(sessionId, EDIT_PROMPT),
+        textPrompt(sessionId, SCENARIO_LIVE_PROMPTS[this.id]),
       ) as Promise<PromptResult>;
       const opened = await h.waitEvent(
         h.forSession(sessionId, (e) => e.type === "request.opened"),
@@ -359,11 +404,15 @@ export const CORE_SCENARIOS: Scenario[] = [
         since.snapshot.turn?.phase === "waiting",
         "snapshot turn phase is waiting",
       );
+      // "once", never "always" — a permanent allowlist entry would
+      // auto-approve the trigger command on reruns (#63). Later asks in the
+      // same turn get "once" each.
       await h.request("request.respond", {
         sessionId,
         requestId: opened.payload.requestId,
-        outcome: "always",
+        outcome: "once",
       });
+      await answerAsks(h, sessionId, "once");
       const res = await result;
       assert(
         res.stopReason === "end_turn",
@@ -532,7 +581,7 @@ export const STEER_SCENARIOS: Scenario[] = [
       const steered = h.waitEvent(
         h.forSession(sessionId, (e) => e.type === "turn.steered"),
       );
-      await answerAsks(h, sessionId, "always");
+      await answerAsks(h, sessionId, "once");
       const steeredEvent = await steered;
       assert(
         steeredEvent.type === "turn.steered" &&
@@ -574,7 +623,7 @@ export const STEER_SCENARIOS: Scenario[] = [
         assert(ack.status === "steered", `steer "${text}" reports steered`);
         queued.push(text);
       }
-      await answerAsks(h, sessionId, "always");
+      await answerAsks(h, sessionId, "once");
       const res = await result;
       assert(res.stopReason === "end_turn", "steered turn still completes");
       const landed = h.events.filter(
