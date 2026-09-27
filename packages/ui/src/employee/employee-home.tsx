@@ -185,6 +185,8 @@ export function EmployeeHome({
   onModel,
   picker,
   composerNote,
+  draft: composerDraft,
+  onDraftChange,
 }: {
   e: Employee;
   feed: Msg[];
@@ -194,7 +196,17 @@ export function EmployeeHome({
   onNav: () => void;
   onProfile: () => void;
   onOpen: (id: string) => void;
-  onSend: (t: string, pick?: WsPick, files?: AttachedFile[]) => void;
+  /* Return a promise to delay clearing the composer draft until it resolves;
+     a rejected send keeps the text (issue #103, AC-5). */
+  onSend: (
+    t: string,
+    pick?: WsPick,
+    files?: AttachedFile[],
+  ) => void | Promise<unknown>;
+  /* Host-held composer draft for this DM channel (issue #103); omitted, the
+     composer keeps its own state. */
+  draft?: string;
+  onDraftChange?: (v: string) => void;
   /* ↑ recall for the new-session composer: the last top-level message sent in
      this DM (issue #104 AC-5). */
   lastSent?: string;
@@ -491,6 +503,8 @@ export function EmployeeHome({
         employees={[]}
         hint={wsHint(pickFolder, pick, !onWorktree)}
         onSend={(t, files) => onSend(t, pick, files)}
+        draft={composerDraft}
+        onDraftChange={onDraftChange}
         lastSent={lastSent}
         accept={accept}
         maxFileSize={maxFileSize}

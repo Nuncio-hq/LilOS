@@ -269,6 +269,10 @@ test("AC-5 ↑ recalls the last sent message — thread, then home composer", as
   await expect(page.getByText("first root: pick a color").first()).toBeVisible({
     timeout: 30_000,
   });
+  /* The root preview lands in the home feed before the send's async navigate
+     commits — wait for the thread URL so the next send hits the thread
+     composer, not a second top-level message (same race as ac-28, #103). */
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_/, { timeout: 10_000 });
   // ↑ recall reads the last message Oscar SENT — it must not depend on
   // whether the running turn has finished (a steer counts too).
   await send(page, "second reply: make it blue");

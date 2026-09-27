@@ -10,7 +10,16 @@ import {
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
-import { AddFolderDialog, EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
+import {
+  AddFolderDialog,
+  clearDraftIfSent,
+  draftKey,
+  EditEmployeeDialog,
+  EmployeeHome,
+  NO_WS,
+  ThreadView,
+  useDraft,
+} from "@lilos/ui";
 import type {
   AttachedFile,
   Channel,
@@ -38,6 +47,7 @@ import {
   ensureAttachments,
   toAttachedFiles,
 } from "../lib/attachments";
+import { removeEmployee, saveEmployee } from "../lib/employees";
 import {
   addFolder,
   cwdInfo,
@@ -126,6 +136,8 @@ export function DmPage() {
   const statusPoll = useAtom(relay.status);
   const fatal = useAtom(relay.fatal);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   /* Folder picking (#113): shared recents from the relay (probed live for
      missing/git) + a per-employee pick (its last session's folder, AC-6).
@@ -190,6 +202,14 @@ export function DmPage() {
     [summaries, channel],
   );
   const openConv = convs.find((c) => c.id === conversationId);
+
+  /* Unsent drafts live outside the composer: one key per conversation and
+     one per employee home (issue #103). Switching sessions or employees — or
+     reloading — swaps in the stored text instead of throwing it away. */
+  const [homeDraft, setHomeDraft] = useDraft(draftKey.dm(employeeId));
+  const [threadDraft, setThreadDraft] = useDraft(
+    openConv ? draftKey.thread(openConv.id) : undefined,
+  );
 
   /* The open thread needs its whole visible history, not just the channel
      window (#28 AC-2): page messages.list scoped to the conversation. */
@@ -397,17 +417,24 @@ export function DmPage() {
     setAddFolderOpen(false);
   };
 
+  /* The returned promise is the composer's clear signal (AC-5): resolved →
+     this DM channel's stored draft is dropped by key (not whatever composer
+     is open at resolve time), rejected → the text stays. sendDm resolves
+     undefined when nothing was sent (#112: unreadable file or relay error,
+     already toasted) — surface it as a rejection so nothing is cleared. */
   const send = (text: string, p?: WsPick, files?: AttachedFile[]) => {
     const folder = p?.folder
       ? folderRows.find((f) => f.id === p.folder && !f.missing)
       : undefined;
-    void sendDm(employeeId, text, undefined, files, folder?.path).then(
-      (conv) =>
-        conv &&
-        navigate({
+    return sendDm(employeeId, text, undefined, files, folder?.path).then(
+      (conv) => {
+        if (!conv) throw new Error("send failed");
+        clearDraftIfSent(draftKey.dm(employeeId), text);
+        return navigate({
           to: "/dm/$employeeId/$conversationId",
           params: { employeeId, conversationId: conv.id },
-        }),
+        });
+      },
     );
   };
 
@@ -522,8 +549,14 @@ export function DmPage() {
           models={catalog.length ? catalog : undefined}
           onModel={(c) => void setConversationModel(conv.id, c.model)}
           onSend={(text, files) =>
-            void sendDm(employeeId, text, conv.id, files)
+            sendDm(employeeId, text, conv.id, files).then((c) => {
+              if (!c) throw new Error("send failed");
+              clearDraftIfSent(draftKey.thread(conv.id), text);
+              return c;
+            })
           }
+          draft={threadDraft}
+          onDraftChange={setThreadDraft}
           accept={canAttachImages ? "image/*" : undefined}
           maxFileSize={MAX_ATTACHMENT_BYTES}
           maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
@@ -558,6 +591,8 @@ export function DmPage() {
         onProfile={() => setProfileOpen((v) => !v)}
         onOpen={openThread}
         onSend={send}
+        draft={homeDraft}
+        onDraftChange={setHomeDraft}
         accept={canAttachImages ? "image/*" : undefined}
         maxFileSize={MAX_ATTACHMENT_BYTES}
         maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
@@ -598,13 +633,42 @@ export function DmPage() {
           onAdd={onDialogAdd}
         />
       )}
-      {profileOpen && (
+      {profileOpen && !editOpen && (
         <EmployeeProfileCard
           name={uiEmp.name}
           profile={uiEmp.profile}
           model={uiEmp.model}
           instructions={uiEmp.instructions}
+          onEdit={() => {
+            setEditError(null);
+            setEditOpen(true);
+          }}
           onClose={() => setProfileOpen(false)}
+        />
+      )}
+      {editOpen && (
+        <EditEmployeeDialog
+          e={uiEmp}
+          error={editError ?? undefined}
+          onClose={() => setEditOpen(false)}
+          onSave={(name, role) => {
+            void saveEmployee(employee.id, name, role)
+              .then(() => setEditOpen(false))
+              .catch((e) =>
+                setEditError(e instanceof Error ? e.message : String(e)),
+              );
+          }}
+          onRemove={() => {
+            void removeEmployee(employee.id)
+              .then(() => {
+                setEditOpen(false);
+                setProfileOpen(false);
+                void navigate({ to: "/" });
+              })
+              .catch((e) =>
+                setEditError(e instanceof Error ? e.message : String(e)),
+              );
+          }}
         />
       )}
     </div>
@@ -683,12 +747,14 @@ function EmployeeProfileCard({
   profile,
   model,
   instructions,
+  onEdit,
   onClose,
 }: {
   name: string;
   profile: string;
   model: string;
   instructions: string;
+  onEdit: () => void;
   onClose: () => void;
 }) {
   return (
@@ -717,13 +783,22 @@ function EmployeeProfileCard({
             <dd className="min-w-0 flex-1">{instructions || "—"}</dd>
           </div>
         </dl>
-        <button
-          type="button"
-          className="mt-4 w-full rounded-md border px-2 py-1.5 text-sm hover:bg-muted"
-          onClick={onClose}
-        >
-          Close
-        </button>
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            className="flex-1 rounded-md bg-foreground px-2 py-1.5 text-background text-sm"
+            onClick={onEdit}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            className="flex-1 rounded-md border px-2 py-1.5 text-sm hover:bg-muted"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -68,19 +68,29 @@ export async function listAgents(
   return { agents };
 }
 
-/** Throw AGENT_NOT_FOUND when `id` is not a Hermes profile. */
-export async function requireAgent(gw: GatewayLike, id: string): Promise<void> {
+/**
+ * Throw AGENT_NOT_FOUND when `id` is not a Hermes profile; resolve to the
+ * canonical profile id otherwise. Hermes lowercases profile names, so callers
+ * passing a display-style name (`Engineer`) still resolve to `engineer`.
+ */
+export async function requireAgent(
+  gw: GatewayLike,
+  id: string,
+): Promise<string> {
   const { agents } = await listAgents(gw);
-  if (!agents.some((a) => a.id === id))
-    throw new RpcError(RPC_ERRORS.AGENT_NOT_FOUND, `no agent ${id}`);
+  const hit = agents.find(
+    (a) => a.id === id || a.id.toLowerCase() === id.toLowerCase(),
+  );
+  if (!hit) throw new RpcError(RPC_ERRORS.AGENT_NOT_FOUND, `no agent ${id}`);
+  return hit.id;
 }
 
 export async function describeAgent(
   gw: GatewayLike,
   id: string,
 ): Promise<{ agent: AgentDescriptor }> {
-  await requireAgent(gw, id);
-  const r = (await gw.request("profiles.describe", { name: id })) as {
+  const realId = await requireAgent(gw, id);
+  const r = (await gw.request("profiles.describe", { name: realId })) as {
     name?: unknown;
     description?: unknown;
     soul?: unknown;
@@ -93,8 +103,8 @@ export async function describeAgent(
   const model = pinnedModel(r.model);
   return {
     agent: {
-      id,
-      name: str(r.name) ?? id,
+      id: realId,
+      name: str(r.name) ?? realId,
       ...(str(r.description) ? { description: str(r.description) } : {}),
       ...(model ? { model } : {}),
       skillCount: skills,
@@ -112,7 +122,9 @@ export async function createAgent(
   p: AgentsCreateParams,
 ): Promise<{ agent: AgentDescriptor }> {
   const { agents } = await listAgents(gw);
-  if (agents.some((a) => a.id === p.name))
+  // Case-insensitive: Hermes lowercases profile names, so `Engineer` collides
+  // with an existing `engineer` — reject before profiles.create half-applies.
+  if (agents.some((a) => a.id.toLowerCase() === p.name.toLowerCase()))
     throw new RpcError(
       RPC_ERRORS.INVALID_STATE,
       `agent ${p.name} already exists — LilOS never overwrites a profile`,

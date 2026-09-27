@@ -101,7 +101,10 @@ async function bootStack(
   });
   const webUrl = `http://127.0.0.1:${ports.web}`;
   try {
+    // vite answers HTTP before the relay accepts WS — wait for both or the
+    // page hits "WebSocket error before open" under parallel load (#84).
     await waitForHttp(webUrl);
+    await waitForHttp(`http://127.0.0.1:${ports.relay}`);
     return {
       home,
       webUrl,

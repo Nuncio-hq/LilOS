@@ -51,7 +51,10 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
     un();
     void relay
       .listModels()
-      .then((r) => engineModels.set(r.models))
+      .then((r) => {
+        engineModels.set(r.models);
+        engineDefaultModel.set(r.default);
+      })
       .catch(() => {});
   });
 }
@@ -76,6 +79,10 @@ function keepEngineAlive(): void {
 
 /** The engine's selectable-model catalog (`models.list`); empty without the capability. */
 export const engineModels = atom<ModelOption[]>([]);
+
+/** The engine's default model id (`models.list` `default`) — used to resolve
+   a blank template model at hire time; never a LilOS-side default (D-#85). */
+export const engineDefaultModel = atom<string | undefined>(undefined);
 
 const modelCache = new Map<string, ReadableAtom<SessionModel>>();
 

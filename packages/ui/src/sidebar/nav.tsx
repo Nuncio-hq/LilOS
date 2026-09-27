@@ -47,7 +47,11 @@ export function Section({
     <div className="flex items-center px-4 pt-4 pb-1 font-medium text-[11px] text-muted-foreground uppercase tracking-wider">
       {title}
       {onAdd && (
-        <button onClick={onAdd} className="ml-auto hover:text-foreground">
+        <button
+          onClick={onAdd}
+          aria-label={`Add ${title}`}
+          className="ml-auto hover:text-foreground"
+        >
           <PlusIcon className="size-3.5" />
         </button>
       )}
