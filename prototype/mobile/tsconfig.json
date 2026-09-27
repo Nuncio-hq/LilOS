@@ -3,5 +3,5 @@
   "compilerOptions": {
     "strict": true
   },
-  "include": ["src", "index.ts", "uniwind-types.d.ts"]
+  "include": ["src", "index.ts"]
 }
