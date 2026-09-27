@@ -7,6 +7,7 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { Composer } from "../src/chat/composer";
+import { FocusComposer } from "../src/chat/focus-composer";
 
 /* happy-dom does not implement every browser API the vendored components touch. */
 if (typeof globalThis.ResizeObserver === "undefined") {
@@ -94,6 +95,28 @@ describe("issue #130 refused send keeps the draft", () => {
     let release: () => void = () => {};
     const onSend = vi.fn(() => new Promise<void>((res) => (release = res)));
     const r = c(onSend);
+    fireEvent.change(box(r.container), { target: { value: "once" } });
+    fireEvent.submit(formOf(r.container));
+    fireEvent.submit(formOf(r.container));
+    await settle();
+    release();
+    await settle();
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(box(r.container).value).toBe("");
+  });
+
+  test("AC-3c FocusComposer dedupes Enter-Enter while a send is in flight", async () => {
+    let release: () => void = () => {};
+    const onSend = vi.fn(() => new Promise<void>((res) => (release = res)));
+    const r = render(
+      <FocusComposer
+        running={false}
+        status="ready"
+        placeholder="Steer…"
+        hint=""
+        onSend={onSend}
+      />,
+    );
     fireEvent.change(box(r.container), { target: { value: "once" } });
     fireEvent.submit(formOf(r.container));
     fireEvent.submit(formOf(r.container));

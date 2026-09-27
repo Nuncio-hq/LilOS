@@ -232,6 +232,27 @@ async function relayDown(stack: Procs) {
   await new Promise((r) => setTimeout(r, 1_500));
 }
 
+/** Press send again until the kept draft lands: after `restartRelay` the
+   client's socket is still in reconnect backoff, so the first retry can be
+   refused too — it just keeps the draft and we try again (ac-28's loop). */
+async function sendUntil(
+  page: Page,
+  scope: "home" | "thread",
+  sent: () => Promise<boolean>,
+  ms = 60_000,
+) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    if (await sent()) return;
+    if (Date.now() > deadline)
+      throw new Error(`kept draft never sent (${scope} composer)`);
+    await formOf(page, scope).evaluate((f: HTMLFormElement) =>
+      f.requestSubmit(),
+    );
+    await page.waitForTimeout(1_000);
+  }
+}
+
 /** Bare JSON-RPC client — e2e runs under Node without workspace deps. */
 async function rpc(
   home: string,
@@ -306,8 +327,8 @@ test("AC-1 a refused send in the home composer keeps the text and image chips", 
 
   // Relay back: pressing send again posts the kept draft and opens the session.
   await stack.restartRelay();
-  await formOf(page, "home").evaluate((f: HTMLFormElement) =>
-    f.requestSubmit(),
+  await sendUntil(page, "home", async () =>
+    /\/dm\/[^/]+\/[^/]+$/.test(page.url()),
   );
   await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac1-retry-sent.png` });
@@ -347,13 +368,12 @@ test("AC-2 a refused reply in the thread composer keeps the text and image chips
 
   // Retry lands the reply in the thread once the relay is back.
   await stack.restartRelay();
-  await expect(boxOf(page, "thread")).toHaveValue(
-    "reply kept through a refused send",
-    { timeout: 30_000 },
+  await sendUntil(
+    page,
+    "thread",
+    async () => (await boxOf(page, "thread").inputValue()) === "",
   );
-  await formOf(page, "thread").evaluate((f: HTMLFormElement) =>
-    f.requestSubmit(),
-  );
+  await expect(boxOf(page, "thread")).toHaveValue("");
   await expect(
     page.locator("text=reply kept through a refused send").last(),
   ).toBeVisible({ timeout: 30_000 });
