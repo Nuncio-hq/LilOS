@@ -164,6 +164,7 @@ export function EmployeeHome({
   onProfile,
   onOpen,
   onSend,
+  lastSent,
   panelOpen,
   onPanel,
   folders,
@@ -177,6 +178,7 @@ export function EmployeeHome({
   onRetrySession,
   accept,
   maxFileSize,
+  maxFiles,
   onAttachError,
   models,
   modelChoice,
@@ -193,6 +195,9 @@ export function EmployeeHome({
   onProfile: () => void;
   onOpen: (id: string) => void;
   onSend: (t: string, pick?: WsPick, files?: AttachedFile[]) => void;
+  /* ↑ recall for the new-session composer: the last top-level message sent in
+     this DM (issue #104 AC-5). */
+  lastSent?: string;
   panelOpen: boolean;
   onPanel: () => void;
   folders: Folder[];
@@ -208,8 +213,9 @@ export function EmployeeHome({
   onRetrySession?: (root: Extract<Msg, { kind: "msg" }>) => void;
   /* Composer attachment types the host accepts; absent = no attach UI. */
   accept?: string;
-  /* Attachment byte cap + where rejections surface (issue #31). */
+  /* Attachment byte cap + count cap + where rejections surface (issue #31). */
   maxFileSize?: number;
+  maxFiles?: number;
   onAttachError?: (message: string) => void;
   /* Model for the NEW session: starts at the employee's default (never the last
      session's pick). No onModel → no picker (D-#19). */
@@ -485,8 +491,10 @@ export function EmployeeHome({
         employees={[]}
         hint={wsHint(pickFolder, pick, !onWorktree)}
         onSend={(t, files) => onSend(t, pick, files)}
+        lastSent={lastSent}
         accept={accept}
         maxFileSize={maxFileSize}
+        maxFiles={maxFiles}
         onAttachError={onAttachError}
         queued={
           composerNote ? (

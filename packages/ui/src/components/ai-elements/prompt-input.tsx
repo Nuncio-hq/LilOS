@@ -502,6 +502,9 @@ export const PromptInput = ({
 
   const addLocal = useCallback(
     (fileList: File[] | FileList) => {
+      // No `accept` means the host never enabled attachments — nothing renders
+      // the chips, so a dropped/pasted file would ship invisibly (D-#19).
+      if (!accept || accept.trim() === "") return;
       const incoming = Array.from(fileList);
       const accepted = incoming.filter((f) => matchesAccept(f));
       if (incoming.length && accepted.length === 0) {
@@ -556,7 +559,7 @@ export const PromptInput = ({
         return prev.concat(next);
       });
     },
-    [matchesAccept, maxFiles, maxFileSize, onError]
+    [accept, matchesAccept, maxFiles, maxFileSize, onError]
   );
 
   const removeLocal = useCallback(
@@ -816,6 +819,7 @@ export type PromptInputTextareaProps = ComponentProps<
 
 export const PromptInputTextarea = ({
   onChange,
+  onKeyDown,
   className,
   placeholder = "What would you like to know?",
   ...props
@@ -825,6 +829,12 @@ export const PromptInputTextarea = ({
   const [isComposing, setIsComposing] = useState(false);
 
   const handleKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
+    // A caller's onKeyDown composes with (never replaces) the built-in Enter /
+    // Backspace handling; preventDefault there skips the rest here.
+    onKeyDown?.(e);
+    if (e.defaultPrevented) {
+      return;
+    }
     if (e.key === "Enter") {
       if (isComposing || e.nativeEvent.isComposing) {
         return;

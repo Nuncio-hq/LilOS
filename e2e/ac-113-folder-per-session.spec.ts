@@ -218,6 +218,36 @@ test("AC-2 the composer shows the folder picker; Add folder browses real dirs on
   await expect(pickerButton(page)).toContainText("lilos-repo-a");
 });
 
+test("DM open never scans the disk — git.discoverRepos runs only on Add folder", async ({
+  page,
+}) => {
+  const hostCalls: string[] = [];
+  page.on("request", (r) => {
+    if (!r.url().endsWith("/host")) return;
+    try {
+      const m = (JSON.parse(r.postData() ?? "{}") as { method?: string })
+        .method;
+      if (m) hostCalls.push(m);
+    } catch {
+      /* OPTIONS preflight carries no JSON body */
+    }
+  });
+  await dmDefault(page);
+  // Recents probes (fs.list/git.branches on the stored folders) DO hit
+  // /host at mount — wait for one so "no discoverRepos" isn't vacuous.
+  await expect
+    .poll(() => hostCalls.length, { timeout: 15_000 })
+    .toBeGreaterThan(0);
+  expect(hostCalls).not.toContain("git.discoverRepos");
+  // …and it does fire when the web Add-folder dialog opens.
+  const menu = await openPicker(page);
+  await menu.getByText("Add a folder").click();
+  await expect(page.locator("[data-addfolder]")).toBeVisible();
+  await expect
+    .poll(() => hostCalls.includes("git.discoverRepos"), { timeout: 15_000 })
+    .toBe(true);
+});
+
 test("AC-3 the picker offers direct mode only (no worktree items)", async ({
   page,
 }) => {

@@ -69,15 +69,16 @@ open "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
 
 - The macOS accessibility target does not match the app by name — use the
   **pid**: `pgrep -x LilOS`, then pass it as `app` in query/act calls.
-  Electron web content (buttons, menus, text) is exposed in the app's tree.
+  Re-resolve the pid after every (re)launch — it changes and stale pids
+  return "did not answer accessibility requests". Electron web content
+  (buttons, menus, text) is exposed in the app's tree.
 - AX `press` on web dropdown chips (Base UI menus) often does NOT open the
   menu — use real `left_click` at the control's screen coordinates instead;
   verify with a screenshot.
-- First DM open on a fresh state triggers macOS TCC prompts ("LilOS would
-  like to access files in your Desktop/Documents folder") because the host
-  API's `git.discoverRepos` scans ~/Desktop, ~/Developer, ~/Documents,
-  ~/repos. Click **Allow** on each — expected behavior, and good evidence
-  the host API is really scanning local dirs.
+- `git.discoverRepos` is lazy since #113: it only runs when the web
+  Add-folder dialog opens, never on DM mount — and the desktop app uses the
+  native panel, so a packaged-app run should NOT see any TCC folder-access
+  prompts at all. If one appears, DM open is scanning the disk — a bug.
 - The native folder dialog (Electron `dialog.showOpenDialog`) is a real
   NSOpenPanel: `key cmd+shift+g` opens "Go to Folder", `type` the absolute
   path, `Return` selects it in its parent listing, then click the **Open**

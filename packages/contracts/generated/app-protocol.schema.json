@@ -1390,8 +1390,7 @@
           "minLength": 1
         },
         "text": {
-          "type": "string",
-          "minLength": 1
+          "type": "string"
         },
         "title": {
           "default": "",
