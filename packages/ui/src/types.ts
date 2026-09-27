@@ -81,6 +81,9 @@ export type Reply = {
   time: string;
   /** Model that produced this turn (engine `turn.started.model`). */
   model?: string;
+  /** Reasoning effort / fast mode the turn ran with, when the engine reports them. */
+  effort?: string;
+  fast?: boolean;
   text: string;
   steps?: Step[];
   streaming?: string;
@@ -156,6 +159,10 @@ export type Thread = {
   todos?: Todo[];
   queue?: string[];
   model?: string;
+  /* The rest of the session's pick (model provider, effort, fast) — next turn uses it. */
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
   pr?: PullRequest;
   ws?: Workspace;
 };
@@ -284,8 +291,48 @@ export type HumanFn = (id: string) => Human | undefined;
 export type Theme = "light" | "dark" | "system";
 
 /* One selectable model, as the engine reports it via `models.list` (issue #30):
-   the picker groups rows by `provider`; `name` is the friendlier label when present. */
-export type ModelOption = { id: string; name?: string; provider?: string };
+   the picker groups rows by `provider`; `name` is the friendlier label when present.
+   `provider` is set only by multi-provider harnesses (Hermes); single-vendor engines
+   (Codex, Claude Code) leave it unset — the pick is never a "provider/model" string.
+   `efforts` is the engine's ordered (low → high) list for THIS model; absent = no
+   reasoning control. When an engine can't say per model, its adapter passes its full
+   ladder (Hermes behaviour) — the UI never probes or guesses. `fast` = the model has a
+   fast/priority tier (billing is the harness's concern). */
+export type ModelOption = {
+  id: string;
+  name?: string;
+  provider?: string;
+  efforts?: string[];
+  defaultEffort?: string;
+  fast?: boolean;
+};
+
+/* A provider's display row (multi-provider engines only). `logo` is a
+   models.dev slug when the engine knows the vendor (e.g. "anthropic"). */
+export type ModelProvider = { id: string; name: string; logo?: string };
+
+/* What the picker reports: model (+ its provider when the engine has several),
+   reasoning effort and fast mode. Applies from the next turn. */
+export type ModelChoice = {
+  model: string;
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
+};
+
+/* Models the user hid from the picker — one list for every employee, owned by
+   the app (Hermes keeps no such setting). Hidden providers hide their future
+   models too; a model new since the last edit is visible by default. */
+export type ModelVisibility = { providers: string[]; models: string[] };
+
+/* Optional picker extras; each control renders only when its handler is passed (D-#19). */
+export type ModelPickerExtras = {
+  providers?: ModelProvider[];
+  visibility?: ModelVisibility;
+  onVisibility?: (v: ModelVisibility) => void;
+  /* Engine caches its catalog (Hermes): re-fetch it. */
+  onRefresh?: () => Promise<void>;
+};
 
 /* Workbench tab ids (Focus). */
 export type WbTab = "changes" | "files" | "terminal" | "preview" | "pr";

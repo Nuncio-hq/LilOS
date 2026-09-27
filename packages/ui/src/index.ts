@@ -6,7 +6,19 @@
 // shared agent-chat pieces (steer rows, not-sent tray, composer running state)
 export * from "./chat/agent-chat";
 export { Composer } from "./chat/composer";
-export { FocusComposer, ModelLogo, ModelPicker } from "./chat/model-picker";
+export { FocusComposer } from "./chat/focus-composer";
+export {
+  choiceFor,
+  defaultEffort,
+  effortLabel,
+  ModelLogo,
+  ModelPicker,
+  sessionChoice,
+} from "./chat/model-picker";
+export {
+  isHidden,
+  ModelVisibilityDialog,
+} from "./chat/model-visibility-dialog";
 // conversation (shared by the thread panel and Focus — issue #19)
 export { ReplyCards } from "./conversation/cards";
 export {

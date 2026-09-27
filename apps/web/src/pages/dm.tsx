@@ -347,7 +347,7 @@ export function DmPage() {
           steer={steer}
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}
-          onModel={(m) => void setConversationModel(conv.id, m)}
+          onModel={(c) => void setConversationModel(conv.id, c.model)}
           onSend={(text) => void sendDm(employeeId, text, conv.id)}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           onFocus={undefined}

@@ -1,37 +1,41 @@
-import type { ChatStatus } from "ai";
 import {
   CheckIcon,
   ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   CpuIcon,
-  PaperclipIcon,
-  SquareIcon,
+  EyeIcon,
+  Loader2Icon,
+  RefreshCwIcon,
+  ZapIcon,
 } from "lucide-react";
 import { useState } from "react";
+import { ModelSelectorLogo } from "../components/ai-elements/model-selector";
+import { PromptInputButton } from "../components/ai-elements/prompt-input";
 import {
-  ModelSelector,
-  ModelSelectorContent,
-  ModelSelectorEmpty,
-  ModelSelectorGroup,
-  ModelSelectorInput,
-  ModelSelectorItem,
-  ModelSelectorList,
-  ModelSelectorLogo,
-  ModelSelectorName,
-  ModelSelectorTrigger,
-} from "../components/ai-elements/model-selector";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "../components/ui/command";
 import {
-  PromptInput,
-  PromptInputAttachment,
-  PromptInputAttachments,
-  PromptInputBody,
-  PromptInputButton,
-  PromptInputFooter,
-  PromptInputSubmit,
-  PromptInputTextarea,
-  PromptInputTools,
-  usePromptInputAttachments,
-} from "../components/ai-elements/prompt-input";
-import type { AttachedFile, ModelOption } from "../types";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "../components/ui/popover";
+import { cn } from "../lib/utils";
+import type {
+  ModelChoice,
+  ModelOption,
+  ModelPickerExtras,
+  ModelProvider,
+  Thread,
+} from "../types";
+import { EffortSlider } from "./effort-slider";
+import { isHidden, ModelVisibilityDialog } from "./model-visibility-dialog";
 
 /* Provider slugs we render the models.dev logo for; anything else gets the
    generic chip — never a broken image. */
@@ -60,7 +64,8 @@ const LOGO_PROVIDERS = new Set([
 ]);
 
 /* Provider slug → display name for the group headings: the models.dev names
-   where the slug matches a logo, a title-cased slug otherwise. */
+   where the slug matches a logo, a title-cased slug otherwise. An engine that
+   names its providers (Hermes: "Anthropic – CLIProxyAPI") wins over both. */
 const PROVIDER_NAMES: Record<string, string> = {
   alibaba: "Alibaba",
   amazon: "Amazon",
@@ -86,194 +91,362 @@ const PROVIDER_NAMES: Record<string, string> = {
   zai: "Z.ai",
 };
 
-export function providerName(slug: string): string {
+export function providerName(slug: string, providers?: ModelProvider[]) {
   return (
+    providers?.find((p) => p.id === slug)?.name ??
     PROVIDER_NAMES[slug] ??
     slug.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
   );
 }
 
-export function ModelLogo({ provider }: { provider?: string }) {
-  return provider && LOGO_PROVIDERS.has(provider) ? (
-    <ModelSelectorLogo provider={provider} className="size-3.5" />
+export function ModelLogo({
+  provider,
+  logo,
+}: {
+  provider?: string;
+  logo?: string;
+}) {
+  const slug = logo ?? provider;
+  return slug && LOGO_PROVIDERS.has(slug) ? (
+    <ModelSelectorLogo
+      provider={slug as "openai"}
+      className="size-3.5 dark:invert"
+    />
   ) : (
     <CpuIcon className="size-3.5 text-muted-foreground" />
   );
 }
 
-// Model pick applies from the next turn (issue #30). The list is what the
-// engine reported via `models.list`, grouped by provider — the app passes it in
-// (no hardcoded catalog).
+/* Engine effort ids are kept verbatim; only the label is friendlier. */
+const EFFORT_LABELS: Record<string, string> = {
+  none: "None",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+  ultra: "Ultra",
+};
+export const effortLabel = (e: string) =>
+  EFFORT_LABELS[e] ?? e.charAt(0).toUpperCase() + e.slice(1);
+
+/* The model's starting effort: its default, else the middle of its ladder. */
+export function defaultEffort(m?: ModelOption): string | undefined {
+  if (!m?.efforts?.length) return undefined;
+  if (m.defaultEffort && m.efforts.includes(m.defaultEffort))
+    return m.defaultEffort;
+  return m.efforts[Math.floor((m.efforts.length - 1) / 2)];
+}
+
+/* The session's pick for an employee default: model + its default effort, fast off. */
+export function choiceFor(model: string, models: ModelOption[]): ModelChoice {
+  const m = models.find((x) => x.id === model);
+  return { model, provider: m?.provider, effort: defaultEffort(m) };
+}
+
+/* A session's current pick: what the session pinned, else the employee's
+   default model with that model's default effort (never last session's pick). */
+export function sessionChoice(
+  t: Pick<Thread, "model" | "provider" | "effort" | "fast">,
+  employeeModel: string | undefined,
+  models: ModelOption[],
+): ModelChoice {
+  if (t.model)
+    return {
+      model: t.model,
+      provider: t.provider,
+      effort: t.effort ?? defaultEffort(findModel(models, t as ModelChoice)),
+      fast: t.fast,
+    };
+  return choiceFor(employeeModel ?? models[0]?.id ?? "", models);
+}
+
+function findModel(models: ModelOption[], c: ModelChoice) {
+  return models.find(
+    (m) =>
+      m.id === c.model &&
+      (c.provider === undefined || m.provider === c.provider),
+  );
+}
+
+/* Codex-style picker (issue: model picker v2): one popover holding the
+   reasoning-effort slider, the fast toggle and a "Model ›" row that opens the
+   searchable model list. Everything applies from the next turn. The slider has
+   exactly the steps the engine reported for THIS model; a model without
+   `efforts` gets no slider. Refresh / Edit models render only with handlers. */
 export function ModelPicker({
-  model,
+  value,
   models,
-  onModel,
+  onChoice,
+  providers,
+  visibility,
+  onVisibility,
+  onRefresh,
 }: {
-  model: string;
+  value: ModelChoice;
   models: ModelOption[];
-  onModel: (m: string) => void;
-}) {
+  onChoice: (c: ModelChoice) => void;
+} & ModelPickerExtras) {
   const [open, setOpen] = useState(false);
-  const selected = models.find((m) => m.id === model);
+  const [view, setView] = useState<"main" | "models">("main");
+  const [editing, setEditing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const cur = findModel(models, value);
+  const efforts = cur?.efforts ?? [];
+  const effort =
+    value.effort && efforts.includes(value.effort)
+      ? value.effort
+      : defaultEffort(cur);
+  const idx = effort ? efforts.indexOf(effort) : -1;
+  const fast = !!(cur?.fast && value.fast);
+  const pName = (p: string) => providerName(p, providers);
+  const logoOf = (p?: string) => providers?.find((x) => x.id === p)?.logo;
+
+  const shown = models.filter((m) => !isHidden(m, visibility) || m === cur);
   const groups = new Map<string, ModelOption[]>();
-  for (const m of models) {
-    const provider = m.provider ?? "";
-    groups.set(provider, [...(groups.get(provider) ?? []), m]);
+  for (const p of providers ?? []) groups.set(p.id, []);
+  for (const m of shown) {
+    const p = m.provider ?? "";
+    groups.set(p, [...(groups.get(p) ?? []), m]);
   }
-  return (
-    <ModelSelector open={open} onOpenChange={setOpen}>
-      <ModelSelectorTrigger
-        render={<PromptInputButton size="sm" className="gap-1.5 text-xs" />}
-      >
-        <ModelLogo provider={selected?.provider} />
-        <span className="max-w-36 truncate">{selected?.name ?? model}</span>
-        <ChevronDownIcon className="size-3" />
-      </ModelSelectorTrigger>
-      <ModelSelectorContent title="Model for the next turn">
-        <ModelSelectorInput placeholder="Search models…" />
-        <ModelSelectorList>
-          <ModelSelectorEmpty>No model found.</ModelSelectorEmpty>
-          {[...groups.entries()].map(([provider, items]) => (
-            <ModelSelectorGroup
-              key={provider || "other"}
-              heading={provider ? providerName(provider) : "Other"}
-            >
-              {items.map((m) => (
-                <ModelSelectorItem
-                  key={m.id}
-                  value={m.id}
-                  keywords={[m.id, m.name ?? "", m.provider ?? ""]}
-                  onSelect={() => {
-                    onModel(m.id);
-                    setOpen(false);
-                  }}
-                >
-                  <ModelLogo provider={m.provider} />
-                  <ModelSelectorName>{m.name ?? m.id}</ModelSelectorName>
-                  {m.id === model && <CheckIcon className="ml-auto size-4" />}
-                </ModelSelectorItem>
-              ))}
-            </ModelSelectorGroup>
-          ))}
-        </ModelSelectorList>
-      </ModelSelectorContent>
-    </ModelSelector>
-  );
-}
 
-/* Same attach UX as the main composer: the paperclip opens PromptInput's file dialog. */
-function FocusAttachButton() {
-  const attachments = usePromptInputAttachments();
-  return (
-    <PromptInputButton
-      onClick={attachments.openFileDialog}
-      aria-label="Attach files"
-    >
-      <PaperclipIcon />
-    </PromptInputButton>
-  );
-}
+  const pickModel = (m: ModelOption) => {
+    const keep = effort && m.efforts?.includes(effort);
+    onChoice({
+      model: m.id,
+      provider: m.provider,
+      effort: keep ? effort : defaultEffort(m),
+      fast: m.fast ? value.fast : undefined,
+    });
+    setView("main");
+  };
+  const refresh = async () => {
+    if (!onRefresh || refreshing) return;
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
-export function FocusComposer({
-  running,
-  status,
-  placeholder,
-  hint,
-  model,
-  models,
-  onModel,
-  onSend,
-  onStop,
-  accept,
-  maxFileSize,
-  onAttachError,
-}: {
-  running: boolean;
-  status: ChatStatus;
-  placeholder: string;
-  hint: string;
-  model?: string;
-  models?: ModelOption[];
-  /* No onModel → no model picker: the control needs its handler (issue #19). */
-  onModel?: (m: string) => void;
-  onSend: (t: string, files?: AttachedFile[]) => void;
-  onStop?: () => void;
-  /* Same contract as Composer: no accept, no attach control. */
-  accept?: string;
-  /* Attachment byte cap before send (#31) — the relay stays authoritative. */
-  maxFileSize?: number;
-  /* Rejected attachments surface through this; without it the error is silent. */
-  onAttachError?: (message: string) => void;
-}) {
-  const [draft, setDraft] = useState("");
   return (
-    // While the employee works, Enter steers the turn (session.steer — the default and only behavior;
-    // the running-state placeholder/hint come from the shared runningComposer in agent-chat.tsx).
-    <div>
-      <PromptInput
-        accept={accept}
-        multiple
-        maxFileSize={maxFileSize}
-        onError={
-          onAttachError ? (err) => onAttachError(err.message) : undefined
-        }
-        onSubmit={({ text, files }) => {
-          const t = text.trim() || draft.trim();
-          if (!t && files.length === 0) return;
-          onSend(
-            t,
-            files.map((f) => ({
-              name: f.filename ?? "attachment",
-              mediaType: f.mediaType ?? "",
-              url: f.url,
-            })),
-          );
-          setDraft("");
+    <>
+      <Popover
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o);
+          if (!o) setView("main");
         }}
       >
-        {accept && (
-          <PromptInputAttachments className="px-3 pt-3 pb-0">
-            {(file) => <PromptInputAttachment data={file} />}
-          </PromptInputAttachments>
-        )}
-        <PromptInputBody>
-          <PromptInputTextarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder={placeholder}
-            className="min-h-14"
-          />
-        </PromptInputBody>
-        <PromptInputFooter>
-          <PromptInputTools className="min-w-0">
-            {accept && <FocusAttachButton />}
-            {onModel && models?.length ? (
-              <ModelPicker
-                model={model ?? models[0].id}
-                models={models}
-                onModel={onModel}
-              />
-            ) : null}
-            <span className="hidden truncate text-muted-foreground text-xs md:inline">
-              {hint}
+        <PopoverTrigger
+          render={
+            <PromptInputButton
+              size="sm"
+              className="min-w-0 shrink gap-1.5 text-xs"
+              data-slot="model-picker-trigger"
+            />
+          }
+        >
+          <ModelLogo provider={cur?.provider} logo={logoOf(cur?.provider)} />
+          <span className="max-w-36 truncate">{cur?.name ?? value.model}</span>
+          {effort && (
+            <span className="text-muted-foreground">
+              · {effortLabel(effort)}
             </span>
-          </PromptInputTools>
-          <div className="flex shrink-0 items-center gap-1">
-            {running && !draft.trim() && onStop ? (
-              <PromptInputSubmit
-                status={status}
+          )}
+          {fast && (
+            <ZapIcon
+              aria-label="Fast"
+              className="size-3 fill-amber-400 text-amber-500"
+            />
+          )}
+          <ChevronDownIcon className="size-3" />
+        </PopoverTrigger>
+        <PopoverContent
+          side="top"
+          align="start"
+          className="w-80 gap-0 p-0"
+          aria-label="Model and reasoning"
+        >
+          {view === "main" ? (
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2 px-3 pt-3">
+                {cur?.fast ? (
+                  <button
+                    type="button"
+                    aria-label="Fast mode"
+                    aria-pressed={fast}
+                    title={fast ? "Fast mode on" : "Fast mode off"}
+                    onClick={() => onChoice({ ...value, effort, fast: !fast })}
+                    className={cn(
+                      "grid size-7 place-items-center rounded-md hover:bg-muted",
+                      fast ? "text-amber-500" : "text-muted-foreground",
+                    )}
+                  >
+                    <ZapIcon className={cn("size-4", fast && "fill-current")} />
+                  </button>
+                ) : (
+                  <span className="size-7" />
+                )}
+                <div className="min-w-0 flex-1 text-center">
+                  <div className="text-[11px] text-muted-foreground">
+                    Reasoning
+                  </div>
+                  <div
+                    key={effort ?? "none"}
+                    className={cn(
+                      "truncate",
+                      effort
+                        ? "fade-in slide-in-from-bottom-1 animate-in bg-linear-to-r from-indigo-500 via-violet-500 to-fuchsia-500 bg-clip-text font-medium text-base text-transparent duration-300 motion-reduce:animate-none"
+                        : "text-muted-foreground text-sm",
+                    )}
+                  >
+                    {effort ? effortLabel(effort) : "Not adjustable"}
+                  </div>
+                </div>
+                <span className="size-7" />
+              </div>
+              {efforts.length > 1 ? (
+                <div className="px-4 pt-3 pb-3">
+                  <EffortSlider
+                    efforts={efforts}
+                    index={idx}
+                    label={effortLabel}
+                    onPick={(e) => onChoice({ ...value, effort: e, fast })}
+                  />
+                </div>
+              ) : (
+                <p className="px-4 pt-1 pb-3 text-center text-muted-foreground text-xs">
+                  {efforts.length === 1
+                    ? "This model has one reasoning level."
+                    : "This model has no reasoning control."}
+                </p>
+              )}
+              <button
                 type="button"
-                onClick={onStop}
-                aria-label="Stop"
+                onClick={() => setView("models")}
+                className="flex items-center gap-2 border-t px-3 py-2.5 text-left hover:bg-muted"
               >
-                <SquareIcon className="size-3.5 fill-current" />
-              </PromptInputSubmit>
-            ) : (
-              <PromptInputSubmit disabled={!draft.trim()} />
-            )}
-          </div>
-        </PromptInputFooter>
-      </PromptInput>
-    </div>
+                <ModelLogo
+                  provider={cur?.provider}
+                  logo={logoOf(cur?.provider)}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm">
+                    {cur?.name ?? value.model}
+                  </span>
+                  {cur?.provider && (
+                    <span className="block truncate text-muted-foreground text-xs">
+                      {pName(cur.provider)}
+                    </span>
+                  )}
+                </span>
+                <span className="text-muted-foreground text-xs">Model</span>
+                <ChevronRightIcon className="size-4 text-muted-foreground" />
+              </button>
+            </div>
+          ) : (
+            <Command className="rounded-lg!">
+              <div className="flex items-center gap-1 pl-1">
+                <button
+                  type="button"
+                  aria-label="Back"
+                  onClick={() => setView("main")}
+                  className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted"
+                >
+                  <ChevronLeftIcon className="size-4" />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <CommandInput autoFocus placeholder="Search models…" />
+                </div>
+              </div>
+              <CommandList className="max-h-80">
+                <CommandEmpty>No model found.</CommandEmpty>
+                {[...groups.entries()].map(([p, items]) =>
+                  items.length ? (
+                    <CommandGroup
+                      key={p || "other"}
+                      heading={p ? pName(p) : "Other"}
+                    >
+                      {items.map((m) => {
+                        const on = m === cur;
+                        return (
+                          <CommandItem
+                            key={`${m.provider ?? ""}::${m.id}`}
+                            value={`${m.provider ?? ""}::${m.id}`}
+                            keywords={[m.id, m.name ?? "", p ? pName(p) : ""]}
+                            data-checked={on}
+                            onSelect={() => pickModel(m)}
+                          >
+                            <ModelLogo provider={m.provider} logo={logoOf(p)} />
+                            <span className="min-w-0 flex-1 truncate">
+                              {m.name ?? m.id}
+                            </span>
+                            {m.fast && (
+                              <ZapIcon
+                                aria-label="Has fast mode"
+                                className="size-3 text-muted-foreground"
+                              />
+                            )}
+                            {on && <CheckIcon className="sr-only" />}
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  ) : null,
+                )}
+                {(onRefresh || onVisibility) && (
+                  <>
+                    <CommandSeparator />
+                    <CommandGroup>
+                      {onRefresh && (
+                        <CommandItem
+                          value="__refresh"
+                          disabled={refreshing}
+                          onSelect={() => void refresh()}
+                        >
+                          {refreshing ? (
+                            <Loader2Icon className="animate-spin" />
+                          ) : (
+                            <RefreshCwIcon />
+                          )}
+                          {refreshing ? "Refreshing…" : "Refresh models"}
+                        </CommandItem>
+                      )}
+                      {onVisibility && (
+                        <CommandItem
+                          value="__edit"
+                          onSelect={() => {
+                            setOpen(false);
+                            setView("main");
+                            setEditing(true);
+                          }}
+                        >
+                          <EyeIcon />
+                          Edit models…
+                        </CommandItem>
+                      )}
+                    </CommandGroup>
+                  </>
+                )}
+              </CommandList>
+            </Command>
+          )}
+        </PopoverContent>
+      </Popover>
+      {onVisibility && (
+        <ModelVisibilityDialog
+          open={editing}
+          onOpenChange={setEditing}
+          models={models}
+          providers={providers}
+          providerLabel={pName}
+          visibility={visibility ?? { providers: [], models: [] }}
+          onVisibility={onVisibility}
+        />
+      )}
+    </>
   );
 }

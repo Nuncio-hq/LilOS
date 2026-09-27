@@ -25,7 +25,8 @@ import {
   QueuedTray,
   runningComposer,
 } from "../chat/agent-chat";
-import { FocusComposer } from "../chat/model-picker";
+import { FocusComposer } from "../chat/focus-composer";
+import { sessionChoice } from "../chat/model-picker";
 import {
   Checkpoint,
   CheckpointIcon,
@@ -61,7 +62,9 @@ import type {
   HostAccessors,
   HumanFn,
   MergeMethod,
+  ModelChoice,
   ModelOption,
+  ModelPickerExtras,
   Msg,
   Project,
   Thread,
@@ -95,6 +98,7 @@ export function FocusView({
   onSendQueued,
   onRewind,
   onModel,
+  picker,
   accept,
   maxFileSize,
   onAttachError,
@@ -129,7 +133,9 @@ export function FocusView({
   onUnqueue?: (i: number) => void;
   onSendQueued?: (i: number) => void;
   onRewind?: (replyIndex: number) => void;
-  onModel?: (m: string) => void;
+  onModel?: (c: ModelChoice) => void;
+  /* Refresh / Edit models… / provider names — each renders only with its handler. */
+  picker?: ModelPickerExtras;
   say?: (t: string) => void;
   models?: ModelOption[];
   repoFiles?: string[];
@@ -521,9 +527,14 @@ export function FocusView({
             <FocusComposer
               running={running}
               status={status}
-              model={model}
+              choice={
+                models?.length
+                  ? sessionChoice(thread, lead?.model, models)
+                  : undefined
+              }
               models={models}
               onModel={onModel}
+              picker={picker}
               onStop={onStop}
               placeholder={
                 // Terminal takeover (issue #69 AC-2): while the human holds
