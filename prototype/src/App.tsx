@@ -954,6 +954,7 @@ export default function App() {
       <Sidebar
         navOpen={navOpen}
         hiddenWhenClosed={focus && !!openThread?.thread}
+        me={HUMANS.oscar}
         companyChannels={COMPANY_CHANNELS}
         projects={[...PROJECTS, ...newProjects]}
         folders={folders}

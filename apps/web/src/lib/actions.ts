@@ -1,10 +1,10 @@
 import type { AppChannel, Conversation } from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
 import { atom } from "nanostores";
+import { USER_ID } from "./me";
 import { engine, relay } from "./runtime";
 
-/** The app's only author (single-user build): "user" per the app protocol. */
-export const USER_ID = "user";
+export { USER_ID };
 
 /** conversationId -> true while the first engine attach is in flight. */
 export const pendingStart = atom<Record<string, boolean>>({});

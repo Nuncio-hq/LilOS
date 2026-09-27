@@ -253,8 +253,19 @@ export function AgentTurn({
       {r.live && r.phase === "submitted" && (
         <Shimmer className="text-[15px]">Opening Hermes session…</Shimmer>
       )}
-      {r.streaming ? (
-        <Shimmer>{r.streaming}</Shimmer>
+      {/* Mid-stream text rides the same MessageResponse path as the finished
+          reply — streamdown's incomplete-markdown pass closes dangling
+          backticks/list markers as chunks land (issue #80, AC-2). */}
+      {r.streaming !== undefined ? (
+        <MessageContent className="w-full" data-streaming>
+          <MessageResponse
+            caret="block"
+            className="lilos-prose break-words"
+            isAnimating
+          >
+            {r.streaming}
+          </MessageResponse>
+        </MessageContent>
       ) : r.text ? (
         <MessageContent className="w-full">
           <MessageResponse className="lilos-prose break-words">

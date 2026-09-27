@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import { employeeBadges } from "./lib/badges";
 import { useAtom } from "./lib/hooks";
 import { toUiEmployee } from "./lib/mapping";
+import { ME } from "./lib/me";
 import {
   openConversationFromPath,
   routeForConversation,
@@ -152,6 +153,7 @@ function AppShell() {
         realApp
         navOpen={nav}
         hiddenWhenClosed={false}
+        me={ME}
         companyChannels={[]}
         projects={[]}
         folders={[]}
