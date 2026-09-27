@@ -164,6 +164,7 @@ export function EmployeeHome({
   onProfile,
   onOpen,
   onSend,
+  lastSent,
   panelOpen,
   onPanel,
   folders,
@@ -204,6 +205,9 @@ export function EmployeeHome({
      composer keeps its own state. */
   draft?: string;
   onDraftChange?: (v: string) => void;
+  /* ↑ recall for the new-session composer: the last top-level message sent in
+     this DM (issue #104 AC-5). */
+  lastSent?: string;
   panelOpen: boolean;
   onPanel: () => void;
   folders: Folder[];
@@ -492,6 +496,7 @@ export function EmployeeHome({
         onSend={(t, files) => onSend(t, pick, files)}
         draft={composerDraft}
         onDraftChange={onDraftChange}
+        lastSent={lastSent}
         accept={accept}
         maxFileSize={maxFileSize}
         onAttachError={onAttachError}

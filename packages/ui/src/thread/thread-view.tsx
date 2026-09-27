@@ -50,6 +50,7 @@ export function ThreadView({
   running,
   onSend,
   onStop,
+  lastSent,
   onRetry,
   onUnqueue,
   onSendQueued,
@@ -86,6 +87,9 @@ export function ThreadView({
      composer keeps its own state. */
   draft?: string;
   onDraftChange?: (v: string) => void;
+  /* ↑ recall for the thread composer: the host's last sent message in this
+     conversation (issue #104 AC-5). */
+  lastSent?: string;
   /* Engine-reported models + pick handler (issue #30); no onModel → no picker (D-#19). */
   models?: ModelOption[];
   onModel?: (c: ModelChoice) => void;
@@ -310,6 +314,7 @@ export function ThreadView({
         draft={draft}
         onDraftChange={onDraftChange}
         status={status}
+        lastSent={lastSent}
         accept={accept}
         maxFileSize={maxFileSize}
         onAttachError={onAttachError}

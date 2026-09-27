@@ -47,6 +47,14 @@ export function dropDrafts(keys: Iterable<string>): void {
   for (const key of keys) clearDraft(key);
 }
 
+/** Clear `key`'s stored draft after a send resolves — but only while it
+ *  still holds the sent text, so text typed during a slow send survives, and
+ *  a switch mid-send clears the *sent* conversation's draft, not whichever
+ *  conversation is open at resolve time (AC-5). */
+export function clearDraftIfSent(key: string, sent: string): void {
+  if (getDraft(key).trim() === sent.trim()) clearDraft(key);
+}
+
 /**
  * The [draft, setDraft] pair a host hands to a composer's `draft` /
  * `onDraftChange` props. Reads the stored draft once per key; when `key`

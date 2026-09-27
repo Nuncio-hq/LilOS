@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { Composer } from "../src/chat/composer";
 import {
   clearDraft,
+  clearDraftIfSent,
   draftKey,
   dropDrafts,
   getDraft,
@@ -41,6 +42,22 @@ describe("draft store", () => {
     clearDraft(draftKey.thread("conv-a"));
     expect(getDraft(draftKey.thread("conv-a"))).toBe("");
     expect(getDraft(draftKey.thread("conv-b"))).toBe("b");
+  });
+
+  test("AC-5 clearDraftIfSent drops the sent draft by key — not the open one, not mid-send typing", () => {
+    /* Send resolves after switching: A's draft (still the sent text) goes,
+       B's untouched. */
+    setDraft(draftKey.thread("conv-a"), "sent from A");
+    setDraft(draftKey.thread("conv-b"), "draft for B");
+    clearDraftIfSent(draftKey.thread("conv-a"), "sent from A");
+    expect(getDraft(draftKey.thread("conv-a"))).toBe("");
+    expect(getDraft(draftKey.thread("conv-b"))).toBe("draft for B");
+    /* Text typed during the flight isn't part of the send — keep it. */
+    setDraft(draftKey.thread("conv-a"), "sent from A + more typing");
+    clearDraftIfSent(draftKey.thread("conv-a"), "sent from A");
+    expect(getDraft(draftKey.thread("conv-a"))).toBe(
+      "sent from A + more typing",
+    );
   });
 
   test("AC-6 writing empty text removes the entry; dropDrafts prunes a set", () => {

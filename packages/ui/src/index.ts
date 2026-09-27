@@ -55,6 +55,7 @@ export { SessionUsage } from "./focus/session-usage";
 // per-conversation composer drafts (issue #103)
 export {
   clearDraft,
+  clearDraftIfSent,
   draftKey,
   dropDrafts,
   getDraft,
