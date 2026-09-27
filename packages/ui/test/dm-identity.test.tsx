@@ -24,6 +24,9 @@ if (typeof Element.prototype.scrollTo === "undefined") {
 if (typeof Element.prototype.scrollIntoView === "undefined") {
   Element.prototype.scrollIntoView = () => {};
 }
+if (typeof Element.prototype.getAnimations === "undefined") {
+  Element.prototype.getAnimations = () => [];
+}
 afterEach(cleanup);
 
 const ME: Human = { name: "Oscar", color: "bg-blue-600" };
