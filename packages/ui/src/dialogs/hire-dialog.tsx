@@ -300,9 +300,7 @@ export function HireDialog({
               Cancel
             </Button>
             <Button
-              disabled={
-                pending || !d.name || (mode === "existing" && !picked)
-              }
+              disabled={pending || !d.name || (mode === "existing" && !picked)}
               onClick={() =>
                 onHire(
                   d,
