@@ -52,6 +52,15 @@ export { FirstRun } from "./first-run/first-run";
 // focus mode
 export { FocusView } from "./focus/focus-view";
 export { SessionUsage } from "./focus/session-usage";
+// per-conversation composer drafts (issue #103)
+export {
+  clearDraft,
+  draftKey,
+  dropDrafts,
+  getDraft,
+  setDraft,
+  useDraft,
+} from "./lib/drafts";
 export * from "./lib/helpers";
 // shell
 export { HermesAvatar, HumanAvatar } from "./shell/avatars";

@@ -10,6 +10,7 @@
     "./types": "./src/types.ts",
     "./lib/utils": "./src/lib/utils.ts",
     "./lib/helpers": "./src/lib/helpers.ts",
+    "./lib/drafts": "./src/lib/drafts.ts",
     "./chat/agent-chat": "./src/chat/agent-chat.tsx",
     "./chat/composer": "./src/chat/composer.tsx",
     "./chat/model-picker": "./src/chat/model-picker.tsx",

@@ -6,7 +6,7 @@ import {
 } from "@lilos/client-runtime";
 import type { AppMessage, Ask, Conversation } from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
-import { EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
+import { draftKey, EmployeeHome, NO_WS, ThreadView, useDraft } from "@lilos/ui";
 import type { Channel, Msg, Reply, Thread } from "@lilos/ui/types";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { atom } from "nanostores";
@@ -138,6 +138,14 @@ export function DmPage() {
     [summaries, channel],
   );
   const openConv = convs.find((c) => c.id === conversationId);
+
+  /* Unsent drafts live outside the composer: one key per conversation and
+     one per employee home (issue #103). Switching sessions or employees — or
+     reloading — swaps in the stored text instead of throwing it away. */
+  const [homeDraft, setHomeDraft] = useDraft(draftKey.dm(employeeId));
+  const [threadDraft, setThreadDraft] = useDraft(
+    openConv ? draftKey.thread(openConv.id) : undefined,
+  );
 
   /* The open thread needs its whole visible history, not just the channel
      window (#28 AC-2): page messages.list scoped to the conversation. */
@@ -273,14 +281,15 @@ export function DmPage() {
       });
   };
 
-  const send = (text: string) => {
-    void sendDm(employeeId, text).then((conv) =>
+  /* The returned promise is the composer's clear signal (AC-5): resolved →
+     the stored draft is dropped, rejected → the text stays. */
+  const send = (text: string) =>
+    sendDm(employeeId, text).then((conv) =>
       navigate({
         to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: conv.id },
       }),
     );
-  };
 
   /* thread panel ---------------------------------------------------------- */
 
@@ -370,7 +379,9 @@ export function DmPage() {
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}
           onModel={(c) => void setConversationModel(conv.id, c.model)}
-          onSend={(text) => void sendDm(employeeId, text, conv.id)}
+          onSend={(text) => sendDm(employeeId, text, conv.id)}
+          draft={threadDraft}
+          onDraftChange={setThreadDraft}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           onFocus={undefined}
           work={null}
@@ -400,6 +411,8 @@ export function DmPage() {
         onProfile={() => setProfileOpen((v) => !v)}
         onOpen={openThread}
         onSend={send}
+        draft={homeDraft}
+        onDraftChange={setHomeDraft}
         panelOpen={!!openConv}
         onPanel={() => {
           const last = convs.at(-1);
