@@ -102,6 +102,9 @@ async function bootStack(
   const webUrl = `http://127.0.0.1:${ports.web}`;
   try {
     await waitForHttp(webUrl);
+    // Vite wins the boot race under load; the app's first WS connect has no
+    // retry, so the relay port must listen before the page ever loads.
+    await waitForHttp(`http://127.0.0.1:${ports.relay}/`);
     return {
       home,
       webUrl,
@@ -141,7 +144,7 @@ async function dmDefault(page: Page, webUrl: string) {
   await page.goto(`${webUrl}/`);
   const aside = page.locator("aside");
   await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
+    timeout: 90_000,
   });
   const dmBtn = page.getByRole("button", {
     name: /open dm|set up later|message/i,
@@ -170,6 +173,7 @@ test.describe.configure({ mode: "serial" });
 test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", async ({
   page,
 }) => {
+  test.setTimeout(180_000);
   const stack = await bootStack("ac80a", {
     relay: wport(4660),
     feed: wport(4661),
