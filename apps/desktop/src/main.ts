@@ -120,6 +120,11 @@ async function ensureServices(): Promise<AgentReport[]> {
       versions: diskVersionStore(paths.versionStoreFile),
     });
     lastEnsureError = undefined;
+    // update.log captures the app's stderr under the applier; keep one line
+    // per agent so failed post-update verifications are diagnosable.
+    console.error(
+      `[lilos] agents: ${serviceReports.map((r) => `${r.label.split(".").pop()}=${r.status}/${r.action}${r.error ? ` ${r.error}` : ""}`).join(" ")}`,
+    );
   } catch (error) {
     lastEnsureError = String(error);
   }
@@ -244,7 +249,8 @@ async function statusSnapshot() {
 
 /* ------------------------------ updates (#35) --------------------------- */
 
-const updateStateDir = join(stateDir, "update");
+const updateBaseDir = stateDir;
+const updateStateDir = join(updateBaseDir, "update");
 
 function updateStatus() {
   try {
@@ -267,7 +273,7 @@ async function checkAndApply(): Promise<void> {
       appVersion: app.getVersion(),
       currentBuild: currentBuild(),
       installPath: bundlePath,
-      baseDir: stateDir,
+      baseDir: updateBaseDir,
     });
     if (outcome === "apply-ready") {
       // The applier waits for this process to exit before swapping.
@@ -287,28 +293,37 @@ async function checkAndApply(): Promise<void> {
 async function verifyPostUpdate(): Promise<boolean> {
   try {
     await ensureServices();
-    if (lastEnsureError) return false;
+    if (lastEnsureError) {
+      console.error(`[lilos] verify: ensure failed: ${lastEnsureError}`);
+      return false;
+    }
     await connectOnce(30_000);
     const deadline = Date.now() + 60_000;
     const me = app.getVersion();
+    let lastSeen = "no handshake";
     while (Date.now() < deadline) {
       try {
         const st = await relay?.systemStatus();
-        if (
-          st &&
-          !st.mismatch &&
-          st.versions.relay === me &&
-          st.versions.harness === me
-        ) {
-          return true;
+        if (st) {
+          lastSeen = `relay=${st.versions.relay} harness=${st.versions.harness} mismatch=${st.mismatch}`;
+          if (
+            !st.mismatch &&
+            st.versions.relay === me &&
+            st.versions.harness === me
+          ) {
+            console.error(`[lilos] verify: converged on ${me}`);
+            return true;
+          }
         }
       } catch {
-        // relay agent mid-restart — keep polling.
+        lastSeen = "relay unreachable";
       }
       await sleep(1_500);
     }
+    console.error(`[lilos] verify: timed out — ${lastSeen} (want ${me})`);
     return false;
-  } catch {
+  } catch (e) {
+    console.error(`[lilos] verify: ${(e as Error).message}`);
     return false;
   }
 }

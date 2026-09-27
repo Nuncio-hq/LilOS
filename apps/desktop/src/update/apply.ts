@@ -43,6 +43,26 @@ export async function stageRelease(
   rmSync(paths.stagingDir, { recursive: true, force: true });
   mkdirSync(paths.stagingDir, { recursive: true });
   await execFileP("ditto", ["-x", "-k", zipPath, paths.stagingDir]);
+  // Zip modes can't be trusted end to end (feed producer → http → extractor).
+  // Every bundle entry point lives under Contents/MacOS or is the crashpad
+  // helper — restore the exec bit explicitly.
+  await execFileP("find", [
+    paths.stagingDir,
+    "-type",
+    "f",
+    "(",
+    "-path",
+    "*/MacOS/*",
+    "-o",
+    "-name",
+    "chrome_crashpad_handler",
+    ")",
+    "-exec",
+    "chmod",
+    "755",
+    "{}",
+    "+",
+  ]);
   const apps = readdirSync(paths.stagingDir).filter((f) => f.endsWith(".app"));
   if (apps.length !== 1) {
     throw new Error(`update payload has ${apps.length} .app bundles, want 1`);
@@ -90,8 +110,27 @@ LOG=${q(o.logFile)}
 OLDPID=${o.oldPid}
 WAIT=${wait}
 
-log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
+# The app rewrites this script file on the next update — a running applier
+# could be reading the old copy at any offset, so every error and trace goes
+# to the log and the applier runs a per-build copy (see checkForUpdate).
+exec >>"$LOG" 2>&1
+[ "$LILOS_UPDATE_TRACE" = "1" ] && set -x
+log() { echo "[$(date '+%H:%M:%S')] $*"; }
 status() { printf '{"phase":"%s","detail":"%s","at":%s}\\n' "$1" "$2" "$(date +%s)000" > "$STATUS"; }
+
+# One applier at a time (a second update tick can overlap stage+apply).
+# mkdir is atomic; a lock older than 10 min is treated as stale/crashed.
+LOCK="$(dirname "$LOG")/apply.lock"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  lockAge=$(( $(date +%s) - $(stat -f %m "$LOCK" 2>/dev/null || echo 0) ))
+  if [ "$lockAge" -gt 600 ]; then
+    rm -rf "$LOCK"
+    mkdir "$LOCK" 2>/dev/null || exit 0
+  else
+    exit 0
+  fi
+fi
+trap 'rm -rf "$LOCK"' EXIT
 
 log "apply: waiting for old app (pid $OLDPID) to exit"
 for i in $(seq 1 150); do
@@ -101,6 +140,7 @@ done
 
 mkdir -p "$(dirname "$ROLLBACK")" "$JUNK"
 rm -f "$BOOT_OK"
+rm -rf "$ROLLBACK"
 
 log "apply: park $APP -> $ROLLBACK"
 if ! mv "$APP" "$ROLLBACK"; then
@@ -114,9 +154,18 @@ if ! mv "$STAGED" "$APP"; then
   exit 1
 fi
 
+# Zip modes survive imperfectly end to end — restore exec bits on every
+# bundle entry point and drop quarantine inherited from the download
+# (same normalization Squirrel.mac does on extracted updates).
+find "$APP" -type f -path "*/MacOS/*" -exec chmod 755 {} +
+find "$APP" -type f -name chrome_crashpad_handler -exec chmod 755 {} +
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+log "apply: normalized perms, staged $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist" 2>/dev/null || echo '?')"
+
 log "apply: launching new build"
 "$APP/Contents/MacOS/LilOS" >> "$LOG" 2>&1 &
 NEW=$!
+log "apply: new build pid $NEW"
 
 ok=""
 for i in $(seq 1 $((WAIT * 10))); do
@@ -140,6 +189,10 @@ if ! mv "$ROLLBACK" "$APP"; then
   status failed "rollback failed — app left parked"
   exit 1
 fi
+find "$APP" -type f -path "*/MacOS/*" -exec chmod 755 {} +
+find "$APP" -type f -name chrome_crashpad_handler -exec chmod 755 {} +
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+log "apply: relaunching previous build"
 "$APP/Contents/MacOS/LilOS" >> "$LOG" 2>&1 &
 status rolled-back "previous version restored"
 exit 0

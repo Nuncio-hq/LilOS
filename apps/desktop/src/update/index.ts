@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { rmSync } from "node:fs";
+import { copyFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { renderApplyScript, stageRelease, writeApplier } from "./apply";
 import { inspectSignature, signatureBlock } from "./codesign";
 import { fetchLatestRelease, pickUpdate, resolveFeedUrl } from "./feed";
@@ -113,7 +114,16 @@ export async function checkForUpdate(e: UpdateEnv): Promise<CheckOutcome> {
     build: update.build,
     version: update.version,
   });
-  const child = spawn("bash", [paths.applyScript], {
+  // Per-spawn copy: the next update check rewrites apply.sh (and may re-stage
+  // the same build) while this applier is still executing it — bash reads
+  // scripts incrementally, so spawn a uniquely-named copy that can't be
+  // overwritten under it.
+  const applier = join(
+    paths.root,
+    `apply-${update.build}-${Date.now().toString(36)}.sh`,
+  );
+  copyFileSync(paths.applyScript, applier);
+  const child = spawn("bash", [applier], {
     detached: true,
     stdio: "ignore",
   });

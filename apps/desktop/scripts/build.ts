@@ -5,6 +5,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -177,6 +178,13 @@ const set = (key: string, value: string) => {
     plistBuddy(["-c", `Add :${key} string ${value}`]);
   }
 };
+// Product name on the main executable too — `open`, `ps` and the updater all
+// address Contents/MacOS/LilOS.
+renameSync(
+  join(APP, "Contents", "MacOS", "Electron"),
+  join(APP, "Contents", "MacOS", "LilOS"),
+);
+set("CFBundleExecutable", "LilOS");
 set("CFBundleName", "LilOS");
 set("CFBundleDisplayName", "LilOS");
 set("CFBundleIdentifier", "com.nuncio.lilos");

@@ -47,39 +47,58 @@ const app = createApp({
 type RelayPeer = ReturnType<typeof relay.connect>;
 const peers = new Map<unknown, RelayPeer>();
 
-const server = Bun.serve({
-  hostname: config.host,
-  port: config.port,
-  fetch(request, server) {
-    const url = new URL(request.url);
-    if (url.pathname === "/ws") {
-      const ok = server.upgrade(request);
-      return ok
-        ? undefined
-        : new Response("websocket upgrade failed", { status: 400 });
+// Under launchd a re-registered agent spawns while the old process is still
+// tearing down, so EADDRINUSE is transient there — retry briefly before
+// giving up (launchd throttles fast exits into "spawn failed").
+const listen = () =>
+  Bun.serve({
+    hostname: config.host,
+    port: config.port,
+    fetch(request, server) {
+      const url = new URL(request.url);
+      if (url.pathname === "/ws") {
+        const ok = server.upgrade(request);
+        return ok
+          ? undefined
+          : new Response("websocket upgrade failed", { status: 400 });
+      }
+      return app.fetch(request);
+    },
+    websocket: {
+      open(ws) {
+        peers.set(
+          ws,
+          relay.connect({
+            send: (frame) => ws.send(frame),
+            close: (code, reason) => ws.close(code, reason),
+          }),
+        );
+      },
+      async message(ws, message) {
+        if (typeof message !== "string") return;
+        await peers.get(ws)?.receive(message);
+      },
+      close(ws) {
+        peers.get(ws)?.closed();
+        peers.delete(ws);
+      },
+    },
+  });
+
+let server: ReturnType<typeof listen> | undefined;
+for (let i = 0; i < 60 && !server; i++) {
+  try {
+    server = listen();
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException;
+    if (e.code !== "EADDRINUSE" && !/in use|EADDRINUSE/i.test(e.message)) {
+      throw err;
     }
-    return app.fetch(request);
-  },
-  websocket: {
-    open(ws) {
-      peers.set(
-        ws,
-        relay.connect({
-          send: (frame) => ws.send(frame),
-          close: (code, reason) => ws.close(code, reason),
-        }),
-      );
-    },
-    async message(ws, message) {
-      if (typeof message !== "string") return;
-      await peers.get(ws)?.receive(message);
-    },
-    close(ws) {
-      peers.get(ws)?.closed();
-      peers.delete(ws);
-    },
-  },
-});
+    console.error(`[relay] port ${config.port} busy, retrying`);
+    Bun.sleepSync(250);
+  }
+}
+if (!server) throw new Error(`port ${config.port} still busy after retries`);
 
 const address = `${server.hostname}:${server.port}`;
 relay.log(`listening on http://${address} (ws: /ws)`);

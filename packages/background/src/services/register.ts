@@ -15,6 +15,12 @@ export interface ServiceControl {
   status(plistName: string): Promise<string>;
   register(plistName: string): Promise<void>;
   unregister(plistName: string): Promise<void>;
+  /**
+   * `lilos-svc spawned <plist>` → launchd job state ("running",
+   * "spawn failed", "absent"). Optional: only set where the helper provides
+   * it; used to repair a stale-launch-constraint registration after swap.
+   */
+  spawned?(plistName: string): Promise<string>;
 }
 
 /**
@@ -28,6 +34,26 @@ export interface VersionStore {
 }
 
 export type AgentAction = "registered" | "replaced" | "already" | "failed";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Poll launchd until the job is running, fails, or ~6s pass. */
+async function pollSpawnState(
+  spawned: NonNullable<ServiceControl["spawned"]>,
+  plist: string,
+): Promise<string> {
+  let last = "unknown";
+  for (let i = 0; i < 24; i++) {
+    await sleep(250);
+    try {
+      last = await spawned(plist);
+    } catch {
+      last = "unknown";
+    }
+    if (last === "running" || last === "spawn failed") return last;
+  }
+  return last;
+}
 
 export interface AgentReport {
   plist: string;
@@ -64,6 +90,21 @@ export async function ensureLaunchAgents(opts: {
       }
       if (action !== "already") {
         await opts.control.register(plist);
+      }
+      // After a bundle swap, launchd's first spawn can fail on a stale launch
+      // constraint (OS_REASON_CODESIGNING); the repair is a second
+      // unregister→register once BTM has dropped the old record. Applies to
+      // any fresh register: post-swap `status` reads notFound, so the action
+      // is "registered", not "replaced".
+      if (action !== "already" && opts.control.spawned) {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const state = await pollSpawnState(opts.control.spawned, plist);
+          if (state === "running") break;
+          if (attempt < 2) {
+            await opts.control.unregister(plist);
+            await opts.control.register(plist);
+          }
+        }
       }
       const status = await opts.control.status(plist);
       await opts.versions.write(agent.label, opts.bundleVersion);

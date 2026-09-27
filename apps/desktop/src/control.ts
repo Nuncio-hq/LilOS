@@ -42,7 +42,7 @@ export function helperServiceControl(
   exec: HelperExec = realExec,
 ): ServiceControl {
   const run = async (
-    verb: "status" | "register" | "unregister",
+    verb: "status" | "register" | "unregister" | "spawned",
     plist: string,
   ) => {
     const res = await exec(helperPath, [verb, plist]);
@@ -78,6 +78,12 @@ export function helperServiceControl(
           `lilos-svc unregister ${plist}: ${res.stderr || res.stdout}`,
         );
       }
+    },
+    async spawned(plist) {
+      // Prints `<plist> <job-state>` (state may contain spaces).
+      const res = await run("spawned", plist);
+      if (res.code !== 0) return "absent";
+      return res.stdout.slice(plist.length).trim() || "unknown";
     },
   };
 }
