@@ -107,6 +107,11 @@ const PROMPT = "What does the replay contract carry?"; // engine-fake script
 const feedRow = (page: Page) => page.locator("[data-session]").first();
 const rowAvatar = (row: Locator) => row.locator("[data-slot='avatar']").first();
 const nameLine = (row: Locator) => row.getByText("Oscar", { exact: true });
+/* The first content line of the row — the element holding the name/time row.
+   Measured alongside the "Oscar" span so the check doesn't depend on text-node
+   boxes (font metric differences across platforms). */
+const nameLineRow = (row: Locator) =>
+  row.locator(":scope > .grid > *:nth-child(2) > *:first-child");
 
 async function dmDefault(page: Page, webUrl: string) {
   await page.goto(`${webUrl}/`);
@@ -163,9 +168,76 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
       }
       return { avatarTop: avatar.y, nameTop: name.y };
     };
-    let { avatarTop, nameTop } = await tops();
+    // On failure, dump what was measured so CI (which can't upload artifacts)
+    // still shows the real DOM + boxes.
+    const dumpRow = async () => {
+      const d = await row.evaluate((el) => {
+        const box = (n: Element) => {
+          const r = n.getBoundingClientRect();
+          return {
+            x: +r.x.toFixed(1),
+            y: +r.y.toFixed(1),
+            w: +r.width.toFixed(1),
+            h: +r.height.toFixed(1),
+          };
+        };
+        const grid = el.querySelector(":scope > .grid");
+        const gridStyle = grid ? getComputedStyle(grid) : null;
+        return {
+          row: box(el),
+          grid: grid
+            ? {
+                display: gridStyle?.display,
+                templateColumns: gridStyle?.gridTemplateColumns,
+                box: box(grid),
+              }
+            : null,
+          avatars: [...el.querySelectorAll("[data-slot='avatar']")].map(
+            (a) => ({
+              box: box(a),
+              cls: (a.getAttribute("class") ?? "").slice(0, 70),
+            }),
+          ),
+          oscars: [...el.querySelectorAll("*")]
+            .filter(
+              (n) =>
+                n.childElementCount === 0 && n.textContent?.trim() === "Oscar",
+            )
+            .map((n) => ({
+              box: box(n),
+              tag: n.tagName,
+              cls: (n.getAttribute("class") ?? "").slice(0, 70),
+            })),
+          html: el.outerHTML.slice(0, 5000),
+        };
+      });
+      console.log(`[ac83-dump] ${JSON.stringify(d)}`);
+    };
+    // Assert the measured top-edge delta; on failure dump the row's DOM and
+    // all avatar/name boxes so CI (no artifact upload) still shows cause.
+    const expectAligned = async (tag: string) => {
+      const { avatarTop, nameTop } = await tops();
+      const lineBox = await nameLineRow(row).boundingBox();
+      const lineTop = lineBox ? lineBox.y : null;
+      const delta = Math.abs(nameTop - avatarTop);
+      const lineDelta = lineTop === null ? null : Math.abs(lineTop - avatarTop);
+      if (delta > 4 || lineDelta === null || lineDelta > 4) {
+        await dumpRow();
+        console.log(
+          `[ac83] ${tag}: nameTop=${nameTop} avatarTop=${avatarTop} lineTop=${lineTop}`,
+        );
+      }
+      expect(delta, `${tag}: name span vs avatar`).toBeLessThanOrEqual(4);
+      expect(lineDelta, `${tag}: name line vs avatar`).not.toBeNull();
+      expect(lineDelta, `${tag}: name line vs avatar`).toBeLessThanOrEqual(4);
+    };
     await page.screenshot({ path: `${SHOTS}/ac-1-feed-row.png` });
-    expect(Math.abs(nameTop - avatarTop)).toBeLessThanOrEqual(4);
+    await expectAligned("default viewport");
+    // Same check at a narrow width — the name line must not wrap below the
+    // avatar when fonts/window sizes differ (the Linux CI failure mode).
+    await page.setViewportSize({ width: 900, height: 720 });
+    await expectAligned("900px viewport");
+    await page.setViewportSize({ width: 1280, height: 720 });
     // AC-1: text + reply chip sit in the column to the RIGHT of the avatar.
     const avatarBox = await rowAvatar(row).boundingBox();
     const chipBox = await row.locator("button").last().boundingBox();
@@ -173,20 +245,17 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
     expect(chipBox.x).toBeGreaterThanOrEqual(avatarBox.x + avatarBox.width - 1);
     // AC-1: hover (and its background change) doesn't shift the row's layout.
     await row.hover();
-    ({ avatarTop, nameTop } = await tops());
-    expect(Math.abs(nameTop - avatarTop)).toBeLessThanOrEqual(4);
+    await expectAligned("hovered");
     // AC-1 selected state: the row is `active` while its session is open —
     // drop to the plain DM view (idle) and back (selected) and re-measure.
     const empId = /\/dm\/([^/]+)/.exec(page.url())?.[1];
     if (!empId) throw new Error(`not on a DM route: ${page.url()}`);
     await page.goto(`${stack.webUrl}/dm/${empId}`);
     await expect(row).toBeVisible({ timeout: 30_000 });
-    ({ avatarTop, nameTop } = await tops());
-    expect(Math.abs(nameTop - avatarTop)).toBeLessThanOrEqual(4);
+    await expectAligned("idle (no open session)");
     await row.locator("button").last().click(); // chip reopens the session
     await expect(row).toBeVisible({ timeout: 30_000 });
-    ({ avatarTop, nameTop } = await tops());
-    expect(Math.abs(nameTop - avatarTop)).toBeLessThanOrEqual(4);
+    await expectAligned("selected (session open)");
   } finally {
     await stack.stop();
   }
