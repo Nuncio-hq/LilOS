@@ -72,6 +72,7 @@ async function startRelay(name: string) {
 function startHarness(env: {
   relayUrl: string;
   token: string;
+  logFile: string;
   engine?: string;
   sessions?: number;
   tag?: string;
@@ -84,6 +85,7 @@ function startHarness(env: {
       LILOS_ENGINE: env.engine ?? "fake",
       LILOS_DEMO_SESSIONS: String(env.sessions ?? 0),
       LILOS_STATUS_INTERVAL_MS: "800",
+      LILOS_DEMO_LOG: env.logFile,
       ...(env.tag ? { LILOS_ENGINE_TAG: env.tag } : {}),
     },
   );
@@ -125,6 +127,7 @@ test.describe("AC-1-4 (#33) live system status", () => {
     const harness = startHarness({
       relayUrl: `ws://127.0.0.1:${relay.port}/ws`,
       token: relay.token,
+      logFile: join(relay.home, "harness-demo.log"),
       sessions: 2,
       tag,
     });
@@ -162,6 +165,7 @@ test.describe("AC-1-4 (#33) live system status", () => {
     const broken = startHarness({
       relayUrl: `ws://127.0.0.1:${relay.port}/ws`,
       token: relay.token,
+      logFile: join(relay.home, "harness-demo.log"),
       engine: "broken",
     });
     try {
@@ -283,6 +287,7 @@ test.describe("AC-1-4 (#33) live system status", () => {
     const harness = startHarness({
       relayUrl: `ws://127.0.0.1:${relay.port}/ws`,
       token: relay.token,
+      logFile: join(relay.home, "harness-demo.log"),
       sessions: 1,
       tag,
     });

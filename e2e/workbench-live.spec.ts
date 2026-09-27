@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, type Page, test } from "@playwright/test";
+import { engineTag, expectNoLeak, killStack, killTagged } from "./engine-leak";
 
 /* Issue #56 coverage, against the REAL surfaces path: the spec boots
    `apps/harness/scripts/surfaces-demo.ts` (real PTY + headless Chromium),
@@ -18,11 +19,16 @@ let attach: {
   session: string;
   token: string;
 } | null = null;
+// #96: the tag marks the demo and its Chromium in argv so teardown can prove
+// nothing survives; `detached` gives the stack its own process group so a
+// group kill reaches the whole tree if the demo itself is wedged.
+const tag = engineTag("workbench");
 
 test.beforeAll(async () => {
   test.setTimeout(60_000);
-  demo = spawn("bun", ["apps/harness/scripts/surfaces-demo.ts"], {
+  demo = spawn("bun", ["apps/harness/scripts/surfaces-demo.ts", "--tag", tag], {
     env: process.env,
+    detached: true,
   });
   const out = await new Promise<string>((resolve, reject) => {
     let buf = "";
@@ -53,8 +59,21 @@ test.beforeAll(async () => {
   attach = parsed;
 });
 
-test.afterAll(() => {
-  demo?.kill();
+test.afterAll(async () => {
+  const pid = demo?.pid;
+  demo?.kill(); // SIGTERM — the demo exits on it now (#96 AC-1)
+  const deadline = Date.now() + 5_000;
+  while (demo && demo.exitCode === null && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  // Backstop: if the demo ignored SIGTERM, SIGKILL its whole process group.
+  if (demo && demo.exitCode === null) killStack(pid);
+  // AC-2: fail the run when the demo or its Chromium outlived the spec.
+  try {
+    await expectNoLeak(tag);
+  } finally {
+    killTagged(tag); // a leaked stack must still not reach launchd
+  }
 });
 
 /** Raw tool-API call — returns status + body so error paths are testable. */
