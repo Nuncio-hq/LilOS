@@ -45,6 +45,7 @@ export const PHASE_LABEL: Record<Phase, string> = {
   submitted: "opening session",
   thinking: "thinking",
   tools: "working",
+  waiting: "needs you",
   typing: "replying",
   done: "done",
   stopped: "stopped",

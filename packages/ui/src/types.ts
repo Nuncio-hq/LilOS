@@ -62,6 +62,7 @@ export type Phase =
   | "submitted"
   | "thinking"
   | "tools"
+  | "waiting"
   | "typing"
   | "done"
   | "stopped";
@@ -89,6 +90,8 @@ export type Reply = {
   thought?: number;
   phase?: Phase;
   live?: boolean;
+  /** Engine request kind the turn waits on (phase === "waiting"), e.g. approval. */
+  waitingOn?: "approval" | "question";
   id?: string;
   steers?: string[];
   dur?: number;

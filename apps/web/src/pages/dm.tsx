@@ -19,6 +19,7 @@ import {
   renameConversation,
   respondToRequest,
   sendDm,
+  setConversationModel,
 } from "../lib/actions";
 import { useAtom } from "../lib/hooks";
 import {
@@ -30,6 +31,7 @@ import {
 import {
   asks as asksAtom,
   engine,
+  engineModels,
   navOpen,
   relay,
   sessionModels,
@@ -86,6 +88,7 @@ export function DmPage() {
   const channels = useAtom(relay.channels);
   const summaries = useAtom(relay.conversationSummaries);
   const models = useAtom(sessionModels);
+  const catalog = useAtom(engineModels);
   const allAsks = useAtom(asksAtom);
   const pending = useAtom(pendingStart);
   const engineState = useAtom(engine.state);
@@ -304,6 +307,7 @@ export function DmPage() {
       archived: conv.archived,
       replies,
       usage: model?.turns.at(-1)?.usage as Thread["usage"],
+      model: conv.model ?? model?.model,
     };
     const running = !!modelLive || pending[conv.id] === true;
     const steer = hasCapability("steer");
@@ -340,6 +344,8 @@ export function DmPage() {
           running={running}
           steer={steer}
           transcriptNote={transcriptNote}
+          models={catalog.length ? catalog : undefined}
+          onModel={(m) => void setConversationModel(conv.id, m)}
           onSend={(text) => void sendDm(employeeId, text, conv.id)}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           onFocus={undefined}

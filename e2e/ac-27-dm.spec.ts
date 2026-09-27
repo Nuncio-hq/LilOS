@@ -331,18 +331,23 @@ test("AC-6 two sessions run in parallel; the DM list shows each live phase", asy
   // Edit-ask prompts hold each turn on an approval — both stay live long
   // enough to observe them running in parallel in the session list.
   await send(page, "Add a parallel-work note to the readme");
+  // Let the send land (its navigation proves messages.post resolved) before
+  // heading home — navigating early can abort the in-flight post.
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
   // Back to the DM home → second session → back home: both rows live.
   await page.goto(`${stackA.webUrl}/dm/${empId}`);
   await send(page, "Add a second note about parallel work");
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
   await page.goto(`${stackA.webUrl}/dm/${empId}`);
   const running = page.locator("[data-session]", {
     has: page.locator(".animate-pulse"),
   });
   await expect(running).toHaveCount(2, { timeout: 60_000 });
+  // #71 AC-4: a turn parked on an approval reads `needs you`, a live phase.
   await expect(
     page
       .locator("[data-session]")
-      .filter({ hasText: /working|thinking|replying|opening/ }),
+      .filter({ hasText: /working|thinking|replying|opening|needs you/ }),
   ).toHaveCount(2, { timeout: 60_000 });
   await page.screenshot({ path: `${SHOTS}/ac-6-parallel.png` });
 });

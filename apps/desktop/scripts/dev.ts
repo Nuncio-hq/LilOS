@@ -47,7 +47,12 @@ copyFileSync(join(ROOT, "src", "index.html"), join(APP_DIR, "index.html"));
 writeFileSync(
   join(APP_DIR, "package.json"),
   `${JSON.stringify(
-    { name: "lilos-desktop", version: "0.0.0-dev", main: "main.cjs" },
+    {
+      name: "lilos-desktop",
+      productName: "LilOS",
+      version: "0.0.0-dev",
+      main: "main.cjs",
+    },
     null,
     2,
   )}\n`,

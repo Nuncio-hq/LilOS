@@ -36,6 +36,10 @@ import { postDesktopNotification } from "./notify";
  * the window and sends `lilos:open-conversation` with the conversation id.
  */
 
+// The app menu + window titles take the name from the app, not the dev
+// binary: without this the macOS menu bar reads "Electron" (issue #71, AC-5).
+app.setName("LilOS");
+
 // `bun build` bakes __dirname to the source path, so resolve locations from
 // getAppPath()/execPath with existence checks: packaged bundle puts lilos-svc
 // and the UI next to Contents/MacOS/<exe> + Contents/Resources/app.

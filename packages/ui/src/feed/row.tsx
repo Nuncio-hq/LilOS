@@ -69,11 +69,19 @@ export function Row({
       )}
     >
       {emp(from) ? (
-        <HermesAvatar />
+        <HermesAvatar name={emp(from)!.name} />
       ) : human(from) ? (
         <HumanAvatar human={human(from)!} />
       ) : null}
-      <Message from="assistant" className="min-w-0 max-w-full gap-1">
+      <Message
+        from="assistant"
+        className={cn(
+          "min-w-0 max-w-full gap-1",
+          // Avatar-less rows (system notices) keep the content column — the
+          // first grid child would otherwise collapse into the 36px gutter.
+          !(emp(from) || human(from)) && "col-start-2",
+        )}
+      >
         {children}
       </Message>
     </div>

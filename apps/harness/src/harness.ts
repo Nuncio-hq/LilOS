@@ -887,15 +887,8 @@ export class Harness {
           );
         }
         break;
-      case "tool.started":
-        if (binding) {
-          void this.postSystem(
-            binding,
-            `⚙ ${event.payload.tool}${toolHint(event.payload.input)}`,
-            `tool:${binding.conversationId}:${event.payload.toolCallId}`,
-          );
-        }
-        break;
+      // tool.started/completed never post feed rows — the tool cards inside
+      // the turn are the single rendering (issue #71, AC-1).
       case "request.opened":
         if (binding) {
           void this.openAsk(
@@ -1485,11 +1478,3 @@ function isTransientRelayError(error: unknown): boolean {
   }
   return false;
 }
-
-const toolHint = (input: unknown): string => {
-  if (!input || typeof input !== "object") return "";
-  const record = input as Record<string, unknown>;
-  const hint =
-    record.command ?? record.path ?? record.file ?? record.name ?? "";
-  return typeof hint === "string" && hint ? ` — ${hint.slice(0, 80)}` : "";
-};

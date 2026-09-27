@@ -201,7 +201,11 @@ export function Sidebar({
                     "bg-sidebar-accent font-medium",
                 )}
               >
-                <HermesAvatar status={e.status} className="size-5" />
+                <HermesAvatar
+                  name={e.name}
+                  status={e.status}
+                  className="size-5"
+                />
                 <span className="min-w-0 truncate">{e.name}</span>
                 <span className="ml-auto flex shrink-0 items-center gap-1">
                   {!!b?.approvals && (
@@ -210,7 +214,9 @@ export function Sidebar({
                       title={`${b.approvals} waiting on your approval`}
                       className="rounded-full bg-amber-500 px-1.5 text-[11px] text-white"
                     >
-                      {b.approvals}
+                      {b.approvals === 1
+                        ? "needs you"
+                        : `${b.approvals} need you`}
                     </span>
                   )}
                   {!!b?.running && (

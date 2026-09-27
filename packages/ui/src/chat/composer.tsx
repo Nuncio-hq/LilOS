@@ -92,7 +92,11 @@ export function Composer({
               onClick={() => setDraft(draft.replace(/@\w*$/, `@${e.name} `))}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted"
             >
-              <HermesAvatar status={e.status} className="size-5" />
+              <HermesAvatar
+                name={e.name}
+                status={e.status}
+                className="size-5"
+              />
               <span className="font-medium">{e.name}</span>
               <span className="ml-auto text-muted-foreground text-xs">
                 {e.role} · new session

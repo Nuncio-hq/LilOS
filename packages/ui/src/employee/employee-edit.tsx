@@ -40,7 +40,7 @@ export function EditEmployeeDialog({
         onClick={(ev) => ev.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b p-4">
-          <HermesAvatar status={e.status} className="size-10" />
+          <HermesAvatar name={e.name} status={e.status} className="size-10" />
           <div className="flex-1">
             <div className="font-semibold">Edit employee</div>
             <div className="text-muted-foreground text-xs">

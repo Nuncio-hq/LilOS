@@ -42,6 +42,7 @@ import type {
   AttachedFile,
   EmpFn,
   HumanFn,
+  ModelOption,
   PullRequest,
   Reply,
   Step,
@@ -119,9 +120,13 @@ export function UserTurn({
 export function TurnSteps({
   steps,
   autoOpen,
+  waitingApproval,
 }: {
   steps: Step[];
   autoOpen?: boolean;
+  /* The turn is parked on an approval (engine request.opened): the running
+     step's card reads "Waiting for approval" (issue #71, AC-4). */
+  waitingApproval?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const running = steps.some((s) => s.running);
@@ -154,7 +159,13 @@ export function TurnSteps({
             <ToolHeader
               title={s.tool}
               type={`tool-${s.tool}`}
-              state={s.running ? "input-available" : "output-available"}
+              state={
+                s.running
+                  ? waitingApproval
+                    ? "approval-requested"
+                    : "input-available"
+                  : "output-available"
+              }
             />
             <ToolContent>
               <ToolInput input={s.input} />
@@ -178,9 +189,12 @@ export function AgentTurn({
   onOpen,
   cards,
   pending = [],
+  models,
 }: {
   r: Reply;
   emp: EmpFn;
+  /** Engine catalog — the footer renders the model's display name, not the id. */
+  models?: ModelOption[];
   /** True on the last reply of the thread — Retry only makes sense there. */
   last: boolean;
   /** When absent the turn shows no Retry action. */
@@ -198,7 +212,7 @@ export function AgentTurn({
   return (
     <Message from="assistant" className="max-w-full gap-2.5" data-agentturn>
       <div className="flex items-center gap-2 text-[13px]">
-        <HermesAvatar className="size-5" />
+        <HermesAvatar name={e?.name} className="size-5" />
         <span className="font-semibold">{e?.name}</span>
         <span className="text-muted-foreground">{r.time}</span>
       </div>
@@ -225,7 +239,11 @@ export function AgentTurn({
         </Reasoning>
       )}
       {steps.length > 0 && (
-        <TurnSteps steps={steps} autoOpen={r.live && r.phase === "tools"} />
+        <TurnSteps
+          steps={steps}
+          autoOpen={r.live && (r.phase === "tools" || r.phase === "waiting")}
+          waitingApproval={r.waitingOn === "approval"}
+        />
       )}
       {r.live && r.phase === "tools" && !steps.some((s) => s.running) && (
         <Shimmer as="span" duration={1} className="pl-4 text-[13px]">
@@ -254,7 +272,11 @@ export function AgentTurn({
       {!r.live && !r.streaming && (r.text || steps.length > 0) && (
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-muted-foreground">
           {r.dur !== undefined && <span>Worked for {r.dur}s</span>}
-          {r.model && <span>· {r.model}</span>}
+          {r.model && (
+            <span>
+              · {models?.find((m) => m.id === r.model)?.name ?? r.model}
+            </span>
+          )}
           {steps.length > 0 && <span>· {plural(steps.length, "step")}</span>}
           {files > 0 &&
             (onOpen ? (

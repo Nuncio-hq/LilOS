@@ -28,7 +28,7 @@ export function HireCardInline({
       {!done && (
         <div className="space-y-2 p-3">
           <div className="flex items-center gap-2">
-            <HermesAvatar className="size-8" />
+            <HermesAvatar name={draft.name} className="size-8" />
             <div>
               <div className="font-semibold">{draft.name}</div>
               <div className="text-muted-foreground text-xs">

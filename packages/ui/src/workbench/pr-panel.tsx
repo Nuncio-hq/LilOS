@@ -176,7 +176,7 @@ export function PrPanel({
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-muted-foreground">
           <span className="flex items-center gap-1.5 text-foreground/80">
-            <HermesAvatar className="size-4" />
+            <HermesAvatar name={author} className="size-4" />
             {author}
           </span>
           <span className="flex items-center gap-1.5">

@@ -289,7 +289,7 @@ export function EmployeeHome({
             onClick={() => onOpen(m.id)}
             className="mt-1 flex w-fit max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border bg-background px-2 py-1.5 text-left text-xs hover:border-foreground/30 [&>*]:shrink-0 [&>*]:whitespace-nowrap"
           >
-            <HermesAvatar className="size-5" />
+            <HermesAvatar name={e.name} className="size-5" />
             <span className="font-medium text-blue-600">
               {t.replies.length} {t.replies.length === 1 ? "reply" : "replies"}
             </span>
@@ -307,7 +307,14 @@ export function EmployeeHome({
               </span>
             )}
             {running ? (
-              <span className="flex items-center gap-1 text-muted-foreground">
+              <span
+                className={cn(
+                  "flex items-center gap-1",
+                  last?.phase === "waiting"
+                    ? "font-medium text-amber-600"
+                    : "text-muted-foreground",
+                )}
+              >
                 <CircleDotIcon className="size-3 animate-pulse text-amber-500" />
                 {last?.phase ? PHASE_LABEL[last.phase] : "working"}
               </span>
@@ -334,7 +341,7 @@ export function EmployeeHome({
         >
           <MenuIcon />
         </Button>
-        <HermesAvatar status={e.status} className="size-8" />
+        <HermesAvatar name={e.name} status={e.status} className="size-8" />
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 font-semibold text-base">
             <span className="truncate">{e.name}</span>
@@ -346,7 +353,8 @@ export function EmployeeHome({
             </Badge>
           </div>
           <div className="truncate text-muted-foreground text-xs">
-            {e.role} · now: {e.now}
+            {e.role}
+            {e.now ? ` · now: ${e.now}` : ""}
           </div>
         </div>
         <div className="ml-auto flex shrink-0 gap-1">
@@ -400,7 +408,7 @@ export function EmployeeHome({
             </div>
           ) : roots.length === 0 && archived.length === 0 ? (
             <ConversationEmptyState
-              icon={<HermesAvatar className="size-12" />}
+              icon={<HermesAvatar name={e.name} className="size-12" />}
               title={
                 q
                   ? `No sessions match “${filter}”`
@@ -488,7 +496,7 @@ export function EmployeeCard({
     <div className="space-y-3 p-3">
       <div className="rounded-xl border bg-background p-4">
         <div className="flex items-center gap-3">
-          <HermesAvatar status={e.status} className="size-12" />
+          <HermesAvatar name={e.name} status={e.status} className="size-12" />
           <div>
             <div className="font-semibold text-base">{e.name}</div>
             <div className="text-muted-foreground text-xs">

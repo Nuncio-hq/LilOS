@@ -42,7 +42,7 @@ test("AC-1 picker lists engine models grouped by provider", async ({
   // present whether the catalog has loaded yet or not.
   await trigger(page, /flash-next/i).click();
   // The live catalog (engine-fake via /api/engine) lands under its provider group.
-  const fake = page.getByRole("group", { name: "fake" });
+  const fake = page.getByRole("group", { name: "Fake" });
   await expect(fake).toBeVisible();
   await expect(fake.getByText("Fake Small")).toBeVisible();
   await expect(fake.getByText("Fake Large")).toBeVisible();
@@ -57,8 +57,11 @@ test("AC-2 the next turn runs on the picked model (turn metadata)", async ({
   const errors = watchConsole(page);
   await page.goto("/");
   await sendDM(page, "What's the state of the relay package?");
-  // Turn 1 finishes on the employee's default model — the footer shows it.
-  await expect(page.getByText(/· qwen3\.8-flash-next/).first()).toBeVisible({
+  // Turn 1 finishes on the employee's default model — the footer shows the
+  // model display name (issue #71) when the catalog has it, else the id.
+  await expect(
+    page.getByText(/· (qwen3\.8-flash-next|Qwen 3\.8 Flash-Next)/).first(),
+  ).toBeVisible({
     timeout: 60_000,
   });
   await trigger(page, /flash-next/i).click();
@@ -69,8 +72,9 @@ test("AC-2 the next turn runs on the picked model (turn metadata)", async ({
   const box = page.getByPlaceholder(/Reply to Builder/);
   await box.fill("and the harness?");
   await box.press("Enter");
-  // turn.started.model lands on the finished turn's footer: "· fake-reasoning".
-  await expect(page.getByText(/· fake-reasoning/).first()).toBeVisible({
+  // turn.started.model lands on the finished turn's footer — the display
+  // name, same as the picker row ("Fake Reasoning", issue #71).
+  await expect(page.getByText("· Fake Reasoning").first()).toBeVisible({
     timeout: 60_000,
   });
   expect(errors).toEqual([]);

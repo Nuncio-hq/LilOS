@@ -276,12 +276,13 @@ test("AC-6 sidebar badges: needs-approval count and running count per employee",
   await page.goto("/");
   const side = sidebar(page);
 
-  // Seeded approval from Reviewer (#engineering m1) → amber badge.
+  // Seeded approval from Reviewer (#engineering m1) → amber badge. The
+  // badge reads `needs you` since #71 (count stays in the tooltip).
   await expect(
     side
       .getByRole("button", { name: /Reviewer/ })
       .locator("[data-badge-approvals]"),
-  ).toHaveText("1");
+  ).toHaveText("needs you");
 
   // A live turn → running badge on the employee while it works.
   await openDM(page, "Builder");

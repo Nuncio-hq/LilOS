@@ -59,6 +59,40 @@ const LOGO_PROVIDERS = new Set([
   "zai",
 ]);
 
+/* Provider slug → display name for the group headings: the models.dev names
+   where the slug matches a logo, a title-cased slug otherwise. */
+const PROVIDER_NAMES: Record<string, string> = {
+  alibaba: "Alibaba",
+  amazon: "Amazon",
+  anthropic: "Anthropic",
+  azure: "Azure",
+  cerebras: "Cerebras",
+  cognition: "Cognition",
+  cohere: "Cohere",
+  deepseek: "DeepSeek",
+  fireworks: "Fireworks AI",
+  "github-copilot": "GitHub Copilot",
+  google: "Google",
+  groq: "Groq",
+  meta: "Meta",
+  mistral: "Mistral AI",
+  moonshotai: "Moonshot AI",
+  nvidia: "NVIDIA",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  togetherai: "Together AI",
+  vercel: "Vercel",
+  xai: "xAI",
+  zai: "Z.ai",
+};
+
+export function providerName(slug: string): string {
+  return (
+    PROVIDER_NAMES[slug] ??
+    slug.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
 export function ModelLogo({ provider }: { provider?: string }) {
   return provider && LOGO_PROVIDERS.has(provider) ? (
     <ModelSelectorLogo provider={provider} className="size-3.5" />
@@ -102,7 +136,7 @@ export function ModelPicker({
           {[...groups.entries()].map(([provider, items]) => (
             <ModelSelectorGroup
               key={provider || "other"}
-              heading={provider || "Other"}
+              heading={provider ? providerName(provider) : "Other"}
             >
               {items.map((m) => (
                 <ModelSelectorItem

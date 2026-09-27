@@ -83,7 +83,11 @@ export function ChannelHeader({
                 onClick={() => onShowEmp(id)}
                 className="flex shrink-0 items-center gap-2 rounded-full border bg-background py-1 pr-3 pl-1 text-xs hover:border-foreground/30"
               >
-                <HermesAvatar status={e.status} className="size-6" />
+                <HermesAvatar
+                  name={e.name}
+                  status={e.status}
+                  className="size-6"
+                />
                 <span className="font-medium">{e.name}</span>
                 <span className="hidden max-w-48 truncate text-muted-foreground sm:inline">
                   {e.now}
