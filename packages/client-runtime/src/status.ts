@@ -68,6 +68,22 @@ const PLAIN_RULES: {
     }),
   },
   {
+    // #95 AC-1: the too-old verdict is already the exact plain sentence —
+    // surface it verbatim. The remedy (`hermes update`) is in the sentence,
+    // so no separate hint.
+    match: /Hermes [^\n]*?is too old[^\n]*/,
+    plain: (_c, m) => ({ reason: sentence(m[0]) }),
+  },
+  {
+    // #95 AC-2: the child died from a signal — the system stopped it, which
+    // on a managed Mac usually means a device security policy. Explain, never
+    // work around it.
+    match: /killed by (SIG\w+)/,
+    plain: (c, m) => ({
+      reason: `The ${c.label.toLowerCase()} was stopped by the system (${m[1]}) — a device security policy may be blocking it.`,
+    }),
+  },
+  {
     match: /ENOENT|posix_spawn|no such file|not found|spawn failed/i,
     plain: (c) => ({
       reason: `${c.label} couldn't start — the ${

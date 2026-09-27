@@ -358,3 +358,106 @@ describe("AC-2 (#85) a missing Hermes reads plainly", () => {
     expect(engine?.hint?.length).toBeGreaterThan(0);
   });
 });
+
+describe("AC-1 (#95) a too-old Hermes reads plainly", () => {
+  const TOO_OLD: SystemStatusResult = {
+    ...RESULT,
+    components: [
+      RESULT.components[0],
+      RESULT.components[1],
+      {
+        id: "engine",
+        label: "Engine",
+        state: "down",
+        reason:
+          "engine hermes failed to start: Error: Hermes 0.20.2 is too old — LilOS needs 0.21.5 or newer. Run `hermes update`.",
+      },
+      RESULT.components[3],
+    ],
+  };
+
+  it("the dialog reason is the exact too-old sentence", () => {
+    const engine = toStatusComponents({
+      result: TOO_OLD,
+      connection: "ready",
+    }).find((r) => r.id === "engine");
+    expect(engine?.state).toBe("down");
+    expect(engine?.reason).toBe(
+      "Hermes 0.20.2 is too old — LilOS needs 0.21.5 or newer. Run `hermes update`.",
+    );
+    expect(engine?.detail).toContain("failed to start");
+  });
+
+  it("the same verdict comes off the -32601 handshake path (fatal exit code)", () => {
+    const result: SystemStatusResult = {
+      ...TOO_OLD,
+      components: [
+        TOO_OLD.components[0],
+        TOO_OLD.components[1],
+        {
+          id: "engine",
+          label: "Engine",
+          state: "down",
+          reason:
+            "engine hermes failed to start: Error: Hermes (unrecognized version) is too old — LilOS needs 0.21.5 or newer. Run `hermes update`.",
+        },
+        TOO_OLD.components[3],
+      ],
+    };
+    const engine = toStatusComponents({ result, connection: "ready" }).find(
+      (r) => r.id === "engine",
+    );
+    expect(engine?.reason).toContain("is too old");
+    expect(engine?.reason).toContain("hermes update");
+  });
+});
+
+describe("AC-2 (#95) a signal-killed engine names the signal and the likely cause", () => {
+  it("'killed by SIGKILL' maps to the device-policy sentence", () => {
+    const result: SystemStatusResult = {
+      ...RESULT,
+      components: [
+        RESULT.components[0],
+        RESULT.components[1],
+        {
+          id: "engine",
+          label: "Engine",
+          state: "down",
+          reason:
+            "engine hermes failed to start x5: engine hermes exited before ready (killed by SIGKILL)",
+        },
+        RESULT.components[3],
+      ],
+    };
+    const engine = toStatusComponents({ result, connection: "ready" }).find(
+      (r) => r.id === "engine",
+    );
+    expect(engine?.reason).toBe(
+      "The engine was stopped by the system (SIGKILL) — a device security policy may be blocking it.",
+    );
+    expect(engine?.detail).toContain("killed by SIGKILL");
+  });
+
+  it("the post-ready exit path names the signal too", () => {
+    const result: SystemStatusResult = {
+      ...RESULT,
+      components: [
+        RESULT.components[0],
+        RESULT.components[1],
+        {
+          id: "engine",
+          label: "Engine",
+          state: "down",
+          reason: "engine exited x5 (killed by SIGTERM)",
+        },
+        RESULT.components[3],
+      ],
+    };
+    const engine = toStatusComponents({ result, connection: "ready" }).find(
+      (r) => r.id === "engine",
+    );
+    expect(engine?.reason).toBe(
+      "The engine was stopped by the system (SIGTERM) — a device security policy may be blocking it.",
+    );
+  });
+});
