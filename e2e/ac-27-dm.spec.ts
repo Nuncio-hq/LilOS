@@ -505,7 +505,21 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
     await expect(
       win.locator("aside").getByRole("button", { name: /default/i }),
     ).toBeVisible({ timeout: 60_000 });
-    await win.screenshot({ path: `${SHOTS}/ac-8-electron.png` });
+    // Page.captureScreenshot intermittently fails on Electron under Xvfb load
+    // (CI: "Unable to capture screenshot") — retry the artifact write a few
+    // times. The assertion above already proved the AC; this is the evidence.
+    let shotErr: unknown;
+    for (let i = 0; i < 4; i++) {
+      try {
+        await win.screenshot({ path: `${SHOTS}/ac-8-electron.png` });
+        shotErr = undefined;
+        break;
+      } catch (e) {
+        shotErr = e;
+        await win.waitForTimeout(500);
+      }
+    }
+    if (shotErr) throw shotErr;
   } finally {
     await app.close();
   }

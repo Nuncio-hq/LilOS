@@ -92,10 +92,31 @@ function AppShell() {
             Object.values(sessionModels.get()).some((m) =>
               m.openRequests.some((r) => r.requestId === requestId),
             ),
+          openAsks: () =>
+            Object.entries(sessionModels.get()).flatMap(([sessionId, m]) =>
+              m.openRequests.map((r) => ({
+                sessionId,
+                requestId: r.requestId,
+                request: r.request,
+              })),
+            ),
+          onOpenAsksChange: (fn) => sessionModels.subscribe(fn),
           openConversationId: () =>
             openConversationFromPath(router.state.location.pathname),
           inForeground: () =>
             document.visibilityState === "visible" && document.hasFocus(),
+          onViewChange: (fn) => {
+            const un = router.subscribe("onResolved", fn);
+            document.addEventListener("visibilitychange", fn);
+            window.addEventListener("focus", fn);
+            window.addEventListener("blur", fn);
+            return () => {
+              un();
+              document.removeEventListener("visibilitychange", fn);
+              window.removeEventListener("focus", fn);
+              window.removeEventListener("blur", fn);
+            };
+          },
           post: (n) => bridge.notifications?.post(n),
         }),
       );

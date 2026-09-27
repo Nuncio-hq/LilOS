@@ -17,7 +17,7 @@ import type {
   DesktopNotification,
   Employee,
 } from "@lilos/contracts/app";
-import type { EngineEvent } from "@lilos/contracts/engine";
+import type { EngineEvent, EngineRequest } from "@lilos/contracts/engine";
 
 export interface NotifyContext {
   conversations: readonly Conversation[];
@@ -37,31 +37,37 @@ const employeeName = (conv: Conversation, ctx: NotifyContext): string => {
   return emp?.name ?? "An employee";
 };
 
+const askNotification = (
+  sessionId: string,
+  request: EngineRequest,
+  ctx: NotifyContext,
+): DesktopNotification | null => {
+  const c = conversationOf(sessionId, ctx);
+  if (!c) return null;
+  const name = employeeName(c, ctx);
+  return request.kind === "question"
+    ? {
+        conversationId: c.id,
+        kind: "ask",
+        title: `${name} has a question`,
+        body: request.question,
+      }
+    : {
+        conversationId: c.id,
+        kind: "ask",
+        title: `${name} needs your approval`,
+        body: request.command,
+      };
+};
+
 /** The event → notification classifier. Null = not attention-worthy. */
 export function notificationForEvent(
   e: EngineEvent,
   ctx: NotifyContext,
 ): DesktopNotification | null {
   switch (e.type) {
-    case "request.opened": {
-      const c = conversationOf(e.sessionId, ctx);
-      if (!c) return null;
-      const name = employeeName(c, ctx);
-      const r = e.payload.request;
-      return r.kind === "question"
-        ? {
-            conversationId: c.id,
-            kind: "ask",
-            title: `${name} has a question`,
-            body: r.question,
-          }
-        : {
-            conversationId: c.id,
-            kind: "ask",
-            title: `${name} needs your approval`,
-            body: r.command,
-          };
-    }
+    case "request.opened":
+      return askNotification(e.sessionId, e.payload.request, ctx);
     case "turn.completed": {
       const { stopReason, error } = e.payload;
       if (stopReason === "cancelled") return null;
@@ -125,10 +131,29 @@ export interface WatchNotificationsOpts {
   /** True when the app window is visible and focused. */
   inForeground: () => boolean;
   /**
-   * Whether a request is still open — consulted only on the retry path, so an
-   * ask resolved in the retry window doesn't post stale.
+   * Whether a request is still open — consulted on the retry path, so an ask
+   * resolved in the retry window doesn't post stale.
    */
   isRequestOpen?: (requestId: string) => boolean;
+  /**
+   * The currently-open asks across sessions — replayed engine state, not
+   * live events. When provided, asks post from this set on every state or
+   * view change instead of only on the live `request.opened` frame, so an
+   * ask survives page reloads and in-view suppression (#84: engine-fake's
+   * request.opened beating the navigate-away left `postKeys` empty on CI).
+   */
+  openAsks?: () => ReadonlyArray<{
+    sessionId: string;
+    requestId: string;
+    request: EngineRequest;
+  }>;
+  /** Fires when the openAsks set may have changed (feed/session updates). */
+  onOpenAsksChange?: (fn: () => void) => () => void;
+  /**
+   * Fires when which conversation is in view may have changed (route change,
+   * focus, visibility). Re-checks open asks against the new view.
+   */
+  onViewChange?: (fn: () => void) => () => void;
   post: (n: DesktopNotification) => void;
   /**
    * The conversation gets its engineRef via a relay write that can land a
@@ -150,9 +175,30 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
   const failureDedupeMs = opts.failureDedupeMs ?? 1500;
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
   const lastFailedAt = new Map<string, number>();
+  // Asks already posted, keyed by requestId — dedupes the live fast-path
+  // against the state-driven check below.
+  const postedAsks = new Set<string>();
 
   const inView = (conversationId: string) =>
     opts.openConversationId() === conversationId && opts.inForeground();
+
+  /**
+   * Post every ask that is still open and not in view. Driven by state (not
+   * the event stream) so it re-evaluates after reloads, late conversation
+   * mappings, and every view change — an ask answered while in view simply
+   * stops appearing in openAsks and is never posted.
+   */
+  const checkAsks = (): void => {
+    if (!opts.openAsks) return;
+    const ctx = opts.context();
+    for (const a of opts.openAsks()) {
+      if (postedAsks.has(a.requestId)) continue;
+      const n = askNotification(a.sessionId, a.request, ctx);
+      if (!n || inView(n.conversationId)) continue;
+      postedAsks.add(a.requestId);
+      opts.post(n);
+    }
+  };
 
   const dupFailed = (n: DesktopNotification): boolean => {
     if (n.kind !== "failed") return false;
@@ -191,21 +237,40 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
             )
               return;
             const retry = notificationForEvent(e, opts.context());
-            if (retry && !inView(retry.conversationId) && !dupFailed(retry))
-              opts.post(retry);
+            if (!retry) return;
+            if (inView(retry.conversationId)) return; // checkAsks owns asks
+            if (
+              e.type === "request.opened" &&
+              postedAsks.has(e.payload.requestId)
+            )
+              return;
+            if (e.type === "request.opened")
+              postedAsks.add(e.payload.requestId);
+            if (!dupFailed(retry)) opts.post(retry);
           }, retryMs),
         );
       }
       return;
     }
-    if (inView(n.conversationId) || dupFailed(n)) return;
+    if (inView(n.conversationId)) return; // checkAsks owns asks
+    if (dupFailed(n)) return;
+    if (e.type === "request.opened") {
+      if (postedAsks.has(e.payload.requestId)) return;
+      postedAsks.add(e.payload.requestId);
+    }
     opts.post(n);
   };
 
   const unsub = opts.onEvent(deliver);
+  const unsubAsks = opts.onOpenAsksChange?.(checkAsks);
+  const unsubView = opts.onViewChange?.(checkAsks);
+  checkAsks();
   return () => {
     unsub();
+    unsubAsks?.();
+    unsubView?.();
     for (const t of pending.values()) clearTimeout(t);
     pending.clear();
+    postedAsks.clear();
   };
 }
