@@ -164,6 +164,7 @@ export function EmployeeHome({
   onProfile,
   onOpen,
   onSend,
+  lastSent,
   panelOpen,
   onPanel,
   folders,
@@ -192,6 +193,9 @@ export function EmployeeHome({
   onProfile: () => void;
   onOpen: (id: string) => void;
   onSend: (t: string, pick?: WsPick, files?: AttachedFile[]) => void;
+  /* ↑ recall for the new-session composer: the last top-level message sent in
+     this DM (issue #104 AC-5). */
+  lastSent?: string;
   panelOpen: boolean;
   onPanel: () => void;
   folders: Folder[];
@@ -478,6 +482,7 @@ export function EmployeeHome({
         employees={[]}
         hint={wsHint(pickFolder, pick)}
         onSend={(t, files) => onSend(t, pick, files)}
+        lastSent={lastSent}
         accept={accept}
         maxFileSize={maxFileSize}
         onAttachError={onAttachError}
