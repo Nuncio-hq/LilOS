@@ -109,6 +109,7 @@ export class Harness {
   private hostId?: string;
   private started = false;
   private readonly bindings = new Map<string, SessionBinding>(); // convId -> binding
+  private readonly modelPickQueue = new Map<string, Promise<void>>();
   private readonly conversationBySession = new Map<string, string>(); // sessionId -> convId
   private readonly rebinds = new Map<string, Promise<void>>(); // convId -> in-flight rebind
   /** engine requestId -> relay ask id (per session). */
@@ -1101,12 +1102,25 @@ export class Harness {
       case "conversation.modelRequested": {
         const parsed = ConversationModelRequestedEvent.safeParse(params);
         if (parsed.success) {
-          void this.onModelRequested(parsed.data.conversationId, {
-            model: parsed.data.model,
-            provider: parsed.data.provider,
-            effort: parsed.data.effort,
-            fast: parsed.data.fast,
-          });
+          const { conversationId } = parsed.data;
+          // Serialize picks per conversation: a slow ack (confirm_required,
+          // deferred-while-running) would otherwise let an earlier pick's
+          // ack overwrite the last one — last-ack-wins must mean last-sent.
+          const prev =
+            this.modelPickQueue.get(conversationId) ?? Promise.resolve();
+          const next = prev.then(() =>
+            this.onModelRequested(conversationId, {
+              model: parsed.data.model,
+              provider: parsed.data.provider,
+              effort: parsed.data.effort,
+              fast: parsed.data.fast,
+            }),
+          );
+          this.modelPickQueue.set(
+            conversationId,
+            next.catch(() => {}),
+          );
+          void next;
         }
         break;
       }

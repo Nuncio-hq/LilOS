@@ -95,7 +95,10 @@ function keepEngineAlive(): void {
 
 /** The engine's selectable-model catalog (`models.list`); empty without the capability. */
 export const engineModels = atom<ModelOption[]>([]);
-/** `models.list.default` — the engine-owned default a new session starts on (#92 AC-5). */
+
+/** `models.list`'s `default` — the engine-owned default a new session starts
+    on (#92 AC-5) and the hire-template fallback for a blank model (#115);
+    never a LilOS-side default (D-#85). */
 export const engineDefaultModel = atom<string | undefined>(undefined);
 
 /** Provider rows `models.list` reported — names/logos for picker groups. */

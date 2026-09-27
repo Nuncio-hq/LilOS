@@ -244,7 +244,9 @@ export function ModelPicker({
       model: m.id,
       provider: m.provider,
       effort: keep ? effort : defaultEffort(m),
-      fast: m.fast ? shown0.fast : undefined,
+      // Explicit `false` (not a dropped field): engines that retain the fast
+      // tier across a model switch must be told it's off (#92 AC-3).
+      fast: m.fast ? shown0.fast : false,
     });
     setView("main");
   };
@@ -345,6 +347,9 @@ export function ModelPicker({
                     index={idx}
                     label={effortLabel}
                     onPick={(e) => choose({ ...shown0, effort: e, fast })}
+                    /* The label follows the thumb live; the wire call fires
+                       once on release (`onPick`). */
+                    onPreview={(e) => setPicked({ ...shown0, effort: e, fast })}
                   />
                 </div>
               ) : (

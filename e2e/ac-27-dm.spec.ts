@@ -206,8 +206,11 @@ test("AC-1 first run auto-hires the `default` engine profile", async ({
   await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
     timeout: 30_000,
   });
-  // No hiring UI — the hire slice is out of scope, so no dead affordance.
-  await expect(aside.getByText("Hire", { exact: false })).toHaveCount(0);
+  // The hire affordance is wired (issue #115); first run hired `default`
+  // without Oscar touching it.
+  await expect(
+    aside.getByRole("button", { name: "Hire employee" }),
+  ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-1-first-employee.png` });
 });
 

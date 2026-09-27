@@ -69,19 +69,29 @@ export async function listAgents(
   return { agents };
 }
 
-/** Throw AGENT_NOT_FOUND when `id` is not a Hermes profile. */
-export async function requireAgent(gw: GatewayLike, id: string): Promise<void> {
+/**
+ * Throw AGENT_NOT_FOUND when `id` is not a Hermes profile; resolve to the
+ * canonical profile id otherwise. Hermes lowercases profile names, so callers
+ * passing a display-style name (`Engineer`) still resolve to `engineer`.
+ */
+export async function requireAgent(
+  gw: GatewayLike,
+  id: string,
+): Promise<string> {
   const { agents } = await listAgents(gw);
-  if (!agents.some((a) => a.id === id))
-    throw new RpcError(RPC_ERRORS.AGENT_NOT_FOUND, `no agent ${id}`);
+  const hit = agents.find(
+    (a) => a.id === id || a.id.toLowerCase() === id.toLowerCase(),
+  );
+  if (!hit) throw new RpcError(RPC_ERRORS.AGENT_NOT_FOUND, `no agent ${id}`);
+  return hit.id;
 }
 
 export async function describeAgent(
   gw: GatewayLike,
   id: string,
 ): Promise<{ agent: AgentDescriptor }> {
-  await requireAgent(gw, id);
-  const r = (await gw.request("profiles.describe", { name: id })) as {
+  const realId = await requireAgent(gw, id);
+  const r = (await gw.request("profiles.describe", { name: realId })) as {
     name?: unknown;
     description?: unknown;
     soul?: unknown;
@@ -94,8 +104,8 @@ export async function describeAgent(
   const model = pinnedModel(r.model);
   return {
     agent: {
-      id,
-      name: str(r.name) ?? id,
+      id: realId,
+      name: str(r.name) ?? realId,
       ...(str(r.description) ? { description: str(r.description) } : {}),
       ...(model ? { model } : {}),
       skillCount: skills,
@@ -113,7 +123,9 @@ export async function createAgent(
   p: AgentsCreateParams,
 ): Promise<{ agent: AgentDescriptor }> {
   const { agents } = await listAgents(gw);
-  if (agents.some((a) => a.id === p.name))
+  // Case-insensitive: Hermes lowercases profile names, so `Engineer` collides
+  // with an existing `engineer` — reject before profiles.create half-applies.
+  if (agents.some((a) => a.id.toLowerCase() === p.name.toLowerCase()))
     throw new RpcError(
       RPC_ERRORS.INVALID_STATE,
       `agent ${p.name} already exists — LilOS never overwrites a profile`,
@@ -270,6 +282,9 @@ async function knownModelIds(
     const all = new Set<string>();
     const byProvider = new Map<string, Set<string>>();
     for (const prov of r.providers ?? []) {
+      // Same gate the picker applies (#92 AC-1): an unauthenticated
+      // provider's model must fail here, not lazily at the next prompt.
+      if (prov.authenticated === false) continue;
       const slug = str(prov.slug) ?? str(prov.name);
       const list = Array.isArray(prov.models) ? prov.models : [];
       for (const m of list) {
@@ -355,6 +370,15 @@ export async function setSessionModel(
         `no model ${pick.model} — see models.list`,
       );
   }
+  // The pick is interpolated into a config.set arg string upstream — a value
+  // with whitespace or a leading dash would be parsed as extra flags.
+  for (const v of [pick.model, pick.provider, pick.effort]) {
+    if (v !== undefined && (/\s/.test(v) || v.startsWith("-")))
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        `invalid model pick value: ${JSON.stringify(v)}`,
+      );
+  }
   const modelValue = [
     pick.model,
     pick.provider ? `--provider ${pick.provider}` : undefined,
@@ -364,14 +388,23 @@ export async function setSessionModel(
     .join(" ");
   const r = await configSet(gw, runtimeSid, "model", modelValue);
   const applied = str(r.value) ?? pick.model;
+  /* The fast leg is a second config.set: when it rejects after the model
+     already switched, throwing would leave the persisted pin on the OLD
+     model while the engine runs the new one. Report the truth instead —
+     model applied, fast off — and the next footer shows what really runs. */
+  let fast = pick.fast;
   if (pick.fast !== undefined) {
-    await configSet(gw, runtimeSid, "fast", pick.fast ? "on" : "off");
+    try {
+      await configSet(gw, runtimeSid, "fast", pick.fast ? "on" : "off");
+    } catch {
+      fast = false;
+    }
   }
   return {
     model: applied,
     ...(pick.provider ? { provider: pick.provider } : {}),
     ...(pick.effort ? { effort: pick.effort } : {}),
-    ...(pick.fast !== undefined ? { fast: pick.fast } : {}),
+    ...(fast !== undefined ? { fast } : {}),
     ...(r.deferred === true ? { deferred: true } : {}),
   };
 }

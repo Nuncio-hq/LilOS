@@ -124,13 +124,15 @@ describe("model picker v2", () => {
     await act(async () =>
       fireEvent.click(within(body()).getByText("Claude test 4.5")),
     );
-    // Claude test 4.5 reports no efforts → no effort in the pick.
+    // Claude test 4.5 reports no efforts → no effort in the pick; fast is
+    // sent as false so an engine that retains the tier across switches
+    // still turns it off.
     expect(picks).toEqual([
       {
         model: "claude-test-4.5",
         provider: "anthropic",
         effort: undefined,
-        fast: undefined,
+        fast: false,
       },
     ]);
   });

@@ -10,7 +10,13 @@ import {
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
-import { choiceFor, EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
+import {
+  choiceFor,
+  EditEmployeeDialog,
+  EmployeeHome,
+  NO_WS,
+  ThreadView,
+} from "@lilos/ui";
 import type {
   AttachedFile,
   Channel,
@@ -42,6 +48,7 @@ import {
   ensureAttachments,
   toAttachedFiles,
 } from "../lib/attachments";
+import { removeEmployee, saveEmployee } from "../lib/employees";
 import { useAtom } from "../lib/hooks";
 import {
   conversationReplies,
@@ -126,6 +133,8 @@ export function DmPage() {
   const statusPoll = useAtom(relay.status);
   const fatal = useAtom(relay.fatal);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   /* The picker's pick for a session that doesn't exist yet (#92 AC-5): held
      per employee, stamped on `conversations.open`, cleared once sent. */
   const [draftPick, setDraftPick] = useState<Record<string, ModelChoice>>({});
@@ -549,13 +558,42 @@ export function DmPage() {
         }}
       />
       {threadEl}
-      {profileOpen && (
+      {profileOpen && !editOpen && (
         <EmployeeProfileCard
           name={uiEmp.name}
           profile={uiEmp.profile}
           model={uiEmp.model}
           instructions={uiEmp.instructions}
+          onEdit={() => {
+            setEditError(null);
+            setEditOpen(true);
+          }}
           onClose={() => setProfileOpen(false)}
+        />
+      )}
+      {editOpen && (
+        <EditEmployeeDialog
+          e={uiEmp}
+          error={editError ?? undefined}
+          onClose={() => setEditOpen(false)}
+          onSave={(name, role) => {
+            void saveEmployee(employee.id, name, role)
+              .then(() => setEditOpen(false))
+              .catch((e) =>
+                setEditError(e instanceof Error ? e.message : String(e)),
+              );
+          }}
+          onRemove={() => {
+            void removeEmployee(employee.id)
+              .then(() => {
+                setEditOpen(false);
+                setProfileOpen(false);
+                void navigate({ to: "/" });
+              })
+              .catch((e) =>
+                setEditError(e instanceof Error ? e.message : String(e)),
+              );
+          }}
         />
       )}
     </div>
@@ -634,12 +672,14 @@ function EmployeeProfileCard({
   profile,
   model,
   instructions,
+  onEdit,
   onClose,
 }: {
   name: string;
   profile: string;
   model: string;
   instructions: string;
+  onEdit: () => void;
   onClose: () => void;
 }) {
   return (
@@ -668,13 +708,22 @@ function EmployeeProfileCard({
             <dd className="min-w-0 flex-1">{instructions || "—"}</dd>
           </div>
         </dl>
-        <button
-          type="button"
-          className="mt-4 w-full rounded-md border px-2 py-1.5 text-sm hover:bg-muted"
-          onClick={onClose}
-        >
-          Close
-        </button>
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            className="flex-1 rounded-md bg-foreground px-2 py-1.5 text-background text-sm"
+            onClick={onEdit}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            className="flex-1 rounded-md border px-2 py-1.5 text-sm hover:bg-muted"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

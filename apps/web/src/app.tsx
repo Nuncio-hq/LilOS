@@ -1,5 +1,12 @@
 import { formatDiagnostics, toStatusComponents } from "@lilos/client-runtime";
-import { Sidebar, StatusDialog, useTheme } from "@lilos/ui";
+import {
+  type EngineProfile,
+  HireDialog,
+  type HireDraft,
+  Sidebar,
+  StatusDialog,
+  useTheme,
+} from "@lilos/ui";
 import {
   createHashHistory,
   createRootRoute,
@@ -10,8 +17,13 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { employeeBadges } from "./lib/badges";
+import {
+  HIRE_TEMPLATES,
+  hireEmployee,
+  listHirableProfiles,
+} from "./lib/employees";
 import { useAtom } from "./lib/hooks";
 import { toUiEmployee } from "./lib/mapping";
 import { ME } from "./lib/me";
@@ -24,6 +36,8 @@ import {
   bootError,
   booted,
   engine,
+  engineDefaultModel,
+  engineModels,
   navOpen,
   relay,
   sessionModels,
@@ -79,6 +93,56 @@ function AppShell() {
     () => employeeBadges(channels, convs, models),
     [channels, convs, models],
   );
+
+  /* #115 hire flow: the + affordance exists only while the engine declares
+     the `agents` capability (D-#19). The model list + default come from
+     `models.list` (D-#85 — no hardcoded catalog, no LilOS default). */
+  const desc = useAtom(engine.description);
+  const canHire = desc?.capabilities.some((c) => c.id === "agents") ?? false;
+  const catalog = useAtom(engineModels);
+  const defaultModel = useAtom(engineDefaultModel);
+  const [hireOpen, setHireOpen] = useState(false);
+  const [hireError, setHireError] = useState<string | null>(null);
+  const [hirePending, setHirePending] = useState(false);
+  /* Single-flight hire: state only flips the button's disabled attr on the
+     next render, so a second click landing inside the same tick still finds
+     the ref already set. */
+  const hireBusy = useRef(false);
+  const [engineProfiles, setEngineProfiles] = useState<EngineProfile[]>([]);
+  const hireTemplates = useMemo(
+    () =>
+      HIRE_TEMPLATES.map((t) => ({
+        ...t,
+        model: t.model || defaultModel || catalog[0]?.id || "",
+      })),
+    [catalog, defaultModel],
+  );
+  const openHire = () => {
+    setHireError(null);
+    setHireOpen(true);
+    // Fresh roster each open — a profile created or freed elsewhere shows up.
+    void listHirableProfiles()
+      .then(setEngineProfiles)
+      .catch(() => setEngineProfiles([]));
+  };
+  const hire = (d: HireDraft, profile: string | null) => {
+    if (hireBusy.current) return;
+    hireBusy.current = true;
+    setHirePending(true);
+    void hireEmployee(d, profile)
+      .then((emp) => {
+        setHireOpen(false);
+        void navigate({
+          to: "/dm/$employeeId",
+          params: { employeeId: emp.id },
+        });
+      })
+      .catch((e) => setHireError(e instanceof Error ? e.message : String(e)))
+      .finally(() => {
+        hireBusy.current = false;
+        setHirePending(false);
+      });
+  };
 
   // Notifications (#32): engine events -> macOS notifications when the
   // conversation isn't in view; a notification click opens that conversation.
@@ -175,12 +239,27 @@ function AppShell() {
         }}
         onOpenTickets={() => {}}
         onAddFolder={() => {}}
+        onHire={canHire ? openHire : undefined}
         badges={badges}
         status={comps}
         buildLabel={buildLabel}
         onOpenStatus={() => setStatusOpen(true)}
       />
       <Outlet />
+      {hireOpen && (
+        <HireDialog
+          initial={hireTemplates[0]}
+          templates={hireTemplates}
+          profiles={engineProfiles}
+          models={catalog}
+          allChannels={[]}
+          usedProfiles={employees.map((e) => e.profile)}
+          error={hireError ?? undefined}
+          pending={hirePending}
+          onClose={() => setHireOpen(false)}
+          onHire={(d, profile) => hire(d, profile)}
+        />
+      )}
       {statusOpen && (
         <StatusDialog
           components={comps}
