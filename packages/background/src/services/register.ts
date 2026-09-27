@@ -37,13 +37,13 @@ export type AgentAction = "registered" | "replaced" | "already" | "failed";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Poll launchd until the job is running, fails, or ~6s pass. */
+/** Poll launchd until the job is running, fails, or ~2.5s pass. */
 async function pollSpawnState(
   spawned: NonNullable<ServiceControl["spawned"]>,
   plist: string,
 ): Promise<string> {
   let last = "unknown";
-  for (let i = 0; i < 24; i++) {
+  for (let i = 0; i < 10; i++) {
     await sleep(250);
     try {
       last = await spawned(plist);
@@ -51,6 +51,8 @@ async function pollSpawnState(
       last = "unknown";
     }
     if (last === "running" || last === "spawn failed") return last;
+    // Nothing is launching this label — don't burn the window on absent.
+    if ((last === "absent" || last === "unknown") && i >= 1) return last;
   }
   return last;
 }
@@ -92,18 +94,22 @@ export async function ensureLaunchAgents(opts: {
         await opts.control.register(plist);
       }
       // After a bundle swap, launchd's first spawn can fail on a stale launch
-      // constraint (OS_REASON_CODESIGNING); the repair is a second
+      // constraint (OS_REASON_CODESIGNING); the repair is another
       // unregister→register once BTM has dropped the old record. Applies to
       // any fresh register: post-swap `status` reads notFound, so the action
-      // is "registered", not "replaced".
+      // is "registered", not "replaced". "absent"/"unknown" are not failures —
+      // keepalive spawns lazily and needs no repair.
       if (action !== "already" && opts.control.spawned) {
         for (let attempt = 0; attempt < 3; attempt++) {
           const state = await pollSpawnState(opts.control.spawned, plist);
-          if (state === "running") break;
-          if (attempt < 2) {
-            await opts.control.unregister(plist);
-            await opts.control.register(plist);
+          if (state === "spawn failed") {
+            if (attempt < 2) {
+              await opts.control.unregister(plist);
+              await opts.control.register(plist);
+            }
+            continue;
           }
+          break;
         }
       }
       const status = await opts.control.status(plist);

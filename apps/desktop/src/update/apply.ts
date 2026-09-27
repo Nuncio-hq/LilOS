@@ -2,7 +2,6 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
-  existsSync,
   mkdirSync,
   readdirSync,
   rmSync,
@@ -114,7 +113,7 @@ WAIT=${wait}
 # could be reading the old copy at any offset, so every error and trace goes
 # to the log and the applier runs a per-build copy (see checkForUpdate).
 exec >>"$LOG" 2>&1
-[ "$LILOS_UPDATE_TRACE" = "1" ] && set -x
+[ "\${LILOS_UPDATE_TRACE:-}" = "1" ] && set -x
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 status() { printf '{"phase":"%s","detail":"%s","at":%s}\\n' "$1" "$2" "$(date +%s)000" > "$STATUS"; }
 
