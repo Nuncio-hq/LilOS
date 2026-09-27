@@ -56,6 +56,19 @@ PR does not exist.
   across sleep or engine restart ends `interrupted` with a Retry note.**
   Not: a spinner that never settles, or silently dropping the turn. — #34 ·
   PR #57
+- **D-#35 Ad-hoc (dev) bundles register agents via `launchctl bootstrap` +
+  `~/Library/LaunchAgents` plists; Developer ID bundles keep
+  `SMAppService.agent`.** SMAppService's launch constraint is keyed to the
+  exact cdhash, so an in-place bundle swap permanently spawn-fails on
+  ad-hoc builds; bootstrap resolves the `Program` path per spawn and
+  survives swaps. Not: SMAppService for dev builds, or bootstrap for
+  signed ones (it loses the Login Items approval item). — #35 · PR #81
+- **D-#35 Auto-update replaces the whole `.app` in place (app + relay +
+  harness share one version), then re-registers agents and gates on the
+  post-update version handshake; on failure it restores the parked
+  previous bundle and skips the release permanently.** Not: per-component
+  versions, in-place binary patches, or auto-retrying a failed release. —
+  #35 · PR #81
 
 ## Testing
 - **D-#3 CI (GitHub Actions, setup-bun) runs `bun run verify` with

@@ -1,10 +1,16 @@
 import { execFileSync } from "node:child_process";
 import {
   chmodSync,
+  closeSync,
   copyFileSync,
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
+  openSync,
+  readdirSync,
+  readSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -31,6 +37,13 @@ import { fileURLToPath } from "node:url";
 
 const VERSION = process.argv[2] ?? "1";
 const IDENTITY = process.argv[3] ?? "-";
+// One release version shared by app + relay + harness (#35): stamped into
+// each binary so a bundle's components always agree in `system.status`.
+const RELEASE_VERSION = `1.0.${VERSION}`;
+const stamp = [
+  "--define",
+  `process.env.LILOS_RELEASE_VERSION:${JSON.stringify(RELEASE_VERSION)}`,
+];
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = join(ROOT, "..", "..");
 const BUILD = join(ROOT, "build");
@@ -56,10 +69,26 @@ if (process.platform !== "darwin") {
   process.exit(1);
 }
 if (!existsSync(ELECTRON_APP)) {
-  console.error(
-    `Electron binary not at ${ELECTRON_APP} — run \`bun install\` first.`,
-  );
-  process.exit(1);
+  // Bun skips electron's postinstall on fresh CI machines; fetch the dist
+  // bundle ourselves (install.js is the package's own downloader).
+  console.log("==> electron dist missing — running electron/install.js");
+  try {
+    execFileSync("node", [join(ROOT, "node_modules/electron/install.js")], {
+      cwd: join(ROOT, "node_modules/electron"),
+      stdio: "inherit",
+    });
+  } catch {
+    execFileSync("bun", [join(ROOT, "node_modules/electron/install.js")], {
+      cwd: join(ROOT, "node_modules/electron"),
+      stdio: "inherit",
+    });
+  }
+  if (!existsSync(ELECTRON_APP)) {
+    console.error(
+      `Electron binary still not at ${ELECTRON_APP} — run \`bun install\` first.`,
+    );
+    process.exit(1);
+  }
 }
 
 console.log("==> render launch-agent plists");
@@ -82,6 +111,7 @@ run("bun", [
   join(REPO, "apps", "relay", "src", "index.ts"),
   "--compile",
   "--target=bun-darwin-arm64",
+  ...stamp,
   "--outfile",
   join(BUILD, "lilos-relay"),
 ]);
@@ -101,6 +131,7 @@ if (!skipHarness) {
     harnessEntry,
     "--compile",
     "--target=bun-darwin-arm64",
+    ...stamp,
     "--outfile",
     join(BUILD, "lilos-harness"),
   ]);
@@ -112,6 +143,7 @@ if (!skipHarness) {
     join(REPO, "packages", "engine-fake", "scripts", "serve.ts"),
     "--compile",
     "--target=bun-darwin-arm64",
+    ...stamp,
     "--outfile",
     join(BUILD, "lilos-engine-fake"),
   ]);
@@ -138,8 +170,10 @@ writeFileSync(
     {
       name: "lilos-desktop",
       productName: "LilOS",
-      version: `1.0.${VERSION}`,
+      version: RELEASE_VERSION,
       main: "main.cjs",
+      // The updater compares feeds against this monotonic build (#35).
+      lilosBuild: Number(VERSION),
     },
     null,
     2,
@@ -165,6 +199,13 @@ const set = (key: string, value: string) => {
     plistBuddy(["-c", `Add :${key} string ${value}`]);
   }
 };
+// Product name on the main executable too — `open`, `ps` and the updater all
+// address Contents/MacOS/LilOS.
+renameSync(
+  join(APP, "Contents", "MacOS", "Electron"),
+  join(APP, "Contents", "MacOS", "LilOS"),
+);
+set("CFBundleExecutable", "LilOS");
 set("CFBundleName", "LilOS");
 set("CFBundleDisplayName", "LilOS");
 set("CFBundleIdentifier", "com.nuncio.lilos");
@@ -185,6 +226,21 @@ mkdirSync(join(APP, "Contents", "Resources", "app"), { recursive: true });
 cpSync(APP_DIR, join(APP, "Contents", "Resources", "app"), {
   recursive: true,
 });
+// apps/web bundle (#27): build it with relative asset paths (the app loads it
+// over file://) and ship it so the DM surface opens offline.
+const WEB_DIST = join(REPO, "apps", "web", "dist");
+if (existsSync(join(REPO, "apps", "web", "package.json"))) {
+  execFileSync("bun", ["run", "--cwd", "apps/web", "build"], {
+    cwd: REPO,
+    stdio: "inherit",
+    env: { ...process.env, LILOS_WEB_BASE: "./" },
+  });
+}
+if (existsSync(join(WEB_DIST, "index.html"))) {
+  cpSync(WEB_DIST, join(APP, "Contents", "Resources", "app", "web"), {
+    recursive: true,
+  });
+}
 
 mkdirSync(join(APP, "Contents", "Library", "LaunchAgents"), {
   recursive: true,
@@ -207,20 +263,66 @@ for (const bin of [
   chmodSync(join(APP, "Contents", "MacOS", bin), 0o755);
 }
 
+/* Developer ID signing, inside out. `codesign --deep` does not reliably reach
+   nested code (Electron's dylibs, Squirrel's ShipIt), and notarization then
+   rejects the archive ("not signed with a valid Developer ID certificate",
+   "no secure timestamp", "hardened runtime not enabled"). Sign every Mach-O
+   file first, then every nested bundle deepest-first, then the app — each
+   with the hardened runtime, a secure timestamp and the JIT entitlements. */
+const ENTITLEMENTS = join(ROOT, "entitlements.plist");
+const MACHO_MAGIC = new Set([
+  0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca,
+]);
+const isMachO = (path: string): boolean => {
+  const fd = openSync(path, "r");
+  try {
+    const buf = Buffer.alloc(4);
+    if (readSync(fd, buf, 0, 4, 0) < 4) return false;
+    return MACHO_MAGIC.has(buf.readUInt32BE(0));
+  } finally {
+    closeSync(fd);
+  }
+};
+const walk = (dir: string, files: string[], bundles: string[]) => {
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    const st = lstatSync(path);
+    if (st.isSymbolicLink()) continue;
+    if (st.isDirectory()) {
+      walk(path, files, bundles);
+      if (/\.(app|framework|xpc|appex)$/.test(name)) bundles.push(path);
+    } else if (st.isFile() && isMachO(path)) {
+      files.push(path);
+    }
+  }
+};
+function signInsideOut(app: string, identity: string) {
+  const sign = (path: string) =>
+    run("codesign", [
+      "--force",
+      "--options",
+      "runtime",
+      "--timestamp",
+      "--entitlements",
+      ENTITLEMENTS,
+      "--sign",
+      identity,
+      path,
+    ]);
+  const files: string[] = [];
+  const bundles: string[] = [];
+  walk(join(app, "Contents"), files, bundles);
+  const depth = (p: string) => p.split("/").length;
+  for (const f of files.sort((a, b) => depth(b) - depth(a))) sign(f);
+  for (const b of bundles.sort((a, b) => depth(b) - depth(a))) sign(b);
+  sign(app);
+}
+
 console.log(`==> sign (${IDENTITY === "-" ? "ad-hoc" : IDENTITY})`);
 if (IDENTITY === "-") {
   run("codesign", ["--force", "--deep", "--sign", "-", APP]);
 } else {
-  run("codesign", [
-    "--force",
-    "--options",
-    "runtime",
-    "--timestamp",
-    "--deep",
-    "--sign",
-    IDENTITY,
-    APP,
-  ]);
+  signInsideOut(APP, IDENTITY);
 }
 run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", APP]);
 

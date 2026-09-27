@@ -1,0 +1,96 @@
+name: release
+
+# Issue #35 AC-1: CI builds the DMG. Signing + notarization run only when the
+# Apple secrets exist; otherwise the job builds the unsigned (dev) DMG and
+# says so — credentials are read from env, never written to the repo.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "scripts/release/**"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+    inputs:
+      build:
+        description: "build number (CFBundleVersion); defaults to run number"
+        required: false
+        default: ""
+
+permissions:
+  contents: write # only needed to attach assets on tag releases
+
+jobs:
+  dmg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Resolve build number
+        id: meta
+        run: |
+          if [ -n "${{ inputs.build }}" ]; then
+            B="${{ inputs.build }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            # v42 or v1.0.42 — last dotted component is the build number.
+            B="${GITHUB_REF##*/}"; B="${B#v}"; B="${B##*.}"
+          else
+            B="${GITHUB_RUN_NUMBER}"
+          fi
+          echo "build=$B" >> "$GITHUB_OUTPUT"
+          echo "version=1.0.$B" >> "$GITHUB_OUTPUT"
+
+      - name: Report credential state
+        id: creds
+        run: |
+          if [ -n "${APPLE_SIGNING_IDENTITY:-}" ] && [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ] && [ -n "${ASC_KEY_P8:-}" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "signing secrets present — this run produces a signed+notarized DMG"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "APPLE_SIGNING_IDENTITY / ASC_* secrets not set — building the unsigned (dev) DMG (AC-1 skipped: no credentials)"
+          fi
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+
+      - name: Build + sign + notarize + staple + pack
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATES_P12: ${{ secrets.APPLE_CERTIFICATES_P12 }}
+          APPLE_CERTIFICATES_PASSWORD: ${{ secrets.APPLE_CERTIFICATES_PASSWORD }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          LILOS_UPDATE_ASSET_URL: https://github.com/${{ github.repository }}/releases/latest/download/lilos-app.zip
+        run: scripts/release/sign-local.sh "${{ steps.meta.outputs.build }}"
+
+      - name: Upload DMG artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lilos-dmg-${{ steps.meta.outputs.version }}
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/lilos-app.zip
+            apps/desktop/dist/update-feed.json
+
+      - name: Publish release assets
+        if: startsWith(github.ref, 'refs/tags/') && steps.creds.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" \
+            "apps/desktop/dist/LilOS-${{ steps.meta.outputs.version }}.dmg" \
+            apps/desktop/dist/lilos-app.zip \
+            apps/desktop/dist/update-feed.json \
+            --clobber
