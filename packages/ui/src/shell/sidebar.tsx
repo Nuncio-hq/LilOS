@@ -103,18 +103,20 @@ export function Sidebar({
           ? "fixed inset-y-0 left-0 z-40 flex w-[264px] shadow-2xl"
           : hiddenWhenClosed
             ? "hidden"
-            : "hidden lg:flex",
+            : // Same fixed width as the overlay variant — content-sized here
+              // would let header extras (e.g. the build label) squeeze the feed.
+              "hidden w-[264px] shrink-0 lg:flex",
       )}
     >
       <div className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
         <div className="grid size-7 place-items-center rounded-md bg-foreground font-bold text-background text-xs">
           OC
         </div>
-        <div className="font-semibold">Oscar Co</div>
+        <div className="min-w-0 truncate font-semibold">Oscar Co</div>
         {buildLabel && (
           <span
             data-build-label
-            className="rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-[10px] text-amber-700 dark:text-amber-400"
+            className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-[10px] text-amber-700 dark:text-amber-400"
           >
             {buildLabel}
           </span>

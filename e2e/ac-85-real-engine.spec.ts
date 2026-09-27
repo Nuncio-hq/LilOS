@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,11 +56,41 @@ function killProc(proc: ChildProcess): Promise<void> {
   });
 }
 
+const freePort = () =>
+  new Promise<number>((resolve, reject) => {
+    const srv = createServer();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const addr = srv.address();
+      srv.close(() =>
+        typeof addr === "object" && addr
+          ? resolve(addr.port)
+          : reject(new Error("no port")),
+      );
+    });
+  });
+
+/** Three distinct free ports — repeat/parallel runs must never collide. */
+async function pickPorts(): Promise<{
+  relay: number;
+  feed: number;
+  web: number;
+}> {
+  for (;;) {
+    const [relay, feed, web] = await Promise.all([
+      freePort(),
+      freePort(),
+      freePort(),
+    ]);
+    if (new Set([relay, feed, web]).size === 3) return { relay, feed, web };
+  }
+}
+
 async function bootStack(
   tag: string,
-  ports: { relay: number; feed: number; web: number },
   extraEnv: Record<string, string> = {},
 ): Promise<Stack> {
+  const ports = await pickPorts();
   const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
   const proc = spawn("bun", ["run", "dev"], {
     cwd: webDir,
@@ -139,11 +170,10 @@ test("AC-2 (#85) a missing Hermes reads plainly — status dialog + DM composer"
   page,
 }) => {
   test.setTimeout(120_000);
-  const stack = await bootStack(
-    "nohermes",
-    { relay: 4583, feed: 4587, web: 5205 },
-    { LILOS_ENGINE: "hermes", HERMES_BIN: "/nonexistent/hermes-ac85" },
-  );
+  const stack = await bootStack("nohermes", {
+    LILOS_ENGINE: "hermes",
+    HERMES_BIN: "/nonexistent/hermes-ac85",
+  });
   try {
     // Engine down means no auto-hire: seed the employee + DM over the relay.
     const [created] = await rpc(stack.relayWs, stack.relayToken, [
@@ -190,11 +220,7 @@ test("AC-4 (#85) a dev stack on the fake engine is labeled", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  const stack = await bootStack(
-    "fakelabel",
-    { relay: 4584, feed: 4588, web: 5206 },
-    { LILOS_ENGINE: "fake" },
-  );
+  const stack = await bootStack("fakelabel", { LILOS_ENGINE: "fake" });
   try {
     await page.goto(`${stack.webUrl}/?statusPollMs=500`);
     const label = page.locator("[data-build-label]");
