@@ -544,4 +544,22 @@ describe("engine-hermes #8: agents + models capabilities", () => {
       h.request("session.setModel", { sessionId, model: "stub-model-a" }),
     ).rejects.toMatchObject({ code: -32003 });
   });
+
+  test("turn.started carries the ambient model when session.start omits one (#30)", async () => {
+    const gw = new FakeGateway();
+    const conn = connectInMemory(
+      new HermesEngine({ gateway: gw, model: "stub-model-a" }),
+    );
+    const h = new Harness(conn);
+    const { sessionId } = await start(h);
+    const startedAt = h.events.length;
+    const p = promptAsync(h, sessionId);
+    const started = h.events
+      .slice(startedAt)
+      .find((e) => e.type === "turn.started");
+    if (!started) throw new Error("turn.started missing");
+    expect((started.payload as { model?: string }).model).toBe("stub-model-a");
+    gw.complete(gw.lastSid);
+    await p;
+  });
 });

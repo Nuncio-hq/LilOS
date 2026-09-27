@@ -395,6 +395,7 @@
         "asks.respond",
         "asks.list",
         "turns.interrupt",
+        "conversations.setModel",
         "system.status",
         "employees.remove",
         "agents.list",
@@ -417,7 +418,8 @@
         "turn.interruptRequested",
         "channel.removed",
         "employee.upserted",
-        "employee.removed"
+        "employee.removed",
+        "conversation.modelRequested"
       ]
     },
     "HelloParams": {
@@ -483,6 +485,74 @@
               ]
             },
             "detail": {
+              "type": "string"
+            },
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "methods": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "detail": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ]
+              }
+            },
+            "models": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "detail": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "defaultModel": {
               "type": "string"
             }
           },
@@ -1073,6 +1143,10 @@
         "title": {
           "type": "string"
         },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
         "archived": {
           "type": "boolean"
         },
@@ -1158,6 +1232,10 @@
               },
               "title": {
                 "type": "string"
+              },
+              "model": {
+                "type": "string",
+                "minLength": 1
               },
               "archived": {
                 "type": "boolean"
@@ -1278,6 +1356,10 @@
             "title": {
               "type": "string"
             },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
             "archived": {
               "type": "boolean"
             },
@@ -1374,6 +1456,10 @@
                   "sizeBytes"
                 ]
               }
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
             }
           },
           "required": [
@@ -1392,6 +1478,25 @@
         "conversation",
         "rootMessage"
       ]
+    },
+    "ConversationsSetModelParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "conversationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "conversationId",
+        "model"
+      ],
+      "additionalProperties": false
     },
     "ConversationsUpdateParams": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1416,6 +1521,10 @@
           ]
         },
         "engineRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
           "type": "string",
           "minLength": 1
         }
@@ -1464,6 +1573,10 @@
             },
             "title": {
               "type": "string"
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
             },
             "archived": {
               "type": "boolean"
@@ -1606,6 +1719,10 @@
               "sizeBytes"
             ]
           }
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -1733,6 +1850,10 @@
                     "sizeBytes"
                   ]
                 }
+              },
+              "model": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [
@@ -1811,6 +1932,10 @@
               "dataBase64"
             ]
           }
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -1898,6 +2023,10 @@
                   "sizeBytes"
                 ]
               }
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
             }
           },
           "required": [
@@ -2279,6 +2408,10 @@
             "title": {
               "type": "string"
             },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
             "archived": {
               "type": "boolean"
             },
@@ -2411,6 +2544,10 @@
                   "sizeBytes"
                 ]
               }
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
             }
           },
           "required": [
@@ -2460,6 +2597,74 @@
           ]
         },
         "detail": {
+          "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string"
+              },
+              "methods": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "detail": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
+        },
+        "defaultModel": {
           "type": "string"
         }
       },
@@ -2536,6 +2741,10 @@
                   },
                   "title": {
                     "type": "string"
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
                   },
                   "archived": {
                     "type": "boolean"
@@ -2669,6 +2878,10 @@
                         "sizeBytes"
                       ]
                     }
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "required": [
@@ -2741,6 +2954,74 @@
             "model": {
               "type": "string"
             },
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "methods": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "detail": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ]
+              }
+            },
+            "models": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "detail": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "defaultModel": {
+              "type": "string"
+            },
             "engineRssBytes": {
               "type": "integer",
               "minimum": 0,
@@ -2789,6 +3070,74 @@
           "maximum": 9007199254740991
         },
         "model": {
+          "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string"
+              },
+              "methods": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "detail": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
+        },
+        "defaultModel": {
           "type": "string"
         },
         "engineRssBytes": {
@@ -3006,6 +3355,74 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
+            },
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "methods": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "detail": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ]
+              }
+            },
+            "models": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "detail": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "defaultModel": {
+              "type": "string"
             }
           }
         },
@@ -3630,6 +4047,10 @@
                   "sizeBytes"
                 ]
               }
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
             }
           },
           "required": [
@@ -3735,6 +4156,10 @@
                     "sizeBytes"
                   ]
                 }
+              },
+              "model": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [
@@ -3824,6 +4249,10 @@
             },
             "title": {
               "type": "string"
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
             },
             "archived": {
               "type": "boolean"
@@ -4330,6 +4759,29 @@
       },
       "required": [
         "employeeId"
+      ]
+    },
+    "ConversationModelRequestedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "channelId",
+        "conversationId",
+        "model"
       ]
     },
     "AgentDescriptor": {

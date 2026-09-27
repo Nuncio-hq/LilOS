@@ -344,7 +344,10 @@ describe("issue #19 — one conversation from shared pieces", () => {
         onSendQueued={() => {}}
         setResolved={() => {}}
         say={() => {}}
-        models={["gpt-test-1", "claude-test-2"]}
+        models={[
+          { id: "gpt-test-1", provider: "openai" },
+          { id: "claude-test-2", provider: "anthropic" },
+        ]}
         repoFiles={["README.md"]}
         onPrComment={() => {}}
         onPrMerge={() => {}}

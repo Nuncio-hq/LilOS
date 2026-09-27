@@ -33,23 +33,43 @@ import {
 } from "../components/ai-elements/prompt-input";
 import type { AttachedFile, ModelOption } from "../types";
 
-export function ModelLogo({ model }: { model: string }) {
-  const p = model.startsWith("qwen")
-    ? "alibaba"
-    : model.startsWith("claude")
-      ? "anthropic"
-      : model.startsWith("gpt")
-        ? "openai"
-        : null;
-  return p ? (
-    <ModelSelectorLogo provider={p} className="size-3.5" />
+/* Provider slugs we render the models.dev logo for; anything else gets the
+   generic chip — never a broken image. */
+const LOGO_PROVIDERS = new Set([
+  "alibaba",
+  "amazon",
+  "anthropic",
+  "azure",
+  "cerebras",
+  "cohere",
+  "deepseek",
+  "fireworks",
+  "github-copilot",
+  "google",
+  "groq",
+  "meta",
+  "mistral",
+  "moonshotai",
+  "nvidia",
+  "openai",
+  "openrouter",
+  "togetherai",
+  "vercel",
+  "xai",
+  "zai",
+]);
+
+export function ModelLogo({ provider }: { provider?: string }) {
+  return provider && LOGO_PROVIDERS.has(provider) ? (
+    <ModelSelectorLogo provider={provider} className="size-3.5" />
   ) : (
     <CpuIcon className="size-3.5 text-muted-foreground" />
   );
 }
 
-// Session model. Real app: slash.exec "/model <id>" on this session (applies from the next turn).
-// The model list comes from the app (no mock data in here).
+// Model pick applies from the next turn (issue #30). The list is what the
+// engine reported via `models.list`, grouped by provider — the app passes it in
+// (no hardcoded catalog).
 export function ModelPicker({
   model,
   models,
@@ -60,35 +80,47 @@ export function ModelPicker({
   onModel: (m: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const selected = models.find((m) => m.id === model);
+  const groups = new Map<string, ModelOption[]>();
+  for (const m of models) {
+    const provider = m.provider ?? "";
+    groups.set(provider, [...(groups.get(provider) ?? []), m]);
+  }
   return (
     <ModelSelector open={open} onOpenChange={setOpen}>
       <ModelSelectorTrigger
         render={<PromptInputButton size="sm" className="gap-1.5 text-xs" />}
       >
-        <ModelLogo model={model} />
-        <span className="max-w-36 truncate">{model.split(" ")[0]}</span>
+        <ModelLogo provider={selected?.provider} />
+        <span className="max-w-36 truncate">{selected?.name ?? model}</span>
         <ChevronDownIcon className="size-3" />
       </ModelSelectorTrigger>
-      <ModelSelectorContent title="Model for this session">
+      <ModelSelectorContent title="Model for the next turn">
         <ModelSelectorInput placeholder="Search models…" />
         <ModelSelectorList>
           <ModelSelectorEmpty>No model found.</ModelSelectorEmpty>
-          <ModelSelectorGroup heading="Hermes providers · applies from the next turn">
-            {models.map((m) => (
-              <ModelSelectorItem
-                key={m}
-                value={m}
-                onSelect={() => {
-                  onModel(m);
-                  setOpen(false);
-                }}
-              >
-                <ModelLogo model={m} />
-                <ModelSelectorName>{m}</ModelSelectorName>
-                {m === model && <CheckIcon className="ml-auto size-4" />}
-              </ModelSelectorItem>
-            ))}
-          </ModelSelectorGroup>
+          {[...groups.entries()].map(([provider, items]) => (
+            <ModelSelectorGroup
+              key={provider || "other"}
+              heading={provider || "Other"}
+            >
+              {items.map((m) => (
+                <ModelSelectorItem
+                  key={m.id}
+                  value={m.id}
+                  keywords={[m.id, m.name ?? "", m.provider ?? ""]}
+                  onSelect={() => {
+                    onModel(m.id);
+                    setOpen(false);
+                  }}
+                >
+                  <ModelLogo provider={m.provider} />
+                  <ModelSelectorName>{m.name ?? m.id}</ModelSelectorName>
+                  {m.id === model && <CheckIcon className="ml-auto size-4" />}
+                </ModelSelectorItem>
+              ))}
+            </ModelSelectorGroup>
+          ))}
         </ModelSelectorList>
       </ModelSelectorContent>
     </ModelSelector>
@@ -183,7 +215,7 @@ export function FocusComposer({
             {accept && <FocusAttachButton />}
             {onModel && models?.length ? (
               <ModelPicker
-                model={model ?? models[0]}
+                model={model ?? models[0].id}
                 models={models}
                 onModel={onModel}
               />

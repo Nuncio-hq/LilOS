@@ -254,6 +254,7 @@ export function AgentTurn({
       {!r.live && !r.streaming && (r.text || steps.length > 0) && (
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-muted-foreground">
           {r.dur !== undefined && <span>Worked for {r.dur}s</span>}
+          {r.model && <span>· {r.model}</span>}
           {steps.length > 0 && <span>· {plural(steps.length, "step")}</span>}
           {files > 0 &&
             (onOpen ? (

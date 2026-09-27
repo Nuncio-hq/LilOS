@@ -51,12 +51,13 @@ export const SEED_AGENTS: FakeAgent[] = [
 export interface FakeModel {
   id: string;
   name: string;
+  provider?: string;
 }
 
 export const MODEL_CATALOG: FakeModel[] = [
-  { id: "fake-small", name: "Fake Small" },
-  { id: "fake-large", name: "Fake Large" },
-  { id: "fake-reasoning", name: "Fake Reasoning" },
+  { id: "fake-small", name: "Fake Small", provider: "fake" },
+  { id: "fake-large", name: "Fake Large", provider: "fake" },
+  { id: "fake-reasoning", name: "Fake Reasoning", provider: "fake" },
 ];
 
 export const DEFAULT_MODEL = "fake-large";

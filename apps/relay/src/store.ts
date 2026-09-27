@@ -33,6 +33,8 @@ export interface ConversationPatch {
   archived?: boolean;
   state?: ConversationState;
   engineRef?: string;
+  /** The model pinned on the engine session (issue #30). */
+  model?: string;
 }
 
 export interface OpenConversationInput {
@@ -52,6 +54,8 @@ export interface AppendMessageInput {
   text: string;
   /** Display refs only — bytes already stored via the AttachmentStore. */
   attachments?: MessageAttachment[];
+  /** Engine `turn.started.model` on employee answers (issue #30). */
+  model?: string;
 }
 
 export interface ListMessagesQuery {
@@ -189,6 +193,7 @@ export function createMemoryStore(): RelayStore {
       authorId: input.authorId,
       authorKind: input.authorKind,
       text: input.text,
+      ...(input.model !== undefined ? { model: input.model } : {}),
       seq,
       createdAt: now(),
       attachments: input.attachments,

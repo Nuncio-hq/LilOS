@@ -60,6 +60,8 @@ export const conversations = sqliteTable(
     state: text("state", { enum: ["idle", "active", "closed"] })
       .notNull()
       .default("idle"),
+    /** Model pinned on the engine session (issue #30); null = engine default. */
+    model: text("model"),
     title: text("title").notNull().default(""),
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),
     createdAt: integer("created_at").notNull(),
@@ -84,6 +86,8 @@ export const messages = sqliteTable(
     text: text("text").notNull(),
     /** Display refs JSON (`MessageAttachment[]`); bytes live outside the row. */
     attachments: text("attachments"),
+    /** Engine `turn.started.model` on employee answers (issue #30). */
+    model: text("model"),
     /** Monotonic per channel; replay cursor (`afterSeq`) points here. */
     seq: integer("seq").notNull(),
     createdAt: integer("created_at").notNull(),

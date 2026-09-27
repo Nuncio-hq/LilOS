@@ -27,17 +27,19 @@ import * as schema from "./schema";
 
 type Db = BunSQLiteDatabase<typeof schema>;
 
+type ConversationRow = typeof schema.conversations.$inferSelect;
+/* SQLite columns are NULL when unset; the contract field is optional, not
+   nullable — fold null to absent at the boundary. */
+const rowToConversation = (row: ConversationRow): Conversation => ({
+  ...row,
+  model: row.model ?? undefined,
+});
+
 type MessageRow = typeof schema.messages.$inferSelect;
 /** Rows carry attachment refs as JSON text; the domain object unpacks them. */
 const rowToMessage = (row: MessageRow): AppMessage => ({
-  id: row.id,
-  channelId: row.channelId,
-  conversationId: row.conversationId,
-  authorId: row.authorId,
-  authorKind: row.authorKind,
-  text: row.text,
-  seq: row.seq,
-  createdAt: row.createdAt,
+  ...row,
+  model: row.model ?? undefined,
   attachments: row.attachments
     ? (JSON.parse(row.attachments) as MessageAttachment[])
     : undefined,
@@ -92,6 +94,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       authorId: input.authorId,
       authorKind: input.authorKind,
       text: input.text,
+      ...(input.model !== undefined ? { model: input.model } : {}),
       seq: bumped.seq,
       createdAt: now(),
       attachments: input.attachments,
@@ -252,16 +255,15 @@ export function createDrizzleStore(db: Db): RelayStore {
             .orderBy(asc(schema.conversations.createdAt))
             .all()
         : base.orderBy(asc(schema.conversations.createdAt)).all();
-      return rows;
+      return rows.map(rowToConversation);
     },
     async getConversation(id) {
-      return (
-        db
-          .select()
-          .from(schema.conversations)
-          .where(eq(schema.conversations.id, id))
-          .get() ?? null
-      );
+      const row = db
+        .select()
+        .from(schema.conversations)
+        .where(eq(schema.conversations.id, id))
+        .get();
+      return row ? rowToConversation(row) : null;
     },
     async openConversation(input: OpenConversationInput) {
       return db.transaction((tx) => {
@@ -315,7 +317,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         .where(eq(schema.conversations.id, id))
         .returning()
         .get();
-      return updated ?? null;
+      return updated ? rowToConversation(updated) : null;
     },
     async listMessages(
       channelId: string,
@@ -446,7 +448,11 @@ export function createDrizzleStore(db: Db): RelayStore {
           .where(eq(schema.channels.id, conversation.channelId))
           .get();
         if (!channel) continue;
-        pending.push({ conversation, channel, message: rowToMessage(last) });
+        pending.push({
+          conversation: rowToConversation(conversation),
+          channel,
+          message: rowToMessage(last),
+        });
       }
       pending.sort((a, b) => a.message.seq - b.message.seq);
       return pending;

@@ -50,13 +50,15 @@ export async function engineProfiles(): Promise<EngineProfile[] | null> {
   }
 }
 
-/** `models.list` → model ids, default first. null when the engine isn't reachable. */
+/** `models.list` → the catalog, default first. null when the engine isn't reachable. */
 export async function engineModels(): Promise<ModelOption[] | null> {
   try {
-    const r = await engine<{ models: { id: string }[]; default?: string }>("models.list")
-    const ids = r.models.map((m) => m.id)
-    if (r.default) return [r.default, ...ids.filter((id) => id !== r.default)]
-    return ids
+    const r = await engine<{ models: ModelOption[]; default?: string }>("models.list")
+    const rest = r.models.filter((m) => m.id !== r.default)
+    const first =
+      r.models.find((m) => m.id === r.default) ??
+      (r.default ? { id: r.default } : undefined)
+    return first ? [first, ...rest] : rest
   } catch {
     return null
   }

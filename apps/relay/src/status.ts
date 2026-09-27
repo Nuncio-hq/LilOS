@@ -241,6 +241,9 @@ export function buildSystemStatus(input: StatusInput): SystemStatusResult {
         version: host.status.engineVersion,
         rssBytes: host.status.engineRssBytes,
         sessions: host.status.sessions,
+        capabilities: host.status.capabilities,
+        models: host.status.models,
+        defaultModel: host.status.defaultModel,
       }
     : host?.engine
       ? {}

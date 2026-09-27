@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { Capability } from "../engine/capabilities";
+import { ModelOption } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
 import { ChannelMessage } from "../index";
 
@@ -70,6 +72,12 @@ export const Conversation = z.object({
   engineRef: z.string().min(1).nullable(),
   state: ConversationState,
   title: z.string(),
+  /**
+   * The model pinned on the conversation's engine session (issue #30): the
+   * id the engine acked via `session.setModel`, or the pending pick applied
+   * at `session.start` before a binding exists. Absent = engine default.
+   */
+  model: z.string().min(1).optional(),
   archived: z.boolean(),
   createdAt: Timestamp,
 });
@@ -101,6 +109,11 @@ export const AppMessage = z.object({
   authorKind: AuthorKind,
   /** Attachment refs for display; bytes are fetched per id. */
   attachments: z.array(MessageAttachment).optional(),
+  /**
+   * The model that produced an employee turn (engine `turn.started.model`,
+   * passed through by the harness). Absent on user/system lines.
+   */
+  model: z.string().min(1).optional(),
 });
 export type AppMessage = z.infer<typeof AppMessage>;
 
@@ -163,5 +176,15 @@ export const EngineHostStatus = z.object({
   state: EngineHostState.optional(),
   /** Freeform one-liner, e.g. crash detail or engine name. */
   detail: z.string().optional(),
+  /**
+   * What the engine declares, from the host's `harness.report` probe
+   * (issue #30): the app renders capability-gated controls (e.g. the model
+   * picker only when `models` is present) straight from this.
+   */
+  capabilities: z.array(Capability).optional(),
+  /** The engine's selectable models (`models.list`), grouped by `provider`. */
+  models: z.array(ModelOption).optional(),
+  /** The engine's default model id (`models.list.default`). */
+  defaultModel: z.string().optional(),
 });
 export type EngineHostStatus = z.infer<typeof EngineHostState>;

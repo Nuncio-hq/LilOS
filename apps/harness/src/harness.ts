@@ -13,6 +13,7 @@ import {
   AskResolvedEvent,
   ChannelCreatedEvent,
   ChannelRemovedEvent,
+  ConversationModelRequestedEvent,
   ENGINE_PASSTHROUGH_METHODS,
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
@@ -55,6 +56,8 @@ interface SessionBinding {
   runningTurnId?: string;
   /** Buffered answer text per running turn. */
   textByTurn: Map<string, string>;
+  /** `turn.started.model` per running turn — stamped on the answer message. */
+  modelByTurn: Map<string, string>;
   /** User messages queued while a turn runs (delivered in order). */
   queue: AppMessage[];
 }
@@ -396,7 +399,7 @@ export class Harness {
     const agent = await this.ensureAgent(conn, employee);
     const started = await conn.request<{ sessionId: string; ref?: string }>(
       "session.start",
-      this.sessionParams(employee, agent),
+      this.sessionParams(employee, agent, conv),
     );
     // Session lost on the engine (fresh engine/orphan grace expired): a turn
     // that was running ended silently — surface interrupted + Retry (AC-4).
@@ -411,6 +414,7 @@ export class Harness {
       lastSeq: 0,
       runningTurnId: undefined,
       textByTurn: new Map(),
+      modelByTurn: new Map(),
     };
     this.bindings.set(binding.conversationId, rebound);
     this.conversationBySession.set(started.sessionId, binding.conversationId);
@@ -602,6 +606,7 @@ export class Harness {
           lastSeq: 0,
           queue: [],
           textByTurn: new Map(),
+          modelByTurn: new Map(),
         };
         this.bindings.set(conv.id, binding);
         this.conversationBySession.set(conv.engineRef, conv.id);
@@ -616,7 +621,7 @@ export class Harness {
     const agent = await this.ensureAgent(conn, employee);
     const started = await conn.request<{ sessionId: string; ref?: string }>(
       "session.start",
-      this.sessionParams(employee, agent),
+      this.sessionParams(employee, agent, conv),
     );
     const binding: SessionBinding = {
       conversationId: conv.id,
@@ -626,6 +631,7 @@ export class Harness {
       lastSeq: 0,
       queue: [],
       textByTurn: new Map(),
+      modelByTurn: new Map(),
     };
     this.bindings.set(conv.id, binding);
     this.conversationBySession.set(started.sessionId, conv.id);
@@ -654,6 +660,9 @@ export class Harness {
         if (!binding) return;
         binding.runningTurnId = event.payload.turnId;
         binding.textByTurn.set(event.payload.turnId, "");
+        if (event.payload.model) {
+          binding.modelByTurn.set(event.payload.turnId, event.payload.model);
+        }
         this.opts.sleep.acquire();
         this.updateConversation(binding.conversationId, {
           state: "active",
@@ -789,6 +798,16 @@ export class Harness {
         }
         break;
       }
+      case "conversation.modelRequested": {
+        const parsed = ConversationModelRequestedEvent.safeParse(params);
+        if (parsed.success) {
+          void this.onModelRequested(
+            parsed.data.conversationId,
+            parsed.data.model,
+          );
+        }
+        break;
+      }
       default:
         break;
     }
@@ -903,6 +922,45 @@ export class Harness {
     }
   }
 
+  /**
+   * Model pick (#30): `conversations.setModel` lands here. With a bound
+   * engine session the engine acks first (its canonical id is what the
+   * conversation stores); without one the pin rides on the conversation and
+   * `session.start` picks it up via `sessionParams`.
+   */
+  private async onModelRequested(conversationId: string, model: string) {
+    const binding = this.bindings.get(conversationId);
+    const conn = this.engine;
+    let pinned = model;
+    if (binding && conn) {
+      try {
+        const ack = await conn.request<{ model: string }>("session.setModel", {
+          sessionId: binding.sessionId,
+          model,
+        });
+        pinned = ack.model;
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        this.opts.log.warn("session.setModel failed", {
+          conversationId,
+          error: detail,
+        });
+        await this.postSystem(
+          binding,
+          `Couldn't switch to ${model}: ${detail}`,
+        );
+        return;
+      }
+    }
+    await this.updateConversation(conversationId, { model: pinned }).catch(
+      (error) =>
+        this.opts.log.warn("conversation model update failed", {
+          conversationId,
+          error: String(error),
+        }),
+    );
+  }
+
   /* --------------------------- turn completion -------------------------- */
 
   private async finishTurn(
@@ -911,7 +969,9 @@ export class Harness {
   ) {
     const { turnId, stopReason } = event.payload;
     const text = binding.textByTurn.get(turnId) ?? "";
+    const model = binding.modelByTurn.get(turnId);
     binding.textByTurn.delete(turnId);
+    binding.modelByTurn.delete(turnId);
     binding.runningTurnId = undefined;
     this.opts.sleep.release();
 
@@ -926,6 +986,7 @@ export class Harness {
           authorKind: "employee",
           authorId: employeeId,
           text: text.trim(),
+          ...(model ? { model } : {}),
         })
         .catch((error) =>
           this.opts.log.error("answer post failed", { error: String(error) }),
@@ -1012,12 +1073,18 @@ export class Harness {
     }
   }
 
-  private sessionParams(employee: Employee | undefined, agentId: string) {
+  private sessionParams(
+    employee: Employee | undefined,
+    agentId: string,
+    conv?: Conversation,
+  ) {
     const base = this.opts.sessionParamsFor?.(employee, agentId) ?? {
       agent: agentId,
       ...(employee?.model ? { model: employee.model } : {}),
     };
-    return { ...base, cwd: this.opts.workdir };
+    // A model pinned on the conversation (#30) wins over the profile default.
+    const model = conv?.model ?? base.model;
+    return { ...base, ...(model ? { model } : {}), cwd: this.opts.workdir };
   }
 
   private employeeIdFor(conv: Conversation | undefined) {
@@ -1078,7 +1145,11 @@ export class Harness {
 
   private async updateConversation(
     conversationId: string,
-    patch: { engineRef?: string; state?: "idle" | "active" | "closed" },
+    patch: {
+      engineRef?: string;
+      state?: "idle" | "active" | "closed";
+      model?: string;
+    },
   ) {
     await this.opts.relay.request("conversations.update", {
       conversationId,

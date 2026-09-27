@@ -281,7 +281,9 @@ export class HermesEngine {
         id,
         p.agent,
         p.cwd,
-        p.model,
+        // effective model (what session.create got), not the bare request —
+        // the ambient default still answers `turn.started.model` (#30).
+        modelRef.model ?? p.model,
         mcp,
         "ws",
         r.session_id,
@@ -293,7 +295,7 @@ export class HermesEngine {
       s.emit("session.started", {
         agent: p.agent,
         cwd: p.cwd,
-        ...(p.model ? { model: p.model } : {}),
+        ...(s.model ? { model: s.model } : {}),
       });
       s.setState("idle");
       return { sessionId: id };
@@ -310,7 +312,7 @@ export class HermesEngine {
       id,
       p.agent,
       p.cwd,
-      p.model,
+      modelRef.model ?? p.model,
       mcp,
       "acp",
       opened.runtimeSid,
@@ -323,7 +325,7 @@ export class HermesEngine {
     s.emit("session.started", {
       agent: p.agent,
       cwd: p.cwd,
-      ...(p.model ? { model: p.model } : {}),
+      ...(s.model ? { model: s.model } : {}),
     });
     s.setState("idle");
     return { sessionId: id };

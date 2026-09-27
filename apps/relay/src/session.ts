@@ -12,6 +12,7 @@ import {
   ChannelUnsubscribeParams,
   ConversationsListParams,
   ConversationsOpenParams,
+  ConversationsSetModelParams,
   ConversationsUpdateParams,
   EmployeesCreateParams,
   EmployeesRemoveParams,
@@ -441,6 +442,9 @@ export function createRelay(options: RelayOptions): Relay {
               connected: host !== null,
               state: host?.engine?.state,
               detail: host?.engine?.detail,
+              capabilities: host?.status?.capabilities,
+              models: host?.status?.models,
+              defaultModel: host?.status?.defaultModel,
             },
           };
           respond(peer, id, welcome);
@@ -551,17 +555,19 @@ export function createRelay(options: RelayOptions): Relay {
         case "conversations.update": {
           const parsed = ConversationsUpdateParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
-          // engineRef/state are owned by the engine host; title/archive are
+          // engineRef/state/model are owned by the engine host (the model
+          // lands once the engine acks `session.setModel`); title/archive are
           // user-facing fields any client may set.
           if (
             (parsed.data.engineRef !== undefined ||
-              parsed.data.state !== undefined) &&
+              parsed.data.state !== undefined ||
+              parsed.data.model !== undefined) &&
             !isHost(peer)
           ) {
             throw new RpcError(
               JsonRpcCode.forbidden,
               "forbidden",
-              "only the registered engine host may write engineRef/state",
+              "only the registered engine host may write engineRef/state/model",
             );
           }
           const { conversationId, ...patch } = parsed.data;
@@ -902,6 +908,29 @@ export function createRelay(options: RelayOptions): Relay {
           emit(conversation.channelId, "turn.interruptRequested", {
             channelId: conversation.channelId,
             conversationId: conversation.id,
+          });
+          respond(peer, id, { ok: true });
+          return;
+        }
+        case "conversations.setModel": {
+          const parsed = ConversationsSetModelParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const conversation = await store.getConversation(
+            parsed.data.conversationId,
+          );
+          if (!conversation) {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "conversation not found",
+            );
+          }
+          // The pick lands via the engine host (session.setModel ack → the
+          // host writes conversation.model), so the relay only notifies.
+          emit(conversation.channelId, "conversation.modelRequested", {
+            channelId: conversation.channelId,
+            conversationId: conversation.id,
+            model: parsed.data.model,
           });
           respond(peer, id, { ok: true });
           return;

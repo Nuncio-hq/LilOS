@@ -125,6 +125,60 @@ describe("AC-4 (#33) harness status reporter feeds engine RSS + sessions", () =>
     expect(report?.probedAt).toBe(firstProbedAt);
   });
 
+  it("AC-1 (#30) probes models.list only when the engine declares the capability", async () => {
+    // Two engines: one declares `models`, one does not. The reporter must
+    // attach the catalog (and default) only in the first case — the picker's
+    // AC-3 hide relies on these fields being absent otherwise.
+    const calls: string[] = [];
+    const connFor = (models: boolean) =>
+      ({
+        request: async <T>(method: string) => {
+          calls.push(method);
+          if (method === "describe") {
+            return {
+              ...DESCRIBE,
+              capabilities: models ? [{ id: "models", name: "Models" }] : [],
+            } as T;
+          }
+          if (method === "models.list") {
+            return {
+              models: [
+                { id: "fake-small", name: "Fake Small", provider: "fake" },
+                { id: "fake-large", name: "Fake Large", provider: "fake" },
+              ],
+              default: "fake-large",
+            } as T;
+          }
+          throw new Error(`unexpected ${method}`);
+        },
+      }) as EngineConnection;
+
+    const capable = makeReporter({
+      supervisor: { state: { current: "running", conn: connFor(true) } },
+      sent: [],
+    });
+    await capable.reporter.reportOnce();
+    const withModels = capable.sent[0].status;
+    expect(withModels?.capabilities?.map((c) => c.id)).toContain("models");
+    expect(withModels?.models?.map((m) => m.id)).toEqual([
+      "fake-small",
+      "fake-large",
+    ]);
+    expect(withModels?.defaultModel).toBe("fake-large");
+
+    calls.length = 0;
+    const incapable = makeReporter({
+      supervisor: { state: { current: "running", conn: connFor(false) } },
+      sent: [],
+    });
+    await incapable.reporter.reportOnce();
+    const without = incapable.sent[0].status;
+    expect(without?.models).toBeUndefined();
+    expect(without?.defaultModel).toBeUndefined();
+    // models.list is never probed for an engine that did not declare `models`.
+    expect(calls).toEqual(["describe"]);
+  });
+
   it("params validate against the wire schema", async () => {
     const supervisor: SupervisorView = {
       state: { current: "stopped" },

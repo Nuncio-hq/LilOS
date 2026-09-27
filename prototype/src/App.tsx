@@ -104,30 +104,37 @@ const HUMANS: Record<string, Human> = {
   minh: { name: "Minh", color: "bg-cyan-600", guest: true },
 }
 
-const MODELS = ["qwen3.8-flash-next (HPC · free)", "claude-opus-5.5 (subscription)", "gpt-5.5 (subscription)", "devin (AgentAuth)"]
+/* What the engine reports via models.list: id is the value picked, name the
+   display label, provider drives the picker's groups (issue #30). */
+const MODELS: ModelOption[] = [
+  { id: "qwen3.8-flash-next", name: "Qwen 3.8 Flash-Next · HPC · free", provider: "alibaba" },
+  { id: "claude-opus-5.5", name: "Claude Opus 5.5 · subscription", provider: "anthropic" },
+  { id: "gpt-5.5", name: "GPT-5.5 · subscription", provider: "openai" },
+  { id: "devin", name: "Devin · AgentAuth", provider: "cognition" },
+]
 
 const SEED_EMPLOYEES: Employee[] = [
-  { id: "builder", name: "Builder", role: "Engineer", status: "busy", profile: "builder", model: MODELS[0], now: "LIL-3 · write_file README.md", instructions: "You are Builder, a full-stack engineer. Execute assigned tickets on a branch, run checks, report back with evidence.", respondTo: "me" },
-  { id: "reviewer", name: "Reviewer", role: "QA", status: "online", profile: "reviewer", model: MODELS[1], now: "waiting on your approval", instructions: "You review diffs for correctness and boundaries. Never push; request changes with file:line.", respondTo: "me" },
-  { id: "marketer", name: "Marketer", role: "Growth", status: "online", profile: "marketer", model: MODELS[0], now: "LIL-6 · drafting launch post", instructions: "You write launch copy in Oscar's voice: plain, concrete, no hype.", respondTo: "selected" },
+  { id: "builder", name: "Builder", role: "Engineer", status: "busy", profile: "builder", model: MODELS[0].id, now: "LIL-3 · write_file README.md", instructions: "You are Builder, a full-stack engineer. Execute assigned tickets on a branch, run checks, report back with evidence.", respondTo: "me" },
+  { id: "reviewer", name: "Reviewer", role: "QA", status: "online", profile: "reviewer", model: MODELS[1].id, now: "waiting on your approval", instructions: "You review diffs for correctness and boundaries. Never push; request changes with file:line.", respondTo: "me" },
+  { id: "marketer", name: "Marketer", role: "Growth", status: "online", profile: "marketer", model: MODELS[0].id, now: "LIL-6 · drafting launch post", instructions: "You write launch copy in Oscar's voice: plain, concrete, no hype.", respondTo: "selected" },
 ]
 
 const TEMPLATES: HireDraft[] = [
-  { name: "Engineer", role: "Engineer", model: MODELS[0], instructions: "You are a full-stack engineer. Work only on assigned tickets, on a branch. Run checks before reporting. Report scope creep instead of expanding." },
-  { name: "Reviewer", role: "QA", model: MODELS[1], instructions: "You review changes for correctness, tests and boundaries. Comment with file:line. Never push to main." },
-  { name: "Marketer", role: "Growth", model: MODELS[0], instructions: "You write marketing copy and plans in the founder's voice: plain, specific, no hype." },
-  { name: "Researcher", role: "Research", model: MODELS[0], instructions: "You research questions with cited sources and a one-paragraph answer first." },
+  { name: "Engineer", role: "Engineer", model: MODELS[0].id, instructions: "You are a full-stack engineer. Work only on assigned tickets, on a branch. Run checks before reporting. Report scope creep instead of expanding." },
+  { name: "Reviewer", role: "QA", model: MODELS[1].id, instructions: "You review changes for correctness, tests and boundaries. Comment with file:line. Never push to main." },
+  { name: "Marketer", role: "Growth", model: MODELS[0].id, instructions: "You write marketing copy and plans in the founder's voice: plain, specific, no hype." },
+  { name: "Researcher", role: "Research", model: MODELS[0].id, instructions: "You research questions with cited sources and a one-paragraph answer first." },
 ]
 
 // Fallback profile/model lists for when the dev engine endpoint isn't serving
 // (prototype/src/engine.ts → /api/engine → a real `@lilos/engine-fake`).
 const MOCK_PROFILES: EngineProfile[] = [
-  { id: "default", model: MODELS[1], soul: "General assistant. Oscar's main Hermes.", skills: 42 },
-  { id: "builder", model: MODELS[0], soul: "You are Builder, a full-stack engineer…", skills: 18 },
-  { id: "reviewer", model: MODELS[1], soul: "You review diffs for correctness and boundaries…", skills: 9 },
-  { id: "marketer", model: MODELS[0], soul: "You write launch copy in Oscar's voice…", skills: 6 },
-  { id: "research", model: MODELS[0], soul: "Deep research with cited sources.", skills: 11 },
-  { id: "ops", model: MODELS[3], soul: "Runs dev_server and HPC chores.", skills: 14 },
+  { id: "default", model: MODELS[1].id, soul: "General assistant. Oscar's main Hermes.", skills: 42 },
+  { id: "builder", model: MODELS[0].id, soul: "You are Builder, a full-stack engineer…", skills: 18 },
+  { id: "reviewer", model: MODELS[1].id, soul: "You review diffs for correctness and boundaries…", skills: 9 },
+  { id: "marketer", model: MODELS[0].id, soul: "You write launch copy in Oscar's voice…", skills: 6 },
+  { id: "research", model: MODELS[0].id, soul: "Deep research with cited sources.", skills: 11 },
+  { id: "ops", model: MODELS[3].id, soul: "Runs dev_server and HPC chores.", skills: 14 },
 ]
 
 const COMPANY_CHANNELS: Channel[] = [{ id: "announcements", name: "announcements", employees: [] }]
@@ -149,7 +156,7 @@ const FEEDS: Record<string, Msg[]> = {
       kind: "msg", id: "m1", from: "oscar", time: "10:02",
       text: "Scaffold the monorepo: `contracts`, `client-runtime`, `apps/web`, `apps/relay`. **@Builder** take it, **@Reviewer** check the layout.",
       thread: {
-        session: "ses_8f2c", ticket: "LIL-3", branch: "lil-3-monorepo", model: MODELS[0],
+        session: "ses_8f2c", ticket: "LIL-3", branch: "lil-3-monorepo", model: MODELS[0].id,
         usage: { input: 71200, output: 6100, reasoning: 2400, cache: 52000 },
         todos: [
           { content: "Create branch + pnpm workspace", status: "completed" },
@@ -218,7 +225,7 @@ const FEEDS: Record<string, Msg[]> = {
     { kind: "msg", id: "g1", from: "oscar", time: "Yesterday", text: "#engineering for code, #marketing for launch. Tickets are shared across the project." },
     {
       kind: "msg", id: "g2", from: "builder", time: "11:20", text: "Tests are the bottleneck on LIL-3. I drafted a new employee for it. Needs your OK.",
-      hire: { name: "Tester", role: "QA automation", model: MODELS[0], instructions: "You own flaky and missing tests. Reproduce, fix or quarantine with a ticket. Never change product code." },
+      hire: { name: "Tester", role: "QA automation", model: MODELS[0].id, instructions: "You own flaky and missing tests. Reproduce, fix or quarantine with a ticket. Never change product code." },
     },
   ],
 }
@@ -280,7 +287,7 @@ const DM_FEEDS: Record<string, Msg[]> = {
 
 /* First run: the relay handshake creates one employee from the machine's default Hermes profile —
    `default` is already there before Oscar types anything. */
-const DEFAULT_EMP: Employee = { id: "default", name: "Default", role: "Assistant", status: "online", profile: "default", model: MODELS[1], now: "idle", instructions: "General assistant created from this Mac's default Hermes profile.", respondTo: "me" }
+const DEFAULT_EMP: Employee = { id: "default", name: "Default", role: "Assistant", status: "online", profile: "default", model: MODELS[1].id, now: "idle", instructions: "General assistant created from this Mac's default Hermes profile.", respondTo: "me" }
 
 /* System status per preview scenario. Each component has a state + one-line reason;
    the dialog's "Copy diagnostics" ships the same lines as plain text. */
@@ -289,13 +296,13 @@ const STATUS: Record<PreviewScenario, StatusComponent[]> = {
     { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
     { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
     { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
-    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].split(" (")[0]} · responding` },
+    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].id} · responding` },
   ],
   "first-run": [
     { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
     { id: "harness", label: "Harness", state: "ok", reason: "Running · 1 session" },
     { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
-    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].split(" (")[0]} · responding` },
+    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].id} · responding` },
   ],
   loading: [],
   reconnecting: [
@@ -320,13 +327,13 @@ const STATUS: Record<PreviewScenario, StatusComponent[]> = {
     { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
     { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
     { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
-    { id: "model", label: "Model", state: "degraded", reason: `${MODELS[0].split(" ")[0]}: HPC not responding` },
+    { id: "model", label: "Model", state: "degraded", reason: `${MODELS[0].id}: HPC not responding` },
   ],
   sleep: [
     { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
     { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
     { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
-    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].split(" (")[0]} · responding` },
+    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].id} · responding` },
   ],
   "version-mismatch": [
     { id: "relay", label: "Relay", state: "down", reason: "Protocol v2 required — this app speaks v1" },
@@ -338,13 +345,13 @@ const STATUS: Record<PreviewScenario, StatusComponent[]> = {
     { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
     { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
     { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
-    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].split(" (")[0]} · responding` },
+    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].id} · responding` },
   ],
 }
 
 /* Session-level failure states (on the DM session row, with Retry where a retry makes sense). */
 const SESSION_ALERTS: Partial<Record<PreviewScenario, SessionAlert>> = {
-  "model-error": { kind: "model", text: `Model error · ${MODELS[0].split(" ")[0]}: provider returned 429 (rate limited)`, retry: true },
+  "model-error": { kind: "model", text: `Model error · ${MODELS[0].id}: provider returned 429 (rate limited)`, retry: true },
   sleep: { kind: "sleep", text: "Interrupted — the Mac slept mid-turn. The reply may be incomplete.", retry: true },
 }
 
@@ -484,6 +491,13 @@ export default function App() {
   const [canSteer] = useState(
     () =>
       new URLSearchParams(window.location.search).get("steer") !== "off",
+  )
+  // The engine's declared models capability (issue #30): the real app reads it off
+  // describe().capabilities via the harness heartbeat; ?models=off simulates an engine
+  // without it — no picker, and picks never reach a session (AC-3).
+  const [canModels] = useState(
+    () =>
+      new URLSearchParams(window.location.search).get("models") !== "off",
   )
   // session.steer: a message sent mid-turn goes into this buffer. When the engine declares steer,
   // the turn loop applies it at the next tool boundary; without it the buffer IS the queue — it
@@ -653,7 +667,7 @@ export default function App() {
     const started0 = Date.now()
     mapRoot(key, rootId, (t) => ({
       ...t,
-      replies: [...t.replies, { id: rid, from: empId, time: nowTime(), text: "", steps: [], live: true, phase: "submitted" }],
+      replies: [...t.replies, { id: rid, from: empId, time: nowTime(), text: "", steps: [], live: true, phase: "submitted", model: t.model ?? emp(empId)?.model }],
       // todo.updated: the employee adds its own item and marks it in_progress
       todos: s.todo ? [...(t.todos ?? []).filter((x) => x.content !== s.todo), { content: s.todo, status: "in_progress" }] : t.todos,
     }))
@@ -837,9 +851,11 @@ export default function App() {
     mapRoot(feedKey, root.id, (t) => ({ ...t, replies: t.replies.slice(0, replyIndex) }))
     say(`Rewound session ${root.thread?.session} · rollback.restore to checkpoint`)
   }
+  // conversations.setModel: the pick pins the conversation's model; the next
+  // turn's reply carries it back as `turn.started.model` (AC-2).
   const setModel = (root: Extract<Msg, { kind: "msg" }>, model: string) => {
     mapRoot(feedKey, root.id, (t) => ({ ...t, model }))
-    say(`Next turn uses ${model.split(" ")[0]}`)
+    say(`Next turn uses ${MODEL_OPTS.find((m) => m.id === model)?.name ?? model}`)
   }
   // PR actions from the PR tab when the session isn't on a real checkout (the
   // Workbench uses hostAccessors.pr* → forge.* → `gh` when it is, issue #37).
@@ -927,6 +943,7 @@ export default function App() {
       running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
+      models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined}
     />
   ) : null
 
@@ -966,9 +983,9 @@ export default function App() {
           onBack={() => setFocus(false)} onNav={() => setNavOpen(true)} onStart={() => setStartFor(openThread.id)}
           running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
-          onRewind={(i) => rewind(openThread, i)} onModel={(m) => setModel(openThread, m)} say={say}
+          onRewind={(i) => rewind(openThread, i)} onModel={canModels ? (m) => setModel(openThread, m) : undefined} say={say}
           surfaces={realSurfaces ?? fakeSurfaces}
-          models={MODELS} repoFiles={REPO_FILES} host={hostAccessors}
+          models={canModels ? MODEL_OPTS : undefined} repoFiles={REPO_FILES} host={hostAccessors}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />
