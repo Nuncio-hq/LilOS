@@ -21,11 +21,15 @@ export function EditEmployeeDialog({
   onClose,
   onSave,
   onRemove,
+  error,
 }: {
   e: Employee;
   onClose: () => void;
   onSave: (name: string, role: string) => void;
   onRemove: () => void;
+  /** Rejection reason from the last save/remove attempt — the dialog stays
+      open so it can be fixed or cancelled. */
+  error?: string;
 }) {
   const [name, setName] = useState(e.name);
   const [role, setRole] = useState(e.role);
@@ -130,6 +134,11 @@ export function EditEmployeeDialog({
             )}
           </div>
         </div>
+        {error && (
+          <div className="border-t bg-red-50/60 px-4 py-2 text-red-800 text-xs dark:bg-red-950/30 dark:text-red-200">
+            {error}
+          </div>
+        )}
         <div className="flex items-center gap-2 border-t bg-muted/30 p-3">
           <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
             <UserIcon className="size-3.5" />@{e.id}
