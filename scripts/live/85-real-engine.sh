@@ -116,7 +116,9 @@ DMG="$(ls -t apps/desktop/dist/*.dmg | head -1)"
 [ -n "$DMG" ] || { echo "RESULT: FAIL (no dmg produced)"; exit 1; }
 echo "built $DMG"
 # AC-1: a release bundle must not contain the fake engine.
-MOUNT=$(hdiutil attach -nobrowse -readonly "$DMG" | awk '/\/Volumes\//{print $3; exit}')
+# The volume name has a space ("LilOS 1.0.85"): take everything from
+# /Volumes/ on, not a whitespace-split field.
+MOUNT=$(hdiutil attach -nobrowse -readonly "$DMG" | grep -o '/Volumes/.*' | head -1)
 [ -n "$MOUNT" ] || { echo "RESULT: FAIL (dmg did not mount)"; exit 1; }
 if [ -e "$MOUNT/LilOS.app/Contents/MacOS/lilos-engine-fake" ]; then
   echo "RESULT: FAIL (lilos-engine-fake is inside the bundle)"
