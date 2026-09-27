@@ -1,8 +1,16 @@
-import type { AppChannel, Conversation } from "@lilos/contracts/app";
+import { RelayError } from "@lilos/client-runtime";
+import {
+  type AppChannel,
+  type Conversation,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+} from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
+import type { AttachedFile } from "@lilos/ui/types";
 import { atom } from "nanostores";
+import { toAttachmentInputs } from "./attachments";
 import { USER_ID } from "./me";
 import { engine, relay } from "./runtime";
+import { say } from "./toast";
 
 export { USER_ID };
 
@@ -28,35 +36,65 @@ async function openDmChannel(employeeId: string): Promise<AppChannel> {
  * Send a message in the employee's DM. Without a conversation the post opens
  * a fresh one (conversations.open); with one it's a thread reply — and while
  * that conversation's engine turn is running the harness steers it
- * (capability `steer`) or queues it as the next prompt.
+ * (capability `steer`) or queues it as the next prompt. `files` are the
+ * composer's attached images — they ride the same call's `attachments`
+ * (base64) so the relay stores them before the turn starts (#112).
+ *
+ * A failed send surfaces as a plain toast and resolves `undefined` so the
+ * caller skips its follow-up navigation (AC-4).
  */
 export async function sendDm(
   employeeId: string,
   text: string,
   conversationId?: string,
-): Promise<Conversation> {
-  const channel = await openDmChannel(employeeId);
-  if (conversationId) {
-    await relay.request("messages.post", {
+  files?: AttachedFile[],
+): Promise<Conversation | undefined> {
+  try {
+    const attachments = toAttachmentInputs(files);
+    const channel = await openDmChannel(employeeId);
+    if (conversationId) {
+      await relay.request("messages.post", {
+        channelId: channel.id,
+        conversationId,
+        authorId: USER_ID,
+        authorKind: "user",
+        text,
+        ...(attachments ? { attachments } : {}),
+      });
+      const conv = relay.conversations
+        .get()
+        .find((c) => c.id === conversationId);
+      return conv as Conversation;
+    }
+    const res = await relay.request<{
+      conversation: Conversation;
+      rootMessage: unknown;
+    }>("conversations.open", {
       channelId: channel.id,
-      conversationId,
       authorId: USER_ID,
-      authorKind: "user",
       text,
+      ...(attachments ? { attachments } : {}),
     });
-    const conv = relay.conversations.get().find((c) => c.id === conversationId);
-    return conv as Conversation;
+    pendingStart.set({ ...pendingStart.get(), [res.conversation.id]: true });
+    return res.conversation;
+  } catch (e) {
+    say(describeSendError(e));
+    return undefined;
   }
-  const res = await relay.request<{
-    conversation: Conversation;
-    rootMessage: unknown;
-  }>("conversations.open", {
-    channelId: channel.id,
-    authorId: USER_ID,
-    text,
-  });
-  pendingStart.set({ ...pendingStart.get(), [res.conversation.id]: true });
-  return res.conversation;
+}
+
+/** A failed send in one plain line — the caps the composer enforces, kept
+ *  readable when the relay is the one that rejects (AC-4). */
+export function describeSendError(e: unknown): string {
+  if (e instanceof RelayError) {
+    if (e.code === "attachment_too_large")
+      return "That image is too large to attach (10 MB max per file).";
+    if (e.code === "invalid_params")
+      return `Only images, up to ${MAX_ATTACHMENTS_PER_MESSAGE} at once.`;
+    if (e.code === "not_connected" || e.code === "timeout")
+      return "Couldn't reach the relay — try again.";
+  }
+  return "Couldn't send that. Try again.";
 }
 
 /** Optimistic "submitted" marker until the feed sees turn.started. */
