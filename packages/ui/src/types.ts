@@ -266,8 +266,15 @@ export type StatusComponent = {
 /* Sidebar badge per employee: running turns (blue) / turns waiting on Oscar (amber). */
 export type EmpBadge = { running?: number; approvals?: number };
 
-/* People (non-employee) as display metadata for avatars/names. Passed IN from the app. */
-export type Human = { name: string; color: string; guest?: boolean };
+/* People (non-employee) as display metadata for avatars/names. Passed IN from the app.
+   `image` is an optional avatar image URL; without it the avatar falls back to
+   the initial on `color` (a Tailwind bg-* class). */
+export type Human = {
+  name: string;
+  color: string;
+  guest?: boolean;
+  image?: string;
+};
 /* Lookup used across surfaces: employee by id. */
 export type EmpFn = (id: string) => Employee | undefined;
 /* Lookup used across surfaces: human (non-employee) by id. */

@@ -1,0 +1,265 @@
+import { type ChildProcess, spawn } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  _electron,
+  expect,
+  type Locator,
+  type Page,
+  test,
+} from "@playwright/test";
+
+/**
+ * Issue #80 — DM identity + streaming markdown. AC-1 asserts the user's
+ * message avatar IS the sidebar footer's avatar (same initial, same computed
+ * colour — never the anonymous grey "Y"). AC-2 asserts markdown renders
+ * mid-stream (ENGINE_FAKE_TICK stretches the text phase so the stream is
+ * observable). AC-3 captures both in the Electron desktop app.
+ */
+
+const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
+const repo = path.resolve(here, "..");
+const webDir = path.join(repo, "apps", "web");
+const desktopDir = path.join(repo, "apps", "desktop");
+
+interface Stack {
+  home: string;
+  webUrl: string;
+  relayWs: string;
+  feedWs: string;
+  stop: () => Promise<void>;
+}
+
+async function waitForHttp(url: string, ms = 30_000): Promise<void> {
+  const start = Date.now();
+  for (;;) {
+    const ok = await fetch(url)
+      .then((r) => r.ok || r.status === 404)
+      .catch(() => false);
+    if (ok) return;
+    if (Date.now() - start > ms)
+      throw new Error(`timed out waiting for ${url}`);
+    await new Promise((r) => setTimeout(r, 200));
+  }
+}
+
+function killProc(proc: ChildProcess): Promise<void> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => {
+      proc.kill("SIGKILL");
+      resolve();
+    }, 8_000);
+    proc.once("exit", () => {
+      clearTimeout(t);
+      resolve();
+    });
+    proc.kill("SIGTERM");
+  });
+}
+
+async function bootStack(
+  tag: string,
+  ports: { relay: number; feed: number; web: number },
+  extraEnv: Record<string, string> = {},
+): Promise<Stack> {
+  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
+  const proc = spawn("bun", ["run", "dev"], {
+    cwd: webDir,
+    env: {
+      ...process.env,
+      LILOS_HOME: home,
+      LILOS_RELAY_PORT: String(ports.relay),
+      LILOS_FEED_PORT: String(ports.feed),
+      LILOS_WEB_PORT: String(ports.web),
+      ...extraEnv,
+    },
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  const webUrl = `http://127.0.0.1:${ports.web}`;
+  try {
+    await waitForHttp(webUrl);
+    return {
+      home,
+      webUrl,
+      relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
+      feedWs: `ws://127.0.0.1:${ports.feed}/ws`,
+      stop: () => killProc(proc),
+    };
+  } catch (e) {
+    proc.kill("SIGKILL");
+    throw e;
+  }
+}
+
+const SHOTS = path.join(repo, "test-results", "ac-80");
+const PROMPT = "What does the replay contract carry?"; // hits the default script
+
+/* The footer's me-row: the aside's last child, its avatar fallback. */
+const footerAvatar = (page: Page) =>
+  page.locator("aside > div:last-child [data-slot='avatar-fallback']");
+
+/* The grid row the user's message renders in (avatar + Who + text) — Row's
+   root is `group relative grid`, distinct from the agent-turn's group wrap. */
+const userRow = (page: Page, text: string) =>
+  page
+    .locator("div.group.grid")
+    .filter({ has: page.locator('[data-slot="avatar-fallback"]') })
+    .filter({ hasText: text })
+    .last();
+
+const bg = (loc: Locator) =>
+  loc.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+async function dmDefault(page: Page, webUrl: string) {
+  await page.goto(`${webUrl}/`);
+  const aside = page.locator("aside");
+  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
+    timeout: 30_000,
+  });
+  const dmBtn = page.getByRole("button", {
+    name: /open dm|set up later|message/i,
+  });
+  if (
+    await dmBtn
+      .first()
+      .isVisible()
+      .catch(() => false)
+  ) {
+    await dmBtn.first().click();
+  } else {
+    await aside.getByRole("button", { name: /default/i }).click();
+  }
+  await expect(page).toHaveURL(/\/dm\//);
+}
+
+const send = async (page: Page, text: string) => {
+  const box = page.locator("textarea").last();
+  await box.fill(text);
+  await box.press("Enter");
+};
+
+test.describe.configure({ mode: "serial" });
+
+test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", async ({
+  page,
+}) => {
+  const stack = await bootStack("ac80a", {
+    relay: 4610,
+    feed: 4611,
+    web: 5210,
+  });
+  try {
+    await dmDefault(page, stack.webUrl);
+    await send(page, PROMPT);
+    const row = userRow(page, PROMPT);
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    const rowFb = row.locator('[data-slot="avatar-fallback"]');
+    const footFb = footerAvatar(page);
+    await expect(rowFb).toHaveText("O");
+    await expect(footFb).toHaveText("O");
+    // Same computed colour on both → literally one identity; and never the
+    // old anonymous fallback's near-white grey (bg-muted ≈ oklch(0.97 0 0)).
+    const [rowBg, footBg] = [await bg(rowFb), await bg(footFb)];
+    expect(rowBg).toBe(footBg);
+    expect(rowBg).not.toBe("oklch(0.97 0 0)");
+    // The Who line names the signed-in human, not "You".
+    await expect(row).toContainText("Oscar");
+    await expect(row).not.toContainText("You");
+  } finally {
+    await stack.stop();
+  }
+});
+
+test("AC-2 markdown renders while the reply streams, then settles unchanged", async ({
+  page,
+}) => {
+  const stack = await bootStack(
+    "ac80b",
+    { relay: 4612, feed: 4613, web: 5211 },
+    { ENGINE_FAKE_TICK: "150" }, // ~6s text phase → observable mid-stream
+  );
+  try {
+    await dmDefault(page, stack.webUrl);
+    await send(page, PROMPT);
+    const turn = page.locator("[data-agentturn]").first();
+    const streaming = turn.locator("[data-streaming]");
+    await expect(streaming).toBeVisible({ timeout: 60_000 });
+    // Mid-stream the bullet and the `seq` code span are already real markdown.
+    await expect(streaming.locator("li")).toBeVisible({ timeout: 60_000 });
+    await expect(
+      streaming.locator("code").filter({ hasText: "seq" }),
+    ).toBeVisible();
+    await expect(streaming).not.toContainText("`");
+    await expect(streaming).not.toContainText(/^-\s/m);
+    await page.screenshot({ path: `${SHOTS}/ac-2-mid-stream.png` });
+    // Done: the streaming block detaches; the same markdown stays rendered.
+    await expect(streaming).toHaveCount(0, { timeout: 60_000 });
+    await expect(
+      turn.locator("code").filter({ hasText: "seq" }).first(),
+    ).toBeVisible();
+    await expect(turn.locator("li").first()).toBeVisible();
+    await page.screenshot({ path: `${SHOTS}/ac-2-done.png` });
+  } finally {
+    await stack.stop();
+  }
+});
+
+test("AC-3 desktop app: same identity + streaming markdown in Electron", async () => {
+  test.setTimeout(240_000);
+  const stack = await bootStack(
+    "ac80c",
+    { relay: 4614, feed: 4615, web: 5212 },
+    { ENGINE_FAKE_TICK: "150" },
+  );
+  try {
+    const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
+      cwd: desktopDir,
+      env: { ...process.env },
+      stdio: "inherit",
+    });
+    await new Promise<void>((resolve, reject) => {
+      build.once("exit", (c) =>
+        c === 0 ? resolve() : reject(new Error(`desktop build exit ${c}`)),
+      );
+    });
+    const portOf = (ws: string) => new URL(ws).port;
+    const app = await _electron.launch({
+      args:
+        process.platform === "linux"
+          ? [desktopDir, "--no-sandbox"]
+          : [desktopDir],
+      env: {
+        ...process.env,
+        LILOS_RELAY_HOME: stack.home,
+        LILOS_RELAY_PORT: portOf(stack.relayWs),
+        LILOS_FEED_PORT: portOf(stack.feedWs),
+        LILOS_WEB_URL: stack.webUrl,
+      },
+    });
+    try {
+      const win = await app.firstWindow();
+      await dmDefault(win, stack.webUrl);
+      await send(win, PROMPT);
+      // AC-1 in the desktop window: the user's row avatar IS the footer avatar.
+      const row = userRow(win, PROMPT);
+      await expect(row).toBeVisible({ timeout: 30_000 });
+      const rowFb = row.locator('[data-slot="avatar-fallback"]');
+      const footFb = footerAvatar(win);
+      expect(await bg(rowFb)).toBe(await bg(footFb));
+      await win.screenshot({ path: `${SHOTS}/ac-3-desktop-avatar.png` });
+      // AC-2 in the desktop window: markdown mid-stream.
+      const streaming = win.locator("[data-agentturn] [data-streaming]");
+      await expect(streaming.locator("li")).toBeVisible({ timeout: 60_000 });
+      await expect(streaming.locator("code").first()).toBeVisible();
+      await win.screenshot({ path: `${SHOTS}/ac-3-desktop-streaming.png` });
+      await expect(streaming).toHaveCount(0, { timeout: 60_000 });
+      await win.screenshot({ path: `${SHOTS}/ac-3-desktop-done.png` });
+    } finally {
+      await app.close();
+    }
+  } finally {
+    await stack.stop();
+  }
+});

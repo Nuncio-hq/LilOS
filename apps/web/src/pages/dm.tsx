@@ -28,6 +28,7 @@ import {
   toFeed,
   toUiEmployee,
 } from "../lib/mapping";
+import { humanFor, ME } from "../lib/me";
 import {
   asks as asksAtom,
   engine,
@@ -53,9 +54,9 @@ const EMPTY_FEED = atom<SessionFeedState>({
 });
 
 const OUTCOME_LABEL: Record<ApprovalOutcome, string> = {
-  once: "Allowed once by Oscar",
+  once: `Allowed once by ${ME.name}`,
   always: "Always allowed here",
-  deny: "Denied by Oscar",
+  deny: `Denied by ${ME.name}`,
   cancel: "Cancelled",
   answer: "Answered",
 };
@@ -68,8 +69,9 @@ function outcomeFromLabel(v: string): ApprovalOutcome {
   return "once";
 }
 
-const human = (id: string) =>
-  id === "user" ? { name: "You", color: "#6b7280" } : undefined;
+/* User messages render as the signed-in human — the same `ME` the sidebar
+   footer shows (issue #80, AC-1). */
+const human = humanFor;
 
 /**
  * `/dm/$employeeId(/$conversationId)` — the DM home: session list + composer

@@ -9,7 +9,6 @@ import {
   UserPlusIcon,
   XIcon,
 } from "lucide-react";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { Button } from "../components/ui/button";
 import {
   Collapsible,
@@ -23,11 +22,12 @@ import type {
   Channel,
   EmpBadge,
   Employee,
+  Human,
   Project,
   StatusComponent,
   Theme,
 } from "../types";
-import { HermesAvatar } from "./avatars";
+import { HermesAvatar, HumanAvatar } from "./avatars";
 import { StatusRow } from "./status";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -36,6 +36,7 @@ import { ThemeToggle } from "./theme-toggle";
 export function Sidebar({
   navOpen,
   hiddenWhenClosed,
+  me,
   companyChannels,
   projects,
   folders,
@@ -58,6 +59,9 @@ export function Sidebar({
 }: {
   navOpen: boolean;
   hiddenWhenClosed: boolean;
+  /* The signed-in human — the footer renders the same avatar + name the
+     app's `human` lookup puts on that person's messages (issue #80, AC-1). */
+  me: Human;
   companyChannels: Channel[];
   projects: Project[];
   folders: import("../types").Folder[];
@@ -249,12 +253,8 @@ export function Sidebar({
         <StatusRow components={status} onOpen={onOpenStatus} />
       )}
       <div className="flex shrink-0 items-center gap-2 border-t px-3 py-2.5">
-        <Avatar className="size-6">
-          <AvatarFallback className="bg-blue-600 text-[11px] text-white">
-            O
-          </AvatarFallback>
-        </Avatar>
-        <span className="min-w-0 truncate font-medium text-sm">Oscar</span>
+        <HumanAvatar human={me} size="sm" className="rounded-full" />
+        <span className="min-w-0 truncate font-medium text-sm">{me.name}</span>
         {preview}
         <ThemeToggle theme={theme} setTheme={onSetTheme} />
       </div>

@@ -38,11 +38,36 @@ export function HermesAvatar({
   );
 }
 
-export function HumanAvatar({ human }: { human: Human }) {
+/* The person's avatar everywhere a human appears — message rows, the sidebar
+   footer (`size="sm"`). One identity: image when the Human carries one, else
+   a high-contrast initial on the human's colour (white on bg-*-600 ≥ AA).
+   `className` overrides the shape (rounded-lg rows / rounded-full footer). */
+export function HumanAvatar({
+  human,
+  className,
+  size,
+}: {
+  human: Human;
+  className?: string;
+  size?: "sm" | "lg";
+}) {
   return (
-    <Avatar className="size-9 rounded-lg">
+    <Avatar
+      size={size}
+      className={cn("rounded-lg", size === undefined && "size-9", className)}
+    >
+      {human.image && (
+        <AvatarImage
+          src={human.image}
+          alt={human.name}
+          className="rounded-[inherit]"
+        />
+      )}
       <AvatarFallback
-        className={cn("rounded-lg font-semibold text-white", human.color)}
+        className={cn(
+          "rounded-[inherit] font-semibold text-white",
+          human.color,
+        )}
       >
         {human.name[0]}
       </AvatarFallback>
