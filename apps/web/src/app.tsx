@@ -247,10 +247,12 @@ const threadRoute = createRoute({
 const routeTree = rootRoute.addChildren([indexRoute, dmRoute, threadRoute]);
 
 // file:// gives the app a path URL that matches no route; hash history keeps
-// navigation inside the page. Plain-web keeps browser history.
+// navigation inside the page. http(s) dev and _electron test pages keep
+// browser history.
 export const router = createRouter({
   routeTree,
-  history: window.lilos ? createHashHistory() : undefined,
+  history:
+    window.location.protocol === "file:" ? createHashHistory() : undefined,
 });
 
 declare module "@tanstack/react-router" {
