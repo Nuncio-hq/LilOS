@@ -12,6 +12,7 @@ import type {
   Step,
   Employee as UiEmployee,
 } from "@lilos/ui/types";
+import { toAttachedFiles } from "./attachments";
 
 /** relay domain -> ui/domain type mapping (the only place it lives). */
 
@@ -130,6 +131,7 @@ export function conversationReplies(
         effort: m.effort,
         fast: m.fast,
         phase: m.authorKind === "employee" ? "done" : undefined,
+        attachments: toAttachedFiles(m.attachments),
       }))
   );
 }
@@ -182,6 +184,7 @@ export function toFeed(
     from: root.authorId,
     time: clock(root.createdAt),
     text: root.text,
+    attachments: toAttachedFiles(root.attachments),
     thread: {
       session: conv.engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
       title: conv.title ?? undefined,

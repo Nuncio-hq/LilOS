@@ -822,6 +822,35 @@ export default function App() {
     }
   }
   const stopTurn = (rootId: string) => { stops.current[rootId] = true }
+
+  /* ↑ recall (issue #104): the message Oscar sent last — inside the open
+     thread and top-level for the home/channel composer. A mid-turn send is
+     still HIS message, so besides human replies the candidates include steers
+     already folded into a reply (`r.steers`), steers still pending
+     (`steerBuf`), and the post-stop not-sent tray (`thread.queue` — those beat
+     the old replies only until a post-stop reply lands). `unbold` hands back
+     what he typed, not the stored `**@mention**` styling or `📎` suffix. */
+  const unbold = (t: string) =>
+    t.replace(/\*\*(@[^*\n]+?)\*\*/g, "$1").replace(/(\s*📎\s*[^\n]+)+$/, "")
+  const lastSentIn = (m?: Extract<Msg, { kind: "msg" }>) => {
+    if (!m) return undefined
+    const t = m.thread
+    const sent: string[] = []
+    // Queue entries were typed mid-turn, before any post-stop reply — so they
+    // count only when the latest reply isn't one of Oscar's own post-stop sends.
+    const lastReply = t?.replies.at(-1)
+    if (t && lastReply && !human(lastReply.from)) sent.push(...(t.queue ?? []))
+    for (const r of t?.replies ?? []) {
+      sent.push(...(r.steers ?? []))
+      if (human(r.from)) sent.push(r.text)
+    }
+    sent.push(...(steerBuf.current[m.id] ?? []))
+    const last = sent.at(-1) ?? (human(m.from) ? m.text : undefined)
+    return last === undefined ? undefined : unbold(last)
+  }
+  const lastTopMsg = [...feed].reverse().find((x) => x.kind === "msg" && human(x.from))
+  const lastSentTop = lastTopMsg?.kind === "msg" ? unbold(lastTopMsg.text) : undefined
+
   // Re-sticking the conversation when a pending steer chip or the not-sent tray appears is handled
   // inside @lilos/ui (ConversationKeepBottom, in ThreadView/FocusView) via use-stick-to-bottom's own
   // scrollToBottom — the old interval pin here is gone (issue #15).
@@ -1029,6 +1058,7 @@ export default function App() {
       onFocus={() => setFocus(!focus)}
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
       running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
+      lastSent={lastSentIn(openThread)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
       models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined} picker={pickerExtras}
@@ -1072,6 +1102,7 @@ export default function App() {
           resolved={resolved} setResolved={setResolved} work={workOf(openThread)}
           onBack={() => setFocus(false)} onNav={() => setNavOpen(true)} onStart={() => setStartFor(openThread.id)}
           running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
+          lastSent={lastSentIn(openThread)}
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
           onRewind={(i) => rewind(openThread, i)} onModel={canModels ? (m) => setModel(openThread, m) : undefined} say={say}
           surfaces={realSurfaces ?? fakeSurfaces}
@@ -1086,7 +1117,7 @@ export default function App() {
             <EmployeeHome
               e={emp(view.id)!} feed={shownFeed} threadId={threadId} emp={emp} human={human}
               onNav={() => setNavOpen(true)} onProfile={() => showEmp(view.id)} onOpen={showThread}
-              onSend={sendTop} panelOpen={panelOpen} onPanel={() => setPanelOpen(true)} folders={folders}
+              onSend={sendTop} lastSent={lastSentTop} panelOpen={panelOpen} onPanel={() => setPanelOpen(true)} folders={folders}
               pick={wsPicks[view.id] ?? NO_WS} setPick={(p) => setWsPicks((w) => ({ ...w, [view.id]: p }))} onAddFolder={() => setAddFolderOpen(true)}
               loading={scenario === "loading"}
               onRename={(id, title) => mapRoot(feedKey, id, (t) => ({ ...t, title }))}
@@ -1120,7 +1151,7 @@ export default function App() {
               <ConversationScrollButton />
             </Conversation>
 
-            <Composer placeholder={`Message #${channel.name}. @ an employee to start a thread`} employees={employees.filter((e) => channel.employees.includes(e.id))} hint="An @mention opens a thread = one Hermes session" onSend={(t, files) => sendTop(t, undefined, files)} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} />
+            <Composer placeholder={`Message #${channel.name}. @ an employee to start a thread`} employees={employees.filter((e) => channel.employees.includes(e.id))} hint="An @mention opens a thread = one Hermes session" onSend={(t, files) => sendTop(t, undefined, files)} lastSent={lastSentTop} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} />
           </main>
           )}
 

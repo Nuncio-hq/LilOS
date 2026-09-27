@@ -50,12 +50,14 @@ export function ThreadView({
   running,
   onSend,
   onStop,
+  lastSent,
   onRetry,
   onUnqueue,
   onSendQueued,
   pending = [],
   accept,
   maxFileSize,
+  maxFiles,
   onAttachError,
   steer = false,
   onRemovePending,
@@ -79,6 +81,9 @@ export function ThreadView({
   running: boolean;
   onSend: (text: string, files?: AttachedFile[]) => void;
   onStop?: () => void;
+  /* ↑ recall for the thread composer: the host's last sent message in this
+     conversation (issue #104 AC-5). */
+  lastSent?: string;
   /* Engine-reported models + pick handler (issue #30); no onModel → no picker (D-#19). */
   models?: ModelOption[];
   onModel?: (c: ModelChoice) => void;
@@ -94,8 +99,9 @@ export function ThreadView({
   pending?: string[];
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
   accept?: string;
-  /* Attachment byte cap + where rejections surface (issue #31). */
+  /* Attachment byte cap + count cap + where rejections surface (issue #31). */
   maxFileSize?: number;
+  maxFiles?: number;
   onAttachError?: (message: string) => void;
   steer?: boolean;
   onRemovePending?: (i: number) => void;
@@ -303,8 +309,10 @@ export function ThreadView({
         }
         onSend={onSend}
         status={status}
+        lastSent={lastSent}
         accept={accept}
         maxFileSize={maxFileSize}
+        maxFiles={maxFiles}
         onAttachError={onAttachError}
         onStop={onStop}
         tools={

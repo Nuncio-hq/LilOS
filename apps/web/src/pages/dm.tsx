@@ -5,15 +5,21 @@ import {
   toStatusComponents,
 } from "@lilos/client-runtime";
 import type { AppMessage, Ask, Conversation } from "@lilos/contracts/app";
+import {
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+} from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
 import { choiceFor, EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
 import type {
+  AttachedFile,
   Channel,
   ModelChoice,
   ModelPickerExtras,
   Msg,
   Reply,
   Thread,
+  WsPick,
 } from "@lilos/ui/types";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { atom } from "nanostores";
@@ -31,6 +37,11 @@ import {
   setConversationModel,
   setModelVisibility,
 } from "../lib/actions";
+import {
+  attachmentUrls,
+  ensureAttachments,
+  toAttachedFiles,
+} from "../lib/attachments";
 import { useAtom } from "../lib/hooks";
 import {
   conversationReplies,
@@ -50,6 +61,7 @@ import {
   relay,
   sessionModels,
 } from "../lib/runtime";
+import { say } from "../lib/toast";
 
 const EMPTY_MESSAGES = atom<ChannelMessagesState>({
   channelId: "",
@@ -135,6 +147,13 @@ export function DmPage() {
     };
   }, [catalog, providers, visibility, description]);
 
+  /* Image attachments (#112): the composers offer pick/drop/paste only when
+     the engine declares `image_prompt` (D-#19); thumbnails resolve lazily
+     from the relay store, so subscribe to the resolved-URL cache. */
+  const canAttachImages =
+    description?.capabilities.some((c) => c.id === "image_prompt") ?? false;
+  useAtom(attachmentUrls);
+
   /* AC-2 (#85): an engine that's down (Hermes missing, crashed out) shows
      its plain reason above the composer — never silently sendable. */
   const engineRow = useMemo(
@@ -219,6 +238,21 @@ export function DmPage() {
   const openFeed = useAtom(
     openConv?.engineRef ? engine.sessionFeed(openConv.engineRef) : EMPTY_FEED,
   );
+
+  /* Attachment blobs behind every visible ref — channel window, open
+     thread, and the summary roots/previews that feed rows render (AC-3). */
+  useEffect(() => {
+    const refs = [
+      ...messages,
+      ...threadMsgs,
+      ...summaries.flatMap((s) =>
+        [s.root, s.firstAnswer, s.last].filter(
+          (m): m is AppMessage => m !== undefined,
+        ),
+      ),
+    ].flatMap((m) => m.attachments ?? []);
+    ensureAttachments(refs);
+  }, [messages, threadMsgs, summaries]);
 
   const uiEmp = employee ? toUiEmployee(employee, engineDown) : undefined;
   const empFn = (id: string) => {
@@ -309,9 +343,10 @@ export function DmPage() {
       });
   };
 
-  const send = (text: string) => {
+  const send = (text: string, _pick?: WsPick, files?: AttachedFile[]) => {
     const pick = draftPick[employeeId];
-    void sendDm(employeeId, text, undefined, pick).then((conv) => {
+    void sendDm(employeeId, text, undefined, pick, files).then((conv) => {
+      if (!conv) return;
       setDraftPick(({ [employeeId]: _drop, ...rest }) => rest);
       void navigate({
         to: "/dm/$employeeId/$conversationId",
@@ -319,6 +354,16 @@ export function DmPage() {
       });
     });
   };
+
+  /* ↑ recall for the home composer: the last top-level message Oscar sent in
+     this DM is the newest conversation's root message (#104 AC-5). */
+  const lastSentTop = [...convs]
+    .reverse()
+    .map(
+      (c) =>
+        summaryOf(c)?.root ?? messages.find((m) => m.id === c.rootMessageId),
+    )
+    .find((m) => m?.authorKind === "user")?.text;
 
   /* thread panel ---------------------------------------------------------- */
 
@@ -377,6 +422,13 @@ export function DmPage() {
       fast: conv.fast ?? model?.fast,
     };
     const running = !!modelLive || pending[conv.id] === true;
+    /* ↑ recall in the open session: Oscar's last sent message in it — the
+       root counts too (#104 AC-5). */
+    const lastSent = threadPool.reduce<AppMessage | undefined>(
+      (last, m) =>
+        m.authorKind === "user" && (!last || m.seq > last.seq) ? m : last,
+      undefined,
+    )?.text;
     const steer = hasCapability("steer");
     const rootMsg: Msg = root
       ? {
@@ -388,6 +440,7 @@ export function DmPage() {
             minute: "2-digit",
           }),
           text: root.text,
+          attachments: toAttachedFiles(root.attachments),
           thread,
         }
       : { kind: "msg", id: conv.id, from: "user", time: "", text: "", thread };
@@ -419,8 +472,15 @@ export function DmPage() {
           }
           picker={picker}
           defaultModel={defaultModel}
-          onSend={(text) => void sendDm(employeeId, text, conv.id)}
+          onSend={(text, files) =>
+            void sendDm(employeeId, text, conv.id, undefined, files)
+          }
+          accept={canAttachImages ? "image/*" : undefined}
+          maxFileSize={MAX_ATTACHMENT_BYTES}
+          maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
+          onAttachError={say}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
+          lastSent={lastSent}
           onFocus={undefined}
           work={null}
         />
@@ -449,6 +509,11 @@ export function DmPage() {
         onProfile={() => setProfileOpen((v) => !v)}
         onOpen={openThread}
         onSend={send}
+        accept={canAttachImages ? "image/*" : undefined}
+        maxFileSize={MAX_ATTACHMENT_BYTES}
+        maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
+        onAttachError={say}
+        lastSent={lastSentTop}
         panelOpen={!!openConv}
         onPanel={() => {
           const last = convs.at(-1);
@@ -579,7 +644,15 @@ function EmployeeProfileCard({
 }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-background/60 p-6">
-      <div className="w-full max-w-sm rounded-xl border bg-background p-5 shadow-2xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${name} profile`}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onClose();
+        }}
+        className="w-full max-w-sm rounded-xl border bg-background p-5 shadow-2xl"
+      >
         <div className="font-semibold">{name}</div>
         <dl className="mt-3 space-y-1.5 text-xs">
           <div className="flex gap-2">
