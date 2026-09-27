@@ -57,6 +57,7 @@ export function ThreadView({
   pending = [],
   accept,
   maxFileSize,
+  maxFiles,
   onAttachError,
   steer = false,
   onRemovePending,
@@ -103,8 +104,9 @@ export function ThreadView({
   pending?: string[];
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
   accept?: string;
-  /* Attachment byte cap + where rejections surface (issue #31). */
+  /* Attachment byte cap + count cap + where rejections surface (issue #31). */
   maxFileSize?: number;
+  maxFiles?: number;
   onAttachError?: (message: string) => void;
   steer?: boolean;
   onRemovePending?: (i: number) => void;
@@ -317,6 +319,7 @@ export function ThreadView({
         lastSent={lastSent}
         accept={accept}
         maxFileSize={maxFileSize}
+        maxFiles={maxFiles}
         onAttachError={onAttachError}
         onStop={onStop}
         tools={

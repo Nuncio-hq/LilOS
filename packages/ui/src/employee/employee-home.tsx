@@ -177,6 +177,7 @@ export function EmployeeHome({
   onRetrySession,
   accept,
   maxFileSize,
+  maxFiles,
   onAttachError,
   models,
   modelChoice,
@@ -221,8 +222,9 @@ export function EmployeeHome({
   onRetrySession?: (root: Extract<Msg, { kind: "msg" }>) => void;
   /* Composer attachment types the host accepts; absent = no attach UI. */
   accept?: string;
-  /* Attachment byte cap + where rejections surface (issue #31). */
+  /* Attachment byte cap + count cap + where rejections surface (issue #31). */
   maxFileSize?: number;
+  maxFiles?: number;
   onAttachError?: (message: string) => void;
   /* Model for the NEW session: starts at the employee's default (never the last
      session's pick). No onModel → no picker (D-#19). */
@@ -499,6 +501,7 @@ export function EmployeeHome({
         lastSent={lastSent}
         accept={accept}
         maxFileSize={maxFileSize}
+        maxFiles={maxFiles}
         onAttachError={onAttachError}
         queued={
           composerNote ? (

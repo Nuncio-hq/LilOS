@@ -5,6 +5,10 @@ import {
   toStatusComponents,
 } from "@lilos/client-runtime";
 import type { AppMessage, Ask, Conversation } from "@lilos/contracts/app";
+import {
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+} from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
 import {
   clearDraftIfSent,
@@ -14,7 +18,14 @@ import {
   ThreadView,
   useDraft,
 } from "@lilos/ui";
-import type { Channel, Msg, Reply, Thread } from "@lilos/ui/types";
+import type {
+  AttachedFile,
+  Channel,
+  Msg,
+  Reply,
+  Thread,
+  WsPick,
+} from "@lilos/ui/types";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { atom } from "nanostores";
 import { useEffect, useMemo, useState } from "react";
@@ -29,6 +40,11 @@ import {
   sendDm,
   setConversationModel,
 } from "../lib/actions";
+import {
+  attachmentUrls,
+  ensureAttachments,
+  toAttachedFiles,
+} from "../lib/attachments";
 import { useAtom } from "../lib/hooks";
 import {
   conversationReplies,
@@ -45,6 +61,7 @@ import {
   relay,
   sessionModels,
 } from "../lib/runtime";
+import { say } from "../lib/toast";
 
 const EMPTY_MESSAGES = atom<ChannelMessagesState>({
   channelId: "",
@@ -105,6 +122,14 @@ export function DmPage() {
   const statusPoll = useAtom(relay.status);
   const fatal = useAtom(relay.fatal);
   const [profileOpen, setProfileOpen] = useState(false);
+
+  /* Image attachments (#112): the composers offer pick/drop/paste only when
+     the engine declares `image_prompt` (D-#19); thumbnails resolve lazily
+     from the relay store, so subscribe to the resolved-URL cache. */
+  const description = useAtom(engine.description);
+  const canAttachImages =
+    description?.capabilities.some((c) => c.id === "image_prompt") ?? false;
+  useAtom(attachmentUrls);
 
   /* AC-2 (#85): an engine that's down (Hermes missing, crashed out) shows
      its plain reason above the composer — never silently sendable. */
@@ -199,6 +224,21 @@ export function DmPage() {
     openConv?.engineRef ? engine.sessionFeed(openConv.engineRef) : EMPTY_FEED,
   );
 
+  /* Attachment blobs behind every visible ref — channel window, open
+     thread, and the summary roots/previews that feed rows render (AC-3). */
+  useEffect(() => {
+    const refs = [
+      ...messages,
+      ...threadMsgs,
+      ...summaries.flatMap((s) =>
+        [s.root, s.firstAnswer, s.last].filter(
+          (m): m is AppMessage => m !== undefined,
+        ),
+      ),
+    ].flatMap((m) => m.attachments ?? []);
+    ensureAttachments(refs);
+  }, [messages, threadMsgs, summaries]);
+
   const uiEmp = employee ? toUiEmployee(employee, engineDown) : undefined;
   const empFn = (id: string) => {
     const e = employees.find((x) => x.id === id);
@@ -290,9 +330,12 @@ export function DmPage() {
 
   /* The returned promise is the composer's clear signal (AC-5): resolved →
      this DM channel's stored draft is dropped by key (not whatever composer
-     is open at resolve time), rejected → the text stays. */
-  const send = (text: string) =>
-    sendDm(employeeId, text).then((conv) => {
+     is open at resolve time), rejected → the text stays. sendDm resolves
+     undefined when nothing was sent (#112: unreadable file or relay error,
+     already toasted) — surface it as a rejection so nothing is cleared. */
+  const send = (text: string, _pick?: WsPick, files?: AttachedFile[]) =>
+    sendDm(employeeId, text, undefined, files).then((conv) => {
+      if (!conv) throw new Error("send failed");
       clearDraftIfSent(draftKey.dm(employeeId), text);
       return navigate({
         to: "/dm/$employeeId/$conversationId",
@@ -380,6 +423,7 @@ export function DmPage() {
             minute: "2-digit",
           }),
           text: root.text,
+          attachments: toAttachedFiles(root.attachments),
           thread,
         }
       : { kind: "msg", id: conv.id, from: "user", time: "", text: "", thread };
@@ -405,14 +449,19 @@ export function DmPage() {
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}
           onModel={(c) => void setConversationModel(conv.id, c.model)}
-          onSend={(text) =>
-            sendDm(employeeId, text, conv.id).then((c) => {
+          onSend={(text, files) =>
+            sendDm(employeeId, text, conv.id, files).then((c) => {
+              if (!c) throw new Error("send failed");
               clearDraftIfSent(draftKey.thread(conv.id), text);
               return c;
             })
           }
           draft={threadDraft}
           onDraftChange={setThreadDraft}
+          accept={canAttachImages ? "image/*" : undefined}
+          maxFileSize={MAX_ATTACHMENT_BYTES}
+          maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
+          onAttachError={say}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           lastSent={lastSent}
           onFocus={undefined}
@@ -445,6 +494,10 @@ export function DmPage() {
         onSend={send}
         draft={homeDraft}
         onDraftChange={setHomeDraft}
+        accept={canAttachImages ? "image/*" : undefined}
+        maxFileSize={MAX_ATTACHMENT_BYTES}
+        maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
+        onAttachError={say}
         lastSent={lastSentTop}
         panelOpen={!!openConv}
         onPanel={() => {
