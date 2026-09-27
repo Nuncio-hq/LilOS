@@ -293,8 +293,19 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
     await expectAligned("900px viewport");
     await page.setViewportSize({ width: 1280, height: 720 });
     // AC-1: text + reply chip sit in the column to the RIGHT of the avatar.
-    const avatarBox = await rowAvatar(row).boundingBox();
-    const chipBox = await row.locator("button").last().boundingBox();
+    // Same single-frame rule as tops(): separate boundingBox() calls can
+    // straddle a reflow and mix frames (#84 — CI hit a 7px false negative).
+    const { avatarBox, chipBox } = await row.evaluate((el) => {
+      const r = (n: Element | null | undefined) => {
+        const b = n?.getBoundingClientRect();
+        return b ? { x: b.x, width: b.width } : null;
+      };
+      const buttons = el.querySelectorAll("button");
+      return {
+        avatarBox: r(el.querySelector("[data-slot='avatar']")),
+        chipBox: r(buttons[buttons.length - 1]),
+      };
+    });
     if (!avatarBox || !chipBox) throw new Error("row boxes missing");
     expect(chipBox.x).toBeGreaterThanOrEqual(avatarBox.x + avatarBox.width - 1);
     // AC-1: hover (and its background change) doesn't shift the row's layout.
@@ -358,12 +369,22 @@ test("AC-3 desktop app: the DM feed row in Electron", async () => {
       });
       // Screenshot first — the buggy run's shot is the "before" evidence.
       await win.screenshot({ path: `${SHOTS}/ac-3-desktop-dm.png` });
-      const [a, n] = await Promise.all([
-        rowAvatar(row).boundingBox(),
-        nameLine(row).boundingBox(),
-      ]);
-      if (!a || !n) throw new Error("row avatar or name line not laid out");
-      expect(Math.abs(n.y - a.y)).toBeLessThanOrEqual(4);
+      // One evaluate → one frame; Promise.all of two boundingBox() calls can
+      // still straddle a reflow (#84).
+      const { a, n } = await row.evaluate((el) => {
+        const y = (e: Element | null | undefined) =>
+          e?.getBoundingClientRect().y ?? null;
+        const nameSpan = [...el.querySelectorAll("span")].find(
+          (s) => s.childElementCount === 0 && s.textContent?.trim() === "Oscar",
+        );
+        return {
+          a: y(el.querySelector("[data-slot='avatar']")),
+          n: y(nameSpan),
+        };
+      });
+      if (a === null || n === null)
+        throw new Error("row avatar or name line not laid out");
+      expect(Math.abs(n - a)).toBeLessThanOrEqual(4);
     } finally {
       await app.close();
     }
