@@ -121,6 +121,37 @@ describe("RelayClient", () => {
     expect((await listPromise).employees).toHaveLength(1);
   });
 
+  it("AC-3 employee.upserted broadcasts append and update the employees atom", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    const employee = {
+      id: "emp_1",
+      name: "Ada",
+      role: "eng",
+      status: "online",
+      profile: "default",
+      model: "fake-small",
+      now: "",
+      instructions: "",
+      respondTo: "me",
+      createdAt: 0,
+    };
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "employee.upserted",
+      params: { employee },
+    });
+    expect(client.employees.get().map((e) => e.id)).toEqual(["emp_1"]);
+
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "employee.upserted",
+      params: { employee: { ...employee, name: "Renamed" } },
+    });
+    expect(client.employees.get()).toHaveLength(1);
+    expect(client.employees.get()[0]?.name).toBe("Renamed");
+  });
+
   it("rejects connect with a typed error on protocol_version_mismatch", async () => {
     const { client, socket } = makeClient();
     const pending = client.connect();

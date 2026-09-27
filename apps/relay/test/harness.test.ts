@@ -295,6 +295,19 @@ describe("relay harness surface (#26)", () => {
       host.frames,
     );
     expect(eventsNamed(watcher.frames, "channel.created")).toHaveLength(1);
+    expect(eventsNamed(watcher.frames, "employee.upserted")).toHaveLength(1);
+    // employees.update broadcasts the same event so online clients that
+    // weren't the caller stay in sync.
+    const created = (
+      host.frames as {
+        result?: { employee?: { id: string } };
+      }[]
+    ).find((f) => f.result?.employee)?.result?.employee;
+    if (!created) throw new Error("employees.create response missing");
+    await host.connection.receive(
+      req("employees.update", { id: created.id, name: "Renamed" }),
+    );
+    expect(eventsNamed(watcher.frames, "employee.upserted")).toHaveLength(2);
 
     await watcher.connection.receive(
       req("channel.subscribe", { channelId: channel.id }),

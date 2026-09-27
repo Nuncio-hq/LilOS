@@ -978,7 +978,8 @@ export class Harness {
     const employeeId = this.employeeIdFor(
       this.conversationFromAtom(binding.conversationId),
     );
-    if (text.trim().length > 0 && employeeId) {
+    const hasAnswer = text.trim().length > 0 && !!employeeId;
+    if (hasAnswer) {
       await this.opts.relay
         .request("messages.post", {
           channelId: binding.channelId,
@@ -991,9 +992,14 @@ export class Harness {
         .catch((error) =>
           this.opts.log.error("answer post failed", { error: String(error) }),
         );
-    } else if (stopReason === "cancelled") {
+    }
+    // An errored turn must leave a trace even when text streamed before it —
+    // in-view conversations never notify, so this is the only failure signal.
+    if (event.payload.error) {
+      await this.postSystem(binding, `Error: ${event.payload.error}`);
+    } else if (!hasAnswer && stopReason === "cancelled") {
       await this.postSystem(binding, "Stopped.");
-    } else {
+    } else if (!hasAnswer) {
       await this.postSystem(binding, "(the engine ended the turn silently)");
     }
     this.updateConversation(binding.conversationId, { state: "idle" }).catch(

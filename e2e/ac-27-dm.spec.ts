@@ -76,14 +76,24 @@ async function bootStack(
   const webUrl = `http://127.0.0.1:${ports.web}`;
   try {
     await waitForHttp(webUrl);
+    // The page connects to relay + feed the moment it loads and only retries
+    // post-handshake drops — wait for them to listen so a slow boot under
+    // parallel load can't strand the client on "could not start".
+    await waitForHttp(`http://127.0.0.1:${ports.relay}/`);
+    await waitForHttp(`http://127.0.0.1:${ports.feed}/`);
     const tokenPath = path.join(home, "relay-token");
     let relayToken = "";
-    for (let i = 0; i < 100 && !relayToken; i++) {
+    // 30s headroom: under a full-suite run several stacks boot at once and
+    // the relay can take >5s to write its token — an empty token surfaces as
+    // a faraway "bad auth token", so fail here instead.
+    for (let i = 0; i < 300 && !relayToken; i++) {
       try {
         relayToken = readFileSync(tokenPath, "utf8").trim();
       } catch {}
-      if (!relayToken) await new Promise((r) => setTimeout(r, 50));
+      if (!relayToken) await new Promise((r) => setTimeout(r, 100));
     }
+    if (!relayToken)
+      throw new Error(`relay token never appeared at ${tokenPath}`);
     return {
       home,
       webUrl,
@@ -241,13 +251,17 @@ test("AC-5 typing mid-turn steers (capability `steer`); stop interrupts", async 
   // An edit-ask prompt holds the turn open on an approval — deterministic
   // running state for both legs.
   await send(page, "Add a release note to the readme");
+  // Send the steer while the turn is parked on the approval — it is
+  // provably running, so the steer lands inside it instead of racing
+  // session creation and becoming a follow-up turn (which the fake's
+  // scripts never echo back).
+  await expect(page.getByText("Approval needed").first()).toBeVisible({
+    timeout: 60_000,
+  });
   await expect(page.getByText("Enter steers · ■ stop")).toBeVisible({
     timeout: 30_000,
   });
   await send(page, "also mention bananas");
-  await expect(page.getByText("Approval needed").first()).toBeVisible({
-    timeout: 60_000,
-  });
   await allowAll(page);
   // The steer lands inside the turn it interrupted (turn.steered chip).
   await expect(page.locator("[data-agentturn]").last()).toContainText(

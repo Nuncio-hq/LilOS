@@ -520,6 +520,32 @@ export class FakeEngine {
     this.emit(s, "turn.started", { turnId, model: s.model });
     this.setState(s, "running");
     try {
+      // Deterministic failure path (#32): a prompt starting with "fail" ends
+      // the turn as a refusal with an error, so failure surfaces are testable.
+      // Reasoning is paced over ~2s like a real turn — an instant failure
+      // races clients that suppress notifications for the in-view session.
+      if (/^\s*fail\b/i.test(promptText)) {
+        for (const w of words(
+          "Reading the workspace to find the right files. Applying the change on the branch. Rebuilding the project and running the checks. Several checks came back red and the build output looks broken. Retrying once, then giving up. ",
+        )) {
+          await this.sleep(s);
+          this.emit(s, "turn.delta", {
+            turnId,
+            stream: "reasoning",
+            delta: w,
+          });
+        }
+        const error = `engine-fake: scripted failure for "${promptText}"`;
+        this.emit(s, "turn.completed", {
+          turnId,
+          stopReason: "refusal",
+          error,
+        });
+        if (s.state !== "closed") this.setState(s, "idle");
+        s.turn = undefined;
+        this.pumpSteers(s);
+        return { turnId, stopReason: "refusal" as const };
+      }
       for (const w of words(script.reasoning)) {
         await this.sleep(s);
         this.emit(s, "turn.delta", { turnId, stream: "reasoning", delta: w });

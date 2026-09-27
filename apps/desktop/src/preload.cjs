@@ -14,6 +14,9 @@ const arg = (key) =>
     .slice(1)
     .join("=") ?? "";
 
+// Channel names mirror DESKTOP_NOTIFY_CHANNEL / DESKTOP_OPEN_CONVERSATION_CHANNEL
+// in packages/contracts/src/app/desktop.ts — sandboxed preload requires only
+// expose electron's own modules, so the literals live here.
 contextBridge.exposeInMainWorld("lilos", {
   config: {
     relayWs: arg("relay"),
@@ -25,4 +28,18 @@ contextBridge.exposeInMainWorld("lilos", {
   ensure: () => ipcRenderer.invoke("lilos:ensure"),
   openSettings: () => ipcRenderer.invoke("lilos:open-settings"),
   openStatus: () => ipcRenderer.invoke("lilos:open-status"),
+  // #32 notifications: renderer posts a DesktopNotification; a click on the
+  // macOS notification delivers the conversation id back over
+  // lilos:open-conversation.
+  notifications: {
+    post: (notification) => ipcRenderer.send("lilos:notify", notification),
+  },
+  onOpenConversation: (cb) => {
+    const listener = (_e, id) => {
+      if (typeof id === "string") cb(id);
+    };
+    ipcRenderer.on("lilos:open-conversation", listener);
+    return () =>
+      ipcRenderer.removeListener("lilos:open-conversation", listener);
+  },
 });
