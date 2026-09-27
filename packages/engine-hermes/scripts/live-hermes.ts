@@ -138,7 +138,7 @@ approvals:
   timeout: 60
 compression:
   in_place: false
-  threshold_tokens: 18000
+  threshold_tokens: 400000
   protect_last_n: 1
   protect_first_n: 1
   min_tail_user_messages: 1
@@ -181,7 +181,7 @@ approvals:
   timeout: 60
 compression:
   in_place: false
-  threshold_tokens: 18000
+  threshold_tokens: 400000
   protect_last_n: 1
   protect_first_n: 1
   min_tail_user_messages: 1
@@ -278,6 +278,11 @@ const h = new Harness(conn, WAIT_MS);
 //     `session.ref.changed` can never fire (the real-model timeout on #58);
 //     and default protects (first 3 / last 20) make a short test history a
 //     structural no-op.
+//   compression.threshold_tokens: 400000 — the filler leg pastes ~100K tokens
+//     of history (#76); auto-compress must not fire mid-leg: a rotation there
+//     lands before the ref watch is armed and leaves the manual call with a
+//     pre-folded transcript. Manual `session.compress` is force=True — the
+//     pin only gates the automatic trigger.
 //   command_allowlist scrubbed — a stale "always" answer would auto-approve
 //     the trigger command on reruns and `request.opened` never fires.
 {
@@ -317,7 +322,7 @@ const h = new Harness(conn, WAIT_MS);
   ]);
   upsertBlock("compression", [
     ["in_place", "false"],
-    ["threshold_tokens", "18000"],
+    ["threshold_tokens", "400000"],
     ["protect_first_n", "1"],
     ["protect_last_n", "1"],
     ["min_tail_user_messages", "1"],
@@ -357,43 +362,68 @@ for (const suite of SUITES) {
       agent: "builder",
       cwd: "/tmp/lilos-live",
     })) as { sessionId: string };
-    // #63 AC-3 — bounded history: a handful of short turns is enough for
-    // compress to fold under the pinned protects, and each is a small reply
-    // a real model finishes in seconds (the 4×100-number drive is what blew
-    // the scenario cap on the real-model leg).
-    for (let i = 0; i < COMPRESS_FILLER_TURNS; i++) {
-      await withCap(
-        h.request("prompt", {
-          sessionId,
-          content: [{ type: "text", text: compressFillerPrompt(i) }],
-        }),
-      );
-    }
+    // #76 AC-1 — foldable mass is pasted in the user turns (see
+    // compressFillerPrompt): each is a ~64KB block a real model answers in a
+    // few tokens, so the summarizable middle dwarfs even the largest allowed
+    // summary. (A reply-sized middle is what got refused on the real leg.)
+    const sendFiller = async (from: number) => {
+      for (let i = from; i < from + COMPRESS_FILLER_TURNS; i++) {
+        await withCap(
+          h.request("prompt", {
+            sessionId,
+            content: [{ type: "text", text: compressFillerPrompt(i) }],
+          }),
+        );
+      }
+    };
+    await sendFiller(0);
     // The LilOS session id is ours; the compress call wants the hermes sid.
     const s = engine.sessionFor(sessionId);
     if (!s) throw new Error(`no engine session for ${sessionId}`);
-    const refWait = h.waitEvent(
-      h.forSession(sessionId, (e) => e.type === "session.ref.changed"),
-      STUB_MODE ? 30_000 : 150_000, // compress is an LLM call on a real build
-    );
-    const res = (await withCap(
-      gateway.request("session.compress", {
-        session_id: s.runtimeSid,
-      }),
-    )) as {
+    type CompressResult = {
       compressed?: boolean;
       status?: string;
       removed?: number;
       before_messages?: number;
       after_messages?: number;
+      summary?: { refused_would_grow?: boolean; headline?: string };
       info?: { stored_session_id?: string };
     };
-    // Logged unconditionally — on a real-model run this is the first place to
-    // look when ref.changed doesn't arrive (removed: 0 = nothing folded,
-    // in_place on = no rotation).
-    console.log(
-      `[live] compress -> status=${res.status} compressed=${res.compressed} removed=${res.removed} msgs=${res.before_messages}->${res.after_messages} stored=${res.info?.stored_session_id ?? "?"}`,
+    const compressOnce = () =>
+      withCap(
+        gateway.request("session.compress", {
+          session_id: s.runtimeSid,
+        }),
+      ) as Promise<CompressResult>;
+    // Arm before the call: session.info (carrying the rotated ref) is emitted
+    // ahead of the RPC result.
+    let refWait = h.waitEvent(
+      h.forSession(sessionId, (e) => e.type === "session.ref.changed"),
+      STUB_MODE ? 30_000 : 150_000, // compress is an LLM call on a real build
     );
+    let res = await compressOnce();
+    console.log(
+      `[live] compress -> status=${res.status} compressed=${res.compressed} removed=${res.removed} msgs=${res.before_messages}->${res.after_messages} refused=${res.summary?.refused_would_grow ?? "?"} stored=${res.info?.stored_session_id ?? "?"}`,
+    );
+    // removed=0 = the fold was refused (summary would not shrink the
+    // transcript) or nothing was eligible. Add a second batch of foldable
+    // mass and retry ONCE — a second refusal is a real FAIL, never a SKIP:
+    // the "documented no-op" the issue describes is the refusal itself.
+    if ((res.removed ?? 0) === 0 && res.status !== "pending") {
+      refWait.catch(() => {}); // nothing rotated on attempt one
+      console.log(
+        `[live] compress produced no fold (${res.summary?.headline ?? "no headline"}) — second filler batch, then retry once`,
+      );
+      await sendFiller(COMPRESS_FILLER_TURNS);
+      refWait = h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "session.ref.changed"),
+        STUB_MODE ? 30_000 : 150_000,
+      );
+      res = await compressOnce();
+      console.log(
+        `[live] compress retry -> status=${res.status} removed=${res.removed} msgs=${res.before_messages}->${res.after_messages} refused=${res.summary?.refused_would_grow ?? "?"} stored=${res.info?.stored_session_id ?? "?"}`,
+      );
+    }
     // "pending" is the compute-host path; the ref rotation then arrives
     // asynchronously via session.info — refWait still covers it.
     if (
@@ -405,6 +435,10 @@ for (const suite of SUITES) {
     )
       throw new Error(
         `session.compress did not compress: ${JSON.stringify(res)}`,
+      );
+    if ((res.removed ?? 0) <= 0 && res.status !== "pending")
+      throw new Error(
+        `engine refused the fold${res.summary?.refused_would_grow ? " (would_grow)" : ""}: ${res.summary?.headline ?? "no summary"}`,
       );
     const ev = await refWait;
     if (ev.type !== "session.ref.changed") throw new Error("unreachable");
