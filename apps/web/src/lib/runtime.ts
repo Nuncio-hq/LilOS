@@ -6,6 +6,7 @@ import {
   type SessionModel,
 } from "@lilos/client-runtime";
 import type { Ask } from "@lilos/contracts/app";
+import type { ModelOption } from "@lilos/contracts/engine";
 import { atom, computed, type ReadableAtom } from "nanostores";
 import type { LilosConfig } from "./config";
 
@@ -35,6 +36,14 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
   }
   keepEngineAlive();
   booted.set(true);
+  // The picker's catalog: models.list via the relay, once, when the engine
+  // declares the `models` capability (issue #71, AC-7).
+  if (engine.description.get()?.capabilities.some((c) => c.id === "models")) {
+    void relay
+      .listModels()
+      .then((r) => engineModels.set(r.models))
+      .catch(() => {});
+  }
 }
 
 /**
@@ -54,6 +63,9 @@ function keepEngineAlive(): void {
   };
   attempt();
 }
+
+/** The engine's selectable-model catalog (`models.list`); empty without the capability. */
+export const engineModels = atom<ModelOption[]>([]);
 
 const modelCache = new Map<string, ReadableAtom<SessionModel>>();
 

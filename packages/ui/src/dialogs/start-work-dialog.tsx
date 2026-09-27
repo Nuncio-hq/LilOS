@@ -127,7 +127,7 @@ export function StartWorkDialog({
                           : "hover:border-foreground/30",
                       )}
                     >
-                      <HermesAvatar className="size-5" />
+                      <HermesAvatar name={emp(w)?.name} className="size-5" />
                       {emp(w)?.name}
                     </button>
                   ))}

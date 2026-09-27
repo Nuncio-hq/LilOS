@@ -35,6 +35,7 @@ export function ThreadSummary({
         {workers.map((w) => (
           <HermesAvatar
             key={w}
+            name={emp(w)?.name}
             className="size-5 rounded-[28%] ring-2 ring-background"
           />
         ))}

@@ -42,11 +42,12 @@ describe("model picker (issue #30)", () => {
       <ModelPicker model="gpt-test-5" models={MODELS} onModel={() => {}} />,
     );
     openPicker();
-    // The pick surface is a dialog; the group headings are the provider slugs.
+    // The pick surface is a dialog; the group headings are provider display
+    // names (issue #71, AC-7 — never the raw slug).
     const headings = [
       ...document.body.querySelectorAll("[cmdk-group-heading]"),
     ].map((el) => el.textContent);
-    expect(headings).toEqual(["openai", "anthropic", "Other"]);
+    expect(headings).toEqual(["OpenAI", "Anthropic", "Other"]);
     // Every engine-reported model is a row — providerless ones land in Other.
     const dialog = document.body.querySelector(
       '[role="dialog"]',

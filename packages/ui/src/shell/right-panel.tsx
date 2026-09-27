@@ -111,7 +111,7 @@ export function TicketsList({
             </Badge>
           </div>
           <div className="mt-1.5 flex items-center gap-1.5 text-muted-foreground text-xs">
-            <HermesAvatar className="size-4" />
+            <HermesAvatar name={emp(t.who)?.name} className="size-4" />
             {emp(t.who)?.name} · #{t.ch}
           </div>
           <div className="mt-1 flex items-center gap-1.5 text-muted-foreground text-xs">

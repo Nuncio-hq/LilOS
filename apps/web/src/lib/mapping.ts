@@ -42,7 +42,7 @@ const PHASE_MAP: Record<TurnModel["phase"], Phase> = {
   reasoning: "thinking",
   tools: "tools",
   text: "typing",
-  waiting: "tools",
+  waiting: "waiting",
   done: "done",
   stopped: "stopped",
 };
@@ -71,6 +71,10 @@ export function liveTurnReply(
   const approvals = asks.filter(
     (a) => a.turnId === turn.turnId && a.request.kind === "approval",
   );
+  // An approval-blocked turn is phase "waiting" (the engine's
+  // request.opened contract event); waitingOn carries the open request's
+  // kind so the tool card can say "Waiting for approval" (issue #71, AC-4).
+  const open = turn.requests.find((r) => r.outcome === undefined);
   const shown = approvals.find((a) => a.state === "open") ?? approvals.at(-1);
   const approval =
     shown && shown.request.kind === "approval"
@@ -92,8 +96,10 @@ export function liveTurnReply(
     steers: turn.steers,
     streaming: turn.phase === "text" ? turn.text : undefined,
     approval,
+    model: turn.model,
     phase: PHASE_MAP[turn.phase],
     live: turn.phase !== "done" && turn.phase !== "stopped",
+    waitingOn: turn.phase === "waiting" ? open?.request.kind : undefined,
   };
 }
 
@@ -102,15 +108,21 @@ export function conversationReplies(
   messages: AppMessage[],
   conversationId: string,
 ): Reply[] {
-  return messages
-    .filter((m) => m.conversationId === conversationId)
-    .map((m) => ({
-      id: m.id,
-      from: m.authorKind === "system" ? "" : m.authorId,
-      time: clock(m.createdAt),
-      text: m.authorKind === "system" ? `⚠ ${m.text}` : m.text,
-      phase: m.authorKind === "employee" ? "done" : undefined,
-    }));
+  return (
+    messages
+      .filter((m) => m.conversationId === conversationId)
+      // Older DBs may hold pre-#71 `⚙ …` tool-event system rows; the tool
+      // cards inside the turn are the single rendering, so drop them (AC-1).
+      .filter((m) => m.authorKind !== "system" || !m.text.startsWith("⚙"))
+      .map((m) => ({
+        id: m.id,
+        from: m.authorKind === "system" ? "" : m.authorId,
+        time: clock(m.createdAt),
+        text: m.authorKind === "system" ? `⚠ ${m.text}` : m.text,
+        model: m.model,
+        phase: m.authorKind === "employee" ? "done" : undefined,
+      }))
+  );
 }
 
 /**

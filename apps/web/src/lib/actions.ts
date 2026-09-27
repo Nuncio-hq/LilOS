@@ -98,6 +98,14 @@ export async function renameConversation(
   await relay.request("conversations.update", { conversationId, title });
 }
 
+/** Pin the model a conversation's next turn runs on (`conversations.setModel`). */
+export async function setConversationModel(
+  conversationId: string,
+  model: string,
+): Promise<void> {
+  await relay.request("conversations.setModel", { conversationId, model });
+}
+
 export async function archiveConversation(
   conversationId: string,
   archived: boolean,

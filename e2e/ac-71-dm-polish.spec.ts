@@ -232,20 +232,24 @@ test("AC-7 model display names — picker groups and the turn footer", async ({
 }) => {
   test.setTimeout(120_000);
   await dmDefault(page);
-  // Composer picker: provider group headings are display names, not slugs.
+  // The picker lives in the session thread — open a session first.
+  await send(page, "Say hello then list files");
+  const turn = page.locator("[data-agentturn]").first();
+  await expect(turn).toBeVisible({ timeout: 30_000 });
+  // A finished turn's footer names the model, same label as the picker.
+  await expect(turn).toContainText("· Fake Large", { timeout: 60_000 });
+  await expect(turn).not.toContainText("fake-large");
+  // Thread-composer picker: provider group headings are display names, not slugs.
   const trigger = page.getByRole("button", { name: /Fake Large|Fake Small/ });
   await expect(trigger).toBeVisible({ timeout: 30_000 });
   await trigger.click();
   const group = page.getByRole("group", { name: "Fake", exact: true });
   await expect(group).toBeVisible();
   await expect(group.getByText("Fake Small")).toBeVisible();
-  await expect(page.getByRole("group", { name: "fake", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("group", { name: "fake", exact: true }),
+  ).toHaveCount(0);
   await page.keyboard.press("Escape");
-  // A finished turn's footer names the model, same label as the picker.
-  await send(page, "Say hello then list files");
-  const turn = page.locator("[data-agentturn]").first();
-  await expect(turn).toContainText("· Fake Large", { timeout: 60_000 });
-  await expect(turn).not.toContainText("fake-large");
   await page.screenshot({ path: `${SHOTS}/ac-7-model-names.png` });
 });
 

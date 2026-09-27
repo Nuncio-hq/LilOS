@@ -83,7 +83,14 @@ describe("issue #71", () => {
   test("AC-7 replies carry the engine model id for the footer", () => {
     // Posted turn (relay message): AppMessage.model lands on the reply.
     const replies = conversationReplies(
-      [msg({ authorKind: "employee", authorId: "emp1", text: "done", model: "fake-large" })],
+      [
+        msg({
+          authorKind: "employee",
+          authorId: "emp1",
+          text: "done",
+          model: "fake-large",
+        }),
+      ],
       "c1",
     );
     expect(replies[0].model).toBe("fake-large");

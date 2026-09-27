@@ -22,7 +22,9 @@ export function employeeBadges(
       if (c.channelId !== ch.id || !c.engineRef) continue;
       const m = models[c.engineRef];
       if (!m) continue;
-      if (m.live) running += 1;
+      // A turn parked on an open request reads "needs you", not "running"
+      // (issue #71, AC-4).
+      if (m.live && m.live.phase !== "waiting") running += 1;
       approvals += m.openRequests.length;
     }
     if (running || approvals) {

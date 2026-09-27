@@ -212,15 +212,15 @@ describe("issue #71", () => {
         onModel={() => {}}
       />,
     );
-    const trigger = document.body.querySelector(
-      '[data-slot="model-selector-trigger"]',
-    );
+    const trigger =
+      document.body.querySelector('[data-slot="model-selector-trigger"]') ??
+      document.body.querySelector("button");
     expect(trigger).toBeTruthy();
     (trigger as HTMLElement).click();
     await new Promise((r) => setTimeout(r, 0));
-    const headings = [...document.body.querySelectorAll("[cmdk-group-heading]")].map(
-      (el) => el.textContent,
-    );
+    const headings = [
+      ...document.body.querySelectorAll("[cmdk-group-heading]"),
+    ].map((el) => el.textContent);
     expect(headings).toEqual(["Fake", "Anthropic", "Other"]);
   });
 

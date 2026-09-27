@@ -234,7 +234,13 @@ export function FocusView({
           </Button>
         )}
         <span className="h-5 w-px shrink-0 bg-border" />
-        {lead && <HermesAvatar status={lead.status} className="size-7" />}
+        {lead && (
+          <HermesAvatar
+            name={lead.name}
+            status={lead.status}
+            className="size-7"
+          />
+        )}
         <div className="min-w-0">
           <div className="truncate font-semibold" title={plain(root.text)}>
             {plain(root.text)}
@@ -385,6 +391,7 @@ export function FocusView({
                     emp={emp}
                     last={i === thread.replies.length - 1}
                     onRetry={onRetry}
+                    models={models}
                     onOpen={pickTab}
                     pending={steer ? pendingSteers : []}
                     cards={

@@ -199,6 +199,7 @@ export function ThreadView({
                   emp={emp}
                   last={i === thread.replies.length - 1}
                   onRetry={onRetry}
+                  models={models}
                   pending={steer ? pending : []}
                   cards={
                     <ReplyCards
