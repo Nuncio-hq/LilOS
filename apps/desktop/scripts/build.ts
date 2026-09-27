@@ -1,10 +1,15 @@
 import { execFileSync } from "node:child_process";
 import {
   chmodSync,
+  closeSync,
   copyFileSync,
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
+  openSync,
+  readdirSync,
+  readSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -258,20 +263,66 @@ for (const bin of [
   chmodSync(join(APP, "Contents", "MacOS", bin), 0o755);
 }
 
+/* Developer ID signing, inside out. `codesign --deep` does not reliably reach
+   nested code (Electron's dylibs, Squirrel's ShipIt), and notarization then
+   rejects the archive ("not signed with a valid Developer ID certificate",
+   "no secure timestamp", "hardened runtime not enabled"). Sign every Mach-O
+   file first, then every nested bundle deepest-first, then the app — each
+   with the hardened runtime, a secure timestamp and the JIT entitlements. */
+const ENTITLEMENTS = join(ROOT, "entitlements.plist");
+const MACHO_MAGIC = new Set([
+  0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca,
+]);
+const isMachO = (path: string): boolean => {
+  const fd = openSync(path, "r");
+  try {
+    const buf = Buffer.alloc(4);
+    if (readSync(fd, buf, 0, 4, 0) < 4) return false;
+    return MACHO_MAGIC.has(buf.readUInt32BE(0));
+  } finally {
+    closeSync(fd);
+  }
+};
+const walk = (dir: string, files: string[], bundles: string[]) => {
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    const st = lstatSync(path);
+    if (st.isSymbolicLink()) continue;
+    if (st.isDirectory()) {
+      walk(path, files, bundles);
+      if (/\.(app|framework|xpc|appex)$/.test(name)) bundles.push(path);
+    } else if (st.isFile() && isMachO(path)) {
+      files.push(path);
+    }
+  }
+};
+function signInsideOut(app: string, identity: string) {
+  const sign = (path: string) =>
+    run("codesign", [
+      "--force",
+      "--options",
+      "runtime",
+      "--timestamp",
+      "--entitlements",
+      ENTITLEMENTS,
+      "--sign",
+      identity,
+      path,
+    ]);
+  const files: string[] = [];
+  const bundles: string[] = [];
+  walk(join(app, "Contents"), files, bundles);
+  const depth = (p: string) => p.split("/").length;
+  for (const f of files.sort((a, b) => depth(b) - depth(a))) sign(f);
+  for (const b of bundles.sort((a, b) => depth(b) - depth(a))) sign(b);
+  sign(app);
+}
+
 console.log(`==> sign (${IDENTITY === "-" ? "ad-hoc" : IDENTITY})`);
 if (IDENTITY === "-") {
   run("codesign", ["--force", "--deep", "--sign", "-", APP]);
 } else {
-  run("codesign", [
-    "--force",
-    "--options",
-    "runtime",
-    "--timestamp",
-    "--deep",
-    "--sign",
-    IDENTITY,
-    APP,
-  ]);
+  signInsideOut(APP, IDENTITY);
 }
 run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", APP]);
 
