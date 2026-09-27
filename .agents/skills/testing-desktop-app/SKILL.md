@@ -76,13 +76,32 @@ open "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
   menu — use real `left_click` at the control's screen coordinates instead;
   verify with a screenshot.
 - `git.discoverRepos` is lazy since #113: it only runs when the web
-  Add-folder dialog opens, never on DM mount — and the desktop app uses the
-  native panel, so a packaged-app run should NOT see any TCC folder-access
-  prompts at all. If one appears, DM open is scanning the disk — a bug.
+  Add-folder dialog opens, never on DM mount — so a packaged-app DM open
+  produces NO TCC prompt. Caveat: a prompt DOES appear at folder-pick time
+  when the picked path is under a protected dir (probeFolder → hostList on
+  ~/Desktop/… prompts "access files in your Desktop folder"). Allow it.
+  Strong laziness proof: `tccutil reset SystemPolicyDesktopFolder
+  com.nuncio.lilos` (+ DocumentsFolder), reload the DM, then
+  `sqlite3 ~/Library/Application\ Support/com.apple.TCC/TCC.db "select
+  client,service from access where client like '%lilos%'"` must stay EMPTY.
+- The composer's 📎 "Attach files" button sits immediately LEFT of the
+  folder chip — a misclick opens Electron's FILE picker (dirs grayed,
+  Open navigates into folders instead of selecting, no New Folder button).
+  The real pickFolder dialog has a "New Folder" button and Open enabled
+  even with nothing selected — if you see neither, you opened the wrong
+  panel: Cancel and retry. Click the chip's center, not its left edge.
+- NSOpenPanel column view quirk: Cmd+Shift+G to a folder drills INTO it
+  (selection sits in the parent column) and Open can stay disabled.
+  Reliable path: switch to List view via the toolbar view menu, or after
+  Go-navigating into the folder just click Open — in openDirectory mode it
+  selects the current dir.
 - The native folder dialog (Electron `dialog.showOpenDialog`) is a real
   NSOpenPanel: `key cmd+shift+g` opens "Go to Folder", `type` the absolute
   path, `Return` selects it in its parent listing, then click the **Open**
   button (bottom-right) to confirm.
+- `test-results/` is wiped by concurrent e2e/vitest runs (`rm -rf` during
+  setup) — stage curated screenshots in /tmp or ~/screenshots and copy into
+  `test-results/` only at the end; keep a mirror copy elsewhere.
 - Packaged harness default workdir is `~/.lilos/harness/work` (NOT
   `~/.lilos/work`): a no-folder session posts
   `No folder: working in ~/.lilos/harness/work`. engine-fake's follow-up
