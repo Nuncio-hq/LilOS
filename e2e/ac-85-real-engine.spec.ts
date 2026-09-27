@@ -226,6 +226,23 @@ test("AC-4 (#85) a dev stack on the fake engine is labeled", async ({
     const label = page.locator("[data-build-label]");
     await expect(label).toHaveText("dev · fake engine", { timeout: 30_000 });
     await page.screenshot({ path: `${SHOTS}/ac-4-dev-label.png` });
+
+    // Sidebar regression guard (#90 review): at fixed 264px the row's role
+    // text must truncate, never the employee name — a 0-width name renders
+    // 'hidden' to Playwright and invisible to Oscar.
+    const name = page.locator("aside").getByText(/^default$/i);
+    await page.setViewportSize({ width: 1288, height: 700 });
+    await expect(name).toBeVisible();
+    expect((await name.boundingBox())?.width ?? 0).toBeGreaterThan(0);
+
+    // Below lg the sidebar becomes an overlay; land on the DM and open it
+    // from the header menu, then check the same invariant there.
+    await page.getByRole("button", { name: "Set up later" }).click();
+    await page.setViewportSize({ width: 900, height: 700 });
+    await page.locator("main header button").first().click();
+    const overlayName = page.locator("aside").getByText(/^default$/i);
+    await expect(overlayName).toBeVisible();
+    expect((await overlayName.boundingBox())?.width ?? 0).toBeGreaterThan(0);
   } finally {
     await stack.stop();
   }
