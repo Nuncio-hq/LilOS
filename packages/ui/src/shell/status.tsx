@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { ScrollArea } from "../components/ui/scroll-area";
+import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
 import type { ComponentState, StatusComponent } from "../types";
 
@@ -159,11 +160,11 @@ export function StatusDialog({
                       />
                     </div>
                     <p className="mt-0.5 text-muted-foreground text-xs">
-                      {c.reason}
+                      <InlineCodeText text={c.reason} />
                     </p>
                     {c.hint && (
                       <p className="mt-0.5 text-foreground/80 text-xs">
-                        {c.hint}
+                        <InlineCodeText text={c.hint} />
                       </p>
                     )}
                     {c.detail && (

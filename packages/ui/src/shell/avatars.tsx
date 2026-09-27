@@ -28,6 +28,7 @@ export function HermesAvatar({
       </Avatar>
       {status && (
         <span
+          data-presence={status}
           className={cn(
             "absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-background",
             STATUS_DOT[status],

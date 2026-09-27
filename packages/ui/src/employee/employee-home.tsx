@@ -46,6 +46,7 @@ import { AttachmentChips } from "../conversation/turns";
 import { WorkspacePicker, wsHint } from "../dialogs/workspace-picker";
 import { Body, Row, Who } from "../feed/row";
 import { PHASE_LABEL, preview } from "../lib/helpers";
+import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import type {
@@ -484,10 +485,16 @@ export function EmployeeHome({
           composerNote ? (
             <div
               data-composer-note
-              className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-50/60 px-3 py-2 text-amber-900 text-xs dark:bg-amber-950/20 dark:text-amber-200"
+              className="mb-2 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-50/60 px-3 py-2 text-amber-900 text-xs dark:bg-amber-950/20 dark:text-amber-200"
             >
               <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
-              <span>{composerNote}</span>
+              <span>
+                {typeof composerNote === "string" ? (
+                  <InlineCodeText text={composerNote} />
+                ) : (
+                  composerNote
+                )}
+              </span>
             </div>
           ) : undefined
         }

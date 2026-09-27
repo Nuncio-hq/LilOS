@@ -101,15 +101,22 @@ export function DmPage() {
 
   /* AC-2 (#85): an engine that's down (Hermes missing, crashed out) shows
      its plain reason above the composer — never silently sendable. */
-  const composerNote = useMemo(() => {
-    const row = toStatusComponents({
-      result: statusPoll.result,
-      connection: "ready",
-      fatal,
-    }).find((c) => c.id === "engine");
-    if (row?.state !== "down" || !row.reason) return undefined;
-    return row.hint ? `${row.reason} ${row.hint}` : row.reason;
-  }, [statusPoll, fatal]);
+  const engineRow = useMemo(
+    () =>
+      toStatusComponents({
+        result: statusPoll.result,
+        connection: "ready",
+        fatal,
+      }).find((c) => c.id === "engine"),
+    [statusPoll, fatal],
+  );
+  const engineDown = engineRow?.state === "down";
+  const composerNote =
+    engineDown && engineRow?.reason
+      ? engineRow.hint
+        ? `${engineRow.reason} ${engineRow.hint}`
+        : engineRow.reason
+      : undefined;
 
   const employee = employees.find((e) => e.id === employeeId);
   const channel = channels.find(
@@ -177,10 +184,10 @@ export function DmPage() {
     openConv?.engineRef ? engine.sessionFeed(openConv.engineRef) : EMPTY_FEED,
   );
 
-  const uiEmp = employee ? toUiEmployee(employee) : undefined;
+  const uiEmp = employee ? toUiEmployee(employee, engineDown) : undefined;
   const empFn = (id: string) => {
     const e = employees.find((x) => x.id === id);
-    return e ? toUiEmployee(e) : undefined;
+    return e ? toUiEmployee(e, engineDown) : undefined;
   };
 
   const summaryOf = (conv: Conversation) =>
