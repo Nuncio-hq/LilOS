@@ -1,9 +1,5 @@
-import {
-  Sidebar,
-  type StatusComponent,
-  StatusDialog,
-  useTheme,
-} from "@lilos/ui";
+import { formatDiagnostics, toStatusComponents } from "@lilos/client-runtime";
+import { Sidebar, StatusDialog, useTheme } from "@lilos/ui";
 import {
   createHashHistory,
   createRootRoute,
@@ -35,42 +31,10 @@ import {
 import { DmPage } from "./pages/dm";
 import { IndexPage } from "./pages/index";
 
-function statusComponents(
-  relayState: string,
-  engineState: string,
-  engineName: string | undefined,
-  engineModel: string | undefined,
-): StatusComponent[] {
-  const conn = (s: string): StatusComponent["state"] =>
-    s === "ready" ? "ok" : s === "closed" ? "down" : "connecting";
-  return [
-    {
-      id: "relay",
-      label: "Relay",
-      state: conn(relayState),
-      reason: relayState,
-    },
-    {
-      id: "engine",
-      label: "Engine",
-      state: conn(engineState),
-      reason: engineName ?? engineState,
-    },
-    {
-      id: "model",
-      label: "Model",
-      state: engineModel ? "ok" : "connecting",
-      reason: engineModel ?? "waiting on describe",
-    },
-  ];
-}
-
 function AppShell() {
   const [theme, setTheme] = useTheme();
   const employees = useAtom(relay.employees);
   const relayState = useAtom(relay.state);
-  const engineState = useAtom(engine.state);
-  const engineInfo = useAtom(engine.description);
   const [statusOpen, setStatusOpen] = useState(false);
   const nav = useAtom(navOpen);
   const navigate = useNavigate();
@@ -80,17 +44,26 @@ function AppShell() {
     ? { kind: "dm", id: decodeURIComponent(dmMatch[1]) }
     : { kind: "dm", id: "" };
 
+  const statusPoll = useAtom(relay.status);
+  const fatal = useAtom(relay.fatal);
   const uiEmployees = useMemo(() => employees.map(toUiEmployee), [employees]);
+  // Real system.status legs (poll keeps them fresh); falls back to socket
+  // states while the relay is unreachable (#53, #85).
   const comps = useMemo(
     () =>
-      statusComponents(
-        relayState,
-        engineState,
-        engineInfo ? `${engineInfo.name} ${engineInfo.version}` : undefined,
-        engineInfo?.capabilities.find((c) => c.id === "models")?.name,
-      ),
-    [relayState, engineState, engineInfo],
+      toStatusComponents({
+        result: statusPoll.result,
+        connection: relayState,
+        fatal,
+      }),
+    [statusPoll, relayState, fatal],
   );
+  // #85 AC-4: a build running the fake engine is labeled — never indistinguishable
+  // from a release running Hermes.
+  const buildLabel =
+    statusPoll.result?.engine?.name === "engine-fake"
+      ? "dev · fake engine"
+      : undefined;
   // live badges: running turns + open approvals per employee (AC-3, #32)
   const models = useAtom(sessionModels);
   const convs = useAtom(relay.conversations);
@@ -176,21 +149,20 @@ function AppShell() {
         onAddFolder={() => {}}
         badges={badges}
         status={comps}
+        buildLabel={buildLabel}
         onOpenStatus={() => setStatusOpen(true)}
       />
       <Outlet />
       {statusOpen && (
         <StatusDialog
           components={comps}
-          diagnostics={JSON.stringify(
-            {
-              relay: relayState,
-              engine: engineState,
-              describe: engineInfo,
-            },
-            null,
-            2,
-          )}
+          diagnostics={formatDiagnostics({
+            result: statusPoll.result,
+            connection: relayState,
+            fatal,
+            error: statusPoll.error,
+            app: { name: "LilOS" },
+          })}
           onClose={() => setStatusOpen(false)}
           onCopied={() => {}}
         />

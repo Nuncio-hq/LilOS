@@ -186,6 +186,23 @@ describe("AC-1 (#33) system.status probes each leg with state + reason", () => {
     expect(leg(status, "model").state).toBe("degraded");
     expect(leg(status, "model").reason.toLowerCase()).toContain("model");
   });
+
+  it("AC-3 (#85) the model leg shows the engine's own default model", async () => {
+    const relay = newRelay();
+    const host = await registerHarness(relay);
+    // Hermes owns provider/model: the harness reports the engine's
+    // `models.list` default, not a LilOS-side setting.
+    await host.connection.receive(
+      req("harness.report", {
+        engine: { state: "running" },
+        status: { engineName: "engine-hermes", defaultModel: "qwen3.8" },
+      }),
+    );
+    const app = await helloed(relay);
+    const status = await systemStatus(app.connection, app.frames);
+    expect(leg(status, "model").state).toBe("ok");
+    expect(leg(status, "model").reason).toContain("qwen3.8");
+  });
 });
 
 describe("AC-2 (#33) version handshake names which side to update", () => {

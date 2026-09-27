@@ -1,7 +1,10 @@
 import type { DesktopBridge, DesktopBridgeConfig } from "@lilos/contracts/app";
 
 /** Runtime wiring for the app: where the relay and the engine endpoint are. */
-export type LilosConfig = DesktopBridgeConfig;
+export type LilosConfig = DesktopBridgeConfig & {
+  /** e2e/dev knob: `?statusPollMs=500` shortens the 15s system.status poll. */
+  statusPollMs?: number;
+};
 
 declare global {
   interface Window {
@@ -16,7 +19,15 @@ declare global {
  * setup error and surfaces in the boot screen.
  */
 export async function loadConfig(): Promise<LilosConfig> {
-  if (window.lilos?.config) return window.lilos.config;
+  const statusPollMs = Number(
+    new URLSearchParams(window.location.search).get("statusPollMs"),
+  );
+  if (window.lilos?.config) {
+    return {
+      ...window.lilos.config,
+      ...(statusPollMs ? { statusPollMs } : {}),
+    };
+  }
   const res = await fetch("/lilos-config.json", { cache: "no-store" });
   if (!res.ok) {
     throw new Error(
@@ -31,5 +42,6 @@ export async function loadConfig(): Promise<LilosConfig> {
     relayWs: cfg.relayWs,
     relayToken: cfg.relayToken ?? "",
     engineWs: cfg.engineWs,
+    ...(statusPollMs ? { statusPollMs } : {}),
   };
 }

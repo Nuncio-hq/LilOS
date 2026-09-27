@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Logger } from "../log";
+import { resolveHermesBin } from "./discover";
 
 /**
  * Engine-launcher seam (AC-2): the harness knows how to start an engine and
@@ -139,65 +141,125 @@ export function commandLauncher(
 }
 
 /**
- * `bun packages/engine-fake/scripts/serve.ts --port 0` — the CI engine.
- * `serveBin` points at a pre-compiled serve binary (the packaged app bundles
- * one at Contents/MacOS/lilos-engine-fake where no repo or bun exists).
+ * The fake engine's argv (#85): a bundled `lilos-engine-fake` binary when the
+ * packaged app ships one, else `bun serve.ts` inside the repo. A build that
+ * has neither errors out plainly — a release bundle never quietly substitutes
+ * another engine.
  */
-export function fakeEngineLauncher(options: {
+export function fakeServeCommand(options: {
   repoRoot: string;
   tick?: number;
   bun?: string;
   /** Pre-compiled fake-engine binary; replaces the `bun serve.ts` command. */
   serveBin?: string;
+}): string[] {
+  const script = join(
+    options.repoRoot,
+    "packages/engine-fake/scripts/serve.ts",
+  );
+  const serve = options.serveBin
+    ? [options.serveBin]
+    : existsSync(script)
+      ? [options.bun ?? "bun", script]
+      : (() => {
+          throw new Error(
+            "The fake engine is not part of this build — it ships in dev bundles only. Remove LILOS_ENGINE=fake or use a dev build.",
+          );
+        })();
+  return [...serve, "--port", "0", "--tick", String(options.tick ?? 25)];
+}
+
+/** `fake serve` through the command launcher — the CI/dev engine. */
+export function fakeEngineLauncher(options: {
+  repoRoot: string;
+  tick?: number;
+  bun?: string;
+  serveBin?: string;
   log: Logger;
 }): EngineLauncher {
-  return commandLauncher({
+  return {
     name: "engine-fake",
-    command: [
-      ...(options.serveBin
-        ? [options.serveBin]
-        : [
-            options.bun ?? "bun",
-            join(options.repoRoot, "packages/engine-fake/scripts/serve.ts"),
-          ]),
-      "--port",
-      "0",
-      "--tick",
-      String(options.tick ?? 25),
-    ],
-    readyPattern: /LISTENING (ws:\/\/\S+)/,
-    log: options.log,
-  });
+    // Build argv inside start(): a bundle without the fake binary fails as a
+    // supervised crash with a plain reason, not an opaque harness boot error.
+    start: async () =>
+      commandLauncher({
+        name: "engine-fake",
+        command: fakeServeCommand(options),
+        readyPattern: /LISTENING (ws:\/\/\S+)/,
+        log: options.log,
+      }).start(),
+  };
 }
 
 /**
- * The Hermes engine, once packages/engine-hermes exists (#7): its serve
- * script owns `hermes serve` itself (generated token on 127.0.0.1, per AC-2)
- * and serves the LilOS engine protocol at /ws. Provider/model envs let the
- * live script steer the model without code changes.
+ * The Hermes adapter's argv (#85): a bundled `lilos-engine-hermes` binary or
+ * the repo's serve script, always handed the discovered `hermes` binary via
+ * `--hermes-bin` (launchd's PATH does not reach `~/.local/bin`). Provider and
+ * model ride only when the operator set them — the engine owns its defaults
+ * (AC-3); the #30 picker overrides per turn.
+ */
+export function hermesServeCommand(options: {
+  repoRoot: string;
+  /** Resolved Hermes binary (from `resolveHermesBin`). */
+  hermesBin: string;
+  /** Pre-compiled adapter binary inside the packaged app. */
+  serveBin?: string;
+  bun?: string;
+  provider?: string;
+  model?: string;
+}): string[] {
+  const script = join(
+    options.repoRoot,
+    "packages/engine-hermes/scripts/serve.ts",
+  );
+  const serve = options.serveBin
+    ? [options.serveBin]
+    : existsSync(script)
+      ? [options.bun ?? "bun", script]
+      : (() => {
+          throw new Error(
+            "The Hermes engine adapter (lilos-engine-hermes) is not part of this build — it should ship in every bundle.",
+          );
+        })();
+  const command = [...serve, "--port", "0", "--hermes-bin", options.hermesBin];
+  if (options.provider) command.push("--provider", options.provider);
+  if (options.model) command.push("--model", options.model);
+  return command;
+}
+
+/**
+ * The real engine: its serve entry owns `hermes serve` itself (generated
+ * token on 127.0.0.1, per AC-2) and serves the LilOS engine protocol at /ws.
+ * Hermes resolution runs inside `start()` so a missing binary lands as a
+ * supervised crash with a plain reason — visible in status — not a harness
+ * boot crash nobody sees.
  */
 export function hermesEngineLauncher(options: {
   repoRoot: string;
   bun?: string;
+  /** Pre-compiled adapter binary inside the packaged app. */
+  serveBin?: string;
+  /** Skip discovery when the caller already resolved a binary. */
+  hermesBin?: string;
   provider?: string;
   model?: string;
   log: Logger;
 }): EngineLauncher {
-  const command = [
-    options.bun ?? "bun",
-    join(options.repoRoot, "packages/engine-hermes/scripts/serve.ts"),
-    "--port",
-    "0",
-  ];
-  if (options.provider) command.push("--provider", options.provider);
-  if (options.model) command.push("--model", options.model);
-  return commandLauncher({
+  return {
     name: "hermes",
-    command,
-    readyPattern: /LISTENING (ws:\/\/\S+)/,
-    startupTimeoutMs: 300_000, // hermes serve cold-starts ACP tooling
-    log: options.log,
-  });
+    start: async () => {
+      const hermesBin = options.hermesBin ?? resolveHermesBin();
+      const command = hermesServeCommand({ ...options, hermesBin });
+      options.log.info("hermes binary", { hermesBin });
+      return commandLauncher({
+        name: "hermes",
+        command,
+        readyPattern: /LISTENING (ws:\/\/\S+)/,
+        startupTimeoutMs: 300_000, // hermes serve cold-starts ACP tooling
+        log: options.log,
+      }).start();
+    },
+  };
 }
 
 /** Connect to an engine the harness does not supervise (e.g. Oscar's own). */

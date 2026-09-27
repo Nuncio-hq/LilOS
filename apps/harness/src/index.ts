@@ -43,13 +43,18 @@ const harness = new Harness({
 });
 
 const repoRoot = process.env.LILOS_REPO_ROOT ?? process.cwd();
-// Packaged app: a compiled engine-fake sits next to this binary when the
-// bundle ships one (execPath = Contents/MacOS/lilos-harness); in a repo
-// checkout execPath is bun and the repo's serve.ts is used instead.
-const bundledFakeEngine = join(dirname(process.execPath), "lilos-engine-fake");
-const serveBin = existsSync(bundledFakeEngine) ? bundledFakeEngine : undefined;
+// Packaged app: compiled engine adapters sit next to this binary when the
+// bundle ships them (execPath = Contents/MacOS/lilos-harness); in a repo
+// checkout execPath is bun and each engine's serve.ts is used instead.
+const bundledEngine = (name: string) => {
+  const p = join(dirname(process.execPath), name);
+  return existsSync(p) ? p : undefined;
+};
 const supervisor = new EngineSupervisor({
-  launcher: launcherFor(config, repoRoot, log, serveBin),
+  launcher: launcherFor(config, repoRoot, log, {
+    fake: bundledEngine("lilos-engine-fake"),
+    hermes: bundledEngine("lilos-engine-hermes"),
+  }),
   connect: (url) => connectEngineWs(url),
   onConnection: (conn) => harness.attachEngine(conn),
   onState: (state, detail) => harness.onEngineStateChange(state, detail),

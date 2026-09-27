@@ -36,6 +36,9 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
   }
   keepEngineAlive();
   booted.set(true);
+  // #85: poll `system.status` so the status row/dialog read the real legs
+  // (engine down reasons included), not just socket liveness.
+  relay.startStatusPolling(cfg.statusPollMs);
   // The picker's catalog: models.list via the relay, once, when the engine
   // declares the `models` capability (issue #71, AC-7). `describe` lands
   // asynchronously after connect, so listen for it rather than sampling once.

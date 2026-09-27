@@ -58,6 +58,7 @@ export function Sidebar({
   onPairPhone,
   realApp,
   preview,
+  buildLabel,
 }: {
   navOpen: boolean;
   hiddenWhenClosed: boolean;
@@ -90,6 +91,9 @@ export function Sidebar({
   realApp?: boolean;
   /* Prototype-only slot (e.g. the Preview states menu); omitted in production wiring. */
   preview?: React.ReactNode;
+  /* "dev · fake engine" on builds that boot the deterministic engine (#85,
+     AC-4) — a dev bundle must never look like a signed release. */
+  buildLabel?: string;
 }) {
   return (
     <aside
@@ -107,6 +111,14 @@ export function Sidebar({
           OC
         </div>
         <div className="font-semibold">Oscar Co</div>
+        {buildLabel && (
+          <span
+            data-build-label
+            className="rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-[10px] text-amber-700 dark:text-amber-400"
+          >
+            {buildLabel}
+          </span>
+        )}
         {!realApp && (
           <Button variant="ghost" size="icon-sm" className="ml-auto">
             <BellIcon />

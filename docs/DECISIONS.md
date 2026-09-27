@@ -106,6 +106,13 @@ PR does not exist.
   409), in-flight runs too.** Hand-back is explicit (`term.release`) or
   automatic when the last viewer leaves. Not: silent interleaving, or a
   UI-only pause badge. — #56
+- **D-#85 Release builds run the real engine (Hermes); `engine-fake` ships
+  only in ad-hoc dev bundles and stays available for `bun run verify`/CI
+  via `LILOS_ENGINE=fake`.** Provider/model come from Hermes' own config —
+  LilOS stores no defaults. Hermes is found without PATH (`HERMES_BIN`,
+  `~/.lilos/hermes-bin`, then known install locations), and a missing
+  engine surfaces as a plain status reason — never a silent fake.
+  Not: a fake default in release. — #85
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the

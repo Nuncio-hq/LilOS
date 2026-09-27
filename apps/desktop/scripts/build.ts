@@ -16,6 +16,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { engineBundlePlan } from "./engines";
 
 /**
  * Build dist/LilOS.app — issue #34.
@@ -29,7 +30,8 @@ import { fileURLToPath } from "node:url";
  *               like "Developer ID Application: …" (#35 owns notarization).
  *
  * Layout produced:
- *   Contents/MacOS/{Electron→LilOS, lilos-svc, lilos-relay, lilos-harness}
+ *   Contents/MacOS/{Electron→LilOS, lilos-svc, lilos-relay, lilos-harness,
+ *                  lilos-engine-hermes (+ lilos-engine-fake on dev builds)}
  *   Contents/Resources/app/{main.cjs, preload.cjs, index.html, package.json}
  *   Contents/Resources/LilOS.icns
  *   Contents/Library/LaunchAgents/*.plist
@@ -124,29 +126,39 @@ if (!existsSync(harnessEntry) && !skipHarness) {
   );
   process.exit(1);
 }
+// #85: the signing identity decides the engine bundle — a signed release
+// ships only the Hermes adapter; an ad-hoc dev bundle ships both engines and
+// boots the fake one so the app can label itself.
+const engines = engineBundlePlan(IDENTITY);
 if (!skipHarness) {
-  console.log("==> compile lilos-harness (bun standalone)");
+  console.log(
+    `==> compile lilos-harness (bun standalone, engine default: ${engines.defaultEngine})`,
+  );
   run("bun", [
     "build",
     harnessEntry,
     "--compile",
     "--target=bun-darwin-arm64",
     ...stamp,
+    "--define",
+    `process.env.LILOS_ENGINE_DEFAULT:${JSON.stringify(engines.defaultEngine)}`,
     "--outfile",
     join(BUILD, "lilos-harness"),
   ]);
-  // The packaged harness can't run `bun serve.ts` — ship the fake engine as
-  // a sibling binary it auto-discovers next to its own execPath.
-  console.log("==> compile lilos-engine-fake (bun standalone)");
-  run("bun", [
-    "build",
-    join(REPO, "packages", "engine-fake", "scripts", "serve.ts"),
-    "--compile",
-    "--target=bun-darwin-arm64",
-    ...stamp,
-    "--outfile",
-    join(BUILD, "lilos-engine-fake"),
-  ]);
+  // The packaged harness can't run `bun serve.ts` — ship each engine adapter
+  // as a sibling binary it auto-discovers next to its own execPath.
+  for (const bin of engines.binaries) {
+    console.log(`==> compile ${bin.outfile} (bun standalone)`);
+    run("bun", [
+      "build",
+      join(REPO, bin.entry),
+      "--compile",
+      "--target=bun-darwin-arm64",
+      ...stamp,
+      "--outfile",
+      join(BUILD, bin.outfile),
+    ]);
+  }
 } else {
   console.warn("!! LILOS_SKIP_HARNESS=1 — dev bundle without lilos-harness");
 }
@@ -257,7 +269,9 @@ for (const plist of [
 for (const bin of [
   "lilos-svc",
   "lilos-relay",
-  ...(skipHarness ? [] : ["lilos-harness", "lilos-engine-fake"]),
+  ...(skipHarness
+    ? []
+    : ["lilos-harness", ...engines.binaries.map((b) => b.outfile)]),
 ]) {
   copyFileSync(join(BUILD, bin), join(APP, "Contents", "MacOS", bin));
   chmodSync(join(APP, "Contents", "MacOS", bin), 0o755);
