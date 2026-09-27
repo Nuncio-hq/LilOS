@@ -66,6 +66,8 @@ export const conversations = sqliteTable(
     provider: text("provider"),
     effort: text("effort"),
     fast: integer("fast", { mode: "boolean" }),
+    /** Folder the session runs in (issue #113); null = harness default dir. */
+    cwd: text("cwd"),
     title: text("title").notNull().default(""),
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),
     /** Host watermark: highest user-message seq handed to the engine (#28). */
@@ -143,6 +145,16 @@ export const asks = sqliteTable(
     index("asks_channel").on(t.channelId),
   ],
 );
+
+/**
+ * LilOS-owned recent folders for the session picker (#113): one shared list,
+ * newest-first by `last_used_at`. `folders.add` upserts; `conversations.open`
+ * with `cwd` bumps the same row.
+ */
+export const recentFolders = sqliteTable("recent_folders", {
+  path: text("path").primaryKey(),
+  lastUsedAt: integer("last_used_at").notNull(),
+});
 
 /**
  * LilOS-owned key/value settings (#92): the one home for app-level state the

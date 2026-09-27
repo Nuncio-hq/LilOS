@@ -58,6 +58,8 @@ export async function sendDm(
   conversationId?: string,
   pick?: ModelChoice,
   files?: AttachedFile[],
+  /** Folder the new session works in (#113); ignored on thread replies. */
+  cwd?: string,
 ): Promise<Conversation | undefined> {
   try {
     const attachments = toAttachmentInputs(files);
@@ -96,6 +98,7 @@ export async function sendDm(
       ...(pick?.provider !== undefined ? { provider: pick.provider } : {}),
       ...(pick?.effort !== undefined ? { effort: pick.effort } : {}),
       ...(pick?.fast !== undefined ? { fast: pick.fast } : {}),
+      ...(cwd !== undefined ? { cwd } : {}),
     });
     pendingStart.set({ ...pendingStart.get(), [res.conversation.id]: true });
     return res.conversation;
@@ -199,6 +202,9 @@ export async function setModelVisibility(v: ModelVisibility): Promise<void> {
   modelVisibility.set(v);
   await relay.request("settings.set", { key: "modelVisibility", value: v });
 }
+
+/** Shared recent folders (relay-owned, #113). */
+export { addFolder, refreshFolders } from "./folders";
 
 export async function archiveConversation(
   conversationId: string,

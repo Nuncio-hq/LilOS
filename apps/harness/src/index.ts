@@ -14,6 +14,7 @@ import { connectEngineWs } from "./engine/client";
 import { EngineSupervisor } from "./engine/supervisor";
 import { createFeedHandler } from "./feed";
 import { Harness } from "./harness";
+import { createHostHandler } from "./host";
 import { createFileLogger } from "./log";
 import { createSleepGuard } from "./sleep";
 import { StatusReporter, teeLogger } from "./status";
@@ -92,13 +93,18 @@ const wakeWatch = watchWake({
 // Client session feed: read-only engine-protocol surface for apps (the app
 // never talks to the engine itself — describe/events.since + live events).
 const feed = createFeedHandler(harness);
+// Host API on the same loopback port (issue #113): POST /host, Bearer = the
+// install token. The /ws feed stays open — it only reads engine events.
+const host = createHostHandler({ token: config.relayToken });
 type FeedData = { send: (frame: string) => void };
 const feedServer = Bun.serve<FeedData>({
   hostname: "127.0.0.1",
   port: config.feedPort,
   fetch(req, server) {
+    const pathname = new URL(req.url).pathname;
+    if (pathname === "/host") return host(req);
     if (
-      new URL(req.url).pathname === "/ws" &&
+      pathname === "/ws" &&
       server.upgrade(req, { data: { send: () => {} } })
     ) {
       return undefined;

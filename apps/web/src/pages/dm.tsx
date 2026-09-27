@@ -11,11 +11,15 @@ import {
 } from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
 import {
+  AddFolderDialog,
   choiceFor,
+  clearDraftIfSent,
+  draftKey,
   EditEmployeeDialog,
   EmployeeHome,
   NO_WS,
   ThreadView,
+  useDraft,
 } from "@lilos/ui";
 import type {
   AttachedFile,
@@ -49,6 +53,17 @@ import {
   toAttachedFiles,
 } from "../lib/attachments";
 import { removeEmployee, saveEmployee } from "../lib/employees";
+import {
+  addFolder,
+  cwdInfo,
+  discovered,
+  folders,
+  fsRows,
+  loadDir,
+  loadDiscovered,
+  refreshFolders,
+  wsFor,
+} from "../lib/folders";
 import { useAtom } from "../lib/hooks";
 import {
   conversationReplies,
@@ -158,6 +173,22 @@ export function DmPage() {
     };
   }, [catalog, providers, visibility, description]);
 
+  /* Folder picking (#113): shared recents from the relay (probed live for
+     missing/git) + a per-employee pick (its last session's folder, AC-6).
+     Direct mode only — the picker gets no onWorktree (AC-3).
+     `git.discoverRepos` stays lazy: it runs when the web Add-folder dialog
+     opens, never on DM mount (desktop uses the native panel instead — a
+     scan would only trip macOS folder-access prompts). */
+  const folderRows = useAtom(folders);
+  const fsListing = useAtom(fsRows);
+  const discoveredRows = useAtom(discovered);
+  const cwdBranches = useAtom(cwdInfo);
+  const [wsPicks, setWsPicks] = useState<Record<string, WsPick>>({});
+  const [addFolderOpen, setAddFolderOpen] = useState(false);
+  useEffect(() => {
+    void refreshFolders().catch(() => {});
+  }, []);
+
   /* Image attachments (#112): the composers offer pick/drop/paste only when
      the engine declares `image_prompt` (D-#19); thumbnails resolve lazily
      from the relay store, so subscribe to the resolved-URL cache. */
@@ -204,6 +235,14 @@ export function DmPage() {
     [summaries, channel],
   );
   const openConv = convs.find((c) => c.id === conversationId);
+
+  /* Unsent drafts live outside the composer: one key per conversation and
+     one per employee home (issue #103). Switching sessions or employees — or
+     reloading — swaps in the stored text instead of throwing it away. */
+  const [homeDraft, setHomeDraft] = useDraft(draftKey.dm(employeeId));
+  const [threadDraft, setThreadDraft] = useDraft(
+    openConv ? draftKey.thread(openConv.id) : undefined,
+  );
 
   /* The open thread needs its whole visible history, not just the channel
      window (#28 AC-2): page messages.list scoped to the conversation. */
@@ -301,6 +340,27 @@ export function DmPage() {
     return out;
   };
 
+  /* AC-6: pre-select the employee's last session's folder once it and the
+     recents are known — but never stomp a pick the user already made. */
+  useEffect(() => {
+    if (wsPicks[employeeId] !== undefined) return;
+    const lastCwd = [...convs].reverse().find((c) => c.cwd)?.cwd;
+    const f = folderRows.find((x) => x.path === lastCwd && !x.missing);
+    if (!f) return;
+    setWsPicks((w) =>
+      w[employeeId] !== undefined
+        ? w
+        : {
+            ...w,
+            [employeeId]: {
+              folder: f.id,
+              base: f.branches[0] ?? "",
+              mode: "direct",
+            },
+          },
+    );
+  }, [employeeId, convs, folderRows, wsPicks]);
+
   const modelFor = (conv: Conversation): SessionModel | undefined =>
     conv.engineRef ? models[conv.engineRef] : undefined;
 
@@ -318,6 +378,7 @@ export function DmPage() {
         root,
         conv,
         mergeTurns(repliesOf(conv), model, employeeId, convAsks(conv)),
+        wsFor(conv.cwd, cwdBranches),
       ),
     ];
   });
@@ -354,12 +415,63 @@ export function DmPage() {
       });
   };
 
-  const send = (text: string, _pick?: WsPick, files?: AttachedFile[]) => {
-    const pick = draftPick[employeeId];
-    void sendDm(employeeId, text, undefined, pick, files).then((conv) => {
-      if (!conv) return;
+  const pick = wsPicks[employeeId] ?? NO_WS;
+  const setPick = (p: WsPick) => setWsPicks((w) => ({ ...w, [employeeId]: p }));
+
+  /* Add folder: native dialog in the packaged app (AC-2), the host-API
+     browser dialog on plain web. */
+  const onAddFolder = () => {
+    if (window.lilos?.pickFolder) {
+      void window.lilos.pickFolder().then((path) => {
+        if (!path) return;
+        void addFolder(path).then((f) => {
+          if (f)
+            setPick({
+              folder: f.id,
+              base: f.branches[0] ?? "",
+              mode: "direct",
+            });
+        });
+      });
+    } else {
+      setAddFolderOpen(true);
+      void loadDiscovered().catch(() => {});
+    }
+  };
+  const onDialogAdd = (path: string) => {
+    void addFolder(path).then((f) => {
+      if (f)
+        setPick({
+          folder: f.id,
+          base: f.branches[0] ?? "",
+          mode: "direct",
+        });
+    });
+    setAddFolderOpen(false);
+  };
+
+  /* The returned promise is the composer's clear signal (AC-5): resolved →
+     this DM channel's stored draft is dropped by key (not whatever composer
+     is open at resolve time), rejected → the text stays. sendDm resolves
+     undefined when nothing was sent (#112: unreadable file or relay error,
+     already toasted) — surface it as a rejection so nothing is cleared. */
+  const send = (text: string, p?: WsPick, files?: AttachedFile[]) => {
+    const folder = p?.folder
+      ? folderRows.find((f) => f.id === p.folder && !f.missing)
+      : undefined;
+    const modelPick = draftPick[employeeId];
+    return sendDm(
+      employeeId,
+      text,
+      undefined,
+      modelPick,
+      files,
+      folder?.path,
+    ).then((conv) => {
+      if (!conv) throw new Error("send failed");
+      clearDraftIfSent(draftKey.dm(employeeId), text);
       setDraftPick(({ [employeeId]: _drop, ...rest }) => rest);
-      void navigate({
+      return navigate({
         to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: conv.id },
       });
@@ -418,6 +530,9 @@ export function DmPage() {
     const openQuestion = asksHere.find(
       (a) => a.state === "open" && a.request.kind === "question",
     );
+    /* AC-7: the conversation's folder (+ branch for a repo) in the header;
+       sessions without one show nothing extra. */
+    const convWs = wsFor(conv.cwd, cwdBranches);
 
     const thread: Thread = {
       session: engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
@@ -431,6 +546,7 @@ export function DmPage() {
       provider: conv.provider ?? model?.provider,
       effort: conv.effort ?? model?.effort,
       fast: conv.fast ?? model?.fast,
+      ...(convWs ? { ws: convWs } : {}),
     };
     const running = !!modelLive || pending[conv.id] === true;
     /* ↑ recall in the open session: Oscar's last sent message in it — the
@@ -485,8 +601,14 @@ export function DmPage() {
           defaultModel={defaultModel}
           defaultProvider={defaultProvider}
           onSend={(text, files) =>
-            void sendDm(employeeId, text, conv.id, undefined, files)
+            sendDm(employeeId, text, conv.id, undefined, files).then((c) => {
+              if (!c) throw new Error("send failed");
+              clearDraftIfSent(draftKey.thread(conv.id), text);
+              return c;
+            })
           }
+          draft={threadDraft}
+          onDraftChange={setThreadDraft}
           accept={canAttachImages ? "image/*" : undefined}
           maxFileSize={MAX_ATTACHMENT_BYTES}
           maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
@@ -521,6 +643,8 @@ export function DmPage() {
         onProfile={() => setProfileOpen((v) => !v)}
         onOpen={openThread}
         onSend={send}
+        draft={homeDraft}
+        onDraftChange={setHomeDraft}
         accept={canAttachImages ? "image/*" : undefined}
         maxFileSize={MAX_ATTACHMENT_BYTES}
         maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
@@ -535,9 +659,10 @@ export function DmPage() {
               params: { employeeId, conversationId: last.id },
             });
         }}
-        folders={[]}
-        pick={NO_WS}
-        setPick={() => {}}
+        folders={folderRows}
+        pick={pick}
+        setPick={setPick}
+        onAddFolder={onAddFolder}
         loading={!channel}
         composerNote={composerNote}
         models={catalog.length ? catalog : undefined}
@@ -566,6 +691,16 @@ export function DmPage() {
         }}
       />
       {threadEl}
+      {addFolderOpen && (
+        <AddFolderDialog
+          folders={folderRows}
+          fs={fsListing}
+          discovered={discoveredRows}
+          onNeedDir={loadDir}
+          onClose={() => setAddFolderOpen(false)}
+          onAdd={onDialogAdd}
+        />
+      )}
       {profileOpen && !editOpen && (
         <EmployeeProfileCard
           name={uiEmp.name}

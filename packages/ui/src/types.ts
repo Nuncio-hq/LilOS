@@ -184,6 +184,8 @@ export type Folder = {
   repo?: string;
   branches: string[];
   workstreams: Workstream[];
+  /* The path is gone from disk (#113): shows in recents, can't be picked. */
+  missing?: boolean;
 }; // branches [] = not a git repo
 /* The machine's folders as the gateway sees them (complete.path / projects.for_cwd). Passed IN to AddFolderDialog. */
 export type FsDir = {

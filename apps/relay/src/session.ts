@@ -22,6 +22,8 @@ import {
   ENGINE_PASSTHROUGH_PARAMS,
   type EngineHostState,
   type EnginePassthroughMethod,
+  FoldersAddParams,
+  FoldersListParams,
   HarnessRegisterParams,
   HarnessReportParams,
   type HarnessStatusReport,
@@ -506,6 +508,20 @@ export function createRelay(options: RelayOptions): Relay {
           respond(peer, id, { channels: await store.listChannels() });
           return;
         }
+        case "folders.list": {
+          const parsed = FoldersListParams.safeParse(params ?? {});
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          respond(peer, id, { folders: await store.listRecentFolders() });
+          return;
+        }
+        case "folders.add": {
+          const parsed = FoldersAddParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          respond(peer, id, {
+            folder: await store.addRecentFolder(parsed.data.path),
+          });
+          return;
+        }
         case "channels.openDm": {
           const parsed = ChannelsOpenDmParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
@@ -574,15 +590,19 @@ export function createRelay(options: RelayOptions): Relay {
           // engineRef/state/model(+provider/effort/fast)/deliveredSeq are
           // owned by the engine host (the pick lands once the engine acks
           // `session.setModel`); title/archive are user-facing fields any
-          // client may set.
+          // client may set. Key presence (`in`) is the write intent — an
+          // explicit `null` clear follows the same host-only rule as a value.
+          const HOST_KEYS = [
+            "engineRef",
+            "state",
+            "model",
+            "provider",
+            "effort",
+            "fast",
+            "deliveredSeq",
+          ] as const;
           if (
-            (parsed.data.engineRef !== undefined ||
-              parsed.data.state !== undefined ||
-              parsed.data.model !== undefined ||
-              parsed.data.provider !== undefined ||
-              parsed.data.effort !== undefined ||
-              parsed.data.fast !== undefined ||
-              parsed.data.deliveredSeq !== undefined) &&
+            HOST_KEYS.some((k) => k in parsed.data) &&
             !isHost(peer)
           ) {
             throw new RpcError(

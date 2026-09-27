@@ -1,6 +1,7 @@
+import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import type { ChatStatus } from "ai";
 import { PaperclipIcon, SquareIcon } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   PromptInput,
   PromptInputAttachment,
@@ -30,18 +31,21 @@ function AttachButton() {
   );
 }
 
-/* Send button: enabled when there's text OR at least one attachment chip. */
+/* Send button: enabled when there's text OR at least one attachment chip,
+   and only while no send is in flight. */
 function SendButton({
   hasDraft,
   status,
+  sending,
 }: {
   hasDraft: boolean;
   status?: ChatStatus;
+  sending: boolean;
 }) {
   const attachments = usePromptInputAttachments();
   return (
     <PromptInputSubmit
-      disabled={!hasDraft && attachments.files.length === 0}
+      disabled={sending || (!hasDraft && attachments.files.length === 0)}
       status={status}
     />
   );
@@ -61,11 +65,14 @@ export function Composer({
   maxFileSize,
   maxFiles,
   onAttachError,
+  draft: draftProp,
+  onDraftChange,
 }: {
   placeholder: string;
   employees: Employee[];
   hint: string;
-  onSend?: (text: string, files?: AttachedFile[]) => void;
+  /* Return a promise to delay clearing: a rejected send keeps the text (#103). */
+  onSend?: (text: string, files?: AttachedFile[]) => void | Promise<unknown>;
   status?: ChatStatus;
   onStop?: () => void;
   /* ↑ in an empty composer recalls this — the last message you sent here
@@ -84,11 +91,29 @@ export function Composer({
   /* Rejected attachment surfaced to the host (e.g. oversize) — no handler, no
      error surface: the toast is the app's job (D-#19). */
   onAttachError?: (message: string) => void;
+  /* Host-held draft (issue #103): pass both to control the text — the host
+     stores it per conversation; omitted, the composer keeps its own state. */
+  draft?: string;
+  onDraftChange?: (v: string) => void;
 }) {
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useControllableState({
+    prop: draftProp,
+    onChange: onDraftChange,
+    defaultProp: "",
+  });
+  /* Latest draft for the async-send clear below — reading the ref at resolve
+     time means typing during a slow send survives (it's a new draft). */
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   /* Esc closes the `@` menu once; the next keystroke reopens it (the menu is
      derived from the draft, so dismissal lives in a flag). */
   const [mentionDismissed, setMentionDismissed] = useState(false);
+  /* A promise-returning onSend keeps the submit in flight until it settles
+     (#130): `sendRef` dedupes submits that arrive while one is pending, and
+     `sending` disables the send button so Enter-Enter can't reach
+     requestSubmit at all. */
+  const [sending, setSending] = useState(false);
+  const sendRef = useRef<Promise<void> | null>(null);
   const mentionOpen =
     employees.length > 0 && !mentionDismissed && /@\w*$/.test(draft);
   const busy = status === "submitted" || status === "streaming";
@@ -134,9 +159,13 @@ export function Composer({
           onAttachError ? (err) => onAttachError(err.message) : undefined
         }
         onSubmit={({ text, files }) => {
+          /* A send already in flight owns the outcome: a second submit (Enter
+             pressed twice, a requestSubmit) joins the pending promise instead
+             of sending the same draft again (#130 AC-3). */
+          if (sendRef.current) return sendRef.current;
           const t = text.trim() || draft.trim();
           if (!t && files.length === 0) return;
-          onSend?.(
+          const done = onSend?.(
             t,
             files.map((f) => ({
               name: f.filename ?? "attachment",
@@ -144,7 +173,22 @@ export function Composer({
               url: f.url,
             })),
           );
-          setDraft("");
+          /* Clear only when the box still holds what was sent — text typed
+             while an async send is in flight is a new draft, not part of the
+             sent message (#103 AC-5). A rejected send keeps everything. */
+          const clearIfUnchanged = () => {
+            if (draftRef.current.trim() === t) setDraft("");
+          };
+          if (done && typeof done.then === "function") {
+            setSending(true);
+            const send = done.then(clearIfUnchanged).finally(() => {
+              sendRef.current = null;
+              setSending(false);
+            });
+            sendRef.current = send;
+            return send;
+          }
+          clearIfUnchanged();
         }}
       >
         {accept && (
@@ -194,6 +238,7 @@ export function Composer({
             <SendButton
               hasDraft={!!draft.trim()}
               status={busy ? undefined : status}
+              sending={sending}
             />
           )}
         </PromptInputFooter>

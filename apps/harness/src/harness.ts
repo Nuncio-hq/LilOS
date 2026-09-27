@@ -26,6 +26,7 @@ import type {
   EngineRequest,
   EventsSinceResult,
 } from "@lilos/contracts/engine";
+import { collapsePath } from "@lilos/host";
 import type { EngineConnection } from "./engine/client";
 import { engineErrorCode, SESSION_NOT_FOUND } from "./engine/client";
 import type { EngineHostState } from "./engine/supervisor";
@@ -859,6 +860,16 @@ export class Harness {
       engineRef: started.sessionId,
       state: "active",
     });
+    // #113 AC-6: a session opened without a picked folder says where the
+    // agent actually works (the harness default). Deduped — a rebind after
+    // restart does not repost it.
+    if (!conv.cwd) {
+      await this.postSystem(
+        binding,
+        `No folder: working in ${collapsePath(this.opts.workdir)}`,
+        `sys:${conv.id}:no-folder`,
+      );
+    }
     return binding;
   }
 
@@ -1459,13 +1470,16 @@ export class Harness {
     const provider = conv?.provider ?? base.provider;
     const effort = conv?.effort ?? base.effort;
     const fast = conv?.fast ?? base.fast;
+    // The session's folder is owned by the conversation (#113); absent → the
+    // harness default workdir, as before.
+    const cwd = conv?.cwd ?? this.opts.workdir;
     return {
       ...base,
       ...(model ? { model } : {}),
       ...(provider ? { provider } : {}),
       ...(effort ? { effort } : {}),
       ...(fast !== undefined ? { fast } : {}),
-      cwd: this.opts.workdir,
+      cwd,
     };
   }
 

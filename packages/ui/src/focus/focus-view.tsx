@@ -115,6 +115,8 @@ export function FocusView({
   pending,
   steer = false,
   onRemovePending,
+  draft,
+  onDraftChange,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -130,7 +132,13 @@ export function FocusView({
   onNav?: () => void;
   onStart?: () => void;
   running: boolean;
-  onSend: (t: string, files?: AttachedFile[]) => void;
+  /* Return a promise to delay clearing the composer draft until it resolves;
+     a rejected send keeps the text (issue #103, AC-5). */
+  onSend: (t: string, files?: AttachedFile[]) => void | Promise<unknown>;
+  /* Host-held composer draft for this conversation (issue #103); omitted, the
+     composer keeps its own state. */
+  draft?: string;
+  onDraftChange?: (v: string) => void;
   onStop?: () => void;
   /* ↑ recall for the composer: the host's last sent message in this
      conversation (issue #104 AC-5). */
@@ -574,6 +582,8 @@ export function FocusView({
                       : "Read-only on main"
               }
               onSend={(t, files) => onSend(t, files)}
+              draft={draft}
+              onDraftChange={onDraftChange}
               accept={accept}
               maxFileSize={maxFileSize}
               onAttachError={onAttachError}

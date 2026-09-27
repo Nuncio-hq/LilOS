@@ -11,6 +11,7 @@ import type {
   Reply,
   Step,
   Employee as UiEmployee,
+  Workspace,
 } from "@lilos/ui/types";
 import { toAttachedFiles } from "./attachments";
 
@@ -177,6 +178,8 @@ export function toFeed(
   root: AppMessage,
   conv: Conversation,
   replies: Reply[],
+  /** Folder the session works in (#113) — feeds the row + header badges. */
+  ws?: Workspace,
 ): Msg {
   return {
     kind: "msg",
@@ -190,6 +193,7 @@ export function toFeed(
       title: conv.title ?? undefined,
       archived: conv.archived,
       replies,
+      ...(ws ? { ws } : {}),
     },
   };
 }

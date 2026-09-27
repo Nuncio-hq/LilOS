@@ -45,7 +45,7 @@ import {
 import { AttachmentChips } from "../conversation/turns";
 import { WorkspacePicker, wsHint } from "../dialogs/workspace-picker";
 import { Body, Row, Who } from "../feed/row";
-import { PHASE_LABEL, preview } from "../lib/helpers";
+import { folderLabel, PHASE_LABEL, preview } from "../lib/helpers";
 import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
@@ -171,6 +171,7 @@ export function EmployeeHome({
   pick,
   setPick,
   onAddFolder,
+  onWorktree,
   loading,
   onRename,
   onArchive,
@@ -184,6 +185,8 @@ export function EmployeeHome({
   onModel,
   picker,
   composerNote,
+  draft: composerDraft,
+  onDraftChange,
 }: {
   e: Employee;
   feed: Msg[];
@@ -193,7 +196,17 @@ export function EmployeeHome({
   onNav: () => void;
   onProfile: () => void;
   onOpen: (id: string) => void;
-  onSend: (t: string, pick?: WsPick, files?: AttachedFile[]) => void;
+  /* Return a promise to delay clearing the composer draft until it resolves;
+     a rejected send keeps the text (issue #103, AC-5). */
+  onSend: (
+    t: string,
+    pick?: WsPick,
+    files?: AttachedFile[],
+  ) => void | Promise<unknown>;
+  /* Host-held composer draft for this DM channel (issue #103); omitted, the
+     composer keeps its own state. */
+  draft?: string;
+  onDraftChange?: (v: string) => void;
   /* ↑ recall for the new-session composer: the last top-level message sent in
      this DM (issue #104 AC-5). */
   lastSent?: string;
@@ -204,6 +217,8 @@ export function EmployeeHome({
   setPick: (p: WsPick) => void;
   /* Folder picking lands with the workspace slice (#11) — omit to hide it. */
   onAddFolder?: () => void;
+  /* Workstream picks (#10) — render only when passed (D-#19, #113). */
+  onWorktree?: (p: WsPick) => void;
   loading?: boolean;
   onRename?: (id: string, title: string) => void;
   onArchive?: (id: string, archived: boolean) => void;
@@ -329,10 +344,14 @@ export function EmployeeHome({
               <span className="flex items-center gap-1 text-muted-foreground">
                 <FolderIcon className="size-3" />
                 {t.ws.project}
-                <GitBranchIcon className="size-3" />
-                <span className="font-mono text-emerald-700">
-                  {t.ws.branch}
-                </span>
+                {t.ws.branch && (
+                  <>
+                    <GitBranchIcon className="size-3" />
+                    <span className="font-mono text-emerald-700">
+                      {t.ws.branch}
+                    </span>
+                  </>
+                )}
               </span>
             )}
             {running ? (
@@ -478,12 +497,14 @@ export function EmployeeHome({
       <Composer
         placeholder={
           pickFolder
-            ? `New session with ${e.name} in ${pickFolder.project}…`
+            ? `New session with ${e.name} in ${folderLabel(pickFolder, folders)}…`
             : `New session with ${e.name}…`
         }
         employees={[]}
-        hint={wsHint(pickFolder, pick)}
+        hint={wsHint(pickFolder, pick, !onWorktree)}
         onSend={(t, files) => onSend(t, pick, files)}
+        draft={composerDraft}
+        onDraftChange={onDraftChange}
         lastSent={lastSent}
         accept={accept}
         maxFileSize={maxFileSize}
@@ -514,6 +535,7 @@ export function EmployeeHome({
                 pick={pick}
                 setPick={setPick}
                 onAddFolder={onAddFolder}
+                onWorktree={onWorktree}
               />
             ) : null}
             {onModel && models?.length ? (

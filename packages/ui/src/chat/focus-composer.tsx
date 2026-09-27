@@ -1,6 +1,7 @@
+import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import type { ChatStatus } from "ai";
 import { PaperclipIcon, SquareIcon } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   PromptInput,
   PromptInputAttachment,
@@ -50,6 +51,8 @@ export function FocusComposer({
   accept,
   maxFileSize,
   onAttachError,
+  draft: draftProp,
+  onDraftChange,
 }: {
   running: boolean;
   status: ChatStatus;
@@ -62,8 +65,13 @@ export function FocusComposer({
   onModel?: (c: ModelChoice) => void;
   /* Refresh / Edit models… / provider names — each renders only with its handler. */
   picker?: ModelPickerExtras;
-  onSend: (t: string, files?: AttachedFile[]) => void;
+  /* Return a promise to delay clearing: a rejected send keeps the text (#103). */
+  onSend: (t: string, files?: AttachedFile[]) => void | Promise<unknown>;
   onStop?: () => void;
+  /* Host-held draft (issue #103): pass both to control the text; omitted, the
+     composer keeps its own state. */
+  draft?: string;
+  onDraftChange?: (v: string) => void;
   /* Same contract as Composer: ↑ in an empty composer recalls it (issue #104). */
   lastSent?: string;
   /* Same contract as Composer: no accept, no attach control. */
@@ -73,7 +81,19 @@ export function FocusComposer({
   /* Rejected attachments surface through this; without it the error is silent. */
   onAttachError?: (message: string) => void;
 }) {
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useControllableState({
+    prop: draftProp,
+    onChange: onDraftChange,
+    defaultProp: "",
+  });
+  /* Latest draft for the async-send clear: text typed while a send is in
+     flight is a new draft and survives (#103 AC-5). */
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  /* Same in-flight guard as Composer (#130 AC-3): `sendRef` dedupes submits
+     while a promise send is pending, `sending` disables the button. */
+  const [sending, setSending] = useState(false);
+  const sendRef = useRef<Promise<void> | null>(null);
   return (
     // While the employee works, Enter steers the turn (session.steer — the default and only behavior;
     // the running-state placeholder/hint come from the shared runningComposer in agent-chat.tsx).
@@ -86,9 +106,13 @@ export function FocusComposer({
           onAttachError ? (err) => onAttachError(err.message) : undefined
         }
         onSubmit={({ text, files }) => {
+          /* A send already in flight owns the outcome: a second submit (Enter
+             pressed twice, a requestSubmit) joins the pending promise instead
+             of sending the same draft again (#130 AC-3). */
+          if (sendRef.current) return sendRef.current;
           const t = text.trim() || draft.trim();
           if (!t && files.length === 0) return;
-          onSend(
+          const done = onSend(
             t,
             files.map((f) => ({
               name: f.filename ?? "attachment",
@@ -96,7 +120,19 @@ export function FocusComposer({
               url: f.url,
             })),
           );
-          setDraft("");
+          const clearIfUnchanged = () => {
+            if (draftRef.current.trim() === t) setDraft("");
+          };
+          if (done && typeof done.then === "function") {
+            setSending(true);
+            const send = done.then(clearIfUnchanged).finally(() => {
+              sendRef.current = null;
+              setSending(false);
+            });
+            sendRef.current = send;
+            return send;
+          }
+          clearIfUnchanged();
         }}
       >
         {accept && (
@@ -145,7 +181,7 @@ export function FocusComposer({
                 <SquareIcon className="size-3.5 fill-current" />
               </PromptInputSubmit>
             ) : (
-              <PromptInputSubmit disabled={!draft.trim()} />
+              <PromptInputSubmit disabled={sending || !draft.trim()} />
             )}
           </div>
         </PromptInputFooter>

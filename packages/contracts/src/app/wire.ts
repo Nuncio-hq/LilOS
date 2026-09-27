@@ -21,6 +21,7 @@ import {
   EngineHostStatus,
   MessageAttachment,
   PendingTurn,
+  RecentFolder,
   RespondTo,
   Timestamp,
 } from "./domain";
@@ -132,6 +133,9 @@ export const AppMethod = z.enum([
      surfaces and restarts. */
   "settings.get",
   "settings.set",
+  /* LilOS-owned recent folders for the session folder picker (#113) */
+  "folders.list",
+  "folders.add",
   /* engine passthrough: forwarded verbatim to the registered engine host */
   "agents.list",
   "agents.describe",
@@ -313,6 +317,8 @@ export const ConversationsOpenParams = z
     provider: z.string().optional(),
     effort: z.string().optional(),
     fast: z.boolean().optional(),
+    /** Folder the session works in (#113); absent = harness default workdir. */
+    cwd: z.string().min(1).optional(),
   })
   .refine(
     (p) => p.text.length > 0 || (p.attachments?.length ?? 0) > 0,
@@ -411,6 +417,18 @@ export const ChannelUnsubscribeParams = z.object({
   channelId: z.string().min(1),
 });
 export const OkResult = z.object({ ok: z.literal(true) });
+
+/**
+ * Recent folders (#113): `folders.list` returns the shared list newest-first;
+ * `folders.add` records a pick (a `conversations.open` with `cwd` bumps it
+ * the same way). Not scoped to an employee — one company, one recents list.
+ */
+export const FoldersListParams = z.object({}).strict();
+export const FoldersListResult = z.object({
+  folders: z.array(RecentFolder),
+});
+export const FoldersAddParams = z.object({ path: z.string().min(1) });
+export const FoldersAddResult = z.object({ folder: RecentFolder });
 
 /** Fetch one stored attachment's bytes — the read path behind display refs. */
 export const AttachmentsGetParams = z.object({

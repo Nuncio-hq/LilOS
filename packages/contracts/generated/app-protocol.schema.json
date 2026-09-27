@@ -401,6 +401,8 @@
         "employees.remove",
         "settings.get",
         "settings.set",
+        "folders.list",
+        "folders.add",
         "agents.list",
         "agents.describe",
         "agents.create",
@@ -1142,6 +1144,101 @@
         "channel"
       ]
     },
+    "RecentFolder": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lastUsedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "path",
+        "lastUsedAt"
+      ]
+    },
+    "FoldersListParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "FoldersListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "folders": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "lastUsedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "path",
+              "lastUsedAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "folders"
+      ]
+    },
+    "FoldersAddParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "FoldersAddResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "folder": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lastUsedAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "path",
+            "lastUsedAt"
+          ]
+        }
+      },
+      "required": [
+        "folder"
+      ]
+    },
     "Conversation": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -1192,6 +1289,10 @@
         },
         "fast": {
           "type": "boolean"
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1
         },
         "archived": {
           "type": "boolean"
@@ -1298,6 +1399,10 @@
               "fast": {
                 "type": "boolean"
               },
+              "cwd": {
+                "type": "string",
+                "minLength": 1
+              },
               "archived": {
                 "type": "boolean"
               },
@@ -1387,6 +1492,10 @@
         },
         "fast": {
           "type": "boolean"
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -1447,6 +1556,10 @@
             },
             "fast": {
               "type": "boolean"
+            },
+            "cwd": {
+              "type": "string",
+              "minLength": 1
             },
             "archived": {
               "type": "boolean"
@@ -1721,6 +1834,10 @@
             },
             "fast": {
               "type": "boolean"
+            },
+            "cwd": {
+              "type": "string",
+              "minLength": 1
             },
             "archived": {
               "type": "boolean"
@@ -2616,6 +2733,10 @@
             "fast": {
               "type": "boolean"
             },
+            "cwd": {
+              "type": "string",
+              "minLength": 1
+            },
             "archived": {
               "type": "boolean"
             },
@@ -3113,6 +3234,10 @@
                   },
                   "fast": {
                     "type": "boolean"
+                  },
+                  "cwd": {
+                    "type": "string",
+                    "minLength": 1
                   },
                   "archived": {
                     "type": "boolean"
@@ -4851,6 +4976,10 @@
             },
             "fast": {
               "type": "boolean"
+            },
+            "cwd": {
+              "type": "string",
+              "minLength": 1
             },
             "archived": {
               "type": "boolean"
