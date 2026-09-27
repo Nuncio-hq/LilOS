@@ -6,8 +6,8 @@ import {
 } from "@lilos/client-runtime";
 import type { AppMessage, Ask, Conversation } from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
-import { EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
-import type { Channel, Msg, Reply, Thread } from "@lilos/ui/types";
+import { AddFolderDialog, EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
+import type { Channel, Msg, Reply, Thread, WsPick } from "@lilos/ui/types";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { atom } from "nanostores";
 import { useEffect, useMemo, useState } from "react";
@@ -22,6 +22,17 @@ import {
   sendDm,
   setConversationModel,
 } from "../lib/actions";
+import {
+  addFolder,
+  cwdInfo,
+  discovered,
+  folders,
+  fsRows,
+  loadDir,
+  loadDiscovered,
+  refreshFolders,
+  wsFor,
+} from "../lib/folders";
 import { useAtom } from "../lib/hooks";
 import {
   conversationReplies,
@@ -98,6 +109,20 @@ export function DmPage() {
   const statusPoll = useAtom(relay.status);
   const fatal = useAtom(relay.fatal);
   const [profileOpen, setProfileOpen] = useState(false);
+
+  /* Folder picking (#113): shared recents from the relay (probed live for
+     missing/git) + a per-employee pick (its last session's folder, AC-6).
+     Direct mode only — the picker gets no onWorktree (AC-3). */
+  const folderRows = useAtom(folders);
+  const fsListing = useAtom(fsRows);
+  const discoveredRows = useAtom(discovered);
+  const cwdBranches = useAtom(cwdInfo);
+  const [wsPicks, setWsPicks] = useState<Record<string, WsPick>>({});
+  const [addFolderOpen, setAddFolderOpen] = useState(false);
+  useEffect(() => {
+    void refreshFolders().catch(() => {});
+    void loadDiscovered().catch(() => {});
+  }, []);
 
   /* AC-2 (#85): an engine that's down (Hermes missing, crashed out) shows
      its plain reason above the composer — never silently sendable. */
@@ -220,6 +245,27 @@ export function DmPage() {
     return out;
   };
 
+  /* AC-6: pre-select the employee's last session's folder once it and the
+     recents are known — but never stomp a pick the user already made. */
+  useEffect(() => {
+    if (wsPicks[employeeId] !== undefined) return;
+    const lastCwd = [...convs].reverse().find((c) => c.cwd)?.cwd;
+    const f = folderRows.find((x) => x.path === lastCwd && !x.missing);
+    if (!f) return;
+    setWsPicks((w) =>
+      w[employeeId] !== undefined
+        ? w
+        : {
+            ...w,
+            [employeeId]: {
+              folder: f.id,
+              base: f.branches[0] ?? "",
+              mode: "direct",
+            },
+          },
+    );
+  }, [employeeId, convs, folderRows, wsPicks]);
+
   const modelFor = (conv: Conversation): SessionModel | undefined =>
     conv.engineRef ? models[conv.engineRef] : undefined;
 
@@ -237,6 +283,7 @@ export function DmPage() {
         root,
         conv,
         mergeTurns(repliesOf(conv), model, employeeId, convAsks(conv)),
+        wsFor(conv.cwd, cwdBranches),
       ),
     ];
   });
@@ -273,8 +320,45 @@ export function DmPage() {
       });
   };
 
-  const send = (text: string) => {
-    void sendDm(employeeId, text).then((conv) =>
+  const pick = wsPicks[employeeId] ?? NO_WS;
+  const setPick = (p: WsPick) => setWsPicks((w) => ({ ...w, [employeeId]: p }));
+
+  /* Add folder: native dialog in the packaged app (AC-2), the host-API
+     browser dialog on plain web. */
+  const onAddFolder = () => {
+    if (window.lilos?.pickFolder) {
+      void window.lilos.pickFolder().then((path) => {
+        if (!path) return;
+        void addFolder(path).then((f) => {
+          if (f)
+            setPick({
+              folder: f.id,
+              base: f.branches[0] ?? "",
+              mode: "direct",
+            });
+        });
+      });
+    } else {
+      setAddFolderOpen(true);
+    }
+  };
+  const onDialogAdd = (path: string) => {
+    void addFolder(path).then((f) => {
+      if (f)
+        setPick({
+          folder: f.id,
+          base: f.branches[0] ?? "",
+          mode: "direct",
+        });
+    });
+    setAddFolderOpen(false);
+  };
+
+  const send = (text: string, p?: WsPick) => {
+    const folder = p?.folder
+      ? folderRows.find((f) => f.id === p.folder && !f.missing)
+      : undefined;
+    void sendDm(employeeId, text, undefined, folder?.path).then((conv) =>
       navigate({
         to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: conv.id },
@@ -324,6 +408,9 @@ export function DmPage() {
     const openQuestion = asksHere.find(
       (a) => a.state === "open" && a.request.kind === "question",
     );
+    /* AC-7: the conversation's folder (+ branch for a repo) in the header;
+       sessions without one show nothing extra. */
+    const convWs = wsFor(conv.cwd, cwdBranches);
 
     const thread: Thread = {
       session: engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
@@ -332,6 +419,7 @@ export function DmPage() {
       replies,
       usage: model?.turns.at(-1)?.usage as Thread["usage"],
       model: conv.model ?? model?.model,
+      ...(convWs ? { ws: convWs } : {}),
     };
     const running = !!modelLive || pending[conv.id] === true;
     const steer = hasCapability("steer");
@@ -409,9 +497,10 @@ export function DmPage() {
               params: { employeeId, conversationId: last.id },
             });
         }}
-        folders={[]}
-        pick={NO_WS}
-        setPick={() => {}}
+        folders={folderRows}
+        pick={pick}
+        setPick={setPick}
+        onAddFolder={onAddFolder}
         loading={!channel}
         composerNote={composerNote}
         onRename={(id, title) => {
@@ -424,6 +513,16 @@ export function DmPage() {
         }}
       />
       {threadEl}
+      {addFolderOpen && (
+        <AddFolderDialog
+          folders={folderRows}
+          fs={fsListing}
+          discovered={discoveredRows}
+          onNeedDir={loadDir}
+          onClose={() => setAddFolderOpen(false)}
+          onAdd={onDialogAdd}
+        />
+      )}
       {profileOpen && (
         <EmployeeProfileCard
           name={uiEmp.name}

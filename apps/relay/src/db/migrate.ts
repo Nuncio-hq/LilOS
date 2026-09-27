@@ -112,6 +112,18 @@ const MIGRATIONS: { version: number; statements: string[] }[] = [
         ON messages(channel_id, dedupe_key)`,
     ],
   },
+  {
+    // #113: the folder a session works in lives on the conversation; the
+    // picker's recents are LilOS-owned (one shared list, newest first).
+    version: 6,
+    statements: [
+      `ALTER TABLE conversations ADD COLUMN cwd TEXT`,
+      `CREATE TABLE IF NOT EXISTS recent_folders (
+        path TEXT PRIMARY KEY,
+        last_used_at INTEGER NOT NULL
+      )`,
+    ],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

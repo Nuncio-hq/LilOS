@@ -30,11 +30,16 @@ export function WorkspacePicker({
   pick,
   setPick,
   onAddFolder,
+  onWorktree,
 }: {
   folders: Folder[];
   pick: WsPick;
   setPick: (p: WsPick) => void;
   onAddFolder?: () => void;
+  /* Workstream/worktree picks (#10) render only when this handler is passed
+     (D-#19); without it the picker is direct-mode only and folders pick
+     `mode: "direct"` (issue #113). */
+  onWorktree?: (p: WsPick) => void;
 }) {
   const f = folders.find((x) => x.id === pick.folder);
   const chip =
@@ -65,11 +70,14 @@ export function WorkspacePicker({
             {folders.map((x) => (
               <DropdownMenuItem
                 key={x.id}
+                disabled={x.missing}
+                data-wsfolder={x.id}
+                {...(x.missing ? { "data-missing": "" } : {})}
                 onClick={() =>
                   setPick({
                     folder: x.id,
                     base: x.branches[0] ?? "",
-                    mode: x.branches.length ? "new" : "direct",
+                    mode: onWorktree && x.branches.length ? "new" : "direct",
                   })
                 }
                 className="items-start"
@@ -78,6 +86,11 @@ export function WorkspacePicker({
                 <span className="min-w-0 flex-1">
                   <span className="block font-medium">
                     {folderLabel(x, folders)}
+                    {x.missing && (
+                      <span className="ml-1.5 font-normal text-muted-foreground text-xs">
+                        · missing
+                      </span>
+                    )}
                   </span>
                   <span className="block truncate font-mono text-[11px] text-muted-foreground">
                     {x.path}
@@ -135,32 +148,34 @@ export function WorkspacePicker({
             <ChevronDownIcon className="size-3 opacity-60" />
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-80" side="top">
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>New workstream from</DropdownMenuLabel>
-              {f.branches.map((b) => (
-                <DropdownMenuItem
-                  key={`n-${b}`}
-                  onClick={() =>
-                    setPick({
-                      ...pick,
-                      mode: "new",
-                      base: b,
-                      existing: undefined,
-                    })
-                  }
-                >
-                  <GitBranchPlusIcon />
-                  <span className="font-mono">{b}</span>
-                  <span className="text-muted-foreground text-xs">
-                    new branch + worktree
-                  </span>
-                  {pick.mode === "new" && pick.base === b && (
-                    <CheckIcon className="ml-auto" />
-                  )}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuGroup>
-            {f.workstreams.length > 0 && (
+            {onWorktree && (
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>New workstream from</DropdownMenuLabel>
+                {f.branches.map((b) => (
+                  <DropdownMenuItem
+                    key={`n-${b}`}
+                    onClick={() =>
+                      onWorktree({
+                        ...pick,
+                        mode: "new",
+                        base: b,
+                        existing: undefined,
+                      })
+                    }
+                  >
+                    <GitBranchPlusIcon />
+                    <span className="font-mono">{b}</span>
+                    <span className="text-muted-foreground text-xs">
+                      new branch + worktree
+                    </span>
+                    {pick.mode === "new" && pick.base === b && (
+                      <CheckIcon className="ml-auto" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+            )}
+            {onWorktree && f.workstreams.length > 0 && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
@@ -169,7 +184,7 @@ export function WorkspacePicker({
                     <DropdownMenuItem
                       key={`w-${w.branch}`}
                       onClick={() =>
-                        setPick({
+                        onWorktree({
                           ...pick,
                           mode: "existing",
                           existing: w.branch,
@@ -193,7 +208,7 @@ export function WorkspacePicker({
                 </DropdownMenuGroup>
               </>
             )}
-            <DropdownMenuSeparator />
+            {onWorktree && <DropdownMenuSeparator />}
             <DropdownMenuGroup>
               <DropdownMenuLabel>No worktree</DropdownMenuLabel>
               {f.branches.map((b) => (

@@ -41,6 +41,12 @@ export interface DesktopBridgeConfig {
  */
 export interface DesktopBridge {
   config?: DesktopBridgeConfig;
+  /**
+   * Native folder picker (issue #113): Electron `dialog.showOpenDialog`.
+   * Resolves the chosen absolute path, or null when cancelled. Absent on
+   * plain web → the app falls back to the host-API `AddFolderDialog`.
+   */
+  pickFolder?: () => Promise<string | null>;
   platform?: string;
   notifications?: {
     post(notification: DesktopNotification): void;

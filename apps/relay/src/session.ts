@@ -22,6 +22,8 @@ import {
   ENGINE_PASSTHROUGH_PARAMS,
   type EngineHostState,
   type EnginePassthroughMethod,
+  FoldersAddParams,
+  FoldersListParams,
   HarnessRegisterParams,
   HarnessReportParams,
   type HarnessStatusReport,
@@ -500,6 +502,20 @@ export function createRelay(options: RelayOptions): Relay {
         }
         case "channels.list": {
           respond(peer, id, { channels: await store.listChannels() });
+          return;
+        }
+        case "folders.list": {
+          const parsed = FoldersListParams.safeParse(params ?? {});
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          respond(peer, id, { folders: await store.listRecentFolders() });
+          return;
+        }
+        case "folders.add": {
+          const parsed = FoldersAddParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          respond(peer, id, {
+            folder: await store.addRecentFolder(parsed.data.path),
+          });
           return;
         }
         case "channels.openDm": {

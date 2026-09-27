@@ -34,6 +34,8 @@ export async function sendDm(
   employeeId: string,
   text: string,
   conversationId?: string,
+  /** Folder the new session works in (#113); ignored on thread replies. */
+  cwd?: string,
 ): Promise<Conversation> {
   const channel = await openDmChannel(employeeId);
   if (conversationId) {
@@ -54,6 +56,7 @@ export async function sendDm(
     channelId: channel.id,
     authorId: USER_ID,
     text,
+    ...(cwd !== undefined ? { cwd } : {}),
   });
   pendingStart.set({ ...pendingStart.get(), [res.conversation.id]: true });
   return res.conversation;
@@ -105,6 +108,9 @@ export async function setConversationModel(
 ): Promise<void> {
   await relay.request("conversations.setModel", { conversationId, model });
 }
+
+/** Shared recent folders (relay-owned, #113). */
+export { addFolder, refreshFolders } from "./folders";
 
 export async function archiveConversation(
   conversationId: string,

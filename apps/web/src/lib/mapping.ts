@@ -11,6 +11,7 @@ import type {
   Reply,
   Step,
   Employee as UiEmployee,
+  Workspace,
 } from "@lilos/ui/types";
 
 /** relay domain -> ui/domain type mapping (the only place it lives). */
@@ -171,6 +172,8 @@ export function toFeed(
   root: AppMessage,
   conv: Conversation,
   replies: Reply[],
+  /** Folder the session works in (#113) — feeds the row + header badges. */
+  ws?: Workspace,
 ): Msg {
   return {
     kind: "msg",
@@ -183,6 +186,7 @@ export function toFeed(
       title: conv.title ?? undefined,
       archived: conv.archived,
       replies,
+      ...(ws ? { ws } : {}),
     },
   };
 }

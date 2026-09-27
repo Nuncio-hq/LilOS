@@ -5,14 +5,17 @@ export const plural = (n: number, w: string) =>
   `${n} ${w}${n === 1 ? "" : "s"}`;
 export const baseName = (path: string) => path.split("/").pop() ?? path;
 // "LilOS" when the project has one folder (named like it), else "LilOS / Notes".
+// A folder with no project (the real app's recents, #113) is just its name.
 export const folderLabel = (
   f: { project: string; path: string },
   all: { project: string }[],
 ) =>
-  all.filter((x) => x.project === f.project).length > 1 ||
-  baseName(f.path).toLowerCase() !== f.project.toLowerCase()
-    ? `${f.project} / ${baseName(f.path)}`
-    : f.project;
+  !f.project
+    ? baseName(f.path)
+    : all.filter((x) => x.project === f.project).length > 1 ||
+        baseName(f.path).toLowerCase() !== f.project.toLowerCase()
+      ? `${f.project} / ${baseName(f.path)}`
+      : f.project;
 export const parentOf = (path: string) =>
   path.includes("/") ? path.slice(0, path.lastIndexOf("/")) || "/" : "~";
 export const slugOf = (s: string) =>
