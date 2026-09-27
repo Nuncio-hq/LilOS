@@ -342,8 +342,8 @@ export const ConversationsUpdateParams = z.object({
   engineRef: z.string().min(1).optional(),
   /** Host-only: the pick the engine acked / will apply at session.start.
       `null` clears a field the new pick dropped (e.g. a model with no
-      effort/fast control) so a stale level can't linger (#92). */
-  model: z.string().min(1).optional(),
+      effort/fast control) or a failed pick restore (#92). */
+  model: z.string().min(1).nullable().optional(),
   provider: z.string().nullable().optional(),
   effort: z.string().nullable().optional(),
   fast: z.boolean().nullable().optional(),

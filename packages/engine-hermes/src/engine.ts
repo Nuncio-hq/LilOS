@@ -643,11 +643,20 @@ export class HermesEngine {
       effort: p.effort,
       fast: p.fast,
     });
-    s.model = ack.model;
-    if (ack.provider !== undefined) s.provider = ack.provider;
-    // Hermes keeps the session's reasoning override across a model switch.
-    if (ack.effort !== undefined) s.effort = ack.effort;
-    if (ack.fast !== undefined) s.fast = ack.fast;
+    /* A deferred ack describes the NEXT turn's pick — the session still
+       runs the old model, so only the live fast leg lands on `s` now.
+       Model/effort arrive as `session.info` when the stash applies at turn
+       start — that mirror stamps `turn.started` with what actually ran,
+       never with a request that might fail at apply (#92 review). */
+    if (ack.deferred === true) {
+      if (ack.fast !== undefined) s.fast = ack.fast;
+    } else {
+      s.model = ack.model;
+      if (ack.provider !== undefined) s.provider = ack.provider;
+      // Hermes keeps the session's reasoning override across a model switch.
+      if (ack.effort !== undefined) s.effort = ack.effort;
+      if (ack.fast !== undefined) s.fast = ack.fast;
+    }
     return {
       model: ack.model,
       ...(ack.provider ? { provider: ack.provider } : {}),
@@ -818,16 +827,11 @@ export class HermesEngine {
       case "message.complete":
         void this.completeTurn(s, p);
         break;
-      case "error":
-      case "notice": {
-        /* Engine-authored notes — a deferred model switch that failed at
-           turn start emits `error` {"message": "Could not switch model…"};
-           `notice` carries informational messages. The host posts the text
-           as a system message in the thread (#92 review). */
-        const text = typeof p.message === "string" ? p.message : "";
-        if (text) s.emit("session.note", { text });
-        break;
-      }
+      /* `error`/`notice` stay unmapped: they also fire on user Stop
+         ("Turn cancelled…"), agent-init and resume failures — too broad to
+         post as system messages. The harness holds picks while a turn
+         runs, so a deferred model-switch failure can't reach us this way
+         anyway (#92 review). */
       default:
         break; // status.update, session.title, sessions.changed, ...
     }

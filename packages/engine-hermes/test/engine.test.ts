@@ -653,29 +653,39 @@ describe("engine-hermes #8: agents + models capabilities", () => {
     await p1;
 
     /* The next prompt goes straight to prompt.submit — no driver-side
-       replay; the gateway's own stash applies the switch at turn start. */
+       replay; the gateway's own stash applies the switch at turn start and
+       re-reports it as session.info. turn.started stamps what the session
+       ran AT start — the pre-apply model here, by design (the apply lands
+       inside prompt_turn, after started goes out). */
     const callsBefore = gw.callLog.length;
     const p2 = promptAsync(h, sessionId);
-    await h.waitEvent(
+    const started2 = await h.waitEvent(
       (e) =>
         e.type === "turn.started" &&
-        (e.payload as { model?: string }).model === "devin/claude-opus-5",
+        (e.payload as { turnId?: string }).turnId === "t2",
     );
-    expect(gw.callLog.slice(callsBefore)).toEqual(["prompt.submit"]);
-    expect(gw.sessionModels.get(gw.lastSid)).toBe("devin/claude-opus-5");
-    expect(gw.sessionEfforts.get(gw.lastSid)).toBe("high");
-    const started = h.events.find(
-      (e) =>
-        e.type === "turn.started" &&
-        (e.payload as { model?: string }).model === "devin/claude-opus-5",
-    );
-    expect((started?.payload as { fast?: boolean })?.fast).toBe(true);
-    expect((started?.payload as { effort?: string })?.effort).toBe("high");
+    expect((started2.payload as { model?: string }).model).toBe("stub-model-a");
     gw.complete(gw.lastSid);
     await p2;
+    expect(
+      gw.callLog.slice(callsBefore).filter((m) => m === "config.set"),
+    ).toEqual([]);
+    expect(gw.sessionModels.get(gw.lastSid)).toBe("devin/claude-opus-5");
+    expect(gw.sessionEfforts.get(gw.lastSid)).toBe("high");
+    // The applied pick shows on the FOLLOWING turn's turn.started.
+    const p3 = promptAsync(h, sessionId);
+    const started3 = await h.waitEvent(
+      (e) =>
+        e.type === "turn.started" &&
+        (e.payload as { model?: string }).model === "devin/claude-opus-5",
+    );
+    expect((started3.payload as { fast?: boolean }).fast).toBe(true);
+    expect((started3.payload as { effort?: string }).effort).toBe("high");
+    gw.complete(gw.lastSid);
+    await p3;
   });
 
-  test("AC-4 a deferred switch that fails at turn start posts a session.note and the turn still runs", async () => {
+  test("AC-4 a deferred switch that fails at turn start keeps the old model and the turn still runs", async () => {
     const { gw, h } = setup();
     const { sessionId } = await start(h);
     gw.runningSids.add(gw.lastSid);
@@ -687,19 +697,33 @@ describe("engine-hermes #8: agents + models capabilities", () => {
     expect(ack.deferred).toBe(true);
     gw.runningSids.delete(gw.lastSid);
     /* The stashed model is gone by the time the next turn applies it — the
-       gateway emits `error {message}`; the engine must surface it and let
-       the prompt proceed on the current model (no jam, no turn failure). */
+       gateway emits `error {message}`. `error`/`notice` events stay
+       unmapped (they also fire on user Stop, agent-init, resume failures —
+       too broad for a system note); the harness never setModels mid-turn
+       anyway, so only a raw protocol caller can reach this. The prompt
+       still runs on the model the session kept (#92 review). */
     gw.failDeferredSwitch.add(gw.lastSid);
 
     const p = promptAsync(h, sessionId);
-    const note = await h.waitEvent((e) => e.type === "session.note");
-    expect((note.payload as { text: string }).text).toContain(
-      "Could not switch model",
-    );
-    expect(gw.sessionModels.get(gw.lastSid)).toBeUndefined();
+    const started = await h.waitEvent((e) => e.type === "turn.started");
+    /* The failed apply never reached the session — turn.started carries no
+       dead pick (the session never learned a model; stub-model-b is absent). */
+    expect((started.payload as { model?: string }).model).toBeUndefined();
     gw.complete(gw.lastSid);
     const res = await p;
     expect(res.stopReason).toBe("end_turn");
+    expect(gw.sessionModels.get(gw.lastSid)).toBeUndefined();
+    expect(h.events.some((e) => e.type === "session.note")).toBe(false);
+    // The NEXT turn's turn.started reports the kept default, not the dead pick.
+    const p2 = promptAsync(h, sessionId);
+    const started2 = await h.waitEvent(
+      (e) =>
+        e.type === "turn.started" &&
+        (e.payload as { turnId?: string }).turnId === "t2",
+    );
+    expect((started2.payload as { model?: string }).model).toBe("stub-model-a");
+    gw.complete(gw.lastSid);
+    await p2;
   });
 
   test("AC-3 a fast leg the engine refuses (4002) omits `fast` from the ack; other codes still throw", async () => {

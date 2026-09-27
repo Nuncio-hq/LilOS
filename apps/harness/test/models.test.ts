@@ -296,19 +296,34 @@ describe("model pick wire path (issue #30)", () => {
     }
   });
 
-  it("AC-4 a mid-turn pick never errors and lands on the next turn (engine defers)", async () => {
-    // Slow turn so the pick lands mid-run: the engine defers the switch —
-    // exactly like Hermes' deferred config.set — the running answer keeps its
-    // starting pick and the next turn carries the new one.
+  it("AC-4 a mid-turn pick is held, applied at turn end, and lands on the next turn", async () => {
+    // Slow turn so the pick lands mid-run. The harness holds it — the engine
+    // sees no setModel while a turn runs (a live fast flip would be checked
+    // against the OLD model and provider overrides could ride onto the new
+    // one) — then applies it on the idle session before the next prompt.
     const w = await setupWorld({ engine: new FakeEngine({ tick: 20 }) });
     try {
       const { channel, conversation } = await openDmConversation(w.user);
+      // `state: active` means turn.started landed — runningTurnId is set.
       await waitFor(async () => {
-        const c = await getConversation(w.user, conversation.id);
-        return c && (c as { engineRef?: string | null }).engineRef
-          ? c
-          : undefined;
-      }, "engine session binding");
+        const c = (await getConversation(w.user, conversation.id)) as
+          | { state?: string }
+          | undefined;
+        return c?.state === "active" ? c : undefined;
+      }, "turn running");
+
+      // Watch the engine wire: no setModel may go out while the turn runs.
+      if (!w.engineConn) throw new Error("engine not attached");
+      const calls: string[] = [];
+      const orig = w.engineConn.request.bind(w.engineConn);
+      w.engineConn.request = <T>(
+        method: string,
+        params?: unknown,
+        timeoutMs?: number,
+      ) => {
+        calls.push(method);
+        return orig<T>(method, params, timeoutMs);
+      };
 
       const res = await w.user.request<{ ok: boolean }>(
         "conversations.setModel",
@@ -322,7 +337,8 @@ describe("model pick wire path (issue #30)", () => {
       );
       expect(res.ok).toBe(true);
 
-      // The running turn's answer keeps the pick it started on.
+      // The running turn's answer keeps the pick it started on — and no
+      // setModel reached the engine while it ran.
       const first = await waitFor(async () => {
         const { messages } = await listMessages(w.user, channel.id);
         return messages.find(
@@ -331,8 +347,9 @@ describe("model pick wire path (issue #30)", () => {
         );
       }, "first answer");
       expect(first.model).not.toBe("fake-reasoning");
+      expect(calls).not.toContain("session.setModel");
 
-      // The conversation row already carries the new pick.
+      // The conversation row already carries the new pick (picker intent).
       await waitFor(async () => {
         const c = (await getConversation(w.user, conversation.id)) as
           | {
@@ -343,7 +360,7 @@ describe("model pick wire path (issue #30)", () => {
             }
           | undefined;
         return c?.model === "fake-reasoning" && c.fast === true ? c : undefined;
-      }, "deferred pick on the conversation");
+      }, "held pick on the conversation");
 
       await w.user.request("messages.post", {
         channelId: channel.id,
@@ -363,6 +380,11 @@ describe("model pick wire path (issue #30)", () => {
       expect(picked.model).toBe("fake-reasoning");
       expect(picked.effort).toBe("high");
       expect(picked.fast).toBe(true);
+      // The held pick applied on the idle session, before the second prompt.
+      const setModelIdx = calls.indexOf("session.setModel");
+      const lastPromptIdx = calls.lastIndexOf("prompt");
+      expect(setModelIdx).toBeGreaterThanOrEqual(0);
+      expect(setModelIdx).toBeLessThan(lastPromptIdx);
     } finally {
       await w.cleanup();
     }
@@ -436,6 +458,16 @@ describe("model pick wire path (issue #30)", () => {
           ? c
           : undefined;
       }, "engine session binding");
+      /* Pick once the opening turn is done — mid-turn picks are held and
+         only surface their refusal when the pick applies at the next
+         prompt (#92). */
+      await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+      }, "first answer");
 
       // describe() no longer advertises the capability.
       if (!w.engineConn) throw new Error("engine not attached");
@@ -465,24 +497,31 @@ describe("model pick wire path (issue #30)", () => {
     }
   });
 
-  it("AC-4 a deferred pick that fails at turn start posts a system note and the turn still answers", async () => {
+  it("AC-4 a held pick that fails on apply restores the row and the turn still answers", async () => {
     const w = await setupWorld({ engine: new FakeEngine({ tick: 20 }) });
     try {
       const { channel, conversation } = await openDmConversation(w.user);
+      // `state: active` means turn.started landed — the pick below is held.
       await waitFor(async () => {
-        const c = await getConversation(w.user, conversation.id);
-        return c && (c as { engineRef?: string | null }).engineRef
-          ? c
-          : undefined;
-      }, "engine session binding");
+        const c = (await getConversation(w.user, conversation.id)) as
+          | { state?: string }
+          | undefined;
+        return c?.state === "active" ? c : undefined;
+      }, "turn running");
 
-      // Pick mid-turn — deferred; the stash is applied at the next turn.
       await w.user.request("conversations.setModel", {
         conversationId: conversation.id,
         model: "fake/opus-2",
         provider: "fake",
         effort: "high",
       });
+      // The pick's intent lands on the row while the turn still runs.
+      await waitFor(async () => {
+        const c = (await getConversation(w.user, conversation.id)) as
+          | { model?: string }
+          | undefined;
+        return c?.model === "fake/opus-2" ? c : undefined;
+      }, "held pick intent on the conversation");
       await waitFor(async () => {
         const { messages } = await listMessages(w.user, channel.id);
         return messages.find(
@@ -491,9 +530,11 @@ describe("model pick wire path (issue #30)", () => {
         );
       }, "first answer");
 
-      /* The stashed model is gone before the apply — a refresh dropped it.
-         The engine must post a pick-specific note and run the turn on the
-         current model (#92 review). */
+      /* The picked model is gone before the held apply runs (a refresh
+         dropped it). The failed apply must restore the row to what the
+         session actually runs — a dead pick can't linger and retry forever
+         — post a pick-specific note, and the next turn answers on the
+         model the session kept (#92 review). */
       const idx = MODEL_CATALOG.findIndex((m) => m.id === "fake/opus-2");
       const removed = MODEL_CATALOG.splice(idx, 1)[0];
       try {
@@ -511,8 +552,17 @@ describe("model pick wire path (issue #30)", () => {
               m.conversationId === conversation.id &&
               m.text.includes("Couldn't switch"),
           );
-        }, "failed deferred pick system note");
+        }, "failed held-pick system note");
         expect(note.text).toContain("fake/opus-2");
+        // The row is restored — no dead model pinned for the next restart.
+        await waitFor(async () => {
+          const c = (await getConversation(w.user, conversation.id)) as
+            | { model?: string; effort?: string; provider?: string }
+            | undefined;
+          return c && c.model === undefined && c.effort === undefined
+            ? c
+            : undefined;
+        }, "row restored after failed apply");
         // And the turn still completed on the model it already had.
         const answers = await waitFor(async () => {
           const { messages } = await listMessages(w.user, channel.id);
@@ -522,7 +572,7 @@ describe("model pick wire path (issue #30)", () => {
               m.conversationId === conversation.id,
           );
           return list.length >= 2 ? list : undefined;
-        }, "second answer after failed deferred pick");
+        }, "second answer after failed held pick");
         expect(answers.at(-1)?.model).toBe("fake-large");
       } finally {
         MODEL_CATALOG.push(removed);

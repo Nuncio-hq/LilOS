@@ -252,6 +252,19 @@ export class FakeGateway implements GatewayLike {
             if (stash.reasoning) this.sessionEfforts.set(sid, stash.reasoning);
           }
         }
+        /* Hermes re-reports session state at turn start (a deferred pick's
+           commit folds into model/provider here) — the engine mirrors it so
+           `turn.started` stamps what the session ACTUALLY runs, which is
+           what keeps a failed apply from stamping the dead model (#92). */
+        const provider = this.sessionProviders.get(sid);
+        const effort = this.sessionEfforts.get(sid);
+        const fast = this.sessionFast.get(sid);
+        this.emit(sid, "session.info", {
+          model: this.sessionModels.get(sid) ?? this.defaultModel,
+          ...(provider ? { provider } : {}),
+          ...(effort ? { reasoning_effort: effort } : {}),
+          ...(fast !== undefined ? { fast } : {}),
+        });
         /* Mid-turn state is real: config.set model on a running sid
            answers deferred until `complete()` (#92 AC-4). */
         this.runningSids.add(sid);

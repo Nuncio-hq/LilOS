@@ -35,8 +35,9 @@ export interface ConversationPatch {
   archived?: boolean;
   state?: ConversationState;
   engineRef?: string;
-  /** The model pinned on the engine session (issue #30). */
-  model?: string;
+  /** The model pinned on the engine session (issue #30). `null` clears
+      (a failed-pick restore, #92) — like the other pick fields. */
+  model?: string | null;
   /** The rest of the session's pick (issue #92). `null` clears — a pick
       that drops a field must not leave the old value on the row. */
   provider?: string | null;
@@ -440,7 +441,7 @@ export function createMemoryStore(): RelayStore {
       }
       /* `null` in a patch clears an engine-pinned field (#92); the domain
          object holds `undefined`, never `null`. */
-      for (const k of ["provider", "effort", "fast"] as const) {
+      for (const k of ["model", "provider", "effort", "fast"] as const) {
         if (patch[k] === null) {
           delete (conversation as Record<string, unknown>)[k];
           patch = { ...patch, [k]: undefined };

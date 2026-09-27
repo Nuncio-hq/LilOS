@@ -53,6 +53,12 @@ for f in config.yaml .env auth.json; do
   [ -f "$HOME/.hermes/$f" ] && cp "$HOME/.hermes/$f" "$HERMES_HOME/$f"
 done
 [ -f "$HERMES_HOME/config.yaml" ] || : > "$HERMES_HOME/config.yaml"
+# Snapshot hash of the real auth.json at copy time — sync-back at exit is
+# only safe when the real file still matches it (a login on the real home
+# during the run must never be overwritten by our rotated copy).
+AUTH_SNAPSHOT=""
+[ -f "$HOME/.hermes/auth.json" ] &&
+  AUTH_SNAPSHOT="$(shasum -a 256 "$HOME/.hermes/auth.json" | cut -d' ' -f1)"
 # The `hermes` launcher resolves its managed python as $HERMES_HOME/tools/…
 # and REWRITES the real ~/.hermes/.../bin/hermes shim to that path on every
 # boot. Symlink the toolchain so the repointed shim keeps working while this
@@ -81,18 +87,35 @@ EOF
 
 STUB_PORT=""
 STUB_PID=""
-STUB_REQ_LOG="/tmp/openai-stub-92-requests.jsonl"
+# Stub introspection + stdout logs live inside the run's temp home — a
+# fixed /tmp path would let two runs clobber each other.
+STUB_REQ_LOG="$HERMES_HOME/stub-requests.jsonl"
+STUB_OUT_LOG="$HERMES_HOME/stub.log"
 cleanup() {
   # Only what this script started — relay/harness/hermes are the ts driver's
   # own process groups and it reaps them itself.
   [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null
   # OAuth refresh tokens rotate: if the run rewrote the copied auth.json,
-  # carry it back to the real home so the rotated token isn't lost. Only
-  # auth.json — config.yaml is never written back (the temp file holds the
-  # stub provider block, not the user's real config).
-  if [ -f "$HERMES_HOME/auth.json" ] && ! cmp -s "$HERMES_HOME/auth.json" "$HOME/.hermes/auth.json" 2>/dev/null; then
-    cp "$HERMES_HOME/auth.json" "$HOME/.hermes/auth.json"
-    echo "(auth.json changed during the run — synced back to ~/.hermes)"
+  # carry it back to the real home so the rotated token isn't lost — but
+  # ONLY when the real file is still the snapshot we copied; a login on the
+  # real home during the run leaves both files alone. Only auth.json —
+  # config.yaml is never written back (the temp file holds the stub
+  # provider block, not the user's real config).
+  if [ -f "$HERMES_HOME/auth.json" ]; then
+    TEMP_HASH="$(shasum -a 256 "$HERMES_HOME/auth.json" | cut -d' ' -f1)"
+    REAL_NOW=""
+    [ -f "$HOME/.hermes/auth.json" ] &&
+      REAL_NOW="$(shasum -a 256 "$HOME/.hermes/auth.json" | cut -d' ' -f1)"
+    if [ "$TEMP_HASH" != "$AUTH_SNAPSHOT" ]; then
+      if [ "$REAL_NOW" = "$AUTH_SNAPSHOT" ]; then
+        cp "$HERMES_HOME/auth.json" "$HOME/.hermes/auth.json"
+        echo "(auth.json rotated during the run — synced back to ~/.hermes)"
+      else
+        cp "$HERMES_HOME/auth.json" "$HOME/.hermes/auth.json.lilos92-conflict"
+        echo "WARN: ~/.hermes/auth.json changed during the run too — left it alone;"
+        echo "      the run's rotated copy is at ~/.hermes/auth.json.lilos92-conflict"
+      fi
+    fi
   fi
   # The launcher repoints the real shims at this run's home — put them back.
   for s in hermes hermes-acp; do
@@ -106,16 +129,16 @@ if [ "$LABEL" = "stub" ]; then
   # Port 0 → kernel picks; the bound port comes back on the stub's first
   # stdout line so a stale process can never shadow it.
   : > "$STUB_REQ_LOG"
-  STUB_REQUEST_LOG="$STUB_REQ_LOG" bun scripts/live/openai-stub.ts 0 >/tmp/openai-stub-92.log 2>&1 &
+  STUB_REQUEST_LOG="$STUB_REQ_LOG" bun scripts/live/openai-stub.ts 0 >"$STUB_OUT_LOG" 2>&1 &
   STUB_PID=$!
   for _ in 1 2 3 4 5 6 7 8 9 10; do
-    STUB_PORT="$(sed -n 's/.*127.0.0.1:\([0-9]*\).*/\1/p' /tmp/openai-stub-92.log | head -1)"
+    STUB_PORT="$(sed -n 's/.*127.0.0.1:\([0-9]*\).*/\1/p' "$STUB_OUT_LOG" | head -1)"
     [ -n "$STUB_PORT" ] && break
     sleep 0.3
   done
   [ -n "$STUB_PORT" ] || {
-    echo "FAIL: stub never bound a port — /tmp/openai-stub-92.log:"
-    cat /tmp/openai-stub-92.log
+    echo "FAIL: stub never bound a port — $STUB_OUT_LOG:"
+    cat "$STUB_OUT_LOG"
     exit 1
   }
   # Register the stub as a named provider with three models (one "/" id for
