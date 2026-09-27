@@ -22,6 +22,7 @@ export function HireDialog({
   onClose,
   onHire,
   usedProfiles,
+  error,
 }: {
   initial: HireDraft;
   templates: HireDraft[];
@@ -31,6 +32,8 @@ export function HireDialog({
   onClose: () => void;
   onHire: (d: HireDraft, profile: string | null, chs: string[]) => void;
   usedProfiles: string[];
+  /** Engine rejection reason, shown plainly under the form (e.g. the name is taken). */
+  error?: string;
 }) {
   const [d, setD] = useState<HireDraft>(initial);
   const [mode, setMode] = useState<"existing" | "new">(
@@ -245,34 +248,44 @@ export function HireDialog({
                   </Field>
                 </>
               )}
-              <Field label="Join channels">
-                <div className="flex flex-wrap gap-1.5">
-                  {allChannels.map((c) => {
-                    const on = chs.includes(c.id);
-                    return (
-                      <button
-                        key={c.id}
-                        onClick={() =>
-                          setChs(
-                            on ? chs.filter((x) => x !== c.id) : [...chs, c.id],
-                          )
-                        }
-                        className={cn(
-                          "rounded-full border px-2.5 py-1 text-xs",
-                          on
-                            ? "border-blue-500 bg-blue-50 text-blue-700"
-                            : "hover:bg-muted/50",
-                        )}
-                      >
-                        {on && "✓ "}
-                        {c.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </Field>
+              {/* No channels to join → no control at all (D-#19). */}
+              {allChannels.length > 0 && (
+                <Field label="Join channels">
+                  <div className="flex flex-wrap gap-1.5">
+                    {allChannels.map((c) => {
+                      const on = chs.includes(c.id);
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() =>
+                            setChs(
+                              on
+                                ? chs.filter((x) => x !== c.id)
+                                : [...chs, c.id],
+                            )
+                          }
+                          className={cn(
+                            "rounded-full border px-2.5 py-1 text-xs",
+                            on
+                              ? "border-blue-500 bg-blue-50 text-blue-700"
+                              : "hover:bg-muted/50",
+                          )}
+                        >
+                          {on && "✓ "}
+                          {c.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Field>
+              )}
             </div>
           </ScrollArea>
+          {error && (
+            <div className="border-t bg-red-50/60 px-4 py-2 text-red-800 text-xs dark:bg-red-950/30 dark:text-red-200">
+              {error}
+            </div>
+          )}
           <div className="flex items-center gap-2 border-t bg-muted/30 p-3">
             <code className="hidden min-w-0 truncate rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs sm:block">
               {mode === "existing"

@@ -6,7 +6,7 @@ import {
 } from "@lilos/client-runtime";
 import type { AppMessage, Ask, Conversation } from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
-import { EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
+import { EditEmployeeDialog, EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
 import type { Channel, Msg, Reply, Thread } from "@lilos/ui/types";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { atom } from "nanostores";
@@ -22,6 +22,7 @@ import {
   sendDm,
   setConversationModel,
 } from "../lib/actions";
+import { removeEmployee, saveEmployee } from "../lib/employees";
 import { useAtom } from "../lib/hooks";
 import {
   conversationReplies,
@@ -98,6 +99,7 @@ export function DmPage() {
   const statusPoll = useAtom(relay.status);
   const fatal = useAtom(relay.fatal);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   /* AC-2 (#85): an engine that's down (Hermes missing, crashed out) shows
      its plain reason above the composer — never silently sendable. */
@@ -424,13 +426,32 @@ export function DmPage() {
         }}
       />
       {threadEl}
-      {profileOpen && (
+      {profileOpen && !editOpen && (
         <EmployeeProfileCard
           name={uiEmp.name}
           profile={uiEmp.profile}
           model={uiEmp.model}
           instructions={uiEmp.instructions}
+          onEdit={() => setEditOpen(true)}
           onClose={() => setProfileOpen(false)}
+        />
+      )}
+      {editOpen && (
+        <EditEmployeeDialog
+          e={uiEmp}
+          onClose={() => setEditOpen(false)}
+          onSave={(name, role) => {
+            void saveEmployee(employee.id, name, role).then(() =>
+              setEditOpen(false),
+            );
+          }}
+          onRemove={() => {
+            void removeEmployee(employee.id).then(() => {
+              setEditOpen(false);
+              setProfileOpen(false);
+              void navigate({ to: "/" });
+            });
+          }}
         />
       )}
     </div>
@@ -509,12 +530,14 @@ function EmployeeProfileCard({
   profile,
   model,
   instructions,
+  onEdit,
   onClose,
 }: {
   name: string;
   profile: string;
   model: string;
   instructions: string;
+  onEdit: () => void;
   onClose: () => void;
 }) {
   return (
@@ -535,13 +558,22 @@ function EmployeeProfileCard({
             <dd className="min-w-0 flex-1">{instructions || "—"}</dd>
           </div>
         </dl>
-        <button
-          type="button"
-          className="mt-4 w-full rounded-md border px-2 py-1.5 text-sm hover:bg-muted"
-          onClick={onClose}
-        >
-          Close
-        </button>
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            className="flex-1 rounded-md bg-foreground px-2 py-1.5 text-background text-sm"
+            onClick={onEdit}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            className="flex-1 rounded-md border px-2 py-1.5 text-sm hover:bg-muted"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
