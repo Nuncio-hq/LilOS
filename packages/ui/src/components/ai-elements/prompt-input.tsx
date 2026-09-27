@@ -502,6 +502,9 @@ export const PromptInput = ({
 
   const addLocal = useCallback(
     (fileList: File[] | FileList) => {
+      // No `accept` means the host never enabled attachments — nothing renders
+      // the chips, so a dropped/pasted file would ship invisibly (D-#19).
+      if (!accept || accept.trim() === "") return;
       const incoming = Array.from(fileList);
       const accepted = incoming.filter((f) => matchesAccept(f));
       if (incoming.length && accepted.length === 0) {
@@ -556,7 +559,7 @@ export const PromptInput = ({
         return prev.concat(next);
       });
     },
-    [matchesAccept, maxFiles, maxFileSize, onError]
+    [accept, matchesAccept, maxFiles, maxFileSize, onError]
   );
 
   const removeLocal = useCallback(

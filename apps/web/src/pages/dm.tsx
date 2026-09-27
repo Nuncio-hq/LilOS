@@ -5,9 +5,20 @@ import {
   toStatusComponents,
 } from "@lilos/client-runtime";
 import type { AppMessage, Ask, Conversation } from "@lilos/contracts/app";
+import {
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+} from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
 import { EditEmployeeDialog, EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
-import type { Channel, Msg, Reply, Thread } from "@lilos/ui/types";
+import type {
+  AttachedFile,
+  Channel,
+  Msg,
+  Reply,
+  Thread,
+  WsPick,
+} from "@lilos/ui/types";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { atom } from "nanostores";
 import { useEffect, useMemo, useState } from "react";
@@ -22,6 +33,11 @@ import {
   sendDm,
   setConversationModel,
 } from "../lib/actions";
+import {
+  attachmentUrls,
+  ensureAttachments,
+  toAttachedFiles,
+} from "../lib/attachments";
 import { removeEmployee, saveEmployee } from "../lib/employees";
 import { useAtom } from "../lib/hooks";
 import {
@@ -39,6 +55,7 @@ import {
   relay,
   sessionModels,
 } from "../lib/runtime";
+import { say } from "../lib/toast";
 
 const EMPTY_MESSAGES = atom<ChannelMessagesState>({
   channelId: "",
@@ -101,6 +118,14 @@ export function DmPage() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  /* Image attachments (#112): the composers offer pick/drop/paste only when
+     the engine declares `image_prompt` (D-#19); thumbnails resolve lazily
+     from the relay store, so subscribe to the resolved-URL cache. */
+  const description = useAtom(engine.description);
+  const canAttachImages =
+    description?.capabilities.some((c) => c.id === "image_prompt") ?? false;
+  useAtom(attachmentUrls);
 
   /* AC-2 (#85): an engine that's down (Hermes missing, crashed out) shows
      its plain reason above the composer — never silently sendable. */
@@ -186,6 +211,21 @@ export function DmPage() {
   const openFeed = useAtom(
     openConv?.engineRef ? engine.sessionFeed(openConv.engineRef) : EMPTY_FEED,
   );
+
+  /* Attachment blobs behind every visible ref — channel window, open
+     thread, and the summary roots/previews that feed rows render (AC-3). */
+  useEffect(() => {
+    const refs = [
+      ...messages,
+      ...threadMsgs,
+      ...summaries.flatMap((s) =>
+        [s.root, s.firstAnswer, s.last].filter(
+          (m): m is AppMessage => m !== undefined,
+        ),
+      ),
+    ].flatMap((m) => m.attachments ?? []);
+    ensureAttachments(refs);
+  }, [messages, threadMsgs, summaries]);
 
   const uiEmp = employee ? toUiEmployee(employee, engineDown) : undefined;
   const empFn = (id: string) => {
@@ -276,12 +316,14 @@ export function DmPage() {
       });
   };
 
-  const send = (text: string) => {
-    void sendDm(employeeId, text).then((conv) =>
-      navigate({
-        to: "/dm/$employeeId/$conversationId",
-        params: { employeeId, conversationId: conv.id },
-      }),
+  const send = (text: string, _pick?: WsPick, files?: AttachedFile[]) => {
+    void sendDm(employeeId, text, undefined, files).then(
+      (conv) =>
+        conv &&
+        navigate({
+          to: "/dm/$employeeId/$conversationId",
+          params: { employeeId, conversationId: conv.id },
+        }),
     );
   };
 
@@ -365,6 +407,7 @@ export function DmPage() {
             minute: "2-digit",
           }),
           text: root.text,
+          attachments: toAttachedFiles(root.attachments),
           thread,
         }
       : { kind: "msg", id: conv.id, from: "user", time: "", text: "", thread };
@@ -390,7 +433,13 @@ export function DmPage() {
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}
           onModel={(c) => void setConversationModel(conv.id, c.model)}
-          onSend={(text) => void sendDm(employeeId, text, conv.id)}
+          onSend={(text, files) =>
+            void sendDm(employeeId, text, conv.id, files)
+          }
+          accept={canAttachImages ? "image/*" : undefined}
+          maxFileSize={MAX_ATTACHMENT_BYTES}
+          maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
+          onAttachError={say}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           lastSent={lastSent}
           onFocus={undefined}
@@ -421,6 +470,10 @@ export function DmPage() {
         onProfile={() => setProfileOpen((v) => !v)}
         onOpen={openThread}
         onSend={send}
+        accept={canAttachImages ? "image/*" : undefined}
+        maxFileSize={MAX_ATTACHMENT_BYTES}
+        maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
+        onAttachError={say}
         lastSent={lastSentTop}
         panelOpen={!!openConv}
         onPanel={() => {
