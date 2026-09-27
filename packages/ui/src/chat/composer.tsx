@@ -59,6 +59,7 @@ export function Composer({
   queued,
   accept,
   maxFileSize,
+  maxFiles,
   onAttachError,
 }: {
   placeholder: string;
@@ -78,6 +79,8 @@ export function Composer({
   /* Attachment byte cap enforced before send (#31); the relay's own cap is the
      authoritative copy — this one just fails fast. */
   maxFileSize?: number;
+  /* How many attachments a send may carry (relay's per-message cap). */
+  maxFiles?: number;
   /* Rejected attachment surfaced to the host (e.g. oversize) — no handler, no
      error surface: the toast is the app's job (D-#19). */
   onAttachError?: (message: string) => void;
@@ -126,6 +129,7 @@ export function Composer({
         accept={accept}
         multiple
         maxFileSize={maxFileSize}
+        maxFiles={maxFiles}
         onError={
           onAttachError ? (err) => onAttachError(err.message) : undefined
         }

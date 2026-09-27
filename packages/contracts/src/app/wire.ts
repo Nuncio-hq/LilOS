@@ -290,15 +290,22 @@ export const ConversationsSummariesResult = z.object({
 
 /**
  * Opens a thread in a channel with its root message; the returned
- * conversation is `idle` until the harness attaches `engineRef`.
+ * conversation is `idle` until the harness attaches `engineRef`. An
+ * image-only send (#112: attachment chips with no typed text) opens one too,
+ * so the text may be empty only when `attachments` carry it.
  */
-export const ConversationsOpenParams = z.object({
-  channelId: z.string().min(1),
-  text: z.string().min(1),
-  title: z.string().default(""),
-  authorId: z.string().min(1).default("user"),
-  attachments: AttachmentsField,
-});
+export const ConversationsOpenParams = z
+  .object({
+    channelId: z.string().min(1),
+    text: z.string(),
+    title: z.string().default(""),
+    authorId: z.string().min(1).default("user"),
+    attachments: AttachmentsField,
+  })
+  .refine(
+    (p) => p.text.length > 0 || (p.attachments?.length ?? 0) > 0,
+    "conversations.open needs text or at least one attachment",
+  );
 export type ConversationsOpenParams = z.infer<typeof ConversationsOpenParams>;
 export const ConversationsOpenResult = z.object({
   conversation: Conversation,

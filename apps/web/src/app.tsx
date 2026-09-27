@@ -28,6 +28,7 @@ import {
   relay,
   sessionModels,
 } from "./lib/runtime";
+import { toast } from "./lib/toast";
 import { DmPage } from "./pages/dm";
 import { IndexPage } from "./pages/index";
 
@@ -39,6 +40,7 @@ function AppShell() {
   const nav = useAtom(navOpen);
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const toastMsg = useAtom(toast);
   const dmMatch = /^\/dm\/([^/]+)/.exec(pathname);
   const view: { kind: "channel" | "dm"; id: string } = dmMatch
     ? { kind: "dm", id: decodeURIComponent(dmMatch[1]) }
@@ -192,6 +194,13 @@ function AppShell() {
           onClose={() => setStatusOpen(false)}
           onCopied={() => {}}
         />
+      )}
+      {/* One-line notices (attach rejections, failed sends) — same look as
+          the prototype's toast. */}
+      {toastMsg && (
+        <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-foreground px-4 py-2 text-background text-sm shadow-lg">
+          {toastMsg}
+        </div>
       )}
     </div>
   );

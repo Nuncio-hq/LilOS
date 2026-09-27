@@ -642,8 +642,11 @@ export class Harness {
     if (binding.runningTurnId) {
       // Capability `steer` (#9): a mid-turn user message steers the running
       // turn; without it the message queues as the next prompt.
+      // `session.steer` carries text only — a mid-turn message with
+      // attachments queues so its image blocks go out through sendPrompt
+      // instead of being silently dropped (#112).
       const conn = this.engine;
-      if (conn && this.hasCapability("steer")) {
+      if (conn && this.hasCapability("steer") && !message.attachments?.length) {
         void conn
           .request<{ status: "steered" | "not_running" }>("session.steer", {
             sessionId: binding.sessionId,
@@ -709,10 +712,17 @@ export class Harness {
         );
       }
     }
-    const content: ContentBlock[] = [
-      { type: "text", text: message.text },
-      ...images,
-    ];
+    // Text block only when there is text — an image-only message prompts
+    // with just image blocks rather than an empty text block (#112).
+    const content: ContentBlock[] = message.text
+      ? [{ type: "text", text: message.text }, ...images]
+      : images;
+    if (!content.length) {
+      // Every attachment failed to load and no text was typed — nothing to
+      // send; the postSystem notes above already told the user.
+      this.markDelivered(binding, message);
+      return;
+    }
     try {
       // Turn lifecycle (`turn.started`/`turn.completed`) arrives as events
       // before the prompt call resolves — they alone own runningTurnId.
