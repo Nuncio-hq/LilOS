@@ -19,6 +19,7 @@ import type {
   ModelOption,
   ModelPickerExtras,
 } from "../types";
+import { composerKeyDown } from "./composer-keys";
 import { choiceFor, ModelPicker } from "./model-picker";
 
 /* Same attach UX as the main composer: the paperclip opens PromptInput's file dialog. */
@@ -45,6 +46,7 @@ export function FocusComposer({
   picker,
   onSend,
   onStop,
+  lastSent,
   accept,
   maxFileSize,
   onAttachError,
@@ -62,6 +64,8 @@ export function FocusComposer({
   picker?: ModelPickerExtras;
   onSend: (t: string, files?: AttachedFile[]) => void;
   onStop?: () => void;
+  /* Same contract as Composer: ↑ in an empty composer recalls it (issue #104). */
+  lastSent?: string;
   /* Same contract as Composer: no accept, no attach control. */
   accept?: string;
   /* Attachment byte cap before send (#31) — the relay stays authoritative. */
@@ -104,6 +108,12 @@ export function FocusComposer({
           <PromptInputTextarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={composerKeyDown({
+              running,
+              onStop,
+              lastSent,
+              setDraft,
+            })}
             placeholder={placeholder}
             className="min-h-14"
           />
@@ -129,7 +139,8 @@ export function FocusComposer({
                 status={status}
                 type="button"
                 onClick={onStop}
-                aria-label="Stop"
+                title="Stop (Esc)"
+                aria-label="Stop (Esc)"
               >
                 <SquareIcon className="size-3.5 fill-current" />
               </PromptInputSubmit>
