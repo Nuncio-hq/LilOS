@@ -69,6 +69,7 @@ async function startRelay(name: string) {
 function startHarness(env: {
   relayUrl: string;
   token: string;
+  logFile: string;
   engine?: string;
   tag?: string;
 }) {
@@ -78,6 +79,7 @@ function startHarness(env: {
     LILOS_ENGINE: env.engine ?? "fake",
     LILOS_DEMO_SESSIONS: "0",
     LILOS_STATUS_INTERVAL_MS: "800",
+    LILOS_DEMO_LOG: env.logFile,
     ...(env.tag ? { LILOS_ENGINE_TAG: env.tag } : {}),
   });
 }
@@ -116,6 +118,7 @@ test.describe("AC-1-4 (#53) plain-language status + blocked legs", () => {
     const broken = startHarness({
       relayUrl: `ws://127.0.0.1:${relay.port}/ws`,
       token: relay.token,
+      logFile: join(relay.home, "harness-demo.log"),
       engine: "broken",
       tag: engineTag("ac53a"),
     });
@@ -184,6 +187,7 @@ test.describe("AC-1-4 (#53) plain-language status + blocked legs", () => {
     const harness = startHarness({
       relayUrl: `ws://127.0.0.1:${relay.port}/ws`,
       token: relay.token,
+      logFile: join(relay.home, "harness-demo.log"),
       tag,
     });
     try {
@@ -222,6 +226,7 @@ test.describe("AC-1-4 (#53) plain-language status + blocked legs", () => {
     const harness = startHarness({
       relayUrl: `ws://127.0.0.1:${relay.port}/ws`,
       token: relay.token,
+      logFile: join(relay.home, "harness-demo.log"),
       tag,
     });
     try {
@@ -263,6 +268,7 @@ test.describe("AC-1-4 (#53) plain-language status + blocked legs", () => {
     const harness = startHarness({
       relayUrl: `ws://127.0.0.1:${relay.port}/ws`,
       token: relay.token,
+      logFile: join(relay.home, "harness-demo.log"),
       tag,
     });
     let relay2: Proc | undefined;

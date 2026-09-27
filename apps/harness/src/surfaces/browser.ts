@@ -36,6 +36,11 @@ const SPECIAL_KEYS: Record<string, { code: string; vk: number }> = {
 };
 
 export class ChromiumBrowser implements BrowserDriver {
+  /**
+   * `args` land verbatim on the Chromium process's command line — the e2e
+   * leak watchdog uses it to pgrep a spec's browser (`--lilos-demo-tag=`).
+   */
+  constructor(private options: { args?: string[] } = {}) {}
   private vp = { ...VIEWPORT };
   /** The page's live viewport — follows `resize` (issue #56 AC-4). */
   get viewport() {
@@ -58,7 +63,10 @@ export class ChromiumBrowser implements BrowserDriver {
   private async ensure(): Promise<Page> {
     if (this.page && !this.page.isClosed()) return this.page;
     this.starting ??= (async () => {
-      this.browser = await chromium.launch({ headless: true });
+      this.browser = await chromium.launch({
+        headless: true,
+        args: this.options.args,
+      });
       this.context = await this.browser.newContext({
         viewport: this.vp,
         deviceScaleFactor: 1,

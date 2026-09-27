@@ -25,6 +25,8 @@ import { StatusReporter, teeLogger } from "../src/status";
  *                     HERMES_PROVIDER / HERMES_MODEL for a live model
  *   LILOS_MODEL       model name reported on the status surface
  *   LILOS_DEMO_SESSIONS  open N engine sessions so the live count is real
+ *   LILOS_DEMO_LOG    log file (default ~/.lilos/harness-demo.log — e2e
+ *                     specs always pass a temp-dir path, issue #96 AC-3)
  */
 const repoRoot = join(import.meta.dir, "../../..");
 const url = process.env.LILOS_RELAY_URL ?? "ws://127.0.0.1:4577/ws";
@@ -46,7 +48,9 @@ const statusIntervalMs = Number.parseInt(
 
 const log = teeLogger(
   createFileLogger({
-    file: join(homedir(), ".lilos", "harness-demo.log"),
+    file:
+      process.env.LILOS_DEMO_LOG ??
+      join(homedir(), ".lilos", "harness-demo.log"),
     console: true,
   }),
 );
