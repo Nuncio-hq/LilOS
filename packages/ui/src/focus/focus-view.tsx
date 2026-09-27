@@ -93,6 +93,7 @@ export function FocusView({
   running,
   onSend,
   onStop,
+  lastSent,
   onRetry,
   onUnqueue,
   onSendQueued,
@@ -129,6 +130,9 @@ export function FocusView({
   running: boolean;
   onSend: (t: string, files?: AttachedFile[]) => void;
   onStop?: () => void;
+  /* ↑ recall for the composer: the host's last sent message in this
+     conversation (issue #104 AC-5). */
+  lastSent?: string;
   onRetry?: (empId: string) => void;
   onUnqueue?: (i: number) => void;
   onSendQueued?: (i: number) => void;
@@ -536,6 +540,7 @@ export function FocusView({
               onModel={onModel}
               picker={picker}
               onStop={onStop}
+              lastSent={lastSent}
               placeholder={
                 // Terminal takeover (issue #69 AC-2): while the human holds
                 // the session's terminal, the agent can't run or write there —

@@ -324,6 +324,16 @@ export function DmPage() {
     );
   };
 
+  /* ↑ recall for the home composer: the last top-level message Oscar sent in
+     this DM is the newest conversation's root message (#104 AC-5). */
+  const lastSentTop = [...convs]
+    .reverse()
+    .map(
+      (c) =>
+        summaryOf(c)?.root ?? messages.find((m) => m.id === c.rootMessageId),
+    )
+    .find((m) => m?.authorKind === "user")?.text;
+
   /* thread panel ---------------------------------------------------------- */
 
   let threadEl = null;
@@ -376,6 +386,13 @@ export function DmPage() {
       model: conv.model ?? model?.model,
     };
     const running = !!modelLive || pending[conv.id] === true;
+    /* ↑ recall in the open session: Oscar's last sent message in it — the
+       root counts too (#104 AC-5). */
+    const lastSent = threadPool.reduce<AppMessage | undefined>(
+      (last, m) =>
+        m.authorKind === "user" && (!last || m.seq > last.seq) ? m : last,
+      undefined,
+    )?.text;
     const steer = hasCapability("steer");
     const rootMsg: Msg = root
       ? {
@@ -421,6 +438,7 @@ export function DmPage() {
           maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
           onAttachError={say}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
+          lastSent={lastSent}
           onFocus={undefined}
           work={null}
         />
@@ -453,6 +471,7 @@ export function DmPage() {
         maxFileSize={MAX_ATTACHMENT_BYTES}
         maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
         onAttachError={say}
+        lastSent={lastSentTop}
         panelOpen={!!openConv}
         onPanel={() => {
           const last = convs.at(-1);
@@ -572,7 +591,15 @@ function EmployeeProfileCard({
 }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-background/60 p-6">
-      <div className="w-full max-w-sm rounded-xl border bg-background p-5 shadow-2xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${name} profile`}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onClose();
+        }}
+        className="w-full max-w-sm rounded-xl border bg-background p-5 shadow-2xl"
+      >
         <div className="font-semibold">{name}</div>
         <dl className="mt-3 space-y-1.5 text-xs">
           <div className="flex gap-2">
