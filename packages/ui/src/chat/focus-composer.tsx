@@ -1,7 +1,7 @@
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import type { ChatStatus } from "ai";
 import { PaperclipIcon, SquareIcon } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
   PromptInput,
   PromptInputAttachment,
@@ -90,6 +90,10 @@ export function FocusComposer({
      flight is a new draft and survives (#103 AC-5). */
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  /* Same in-flight guard as Composer (#130 AC-3): `sendRef` dedupes submits
+     while a promise send is pending, `sending` disables the button. */
+  const [sending, setSending] = useState(false);
+  const sendRef = useRef<Promise<void> | null>(null);
   return (
     // While the employee works, Enter steers the turn (session.steer — the default and only behavior;
     // the running-state placeholder/hint come from the shared runningComposer in agent-chat.tsx).
@@ -102,6 +106,10 @@ export function FocusComposer({
           onAttachError ? (err) => onAttachError(err.message) : undefined
         }
         onSubmit={({ text, files }) => {
+          /* A send already in flight owns the outcome: a second submit (Enter
+             pressed twice, a requestSubmit) joins the pending promise instead
+             of sending the same draft again (#130 AC-3). */
+          if (sendRef.current) return sendRef.current;
           const t = text.trim() || draft.trim();
           if (!t && files.length === 0) return;
           const done = onSend(
@@ -116,7 +124,13 @@ export function FocusComposer({
             if (draftRef.current.trim() === t) setDraft("");
           };
           if (done && typeof done.then === "function") {
-            return done.then(clearIfUnchanged);
+            setSending(true);
+            const send = done.then(clearIfUnchanged).finally(() => {
+              sendRef.current = null;
+              setSending(false);
+            });
+            sendRef.current = send;
+            return send;
           }
           clearIfUnchanged();
         }}
@@ -167,7 +181,7 @@ export function FocusComposer({
                 <SquareIcon className="size-3.5 fill-current" />
               </PromptInputSubmit>
             ) : (
-              <PromptInputSubmit disabled={!draft.trim()} />
+              <PromptInputSubmit disabled={sending || !draft.trim()} />
             )}
           </div>
         </PromptInputFooter>
