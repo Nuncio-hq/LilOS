@@ -11,6 +11,8 @@ import {
   FirstRun,
   FocusView,
   HireDialog,
+  PairPhoneDialog,
+  type PairPhoneState,
   type PreviewScenario,
   PrototypePreviewMenu,
   StatusBanner,
@@ -159,7 +161,7 @@ const TEMPLATES: HireDraft[] = [
 ]
 
 // Fallback profile/model lists for when the dev engine endpoint isn't serving
-// (prototype/src/engine.ts → /api/engine → a real `@lilos/engine-fake`).
+// (prototype/web/src/engine.ts → /api/engine → a real `@lilos/engine-fake`).
 const MOCK_PROFILES: EngineProfile[] = [
   { id: "default", model: MODELS[1].id, soul: "General assistant. Oscar's main Hermes.", skills: 42 },
   { id: "builder", model: MODELS[0].id, soul: "You are Builder, a full-stack engineer…", skills: 18 },
@@ -320,6 +322,15 @@ const DM_FEEDS: Record<string, Msg[]> = {
 /* First run: the relay handshake creates one employee from the machine's default Hermes profile —
    `default` is already there before Oscar types anything. */
 const DEFAULT_EMP: Employee = { id: "default", name: "Default", role: "Assistant", status: "online", profile: "default", model: MODELS[1].id, now: "idle", instructions: "General assistant created from this Mac's default Hermes profile.", respondTo: "me" }
+
+/* Mock pairing offer — same host/code/name the mobile prototype's fake Mac uses
+   (prototype/mobile/src/fake-mac.ts DEMO_OFFER). */
+const pairOffer = (seconds: number) => ({
+  host: "oscars-macbook-pro.tail1a2b.ts.net",
+  code: "7K4M2P",
+  name: "Oscar's MacBook Pro",
+  expiresAt: Date.now() + seconds * 1000,
+})
 
 /* System status per preview scenario. Each component has a state + one-line reason;
    the dialog's "Copy diagnostics" ships the same lines as plain text. */
@@ -552,6 +563,15 @@ export default function App() {
      status mock for the real system.status poll from the relay. */
   const liveStatus = useLiveStatus()
   const [statusOpen, setStatusOpen] = useState(false)
+  /* Pair phone (mobile onboarding, Mac side). Mock offer; `?pair=no-remote|expired|paired`
+     opens it straight into that state (the phone side lives in prototype/mobile). */
+  const [pairPhone, setPairPhone] = useState<PairPhoneState | null>(() => {
+    const p = new URLSearchParams(location.search).get("pair")
+    if (p === "no-remote") return { kind: "no-remote" }
+    if (p === "paired") return { kind: "paired", device: "Oscar's iPhone", macName: "Oscar's MacBook Pro" }
+    if (p === "ready" || p === "expired") return { kind: "ready", offer: pairOffer(p === "expired" ? 0 : 300) }
+    return null
+  })
   const [firstDone, setFirstDone] = useState(false)
   const [editEmp, setEditEmp] = useState<string | null>(null)
   // Employees removed from the company stay in `removed` so their past messages keep a name/avatar.
@@ -1032,6 +1052,7 @@ export default function App() {
         badges={badges}
         status={liveStatus?.components ?? STATUS[scenario]}
         onOpenStatus={() => setStatusOpen(true)}
+        onPairPhone={() => setPairPhone({ kind: "ready", offer: pairOffer(300) })}
         realApp={realApp || scenario === "first-run"}
         preview={<PrototypePreviewMenu scenario={scenario} realApp={realApp} onScenario={pickScenario} onRealApp={setRealApp} />}
         isProjectDefaultOpen={(p) => p.id === "lilos" || newProjects.includes(p)}
@@ -1142,6 +1163,14 @@ export default function App() {
           diagnostics={liveStatus?.diagnostics ?? STATUS[scenario].map((c) => `${c.id}: ${c.state} — ${c.reason}`).join("\n")}
           onClose={() => setStatusOpen(false)}
           onCopied={() => say("Diagnostics copied")}
+        />
+      )}
+      {pairPhone && (
+        <PairPhoneDialog
+          state={pairPhone}
+          onNewCode={() => setPairPhone({ kind: "ready", offer: pairOffer(300) })}
+          onClose={() => setPairPhone(null)}
+          onCopied={say}
         />
       )}
       {scenario === "first-run" && !firstDone && (

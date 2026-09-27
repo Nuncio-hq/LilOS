@@ -32,6 +32,12 @@ export { AddFolderDialog } from "./dialogs/add-folder-dialog";
 // dialogs
 export { Field } from "./dialogs/field";
 export { HireDialog } from "./dialogs/hire-dialog";
+export {
+  PairPhoneDialog,
+  type PairPhoneOffer,
+  type PairPhoneState,
+  pairingUrl,
+} from "./dialogs/pair-phone-dialog";
 export { StartWorkDialog } from "./dialogs/start-work-dialog";
 export { WorkspacePicker, wsHint } from "./dialogs/workspace-picker";
 // employees

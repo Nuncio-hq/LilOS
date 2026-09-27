@@ -24,7 +24,7 @@ export default defineConfig({
   webServer: {
     // --host 127.0.0.1: vite binds ::1 by default; the baseURL below is IPv4.
     command:
-      "bun run --cwd prototype dev --host 127.0.0.1 --port 5199 --strictPort",
+      "bun run --cwd prototype/web dev --host 127.0.0.1 --port 5199 --strictPort",
     url: "http://127.0.0.1:5199",
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
