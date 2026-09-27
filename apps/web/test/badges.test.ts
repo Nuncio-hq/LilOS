@@ -36,6 +36,11 @@ const conv = (
 const model = (opts: {
   live?: boolean;
   openRequests?: number;
+  phase?: SessionModel["live"] extends infer T
+    ? T extends { phase: infer P }
+      ? P
+      : never
+    : never;
 }): SessionModel => ({
   sessionId: "s",
   state: opts.live ? "running" : "idle",
@@ -43,7 +48,7 @@ const model = (opts: {
   live: opts.live
     ? {
         turnId: "t",
-        phase: "reasoning",
+        phase: opts.phase ?? "reasoning",
         reasoning: "",
         text: "",
         steps: [],
@@ -84,6 +89,14 @@ describe("AC-3 employeeBadges", () => {
       s1: model({ live: true, openRequests: 2 }),
     });
     expect(badges.e1).toEqual({ running: 1, approvals: 2 });
+  });
+
+  it("AC-4 (#71): a waiting turn is `needs you`, not `running`", () => {
+    const ch1 = dm("ch1", "e1");
+    const badges = employeeBadges([ch1], [conv("c1", "ch1", "s1")], {
+      s1: model({ live: true, phase: "waiting", openRequests: 1 }),
+    });
+    expect(badges.e1).toEqual({ running: undefined, approvals: 1 });
   });
 
   it("sums across the employee's conversations and skips unbound/unknown sessions", () => {

@@ -37,13 +37,16 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
   keepEngineAlive();
   booted.set(true);
   // The picker's catalog: models.list via the relay, once, when the engine
-  // declares the `models` capability (issue #71, AC-7).
-  if (engine.description.get()?.capabilities.some((c) => c.id === "models")) {
+  // declares the `models` capability (issue #71, AC-7). `describe` lands
+  // asynchronously after connect, so listen for it rather than sampling once.
+  const un = engine.description.listen((d) => {
+    if (!d?.capabilities.some((c) => c.id === "models")) return;
+    un();
     void relay
       .listModels()
       .then((r) => engineModels.set(r.models))
       .catch(() => {});
-  }
+  });
 }
 
 /**
