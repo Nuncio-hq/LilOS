@@ -24,7 +24,12 @@ import {
   type FsDir,
   type HireDraft,
   type EngineProfile,
+  type ModelChoice,
   type ModelOption,
+  type ModelProvider,
+  type ModelVisibility,
+  choiceFor,
+  effortLabel,
   type Human,
   type HumanFn,
   type Msg,
@@ -104,14 +109,41 @@ const HUMANS: Record<string, Human> = {
   minh: { name: "Minh", color: "bg-cyan-600", guest: true },
 }
 
-/* What the engine reports via models.list: id is the value picked, name the
-   display label, provider drives the picker's groups (issue #30). */
-const MODELS: ModelOption[] = [
-  { id: "qwen3.8-flash-next", name: "Qwen 3.8 Flash-Next · HPC · free", provider: "alibaba" },
-  { id: "claude-opus-5.5", name: "Claude Opus 5.5 · subscription", provider: "anthropic" },
-  { id: "gpt-5.5", name: "GPT-5.5 · subscription", provider: "openai" },
-  { id: "devin", name: "Devin · AgentAuth", provider: "cognition" },
+/* What a multi-provider engine (Hermes) reports via models.list — shaped after
+   Oscar's real `model.options` (providers + slugs are real). `efforts` is the
+   ordered list the engine knows for THAT model; when it can't say (HPC, custom
+   endpoints) the adapter passes Hermes' full ladder, exactly like Hermes does.
+   No `efforts` = no reasoning control. `fast` = has a fast/priority tier. */
+const HERMES_LADDER = ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+const CODEX_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
+const GROK_EFFORTS = ["low", "medium", "high", "xhigh"]
+const PROVIDERS: ModelProvider[] = [
+  { id: "hpc", name: "HPC", logo: "alibaba" },
+  { id: "anthropic-cliproxy", name: "Anthropic – CLIProxyAPI", logo: "anthropic" },
+  { id: "openai-codex", name: "ChatGPT or Codex Subscription", logo: "openai" },
+  { id: "xai-oauth", name: "xAI Grok OAuth (SuperGrok / Premium+)", logo: "xai" },
+  { id: "agentauth", name: "AgentAuth (Devin Cascade)" },
 ]
+const MODELS: ModelOption[] = [
+  { id: "qwen3.8-flash-next", name: "Qwen 3.8 Flash-Next", provider: "hpc", efforts: HERMES_LADDER, defaultEffort: "medium" },
+  { id: "claude-opus-5-5", name: "Claude Opus 5.5", provider: "anthropic-cliproxy", efforts: HERMES_LADDER, defaultEffort: "high", fast: true },
+  { id: "claude-sonnet-5", name: "Claude Sonnet 5", provider: "anthropic-cliproxy", efforts: HERMES_LADDER, defaultEffort: "medium" },
+  { id: "claude-fable-5-1", name: "Claude Fable 5.1", provider: "anthropic-cliproxy", efforts: HERMES_LADDER, defaultEffort: "medium" },
+  { id: "claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku", provider: "anthropic-cliproxy" },
+  { id: "gpt-6-astra", name: "GPT-6 Astra", provider: "openai-codex", efforts: CODEX_EFFORTS, defaultEffort: "medium", fast: true },
+  { id: "gpt-6-sol", name: "GPT-6 Sol", provider: "openai-codex", efforts: ["none", ...CODEX_EFFORTS], defaultEffort: "medium", fast: true },
+  { id: "gpt-6-luna", name: "GPT-6 Luna", provider: "openai-codex", efforts: ["none", ...CODEX_EFFORTS], defaultEffort: "low", fast: true },
+  { id: "grok-4.6", name: "Grok 4.6", provider: "xai-oauth", efforts: GROK_EFFORTS, defaultEffort: "medium", fast: true },
+  { id: "grok-4.5", name: "Grok 4.5", provider: "xai-oauth", efforts: ["low", "medium", "high"], defaultEffort: "medium" },
+  { id: "grok-4.20-0309-non-reasoning", name: "Grok 4.20 (non-reasoning)", provider: "xai-oauth" },
+  { id: "devin/claude-opus-5", name: "Claude Opus 5 · Devin", provider: "agentauth", efforts: HERMES_LADDER, defaultEffort: "high", fast: true },
+  { id: "devin/gpt-6-astra", name: "GPT-6 Astra · Devin", provider: "agentauth", efforts: HERMES_LADDER, defaultEffort: "medium", fast: true },
+  { id: "devin/kimi-k3", name: "Kimi K3 · Devin", provider: "agentauth", efforts: HERMES_LADDER, defaultEffort: "high" },
+  { id: "devin/glm-5-2", name: "GLM 5.2 · Devin", provider: "agentauth", efforts: HERMES_LADDER, defaultEffort: "high" },
+]
+/* What "Refresh models" finds that the cached catalog didn't have — shows the
+   refresh round-trip and that a model new since the last edit is visible. */
+const REFRESHED: ModelOption = { id: "claude-opus-5-6", name: "Claude Opus 5.6 (new)", provider: "anthropic-cliproxy", efforts: HERMES_LADDER, defaultEffort: "high", fast: true }
 
 const SEED_EMPLOYEES: Employee[] = [
   { id: "builder", name: "Builder", role: "Engineer", status: "busy", profile: "builder", model: MODELS[0].id, now: "LIL-3 · write_file README.md", instructions: "You are Builder, a full-stack engineer. Execute assigned tickets on a branch, run checks, report back with evidence.", respondTo: "me" },
@@ -530,7 +562,35 @@ export default function App() {
   const [liveModels, setLiveModels] = useState<ModelOption[] | null>(null)
   const [engineName, setEngineName] = useState<string | null>(null)
   const PROFILES = liveProfiles ?? MOCK_PROFILES
-  const MODEL_OPTS = liveModels ?? MODELS
+  /* Picker catalog: the mock Hermes catalog (multi-provider, per-model efforts,
+     fast) to design against, plus whatever the live engine-fake reports over
+     models.list (its "Fake" group proves the wire). Refresh can add a model. */
+  const [refreshed, setRefreshed] = useState<ModelOption[]>([])
+  const MODEL_OPTS = useMemo(() => [...MODELS, ...refreshed, ...(liveModels ?? [])], [refreshed, liveModels])
+  /* Hidden models: ONE list for every employee, owned by the app (Hermes keeps
+     none). The prototype keeps it in localStorage; the real app on the relay. */
+  const [visibility, setVisibility] = useState<ModelVisibility>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("lilos-model-visibility") ?? "") as ModelVisibility
+    } catch {
+      return { providers: [], models: [] }
+    }
+  })
+  const saveVisibility = (v: ModelVisibility) => {
+    setVisibility(v)
+    localStorage.setItem("lilos-model-visibility", JSON.stringify(v))
+  }
+  /* Hermes caches its catalog; Refresh re-fetches it (model.options refresh:true). */
+  const refreshModels = async () => {
+    await new Promise((r) => setTimeout(r, 900))
+    const added = refreshed.length ? 0 : 1
+    setRefreshed([REFRESHED])
+    say(added ? "Models refreshed · 1 new model" : "Models refreshed · no changes")
+  }
+  const pickerExtras = { providers: PROVIDERS, visibility, onVisibility: saveVisibility, onRefresh: refreshModels }
+  /* New-session pick per employee: starts at the employee's default model every
+     time (never the last session's pick) and clears once the session starts. */
+  const [draftPick, setDraftPick] = useState<Record<string, ModelChoice>>({})
   useEffect(() => {
     void Promise.all([engineProfiles(), engineModels()]).then(([ps, ms]) => {
       if (ps) {
@@ -667,7 +727,7 @@ export default function App() {
     const started0 = Date.now()
     mapRoot(key, rootId, (t) => ({
       ...t,
-      replies: [...t.replies, { id: rid, from: empId, time: nowTime(), text: "", steps: [], live: true, phase: "submitted", model: t.model ?? emp(empId)?.model }],
+      replies: [...t.replies, { id: rid, from: empId, time: nowTime(), text: "", steps: [], live: true, phase: "submitted", ...turnPick(t, empId) }],
       // todo.updated: the employee adds its own item and marks it in_progress
       todos: s.todo ? [...(t.todos ?? []).filter((x) => x.content !== s.todo), { content: s.todo, status: "in_progress" }] : t.todos,
     }))
@@ -816,7 +876,9 @@ export default function App() {
     const target = view.kind === "dm" ? view.id : mentionIn(text)?.id
     const id = `s-${Date.now()}`
     const ws = target ? resolveWs(pick, text) : undefined
-    const msg: Msg = { kind: "msg", id, from: "oscar", time: nowTime(), text: bold(text), attachments: files?.length ? files : undefined, ...(target ? { thread: { session: newSession(), replies: [], model: emp(target)?.model, ws } } : {}) }
+    const pickFor = target ? draftPick[target] ?? choiceFor(emp(target)?.model ?? "", MODEL_OPTS) : undefined
+    const msg: Msg = { kind: "msg", id, from: "oscar", time: nowTime(), text: bold(text), attachments: files?.length ? files : undefined, ...(target && pickFor ? { thread: { session: newSession(), replies: [], model: pickFor.model, provider: pickFor.provider, effort: pickFor.effort, fast: pickFor.fast, ws } } : {}) }
+    if (target) setDraftPick(({ [target]: _, ...rest }) => rest)
     setFeeds((fs) => ({ ...fs, [feedKey]: [...(fs[feedKey] ?? []), msg] }))
     if (target) { showThread(id); runTurn(feedKey, id, target, text, ws, files) }
   }
@@ -853,9 +915,15 @@ export default function App() {
   }
   // conversations.setModel: the pick pins the conversation's model; the next
   // turn's reply carries it back as `turn.started.model` (AC-2).
-  const setModel = (root: Extract<Msg, { kind: "msg" }>, model: string) => {
-    mapRoot(feedKey, root.id, (t) => ({ ...t, model }))
-    say(`Next turn uses ${MODEL_OPTS.find((m) => m.id === model)?.name ?? model}`)
+  /* turn.started: the reply carries the model/effort/fast it ran with. */
+  const turnPick = (t: Thread, empId: string) => {
+    const c = t.model ? { model: t.model, effort: t.effort, fast: t.fast } : choiceFor(emp(empId)?.model ?? "", MODEL_OPTS)
+    return { model: c.model, effort: c.effort, fast: c.fast || undefined }
+  }
+  const setModel = (root: Extract<Msg, { kind: "msg" }>, c: ModelChoice) => {
+    const before = root.thread?.model
+    mapRoot(feedKey, root.id, (t) => ({ ...t, model: c.model, provider: c.provider, effort: c.effort, fast: c.fast }))
+    if (c.model !== before) say(`Next turn uses ${MODEL_OPTS.find((m) => m.id === c.model)?.name ?? c.model}`)
   }
   // PR actions from the PR tab when the session isn't on a real checkout (the
   // Workbench uses hostAccessors.pr* → forge.* → `gh` when it is, issue #37).
@@ -943,7 +1011,7 @@ export default function App() {
       running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
-      models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined}
+      models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined} picker={pickerExtras}
     />
   ) : null
 
@@ -986,7 +1054,7 @@ export default function App() {
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
           onRewind={(i) => rewind(openThread, i)} onModel={canModels ? (m) => setModel(openThread, m) : undefined} say={say}
           surfaces={realSurfaces ?? fakeSurfaces}
-          models={canModels ? MODEL_OPTS : undefined} repoFiles={REPO_FILES} host={hostAccessors}
+          models={canModels ? MODEL_OPTS : undefined} picker={pickerExtras} repoFiles={REPO_FILES} host={hostAccessors}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />
@@ -1004,6 +1072,10 @@ export default function App() {
               onArchive={(id, archived) => mapRoot(feedKey, id, (t) => ({ ...t, archived }))}
               onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying session ${m.thread?.session}`) }}
               accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say}
+              models={canModels ? MODEL_OPTS : undefined}
+              modelChoice={draftPick[view.id] ?? choiceFor(emp(view.id)?.model ?? "", MODEL_OPTS)}
+              onModel={canModels ? (c) => setDraftPick((d) => ({ ...d, [view.id]: c })) : undefined}
+              picker={pickerExtras}
             />
           ) : (
           <main className="flex min-h-0 min-w-0 flex-col">

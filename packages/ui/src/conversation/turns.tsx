@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { SteerRows } from "../chat/agent-chat";
+import { effortLabel } from "../chat/model-picker";
 import {
   Message,
   MessageAction,
@@ -286,6 +287,8 @@ export function AgentTurn({
           {r.model && (
             <span>
               · {models?.find((m) => m.id === r.model)?.name ?? r.model}
+              {r.effort && ` · ${effortLabel(r.effort)}`}
+              {r.fast && " · Fast"}
             </span>
           )}
           {steps.length > 0 && <span>· {plural(steps.length, "step")}</span>}

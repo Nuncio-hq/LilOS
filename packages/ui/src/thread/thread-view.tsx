@@ -7,7 +7,7 @@ import {
   runningComposer,
 } from "../chat/agent-chat";
 import { Composer } from "../chat/composer";
-import { ModelPicker } from "../chat/model-picker";
+import { ModelPicker, sessionChoice } from "../chat/model-picker";
 import {
   Conversation,
   ConversationContent,
@@ -23,7 +23,9 @@ import type {
   Channel,
   EmpFn,
   HumanFn,
+  ModelChoice,
   ModelOption,
+  ModelPickerExtras,
   Msg,
   Thread,
   Work,
@@ -59,6 +61,7 @@ export function ThreadView({
   onRemovePending,
   models,
   onModel,
+  picker,
   transcriptNote,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
@@ -77,7 +80,9 @@ export function ThreadView({
   onStop?: () => void;
   /* Engine-reported models + pick handler (issue #30); no onModel → no picker (D-#19). */
   models?: ModelOption[];
-  onModel?: (m: string) => void;
+  onModel?: (c: ModelChoice) => void;
+  /* Refresh / Edit models… / provider names — each renders only with its handler. */
+  picker?: ModelPickerExtras;
   onRetry?: (empId: string) => void;
   onUnqueue?: (i: number) => void;
   onSendQueued?: (i: number) => void;
@@ -302,9 +307,10 @@ export function ThreadView({
         tools={
           onModel && models?.length ? (
             <ModelPicker
-              model={thread.model ?? leadEmp?.model ?? models[0].id}
+              value={sessionChoice(thread, leadEmp?.model, models)}
               models={models}
-              onModel={onModel}
+              onChoice={onModel}
+              {...picker}
             />
           ) : undefined
         }

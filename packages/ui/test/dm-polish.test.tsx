@@ -3,7 +3,7 @@
    full width, AC-2 the Hermes avatar bundles its mark and falls back to an
    initial, AC-3 `· now:` hides when empty, AC-4 waiting surfaces read
    "needs you" / "Waiting for approval". */
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { ModelPicker } from "../src/chat/model-picker";
 import { AgentTurn, TurnSteps } from "../src/conversation/turns";
@@ -204,21 +204,25 @@ describe("issue #71", () => {
   test("AC-7 the picker groups by provider display name, not the slug", async () => {
     render(
       <ModelPicker
-        model="fake-large"
+        value={{ model: "fake-large", provider: "fake" }}
         models={[
           { id: "fake-large", name: "Fake Large", provider: "fake" },
           { id: "claude-x", name: "Claude X", provider: "anthropic" },
           { id: "orphan" },
         ]}
-        onModel={() => {}}
+        onChoice={() => {}}
       />,
     );
-    const trigger =
-      document.body.querySelector('[data-slot="model-selector-trigger"]') ??
-      document.body.querySelector("button");
+    const trigger = document.body.querySelector(
+      '[data-slot="model-picker-trigger"]',
+    );
     expect(trigger).toBeTruthy();
-    (trigger as HTMLElement).click();
-    await new Promise((r) => setTimeout(r, 0));
+    await act(async () => fireEvent.click(trigger as HTMLElement));
+    // The popover's "Model ›" row drills into the grouped list.
+    const modelRow = [...document.body.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Model"),
+    );
+    await act(async () => fireEvent.click(modelRow as HTMLElement));
     const headings = [
       ...document.body.querySelectorAll("[cmdk-group-heading]"),
     ].map((el) => el.textContent);

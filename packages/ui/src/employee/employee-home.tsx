@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Composer } from "../chat/composer";
+import { choiceFor, ModelPicker } from "../chat/model-picker";
 import {
   Conversation,
   ConversationContent,
@@ -54,6 +55,9 @@ import type {
   EngineProfile,
   Folder,
   HumanFn,
+  ModelChoice,
+  ModelOption,
+  ModelPickerExtras,
   Msg,
   SessionAlert,
   WsPick,
@@ -172,6 +176,10 @@ export function EmployeeHome({
   accept,
   maxFileSize,
   onAttachError,
+  models,
+  modelChoice,
+  onModel,
+  picker,
 }: {
   e: Employee;
   feed: Msg[];
@@ -198,6 +206,12 @@ export function EmployeeHome({
   /* Attachment byte cap + where rejections surface (issue #31). */
   maxFileSize?: number;
   onAttachError?: (message: string) => void;
+  /* Model for the NEW session: starts at the employee's default (never the last
+     session's pick). No onModel → no picker (D-#19). */
+  models?: ModelOption[];
+  modelChoice?: ModelChoice;
+  onModel?: (c: ModelChoice) => void;
+  picker?: ModelPickerExtras;
 }) {
   const pickFolder = folders.find((x) => x.id === pick.folder);
   const [filter, setFilter] = useState("");
@@ -463,14 +477,24 @@ export function EmployeeHome({
         maxFileSize={maxFileSize}
         onAttachError={onAttachError}
         tools={
-          folders.length || onAddFolder ? (
-            <WorkspacePicker
-              folders={folders}
-              pick={pick}
-              setPick={setPick}
-              onAddFolder={onAddFolder}
-            />
-          ) : undefined
+          <>
+            {folders.length || onAddFolder ? (
+              <WorkspacePicker
+                folders={folders}
+                pick={pick}
+                setPick={setPick}
+                onAddFolder={onAddFolder}
+              />
+            ) : null}
+            {onModel && models?.length ? (
+              <ModelPicker
+                value={modelChoice ?? choiceFor(e.model, models)}
+                models={models}
+                onChoice={onModel}
+                {...picker}
+              />
+            ) : null}
+          </>
         }
       />
     </main>

@@ -240,9 +240,15 @@ test("AC-7 model display names — picker groups and the turn footer", async ({
   await expect(turn).toContainText("· Fake Large", { timeout: 60_000 });
   await expect(turn).not.toContainText("fake-large");
   // Thread-composer picker: provider group headings are display names, not slugs.
-  const trigger = page.getByRole("button", { name: /Fake Large|Fake Small/ });
+  const trigger = page
+    .locator('[data-slot="model-picker-trigger"]', {
+      hasText: /Fake Large|Fake Small/,
+    })
+    .last();
   await expect(trigger).toBeVisible({ timeout: 30_000 });
   await trigger.click();
+  // Picker v2: the popover's "Model ›" row drills into the grouped list.
+  await page.getByRole("button", { name: /Model$/ }).click();
   const group = page.getByRole("group", { name: "Fake", exact: true });
   await expect(group).toBeVisible();
   await expect(group.getByText("Fake Small")).toBeVisible();

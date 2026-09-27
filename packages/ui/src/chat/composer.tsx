@@ -142,7 +142,7 @@ export function Composer({
           />
         </PromptInputBody>
         <PromptInputFooter>
-          <PromptInputTools className="min-w-0">
+          <PromptInputTools className="min-w-0 flex-wrap">
             {accept && <AttachButton />}
             {tools}
             <span className="hidden truncate text-muted-foreground text-xs sm:inline">
