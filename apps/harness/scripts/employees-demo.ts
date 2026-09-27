@@ -206,8 +206,32 @@ check(
   /already exists/.test(rejection),
   `duplicate agents.create rejected: ${rejection || "(accepted!)"}`,
 );
+// #115 review: a display-style (mixed-case) name must still land — Hermes
+// lowercases profile names, so the adapter resolves the canonical id for the
+// post-create describe; and a name differing only in case is still a duplicate.
+const mixedRaw = `DemoCase-${slug.slice(5)}`;
+const mixed = await user
+  .createAgent({ name: mixedRaw, model })
+  .catch((e) => fail(`agents.create (mixed case): ${e}`));
+check(
+  "AC-3-case",
+  mixed.id === mixedRaw.toLowerCase(),
+  `agents.create("${mixedRaw}") -> canonical ${mixed.id}`,
+);
+let caseDup = "";
+try {
+  await user.createAgent({ name: mixedRaw.toUpperCase(), model });
+} catch (e) {
+  caseDup = e instanceof Error ? e.message : String(e);
+}
+check(
+  "AC-3-case-dup",
+  /already exists/.test(caseDup),
+  `case-only duplicate rejected: ${caseDup || "(accepted!)"}`,
+);
 // Printed for scripts/live/115.sh so it can cross-check `hermes profile list`.
 console.log(`PROFILE_SLUG=${slug}`);
+console.log(`PROFILE_CASE=${mixed.id}`);
 let hiredExisting = "skip (no pre-existing profile)";
 let empB = hiredNew;
 if (agents.length > 0) {

@@ -60,8 +60,20 @@ else
   exit 1
 fi
 
+# The mixed-case display name must have landed as its lowercase slug too.
+CASE_SLUG=$(echo "$OUT" | sed -n 's/^PROFILE_CASE=//p' | tail -1)
+if [ -n "$CASE_SLUG" ] &&
+  hermes profile list 2>/dev/null | grep -q "$CASE_SLUG"; then
+  echo "RESULT hermes-profile-case: PASS — \`hermes profile list\` shows $CASE_SLUG"
+else
+  echo "RESULT hermes-profile-case: FAIL — $CASE_SLUG missing from hermes profile list"
+  exit 1
+fi
+
 if echo "$OUT" | grep -q "RESULT AC-4: PASS" &&
   echo "$OUT" | grep -q "RESULT AC-3-reject: PASS" &&
+  echo "$OUT" | grep -q "RESULT AC-3-case: PASS" &&
+  echo "$OUT" | grep -q "RESULT AC-3-case-dup: PASS" &&
   echo "$OUT" | grep -q "RESULT AC-2-dm: PASS"; then
   echo "RESULT: PASS (engine=hermes, label=${LABEL})"
 else

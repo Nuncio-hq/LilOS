@@ -23,6 +23,7 @@ export function HireDialog({
   onHire,
   usedProfiles,
   error,
+  pending,
 }: {
   initial: HireDraft;
   templates: HireDraft[];
@@ -34,6 +35,9 @@ export function HireDialog({
   usedProfiles: string[];
   /** Engine rejection reason, shown plainly under the form (e.g. the name is taken). */
   error?: string;
+  /** True while a hire request is in flight — Hire stays disabled so a
+      second click can't create a duplicate. */
+  pending?: boolean;
 }) {
   const [d, setD] = useState<HireDraft>(initial);
   const [mode, setMode] = useState<"existing" | "new">(
@@ -296,7 +300,9 @@ export function HireDialog({
               Cancel
             </Button>
             <Button
-              disabled={!d.name || (mode === "existing" && !picked)}
+              disabled={
+                pending || !d.name || (mode === "existing" && !picked)
+              }
               onClick={() =>
                 onHire(
                   d,

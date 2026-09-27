@@ -100,6 +100,7 @@ export function DmPage() {
   const fatal = useAtom(relay.fatal);
   const [profileOpen, setProfileOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   /* AC-2 (#85): an engine that's down (Hermes missing, crashed out) shows
      its plain reason above the composer — never silently sendable. */
@@ -432,25 +433,35 @@ export function DmPage() {
           profile={uiEmp.profile}
           model={uiEmp.model}
           instructions={uiEmp.instructions}
-          onEdit={() => setEditOpen(true)}
+          onEdit={() => {
+            setEditError(null);
+            setEditOpen(true);
+          }}
           onClose={() => setProfileOpen(false)}
         />
       )}
       {editOpen && (
         <EditEmployeeDialog
           e={uiEmp}
+          error={editError ?? undefined}
           onClose={() => setEditOpen(false)}
           onSave={(name, role) => {
-            void saveEmployee(employee.id, name, role).then(() =>
-              setEditOpen(false),
-            );
+            void saveEmployee(employee.id, name, role)
+              .then(() => setEditOpen(false))
+              .catch((e) =>
+                setEditError(e instanceof Error ? e.message : String(e)),
+              );
           }}
           onRemove={() => {
-            void removeEmployee(employee.id).then(() => {
-              setEditOpen(false);
-              setProfileOpen(false);
-              void navigate({ to: "/" });
-            });
+            void removeEmployee(employee.id)
+              .then(() => {
+                setEditOpen(false);
+                setProfileOpen(false);
+                void navigate({ to: "/" });
+              })
+              .catch((e) =>
+                setEditError(e instanceof Error ? e.message : String(e)),
+              );
           }}
         />
       )}

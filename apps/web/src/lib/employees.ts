@@ -66,11 +66,23 @@ export async function listHirableProfiles(): Promise<EngineProfile[]> {
 }
 
 /**
+ * Engine profile ids are lowercase slugs (Hermes: letters, numbers, `-`/`_`,
+ * leading alnum, ≤64 chars); the employee keeps the display name Oscar typed.
+ */
+export const profileSlug = (name: string): string =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^[^a-z0-9]+|[-_]+$/g, "")
+    .slice(0, 64);
+
+/**
  * Hire a draft onto the roster. `profile` links an existing engine profile;
- * null creates one on the engine first (`agents.create`) — LilOS never owns
- * or deletes profiles (D-#29). The DM channel opens up front so the new
- * employee's DM renders ready instead of a perpetual skeleton (AC-5). An
- * engine rejection propagates before anything is created.
+ * null creates one on the engine first (`agents.create` with the slug, not
+ * the display name) — LilOS never owns or deletes profiles (D-#29). The DM
+ * channel opens up front so the new employee's DM renders ready instead of a
+ * perpetual skeleton (AC-5). An engine rejection propagates before anything
+ * is created.
  */
 export async function hireEmployee(
   d: HireDraft,
@@ -79,7 +91,7 @@ export async function hireEmployee(
   let profileId = profile;
   if (profileId === null) {
     const agent = await relay.createAgent({
-      name: d.name,
+      name: profileSlug(d.name),
       ...(d.instructions ? { soul: d.instructions } : {}),
       ...(d.model ? { model: d.model } : {}),
     });

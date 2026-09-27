@@ -297,14 +297,18 @@ test("AC-2 Use profile lists unhired engine profiles (model, skills, soul); hire
   await expect(dlg.getByText("fake-small")).toBeVisible();
   await expect(dlg.getByText(/Read the diff first/)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-2-use-profile.png` });
-  await dlg.getByRole("button", { name: /Hire Reviewer/ }).click();
+  // dispatchEvent lands a second click while the request is in flight — the
+  // pending guard must keep it from hiring a duplicate.
+  const hireBtn = dlg.getByRole("button", { name: /Hire Reviewer/ });
+  await hireBtn.dispatchEvent("click");
+  await hireBtn.dispatchEvent("click");
 
   const aside = page.locator("aside");
   await expect(aside.getByRole("button", { name: "Reviewer" })).toBeVisible();
   const employees = await employeeRows(stackA);
-  expect(
-    employees.some((e) => e.name === "Reviewer" && e.profile === "reviewer"),
-  ).toBe(true);
+  const hired = employees.filter((e) => e.profile === "reviewer");
+  expect(hired.length).toBe(1);
+  expect(hired[0]?.name).toBe("Reviewer");
 });
 
 test("AC-3 New profile: 4 templates + Blank, agents.create then hire; a rejection reads plainly", async ({
@@ -327,22 +331,28 @@ test("AC-3 New profile: 4 templates + Blank, agents.create then hire; a rejectio
   await expect(dlg.getByRole("button", { name: /Blank/ })).toBeVisible();
 
   await dlg.getByRole("button", { name: /Engineer Engineer/ }).click();
-  await dlg.getByPlaceholder("Tester").fill("Archivist");
+  // Display names are what Oscar types — the app derives the engine profile
+  // slug ("senior-engineer"); the employee keeps the display name.
+  await dlg.getByPlaceholder("Tester").fill("Senior Engineer");
   await dlg
     .locator("textarea")
-    .fill("You are Archivist. Keep the record straight.");
+    .fill("You are the Senior Engineer. Keep the record straight.");
   await dlg.getByRole("button", { name: "Fake Reasoning" }).click();
   await page.screenshot({ path: `${SHOTS}/ac-3-new-profile.png` });
-  await dlg.getByRole("button", { name: /Hire Archivist/ }).click();
+  await dlg.getByRole("button", { name: /Hire Senior Engineer/ }).click();
   await expect(hireDialog(page)).toHaveCount(0);
 
   const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: "Archivist" })).toBeVisible();
-  // agents.create ran for real: the profile exists on the engine now.
-  expect(await agentIds(stackA)).toContain("Archivist");
+  await expect(
+    aside.getByRole("button", { name: "Senior Engineer" }),
+  ).toBeVisible();
+  // agents.create ran for real with the slug, not the display name.
+  expect(await agentIds(stackA)).toContain("senior-engineer");
   const employees = await employeeRows(stackA);
   expect(
-    employees.some((e) => e.name === "Archivist" && e.profile === "Archivist"),
+    employees.some(
+      (e) => e.name === "Senior Engineer" && e.profile === "senior-engineer",
+    ),
   ).toBe(true);
 
   // Engine rejection: a name the engine already has reads plainly, nothing is
@@ -357,6 +367,14 @@ test("AC-3 New profile: 4 templates + Blank, agents.create then hire; a rejectio
   await expect(dlg.getByText("Hire an employee")).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-3-engine-rejection.png` });
   expect((await employeeRows(stackA)).length).toBe(before.length);
+
+  // Same slug again: retyping the display name hits the duplicate check too.
+  await dlg.getByPlaceholder("Tester").fill("Senior Engineer");
+  await dlg.getByRole("button", { name: /Hire Senior Engineer/ }).click();
+  await expect(
+    dlg.getByText(/agent senior-engineer already exists/i),
+  ).toBeVisible();
+  await expect(dlg).toBeVisible();
   await dlg.getByRole("button", { name: "Cancel" }).click();
 });
 
@@ -420,13 +438,13 @@ test("AC-6 Edit saves display name + role via employees.update; surfaces update 
 }) => {
   await openApp(stackA, page);
   const aside = page.locator("aside");
-  await aside.getByRole("button", { name: "Archivist" }).click();
+  await aside.getByRole("button", { name: "Senior Engineer" }).click();
   await expect(page).toHaveURL(/\/dm\//);
   await page.getByRole("button", { name: /Profile/ }).click();
   await page.getByRole("button", { name: "Edit" }).click();
 
   const dlg = editDialog(page);
-  await dlg.getByLabel("Display name").fill("Archivist Prime");
+  await dlg.getByLabel("Display name").fill("Engineer Prime");
   await dlg.getByLabel("Role").fill("Records lead");
   await page.screenshot({ path: `${SHOTS}/ac-6-edit-dialog.png` });
   await dlg.getByRole("button", { name: "Save" }).click();
@@ -434,7 +452,7 @@ test("AC-6 Edit saves display name + role via employees.update; surfaces update 
 
   // Sidebar row and DM header read the updated record without a reload.
   await expect(
-    aside.getByRole("button", { name: /Archivist Prime/ }),
+    aside.getByRole("button", { name: /Engineer Prime/ }),
   ).toBeVisible();
   await expect(aside.getByText("Records lead")).toBeVisible();
   await expect(page.getByText("Records lead").last()).toBeVisible();
@@ -442,7 +460,7 @@ test("AC-6 Edit saves display name + role via employees.update; surfaces update 
   const employees = await employeeRows(stackA);
   expect(
     employees.some(
-      (e) => e.name === "Archivist Prime" && e.role === "Records lead",
+      (e) => e.name === "Engineer Prime" && e.role === "Records lead",
     ),
   ).toBe(true);
 });

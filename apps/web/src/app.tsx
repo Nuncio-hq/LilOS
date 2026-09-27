@@ -17,7 +17,7 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { employeeBadges } from "./lib/badges";
 import {
   HIRE_TEMPLATES,
@@ -101,6 +101,11 @@ function AppShell() {
   const defaultModel = useAtom(engineDefaultModel);
   const [hireOpen, setHireOpen] = useState(false);
   const [hireError, setHireError] = useState<string | null>(null);
+  const [hirePending, setHirePending] = useState(false);
+  /* Single-flight hire: state only flips the button's disabled attr on the
+     next render, so a second click landing inside the same tick still finds
+     the ref already set. */
+  const hireBusy = useRef(false);
   const [engineProfiles, setEngineProfiles] = useState<EngineProfile[]>([]);
   const hireTemplates = useMemo(
     () =>
@@ -119,6 +124,9 @@ function AppShell() {
       .catch(() => setEngineProfiles([]));
   };
   const hire = (d: HireDraft, profile: string | null) => {
+    if (hireBusy.current) return;
+    hireBusy.current = true;
+    setHirePending(true);
     void hireEmployee(d, profile)
       .then((emp) => {
         setHireOpen(false);
@@ -127,7 +135,11 @@ function AppShell() {
           params: { employeeId: emp.id },
         });
       })
-      .catch((e) => setHireError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => setHireError(e instanceof Error ? e.message : String(e)))
+      .finally(() => {
+        hireBusy.current = false;
+        setHirePending(false);
+      });
   };
 
   // Notifications (#32): engine events -> macOS notifications when the
@@ -241,6 +253,7 @@ function AppShell() {
           allChannels={[]}
           usedProfiles={employees.map((e) => e.profile)}
           error={hireError ?? undefined}
+          pending={hirePending}
           onClose={() => setHireOpen(false)}
           onHire={(d, profile) => hire(d, profile)}
         />
