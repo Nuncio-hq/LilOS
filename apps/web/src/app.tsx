@@ -46,7 +46,6 @@ function AppShell() {
 
   const statusPoll = useAtom(relay.status);
   const fatal = useAtom(relay.fatal);
-  const uiEmployees = useMemo(() => employees.map(toUiEmployee), [employees]);
   // Real system.status legs (poll keeps them fresh); falls back to socket
   // states while the relay is unreachable (#53, #85).
   const comps = useMemo(
@@ -57,6 +56,12 @@ function AppShell() {
         fatal,
       }),
     [statusPoll, relayState, fatal],
+  );
+  // #99: presence follows the engine — no green dot beside "Engine down".
+  const engineDown = comps.some((c) => c.id === "engine" && c.state === "down");
+  const uiEmployees = useMemo(
+    () => employees.map((e) => toUiEmployee(e, engineDown)),
+    [employees, engineDown],
   );
   // #85 AC-4: a build running the fake engine is labeled — never indistinguishable
   // from a release running Hermes.

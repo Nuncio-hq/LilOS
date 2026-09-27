@@ -15,13 +15,18 @@ import type {
 
 /** relay domain -> ui/domain type mapping (the only place it lives). */
 
-export function toUiEmployee(e: Employee): UiEmployee {
+/**
+ * `engineDown` (#99): an employee can't answer while the engine is down, so
+ * presence reads offline — never a green dot next to a red "Engine down".
+ */
+export function toUiEmployee(e: Employee, engineDown = false): UiEmployee {
   return {
     id: e.id,
     name: e.name,
     role: e.role,
-    status:
-      e.status === "busy"
+    status: engineDown
+      ? "offline"
+      : e.status === "busy"
         ? "busy"
         : e.status === "offline"
           ? "offline"
