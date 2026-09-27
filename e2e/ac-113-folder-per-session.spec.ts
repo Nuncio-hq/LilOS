@@ -222,20 +222,26 @@ test("AC-3 the picker offers direct mode only (no worktree items)", async ({
   page,
 }) => {
   await dmDefault(page);
-  // Pick the git repo from the recents menu, then open its branch menu.
+  // Pick the git repo from the recents menu, then check the branch chip.
   const folderMenu = await openPicker(page);
   await folderMenu.locator(`[data-wsfolder="${repoDir}"]`).click();
   await expect(pickerButton(page)).toContainText("lilos-repo-a");
-  // Branch menu on a git folder: only "No worktree" — no workstream groups.
-  await page.locator('[data-ws="branch"]').click();
-  const menu = page
-    .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-    .last();
-  await expect(menu.getByText("No worktree")).toBeVisible();
-  await expect(menu.getByText("New workstream from")).toHaveCount(0);
-  await expect(menu.getByText("Continue a workstream")).toHaveCount(0);
+  // Direct-only mode: the checked-out branch shows as a static label — the
+  // real app never renders a branch list, since nothing checks a branch out.
+  const branch = page.locator('[data-ws="branch"]');
+  await expect(branch).toContainText("trunk");
+  await expect(branch.locator("button")).toHaveCount(0);
+  await branch.click();
+  await expect(
+    page.locator('[role="menu"], [data-slot="dropdown-menu-content"]'),
+  ).toHaveCount(0);
+  await expect(page.getByText(/Edit .* directly/)).toHaveCount(0);
+  await expect(page.getByText("New workstream from")).toHaveCount(0);
+  await expect(page.getByText("Continue a workstream")).toHaveCount(0);
+  await expect(
+    page.getByText("edits land on the checked-out branch", { exact: false }),
+  ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-3-direct-only.png` });
-  await page.keyboard.press("Escape");
 });
 
 test("AC-4 + AC-7 a session picked on the repo runs there; the header shows folder + branch", async ({

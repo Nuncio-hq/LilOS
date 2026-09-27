@@ -394,11 +394,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         };
         tx.insert(schema.conversations).values(conversation).run();
         if (input.cwd !== undefined) {
-          const top = tx
-            .select({ m: max(schema.recentFolders.lastUsedAt) })
-            .from(schema.recentFolders)
-            .get();
-          const stamp = Math.max(now(), (top?.m ?? 0) + 1);
+          const stamp = nextFolderStamp(tx);
           tx.insert(schema.recentFolders)
             .values({ path: input.cwd, lastUsedAt: stamp })
             .onConflictDoUpdate({

@@ -483,7 +483,7 @@ export function EmployeeHome({
             : `New session with ${e.name}…`
         }
         employees={[]}
-        hint={wsHint(pickFolder, pick)}
+        hint={wsHint(pickFolder, pick, !onWorktree)}
         onSend={(t, files) => onSend(t, pick, files)}
         accept={accept}
         maxFileSize={maxFileSize}

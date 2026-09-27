@@ -125,7 +125,18 @@ export function WorkspacePicker({
           direct · no git
         </span>
       )}
-      {f && f.branches.length > 0 && (
+      {f && f.branches.length > 0 && !onWorktree && (
+        <span
+          className="flex h-7 items-center gap-1.5 px-2 text-muted-foreground text-xs"
+          data-ws="branch"
+          title="Direct mode: edits land on the checked-out branch"
+        >
+          <PencilLineIcon className="size-3.5" />
+          <span className="shrink-0 font-mono">{f.branches[0]}</span>
+          <span className="hidden shrink-0 lg:inline">· direct</span>
+        </span>
+      )}
+      {f && f.branches.length > 0 && onWorktree && (
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -148,34 +159,32 @@ export function WorkspacePicker({
             <ChevronDownIcon className="size-3 opacity-60" />
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-80" side="top">
-            {onWorktree && (
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>New workstream from</DropdownMenuLabel>
-                {f.branches.map((b) => (
-                  <DropdownMenuItem
-                    key={`n-${b}`}
-                    onClick={() =>
-                      onWorktree({
-                        ...pick,
-                        mode: "new",
-                        base: b,
-                        existing: undefined,
-                      })
-                    }
-                  >
-                    <GitBranchPlusIcon />
-                    <span className="font-mono">{b}</span>
-                    <span className="text-muted-foreground text-xs">
-                      new branch + worktree
-                    </span>
-                    {pick.mode === "new" && pick.base === b && (
-                      <CheckIcon className="ml-auto" />
-                    )}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
-            )}
-            {onWorktree && f.workstreams.length > 0 && (
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>New workstream from</DropdownMenuLabel>
+              {f.branches.map((b) => (
+                <DropdownMenuItem
+                  key={`n-${b}`}
+                  onClick={() =>
+                    onWorktree({
+                      ...pick,
+                      mode: "new",
+                      base: b,
+                      existing: undefined,
+                    })
+                  }
+                >
+                  <GitBranchPlusIcon />
+                  <span className="font-mono">{b}</span>
+                  <span className="text-muted-foreground text-xs">
+                    new branch + worktree
+                  </span>
+                  {pick.mode === "new" && pick.base === b && (
+                    <CheckIcon className="ml-auto" />
+                  )}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+            {f.workstreams.length > 0 && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
@@ -208,7 +217,7 @@ export function WorkspacePicker({
                 </DropdownMenuGroup>
               </>
             )}
-            {onWorktree && <DropdownMenuSeparator />}
+            <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuLabel>No worktree</DropdownMenuLabel>
               {f.branches.map((b) => (
@@ -240,7 +249,7 @@ export function WorkspacePicker({
   );
 }
 
-export const wsHint = (f: Folder | undefined, p: WsPick) =>
+export const wsHint = (f: Folder | undefined, p: WsPick, directOnly = false) =>
   !f
     ? "Chat only · no folder. Enter opens a new session"
     : !f.branches.length
@@ -249,4 +258,6 @@ export const wsHint = (f: Folder | undefined, p: WsPick) =>
         ? `Enter opens a session in a new worktree off ${p.base}`
         : p.mode === "existing"
           ? `Enter opens a session in ${f.workstreams.find((w) => w.branch === p.existing)?.path ?? "the worktree"}`
-          : `Enter opens a session in ${f.path} · edits land on ${p.base} directly`;
+          : directOnly
+            ? `Enter opens a session in ${f.path} · edits land on the checked-out branch (${p.base})`
+            : `Enter opens a session in ${f.path} · edits land on ${p.base} directly`;

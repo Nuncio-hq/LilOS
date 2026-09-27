@@ -65,6 +65,30 @@ open "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
 - Full-screen captures: `screencapture -x /path.png` works from the shell
   (1600×1200 retina PNGs).
 
+## Driving the app window (computer tool, macOS target)
+
+- The macOS accessibility target does not match the app by name — use the
+  **pid**: `pgrep -x LilOS`, then pass it as `app` in query/act calls.
+  Electron web content (buttons, menus, text) is exposed in the app's tree.
+- AX `press` on web dropdown chips (Base UI menus) often does NOT open the
+  menu — use real `left_click` at the control's screen coordinates instead;
+  verify with a screenshot.
+- First DM open on a fresh state triggers macOS TCC prompts ("LilOS would
+  like to access files in your Desktop/Documents folder") because the host
+  API's `git.discoverRepos` scans ~/Desktop, ~/Developer, ~/Documents,
+  ~/repos. Click **Allow** on each — expected behavior, and good evidence
+  the host API is really scanning local dirs.
+- The native folder dialog (Electron `dialog.showOpenDialog`) is a real
+  NSOpenPanel: `key cmd+shift+g` opens "Go to Folder", `type` the absolute
+  path, `Return` selects it in its parent listing, then click the **Open**
+  button (bottom-right) to confirm.
+- Packaged harness default workdir is `~/.lilos/harness/work` (NOT
+  `~/.lilos/work`): a no-folder session posts
+  `No folder: working in ~/.lilos/harness/work`. engine-fake's follow-up
+  reply echoes `I'm in `<cwd>` on ⎇ `work/<agent>-<session>`` — the ⎇ name
+  is the fake's synthetic session branch; the real git branch (e.g.
+  `trunk`) is asserted on the thread header's green workspace badge.
+
 ## Devin Secrets Needed
 
 None for the packaged-app flow — engine-fake is bundled and deterministic.
