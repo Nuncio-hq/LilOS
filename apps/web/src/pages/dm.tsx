@@ -10,7 +10,15 @@ import {
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
-import { EditEmployeeDialog, EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
+import {
+  clearDraftIfSent,
+  draftKey,
+  EditEmployeeDialog,
+  EmployeeHome,
+  NO_WS,
+  ThreadView,
+  useDraft,
+} from "@lilos/ui";
 import type {
   AttachedFile,
   Channel,
@@ -167,6 +175,14 @@ export function DmPage() {
   );
   const openConv = convs.find((c) => c.id === conversationId);
 
+  /* Unsent drafts live outside the composer: one key per conversation and
+     one per employee home (issue #103). Switching sessions or employees — or
+     reloading — swaps in the stored text instead of throwing it away. */
+  const [homeDraft, setHomeDraft] = useDraft(draftKey.dm(employeeId));
+  const [threadDraft, setThreadDraft] = useDraft(
+    openConv ? draftKey.thread(openConv.id) : undefined,
+  );
+
   /* The open thread needs its whole visible history, not just the channel
      window (#28 AC-2): page messages.list scoped to the conversation. */
   const channelId = channel?.id;
@@ -316,16 +332,20 @@ export function DmPage() {
       });
   };
 
-  const send = (text: string, _pick?: WsPick, files?: AttachedFile[]) => {
-    void sendDm(employeeId, text, undefined, files).then(
-      (conv) =>
-        conv &&
-        navigate({
-          to: "/dm/$employeeId/$conversationId",
-          params: { employeeId, conversationId: conv.id },
-        }),
-    );
-  };
+  /* The returned promise is the composer's clear signal (AC-5): resolved →
+     this DM channel's stored draft is dropped by key (not whatever composer
+     is open at resolve time), rejected → the text stays. sendDm resolves
+     undefined when nothing was sent (#112: unreadable file or relay error,
+     already toasted) — surface it as a rejection so nothing is cleared. */
+  const send = (text: string, _pick?: WsPick, files?: AttachedFile[]) =>
+    sendDm(employeeId, text, undefined, files).then((conv) => {
+      if (!conv) throw new Error("send failed");
+      clearDraftIfSent(draftKey.dm(employeeId), text);
+      return navigate({
+        to: "/dm/$employeeId/$conversationId",
+        params: { employeeId, conversationId: conv.id },
+      });
+    });
 
   /* ↑ recall for the home composer: the last top-level message Oscar sent in
      this DM is the newest conversation's root message (#104 AC-5). */
@@ -434,8 +454,14 @@ export function DmPage() {
           models={catalog.length ? catalog : undefined}
           onModel={(c) => void setConversationModel(conv.id, c.model)}
           onSend={(text, files) =>
-            void sendDm(employeeId, text, conv.id, files)
+            sendDm(employeeId, text, conv.id, files).then((c) => {
+              if (!c) throw new Error("send failed");
+              clearDraftIfSent(draftKey.thread(conv.id), text);
+              return c;
+            })
           }
+          draft={threadDraft}
+          onDraftChange={setThreadDraft}
           accept={canAttachImages ? "image/*" : undefined}
           maxFileSize={MAX_ATTACHMENT_BYTES}
           maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
@@ -470,6 +496,8 @@ export function DmPage() {
         onProfile={() => setProfileOpen((v) => !v)}
         onOpen={openThread}
         onSend={send}
+        draft={homeDraft}
+        onDraftChange={setHomeDraft}
         accept={canAttachImages ? "image/*" : undefined}
         maxFileSize={MAX_ATTACHMENT_BYTES}
         maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}

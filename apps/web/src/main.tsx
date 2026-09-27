@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import { App } from "./app";
 import { loadConfig } from "./lib/config";
+import { watchDraftPruning } from "./lib/drafts";
 import {
   bootError,
   bootRuntime,
@@ -19,6 +20,7 @@ async function main() {
     await bootRuntime(cfg);
     watchSessionFeeds();
     watchAsks();
+    watchDraftPruning();
   } catch (e) {
     bootError.set((e as Error).message);
   }

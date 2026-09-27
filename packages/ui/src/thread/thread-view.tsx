@@ -65,6 +65,8 @@ export function ThreadView({
   onModel,
   picker,
   transcriptNote,
+  draft,
+  onDraftChange,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -78,8 +80,14 @@ export function ThreadView({
   repo?: string;
   onStart?: () => void;
   running: boolean;
-  onSend: (text: string, files?: AttachedFile[]) => void;
+  /* Return a promise to delay clearing the composer draft until it resolves;
+     a rejected send keeps the text (issue #103, AC-5). */
+  onSend: (text: string, files?: AttachedFile[]) => void | Promise<unknown>;
   onStop?: () => void;
+  /* Host-held composer draft for this conversation (issue #103); omitted, the
+     composer keeps its own state. */
+  draft?: string;
+  onDraftChange?: (v: string) => void;
   /* ↑ recall for the thread composer: the host's last sent message in this
      conversation (issue #104 AC-5). */
   lastSent?: string;
@@ -305,6 +313,8 @@ export function ThreadView({
                   : `session ${thread.session}`
         }
         onSend={onSend}
+        draft={draft}
+        onDraftChange={onDraftChange}
         status={status}
         lastSent={lastSent}
         accept={accept}

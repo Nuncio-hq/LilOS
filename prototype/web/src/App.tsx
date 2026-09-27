@@ -58,6 +58,9 @@ import {
   plain,
   slugOf,
   useTheme,
+  draftKey,
+  dropDrafts,
+  useDraft,
 } from "@lilos/ui"
 import { cn } from "@lilos/ui/lib/utils"
 import { MAX_ATTACHMENT_BYTES } from "@lilos/contracts/app"
@@ -663,6 +666,11 @@ export default function App() {
   const feed: Msg[] = feeds[feedKey] ?? []
   const openThread = feed.find((m): m is Extract<Msg, { kind: "msg" }> => m.kind === "msg" && m.id === threadId && !!m.thread)
 
+  // Unsent composer text survives switching threads/employees and reloads (issue #103):
+  // one draft key per session thread, one per employee DM home.
+  const [threadDraft, setThreadDraft] = useDraft(openThread ? draftKey.thread(openThread.id) : undefined)
+  const [dmDraft, setDmDraft] = useDraft(view.kind === "dm" ? draftKey.dm(view.id) : undefined)
+
   // Scenario alert: stamped on the last session row of the open DM (the session-level failure states).
   const shownFeed = useMemo(() => {
     const al = SESSION_ALERTS[scenario]
@@ -1029,6 +1037,13 @@ export default function App() {
     setEditEmp(null)
     if (selectedEmp === id) setPanelTab("thread")
     if (view.kind === "dm" && view.id === id) goChannel("general")
+    // Drafts go with the employee: home composer plus every session thread on the DM (AC-6).
+    dropDrafts([
+      draftKey.dm(id),
+      ...(feedsRef.current[`dm-${id}`] ?? [])
+        .filter((m): m is Extract<Msg, { kind: "msg" }> => m.kind === "msg" && !!m.thread)
+        .map((m) => draftKey.thread(m.id)),
+    ])
     say(`Removed ${e.name} · profile ${e.profile} kept`)
   }
   const switchProfile = (id: string, profileId: string) => {
@@ -1058,6 +1073,7 @@ export default function App() {
       onFocus={() => setFocus(!focus)}
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
       running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
+      draft={threadDraft} onDraftChange={setThreadDraft}
       lastSent={lastSentIn(openThread)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
@@ -1105,6 +1121,7 @@ export default function App() {
           lastSent={lastSentIn(openThread)}
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
           onRewind={(i) => rewind(openThread, i)} onModel={canModels ? (m) => setModel(openThread, m) : undefined} say={say}
+          draft={threadDraft} onDraftChange={setThreadDraft}
           surfaces={realSurfaces ?? fakeSurfaces}
           models={canModels ? MODEL_OPTS : undefined} picker={pickerExtras} repoFiles={REPO_FILES} host={hostAccessors}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
@@ -1121,7 +1138,11 @@ export default function App() {
               pick={wsPicks[view.id] ?? NO_WS} setPick={(p) => setWsPicks((w) => ({ ...w, [view.id]: p }))} onAddFolder={() => setAddFolderOpen(true)}
               loading={scenario === "loading"}
               onRename={(id, title) => mapRoot(feedKey, id, (t) => ({ ...t, title }))}
-              onArchive={(id, archived) => mapRoot(feedKey, id, (t) => ({ ...t, archived }))}
+              onArchive={(id, archived) => {
+                mapRoot(feedKey, id, (t) => ({ ...t, archived }))
+                if (archived) dropDrafts([draftKey.thread(id)])
+              }}
+              draft={dmDraft} onDraftChange={setDmDraft}
               onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying session ${m.thread?.session}`) }}
               accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say}
               models={canModels ? MODEL_OPTS : undefined}
