@@ -30,7 +30,6 @@ if (typeof Element.prototype.getAnimations === "undefined") {
 afterEach(cleanup);
 
 const ME: Human = { name: "Oscar", color: "bg-blue-600" };
-const human = (id: string) => (id === "user" ? ME : undefined);
 
 const EMP: Employee = {
   id: "emp_default",
@@ -167,14 +166,17 @@ describe("issue #80", () => {
     // the user sees a bullet + a code span, never raw ` or "- ".
     const streaming = container.querySelector("[data-streaming]");
     expect(streaming).not.toBeNull();
-    expect(streaming!.querySelector("li")?.textContent).toContain(
+    if (!streaming) {
+      throw new Error("no [data-streaming] node");
+    }
+    expect(streaming.querySelector("li")?.textContent).toContain(
       "The contracts already carry",
     );
-    expect(streaming!.querySelector("code")?.textContent).toBe("se");
-    expect(streaming!.textContent).not.toContain("`se");
-    expect(streaming!.textContent).not.toContain("- The contracts");
+    expect(streaming.querySelector("code")?.textContent).toBe("se");
+    expect(streaming.textContent).not.toContain("`se");
+    expect(streaming.textContent).not.toContain("- The contracts");
     // The caret rides on streamdown's last-child ::after while animating.
-    const styled = [...streaming!.querySelectorAll("[style]")].find((el) =>
+    const styled = [...streaming.querySelectorAll("[style]")].find((el) =>
       el.getAttribute("style")?.includes("streamdown-caret"),
     );
     expect(styled).toBeTruthy();
