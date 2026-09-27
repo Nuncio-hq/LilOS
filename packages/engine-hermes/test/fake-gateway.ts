@@ -129,6 +129,19 @@ export class FakeGateway implements GatewayLike {
   runningSids = new Set<string>();
   /** Model ids that require confirm_expensive_model on config.set. */
   confirmModels = new Set<string>();
+  /** sids whose deferred model switch fails when the next prompt.submit
+      applies it — Hermes emits `error {message}` and keeps the old model
+      (tui_gateway session_compression._apply_pending_model_switch). */
+  failDeferredSwitch = new Set<string>();
+  /** When set, `config.set fast` rejects with it — transport/5001-style
+      failures the engine must not swallow (#92 review). */
+  fastError?: RpcError;
+  /** sid -> stashed config.set model args while a turn runs (the real
+      `pending_model_switch` — applied by prompt_turn at turn start). */
+  private pendingSwitches = new Map<
+    string,
+    { model: string; provider: string; reasoning: string }
+  >();
   slashCommands: string[] = [];
   /** Extra provider rows appended on the NEXT model.options refresh:true
       (the "new model appeared" fixture). */
@@ -220,12 +233,30 @@ export class FakeGateway implements GatewayLike {
           info: { version: "v0.21.5+test", release_date: "2026.9.24" },
         });
       }
-      case "prompt.submit":
+      case "prompt.submit": {
         this.lastPrompt = p;
-        /* Mid-turn state is real: config.set model/fast on a running sid
-           answers deferred/4002 until `complete()` (#92 AC-4). */
-        this.runningSids.add(String(p.session_id));
+        const sid = String(p.session_id);
+        /* prompt_turn.py applies `pending_model_switch` at turn start —
+           before the prompt runs. On failure the gateway emits `error` and
+           the turn still runs on the previous model (#92 review). */
+        const stash = this.pendingSwitches.get(sid);
+        if (stash) {
+          this.pendingSwitches.delete(sid);
+          if (this.failDeferredSwitch.has(sid)) {
+            this.emit(sid, "error", {
+              message: `Could not switch model: no model ${stash.model} — see models.list`,
+            });
+          } else {
+            this.sessionModels.set(sid, stash.model);
+            if (stash.provider) this.sessionProviders.set(sid, stash.provider);
+            if (stash.reasoning) this.sessionEfforts.set(sid, stash.reasoning);
+          }
+        }
+        /* Mid-turn state is real: config.set model on a running sid
+           answers deferred until `complete()` (#92 AC-4). */
+        this.runningSids.add(sid);
         return Promise.resolve({ status: "streaming", user_row_id: "u1" });
+      }
       case "session.interrupt":
         return Promise.resolve({ status: "interrupted" });
       case "session.steer":
@@ -357,18 +388,29 @@ export class FakeGateway implements GatewayLike {
               confirm_message: `${modelId} is a paid model — confirm?`,
               scope: "session",
             });
-          const deferred = this.runningSids.has(sid);
+          if (this.runningSids.has(sid)) {
+            /* The stash, not a live write: `_stash_pending_model_switch`
+               parks the parsed args; the session's effective model changes
+               only when the next turn applies it (#92 review). */
+            this.pendingSwitches.set(sid, {
+              model: modelId,
+              provider,
+              reasoning,
+            });
+            return Promise.resolve({
+              key,
+              value: modelId,
+              scope: "session",
+              deferred: true,
+            });
+          }
           this.sessionModels.set(sid, modelId);
           if (provider) this.sessionProviders.set(sid, provider);
           if (reasoning) this.sessionEfforts.set(sid, reasoning);
-          return Promise.resolve({
-            key,
-            value: modelId,
-            scope: "session",
-            ...(deferred ? { deferred: true } : {}),
-          });
+          return Promise.resolve({ key, value: modelId, scope: "session" });
         }
         if (key === "fast") {
+          if (this.fastError) return Promise.reject(this.fastError);
           const v =
             value === "on" || value === "fast"
               ? "fast"
@@ -379,14 +421,16 @@ export class FakeGateway implements GatewayLike {
             return Promise.reject(
               new RpcError(4002, `unknown fast mode: ${value}`),
             );
-          /* A fast flip on a running session answers 4002 — real Hermes
-             validates against the OLD model's tier mid-turn (#92 review). */
-          if (this.runningSids.has(sid))
+          /* `_set_fast` has no running check — it mutates the live session
+             mid-turn and 4002s only for an unknown mode or a model whose
+             catalog caps say no fast tier (#92 review). */
+          const cur = this.sessionModels.get(sid) ?? this.defaultModel;
+          const caps = this.modelProviders
+            .flatMap((pr) => Object.entries(pr.capabilities ?? {}))
+            .find(([id]) => id === cur)?.[1];
+          if (caps && caps.fast === false)
             return Promise.reject(
-              new RpcError(
-                4002,
-                "fast mode cannot change while a turn is running",
-              ),
+              new RpcError(4002, "fast mode is not available for this model"),
             );
           this.sessionFast.set(sid, v === "fast");
           return Promise.resolve({ key, value: v, scope: "session" });

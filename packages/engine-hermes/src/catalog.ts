@@ -336,10 +336,11 @@ async function configSet(
  * bare switch on a fresh install or with `persist_switch_by_default`, which
  * would silently retarget every employee's default). `fast` toggles the
  * session's service tier (`on`/`off` → `priority`/normal). A running
- * session defers the model leg to the next turn (`deferred: true`); the
- * fast leg is held with it — `_set_fast` validates and mutates the LIVE
- * agent, which is still the old model mid-turn (a wrong-model 4002 or a
- * mid-turn tier flip). The caller replays it once the session is idle.
+ * session defers only the model leg (`deferred: true` — Hermes stashes it
+ * as `pending_model_switch` and applies it at turn start). The fast leg is
+ * sent live in every case: `_set_fast` has no running check — it mutates
+ * service_tier + request_overrides immediately, and the deferred apply
+ * keeps those keys through `switch_model` (#92 AC-4 review).
  */
 export async function setSessionModel(
   gw: GatewayLike,
@@ -385,17 +386,21 @@ export async function setSessionModel(
     .join(" ");
   const r = await configSet(gw, runtimeSid, "model", modelValue);
   const applied = str(r.value) ?? pick.model;
-  /* The fast leg is a second config.set. When the model leg was deferred
-     (a turn is running), it's skipped here and replayed before the next
-     prompt — see the doc comment. When it rejects after a live switch,
-     throwing would leave the persisted pin on the OLD model while the
-     engine runs the new one: report the truth (fast off) instead. */
-  let fast = pick.fast;
-  if (pick.fast !== undefined && r.deferred !== true) {
+  /* The fast leg is a second config.set, always sent — `_set_fast`
+     mutates the live session with no running check, and its tier survives
+     the engine's own deferred model apply. Only a 4002 means "fast not
+     available for this model" (the catalog row said it was → the engine
+     disagreed): the tier did NOT change, so report the pick without `fast`
+     rather than claim a flip to off. Transport drops and any other code
+     (5001, …) still fail the whole pick — a swallowed error would leave
+     LilOS believing a state the engine never applied. */
+  let fast: boolean | undefined;
+  if (pick.fast !== undefined) {
     try {
       await configSet(gw, runtimeSid, "fast", pick.fast ? "on" : "off");
-    } catch {
-      fast = false;
+      fast = pick.fast;
+    } catch (e) {
+      if (!(e instanceof RpcError && e.code === 4002)) throw e;
     }
   }
   return {

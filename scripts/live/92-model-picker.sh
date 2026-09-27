@@ -65,12 +65,35 @@ for s in hermes hermes-acp; do
   [ -f "$SHIM_DIR/$s" ] && cp "$SHIM_DIR/$s" "$SHIM_BAK/$s"
 done
 
+# ── SIGKILL warning ────────────────────────────────────────────────────
+# A SIGKILL never runs the trap: the `hermes`/`hermes-acp` shims under
+# ~/.hermes/hermes-agent/.hermes/bin keep pointing at this run's temp
+# HERMES_HOME — which no longer exists, so `hermes` breaks for EVERYTHING.
+# Fix: restore the backups this run took, e.g.
+#   cp <SHIM_BAK printed below>/hermes* ~/.hermes/hermes-agent/.hermes/bin/
+# (or just re-run `hermes` once with HERMES_HOME unset — the launcher
+# rewrites the shim back to the real toolchain on the next normal boot).
+cat <<EOF
+NOTE: hermes shims are temporarily repointed at $HERMES_HOME
+      (backups in $SHIM_BAK). If this script is SIGKILLed, restore them:
+      cp $SHIM_BAK/hermes* $SHIM_DIR/
+EOF
+
 STUB_PORT=""
 STUB_PID=""
+STUB_REQ_LOG="/tmp/openai-stub-92-requests.jsonl"
 cleanup() {
   # Only what this script started — relay/harness/hermes are the ts driver's
   # own process groups and it reaps them itself.
   [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null
+  # OAuth refresh tokens rotate: if the run rewrote the copied auth.json,
+  # carry it back to the real home so the rotated token isn't lost. Only
+  # auth.json — config.yaml is never written back (the temp file holds the
+  # stub provider block, not the user's real config).
+  if [ -f "$HERMES_HOME/auth.json" ] && ! cmp -s "$HERMES_HOME/auth.json" "$HOME/.hermes/auth.json" 2>/dev/null; then
+    cp "$HERMES_HOME/auth.json" "$HOME/.hermes/auth.json"
+    echo "(auth.json changed during the run — synced back to ~/.hermes)"
+  fi
   # The launcher repoints the real shims at this run's home — put them back.
   for s in hermes hermes-acp; do
     [ -f "$SHIM_BAK/$s" ] && cp "$SHIM_BAK/$s" "$SHIM_DIR/$s"
@@ -82,7 +105,8 @@ trap cleanup EXIT
 if [ "$LABEL" = "stub" ]; then
   # Port 0 → kernel picks; the bound port comes back on the stub's first
   # stdout line so a stale process can never shadow it.
-  bun scripts/live/openai-stub.ts 0 >/tmp/openai-stub-92.log 2>&1 &
+  : > "$STUB_REQ_LOG"
+  STUB_REQUEST_LOG="$STUB_REQ_LOG" bun scripts/live/openai-stub.ts 0 >/tmp/openai-stub-92.log 2>&1 &
   STUB_PID=$!
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     STUB_PORT="$(sed -n 's/.*127.0.0.1:\([0-9]*\).*/\1/p' /tmp/openai-stub-92.log | head -1)"
@@ -118,6 +142,10 @@ fi
 
 export LILOS_ENGINE=hermes
 export LILOS_REPO_ROOT="$ROOT"
+# The stub records each request's model/service_tier/speed/reasoning_effort
+# so the driver can prove the pick (incl. the live fast leg) reached the
+# wire — on the stub leg only; a real provider can't be introspected.
+export STUB_REQUEST_LOG_FILE="$STUB_REQ_LOG"
 
 echo "== issue-92 live leg: model picker v2 -> next turn (engine=hermes, label=${LABEL}) =="
 if bun apps/harness/scripts/live-92-model-picker.ts; then

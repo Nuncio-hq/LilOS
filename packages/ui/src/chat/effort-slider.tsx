@@ -102,9 +102,14 @@ export function EffortSlider({
           start.current = null;
           setDrag(null);
           if (!efforts[n]) return;
-          if (from === null || n !== from) onPick(efforts[n]);
-          /* Released where the gesture began: undo the preview so the label
-             returns to the confirmed pick. */ else onPreview?.(efforts[n]);
+          /* A press that never moved the thumb fires no onValueChange, so
+             `from` stays null — commit nothing: onPick is for a real change,
+             not for landing on the shown level (the middle when unset).
+             Released where the gesture began: undo the preview so the label
+             returns to the confirmed pick. */
+          if (from === null) return;
+          if (n !== from) onPick(efforts[n]);
+          else onPreview?.(efforts[n]);
         }}
       >
         <SliderPrimitive.Control className="relative flex h-7 w-full cursor-pointer touch-none select-none items-center">

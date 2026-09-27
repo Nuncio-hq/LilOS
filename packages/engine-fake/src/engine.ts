@@ -86,13 +86,13 @@ interface FakeSession {
   provider?: string;
   effort?: string;
   fast?: boolean;
-  /** A pick taken mid-turn — applied at the next turn (#92 AC-4); real
-      engines defer a model switch while a turn is running. */
+  /** A pick taken mid-turn — model/provider/effort apply at the next turn
+      (#92 AC-4); fast is already live on the session (engines mutate the
+      running tier, no deferral). */
   pendingPick?: {
     model: string;
     provider?: string;
     effort?: string;
-    fast?: boolean;
   };
   mcpServers: unknown[];
   /** Spawned lazily on first mcp__<server>__<tool> step — a session that never drives surfaces costs zero children. */
@@ -551,15 +551,18 @@ export class FakeEngine {
         RPC_ERRORS.INVALID_PARAMS,
         `model ${p.model} has no fast tier`,
       );
-    /* A pick mid-turn defers to the next turn — the ack carries the
-       requested values plus `deferred` (issue #92 AC-4). */
+    /* A pick mid-turn defers the model leg to the next turn — the ack
+       carries the requested values plus `deferred` (issue #92 AC-4). The
+       fast leg applies LIVE (engines that support fast mutate the running
+       session's tier — no running check), so `s.fast` moves now; the stash
+       carries it so the deferred apply can't drop it at turn start. */
     if (s.turn) {
       s.pendingPick = {
         model: p.model,
         ...(p.provider !== undefined ? { provider: p.provider } : {}),
         ...(p.effort !== undefined ? { effort: p.effort } : {}),
-        ...(p.fast !== undefined ? { fast: p.fast } : {}),
       };
+      if (p.fast !== undefined) s.fast = p.fast;
       return {
         model: p.model,
         ...(p.provider !== undefined
@@ -643,11 +646,21 @@ export class FakeEngine {
   ) {
     // A pick deferred while the previous turn ran lands before the new turn
     // reads model/effort/fast for `turn.started` (#92 AC-4). Every turn path
-    // funnels here — `prompt` and steered follow-ups via `pumpSteers`.
+    // funnels here — `prompt` and steered follow-ups via `pumpSteers`. The
+    // fast tier was already applied at pick time — pass it through so the
+    // apply can't reset it. If the stashed model no longer applies (it left
+    // the catalog), post a note and run the turn on the current model — a
+    // failed deferred apply must not jam or fail the prompt (#92 review).
     if (s.pendingPick) {
       const pick = s.pendingPick;
       s.pendingPick = undefined;
-      this.applyPick(s, pick);
+      try {
+        this.applyPick(s, { ...pick, fast: s.fast });
+      } catch {
+        this.emit(s, "session.note", {
+          text: `Couldn't switch to ${pick.model} — staying on ${s.model ?? "the default model"}.`,
+        });
+      }
     }
     const turnId = `t${++this.turnCounter}`;
     const script = scriptFor(

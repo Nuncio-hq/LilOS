@@ -334,6 +334,38 @@ out(
   `turn 2 answered on ${second.model} effort=${second.effort ?? "-"} fast=${second.fast ?? "-"} — pick took effect`,
 );
 
+/* #92 review — prove the pick reached the wire exactly once and the fast
+   tier survived: the deferred `config.set model` applies at turn start via
+   Hermes' own pending_model_switch; a driver-side replay would run a second
+   switch_model whose request_overrides reset silently drops the fast tier.
+   (Hermes' switch marker is self-replacing, so a marker count can't catch
+   that — the request's service_tier/speed can.) Stub leg only: a real
+   provider can't be introspected, so the real leg relies on second.fast. */
+if (stubLeg) {
+  const logFile = process.env.STUB_REQUEST_LOG_FILE;
+  const reqs = (logFile ? readFileSync(logFile, "utf8") : "")
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as Record<string, unknown>);
+  const picked = reqs.filter((r) => r.model === pick.model);
+  const last = picked[picked.length - 1];
+  if (!last)
+    fail(
+      `no stub request carried model=${pick.model} — the deferred switch never reached the wire (${JSON.stringify(reqs.map((r) => r.model))})`,
+    );
+  if (pick.fast === true && !last.service_tier && !last.speed)
+    fail(
+      `pick ran on ${String(pick.model)} but WITHOUT a fast tier — a second deferred apply dropped request_overrides`,
+    );
+  if (pick.effort && last.reasoning_effort !== pick.effort)
+    fail(
+      `request effort=${String(last.reasoning_effort ?? null)}; expected ${pick.effort}`,
+    );
+  out(
+    `wire check ok: request on ${String(last.model)} tier=${String(last.service_tier ?? last.speed ?? "-")} effort=${String(last.reasoning_effort ?? "-")}`,
+  );
+}
+
 cleanup();
 console.log(
   "RESULT: PASS (AC-1 catalog+providers, AC-2/3/4 pick->turn, AC-6 refresh, AC-7 settings, AC-8 verbatim id)",

@@ -34,6 +34,13 @@ const server = Bun.serve({
         model?: string;
         stream?: boolean;
         messages?: { content?: unknown }[];
+        /* #92: the pick fields live scripts assert on — fast tier rides
+           `service_tier` (OpenAI/xAI) or `speed` (Anthropic); effort rides
+           `reasoning_effort` (or a `reasoning` object on Anthropic-style). */
+        service_tier?: string;
+        speed?: string;
+        reasoning_effort?: string;
+        reasoning?: { effort?: string };
       };
       const model = body.model ?? "stub-model";
       // Live-image runs (issue #31): record whether the request carried image
@@ -52,7 +59,7 @@ const server = Bun.serve({
           .map((m) => (typeof m.content === "string" ? m.content : ""))
           .join(" ")
           .slice(0, 300);
-        const line = `${JSON.stringify({ image_parts: images.length, content_blocks: parts.length, text_sample: textSample })}\n`;
+        const line = `${JSON.stringify({ model, service_tier: body.service_tier, speed: body.speed, reasoning_effort: body.reasoning_effort ?? body.reasoning?.effort, image_parts: images.length, content_blocks: parts.length, text_sample: textSample })}\n`;
         const { appendFileSync } = await import("node:fs");
         appendFileSync(process.env.STUB_REQUEST_LOG, line);
       }

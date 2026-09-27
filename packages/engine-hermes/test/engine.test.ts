@@ -2,6 +2,7 @@ import type { EngineEvent } from "@lilos/contracts/engine";
 import { Harness } from "@lilos/engine-conformance";
 import { describe, expect, test } from "vitest";
 import { HermesEngine } from "../src/engine.js";
+import { RpcError } from "../src/errors.js";
 import { connectInMemory } from "../src/transport.js";
 import { FakeGateway } from "./fake-gateway.js";
 
@@ -570,23 +571,25 @@ describe("engine-hermes #8: agents + models capabilities", () => {
   test("session.setModel picks effort + fast; the next turn.started carries them", async () => {
     const { gw, h } = setup();
     const { sessionId } = await start(h);
+    /* A model with a fast tier + an effort ladder: claude-opus-5 reports
+       both, so the whole pick lands. */
     const ack = (await h.request("session.setModel", {
       sessionId,
-      model: "stub-model-b",
-      effort: "high",
+      model: "devin/claude-opus-5",
+      effort: "xhigh",
       fast: true,
     })) as { model: string; effort?: string; fast?: boolean };
-    expect(ack.model).toBe("stub-model-b");
-    expect(ack.effort).toBe("high");
+    expect(ack.model).toBe("devin/claude-opus-5");
+    expect(ack.effort).toBe("xhigh");
     expect(ack.fast).toBe(true);
     /* `config.set model` always carries `--session` — a bare switch would
        persist to config.yaml and retarget every employee's default (#92). */
     expect(gw.configSetCalls.map((c) => `${c.key}=${c.value}`)).toEqual([
-      "model=stub-model-b --reasoning high --session",
+      "model=devin/claude-opus-5 --reasoning xhigh --session",
       "fast=on",
     ]);
-    expect(gw.sessionModels.get(gw.lastSid)).toBe("stub-model-b");
-    expect(gw.sessionEfforts.get(gw.lastSid)).toBe("high");
+    expect(gw.sessionModels.get(gw.lastSid)).toBe("devin/claude-opus-5");
+    expect(gw.sessionEfforts.get(gw.lastSid)).toBe("xhigh");
     expect(gw.sessionFast.get(gw.lastSid)).toBe(true);
 
     const p = promptAsync(h, sessionId);
@@ -597,8 +600,8 @@ describe("engine-hermes #8: agents + models capabilities", () => {
       effort?: string;
       fast?: boolean;
     };
-    expect(pl.model).toBe("stub-model-b");
-    expect(pl.effort).toBe("high");
+    expect(pl.model).toBe("devin/claude-opus-5");
+    expect(pl.effort).toBe("xhigh");
     expect(pl.fast).toBe(true);
     gw.complete(gw.lastSid);
     await p;
@@ -625,7 +628,7 @@ describe("engine-hermes #8: agents + models capabilities", () => {
     expect(calls[1].value).toBe("stub-model-a --provider stub --session");
   });
 
-  test("AC-4 a mid-turn pick holds the fast leg and replays model→fast at the next prompt", async () => {
+  test("AC-4 a mid-turn pick sends fast live; the deferred model applies at the next prompt — no driver replay", async () => {
     const { gw, h } = setup();
     const { sessionId } = await start(h);
     const p1 = promptAsync(h, sessionId);
@@ -633,42 +636,100 @@ describe("engine-hermes #8: agents + models capabilities", () => {
 
     const ack = (await h.request("session.setModel", {
       sessionId,
-      model: "stub-model-b",
-      provider: "stub",
+      model: "devin/claude-opus-5",
+      provider: "devin",
       effort: "high",
       fast: true,
     })) as { model: string; deferred?: boolean; fast?: boolean };
     expect(ack.deferred).toBe(true);
-    /* The fast leg never fires mid-turn — real `_set_fast` validates against
-       the still-running OLD model and 4002s (or mutates its tier). */
-    expect(gw.configSetCalls.map((c) => c.key)).toEqual(["model"]);
+    expect(ack.fast).toBe(true);
+    /* `_set_fast` has no running check — it mutates the live session's tier
+       immediately; only the model leg defers (the gateway stashes it as
+       pending_model_switch: sessionModels is NOT written yet). */
+    expect(gw.configSetCalls.map((c) => c.key)).toEqual(["model", "fast"]);
+    expect(gw.sessionFast.get(gw.lastSid)).toBe(true);
+    expect(gw.sessionModels.get(gw.lastSid)).toBeUndefined();
     gw.complete(gw.lastSid);
     await p1;
 
-    /* The next prompt flushes the pending pick first — model leg, then
-       fast, then the prompt itself (deterministic ordering). */
+    /* The next prompt goes straight to prompt.submit — no driver-side
+       replay; the gateway's own stash applies the switch at turn start. */
+    const callsBefore = gw.callLog.length;
     const p2 = promptAsync(h, sessionId);
     await h.waitEvent(
       (e) =>
         e.type === "turn.started" &&
-        (e.payload as { model?: string }).model === "stub-model-b",
+        (e.payload as { model?: string }).model === "devin/claude-opus-5",
     );
-    const lastSubmit = gw.callLog.lastIndexOf("prompt.submit");
-    expect(gw.callLog.slice(lastSubmit - 2, lastSubmit + 1)).toEqual([
-      "config.set:model",
-      "config.set:fast",
-      "prompt.submit",
-    ]);
-    expect(gw.sessionFast.get(gw.lastSid)).toBe(true);
+    expect(gw.callLog.slice(callsBefore)).toEqual(["prompt.submit"]);
+    expect(gw.sessionModels.get(gw.lastSid)).toBe("devin/claude-opus-5");
+    expect(gw.sessionEfforts.get(gw.lastSid)).toBe("high");
     const started = h.events.find(
       (e) =>
         e.type === "turn.started" &&
-        (e.payload as { model?: string }).model === "stub-model-b",
+        (e.payload as { model?: string }).model === "devin/claude-opus-5",
     );
     expect((started?.payload as { fast?: boolean })?.fast).toBe(true);
     expect((started?.payload as { effort?: string })?.effort).toBe("high");
     gw.complete(gw.lastSid);
     await p2;
+  });
+
+  test("AC-4 a deferred switch that fails at turn start posts a session.note and the turn still runs", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    gw.runningSids.add(gw.lastSid);
+    const ack = (await h.request("session.setModel", {
+      sessionId,
+      model: "stub-model-b",
+      provider: "stub",
+    })) as { deferred?: boolean };
+    expect(ack.deferred).toBe(true);
+    gw.runningSids.delete(gw.lastSid);
+    /* The stashed model is gone by the time the next turn applies it — the
+       gateway emits `error {message}`; the engine must surface it and let
+       the prompt proceed on the current model (no jam, no turn failure). */
+    gw.failDeferredSwitch.add(gw.lastSid);
+
+    const p = promptAsync(h, sessionId);
+    const note = await h.waitEvent((e) => e.type === "session.note");
+    expect((note.payload as { text: string }).text).toContain(
+      "Could not switch model",
+    );
+    expect(gw.sessionModels.get(gw.lastSid)).toBeUndefined();
+    gw.complete(gw.lastSid);
+    const res = await p;
+    expect(res.stopReason).toBe("end_turn");
+  });
+
+  test("AC-3 a fast leg the engine refuses (4002) omits `fast` from the ack; other codes still throw", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    /* stub-model-b's caps say no fast tier — `_set_fast` 4002s; the tier
+       didn't change so the ack must not claim `fast:false`. */
+    await h.request("session.setModel", {
+      sessionId,
+      model: "stub-model-b",
+      provider: "stub",
+    });
+    const ack = (await h.request("session.setModel", {
+      sessionId,
+      model: "stub-model-b",
+      provider: "stub",
+      fast: true,
+    })) as { fast?: boolean };
+    expect(ack.fast).toBeUndefined();
+    expect(gw.sessionFast.get(gw.lastSid)).toBeUndefined();
+    /* A non-4002 failure (transport, 5001…) still fails the whole pick. */
+    gw.fastError = new RpcError(5001, "provider down");
+    await expect(
+      h.request("session.setModel", {
+        sessionId,
+        model: "stub-model-a",
+        provider: "stub",
+        fast: true,
+      }),
+    ).rejects.toMatchObject({ code: 5001 });
   });
 
   test("AC-8 a model id containing '/' round-trips verbatim via {provider, id}", async () => {

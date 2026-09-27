@@ -420,24 +420,12 @@ export class HermesEngine {
         RPC_ERRORS.INVALID_STATE,
         `session ${s.id} already has a running turn`,
       );
-    /* A pick taken mid-turn was parked on `s.pendingPick` (#92 AC-4). Replay
-       it now — the session is idle between turns, so `config.set model`
-       applies live and the held `fast` leg runs AFTER it (model→fast order
-       is load-bearing: `_set_fast` validates the agent's current model).
-       Hermes' own pending-switch stash re-applies the same args at turn
-       start — a redundant, harmless second write. */
-    if (s.driver === "ws" && s.pendingPick) {
-      const ack = await setSessionModel(
-        this.opts.gateway,
-        s.runtimeSid,
-        s.pendingPick,
-      );
-      s.model = ack.model;
-      if (ack.provider !== undefined) s.provider = ack.provider;
-      if (ack.effort !== undefined) s.effort = ack.effort;
-      if (ack.fast !== undefined) s.fast = ack.fast;
-      if (ack.deferred !== true) s.pendingPick = undefined;
-    }
+    /* A mid-turn pick needs no replay here: Hermes stashes the deferred
+       `config.set model` itself (`pending_model_switch`) and applies it at
+       turn start inside prompt_turn.py — a driver-side replay would run a
+       second `_commit_agent_switch`, write a second switch marker, and
+       `switch_model`'s request_overrides reset could drop the fast tier
+       the live `config.set fast` already applied (#92 AC-4 review). */
     const images = p.content.filter(
       (b): b is Extract<ContentBlock, { type: "image" }> => b.type === "image",
     );
@@ -643,42 +631,28 @@ export class HermesEngine {
         "session.setModel needs the WS transport (no ACP equivalent yet)",
       );
     /* config.set trio: `<id> --provider <p> --reasoning <e> --session` +
-       fast on/off. A running session defers the model leg to the next turn
-       (`deferred`); `confirm_required` is answered inside setSessionModel
-       (#92 AC-4). While a turn runs the fast leg is held off the wire
-       entirely — `_set_fast` validates + mutates the LIVE agent, i.e. the
-       old model mid-turn (4002 `Couldn't switch`, or a tier flip inside the
-       turn). It rides `pendingPick` and lands before the next prompt. */
-    const running = s.turn !== undefined;
+       fast on/off. A running session defers the MODEL leg to the next turn
+       (Hermes stashes `pending_model_switch` and applies it at turn start;
+       `confirm_required` is answered inside setSessionModel). The fast leg
+       is sent live even mid-turn: `_set_fast` has no running check — it
+       mutates service_tier + request_overrides immediately, and the stash
+       apply keeps those keys through `switch_model` (#92 AC-4 review). */
     const ack = await setSessionModel(this.opts.gateway, s.runtimeSid, {
       model: p.model,
       provider: p.provider,
       effort: p.effort,
-      ...(running ? {} : { fast: p.fast }),
+      fast: p.fast,
     });
     s.model = ack.model;
     if (ack.provider !== undefined) s.provider = ack.provider;
     // Hermes keeps the session's reasoning override across a model switch.
     if (ack.effort !== undefined) s.effort = ack.effort;
     if (ack.fast !== undefined) s.fast = ack.fast;
-    if (ack.deferred === true || (running && p.fast !== undefined)) {
-      s.pendingPick = {
-        model: ack.model,
-        ...(p.provider !== undefined ? { provider: p.provider } : {}),
-        ...(p.effort !== undefined ? { effort: p.effort } : {}),
-        ...(p.fast !== undefined ? { fast: p.fast } : {}),
-      };
-    } else {
-      s.pendingPick = undefined;
-    }
-    // A held fast leg still reports the intent — it lands with the next
-    // turn (the contract's `deferred` already says "applies next turn").
-    const fast = ack.fast !== undefined ? ack.fast : p.fast;
     return {
       model: ack.model,
       ...(ack.provider ? { provider: ack.provider } : {}),
       ...(ack.effort ? { effort: ack.effort } : {}),
-      ...(fast !== undefined ? { fast } : {}),
+      ...(ack.fast !== undefined ? { fast: ack.fast } : {}),
       ...(ack.deferred === true ? { deferred: true } : {}),
     };
   }
@@ -844,6 +818,16 @@ export class HermesEngine {
       case "message.complete":
         void this.completeTurn(s, p);
         break;
+      case "error":
+      case "notice": {
+        /* Engine-authored notes — a deferred model switch that failed at
+           turn start emits `error` {"message": "Could not switch model…"};
+           `notice` carries informational messages. The host posts the text
+           as a system message in the thread (#92 review). */
+        const text = typeof p.message === "string" ? p.message : "";
+        if (text) s.emit("session.note", { text });
+        break;
+      }
       default:
         break; // status.update, session.title, sessions.changed, ...
     }

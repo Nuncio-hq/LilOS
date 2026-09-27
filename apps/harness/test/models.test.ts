@@ -3,6 +3,7 @@ import { RelayClient } from "@lilos/client-runtime";
 import type { AppMessage } from "@lilos/contracts/app";
 import { connectFake, FakeEngine } from "@lilos/engine-fake";
 import { describe, expect, it } from "vitest";
+import { MODEL_CATALOG } from "../../../packages/engine-fake/src/catalog";
 import { createRelay } from "../../relay/src/session";
 import { createMemoryStore } from "../../relay/src/store";
 import type { EngineConnection } from "../src/engine/client";
@@ -463,4 +464,71 @@ describe("model pick wire path (issue #30)", () => {
       await w.cleanup();
     }
   });
+
+  it("AC-4 a deferred pick that fails at turn start posts a system note and the turn still answers", async () => {
+    const w = await setupWorld({ engine: new FakeEngine({ tick: 20 }) });
+    try {
+      const { channel, conversation } = await openDmConversation(w.user);
+      await waitFor(async () => {
+        const c = await getConversation(w.user, conversation.id);
+        return c && (c as { engineRef?: string | null }).engineRef
+          ? c
+          : undefined;
+      }, "engine session binding");
+
+      // Pick mid-turn — deferred; the stash is applied at the next turn.
+      await w.user.request("conversations.setModel", {
+        conversationId: conversation.id,
+        model: "fake/opus-2",
+        provider: "fake",
+        effort: "high",
+      });
+      await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+      }, "first answer");
+
+      /* The stashed model is gone before the apply — a refresh dropped it.
+         The engine must post a pick-specific note and run the turn on the
+         current model (#92 review). */
+      const idx = MODEL_CATALOG.findIndex((m) => m.id === "fake/opus-2");
+      const removed = MODEL_CATALOG.splice(idx, 1)[0];
+      try {
+        await w.user.request("messages.post", {
+          channelId: channel.id,
+          conversationId: conversation.id,
+          text: "still there?",
+          authorKind: "user",
+        });
+        const note = await waitFor(async () => {
+          const { messages } = await listMessages(w.user, channel.id);
+          return messages.find(
+            (m) =>
+              m.authorKind === "system" &&
+              m.conversationId === conversation.id &&
+              m.text.includes("Couldn't switch"),
+          );
+        }, "failed deferred pick system note");
+        expect(note.text).toContain("fake/opus-2");
+        // And the turn still completed on the model it already had.
+        const answers = await waitFor(async () => {
+          const { messages } = await listMessages(w.user, channel.id);
+          const list = messages.filter(
+            (m) =>
+              m.authorKind === "employee" &&
+              m.conversationId === conversation.id,
+          );
+          return list.length >= 2 ? list : undefined;
+        }, "second answer after failed deferred pick");
+        expect(answers.at(-1)?.model).toBe("fake-large");
+      } finally {
+        MODEL_CATALOG.push(removed);
+      }
+    } finally {
+      await w.cleanup();
+    }
+  }, 20_000);
 });

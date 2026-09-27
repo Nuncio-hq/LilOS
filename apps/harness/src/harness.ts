@@ -922,6 +922,18 @@ export class Harness {
           state: "active",
         }).catch(() => {});
         break;
+      case "session.note":
+        /* Engine-authored note (e.g. a deferred model switch that failed at
+           turn start — "Couldn't switch to X — staying on Y"). Surfaced as a
+           system message, deduped on replay by the event's seq (#92). */
+        if (binding) {
+          this.postSystem(
+            binding,
+            event.payload.text,
+            `sys:${binding.conversationId}:note:${event.seq}`,
+          ).catch(() => {});
+        }
+        break;
       case "turn.delta":
         if (binding && event.payload.stream === "text") {
           binding.textByTurn.set(

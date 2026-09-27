@@ -601,10 +601,7 @@ export function createRelay(options: RelayOptions): Relay {
             "fast",
             "deliveredSeq",
           ] as const;
-          if (
-            HOST_KEYS.some((k) => k in parsed.data) &&
-            !isHost(peer)
-          ) {
+          if (HOST_KEYS.some((k) => k in parsed.data) && !isHost(peer)) {
             throw new RpcError(
               JsonRpcCode.forbidden,
               "forbidden",
