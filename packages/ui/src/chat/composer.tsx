@@ -31,18 +31,21 @@ function AttachButton() {
   );
 }
 
-/* Send button: enabled when there's text OR at least one attachment chip. */
+/* Send button: enabled when there's text OR at least one attachment chip,
+   and only while no send is in flight. */
 function SendButton({
   hasDraft,
   status,
+  sending,
 }: {
   hasDraft: boolean;
   status?: ChatStatus;
+  sending: boolean;
 }) {
   const attachments = usePromptInputAttachments();
   return (
     <PromptInputSubmit
-      disabled={!hasDraft && attachments.files.length === 0}
+      disabled={sending || (!hasDraft && attachments.files.length === 0)}
       status={status}
     />
   );
@@ -105,6 +108,12 @@ export function Composer({
   /* Esc closes the `@` menu once; the next keystroke reopens it (the menu is
      derived from the draft, so dismissal lives in a flag). */
   const [mentionDismissed, setMentionDismissed] = useState(false);
+  /* A promise-returning onSend keeps the submit in flight until it settles
+     (#130): `sendRef` dedupes submits that arrive while one is pending, and
+     `sending` disables the send button so Enter-Enter can't reach
+     requestSubmit at all. */
+  const [sending, setSending] = useState(false);
+  const sendRef = useRef<Promise<void> | null>(null);
   const mentionOpen =
     employees.length > 0 && !mentionDismissed && /@\w*$/.test(draft);
   const busy = status === "submitted" || status === "streaming";
@@ -150,6 +159,10 @@ export function Composer({
           onAttachError ? (err) => onAttachError(err.message) : undefined
         }
         onSubmit={({ text, files }) => {
+          /* A send already in flight owns the outcome: a second submit (Enter
+             pressed twice, a requestSubmit) joins the pending promise instead
+             of sending the same draft again (#130 AC-3). */
+          if (sendRef.current) return sendRef.current;
           const t = text.trim() || draft.trim();
           if (!t && files.length === 0) return;
           const done = onSend?.(
@@ -167,7 +180,13 @@ export function Composer({
             if (draftRef.current.trim() === t) setDraft("");
           };
           if (done && typeof done.then === "function") {
-            return done.then(clearIfUnchanged);
+            setSending(true);
+            const send = done.then(clearIfUnchanged).finally(() => {
+              sendRef.current = null;
+              setSending(false);
+            });
+            sendRef.current = send;
+            return send;
           }
           clearIfUnchanged();
         }}
@@ -219,6 +238,7 @@ export function Composer({
             <SendButton
               hasDraft={!!draft.trim()}
               status={busy ? undefined : status}
+              sending={sending}
             />
           )}
         </PromptInputFooter>
