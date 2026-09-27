@@ -50,6 +50,7 @@ export function ThreadView({
   running,
   onSend,
   onStop,
+  lastSent,
   onRetry,
   onUnqueue,
   onSendQueued,
@@ -78,6 +79,9 @@ export function ThreadView({
   running: boolean;
   onSend: (text: string, files?: AttachedFile[]) => void;
   onStop?: () => void;
+  /* ↑ recall for the thread composer: the host's last sent message in this
+     conversation (issue #104 AC-5). */
+  lastSent?: string;
   /* Engine-reported models + pick handler (issue #30); no onModel → no picker (D-#19). */
   models?: ModelOption[];
   onModel?: (c: ModelChoice) => void;
@@ -300,6 +304,7 @@ export function ThreadView({
         }
         onSend={onSend}
         status={status}
+        lastSent={lastSent}
         accept={accept}
         maxFileSize={maxFileSize}
         onAttachError={onAttachError}

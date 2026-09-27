@@ -15,6 +15,7 @@ import {
 } from "../components/ai-elements/prompt-input";
 import { HermesAvatar } from "../shell/avatars";
 import type { AttachedFile, Employee } from "../types";
+import { composerKeyDown } from "./composer-keys";
 
 /* The paperclip opens the file dialog through PromptInput's attachments context. */
 function AttachButton() {
@@ -53,6 +54,7 @@ export function Composer({
   onSend,
   status = "ready",
   onStop,
+  lastSent,
   tools,
   queued,
   accept,
@@ -65,6 +67,9 @@ export function Composer({
   onSend?: (text: string, files?: AttachedFile[]) => void;
   status?: ChatStatus;
   onStop?: () => void;
+  /* ↑ in an empty composer recalls this — the last message you sent here
+     (issue #104). Computed by the host; absent = ↑ stays a caret move. */
+  lastSent?: string;
   tools?: React.ReactNode;
   queued?: React.ReactNode;
   /* What the host accepts as attachments (e.g. "image/*"). Without it the paperclip
@@ -78,17 +83,27 @@ export function Composer({
   onAttachError?: (message: string) => void;
 }) {
   const [draft, setDraft] = useState("");
-  const mentionOpen = employees.length > 0 && /@\w*$/.test(draft);
+  /* Esc closes the `@` menu once; the next keystroke reopens it (the menu is
+     derived from the draft, so dismissal lives in a flag). */
+  const [mentionDismissed, setMentionDismissed] = useState(false);
+  const mentionOpen =
+    employees.length > 0 && !mentionDismissed && /@\w*$/.test(draft);
   const busy = status === "submitted" || status === "streaming";
   return (
     <div className="relative m-2 mt-1 shrink-0 sm:m-3 sm:mt-2">
       {queued}
       {mentionOpen && (
-        <div className="absolute bottom-full left-2 z-10 mb-2 w-80 max-w-[calc(100%-1rem)] rounded-lg border bg-popover p-1 shadow-lg">
+        <div
+          role="listbox"
+          aria-label="Mention an employee"
+          className="absolute bottom-full left-2 z-10 mb-2 w-80 max-w-[calc(100%-1rem)] rounded-lg border bg-popover p-1 shadow-lg"
+        >
           {employees.map((e) => (
             <button
               key={e.id}
               type="button"
+              role="option"
+              aria-selected={false}
               onClick={() => setDraft(draft.replace(/@\w*$/, `@${e.name} `))}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted"
             >
@@ -136,7 +151,19 @@ export function Composer({
         <PromptInputBody>
           <PromptInputTextarea
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              setMentionDismissed(false);
+            }}
+            onKeyDown={composerKeyDown({
+              running: busy,
+              onStop,
+              lastSent,
+              setDraft,
+              onDismissOverlay: mentionOpen
+                ? () => setMentionDismissed(true)
+                : undefined,
+            })}
             placeholder={placeholder}
             className="min-h-12"
           />
@@ -154,7 +181,8 @@ export function Composer({
               status={status}
               type="button"
               onClick={onStop}
-              aria-label="Stop"
+              title="Stop (Esc)"
+              aria-label="Stop (Esc)"
             >
               <SquareIcon className="size-3.5 fill-current" />
             </PromptInputSubmit>
