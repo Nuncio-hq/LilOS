@@ -13,6 +13,10 @@ export {
   type SessionFeedState,
 } from "./engine";
 export {
+  exchangePairingGrant,
+  PairingExchangeFailed,
+} from "./pairing";
+export {
   defaultSocketFactory,
   type RelaySocket,
   SOCKET_OPEN,

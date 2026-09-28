@@ -135,6 +135,20 @@ export const AuthorKind = z.enum(["user", "employee", "system"]);
 export type AuthorKind = z.infer<typeof AuthorKind>;
 
 /**
+ * A phone (or other device) paired to this install (#153): created by
+ * exchanging a one-time grant, listed and revoked on the Mac. The record
+ * carries no credential material — the store keeps only the credential's
+ * hash; the raw value exists once, in the exchange response.
+ */
+export const PairedDevice = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  pairedAt: Timestamp,
+  lastSeenAt: Timestamp,
+});
+export type PairedDevice = z.infer<typeof PairedDevice>;
+
+/**
  * Display-only reference to a stored attachment (issue #31): the relay keeps
  * the bytes behind `attachments.get`, so message records, history pages and
  * replay frames carry only this ref — never the blob.
