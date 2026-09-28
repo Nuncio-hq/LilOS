@@ -77,7 +77,7 @@ describe("AC-4 (#141) --engine=fake on a signed build is an error", () => {
 });
 
 describe("MDM kill-by-name guard (#141)", () => {
-  /* Managed Macs (e.g. Oscar's work Mac, CrowdStrike/Jamf) SIGKILL any
+  /* Managed Macs (MDM/EDR policies like CrowdStrike/Jamf) SIGKILL any
      executable whose file name contains "hermes" — case-insensitive, in any
      directory, signed or ad-hoc. No executable the build ships may carry
      that substring in its basename, or the engine dies before ready. */
