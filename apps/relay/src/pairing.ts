@@ -88,6 +88,9 @@ export function createPairingService(options: {
 
   return {
     async mintGrant() {
+      /* GC spent/expired rows on every mint — grants are write-only secrets,
+         nothing reads old ones back. */
+      await store.prunePairingGrants(now());
       const code = newPairingCode();
       const expiresAt = now() + grantTtlMs;
       await store.insertPairingGrant({
@@ -99,22 +102,24 @@ export function createPairingService(options: {
     },
 
     async exchangeGrant({ code, name }) {
-      const verdict = await store.consumePairingGrant(
-        sha256Hex(normalizePairingCode(code)),
-        now(),
-      );
-      if (verdict !== "ok") return { error: verdict };
       const credential = `devcred_${randomBytes(32).toString("hex")}`;
       const at = now();
-      const device = await store.insertPairedDevice({
-        id: newId("dev"),
-        name: name?.trim() || "iPhone",
-        credentialHash: sha256Hex(credential),
-        pairedAt: at,
-        lastSeenAt: at,
+      /* Consume + device insert are one store transaction — a failure can't
+         burn the grant while leaving the phone with a bare 500. */
+      const spent = await store.exchangePairingGrant({
+        codeHash: sha256Hex(normalizePairingCode(code)),
+        device: {
+          id: newId("dev"),
+          name: name?.trim() || "iPhone",
+          credentialHash: sha256Hex(credential),
+          pairedAt: at,
+          lastSeenAt: at,
+        },
+        at,
       });
+      if ("error" in spent) return { error: spent.error };
       changed();
-      return { device, credential };
+      return { device: spent.device, credential };
     },
 
     async authenticateDevice(deviceId, credential) {

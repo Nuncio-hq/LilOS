@@ -37,6 +37,12 @@ function spiedStore() {
       devices.push(d);
       return inner.insertPairedDevice(d);
     },
+    exchangePairingGrant: async (input) => {
+      /* The atomic path carries the device — the service no longer calls
+         insertPairedDevice on the exchange happy path. */
+      devices.push(input.device);
+      return inner.exchangePairingGrant(input);
+    },
   };
   return { store, grants, devices };
 }
@@ -281,6 +287,69 @@ describe("AC-4 list + revoke", () => {
     expect(errorCodeOf(mac.frames, `t${nextId - 1}`)).toBe(
       "not_found" satisfies AppErrorCode,
     );
+  });
+});
+
+describe("pairing admin is install-token scope", () => {
+  it("a device peer can't mint grants, list, revoke, or disable — and a second hello is refused", async () => {
+    const store = createMemoryStore();
+    const pairing = createPairingService({ store });
+    const relay = createRelay({
+      store,
+      token: TOKEN,
+      pairing,
+      phoneAccess: tailscaleUp(),
+    });
+
+    // Pair a device and connect it.
+    const grant = await pairing.mintGrant();
+    const exchanged = await pairing.exchangeGrant({ code: grant.code });
+    if (!("device" in exchanged)) throw new Error("exchange failed");
+    const phone = connectPeer(relay);
+    await helloDevice(
+      phone.connection,
+      exchanged.device.id,
+      exchanged.credential,
+    );
+    expect(frameFor(phone.frames, `t${nextId - 1}`).result).toBeTruthy();
+
+    // Every pairing-admin call is forbidden for a device credential —
+    // a stolen devcred_ can't mint its way past its own revoke.
+    for (const method of [
+      "pairing.offer",
+      "pairing.disable",
+      "devices.list",
+      "devices.revoke",
+    ]) {
+      await phone.connection.receive(
+        req(method, { deviceId: exchanged.device.id }),
+      );
+      expect(errorCodeOf(phone.frames, `t${nextId - 1}`)).toBe(
+        "forbidden" satisfies AppErrorCode,
+      );
+    }
+
+    // A second hello on one connection is refused (token peers can't
+    // retag as devices, devices can't climb back to token scope).
+    await phone.connection.receive(
+      req("session.hello", {
+        protocolVersion: APP_PROTOCOL_VERSION,
+        token: TOKEN,
+      }),
+    );
+    expect(phone.frames.at(-1)).toMatchObject({
+      error: { message: expect.stringContaining("already completed") },
+    });
+    await phone.connection.receive(
+      req("session.hello", {
+        protocolVersion: APP_PROTOCOL_VERSION,
+        deviceId: exchanged.device.id,
+        credential: exchanged.credential,
+      }),
+    );
+    expect(phone.frames.at(-1)).toMatchObject({
+      error: { message: expect.stringContaining("already completed") },
+    });
   });
 });
 

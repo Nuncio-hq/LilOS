@@ -19,9 +19,12 @@ import {
   eq,
   gt,
   inArray,
+  isNotNull,
   isNull,
+  lte,
   max,
   ne,
+  or,
   sql,
 } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
@@ -679,6 +682,62 @@ export function createDrizzleStore(db: Db): RelayStore {
       if (!row) return "unknown";
       if (row.consumedAt !== null) return "used";
       return "expired";
+    },
+    async exchangePairingGrant({
+      codeHash,
+      device,
+      at,
+    }: {
+      codeHash: string;
+      device: NewPairedDevice;
+      at: number;
+    }) {
+      /* One transaction: the device insert can't burn the grant — a failure
+         rolls the consume back so the phone can retry the same code. */
+      return db.transaction((tx) => {
+        const spent = tx
+          .update(schema.pairingGrants)
+          .set({ consumedAt: at })
+          .where(
+            and(
+              eq(schema.pairingGrants.codeHash, codeHash),
+              isNull(schema.pairingGrants.consumedAt),
+              gt(schema.pairingGrants.expiresAt, at),
+            ),
+          )
+          .returning({ codeHash: schema.pairingGrants.codeHash })
+          .get();
+        if (!spent) {
+          const row = tx
+            .select()
+            .from(schema.pairingGrants)
+            .where(eq(schema.pairingGrants.codeHash, codeHash))
+            .get();
+          if (!row) return { error: "unknown" as const };
+          return {
+            error:
+              row.consumedAt !== null
+                ? ("used" as const)
+                : ("expired" as const),
+          };
+        }
+        const inserted = tx
+          .insert(schema.pairedDevices)
+          .values(device)
+          .returning()
+          .get();
+        return { device: rowToDevice(inserted) };
+      });
+    },
+    async prunePairingGrants(at: number) {
+      db.delete(schema.pairingGrants)
+        .where(
+          or(
+            lte(schema.pairingGrants.expiresAt, at),
+            isNotNull(schema.pairingGrants.consumedAt),
+          ),
+        )
+        .run();
     },
     async insertPairedDevice(device: NewPairedDevice) {
       const row = db

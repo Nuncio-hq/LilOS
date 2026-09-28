@@ -301,6 +301,20 @@ export interface RelayStore {
     codeHash: string,
     at: number,
   ): Promise<"ok" | "unknown" | "expired" | "used">;
+  /**
+   * Spend a grant AND record the new device in one transaction — a
+   * device-insert failure rolls the spend back so the phone can retry the
+   * same code instead of losing it to an opaque 500.
+   */
+  exchangePairingGrant(input: {
+    codeHash: string;
+    device: NewPairedDevice;
+    at: number;
+  }): Promise<
+    { device: PairedDevice } | { error: "unknown" | "expired" | "used" }
+  >;
+  /** Drop spent/expired grant rows; called on every mint so the table stays small. */
+  prunePairingGrants(at: number): Promise<void>;
   insertPairedDevice(device: NewPairedDevice): Promise<PairedDevice>;
   /**
    * Device-credential hello: a hash match on an unrevoked device bumps
@@ -776,6 +790,24 @@ export function createMemoryStore(): RelayStore {
       if (grant.expiresAt <= at) return "expired";
       grant.consumedAt = at;
       return "ok";
+    },
+    async exchangePairingGrant({ codeHash, device, at }) {
+      /* Single-threaded map ops are already atomic — same verdicts as the
+         drizzle transaction. */
+      const grant = grants.get(codeHash);
+      if (!grant) return { error: "unknown" as const };
+      if (grant.consumedAt !== undefined) return { error: "used" as const };
+      if (grant.expiresAt <= at) return { error: "expired" as const };
+      grant.consumedAt = at;
+      devices.set(device.id, { ...device });
+      return { device: rowToDevice(device) };
+    },
+    async prunePairingGrants(at) {
+      for (const [codeHash, grant] of grants) {
+        if (grant.consumedAt !== undefined || grant.expiresAt <= at) {
+          grants.delete(codeHash);
+        }
+      }
     },
     async insertPairedDevice(device) {
       devices.set(device.id, { ...device });

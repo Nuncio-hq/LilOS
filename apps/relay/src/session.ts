@@ -128,6 +128,14 @@ const JsonRpcCode = {
   attachmentTooLarge: -32010,
 } as const;
 
+/** Pairing admin is install-token scope only — device peers are refused. */
+const PAIRING_ADMIN_METHODS = new Set([
+  "pairing.offer",
+  "pairing.disable",
+  "devices.list",
+  "devices.revoke",
+]);
+
 /** The peer that has `harness.register`ed — the single engine host. */
 interface HostRecord {
   peer: RelayWsPeer;
@@ -421,6 +429,22 @@ export function createRelay(options: RelayOptions): Relay {
       return;
     }
 
+    /* Paired phones get the whole app surface but not pairing admin: a
+       stolen `devcred_` could otherwise mint fresh credentials (surviving
+       its own revoke) or drop other devices. devicePeers is set inside
+       session.hello before the credential check resolves, so it is also
+       the marker that separates device peers from token-authed ones. */
+    if (devicePeers.has(peer) && PAIRING_ADMIN_METHODS.has(method)) {
+      respondError(
+        peer,
+        id,
+        JsonRpcCode.forbidden,
+        "forbidden",
+        "paired devices can't administer pairing",
+      );
+      return;
+    }
+
     try {
       const passthrough = (
         ENGINE_PASSTHROUGH_METHODS as readonly string[]
@@ -437,12 +461,21 @@ export function createRelay(options: RelayOptions): Relay {
       }
       switch (method) {
         case "session.hello": {
+          if (state.helloed) {
+            /* One hello per connection: re-hello would let a token peer
+               retag itself as a device (then a revoke kills the local
+               socket) or a device climb back to token scope. */
+            throw new RpcError(
+              JsonRpcCode.invalidRequest,
+              "internal",
+              "session.hello already completed on this connection",
+            );
+          }
           const parsed = HelloParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
           const hello = parsed.data;
           /** Two auth shapes (#153): the local install token, or a paired
               device's `deviceId` + `credential` exchanged from a grant. */
-          let deviceId: string | undefined;
           if ("token" in hello) {
             if (hello.token !== options.token) {
               log("session.hello rejected: bad token");
@@ -453,6 +486,11 @@ export function createRelay(options: RelayOptions): Relay {
               );
             }
           } else {
+            /* Tag as a device peer BEFORE the auth await: a devices.revoke
+               processed while authenticateDevice is in flight must find
+               this peer — otherwise a revoked device keeps a live,
+               fully-authed socket until it disconnects. Untag on failure. */
+            devicePeers.set(peer, hello.deviceId);
             const device = options.pairing
               ? await options.pairing.authenticateDevice(
                   hello.deviceId,
@@ -460,6 +498,7 @@ export function createRelay(options: RelayOptions): Relay {
                 )
               : null;
             if (!device) {
+              devicePeers.delete(peer);
               log("session.hello rejected: bad device credential");
               throw new RpcError(
                 JsonRpcCode.unauthenticated,
@@ -467,7 +506,6 @@ export function createRelay(options: RelayOptions): Relay {
                 "bad device credential",
               );
             }
-            deviceId = device.id;
           }
           if (hello.protocolVersion !== protocolVersion) {
             recordRejection({
@@ -492,7 +530,6 @@ export function createRelay(options: RelayOptions): Relay {
           }
           state.helloed = true;
           helloedPeers.add(peer);
-          if (deviceId) devicePeers.set(peer, deviceId);
           log(
             `session.hello accepted (client ${hello.client?.name ?? "app"} ${hello.client?.version ?? ""})`.trim(),
           );
@@ -1124,19 +1161,19 @@ export function createRelay(options: RelayOptions): Relay {
            * (opt-in — loopback never appears in a QR) and mints a fresh
            * one-time grant for the code/QR it renders.
            */
+          if (!options.pairing) {
+            throw new RpcError(
+              JsonRpcCode.unavailable,
+              "internal",
+              "pairing is not configured",
+            );
+          }
           const bound = await options.phoneAccess?.enable();
           if (!bound) {
             throw new RpcError(
               JsonRpcCode.unavailable,
               "tailscale_unavailable",
               "Tailscale isn't running on this Mac — install it and sign in, then try again.",
-            );
-          }
-          if (!options.pairing) {
-            throw new RpcError(
-              JsonRpcCode.unavailable,
-              "internal",
-              "pairing is not configured",
             );
           }
           const grant = await options.pairing.mintGrant();

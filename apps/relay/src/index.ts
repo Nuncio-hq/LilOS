@@ -107,6 +107,30 @@ const listen = (bindHost: string) => {
   return server;
 };
 
+/* Same retry loop but async: the tailnet bind runs while the loopback
+   server is already serving, and Bun.sleepSync there would freeze every
+   local client for the whole retry window. Still retries — a restart's
+   rebind can hit TIME_WAIT from its own accepted tailnet sockets. */
+const listenAsync = async (bindHost: string) => {
+  let server: ReturnType<typeof listenOnce> | undefined;
+  for (let i = 0; i < 40 && !server; i++) {
+    try {
+      server = listenOnce(bindHost);
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException;
+      if (e.code !== "EADDRINUSE" && !/in use|EADDRINUSE/i.test(e.message)) {
+        throw err;
+      }
+      console.error(
+        `[relay] port ${config.port} on ${bindHost} busy, retrying`,
+      );
+      await Bun.sleep(250);
+    }
+  }
+  if (!server) throw new Error(`port ${config.port} still busy after retries`);
+  return server;
+};
+
 /**
  * Opt-in Tailscale listener (#153): a second Bun.serve on this Mac's CGNAT
  * address. It only ever binds the tailnet IP — never loopback — so a QR can
@@ -118,39 +142,57 @@ let tailscaleServer: ReturnType<typeof listen> | undefined;
 let tailscaleAdvertised: string | undefined;
 const PHONE_ACCESS_SETTING = "phoneAccess";
 
+/* One enable/disable in flight at a time: the probe→bind sequence is async,
+   so a racing pair of calls (double-clicked dialog, startup rebind vs. an
+   RPC) could double-bind or let an in-flight enable's `setSetting(true)`
+   overwrite a just-requested disable. */
+let phoneAccessGate: Promise<unknown> = Promise.resolve();
+const serializePhoneAccess = <T>(fn: () => Promise<T>): Promise<T> => {
+  const run = phoneAccessGate.then(fn, fn);
+  phoneAccessGate = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+};
+
 const phoneAccess: PhoneAccess = {
-  async enable() {
-    if (tailscaleServer) {
-      return tailscaleAdvertised
-        ? { host: `${tailscaleAdvertised}:${tailscaleServer.port}` }
-        : null;
-    }
-    const probe = await probeTailscale();
-    const bindIp = probe.ok ? probe.self.ipv4s[0] : undefined;
-    if (!probe.ok || !bindIp) {
+  enable: () =>
+    serializePhoneAccess(async () => {
+      if (tailscaleServer) {
+        return tailscaleAdvertised
+          ? { host: `${tailscaleAdvertised}:${tailscaleServer.port}` }
+          : null;
+      }
+      const probe = await probeTailscale();
+      const bindIp = probe.ok ? probe.self.ipv4s[0] : undefined;
+      if (!probe.ok || !bindIp) {
+        relay.log(
+          `tailscale unavailable (${probe.ok ? "no tailnet IPv4" : probe.reason})`,
+        );
+        return null;
+      }
+      try {
+        tailscaleServer = await listenAsync(bindIp);
+      } catch (err) {
+        relay.log(`tailscale bind ${bindIp}:${config.port} failed: ${err}`);
+        return null;
+      }
+      // MagicDNS name over raw IP in the QR host when the tailnet has one.
+      tailscaleAdvertised = probe.self.dnsName ?? bindIp;
+      await store.setSetting(PHONE_ACCESS_SETTING, true);
       relay.log(
-        `tailscale unavailable (${probe.ok ? "no tailnet IPv4" : probe.reason})`,
+        `tailscale listener on http://${bindIp}:${tailscaleServer.port}`,
       );
-      return null;
-    }
-    try {
-      tailscaleServer = listen(bindIp);
-    } catch (err) {
-      relay.log(`tailscale bind ${bindIp}:${config.port} failed: ${err}`);
-      return null;
-    }
-    // MagicDNS name over raw IP in the QR host when the tailnet has one.
-    tailscaleAdvertised = probe.self.dnsName ?? bindIp;
-    await store.setSetting(PHONE_ACCESS_SETTING, true);
-    relay.log(`tailscale listener on http://${bindIp}:${tailscaleServer.port}`);
-    return { host: `${tailscaleAdvertised}:${tailscaleServer.port}` };
-  },
-  async disable() {
-    tailscaleServer?.stop(true);
-    tailscaleServer = undefined;
-    tailscaleAdvertised = undefined;
-    await store.setSetting(PHONE_ACCESS_SETTING, false);
-  },
+      return { host: `${tailscaleAdvertised}:${tailscaleServer.port}` };
+    }),
+  disable: () =>
+    serializePhoneAccess(async () => {
+      tailscaleServer?.stop(true);
+      tailscaleServer = undefined;
+      tailscaleAdvertised = undefined;
+      await store.setSetting(PHONE_ACCESS_SETTING, false);
+    }),
 };
 
 const relay = createRelay({
