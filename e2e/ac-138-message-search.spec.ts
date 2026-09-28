@@ -219,7 +219,10 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
   await send(page, ROOT_A);
   await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_/, { timeout: 15_000 });
   await expect(
-    page.locator("main").getByText(/Short answer|Done on/i).first(),
+    page
+      .locator("main")
+      .getByText(/Short answer|Done on/i)
+      .first(),
   ).toBeVisible({ timeout: 60_000 });
   await send(page, HIT_TEXT);
   await expect(page.getByText(HIT_TEXT).first()).toBeVisible();
@@ -229,7 +232,10 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
   await send(page, ROOT_B);
   await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_/, { timeout: 15_000 });
   await expect(
-    page.locator("main").getByText(/Short answer|Done on/i).first(),
+    page
+      .locator("main")
+      .getByText(/Short answer|Done on/i)
+      .first(),
   ).toBeVisible({ timeout: 60_000 });
   await send(page, HIT_ARCHIVED);
   await expect(page.getByText(HIT_ARCHIVED).first()).toBeVisible();
@@ -254,9 +260,7 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
   await expect(hitsPanel).toBeVisible({ timeout: 10_000 });
   await expect(hitsPanel.getByText("Messages")).toBeVisible();
   await expect(hitsPanel.locator("mark").first()).toHaveText("quaggmire");
-  await expect(
-    hitsPanel.locator("[data-archived-hit]").first(),
-  ).toBeVisible();
+  await expect(hitsPanel.locator("[data-archived-hit]").first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac2-message-hits.png` });
 
   // AC-3: clicking the live session's hit opens it and flashes the message.
@@ -277,8 +281,8 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
   await page.goto(dmHome);
   await expect(filter).toBeVisible({ timeout: 30_000 });
   await filter.fill("definitely-not-anywhere");
-  await expect(
-    page.getByText(/Titles and messages are searched/i),
-  ).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/Titles and messages are searched/i)).toBeVisible(
+    { timeout: 10_000 },
+  );
   await page.screenshot({ path: `${SHOTS}/ac2-empty-state.png` });
 });
