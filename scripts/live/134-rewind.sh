@@ -22,7 +22,7 @@
 #      edits files itself — either way the harness checkpoint owns restore)
 #   3. rewind to before turn 2 → asserts files restored (markers 2/3 gone,
 #      1 + seed intact, `git status` byte-identical), the message tail is
-#      marked rewound, engineRewound=true (WS `command.dispatch` /undo N),
+#      marked rewound, engineRewound=true (WS `session.undo`, looped),
 #      and — stub runs — the next prompt's context lacks the dropped turns
 #   4. PASS/FAIL summary on stdout
 set -u
@@ -30,13 +30,19 @@ cd "$(dirname "$0")/../.."
 export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
 
 LABEL=stub
-if [ -n "${HERMES_PROVIDER:-}" ] && [ -n "${HERMES_MODEL:-}" ]; then
+command -v hermes >/dev/null 2>&1 || {
+  echo "LIVE_ENGINE_UNAVAILABLE: hermes not on PATH"
+  exit 2
+}
+if [ "${HERMES_PROVIDER:-}" = "auto" ]; then
+  # Use the machine's configured model.provider/model.default verbatim —
+  # no override passed to session.create. On this VM that resolves to
+  # OpenRouter (model.base_url + OPENROUTER_API_KEY).
+  unset HERMES_PROVIDER HERMES_MODEL
+  LABEL="live (configured default)"
+elif [ -n "${HERMES_PROVIDER:-}" ] && [ -n "${HERMES_MODEL:-}" ]; then
   LABEL="live (${HERMES_PROVIDER}/${HERMES_MODEL})"
 else
-  command -v hermes >/dev/null 2>&1 || {
-    echo "LIVE_ENGINE_UNAVAILABLE: hermes not on PATH"
-    exit 2
-  }
   export HERMES_PROVIDER=lilos-stub
   export HERMES_MODEL=stub-model
 fi
@@ -64,13 +70,13 @@ if pgrep -f "serve --host 127.0.0.1 --port" >/dev/null 2>&1; then
   sleep 1
 fi
 
+cp ~/.hermes/config.yaml /tmp/hermes-config-backup-134.$$ && CONFIG_TOUCHED=/tmp/hermes-config-backup-134.$$
 if [ "$LABEL" = "stub" ]; then
   export STUB_REQUEST_LOG=/tmp/lilos-134-stub-requests.jsonl
   : > "$STUB_REQUEST_LOG"
   STUB_REPLY="Noted (stub)." bun scripts/live/openai-stub.ts "$STUB_PORT" >/tmp/openai-stub-134.log 2>&1 &
   STUB_PID=$!
   sleep 0.5
-  cp ~/.hermes/config.yaml /tmp/hermes-config-backup-134.$$ && CONFIG_TOUCHED=/tmp/hermes-config-backup-134.$$
   if ! grep -q "lilos-stub:" ~/.hermes/config.yaml; then
     cat >> ~/.hermes/config.yaml <<EOF
 providers:

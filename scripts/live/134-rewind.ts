@@ -91,9 +91,13 @@ execSync(
   "git init -q && git add -A && git -c user.email=t@t -c user.name=t commit -qm seed",
   { cwd: picked },
 );
+/* AC-1 reads "the user's own git state is byte-identical before and after"
+   — HEAD, index, stash: rewind must never touch the user's .git. The
+   worktree legitimately differs (turn-1 output kept, turn-2/3 output
+   removed), so porcelain status is not part of this digest. */
 const gitDigest = () =>
-  `${execSync("git status --porcelain=v1 && git rev-parse HEAD && git stash list", { cwd: picked })}`;
-const cleanGit = gitDigest();
+  `${execSync("git rev-parse HEAD && git stash list && git ls-files -s | git hash-object --stdin", { cwd: picked })}`;
+let beforeRewindGit = "";
 
 const procs: ChildProcess[] = [];
 const launch = (name: string, cmd: string[], env: Record<string, string>) => {
@@ -308,6 +312,7 @@ writeFileSync(join(picked, "live-turn-3.txt"), "agent turn 3\n");
 writeFileSync(join(picked, "notes.md"), "notes v2 EDITED\n");
 rmSync(join(picked, "seed.txt"));
 out("turn 3 done — rewinding to before turn 2");
+beforeRewindGit = gitDigest();
 
 const rewind = await user.request<{
   message: { id: string; text: string };
@@ -336,19 +341,24 @@ if (existsSync(join(picked, "live-turn-3.txt"))) fail(bad("live-turn-3.txt"));
 if (!existsSync(join(picked, "seed.txt"))) fail(bad("seed.txt"));
 if (readFileSync(join(picked, "notes.md"), "utf8") !== "notes v1\n")
   fail(bad("notes.md"));
-if (gitDigest() !== cleanGit) fail("user git state changed");
+if (gitDigest() !== beforeRewindGit)
+  fail("user git state changed (HEAD/index/stash touched by rewind)");
 out("PASS files: folder restored to pre-turn-2, user git byte-identical");
 
 /* The dropped tail is marked rewound: hidden from channelMessages, still
    audit-able through messages.list includeRewound. */
 const all = await user.request<{
   messages: { id: string; seq: number; rewound?: boolean }[];
-}>("messages.list", { conversationId: conversation.id, includeRewound: true });
+}>("messages.list", {
+  channelId: channel.id,
+  conversationId: conversation.id,
+  includeRewound: true,
+});
 const rewound = all.messages.filter((m) => m.rewound);
 if (rewound.length < 2) fail("no rewound rows");
 if (
-  !rewind.some((m) => m.id === msg2.id) ||
-  !rewind.some((m) => m.id === msg3.id)
+  !rewound.some((m) => m.id === msg2.id) ||
+  !rewound.some((m) => m.id === msg3.id)
 )
   fail("rewound rows missing turns 2/3 user messages");
 await waitFor("visible tail dropped", () =>
