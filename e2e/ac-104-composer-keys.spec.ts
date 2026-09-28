@@ -202,7 +202,9 @@ test("AC-2 Esc with no turn running does nothing (no Stop → no Esc stop)", asy
 
   // A finished turn: running is false → dm.tsx passes no onStop → Esc inert.
   await send(page, "Say hello then list files");
-  await expect(page.getByPlaceholder(/in this session/)).toBeVisible({
+  await expect(
+    page.getByPlaceholder(/in this session|Continue session/),
+  ).toBeVisible({
     timeout: 90_000,
   });
   const box = page.locator("textarea").last();

@@ -355,7 +355,16 @@ export type HostAccessors = {
     binary: boolean;
     truncated: boolean;
   } | null>;
-  pr?: (cwd: string) => Promise<{ pr: PullRequest | null } | null>;
+  /* `forge.pr` resolves the checkout's branch PR. `{ pr: null }` = real
+     checkout with no PR on the branch; `{ pr: null, error }` = the forge call
+     itself failed (gh missing/unauthenticated — shown plainly in the tab,
+     issue #114 AC-5); outer null = the method didn't answer → tab hidden. */
+  pr?: (cwd: string) => Promise<{
+    pr: PullRequest | null;
+    /** The checkout branch the forge probed — labels the "no PR" state. */
+    branch?: string;
+    error?: string;
+  } | null>;
   /** Posts a comment via `gh`; resolves the comment URL; throws on failure. */
   prComment?: (cwd: string, body: string) => Promise<string>;
   /** Merges via `gh`; resolves the re-read PR; throws on failure. */

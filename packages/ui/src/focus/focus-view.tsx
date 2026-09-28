@@ -17,7 +17,7 @@ import {
   PlayIcon,
   Undo2Icon,
 } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useState } from "react";
 import {
   ConversationKeepBottom,
   NotSentTray,
@@ -25,6 +25,7 @@ import {
   QueuedTray,
   runningComposer,
 } from "../chat/agent-chat";
+import { overlayOpen } from "../chat/composer-keys";
 import { FocusComposer } from "../chat/focus-composer";
 import { sessionChoice } from "../chat/model-picker";
 import {
@@ -115,6 +116,8 @@ export function FocusView({
   onRemovePending,
   draft,
   onDraftChange,
+  transcriptNote,
+  children,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -166,6 +169,11 @@ export function FocusView({
   onAttachError?: (message: string) => void;
   steer?: boolean;
   onRemovePending?: (i: number) => void;
+  /* Why the working transcript can't be shown — same note ThreadView renders
+     where the transcript would be (issue #28). */
+  transcriptNote?: string;
+  /* Extra surface content below the composer (the question card, #114). */
+  children?: ReactNode;
 }) {
   const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024);
   const [tab, setTab] = useState<WbTab>(() =>
@@ -226,9 +234,30 @@ export function FocusView({
   useEffect(() => setPlanOpen(running), [running]);
   const where = isDM ? "Direct" : (project?.name ?? "Company");
   const chLabel = isDM ? channel.name : `#${channel.name}`;
+  /* The Workbench exists only where there is a real folder to read (D-#19):
+     the app passes `host` only for sessions with one — a folder-less session
+     (or a pure-mock surface) gets no Workbench and no toggle (#114 AC-6). */
+  const wbAvailable = host != null;
+
+  /* Esc leaves Focus — but only when nothing else owns the key: the composer
+     takes it to stop a running turn, an open popup/menu takes it to close
+     (overlayOpen), and Esc pressed inside a field stays there (#114 AC-1,
+     same rules as issue #104). Capture phase: the check runs before the
+     overlay's own keydown handler dismisses it. */
+  useEffect(() => {
+    if (!onBack) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || overlayOpen()) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.("input, textarea, select, [contenteditable]")) return;
+      onBack();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onBack]);
 
   return (
-    <main className="flex min-h-0 min-w-0 flex-col">
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b px-2 sm:px-3">
         {onNav && (
           <Button
@@ -246,6 +275,8 @@ export function FocusView({
             size="sm"
             className="shrink-0 px-2"
             onClick={onBack}
+            title={isDM ? "Back to DM" : `Back to ${chLabel}`}
+            aria-label={isDM ? "Back to DM" : `Back to ${chLabel}`}
           >
             <ArrowLeftIcon />
             <span className="hidden sm:inline">{chLabel}</span>
@@ -272,19 +303,39 @@ export function FocusView({
             <code className="hidden shrink-0 rounded bg-muted px-1 sm:inline">
               {thread.session}
             </code>
-            {thread.ws && (
+            {/* The session's folder + branch — same badge the thread panel
+                shows (#113); Focus is the session's main view (#114). */}
+            {thread.ws ? (
               <span
-                className="hidden shrink-0 items-center gap-1 md:flex"
+                data-wsbadge
+                className="hidden shrink-0 items-center gap-1 rounded bg-emerald-50 px-1 text-emerald-800 md:flex"
                 title={thread.ws.cwd}
               >
                 <FolderIcon className="size-3" />
-                {thread.ws.project}
+                <span className="truncate">{thread.ws.project}</span>
+                {thread.ws.branch && (
+                  <>
+                    <GitBranchIcon className="size-3" />
+                    <span className="truncate font-mono">
+                      {thread.ws.branch}
+                    </span>
+                  </>
+                )}
+                <span className="shrink-0 text-emerald-700/80">
+                  · {thread.ws.mode === "direct" ? "direct" : "worktree"}
+                </span>
               </span>
-            )}
-            {work?.branch ? (
+            ) : work?.branch ? (
               <span className="hidden shrink-0 items-center gap-1 rounded bg-emerald-50 px-1 text-emerald-800 md:flex">
                 <GitBranchIcon className="size-3" />
                 <span className="font-mono">{work.branch}</span>
+              </span>
+            ) : work ? (
+              /* A real folder that isn't a git checkout: writes land there,
+                 "read-only" would lie (#114). */
+              <span className="hidden shrink-0 items-center gap-1 rounded bg-muted px-1 text-muted-foreground md:flex">
+                <FolderIcon className="size-3" />
+                no git repo
               </span>
             ) : (
               <span className="hidden shrink-0 items-center gap-1 rounded bg-muted px-1 md:flex">
@@ -363,14 +414,16 @@ export function FocusView({
               </Button>
             )
           )}
-          <Button
-            variant={wbOpen ? "secondary" : "ghost"}
-            size="icon-sm"
-            title="Workbench"
-            onClick={() => setWbOpen(!wbOpen)}
-          >
-            {wbOpen ? <PanelRightCloseIcon /> : <PanelRightOpenIcon />}
-          </Button>
+          {wbAvailable && (
+            <Button
+              variant={wbOpen ? "secondary" : "ghost"}
+              size="icon-sm"
+              title="Workbench"
+              onClick={() => setWbOpen(!wbOpen)}
+            >
+              {wbOpen ? <PanelRightCloseIcon /> : <PanelRightOpenIcon />}
+            </Button>
+          )}
           {onBack && (
             <Button
               variant="ghost"
@@ -387,7 +440,9 @@ export function FocusView({
       <div
         className={cn(
           "grid min-h-0 flex-1 grid-cols-1",
-          wbOpen && "lg:grid-cols-[minmax(0,1fr)_minmax(400px,46%)]",
+          wbAvailable &&
+            wbOpen &&
+            "lg:grid-cols-[minmax(0,1fr)_minmax(400px,46%)]",
         )}
       >
         <section className="flex min-h-0 min-w-0 flex-col">
@@ -465,6 +520,14 @@ export function FocusView({
                     />
                   </Fragment>
                 ),
+              )}
+              {transcriptNote && (
+                <div
+                  data-transcript-note
+                  className="rounded-lg border border-dashed px-3 py-2 text-muted-foreground text-xs"
+                >
+                  {transcriptNote}
+                </div>
               )}
             </ConversationContent>
             <ConversationScrollButton />
@@ -567,7 +630,9 @@ export function FocusView({
                     ? `#${pr.number} merged, ⎇ ${pr.head} deleted · next edit starts a new branch from main`
                     : work?.branch
                       ? `Edits go to ⎇ ${work.branch}`
-                      : "Read-only on main"
+                      : work
+                        ? "Edits land in this folder"
+                        : "Read-only on main"
               }
               onSend={(t, files) => onSend(t, files)}
               draft={draft}
@@ -577,9 +642,12 @@ export function FocusView({
               onAttachError={onAttachError}
             />
           </div>
+          {/* The open question card docks below the composer, same place it
+              sits under the thread panel (#114 AC-2). */}
+          {children}
         </section>
 
-        {wbOpen && (
+        {wbAvailable && wbOpen && (
           <>
             <div
               className="fixed inset-0 z-20 bg-black/20 lg:hidden"
@@ -604,6 +672,7 @@ export function FocusView({
                 onPrComment={onPrComment}
                 onPrMerge={onPrMerge}
                 live={surfaces}
+                running={running}
               />
             </aside>
           </>

@@ -134,8 +134,10 @@ test.afterAll(async () => {
 test.describe.configure({ mode: "serial" });
 
 const homeComposer = (page: Page) => page.getByPlaceholder(/New session with/);
+/* The session composer: "Reply to … in this session" in the peek panel,
+   "Continue session …" in Focus — opening a session lands in Focus (#114). */
 const threadComposer = (page: Page) =>
-  page.getByPlaceholder(/Reply to .* in this session/);
+  page.getByPlaceholder(/Reply to .* in this session|Continue session/);
 
 /** Open the app, land on Default's DM (dismissing the first-run card). */
 async function dmDefault(page: Page) {
@@ -245,6 +247,8 @@ test("AC-1 draft survives switching sessions; each thread keeps its own", async 
   await expect(threadComposer(page)).toHaveValue("");
 
   await threadComposer(page).fill("draft in beta");
+  // Session rows live on the DM home — Focus replaces it (#114).
+  await openDm(page, /default/i);
   await sessionRowWith(page, "session alpha")
     .getByRole("button", { name: /\d+ repl(y|ies)/ })
     .click();
@@ -260,13 +264,19 @@ test("AC-2 home composer keeps its own draft, separate from thread drafts", asyn
   await dmDefault(page);
   await homeComposer(page).fill("home draft");
   await homeComposer(page).press("Enter");
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
+  // The send lands in Focus (#114) — the home composer is back at the DM.
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/);
 
-  await homeComposer(page).fill("next top-level thought");
   await threadComposer(page).fill("thread draft");
-  // Both composers hold their own draft at once — home key ≠ thread key.
-  await expect(homeComposer(page)).toHaveValue("next top-level thought");
+  await openDm(page, /default/i);
+  await homeComposer(page).fill("next top-level thought");
+  // Both drafts hold their own key — reopening the session restores it.
+  await sessionRowWith(page, "home draft")
+    .getByRole("button", { name: /\d+ repl(y|ies)/ })
+    .click();
   await expect(threadComposer(page)).toHaveValue("thread draft");
+  await openDm(page, /default/i);
+  await expect(homeComposer(page)).toHaveValue("next top-level thought");
   await page.screenshot({ path: `${SHOTS}/ac-2-home-vs-thread.png` });
 });
 
@@ -324,6 +334,7 @@ test("AC-6 clearing text drops the draft; archive + remove prune theirs", async 
   // Archiving a session drops its draft — scope to this leg's session row:
   // earlier tests' sessions exist on the same serial stack.
   await threadComposer(page).fill("draft to prune");
+  await openDm(page, /default/i); // the session rows live on the DM home
   await sessionRowWith(page, "session to archive")
     .getByRole("button", { name: "Session actions" })
     .click();
@@ -372,6 +383,7 @@ test("AC-5 sending clears only that draft; a failed send keeps the text", async 
   // Send in B: B clears, A's draft untouched.
   await threadComposer(page).press("Enter");
   await expect(threadComposer(page)).toHaveValue("", { timeout: 30_000 });
+  await openDm(page, /default/i); // Focus → DM home, where the rows are
   await sessionRowWith(page, "session one")
     .getByRole("button", { name: /\d+ repl(y|ies)/ })
     .click();

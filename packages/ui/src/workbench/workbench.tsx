@@ -100,6 +100,7 @@ export function Workbench({
   onPrComment,
   onPrMerge,
   live,
+  running,
 }: {
   thread: Thread;
   work: Work | null;
@@ -121,6 +122,8 @@ export function Workbench({
   onPrMerge?: (method: MergeMethod) => void | Promise<void>;
   /** Live harness surfaces (issue #36): replaces the mock Terminal/Preview tabs. */
   live?: LiveSurfaces;
+  /** A turn is running — Changes/Files poll while the agent edits (#114 AC-3). */
+  running?: boolean;
 }) {
   const a = sessionArtifacts(thread);
   const [sel, setSel] = useState<string | null>(null);
@@ -131,48 +134,51 @@ export function Workbench({
     truncated: boolean;
   } | null>(null);
   const liveCwd = work?.path;
-  const [hostFiles, setHostFiles] = useState<{
-    files: string[];
-    diffs: Diff[];
+  /* Live mode = host accessors + a real session folder. In it each tab
+     renders only when its host method answered (D-#19, #114 AC-6): `null`
+     fields mean "didn't answer" — fs unreachable, path not a repo, `gh`
+     missing — never an unlucky mock fallback. `probe` is null until the
+     first round lands. */
+  const liveMode = !!host && liveCwd != null;
+  const [probe, setProbe] = useState<{
+    files: string[] | null;
+    diffs: Diff[] | null;
+    pr: { pr: PullRequest | null; branch?: string; error?: string } | null;
   } | null>(null);
-  const [livePending, setLivePending] = useState(false);
-  /* The conversation's PR: the forge (host API, issue #37) resolves the PR for
-     the session checkout's branch via `gh`. Outer null = host unreachable →
-     the session-carried `thread.pr` stays (mock). */
-  const [livePr, setLivePr] = useState<{ pr: PullRequest | null } | null>(null);
   const reloadPr = async () => {
     if (!host?.pr || !liveCwd) return;
     const r = await host.pr(liveCwd).catch(() => null);
-    if (r) setLivePr(r);
+    if (r) setProbe((p) => (p ? { ...p, pr: r } : p));
   };
-  // Read the session folder live when a host is wired; null entries = host
-  // unreachable / path not a repo → fall back to the session-derived mock.
+  // Read the session folder live. While a turn runs the agent is editing —
+  // a short poll keeps Changes/Files current (#114 AC-3); the effect's
+  // re-run on `running` flips lands a fresh read at turn end.
   useEffect(() => {
     setViewFile(null);
-    if (!host || !liveCwd) {
-      setHostFiles(null);
-      setLivePr(null);
+    if (!liveMode || !host || !liveCwd) {
+      setProbe(null);
       return;
     }
     const cwd = liveCwd;
     let off = false;
-    setLivePending(true);
-    void Promise.all([host.tree(cwd), host.diff(cwd), host.pr?.(cwd)]).then(
-      ([files, d, pr]) => {
-        if (off) return;
-        setHostFiles(files === null ? null : { files, diffs: d ?? [] });
-        if (pr) setLivePr(pr);
-        setLivePending(false);
-      },
-    );
+    const update = () =>
+      Promise.all([host.tree(cwd), host.diff(cwd), host.pr?.(cwd)]).then(
+        ([files, d, pr]) => {
+          if (off) return;
+          setProbe({ files, diffs: d ?? null, pr: pr ?? null });
+        },
+      );
+    void update();
+    const poll = running ? setInterval(update, 1500) : undefined;
     return () => {
       off = true;
+      if (poll) clearInterval(poll);
     };
-  }, [liveCwd]);
-  const diffs = hostFiles?.diffs ?? a.diffs;
+  }, [liveMode, liveCwd, running, host]);
+  const diffs = liveMode ? (probe?.diffs ?? []) : a.diffs;
   const changed = new Map(diffs.map((d) => [d.path, d]));
   const tree = buildTree([
-    ...new Set([...(hostFiles?.files ?? repoFiles ?? []), ...changed.keys()]),
+    ...new Set([...(probe?.files ?? repoFiles ?? []), ...changed.keys()]),
   ]);
   const folders = new Set<string>();
   diffs.forEach((d) => {
@@ -195,13 +201,16 @@ export function Workbench({
   walkDirs(tree);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const expandedSeed = new Set(["packages", "apps", ...folders]);
+  /* Newly seen folders expand — keyed on the seed's contents, not the probe
+     object, so the poll never re-expands folders the user collapsed. */
+  const expandedKey = [...expandedSeed].sort().join("\n");
   useEffect(() => {
     setExpanded((e) => {
       const n = new Set(e);
       for (const f of expandedSeed) n.add(f);
       return n;
     });
-  }, [hostFiles]);
+  }, [expandedKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const cwd =
     work?.path ??
     (work?.branch ? `.lilos/wt/${work.ticket.toLowerCase()}` : "main");
@@ -215,12 +224,34 @@ export function Workbench({
       </span>
     );
 
-  /* PR tab (issue #37): the forge's real PR wins over the session-carried
-     thread.pr once the host answers. Comment/merge route to `gh` only when a
-     real PR was resolved — otherwise the app's own handlers stay (D-#19:
-     no handler → no control). */
-  const prShown = livePr?.pr ?? thread.pr;
-  const liveForge = livePr?.pr != null && liveCwd != null;
+  /* PR tab (issue #37): in live mode the forge's answer is authoritative —
+     `{pr}` shows it, `{pr:null}` shows a plain "no PR on this branch" state,
+     `{error}` reads the `gh` failure plainly (#114 AC-5). A silent method
+     (outer null) hides the tab. Without a host the session-carried
+     thread.pr stays (mock). */
+  const prShown = liveMode ? (probe?.pr?.pr ?? null) : thread.pr;
+  const prError = liveMode ? probe?.pr?.error : undefined;
+  const liveForge = liveMode && prShown != null && liveCwd != null;
+  /* Tabs render only when their host method answered (#114 AC-6). Terminal /
+     Preview exist only where live surfaces are wired (slice B, #119). */
+  const changesOn = !liveMode || probe?.diffs != null;
+  const filesOn = !liveMode || probe?.files != null;
+  const surfacesOn = !liveMode || live != null;
+  const prOn = !liveMode ? prShown != null : probe?.pr != null;
+  const allowed: Record<WbTab, boolean> = {
+    changes: changesOn,
+    files: filesOn,
+    terminal: surfacesOn,
+    preview: surfacesOn,
+    pr: prOn,
+  };
+  /* The caller's tab choice yields to availability: when its method never
+     answers the first allowed tab shows instead. */
+  const shownTab = allowed[tab]
+    ? tab
+    : (["changes", "files", "pr", "terminal", "preview"] as WbTab[]).find(
+        (t) => allowed[t],
+      );
   const ghError = (e: unknown) =>
     (e instanceof Error ? e.message : String(e)).slice(0, 160);
   const prComment =
@@ -240,7 +271,7 @@ export function Workbench({
       ? async (m: MergeMethod) => {
           try {
             const pr = await host.prMerge?.(liveCwd, m);
-            if (pr) setLivePr({ pr });
+            if (pr) setProbe((p) => (p ? { ...p, pr: { pr } } : p));
             say?.(
               pr?.status === "merged"
                 ? `Merged #${pr.number} into ${pr.base} · gh pr merge --${m}`
@@ -251,9 +282,29 @@ export function Workbench({
           }
         }
       : onPrMerge;
+  /* First probe still in flight → hold the aside; a landed probe with no
+     answered method gets one plain line instead of an empty tab strip. */
+  if (liveMode && probe === null) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center gap-1.5 p-6 text-center text-muted-foreground text-xs">
+        Reading <span className="font-mono">{cwd}</span>…
+      </div>
+    );
+  }
+  if (liveMode && !changesOn && !filesOn && !surfacesOn && !prOn) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-muted-foreground text-xs">
+        <p>
+          Nothing to show — the host has no answer for{" "}
+          <span className="font-mono">{cwd}</span>.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <Tabs
-      value={tab}
+      value={shownTab ?? "changes"}
       onValueChange={(v) => setTab(v as WbTab)}
       className="flex min-h-0 flex-1 flex-col gap-0"
     >
@@ -262,37 +313,45 @@ export function Workbench({
           variant="line"
           className="no-scrollbar h-full min-w-0 overflow-x-auto"
         >
-          <TabsTrigger value="changes">
-            <FileDiffIcon />
-            Changes{count(diffs.length)}
-          </TabsTrigger>
-          <TabsTrigger value="files">
-            <FolderGit2Icon />
-            Files
-          </TabsTrigger>
-          <TabsTrigger value="terminal">
-            <SquareTerminalIcon />
-            Terminal
-            {a.termRunning && (
-              <CircleDotIcon className="size-3 animate-pulse text-amber-500" />
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="preview">
-            <GlobeIcon />
-            Preview
-          </TabsTrigger>
-          {prShown && (
+          {changesOn && (
+            <TabsTrigger value="changes">
+              <FileDiffIcon />
+              Changes{count(diffs.length)}
+            </TabsTrigger>
+          )}
+          {filesOn && (
+            <TabsTrigger value="files">
+              <FolderGit2Icon />
+              Files
+            </TabsTrigger>
+          )}
+          {surfacesOn && (
+            <TabsTrigger value="terminal">
+              <SquareTerminalIcon />
+              Terminal
+              {a.termRunning && (
+                <CircleDotIcon className="size-3 animate-pulse text-amber-500" />
+              )}
+            </TabsTrigger>
+          )}
+          {surfacesOn && (
+            <TabsTrigger value="preview">
+              <GlobeIcon />
+              Preview
+            </TabsTrigger>
+          )}
+          {prOn && (
             <TabsTrigger value="pr">
               <GitPullRequestIcon
                 className={
-                  prShown.status === "merged"
+                  prShown?.status === "merged"
                     ? "text-violet-600"
-                    : prShown.status === "closed"
+                    : prShown?.status === "closed"
                       ? "text-zinc-500"
                       : "text-emerald-600"
                 }
               />
-              PR #{prShown.number}
+              {prShown ? `PR #${prShown.number}` : "PR"}
             </TabsTrigger>
           )}
         </TabsList>
@@ -312,7 +371,7 @@ export function Workbench({
           {diffs.length === 0 ? (
             <div className="flex flex-col items-center gap-2 p-8 text-center text-muted-foreground text-xs">
               <EyeIcon className="size-5" />
-              {hostFiles ? (
+              {liveMode ? (
                 <p>
                   Clean working tree in <span className="font-mono">{cwd}</span>
                   .
@@ -443,11 +502,11 @@ export function Workbench({
               {diffs.length > 0 && (
                 <span>
                   · {plural(diffs.length, "file")}{" "}
-                  {hostFiles ? "changed" : "touched by this session"}
+                  {liveMode ? "changed" : "touched by this session"}
                 </span>
               )}
             </div>
-            {livePending ? (
+            {liveMode && probe === null ? (
               <div className="py-6 text-center text-muted-foreground text-xs">
                 Reading <span className="font-mono">{cwd}</span>…
               </div>
@@ -599,19 +658,37 @@ export function Workbench({
         )}
       </TabsContent>
 
-      {prShown && (
+      {prOn && (
         <TabsContent value="pr" className="min-h-0 flex-1">
-          <PrPanel
-            pr={prShown}
-            diffs={diffs}
-            commits={a.commits}
-            lead={lead}
-            session={thread.session}
-            human={human}
-            onComment={prComment}
-            onMerge={prMerge}
-            say={say}
-          />
+          {prShown ? (
+            <PrPanel
+              pr={prShown}
+              diffs={diffs}
+              commits={a.commits}
+              lead={lead}
+              session={thread.session}
+              human={human}
+              onComment={prComment}
+              onMerge={prMerge}
+              say={say}
+            />
+          ) : (
+            /* No PR on the branch, or `gh` failed — read plainly (#114 AC-5). */
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground text-xs">
+              <EyeIcon className="size-5" />
+              {prError ? (
+                <p className="max-w-full break-words">{prError}</p>
+              ) : (
+                <p>
+                  No pull request on{" "}
+                  <span className="font-mono">
+                    ⎇ {probe?.pr?.branch || work?.branch || "this branch"}
+                  </span>{" "}
+                  yet.
+                </p>
+              )}
+            </div>
+          )}
         </TabsContent>
       )}
     </Tabs>

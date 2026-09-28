@@ -139,6 +139,9 @@ const git = (args: string[], cwd = repoDir) =>
   execFileSync("git", args, { cwd, encoding: "utf8" });
 git(["init", "-b", "trunk"]);
 writeFileSync(path.join(repoDir, "a.txt"), "one\n");
+/* Committed but never touched by the session — clicking it in Files opens
+   fs.read (changed files route to the diff instead). */
+writeFileSync(path.join(repoDir, "b.txt"), "bees\n");
 writeFileSync(path.join(plainDir, "note.txt"), "plain\n");
 git(["add", "."]);
 git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init"]);
@@ -237,17 +240,22 @@ async function pickFolder(page: Page, dir: string) {
       .catch(() => false)
   ) {
     await recent.first().click();
-    return;
+  } else {
+    await menu.getByText("Add a folder").click();
+    const dialog = page.locator("[data-addfolder]");
+    await expect(dialog).toBeVisible();
+    await dialog.locator("[data-pathinput]").fill(dir);
+    await expect(dialog.locator("[data-folderinfo]")).toBeVisible({
+      timeout: 15_000,
+    });
+    await dialog.locator("[data-addbtn]").click();
+    await expect(dialog).toHaveCount(0);
   }
-  await menu.getByText("Add a folder").click();
-  const dialog = page.locator("[data-addfolder]");
-  await expect(dialog).toBeVisible();
-  await dialog.locator("[data-pathinput]").fill(dir);
-  await expect(dialog.locator("[data-folderinfo]")).toBeVisible({
+  // The pick lands async (addFolder → setPick) — wait for the button label
+  // before sending, or the session starts without the folder.
+  await expect(pickerButton(page)).toContainText(path.basename(dir), {
     timeout: 15_000,
   });
-  await dialog.locator("[data-addbtn]").click();
-  await expect(dialog).toHaveCount(0);
 }
 
 const send = async (page: Page, text: string) => {
@@ -325,9 +333,10 @@ test("AC-2 Focus is the same live conversation: streaming, steps, approvals, mod
   await sessionRow(page).click();
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
 
-  // A reply turn streams in — reasoning + tool steps render live.
+  // A reply turn streams in — reasoning + tool steps render live. `.last()`:
+  // AC-1's "check in" turn sits above it and carries no tool steps.
   await send(page, "Say hello then list files");
-  const turn = page.locator("[data-agentturn]").first();
+  const turn = page.locator("[data-agentturn]").last();
   await expect(turn).toBeVisible({ timeout: 30_000 });
   await expect(turn.locator("[data-tasksteps]")).toBeVisible({
     timeout: 60_000,
@@ -348,7 +357,9 @@ test("AC-2 Focus is the same live conversation: streaming, steps, approvals, mod
   });
   await page.screenshot({ path: `${SHOTS}/ac-2-approval.png` });
   await allowAll(page);
-  await expect(page.getByText(/Allowed once|Always allowed/).first()).toBeVisible({
+  await expect(
+    page.getByText(/Allowed once|Always allowed/).first(),
+  ).toBeVisible({
     timeout: 30_000,
   });
   await expect(page.locator("[data-agentturn]").last()).toContainText(
@@ -429,12 +440,12 @@ test("AC-4 Files shows the folder tree (fs.tree) and file contents (fs.read)", a
   await files.click();
   await expect(page.getByText("a.txt").last()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("notes.txt").last()).toBeVisible();
-  await page.getByText("a.txt").last().click();
-  // fs.read's content renders in the file view.
-  await expect(page.locator("[data-fileview]")).toContainText("one", {
+  // An unchanged file opens fs.read's content (a.txt/notes.txt changed in
+  // AC-3 — clicking one of those jumps to its diff instead).
+  await page.getByText("b.txt").last().click();
+  await expect(page.locator("[data-fileview]")).toContainText("bees", {
     timeout: 15_000,
   });
-  await expect(page.locator("[data-fileview]")).toContainText("two");
   await page.screenshot({ path: `${SHOTS}/ac-4-files.png` });
 });
 
@@ -545,7 +556,11 @@ test("AC-7 Focus + Workbench compose like the prototype (evidence screenshots)",
 }) => {
   test.setTimeout(120_000);
   await dmDefault(page);
-  await sessionRow(page).first().click();
+  // AC-1's repo session — AC-6 added newer plain/no-folder rows on top.
+  await page
+    .locator("[data-session]", { hasText: "check in" })
+    .getByRole("button", { name: /repl(y|ies)/ })
+    .click();
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
   await expect(tab(page, /Changes/)).toBeVisible({ timeout: 30_000 });
   await tab(page, /Changes/).click();

@@ -16,6 +16,7 @@ import {
   draftKey,
   EditEmployeeDialog,
   EmployeeHome,
+  FocusView,
   NO_WS,
   ThreadView,
   useDraft,
@@ -26,9 +27,10 @@ import type {
   Msg,
   Reply,
   Thread,
+  Work,
   WsPick,
 } from "@lilos/ui/types";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import { atom } from "nanostores";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -60,6 +62,7 @@ import {
   wsFor,
 } from "../lib/folders";
 import { useAtom } from "../lib/hooks";
+import { hostAccessors } from "../lib/host";
 import {
   conversationReplies,
   mergeTurns,
@@ -124,6 +127,11 @@ export function DmPage() {
     conversationId?: string;
   };
   const navigate = useNavigate();
+  /* `/dm/$e/$c/focus` renders the session in Focus instead of the panel
+     (#114) — the route carries it, so reload stays in Focus. */
+  const focusOpen = useRouterState({
+    select: (s) => s.location.pathname.endsWith("/focus"),
+  });
 
   const employees = useAtom(relay.employees);
   const channels = useAtom(relay.channels);
@@ -373,11 +381,13 @@ export function DmPage() {
     employees: [employeeId],
   };
 
+  /* Clicking a session opens it straight in Focus, like Claude Code /
+     Codex — the thread panel stays the quick peek (#114 AC-1). */
   const openThread = (id: string) => {
     const conv = convs.find((c) => c.rootMessageId === id);
     if (conv)
       void navigate({
-        to: "/dm/$employeeId/$conversationId",
+        to: "/dm/$employeeId/$conversationId/focus",
         params: { employeeId, conversationId: conv.id },
       });
   };
@@ -430,8 +440,9 @@ export function DmPage() {
       (conv) => {
         if (!conv) throw new Error("send failed");
         clearDraftIfSent(draftKey.dm(employeeId), text);
+        // A fresh session opens in Focus too (#114).
         return navigate({
-          to: "/dm/$employeeId/$conversationId",
+          to: "/dm/$employeeId/$conversationId/focus",
           params: { employeeId, conversationId: conv.id },
         });
       },
@@ -493,6 +504,16 @@ export function DmPage() {
     /* AC-7: the conversation's folder (+ branch for a repo) in the header;
        sessions without one show nothing extra. */
     const convWs = wsFor(conv.cwd, cwdBranches);
+    /* The session's real folder for Focus/Workbench (issue #113/114): absent
+       when the session was started without one — no Workbench then (D-#19). */
+    const work: Work | null = conv.cwd
+      ? {
+          ticket: "",
+          title: conv.title ?? "",
+          path: conv.cwd,
+          ...(convWs?.branch ? { branch: convWs.branch } : {}),
+        }
+      : null;
 
     const thread: Thread = {
       session: engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
@@ -526,6 +547,69 @@ export function DmPage() {
           thread,
         }
       : { kind: "msg", id: conv.id, from: "user", time: "", text: "", thread };
+
+    if (focusOpen) {
+      /* Focus: the same live conversation the thread panel shows (shared
+         AgentTurn/composer/draft/asks — issue #114 AC-2), plus the
+         Workbench against the session's real folder (AC-3…5). Esc / the
+         back button return to the DM with the panel closed (AC-1). */
+      return (
+        <FocusView
+          root={rootMsg}
+          thread={thread}
+          channel={uiChannel}
+          lead={uiEmp}
+          emp={empFn}
+          human={human}
+          resolved={resolved}
+          setResolved={(r) => {
+            const diff = Object.entries(r).find(([k, v]) => resolved[k] !== v);
+            if (diff) {
+              void respondToRequest(diff[0], outcomeFromLabel(diff[1]));
+            }
+          }}
+          work={work}
+          onBack={() =>
+            void navigate({
+              to: "/dm/$employeeId",
+              params: { employeeId },
+            })
+          }
+          onNav={() => navOpen.set(true)}
+          running={running}
+          onSend={(text, files) =>
+            sendDm(employeeId, text, conv.id, files).then((c) => {
+              if (!c) throw new Error("send failed");
+              clearDraftIfSent(draftKey.thread(conv.id), text);
+              return c;
+            })
+          }
+          onStop={running ? () => void interruptSession(conv.id) : undefined}
+          lastSent={lastSent}
+          onModel={(c) => void setConversationModel(conv.id, c.model)}
+          models={catalog.length ? catalog : undefined}
+          accept={canAttachImages ? "image/*" : undefined}
+          maxFileSize={MAX_ATTACHMENT_BYTES}
+          onAttachError={say}
+          say={say}
+          host={conv.cwd ? hostAccessors : undefined}
+          transcriptNote={transcriptNote}
+          steer={steer}
+          draft={threadDraft}
+          onDraftChange={setThreadDraft}
+        >
+          {openQuestion && (
+            <QuestionCard
+              ask={openQuestion}
+              onAnswer={(answer) =>
+                void respondToRequest(openQuestion.id, "answer", answer)
+              }
+              onCancel={() => void respondToRequest(openQuestion.id, "cancel")}
+            />
+          )}
+        </FocusView>
+      );
+    }
 
     threadEl = (
       <div className="flex min-h-0 w-[420px] shrink-0 flex-col border-l xl:w-[460px]">
@@ -563,7 +647,13 @@ export function DmPage() {
           onAttachError={say}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           lastSent={lastSent}
-          onFocus={undefined}
+          /* The peek panel's Focus button jumps to the full view (#114). */
+          onFocus={() =>
+            void navigate({
+              to: "/dm/$employeeId/$conversationId/focus",
+              params: { employeeId, conversationId: conv.id },
+            })
+          }
           work={null}
         />
         {openQuestion && (
