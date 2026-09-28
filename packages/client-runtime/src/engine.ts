@@ -102,6 +102,13 @@ export class EngineClient {
   >();
   private readonly listeners = new Set<(e: EngineEvent) => void>();
   private readonly feeds = new Map<string, WritableAtom<SessionFeedState>>();
+  /* #179: a failed `events.since` mustn't brick a feed while the socket
+     stays up — transient failures retry with backoff (bounded), then the
+     error note stands. */
+  private readonly resyncRetries = new Map<
+    WritableAtom<SessionFeedState>,
+    { attempts: number; timer?: ReturnType<typeof setTimeout> }
+  >();
   private manualClose = false;
   private connectPromise: Promise<DescribeResult> | undefined;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -152,6 +159,10 @@ export class EngineClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = undefined;
     }
+    for (const entry of this.resyncRetries.values()) {
+      if (entry.timer) clearTimeout(entry.timer);
+    }
+    this.resyncRetries.clear();
     this.socket?.close();
     this.dropSocket(new EngineError("engine socket closed", "socket_closed"));
     this.connectPromise = undefined;
@@ -205,7 +216,9 @@ export class EngineClient {
       });
       this.feeds.set(sessionId, feed);
       if (this.state.get() === "ready") {
-        void this.resyncFeed(feed);
+        /* The failure is recorded on the feed (+retry) — nothing else
+           consumes the rejection. */
+        void this.resyncFeed(feed).catch(() => {});
       }
     }
     return feed;
@@ -401,13 +414,38 @@ export class EngineClient {
         snapshot: res.snapshot,
         error: undefined,
       });
+      const pending = this.resyncRetries.get(feed);
+      if (pending?.timer) clearTimeout(pending.timer);
+      this.resyncRetries.delete(feed);
     } catch (error) {
       feed.set({
         ...feed.get(),
         error: feedErrorText(error),
       });
+      /* #179: transient failures (engine link blip, request timeout) retry
+         with backoff — the socket staying up never re-triggers a resync on
+         its own, and without this the pre-reload log (e.g. subagent rows)
+         is lost for good. A gone session is terminal: its note stands. */
+      if (isTransientFeedError(error)) this.scheduleResyncRetry(feed);
       throw error;
     }
+  }
+
+  private scheduleResyncRetry(feed: WritableAtom<SessionFeedState>): void {
+    const entry = this.resyncRetries.get(feed) ?? { attempts: 0 };
+    if (entry.attempts >= 5) return;
+    entry.attempts += 1;
+    if (entry.timer) clearTimeout(entry.timer);
+    entry.timer = setTimeout(
+      () => {
+        this.resyncRetries.delete(feed);
+        /* Not ready yet — the reconnect path's resyncFeeds covers it. */
+        if (this.state.get() === "ready")
+          void this.resyncFeed(feed).catch(() => {});
+      },
+      Math.min(2_000 * 2 ** (entry.attempts - 1), 15_000),
+    );
+    this.resyncRetries.set(feed, entry);
   }
 
   private dropSocket(_error: EngineError): void {
@@ -456,6 +494,13 @@ export class EngineClient {
 
 /** ids used by tests to assert events the client accepted. */
 export const ENGINE_EVENT_NAMES = ENGINE_EVENT_TYPES;
+
+/** #179: a gone session's replay error is terminal; anything else retries. */
+function isTransientFeedError(error: unknown): boolean {
+  const code =
+    error instanceof EngineError ? (error.code ?? "") : String(error);
+  return !code.includes("session_not_found") && !code.includes("-32001");
+}
 
 /** Why a session feed can't replay — phrased for the thread panel. */
 function feedErrorText(error: unknown): string {
