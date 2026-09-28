@@ -39,7 +39,9 @@ const NO_PR = /no pull requests found|no open pull requests|not found/i;
 
 function ghFailed(e: unknown): HostError {
   const err = e as { stderr?: string; message?: string };
-  const detail = (err.stderr ?? err.message ?? String(e)).trim();
+  // Bun attaches stderr:"" on ENOENT (Node doesn't) — an empty stderr must
+  // fall back to err.message or the failure reads "gh failed:" blank.
+  const detail = (err.stderr?.trim() || err.message || String(e)).trim();
   return new HostError(HOST_ERRORS.GH_FAILED, `gh failed: ${detail}`, {
     detail,
   });

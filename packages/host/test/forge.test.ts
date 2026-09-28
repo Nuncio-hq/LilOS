@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -240,6 +241,25 @@ describe("forge host api (fake gh)", () => {
     const d = (await callHost("host.describe", {})) as { methods: string[] };
     for (const m of ["forge.pr", "forge.comment", "forge.merge"]) {
       expect(d.methods).toContain(m);
+    }
+  });
+
+  it("missing gh reports its reason — never a bare 'gh failed:'", async () => {
+    // execFile ENOENT carries stderr:"" on both Node and Bun; the detail must
+    // fall back to err.message (regression: packaged app showed "gh failed:"
+    // blank because launchd's PATH hid gh AND stderr:"" shadowed the message).
+    const bare = mkdtempSync(join(tmpdir(), "lilos-nogh-"));
+    symlinkSync("/usr/bin/git", join(bare, "git"));
+    const saved = process.env.PATH;
+    process.env.PATH = `${bare}:/usr/bin:/bin`;
+    try {
+      await expect(callHost("forge.pr", { path: repo })).rejects.toMatchObject({
+        code: HOST_ERRORS.GH_FAILED,
+        message: expect.stringMatching(/^gh failed: \S/),
+      });
+    } finally {
+      process.env.PATH = saved;
+      rmSync(bare, { recursive: true, force: true });
     }
   });
 
