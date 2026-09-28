@@ -87,10 +87,15 @@ interface World {
   cleanup: () => Promise<void>;
 }
 
-async function setupWorld(tick = 1, hideCaps?: string[]): Promise<World> {
+async function setupWorld(
+  tick = 1,
+  hideCaps?: string[],
+  wrap?: (conn: EngineConnection, engine: FakeEngine) => EngineConnection,
+): Promise<World> {
   const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
   const engine = new FakeEngine({ tick });
-  const engineConn = connectFake(engine) as unknown as EngineConnection;
+  const raw = connectFake(engine) as unknown as EngineConnection;
+  const engineConn = wrap ? wrap(raw, engine) : raw;
   const log = createMemoryLogger();
   const harnessRelay = new RelayClient({
     url: "mem://harness",
@@ -302,6 +307,65 @@ describe("steer capability gating", () => {
         };
         return events.find((e) => e.type === "turn.steered");
       }, "turn.steered event");
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("a steer that races the turn's end (not_running) still runs as the next prompt", {
+    timeout: 30_000,
+  }, async () => {
+    /* The harness saw a running turn and steered; by the time the engine
+       handled it the turn had ended (a Stop landed first), so it answered
+       not_running. The message must become a prompt — not sit in the queue,
+       which only drains on a turn.completed that already happened. */
+    let raced = false;
+    const w = await setupWorld(1, undefined, (conn) => {
+      const request = conn.request.bind(conn) as EngineConnection["request"];
+      return new Proxy(conn, {
+        get(target, prop, receiver) {
+          if (prop !== "request") return Reflect.get(target, prop, receiver);
+          return async (method: string, params?: Record<string, unknown>) => {
+            if (method === "session.steer" && !raced) {
+              raced = true;
+              // End the running turn, let the harness settle it, then answer
+              // the steer exactly as the engine does for an idle session.
+              await request("interrupt", { sessionId: params?.sessionId });
+              await new Promise((r) => setTimeout(r, 200));
+              return { status: "not_running" };
+            }
+            return request(method as never, params as never);
+          };
+        },
+      }) as EngineConnection;
+    });
+    try {
+      const conversation = await midTurn(w);
+      const sessionId = await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        return (
+          conversations.find((c) => c.id === conversation.id)?.engineRef ??
+          undefined
+        );
+      }, "engineRef");
+      if (!sessionId) throw new Error("engineRef never set");
+      // "also bananas" reaches the engine as a second turn's prompt.
+      await waitFor(
+        async () => {
+          await answeredConvs(w, conversation.id);
+          const { events } = (await w.harness.eventsSince(sessionId, 0)) as {
+            events: EngineEvent[];
+          };
+          return events.filter((e) => e.type === "turn.started").length >= 2
+            ? true
+            : undefined;
+        },
+        "second turn from the raced steer",
+        15_000,
+      );
+      expect(raced).toBe(true);
     } finally {
       await w.cleanup();
     }
