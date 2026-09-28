@@ -1,0 +1,282 @@
+import { useState } from "react";
+import {
+  KeyboardAvoidingView,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AppText } from "../components/app-text";
+import { SectionTitle } from "../components/bits";
+import { Icon } from "../components/icon";
+import { Orb, type OrbState, type OrbTone } from "../components/orb";
+import { Pulse, plain } from "../components/prose";
+import { Composer } from "./composer";
+import { PrLine } from "./pr-badges";
+import type { SessionState, SessionTurn } from "./types";
+
+/* A DM with one employee, as a Mail-style list of its threads: each message
+   you send opens a thread, and the threads group by what they need from
+   you — Needs you, Working, Done — newest first inside each group. Tap a
+   thread to open it (approve there, with the context in view). The floating
+   glass composer starts a new thread. The header is the native nav bar
+   (see DmHeaderTitle). */
+
+const GROUPS: { title: string; states: SessionState[] }[] = [
+  { title: "Needs you", states: ["needs-you"] },
+  { title: "Working", states: ["working"] },
+  { title: "Done", states: ["done", "failed", "stopped"] },
+];
+
+export function EmployeeDmScreen({
+  name,
+  tone,
+  turns,
+  folder,
+  model,
+  modelLogo,
+  onOpenSession,
+  onSend,
+  onPickFolder,
+  onPickModel,
+}: {
+  name: string;
+  tone: OrbTone;
+  turns: SessionTurn[];
+  folder: string;
+  model: string;
+  /** models.dev slug for the composer's model chip. */
+  modelLogo?: string;
+  onOpenSession: (id: string) => void;
+  onSend: (text: string) => void;
+  onPickFolder: () => void;
+  onPickModel: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [composerHeight, setComposerHeight] = useState(96);
+  const newest = [...turns].reverse();
+
+  return (
+    <KeyboardAvoidingView behavior="padding" className="flex-1 bg-background">
+      {/* The keyboard shrinks this box, so the composer pinned to its
+          bottom rides up with the keyboard. */}
+      <View className="flex-1">
+        <ScrollView
+          className="flex-1"
+          contentInsetAdjustmentBehavior="automatic"
+          keyboardDismissMode="interactive"
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingBottom: composerHeight + 16,
+          }}
+        >
+          {turns.length === 0 && (
+            <View className="flex-1 items-center justify-center gap-3 px-10">
+              <Orb tone={tone} size={64} />
+              <AppText tone="muted" className="text-center text-[15px]">
+                {`Each message opens its own thread.\nAsk ${name} something below.`}
+              </AppText>
+            </View>
+          )}
+          {GROUPS.map((g) => {
+            const rows = newest.filter((t) => g.states.includes(t.state));
+            if (!rows.length) return null;
+            return (
+              <View key={g.title}>
+                <SectionTitle title={g.title} />
+                {rows.map((t, i) => (
+                  <ThreadRow
+                    key={t.id}
+                    t={t}
+                    last={i === rows.length - 1}
+                    onPress={() => onOpenSession(t.id)}
+                  />
+                ))}
+              </View>
+            );
+          })}
+        </ScrollView>
+
+        <View className="absolute inset-x-0 bottom-0">
+          <Composer
+            placeholder={`New thread with ${name}`}
+            folder={folder}
+            model={model}
+            modelLogo={modelLogo}
+            insetBottom={insets.bottom}
+            onSend={onSend}
+            onPickFolder={onPickFolder}
+            onPickModel={onPickModel}
+            onLayoutHeight={setComposerHeight}
+          />
+        </View>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+/* One thread, like a message in Mail: a state mark in the gutter (teal dot
+   = needs you, pulsing blue = working), title + time, what it needs or said
+   last, then where it runs and how many replies. */
+function ThreadRow({
+  t,
+  last,
+  onPress,
+}: {
+  t: SessionTurn;
+  last: boolean;
+  onPress: () => void;
+}) {
+  const needs = t.state === "needs-you";
+  const body = needs
+    ? (t.approval?.reason ?? plain(t.preview ?? ""))
+    : t.state === "working"
+      ? (t.live ?? plain(t.preview ?? ""))
+      : plain(t.preview ?? t.prompt);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${t.title}, ${stateLabel(t.state)}. ${body}`}
+      onPress={onPress}
+      className="flex-row pl-4 active:bg-fill"
+    >
+      <View className="w-5 items-start pt-[19px]">
+        <StateMark state={t.state} />
+      </View>
+      <View className="min-w-0 flex-1 gap-0.5 py-3 pr-4">
+        <View className="flex-row items-center gap-2">
+          <AppText
+            weight="semibold"
+            numberOfLines={1}
+            className="flex-1 text-[17px] leading-[22px]"
+          >
+            {t.title}
+          </AppText>
+          <AppText tone="muted" className="text-[15px]">
+            {t.when}
+          </AppText>
+          <Icon
+            name="chevron.right"
+            size={11}
+            tone="muted-foreground"
+            weight="semibold"
+          />
+        </View>
+        {!!body && (
+          <Text
+            numberOfLines={2}
+            className={`text-[15px] leading-5 ${needs ? "text-foreground" : "text-muted-foreground"}`}
+          >
+            {body}
+          </Text>
+        )}
+        <View className="mt-0.5 flex-row items-center gap-2">
+          {t.folder ? (
+            <View className="min-w-0 shrink flex-row items-center gap-1">
+              <Icon
+                name="arrow.triangle.branch"
+                size={11}
+                tone="muted-foreground"
+              />
+              <Text
+                numberOfLines={1}
+                className="shrink text-[13px] text-muted-foreground"
+              >
+                {t.branch ? `${t.folder} · ${t.branch}` : t.folder}
+              </Text>
+            </View>
+          ) : (
+            <AppText tone="muted" className="text-[13px]">
+              Just chat
+            </AppText>
+          )}
+          {t.added !== undefined && (
+            <Text
+              className="font-medium text-[13px]"
+              style={{ fontVariant: ["tabular-nums"] }}
+            >
+              <Text className="text-success">{`+${t.added}`}</Text>
+              <Text className="text-destructive">{` −${t.removed ?? 0}`}</Text>
+            </Text>
+          )}
+          <View className="flex-1" />
+          {!!t.replies && (
+            <AppText tone="muted" className="text-[13px]">
+              {`${t.replies} ${t.replies === 1 ? "reply" : "replies"}`}
+            </AppText>
+          )}
+        </View>
+        {!!t.prs?.length && <PrLine prs={t.prs} />}
+        {!last && (
+          <View className="absolute right-0 bottom-0 left-0 h-[0.5px] bg-border" />
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
+function StateMark({ state }: { state: SessionState }) {
+  if (state === "needs-you")
+    return <View className="size-2.5 rounded-full bg-primary" />;
+  if (state === "working")
+    return (
+      <Pulse>
+        <View className="size-2.5 rounded-full bg-work" />
+      </Pulse>
+    );
+  if (state === "failed")
+    return (
+      <Icon name="exclamationmark.triangle.fill" size={11} tone="destructive" />
+    );
+  return null;
+}
+
+function stateLabel(state: SessionState) {
+  return state === "needs-you"
+    ? "needs you"
+    : state === "working"
+      ? "working"
+      : state;
+}
+
+export function DmHeaderTitle({
+  name,
+  tone,
+  state,
+  status,
+  onPress,
+}: {
+  name: string;
+  tone: OrbTone;
+  state: OrbState;
+  status: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${name} profile`}
+      onPress={onPress}
+      className="flex-row items-center gap-2 active:opacity-60"
+    >
+      <Orb tone={tone} size={26} state={state} badge={false} />
+      <View>
+        <AppText
+          weight="semibold"
+          numberOfLines={1}
+          className="text-[16px] leading-5"
+        >
+          {name}
+        </AppText>
+        <AppText
+          tone="muted"
+          numberOfLines={1}
+          className="text-[12px] leading-[15px]"
+        >
+          {status}
+        </AppText>
+      </View>
+    </Pressable>
+  );
+}

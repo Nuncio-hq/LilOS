@@ -7,7 +7,11 @@ export type IconTone =
   | "primary-foreground"
   | "destructive"
   | "success"
-  | "warning";
+  | "warning"
+  | "primary"
+  | "subtle-foreground"
+  | "work"
+  | "merged";
 
 /* SF Symbols tinted from the theme's CSS variables (light/dark aware). */
 export function Icon({
