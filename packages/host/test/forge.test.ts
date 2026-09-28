@@ -244,7 +244,10 @@ describe("forge host api (fake gh)", () => {
     }
   });
 
-  it("missing gh reports its reason — never a bare 'gh failed:'", async () => {
+  /* #114 AC-5 — every gh failure carries a typed reason in error data, so the
+     Workbench renders plain copy + one next step instead of raw stderr. */
+
+  it("#114 AC-5 gh not installed maps to reason 'missing' — never a bare 'gh failed:'", async () => {
     // execFile ENOENT carries stderr:"" on both Node and Bun; the detail must
     // fall back to err.message (regression: packaged app showed "gh failed:"
     // blank because launchd's PATH hid gh AND stderr:"" shadowed the message).
@@ -256,11 +259,38 @@ describe("forge host api (fake gh)", () => {
       await expect(callHost("forge.pr", { path: repo })).rejects.toMatchObject({
         code: HOST_ERRORS.GH_FAILED,
         message: expect.stringMatching(/^gh failed: \S/),
+        data: { reason: "missing" },
       });
     } finally {
       process.env.PATH = saved;
       rmSync(bare, { recursive: true, force: true });
     }
+  });
+
+  it("#114 AC-5 gh signed out (exit 4 + auth copy) maps to 'unauthenticated'", async () => {
+    writeFileSync(join(ghDir, "fail"), "auth\n");
+    await expect(callHost("forge.pr", { path: repo })).rejects.toMatchObject({
+      code: HOST_ERRORS.GH_FAILED,
+      data: { reason: "unauthenticated" },
+    });
+  });
+
+  it("#114 AC-5 gh's auth copy maps to 'unauthenticated' even on exit 1", async () => {
+    // Some gh versions answer auth-required text with a plain exit 1 — the
+    // stderr signal is what matters, not the code.
+    writeFileSync(join(ghDir, "fail"), "please run: gh auth login\n");
+    await expect(callHost("forge.pr", { path: repo })).rejects.toMatchObject({
+      code: HOST_ERRORS.GH_FAILED,
+      data: { reason: "unauthenticated" },
+    });
+  });
+
+  it("#114 AC-5 any other gh failure maps to 'other' with the raw detail", async () => {
+    writeFileSync(join(ghDir, "fail"), "boom\n");
+    await expect(callHost("forge.pr", { path: repo })).rejects.toMatchObject({
+      code: HOST_ERRORS.GH_FAILED,
+      data: { reason: "other", detail: "fake gh: boom" },
+    });
   });
 
   it("forge.pr by explicit number resolves that PR", async () => {

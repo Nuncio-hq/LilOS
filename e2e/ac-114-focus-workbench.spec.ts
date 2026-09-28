@@ -132,6 +132,9 @@ const repoDir = path.join(ROOT, "lilos-repo-a");
 const plainDir = path.join(ROOT, "lilos-plain-b");
 const ghFakeDir = path.join(ROOT, "gh-fake");
 const viewPath = path.join(ghFakeDir, "view.json");
+/* fake-gh's forced-failure switch (packages/host/test/fake-gh): "auth" =
+   gh's signed-out answer, anything else = a generic failure. */
+const failPath = path.join(ghFakeDir, "fail");
 const ghLogFile = path.join(ghFakeDir, "gh.log");
 mkdirSync(repoDir, { recursive: true });
 mkdirSync(plainDir, { recursive: true });
@@ -513,16 +516,44 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
   ).toBeVisible({ timeout: 15_000 });
   await page.screenshot({ path: `${SHOTS}/ac-5-no-pr.png` });
 
-  // A `gh` failure (unauthenticated, missing) reads plainly too.
-  writeFileSync(viewPath, "{not json\n");
+  // `gh` signed out (its real "gh auth login" stderr + exit 4) → the sign-in
+  // copy with a copyable chip and Retry — never raw stderr, never "gh failed:".
+  writeFileSync(failPath, "auth\n");
   await page.reload();
   await expect(tab(page, /^PR$/)).toBeVisible({ timeout: 30_000 });
   await tab(page, /^PR$/).click();
   await expect(
-    page.getByText(/gh failed|can't reach GitHub|Could not/i),
+    page.getByText("Sign in to GitHub to see this PR", { exact: false }),
   ).toBeVisible({ timeout: 15_000 });
-  await page.screenshot({ path: `${SHOTS}/ac-5-gh-error.png` });
+  await expect(page.getByText("gh auth login")).toBeVisible();
+  const retry = page.getByRole("button", { name: "Retry" });
+  await expect(retry).toBeVisible();
+  await expect(page.getByText(/gh failed:/)).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/ac-5-gh-auth.png` });
+
+  // Retry re-probes for real: gh healthy again → the PR renders in place.
+  rmSync(failPath);
   writeView(PR_VIEW);
+  await retry.click();
+  await expect(page.locator("[data-pr='7']")).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // Any other `gh` failure → "Couldn't load the PR." with the raw detail
+  // only behind Details.
+  writeFileSync(failPath, "boom\n");
+  await page.reload();
+  await expect(tab(page, /^PR$/)).toBeVisible({ timeout: 30_000 });
+  await tab(page, /^PR$/).click();
+  await expect(page.getByText("Couldn't load the PR.")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByText(/gh failed:/)).toHaveCount(0);
+  await expect(page.getByText(/fake gh: boom/)).toHaveCount(0);
+  await page.getByText("Details").click();
+  await expect(page.getByText(/fake gh: boom/)).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ac-5-gh-error.png` });
+  rmSync(failPath);
 });
 
 test("AC-6 tabs render only when their host method answers; a session without a folder shows no Workbench", async ({
