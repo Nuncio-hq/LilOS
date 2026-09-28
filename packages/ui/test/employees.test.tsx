@@ -7,7 +7,12 @@ import { afterEach, describe, expect, test } from "vitest";
 import { HireDialog } from "../src/dialogs/hire-dialog";
 import { EditEmployeeDialog } from "../src/employee/employee-edit";
 import { EmployeeCard } from "../src/employee/employee-home";
-import type { Employee, EngineProfile, HireDraft } from "../src/types";
+import type {
+  Employee,
+  EmployeeEditSave,
+  EngineProfile,
+  HireDraft,
+} from "../src/types";
 
 if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = class {
@@ -194,13 +199,13 @@ describe("AC-5 EmployeeCard profile-missing state", () => {
 
 describe("AC-3/AC-4 EditEmployeeDialog", () => {
   test("edits display name + role; removal keeps the engine profile", () => {
-    const saves: [string, string][] = [];
+    const saves: EmployeeEditSave[] = [];
     let removed = 0;
     const { getByLabelText, getAllByRole, getByText } = render(
       <EditEmployeeDialog
         e={EMPLOYEE}
         onClose={() => {}}
-        onSave={(name, role) => saves.push([name, role])}
+        onSave={(edit) => saves.push(edit)}
         onRemove={() => removed++}
       />,
     );
@@ -211,7 +216,7 @@ describe("AC-3/AC-4 EditEmployeeDialog", () => {
       target: { value: "Principal" },
     });
     fireEvent.click(getAllByRole("button", { name: /^save$/i })[0]!);
-    expect(saves).toEqual([["Ada Lovelace", "Principal"]]);
+    expect(saves).toEqual([{ name: "Ada Lovelace", role: "Principal" }]);
 
     fireEvent.click(
       getAllByRole("button", { name: /remove from company/i })[0]!,

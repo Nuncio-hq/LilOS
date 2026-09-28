@@ -6,6 +6,12 @@ import { z } from "zod";
  * `agents.describe.id` take. There is deliberately no delete method: LilOS
  * never removes an engine profile — "firing" only removes the LilOS
  * employee record, the engine's profile stays put.
+ *
+ * `agents.update` writes persona fields back to the engine. Which fields an
+ * engine accepts is declared on the capability descriptor as
+ * `detail.updatable` — a list of `AgentDescriptor` field names like
+ * `["soul", "model"]`; the Edit dialog renders only those controls (D-#19).
+ * Engines reject a field they did not list with INVALID_PARAMS.
  */
 export const AgentDescriptor = z.object({
   /** Stable engine-side id. */
@@ -19,8 +25,9 @@ export const AgentDescriptor = z.object({
   skillCount: z.int().min(0).optional(),
   /**
    * Persona text (the agent's charter). `agents.describe` carries it —
-   * `agents.list` may omit it to keep the roster light. Read-only over the
-   * wire: editing personas is an engine surface, not a LilOS one.
+   * `agents.list` may omit it to keep the roster light. Writable over the
+   * wire via `agents.update` when the capability lists `"soul"` in
+   * `detail.updatable` (#123).
    */
   soul: z.string().optional(),
   /** Engine-owned extras (provider, avatar flags, ...); opaque to clients. */
@@ -67,3 +74,43 @@ export const AgentsCreateResult = z.object({
   agent: AgentDescriptor,
 });
 export type AgentsCreateResult = z.infer<typeof AgentsCreateResult>;
+
+// ── agents.update ───────────────────────────────────────────────────────────
+export const AgentsUpdateParams = z.strictObject({
+  /** Agent id from `agents.list` / `agents.create` / `agents.describe`. */
+  id: z.string().min(1),
+  /** New display name — only where `detail.updatable` lists "name". */
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  /** New persona text. An empty string clears the persona. */
+  soul: z.string().optional(),
+  /**
+   * New default model id (from `models.list`) — applies to sessions started
+   * AFTER this call; running sessions keep the model they started with.
+   * `provider/model` refs are allowed for multi-provider engines.
+   */
+  model: z.string().optional(),
+  /** Provider slug for multi-provider engines, paired with `model`. */
+  provider: z.string().optional(),
+  /**
+   * Force a guarded model pin: when the engine answers `confirmModel`, the
+   * client re-sends the same update with this set once the user confirms.
+   */
+  confirmModel: z.boolean().optional(),
+  /** Engine-specific update options; opaque to generic clients. */
+  detail: z.record(z.string(), z.unknown()).optional(),
+});
+export type AgentsUpdateParams = z.infer<typeof AgentsUpdateParams>;
+
+export const AgentsUpdateResult = z.object({
+  /** The agent as `agents.describe` now reports it. */
+  agent: AgentDescriptor,
+  /**
+   * Set when the engine declined the model pin pending a user confirm — the
+   * value is the engine's own warning/question text. Other fields may have
+   * been written already; re-send the same params plus `confirmModel: true`
+   * to force the model write.
+   */
+  confirmModel: z.string().optional(),
+});
+export type AgentsUpdateResult = z.infer<typeof AgentsUpdateResult>;

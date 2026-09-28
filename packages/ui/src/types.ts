@@ -219,6 +219,29 @@ export type HireDraft = {
   instructions: string;
   model: string;
 };
+/**
+ * What the Edit employee dialog hands back on Save (#123). Engine fields are
+ * only set when the engine advertises them (`agents` capability
+ * `detail.updatable`, D-#19) and the value actually changed — an untouched
+ * guarded model must not re-trigger the engine's confirm prompt.
+ */
+export type EmployeeEditSave = {
+  name: string;
+  role: string;
+  soul?: string;
+  model?: string;
+  description?: string;
+  /** Mirror the display name into the profile (updatable lists "name"). */
+  engineName?: boolean;
+  /** Re-send after the engine asked to confirm a guarded model. */
+  confirmModel?: boolean;
+};
+/**
+ * What an Edit save answers. A `confirmModel` string means the engine held
+ * back the model pin and wants a confirm — the dialog shows the message and
+ * offers a "Pin anyway" that re-sends with `confirmModel: true`.
+ */
+export type EmployeeSaveReply = { confirmModel?: string } | undefined;
 export type TicketRow = {
   id: string;
   title: string;

@@ -22,6 +22,7 @@ import {
   type Channel,
   type EmpBadge,
   type Employee,
+  type EmployeeEditSave,
   type EmpFn,
   type FsDir,
   type HireDraft,
@@ -64,7 +65,14 @@ import {
 } from "@lilos/ui"
 import { cn } from "@lilos/ui/lib/utils"
 import { MAX_ATTACHMENT_BYTES } from "@lilos/contracts/app"
-import { engineCreateAgent, engineModels, engineProfiles } from "./engine"
+import {
+  engineCreateAgent,
+  engineDescribe,
+  engineModels,
+  engineProfiles,
+  engineUpdatable,
+  engineUpdateAgent,
+} from "./engine"
 import { hostAccessors, hostDir, hostDiscover, hostPick } from "./host"
 import { useFakeSurfaces } from "./fake-surfaces"
 import { useLiveStatus } from "./live-status"
@@ -583,6 +591,9 @@ export default function App() {
   // replace the mock lists below; `engineName` labels the Engine row on the card.
   const [liveProfiles, setLiveProfiles] = useState<EngineProfile[] | null>(null)
   const [liveModels, setLiveModels] = useState<ModelOption[] | null>(null)
+  // #123: the agents capability's updatable fields + the live describe of the employee being edited.
+  const [liveUpdatable, setLiveUpdatable] = useState<string[] | null>(null)
+  const [editAgent, setEditAgent] = useState<{ soul?: string; model?: string; description?: string } | null>(null)
   const [engineName, setEngineName] = useState<string | null>(null)
   const PROFILES = liveProfiles ?? MOCK_PROFILES
   /* Picker catalog: the mock Hermes catalog (multi-provider, per-model efforts,
@@ -622,6 +633,7 @@ export default function App() {
       }
       if (ms && ms.length > 0) setLiveModels(ms)
     })
+    void engineUpdatable().then(setLiveUpdatable)
   }, [])
   // Retry on a session alert dismisses it for this scenario visit.
   const [alertOff, setAlertOff] = useState(0)
@@ -1021,10 +1033,50 @@ export default function App() {
     showEmp(id)
   }
 
-  const saveEmployee = (id: string, name: string, role: string) => {
-    setEmployees((es) => es.map((e) => (e.id === id ? { ...e, name, role } : e)))
+  const saveEmployee = async (id: string, edit: EmployeeEditSave) => {
+    const e = emp(id)
+    if (!e) return
+    // Engine fields write to the profile first (agents.update); the company
+    // record mirrors them once they stick. confirmModel keeps the dialog open.
+    const engineFields =
+      edit.soul !== undefined ||
+      edit.model !== undefined ||
+      edit.description !== undefined ||
+      edit.engineName === true
+    if (engineFields && e.profile) {
+      try {
+        const r = await engineUpdateAgent({
+          id: e.profile,
+          ...(edit.engineName ? { name: edit.name } : {}),
+          ...(edit.soul !== undefined ? { soul: edit.soul } : {}),
+          ...(edit.description !== undefined ? { description: edit.description } : {}),
+          ...(edit.model !== undefined ? { model: edit.model } : {}),
+          ...(edit.confirmModel ? { confirmModel: true } : {}),
+        })
+        if (r.confirmModel) {
+          setEmployees((es) => es.map((x) => (x.id === id ? { ...x, name: edit.name, role: edit.role, ...(edit.soul !== undefined ? { instructions: edit.soul } : {}) } : x)))
+          return { confirmModel: r.confirmModel }
+        }
+      } catch (err) {
+        say(`Engine rejected the edit: ${err instanceof Error ? err.message : String(err)}`)
+        return
+      }
+    }
+    setEmployees((es) =>
+      es.map((x) =>
+        x.id === id
+          ? {
+              ...x,
+              name: edit.name,
+              role: edit.role,
+              ...(edit.soul !== undefined ? { instructions: edit.soul } : {}),
+              ...(edit.model !== undefined ? { model: edit.model } : {}),
+            }
+          : x,
+      ),
+    )
     setEditEmp(null)
-    say(`Saved ${name}`)
+    say(`Saved ${edit.name}`)
   }
   // Remove from company: the employee leaves sidebar/channels/DMs, but the Hermes profile (and its
   // sessions, memory, skills) stays on the harness — the dialog copy says so before confirming.
@@ -1182,7 +1234,7 @@ export default function App() {
             <RightPanel
               tab={panelTab} onTab={setPanelTab} onClose={() => setPanelOpen(false)}
               threadPanel={threadPanel}
-              employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} profiles={PROFILES} engineName={engineName ?? undefined} onDM={() => goDM(selectedEmp)} onEdit={() => setEditEmp(selectedEmp)} onSwitchProfile={(p) => switchProfile(selectedEmp, p)} /> : null}
+              employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} profiles={PROFILES} engineName={engineName ?? undefined} onDM={() => goDM(selectedEmp)} onEdit={() => { setEditAgent(null); void engineDescribe(emp(selectedEmp)?.profile ?? "").then(setEditAgent).catch(() => {}).finally(() => setEditEmp(selectedEmp)) }} onSwitchProfile={(p) => switchProfile(selectedEmp, p)} /> : null}
               tickets={tickets} emp={emp} dm={!!channel.dm}
             />
           )}
@@ -1237,8 +1289,11 @@ export default function App() {
       {editEmp && emp(editEmp) && (
         <EditEmployeeDialog
           e={emp(editEmp)!}
-          onClose={() => setEditEmp(null)}
-          onSave={(name, role) => saveEmployee(editEmp, name, role)}
+          agent={editAgent ?? undefined}
+          updatable={liveUpdatable ?? []}
+          models={liveModels ?? []}
+          onClose={() => { setEditEmp(null); setEditAgent(null) }}
+          onSave={(edit) => saveEmployee(editEmp, edit)}
           onRemove={() => removeEmployee(editEmp)}
         />
       )}

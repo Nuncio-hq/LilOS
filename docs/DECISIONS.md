@@ -91,10 +91,12 @@ PR does not exist.
   Not: Hermes-specific names or types in `contracts`/`engine-fake`/
   `engine-conformance`, `if engine == "..."` branches, server-to-client
   request frames. — #6 · PR #39
-- **D-#8 Hiring and the model picker speak `agents.*` / `models.*`; the
-  protocol has no profile delete — firing removes only the LilOS employee
-  record.** Not: LilOS-owned profile CRUD, or a delete method "for cleanup".
-  — #8 · PR #46
+- **D-#8 Hiring, the model picker and persona edits speak `agents.*` /
+  `models.*`: `agents.update` writes the fields the engine advertises
+  (`detail.updatable`); there is still no profile delete — firing removes
+  only the LilOS employee record.** Not: LilOS-owned profile CRUD, a persona
+  read-only wire (was #8), or a delete method "for cleanup".
+  — #8, #123 · PR #46
 - **D-#26 The harness supervises the engine and is the only thing that talks
   to it.** It owns launch (`hermes serve` on 127.0.0.1 with a generated
   token, via `packages/engine-hermes`), crash restart with bounded backoff,

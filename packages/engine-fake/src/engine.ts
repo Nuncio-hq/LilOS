@@ -2,6 +2,7 @@ import {
   type AgentDescriptor,
   type AgentsCreateParams,
   type AgentsDescribeParams,
+  type AgentsUpdateParams,
   type ApprovalOption,
   type ApprovalOutcome,
   type Capability,
@@ -216,6 +217,8 @@ export class FakeEngine {
         return this.agentsDescribe(parsed.data as AgentsDescribeParams);
       case "agents.create":
         return this.agentsCreate(parsed.data as AgentsCreateParams);
+      case "agents.update":
+        return this.agentsUpdate(parsed.data as AgentsUpdateParams);
       case "models.list":
         return this.modelsList();
       case "session.setModel":
@@ -248,8 +251,17 @@ export class FakeEngine {
         id: "agents",
         name: "Hireable agents",
         description:
-          "List, describe, and create engine profiles; sessions start as one.",
-        methods: ["agents.list", "agents.describe", "agents.create"],
+          "List, describe, create and update engine profiles; sessions start as one.",
+        methods: [
+          "agents.list",
+          "agents.describe",
+          "agents.create",
+          "agents.update",
+        ],
+        detail: {
+          // Every persona field is writable here (D-#19).
+          updatable: ["name", "description", "soul", "model"],
+        },
       },
       ...(this.capOn("models")
         ? [
@@ -488,6 +500,26 @@ export class FakeEngine {
     };
     this.agents.set(agent.id, agent);
     return { agent: { ...agent } satisfies AgentDescriptor };
+  }
+
+  /**
+   * Rewrite the agent's persona fields in place — the id never moves. New
+   * sessions read the updated row at `session.start`; sessions already
+   * running keep the snapshot they took (#123 AC-4).
+   */
+  private agentsUpdate(p: AgentsUpdateParams) {
+    const a = this.agents.get(p.id);
+    if (!a) throw new RpcError(RPC_ERRORS.AGENT_NOT_FOUND, `no agent ${p.id}`);
+    if (p.model !== undefined && !MODEL_CATALOG.some((m) => m.id === p.model))
+      throw new RpcError(
+        RPC_ERRORS.MODEL_NOT_FOUND,
+        `no model ${p.model} — see models.list`,
+      );
+    if (p.name !== undefined) a.name = p.name;
+    if (p.description !== undefined) a.description = p.description;
+    if (p.soul !== undefined) a.soul = p.soul;
+    if (p.model !== undefined) a.model = p.model;
+    return { agent: { ...a } satisfies AgentDescriptor };
   }
 
   private modelsList() {

@@ -1,0 +1,367 @@
+import { type ChildProcess, spawn } from "node:child_process";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { expect, type Page, test } from "@playwright/test";
+import { engineTag, expectNoEngineLeak } from "./engine-leak";
+
+/**
+ * Issue #123 — edit an employee's persona (soul) and default model from the
+ * Edit dialog (`agents.update`), on the real stack (apps/web → relay →
+ * harness → engine-fake). Each acceptance criterion is a named test. Engine
+ * truth is probed over the real JSON-RPC path.
+ */
+
+const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
+const repo = path.resolve(here, "..");
+const webDir = path.join(repo, "apps", "web");
+const SHOTS = path.join(repo, "test-results", "ac-123");
+
+interface Stack {
+  home: string;
+  webUrl: string;
+  relayWs: string;
+  relayToken: string;
+  stop: () => Promise<void>;
+}
+
+async function waitForHttp(url: string, ms = 30_000): Promise<void> {
+  const start = Date.now();
+  for (;;) {
+    const ok = await fetch(url)
+      .then((r) => r.ok || r.status === 404)
+      .catch(() => false);
+    if (ok) return;
+    if (Date.now() - start > ms)
+      throw new Error(`timed out waiting for ${url}`);
+    await new Promise((r) => setTimeout(r, 200));
+  }
+}
+
+function killProc(proc: ChildProcess): Promise<void> {
+  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
+    try {
+      if (proc.pid) process.kill(-proc.pid, sig);
+    } catch {
+      try {
+        proc.kill(sig);
+      } catch {}
+    }
+  };
+  return new Promise((resolve) => {
+    const t = setTimeout(() => {
+      killGroup("SIGKILL");
+      resolve();
+    }, 8_000);
+    proc.once("exit", () => {
+      clearTimeout(t);
+      resolve();
+    });
+    killGroup("SIGTERM");
+  });
+}
+
+const freePort = () =>
+  new Promise<number>((resolve, reject) => {
+    const srv = createServer();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const addr = srv.address();
+      srv.close(() =>
+        typeof addr === "object" && addr
+          ? resolve(addr.port)
+          : reject(new Error("no port")),
+      );
+    });
+  });
+
+async function bootStack(
+  tag: string,
+  extraEnv: Record<string, string> = {},
+): Promise<Stack> {
+  const [relay, feed, web] = await Promise.all([
+    freePort(),
+    freePort(),
+    freePort(),
+  ]);
+  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
+  const leakTag = engineTag(tag);
+  const proc = spawn("bun", ["run", "dev"], {
+    cwd: webDir,
+    detached: true,
+    env: {
+      ...process.env,
+      LILOS_HOME: home,
+      LILOS_ENGINE_TAG: leakTag,
+      LILOS_RELAY_PORT: String(relay),
+      LILOS_FEED_PORT: String(feed),
+      LILOS_WEB_PORT: String(web),
+      ...extraEnv,
+    },
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  const webUrl = `http://127.0.0.1:${web}`;
+  try {
+    await waitForHttp(webUrl);
+    await waitForHttp(`http://127.0.0.1:${relay}/`);
+    await waitForHttp(`http://127.0.0.1:${feed}/`);
+    const tokenPath = path.join(home, "relay-token");
+    let relayToken = "";
+    for (let i = 0; i < 300 && !relayToken; i++) {
+      try {
+        relayToken = readFileSync(tokenPath, "utf8").trim();
+      } catch {}
+      if (!relayToken) await new Promise((r) => setTimeout(r, 100));
+    }
+    if (!relayToken)
+      throw new Error(`relay token never appeared at ${tokenPath}`);
+    return {
+      home,
+      webUrl,
+      relayWs: `ws://127.0.0.1:${relay}/ws`,
+      relayToken,
+      stop: async () => {
+        await killProc(proc);
+        await expectNoEngineLeak(leakTag);
+      },
+    };
+  } catch (e) {
+    proc.kill("SIGKILL");
+    throw e;
+  }
+}
+
+/** Bare JSON-RPC client — e2e runs under Node without workspace deps. */
+async function rpc(
+  relayWs: string,
+  token: string,
+  calls: { method: string; params: Record<string, unknown> }[],
+): Promise<Record<string, unknown>[]> {
+  const ws = new WebSocket(relayWs);
+  await new Promise<void>((res, rej) => {
+    ws.onopen = () => res();
+    ws.onerror = () => rej(new Error("ws connect failed"));
+  });
+  const pending = new Map<string, (r: Record<string, unknown>) => void>();
+  ws.onmessage = (e) => {
+    const f = JSON.parse(e.data as string) as Record<string, unknown>;
+    if (typeof f.id === "string") pending.get(f.id)?.(f);
+  };
+  const send = (id: string, method: string, params: object) =>
+    new Promise<Record<string, unknown>>((res, rej) => {
+      pending.set(id, (f) =>
+        f.error
+          ? rej(new Error(`${method} -> ${JSON.stringify(f.error)}`))
+          : res(f),
+      );
+      ws.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
+    });
+  await send("h", "session.hello", { protocolVersion: 1, token });
+  const out: Record<string, unknown>[] = [];
+  for (const [i, c] of calls.entries())
+    out.push(await send(String(i), c.method, c.params));
+  ws.close();
+  return out;
+}
+
+async function describeAgent(
+  stack: Stack,
+  id: string,
+): Promise<{ soul?: string; model?: string; description?: string }> {
+  const [res] = await rpc(stack.relayWs, stack.relayToken, [
+    { method: "agents.describe", params: { id } },
+  ]);
+  return (
+    res.result as {
+      agent: { soul?: string; model?: string; description?: string };
+    }
+  ).agent;
+}
+
+test.describe.configure({ mode: "serial" });
+
+let stackA: Stack; // engine-fake advertising every capability
+test.beforeAll(async () => {
+  test.setTimeout(180_000);
+  stackA = await bootStack("main");
+});
+test.afterAll(async () => {
+  await stackA?.stop();
+});
+
+/** Open the app past first-run, landed on the auto-hired Default's DM. */
+async function openApp(stack: Stack, page: Page) {
+  await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
+  await page.goto(`${stack.webUrl}/`);
+  await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
+  await expect(
+    page.locator("aside").getByRole("button", { name: /Default/ }),
+  ).toBeVisible({ timeout: 30_000 });
+}
+
+const editDialog = (page: Page) =>
+  page.locator("div.fixed.inset-0", { hasText: "Edit employee" });
+
+async function openEdit(page: Page) {
+  await page.getByRole("button", { name: /Profile/ }).click();
+  await page.getByRole("button", { name: "Edit" }).click();
+  const dlg = editDialog(page);
+  await expect(dlg).toBeVisible();
+  return dlg;
+}
+
+/** Open the session row whose root message is `text` (split-pane home list). */
+async function openConvRow(page: Page, rootText: string) {
+  await page
+    .locator("[data-session]", { hasText: rootText })
+    .getByRole("button", { name: /\d+ repl(y|ies)/ })
+    .click();
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/);
+}
+
+/** Send a top-level DM message → a new session (employee-home composer).
+ *  The composer navigates into the thread on send; if that navigate is still
+ *  pending (a feed re-render can swallow it), open the new row by its text. */
+async function sendDm(page: Page, text: string) {
+  const composer = page.getByPlaceholder(/New session with/);
+  await composer.fill(text);
+  await composer.press("Enter");
+  await expect(page)
+    .toHaveURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 4_000 })
+    .catch(() => openConvRow(page, text));
+}
+
+/** Reply inside the open conversation — same session, a fresh turn. */
+async function replyInSession(page: Page, text: string) {
+  const box = page.getByPlaceholder(/Reply to .* in this session/);
+  await box.fill(text);
+  await box.press("Enter");
+}
+
+test("AC-1 the Edit dialog shows only the fields the engine advertises", async ({
+  page,
+}) => {
+  await openApp(stackA, page);
+  const dlg = await openEdit(page);
+  // engine-fake advertises description/soul/model (and name, which the
+  // company record already owns) — the dialog renders exactly those.
+  await expect(dlg.getByLabel("Display name")).toBeVisible();
+  await expect(dlg.getByLabel("Persona")).toBeVisible();
+  await expect(dlg.getByLabel("Description")).toBeVisible();
+  await expect(dlg.getByText(/Applies to new chats/)).toBeVisible(); // AC-4's note
+  await expect(dlg.getByRole("button", { name: "Fake Small" })).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ac-1-edit-dialog.png` });
+  await dlg.getByRole("button", { name: "Cancel" }).click();
+});
+
+test("AC-2 saving a new persona + model writes the engine profile (agents.update → agents.describe)", async ({
+  page,
+}) => {
+  await openApp(stackA, page);
+  const dlg = await openEdit(page);
+  await dlg
+    .getByLabel("Persona")
+    .fill("You are Default v2. Answer in exactly one word.");
+  await dlg.getByLabel("Description").fill("persona updated from LilOS");
+  await dlg.getByRole("button", { name: "Fake Small" }).click();
+  await page.screenshot({ path: `${SHOTS}/ac-2-edited-dialog.png` });
+  await dlg.getByRole("button", { name: "Save" }).click();
+  await expect(dlg).toHaveCount(0);
+
+  const agent = await describeAgent(stackA, "default");
+  expect(agent.soul).toBe("You are Default v2. Answer in exactly one word.");
+  expect(agent.description).toBe("persona updated from LilOS");
+  expect(agent.model).toBe("fake-small");
+
+  // The still-open profile card reads the mirrored record — new soul + model.
+  const card = page.getByRole("dialog", { name: /Default profile/ });
+  await expect(card.getByText("You are Default v2.")).toBeVisible();
+  await expect(card.getByText("fake-small")).toBeVisible();
+  await card.getByRole("button", { name: "Close" }).click();
+});
+
+test("AC-4 a running session keeps its model; the next new session uses the updated default", async ({
+  page,
+}) => {
+  await openApp(stackA, page);
+  // Session 1 starts on the current default (fake-small after AC-2's edit).
+  await sendDm(page, "first session");
+  await expect(
+    page.locator("[data-agentturn]").getByText(/Fake Small/),
+  ).toBeVisible({ timeout: 30_000 });
+
+  // Edit the default model mid-conversation (Profile lives on the DM home —
+  // hop out, edit, then come back to the open session).
+  const convUrl = page.url();
+  await page
+    .locator("aside")
+    .getByRole("button", { name: /Default/ })
+    .click();
+  const dlg = await openEdit(page);
+  await dlg.getByRole("button", { name: "Fake Reasoning" }).click();
+  await dlg.getByRole("button", { name: "Save" }).click();
+  await expect(dlg).toHaveCount(0);
+  const agent = await describeAgent(stackA, "default");
+  expect(agent.model).toBe("fake-reasoning");
+  // The profile card stays open behind the dialog — dismiss it.
+  await page
+    .getByRole("dialog", { name: /Default profile/ })
+    .getByRole("button", { name: "Close" })
+    .click();
+
+  // A reply in the SAME conversation still runs on the start-time model.
+  await openConvRow(page, "first session");
+  await expect(page).toHaveURL(convUrl);
+  await replyInSession(page, "still the old model");
+  await expect(
+    page
+      .locator("[data-agentturn]")
+      .getByText(/Fake Small/)
+      .last(),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.locator("[data-agentturn]").getByText(/Fake Reasoning/),
+  ).toHaveCount(0);
+
+  // Back to the employee home → a new top-level message = a NEW session.
+  await page
+    .locator("aside")
+    .getByRole("button", { name: /Default/ })
+    .click();
+  await expect(page).toHaveURL(/\/dm\/[^/]+$/);
+  // (prompt words like "edit"/"change" trigger the fake's mutating script —
+  // it parks the turn on an approval card, so keep the text neutral)
+  await sendDm(page, "a brand-new session");
+  await expect(
+    page.locator("[data-agentturn]").getByText(/Fake Reasoning/),
+  ).toBeVisible({ timeout: 30_000 });
+  await page.screenshot({ path: `${SHOTS}/ac-4-new-session-model.png` });
+});
+
+test("AC-5 the per-session model picker still overrides the edited default", async ({
+  page,
+}) => {
+  await openApp(stackA, page);
+  await sendDm(page, "picker override");
+  await expect(
+    page.locator("[data-agentturn]").getByText(/Fake Reasoning/),
+  ).toBeVisible({ timeout: 30_000 });
+
+  // The picker on the open session shows the model it started on; picking
+  // Fake Small overrides just this session.
+  await page.locator('[data-slot="model-picker-trigger"]').last().click();
+  await page.getByRole("button", { name: /Model$/ }).click();
+  await page.locator("[cmdk-item]", { hasText: /^Fake Small$/ }).click();
+  await page.keyboard.press("Escape");
+  await replyInSession(page, "one more on the picked model");
+  await expect(
+    page.locator("[data-agentturn]").getByText(/Fake Small/),
+  ).toBeVisible({ timeout: 30_000 });
+  await page.screenshot({ path: `${SHOTS}/ac-5-picker-override.png` });
+
+  // The profile default itself is untouched by the per-session pick.
+  const agent = await describeAgent(stackA, "default");
+  expect(agent.model).toBe("fake-reasoning");
+});

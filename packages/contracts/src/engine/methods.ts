@@ -6,6 +6,8 @@ import {
   AgentsDescribeResult,
   AgentsListParams,
   AgentsListResult,
+  AgentsUpdateParams,
+  AgentsUpdateResult,
 } from "./agents.js";
 import { Capability } from "./capabilities.js";
 import { ContentBlock } from "./content.js";
@@ -252,6 +254,12 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
     params: AgentsCreateParams,
     result: AgentsCreateResult,
     doc: "Register a new agent profile on the engine. No delete exists by design.",
+    capability: "agents",
+  },
+  "agents.update": {
+    params: AgentsUpdateParams,
+    result: AgentsUpdateResult,
+    doc: "Write persona fields back to the agent (soul, default model, name, description — the capability's `detail.updatable` lists which). New sessions started after the call use the update; running sessions keep the persona/model they began with.",
     capability: "agents",
   },
   "models.list": {

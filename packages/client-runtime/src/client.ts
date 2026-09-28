@@ -24,6 +24,8 @@ import {
 import type {
   AgentDescriptor,
   AgentsCreateParams,
+  AgentsUpdateParams,
+  AgentsUpdateResult,
   ModelsListResult,
 } from "@lilos/contracts/engine";
 import { atom, type WritableAtom } from "nanostores";
@@ -368,6 +370,18 @@ export class RelayClient {
       params as Record<string, unknown>,
     );
     return agent;
+  }
+
+  /**
+   * `agents.update` — edit a profile's persona/model (#123). The engine may
+   * answer `confirmModel` instead of applying a guarded model: the caller
+   * asks the user and re-sends with `confirmModel: true`.
+   */
+  async updateAgent(params: AgentsUpdateParams): Promise<AgentsUpdateResult> {
+    return await this.request<AgentsUpdateResult>(
+      "agents.update",
+      params as Record<string, unknown>,
+    );
   }
 
   async listModels(): Promise<ModelsListResult> {

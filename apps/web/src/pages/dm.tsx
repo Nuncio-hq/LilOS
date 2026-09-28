@@ -9,7 +9,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@lilos/contracts/app";
-import type { ApprovalOutcome } from "@lilos/contracts/engine";
+import type { AgentDescriptor, ApprovalOutcome } from "@lilos/contracts/engine";
 import {
   AddFolderDialog,
   clearDraftIfSent,
@@ -161,6 +161,22 @@ export function DmPage() {
   const description = useAtom(engine.description);
   const canAttachImages =
     description?.capabilities.some((c) => c.id === "image_prompt") ?? false;
+  /* Profile fields the engine lets LilOS write (#123): the `agents`
+     capability's `detail.updatable` list — the Edit dialog renders exactly
+     these engine fields (D-#19). */
+  const updatable = useMemo(() => {
+    const u = description?.capabilities.find((c) => c.id === "agents")?.detail
+      ?.updatable;
+    return Array.isArray(u)
+      ? u.filter((x): x is string => typeof x === "string")
+      : [];
+  }, [description]);
+  /* Live `agents.describe` for the employee being edited — the dialog's
+     engine fields prefill from it (undefined until fetched, null = engine
+     unreachable → record-only edit). */
+  const [editAgent, setEditAgent] = useState<
+    AgentDescriptor | null | undefined
+  >(undefined);
   useAtom(attachmentUrls);
 
   /* AC-2 (#85): an engine that's down (Hermes missing, crashed out) shows
@@ -641,7 +657,14 @@ export function DmPage() {
           instructions={uiEmp.instructions}
           onEdit={() => {
             setEditError(null);
-            setEditOpen(true);
+            setEditAgent(undefined);
+            // The persona/model live on the engine profile — describe
+            // prefills them; a failed describe still opens the record edit.
+            void relay
+              .describeAgent(employee.profile)
+              .then((a) => setEditAgent(a))
+              .catch(() => setEditAgent(null))
+              .finally(() => setEditOpen(true));
           }}
           onClose={() => setProfileOpen(false)}
         />
@@ -649,14 +672,23 @@ export function DmPage() {
       {editOpen && (
         <EditEmployeeDialog
           e={uiEmp}
+          agent={editAgent ?? undefined}
+          updatable={updatable}
+          models={catalog}
           error={editError ?? undefined}
           onClose={() => setEditOpen(false)}
-          onSave={(name, role) => {
-            void saveEmployee(employee.id, name, role)
-              .then(() => setEditOpen(false))
-              .catch((e) =>
-                setEditError(e instanceof Error ? e.message : String(e)),
-              );
+          onSave={async (edit) => {
+            try {
+              const r = await saveEmployee(employee.id, edit);
+              setEditError(null);
+              // A confirmModel reply keeps the dialog open on its own
+              // confirm card — the dialog re-sends with confirmModel:true.
+              if (!r?.confirmModel) setEditOpen(false);
+              return r;
+            } catch (e) {
+              setEditError(e instanceof Error ? e.message : String(e));
+              return;
+            }
           }}
           onRemove={() => {
             void removeEmployee(employee.id)

@@ -1,6 +1,8 @@
 import {
   type AgentDescriptor,
   type AgentsCreateParams,
+  type AgentsUpdateParams,
+  type AgentsUpdateResult,
   type ModelOption,
   RPC_ERRORS,
 } from "@lilos/contracts/engine";
@@ -101,6 +103,10 @@ export async function describeAgent(
   };
   const skills = Array.isArray(r.skills) ? r.skills.length : 0;
   const model = pinnedModel(r.model);
+  const provider =
+    r.model && typeof r.model === "object"
+      ? str((r.model as { provider?: unknown }).provider)
+      : undefined;
   return {
     agent: {
       id: realId,
@@ -112,6 +118,7 @@ export async function describeAgent(
       detail: {
         toolsets: Array.isArray(r.toolsets) ? r.toolsets.length : 0,
         mcpServers: Array.isArray(r.mcp_servers) ? r.mcp_servers.length : 0,
+        ...(provider ? { provider } : {}),
       },
     },
   };
@@ -144,6 +151,74 @@ export async function createAgent(
       : {}),
   });
   return describeAgent(gw, p.name);
+}
+
+/**
+ * `agents.update` → `profiles.configure` (#123): the gateway's own profile
+ * editor write — `soul` overwrites SOUL.md, `description` lands in
+ * profile.yaml, `model`+`provider` pins config.yaml's `model.{provider,
+ * default}`. Hermes can't rename a profile over the gateway (rename is
+ * CLI-only), so `name` is refused — it's not in this engine's `updatable`.
+ *
+ * The gateway guards expensive/data-policy models: without
+ * `confirm_expensive_model` a guarded pick answers `confirm_required` +
+ * `confirm_message` and skips the model section (other sections still
+ * apply). That handshake rides back to the caller as `confirmModel` so the
+ * app can ask and re-send — never auto-confirmed here.
+ */
+export async function updateAgent(
+  gw: GatewayLike,
+  p: AgentsUpdateParams,
+  ambientProvider?: string,
+): Promise<AgentsUpdateResult> {
+  const realId = await requireAgent(gw, p.id);
+  const params: Record<string, unknown> = { name: realId };
+  if (p.name !== undefined)
+    throw new RpcError(
+      RPC_ERRORS.INVALID_PARAMS,
+      "Hermes cannot rename a profile over the wire — 'name' is not in this engine's updatable fields",
+    );
+  if (typeof p.soul === "string") params.soul = p.soul;
+  if (typeof p.description === "string") params.description = p.description;
+  if (p.model !== undefined) {
+    const ref = splitModelRef(p.model, p.provider ?? ambientProvider);
+    let provider = ref.provider;
+    if (!provider) {
+      // No provider anywhere: keep the pin on the profile's current one.
+      const cur = await describeAgent(gw, realId);
+      provider = str(cur.agent.detail?.provider);
+    }
+    if (!provider)
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        "updating the model needs a provider — pass `provider` or pin one on the harness",
+      );
+    params.model = ref.model;
+    params.provider = provider;
+    if (p.confirmModel === true) params.confirm_expensive_model = true;
+  }
+  const r = (await gw.request("profiles.configure", params)) as {
+    ok?: unknown;
+    applied?: Record<string, unknown>;
+    confirm_required?: unknown;
+    confirm_message?: unknown;
+  };
+  const after = await describeAgent(gw, realId);
+  if (r.confirm_required === true)
+    return {
+      agent: after.agent,
+      confirmModel:
+        str(r.confirm_message) ?? "the engine wants a confirm for this model",
+    };
+  const failed = Object.entries(r.applied ?? {})
+    .filter(([, ok]) => ok === false)
+    .map(([k]) => k);
+  if (failed.length)
+    throw new RpcError(
+      RPC_ERRORS.INTERNAL_ERROR,
+      `profiles.configure could not write: ${failed.join(", ")}`,
+    );
+  return { agent: after.agent };
 }
 
 interface ModelOptionsProvider {
