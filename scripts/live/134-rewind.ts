@@ -13,7 +13,7 @@
  *      the agent's own file changes — a real model writes them itself, the
  *      harness checkpoint is engine-neutral so the restore is identical).
  *   2. `conversations.rewind` to the second user message → asserts
- *      filesRestored + engineRewound (hermes WS `command.dispatch` /undo N),
+ *      filesRestored + engineRewound (hermes WS `session.undo`, looped),
  *      the folder is byte-identical to the pre-turn-2 snapshot, and the
  *      dropped tail is marked rewound (hidden from channelMessages, kept
  *      for audit via messages.list includeRewound).

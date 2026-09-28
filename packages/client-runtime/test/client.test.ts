@@ -619,12 +619,15 @@ describe("relay -> app requests + employee lifecycle (#29)", () => {
         conversationId: "conv1",
         fromSeq: 2,
         messageId: "m2",
+        removedIds: ["m2", "m3"],
         engineRewound: true,
       },
     });
 
     expect(store.get().messages.map((m) => m.id)).toEqual(["m1", "o1"]);
-    expect(client.rewinds.get()).toEqual({ conv1: 2 });
+    expect(client.rewinds.get()).toEqual({
+      conv1: { fromSeq: 2, removedIds: ["m2", "m3"] },
+    });
     /* A second rewind of the same conversation supersedes the first point. */
     socket.emit({
       jsonrpc: "2.0",
@@ -634,10 +637,13 @@ describe("relay -> app requests + employee lifecycle (#29)", () => {
         conversationId: "conv1",
         fromSeq: 1,
         messageId: "m1",
+        removedIds: ["m1"],
         engineRewound: false,
       },
     });
     expect(store.get().messages.map((m) => m.id)).toEqual(["o1"]);
-    expect(client.rewinds.get()).toEqual({ conv1: 1 });
+    expect(client.rewinds.get()).toEqual({
+      conv1: { fromSeq: 1, removedIds: ["m2", "m3", "m1"] },
+    });
   });
 });

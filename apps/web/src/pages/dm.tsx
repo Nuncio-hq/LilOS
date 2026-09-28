@@ -74,6 +74,7 @@ import {
   loadDir,
   loadDiscovered,
   refreshFolders,
+  sameFolder,
   wsFor,
 } from "../lib/folders";
 import { useAtom } from "../lib/hooks";
@@ -90,7 +91,7 @@ import {
   toFeed,
   toUiEmployee,
 } from "../lib/mapping";
-import { currentName, humanFor, osFullName, profile } from "../lib/me";
+import { currentName, humanFor, osFullName, osHome, profile } from "../lib/me";
 import {
   asks as asksAtom,
   engine,
@@ -172,6 +173,7 @@ export function DmPage() {
   // #118: the human's name/avatar re-render live on a settings change.
   useAtom(profile);
   useAtom(osFullName);
+  const home = useAtom(osHome);
   const summaries = useAtom(relay.conversationSummaries);
   const models = useAtom(sessionModels);
   const catalog = useAtom(engineModels);
@@ -361,10 +363,15 @@ export function DmPage() {
   /* Ids of the open conversation's rewound messages — a feed turn prompted
      by one (its `ref`) must not resurrect via mergeTurns' unmatched-append
      (#134). The event's removedIds cover live rewinds; this covers the
-     fetched history and the window before the event lands. */
+     fetched history and the window before the event lands. `texts` holds
+     the dropped employee answers for turns the engine never tagged with a
+     `ref` (steer-pumped turns on engines that don't echo it). */
   const [localRewoundIds, setLocalRewoundIds] = useState<ReadonlySet<string>>(
     new Set(),
   );
+  const [localRewoundTexts, setLocalRewoundTexts] = useState<
+    ReadonlySet<string>
+  >(new Set());
   const [seedConv, setSeedConv] = useState<string | undefined>();
   /* Only a different open conversation resets — a transient `undefined`
      while summaries refetch (e.g. right after conversation.rewound) must
@@ -374,24 +381,29 @@ export function DmPage() {
     setSeedFiles(undefined);
     setFilesOnly(null);
     setLocalRewoundIds(new Set());
+    setLocalRewoundTexts(new Set());
   }
   /* Latest rewind per conversation — the fetched tail is dropped
      client-side as soon as the relay emits `conversation.rewound`. */
   const rewinds = useAtom(relay.rewinds);
-  /* Rewound message ids per conversation: the event's removedIds cover any
-     rewound conv (feed previews included); local ids cover the open one. */
-  const rewoundRefs = useMemo(() => {
-    const map = new Map<string, ReadonlySet<string>>();
+  /* Rewound message ids (+ answer texts) per conversation: the event's
+     removedIds cover any rewound conv (feed previews included); the local
+     sets cover the open one, where texts are known. */
+  const rewoundInfo = useMemo(() => {
+    const map = new Map<
+      string,
+      { refs: ReadonlySet<string>; texts?: ReadonlySet<string> }
+    >();
     for (const [convId, r] of Object.entries(rewinds)) {
-      map.set(convId, new Set(r.removedIds));
+      map.set(convId, { refs: new Set(r.removedIds) });
     }
-    if (openConv && localRewoundIds.size) {
-      const s = new Set(map.get(openConv.id) ?? []);
+    if (openConv && (localRewoundIds.size || localRewoundTexts.size)) {
+      const s = new Set(map.get(openConv.id)?.refs ?? []);
       for (const id of localRewoundIds) s.add(id);
-      map.set(openConv.id, s);
+      map.set(openConv.id, { refs: s, texts: localRewoundTexts });
     }
     return map;
-  }, [rewinds, localRewoundIds, openConv]);
+  }, [rewinds, localRewoundIds, localRewoundTexts, openConv]);
 
   /* The open thread needs its whole visible history, not just the channel
      window (#28 AC-2): page messages.list scoped to the conversation. */
@@ -400,6 +412,7 @@ export function DmPage() {
   useEffect(() => {
     setThreadMsgs([]);
     setLocalRewoundIds(new Set());
+    setLocalRewoundTexts(new Set());
     if (!conversationId || !channelId) return;
     let dead = false;
     void (async () => {
@@ -419,8 +432,14 @@ export function DmPage() {
       }
       if (dead) return;
       setThreadMsgs(all.filter((m) => !m.rewound));
-      setLocalRewoundIds(
-        new Set(all.filter((m) => m.rewound).map((m) => m.id)),
+      const rewound = all.filter((m) => m.rewound);
+      setLocalRewoundIds(new Set(rewound.map((m) => m.id)));
+      setLocalRewoundTexts(
+        new Set(
+          rewound
+            .filter((m) => m.authorKind === "employee")
+            .map((m) => m.text.trim()),
+        ),
       );
     })().catch(() => {});
     return () => {
@@ -433,9 +452,7 @@ export function DmPage() {
      drops the fetched copy too (#134). */
   const openConvId = openConv?.id;
   const threadPool = useMemo(() => {
-    const rewoundFrom = openConvId
-      ? rewinds[openConvId]?.fromSeq
-      : undefined;
+    const rewoundFrom = openConvId ? rewinds[openConvId]?.fromSeq : undefined;
     const seen = new Set<string>();
     const out: AppMessage[] = [];
     /* `threadMsgs` is a fetch-time snapshot: a rewind landing between the
@@ -497,13 +514,15 @@ export function DmPage() {
        the thread drops the relay rows (mergeTurns). The relay's event
        carries the same ids; this covers the window until it lands. */
     const target = threadPool.find((m) => m.id === messageId);
-    const doomedIds = target
-      ? threadPool
-          .filter(
-            (m) => m.conversationId === conv.id && m.seq >= target.seq,
-          )
-          .map((m) => m.id)
+    const doomed = target
+      ? threadPool.filter(
+          (m) => m.conversationId === conv.id && m.seq >= target.seq,
+        )
       : [];
+    const doomedIds = doomed.map((m) => m.id);
+    const doomedTexts = doomed
+      .filter((m) => m.authorKind === "employee")
+      .map((m) => m.text.trim());
 
     void (async () => {
       try {
@@ -514,6 +533,8 @@ export function DmPage() {
         setThreadDraft(res.message.text);
         if (doomedIds.length)
           setLocalRewoundIds((prev) => new Set([...prev, ...doomedIds]));
+        if (doomedTexts.length)
+          setLocalRewoundTexts((prev) => new Set([...prev, ...doomedTexts]));
         const files = await hydrateAttachments(res.message.attachments);
         if (files.length) setSeedFiles(files);
         setFilesOnly(
@@ -645,7 +666,7 @@ export function DmPage() {
           model,
           employeeId,
           convAsks(conv),
-          rewoundRefs.get(conv.id),
+          rewoundInfo.get(conv.id),
         ),
         wsFor(conv.cwd, cwdBranches),
       ),
@@ -837,7 +858,7 @@ export function DmPage() {
       model,
       employeeId,
       asksHere,
-      rewoundRefs.get(conv.id),
+      rewoundInfo.get(conv.id),
     );
     // An open question ask gets a real answer card (asks.respond).
     const openQuestion = asksHere.find(
@@ -881,7 +902,7 @@ export function DmPage() {
           c.id !== conv.id &&
           !c.archived &&
           conv.cwd !== undefined &&
-          c.cwd === conv.cwd,
+          sameFolder(c.cwd, conv.cwd, home),
       );
     const sharerName = sharer
       ? sharer.title ||

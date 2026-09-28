@@ -292,7 +292,7 @@ test("AC-2/4 + AC-1 files: rewind drops the tail, restores the folder, refills t
   page,
 }) => {
   test.setTimeout(180_000);
-  const errors = watchConsole(page);
+  watchConsole(page);
   await dmDefault(stackA, page, ROOT);
   await pickFolder(page, repoDir);
   await expect(page.locator('[data-ws="folder"]')).toContainText("lilos-repo");
@@ -331,12 +331,6 @@ test("AC-2/4 + AC-1 files: rewind drops the tail, restores the folder, refills t
   const triggers = page.locator("[data-rewind]");
   await expect(triggers).toHaveCount(3);
   await triggers.nth(1).click();
-  /* Surface a relay error toast/console error immediately when debugging. */
-  await page.waitForTimeout(800);
-  if (errors.length) console.log("PAGE ERRORS:", errors);
-  const toast = page.locator("div.fixed.bottom-5");
-  if (await toast.isVisible().catch(() => false))
-    console.log("TOAST:", await toast.innerText());
 
   /* The message and everything after (its reply, the recall turn) drop out
      of the thread; a system note lands where the thread was cut. */

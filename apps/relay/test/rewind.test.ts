@@ -252,9 +252,8 @@ describe("conversations.rewind (#134)", () => {
       await user.connection.receive(
         req("messages.search", { query: "rate limit" }),
       );
-      return (
-        resultOf(user.frames, lastId()).result as { hits: unknown[] }
-      ).hits;
+      return (resultOf(user.frames, lastId()).result as { hits: unknown[] })
+        .hits;
     };
     expect(await hitsBefore()).toHaveLength(2);
 

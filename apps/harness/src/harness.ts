@@ -5,6 +5,7 @@ import type {
   Ask,
   AttachmentsGetResult,
   Conversation,
+  ConversationsRewindHostResult,
   Employee,
   PendingTurn,
 } from "@lilos/contracts/app";
@@ -14,12 +15,11 @@ import {
   ChannelCreatedEvent,
   ChannelRemovedEvent,
   ConversationModelRequestedEvent,
+  ConversationsRewindHostParams,
   ConversationUpdatedEvent,
   ENGINE_PASSTHROUGH_METHODS,
-  ConversationsRewindHostParams,
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
-import type { ConversationsRewindHostResult } from "@lilos/contracts/app";
 import type {
   AgentDescriptor,
   ContentBlock,
@@ -741,6 +741,10 @@ export class Harness {
               {
                 sessionId: binding.sessionId,
                 text: message.text,
+                /* Same link as `prompt.ref` — a steer that outlives its turn
+                   pumps as the next one, and its turn.started must still name
+                   the relay message (#134 rewind filtering keys off it). */
+                ref: message.id,
               },
             ),
           )

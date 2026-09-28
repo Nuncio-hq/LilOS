@@ -12,6 +12,8 @@ import {
   ChannelUnsubscribeParams,
   ConversationsListParams,
   ConversationsOpenParams,
+  type ConversationsRewindHostParams,
+  type ConversationsRewindHostResult,
   ConversationsRewindParams,
   ConversationsSetModelParams,
   ConversationsSummariesParams,
@@ -36,8 +38,6 @@ import {
   MessagesPostParams,
   MessagesSearchParams,
   MessagesSetCheckpointParams,
-  type ConversationsRewindHostParams,
-  type ConversationsRewindHostResult,
   ProfileUpdateParams,
   SettingsGetParams,
   SettingsSetParams,
@@ -836,10 +836,16 @@ export function createRelay(options: RelayOptions): Relay {
           const parts = [
             `Rewound to before your message — ${marked.length} message${marked.length === 1 ? "" : "s"} dropped`,
           ];
-          if (filesRestored) parts.push("files restored to the earlier checkpoint");
-          else parts.push("no file checkpoint was stored for it — the folder kept its current state");
+          if (filesRestored)
+            parts.push("files restored to the earlier checkpoint");
+          else
+            parts.push(
+              "no file checkpoint was stored for it — the folder kept its current state",
+            );
           if (!engineRewound)
-            parts.push("this session's transport can't rewind the agent's memory — it still remembers the later messages");
+            parts.push(
+              "this session's transport can't rewind the agent's memory — it still remembers the later messages",
+            );
           const note = `${parts.join("; ").replace(/^./, (c) => c.toUpperCase())}.`;
           const { message: noteMessage } = await store.appendMessage({
             channelId: conversation.channelId,

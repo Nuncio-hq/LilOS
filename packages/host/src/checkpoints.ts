@@ -39,10 +39,10 @@ const DEFAULT_EXCLUDES = DEFAULT_EXCLUDE_NAMES.join("\n");
    bare form — a leading `**` does not match zero directories in exclude
    pathspecs). */
 const EXCLUDE_ARGS = DEFAULT_EXCLUDE_NAMES.flatMap((n) => [
-  ":(exclude)" + n,
-  ":(exclude)" + n + "/**",
-  ":(exclude)**/" + n,
-  ":(exclude)**/" + n + "/**",
+  `:(exclude)${n}`,
+  `:(exclude)${n}/**`,
+  `:(exclude)**/${n}`,
+  `:(exclude)**/${n}/**`,
 ]);
 
 const isExcluded = (rel: string) =>
@@ -197,10 +197,7 @@ export function createCheckpointStore(root: string): CheckpointStore {
       (o) => o?.trim() || null,
     );
 
-  const enqueue = async <T>(
-    cwd: string,
-    fn: () => Promise<T>,
-  ): Promise<T> => {
+  const enqueue = async <T>(cwd: string, fn: () => Promise<T>): Promise<T> => {
     /* Key the chain on the real path — `~/x`, `x/` and symlinks would
        otherwise run parallel chains into the same shadow index. */
     const key = await fsp.realpath(cwd).catch(() => cwd);
@@ -306,9 +303,7 @@ export function createCheckpointStore(root: string): CheckpointStore {
        extras (a `.env` created after the checkpoint still gets removed);
        only DEFAULT_EXCLUDE names are filtered, in JS. */
     const raw = await git(f, cwd, ["ls-files", "--others", "-z"]);
-    const extras = raw
-      .split("\0")
-      .filter((p) => p && !isExcluded(p));
+    const extras = raw.split("\0").filter((p) => p && !isExcluded(p));
     const dirs = new Set<string>();
     for (const rel of extras) {
       await fsp.rm(join(cwd, rel), { recursive: true, force: true });

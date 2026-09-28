@@ -666,12 +666,18 @@ export class HermesEngine {
       );
     const drop = Math.max(0, s.userTurns - p.toTurn);
     if (drop === 0) return { removed: 0 };
+    /* Track each landed undo: a mid-loop failure (e.g. a turn racing in)
+       must still count what Hermes already dropped or `userTurns` drifts. */
+    let done = 0;
     try {
-      for (let i = 0; i < drop; i++)
+      for (let i = 0; i < drop; i++) {
         await this.opts.gateway.request("session.undo", {
           session_id: s.runtimeSid,
         });
+        done++;
+      }
     } catch (e) {
+      s.userTurns -= done;
       // Hermes 4009 = agent busy; the adapter's own running check raced a
       // turn that started in between — translate to the contract's code.
       if (e instanceof RpcError && e.code === 4009)

@@ -1172,17 +1172,23 @@ export default function App() {
     if (idx < 0) return
     const target = idx === 0 ? root.text : t.replies[idx]?.text
     const n = t.replies.length - idx
-    mapRoot(feedKey, root.id, (tt) => ({
-      ...tt,
-      replies: [
-        ...tt.replies.slice(0, idx),
-        {
-          from: "",
-          time: "",
-          text: `⚠ Rewound to before your message — ${n} message${n === 1 ? "" : "s"} dropped, files restored to the earlier checkpoint.`,
-        },
-      ],
-    }))
+    if (idx === 0) {
+      /* Rewinding to the root drops every message — the whole thread goes. */
+      setFeeds((fs) => ({ ...fs, [feedKey]: (fs[feedKey] ?? []).filter((m) => m.id !== root.id) }))
+      setPanelOpen(false)
+    } else {
+      mapRoot(feedKey, root.id, (tt) => ({
+        ...tt,
+        replies: [
+          ...tt.replies.slice(0, idx),
+          {
+            from: "",
+            time: "",
+            text: `⚠ Rewound to before your message — ${n} message${n === 1 ? "" : "s"} dropped, files restored to the earlier checkpoint.`,
+          },
+        ],
+      }))
+    }
     if (target !== undefined) setThreadDraft(target)
     say(`Rewound session ${t.session} · files + ${n} message${n === 1 ? "" : "s"}`)
   }

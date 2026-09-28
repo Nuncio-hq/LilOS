@@ -167,6 +167,10 @@ export type SessionStopResult = z.infer<typeof SessionStopResult>;
 export const SessionSteerParams = z.strictObject({
   sessionId: SessionId,
   text: z.string().min(1),
+  /* Client tag echo'd on `turn.started` like `prompt.ref` — a steer that
+     outlives its turn is pumped as the next prompt, and the link back to
+     the relay message must survive that requeue (#134 rewind needs it). */
+  ref: z.string().min(1).optional(),
 });
 export type SessionSteerParams = z.infer<typeof SessionSteerParams>;
 export const SessionSteerResult = z.object({

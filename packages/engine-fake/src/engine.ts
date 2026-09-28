@@ -112,7 +112,7 @@ interface FakeSession {
       derived/llm stages never overwrite it. */
   titleUserSet: boolean;
   usage: Usage;
-  steers: string[];
+  steers: { text: string; ref?: string }[];
   /** #134: every user input the session heard (prompt + accepted steer),
       in order — `session.rewind {toTurn}` truncates this list. */
   userTurns: string[];
@@ -508,7 +508,9 @@ export class FakeEngine {
     if (!s.turn)
       // not_running consumes nothing — the client sends the text as prompt.
       return { status: "not_running" as const };
-    s.steers.push(p.text);
+    /* `ref` rides along so a steer pumped into a fresh turn still echoes
+       it on `turn.started` — rewind filtering keys off it (#134). */
+    s.steers.push({ text: p.text, ref: p.ref });
     /* A steer is a user turn the agent heard mid-run — counted so a rewind
        drops it like a prompt (#134). */
     s.userTurns.push(p.text);
@@ -926,12 +928,13 @@ export class FakeEngine {
   private pumpSteers(s: FakeSession) {
     if (!s.turn && s.state !== "closed" && s.steers.length) {
       const next = s.steers.shift();
-      if (next !== undefined) void this.runTurn(s, next);
+      if (next !== undefined)
+        void this.runTurn(s, next.text, undefined, next.ref);
     }
   }
 
   private drainSteers(s: FakeSession, turnId: string) {
-    for (const text of s.steers.splice(0))
+    for (const { text } of s.steers.splice(0))
       this.emit(s, "turn.steered", { turnId, text });
   }
 
