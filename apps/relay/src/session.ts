@@ -33,6 +33,7 @@ import {
   type MessageAttachment,
   MessagesListParams,
   MessagesPostParams,
+  MessagesSearchParams,
   ProfileUpdateParams,
   SettingsGetParams,
   SettingsSetParams,
@@ -688,6 +689,14 @@ export function createRelay(options: RelayOptions): Relay {
               "channel or conversation not found",
             );
           }
+          return;
+        }
+        case "messages.search": {
+          const parsed = MessagesSearchParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          respond(peer, id, {
+            hits: await store.searchMessages(parsed.data),
+          });
           return;
         }
         case "attachments.get": {

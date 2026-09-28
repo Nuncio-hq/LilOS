@@ -283,6 +283,22 @@ export type Msg =
     }
   | { kind: "event"; id: string; text: string; ticket: string };
 
+/* A message-level match in the DM session filter (issue #138). Groups under
+   its session in the list; `messageId` is the scroll/flash anchor when the
+   hit is opened (AC-3). `archived` carries the marker for AC-4. */
+export type MessageHit = {
+  /** Session's root message id — the `onOpen`/`threadId` key. */
+  rootId: string;
+  /** The matched message's id. */
+  messageId: string;
+  from: string;
+  time: string;
+  /** Excerpt with `<mark>` around matched terms — parsed back into elements,
+     never set as HTML. */
+  snippet: string;
+  archived?: boolean;
+};
+
 /* The chain a session needs: relay → harness → engine → model. One line each for the
    status surface; the app builds the rows (and the Copy diagnostics text) from real
    health checks later — this shape is the contract. `blocked` (#53) means the leg is
