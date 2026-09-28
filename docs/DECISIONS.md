@@ -133,7 +133,7 @@ PR does not exist.
   stay inside the session folder) and `os.editors` (VS Code/Cursor/Zed/Xcode
   detected by bundle id in /Applications + ~/Applications; first in that
   order is the default until #132). Not: `open -a` guessed by name, or a
-  persisted editor choice. — #110
+  persisted editor choice. — #110 · PR #143
 
 ## UX
 - **D-#19 A control renders only when its handler is passed; the app shows
