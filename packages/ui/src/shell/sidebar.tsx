@@ -50,7 +50,6 @@ export function Sidebar({
   navOpen,
   hiddenWhenClosed,
   me,
-  company = "Oscar Co",
   companyChannels,
   projects,
   folders,
