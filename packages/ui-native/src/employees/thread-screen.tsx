@@ -9,9 +9,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "../components/app-text";
 import { StateChip } from "../components/bits";
 import { AgentTurn, UserBubble } from "./agent-turn";
+import { BackgroundPill } from "./background-sheet";
 import { Composer } from "./composer";
 import { PrBadge, prHeadline } from "./pr-badges";
-import type { PullRequestRef, SessionState, ThreadDetail } from "./types";
+import type {
+  PullRequestRef,
+  SessionState,
+  SubagentRow,
+  ThreadDetail,
+} from "./types";
 
 /* One session opened as a thread (web: ThreadView), iOS style: the native
    nav bar carries the title + state (ThreadHeaderTitle) and an info button
@@ -28,6 +34,8 @@ export function ThreadScreen({
   onSend,
   onStop,
   onPickModel,
+  onOpenSubagent,
+  onOpenBackground,
 }: {
   t: ThreadDetail;
   model: string;
@@ -38,13 +46,21 @@ export function ThreadScreen({
   onSend: (text: string) => void;
   onStop: () => void;
   onPickModel: () => void;
+  /** A subagent row → its sheet (issue #170). */
+  onOpenSubagent?: (a: SubagentRow) => void;
+  /** The "N running in background" pill → the background sheet. */
+  onOpenBackground?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const scroller = useRef<ScrollView>(null);
   const [composerHeight, setComposerHeight] = useState(96);
   const running = t.state === "working";
+  // The background pill floats above the composer; keep the last turn clear of it.
+  const pill =
+    !!onOpenBackground && !!t.jobs?.some((j) => j.status === "running");
   // The composer's height lands after the first layout; once it does, the
   // newest turn (and its Approve) must sit above it, not under it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the measured height lands
   useEffect(() => {
     const id = setTimeout(
       () => scroller.current?.scrollToEnd({ animated: false }),
@@ -70,7 +86,7 @@ export function ThreadScreen({
             flexGrow: 1,
             justifyContent: "flex-end",
             paddingTop: 12,
-            paddingBottom: composerHeight + 16,
+            paddingBottom: composerHeight + 16 + (pill ? 44 : 0),
             paddingHorizontal: 16,
             gap: 24,
           }}
@@ -90,12 +106,16 @@ export function ThreadScreen({
                 tone={t.employee.tone}
                 onApprove={onApprove}
                 onDeny={onDeny}
+                onOpenSubagent={onOpenSubagent}
               />
             ),
           )}
         </ScrollView>
 
-        <View className="absolute inset-x-0 bottom-0">
+        <View className="absolute inset-x-0 bottom-0 gap-2">
+          {onOpenBackground && (
+            <BackgroundPill jobs={t.jobs ?? []} onPress={onOpenBackground} />
+          )}
           <Composer
             placeholder={
               running

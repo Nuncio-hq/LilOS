@@ -119,6 +119,8 @@ export function FocusView({
   onRemovePending,
   draft,
   onDraftChange,
+  onOpenSession,
+  onStopJob,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -174,6 +176,10 @@ export function FocusView({
   onAttachError?: (message: string) => void;
   steer?: boolean;
   onRemovePending?: (i: number) => void;
+  /* A subagent row that is another employee links to their session (issue #170). */
+  onOpenSession?: (employeeId: string, session: string) => void;
+  /* Workbench → Background: Stop a process (issue #170). */
+  onStopJob?: (id: string) => void;
 }) {
   const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024);
   const [tab, setTab] = useState<WbTab>(() =>
@@ -452,6 +458,7 @@ export function FocusView({
                     onRetry={onRetry}
                     models={models}
                     onOpen={pickTab}
+                    onOpenSession={onOpenSession}
                     pending={steer ? pendingSteers : []}
                     cards={
                       <>
@@ -652,6 +659,7 @@ export function FocusView({
                 onPrComment={onPrComment}
                 onPrMerge={onPrMerge}
                 live={surfaces}
+                onStopJob={onStopJob}
               />
             </aside>
           </>

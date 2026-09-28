@@ -73,6 +73,7 @@ import { MAX_ATTACHMENT_BYTES } from "@lilos/contracts/app"
 import { engineCreateAgent, engineModels, engineProfiles } from "./engine"
 import { hostAccessors, hostDir, hostDiscover, hostPick } from "./host"
 import { useFakeSurfaces } from "./fake-surfaces"
+import { DEMO_ROOT, playSubagents, stopJob, SUBAGENT_DMS } from "./fake-subagents"
 import { useLiveStatus } from "./live-status"
 import { liveAttachFromLocation, useLiveSurfaces } from "./live-surfaces"
 
@@ -561,7 +562,11 @@ export default function App() {
   const [tickets, setTickets] = useState<TicketRow[]>(TICKETS)
   const [startFor, setStartFor] = useState<string | null>(null)
   const [selfStart, setSelfStart] = useState<Record<string, boolean>>({})
-  const [feeds, setFeeds] = useState<Record<string, Msg[]>>(() => ({ ...FEEDS, ...DM_FEEDS }))
+  const [feeds, setFeeds] = useState<Record<string, Msg[]>>(() => ({
+    ...FEEDS, ...DM_FEEDS,
+    // Subagents + background work demo (issue #170): newest session in each DM.
+    ...Object.fromEntries(Object.entries(SUBAGENT_DMS).map(([k, ms]) => [k, [...(DM_FEEDS[k] ?? []), ...ms]])),
+  }))
   const stops = useRef<Record<string, boolean>>({})
   // The engine's declared steer capability: the real app reads describe().capabilities once at connect.
   // The prototype's built-in engine declares it; ?steer=off simulates an engine without it — mid-turn
@@ -939,6 +944,23 @@ export default function App() {
   const threadRunning = (m?: Extract<Msg, { kind: "msg" }>) => !!m?.thread?.replies.some((r) => r.live)
   // Live harness surfaces shown in Workbench Terminal/Preview while a turn runs (issue #36, prototype fake).
   const fakeSurfaces = useFakeSurfaces(threadRunning(openThread))
+  /* Subagents demo (issue #170): the live turn plays once, the first time its thread opens. */
+  const demoPlayed = useRef(false)
+  useEffect(() => {
+    if (openThread?.id !== DEMO_ROOT || demoPlayed.current) return
+    demoPlayed.current = true
+    playSubagents((fn) => mapRoot("dm-builder", DEMO_ROOT, fn), () => !!stops.current[DEMO_ROOT])
+  }, [openThread?.id])
+  /* A subagent row that is another employee → that employee's session in their DM. */
+  const openSession = (empId: string, session: string) => {
+    const m = (feeds[`dm-${empId}`] ?? []).find((x) => x.kind === "msg" && x.thread?.session === session)
+    if (!m) return say(`Session ${session} isn't in this prototype`)
+    setView({ kind: "dm", id: empId }); setThreadId(m.id); setPanelTab("thread"); setPanelOpen(true)
+  }
+  const stopJobIn = (m: Extract<Msg, { kind: "msg" }>, id: string) => {
+    mapRoot(feedKey, m.id, stopJob(id))
+    say(`Stopped ${m.thread?.jobs?.find((j) => j.id === id)?.command ?? id}`)
+  }
   // Real harness attach when ?surfaces=…&session=…&token=… is present (AC-4):
   // the Workbench Terminal/Preview tabs then show the live session, not a mock.
   const realSurfaces = useLiveSurfaces(useMemo(liveAttachFromLocation, []))
@@ -1187,7 +1209,7 @@ export default function App() {
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
       models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined} picker={pickerExtras}
-      editors={openEditors ?? undefined}
+      editors={openEditors ?? undefined} onOpenSession={openSession}
       onOpenPath={openWsCwd && openEditors !== null
         ? (path, app, line) => void hostAccessors.osOpen(openWsCwd, path, app, line).catch((e) => say(`Open failed — ${e instanceof Error ? e.message : String(e)}`))
         : undefined}
@@ -1240,6 +1262,7 @@ export default function App() {
           surfaces={realSurfaces ?? fakeSurfaces}
           models={canModels ? MODEL_OPTS : undefined} picker={pickerExtras} repoFiles={REPO_FILES} host={hostAccessors}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
+          onOpenSession={openSession} onStopJob={(id) => stopJobIn(openThread, id)}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />
       ) : (

@@ -106,7 +106,11 @@ async function openWorkbench(page: Page) {
     .first()
     .getByRole("button", { name: /Builder/ })
     .click();
-  await page.locator("[data-session]").first().click();
+  // An idle session: Builder's newest one is the live subagents demo (#170).
+  await page
+    .locator('[data-session="d2"]')
+    .getByRole("button", { name: /repl/ })
+    .click();
   // Thread → focus view → Workbench panel → Terminal tab. The panel starts
   // open on wide viewports — toggle it on only when it isn't.
   await page.locator('[title="Focus"]').click();

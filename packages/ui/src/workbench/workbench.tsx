@@ -1,5 +1,6 @@
 import {
   CircleDotIcon,
+  CpuIcon,
   EyeIcon,
   FileDiffIcon,
   FolderGit2Icon,
@@ -75,6 +76,7 @@ import type {
 } from "../types";
 import type { TreeNode } from "./artifacts";
 import { buildTree, sessionArtifacts } from "./artifacts";
+import { BackgroundPanel } from "./background-panel";
 import { DiffView } from "./diff-view";
 import { TreeNodes } from "./file-tree-nodes";
 import { LivePreview, type LiveSurfaces, LiveTerminal } from "./live";
@@ -103,6 +105,7 @@ export function Workbench({
   onPrComment,
   onPrMerge,
   live,
+  onStopJob,
 }: {
   thread: Thread;
   work: Work | null;
@@ -124,8 +127,12 @@ export function Workbench({
   onPrMerge?: (method: MergeMethod) => void | Promise<void>;
   /** Live harness surfaces (issue #36): replaces the mock Terminal/Preview tabs. */
   live?: LiveSurfaces;
+  /** Stops a background process (issue #170); absent = no Stop button. */
+  onStopJob?: (id: string) => void;
 }) {
   const a = sessionArtifacts(thread);
+  const jobs = thread.jobs ?? [];
+  const jobsRunning = jobs.filter((j) => j.status === "running").length;
   const [sel, setSel] = useState<string | null>(null);
   const [viewFile, setViewFile] = useState<{
     path: string;
@@ -309,6 +316,16 @@ export function Workbench({
           <TabsTrigger value="preview">
             <GlobeIcon />
             Preview
+          </TabsTrigger>
+          <TabsTrigger value="background">
+            <CpuIcon />
+            Background
+            {jobsRunning > 0 && (
+              <span className="flex items-center gap-1 font-mono text-[11px] text-emerald-600">
+                <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+                {jobsRunning}
+              </span>
+            )}
           </TabsTrigger>
           {prShown && (
             <TabsTrigger value="pr">
@@ -664,6 +681,10 @@ export function Workbench({
             </div>
           </WebPreview>
         )}
+      </TabsContent>
+
+      <TabsContent value="background" className="min-h-0 flex-1">
+        <BackgroundPanel jobs={jobs} onStop={onStopJob} />
       </TabsContent>
 
       {prShown && (
