@@ -283,7 +283,9 @@ async function allowAll(page: Page) {
 
 const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
 const DM_URL = /\/dm\/[^/]+$/;
-const workbenchToggle = (page: Page) => page.getByTitle("Workbench");
+// exact: title substring-match would also hit "Hide workbench" when open.
+const workbenchToggle = (page: Page) =>
+  page.getByTitle("Workbench", { exact: true });
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
 
@@ -349,6 +351,12 @@ test("AC-2 Focus is the same live conversation: streaming, steps, approvals, mod
   ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-2-streamed.png` });
 
+  // Turn text lands before the turn settles — wait, or the next send steers
+  // the running turn instead of opening a new one (no approval card).
+  await expect(turn.locator("[data-streaming]")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+
   // An edit-ask prompt parks on an approval card; answering it continues the turn.
   await send(page, "Add a release note to the readme");
   await expect(page.getByText("Approval needed").first()).toBeVisible({
@@ -365,6 +373,9 @@ test("AC-2 Focus is the same live conversation: streaming, steps, approvals, mod
     /Done on|Review it|done/i,
     { timeout: 60_000 },
   );
+  await expect(
+    page.locator("[data-agentturn] [data-streaming]"),
+  ).toHaveCount(0, { timeout: 60_000 });
 
   // Esc inside the composer is still the turn's Stop — Focus stays open.
   await send(page, "Add another note to the readme");
