@@ -53,6 +53,7 @@ function wsFactory(): SocketFactory {
       addEventListener(type: string, listener: (event: never) => void) {
         const list = listeners[type] ?? [];
         list.push(listener as (event: unknown) => void);
+        listeners[type] = list;
       },
     };
     return socket;

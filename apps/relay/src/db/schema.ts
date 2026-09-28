@@ -147,3 +147,15 @@ export const recentFolders = sqliteTable("recent_folders", {
   path: text("path").primaryKey(),
   lastUsedAt: integer("last_used_at").notNull(),
 });
+
+/**
+ * The signed-in human's profile (#118): one row (`id` = 1) of relay-owned
+ * identity — name, company name, avatar colour. Columns stay NULL until the
+ * user sets them; the app prefills from the OS on an untouched install.
+ */
+export const settings = sqliteTable("settings", {
+  id: integer("id").primaryKey(),
+  userName: text("user_name"),
+  companyName: text("company_name"),
+  avatarColor: text("avatar_color"),
+});

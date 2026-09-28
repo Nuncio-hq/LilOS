@@ -107,6 +107,20 @@ export const RecentFolder = z.object({
 });
 export type RecentFolder = z.infer<typeof RecentFolder>;
 
+/**
+ * The signed-in human's identity — name, company name, avatar colour
+ * (#118). LilOS-owned domain data (D-#25): the relay stores it and every
+ * surface rendering `ME` or the company reads it. All fields optional — an
+ * untouched install stores nothing and the app prefills from the OS.
+ */
+export const ProfileSettings = z.object({
+  userName: z.string().min(1).optional(),
+  companyName: z.string().min(1).optional(),
+  /** Tailwind `bg-*` class backing the human's avatar chip. */
+  avatarColor: z.string().min(1).optional(),
+});
+export type ProfileSettings = z.infer<typeof ProfileSettings>;
+
 export const AuthorKind = z.enum(["user", "employee", "system"]);
 export type AuthorKind = z.infer<typeof AuthorKind>;
 

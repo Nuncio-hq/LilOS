@@ -35,6 +35,11 @@ PR does not exist.
   `cwd`, the relay stores it (nullable), and the engine sees it only as
   `cwd` on `session.start`.** Not: a per-employee fixed workdir, or folder
   moves inside a session (#10). — #113
+- **D-#118 The signed-in human's identity (name, company, avatar colour) is
+  relay-owned profile data: `settings.get`/`settings.update` on a singleton
+  `settings` row; every surface reads it, nothing is hardcoded.** Prefill
+  comes from `host.user` (the OS account's full name). Not: a `ME` constant
+  in the web app, or identity fields on the employee record. — #118
 
 ## Web
 - **D-#3 Web: React 19 + Vite + Tailwind v4 + shadcn (base-nova) + AI

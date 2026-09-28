@@ -16,8 +16,10 @@ import {
   JsonRpcNotification,
   JsonRpcResponse,
   MessageCreatedEvent,
+  type ProfileSettings,
   type RequestId,
   type RpcError,
+  SettingsUpdatedEvent,
   SystemStatusResult,
   type WelcomeResult,
 } from "@lilos/contracts/app";
@@ -119,6 +121,9 @@ export class RelayClient {
   readonly employees: WritableAtom<Employee[]> = atom([]);
   readonly channels: WritableAtom<AppChannel[]> = atom([]);
   readonly conversations: WritableAtom<Conversation[]> = atom([]);
+  /** Relay-owned profile (#118) — `{}` on an untouched install; the app
+      layers OS-derived prefill on top (AC-4). */
+  readonly settings: WritableAtom<ProfileSettings> = atom({});
   /**
    * Per-conversation list rows (title, root, answer preview, state) that
    * survive the channel snapshot window — refreshed on connect and patched
@@ -345,6 +350,19 @@ export class RelayClient {
     this.employees.set(this.employees.get().filter((e) => e.id !== id));
   }
 
+  /**
+   * Merge profile settings (#118). The result is the stored profile; the
+   * `settings.updated` broadcast lands the same value on every open window.
+   */
+  async updateSettings(patch: ProfileSettings): Promise<ProfileSettings> {
+    const { settings } = await this.request<{ settings: ProfileSettings }>(
+      "settings.update",
+      patch as Record<string, unknown>,
+    );
+    this.settings.set(settings);
+    return settings;
+  }
+
   /** Engine roster + model catalog, forwarded through the relay to the host. */
   async listAgents(): Promise<AgentDescriptor[]> {
     const { agents } = await this.request<{ agents: AgentDescriptor[] }>(
@@ -537,8 +555,8 @@ export class RelayClient {
 
   private async refreshDirectory(): Promise<void> {
     try {
-      const [employees, channels, conversations, summaries] = await Promise.all(
-        [
+      const [employees, channels, conversations, summaries, settings] =
+        await Promise.all([
           this.request<{ employees: Employee[] }>("employees.list", {}),
           this.request<{ channels: AppChannel[] }>("channels.list", {}),
           // Archived included: the DM list renders its own Archived section.
@@ -550,12 +568,13 @@ export class RelayClient {
             "conversations.summaries",
             { includeArchived: true },
           ),
-        ],
-      );
+          this.request<{ settings: ProfileSettings }>("settings.get", {}),
+        ]);
       this.employees.set(employees.employees);
       this.channels.set(channels.channels);
       this.conversations.set(conversations.conversations);
       this.conversationSummaries.set(summaries.summaries);
+      this.settings.set(settings.settings);
     } catch {
       // Directory refresh is best-effort on reconnect; stores keep stale data.
     }
@@ -709,6 +728,10 @@ export class RelayClient {
       case "channel.removed": {
         const event = ChannelRemovedEvent.parse(params);
         this.dropChannel(event.channelId);
+        return;
+      }
+      case "settings.updated": {
+        this.settings.set(SettingsUpdatedEvent.parse(params).settings);
         return;
       }
       case "employee.upserted": {

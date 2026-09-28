@@ -4,9 +4,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * Issue #118 AC-1: no hardcoded "Oscar" / "Oscar Co" is left in `apps/*` or
- * `packages/ui` — every surface renders the relay-stored identity instead.
- * The needles are assembled piecewise so this test does not flag itself.
+ * Issue #118 AC-1: the shipped placeholder identity is gone from `apps/*`
+ * and `packages/ui` — every surface renders the relay-stored identity
+ * instead. The needles are assembled piecewise so this test does not flag
+ * itself.
  */
 
 const OSC = "Osc" + "ar";
@@ -35,7 +36,7 @@ function* walk(dir: string): Generator<string> {
 }
 
 describe("AC-1 no hardcoded identity strings", () => {
-  it("no 'Oscar'/'Oscar Co' remains in apps/* or packages/ui", () => {
+  it("no hardcoded name/company remains in apps/* or packages/ui", () => {
     const hits: string[] = [];
     for (const scope of SCOPES) {
       for (const file of walk(scope)) {

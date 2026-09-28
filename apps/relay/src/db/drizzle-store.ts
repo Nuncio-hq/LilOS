@@ -7,6 +7,7 @@ import type {
   Employee,
   MessageAttachment,
   PendingTurn,
+  ProfileSettings,
   RecentFolder,
 } from "@lilos/contracts/app";
 import { ApprovalOutcome, EngineRequest } from "@lilos/contracts/engine";
@@ -67,6 +68,13 @@ const rowToAsk = (row: AskRow): Ask => ({
   answer: row.answer ?? undefined,
   createdAt: row.createdAt,
   resolvedAt: row.resolvedAt ?? undefined,
+});
+
+type SettingsRow = typeof schema.settings.$inferSelect;
+const rowToSettings = (row: SettingsRow): ProfileSettings => ({
+  userName: row.userName ?? undefined,
+  companyName: row.companyName ?? undefined,
+  avatarColor: row.avatarColor ?? undefined,
 });
 
 export function createDrizzleStore(db: Db): RelayStore {
@@ -352,6 +360,25 @@ export function createDrizzleStore(db: Db): RelayStore {
         })
         .run();
       return folder;
+    },
+    async getSettings(): Promise<ProfileSettings> {
+      const row = db
+        .select()
+        .from(schema.settings)
+        .where(eq(schema.settings.id, 1))
+        .get();
+      return row ? rowToSettings(row) : {};
+    },
+    async updateSettings(patch: ProfileSettings): Promise<ProfileSettings> {
+      const cols: Partial<typeof schema.settings.$inferInsert> = {};
+      if (patch.userName !== undefined) cols.userName = patch.userName;
+      if (patch.companyName !== undefined) cols.companyName = patch.companyName;
+      if (patch.avatarColor !== undefined) cols.avatarColor = patch.avatarColor;
+      db.insert(schema.settings)
+        .values({ id: 1, ...cols })
+        .onConflictDoUpdate({ target: schema.settings.id, set: cols })
+        .run();
+      return this.getSettings();
     },
     async openConversation(input: OpenConversationInput) {
       return db.transaction((tx) => {

@@ -21,6 +21,7 @@ import {
   EngineHostStatus,
   MessageAttachment,
   PendingTurn,
+  ProfileSettings,
   RecentFolder,
   RespondTo,
   Timestamp,
@@ -131,6 +132,9 @@ export const AppMethod = z.enum([
   /* LilOS-owned recent folders for the session folder picker (#113) */
   "folders.list",
   "folders.add",
+  /* The signed-in human's identity — name, company, avatar colour (#118) */
+  "settings.get",
+  "settings.update",
   /* engine passthrough: forwarded verbatim to the registered engine host */
   "agents.list",
   "agents.describe",
@@ -409,6 +413,20 @@ export const FoldersListResult = z.object({
 export const FoldersAddParams = z.object({ path: z.string().min(1) });
 export const FoldersAddResult = z.object({ folder: RecentFolder });
 
+/**
+ * Profile settings (#118): `settings.get` returns the stored profile — `{}`
+ * on an untouched install, the app prefills from the OS (AC-4).
+ * `settings.update` merges the given keys and returns the stored profile.
+ */
+export const SettingsGetParams = z.object({}).strict();
+export const SettingsGetResult = z.object({ settings: ProfileSettings });
+export const SettingsUpdateParams = ProfileSettings.refine(
+  (p) => Object.values(p).some((v) => v !== undefined),
+  { message: "at least one setting required" },
+);
+export type SettingsUpdateParams = z.infer<typeof SettingsUpdateParams>;
+export const SettingsUpdateResult = z.object({ settings: ProfileSettings });
+
 /** Fetch one stored attachment's bytes — the read path behind display refs. */
 export const AttachmentsGetParams = z.object({
   id: z.string().min(1),
@@ -639,6 +657,7 @@ export const AppEventMethod = z.enum([
   "employee.upserted",
   "employee.removed",
   "conversation.modelRequested",
+  "settings.updated",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 
@@ -683,6 +702,10 @@ export type EmployeeUpsertedEvent = z.infer<typeof EmployeeUpsertedEvent>;
 /** Broadcast on employees.remove so all clients drop the record. */
 export const EmployeeRemovedEvent = z.object({ employeeId: z.string().min(1) });
 export type EmployeeRemovedEvent = z.infer<typeof EmployeeRemovedEvent>;
+
+/** Broadcast on settings.update — every connected surface sees the edit. */
+export const SettingsUpdatedEvent = z.object({ settings: ProfileSettings });
+export type SettingsUpdatedEvent = z.infer<typeof SettingsUpdatedEvent>;
 
 export const AskOpenedEvent = z.object({
   channelId: z.string().min(1),

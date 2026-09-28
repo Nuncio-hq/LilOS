@@ -124,6 +124,18 @@ const MIGRATIONS: { version: number; statements: string[] }[] = [
       )`,
     ],
   },
+  {
+    // #118: the signed-in human's profile — one row, NULL columns until set.
+    version: 7,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        user_name TEXT,
+        company_name TEXT,
+        avatar_color TEXT
+      )`,
+    ],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

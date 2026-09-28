@@ -167,7 +167,8 @@ describe("issue #71", () => {
       <Sidebar
         navOpen
         hiddenWhenClosed={false}
-        me={{ name: "Oscar", color: "bg-blue-600" }}
+        me={{ name: "Ada", color: "bg-blue-600" }}
+        company="Ada Co"
         companyChannels={[]}
         projects={[]}
         folders={[]}

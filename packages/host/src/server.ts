@@ -9,6 +9,7 @@ import {
   gitIsRepo,
   gitStatus,
 } from "./git.js";
+import { hostUser } from "./user.js";
 
 type Handler = (params: never) => Promise<unknown>;
 
@@ -29,6 +30,7 @@ const HANDLERS: Record<keyof typeof HOST_METHODS, Handler> = {
   "forge.pr": forgePr,
   "forge.comment": forgeComment,
   "forge.merge": forgeMerge,
+  "host.user": hostUser,
 };
 
 /**

@@ -13,7 +13,7 @@ import { engineBundlePlan } from "../scripts/engines";
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 describe("AC-1 (#85) a signed bundle ships the real engine only", () => {
-  const plan = engineBundlePlan("Developer ID Application: Oscar");
+  const plan = engineBundlePlan("Developer ID Application: Example Dev");
 
   it("compiles lilos-engine-hermes and no fake", () => {
     expect(plan.binaries.map((b) => b.outfile)).toEqual([

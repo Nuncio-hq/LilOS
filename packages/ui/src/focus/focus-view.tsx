@@ -407,6 +407,7 @@ export function FocusView({
                     key={r.id ?? i}
                     r={r}
                     emp={emp}
+                    human={human}
                     last={i === thread.replies.length - 1}
                     onRetry={onRetry}
                     models={models}
@@ -421,6 +422,7 @@ export function FocusView({
                           work={work}
                           repo={channel.repo}
                           emp={emp}
+                          human={human}
                           resolved={resolved}
                           setResolved={setResolved}
                           onStart={onStart}

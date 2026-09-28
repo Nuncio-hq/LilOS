@@ -401,6 +401,8 @@
         "employees.remove",
         "folders.list",
         "folders.add",
+        "settings.get",
+        "settings.update",
         "agents.list",
         "agents.describe",
         "agents.create",
@@ -422,7 +424,8 @@
         "channel.removed",
         "employee.upserted",
         "employee.removed",
-        "conversation.modelRequested"
+        "conversation.modelRequested",
+        "settings.updated"
       ]
     },
     "HelloParams": {
@@ -1201,6 +1204,100 @@
       },
       "required": [
         "folder"
+      ]
+    },
+    "ProfileSettings": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "userName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "companyName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "avatarColor": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "SettingsGetParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "SettingsGetResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "settings": {
+          "type": "object",
+          "properties": {
+            "userName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "companyName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "avatarColor": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "required": [
+        "settings"
+      ]
+    },
+    "SettingsUpdateParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "userName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "companyName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "avatarColor": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "SettingsUpdateResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "settings": {
+          "type": "object",
+          "properties": {
+            "userName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "companyName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "avatarColor": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "required": [
+        "settings"
       ]
     },
     "Conversation": {

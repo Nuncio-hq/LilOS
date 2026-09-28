@@ -33,6 +33,7 @@ import {
   type MessageAttachment,
   MessagesListParams,
   MessagesPostParams,
+  SettingsUpdateParams,
   SystemStatusParams,
   TurnsInterruptParams,
   type WelcomeResult,
@@ -516,6 +517,18 @@ export function createRelay(options: RelayOptions): Relay {
           respond(peer, id, {
             folder: await store.addRecentFolder(parsed.data.path),
           });
+          return;
+        }
+        case "settings.get": {
+          respond(peer, id, { settings: await store.getSettings() });
+          return;
+        }
+        case "settings.update": {
+          const parsed = SettingsUpdateParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const settings = await store.updateSettings(parsed.data);
+          broadcast("settings.updated", { settings });
+          respond(peer, id, { settings });
           return;
         }
         case "channels.openDm": {

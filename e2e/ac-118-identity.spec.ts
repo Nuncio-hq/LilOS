@@ -38,7 +38,8 @@ async function waitForHttp(url: string, ms = 30_000): Promise<void> {
       .then((r) => r.ok || r.status === 404)
       .catch(() => false);
     if (ok) return;
-    if (Date.now() - start > ms) throw new Error(`timed out waiting for ${url}`);
+    if (Date.now() - start > ms)
+      throw new Error(`timed out waiting for ${url}`);
     await new Promise((r) => setTimeout(r, 200));
   }
 }
@@ -156,9 +157,7 @@ test("AC-2 first run folds name+company into the card, prefilled; AC-1 the choic
 
     await nameInput.fill("Ada");
     await companyInput.fill("Ada Labs");
-    await card
-      .getByRole("button", { name: /open dm/i })
-      .click();
+    await card.getByRole("button", { name: /open dm/i }).click();
     await expect(page).toHaveURL(/\/dm\//);
 
     // Every surface renders the stored identity (AC-1).

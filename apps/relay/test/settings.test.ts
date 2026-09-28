@@ -76,8 +76,9 @@ describe("AC-1 relay owns the profile settings", () => {
         avatarColor: "bg-rose-600",
       },
     });
-    const event = (watcher.frames as { method?: string; params?: unknown }[])
-      .find((f) => f.method === "settings.updated");
+    const event = (
+      watcher.frames as { method?: string; params?: unknown }[]
+    ).find((f) => f.method === "settings.updated");
     expect(event?.params).toEqual({
       settings: {
         userName: "Ada",

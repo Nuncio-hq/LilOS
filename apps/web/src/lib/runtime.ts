@@ -9,7 +9,8 @@ import type { Ask } from "@lilos/contracts/app";
 import type { ModelOption } from "@lilos/contracts/engine";
 import { atom, computed, type ReadableAtom } from "nanostores";
 import type { LilosConfig } from "./config";
-import { initHost } from "./host";
+import { hostUser, initHost } from "./host";
+import { osFullName, profile } from "./me";
 
 export const booted = atom(false);
 export const bootError = atom<string | null>(null);
@@ -29,9 +30,15 @@ export let engine: EngineClient;
 export async function bootRuntime(cfg: LilosConfig): Promise<void> {
   relay = new RelayClient({ url: cfg.relayWs, token: cfg.relayToken });
   engine = new EngineClient({ url: cfg.engineWs });
+  // #118: the signed-in human's profile is relay-owned — mirror it into the
+  // identity atoms; the OS full name prefills the fields the relay left empty.
+  relay.settings.listen((s) => profile.set(s));
   // #113: the harness serves the host API on the feed port; folder picking
   // and the thread header's branch badge ride it.
   initHost(cfg);
+  void hostUser()
+    .then((u) => osFullName.set(u.fullName))
+    .catch(() => {});
   try {
     await relay.connect();
   } catch (e) {
