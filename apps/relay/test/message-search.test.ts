@@ -158,6 +158,7 @@ describe("messages.search over the session wire (memory store)", () => {
     const s = await seed(connection, frames);
     await connection.receive(req("employees.remove", { id: s.employeeId }));
     await search(connection, { query: "rate limit", includeArchived: true });
+    expect(lastFrame(frames).error).toBeUndefined();
     expect(hitsOf(frames)).toEqual([]);
   });
 

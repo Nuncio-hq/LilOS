@@ -210,6 +210,7 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
   page,
 }) => {
   test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1288, height: 700 });
   await dmDefault(stack, page);
   const dmHome = page.url();
 

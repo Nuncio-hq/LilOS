@@ -35,6 +35,10 @@ PR does not exist.
   `cwd`, the relay stores it (nullable), and the engine sees it only as
   `cwd` on `session.start`.** Not: a per-employee fixed workdir, or folder
   moves inside a session (#10). — #113
+- **D-#138 Message search indexes only the relay's stored messages via a
+  SQLite FTS5 external-content table + triggers (migration v9).** Engine
+  transcripts, tool output and attachments are never indexed (D-#25).
+  Not: a separate search service, or indexing transcripts. — #138
 - **D-#118 The signed-in human's identity (name, company, avatar colour) is
   relay-owned profile data: `profile.get`/`profile.update` on a singleton
   `profile` row (`settings.*` is #92's KV namespace); every surface reads it, nothing is hardcoded.** Prefill
