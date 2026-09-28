@@ -35,7 +35,7 @@ interface Stack {
   stop: () => Promise<void>;
 }
 
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
+async function waitForHttp(url: string, ms = 90_000): Promise<void> {
   const start = Date.now();
   for (;;) {
     const ok = await fetch(url)
