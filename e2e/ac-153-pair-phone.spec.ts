@@ -217,7 +217,7 @@ test("AC-2/AC-4/AC-6 grant shows a QR, exchange pairs, revoke drops it", async (
     // the loopback listener took.
     expect(address).toBe(`mac.tailnet.test:${new URL(stack.relayWs).port}`);
     expect(shownCode).toMatch(
-      /^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/,
+      /^[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/,
     );
     await expect(page.locator("[data-expiry]")).toContainText("Works once");
     await page.screenshot({ path: path.join(SHOTS, "2-qr-ready.png") });
