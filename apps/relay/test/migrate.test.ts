@@ -52,8 +52,8 @@ describe("relay migrations", () => {
     // v7 adds #92's pick columns + the LilOS-owned settings KV; v8 adds
     // #118's profile row; v9 adds #138's FTS index (sqlite_master lists the
     // virtual table's shadow tables too — only assert the FTS table itself);
-    // v10 adds #153's phone pairing tables.
-    expect(out.version).toBe(10);
+    // v11 adds #153's phone pairing tables (v10 is open PR #162's).
+    expect(out.version).toBe(11);
     for (const col of ["provider", "effort", "fast"])
       expect(out.colsAt7).toContain(col);
     for (const col of ["provider", "effort", "fast"])
