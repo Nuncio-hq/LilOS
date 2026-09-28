@@ -272,20 +272,30 @@ const turns = (page: Page) => page.locator("[data-agentturn]");
 
 /* Send as a NEW turn: wait until every earlier turn has settled (a send into
    a running turn steers it instead — no new turn, no approval card), then
-   send and wait for the new turn to render. Returns that turn. */
+   send and return the agent turn right after THIS message. Anchored on the
+   sent message, not a turn count: after a page load the engine feed replays
+   older turns late, so a count taken early can point at one of those. */
 const sendTurn = async (page: Page, text: string) => {
   await expect(turns(page).locator("[data-streaming]")).toHaveCount(0, {
     timeout: 60_000,
   });
-  const before = await turns(page).count();
-  if (before > 0) {
+  if ((await turns(page).count()) > 0) {
     await expect(turns(page).last().locator("[data-turnsettled]")).toBeVisible({
       timeout: 60_000,
     });
   }
   await send(page, text);
-  await expect(turns(page)).toHaveCount(before + 1, { timeout: 60_000 });
-  return turns(page).nth(before);
+  const mine = page
+    .locator("main [data-msg]")
+    .filter({ hasText: text })
+    .filter({ hasNot: page.locator("[data-agentturn]") })
+    .last();
+  await expect(mine).toBeVisible({ timeout: 60_000 });
+  const turn = mine.locator(
+    "xpath=following-sibling::*[.//*[@data-agentturn]][1]//*[@data-agentturn]",
+  );
+  await expect(turn).toBeVisible({ timeout: 60_000 });
+  return turn;
 };
 
 /** The open session's chip row on the DM home. */
