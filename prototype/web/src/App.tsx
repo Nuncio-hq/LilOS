@@ -84,7 +84,7 @@ import {
 import { hostAccessors, hostDir, hostDiscover, hostPick } from "./host"
 import { useFakeSurfaces } from "./fake-surfaces"
 import { DEMO_ROOT, playSubagents, stopJob, SUBAGENT_DMS } from "./fake-subagents"
-import { approvePlan, pendingPlan, PLAN_DMS, rejectPlan, revisePlan } from "./fake-plan"
+import { approvePlan, pendingPlan, PLAN_DMS, rejectPlan, revisePlan, stopTasks, tasksFrom, tickTask } from "./fake-plan"
 import { useLiveStatus } from "./live-status"
 import { liveAttachFromLocation, useLiveSurfaces } from "./live-surfaces"
 
@@ -231,6 +231,13 @@ const FEEDS: Record<string, Msg[]> = {
         replies: [
           {
             from: "builder", time: "10:04", thought: 4, dur: 48,
+            // The employee's own task list for this turn, finished (#175): folds to one green line.
+            plan: { id: "tasks-lil3", kind: "tasks", version: 1, status: "approved", steps: [
+              { text: "Create branch + pnpm workspace", status: "completed" },
+              { text: "Scaffold contracts, client-runtime, web, relay", status: "completed" },
+              { text: "Strict TS + no DOM in client-runtime", status: "completed" },
+              { text: "Run the tests and commit", status: "completed" },
+            ] },
             reasoning: "Ticket LIL-3 on its own worktree, so I can edit. Four packages; `client-runtime` must never import the DOM, so enforce it in tsconfig instead of hoping.",
             text: "On it. Scaffolded on `lil-3-monorepo`: pnpm workspaces, strict TS, no DOM imports in `client-runtime`. **@Reviewer** please check the package boundaries.",
             steps: [
@@ -900,7 +907,8 @@ export default function App() {
     const started0 = Date.now()
     mapRoot(key, rootId, (t) => ({
       ...t,
-      replies: [...t.replies, { id: rid, from: empId, time: nowTime(), text: "", steps: [], live: true, phase: "submitted", ...turnPick(t, empId) }],
+      // A longer turn keeps its own task list, ticked as it goes (#175); short ones don't bother.
+      replies: [...t.replies, { id: rid, from: empId, time: nowTime(), text: "", steps: [], live: true, phase: "submitted", ...turnPick(t, empId), plan: s.steps.length >= 3 ? tasksFrom(s.steps) : undefined }],
       // todo.updated: the employee adds its own item and marks it in_progress
       todos: s.todo ? [...(t.todos ?? []).filter((x) => x.content !== s.todo), { content: s.todo, status: "in_progress" }] : t.todos,
     }))
@@ -925,11 +933,11 @@ export default function App() {
       const t0 = Date.now()
       for (const w of words(s.reasoning)) { await tick(45); set((r) => ({ ...r, reasoning: (r.reasoning ?? "") + w })) }
       set((r) => ({ ...r, phase: "tools", thought: Math.max(1, Math.round((Date.now() - t0) / 1000)) }))
-      for (const st of s.steps) {
+      for (const [n, st] of s.steps.entries()) {
         applySteers() // boundary: the next tool call is about to start
-        set((r) => ({ ...r, steps: [...(r.steps ?? []), { ...st, output: "", running: true, diff: undefined, commit: undefined }] }))
+        set((r) => ({ ...r, plan: tickTask(r.plan, n, "in_progress"), steps: [...(r.steps ?? []), { ...st, output: "", running: true, diff: undefined, commit: undefined }] }))
         await tick(650)
-        set((r) => ({ ...r, steps: (r.steps ?? []).map((x, i, a) => (i === a.length - 1 ? { ...st } : x)) }))
+        set((r) => ({ ...r, plan: tickTask(r.plan, n, "completed"), steps: (r.steps ?? []).map((x, i, a) => (i === a.length - 1 ? { ...st } : x)) }))
       }
       applySteers() // last boundary: nothing more lands between tools, so apply before message.delta
       if (applied.length) s.text += `\n\nFolded in your steer: *“${plain(applied.join(" "))}”.`
@@ -951,7 +959,7 @@ export default function App() {
         s.pr.checks.forEach((_, i) => setTimeout(() => mapRoot(key, rootId, (t) => t.pr ? { ...t, pr: { ...t.pr, checks: t.pr.checks.map((c, j) => (j === i ? { ...c, status: outcome[i] } : c)) } } : t), 1200 + i * 900))
       }
     } catch {
-      set((r) => ({ ...r, phase: "stopped", live: false, steps: (r.steps ?? []).map((x) => ({ ...x, running: false })) }))
+      set((r) => ({ ...r, phase: "stopped", live: false, plan: stopTasks(r.plan), steps: (r.steps ?? []).map((x) => ({ ...x, running: false })) }))
       mapRoot(key, rootId, (t) => ({ ...t, todos: s.todo ? (t.todos ?? []).map((x) => (x.content === s.todo ? { ...x, status: "cancelled" } : x)) : t.todos }))
     }
     // session.interrupt (■): undelivered steers must not silently land in a LATER turn —

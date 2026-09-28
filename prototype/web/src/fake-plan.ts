@@ -158,3 +158,24 @@ export function revisePlan(planId: string, ask: string): Edit {
     }
   }
 }
+
+/* The employee's own working list for a longer turn (Claude Code TodoWrite, Codex plan,
+   Hermes todo): one task per tool call here; a real engine sends its own wording. Same
+   card as a plan, but it never asks — it just ticks (issue #175). */
+const VERB: Record<string, string> = { terminal: "Run", read_file: "Read", write_file: "Create", patch: "Edit", search_files: "Search for", web_search: "Look up" }
+export function tasksFrom(steps: Step[]): Plan {
+  return {
+    id: `tasks-${Date.now()}`,
+    kind: "tasks",
+    version: 1,
+    status: "approved",
+    steps: steps.map((s) => ({
+      text: `${VERB[s.tool] ?? s.tool} ${String(s.input.command ?? s.input.path ?? s.input.pattern ?? s.input.query ?? "")}`.trim(),
+      status: "pending" as const,
+    })),
+  }
+}
+export const tickTask = (p: Plan | undefined, i: number, status: Plan["steps"][number]["status"]): Plan | undefined =>
+  p?.kind === "tasks" ? { ...p, steps: p.steps.map((s, j) => (j === i ? { ...s, status } : s)) } : p
+export const stopTasks = (p: Plan | undefined): Plan | undefined =>
+  p?.kind === "tasks" ? { ...p, steps: p.steps.map((s) => (s.status === "in_progress" ? { ...s, status: "cancelled" } : s)) } : p

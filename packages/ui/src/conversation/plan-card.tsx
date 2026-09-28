@@ -2,6 +2,7 @@ import {
   ArrowUpRightIcon,
   CheckIcon,
   ChevronRightIcon,
+  CircleCheckIcon,
   CircleDotIcon,
   ListChecksIcon,
   TriangleAlertIcon,
@@ -96,20 +97,43 @@ export function PlanRisks({ risks }: { risks: string[] }) {
   );
 }
 
+/* Where the card is in its life: waiting on you, working, done, stopped mid-way, or
+   superseded. Done folds to one green line (plans: with the goal) — tap for the steps. */
+export function planPhase(p: Plan) {
+  const { done, total } = planProgress(p);
+  if (p.status === "proposed") return "waiting";
+  if (p.status === "replaced" || p.status === "rejected") return p.status;
+  if (done === total) return "done";
+  if (p.steps.some((s) => s.status === "cancelled")) return "stopped";
+  return "working";
+}
+
 function Status({ plan }: { plan: Plan }) {
   const { done, total } = planProgress(plan);
-  switch (plan.status) {
-    case "proposed":
+  switch (planPhase(plan)) {
+    case "waiting":
       return (
         <span className="flex items-center gap-1.5 rounded-full bg-amber-500/12 px-2 py-0.5 font-medium text-[11.5px] text-amber-700 dark:text-amber-400">
           <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
           Waiting for you
         </span>
       );
-    case "approved":
+    case "working":
+      return (
+        <span className="font-medium font-mono text-[12px] text-amber-600">
+          {done}/{total}
+        </span>
+      );
+    case "done":
       return (
         <span className="font-medium text-[12px] text-emerald-600">
-          {done === total ? "Done" : `Approved · ${done}/${total}`}
+          {total}/{total} done
+        </span>
+      );
+    case "stopped":
+      return (
+        <span className="text-[12px] text-muted-foreground">
+          Stopped · {done}/{total}
         </span>
       );
     case "replaced":
@@ -133,45 +157,67 @@ export function PlanCard({
   /** Opens the Workbench Plan tab. */
   onOpen?: () => void;
 }) {
-  const folded = plan.status === "replaced" || plan.status === "rejected";
-  // Unset = follow the status: a plan folds on its own once replaced or rejected.
+  const phase = planPhase(plan);
+  const tasks = plan.kind === "tasks";
+  const finished = phase === "done";
+  const muted = phase === "replaced" || phase === "rejected";
+  const folded = muted || finished;
+  // Unset = follow the phase: the card folds on its own once done, replaced or rejected.
   const [open, setOpen] = useState<boolean | null>(null);
   const { pct } = planProgress(plan);
   const shown = !folded || !!open;
+  const name = tasks
+    ? "Tasks"
+    : `Plan${plan.version > 1 ? ` v${plan.version}` : ""}`;
   return (
     <div
       data-plan={plan.id}
       data-planstatus={plan.status}
+      data-planphase={phase}
       className={cn(
         "w-full max-w-xl overflow-hidden rounded-xl border bg-background",
-        plan.status === "proposed" && "border-amber-500/40",
-        folded && "bg-muted/30",
+        phase === "waiting" && "border-amber-500/40",
+        finished && "border-emerald-500/30 bg-emerald-500/[0.04]",
+        muted && "bg-muted/30",
       )}
     >
       <button
         type="button"
         disabled={!folded}
         onClick={() => setOpen(!shown)}
-        className="flex w-full items-center gap-2 px-3.5 pt-3 pb-2 text-left"
+        className={cn(
+          "flex w-full items-center gap-2 px-3.5 text-left",
+          folded && !shown ? "py-2.5" : "pt-3 pb-2",
+        )}
       >
-        <ListChecksIcon
-          className={cn(
-            "size-4 shrink-0",
-            folded ? "text-muted-foreground" : "text-foreground",
-          )}
-        />
+        {finished ? (
+          <CircleCheckIcon className="size-4 shrink-0 text-emerald-600" />
+        ) : (
+          <ListChecksIcon
+            className={cn(
+              "size-4 shrink-0",
+              muted ? "text-muted-foreground" : "text-foreground",
+            )}
+          />
+        )}
         <span
           className={cn(
-            "font-semibold text-[13.5px]",
-            folded && "text-muted-foreground",
+            "shrink-0 font-semibold text-[13.5px]",
+            muted && "text-muted-foreground",
           )}
         >
-          Plan{plan.version > 1 && ` v${plan.version}`}
+          {finished ? `${name} done` : name}
         </span>
-        <span className="text-[12px] text-muted-foreground">
-          · {plan.steps.length} steps
-        </span>
-        <span className="ml-auto flex items-center gap-1.5">
+        {folded && !shown && plan.goal ? (
+          <span className="min-w-0 truncate text-[12.5px] text-muted-foreground">
+            · {plan.goal}
+          </span>
+        ) : (
+          <span className="shrink-0 text-[12px] text-muted-foreground">
+            · {plan.steps.length} {tasks ? "tasks" : "steps"}
+          </span>
+        )}
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
           <Status plan={plan} />
           {folded && (
             <ChevronRightIcon
@@ -183,7 +229,7 @@ export function PlanCard({
           )}
         </span>
       </button>
-      {plan.status === "approved" && (
+      {(phase === "working" || phase === "stopped") && (
         <div className="mx-3.5 mb-2 h-1 overflow-hidden rounded-full bg-muted">
           <div
             className="h-full rounded-full bg-emerald-500 transition-[width] duration-500"
@@ -193,17 +239,19 @@ export function PlanCard({
       )}
       {shown && (
         <div className="space-y-3 px-3.5 pb-3.5">
-          <p className="text-[13.5px] leading-5">
-            <span className="text-muted-foreground">Goal · </span>
-            {plan.goal}
-          </p>
+          {plan.goal && (
+            <p className="text-[13.5px] leading-5">
+              <span className="text-muted-foreground">Goal · </span>
+              {plan.goal}
+            </p>
+          )}
           <PlanSteps plan={plan} />
-          {plan.status === "proposed" && !!plan.risks?.length && (
+          {phase === "waiting" && !!plan.risks?.length && (
             <PlanRisks risks={plan.risks} />
           )}
-          {(plan.status === "proposed" && onAction) || onOpen ? (
+          {(phase === "waiting" && onAction) || (onOpen && !muted) ? (
             <div className="flex flex-wrap items-center gap-2 pt-1">
-              {plan.status === "proposed" && onAction && (
+              {phase === "waiting" && onAction && (
                 <>
                   <Button
                     size="sm"
@@ -228,7 +276,7 @@ export function PlanCard({
                   </Button>
                 </>
               )}
-              {onOpen && !folded && (
+              {onOpen && !muted && (
                 <button
                   type="button"
                   onClick={onOpen}

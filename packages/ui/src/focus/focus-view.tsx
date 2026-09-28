@@ -255,8 +255,9 @@ export function FocusView({
       ? "submitted"
       : "streaming"
     : "ready";
-  // The engine's todo list, else the approved plan's steps (issue #175).
-  const todos = thread.todos?.length ? thread.todos : planTodos(thread);
+  // The latest approved plan / task list (issue #175), else the engine's session todos.
+  const fromPlan = planTodos(thread);
+  const todos = fromPlan.length ? fromPlan : (thread.todos ?? []);
   const queue = thread.queue ?? [];
   const pendingSteers = pending ?? [];
   // The open "asks to start work" card, if any, is the single start-work entry point (issue #15).

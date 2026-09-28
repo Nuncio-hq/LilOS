@@ -116,9 +116,13 @@ export type PlanStep = {
 };
 export type Plan = {
   id: string;
+  /* plan = proposed for your OK first; tasks = the employee's own working
+     list (Claude Code TodoWrite, Codex plan, Hermes todo) — never asks,
+     starts "approved" and just ticks. Same card either way. */
+  kind?: "plan" | "tasks";
   version: number;
-  /** One line: what done looks like. */
-  goal: string;
+  /** One line: what done looks like (tasks lists may have none). */
+  goal?: string;
   steps: PlanStep[];
   risks?: string[];
   status: "proposed" | "approved" | "replaced" | "rejected";

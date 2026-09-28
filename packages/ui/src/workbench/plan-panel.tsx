@@ -43,7 +43,7 @@ function Older({ p }: { p: Plan }) {
         <span className="shrink-0 whitespace-nowrap">
           v{p.version} · {LABEL[p.status]}
         </span>
-        <span className="min-w-0 truncate">· {p.goal}</span>
+        {p.goal && <span className="min-w-0 truncate">· {p.goal}</span>}
       </button>
       {open && (
         <div className="px-3 pb-3">
@@ -69,7 +69,9 @@ export function PlanPanel({ plans }: { plans: Plan[] }) {
         <section className="space-y-3">
           <div className="flex items-baseline gap-2">
             <h3 className="font-semibold text-[15px]">
-              Plan{current.version > 1 && ` v${current.version}`}
+              {current.kind === "tasks"
+                ? "Tasks"
+                : `Plan${current.version > 1 ? ` v${current.version}` : ""}`}
             </h3>
             <span
               className={cn(
@@ -81,7 +83,11 @@ export function PlanPanel({ plans }: { plans: Plan[] }) {
                     : "text-muted-foreground",
               )}
             >
-              {LABEL[current.status]}
+              {planProgress(current).done === total
+                ? "Done"
+                : current.kind === "tasks"
+                  ? "The employee's own list"
+                  : LABEL[current.status]}
             </span>
             <span className="ml-auto font-mono text-[12px] text-muted-foreground">
               {done}/{total}
@@ -93,10 +99,12 @@ export function PlanPanel({ plans }: { plans: Plan[] }) {
               style={{ width: `${pct}%` }}
             />
           </div>
-          <p className="text-[13.5px] leading-5">
-            <span className="text-muted-foreground">Goal · </span>
-            {current.goal}
-          </p>
+          {current.goal && (
+            <p className="text-[13.5px] leading-5">
+              <span className="text-muted-foreground">Goal · </span>
+              {current.goal}
+            </p>
+          )}
           <PlanSteps plan={current} />
           {!!current.risks?.length && <PlanRisks risks={current.risks} />}
         </section>

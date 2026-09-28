@@ -723,6 +723,7 @@ const SLEEP_FIX_TURN: Script = {
 };
 
 const CI: Script = {
+  followPlan: "g1",
   steps: [
     {
       tool: "terminal",

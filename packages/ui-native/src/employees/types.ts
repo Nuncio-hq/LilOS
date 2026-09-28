@@ -110,8 +110,10 @@ export type SubagentRow = {
     steps are the live checklist; replaced = a newer version took over. */
 export type PlanRow = {
   id: string;
+  /** tasks = the employee's own working list: no OK asked, it just ticks. */
+  kind?: "plan" | "tasks";
   version: number;
-  goal: string;
+  goal?: string;
   steps: {
     text: string;
     files?: string[];

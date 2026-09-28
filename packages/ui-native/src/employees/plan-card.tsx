@@ -9,8 +9,9 @@ import type { PlanRow } from "./types";
 
 /* The plan an employee proposes before editing (issue #175; web: PlanCard).
    In the turn: goal + steps, and while it waits on you Approve / Change… /
-   Reject. Approved, the same steps tick off with a progress bar. Replaced or
-   rejected plans fold to one line. Tap the card for PlanSheet: every step
+   Reject. Approved, the same steps tick off with a progress bar. The same
+   card shows an employee's own task list (kind "tasks": never asks). Done,
+   replaced or rejected fold to one line. Tap the card for PlanSheet: every step
    with its files, the risks, and earlier versions. */
 
 export type PlanAction = "approve" | "change" | "reject";
@@ -74,19 +75,26 @@ function Steps({ plan, files }: { plan: PlanRow; files?: boolean }) {
   );
 }
 
+/* Where the card is: waiting on you, working, done, stopped mid-way, or
+   superseded (web: planPhase). */
+function phaseOf(p: PlanRow) {
+  if (p.status === "proposed") return "waiting";
+  if (p.status === "replaced" || p.status === "rejected") return p.status;
+  if (done(p) === p.steps.length) return "done";
+  if (p.steps.some((s) => s.status === "cancelled")) return "stopped";
+  return "working";
+}
+
 function StatusLabel({ plan }: { plan: PlanRow }) {
-  const n = done(plan);
-  const [text, cls] =
-    plan.status === "proposed"
-      ? ["Needs your OK", "text-accent-text"]
-      : plan.status === "approved"
-        ? [
-            n === plan.steps.length ? "Done" : `${n}/${plan.steps.length} done`,
-            "text-success",
-          ]
-        : plan.status === "replaced"
-          ? [`Replaced by v${plan.version + 1}`, "text-muted-foreground"]
-          : ["Rejected", "text-destructive"];
+  const n = `${done(plan)}/${plan.steps.length}`;
+  const [text, cls] = {
+    waiting: ["Needs your OK", "text-accent-text"],
+    working: [n, "text-work"],
+    done: [`${n} done`, "text-success"],
+    stopped: [`Stopped · ${n}`, "text-muted-foreground"],
+    replaced: [`Replaced by v${plan.version + 1}`, "text-muted-foreground"],
+    rejected: ["Rejected", "text-destructive"],
+  }[phaseOf(plan)];
   return (
     <AppText
       size="xs"
@@ -137,32 +145,49 @@ export function PlanCard({
   /** Opens PlanSheet. */
   onOpen?: () => void;
 }) {
-  const folded = plan.status === "replaced" || plan.status === "rejected";
+  const phase = phaseOf(plan);
+  const finished = phase === "done";
+  const muted = phase === "replaced" || phase === "rejected";
+  // Done, replaced and rejected fold to one line; the sheet has the rest.
+  const folded = finished || muted;
+  const tasks = plan.kind === "tasks";
+  const name = tasks
+    ? "Tasks"
+    : `Plan${plan.version > 1 ? ` v${plan.version}` : ""}`;
   const pct = (done(plan) / plan.steps.length) * 100;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Plan${plan.version > 1 ? ` v${plan.version}` : ""}, ${plan.steps.length} steps`}
+      accessibilityLabel={`${name}, ${plan.steps.length} ${tasks ? "tasks" : "steps"}`}
       disabled={!onOpen}
       onPress={onOpen}
-      className={`gap-3 rounded-[20px] p-3.5 active:opacity-90 ${folded ? "bg-fill" : "bg-card"} ${plan.status === "proposed" ? "border border-primary/40" : ""}`}
+      className={`gap-3 rounded-[20px] active:opacity-90 ${folded ? "px-3.5 py-3" : "p-3.5"} ${muted ? "bg-fill" : "bg-card"} ${phase === "waiting" ? "border border-primary/40" : ""}`}
       style={{ borderCurve: "continuous" }}
     >
       <View className="flex-row items-center gap-2">
         <Icon
-          name="checklist"
+          name={finished ? "checkmark.circle.fill" : "checklist"}
           size={15}
-          tone={folded ? "muted-foreground" : "foreground"}
+          tone={
+            finished ? "success" : muted ? "muted-foreground" : "foreground"
+          }
         />
         <AppText
           weight="semibold"
-          tone={folded ? "muted" : "default"}
+          tone={muted ? "muted" : "default"}
           className="text-[15px]"
         >
-          {`Plan${plan.version > 1 ? ` v${plan.version}` : ""}`}
+          {finished ? `${name} done` : name}
         </AppText>
-        <AppText size="xs" tone="muted" className="flex-1 text-[13px]">
-          {`· ${plan.steps.length} steps`}
+        <AppText
+          size="xs"
+          tone="muted"
+          numberOfLines={1}
+          className="flex-1 text-[13px]"
+        >
+          {folded && plan.goal
+            ? `· ${plan.goal}`
+            : `· ${plan.steps.length} ${tasks ? "tasks" : "steps"}`}
         </AppText>
         <StatusLabel plan={plan} />
         {onOpen && (
@@ -174,7 +199,7 @@ export function PlanCard({
           />
         )}
       </View>
-      {plan.status === "approved" && (
+      {(phase === "working" || phase === "stopped") && (
         <View className="h-1 overflow-hidden rounded-full bg-fill">
           <View
             className="h-full rounded-full bg-success"
@@ -184,17 +209,19 @@ export function PlanCard({
       )}
       {!folded && (
         <>
-          <AppText className="text-[15px] leading-5">
-            <AppText tone="muted" className="text-[15px]">
-              {"Goal · "}
+          {plan.goal && (
+            <AppText className="text-[15px] leading-5">
+              <AppText tone="muted" className="text-[15px]">
+                {"Goal · "}
+              </AppText>
+              {plan.goal}
             </AppText>
-            {plan.goal}
-          </AppText>
+          )}
           <Steps plan={plan} />
-          {plan.status === "proposed" && !!plan.risks?.length && (
+          {phase === "waiting" && !!plan.risks?.length && (
             <Risks risks={plan.risks} />
           )}
-          {plan.status === "proposed" && onAction && (
+          {phase === "waiting" && onAction && (
             // Its own responder, so a button tap never opens the sheet.
             <View
               onStartShouldSetResponder={() => true}
@@ -243,7 +270,11 @@ export function PlanSheet({
     >
       <View className="-mx-4">
         <SheetHeader
-          title={`Plan${plan.version > 1 ? ` v${plan.version}` : ""}`}
+          title={
+            plan.kind === "tasks"
+              ? "Tasks"
+              : `Plan${plan.version > 1 ? ` v${plan.version}` : ""}`
+          }
           onDone={onDone}
         />
       </View>
@@ -252,7 +283,7 @@ export function PlanSheet({
           weight="semibold"
           className="text-center text-[20px] leading-6"
         >
-          {plan.goal}
+          {plan.goal ?? "The employee's own list for this turn"}
         </AppText>
         <StatusLabel plan={plan} />
       </View>
