@@ -565,4 +565,79 @@ describe("relay -> app requests + employee lifecycle (#29)", () => {
     expect(store.get().messages).toEqual([]);
     expect(store.get().synced).toBe(false);
   });
+
+  /* #134 AC-2: `conversation.rewound` drops every message at/after the
+     rewind point from the channel store — other conversations' messages
+     stay — and records the point so views holding fetched history re-render
+     without the tail. */
+  it("AC-2 conversation.rewound drops the tail and stamps rewinds", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    const store = client.channelMessages("ch1");
+    await Promise.resolve();
+    const mk = (id: string, seq: number, conv: string | null) => ({
+      id,
+      channelId: "ch1",
+      conversationId: conv,
+      authorId: "u",
+      authorKind: "user" as const,
+      text: id,
+      seq,
+      createdAt: seq,
+    });
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "channel.snapshot",
+      params: {
+        channelId: "ch1",
+        lastSeq: 4,
+        messages: [
+          mk("m1", 1, "conv1"),
+          mk("m2", 2, "conv1"),
+          mk("m3", 3, "conv1"),
+          mk("o1", 4, "conv2"),
+        ],
+      },
+    });
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "channel.synced",
+      params: { channelId: "ch1", lastSeq: 4 },
+    });
+    expect(store.get().messages.map((m) => m.id)).toEqual([
+      "m1",
+      "m2",
+      "m3",
+      "o1",
+    ]);
+
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "conversation.rewound",
+      params: {
+        channelId: "ch1",
+        conversationId: "conv1",
+        fromSeq: 2,
+        messageId: "m2",
+        engineRewound: true,
+      },
+    });
+
+    expect(store.get().messages.map((m) => m.id)).toEqual(["m1", "o1"]);
+    expect(client.rewinds.get()).toEqual({ conv1: 2 });
+    /* A second rewind of the same conversation supersedes the first point. */
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "conversation.rewound",
+      params: {
+        channelId: "ch1",
+        conversationId: "conv1",
+        fromSeq: 1,
+        messageId: "m1",
+        engineRewound: false,
+      },
+    });
+    expect(store.get().messages.map((m) => m.id)).toEqual(["o1"]);
+    expect(client.rewinds.get()).toEqual({ conv1: 1 });
+  });
 });

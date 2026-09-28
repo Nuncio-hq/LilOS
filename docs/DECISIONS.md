@@ -125,6 +125,18 @@ PR does not exist.
   `~/.lilos/hermes-bin`, then known install locations), and a missing
   engine surfaces as a plain status reason — never a silent fake.
   Not: a fake default in release. — #85
+- **D-#134 Rewind = harness-owned file checkpoints + an engine `rewind`
+  capability for conversation memory.** Before each user turn the harness
+  snapshots the session folder into a LilOS shadow git store
+  (`~/.lilos/checkpoints/<folder-hash>`, `GIT_DIR`+`GIT_WORK_TREE`+`GIT_INDEX_FILE`
+  — the user's `.git`/index/stash/HEAD are never touched, non-git folders
+  work); the checkpoint id rides on the user message, and the relay marks
+  the dropped tail `rewound` (hidden, kept for audit). `session.rewind
+  {toTurn}` is a declared capability — transports that can't rewind the
+  engine's memory (ACP today) still get the file restore plus a plain
+  "still remembers" note and Start a new session.
+  Not: engine-owned file checkpoints (opt-in, transport-dependent),
+  deleting messages, or the engine owning the folder snapshot. — #134
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the

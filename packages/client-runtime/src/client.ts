@@ -7,6 +7,7 @@ import {
   ChannelSnapshotEvent,
   ChannelSyncedEvent,
   type Conversation,
+  ConversationRewoundEvent,
   type ConversationSummary,
   ConversationUpdatedEvent,
   type Employee,
@@ -138,6 +139,12 @@ export class RelayClient {
   });
   /** Fatal handshake failure (version mismatch, bad token) once raised. */
   readonly fatal: WritableAtom<RelayError | undefined> = atom(undefined);
+  /**
+   * #134: latest rewind per conversation (conversationId -> first rewound
+   * seq). Views holding fetched history outside the channel atoms re-render
+   * off this so the dropped tail disappears in every open window.
+   */
+  readonly rewinds: WritableAtom<Record<string, number>> = atom({});
 
   private readonly options: Required<
     Pick<
@@ -794,6 +801,38 @@ export class RelayClient {
         if (event.lastSeq > wm)
           this.watermarks.set(event.channelId, event.lastSeq);
         this.setChannelSynced(event.channelId, true, event.lastSeq);
+        return;
+      }
+      case "conversation.rewound": {
+        const event = ConversationRewoundEvent.parse(params);
+        const store = this.channelStates.get(event.channelId);
+        if (store) {
+          const state = store.get();
+          store.set({
+            ...state,
+            messages: state.messages.filter(
+              (m) =>
+                m.conversationId !== event.conversationId ||
+                m.seq < event.fromSeq,
+            ),
+          });
+        }
+        const parked = this.parked.get(event.channelId);
+        if (parked) {
+          this.parked.set(
+            event.channelId,
+            parked.filter(
+              (m) =>
+                m.conversationId !== event.conversationId ||
+                m.seq < event.fromSeq,
+            ),
+          );
+        }
+        this.rewinds.set({
+          ...this.rewinds.get(),
+          [event.conversationId]: event.fromSeq,
+        });
+        void this.refreshSummaries();
         return;
       }
       case "conversation.updated": {

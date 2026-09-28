@@ -1,5 +1,6 @@
 import type { ChatStatus } from "ai";
-import { CheckIcon, Maximize2Icon, PlayIcon } from "lucide-react";
+import { CheckIcon, Maximize2Icon, PlayIcon, Undo2Icon } from "lucide-react";
+import { useState } from "react";
 import {
   ConversationKeepBottom,
   NotSentTray,
@@ -8,6 +9,11 @@ import {
 } from "../chat/agent-chat";
 import { Composer } from "../chat/composer";
 import { ModelPicker, sessionChoice } from "../chat/model-picker";
+import {
+  Checkpoint,
+  CheckpointIcon,
+  CheckpointTrigger,
+} from "../components/ai-elements/checkpoint";
 import {
   Conversation,
   ConversationContent,
@@ -35,6 +41,64 @@ import type {
   Work,
 } from "../types";
 import { WorkspaceBadge, WsBadge } from "../workbench/ws-badges";
+
+/* #134: the "Rewind to here" checkpoint above each user message — the same
+   affordance FocusView ships (issue #38), keyed by message id here. A shared
+   folder (`warning`) turns the click into an inline confirm; a running turn
+   greys it out (AC-5). */
+function RewindCheckpoint({
+  running,
+  warning,
+  onRewind,
+}: {
+  running: boolean;
+  warning?: string;
+  onRewind: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  if (confirming && warning) {
+    return (
+      <div className="mx-3 my-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 sm:mx-5">
+        <div className="mb-1.5 text-amber-700 text-xs dark:text-amber-300">
+          {warning}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="xs" onClick={onRewind} data-rewind-confirm>
+            Rewind anyway
+          </Button>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => setConfirming(false)}
+          >
+            Cancel
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <Checkpoint className="mx-3 my-0.5 text-xs sm:mx-5">
+      <CheckpointIcon className="size-3.5" />
+      <span title={running ? "Stop the running turn first" : undefined}>
+        <CheckpointTrigger
+          size="xs"
+          disabled={running}
+          tooltip={
+            running
+              ? "Stop the running turn first"
+              : "Undo files + conversation back to before this message"
+          }
+          onClick={() => (warning ? setConfirming(true) : onRewind())}
+          data-rewind
+        >
+          <Undo2Icon className="size-3" />
+          Rewind to here
+        </CheckpointTrigger>
+      </span>
+    </Checkpoint>
+  );
+}
 
 /* The right-panel frame around the conversation — channel threads AND DM sessions (issue #19).
    The employee turns render through the shared AgentTurn (identical to Focus); human turns keep
@@ -77,6 +141,10 @@ export function ThreadView({
   onDraftChange,
   editors,
   onOpenPath,
+  onRewind,
+  rewindWarning,
+  seedFiles,
+  onSeededFiles,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -136,6 +204,17 @@ export function ThreadView({
      the Files section — passed only when the session has a folder (cwd). */
   mentionables?: Employee[];
   onSearchFiles?: (query: string) => Promise<FileMention[]>;
+  /* #134 "Rewind to here" on every user row (root included): the host drops
+     the message + everything after and restores the folder to the pre-turn
+     checkpoint. Disabled while a turn runs (AC-5). */
+  onRewind?: (messageId: string) => void;
+  /* AC-5: when another session shares this folder a click must confirm first
+     — the string names the sharer. */
+  rewindWarning?: string;
+  /* AC-4: rewound message images re-entering the composer — forwarded to the
+     Composer's `seedFiles`. */
+  seedFiles?: AttachedFile[];
+  onSeededFiles?: () => void;
 }) {
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
@@ -222,6 +301,13 @@ export function ThreadView({
       </div>
       <Conversation className="min-h-0">
         <ConversationContent className="gap-0 p-0 py-2">
+          {onRewind && root.id && human(root.from) && (
+            <RewindCheckpoint
+              running={running}
+              warning={rewindWarning}
+              onRewind={() => onRewind(root.id ?? "")}
+            />
+          )}
           <Row from={root.from} emp={emp} human={human}>
             <Who id={root.from} time={root.time} emp={emp} human={human} />
             <Body text={root.text} />
@@ -271,11 +357,20 @@ export function ThreadView({
                 />
               </div>
             ) : (
-              <Row key={r.id ?? i} from={r.from} emp={emp} human={human}>
-                <Who id={r.from} time={r.time} emp={emp} human={human} />
-                <Body text={r.text} />
-                {r.attachments && <AttachmentChips files={r.attachments} />}
-              </Row>
+              <div key={r.id ?? i}>
+                {onRewind && r.id && human(r.from) && (
+                  <RewindCheckpoint
+                    running={running}
+                    warning={rewindWarning}
+                    onRewind={() => onRewind(r.id ?? "")}
+                  />
+                )}
+                <Row from={r.from} emp={emp} human={human}>
+                  <Who id={r.from} time={r.time} emp={emp} human={human} />
+                  <Body text={r.text} />
+                  {r.attachments && <AttachmentChips files={r.attachments} />}
+                </Row>
+              </div>
             ),
           )}
           {transcriptNote && (
@@ -351,6 +446,8 @@ export function ThreadView({
         onSend={onSend}
         draft={draft}
         onDraftChange={onDraftChange}
+        seedFiles={seedFiles}
+        onSeededFiles={onSeededFiles}
         status={status}
         lastSent={lastSent}
         accept={accept}

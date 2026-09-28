@@ -1,0 +1,503 @@
+import { type ChildProcess, execSync, spawn } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { expect, type Locator, type Page, test } from "@playwright/test";
+import { engineTag, expectNoEngineLeak } from "./engine-leak";
+
+/**
+ * Issue #134 — "Rewind to here" on every user message: the relay marks the
+ * message + everything after it `rewound` (hidden, kept for audit), the
+ * harness restores the session folder from its pre-turn shadow-git
+ * checkpoint, and an engine declaring `rewind` drops the turns from agent
+ * memory (engine-fake proves it via `recall:`).
+ *
+ * Two real-app stacks: stackA declares every capability (rewind on),
+ * stackB hides it (`LILOS_HIDE_CAPS=rewind`) for the AC-3 files-only
+ * fallback. The last leg is the prototype (AC-8).
+ */
+
+const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
+const repo = path.resolve(here, "..");
+const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
+const wport = (p: number) => p + WORKER * 100;
+const webDir = path.join(repo, "apps", "web");
+const SHOTS = path.join(repo, "test-results", "ac-134");
+
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVQI12P8z/CfAQMwMCooKOgDAu2zC+h6pBe+AAAAAElFTkSuQmCC",
+  "base64",
+);
+
+interface Stack {
+  home: string;
+  webUrl: string;
+  relayWs: string;
+  relayToken: string;
+  stop: () => Promise<void>;
+}
+
+async function waitForHttp(url: string, ms = 30_000): Promise<void> {
+  const start = Date.now();
+  for (;;) {
+    const ok = await fetch(url)
+      .then((r) => r.ok || r.status === 404)
+      .catch(() => false);
+    if (ok) return;
+    if (Date.now() - start > ms)
+      throw new Error(`timed out waiting for ${url}`);
+    await new Promise((r) => setTimeout(r, 200));
+  }
+}
+
+function killProc(proc: ChildProcess): Promise<void> {
+  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
+    try {
+      if (proc.pid) process.kill(-proc.pid, sig);
+    } catch {
+      try {
+        proc.kill(sig);
+      } catch {}
+    }
+  };
+  return new Promise((resolve) => {
+    const t = setTimeout(() => {
+      killGroup("SIGKILL");
+      resolve();
+    }, 8_000);
+    proc.once("exit", () => {
+      clearTimeout(t);
+      resolve();
+    });
+    killGroup("SIGTERM");
+  });
+}
+
+async function bootStack(
+  tag: string,
+  ports: { relay: number; feed: number; web: number },
+  extraEnv: Record<string, string> = {},
+): Promise<Stack> {
+  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
+  const leakTag = engineTag(tag);
+  const proc = spawn("bun", ["run", "dev"], {
+    cwd: webDir,
+    detached: true,
+    env: {
+      ...process.env,
+      LILOS_HOME: home,
+      LILOS_ENGINE_TAG: leakTag,
+      LILOS_RELAY_PORT: String(ports.relay),
+      LILOS_FEED_PORT: String(ports.feed),
+      LILOS_WEB_PORT: String(ports.web),
+      ...extraEnv,
+    },
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  const webUrl = `http://127.0.0.1:${ports.web}`;
+  try {
+    await waitForHttp(webUrl);
+    await waitForHttp(`http://127.0.0.1:${ports.relay}/`);
+    await waitForHttp(`http://127.0.0.1:${ports.feed}/`);
+    const tokenPath = path.join(home, "relay-token");
+    let relayToken = "";
+    for (let i = 0; i < 300 && !relayToken; i++) {
+      try {
+        relayToken = readFileSync(tokenPath, "utf8").trim();
+      } catch {}
+      if (!relayToken) await new Promise((r) => setTimeout(r, 100));
+    }
+    if (!relayToken)
+      throw new Error(`relay token never appeared at ${tokenPath}`);
+    return {
+      home,
+      webUrl,
+      relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
+      relayToken,
+      stop: async () => {
+        await killProc(proc);
+        await expectNoEngineLeak(leakTag);
+      },
+    };
+  } catch (e) {
+    proc.kill("SIGKILL");
+    throw e;
+  }
+}
+
+/* The folder the rewound sessions run in — a real git repo so the shadow
+   store proves it never touches the user's `.git`. seed.txt is deleted and
+   notes.md edited mid-test; the rewind must restore both. */
+const ROOT = mkdtempSync(path.join(tmpdir(), "lilos-134-"));
+const repoDir = path.join(ROOT, "lilos-repo");
+const SEED_TEXT = "seed line\n";
+const NOTES_TEXT = "notes v1\n";
+mkdirSync(repoDir);
+execSync(
+  `git init -b trunk && git -c user.email=t@t -c user.name=t commit --allow-empty -m init`,
+  { cwd: repoDir },
+);
+writeFileSync(path.join(repoDir, "seed.txt"), SEED_TEXT);
+writeFileSync(path.join(repoDir, "notes.md"), NOTES_TEXT);
+execSync("git add -A && git -c user.email=t@t -c user.name=t commit -m files", {
+  cwd: repoDir,
+});
+const gitDigest = () =>
+  execSync("git status --porcelain && git rev-parse HEAD && git stash list", {
+    cwd: repoDir,
+  }).toString();
+/* Captured after the fixture commit: HEAD + clean worktree + empty stash —
+   the user's git state a rewind must leave byte-identical. */
+const CLEAN_GIT = gitDigest();
+
+let stackA: Stack; // engine-fake with every capability — incl. `rewind`
+let stackB: Stack; // engine-fake with `rewind` hidden (the ACP path)
+test.beforeAll(async () => {
+  test.setTimeout(180_000);
+  stackA = await bootStack(
+    "rw-a",
+    { relay: wport(4643), feed: wport(4647), web: wport(5241) },
+    {
+      LILOS_USER_NAME: "Oscar",
+      /* Slow the fake's steps so the AC-5 "disabled while running" assertion
+         has a window even on a fast VM. */
+      ENGINE_FAKE_TICK: "700",
+    },
+  );
+  stackB = await bootStack(
+    "rw-b",
+    { relay: wport(4743), feed: wport(4747), web: wport(5341) },
+    { LILOS_USER_NAME: "Oscar", LILOS_HIDE_CAPS: "rewind" },
+  );
+});
+test.afterAll(async () => {
+  await stackA?.stop();
+  await stackB?.stop();
+});
+
+test.describe.configure({ mode: "serial" });
+
+/** Open the app, land on Default's DM home composer. `roots` feeds
+    `?roots=` so git.discoverRepos finds the fixture repo. */
+async function dmDefault(stack: Stack, page: Page, roots = "") {
+  await page.goto(`${stack.webUrl}/${roots ? `?roots=${roots}` : ""}`);
+  const aside = page.locator("aside");
+  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
+    timeout: 30_000,
+  });
+  const dmBtn = page.getByRole("button", {
+    name: /open dm|set up later|message/i,
+  });
+  if (
+    await dmBtn
+      .first()
+      .isVisible()
+      .catch(() => false)
+  ) {
+    await dmBtn.first().click();
+  } else {
+    await aside.getByRole("button", { name: /default/i }).click();
+  }
+  await expect(page).toHaveURL(/\/dm\//);
+}
+
+const send = async (page: Page, text: string) => {
+  const box = page.locator("textarea").last();
+  await box.fill(text);
+  await box.press("Enter");
+};
+
+const empId = (page: Page) =>
+  decodeURIComponent(page.url().split("/dm/")[1].split("/")[0]);
+
+/** Pick `dir` in the home composer's folder picker (Add folder dialog). */
+async function pickFolder(page: Page, dir: string) {
+  await page.locator('[data-ws="folder"]').click();
+  const menu = page
+    .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
+    .last();
+  /* Existing folders list by id — match the row by its rendered path. A
+     folder bound to a live session is filtered out of "discovered", so
+     picking it again for a second session only works through this list. */
+  const recent = menu.locator("[data-wsfolder]").filter({ hasText: dir });
+  if (await recent.first().isVisible().catch(() => false)) {
+    await recent.first().click();
+    return;
+  }
+  await menu.getByText("Add a folder").click();
+  const dialog = page.locator("[data-addfolder]");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator(`[data-discovered="${dir}"]`)).toBeVisible({
+    timeout: 15_000,
+  });
+  await dialog.locator(`[data-discovered="${dir}"]`).click();
+  await expect(dialog.locator("[data-folderinfo]")).toContainText("Git repo", {
+    timeout: 15_000,
+  });
+  await dialog.locator("[data-addbtn]").click();
+  await expect(dialog).toHaveCount(0);
+}
+
+let convA = "";
+let empA = "";
+
+/** Message-row text match that excludes the composer textarea — after a
+    rewind the draft legitimately echoes the dropped message (AC-4), and
+    getByText matches a textarea's content too. */
+const rowText = (scope: Locator, text: string | RegExp) =>
+  scope.getByText(text).and(scope.locator(":not(textarea)"));
+
+function watchConsole(page: Page) {
+  const errors: string[] = [];
+  page.on("console", (m) => {
+    if (m.text().includes("[dbg]")) console.log("PAGE:", m.text());
+    if (m.type() === "error") errors.push(m.text());
+  });
+  page.on("pageerror", (e) => errors.push(String(e)));
+  return errors;
+}
+
+test("AC-2/4 + AC-1 files: rewind drops the tail, restores the folder, refills the composer", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const errors = watchConsole(page);
+  await dmDefault(stackA, page, ROOT);
+  await pickFolder(page, repoDir);
+  await expect(page.locator('[data-ws="folder"]')).toContainText("lilos-repo");
+  await send(page, "alpha marker one");
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  convA = decodeURIComponent(page.url().split("/dm/")[1].split("/")[1]);
+  empA = empId(page);
+  await expect(
+    page.locator("[data-thread]").getByText("If you want me to change code"),
+  ).toBeVisible({ timeout: 60_000 });
+
+  /* beta carries an image so AC-4 asserts the attachment chip comes back. */
+  await page.locator('input[type="file"]').last().setInputFiles({
+    name: "beta-proof.png",
+    mimeType: "image/png",
+    buffer: PNG,
+  });
+  await send(page, "beta marker two");
+  await expect(
+    page.locator("[data-thread]").getByText("Got your image"),
+  ).toBeVisible({ timeout: 60_000 });
+  await send(page, "recall:");
+  await expect(
+    page.locator("[data-thread]").getByText("I remember 2 earlier turns"),
+  ).toBeVisible({ timeout: 60_000 });
+  await page.screenshot({ path: `${SHOTS}/ac-2-before.png` });
+
+  /* The "agent's writes", faked locally since engine-fake never touches fs:
+     a file created, one deleted, one edited — all after beta's checkpoint.
+     The user's git state must be byte-identical afterwards. */
+  writeFileSync(path.join(repoDir, "marker.txt"), "made after turn 2\n");
+  writeFileSync(path.join(repoDir, "notes.md"), "notes v2 EDITED\n");
+  unlinkSync(path.join(repoDir, "seed.txt"));
+
+  /* Three user messages => three checkpoints; rewind at "beta marker two". */
+  const triggers = page.locator("[data-rewind]");
+  await expect(triggers).toHaveCount(3);
+  await triggers.nth(1).click();
+  /* Surface a relay error toast/console error immediately when debugging. */
+  await page.waitForTimeout(800);
+  if (errors.length) console.log("PAGE ERRORS:", errors);
+  const toast = page.locator("div.fixed.bottom-5");
+  if (await toast.isVisible().catch(() => false))
+    console.log("TOAST:", await toast.innerText());
+
+  /* The message and everything after (its reply, the recall turn) drop out
+     of the thread; a system note lands where the thread was cut. */
+  const thread = page.locator("[data-thread]");
+  await expect(rowText(thread, "beta marker two")).toHaveCount(0);
+  await expect(rowText(thread, "Noted. Plan for this session")).toHaveCount(0);
+  await expect(rowText(thread, "I remember 2 earlier turns")).toHaveCount(0);
+  await expect(rowText(thread, "alpha marker one")).toBeVisible();
+  await expect(
+    thread.getByText(/Rewound to before your message — \d+ messages dropped/),
+  ).toBeVisible();
+  await expect(page.locator("textarea").last()).toHaveValue("beta marker two");
+  await expect(
+    page.locator("form").last().getByText("beta-proof.png"),
+  ).toBeVisible({ timeout: 15_000 });
+  await page.screenshot({ path: `${SHOTS}/ac-2-4-after.png` });
+
+  /* AC-1 end to end: created file gone, deleted file back, edit reverted;
+     the user's own git state is untouched. */
+  expect(existsSync(path.join(repoDir, "marker.txt"))).toBe(false);
+  expect(readFileSync(path.join(repoDir, "seed.txt"), "utf8")).toBe(SEED_TEXT);
+  expect(readFileSync(path.join(repoDir, "notes.md"), "utf8")).toBe(NOTES_TEXT);
+  /* `git status`+HEAD+stash byte-identical to the pre-session state — the
+     shadow store never touched the user's `.git`. */
+  expect(gitDigest()).toBe(CLEAN_GIT);
+
+  /* AC-2 continued: the engine forgot the rewound turns — a new recall
+     hears only "alpha marker one". */
+  await send(page, "recall:");
+  await expect(
+    page.locator("[data-thread]").getByText("I remember 1 earlier turn"),
+  ).toBeVisible({ timeout: 60_000 });
+  /* The alpha message row + the recall's list item; beta stays gone (the
+     composer was cleared by sending "recall:"). */
+  await expect(rowText(thread, "alpha marker one")).toHaveCount(2);
+  await expect(rowText(thread, "beta marker two")).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/ac-2-memory.png` });
+});
+
+test("AC-5 rewind triggers are disabled while a turn runs", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(`${stackA.webUrl}/dm/${empA}/${convA}`);
+  await expect(page.locator("[data-rewind]").first()).toBeVisible({
+    timeout: 30_000,
+  });
+  /* ENGINE_FAKE_TICK=700 keeps the turn streaming for a few seconds. */
+  await send(page, "a slow-running turn for the disabled check");
+  await expect(page.locator("[data-rewind]").first()).toBeDisabled({
+    timeout: 15_000,
+  });
+  await page.screenshot({ path: `${SHOTS}/ac-5-disabled.png` });
+  await expect(
+    page.locator("[data-thread]").getByText("Noted. Plan for this session"),
+  ).toBeVisible({ timeout: 60_000 });
+  /* `running` clears on the turn-done frame — the fake keeps streaming
+     steps after the reply text lands, so give it real headroom. */
+  await expect(page.locator("[data-rewind]").first()).toBeEnabled({
+    timeout: 45_000,
+  });
+});
+
+test("AC-5 a folder shared with another session warns + names it before rewinding", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  /* Session B: same employee, same folder, second conversation. `?roots=`
+     is what lets git.discoverRepos offer the fixture repo in the picker. */
+  await page.goto(`${stackA.webUrl}/dm/${empA}?roots=${ROOT}`);
+  await pickFolder(page, repoDir);
+  await send(page, "session B alpha");
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  const convB = page.url().split("/dm/")[1].split("/")[1];
+  expect(convB).not.toBe(convA);
+  await expect(
+    page.locator("[data-thread]").getByText("If you want me to change code"),
+  ).toBeVisible({ timeout: 60_000 });
+
+  /* Back on session A: the click asks first, naming session B; cancelling
+     leaves the thread untouched. */
+  await page.goto(`${stackA.webUrl}/dm/${empA}/${convA}`);
+  const thread = page.locator("[data-thread]");
+  await expect(thread.locator("[data-rewind]").first()).toBeEnabled({
+    timeout: 30_000,
+  });
+  await thread.locator("[data-rewind]").first().click();
+  await expect(thread.getByText(/shared with/)).toBeVisible();
+  await expect(thread.getByText(/session B alpha/)).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ac-5-shared.png` });
+  await thread.getByRole("button", { name: "Cancel" }).click();
+  await expect(rowText(thread, "alpha marker one")).toBeVisible();
+  await thread.locator("[data-rewind]").first().click();
+  await thread.getByRole("button", { name: "Rewind anyway" }).click();
+  /* Rewound to the root: the whole thread is gone, the rewind note shows
+     alone at the top, and the opener is back in the composer. */
+  await expect(page.locator("textarea").last()).toHaveValue("alpha marker one");
+  await expect(
+    rowText(thread, /Rewound to before your message/),
+  ).toBeVisible();
+  await expect(rowText(thread, "alpha marker one")).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/ac-5-root.png` });
+});
+
+test("AC-3 without rewind: files restore, the plain note shows, Start a new session works", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await dmDefault(stackB, page, ROOT);
+  await pickFolder(page, repoDir);
+  await send(page, "alpha in the no-rewind session");
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  const convC = page.url().split("/dm/")[1].split("/")[1];
+  await expect(
+    page.locator("[data-thread]").getByText("If you want me to change code"),
+  ).toBeVisible({ timeout: 60_000 });
+  await send(page, "beta in the no-rewind session");
+  await expect(
+    page.locator("[data-thread]").getByText("Noted. Plan for this session"),
+  ).toBeVisible({ timeout: 60_000 });
+
+  writeFileSync(path.join(repoDir, "stackb-marker.txt"), "post-beta\n");
+  const thread = page.locator("[data-thread]");
+  await expect(thread.locator("[data-rewind]").nth(1)).toBeEnabled({
+    timeout: 30_000,
+  });
+  await thread.locator("[data-rewind]").nth(1).click();
+
+  /* Files restore and the thread still drops the tail — but the banner says
+     plainly the agent still remembers, with the escape hatch. */
+  await expect(
+    page.locator("[data-thread]").getByText(/still remembers/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Start a new session from here" }),
+  ).toBeVisible();
+  await expect(
+    rowText(thread, "beta in the no-rewind session"),
+  ).toHaveCount(0);
+  await expect(existsSync(path.join(repoDir, "stackb-marker.txt"))).toBe(false);
+  await page.screenshot({ path: `${SHOTS}/ac-3-banner.png` });
+
+  await page
+    .getByRole("button", { name: "Start a new session from here" })
+    .click();
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  const convD = page.url().split("/dm/")[1].split("/")[1];
+  expect(convD).not.toBe(convC);
+  /* The fresh session's root carries the surviving transcript as quoted
+     context, then the rewound text. */
+  await expect(
+    page.locator("[data-thread]").getByText(/Picking up mid-session after a rewind/),
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(
+    page.locator("[data-thread]").getByText(/alpha in the no-rewind session/),
+  ).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ac-3-new-session.png` });
+});
+
+test("AC-8 prototype shows the action and the result", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto("/");
+  await page
+    .locator("aside")
+    .first()
+    .getByRole("button", { name: /Builder/ })
+    .click();
+  const box = page.getByPlaceholder(/New session with Builder/);
+  await box.fill("prototype alpha");
+  await box.press("Enter");
+  /* In the thread composer: a second user turn gets its own checkpoint.
+     Wait for its turn to end so the trigger isn't running-disabled. */
+  const thread = page.locator("textarea").last();
+  await thread.fill("prototype beta");
+  await thread.press("Enter");
+  await expect(page.locator("[data-rewind]").nth(1)).toBeEnabled({
+    timeout: 60_000,
+  });
+  await page.screenshot({ path: `${SHOTS}/ac-8-action.png` });
+  await page.locator("[data-rewind]").nth(1).click();
+  await expect(
+    page.getByText("prototype beta").and(page.locator(":not(textarea)")),
+  ).toHaveCount(0);
+  await expect(page.getByText(/Rewound to before your message/)).toBeVisible();
+  await expect(page.locator("textarea").last()).toHaveValue("prototype beta");
+  await page.screenshot({ path: `${SHOTS}/ac-8-result.png` });
+});
