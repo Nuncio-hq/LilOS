@@ -26,7 +26,7 @@ import type {
   EngineRequest,
   EventsSinceResult,
 } from "@lilos/contracts/engine";
-import { type CheckpointStore, collapsePath } from "@lilos/host";
+import { type CheckpointStore, collapsePath, expandPath } from "@lilos/host";
 import type { EngineConnection } from "./engine/client";
 import { engineErrorCode, SESSION_NOT_FOUND } from "./engine/client";
 import type { EngineHostState } from "./engine/supervisor";
@@ -888,7 +888,9 @@ export class Harness {
         { code: -32009 },
       );
     }
-    const cwd = params.cwd ?? binding?.cwd ?? this.opts.workdir;
+    /* Stored cwd may be `~/x` (host fs echoes collapsed): expand before
+       any spawn/fs use — literal `~` is not a valid cwd for execFile. */
+    const cwd = expandPath(params.cwd ?? binding?.cwd ?? this.opts.workdir);
     let filesRestored = false;
     if (params.checkpoint && this.opts.checkpoints) {
       await this.opts.checkpoints.restore(cwd, params.checkpoint);
@@ -968,7 +970,7 @@ export class Harness {
           channelId,
           sessionId: conv.engineRef,
           ref: conv.engineRef,
-          cwd: conv.cwd ?? this.opts.workdir,
+          cwd: expandPath(conv.cwd ?? this.opts.workdir),
           lastSeq: 0,
           queue: [],
           textByTurn: new Map(),
@@ -997,7 +999,7 @@ export class Harness {
       channelId,
       sessionId: started.sessionId,
       ref: started.ref ?? started.sessionId,
-      cwd: conv.cwd ?? this.opts.workdir,
+      cwd: expandPath(conv.cwd ?? this.opts.workdir),
       lastSeq: 0,
       queue: [],
       textByTurn: new Map(),
@@ -1769,7 +1771,7 @@ export class Harness {
     const fast = conv?.fast ?? base.fast;
     // The session's folder is owned by the conversation (#113); absent → the
     // harness default workdir, as before.
-    const cwd = conv?.cwd ?? this.opts.workdir;
+    const cwd = expandPath(conv?.cwd ?? this.opts.workdir);
     return {
       ...base,
       ...(model ? { model } : {}),

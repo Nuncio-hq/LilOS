@@ -46,7 +46,7 @@ const { conversation } = await store.openConversation({
   text: "please look at the rate limit errors",
   authorId: "user",
 });
-const { message: reply } = await store.appendMessage({
+await store.appendMessage({
   channelId: channel.id,
   conversationId: conversation.id,
   authorId: employee.id,
