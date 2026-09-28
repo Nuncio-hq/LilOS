@@ -42,6 +42,10 @@ export interface TurnModel {
   turnId: string;
   phase: TurnPhase;
   model?: string;
+  /** The rest of the pick this turn ran on (#92): provider, effort, fast. */
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
   reasoning: string;
   text: string;
   steps: TurnStep[];
@@ -60,6 +64,9 @@ export interface SessionModel {
   /** Requests still awaiting request.respond. */
   openRequests: TurnRequest[];
   model?: string;
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
 }
 
 /**
@@ -70,12 +77,22 @@ export interface SessionModel {
 export function reduceSessionEvents(
   sessionId: string,
   events: EngineEvent[],
-  snapshot?: { state: SessionState; model?: string; turn?: { turnId: string } },
+  snapshot?: {
+    state: SessionState;
+    model?: string;
+    provider?: string;
+    effort?: string;
+    fast?: boolean;
+    turn?: { turnId: string };
+  },
 ): SessionModel {
   const turns = new Map<string, TurnModel>();
   const order: TurnModel[] = [];
   let state: SessionState | "unknown" = "unknown";
   let model: string | undefined = snapshot?.model;
+  let provider: string | undefined = snapshot?.provider;
+  let effort: string | undefined = snapshot?.effort;
+  let fast: boolean | undefined = snapshot?.fast;
 
   const turn = (turnId: string): TurnModel => {
     let t = turns.get(turnId);
@@ -100,6 +117,9 @@ export function reduceSessionEvents(
     switch (e.type) {
       case "session.started": {
         model = e.payload.model ?? model;
+        provider = e.payload.provider ?? provider;
+        effort = e.payload.effort ?? effort;
+        fast = e.payload.fast ?? fast;
         break;
       }
       case "session.state": {
@@ -110,6 +130,9 @@ export function reduceSessionEvents(
         const t = turn(e.payload.turnId);
         t.phase = "reasoning";
         t.model = e.payload.model ?? t.model;
+        t.provider = e.payload.provider ?? t.provider;
+        t.effort = e.payload.effort ?? t.effort;
+        t.fast = e.payload.fast ?? t.fast;
         break;
       }
       case "turn.delta": {
@@ -200,5 +223,15 @@ export function reduceSessionEvents(
       if (r.outcome === undefined) openRequests.push(r);
     }
   }
-  return { sessionId, state, turns: order, live, openRequests, model };
+  return {
+    sessionId,
+    state,
+    turns: order,
+    live,
+    openRequests,
+    model,
+    provider,
+    effort,
+    fast,
+  };
 }

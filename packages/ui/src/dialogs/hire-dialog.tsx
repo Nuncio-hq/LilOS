@@ -52,6 +52,7 @@ export function HireDialog({
       name: p.name ?? p.id[0].toUpperCase() + p.id.slice(1),
       role: d.role,
       model: p.model,
+      provider: undefined,
       instructions: p.soul,
     });
   };
@@ -141,6 +142,7 @@ export function HireDialog({
                     name: "",
                     role: "",
                     model: models[0]?.id ?? "",
+                    provider: models[0]?.provider,
                     instructions: "",
                   })
                 }
@@ -236,11 +238,15 @@ export function HireDialog({
                     <div className="grid gap-1.5 sm:grid-cols-2">
                       {models.map((m) => (
                         <button
-                          key={m.id}
-                          onClick={() => setD({ ...d, model: m.id })}
+                          /* `provider::id` — a bare id can collide across
+                             providers, and may itself contain `/` (#92). */
+                          key={`${m.provider ?? ""}::${m.id}`}
+                          onClick={() =>
+                            setD({ ...d, model: m.id, provider: m.provider })
+                          }
                           className={cn(
                             "rounded-md border px-2.5 py-1.5 text-left text-xs",
-                            d.model === m.id
+                            d.model === m.id && d.provider === m.provider
                               ? "border-foreground bg-muted font-medium"
                               : "hover:bg-muted/50",
                           )}

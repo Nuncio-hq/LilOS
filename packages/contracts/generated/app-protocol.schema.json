@@ -399,6 +399,8 @@
         "conversations.setModel",
         "system.status",
         "employees.remove",
+        "settings.get",
+        "settings.set",
         "folders.list",
         "folders.add",
         "agents.list",
@@ -422,7 +424,8 @@
         "channel.removed",
         "employee.upserted",
         "employee.removed",
-        "conversation.modelRequested"
+        "conversation.modelRequested",
+        "settings.changed"
       ]
     },
     "HelloParams": {
@@ -542,6 +545,18 @@
                   "provider": {
                     "type": "string"
                   },
+                  "efforts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "defaultEffort": {
+                    "type": "string"
+                  },
+                  "fast": {
+                    "type": "boolean"
+                  },
                   "detail": {
                     "type": "object",
                     "propertyNames": {
@@ -555,7 +570,28 @@
                 ]
               }
             },
+            "providers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            },
             "defaultModel": {
+              "type": "string"
+            },
+            "defaultProvider": {
               "type": "string"
             }
           },
@@ -1245,6 +1281,15 @@
           "type": "string",
           "minLength": 1
         },
+        "provider": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "fast": {
+          "type": "boolean"
+        },
         "cwd": {
           "type": "string",
           "minLength": 1
@@ -1345,6 +1390,15 @@
                 "type": "string",
                 "minLength": 1
               },
+              "provider": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "fast": {
+                "type": "boolean"
+              },
               "cwd": {
                 "type": "string",
                 "minLength": 1
@@ -1426,6 +1480,19 @@
             ]
           }
         },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "fast": {
+          "type": "boolean"
+        },
         "cwd": {
           "type": "string",
           "minLength": 1
@@ -1480,6 +1547,15 @@
             "model": {
               "type": "string",
               "minLength": 1
+            },
+            "provider": {
+              "type": "string"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "fast": {
+              "type": "boolean"
             },
             "cwd": {
               "type": "string",
@@ -1591,6 +1667,15 @@
             "model": {
               "type": "string",
               "minLength": 1
+            },
+            "provider": {
+              "type": "string"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "fast": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -1621,6 +1706,15 @@
         "model": {
           "type": "string",
           "minLength": 1
+        },
+        "provider": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "fast": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -1656,8 +1750,33 @@
           "minLength": 1
         },
         "model": {
-          "type": "string",
-          "minLength": 1
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effort": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fast": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "deliveredSeq": {
           "type": "integer",
@@ -1713,6 +1832,15 @@
             "model": {
               "type": "string",
               "minLength": 1
+            },
+            "provider": {
+              "type": "string"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "fast": {
+              "type": "boolean"
             },
             "cwd": {
               "type": "string",
@@ -1869,6 +1997,15 @@
         "model": {
           "type": "string",
           "minLength": 1
+        },
+        "provider": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "fast": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -2004,6 +2141,15 @@
               "model": {
                 "type": "string",
                 "minLength": 1
+              },
+              "provider": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "fast": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -2086,6 +2232,15 @@
         "model": {
           "type": "string",
           "minLength": 1
+        },
+        "provider": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "fast": {
+          "type": "boolean"
         },
         "dedupeKey": {
           "type": "string",
@@ -2182,6 +2337,15 @@
             "model": {
               "type": "string",
               "minLength": 1
+            },
+            "provider": {
+              "type": "string"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "fast": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -2567,6 +2731,15 @@
               "type": "string",
               "minLength": 1
             },
+            "provider": {
+              "type": "string"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "fast": {
+              "type": "boolean"
+            },
             "cwd": {
               "type": "string",
               "minLength": 1
@@ -2713,6 +2886,15 @@
             "model": {
               "type": "string",
               "minLength": 1
+            },
+            "provider": {
+              "type": "string"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "fast": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -2809,6 +2991,15 @@
               "model": {
                 "type": "string",
                 "minLength": 1
+              },
+              "provider": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "fast": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -2914,6 +3105,18 @@
               "provider": {
                 "type": "string"
               },
+              "efforts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "defaultEffort": {
+                "type": "string"
+              },
+              "fast": {
+                "type": "boolean"
+              },
               "detail": {
                 "type": "object",
                 "propertyNames": {
@@ -2927,7 +3130,28 @@
             ]
           }
         },
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
+        },
         "defaultModel": {
+          "type": "string"
+        },
+        "defaultProvider": {
           "type": "string"
         }
       },
@@ -3008,6 +3232,15 @@
                   "model": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "effort": {
+                    "type": "string"
+                  },
+                  "fast": {
+                    "type": "boolean"
                   },
                   "cwd": {
                     "type": "string",
@@ -3155,6 +3388,15 @@
                   "model": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "effort": {
+                    "type": "string"
+                  },
+                  "fast": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -3251,6 +3493,15 @@
                     "model": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "provider": {
+                      "type": "string"
+                    },
+                    "effort": {
+                      "type": "string"
+                    },
+                    "fast": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -3377,6 +3628,18 @@
                   "provider": {
                     "type": "string"
                   },
+                  "efforts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "defaultEffort": {
+                    "type": "string"
+                  },
+                  "fast": {
+                    "type": "boolean"
+                  },
                   "detail": {
                     "type": "object",
                     "propertyNames": {
@@ -3390,7 +3653,28 @@
                 ]
               }
             },
+            "providers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            },
             "defaultModel": {
+              "type": "string"
+            },
+            "defaultProvider": {
               "type": "string"
             },
             "engineRssBytes": {
@@ -3495,6 +3779,18 @@
               "provider": {
                 "type": "string"
               },
+              "efforts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "defaultEffort": {
+                "type": "string"
+              },
+              "fast": {
+                "type": "boolean"
+              },
               "detail": {
                 "type": "object",
                 "propertyNames": {
@@ -3508,7 +3804,28 @@
             ]
           }
         },
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
+        },
         "defaultModel": {
+          "type": "string"
+        },
+        "defaultProvider": {
           "type": "string"
         },
         "engineRssBytes": {
@@ -3779,6 +4096,18 @@
                   "provider": {
                     "type": "string"
                   },
+                  "efforts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "defaultEffort": {
+                    "type": "string"
+                  },
+                  "fast": {
+                    "type": "boolean"
+                  },
                   "detail": {
                     "type": "object",
                     "propertyNames": {
@@ -3793,6 +4122,9 @@
               }
             },
             "defaultModel": {
+              "type": "string"
+            },
+            "defaultProvider": {
               "type": "string"
             }
           }
@@ -4422,6 +4754,15 @@
             "model": {
               "type": "string",
               "minLength": 1
+            },
+            "provider": {
+              "type": "string"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "fast": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -4531,6 +4872,15 @@
               "model": {
                 "type": "string",
                 "minLength": 1
+              },
+              "provider": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "fast": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -4624,6 +4974,15 @@
             "model": {
               "type": "string",
               "minLength": 1
+            },
+            "provider": {
+              "type": "string"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "fast": {
+              "type": "boolean"
             },
             "cwd": {
               "type": "string",
@@ -5157,12 +5516,124 @@
         "model": {
           "type": "string",
           "minLength": 1
+        },
+        "provider": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "fast": {
+          "type": "boolean"
         }
       },
       "required": [
         "channelId",
         "conversationId",
         "model"
+      ]
+    },
+    "SettingsGetParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "SettingsGetResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "value": {}
+      },
+      "required": [
+        "value"
+      ]
+    },
+    "SettingsSetParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "$ref": "#/$defs/__schema0"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "SettingsSetResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    },
+    "SettingsChangedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {}
+      },
+      "required": [
+        "key",
+        "value"
       ]
     },
     "UpdateRelease": {
@@ -5420,6 +5891,9 @@
         "model": {
           "type": "string"
         },
+        "provider": {
+          "type": "string"
+        },
         "detail": {
           "type": "object",
           "propertyNames": {
@@ -5483,7 +5957,11 @@
     "ModelsListParams": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
-      "properties": {},
+      "properties": {
+        "refresh": {
+          "type": "boolean"
+        }
+      },
       "additionalProperties": false
     },
     "ModelsListResult": {
@@ -5505,6 +5983,18 @@
               "provider": {
                 "type": "string"
               },
+              "efforts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "defaultEffort": {
+                "type": "string"
+              },
+              "fast": {
+                "type": "boolean"
+              },
               "detail": {
                 "type": "object",
                 "propertyNames": {
@@ -5520,6 +6010,27 @@
         },
         "default": {
           "type": "string"
+        },
+        "defaultProvider": {
+          "type": "string"
+        },
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
         }
       },
       "required": [

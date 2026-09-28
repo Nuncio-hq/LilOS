@@ -64,6 +64,8 @@ export function ThreadView({
   models,
   onModel,
   picker,
+  defaultModel,
+  defaultProvider,
   transcriptNote,
   draft,
   onDraftChange,
@@ -96,6 +98,10 @@ export function ThreadView({
   onModel?: (c: ModelChoice) => void;
   /* Refresh / Edit models… / provider names — each renders only with its handler. */
   picker?: ModelPickerExtras;
+  /* The engine's `models.list.default` — the unpinned-employee pick (#92 AC-5). */
+  defaultModel?: string;
+  /* The default's provider — a `{provider?, id}` pair disambiguates a shared id. */
+  defaultProvider?: string;
   onRetry?: (empId: string) => void;
   onUnqueue?: (i: number) => void;
   onSendQueued?: (i: number) => void;
@@ -325,7 +331,13 @@ export function ThreadView({
         tools={
           onModel && models?.length ? (
             <ModelPicker
-              value={sessionChoice(thread, leadEmp?.model, models)}
+              value={sessionChoice(
+                thread,
+                leadEmp?.model,
+                models,
+                defaultModel,
+                defaultProvider,
+              )}
               models={models}
               onChoice={onModel}
               {...picker}

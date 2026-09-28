@@ -94,6 +94,8 @@ export async function hireEmployee(
       name: profileSlug(d.name),
       ...(d.instructions ? { soul: d.instructions } : {}),
       ...(d.model ? { model: d.model } : {}),
+      /* `{provider?, id}` — the id may itself contain `/` (#92 AC-8). */
+      ...(d.provider ? { provider: d.provider } : {}),
     });
     profileId = agent.id;
   }

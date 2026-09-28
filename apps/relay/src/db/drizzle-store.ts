@@ -35,6 +35,9 @@ type ConversationRow = typeof schema.conversations.$inferSelect;
 const rowToConversation = (row: ConversationRow): Conversation => ({
   ...row,
   model: row.model ?? undefined,
+  provider: row.provider ?? undefined,
+  effort: row.effort ?? undefined,
+  fast: row.fast ?? undefined,
   cwd: row.cwd ?? undefined,
 });
 
@@ -43,6 +46,9 @@ type MessageRow = typeof schema.messages.$inferSelect;
 const rowToMessage = (row: MessageRow): AppMessage => ({
   ...row,
   model: row.model ?? undefined,
+  provider: row.provider ?? undefined,
+  effort: row.effort ?? undefined,
+  fast: row.fast ?? undefined,
   attachments: row.attachments
     ? (JSON.parse(row.attachments) as MessageAttachment[])
     : undefined,
@@ -124,6 +130,9 @@ export function createDrizzleStore(db: Db): RelayStore {
       authorKind: input.authorKind,
       text: input.text,
       ...(input.model !== undefined ? { model: input.model } : {}),
+      ...(input.provider !== undefined ? { provider: input.provider } : {}),
+      ...(input.effort !== undefined ? { effort: input.effort } : {}),
+      ...(input.fast !== undefined ? { fast: input.fast } : {}),
       dedupeKey: input.dedupeKey ?? null,
       seq: bumped.seq,
       createdAt: now(),
@@ -391,6 +400,10 @@ export function createDrizzleStore(db: Db): RelayStore {
           archived: false,
           deliveredSeq: 0,
           createdAt: now(),
+          ...(input.model !== undefined ? { model: input.model } : {}),
+          ...(input.provider !== undefined ? { provider: input.provider } : {}),
+          ...(input.effort !== undefined ? { effort: input.effort } : {}),
+          ...(input.fast !== undefined ? { fast: input.fast } : {}),
         };
         tx.insert(schema.conversations).values(conversation).run();
         if (input.cwd !== undefined) {
@@ -534,6 +547,29 @@ export function createDrizzleStore(db: Db): RelayStore {
             .all()
         : base.orderBy(asc(schema.asks.createdAt)).all();
       return rows.map(rowToAsk);
+    },
+    async getSetting(key: string) {
+      const row = db
+        .select()
+        .from(schema.settings)
+        .where(eq(schema.settings.key, key))
+        .get();
+      if (!row) return null;
+      try {
+        return JSON.parse(row.value) as unknown;
+      } catch {
+        return row.value;
+      }
+    },
+    async setSetting(key: string, value: unknown) {
+      const serialized = JSON.stringify(value);
+      db.insert(schema.settings)
+        .values({ key, value: serialized })
+        .onConflictDoUpdate({
+          target: schema.settings.key,
+          set: { value: serialized },
+        })
+        .run();
     },
     async listPendingTurns(): Promise<PendingTurn[]> {
       const convs = db
