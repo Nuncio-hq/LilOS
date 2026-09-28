@@ -41,17 +41,25 @@ async function waitForHttp(
   ms = 90_000,
 ): Promise<void> {
   const start = Date.now();
+  let last = "unreachable";
   for (;;) {
     const ok = await fetch(url)
-      .then((r) => r.ok || r.status === 404)
-      .catch(() => false);
+      .then((r) => {
+        if (r.ok || r.status === 404) return true;
+        last = `HTTP ${r.status}`;
+        return false;
+      })
+      .catch((e) => {
+        last = String(e?.cause ?? e);
+        return false;
+      });
     if (ok) return;
     // A dead stack never serves (vite --strictPort losing a port race,
     // relay dying) — fail fast instead of burning the whole budget.
     if (proc && proc.exitCode !== null)
       throw new Error(`stack exited ${proc.exitCode} before ${url}`);
     if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
+      throw new Error(`timed out waiting for ${url}: last=${last}`);
     await new Promise((r) => setTimeout(r, 200));
   }
 }
