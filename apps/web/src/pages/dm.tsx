@@ -24,6 +24,7 @@ import {
 import type {
   AttachedFile,
   Channel,
+  FileMention,
   ModelChoice,
   ModelPickerExtras,
   Msg,
@@ -33,7 +34,7 @@ import type {
 } from "@lilos/ui/types";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { atom } from "nanostores";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   archiveConversation,
   clearPending,
@@ -65,7 +66,12 @@ import {
   wsFor,
 } from "../lib/folders";
 import { useAtom } from "../lib/hooks";
-import { hostEditors, hostOsOpen, type OsEditor } from "../lib/host";
+import {
+  hostEditors,
+  hostOsOpen,
+  hostSearch,
+  type OsEditor,
+} from "../lib/host";
 import {
   conversationReplies,
   mergeTurns,
@@ -422,6 +428,19 @@ export function DmPage() {
     if (openConv && openModel?.live) clearPending(openConv.id);
   }, [openConv, openModel]);
 
+  /* `@` mentions (#105): every employee in the Employees section, and — when
+     the session has a folder — fs.search over it for the Files section. No
+     folder (or a missing one) → no Files section at all (D-#19). */
+  const mentionables = useMemo(
+    () => employees.map((e) => toUiEmployee(e, engineDown)),
+    [employees, engineDown],
+  );
+  /* Stable searcher identity per folder: the composer's effect keys on the
+     function — a fresh lambda each render would refire fs.search in a loop. */
+  const fileSearchers = useRef(
+    new Map<string, (q: string) => Promise<FileMention[]>>(),
+  );
+
   if (!employee || !uiEmp) {
     return (
       <div className="grid min-w-0 flex-1 place-items-center text-muted-foreground text-sm">
@@ -448,6 +467,19 @@ export function DmPage() {
 
   const pick = wsPicks[employeeId] ?? NO_WS;
   const setPick = (p: WsPick) => setWsPicks((w) => ({ ...w, [employeeId]: p }));
+
+  const fileSearch = (folderPath: string | null | undefined) => {
+    if (!folderPath) return undefined;
+    let f = fileSearchers.current.get(folderPath);
+    if (!f) {
+      f = (q: string) => hostSearch(folderPath, q).then((r) => r.files);
+      fileSearchers.current.set(folderPath, f);
+    }
+    return f;
+  };
+  const pickFolderPath = pick.folder
+    ? (folderRows.find((f) => f.id === pick.folder && !f.missing)?.path ?? null)
+    : null;
 
   /* Add folder: native dialog in the packaged app (AC-2), the host-API
      browser dialog on plain web. */
@@ -647,6 +679,8 @@ export function DmPage() {
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           lastSent={lastSent}
           onFocus={undefined}
+          mentionables={mentionables}
+          onSearchFiles={fileSearch(conv.cwd)}
           work={null}
           editors={editors ?? undefined}
           onOpenPath={
@@ -708,6 +742,8 @@ export function DmPage() {
         onAddFolder={onAddFolder}
         loading={!channel}
         composerNote={composerNote}
+        mentionables={mentionables}
+        onSearchFiles={fileSearch(pickFolderPath)}
         models={catalog.length ? catalog : undefined}
         modelChoice={
           draftPick[employeeId] ??
