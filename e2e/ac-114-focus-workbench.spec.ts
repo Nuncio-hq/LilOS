@@ -268,6 +268,36 @@ const send = async (page: Page, text: string) => {
   await box.press("Enter");
 };
 
+const turns = (page: Page) => page.locator("[data-agentturn]");
+
+/* Send as a NEW turn: wait until every earlier turn has settled (a send into
+   a running turn steers it instead — no new turn, no approval card), then
+   send and return the agent turn right after THIS message. Anchored on the
+   sent message, not a turn count: after a page load the engine feed replays
+   older turns late, so a count taken early can point at one of those. */
+const sendTurn = async (page: Page, text: string) => {
+  await expect(turns(page).locator("[data-streaming]")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  if ((await turns(page).count()) > 0) {
+    await expect(turns(page).last().locator("[data-turnsettled]")).toBeVisible({
+      timeout: 60_000,
+    });
+  }
+  await send(page, text);
+  const mine = page
+    .locator("main [data-msg]")
+    .filter({ hasText: text })
+    .filter({ hasNot: page.locator("[data-agentturn]") })
+    .last();
+  await expect(mine).toBeVisible({ timeout: 60_000 });
+  const turn = mine.locator(
+    "xpath=following-sibling::*[.//*[@data-agentturn]][1]//*[@data-agentturn]",
+  );
+  await expect(turn).toBeVisible({ timeout: 60_000 });
+  return turn;
+};
+
 /** The open session's chip row on the DM home. */
 const sessionRow = (page: Page) => page.locator("[data-session] button").last();
 
@@ -341,9 +371,7 @@ test("AC-2 Focus is the same live conversation: streaming, steps, approvals, mod
 
   // A reply turn streams in — reasoning + tool steps render live. `.last()`:
   // AC-1's "check in" turn sits above it and carries no tool steps.
-  await send(page, "Say hello then list files");
-  const turn = page.locator("[data-agentturn]").last();
-  await expect(turn).toBeVisible({ timeout: 30_000 });
+  const turn = await sendTurn(page, "Say hello then list files");
   await expect(turn.locator("[data-tasksteps]")).toBeVisible({
     timeout: 60_000,
   });
@@ -356,14 +384,10 @@ test("AC-2 Focus is the same live conversation: streaming, steps, approvals, mod
   ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-2-streamed.png` });
 
-  // Turn text lands before the turn settles — wait, or the next send steers
-  // the running turn instead of opening a new one (no approval card).
-  await expect(turn.locator("[data-streaming]")).toHaveCount(0, {
-    timeout: 60_000,
-  });
-
-  // An edit-ask prompt parks on an approval card; answering it continues the turn.
-  await send(page, "Add a release note to the readme");
+  // An edit-ask prompt parks on an approval card; answering it continues the
+  // turn. sendTurn waits for the turn above to settle first — its text lands
+  // before it ends, and a send into a running turn steers it instead.
+  await sendTurn(page, "Add a release note to the readme");
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
@@ -384,7 +408,7 @@ test("AC-2 Focus is the same live conversation: streaming, steps, approvals, mod
   );
 
   // Esc inside the composer is still the turn's Stop — Focus stays open.
-  await send(page, "Add another note to the readme");
+  await sendTurn(page, "Add another note to the readme");
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
@@ -417,8 +441,8 @@ test("AC-3 Changes lists uncommitted files with +/− and refreshes while the ag
 
   // An edit-ask turn parks on its approval; while it waits, the agent's
   // writes land in the folder — the tab polls and shows them mid-turn.
-  await send(page, "Add a changelog note to the readme");
-  await expect(page.getByText("Approval needed").first()).toBeVisible({
+  const edit = await sendTurn(page, "Add a changelog note to the readme");
+  await expect(edit.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
   writeFileSync(path.join(repoDir, "notes.txt"), "fresh\nlines\nhere\n");
@@ -436,10 +460,9 @@ test("AC-3 Changes lists uncommitted files with +/− and refreshes while the ag
 
   // Turn ends (allow through); the edits stay listed.
   await allowAll(page);
-  await expect(page.locator("[data-agentturn]").last()).toContainText(
-    /Done on|Review it|done/i,
-    { timeout: 60_000 },
-  );
+  await expect(edit).toContainText(/Done on|Review it|done/i, {
+    timeout: 60_000,
+  });
   await expect(page.locator('[data-diff="notes.txt"]')).toBeVisible();
 });
 

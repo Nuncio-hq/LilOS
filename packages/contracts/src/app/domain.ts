@@ -73,6 +73,12 @@ export const Conversation = z.object({
   state: ConversationState,
   title: z.string(),
   /**
+   * Who last wrote `title` (#137): `user` = typed by a human (rename/open) —
+   * an engine-written title may NEVER overwrite it; `auto` = placeholder or
+   * engine-emitted title, free for the engine to upgrade.
+   */
+  titleSource: z.enum(["auto", "user"]).default("auto"),
+  /**
    * The model pinned on the conversation's engine session (issue #30): the
    * id the engine acked via `session.setModel`, or the pending pick applied
    * at `session.start` before a binding exists. Absent = engine default.

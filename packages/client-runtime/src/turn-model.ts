@@ -53,6 +53,8 @@ export interface TurnModel {
   requests: TurnRequest[];
   usage?: Usage;
   stopReason?: string;
+  /** The user message that prompted this turn (engine `turn.started.ref`). */
+  ref?: string;
 }
 
 export interface SessionModel {
@@ -133,6 +135,7 @@ export function reduceSessionEvents(
         t.provider = e.payload.provider ?? t.provider;
         t.effort = e.payload.effort ?? t.effort;
         t.fast = e.payload.fast ?? t.fast;
+        t.ref = e.payload.ref ?? t.ref;
         break;
       }
       case "turn.delta": {

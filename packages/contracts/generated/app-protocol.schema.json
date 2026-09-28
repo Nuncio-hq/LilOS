@@ -1423,6 +1423,14 @@
         "title": {
           "type": "string"
         },
+        "titleSource": {
+          "default": "auto",
+          "type": "string",
+          "enum": [
+            "auto",
+            "user"
+          ]
+        },
         "model": {
           "type": "string",
           "minLength": 1
@@ -1531,6 +1539,14 @@
               },
               "title": {
                 "type": "string"
+              },
+              "titleSource": {
+                "default": "auto",
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "user"
+                ]
               },
               "model": {
                 "type": "string",
@@ -1689,6 +1705,14 @@
             },
             "title": {
               "type": "string"
+            },
+            "titleSource": {
+              "default": "auto",
+              "type": "string",
+              "enum": [
+                "auto",
+                "user"
+              ]
             },
             "model": {
               "type": "string",
@@ -1974,6 +1998,14 @@
             },
             "title": {
               "type": "string"
+            },
+            "titleSource": {
+              "default": "auto",
+              "type": "string",
+              "enum": [
+                "auto",
+                "user"
+              ]
             },
             "model": {
               "type": "string",
@@ -3001,6 +3033,14 @@
             "title": {
               "type": "string"
             },
+            "titleSource": {
+              "default": "auto",
+              "type": "string",
+              "enum": [
+                "auto",
+                "user"
+              ]
+            },
             "model": {
               "type": "string",
               "minLength": 1
@@ -3502,6 +3542,14 @@
                   },
                   "title": {
                     "type": "string"
+                  },
+                  "titleSource": {
+                    "default": "auto",
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "user"
+                    ]
                   },
                   "model": {
                     "type": "string",
@@ -5256,6 +5304,14 @@
             },
             "title": {
               "type": "string"
+            },
+            "titleSource": {
+              "default": "auto",
+              "type": "string",
+              "enum": [
+                "auto",
+                "user"
+              ]
             },
             "model": {
               "type": "string",

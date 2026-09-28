@@ -36,6 +36,10 @@ export type EmployeePatchInput = Partial<NewEmployee>;
 
 export interface ConversationPatch {
   title?: string;
+  /** Provenance of a `title` write (#137) — caller identity, not a wire
+      field: `user` (non-host client) marks the name user-chosen forever;
+      `auto` (engine host) applies only while the row isn't user-titled. */
+  titleSource?: "auto" | "user";
   archived?: boolean;
   state?: ConversationState;
   engineRef?: string;
@@ -52,7 +56,11 @@ export interface ConversationPatch {
 
 export interface OpenConversationInput {
   channelId: string;
+  /** Empty = store derives a placeholder from `text`/`attachments` (#137). */
   title: string;
+  /** What an explicit `title` means (#137): the opener is a user client
+      ("user") or the engine host ("auto"). Ignored for placeholders. */
+  titleSource?: "auto" | "user";
   text: string;
   authorId: string;
   /** Display refs only — bytes already stored via the AttachmentStore. */
@@ -336,6 +344,65 @@ export function newId(prefix: string): string {
   return `${prefix}_${randomUUID()}`;
 }
 
+/**
+ * The name a conversation wears before the engine titles it (#137 AC-3):
+ * the first ~6 words / ~60 chars of the first message — the same rule
+ * Synara uses — or `Image` for an image-only send. Collapses whitespace so
+ * multi-line pastes read as one line.
+ */
+export function placeholderTitle(
+  text: string,
+  hasAttachments: boolean,
+): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return hasAttachments ? "Image" : "";
+  const words = clean.split(" ");
+  let title = words.slice(0, 6).join(" ");
+  if (title.length > 60) {
+    // Over-long first words: cut under 60 chars at a word boundary.
+    const cut = title.slice(0, 59);
+    const boundary = cut.lastIndexOf(" ");
+    title = boundary > 0 ? cut.slice(0, boundary) : cut;
+    return `${title}…`;
+  }
+  return words.length > 6 ? `${title}…` : title;
+}
+
+/** Resolve the title + provenance for a new conversation (#137). */
+export function openTitle(input: OpenConversationInput): {
+  title: string;
+  titleSource: "auto" | "user";
+} {
+  if (input.title !== "") {
+    // A title passed at open is a chosen name — user unless the engine
+    // host itself opened the conversation.
+    return { title: input.title, titleSource: input.titleSource ?? "user" };
+  }
+  return {
+    title: placeholderTitle(input.text, (input.attachments?.length ?? 0) > 0),
+    titleSource: "auto",
+  };
+}
+
+/**
+ * Fold title provenance into an update patch (#137 AC-2): an `auto` write
+ * (engine host) applies only while the row isn't user-titled; a `user`
+ * write always applies and marks the row user-named.
+ */
+export function titlePatch(
+  patch: ConversationPatch,
+  current: Conversation | { titleSource: "auto" | "user" },
+): ConversationPatch {
+  if (patch.title === undefined) return patch;
+  const provenance = patch.titleSource ?? "user";
+  if (provenance === "auto" && current.titleSource === "user") {
+    // A late engine title never overwrites a rename.
+    const { title: _title, titleSource: _ts, ...rest } = patch;
+    return rest;
+  }
+  return { ...patch, titleSource: provenance };
+}
+
 /** Reference implementation used by unit tests; SQLite is the shipped one. */
 export function createMemoryStore(): RelayStore {
   const employees = new Map<string, Employee>();
@@ -549,7 +616,7 @@ export function createMemoryStore(): RelayStore {
         engineRef: null,
         state: "idle",
         ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
-        title: input.title,
+        ...openTitle(input),
         archived: false,
         deliveredSeq: 0,
         createdAt: now(),
@@ -574,6 +641,7 @@ export function createMemoryStore(): RelayStore {
     async updateConversation(id, patch) {
       const conversation = conversations.get(id);
       if (!conversation) return null;
+      patch = titlePatch(patch, conversation);
       // The delivery watermark only moves forward — a slower write must not
       // re-owe a later message its prompt.
       if (patch.deliveredSeq !== undefined) {

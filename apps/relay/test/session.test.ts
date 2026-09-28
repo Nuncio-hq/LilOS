@@ -812,3 +812,212 @@ describe("sessions history (#28)", () => {
     ]);
   });
 });
+
+describe("auto titles + provenance (#137)", () => {
+  /** A host peer registered on the relay (for engine-owned writes). */
+  async function hostOf(relay: ReturnType<typeof createRelay>) {
+    const host = connectPeer(relay);
+    await host.connection.receive(
+      req("session.hello", { protocolVersion: 1, token: TOKEN }),
+    );
+    await host.connection.receive(
+      req("harness.register", { protocolVersion: 1, version: "t" }),
+    );
+    return host;
+  }
+
+  const openConv = async (
+    frames: unknown[],
+    connection: { receive(d: string): Promise<void> },
+    params: Record<string, unknown>,
+  ) => {
+    await connection.receive(req("conversations.open", params));
+    return (
+      resultOf(frames, `t${nextId - 1}`).result as {
+        conversation: {
+          id: string;
+          title: string;
+          titleSource: "auto" | "user";
+        };
+      }
+    ).conversation;
+  };
+
+  it("AC-3 an untitled conversation opens with a placeholder from the first message", async () => {
+    const relay = newRelay();
+    const { frames, connection } = await helloed(relay);
+    const { channel } = await setupChannel(frames, connection);
+
+    // First ~6 words, ellipsis when the message runs on.
+    const c1 = await openConv(frames, connection, {
+      channelId: channel.id,
+      text: "Fix the composer draft on reload please now",
+    });
+    expect(c1.title).toBe("Fix the composer draft on reload…");
+    expect(c1.titleSource).toBe("auto");
+
+    // A short message is its own title — no ellipsis.
+    const c2 = await openConv(frames, connection, {
+      channelId: channel.id,
+      text: "short one",
+    });
+    expect(c2.title).toBe("short one");
+
+    // Whitespace collapses before the placeholder is cut.
+    const c3 = await openConv(frames, connection, {
+      channelId: channel.id,
+      text: "  hello\n\n  world   again ",
+    });
+    expect(c3.title).toBe("hello world again");
+
+    // Long words still cap at ~60 chars, cut at a word boundary.
+    const c4 = await openConv(frames, connection, {
+      channelId: channel.id,
+      text: "averyveryveryverylongwordthatwillnotfitinanytitlebar averyveryveryverylongwordthatwillnotfitinanytitlebar",
+    });
+    expect(c4.title.length).toBeLessThanOrEqual(60);
+    expect(c4.title.endsWith("…")).toBe(true);
+    expect(c4.title).toBe(
+      "averyveryveryverylongwordthatwillnotfitinanytitlebar…",
+    );
+
+    // An image-only send titles "Image" (AC-3).
+    const c5 = await openConv(frames, connection, {
+      channelId: channel.id,
+      text: "",
+      attachments: [
+        { name: "shot.png", mimeType: "image/png", dataBase64: "aGk=" },
+      ],
+    });
+    expect(c5.title).toBe("Image");
+    expect(c5.titleSource).toBe("auto");
+
+    // An explicit client title wins over the placeholder — that's a
+    // user-chosen name.
+    const c6 = await openConv(frames, connection, {
+      channelId: channel.id,
+      text: "whatever",
+      title: "Chosen name",
+    });
+    expect(c6.title).toBe("Chosen name");
+    expect(c6.titleSource).toBe("user");
+  });
+
+  it("AC-2 a host title write applies while the title is auto; a user rename sticks forever", async () => {
+    const relay = newRelay();
+    const { frames, connection } = await helloed(relay);
+    const host = await hostOf(relay);
+    const { channel } = await setupChannel(frames, connection);
+    // conversation.updated fans out only to channel subscribers.
+    await connection.receive(
+      req("channel.subscribe", { channelId: channel.id }),
+    );
+
+    // Placeholder at open (auto) — engine titles may upgrade it.
+    const conv = await openConv(frames, connection, {
+      channelId: channel.id,
+      text: "Summarize the repo layout",
+    });
+    expect(conv.titleSource).toBe("auto");
+
+    // Engine-derived title lands.
+    await host.connection.receive(
+      req("conversations.update", {
+        conversationId: conv.id,
+        title: "Repo layout summary",
+      }),
+    );
+    const afterDerived = (
+      resultOf(host.frames, `t${nextId - 1}`).result as {
+        conversation: { title: string; titleSource: string };
+      }
+    ).conversation;
+    expect(afterDerived).toMatchObject({
+      title: "Repo layout summary",
+      titleSource: "auto",
+    });
+    // Subscribers see the auto title live.
+    const updated = eventsNamed(frames, "conversation.updated").at(-1) as {
+      params: { conversation: { title: string } };
+    };
+    expect(updated.params.conversation.title).toBe("Repo layout summary");
+
+    // The llm upgrade lands over the derived one.
+    await host.connection.receive(
+      req("conversations.update", {
+        conversationId: conv.id,
+        title: "Summarize the Repo Layout",
+      }),
+    );
+    const afterLlm = (
+      resultOf(host.frames, `t${nextId - 1}`).result as {
+        conversation: { title: string; titleSource: string };
+      }
+    ).conversation;
+    expect(afterLlm.title).toBe("Summarize the Repo Layout");
+
+    // A manual rename (#28) — provenance flips to user.
+    await connection.receive(
+      req("conversations.update", {
+        conversationId: conv.id,
+        title: "My named session",
+      }),
+    );
+    const renamed = (
+      resultOf(frames, `t${nextId - 1}`).result as {
+        conversation: { title: string; titleSource: string };
+      }
+    ).conversation;
+    expect(renamed).toMatchObject({
+      title: "My named session",
+      titleSource: "user",
+    });
+
+    // A late engine title must NOT overwrite the user rename — the relay
+    // answers with the current row so the caller sees what stuck.
+    await host.connection.receive(
+      req("conversations.update", {
+        conversationId: conv.id,
+        title: "Late llm title",
+      }),
+    );
+    const afterLate = (
+      resultOf(host.frames, `t${nextId - 1}`).result as {
+        conversation: { title: string; titleSource: string };
+      }
+    ).conversation;
+    expect(afterLate).toMatchObject({
+      title: "My named session",
+      titleSource: "user",
+    });
+  });
+
+  it("AC-2 a user rename before the first engine title still wins", async () => {
+    const relay = newRelay();
+    const { frames, connection } = await helloed(relay);
+    const host = await hostOf(relay);
+    const { channel } = await setupChannel(frames, connection);
+    const conv = await openConv(frames, connection, {
+      channelId: channel.id,
+      text: "whatever",
+    });
+    await connection.receive(
+      req("conversations.update", {
+        conversationId: conv.id,
+        title: "Typed first",
+      }),
+    );
+    await host.connection.receive(
+      req("conversations.update", {
+        conversationId: conv.id,
+        title: "Engine title",
+      }),
+    );
+    const after = (
+      resultOf(host.frames, `t${nextId - 1}`).result as {
+        conversation: { title: string; titleSource: string };
+      }
+    ).conversation;
+    expect(after).toMatchObject({ title: "Typed first", titleSource: "user" });
+  });
+});
