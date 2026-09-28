@@ -7,6 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { type AddressInfo, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,8 +27,17 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
-const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
-const wport = (p: number) => p + WORKER * 100;
+/* Kernel-assigned ports — the shared `wport(base + WORKER*100)` scheme
+   collides across spec files (base differences < worker stride). */
+const freePort = () =>
+  new Promise<number>((resolve, reject) => {
+    const s = createServer();
+    s.once("error", reject);
+    s.listen(0, "127.0.0.1", () => {
+      const p = (s.address() as AddressInfo).port;
+      s.close(() => resolve(p));
+    });
+  });
 
 const webDir = path.join(repo, "apps", "web");
 const SHOTS = path.join(repo, "test-results", "ac-110");
@@ -146,9 +156,9 @@ let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack("ac110", {
-    relay: wport(4760),
-    feed: wport(4761),
-    web: wport(5380),
+    relay: await freePort(),
+    feed: await freePort(),
+    web: await freePort(),
   });
 });
 test.afterAll(async () => {
