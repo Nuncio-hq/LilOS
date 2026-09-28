@@ -102,8 +102,6 @@ interface FakeSession {
   log: EngineEvent[];
   state: SessionState;
   openRequests: Map<string, PendingAsk>;
-  /** True once an approval was answered "always" — fake remembers for the session. */
-  alwaysApproved: boolean;
   /** session_meta (#28): user-visible title + archive flag, mirrored from LilOS. */
   title: string;
   hidden: boolean;
@@ -149,6 +147,15 @@ export class FakeEngine {
     SEED_AGENTS.map((a) => [a.id, a]),
   );
   private listeners = new Set<(e: EngineEvent) => void>();
+  /**
+   * Permanent approval grants — `${agent}\n${command}` recorded on every
+   * "always" answer (#133). A real engine's permanent allow writes the
+   * command to a profile allowlist that outlives the session; a
+   * session-scoped flag (the old `alwaysApproved`) mimicked the
+   * `allow_session` bug instead — a new session must NOT re-ask a granted
+   * command, and MUST still ask for a different one.
+   */
+  private alwaysGranted = new Set<string>();
   private readonly sessionNamespace: string;
   private sessionCounter = 0;
   private refCounter = 0;
@@ -320,7 +327,6 @@ export class FakeEngine {
       log: [],
       state: "idle",
       openRequests: new Map(),
-      alwaysApproved: false,
       title: "",
       hidden: false,
       usage: { input: 0, output: 0, reasoning: 0, cache: 0 },
@@ -420,7 +426,7 @@ export class FakeEngine {
       );
     }
     if (ask.request.kind === "approval" && p.outcome === "always")
-      s.alwaysApproved = true;
+      this.alwaysGranted.add(`${s.agent}\n${ask.request.command}`);
     s.openRequests.delete(p.requestId);
     this.emit(s, "request.resolved", {
       requestId: p.requestId,
@@ -726,8 +732,11 @@ export class FakeEngine {
           input: step.input,
         });
         const mcpMatch = /^mcp__(\w+)__(\w+)$/.exec(step.tool);
+        const granted = this.alwaysGranted.has(
+          `${s.agent}\n${FakeEngine.stepCommand(step)}`,
+        );
         const outcome =
-          this.needsApproval(step) && !s.alwaysApproved && !mcpMatch
+          this.needsApproval(step) && !granted && !mcpMatch
             ? await this.awaitApproval(s, turnId, step)
             : "once";
         if (outcome === "deny" || outcome === "cancel") {
@@ -837,16 +846,20 @@ export class FakeEngine {
     return client;
   }
 
+  /** The command string a step's approval card carries — the grant key body. */
+  private static stepCommand(step: FakeStep): string {
+    return typeof step.input.command === "string"
+      ? step.input.command
+      : `${step.tool} ${JSON.stringify(step.input)}`;
+  }
+
   private async awaitApproval(
     s: FakeSession,
     turnId: string,
     step: FakeStep,
   ): Promise<ApprovalOutcome> {
     const requestId = `r${++s.requestCounter}`;
-    const command =
-      typeof step.input.command === "string"
-        ? step.input.command
-        : `${step.tool} ${JSON.stringify(step.input)}`;
+    const command = FakeEngine.stepCommand(step);
     const request = {
       kind: "approval" as const,
       command,

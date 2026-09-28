@@ -115,6 +115,7 @@ class Rpc:
         self.ws = WebSocket(url)
         self.next_id = 0
         self.events = []
+        self.responded = {}  # requestId -> outcome this client sent
 
     def send_request(self, method, params):
         self.next_id += 1
@@ -140,12 +141,15 @@ class Rpc:
 
     def _auto_respond(self, ev):
         if ev["type"] == "request.opened":
+            options = ev["payload"]["request"].get("options", [])
+            outcome = "always" if "always" in options else "once"
+            self.responded[ev["payload"]["requestId"]] = outcome
             self.send_request(
                 "request.respond",
                 {
                     "sessionId": ev["sessionId"],
                     "requestId": ev["payload"]["requestId"],
-                    "outcome": "once",
+                    "outcome": outcome,
                 },
             )
 
@@ -235,6 +239,19 @@ def main():
         "turn.completed",
     ):
         check(t in types, f"missing event {t}")
+    # #133 AC-3 — the engine must echo the outcome the client actually chose:
+    # every answered ask resolves to the sent outcome (never a downgrade).
+    resolved = {
+        e["payload"]["requestId"]: e["payload"].get("outcome")
+        for e in my_events
+        if e["type"] == "request.resolved"
+    }
+    for rid, sent in rpc.responded.items():
+        check(rid in resolved, f"answered request {rid} must resolve")
+        check(
+            resolved[rid] == sent,
+            f"request.resolved outcome must echo the sent '{sent}', got {resolved[rid]}",
+        )
     print(f"PASS prompt+approval — {len(my_events)} events, seq 1..{seqs[-1]}, stopReason={result['stopReason']}")
 
     r = rpc.request("events.since", {"sessionId": sid, "after": 0})
