@@ -18,7 +18,7 @@ const V1: Plan = {
   ],
   steps: [
     { text: "Add a backoff helper (250ms → 30s, with jitter)", files: ["packages/client-runtime/src/backoff.ts"], status: "pending" },
-    { text: "Use it in the socket's reconnect loop", files: ["packages/client-runtime/src/retry-log.ts"], status: "pending" },
+    { text: "Use it in the socket's reconnect loop", files: ["packages/client-runtime/src/socket.ts"], status: "pending" },
     { text: "Resume from the last seq after reconnect", files: ["packages/client-runtime/src/sync.ts"], status: "pending" },
     { text: "Tests: drop → retry → resume, and the 30s cap", files: ["packages/client-runtime/test/reconnect.test.ts"], status: "pending" },
     { text: "Show \"Reconnecting…\" in the status banner", files: ["packages/ui/src/shell/banner.tsx"], status: "pending" },
