@@ -54,6 +54,7 @@ const model = (opts: {
         text: "",
         steps: [],
         steers: [],
+        plans: [],
         requests: [],
       }
     : undefined,
