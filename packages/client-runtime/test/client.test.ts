@@ -566,3 +566,101 @@ describe("relay -> app requests + employee lifecycle (#29)", () => {
     expect(store.get().synced).toBe(false);
   });
 });
+
+describe("mobile instant-connect seam (#154)", () => {
+  it("AC-1 sends the device credential variant of session.hello", async () => {
+    const socket = new FakeSocket();
+    const client = new RelayClient({
+      url: "ws://fake",
+      device: { deviceId: "dev_1", credential: "cred" },
+      socketFactory: () => socket,
+      autoReconnect: false,
+    });
+    const pending = client.connect();
+    await Promise.resolve();
+    socket.openSocket();
+    await Promise.resolve();
+    const hello = socket.sent
+      .map((raw) => JSON.parse(raw) as { method?: string; params?: unknown })
+      .find((f) => f.method === "session.hello");
+    expect(hello?.params).toMatchObject({
+      deviceId: "dev_1",
+      credential: "cred",
+    });
+    expect(hello?.params).not.toHaveProperty("token");
+    socket.respondTo("session.hello", WELCOME);
+    await pending;
+  });
+
+  it("AC-4 session.ping answers on the live socket", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    const ping = client.ping();
+    const frame = socket.sent
+      .map((raw) => JSON.parse(raw) as { method?: string })
+      .find((f) => f.method === "session.ping");
+    expect(frame).toBeDefined();
+    socket.respondTo("session.ping", { ok: true, instanceId: "inst-1" });
+    await expect(ping).resolves.toBeUndefined();
+  });
+
+  it("AC-2 hydrate seeds the directory and watermarks; subscribe resumes with afterSeq", async () => {
+    const { client, socket } = makeClient();
+    client.hydrate({
+      schemaVersion: 1,
+      savedAt: 1,
+      employees: [
+        {
+          id: "e1",
+          name: "Ada",
+          role: "eng",
+          status: "online",
+          profile: "p",
+          model: "m",
+          now: "n",
+          instructions: "",
+          respondTo: "anyone",
+          createdAt: 1,
+        },
+      ],
+      channels: [
+        { id: "ch1", kind: "dm", employeeId: "e1", lastSeq: 5, createdAt: 1 },
+      ],
+      conversations: [],
+      conversationSummaries: [],
+      profile: { userName: "Oscar" },
+      watermarks: { ch1: 5 },
+    });
+    // Cache-first: atoms render before the socket even exists.
+    expect(client.employees.get().map((e) => e.name)).toEqual(["Ada"]);
+    expect(client.profile.get().userName).toBe("Oscar");
+
+    client.channelMessages("ch1"); // subscribed intent survives the reconnect
+    await connectClient(client, () => socket);
+    await Promise.resolve();
+    await Promise.resolve();
+    const subscribe = socket.sent
+      .map(
+        (raw) =>
+          JSON.parse(raw) as {
+            method?: string;
+            params?: { afterSeq?: number };
+          },
+      )
+      .find((f) => f.method === "channel.subscribe");
+    expect(subscribe?.params?.afterSeq).toBe(5);
+  });
+
+  it("AC-2 snapshot() exports exactly what hydrate() needs", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    const snap = client.snapshot();
+    expect(snap.schemaVersion).toBe(1);
+    expect(snap.employees).toEqual([]);
+    expect(typeof snap.savedAt).toBe("number");
+
+    const { client: cold } = makeClient();
+    cold.hydrate(snap);
+    expect(cold.snapshot()).toEqual({ ...snap, savedAt: expect.any(Number) });
+  });
+});

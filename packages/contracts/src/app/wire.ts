@@ -159,6 +159,10 @@ export const AppMethod = z.enum([
   "pairing.disable",
   "devices.list",
   "devices.revoke",
+  /* Keep-vs-replace probe (#154): the mobile connection supervisor pings the
+     live socket before deciding to replace it; a request that can't answer
+     inside a small timeout marks the transport dead. */
+  "session.ping",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -229,6 +233,14 @@ export const WelcomeResult = z.object({
   engineHost: EngineHostStatus.optional(),
 });
 export type WelcomeResult = z.infer<typeof WelcomeResult>;
+
+export const SessionPingParams = z.object({}).strict();
+export const SessionPingResult = z.object({
+  ok: z.literal(true),
+  /** Relay run identity — the probe answer doubles as an instanceId check. */
+  instanceId: z.string().min(1),
+});
+export type SessionPingResult = z.infer<typeof SessionPingResult>;
 
 export const EmployeesListParams = z.object({}).strict();
 export const EmployeesListResult = z.object({ employees: z.array(Employee) });

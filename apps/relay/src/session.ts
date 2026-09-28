@@ -36,6 +36,7 @@ import {
   MessagesPostParams,
   MessagesSearchParams,
   ProfileUpdateParams,
+  SessionPingParams,
   SettingsGetParams,
   SettingsSetParams,
   SystemStatusParams,
@@ -551,6 +552,16 @@ export function createRelay(options: RelayOptions): Relay {
             },
           };
           respond(peer, id, welcome);
+          return;
+        }
+        case "session.ping": {
+          const parsed = SessionPingParams.safeParse(params ?? {});
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          /* #154 keep-vs-replace probe: the mobile supervisor pings the live
+             socket on foreground before deciding to replace it. Answers the
+             run identity so a probe across a relay restart also catches the
+             instanceId change. */
+          respond(peer, id, { ok: true, instanceId });
           return;
         }
         case "employees.list": {

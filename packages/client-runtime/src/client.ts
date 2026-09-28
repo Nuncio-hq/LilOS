@@ -35,6 +35,10 @@ import type {
 } from "@lilos/contracts/engine";
 import { atom, type WritableAtom } from "nanostores";
 import {
+  type CachedDirectory,
+  DEVICE_CACHE_SCHEMA_VERSION,
+} from "./device-cache";
+import {
   defaultSocketFactory,
   type RelaySocket,
   SOCKET_OPEN,
@@ -73,8 +77,17 @@ export interface ChannelMessagesState {
 export interface RelayClientOptions {
   /** ws:// or wss:// relay endpoint (path included, e.g. ws://127.0.0.1:4577/ws). */
   url: string;
-  /** Per-install token (relay writes it to <home>/relay-token on first run). */
-  token: string;
+  /**
+   * Per-install token (relay writes it to <home>/relay-token on first run).
+   * Required unless `device` authenticates the session instead.
+   */
+  token?: string;
+  /**
+   * Paired-device auth (#153): what `POST /pair/exchange` minted — the
+   * phone's own credential, revocable per device without rotating the
+   * install token. Wins over `token` when both are set.
+   */
+  device?: { deviceId: string; credential: string };
   socketFactory?: SocketFactory;
   protocolVersion?: number;
   client?: { name?: string; version?: string };
@@ -446,9 +459,20 @@ export class RelayClient {
     await this.request("devices.revoke", { deviceId });
   }
 
+  /**
+   * Keep-vs-replace probe (#154): the connection supervisor pings the live
+   * socket on foreground — a timeout or error means the transport is dead
+   * and the socket gets replaced, an answer means keep it.
+   */
+  async ping(timeoutMs = 3_000): Promise<void> {
+    await this.request("session.ping", {}, timeoutMs);
+  }
+
   async request<T>(
     method: string,
     params?: Record<string, unknown>,
+    /** Per-call timeout override — the foreground probe uses ~3s (#154). */
+    timeoutMs = this.options.requestTimeoutMs,
   ): Promise<T> {
     if (!this.socket || this.socket.readyState !== SOCKET_OPEN) {
       throw new RelayError("relay not connected", "not_connected");
@@ -458,7 +482,7 @@ export class RelayClient {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new RelayError(`request ${method} timed out`, "timeout"));
-      }, this.options.requestTimeoutMs);
+      }, timeoutMs);
       this.pending.set(id, {
         resolve: resolve as (v: unknown) => void,
         reject,
@@ -468,6 +492,39 @@ export class RelayClient {
         JSON.stringify({ jsonrpc: "2.0", id, method, params: params ?? {} }),
       );
     });
+  }
+
+  /* ----------------- device cache hydrate/snapshot (#154) ----------------- */
+
+  /**
+   * Cold-start hydrate: seed the directory atoms and seq watermarks from the
+   * on-device cache so Home renders before the socket opens, then reconnect
+   * replays only what changed (`afterSeq` on the seeded watermarks).
+   */
+  hydrate(snapshot: CachedDirectory): void {
+    this.employees.set(snapshot.employees);
+    this.channels.set(snapshot.channels);
+    this.conversations.set(snapshot.conversations);
+    this.conversationSummaries.set(snapshot.conversationSummaries);
+    this.profile.set(snapshot.profile);
+    this.watermarks.clear();
+    for (const [channelId, seq] of Object.entries(snapshot.watermarks)) {
+      this.watermarks.set(channelId, seq);
+    }
+  }
+
+  /** Current directory state + watermarks — what the device cache persists. */
+  snapshot(): CachedDirectory {
+    return {
+      schemaVersion: DEVICE_CACHE_SCHEMA_VERSION,
+      savedAt: Date.now(),
+      employees: this.employees.get(),
+      channels: this.channels.get(),
+      conversations: this.conversations.get(),
+      conversationSummaries: this.conversationSummaries.get(),
+      profile: this.profile.get(),
+      watermarks: Object.fromEntries(this.watermarks),
+    };
   }
 
   /** Subscribe a channel and get its live message store. */
@@ -512,9 +569,15 @@ export class RelayClient {
     this.attachSocketListeners(socket);
     await this.waitForOpen(socket);
     try {
+      const auth = this.options.device
+        ? {
+            deviceId: this.options.device.deviceId,
+            credential: this.options.device.credential,
+          }
+        : { token: this.options.token ?? "" };
       const welcome = await this.request<WelcomeResult>("session.hello", {
         protocolVersion: this.options.protocolVersion,
-        token: this.options.token,
+        ...auth,
         client: this.options.client,
       });
       if (

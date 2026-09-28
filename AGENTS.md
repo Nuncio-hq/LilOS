@@ -22,6 +22,7 @@ Mock data is not a contract.
 | Path | What |
 |---|---|
 | `prototype/web`, `prototype/mobile` | UX prototypes (UI source of truth): mock data + fake engine/Mac + wiring in `src/App.tsx` |
+| `apps/mobile` | Real phone app (Expo, iOS): `ui-native` screens + `client-runtime` supervisor/cache over the relay |
 | `packages/ui/` | `@lilos/ui`: every UI component (shadcn, AI Elements, LilOS surfaces); props in, callbacks out |
 | `packages/contracts/` | Zod schemas for everything crossing a boundary |
 | `packages/host/` | `@lilos/host`: fs + git reads on the session machine, served by the harness (runtime-neutral) |

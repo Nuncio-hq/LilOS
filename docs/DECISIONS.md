@@ -173,6 +173,11 @@ PR does not exist.
   `lilos://pair?host=<tailscale-host>:<port>#code=<grant>` — fragments never
   leave the device in a URL copy or server log.** Not: secret in the query
   string. — #153
+- **D-#154 The phone app is Expo (dev client, iOS first) rendering
+  `packages/ui-native` over `packages/client-runtime` — the supervisor
+  (one retry owner) and the directory cache are runtime-neutral, RN glue
+  (AppState/NetInfo/Keychain) lives only in `apps/mobile`.** Not: per-app
+  reconnect loops, or RN imports inside client-runtime. — #154
 
 ## UX
 - **D-#114 The Workbench lives only in Focus mode, and opening a session
