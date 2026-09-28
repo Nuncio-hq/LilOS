@@ -245,6 +245,29 @@ describe("ConnectionSupervisor (#154)", () => {
     supervisor.dispose();
   });
 
+  it("a 4403 device-revoked drop is fatal: blocked once, no reconnect loop", async () => {
+    const fatals: unknown[] = [];
+    const { supervisor, leases, connects } = makeSupervisor({
+      onFatalError: (e) => fatals.push(e),
+    });
+    supervisor.connect();
+    await tick(10);
+    expect(supervisor.state.get().phase).toBe("connected");
+
+    // The Mac revoked this phone mid-session — same shape the app sees when
+    // the relay closes the socket 4403.
+    leases.at(-1)?.fail(new RelayError("device revoked", "device_revoked"));
+    await tick(10);
+    expect(supervisor.state.get().phase).toBe("blocked");
+    expect(fatals).toHaveLength(1);
+    expect((fatals[0] as RelayError).code).toBe("device_revoked");
+
+    // No retry storm: the loop stays parked — the app tears down instead.
+    await tick(120_000);
+    expect(connects).toHaveLength(1);
+    supervisor.dispose();
+  });
+
   it("AC-5 a fatal handshake failure parks the loop in blocked", async () => {
     const fatals: unknown[] = [];
     const { supervisor, connects } = makeSupervisor({

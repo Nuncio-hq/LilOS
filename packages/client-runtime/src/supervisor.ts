@@ -101,7 +101,7 @@ export interface ConnectionSupervisorOptions {
   readonly connect: (signal: AbortSignal) => Promise<SupervisedConnection>;
   /** Health check on the held lease; reject/timeout = replace it. */
   readonly probe?: (connection: SupervisedConnection) => Promise<unknown>;
-  /** A failure retries can't fix → `blocked` until a wake. Default: unauthenticated / protocol_version_mismatch. */
+  /** A failure retries can't fix → `blocked` until a wake. Default: unauthenticated / device_revoked / protocol_version_mismatch. */
   readonly isFatal?: (error: unknown) => boolean;
   readonly retryDelaysMs?: readonly number[];
   readonly stableAfterMs?: number;
@@ -116,6 +116,7 @@ export interface ConnectionSupervisorOptions {
 const defaultIsFatal = (error: unknown): boolean =>
   error instanceof RelayError &&
   (error.code === "unauthenticated" ||
+    error.code === "device_revoked" ||
     error.code === "protocol_version_mismatch");
 
 export class ConnectionSupervisor {

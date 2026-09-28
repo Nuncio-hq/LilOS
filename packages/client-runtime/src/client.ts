@@ -25,6 +25,7 @@ import {
   type RpcError,
   SystemStatusResult,
   type WelcomeResult,
+  WS_CLOSE_DEVICE_REVOKED,
 } from "@lilos/contracts/app";
 import type {
   AgentDescriptor,
@@ -158,6 +159,12 @@ export class RelayClient {
   readonly fatal: WritableAtom<RelayError | undefined> = atom(undefined);
   /** Phones paired to this install (#153) — live via `devices.changed`. */
   readonly devices: WritableAtom<PairedDevice[]> = atom([]);
+  /**
+   * Why the socket last dropped. Close-code aware: `devices.revoke` ends the
+   * socket 4403 → `code: "device_revoked"` — a dead credential the app must
+   * re-pair for, not a transient transport loss (#154).
+   */
+  lastSocketError: RelayError | undefined;
 
   private readonly options: Required<
     Pick<
@@ -562,6 +569,7 @@ export class RelayClient {
 
   private async openAndHello(): Promise<WelcomeResult> {
     this.state.set(this.everConnected ? "reconnecting" : "connecting");
+    this.lastSocketError = undefined;
     const socket = (this.options.socketFactory ?? defaultSocketFactory)(
       this.options.url,
     );
@@ -655,9 +663,9 @@ export class RelayClient {
       const text = typeof event.data === "string" ? event.data : undefined;
       if (text !== undefined) this.handleFrame(text);
     });
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event) => {
       if (this.socket !== socket) return;
-      this.handleSocketClose();
+      this.handleSocketClose(event);
     });
     socket.addEventListener("error", () => {
       // 'close' follows; nothing to do here.
@@ -1051,11 +1059,21 @@ export class RelayClient {
     });
   }
 
-  private handleSocketClose(): void {
+  private handleSocketClose(event?: { code: number; reason: string }): void {
     // A close during the initial handshake already rejects connect() via
     // waitForOpen — don't start a reconnect loop on top of that rejection.
     const stillHandshaking = this.state.get() === "connecting";
-    this.dropSocket(new RelayError("relay socket closed", "socket_closed"));
+    const revoked = event?.code === WS_CLOSE_DEVICE_REVOKED;
+    this.dropSocket(
+      revoked
+        ? new RelayError(event.reason || "device revoked", "device_revoked", {
+            closeCode: event.code,
+          })
+        : new RelayError("relay socket closed", "socket_closed", {
+            closeCode: event?.code,
+            closeReason: event?.reason,
+          }),
+    );
     if (stillHandshaking) {
       this.state.set("closed");
       return;
@@ -1108,6 +1126,7 @@ export class RelayClient {
   }
 
   private dropSocket(error: RelayError): void {
+    this.lastSocketError = error;
     const socket = this.socket;
     this.socket = undefined;
     for (const [, entry] of this.pending) {

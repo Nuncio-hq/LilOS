@@ -8,9 +8,13 @@ import { Screen } from "../components/screen";
    installs the phone app already runs LilOS on a Mac, so no feature tour. */
 export function WelcomeScreen({
   logo,
+  notice,
   onStart,
 }: {
   logo: ImageSourcePropType;
+  /** Shown when onboarding re-appears for a reason (e.g. the Mac removed
+      this phone) — plain sentence above the intro. */
+  notice?: string;
   onStart: () => void;
 }) {
   return (
@@ -22,6 +26,18 @@ export function WelcomeScreen({
           className="size-28 self-start"
           resizeMode="contain"
         />
+        {notice ? (
+          <View className="flex-row items-center gap-3 rounded-2xl bg-secondary p-4">
+            <Icon
+              name="exclamationmark.triangle.fill"
+              size={20}
+              tone="warning"
+            />
+            <AppText size="sm" className="flex-1">
+              {notice}
+            </AppText>
+          </View>
+        ) : null}
         <View className="gap-3">
           <AppText size="hero">Welcome to LilOS</AppText>
           <AppText size="lg" tone="muted">

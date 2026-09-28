@@ -31,6 +31,9 @@ export type Phase = "loading" | "onboarding" | "app";
 
 export const $connections = atom<PairedMac[]>([]);
 export const $phase = atom<Phase>("loading");
+/** Why onboarding is showing again after the Mac dropped us — the pair
+    screen renders it above the intro (#154 4403 handling). */
+export const $pairNotice = atom<string | undefined>(undefined);
 
 const KEY = "lilos.connections.v1";
 
@@ -53,6 +56,7 @@ async function persist(list: PairedMac[]): Promise<void> {
 
 /** One Mac for now: pairing again replaces the current one. */
 export async function savePairedMac(mac: PairedMac): Promise<void> {
+  $pairNotice.set(undefined);
   await persist([mac]);
 }
 
@@ -72,6 +76,18 @@ export async function forgetMacs(
   await clearCache();
   $connections.set([]);
   $phase.set("onboarding");
+}
+
+/**
+ * The Mac revoked this phone (ws close 4403 / refused device credential):
+ * the stored credential is dead, so teardown is Forget's — then a plain
+ * notice on the pair screen instead of a reconnect loop (#154).
+ */
+export async function removedByMac(
+  clearCache: () => Promise<void>,
+): Promise<void> {
+  $pairNotice.set("This Mac removed this phone. Pair again.");
+  await forgetMacs(clearCache);
 }
 
 export function routeFor(host: string): Route {

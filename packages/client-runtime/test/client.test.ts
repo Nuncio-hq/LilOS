@@ -40,9 +40,9 @@ class FakeSocket implements RelaySocket {
   emit(frame: unknown): void {
     this.fire("message", { data: JSON.stringify(frame) } as never);
   }
-  emitClose(): void {
+  emitClose(code = 1006, reason = ""): void {
     this.readyState = 3;
-    this.fire("close", { code: 1006, reason: "" } as never);
+    this.fire("close", { code, reason } as never);
   }
   private fire(type: string, event?: never): void {
     for (const listener of this.listeners.get(type) ?? []) listener(event);
@@ -649,6 +649,30 @@ describe("mobile instant-connect seam (#154)", () => {
       )
       .find((f) => f.method === "channel.subscribe");
     expect(subscribe?.params?.afterSeq).toBe(5);
+  });
+
+  it("a revoked socket close (4403) surfaces device_revoked, not socket_closed", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+
+    socket.emitClose(4403, "device revoked");
+    expect(client.state.get()).toBe("closed");
+    expect(client.lastSocketError).toMatchObject({
+      code: "device_revoked",
+      message: "device revoked",
+      data: { closeCode: 4403 },
+    });
+  });
+
+  it("a plain transport close stays socket_closed and keeps the close code", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+
+    socket.emitClose(1006, "abnormal");
+    expect(client.lastSocketError).toMatchObject({
+      code: "socket_closed",
+      data: { closeCode: 1006, closeReason: "abnormal" },
+    });
   });
 
   it("AC-2 snapshot() exports exactly what hydrate() needs", async () => {

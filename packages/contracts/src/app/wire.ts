@@ -58,6 +58,15 @@ export const JsonRpcNotification = z.object({
 });
 export type JsonRpcNotification = z.infer<typeof JsonRpcNotification>;
 
+/**
+ * WebSocket close codes that carry protocol meaning (4000–4999 is the
+ * application range; `session.hello` failures close 4000). `devices.revoke`
+ * drops the phone's live sockets with this code so the client can tell
+ * "your credential is dead" apart from a lost transport — the app must
+ * re-pair, not reconnect.
+ */
+export const WS_CLOSE_DEVICE_REVOKED = 4403;
+
 /** Codes carried in `error.data.code` (JSON-RPC `error.code` stays numeric). */
 export const AppErrorCode = z.enum([
   "unauthenticated",

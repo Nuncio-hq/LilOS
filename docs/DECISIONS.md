@@ -167,8 +167,9 @@ PR does not exist.
   exchanged over the tailnet listener for a per-device credential (stored
   hashed; raw only in the exchange response). The phone keeps it in the
   Keychain; the Mac lists and revokes devices (revoke drops the live
-  socket).** Not: sharing the install token (D-#25) with phones, a cloud
-  relay, or DPoP. — #153
+  socket with ws close 4403 — the phone forgets the credential and lands
+  on pairing, never a reconnect loop).** Not: sharing the install token
+  (D-#25) with phones, a cloud relay, or DPoP. — #153 · #154
 - **D-#153 The pairing URL keeps the secret in the fragment:
   `lilos://pair?host=<tailscale-host>:<port>#code=<grant>` — fragments never
   leave the device in a URL copy or server log.** Not: secret in the query

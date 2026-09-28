@@ -3,5 +3,5 @@
   "compilerOptions": {
     "strict": true
   },
-  "include": ["src", "index.ts", "env.d.ts"]
+  "include": ["src", "test", "index.ts", "env.d.ts"]
 }

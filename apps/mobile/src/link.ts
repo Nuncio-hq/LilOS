@@ -2,6 +2,7 @@ import {
   type CachedDirectory,
   ConnectionSupervisor,
   RelayClient,
+  RelayError,
   type SupervisedConnection,
 } from "@lilos/client-runtime";
 import type { WelcomeResult } from "@lilos/contracts/app";
@@ -10,7 +11,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { atom } from "nanostores";
 import { AppState, type AppStateStatus } from "react-native";
 import { directoryCache } from "./cache";
-import { type PairedMac, touchMac } from "./paired-macs";
+import { type PairedMac, removedByMac, touchMac } from "./paired-macs";
 
 /**
  * The real-relay link (#154): one RelayClient, one ConnectionSupervisor —
@@ -78,7 +79,7 @@ export function startLink(mac: PairedMac, cached?: CachedDirectory): void {
           const unsub = client.state.listen((state) => {
             if (state === "closed") {
               unsub();
-              resolve(undefined);
+              resolve(client.lastSocketError);
             }
           });
         }),
@@ -91,6 +92,19 @@ export function startLink(mac: PairedMac, cached?: CachedDirectory): void {
       const started = Date.now();
       await c.ping();
       $latencyMs.set(Date.now() - started);
+    },
+    onFatalError: (error) => {
+      /* The Mac revoked this phone (socket closed 4403) or won't take the
+         stored credential at hello — the pairing is dead either way: drop
+         it and send the user back to pair instead of retrying forever.
+         protocol_version_mismatch stays a "Can't reach" detail. */
+      if (
+        error instanceof RelayError &&
+        (error.code === "device_revoked" || error.code === "unauthenticated")
+      ) {
+        stopLink();
+        void removedByMac(() => directoryCache.clear());
+      }
     },
   });
   supervisor = sv;

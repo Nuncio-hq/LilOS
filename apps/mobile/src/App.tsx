@@ -60,6 +60,7 @@ import {
 import { toEmployeeRow, toHomeChannels } from "./mapping";
 import {
   $connections,
+  $pairNotice,
   $phase,
   fallbackName,
   forgetMacs,
@@ -98,8 +99,13 @@ const nav = createNavigationContainerRef<Routes>();
 // ── Onboarding ──────────────────────────────────────────────────────────────
 
 function Welcome({ navigation }: Props<"Welcome">) {
+  const notice = useStore($pairNotice);
   return (
-    <WelcomeScreen logo={logo} onStart={() => navigation.navigate("Pair")} />
+    <WelcomeScreen
+      logo={logo}
+      notice={notice}
+      onStart={() => navigation.navigate("Pair")}
+    />
   );
 }
 

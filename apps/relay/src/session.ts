@@ -42,6 +42,7 @@ import {
   SystemStatusParams,
   TurnsInterruptParams,
   type WelcomeResult,
+  WS_CLOSE_DEVICE_REVOKED,
 } from "@lilos/contracts/app";
 import {
   type AttachmentStore,
@@ -1231,7 +1232,8 @@ export function createRelay(options: RelayOptions): Relay {
           // Drop the revoked phone's live sockets; `closed()` then cleans
           // devicePeers/helloedPeers/subscriptions for each.
           for (const [p, did] of devicePeers) {
-            if (did === device.id) p.close(4403, "device revoked");
+            if (did === device.id)
+              p.close(WS_CLOSE_DEVICE_REVOKED, "device revoked");
           }
           respond(peer, id, { ok: true });
           return;
