@@ -586,10 +586,9 @@ export function DmPage() {
           work={null}
           editors={editors ?? undefined}
           onOpenPath={
-            conv.cwd && editors !== null
+            openCwd && editors !== null
               ? (path, app, line) => {
-                  const cwd = conv.cwd;
-                  void hostOsOpen(cwd, path, app, line).catch((e) =>
+                  void hostOsOpen(openCwd, path, app, line).catch((e) =>
                     say(
                       `Open failed — ${e instanceof Error ? e.message : String(e)}`,
                     ),

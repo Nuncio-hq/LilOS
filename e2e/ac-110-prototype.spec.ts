@@ -57,7 +57,7 @@ test("AC-2/AC-3 workbench: open file, open file at line, reveal — real os.open
   page,
 }) => {
   test.setTimeout(90_000);
-  await page.goto("/?roots=" + encodeURIComponent(ROOT));
+  await page.goto(`/?roots=${encodeURIComponent(ROOT)}`);
   await page
     .locator("aside")
     .first()

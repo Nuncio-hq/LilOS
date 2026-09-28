@@ -249,7 +249,7 @@ test("AC-2 + AC-4 Open in Zed runs the Zed CLI on the session folder (no shell)"
   await expect
     .poll(() => logLines().join("|"), { timeout: 10_000 })
     .toContain(`arg:${repoDir}`);
-  const idx = logLines().findIndex((l) => l === "exec:cli");
+  const idx = logLines().indexOf("exec:cli");
   expect(idx).toBeGreaterThanOrEqual(0);
   // Zed's cli takes the bare path (folder open — no :line here).
   expect(logLines()[idx + 1]).toBe(`arg:${repoDir}`);
@@ -259,7 +259,7 @@ test("AC-2 + AC-4 Open in Zed runs the Zed CLI on the session folder (no shell)"
   await expect
     .poll(() => logLines().join("|"), { timeout: 10_000 })
     .toContain("exec:cursor");
-  const ci = logLines().findIndex((l) => l === "exec:cursor");
+  const ci = logLines().indexOf("exec:cursor");
   expect(logLines()[ci + 1]).toBe("arg:-g");
   expect(logLines()[ci + 2]).toBe(`arg:${repoDir}`);
   await page.screenshot({ path: `${SHOTS}/ac-2-open-zed.png` });
@@ -276,7 +276,7 @@ test("AC-3 Reveal in Finder runs `open -R` on the session folder", async ({
   await expect
     .poll(() => logLines().join("|"), { timeout: 10_000 })
     .toContain("exec:open");
-  const i = logLines().findIndex((l) => l === "exec:open");
+  const i = logLines().indexOf("exec:open");
   expect(logLines()[i + 1]).toBe("arg:-R");
   expect(logLines()[i + 2]).toBe(`arg:${repoDir}`);
   await page.screenshot({ path: `${SHOTS}/ac-3-finder.png` });
