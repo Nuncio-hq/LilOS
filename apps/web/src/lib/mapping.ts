@@ -167,12 +167,20 @@ export function mergeTurns(
     // Keep the relay message id — it's the search-hit scroll anchor (#138).
     return { ...liveTurnReply(t, employeeId, asks), id: r.id };
   });
+  /* A finished turn with no relay message (a stop before any text) sits
+     right after the user message that prompted it (`turn.started.ref`), not
+     at the end — appended, it jumped below every later message and answer.
+     The live turn is always the newest, so it still goes last. */
   for (const t of model.turns) {
-    if (used.has(t)) continue;
+    if (used.has(t) || t === model.live) continue;
     if (rewoundTexts?.has(t.text.trim())) continue;
-    if (t === model.live || t.text.trim() || t.phase === "stopped")
-      out.push(liveTurnReply(t, employeeId, asks));
+    if (!t.text.trim() && t.phase !== "stopped") continue;
+    const at = t.ref ? out.findIndex((r) => r.id === t.ref) : -1;
+    if (at < 0) out.push(liveTurnReply(t, employeeId, asks));
+    else out.splice(at + 1, 0, liveTurnReply(t, employeeId, asks));
   }
+  if (model.live && !used.has(model.live))
+    out.push(liveTurnReply(model.live, employeeId, asks));
   return out;
 }
 

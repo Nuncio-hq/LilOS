@@ -6,7 +6,11 @@
 import type { TurnModel } from "@lilos/client-runtime";
 import type { AppMessage } from "@lilos/contracts/app";
 import { describe, expect, test } from "vitest";
-import { conversationReplies, liveTurnReply } from "../src/lib/mapping";
+import {
+  conversationReplies,
+  liveTurnReply,
+  mergeTurns,
+} from "../src/lib/mapping";
 
 const msg = (over: Partial<AppMessage>): AppMessage => ({
   id: "m1",
@@ -101,5 +105,56 @@ describe("issue #71", () => {
       "emp1",
     );
     expect(reply.model).toBe("fake-large");
+  });
+});
+
+describe("mergeTurns ordering", () => {
+  const session = (turns: TurnModel[], live?: TurnModel) => ({
+    sessionId: "s1",
+    state: "idle" as const,
+    turns,
+    live,
+    openRequests: [],
+  });
+  test("a stopped turn stays after the message that prompted it, not below later answers", () => {
+    const replies = conversationReplies(
+      [
+        msg({ id: "u1", authorKind: "user", authorId: "me", text: "first" }),
+        msg({ id: "s1", seq: 2, text: "Stopped." }),
+        msg({
+          id: "u2",
+          seq: 3,
+          authorKind: "user",
+          authorId: "me",
+          text: "second",
+        }),
+        msg({
+          id: "a2",
+          seq: 4,
+          authorKind: "employee",
+          authorId: "emp",
+          text: "Done on main",
+        }),
+      ],
+      "c1",
+    );
+    const stopped = turn({ turnId: "t1", phase: "stopped", ref: "u1" });
+    const answered = turn({
+      turnId: "t2",
+      phase: "done",
+      text: "Done on main",
+      ref: "u2",
+    });
+    const out = mergeTurns(replies, session([stopped, answered]), "emp");
+    expect(out.map((r) => r.id)).toEqual(["u1", "live-t1", "s1", "u2", "a2"]);
+  });
+  test("the live turn still goes last", () => {
+    const replies = conversationReplies(
+      [msg({ id: "u1", authorKind: "user", authorId: "me", text: "go" })],
+      "c1",
+    );
+    const live = turn({ turnId: "t1", phase: "text", text: "wor", ref: "u1" });
+    const out = mergeTurns(replies, session([live], live), "emp");
+    expect(out.map((r) => r.id)).toEqual(["u1", "live-t1"]);
   });
 });

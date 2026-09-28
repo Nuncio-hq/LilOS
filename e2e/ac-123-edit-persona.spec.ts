@@ -218,7 +218,7 @@ async function openConvRow(page: Page, rootText: string) {
     .locator("[data-session]", { hasText: rootText })
     .getByRole("button", { name: /\d+ repl(y|ies)/ })
     .click();
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/);
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+(\/focus)?$/);
 }
 
 /** Send a top-level DM message → a new session (employee-home composer).
@@ -229,13 +229,17 @@ async function sendDm(page: Page, text: string) {
   await composer.fill(text);
   await composer.press("Enter");
   await expect(page)
-    .toHaveURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 4_000 })
+    .toHaveURL(/\/dm\/[^/]+\/[^/]+(\/focus)?$/, { timeout: 4_000 })
     .catch(() => openConvRow(page, text));
 }
 
 /** Reply inside the open conversation — same session, a fresh turn. */
 async function replyInSession(page: Page, text: string) {
-  const box = page.getByPlaceholder(/Reply to .* in this session/);
+  /* Opening a session lands in Focus (#114): its composer reads
+     "Continue session … with …"; the peek panel keeps "Reply to …". */
+  const box = page.getByPlaceholder(
+    /Reply to .* in this session|Continue session .* with/,
+  );
   await box.fill(text);
   await box.press("Enter");
 }

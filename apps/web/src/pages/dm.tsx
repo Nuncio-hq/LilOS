@@ -946,6 +946,8 @@ export function DmPage() {
           say={say}
           host={conv.cwd ? hostAccessors : undefined}
           transcriptNote={transcriptNote}
+          scrollTo={scrollTo ?? undefined}
+          onScrolled={() => setScrollTo(null)}
           steer={steer}
           draft={threadDraft}
           onDraftChange={setThreadDraft}
