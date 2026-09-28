@@ -35,13 +35,21 @@ interface Stack {
   stop: () => Promise<void>;
 }
 
-async function waitForHttp(url: string, ms = 90_000): Promise<void> {
+async function waitForHttp(
+  url: string,
+  proc?: ChildProcess,
+  ms = 90_000,
+): Promise<void> {
   const start = Date.now();
   for (;;) {
     const ok = await fetch(url)
       .then((r) => r.ok || r.status === 404)
       .catch(() => false);
     if (ok) return;
+    // A dead stack never serves (vite --strictPort losing a port race,
+    // relay dying) — fail fast instead of burning the whole budget.
+    if (proc && proc.exitCode !== null)
+      throw new Error(`stack exited ${proc.exitCode} before ${url}`);
     if (Date.now() - start > ms)
       throw new Error(`timed out waiting for ${url}`);
     await new Promise((r) => setTimeout(r, 200));
@@ -98,7 +106,7 @@ async function bootStack(
   });
   const webUrl = `http://127.0.0.1:${ports.web}`;
   try {
-    await waitForHttp(webUrl);
+    await waitForHttp(webUrl, proc);
     return {
       home,
       webUrl,
@@ -110,7 +118,9 @@ async function bootStack(
       },
     };
   } catch (e) {
-    proc.kill("SIGKILL");
+    // Group kill: `bun run dev` spawns detached — killing only the shim
+    // orphans stack.ts + relay + harness + vite and poisons the next boot.
+    await killProc(proc);
     throw e;
   }
 }

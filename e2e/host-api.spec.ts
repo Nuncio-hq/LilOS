@@ -99,6 +99,12 @@ test("AC-1..4 picker + session cwd + Workbench Files/Changes over host API", asy
   await expect(
     page.getByText(new RegExp(`I'm in .*${basename(repoReal)}`)),
   ).toBeVisible({ timeout: 30_000 });
+  // While the reply streams the conversation keeps reflowing and the
+  // Workbench's buttons never settle — wait for the turn to finish.
+  await expect(page.locator("[data-agentturn] [data-streaming]")).toHaveCount(
+    0,
+    { timeout: 30_000 },
+  );
 
   // ── AC-2: Files tab shows the real tree + file contents ──
   await page.getByRole("tab", { name: /Files/ }).click();

@@ -128,7 +128,9 @@ async function bootStack(
       },
     };
   } catch (e) {
-    proc.kill("SIGKILL");
+    // Group kill: `bun run dev` spawns detached — killing only the shim
+    // orphans stack.ts + relay + harness + vite and poisons the next boot.
+    await killProc(proc);
     throw e;
   }
 }
