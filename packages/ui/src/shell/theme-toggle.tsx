@@ -18,7 +18,7 @@ export function ThemeToggle({
     <div
       role="radiogroup"
       aria-label="Theme"
-      className="ml-auto flex items-center gap-0.5 rounded-md bg-sidebar-accent p-0.5"
+      className="ml-auto inline-flex w-fit items-center gap-0.5 rounded-md bg-sidebar-accent p-0.5"
       data-theme-toggle
     >
       {opts.map(([t, label, I]) => (
@@ -32,9 +32,8 @@ export function ThemeToggle({
           onClick={() => setTheme(t)}
           data-theme-opt={t}
           className={cn(
-            "grid size-6 place-items-center rounded text-muted-foreground hover:text-foreground",
-            theme === t &&
-              "bg-background text-foreground shadow-sm dark:bg-white/15",
+            "grid size-11 place-items-center rounded text-foreground md:size-6",
+            theme === t && "bg-background shadow-sm dark:bg-white/15",
           )}
         >
           <I className="size-3.5" />

@@ -109,7 +109,7 @@ export function SettingsView({
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
-        className="grid h-dvh w-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background sm:h-[min(640px,85dvh)] sm:max-w-3xl sm:rounded-2xl sm:border sm:shadow-2xl"
+        className="flex h-dvh w-full flex-col overflow-hidden bg-background sm:h-auto sm:max-h-[85dvh] sm:max-w-3xl sm:rounded-2xl sm:border sm:shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
@@ -119,19 +119,19 @@ export function SettingsView({
             variant="ghost"
             size="icon-sm"
             aria-label="Close settings"
-            className="ml-auto"
+            className="ml-auto size-11 md:size-7"
             onClick={onClose}
           >
             <XIcon />
           </Button>
         </div>
-        <div className="grid min-h-0 md:grid-cols-[200px_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 md:grid-cols-[200px_minmax(0,1fr)]">
           <div
             role="tablist"
             aria-label="Settings sections"
             aria-orientation="vertical"
             className={cn(
-              "min-h-0 space-y-0.5 overflow-y-auto p-2 md:border-r",
+              "min-h-0 space-y-0.5 overflow-y-auto p-2 md:border-r md:pt-4",
               paneOpen && "hidden md:block",
             )}
           >
@@ -148,7 +148,7 @@ export function SettingsView({
                     setPaneOpen(true);
                   }}
                   className={cn(
-                    "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted",
+                    "flex w-full items-center gap-2.5 rounded-md px-2.5 py-3 text-left text-sm hover:bg-muted md:py-2",
                     shown === s.id && "bg-muted font-medium",
                   )}
                 >
@@ -170,6 +170,7 @@ export function SettingsView({
                 variant="ghost"
                 size="sm"
                 aria-label="All settings"
+                className="h-11"
                 onClick={() => setPaneOpen(false)}
               >
                 <ChevronLeftIcon />

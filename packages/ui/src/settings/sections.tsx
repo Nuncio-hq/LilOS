@@ -118,9 +118,8 @@ function Choice<T extends string>({
           aria-checked={value === o.id}
           onClick={() => onChange(o.id)}
           className={cn(
-            "rounded-md px-3 py-1.5 text-muted-foreground text-sm hover:text-foreground",
-            value === o.id &&
-              "bg-background text-foreground shadow-sm dark:bg-white/15",
+            "rounded-md px-3 py-3 text-foreground text-sm md:py-1.5",
+            value === o.id && "bg-background shadow-sm dark:bg-white/15",
           )}
         >
           {o.label}
@@ -138,31 +137,33 @@ export function GeneralSection({ general }: { general: GeneralProps }) {
   const { me, onMeChange } = general;
   return (
     <Pane title="General">
-      <div className="flex items-center gap-4">
-        <HumanAvatar human={me} size="lg" className="rounded-full" />
-        <div
-          role="radiogroup"
-          aria-label="Avatar colour"
-          className="flex flex-wrap items-center gap-2"
-        >
-          {AVATAR_COLORS.map(({ color, label }) => (
-            <button
-              key={color}
-              type="button"
-              role="radio"
-              aria-checked={me.color === color}
-              aria-label={label}
-              onClick={() => onMeChange({ ...me, color })}
-              className={cn(
-                "size-6 rounded-full",
-                color,
-                me.color === color &&
-                  "ring-2 ring-foreground ring-offset-2 ring-offset-background",
-              )}
-            />
-          ))}
+      <Field label="Avatar colour">
+        <div className="flex items-center gap-4">
+          <HumanAvatar human={me} size="lg" className="rounded-full" />
+          <div
+            role="radiogroup"
+            aria-label="Avatar colour"
+            className="flex flex-wrap items-center gap-3 md:gap-2"
+          >
+            {AVATAR_COLORS.map(({ color, label }) => (
+              <button
+                key={color}
+                type="button"
+                role="radio"
+                aria-checked={me.color === color}
+                aria-label={label}
+                onClick={() => onMeChange({ ...me, color })}
+                className={cn(
+                  "size-11 rounded-full md:size-6",
+                  color,
+                  me.color === color &&
+                    "ring-2 ring-foreground ring-offset-2 ring-offset-background",
+                )}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      </Field>
       <Field label="Your name">
         <Input
           aria-label="Your name"
@@ -297,7 +298,12 @@ export function ModelsSection({
               : `${hidden} hidden · applies to every employee`}
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={onManage}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-11 md:h-7"
+          onClick={onManage}
+        >
           Manage models…
         </Button>
       </div>
@@ -316,6 +322,7 @@ export function StatusSection({ status }: { status: StatusProps }) {
         <Button
           variant="outline"
           size="sm"
+          className="h-11 md:h-7"
           onClick={() => {
             void navigator.clipboard.writeText(status.diagnostics);
             status.onCopied?.();
@@ -347,7 +354,12 @@ export function AboutSection({ about }: { about: AboutProps }) {
       </div>
       {about.onCheckUpdates && (
         <div className="flex flex-wrap items-center gap-3">
-          <Button variant="outline" size="sm" onClick={about.onCheckUpdates}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-11 md:h-7"
+            onClick={about.onCheckUpdates}
+          >
             Check for updates
           </Button>
           {about.updateStatus && (

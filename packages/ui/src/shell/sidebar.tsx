@@ -303,6 +303,7 @@ export function Sidebar({
             variant="ghost"
             size="icon-sm"
             aria-label="Settings"
+            className="size-11 md:size-7"
             onClick={onOpenSettings}
           >
             <SettingsIcon />
