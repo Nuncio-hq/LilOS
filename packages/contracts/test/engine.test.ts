@@ -8,6 +8,8 @@ import {
   ENGINE_PROTOCOL,
   EngineEvent,
   PromptParams,
+  SESSION_META_CAPABILITY,
+  SessionSnapshot,
   SessionStartParams,
 } from "../src/engine/index.js";
 
@@ -72,6 +74,7 @@ describe("engine wire contract", () => {
       "session.started",
       "session.state",
       "session.note",
+      "session.titled",
       "turn.started",
       "turn.delta",
       "tool.started",
@@ -82,6 +85,47 @@ describe("engine wire contract", () => {
       "turn.steered",
       "turn.completed",
     ]);
+  });
+
+  test("AC-1 session.titled carries an engine-written title (#137)", () => {
+    const frame = {
+      seq: 3,
+      sessionId: "s1",
+      type: "session.titled",
+      payload: { title: "Fix composer draft on reload", source: "derived" },
+    };
+    const ev = EngineEvent.parse(frame);
+    expect(ev.type).toBe("session.titled");
+    // Engine-neutral provenance: only the engine's own stages — "user" is a
+    // rename (#28), which travels session.setTitle the other way.
+    for (const source of ["user", "manual", ""])
+      expect(
+        EngineEvent.safeParse({ ...frame, payload: { title: "x", source } })
+          .success,
+      ).toBe(false);
+    expect(
+      EngineEvent.safeParse({
+        ...frame,
+        payload: { title: "", source: "llm" },
+      }).success,
+    ).toBe(false);
+  });
+
+  test("AC-1 auto titles are declared on session_meta.detail.autoTitle (#137)", () => {
+    expect(SESSION_META_CAPABILITY.detail?.autoTitle).toBe(true);
+  });
+
+  test("AC-2 the session snapshot may carry the current title (#137)", () => {
+    // events.since replays may precede the title event (engine restart) — the
+    // snapshot legs in whatever the engine last persisted so a reconnecting
+    // harness lands the same title.
+    const parsed = SessionSnapshot.safeParse({
+      sessionId: "s1",
+      state: "idle",
+      title: "Fix composer draft",
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.title).toBe("Fix composer draft");
   });
 
   test("params are strict and carry the #18 additions", () => {

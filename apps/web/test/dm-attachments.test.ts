@@ -32,6 +32,7 @@ const conv = {
   engineRef: null,
   state: "idle" as const,
   title: "",
+  titleSource: "user" as const,
   archived: false,
   deliveredSeq: 0,
   createdAt: 0,

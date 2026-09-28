@@ -25,7 +25,7 @@ import type {
   RelayStore,
   ResolveAskInput,
 } from "../store";
-import { newId, searchTerms } from "../store";
+import { newId, openTitle, searchTerms, titlePatch } from "../store";
 import * as schema from "./schema";
 
 type Db = BunSQLiteDatabase<typeof schema>;
@@ -426,7 +426,7 @@ export function createDrizzleStore(db: Db): RelayStore {
           rootMessageId: rootMessage.id,
           engineRef: null,
           state: "idle",
-          title: input.title,
+          ...openTitle(input),
           ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
           archived: false,
           deliveredSeq: 0,
@@ -455,18 +455,30 @@ export function createDrizzleStore(db: Db): RelayStore {
       });
     },
     async updateConversation(id, patch: ConversationPatch) {
-      if (patch.deliveredSeq !== undefined) {
-        // Forward-only watermark (see memory store): clamp before writing.
+      // One read guards both conditional writes: the forward-only
+      // deliveredSeq clamp and the title provenance rule (#137).
+      if (patch.deliveredSeq !== undefined || patch.title !== undefined) {
         const current = db
-          .select({ deliveredSeq: schema.conversations.deliveredSeq })
+          .select({
+            deliveredSeq: schema.conversations.deliveredSeq,
+            titleSource: schema.conversations.titleSource,
+          })
           .from(schema.conversations)
           .where(eq(schema.conversations.id, id))
           .get();
         if (!current) return null;
-        patch = {
-          ...patch,
-          deliveredSeq: Math.max(current.deliveredSeq, patch.deliveredSeq),
-        };
+        patch = titlePatch(patch, current);
+        if (patch.deliveredSeq !== undefined) {
+          patch = {
+            ...patch,
+            deliveredSeq: Math.max(current.deliveredSeq, patch.deliveredSeq),
+          };
+        }
+        if (Object.keys(patch).length === 0) {
+          // A title-only write dropped by the provenance rule (#137) is a
+          // no-op: answer with the current row rather than `set({})`.
+          return this.getConversation(id);
+        }
       }
       const updated = db
         .update(schema.conversations)

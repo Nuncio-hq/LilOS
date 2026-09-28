@@ -49,7 +49,7 @@ import {
 } from "./attachments";
 import { createLogTail, type LogTail } from "./logtail";
 import { buildSystemStatus, type RejectedHandshake } from "./status";
-import type { RelayStore } from "./store";
+import type { ConversationPatch, RelayStore } from "./store";
 
 /** Minimal ws peer surface — Bun's ServerWebSocket and test doubles fit this. */
 export interface RelayWsPeer {
@@ -662,6 +662,9 @@ export function createRelay(options: RelayOptions): Relay {
             const { conversation, rootMessage } = await store.openConversation({
               ...parsed.data,
               attachments,
+              /* #137: a title given at open is user-chosen from a client,
+                 engine-owned ("auto") from the host; empty → placeholder. */
+              titleSource: isHost(peer) ? "auto" : "user",
             });
             emitMessage(conversation.channelId, rootMessage);
             emitConversation(conversation.channelId, conversation);
@@ -701,7 +704,20 @@ export function createRelay(options: RelayOptions): Relay {
               "only the registered engine host may write engineRef/state/model/provider/effort/fast/deliveredSeq",
             );
           }
-          const { conversationId, ...patch } = parsed.data;
+          const { conversationId, ...rest } = parsed.data;
+          /* #137 AC-2: title provenance is caller identity — a host write is
+             the engine titling its session ("auto", guarded: never over a
+             user name); any other client's title is a rename ("user"). */
+          const patch: ConversationPatch = {
+            ...rest,
+            ...("title" in rest
+              ? {
+                  titleSource: isHost(peer)
+                    ? ("auto" as const)
+                    : ("user" as const),
+                }
+              : {}),
+          };
           const conversation = await store.updateConversation(
             conversationId,
             patch,

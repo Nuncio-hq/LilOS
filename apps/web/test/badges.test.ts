@@ -28,6 +28,7 @@ const conv = (
   engineRef,
   state: "active",
   title: "",
+  titleSource: "user",
   archived: false,
   deliveredSeq: 0,
   createdAt: 0,

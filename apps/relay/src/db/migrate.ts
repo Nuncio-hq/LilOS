@@ -185,9 +185,18 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     ],
   },
   {
+    // #137: title provenance — every title that exists was client-chosen
+    // before this column, so backfill those as `user`; new opens default to
+    // `auto` (placeholder/engine titles the engine may upgrade).
+    version: 10,
+    statements: [
+      `ALTER TABLE conversations ADD COLUMN title_source TEXT NOT NULL DEFAULT 'auto'`,
+      `UPDATE conversations SET title_source = 'user' WHERE title != ''`,
+    ],
+  },
+  {
     /* #134: `conversations.rewind` marks dropped messages (hidden, kept for
-       audit) and the harness stamps each user message's pre-turn checkpoint.
-       v10 is reserved for #162 — this one is 11. */
+       audit) and the harness stamps each user message's pre-turn checkpoint. */
     version: 11,
     statements: [
       `ALTER TABLE messages ADD COLUMN rewound INTEGER NOT NULL DEFAULT 0`,

@@ -255,6 +255,12 @@ export class HermesEngine {
         description:
           "session.setTitle/setHidden map to hermes session.title / session.set_hidden (live id first, else stored key).",
         methods: ["session.setTitle", "session.setHidden"],
+        /* #137 AC-1: Hermes auto-titles persisted sessions (instant "derived"
+           title at turn prologue, then a small-model "llm" upgrade —
+           `agent/title_generator.py`); they surface as `session.title`
+           gateway events and `session.info.title` (`tui_gateway/server.py`
+           `_session_info`), mapped to `session.titled` in applyEvent. */
+        detail: { autoTitle: true },
       },
       {
         ...REWIND_CAPABILITY,
@@ -757,6 +763,9 @@ export class HermesEngine {
         RPC_ERRORS.INTERNAL_ERROR,
         "session.title returned no title",
       );
+    /* #137: preset so the user title's own echo (`session.info`/`session.title`
+       carrying it) dedupes and never surfaces as a derived/llm `session.titled`. */
+    s.title = r.title;
     return { title: r.title };
   }
 
@@ -897,6 +906,16 @@ export class HermesEngine {
         if (typeof p.reasoning_effort === "string")
           s.effort = p.reasoning_effort || undefined;
         if (typeof p.fast === "boolean") s.fast = p.fast;
+        /* #137: `session.info` also carries the session's current title —
+           deduped in applyTitle so only the first sighting / changes emit. */
+        if (typeof p.title === "string") s.applyTitle(p.title);
+        break;
+      }
+      /* #137 AC-1: `session.title` events are Hermes' persisted auto-title
+         writes (instant derived title at turn prologue, then the small-model
+         upgrade — `agent/title_generator.py`, emitted from prompt_turn.py). */
+      case "session.title": {
+        if (typeof p.title === "string") s.applyTitle(p.title);
         break;
       }
       case "message.complete":
@@ -908,7 +927,7 @@ export class HermesEngine {
          runs, so a deferred model-switch failure can't reach us this way
          anyway (#92 review). */
       default:
-        break; // status.update, session.title, sessions.changed, ...
+        break; // status.update, sessions.changed, ...
     }
   }
 

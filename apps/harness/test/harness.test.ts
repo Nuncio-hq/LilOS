@@ -94,9 +94,13 @@ interface World {
   cleanup: () => Promise<void>;
 }
 
-async function setupWorld(tick = 1, attachEngine = true): Promise<World> {
+async function setupWorld(
+  tick = 1,
+  attachEngine = true,
+  engineOpts?: ConstructorParameters<typeof FakeEngine>[0],
+): Promise<World> {
   const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
-  const engine = new FakeEngine({ tick });
+  const engine = new FakeEngine({ tick, ...engineOpts });
   const engineConn = connectFake(engine) as unknown as EngineConnection;
   const engineCalls: { method: string; params: unknown }[] = [];
   const origRequest = engineConn.request.bind(engineConn);
@@ -1127,6 +1131,153 @@ describe("sessions replay + meta (#28)", () => {
             JSON.stringify(c.params).includes("one more thing"),
         ),
       ).toHaveLength(1);
+    } finally {
+      await w.cleanup();
+    }
+  });
+});
+
+describe("auto titles (#137)", () => {
+  const convById = async (user: RelayClient, id: string) => {
+    const { conversations } = await user.request<{
+      conversations: {
+        id: string;
+        title: string;
+        titleSource: "auto" | "user";
+      }[];
+    }>("conversations.list", {});
+    return conversations.find((c) => c.id === id);
+  };
+
+  it("AC-2/AC-4 the engine's derived→llm titles land on the conversation, marked auto", {
+    timeout: 30000,
+  }, async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string; title: string; titleSource: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Summarize the repo layout",
+      });
+      // AC-3: the placeholder is already on the row before any engine title.
+      expect(conversation.title).toBe("Summarize the repo layout");
+      expect(conversation.titleSource).toBe("auto");
+
+      // engine-fake emits session.titled derived (turn start) then llm
+      // (turn end) — the final title on the conversation is the llm one
+      // (Title Case rewrite of the first clause).
+      const conv = await waitFor(async () => {
+        const c = await convById(w.user, conversation.id);
+        return c?.title === "Summarize The Repo Layout" ? c : undefined;
+      }, "llm title on conversation");
+      expect(conv.titleSource).toBe("auto");
+
+      // Engine-written titles must never echo back as session.setTitle —
+      // that would mark the engine's own auto title as user-provenance and
+      // block the upgrade (mirrorMeta is user-rename only).
+      expect(
+        w.engineCalls.filter((c) => c.method === "session.setTitle"),
+      ).toHaveLength(0);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-2 a user rename during the first turn beats the late llm title", {
+    timeout: 30000,
+  }, async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page", // approval-gated: pauses mid-turn
+      });
+      // Wait for the ask so the turn is running (derived title already out).
+      await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks[0];
+      }, "approval ask");
+
+      // A manual rename mid-turn → provenance flips to user.
+      await w.user.request("conversations.update", {
+        conversationId: conversation.id,
+        title: "My footer session",
+      });
+
+      // The rename mirrors to the engine before the llm upgrade can land.
+      const setTitle = await waitFor(
+        () => w.engineCalls.find((c) => c.method === "session.setTitle"),
+        "session.setTitle call",
+      );
+      expect(setTitle.params).toMatchObject({ title: "My footer session" });
+
+      // Answer approvals; the canned turn asks more than once — keep
+      // answering until it completes, and any late llm title must be dropped
+      // at the relay (provenance) — never overwrites the rename.
+      await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        for (const a of asks)
+          await w.user.request("asks.respond", {
+            askId: a.id,
+            outcome: "once",
+          });
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.authorKind === "employee");
+      }, "turn completes");
+
+      const conv = await convById(w.user, conversation.id);
+      expect(conv).toMatchObject({
+        title: "My footer session",
+        titleSource: "user",
+      });
+      // Only the user's own rename ever reached the engine as a title.
+      const titles = w.engineCalls
+        .filter((c) => c.method === "session.setTitle")
+        .map((c) => (c.params as { title?: string }).title);
+      expect(titles).toEqual(["My footer session"]);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-3 an engine without autoTitle leaves the placeholder as the title", {
+    timeout: 30000,
+  }, async () => {
+    // session_meta off → no autoTitle detail and no session.titled events.
+    const w = await setupWorld(1, true, {
+      capabilities: { session_meta: false },
+    });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string; title: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Tell me about the layout of this repo please",
+      });
+      expect(conversation.title).toBe("Tell me about the layout of…");
+
+      // The turn completes; no engine title may ever write.
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.authorKind === "employee");
+      }, "turn completes");
+      const conv = await convById(w.user, conversation.id);
+      expect(conv).toMatchObject({
+        title: "Tell me about the layout of…",
+        titleSource: "auto",
+      });
     } finally {
       await w.cleanup();
     }

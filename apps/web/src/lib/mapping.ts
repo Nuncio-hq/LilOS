@@ -204,7 +204,7 @@ export function toFeed(
     attachments: toAttachedFiles(root.attachments),
     thread: {
       session: conv.engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
-      title: conv.title ?? undefined,
+      title: conv.title || undefined,
       archived: conv.archived,
       replies,
       ...(ws ? { ws } : {}),

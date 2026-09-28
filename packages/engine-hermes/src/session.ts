@@ -96,6 +96,23 @@ export class Session {
     this.emit("session.state", reason ? { state, reason } : { state });
   }
 
+  /** Engine-written title, tracked so the snapshot can carry it (#137). */
+  title: string | undefined;
+
+  /* #137 AC-1: mirror a persisted engine title into `session.titled`.
+     Hermes drops the stage on the wire — `session.title` events carry only
+     `{session_id, title}` (prompt_turn.py) and `session.info` carries the
+     current `title` — so the first title observed is "derived" and any
+     later change is "llm" (Hermes persists auto titles in that order and
+     its title_source CAS stops them once a user name lands). User renames
+     preset `s.title` in sessionSetTitle, so their echoes dedupe here. */
+  applyTitle(title: string) {
+    if (!title || title === this.title) return;
+    const source = this.title ? "llm" : "derived";
+    this.title = title;
+    this.emit("session.titled", { title, source });
+  }
+
   snapshot() {
     return {
       sessionId: this.id,
@@ -108,6 +125,7 @@ export class Session {
       provider: this.provider,
       effort: this.effort,
       fast: this.fast,
+      ...(this.title ? { title: this.title } : {}),
     };
   }
 
