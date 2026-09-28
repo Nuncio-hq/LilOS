@@ -1,20 +1,23 @@
 import {
+  ChevronDownIcon,
   EyeIcon,
   FolderIcon,
   GitBranchIcon,
   PencilLineIcon,
 } from "lucide-react";
-import type { Work, Workspace } from "../types";
+import type { OsApp, OsEditor, Work, Workspace } from "../types";
+import { OpenPathMenu } from "./open-path";
 
-/* Workspace pill in the thread header: which folder/branch this session runs in. */
-export function WsBadge({ ws }: { ws: Workspace }) {
+/* The props a surface needs to offer open/reveal for one path (issue #110). */
+export type OpenMenuFor = {
+  editors: OsEditor[];
+  onOpen: (app: OsApp) => void;
+};
+
+function WsBadgeContent({ ws }: { ws: Workspace }) {
   const f = { project: ws.project };
   return (
-    <div
-      className="mt-1 flex w-fit max-w-full items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-800 text-xs"
-      title={ws.cwd}
-      data-wsbadge
-    >
+    <>
       <FolderIcon className="size-3 shrink-0" />
       <span className="shrink-0">{f?.project}</span>
       {ws.branch && (
@@ -30,6 +33,44 @@ export function WsBadge({ ws }: { ws: Workspace }) {
       <span className="shrink-0 text-emerald-700/80">
         · {ws.mode === "direct" ? "direct" : "worktree"}
       </span>
+    </>
+  );
+}
+
+const badgeClass =
+  "mt-1 flex w-fit max-w-full items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-800 text-xs";
+
+/* Workspace pill in the thread header: which folder/branch this session runs in.
+   With `openMenu` (host os.open) the badge is also the Open-in-editor /
+   Reveal-in-Finder menu for the folder itself; without it, a plain label. */
+export function WsBadge({
+  ws,
+  openMenu,
+}: {
+  ws: Workspace;
+  openMenu?: OpenMenuFor;
+}) {
+  if (openMenu)
+    return (
+      <OpenPathMenu
+        editors={openMenu.editors}
+        onOpen={openMenu.onOpen}
+        trigger={
+          <button
+            type="button"
+            className={`${badgeClass} cursor-pointer hover:bg-emerald-100`}
+            title={`${ws.cwd} — open in an editor or reveal in Finder`}
+            data-wsbadge
+          />
+        }
+      >
+        <WsBadgeContent ws={ws} />
+        <ChevronDownIcon className="size-3 shrink-0 opacity-60" />
+      </OpenPathMenu>
+    );
+  return (
+    <div className={badgeClass} title={ws.cwd} data-wsbadge>
+      <WsBadgeContent ws={ws} />
     </div>
   );
 }

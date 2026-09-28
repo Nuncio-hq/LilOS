@@ -994,6 +994,100 @@
         ],
         "additionalProperties": false
       }
+    },
+    "os.editors": {
+      "doc": "Editors detected on this Mac (VS Code, Cursor, Zed, Xcode by bundle id), preference order; first = default.",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "editors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "enum": [
+                    "vscode",
+                    "cursor",
+                    "zed",
+                    "xcode"
+                  ]
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "app": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "app"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "editors"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "os.open": {
+      "doc": "Open a path inside the session folder in an editor (`code -g`/`cursor -g`/`zed` line syntax; Xcode file-only) or reveal it in Finder. argv exec, no shell.",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "root": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "app": {
+            "type": "string",
+            "enum": [
+              "vscode",
+              "cursor",
+              "zed",
+              "xcode",
+              "finder"
+            ]
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "root",
+          "path",
+          "app"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
     }
   }
 }
