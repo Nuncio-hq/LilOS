@@ -368,6 +368,7 @@ export function FocusView({
           <div
             className="truncate font-semibold"
             title={thread.title || plain(root.text)}
+            data-session-title
           >
             {thread.title || plain(root.text)}
           </div>

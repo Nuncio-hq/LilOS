@@ -153,7 +153,8 @@ test("DM page: with no session open the feed fills the window (no empty right co
 
     // The plain thread URL still gives the quick-peek panel (right column).
     await page.goto(page.url().replace(/\/focus$/, ""));
-    const panel = page.getByText("Session", { exact: true }).first();
+    // The panel header shows the session's title (#137), not "Session".
+    const panel = page.locator("[data-session-title]").first();
 
     // The thread header shows the session's auto title (placeholder →
     // engine-written, #137) — the prompt's own words land there first.

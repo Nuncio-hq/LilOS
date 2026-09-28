@@ -142,6 +142,7 @@ test("AC-3/AC-4 placeholder then engine titles land live in header, list, search
   await dmDefault(page);
   await send(page, PROMPT);
   await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_/, { timeout: 10_000 });
+  // A new session opens in Focus (#114); its header carries the title too.
 
   /* AC-4 "≤1 visible flicker placeholder → derived → llm": poll the header
      title and assert the observed stages only ever move forward. */
