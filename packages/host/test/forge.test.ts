@@ -253,7 +253,9 @@ describe("forge host api (fake gh)", () => {
     const bare = mkdtempSync(join(tmpdir(), "lilos-nogh-"));
     symlinkSync("/usr/bin/git", join(bare, "git"));
     const saved = process.env.PATH;
-    process.env.PATH = `${bare}:/usr/bin:/bin`;
+    // Only `git` on PATH: CI's Ubuntu image ships gh in /usr/bin, so adding
+    // system dirs would find a real (signed-out) gh instead of none.
+    process.env.PATH = bare;
     try {
       await expect(callHost("forge.pr", { path: repo })).rejects.toMatchObject({
         code: HOST_ERRORS.GH_FAILED,
