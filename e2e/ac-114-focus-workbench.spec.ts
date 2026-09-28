@@ -373,9 +373,10 @@ test("AC-2 Focus is the same live conversation: streaming, steps, approvals, mod
     /Done on|Review it|done/i,
     { timeout: 60_000 },
   );
-  await expect(
-    page.locator("[data-agentturn] [data-streaming]"),
-  ).toHaveCount(0, { timeout: 60_000 });
+  await expect(page.locator("[data-agentturn] [data-streaming]")).toHaveCount(
+    0,
+    { timeout: 60_000 },
+  );
 
   // Esc inside the composer is still the turn's Stop — Focus stays open.
   await send(page, "Add another note to the readme");
