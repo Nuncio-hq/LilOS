@@ -359,9 +359,13 @@ export class EngineClient {
   ): Promise<void> {
     const state = feed.get();
     try {
+      /* A feed that never synced replays from 0, not from its watermark:
+         live notifications land on the atom before the deferred first
+         resync (reload mid-turn), and `after: latestSeq` would then drop
+         the whole history — turn text, plans, requests (#180 AC-1). */
       const res = await this.request<EventsSinceResult>("events.since", {
         sessionId: state.sessionId,
-        after: state.latestSeq,
+        after: state.synced ? state.latestSeq : 0,
       });
       // Re-read: live events can land while the replay is in flight. The
       // replay is authoritative only through `res.latestSeq` — merging onto

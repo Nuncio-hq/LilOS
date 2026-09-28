@@ -85,3 +85,21 @@ export const SESSION_META_CAPABILITY: Capability = {
       without the flag leave the placeholder title alone. */
   detail: { autoTitle: true },
 };
+
+/**
+ * The canonical `plan` descriptor (issue #180): the engine streams
+ * `plan.updated` snapshots — `kind:"tasks"` for its own working list (ticks
+ * live, never asks) and `kind:"plan"` for a proposal gated by a `plan`
+ * EngineRequest (`request.respond` outcomes `approve` / `reject` / `change`,
+ * the change text in `answer`). `detail.proposals` is true only when the
+ * engine can open a `plan` request; engines with a task-list surface only
+ * declare it false. Clients render nothing without the capability (D-#19).
+ */
+export const PLAN_CAPABILITY: Capability = {
+  id: "plan",
+  name: "Plans & task lists",
+  description:
+    "Streams plan.updated snapshots; a plan request asks the client to approve, reject or change a proposed plan.",
+  methods: ["request.respond"],
+  detail: { proposals: true },
+};

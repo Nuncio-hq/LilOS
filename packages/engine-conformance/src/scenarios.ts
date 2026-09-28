@@ -1569,6 +1569,324 @@ for line in sys.stdin:
 `;
 
 /**
+ * #180 — plans & task lists. The fake keys on the `plan:` prefix; the same
+ * prompts read as plain instructions for a live engine (a todo tool / a
+ * plan-mode proposal), so one string drives both.
+ */
+export const PLAN_TASKS_PROMPT =
+  "plan: tasks — keep a todo list for this job and work it in order: 1) read README.md, 2) edit README.md exactly once, 3) run a quick check. Then reply with exactly: LILOS_OK";
+export const PLAN_PROPOSE_PROMPT =
+  "plan: propose — before editing anything, propose a plan for 'add a reconnect backoff to the client' and wait for my approval; if approved run it, then reply with exactly: LILOS_OK";
+
+interface PlanUpdatedPayloadShape {
+  turnId: string;
+  planId: string;
+  kind: "tasks" | "plan";
+  version: number;
+  goal?: string;
+  steps: { text: string; files?: string[]; status: string }[];
+  risks?: string[];
+}
+
+const STEP_STATUSES = new Set([
+  "pending",
+  "in_progress",
+  "completed",
+  "cancelled",
+]);
+
+function assertPlanEvent(
+  e: EngineEvent,
+  what = "plan.updated",
+): asserts e is EngineEvent & { payload: PlanUpdatedPayloadShape } {
+  assert(e.type === "plan.updated", `${what}: expected plan.updated`);
+  const p = e.payload as PlanUpdatedPayloadShape;
+  assert(typeof p.planId === "string" && p.planId.length > 0, "planId");
+  assert(p.kind === "tasks" || p.kind === "plan", `kind: ${p.kind}`);
+  assert(typeof p.version === "number" && p.version >= 1, "version >= 1");
+  assert(Array.isArray(p.steps) && p.steps.length > 0, "steps non-empty");
+  for (const s of p.steps) {
+    assert(typeof s.text === "string" && s.text.length > 0, "step text");
+    assert(STEP_STATUSES.has(s.status), `step status: ${s.status}`);
+  }
+}
+
+/** plan.updated events for one session, oldest first. */
+const planEvents = (h: Harness, sessionId: string) =>
+  h.events.filter(
+    (e): e is EngineEvent & { payload: PlanUpdatedPayloadShape } =>
+      e.sessionId === sessionId && e.type === "plan.updated",
+  );
+
+/** Versions never go backwards inside one planId. */
+function assertMonotonicVersions(
+  events: { payload: PlanUpdatedPayloadShape }[],
+) {
+  const seen = new Map<string, number>();
+  for (const e of events) {
+    const prev = seen.get(e.payload.planId) ?? 0;
+    assert(
+      e.payload.version >= prev,
+      `plan ${e.payload.planId} version regressed: ${prev} -> ${e.payload.version}`,
+    );
+    seen.set(e.payload.planId, e.payload.version);
+  }
+}
+
+const PLAN_SCENARIOS: Scenario[] = [
+  {
+    id: "describe wires plan.updated + plan requests under the plan capability",
+    async run(h) {
+      const r = (await h.request("describe")) as {
+        capabilities: { id: string; methods?: string[] }[];
+      };
+      const cap = r.capabilities.find((c) => c.id === "plan");
+      assert(cap, "plan suite runs only against engines declaring plan");
+    },
+  },
+  {
+    id: "task list ticks live: plan.updated snapshots track each item",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, PLAN_TASKS_PROMPT),
+      ) as Promise<PromptResult>;
+      const first = await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "plan.updated"),
+      );
+      assertPlanEvent(first);
+      assert(
+        first.payload.kind === "tasks",
+        `a working list is kind tasks, got ${first.payload.kind}`,
+      );
+      const res = await result;
+      assert(res.stopReason === "end_turn", "the tasks turn completes");
+      const updates = planEvents(h, sessionId);
+      assert(
+        updates.length >= 2,
+        `a ticking list streams more than one snapshot, got ${updates.length}`,
+      );
+      for (const e of updates) assertPlanEvent(e);
+      assertMonotonicVersions(updates);
+      const last = updates[updates.length - 1].payload;
+      assert(
+        last.steps.every((s) => s.status === "completed"),
+        "the last tasks snapshot has every item completed",
+      );
+      // Snapshots are keyed to the turn that produced them.
+      for (const e of updates)
+        assert(
+          e.payload.turnId === res.turnId,
+          "plan.updated carries the producing turnId",
+        );
+      /* AC-1 replay: the whole stream is in the log — events.since after
+         the first snapshot replays the rest verbatim. */
+      const tail = (await h.request("events.since", {
+        sessionId,
+        after: first.seq - 1,
+      })) as SinceResult;
+      const replayed = tail.events.filter((e) => e.type === "plan.updated");
+      assert(
+        replayed.length === updates.length,
+        `events.since replays every plan.updated (${replayed.length}/${updates.length})`,
+      );
+    },
+  },
+  {
+    id: "plan proposal: request.opened plan -> approve -> the steps run",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, PLAN_PROPOSE_PROMPT),
+      ) as Promise<PromptResult>;
+      const opened = await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "request.opened"),
+      );
+      assert(opened.type === "request.opened", "the proposal opens an ask");
+      const { requestId, request } = opened.payload;
+      assert(
+        request.kind === "plan",
+        `the proposal opens a plan request, got ${request.kind}`,
+      );
+      const proposal = await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) => e.type === "plan.updated" && e.payload.kind === "plan",
+        ),
+      );
+      assertPlanEvent(proposal);
+      const planId = proposal.payload.planId;
+      assert(
+        request.kind === "plan" && request.planId === planId,
+        "the request references the proposed planId",
+      );
+      // Double-answering is refused — one decision per request.
+      await h.request("request.respond", {
+        sessionId,
+        requestId,
+        outcome: "approve",
+      });
+      const second = await errorCode(h, "request.respond", {
+        sessionId,
+        requestId,
+        outcome: "approve",
+      });
+      assert(
+        second === -32002,
+        `answering twice errors REQUEST_NOT_FOUND (got ${second})`,
+      );
+      const res = await result;
+      assert(res.stopReason === "end_turn", "the approved plan completes");
+      const updates = planEvents(h, sessionId);
+      assertMonotonicVersions(updates);
+      const last = updates[updates.length - 1].payload;
+      assert(
+        last.steps.every((s) => s.status === "completed"),
+        "an approved plan's steps all complete",
+      );
+      // The same planId carried every snapshot of this revision chain.
+      assert(
+        updates.every((e) => e.payload.planId === planId),
+        "one planId owns the whole revision chain",
+      );
+    },
+  },
+  {
+    id: "plan proposal: change -> v2 -> approve -> done",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, PLAN_PROPOSE_PROMPT),
+      ) as Promise<PromptResult>;
+      const opened = await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "request.opened"),
+      );
+      assert(opened.type === "request.opened", "the proposal opens an ask");
+      await h.request("request.respond", {
+        sessionId,
+        requestId: opened.payload.requestId,
+        outcome: "change",
+        answer: "skip the banner step",
+      });
+      const v2 = await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) =>
+            e.type === "plan.updated" &&
+            e.payload.kind === "plan" &&
+            e.payload.version === 2,
+        ),
+      );
+      assertPlanEvent(v2, "the revised plan arrives as v2");
+      const opened2 = await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) =>
+            e.type === "request.opened" &&
+            e.payload.requestId !== opened.payload.requestId,
+        ),
+      );
+      assert(opened2.type === "request.opened", "v2 opens its own ask");
+      await h.request("request.respond", {
+        sessionId,
+        requestId: opened2.payload.requestId,
+        outcome: "approve",
+      });
+      const res = await result;
+      assert(res.stopReason === "end_turn", "v2 approved completes the turn");
+      const resolved = h.events.filter(
+        (e) => e.sessionId === sessionId && e.type === "request.resolved",
+      );
+      assert(
+        resolved.length === 2 &&
+          resolved[0].type === "request.resolved" &&
+          resolved[0].payload.outcome === "change" &&
+          resolved[1].type === "request.resolved" &&
+          resolved[1].payload.outcome === "approve",
+        `change then approve resolve in order, got ${resolved.map((e) => (e.type === "request.resolved" ? e.payload.outcome : "?"))}`,
+      );
+    },
+  },
+  {
+    id: "plan proposal: reject — nothing runs",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, PLAN_PROPOSE_PROMPT),
+      ) as Promise<PromptResult>;
+      const opened = await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "request.opened"),
+      );
+      assert(opened.type === "request.opened", "the proposal opens an ask");
+      await h.request("request.respond", {
+        sessionId,
+        requestId: opened.payload.requestId,
+        outcome: "reject",
+      });
+      const res = await result;
+      assert(
+        res.stopReason === "end_turn",
+        `a rejected plan still ends end_turn, got ${res.stopReason}`,
+      );
+      const ran = h.events.filter(
+        (e) => e.sessionId === sessionId && e.type === "tool.started",
+      );
+      assert(ran.length === 0, "a rejected plan runs no tools");
+    },
+  },
+  {
+    id: "interrupt mid-list: tasks snapshot present, turn cancelled",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, PLAN_TASKS_PROMPT),
+      ) as Promise<PromptResult>;
+      await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "plan.updated"),
+      );
+      const ack = (await h.request("interrupt", { sessionId })) as {
+        interrupted: boolean;
+      };
+      assert(ack.interrupted === true, "interrupt reports interrupted");
+      const res = await result;
+      assert(res.stopReason === "cancelled", "the turn ends cancelled");
+      const updates = planEvents(h, sessionId);
+      assert(
+        updates.length >= 1,
+        "the interrupted list's snapshots stay in the log",
+      );
+      const last = updates[updates.length - 1].payload;
+      assert(
+        last.steps.some(
+          (s) => s.status === "pending" || s.status === "in_progress",
+        ),
+        "a stopped list still shows unfinished items",
+      );
+    },
+  },
+];
+
+/**
  * `mcp_servers` capability: a `session.start` that carries stdio MCP servers.
  * An engine whose primary transport has no mcp_servers routes the session
  * onto its secondary (e.g. ACP) transport — where #133 lived; the fake
@@ -1691,6 +2009,6 @@ export const SUITES: {
     scenarios: SESSION_META_SCENARIOS,
   },
   { capability: "usage", implemented: false, scenarios: [] },
-  { capability: "plan", implemented: false, scenarios: [] },
+  { capability: "plan", implemented: true, scenarios: PLAN_SCENARIOS },
   { capability: "rewind", implemented: false, scenarios: [] },
 ];

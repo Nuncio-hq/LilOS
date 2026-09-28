@@ -162,6 +162,46 @@ export const TurnSteeredPayload = z.strictObject({
   text: z.string(),
 });
 
+/* ── plans & task lists (#180) ───────────────────────────────────────────
+   Plans and task lists are engine state (D-#25): the engine streams a FULL
+   snapshot on every change (`plan.updated`), and LilOS derives the UI from
+   the event stream only — no patch/delta protocol, no client-side store. */
+
+export const PlanStepStatus = z.enum([
+  "pending",
+  "in_progress",
+  "completed",
+  "cancelled",
+]);
+export type PlanStepStatus = z.infer<typeof PlanStepStatus>;
+
+export const PlanStep = z.strictObject({
+  text: z.string().min(1),
+  /** Paths the step touches (chips under the row). */
+  files: z.array(z.string().min(1)).optional(),
+  status: PlanStepStatus,
+});
+export type PlanStep = z.infer<typeof PlanStep>;
+
+/**
+ * A full snapshot of one engine-side plan or task list, keyed `planId`.
+ * `kind: "tasks"` is the agent's own working list (a todo or plan-mode
+ * tool the agent drives for itself) — it ticks live and never asks.
+ * `kind: "plan"` is a proposal gated by a `plan` EngineRequest. `version`
+ * counts revisions of this planId; a newer snapshot supersedes the older
+ * one (renders "replaced").
+ */
+export const PlanUpdatedPayload = z.strictObject({
+  turnId: TurnId,
+  planId: z.string().min(1),
+  kind: z.enum(["tasks", "plan"]),
+  version: z.int().min(1),
+  goal: z.string().optional(),
+  steps: z.array(PlanStep),
+  risks: z.array(z.string()).optional(),
+});
+export type PlanUpdatedPayload = z.infer<typeof PlanUpdatedPayload>;
+
 export const TurnCompletedPayload = z.strictObject({
   turnId: TurnId,
   stopReason: StopReason,
@@ -242,6 +282,12 @@ export const EngineEvent = z.discriminatedUnion("type", [
     sessionId: SessionId,
     type: z.literal("turn.steered"),
     payload: TurnSteeredPayload,
+  }),
+  z.strictObject({
+    seq: Seq,
+    sessionId: SessionId,
+    type: z.literal("plan.updated"),
+    payload: PlanUpdatedPayload,
   }),
   z.strictObject({
     seq: Seq,

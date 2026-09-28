@@ -140,6 +140,14 @@ PR does not exist.
   `~/.lilos/hermes-bin`, then known install locations), and a missing
   engine surfaces as a plain status reason — never a silent fake.
   Not: a fake default in release. — #85
+- **D-#180 Plans and task lists are engine state: the engine streams a full
+  snapshot on every change (`plan.updated` keyed by `planId`), and LilOS
+  derives the Tasks card / Plan card / Workbench Plan tab from events
+  only.** `kind:"tasks"` (Hermes `todo_list`, ACP `plan`) ticks without
+  approval; `kind:"plan"` waits on a `plan` EngineRequest answered
+  approve / reject / change{text}. Not: a LilOS-owned plan store, patch or
+  delta plan events, or rendering these without a declared `plan`
+  capability (D-#19). — #180
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the

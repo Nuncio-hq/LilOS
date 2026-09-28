@@ -29,6 +29,7 @@ export {
   type SessionModel,
   type TurnModel,
   type TurnPhase,
+  type TurnPlan,
   type TurnRequest,
   type TurnStep,
 } from "./turn-model";

@@ -463,7 +463,10 @@
               "always",
               "deny",
               "cancel",
-              "answer"
+              "answer",
+              "approve",
+              "reject",
+              "change"
             ]
           },
           "answer": {
@@ -1120,6 +1123,24 @@
                                 "question"
                               ],
                               "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "plan"
+                                },
+                                "planId": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "planId"
+                              ],
+                              "additionalProperties": false
                             }
                           ]
                         }
@@ -1170,7 +1191,10 @@
                             "always",
                             "deny",
                             "cancel",
-                            "answer"
+                            "answer",
+                            "approve",
+                            "reject",
+                            "change"
                           ]
                         },
                         "answer": {
@@ -1265,6 +1289,106 @@
                       "required": [
                         "turnId",
                         "text"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "sessionId",
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "type": {
+                      "type": "string",
+                      "const": "plan.updated"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "turnId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "planId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "tasks",
+                            "plan"
+                          ]
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "goal": {
+                          "type": "string"
+                        },
+                        "steps": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "text": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "files": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "pending",
+                                  "in_progress",
+                                  "completed",
+                                  "cancelled"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "text",
+                              "status"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "risks": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "turnId",
+                        "planId",
+                        "kind",
+                        "version",
+                        "steps"
                       ],
                       "additionalProperties": false
                     }
@@ -1462,6 +1586,24 @@
                       "required": [
                         "kind",
                         "question"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "plan"
+                        },
+                        "planId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "planId"
                       ],
                       "additionalProperties": false
                     }
@@ -2792,6 +2934,24 @@
                           "question"
                         ],
                         "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "plan"
+                          },
+                          "planId": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "planId"
+                        ],
+                        "additionalProperties": false
                       }
                     ]
                   }
@@ -2842,7 +3002,10 @@
                       "always",
                       "deny",
                       "cancel",
-                      "answer"
+                      "answer",
+                      "approve",
+                      "reject",
+                      "change"
                     ]
                   },
                   "answer": {
@@ -2937,6 +3100,106 @@
                 "required": [
                   "turnId",
                   "text"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "seq",
+              "sessionId",
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "const": "plan.updated"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "turnId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "planId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "tasks",
+                      "plan"
+                    ]
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "goal": {
+                    "type": "string"
+                  },
+                  "steps": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "in_progress",
+                            "completed",
+                            "cancelled"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "risks": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "turnId",
+                  "planId",
+                  "kind",
+                  "version",
+                  "steps"
                 ],
                 "additionalProperties": false
               }
