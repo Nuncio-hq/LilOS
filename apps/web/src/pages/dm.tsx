@@ -4,12 +4,17 @@ import {
   type SessionModel,
   toStatusComponents,
 } from "@lilos/client-runtime";
-import type { AppMessage, Ask, Conversation } from "@lilos/contracts/app";
+import type {
+  AppMessage,
+  Ask,
+  Conversation,
+  MessageSearchHit,
+} from "@lilos/contracts/app";
 import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@lilos/contracts/app";
-import type { ApprovalOutcome } from "@lilos/contracts/engine";
+import type { AgentDescriptor, ApprovalOutcome } from "@lilos/contracts/engine";
 import {
   AddFolderDialog,
   choiceFor,
@@ -17,6 +22,7 @@ import {
   draftKey,
   EditEmployeeDialog,
   EmployeeHome,
+  FocusView,
   NO_WS,
   ThreadView,
   useDraft,
@@ -25,16 +31,18 @@ import type {
   AttachedFile,
   Channel,
   FileMention,
+  MessageHit,
   ModelChoice,
   ModelPickerExtras,
   Msg,
   Reply,
   Thread,
+  Work,
   WsPick,
 } from "@lilos/ui/types";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import { atom } from "nanostores";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   archiveConversation,
   clearPending,
@@ -67,6 +75,7 @@ import {
 } from "../lib/folders";
 import { useAtom } from "../lib/hooks";
 import {
+  hostAccessors,
   hostEditors,
   hostOsOpen,
   hostSearch,
@@ -149,6 +158,11 @@ export function DmPage() {
     conversationId?: string;
   };
   const navigate = useNavigate();
+  /* `/dm/$e/$c/focus` renders the session in Focus instead of the panel
+     (#114) — the route carries it, so reload stays in Focus. */
+  const focusOpen = useRouterState({
+    select: (s) => s.location.pathname.endsWith("/focus"),
+  });
 
   const employees = useAtom(relay.employees);
   const channels = useAtom(relay.channels);
@@ -213,6 +227,22 @@ export function DmPage() {
      from the relay store, so subscribe to the resolved-URL cache. */
   const canAttachImages =
     description?.capabilities.some((c) => c.id === "image_prompt") ?? false;
+  /* Profile fields the engine lets LilOS write (#123): the `agents`
+     capability's `detail.updatable` list — the Edit dialog renders exactly
+     these engine fields (D-#19). */
+  const updatable = useMemo(() => {
+    const u = description?.capabilities.find((c) => c.id === "agents")?.detail
+      ?.updatable;
+    return Array.isArray(u)
+      ? u.filter((x): x is string => typeof x === "string")
+      : [];
+  }, [description]);
+  /* Live `agents.describe` for the employee being edited — the dialog's
+     engine fields prefill from it (undefined until fetched, null = engine
+     unreachable → record-only edit). */
+  const [editAgent, setEditAgent] = useState<
+    AgentDescriptor | null | undefined
+  >(undefined);
   useAtom(attachmentUrls);
 
   /* AC-2 (#85): an engine that's down (Hermes missing, crashed out) shows
@@ -254,6 +284,39 @@ export function DmPage() {
     [summaries, channel],
   );
   const openConv = convs.find((c) => c.id === conversationId);
+
+  /* #138: full-text message search behind the session filter. Wire hits are
+     conversation-scoped; the box groups by the session's root message id, so
+     map conversationId → rootMessageId. Archived sessions are searched too —
+     their hits carry the marker (AC-4). */
+  const [scrollTo, setScrollTo] = useState<string | null>(null);
+  const searchMessages = useCallback(
+    async (query: string): Promise<MessageHit[]> => {
+      if (!channel?.id) return [];
+      const res = await relay.request<{ hits: MessageSearchHit[] }>(
+        "messages.search",
+        { query, channelId: channel.id, includeArchived: true, limit: 50 },
+      );
+      return res.hits.flatMap((h) => {
+        const conv = convs.find((c) => c.id === h.conversationId);
+        if (h.conversationId && !conv) return [];
+        return [
+          {
+            rootId: conv?.rootMessageId ?? h.messageId,
+            messageId: h.messageId,
+            from: h.authorId,
+            time: new Date(h.createdAt).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            snippet: h.snippet,
+            archived: conv?.archived,
+          },
+        ];
+      });
+    },
+    [channel?.id, convs],
+  );
 
   /* Open-in-editor affordance for the session header (issue #110): editors
      the host detected — `null` while unknown or when os.open isn't on this
@@ -456,13 +519,21 @@ export function DmPage() {
     employees: [employeeId],
   };
 
+  /* Clicking a session opens it straight in Focus, like Claude Code /
+     Codex — the thread panel stays the quick peek (#114 AC-1). */
   const openThread = (id: string) => {
     const conv = convs.find((c) => c.rootMessageId === id);
     if (conv)
       void navigate({
-        to: "/dm/$employeeId/$conversationId",
+        to: "/dm/$employeeId/$conversationId/focus",
         params: { employeeId, conversationId: conv.id },
       });
+  };
+
+  /* #138 AC-3: click a hit → open the session scrolled to the message. */
+  const onOpenHit = (h: MessageHit) => {
+    setScrollTo(h.messageId);
+    openThread(h.rootId);
   };
 
   const pick = wsPicks[employeeId] ?? NO_WS;
@@ -534,8 +605,9 @@ export function DmPage() {
       if (!conv) throw new Error("send failed");
       clearDraftIfSent(draftKey.dm(employeeId), text);
       setDraftPick(({ [employeeId]: _drop, ...rest }) => rest);
+      // A fresh session opens in Focus too (#114).
       return navigate({
-        to: "/dm/$employeeId/$conversationId",
+        to: "/dm/$employeeId/$conversationId/focus",
         params: { employeeId, conversationId: conv.id },
       });
     });
@@ -596,10 +668,20 @@ export function DmPage() {
     /* AC-7: the conversation's folder (+ branch for a repo) in the header;
        sessions without one show nothing extra. */
     const convWs = wsFor(conv.cwd, cwdBranches);
+    /* The session's real folder for Focus/Workbench (issue #113/114): absent
+       when the session was started without one — no Workbench then (D-#19). */
+    const work: Work | null = conv.cwd
+      ? {
+          ticket: "",
+          title: conv.title ?? "",
+          path: conv.cwd,
+          ...(convWs?.branch ? { branch: convWs.branch } : {}),
+        }
+      : null;
 
     const thread: Thread = {
       session: engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
-      title: conv.title ?? undefined,
+      title: conv.title || undefined,
       archived: conv.archived,
       replies,
       usage: model?.turns.at(-1)?.usage as Thread["usage"],
@@ -634,6 +716,85 @@ export function DmPage() {
           thread,
         }
       : { kind: "msg", id: conv.id, from: "user", time: "", text: "", thread };
+
+    if (focusOpen) {
+      /* Focus: the same live conversation the thread panel shows (shared
+         AgentTurn/composer/draft/asks — issue #114 AC-2), plus the
+         Workbench against the session's real folder (AC-3…5). Esc / the
+         back button return to the DM with the panel closed (AC-1). */
+      return (
+        <FocusView
+          root={rootMsg}
+          thread={thread}
+          channel={uiChannel}
+          lead={uiEmp}
+          emp={empFn}
+          human={human}
+          resolved={resolved}
+          setResolved={(r) => {
+            const diff = Object.entries(r).find(([k, v]) => resolved[k] !== v);
+            if (diff) {
+              void respondToRequest(diff[0], outcomeFromLabel(diff[1]));
+            }
+          }}
+          work={work}
+          onBack={() =>
+            void navigate({
+              to: "/dm/$employeeId",
+              params: { employeeId },
+            })
+          }
+          onNav={() => navOpen.set(true)}
+          running={running}
+          onSend={(text, files) =>
+            sendDm(employeeId, text, conv.id, undefined, files).then((c) => {
+              if (!c) throw new Error("send failed");
+              clearDraftIfSent(draftKey.thread(conv.id), text);
+              return c;
+            })
+          }
+          onStop={running ? () => void interruptSession(conv.id) : undefined}
+          lastSent={lastSent}
+          onModel={(c) => void setConversationModel(conv.id, c)}
+          models={catalog.length ? catalog : undefined}
+          accept={canAttachImages ? "image/*" : undefined}
+          maxFileSize={MAX_ATTACHMENT_BYTES}
+          onAttachError={say}
+          say={say}
+          host={conv.cwd ? hostAccessors : undefined}
+          transcriptNote={transcriptNote}
+          scrollTo={scrollTo ?? undefined}
+          onScrolled={() => setScrollTo(null)}
+          steer={steer}
+          draft={threadDraft}
+          onDraftChange={setThreadDraft}
+          /* Same capability probe as the thread panel (#110): null pins the
+             badge to a plain label when os.open isn't on the host. */
+          editors={editors ?? undefined}
+          onOpenPath={
+            openCwd && editors !== null
+              ? (path, app, line) => {
+                  void hostOsOpen(openCwd, path, app, line).catch((e) =>
+                    say(
+                      `Open failed — ${e instanceof Error ? e.message : String(e)}`,
+                    ),
+                  );
+                }
+              : null
+          }
+        >
+          {openQuestion && (
+            <QuestionCard
+              ask={openQuestion}
+              onAnswer={(answer) =>
+                void respondToRequest(openQuestion.id, "answer", answer)
+              }
+              onCancel={() => void respondToRequest(openQuestion.id, "cancel")}
+            />
+          )}
+        </FocusView>
+      );
+    }
 
     threadEl = (
       <div className="flex min-h-0 w-[420px] shrink-0 flex-col border-l xl:w-[460px]">
@@ -678,9 +839,17 @@ export function DmPage() {
           onAttachError={say}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           lastSent={lastSent}
-          onFocus={undefined}
+          /* The peek panel's Focus button jumps to the full view (#114). */
+          onFocus={() =>
+            void navigate({
+              to: "/dm/$employeeId/$conversationId/focus",
+              params: { employeeId, conversationId: conv.id },
+            })
+          }
           mentionables={mentionables}
           onSearchFiles={fileSearch(conv.cwd)}
+          scrollTo={scrollTo ?? undefined}
+          onScrolled={() => setScrollTo(null)}
           work={null}
           editors={editors ?? undefined}
           onOpenPath={
@@ -744,6 +913,8 @@ export function DmPage() {
         composerNote={composerNote}
         mentionables={mentionables}
         onSearchFiles={fileSearch(pickFolderPath)}
+        onSearchMessages={searchMessages}
+        onOpenHit={onOpenHit}
         models={catalog.length ? catalog : undefined}
         modelChoice={
           draftPick[employeeId] ??
@@ -788,7 +959,14 @@ export function DmPage() {
           instructions={uiEmp.instructions}
           onEdit={() => {
             setEditError(null);
-            setEditOpen(true);
+            setEditAgent(undefined);
+            // The persona/model live on the engine profile — describe
+            // prefills them; a failed describe still opens the record edit.
+            void relay
+              .describeAgent(employee.profile)
+              .then((a) => setEditAgent(a))
+              .catch(() => setEditAgent(null))
+              .finally(() => setEditOpen(true));
           }}
           onClose={() => setProfileOpen(false)}
         />
@@ -796,14 +974,23 @@ export function DmPage() {
       {editOpen && (
         <EditEmployeeDialog
           e={uiEmp}
+          agent={editAgent ?? undefined}
+          updatable={updatable}
+          models={catalog}
           error={editError ?? undefined}
           onClose={() => setEditOpen(false)}
-          onSave={(name, role) => {
-            void saveEmployee(employee.id, name, role)
-              .then(() => setEditOpen(false))
-              .catch((e) =>
-                setEditError(e instanceof Error ? e.message : String(e)),
-              );
+          onSave={async (edit) => {
+            try {
+              const r = await saveEmployee(employee.id, edit);
+              setEditError(null);
+              // A confirmModel reply keeps the dialog open on its own
+              // confirm card — the dialog re-sends with confirmModel:true.
+              if (!r?.confirmModel) setEditOpen(false);
+              return r;
+            } catch (e) {
+              setEditError(e instanceof Error ? e.message : String(e));
+              return;
+            }
           }}
           onRemove={() => {
             void removeEmployee(employee.id)

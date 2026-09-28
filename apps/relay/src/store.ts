@@ -11,6 +11,8 @@ import type {
   Employee,
   EmployeeStatus,
   MessageAttachment,
+  MessageSearchHit,
+  MessagesSearchParams,
   PendingTurn,
   ProfileSettings,
   RecentFolder,
@@ -33,6 +35,10 @@ export type EmployeePatchInput = Partial<NewEmployee>;
 
 export interface ConversationPatch {
   title?: string;
+  /** Provenance of a `title` write (#137) — caller identity, not a wire
+      field: `user` (non-host client) marks the name user-chosen forever;
+      `auto` (engine host) applies only while the row isn't user-titled. */
+  titleSource?: "auto" | "user";
   archived?: boolean;
   state?: ConversationState;
   engineRef?: string;
@@ -49,7 +55,11 @@ export interface ConversationPatch {
 
 export interface OpenConversationInput {
   channelId: string;
+  /** Empty = store derives a placeholder from `text`/`attachments` (#137). */
   title: string;
+  /** What an explicit `title` means (#137): the opener is a user client
+      ("user") or the engine host ("auto"). Ignored for placeholders. */
+  titleSource?: "auto" | "user";
   text: string;
   authorId: string;
   /** Display refs only — bytes already stored via the AttachmentStore. */
@@ -90,6 +100,56 @@ export interface ListMessagesQuery {
 export interface ListMessagesPage {
   messages: AppMessage[];
   lastSeq: number;
+}
+
+/**
+ * #138: search semantics shared by both stores — whitespace-split lowercase
+ * terms, all must match (AND), except the last which is a prefix so the box
+ * can filter while the user is mid-word.
+ */
+export function searchTerms(query: string): string[] {
+  return query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** Word tokens the way the FTS unicode61 tokenizer sees them. */
+const textTokens = (text: string): string[] =>
+  text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}_]+/u)
+    .filter(Boolean);
+
+/** Term match: earlier terms must hit a whole token; the last is a prefix. */
+export function messageMatchesTerms(text: string, terms: string[]): boolean {
+  if (!terms.length) return false;
+  const toks = textTokens(text);
+  return terms.every((t, i) =>
+    i < terms.length - 1 ? toks.includes(t) : toks.some((w) => w.startsWith(t)),
+  );
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/* A relay-snippet-shaped excerpt for the memory store: a ~12-word window
+   opening a few words before the first match (the SQLite side uses
+   snippet(…, 12)), `…` at clipped edges, `<mark>` around every term hit. */
+export function markSnippet(text: string, terms: string[]): string {
+  if (!terms.length) return text.slice(0, 96);
+  const patterns = terms.map(
+    (t, i) =>
+      `(?<![\\w])${escapeRe(t)}${i < terms.length - 1 ? `(?![\\w])` : `[\\w]*`}`,
+  );
+  const re = new RegExp(patterns.join("|"), "gi");
+  const first = re.exec(text);
+  if (!first) return text.slice(0, 96);
+  const words = [...text.matchAll(/\S+/g)];
+  const hit = words.findIndex((w) => w.index + w[0].length > first.index);
+  if (hit < 0) return text.slice(0, 96);
+  const from = Math.max(0, hit - 3);
+  const last = Math.min(words.length - 1, from + 11);
+  const start = words[from].index;
+  const end = words[last].index + words[last][0].length;
+  const marked = text.slice(start, end).replace(re, (s) => `<mark>${s}</mark>`);
+  return `${start > 0 ? "…" : ""}${marked}${end < text.length ? "…" : ""}`;
 }
 
 export interface ListConversationsQuery {
@@ -182,6 +242,13 @@ export interface RelayStore {
     query: ListMessagesQuery,
   ): Promise<ListMessagesPage>;
   /**
+   * Full-text search over stored message text (#138). Hits come back ordered
+   * by relevance (best first); `includeArchived` keeps hits in archived
+   * conversations, off by default like `conversations.list`. Only the hit
+   * set is contractual — rank order differs between implementations.
+   */
+  searchMessages(params: MessagesSearchParams): Promise<MessageSearchHit[]>;
+  /**
    * Appends with the channel's next seq (atomic with the counter bump).
    * `dedupeKey` makes the write idempotent: `created: false` returns the
    * message the first call stored.
@@ -217,6 +284,65 @@ export interface RelayStore {
 
 export function newId(prefix: string): string {
   return `${prefix}_${randomUUID()}`;
+}
+
+/**
+ * The name a conversation wears before the engine titles it (#137 AC-3):
+ * the first ~6 words / ~60 chars of the first message — the same rule
+ * Synara uses — or `Image` for an image-only send. Collapses whitespace so
+ * multi-line pastes read as one line.
+ */
+export function placeholderTitle(
+  text: string,
+  hasAttachments: boolean,
+): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return hasAttachments ? "Image" : "";
+  const words = clean.split(" ");
+  let title = words.slice(0, 6).join(" ");
+  if (title.length > 60) {
+    // Over-long first words: cut under 60 chars at a word boundary.
+    const cut = title.slice(0, 59);
+    const boundary = cut.lastIndexOf(" ");
+    title = boundary > 0 ? cut.slice(0, boundary) : cut;
+    return `${title}…`;
+  }
+  return words.length > 6 ? `${title}…` : title;
+}
+
+/** Resolve the title + provenance for a new conversation (#137). */
+export function openTitle(input: OpenConversationInput): {
+  title: string;
+  titleSource: "auto" | "user";
+} {
+  if (input.title !== "") {
+    // A title passed at open is a chosen name — user unless the engine
+    // host itself opened the conversation.
+    return { title: input.title, titleSource: input.titleSource ?? "user" };
+  }
+  return {
+    title: placeholderTitle(input.text, (input.attachments?.length ?? 0) > 0),
+    titleSource: "auto",
+  };
+}
+
+/**
+ * Fold title provenance into an update patch (#137 AC-2): an `auto` write
+ * (engine host) applies only while the row isn't user-titled; a `user`
+ * write always applies and marks the row user-named.
+ */
+export function titlePatch(
+  patch: ConversationPatch,
+  current: Conversation | { titleSource: "auto" | "user" },
+): ConversationPatch {
+  if (patch.title === undefined) return patch;
+  const provenance = patch.titleSource ?? "user";
+  if (provenance === "auto" && current.titleSource === "user") {
+    // A late engine title never overwrites a rename.
+    const { title: _title, titleSource: _ts, ...rest } = patch;
+    return rest;
+  }
+  return { ...patch, titleSource: provenance };
 }
 
 /** Reference implementation used by unit tests; SQLite is the shipped one. */
@@ -422,7 +548,7 @@ export function createMemoryStore(): RelayStore {
         engineRef: null,
         state: "idle",
         ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
-        title: input.title,
+        ...openTitle(input),
         archived: false,
         deliveredSeq: 0,
         createdAt: now(),
@@ -447,6 +573,7 @@ export function createMemoryStore(): RelayStore {
     async updateConversation(id, patch) {
       const conversation = conversations.get(id);
       if (!conversation) return null;
+      patch = titlePatch(patch, conversation);
       // The delivery watermark only moves forward — a slower write must not
       // re-owe a later message its prompt.
       if (patch.deliveredSeq !== undefined) {
@@ -479,6 +606,30 @@ export function createMemoryStore(): RelayStore {
         list = list.slice(-limit);
       }
       return { messages: list, lastSeq: channel.lastSeq };
+    },
+    async searchMessages({ query, channelId, includeArchived, limit }) {
+      const terms = searchTerms(query);
+      if (!terms.length) return [];
+      const hits: MessageSearchHit[] = [];
+      for (const m of messages.values()) {
+        if (channelId && m.channelId !== channelId) continue;
+        if (!includeArchived && m.conversationId) {
+          const conversation = conversations.get(m.conversationId);
+          if (conversation?.archived) continue;
+        }
+        if (!messageMatchesTerms(m.text, terms)) continue;
+        hits.push({
+          messageId: m.id,
+          conversationId: m.conversationId,
+          channelId: m.channelId,
+          authorId: m.authorId,
+          snippet: markSnippet(m.text, terms),
+          createdAt: m.createdAt,
+        });
+      }
+      // Newest-first standing in for relevance rank (see RelayStore docs).
+      hits.sort((a, b) => b.createdAt - a.createdAt);
+      return hits.slice(0, limit);
     },
     async appendMessage(input) {
       return appendMessage(input);

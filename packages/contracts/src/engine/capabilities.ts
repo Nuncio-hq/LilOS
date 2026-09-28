@@ -79,4 +79,9 @@ export const SESSION_META_CAPABILITY: Capability = {
   description:
     "Rename/hide the engine's session (title / hidden) so it tracks the app's conversation.",
   methods: ["session.setTitle", "session.setHidden"],
+  /** `autoTitle`: the engine writes session titles itself (#137) — it emits
+      `session.titled` (derived, then an optional llm upgrade) and carries
+      `title` in the `events.since` snapshot. Apps mirror those; engines
+      without the flag leave the placeholder title alone. */
+  detail: { autoTitle: true },
 };

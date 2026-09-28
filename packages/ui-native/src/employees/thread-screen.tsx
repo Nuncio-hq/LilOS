@@ -60,7 +60,7 @@ export function ThreadScreen({
     !!onOpenBackground && !!t.jobs?.some((j) => j.status === "running");
   // The composer's height lands after the first layout; once it does, the
   // newest turn (and its Approve) must sit above it, not under it.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the measured height lands
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-scroll is triggered by the composer height change, not read in the body
   useEffect(() => {
     const id = setTimeout(
       () => scroller.current?.scrollToEnd({ animated: false }),

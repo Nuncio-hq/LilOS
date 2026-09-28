@@ -6,7 +6,6 @@ import type { BackgroundJob, Msg, Reply, Step, Subagent, Thread } from "@lilos/u
    when the thread opens and plays its helpers to done. Real app: Hermes delegate_task /
    Claude Code Task events and the engine's background-process list. */
 
-const CWD = "~/Desktop/Oscar/LilOS/.lilos/wt/lil-9"
 export const DEMO_ROOT = "d3"
 export const REVIEW_SESSION = "ses_rv21"
 const LIVE = "r-sub-live"
@@ -111,7 +110,7 @@ export const SUBAGENT_DMS: Record<string, Msg[]> = {
       thread: {
         session: "ses_9d51", title: "Why turns get lost after sleep",
         usage: { input: 91800, output: 7400, reasoning: 3100, cache: 64000 },
-        ws: { folder: "lilos", project: "LilOS", repo: "Nuncio-hq/LilOS", mode: "new", base: "main", branch: "lil-9-sleep-replay", cwd: CWD, worktree: ".lilos/wt/lil-9" },
+        ticket: "LIL-9", branch: "lil-9-sleep-replay",
         jobs: JOBS,
         replies: [
           {

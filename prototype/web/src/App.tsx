@@ -22,6 +22,7 @@ import {
   type Channel,
   type EmpBadge,
   type Employee,
+  type EmployeeEditSave,
   type EmpFn,
   type FileMention,
   type FsDir,
@@ -35,6 +36,7 @@ import {
   effortLabel,
   type Human,
   type HumanFn,
+  type MessageHit,
   type Msg,
   type OsEditor,
   type Project,
@@ -70,7 +72,14 @@ import {
 } from "@lilos/ui"
 import { cn } from "@lilos/ui/lib/utils"
 import { MAX_ATTACHMENT_BYTES } from "@lilos/contracts/app"
-import { engineCreateAgent, engineModels, engineProfiles } from "./engine"
+import {
+  engineCreateAgent,
+  engineDescribe,
+  engineModels,
+  engineProfiles,
+  engineUpdatable,
+  engineUpdateAgent,
+} from "./engine"
 import { hostAccessors, hostDir, hostDiscover, hostPick } from "./host"
 import { useFakeSurfaces } from "./fake-surfaces"
 import { DEMO_ROOT, playSubagents, stopJob, SUBAGENT_DMS } from "./fake-subagents"
@@ -298,7 +307,7 @@ const DM_FEEDS: Record<string, Msg[]> = {
         session: "ses_4a19", usage: { input: 38400, output: 2900, reasoning: 1100, cache: 24000 },
         replies: [
           {
-            from: "builder", time: "Yesterday", thought: 6,
+            id: "d1r1", from: "builder", time: "Yesterday", thought: 6,
             reasoning: "Oscar asks for the gap list, not a build plan. No ticket, so read `main` only. Check the relay package and the contracts, list only what blocks one harness from connecting.",
             steps: [
               { tool: "search_files", input: { pattern: "WebSocketServer", path: "apps/relay" }, output: "0 matches" },
@@ -306,8 +315,8 @@ const DM_FEEDS: Record<string, Msg[]> = {
             ],
             text: "Three things block it:\n\n1. **Relay has no socket yet.** `apps/relay` is an empty package.\n2. **No auth handshake.** The envelope has `seq` but no member token.\n3. **No harness package.** Nothing dials out yet.\n\n(1) and (2) are one ticket. (3) is its own.",
           },
-          { from: "oscar", time: "Yesterday", text: "Which one first?" },
-          { from: "builder", time: "Yesterday", thought: 2, reasoning: "Order by dependency: the harness needs something to dial.", text: "Relay socket + token check first. The harness has nothing to dial without it, and it is the smaller change (about 150 lines)." },
+          { id: "d1r2", from: "oscar", time: "Yesterday", text: "Which one first?" },
+          { id: "d1r3", from: "builder", time: "Yesterday", thought: 2, reasoning: "Order by dependency: the harness needs something to dial.", text: "Relay socket + token check first. The harness has nothing to dial without it, and it is the smaller change (about 150 lines)." },
         ],
       },
     },
@@ -317,7 +326,7 @@ const DM_FEEDS: Record<string, Msg[]> = {
         session: "ses_c03e", usage: { input: 12100, output: 640, reasoning: 210, cache: 9000 },
         replies: [
           {
-            from: "builder", time: "Yesterday", thought: 3, reasoning: "git log since Monday, group commits by package.",
+            id: "d2r1", from: "builder", time: "Yesterday", thought: 3, reasoning: "git log since Monday, group commits by package.",
             steps: [{ tool: "terminal", input: { command: "git log --since=monday --oneline main" }, output: "7 commits" }],
             text: "7 commits since Monday:\n\n- **contracts**: envelope gets `seq` (2)\n- **web**: Slack frame + thread panel (4)\n- **docs**: brainstorm reset (1)\n\nNothing touched `apps/relay`.",
           },
@@ -330,7 +339,7 @@ const DM_FEEDS: Record<string, Msg[]> = {
       kind: "msg", id: "v1", from: "oscar", time: "08:05", text: "What do you check first on a PR from Builder?",
       thread: {
         session: "ses_77e2", usage: { input: 6400, output: 380, reasoning: 90, cache: 4100 },
-        replies: [{ from: "reviewer", time: "08:06", thought: 1, reasoning: "Answer from my SOUL.md checklist.", text: "Package boundaries first (`client-runtime` must stay DOM-free), then tests for the changed paths, then the diff itself. I never push; I comment with file:line." }],
+        replies: [{ id: "v1r1", from: "reviewer", time: "08:06", thought: 1, reasoning: "Answer from my SOUL.md checklist.", text: "Package boundaries first (`client-runtime` must stay DOM-free), then tests for the changed paths, then the diff itself. I never push; I comment with file:line." }],
       },
     },
   ],
@@ -547,6 +556,8 @@ export default function App() {
   const [employees, setEmployees] = useState<Employee[]>(SEED_EMPLOYEES)
   const [view, setView] = useState<View>({ kind: "channel", id: "engineering" })
   const [threadId, setThreadId] = useState<string | null>("m2")
+  // #138 AC-3: search hit opened → thread scrolls to this message id, flashes it.
+  const [scrollTo, setScrollTo] = useState<string | null>(null)
   const [focus, setFocus] = useState(false)
   const [panelTab, setPanelTab] = useState<"thread" | "employee" | "tickets">("thread")
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 1280)
@@ -631,6 +642,9 @@ export default function App() {
   // replace the mock lists below; `engineName` labels the Engine row on the card.
   const [liveProfiles, setLiveProfiles] = useState<EngineProfile[] | null>(null)
   const [liveModels, setLiveModels] = useState<ModelOption[] | null>(null)
+  // #123: the agents capability's updatable fields + the live describe of the employee being edited.
+  const [liveUpdatable, setLiveUpdatable] = useState<string[] | null>(null)
+  const [editAgent, setEditAgent] = useState<{ soul?: string; model?: string; description?: string } | null>(null)
   const [engineName, setEngineName] = useState<string | null>(null)
   const PROFILES = liveProfiles ?? MOCK_PROFILES
   /* Picker catalog: the mock Hermes catalog (multi-provider, per-model efforts,
@@ -670,6 +684,7 @@ export default function App() {
       }
       if (ms && ms.length > 0) setLiveModels(ms)
     })
+    void engineUpdatable().then(setLiveUpdatable)
   }, [])
   // Retry on a session alert dismisses it for this scenario visit.
   const [alertOff, setAlertOff] = useState(0)
@@ -730,6 +745,54 @@ export default function App() {
   const project = PROJECTS.find((p) => p.channels.some((c) => c.id === channel.id))
   const feedKey = channel.id
   const feed: Msg[] = feeds[feedKey] ?? []
+
+  // #138 AC-6: mock message search over this DM's feed — same box, same
+  // semantics as the relay FTS query (terms AND'd, last term a word prefix).
+  const searchDmMessages = async (query: string): Promise<MessageHit[]> => {
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    if (!terms.length) return []
+    const toks = (t: string) => t.toLowerCase().split(/[^\p{L}\p{N}_]+/u).filter(Boolean)
+    const matches = (t: string) => {
+      const w = toks(t)
+      return terms.every((term, i) => i < terms.length - 1 ? w.includes(term) : w.some((x) => x.startsWith(term)))
+    }
+    // Same excerpt shape as the relay snippet: a ~12-word window opening a
+    // few words before the first match so the row never clips the <mark>.
+    const mark = (t: string) => {
+      const re = new RegExp(terms.map((term) => `\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\w*`).join("|"), "gi")
+      const first = re.exec(t)
+      let s = t
+      let lead = ""
+      let tail = ""
+      if (first) {
+        const words = [...t.matchAll(/\S+/g)]
+        const hit = words.findIndex((w) => w.index + w[0].length > first.index)
+        if (hit >= 0) {
+          const from = Math.max(0, hit - 3)
+          const last = Math.min(words.length - 1, from + 11)
+          const start = words[from].index
+          const end = words[last].index + words[last][0].length
+          s = t.slice(start, end)
+          if (start > 0) lead = "…"
+          if (end < t.length) tail = "…"
+        }
+      }
+      return lead + s.replace(re, (m) => `<mark>${m}</mark>`) + tail
+    }
+    const hits: MessageHit[] = []
+    for (const m of feed) {
+      if (m.kind !== "msg" || !m.thread) continue
+      const rows = [
+        { id: m.id, from: m.from, time: m.time, text: m.text },
+        ...m.thread.replies.map((r, i) => ({ id: r.id ?? `${m.id}-r${i}`, from: r.from, time: r.time, text: r.text })),
+      ]
+      for (const r of rows) {
+        if (!matches(r.text)) continue
+        hits.push({ rootId: m.id, messageId: r.id, from: r.from, time: r.time, snippet: mark(r.text), archived: m.thread.archived })
+      }
+    }
+    return hits
+  }
   const openThread = feed.find((m): m is Extract<Msg, { kind: "msg" }> => m.kind === "msg" && m.id === threadId && !!m.thread)
 
   /* Open-in-editor affordance for the session header (issue #110): editors
@@ -1150,10 +1213,50 @@ export default function App() {
     showEmp(id)
   }
 
-  const saveEmployee = (id: string, name: string, role: string) => {
-    setEmployees((es) => es.map((e) => (e.id === id ? { ...e, name, role } : e)))
+  const saveEmployee = async (id: string, edit: EmployeeEditSave) => {
+    const e = emp(id)
+    if (!e) return
+    // Engine fields write to the profile first (agents.update); the company
+    // record mirrors them once they stick. confirmModel keeps the dialog open.
+    const engineFields =
+      edit.soul !== undefined ||
+      edit.model !== undefined ||
+      edit.description !== undefined ||
+      edit.engineName === true
+    if (engineFields && e.profile) {
+      try {
+        const r = await engineUpdateAgent({
+          id: e.profile,
+          ...(edit.engineName ? { name: edit.name } : {}),
+          ...(edit.soul !== undefined ? { soul: edit.soul } : {}),
+          ...(edit.description !== undefined ? { description: edit.description } : {}),
+          ...(edit.model !== undefined ? { model: edit.model } : {}),
+          ...(edit.confirmModel ? { confirmModel: true } : {}),
+        })
+        if (r.confirmModel) {
+          setEmployees((es) => es.map((x) => (x.id === id ? { ...x, name: edit.name, role: edit.role, ...(edit.soul !== undefined ? { instructions: edit.soul } : {}) } : x)))
+          return { confirmModel: r.confirmModel }
+        }
+      } catch (err) {
+        say(`Engine rejected the edit: ${err instanceof Error ? err.message : String(err)}`)
+        return
+      }
+    }
+    setEmployees((es) =>
+      es.map((x) =>
+        x.id === id
+          ? {
+              ...x,
+              name: edit.name,
+              role: edit.role,
+              ...(edit.soul !== undefined ? { instructions: edit.soul } : {}),
+              ...(edit.model !== undefined ? { model: edit.model } : {}),
+            }
+          : x,
+      ),
+    )
     setEditEmp(null)
-    say(`Saved ${name}`)
+    say(`Saved ${edit.name}`)
   }
   // Remove from company: the employee leaves sidebar/channels/DMs, but the Hermes profile (and its
   // sessions, memory, skills) stays on the harness — the dialog copy says so before confirming.
@@ -1209,6 +1312,7 @@ export default function App() {
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
       models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined} picker={pickerExtras}
+      scrollTo={scrollTo ?? undefined} onScrolled={() => setScrollTo(null)}
       editors={openEditors ?? undefined} onOpenSession={openSession}
       onOpenPath={openWsCwd && openEditors !== null
         ? (path, app, line) => void hostAccessors.osOpen(openWsCwd, path, app, line).catch((e) => say(`Open failed — ${e instanceof Error ? e.message : String(e)}`))
@@ -1284,6 +1388,8 @@ export default function App() {
               draft={dmDraft} onDraftChange={setDmDraft}
               mentionables={employees} onSearchFiles={fileMentions((wsPicks[view.id] ?? NO_WS).folder)}
               onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying session ${m.thread?.session}`) }}
+              onSearchMessages={searchDmMessages}
+              onOpenHit={(h) => { setScrollTo(h.messageId); showThread(h.rootId) }}
               accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say}
               models={canModels ? MODEL_OPTS : undefined}
               modelChoice={draftPick[view.id] ?? choiceFor(emp(view.id)?.model ?? "", MODEL_OPTS)}
@@ -1320,7 +1426,7 @@ export default function App() {
             <RightPanel
               tab={panelTab} onTab={setPanelTab} onClose={() => setPanelOpen(false)}
               threadPanel={threadPanel}
-              employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} profiles={PROFILES} engineName={engineName ?? undefined} ownerName={me.name} onDM={() => goDM(selectedEmp)} onEdit={() => setEditEmp(selectedEmp)} onSwitchProfile={(p) => switchProfile(selectedEmp, p)} /> : null}
+              employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} profiles={PROFILES} engineName={engineName ?? undefined} ownerName={me.name} onDM={() => goDM(selectedEmp)} onEdit={() => { setEditAgent(null); void engineDescribe(emp(selectedEmp)?.profile ?? "").then(setEditAgent).catch(() => {}).finally(() => setEditEmp(selectedEmp)) }} onSwitchProfile={(p) => switchProfile(selectedEmp, p)} /> : null}
               tickets={tickets} emp={emp} dm={!!channel.dm}
             />
           )}
@@ -1396,8 +1502,11 @@ export default function App() {
       {editEmp && emp(editEmp) && (
         <EditEmployeeDialog
           e={emp(editEmp)!}
-          onClose={() => setEditEmp(null)}
-          onSave={(name, role) => saveEmployee(editEmp, name, role)}
+          agent={editAgent ?? undefined}
+          updatable={liveUpdatable ?? []}
+          models={liveModels ?? []}
+          onClose={() => { setEditEmp(null); setEditAgent(null) }}
+          onSave={(edit) => saveEmployee(editEmp, edit)}
           onRemove={() => removeEmployee(editEmp)}
         />
       )}

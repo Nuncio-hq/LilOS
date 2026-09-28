@@ -33,6 +33,7 @@ import {
   type MessageAttachment,
   MessagesListParams,
   MessagesPostParams,
+  MessagesSearchParams,
   ProfileUpdateParams,
   SettingsGetParams,
   SettingsSetParams,
@@ -46,7 +47,7 @@ import {
 } from "./attachments";
 import { createLogTail, type LogTail } from "./logtail";
 import { buildSystemStatus, type RejectedHandshake } from "./status";
-import type { RelayStore } from "./store";
+import type { ConversationPatch, RelayStore } from "./store";
 
 /** Minimal ws peer surface — Bun's ServerWebSocket and test doubles fit this. */
 export interface RelayWsPeer {
@@ -582,6 +583,9 @@ export function createRelay(options: RelayOptions): Relay {
             const { conversation, rootMessage } = await store.openConversation({
               ...parsed.data,
               attachments,
+              /* #137: a title given at open is user-chosen from a client,
+                 engine-owned ("auto") from the host; empty → placeholder. */
+              titleSource: isHost(peer) ? "auto" : "user",
             });
             emitMessage(conversation.channelId, rootMessage);
             emitConversation(conversation.channelId, conversation);
@@ -621,7 +625,20 @@ export function createRelay(options: RelayOptions): Relay {
               "only the registered engine host may write engineRef/state/model/provider/effort/fast/deliveredSeq",
             );
           }
-          const { conversationId, ...patch } = parsed.data;
+          const { conversationId, ...rest } = parsed.data;
+          /* #137 AC-2: title provenance is caller identity — a host write is
+             the engine titling its session ("auto", guarded: never over a
+             user name); any other client's title is a rename ("user"). */
+          const patch: ConversationPatch = {
+            ...rest,
+            ...("title" in rest
+              ? {
+                  titleSource: isHost(peer)
+                    ? ("auto" as const)
+                    : ("user" as const),
+                }
+              : {}),
+          };
           const conversation = await store.updateConversation(
             conversationId,
             patch,
@@ -688,6 +705,14 @@ export function createRelay(options: RelayOptions): Relay {
               "channel or conversation not found",
             );
           }
+          return;
+        }
+        case "messages.search": {
+          const parsed = MessagesSearchParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          respond(peer, id, {
+            hits: await store.searchMessages(parsed.data),
+          });
           return;
         }
         case "attachments.get": {
@@ -757,6 +782,20 @@ export function createRelay(options: RelayOptions): Relay {
                 );
               }
             }
+            // Asks carry no seq watermark: an ask that opened between the
+            // client's seed read and this subscribe would otherwise be lost
+            // for good (issue #148). Replay the channel's current set — live
+            // ask events dedupe by id on the client, same as messages.
+            for (const ask of await store.listAsks({ channelId })) {
+              peer.send(
+                JSON.stringify({
+                  jsonrpc: "2.0",
+                  method:
+                    ask.state === "resolved" ? "ask.resolved" : "ask.opened",
+                  params: { channelId, ask },
+                }),
+              );
+            }
             peer.send(
               JSON.stringify({
                 jsonrpc: "2.0",
@@ -817,6 +856,7 @@ export function createRelay(options: RelayOptions): Relay {
               "an engine host is already registered",
             );
           }
+          const wasEmpty = !host;
           if (!host) {
             host = {
               peer,
@@ -830,6 +870,7 @@ export function createRelay(options: RelayOptions): Relay {
             host.protocolVersion = parsed.data.protocolVersion;
           }
           log(`harness.register accepted (${host.hostId} v${host.version})`);
+          if (wasEmpty) broadcast("host.changed", { connected: true });
           respond(peer, id, {
             hostId: host.hostId,
             pending: await store.listPendingTurns(),
@@ -1132,6 +1173,7 @@ export function createRelay(options: RelayOptions): Relay {
             log(`harness ${host.hostId} disconnected`);
             host = null;
             lastHostDisconnectedAt = now();
+            broadcast("host.changed", { connected: false });
           }
           // Fail or drop every forwarded call this peer is a party to.
           for (const [reqId, call] of hostCalls) {

@@ -309,7 +309,12 @@ export function AgentTurn({
       {!r.live &&
         !r.streaming &&
         (r.text || steps.length > 0 || !!r.subagents?.length) && (
-          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-muted-foreground">
+          /* data-turnsettled: the footer only renders once the turn has ended —
+           the stable "turn is over" anchor for specs (text lands earlier). */
+          <div
+            data-turnsettled
+            className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-muted-foreground"
+          >
             {r.dur !== undefined && <span>Worked for {r.dur}s</span>}
             {r.model && (
               <span>

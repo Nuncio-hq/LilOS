@@ -17,7 +17,7 @@ import {
   PlayIcon,
   Undo2Icon,
 } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import {
   ConversationKeepBottom,
   NotSentTray,
@@ -25,6 +25,7 @@ import {
   QueuedTray,
   runningComposer,
 } from "../chat/agent-chat";
+import { overlayOpen } from "../chat/composer-keys";
 import { FocusComposer } from "../chat/focus-composer";
 import { sessionChoice } from "../chat/model-picker";
 import {
@@ -66,6 +67,7 @@ import type {
   ModelOption,
   ModelPickerExtras,
   Msg,
+  OsApp,
   OsEditor,
   Project,
   Thread,
@@ -74,8 +76,8 @@ import type {
 } from "../types";
 import { sessionArtifacts } from "../workbench/artifacts";
 import type { LiveSurfaces } from "../workbench/live";
-import { OpenPathButton } from "../workbench/open-path";
 import { Workbench } from "../workbench/workbench";
+import { WsBadge } from "../workbench/ws-badges";
 import { SessionUsage } from "./session-usage";
 
 export function FocusView({
@@ -117,8 +119,14 @@ export function FocusView({
   pending,
   steer = false,
   onRemovePending,
+  editors: editorsProp,
+  onOpenPath,
   draft,
   onDraftChange,
+  transcriptNote,
+  scrollTo,
+  onScrolled,
+  children,
   onOpenSession,
   onStopJob,
 }: {
@@ -169,6 +177,13 @@ export function FocusView({
   surfaces?: LiveSurfaces;
   /* Mid-turn sends: pending-steer chips when `steer` is declared, the queued tray without it. */
   pending?: string[];
+  /* os.editors + a bound os.open (issue #110, same pair ThreadView takes):
+     the caller probes `host.describe` — onOpenPath={null} means os.open was
+     absent, so the badge stays a plain label even when the accessors object
+     statically carries the method (D-#19). Undefined keeps the prototype's
+     own host.osEditors/osOpen path. */
+  editors?: OsEditor[];
+  onOpenPath?: ((path: string, app: OsApp, line?: number) => void) | null;
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
   accept?: string;
   /* Attachment byte cap + where rejections surface (issue #31). */
@@ -176,6 +191,15 @@ export function FocusView({
   onAttachError?: (message: string) => void;
   steer?: boolean;
   onRemovePending?: (i: number) => void;
+  /* Why the working transcript can't be shown — same note ThreadView renders
+     where the transcript would be (issue #28). */
+  transcriptNote?: string;
+  /* #138 AC-3 jump-to-hit, same contract as ThreadView: scroll the message
+     with this id into view, flash it, then call onScrolled. */
+  scrollTo?: string;
+  onScrolled?: () => void;
+  /* Extra surface content below the composer (the question card, #114). */
+  children?: ReactNode;
   /* A subagent row that is another employee links to their session (issue #170). */
   onOpenSession?: (employeeId: string, session: string) => void;
   /* Workbench → Background: Stop a process (issue #170). */
@@ -186,6 +210,37 @@ export function FocusView({
     sessionArtifacts(thread).diffs.length ? "changes" : "terminal",
   );
   const [follow, setFollow] = useState(true);
+  /* #138 AC-3: a search hit opens the session in Focus (#114) scrolled to
+     that message with a short flash — mirrors ThreadView's jump-to-hit.
+     Waits for the row to render (history may still be loading). */
+  const turnsRef = useRef<HTMLElement>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  const flashedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!scrollTo) {
+      flashedRef.current = null;
+      return;
+    }
+    if (flashedRef.current === scrollTo) return;
+    const el = turnsRef.current?.querySelector(
+      `[data-msg="${CSS.escape(scrollTo)}"]`,
+    );
+    if (!el) return;
+    flashedRef.current = scrollTo;
+    el.scrollIntoView({ block: "center" });
+    setFlash(scrollTo);
+    onScrolled?.();
+  }, [scrollTo, thread.replies, onScrolled]);
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(null), 1800);
+    return () => clearTimeout(t);
+  }, [flash]);
+  const flashCls = (id?: string) =>
+    cn(
+      "rounded-lg transition-colors duration-500",
+      id && flash === id && "bg-amber-100 dark:bg-amber-900/40",
+    );
   const isDM = !!channel.dm;
   const model = thread.model ?? lead?.model ?? defaultModel ?? models?.[0]?.id;
   const live = thread.replies.find((r) => r.live);
@@ -239,26 +294,48 @@ export function FocusView({
   const [planOpen, setPlanOpen] = useState(running);
   useEffect(() => setPlanOpen(running), [running]);
   /* Header "Open folder" affordance (issue #110): editors on the session's
-     host; the button renders only when os.open exists there (D-#19). */
+     host; the badge is a menu only when os.open exists there (D-#19). */
   const wsCwd = thread.ws?.cwd;
-  const [editors, setEditors] = useState<OsEditor[]>([]);
+  const [hostEditors, setHostEditors] = useState<OsEditor[]>([]);
   useEffect(() => {
     let off = false;
-    if (host?.osEditors && wsCwd)
+    if (editorsProp === undefined && host?.osEditors && wsCwd)
       void host
         .osEditors()
-        .then((e) => !off && setEditors(e))
+        .then((e) => !off && setHostEditors(e))
         .catch(() => {});
-    else setEditors([]);
+    else setHostEditors([]);
     return () => {
       off = true;
     };
-  }, [wsCwd]);
+  }, [wsCwd, editorsProp]);
+  const editors = editorsProp ?? hostEditors;
   const where = isDM ? "Direct" : (project?.name ?? "Company");
   const chLabel = isDM ? channel.name : `#${channel.name}`;
+  /* The Workbench exists only where there is a real folder to read (D-#19):
+     the app passes `host` only for sessions with one — a folder-less session
+     (or a pure-mock surface) gets no Workbench and no toggle (#114 AC-6). */
+  const wbAvailable = host != null;
+
+  /* Esc leaves Focus — but only when nothing else owns the key: the composer
+     takes it to stop a running turn, an open popup/menu takes it to close
+     (overlayOpen), and Esc pressed inside a field stays there (#114 AC-1,
+     same rules as issue #104). Capture phase: the check runs before the
+     overlay's own keydown handler dismisses it. */
+  useEffect(() => {
+    if (!onBack) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || overlayOpen()) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.("input, textarea, select, [contenteditable]")) return;
+      onBack();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onBack]);
 
   return (
-    <main className="flex min-h-0 min-w-0 flex-col">
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b px-2 sm:px-3">
         {onNav && (
           <Button
@@ -276,6 +353,8 @@ export function FocusView({
             size="sm"
             className="shrink-0 px-2"
             onClick={onBack}
+            title={isDM ? "Back to DM" : `Back to ${chLabel}`}
+            aria-label={isDM ? "Back to DM" : `Back to ${chLabel}`}
           >
             <ArrowLeftIcon />
             <span className="hidden sm:inline">{chLabel}</span>
@@ -290,8 +369,14 @@ export function FocusView({
           />
         )}
         <div className="min-w-0">
-          <div className="truncate font-semibold" title={plain(root.text)}>
-            {plain(root.text)}
+          {/* #137 AC-4: the session's title (placeholder → engine-written)
+              leads; untitled threads keep the first message. */}
+          <div
+            className="truncate font-semibold"
+            title={thread.title || plain(root.text)}
+            data-session-title
+          >
+            {thread.title || plain(root.text)}
           </div>
           <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
             <span className="truncate">
@@ -302,35 +387,43 @@ export function FocusView({
             <code className="hidden shrink-0 rounded bg-muted px-1 sm:inline">
               {thread.session}
             </code>
-            {thread.ws && (
-              <span
-                className="hidden shrink-0 items-center gap-1 md:flex"
-                title={thread.ws.cwd}
-              >
-                <FolderIcon className="size-3" />
-                {thread.ws.project}
-              </span>
-            )}
-            {thread.ws && host?.osOpen && (
-              <OpenPathButton
-                editors={editors}
-                onOpen={(app) =>
-                  void host
-                    .osOpen?.(thread.ws!.cwd, ".", app)
-                    .catch((e) =>
-                      say?.(
-                        `Open failed — ${e instanceof Error ? e.message : String(e)}`,
-                      ),
-                    )
+            {/* The session's folder + branch — same badge the thread panel
+                shows (#113); Focus is the session's main view (#114). */}
+            {thread.ws ? (
+              /* Same WsBadge the thread header shows (#113) — with the
+                 open-in-editor / Reveal-in-Finder menu when the host has
+                 os.open (#110); Focus is the session's main view (#114). */
+              <WsBadge
+                ws={thread.ws}
+                openMenu={
+                  onOpenPath
+                    ? { editors, onOpen: (app) => onOpenPath(".", app) }
+                    : onOpenPath === undefined && host?.osOpen
+                      ? {
+                          editors,
+                          onOpen: (app) =>
+                            void host
+                              .osOpen?.(thread.ws!.cwd, ".", app)
+                              .catch((e) =>
+                                say?.(
+                                  `Open failed — ${e instanceof Error ? e.message : String(e)}`,
+                                ),
+                              ),
+                        }
+                      : undefined
                 }
-                label={`${thread.ws.cwd} — open in an editor or reveal in Finder`}
-                className="hidden shrink-0 md:inline-flex"
               />
-            )}
-            {work?.branch ? (
+            ) : work?.branch ? (
               <span className="hidden shrink-0 items-center gap-1 rounded bg-emerald-50 px-1 text-emerald-800 md:flex">
                 <GitBranchIcon className="size-3" />
                 <span className="font-mono">{work.branch}</span>
+              </span>
+            ) : work ? (
+              /* A real folder that isn't a git checkout: writes land there,
+                 "read-only" would lie (#114). */
+              <span className="hidden shrink-0 items-center gap-1 rounded bg-muted px-1 text-muted-foreground md:flex">
+                <FolderIcon className="size-3" />
+                no git repo
               </span>
             ) : (
               <span className="hidden shrink-0 items-center gap-1 rounded bg-muted px-1 md:flex">
@@ -409,14 +502,16 @@ export function FocusView({
               </Button>
             )
           )}
-          <Button
-            variant={wbOpen ? "secondary" : "ghost"}
-            size="icon-sm"
-            title="Workbench"
-            onClick={() => setWbOpen(!wbOpen)}
-          >
-            {wbOpen ? <PanelRightCloseIcon /> : <PanelRightOpenIcon />}
-          </Button>
+          {wbAvailable && (
+            <Button
+              variant={wbOpen ? "secondary" : "ghost"}
+              size="icon-sm"
+              title="Workbench"
+              onClick={() => setWbOpen(!wbOpen)}
+            >
+              {wbOpen ? <PanelRightCloseIcon /> : <PanelRightOpenIcon />}
+            </Button>
+          )}
           {onBack && (
             <Button
               variant="ghost"
@@ -433,63 +528,72 @@ export function FocusView({
       <div
         className={cn(
           "grid min-h-0 flex-1 grid-cols-1",
-          wbOpen && "lg:grid-cols-[minmax(0,1fr)_minmax(400px,46%)]",
+          wbAvailable &&
+            wbOpen &&
+            "lg:grid-cols-[minmax(0,1fr)_minmax(400px,46%)]",
         )}
       >
-        <section className="flex min-h-0 min-w-0 flex-col">
+        <section ref={turnsRef} className="flex min-h-0 min-w-0 flex-col">
           <Conversation className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]">
             <ConversationContent className="mx-auto w-full max-w-[46rem] gap-7 px-5 py-8">
-              <UserTurn
-                from={root.from}
-                time={root.time}
-                text={root.text}
-                note={`opened session ${thread.session}`}
-                human={human}
-                attachments={root.attachments}
-              />
+              <div data-msg={root.id} className={flashCls(root.id)}>
+                <UserTurn
+                  from={root.from}
+                  time={root.time}
+                  text={root.text}
+                  note={`opened session ${thread.session}`}
+                  human={human}
+                  attachments={root.attachments}
+                />
+              </div>
               {thread.replies.map((r, i) =>
                 emp(r.from) ? (
-                  <AgentTurn
+                  <div
                     key={r.id ?? i}
-                    r={r}
-                    emp={emp}
-                    human={human}
-                    last={i === thread.replies.length - 1}
-                    onRetry={onRetry}
-                    models={models}
-                    onOpen={pickTab}
-                    onOpenSession={onOpenSession}
-                    pending={steer ? pendingSteers : []}
-                    cards={
-                      <>
-                        <ReplyCards
-                          r={r}
-                          i={i}
-                          last={i === thread.replies.length - 1}
-                          work={work}
-                          repo={channel.repo}
-                          emp={emp}
-                          human={human}
-                          resolved={resolved}
-                          setResolved={setResolved}
-                          onStart={onStart}
-                        />
-                        {pr &&
-                          !r.live &&
-                          r.steps?.some((s) =>
-                            String(s.input.command ?? "").startsWith(
-                              "gh pr create",
-                            ),
-                          ) && (
-                            <PrCard
-                              pr={pr}
-                              author={lead?.name ?? pr.author}
-                              onOpen={() => pickTab("pr")}
-                            />
-                          )}
-                      </>
-                    }
-                  />
+                    data-msg={r.id}
+                    className={flashCls(r.id)}
+                  >
+                    <AgentTurn
+                      r={r}
+                      emp={emp}
+                      human={human}
+                      last={i === thread.replies.length - 1}
+                      onRetry={onRetry}
+                      models={models}
+                      onOpen={pickTab}
+                      onOpenSession={onOpenSession}
+                      pending={steer ? pendingSteers : []}
+                      cards={
+                        <>
+                          <ReplyCards
+                            r={r}
+                            i={i}
+                            last={i === thread.replies.length - 1}
+                            work={work}
+                            repo={channel.repo}
+                            emp={emp}
+                            human={human}
+                            resolved={resolved}
+                            setResolved={setResolved}
+                            onStart={onStart}
+                          />
+                          {pr &&
+                            !r.live &&
+                            r.steps?.some((s) =>
+                              String(s.input.command ?? "").startsWith(
+                                "gh pr create",
+                              ),
+                            ) && (
+                              <PrCard
+                                pr={pr}
+                                author={lead?.name ?? pr.author}
+                                onOpen={() => pickTab("pr")}
+                              />
+                            )}
+                        </>
+                      }
+                    />
+                  </div>
                 ) : (
                   <Fragment key={r.id ?? i}>
                     {!running && onRewind && (
@@ -505,15 +609,25 @@ export function FocusView({
                         </CheckpointTrigger>
                       </Checkpoint>
                     )}
-                    <UserTurn
-                      from={r.from}
-                      time={r.time}
-                      text={r.text}
-                      human={human}
-                      attachments={r.attachments}
-                    />
+                    <div data-msg={r.id} className={flashCls(r.id)}>
+                      <UserTurn
+                        from={r.from}
+                        time={r.time}
+                        text={r.text}
+                        human={human}
+                        attachments={r.attachments}
+                      />
+                    </div>
                   </Fragment>
                 ),
+              )}
+              {transcriptNote && (
+                <div
+                  data-transcript-note
+                  className="rounded-lg border border-dashed px-3 py-2 text-muted-foreground text-xs"
+                >
+                  {transcriptNote}
+                </div>
               )}
             </ConversationContent>
             <ConversationScrollButton />
@@ -622,7 +736,9 @@ export function FocusView({
                     ? `#${pr.number} merged, ⎇ ${pr.head} deleted · next edit starts a new branch from main`
                     : work?.branch
                       ? `Edits go to ⎇ ${work.branch}`
-                      : "Read-only on main"
+                      : work
+                        ? "Edits land in this folder"
+                        : "Read-only on main"
               }
               onSend={(t, files) => onSend(t, files)}
               draft={draft}
@@ -632,9 +748,12 @@ export function FocusView({
               onAttachError={onAttachError}
             />
           </div>
+          {/* The open question card docks below the composer, same place it
+              sits under the thread panel (#114 AC-2). */}
+          {children}
         </section>
 
-        {wbOpen && (
+        {wbAvailable && wbOpen && (
           <>
             <div
               className="fixed inset-0 z-20 bg-black/20 lg:hidden"
@@ -660,6 +779,9 @@ export function FocusView({
                 onPrMerge={onPrMerge}
                 live={surfaces}
                 onStopJob={onStopJob}
+                running={running}
+                editors={editorsProp}
+                onOpenPath={onOpenPath}
               />
             </aside>
           </>

@@ -10,6 +10,24 @@ import { z } from "zod";
 
 const Path = z.string().min(1);
 
+/**
+ * Which known `gh` failure a GH_FAILED error carries, in its error `data`.
+ * Clients render plain per-reason copy with one next step — raw stderr never
+ * becomes the headline (#114 AC-5). `no PR` is not a failure: `forge.pr`
+ * answers `pr: null` for it.
+ */
+export const ForgeGhReason = z.enum(["missing", "unauthenticated", "other"]);
+export type ForgeGhReason = z.infer<typeof ForgeGhReason>;
+
+/** GH_FAILED error `data` (errors aren't schema-checked on the wire — clients
+    `safeParse` this and fall back to "other"). */
+export const ForgeGhErrorData = z.object({
+  reason: ForgeGhReason,
+  /** Raw stderr/exec detail — for a Details disclosure only. */
+  detail: z.string(),
+});
+export type ForgeGhErrorData = z.infer<typeof ForgeGhErrorData>;
+
 export const ForgeCheckStatus = z.enum([
   "pending",
   "passed",

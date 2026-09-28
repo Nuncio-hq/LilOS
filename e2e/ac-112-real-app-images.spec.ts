@@ -284,16 +284,17 @@ test("AC-1 attach button + pick/drop/paste chips in both composers", async ({
   await expect(form.locator('img[alt="picked.png"]')).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac1-chips-home.png` });
 
-  // A thread's composer shows the same affordances.
+  // The open session's composer shows the same affordances — a send opens
+  // the session in Focus (#114), where its composer is the only form.
   await page
     .locator("main textarea")
     .pressSequentially("open a thread", { delay: 10 });
   await page.locator("main form").evaluate((f: HTMLFormElement) => {
     f.requestSubmit();
   });
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
-  await expect(page.locator("form")).toHaveCount(2);
-  await expect(page.locator('input[type="file"]')).toHaveCount(2);
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  await expect(page.locator("form")).toHaveCount(1);
+  await expect(page.locator('input[type="file"]')).toHaveCount(1);
   await attach(page, "pick", "thread.png", "thread");
   await expect(formOf(page, "thread").getByText("thread.png")).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac1-thread.png` });
@@ -334,8 +335,8 @@ test("AC-2 sends attachments over conversations.open and messages.post", async (
   await page.locator("main form").evaluate((f: HTMLFormElement) => {
     f.requestSubmit();
   });
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
-  const dmUrl = page.url().match(/\/dm\/([^/]+)\/([^/]+)$/);
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  const dmUrl = page.url().match(/\/dm\/([^/]+)\/([^/]+?)(?:\/focus)?$/);
   if (!dmUrl) throw new Error("not on a conversation");
   const [, emp, conv] = dmUrl;
 
@@ -404,7 +405,7 @@ test("AC-3 thumbnails render from stored refs, survive reload + reopen", async (
   await page.locator("main form").evaluate((f: HTMLFormElement) => {
     f.requestSubmit();
   });
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
   await expect(
     page.locator('[data-attachments] img[alt="stored.png"]').first(),
   ).toBeVisible();
@@ -430,11 +431,10 @@ test("AC-3 thumbnails render from stored refs, survive reload + reopen", async (
   ).toBeVisible({ timeout: 15_000 });
   await page.screenshot({ path: `${SHOTS}/ac3-feed.png` });
   await page
-    .locator("[data-session]")
-    .first()
+    .locator("[data-session]", { hasText: "look at this" })
     .getByRole("button", { name: /repl/i })
     .click();
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
   await expect(
     page.locator('[data-attachments] img[alt="stored.png"]').first(),
   ).toBeVisible();
@@ -521,7 +521,7 @@ test("AC-5 engine-fake receives the image as a prompt content block", async ({
   await page.locator("main form").evaluate((f: HTMLFormElement) => {
     f.requestSubmit();
   });
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
   await expect(
     page.locator("text=/prompt content block/i").last(),
   ).toContainText("image/png (78 bytes)", { timeout: 15_000 });
@@ -537,7 +537,7 @@ test("AC-2b an image-only send (no typed text) opens a session and replies", asy
   await page.locator("main form").evaluate((f: HTMLFormElement) => {
     f.requestSubmit();
   });
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
   // The message rendered with its thumbnail and the engine answered it —
   // the fake only prints "prompt content block" for a real image block.
   await expect(
@@ -548,7 +548,7 @@ test("AC-2b an image-only send (no typed text) opens a session and replies", asy
   ).toContainText("image/png", { timeout: 30_000 });
 
   // Wire check: the root message carried attachments with empty text.
-  const dmUrl = page.url().match(/\/dm\/([^/]+)\/([^/]+)$/);
+  const dmUrl = page.url().match(/\/dm\/([^/]+)\/([^/]+?)(?:\/focus)?$/);
   if (!dmUrl) throw new Error("not on a conversation");
   const [, emp, conv] = dmUrl;
   const chan = await rpc(stack.home, RELAY, [
@@ -596,7 +596,7 @@ test("AC-5b a mid-turn image queues as the next prompt instead of steering", asy
   await page.locator("main form").evaluate((f: HTMLFormElement) => {
     f.requestSubmit();
   });
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });

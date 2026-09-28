@@ -138,12 +138,34 @@ test("DM page: with no session open the feed fills the window (no empty right co
       1,
     );
 
-    // With a session open, the thread panel takes the right column.
+    // With a session open, Focus takes over and fills the window (#114) —
+    // still no reserved-but-empty column. (This session has no folder, so
+    // the Workbench stays hidden; AC-114 covers the Workbench layout.)
     const box = page.locator("textarea").last();
     await box.fill(PROMPT);
     await box.press("Enter");
-    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
-    const panel = page.getByText("Session", { exact: true }).first();
+    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/, {
+      timeout: 30_000,
+    });
+    expect(await rightGap(page), "focus fills the window").toBeLessThanOrEqual(
+      1,
+    );
+
+    // The plain thread URL still gives the quick-peek panel (right column).
+    await page.goto(page.url().replace(/\/focus$/, ""));
+    // The panel header shows the session's title (#137), not "Session".
+    const panel = page.locator("[data-session-title]").first();
+
+    // The thread header shows the session's auto title (placeholder →
+    // engine-written, #137) — the prompt's own words land there first.
+    await expect(
+      page
+        .locator("main")
+        .getByText(
+          /What does the replay contract carry|What Does The Replay Contract Carry/,
+        )
+        .first(),
+    ).toBeVisible({ timeout: 30_000 });
     await expect(panel).toBeVisible({ timeout: 30_000 });
     expect(await rightGap(page)).toBeGreaterThan(300);
 

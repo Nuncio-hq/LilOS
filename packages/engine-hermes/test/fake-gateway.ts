@@ -112,6 +112,12 @@ export class FakeGateway implements GatewayLike {
     },
   ];
   defaultModel = "stub-model-a";
+  /**
+   * Models that `profiles.configure` guards (real Hermes: expensive /
+   * data-policy models answer `confirm_required` + `confirm_message` until
+   * `confirm_expensive_model:true` is sent).
+   */
+  guardedModels = new Set<string>();
   /** session_id -> model set via config.set model. */
   sessionModels = new Map<string, string>();
   /** session_id -> provider / effort / fast set via config.set (#92). */
@@ -285,8 +291,11 @@ export class FakeGateway implements GatewayLike {
         this.closedSessions.push(String(p.session_id));
         return Promise.resolve({ closed: true });
       case "session.title":
+        /* The gateway echoes the just-set title back (tui_gateway/methods
+           _session_title returns the stored row); tests need the echo to be
+           the requested value, not a canned one. */
         return Promise.resolve({
-          title: "t",
+          title: String(p.title ?? "t"),
           session_key: this.refs.get(String(p.session_id)) ?? "",
         });
       case "image.attach_bytes":
@@ -347,6 +356,46 @@ export class FakeGateway implements GatewayLike {
           model_set: typeof p.model === "string",
           mirrored: { credentials: false, env: false },
         });
+      }
+      case "profiles.configure": {
+        // Mirrors methods_profiles.py: soul/description write straight in;
+        // the model section pins `model.{provider,default}` and needs BOTH
+        // model and provider — without both it is silently skipped.
+        const pr = this.profiles.get(String(p.name));
+        if (!pr)
+          return Promise.reject(
+            new RpcError(-32602, `no profile ${String(p.name)}`),
+          );
+        const applied: Record<string, boolean> = {};
+        if (typeof p.soul === "string") {
+          pr.soul = p.soul;
+          applied.soul = true;
+        }
+        if (typeof p.description === "string") {
+          pr.description = p.description;
+          applied.description = true;
+        }
+        const wantsModel =
+          typeof p.model === "string" && typeof p.provider === "string";
+        if (wantsModel && this.guardedModels.has(String(p.model))) {
+          if (p.confirm_expensive_model === true) {
+            pr.model = String(p.model);
+            applied.model = true;
+            return Promise.resolve({ ok: true, name: pr.name, applied });
+          }
+          return Promise.resolve({
+            ok: true,
+            name: pr.name,
+            applied,
+            confirm_required: true,
+            confirm_message: `model ${String(p.model)} is expensive — confirm to pin it`,
+          });
+        }
+        if (wantsModel) {
+          pr.model = String(p.model);
+          applied.model = true;
+        }
+        return Promise.resolve({ ok: true, name: pr.name, applied });
       }
       case "model.options":
         this.modelOptionsCalls.push({ ...p });

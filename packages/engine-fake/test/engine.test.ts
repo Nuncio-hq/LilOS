@@ -281,6 +281,125 @@ describe("engine-fake", () => {
     c.close();
   });
 
+  test("AC-5 the first turn emits a derived title, then an llm title (#137)", async () => {
+    const c = conn();
+    const events: { type: string; seq: number; payload: unknown }[] = [];
+    c.onEvent((e) =>
+      events.push({
+        type: e.type,
+        seq: e.seq,
+        payload: e.payload,
+      }),
+    );
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/tmp/lilos-fake",
+    })) as { sessionId: string };
+    await promptText(c, sessionId, "Explain the relay package to me");
+
+    const titled = events
+      .filter((e) => e.type === "session.titled")
+      .map((e) => e.payload as { title: string; source: string });
+    expect(titled.map((t) => t.source)).toEqual(["derived", "llm"]);
+    expect(titled[0].title).toBe("Explain the relay package to me");
+    expect(titled[1].title).not.toBe(titled[0].title);
+
+    // Ordering: derived arrives with the first turn; llm upgrades at its end
+    // — both strictly seq-ordered (assertMonotonic covered by conformance).
+    const titledSeqs = events
+      .filter((e) => e.type === "session.titled")
+      .map((e) => e.seq);
+    const startedSeq = events.find((e) => e.type === "turn.started")?.seq ?? 0;
+    const completedSeq =
+      events.find((e) => e.type === "turn.completed")?.seq ?? 0;
+    expect(titledSeqs[0]).toBeGreaterThan(startedSeq);
+    expect(titledSeqs[0]).toBeLessThan(completedSeq);
+    expect(titledSeqs[1]).toBeGreaterThan(titledSeqs[0]);
+
+    // Snapshot carries the settled title so a replaying harness lands it.
+    const since = (await c.request("events.since", {
+      sessionId,
+      after: 0,
+    })) as { snapshot: { title?: string } };
+    expect(since.snapshot.title).toBe(titled[1].title);
+
+    // Second turn: titles are a once-per-session write, not per-turn.
+    await promptText(c, sessionId, "Explain the store package to me");
+    expect(events.filter((e) => e.type === "session.titled")).toHaveLength(2);
+    c.close();
+  });
+
+  test("AC-5 a user title (session.setTitle) blocks engine title writes (#137)", async () => {
+    const c = conn();
+    const events: { type: string; payload: unknown }[] = [];
+    c.onEvent((e) => events.push({ type: e.type, payload: e.payload }));
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/tmp/lilos-fake",
+    })) as { sessionId: string };
+
+    // setTitle BEFORE any turn → the whole auto-title leg is suppressed
+    // `user` provenance outranks `derived`/`llm`.
+    await c.request("session.setTitle", {
+      sessionId,
+      title: "My session",
+    });
+    await promptText(c, sessionId, "Explain the relay package to me");
+    expect(events.filter((e) => e.type === "session.titled")).toHaveLength(0);
+    c.close();
+
+    // setTitle mid-turn-1 → the derived title already landed (it fires at
+    // turn start) but the llm upgrade must not.
+    const c2 = conn();
+    const events2: { type: string; payload: unknown }[] = [];
+    c2.onEvent((e) => events2.push({ type: e.type, payload: e.payload }));
+    const { sessionId: s2 } = (await c2.request("session.start", {
+      agent: "builder",
+      cwd: "/tmp/lilos-fake",
+    })) as { sessionId: string };
+    const pending = promptText(c2, s2, "Add a footer to the page"); // asks
+    const deadline = Date.now() + 5_000;
+    let ask = events2.find((e) => e.type === "request.opened");
+    while (!ask && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 5));
+      ask = events2.find((e) => e.type === "request.opened");
+    }
+    expect(ask).toBeTruthy();
+    await c2.request("session.setTitle", {
+      sessionId: s2,
+      title: "Footer work",
+    });
+    // The canned turn asks more than once — answer each open request until
+    // the prompt settles.
+    let settled = false;
+    void pending.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    const answered = new Set<string>();
+    const deadline2 = Date.now() + 5_000;
+    while (!settled && Date.now() < deadline2) {
+      for (const e of events2) {
+        if (e.type !== "request.opened") continue;
+        const requestId = (e.payload as { requestId: string }).requestId;
+        if (answered.has(requestId)) continue;
+        answered.add(requestId);
+        await c2.request("request.respond", {
+          sessionId: s2,
+          requestId,
+          outcome: "once",
+        });
+      }
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    await pending;
+    const titled = events2
+      .filter((e) => e.type === "session.titled")
+      .map((e) => e.payload as { source: string });
+    expect(titled.map((t) => t.source)).toEqual(["derived"]);
+    c2.close();
+  });
+
   test("handleJsonRpc: parse error, notification silence, batch rejection", async () => {
     const engine = new FakeEngine({ tick: 1 });
     expect(await handleJsonRpc(engine, "{nope")).toContain('"code":-32700');
