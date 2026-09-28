@@ -25,8 +25,10 @@ export {
   toStatusComponents,
 } from "./status";
 export {
+  type JobModel,
   reduceSessionEvents,
   type SessionModel,
+  type SubagentModel,
   type TurnModel,
   type TurnPhase,
   type TurnRequest,

@@ -32,6 +32,7 @@ const turn = (over: Partial<TurnModel>): TurnModel => ({
   steps: [],
   steers: [],
   requests: [],
+  subagents: [],
   ...over,
 });
 
@@ -114,6 +115,7 @@ describe("mergeTurns ordering", () => {
     turns,
     live,
     openRequests: [],
+    jobs: [],
   });
   test("a stopped turn stays after the message that prompted it, not below later answers", () => {
     const replies = conversationReplies(

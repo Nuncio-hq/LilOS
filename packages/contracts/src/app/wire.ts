@@ -6,6 +6,7 @@ import {
   AgentsUpdateParams,
 } from "../engine/agents";
 import { Capability } from "../engine/capabilities";
+import { JobsListParams, JobsStopParams } from "../engine/methods";
 import { ModelOption, ModelProvider, ModelsListParams } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
 import {
@@ -149,6 +150,8 @@ export const AppMethod = z.enum([
   "agents.create",
   "agents.update",
   "models.list",
+  "jobs.list",
+  "jobs.stop",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -166,6 +169,8 @@ export const ENGINE_PASSTHROUGH_METHODS = [
   "agents.create",
   "agents.update",
   "models.list",
+  "jobs.list",
+  "jobs.stop",
 ] as const;
 export type EnginePassthroughMethod =
   (typeof ENGINE_PASSTHROUGH_METHODS)[number];
@@ -177,6 +182,8 @@ export const ENGINE_PASSTHROUGH_PARAMS = {
   "agents.create": AgentsCreateParams,
   "agents.update": AgentsUpdateParams,
   "models.list": ModelsListParams,
+  "jobs.list": JobsListParams,
+  "jobs.stop": JobsStopParams,
 } as const satisfies Record<EnginePassthroughMethod, z.ZodType>;
 
 export const HelloParams = z.object({

@@ -120,6 +120,12 @@ export const ToolStartedPayload = z.strictObject({
   toolCallId: z.string().min(1),
   tool: z.string().min(1),
   input: z.record(z.string(), z.unknown()),
+  /**
+   * Set when this call ran inside a subagent — the value is the row's
+   * `subagentId`, so a child's tool calls nest under its row instead of the
+   * parent's step list (#179).
+   */
+  parentToolCallId: z.string().min(1).optional(),
 });
 
 export const ToolCompletedPayload = z.strictObject({
@@ -130,6 +136,75 @@ export const ToolCompletedPayload = z.strictObject({
   output: z.string().optional(),
   diff: FileDiff.optional(),
   commit: CommitInfo.optional(),
+  /** See `ToolStartedPayload.parentToolCallId`. */
+  parentToolCallId: z.string().min(1).optional(),
+});
+
+// ── subagents (#179) ─────────────────────────────────────────────────────────
+/**
+ * A helper another employee handed a task to — the children of an
+ * engine's delegation call. `subagentId` is the engine's own id
+ * for the child run; the row lives under the turn that spawned it.
+ */
+export const SubagentStartedPayload = z.strictObject({
+  turnId: TurnId,
+  subagentId: z.string().min(1),
+  /** Short row label, e.g. "helper 1". */
+  name: z.string().min(1),
+  /** The brief the parent handed down (the delegate call's `goal`). */
+  task: z.string(),
+  /** The tool call that spawned it (the delegate call's `toolCallId`). */
+  parentToolCallId: z.string().min(1).optional(),
+  /**
+   * Set when the helper is another employee the engine can name — the app
+   * renders their avatar and links "Open session" to `sessionRef`'s DM
+   * (D-#25: a link, never a copy of their turns).
+   */
+  employee: z
+    .strictObject({
+      employeeRef: z.string().min(1),
+      sessionRef: z.string().min(1),
+    })
+    .optional(),
+});
+
+export const SubagentCompletedPayload = z.strictObject({
+  subagentId: z.string().min(1),
+  /** completed→done, failed|error|timeout→failed, interrupted→stopped. */
+  status: z.enum(["done", "failed", "stopped"]),
+  /** The child's report back. */
+  result: z.string().optional(),
+  durationMs: z.int().min(0).optional(),
+});
+
+// ── background jobs (#179) ───────────────────────────────────────────────────
+/** Engine-owned background process (a dev server, test watcher, build). */
+export const JobStatus = z.enum(["running", "exited", "failed", "stopped"]);
+export type JobStatus = z.infer<typeof JobStatus>;
+
+export const JobStartedPayload = z.strictObject({
+  jobId: z.string().min(1),
+  command: z.string().min(1),
+  /** Engine-side start time (ms epoch) — replays must not re-clock it. */
+  startedAt: z.int().min(0).optional(),
+  /** URL the process printed, when the engine caught one (e.g. localhost). */
+  url: z.string().min(1).optional(),
+  /** Who started it — a subagent name when a helper spawned it. */
+  by: z.string().min(1).optional(),
+});
+
+export const JobOutputPayload = z.strictObject({
+  jobId: z.string().min(1),
+  /** Local URL the process serves, when the engine spots one in the tail. */
+  url: z.url().optional(),
+  /** Rolling tail — the last ~4KB of output, not a delta (throttled). */
+  tail: z.string(),
+});
+
+export const JobExitedPayload = z.strictObject({
+  jobId: z.string().min(1),
+  status: z.enum(["exited", "failed", "stopped"]),
+  exitCode: z.int().optional(),
 });
 
 export const RequestOpenedPayload = z.strictObject({
@@ -248,6 +323,37 @@ export const EngineEvent = z.discriminatedUnion("type", [
     sessionId: SessionId,
     type: z.literal("turn.completed"),
     payload: TurnCompletedPayload,
+  }),
+  // ── subagents + background jobs (#179) ──
+  z.strictObject({
+    seq: Seq,
+    sessionId: SessionId,
+    type: z.literal("subagent.started"),
+    payload: SubagentStartedPayload,
+  }),
+  z.strictObject({
+    seq: Seq,
+    sessionId: SessionId,
+    type: z.literal("subagent.completed"),
+    payload: SubagentCompletedPayload,
+  }),
+  z.strictObject({
+    seq: Seq,
+    sessionId: SessionId,
+    type: z.literal("job.started"),
+    payload: JobStartedPayload,
+  }),
+  z.strictObject({
+    seq: Seq,
+    sessionId: SessionId,
+    type: z.literal("job.output"),
+    payload: JobOutputPayload,
+  }),
+  z.strictObject({
+    seq: Seq,
+    sessionId: SessionId,
+    type: z.literal("job.exited"),
+    payload: JobExitedPayload,
   }),
 ]);
 export type EngineEvent = z.infer<typeof EngineEvent>;

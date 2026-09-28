@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import {
   type AgentDescriptor,
   type AgentsCreateParams,
@@ -5,6 +7,7 @@ import {
   type AgentsUpdateParams,
   type ApprovalOption,
   type ApprovalOutcome,
+  BACKGROUND_JOBS_CAPABILITY,
   type Capability,
   type ContentBlock,
   ENGINE_METHODS,
@@ -12,8 +15,12 @@ import {
   type EngineEvent,
   type EngineEventType,
   type EventsSinceParams,
+  type FileDiff,
   IMAGE_PROMPT_CAPABILITY,
   type InterruptParams,
+  type JobStatus,
+  type JobsListParams,
+  type JobsStopParams,
   type KnownCapability,
   type ModelsListParams,
   type PromptParams,
@@ -28,6 +35,7 @@ import {
   type SessionSteerParams,
   type SessionStopParams,
   STEER_CAPABILITY,
+  SUBAGENTS_CAPABILITY,
   type Usage,
 } from "@lilos/contracts/engine";
 import {
@@ -38,7 +46,32 @@ import {
   SEED_AGENTS,
 } from "./catalog.js";
 import { type McpClient, startMcpServer } from "./mcp.js";
-import { type FakeScript, type FakeStep, scriptFor } from "./script.js";
+import {
+  type FakeScript,
+  type FakeStep,
+  type FakeSubagent,
+  scriptFor,
+} from "./script.js";
+
+/* ── subagents + background jobs (#179) ────────────────────────────────── */
+
+/** Live state of one background process the fake leaves running. */
+interface FakeJob {
+  jobId: string;
+  command: string;
+  status: JobStatus;
+  startedAt: number;
+  exitCode?: number;
+  url?: string;
+  by?: string;
+  /** Rolling ~4KB tail — job.output replaces, never appends. */
+  tail: string;
+  /** Script lines still to pump. */
+  lines: string[];
+  /** Emit job.exited with this code once lines drain; absent = runs forever. */
+  exitCodeOnDrain?: number;
+  timer?: ReturnType<typeof setInterval>;
+}
 
 /** Transport-agnostic failure; the transports translate it into a JSON-RPC error object. */
 export class RpcError extends Error {
@@ -61,6 +94,13 @@ interface PendingAsk {
   seq: number;
   resolve: (outcome: { outcome: ApprovalOutcome; answer?: string }) => void;
 }
+
+/** First localhost-ish URL in a job tail — the "URL (when printed)" the
+    Background tab shows (AC-4). */
+const firstLocalUrl = (tail: string) =>
+  /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?\/?/.exec(
+    tail,
+  )?.[0];
 
 /** Base64 length -> decoded bytes, without pulling node:buffer into packages. */
 const decodedBytes = (base64: string) => {
@@ -115,6 +155,10 @@ interface FakeSession {
   turnCount: number;
   toolCounter: number;
   requestCounter: number;
+  /** #179: background processes this session left running (jobs.* + job.*). */
+  jobs: Map<string, FakeJob>;
+  jobCounter: number;
+  subCounter: number;
 }
 
 export interface FakeEngineOptions {
@@ -251,6 +295,11 @@ export class FakeEngine {
         return this.sessionSetTitle(parsed.data as SessionSetTitleParams);
       case "session.setHidden":
         return this.sessionSetHidden(parsed.data as SessionSetHiddenParams);
+      /* ── background jobs (#179) ── */
+      case "jobs.list":
+        return this.jobsList(parsed.data as JobsListParams);
+      case "jobs.stop":
+        return this.jobsStop(parsed.data as JobsStopParams);
       default:
         throw new RpcError(
           RPC_ERRORS.METHOD_NOT_FOUND,
@@ -302,6 +351,9 @@ export class FakeEngine {
           ]
         : []),
       ...(this.capOn("session_meta") ? [SESSION_META_CAPABILITY] : []),
+      /* ── #179: declared only while the switch is on (AC-5). ── */
+      ...(this.capOn("subagents") ? [SUBAGENTS_CAPABILITY] : []),
+      ...(this.capOn("background_jobs") ? [BACKGROUND_JOBS_CAPABILITY] : []),
     ];
     return {
       name: "engine-fake",
@@ -350,6 +402,9 @@ export class FakeEngine {
       turnCount: 0,
       toolCounter: 0,
       requestCounter: 0,
+      jobs: new Map(),
+      jobCounter: 0,
+      subCounter: 0,
     };
     this.sessions.set(id, s);
     this.emit(s, "session.started", {
@@ -478,6 +533,19 @@ export class FakeEngine {
       ask.resolve({ outcome: "cancel" });
     for (const c of s.mcpClients.values()) c.close();
     s.mcpClients.clear();
+    /* #179: a closed session stops its pumps; running rows settle stopped. */
+    for (const job of s.jobs.values()) {
+      if (job.timer) clearInterval(job.timer);
+      if (job.status === "running") {
+        job.status = "stopped";
+        job.exitCode = 15;
+        this.emit(s, "job.exited", {
+          jobId: job.jobId,
+          status: "stopped",
+          exitCode: 15,
+        });
+      }
+    }
     s.state = "closed";
     this.emit(s, "session.state", { state: "closed" });
     return { stopped: true };
@@ -682,6 +750,156 @@ export class FakeEngine {
     return { hidden: s.hidden };
   }
 
+  /* ── subagents + background jobs (#179) ────────────────────────────────── */
+
+  /** The engine's jobs view — what `jobs.list` answers (D-#179: no LilOS
+      job table; the engine is the only source). */
+  private jobsList(p: JobsListParams) {
+    const s = this.require(p.sessionId);
+    const now = Date.now();
+    return {
+      jobs: [...s.jobs.values()].map((j) => ({
+        jobId: j.jobId,
+        command: j.command,
+        status: j.status,
+        startedAt: j.startedAt,
+        uptimeSeconds: Math.floor((now - j.startedAt) / 1000),
+        ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
+        ...(j.url ? { url: j.url } : {}),
+        ...(j.by ? { by: j.by } : {}),
+        ...(j.tail ? { tail: j.tail } : {}),
+      })),
+    };
+  }
+
+  private jobsStop(p: JobsStopParams) {
+    const s = this.require(p.sessionId);
+    const job = s.jobs.get(p.jobId);
+    if (job?.status !== "running") return { stopped: false };
+    this.stopJob(s, job, "stopped");
+    return { stopped: true };
+  }
+
+  private stopJob(
+    s: FakeSession,
+    job: FakeJob,
+    status: Extract<JobStatus, "exited" | "failed" | "stopped">,
+  ) {
+    if (job.timer) clearInterval(job.timer);
+    job.timer = undefined;
+    job.status = status;
+    if (job.exitCode === undefined)
+      job.exitCode = status === "stopped" ? 15 : 0;
+    this.emit(s, "job.exited", {
+      jobId: job.jobId,
+      status,
+      exitCode: job.exitCode,
+    });
+  }
+
+  /** AC-3: a helper declared as another employee links to their newest live
+      session — the row opens that session, never a copy of its turns
+      (D-#25). No live session -> no link, the row stays a plain helper. */
+  private employeeLink(
+    employeeRef: string,
+  ): { employeeRef: string; sessionRef: string } | undefined {
+    if (!this.agents.has(employeeRef)) return undefined;
+    const live = [...this.sessions.values()].filter(
+      (x) => x.agent === employeeRef && x.state !== "closed",
+    );
+    const newest = live.at(-1);
+    return newest ? { employeeRef, sessionRef: newest.id } : undefined;
+  }
+
+  /** Pump one job's scripted output into job.output, one line per tick, then
+      emit job.exited when the script says it ends. */
+  private startJobPump(s: FakeSession, job: FakeJob) {
+    job.timer = setInterval(() => {
+      if (s.state === "closed" || job.status !== "running") {
+        if (job.timer) clearInterval(job.timer);
+        job.timer = undefined;
+        return;
+      }
+      const line = job.lines.shift();
+      if (line !== undefined) {
+        job.tail = `${job.tail}${line}\n`.slice(-4000);
+        const url = job.url ?? firstLocalUrl(job.tail);
+        if (url && !job.url) job.url = url;
+        this.emit(s, "job.output", {
+          jobId: job.jobId,
+          tail: job.tail,
+          ...(job.url ? { url: job.url } : {}),
+        });
+      }
+      if (job.lines.length === 0 && job.exitCodeOnDrain !== undefined) {
+        const code = job.exitCodeOnDrain;
+        job.exitCode = code;
+        this.stopJob(s, job, code === 0 ? "exited" : "failed");
+      } else if (job.lines.length === 0 && job.timer) {
+        /* A server with no more scripted lines stays running — quiet but
+           listed by jobs.list until jobs.stop lands. */
+        clearInterval(job.timer);
+        job.timer = undefined;
+      }
+    }, this.tick);
+  }
+
+  /** Emit the whole subagent arc inside one delegate step: subagent.started,
+      its nested tool calls (parentToolCallId), then subagent.completed. */
+  private async runSubagents(
+    s: FakeSession,
+    turnId: string,
+    toolCallId: string,
+    subs: FakeSubagent[],
+  ) {
+    for (const sub of subs) {
+      if (s.turn?.interrupted) return;
+      const subagentId = sub.id ?? `sa-${++s.subCounter}`;
+      const employee = sub.employee
+        ? this.employeeLink(sub.employee)
+        : undefined;
+      this.emit(s, "subagent.started", {
+        turnId,
+        subagentId,
+        name: sub.name,
+        task: sub.task,
+        parentToolCallId: toolCallId,
+        ...(employee ? { employee } : {}),
+      });
+      for (const ns of sub.steps) {
+        const nestedId = `c${++s.toolCounter}`;
+        this.emit(s, "tool.started", {
+          turnId,
+          toolCallId: nestedId,
+          tool: ns.tool,
+          input: ns.input,
+          parentToolCallId: subagentId,
+        });
+        await this.sleep(s);
+        /* #179 AC-2: a helper's write lands in the same checkout — the fake
+           materializes its `diff` into s.cwd so Workbench → Changes
+           (git.diff) lists it, like a real helper's edit does. */
+        if (ns.diff && s.cwd) applyFakeDiffToCwd(s.cwd, ns.diff);
+        this.emit(s, "tool.completed", {
+          turnId,
+          toolCallId: nestedId,
+          tool: ns.tool,
+          status: "completed",
+          output: ns.output,
+          diff: ns.diff,
+          commit: ns.commit,
+          parentToolCallId: subagentId,
+        });
+      }
+      this.emit(s, "subagent.completed", {
+        subagentId,
+        status: sub.status,
+        result: sub.result,
+        durationMs: sub.durationMs,
+      });
+    }
+  }
+
   // ── the turn loop (ports the prototype's runTurn) ─────────────────────────
 
   private async runTurn(
@@ -808,6 +1026,24 @@ export class FakeEngine {
             continue;
           }
         }
+        /* #179: a delegate step emits the subagent arc under its own call id
+           before the call itself completes (result = per-helper summary). */
+        if (step.subagents?.length && this.capOn("subagents")) {
+          await this.runSubagents(s, turnId, toolCallId, step.subagents);
+          this.emit(s, "tool.completed", {
+            turnId,
+            toolCallId,
+            tool: step.tool,
+            status: "completed",
+            output: step.subagents
+              .map(
+                (x) =>
+                  `${x.name}: ${x.status}${x.result ? ` — ${x.result}` : ""}`,
+              )
+              .join("\n"),
+          });
+          continue;
+        }
         this.emit(s, "tool.completed", {
           turnId,
           toolCallId,
@@ -817,6 +1053,31 @@ export class FakeEngine {
           diff: step.diff,
           commit: step.commit,
         });
+        /* #179: a job the step left running starts after its call completes —
+           job.* events are session-scoped and outlive the turn. */
+        if (step.job && this.capOn("background_jobs")) {
+          const jobId = step.job.id ?? `job-${++s.jobCounter}`;
+          const job: FakeJob = {
+            jobId,
+            command:
+              step.job.command ??
+              String(step.input.command ?? "background task"),
+            status: "running",
+            startedAt: Date.now(),
+            by: step.job.by,
+            tail: "",
+            lines: [...step.job.outputLines],
+            exitCodeOnDrain: step.job.exitCode,
+          };
+          s.jobs.set(jobId, job);
+          this.emit(s, "job.started", {
+            jobId,
+            command: job.command,
+            startedAt: job.startedAt,
+            ...(job.by ? { by: job.by } : {}),
+          });
+          this.startJobPump(s, job);
+        }
       }
       this.drainSteers(s, turnId);
       s.turn.phase = "text";
@@ -1022,6 +1283,25 @@ export class FakeEngine {
 }
 
 class Interrupted extends Error {}
+
+/** #179 AC-2: write a scripted diff into the session checkout — the fake's
+    `+` lines become the file's content, so git.diff picks it up exactly like
+    a real helper's `write_file`/`patch` does. */
+function applyFakeDiffToCwd(cwd: string, diff: FileDiff) {
+  if (diff.status === "deleted") return;
+  const path = join(cwd, diff.path);
+  const body = (diff.patch ?? "")
+    .split("\n")
+    .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
+    .map((l) => l.slice(1))
+    .join("\n");
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, body.endsWith("\n") || !body ? body : `${body}\n`);
+  } catch {
+    /* An unwritable cwd must not fail the turn — the step still reports. */
+  }
+}
 
 /** Instant-title rule: first line, whitespace-collapsed, ≤48 chars. */
 const MAX_DERIVED_TITLE_CHARS = 48;

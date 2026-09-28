@@ -140,6 +140,14 @@ PR does not exist.
   `~/.lilos/hermes-bin`, then known install locations), and a missing
   engine surfaces as a plain status reason — never a silent fake.
   Not: a fake default in release. — #85
+- **D-#179 Subagent runs and background jobs exist only as engine events /
+  `jobs.*` answers — LilOS stores no job/subagent state** (`subagent.*`,
+  `job.*`, `jobs.list`/`jobs.stop` under `background_jobs`; a helper that is
+  another employee surfaces as `subagent.started.employee` + a session link
+  in its DM, per D-#25). Job output lives in engine memory (rolling tail);
+  after a reconnect the list comes from `jobs.list`, never a LilOS copy.
+  Not: a LilOS-side jobs/subagents table, or a copy of a helper's turns. —
+  #179
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the

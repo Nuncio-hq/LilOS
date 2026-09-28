@@ -932,3 +932,268 @@ describe("engine-hermes #8: agents + models capabilities", () => {
     await p;
   });
 });
+
+describe("engine-hermes #179: subagents + background jobs", () => {
+  test("AC-1 delegate turn emits flat subagent rows, nested tools grouped", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId, "delegate");
+    await h.waitEvent((e) => e.type === "turn.started");
+
+    // delegate_tool.py:288 spawn_requested at queue time; _progress_subagent
+    // relays start/tool/complete frames with a stable subagent_id.
+    gw.emit(gw.lastSid, "tool.start", {
+      tool_id: "call_d",
+      name: "delegate_task",
+      args: {
+        tasks: [
+          { goal: "Scan the repo" },
+          { goal: "Verify the fix" },
+          { goal: "Draft the report" },
+        ],
+      },
+    });
+    const delegateStarted = h.events
+      .filter(
+        (e): e is Extract<EngineEvent, { type: "tool.started" }> =>
+          e.type === "tool.started",
+      )
+      .at(-1);
+    if (!delegateStarted) throw new Error("tool.started missing");
+    const callId = delegateStarted.payload.toolCallId;
+    for (let i = 0; i < 3; i++) {
+      gw.emit(gw.lastSid, "subagent.start", {
+        subagent_id: `sub-${i}`,
+        task_index: i,
+        task_count: 3,
+        goal: ["Scan the repo", "Verify the fix", "Draft the report"][i],
+      });
+      gw.emit(gw.lastSid, "subagent.tool", {
+        subagent_id: `sub-${i}`,
+        task_index: i,
+        tool_name: "read_file",
+        tool_preview: `src/f${i}.ts`,
+      });
+      gw.emit(gw.lastSid, "subagent.complete", {
+        subagent_id: `sub-${i}`,
+        task_index: i,
+        status: i === 1 ? "timeout" : "completed",
+        summary: `task ${i} report`,
+        duration_seconds: 1.2 + i,
+      });
+    }
+    gw.emit(gw.lastSid, "tool.complete", {
+      tool_id: "call_d",
+      name: "delegate_task",
+      result: { status: "completed" },
+      result_text: "3 of 3 tasks finished",
+      duration_s: 4.2,
+    });
+    gw.complete(gw.lastSid);
+    await p;
+
+    const started = h.events.filter(
+      (e): e is Extract<EngineEvent, { type: "subagent.started" }> =>
+        e.type === "subagent.started",
+    );
+    expect(started).toHaveLength(3);
+    expect(started.map((e) => e.payload.name)).toEqual([
+      "task 1",
+      "task 2",
+      "task 3",
+    ]);
+    expect(started.map((e) => e.payload.task)).toEqual([
+      "Scan the repo",
+      "Verify the fix",
+      "Draft the report",
+    ]);
+    for (const e of started) expect(e.payload.parentToolCallId).toBe(callId);
+
+    const completed = h.events.filter(
+      (e): e is Extract<EngineEvent, { type: "subagent.completed" }> =>
+        e.type === "subagent.completed",
+    );
+    expect(completed).toHaveLength(3);
+    const byId = new Map(started.map((e) => [e.payload.subagentId, e]));
+    expect(
+      completed.find((e) => e.payload.subagentId === [...byId.keys()][1])
+        ?.payload.status,
+    ).toBe("failed");
+    expect(
+      completed.find((e) => e.payload.subagentId === [...byId.keys()][0])
+        ?.payload.result,
+    ).toBe("task 0 report");
+
+    const nested = h.events.filter(
+      (e): e is Extract<EngineEvent, { type: "tool.started" }> =>
+        e.type === "tool.started" && e.payload.parentToolCallId !== undefined,
+    );
+    expect(nested.length).toBeGreaterThanOrEqual(3);
+    for (const e of nested)
+      expect(byId.has(e.payload.parentToolCallId ?? "")).toBe(true);
+
+    // seq replay: every emitted event replays verbatim, no dup rows.
+    const replay = (await h.request("events.since", {
+      sessionId,
+      after: 0,
+    })) as { events: EngineEvent[] };
+    const replayStarted = replay.events.filter(
+      (e) => e.type === "subagent.started",
+    );
+    expect(replayStarted).toHaveLength(3);
+    expect(
+      new Set(
+        replayStarted.map(
+          (e) => (e.payload as { subagentId: string }).subagentId,
+        ),
+      ).size,
+    ).toBe(3);
+  });
+
+  test("AC-4 backgrounded terminal mints a job row; output + close land", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId, "run dev");
+    await h.waitEvent((e) => e.type === "turn.started");
+
+    const proc = gw.pushProcess(gw.lastSid, {
+      command: "bun run dev",
+      tail: "$ bun run dev\n",
+    });
+    gw.emit(gw.lastSid, "tool.start", {
+      tool_id: "call_t",
+      name: "terminal",
+      args: { command: "bun run dev", background: true },
+    });
+    // terminal_tool_background.py: the spawn result is a JSON string.
+    gw.emit(gw.lastSid, "tool.complete", {
+      tool_id: "call_t",
+      name: "terminal",
+      result: JSON.stringify({
+        output: "Background process started",
+        session_id: proc.id,
+        pid: proc.pid,
+        exit_code: 0,
+        error: null,
+      }),
+      duration_s: 0.4,
+    });
+    const jobStarted = await h.waitEvent((e) => e.type === "job.started");
+    expect(jobStarted.payload).toMatchObject({
+      jobId: proc.id,
+      command: "bun run dev",
+    });
+    gw.complete(gw.lastSid);
+    await p;
+
+    // Desktop sink: agent.terminal.output carries the registry id + chunk.
+    gw.emit(gw.lastSid, "agent.terminal.output", {
+      process_id: proc.id,
+      chunk: "  ➜  Local:   http://localhost:4173/\n",
+    });
+    const out = await h.waitEvent(
+      (e) =>
+        e.type === "job.output" &&
+        String((e.payload as { tail: string }).tail).includes("4173"),
+    );
+    expect(out.payload).toMatchObject({
+      jobId: proc.id,
+      url: "http://localhost:4173/",
+    });
+
+    // terminal.close carries the OS pid; the row reconciles via process.list.
+    proc.exited = true;
+    proc.exitCode = 0;
+    proc.reason = "exited";
+    proc.tail += "done\n";
+    gw.emit(gw.lastSid, "terminal.close", { process_id: proc.pid });
+    const exited = await h.waitEvent((e) => e.type === "job.exited");
+    expect(exited.payload).toMatchObject({
+      jobId: proc.id,
+      status: "exited",
+      exitCode: 0,
+    });
+  });
+
+  test("AC-4 jobs.list + jobs.stop over process.*; 2nd stop reads stopped:false", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const proc = gw.pushProcess(gw.lastSid, {
+      command: "bun run test --watch",
+      tail: "watching…\n",
+    });
+
+    const list = (await h.request("jobs.list", { sessionId })) as {
+      jobs: { jobId: string; command: string; status: string }[];
+    };
+    expect(list.jobs.map((j) => j.jobId)).toContain(proc.id);
+    expect(list.jobs[0].status).toBe("running");
+
+    const exitedP = h.waitEvent((e) => e.type === "job.exited");
+    const stopped = (await h.request("jobs.stop", {
+      sessionId,
+      jobId: proc.id,
+    })) as { stopped: boolean };
+    expect(stopped.stopped).toBe(true);
+    expect((await exitedP).payload).toMatchObject({
+      jobId: proc.id,
+      status: "stopped",
+    });
+
+    const again = (await h.request("jobs.stop", {
+      sessionId,
+      jobId: proc.id,
+    })) as { stopped: boolean };
+    expect(again.stopped).toBe(false);
+    const missing = (await h.request("jobs.stop", {
+      sessionId,
+      jobId: "proc-nope",
+    })) as { stopped: boolean };
+    expect(missing.stopped).toBe(false);
+  });
+
+  test("AC-4 timeout-yielded terminal call mints the job too", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    await h.waitEvent((e) => e.type === "turn.started");
+    gw.pushProcess(gw.lastSid, { command: "bun test" });
+    const proc = gw.processes.at(-1);
+    if (!proc) throw new Error("no proc");
+    gw.emit(gw.lastSid, "tool.start", {
+      tool_id: "call_y",
+      name: "terminal",
+      args: { command: "bun test" },
+    });
+    gw.emit(gw.lastSid, "tool.complete", {
+      tool_id: "call_y",
+      name: "terminal",
+      result: JSON.stringify({
+        status: "yielded_to_background",
+        session_id: proc.id,
+        pid: proc.pid,
+      }),
+      duration_s: 30.1,
+    });
+    const started = await h.waitEvent((e) => e.type === "job.started");
+    expect(started.payload).toMatchObject({
+      jobId: proc.id,
+      command: "bun test",
+    });
+    gw.complete(gw.lastSid);
+    await p;
+  });
+
+  test("AC-5 describe declares subagents + background_jobs", async () => {
+    const { h } = setup();
+    const d = (await h.request("describe")) as {
+      capabilities: { id: string; methods?: string[] }[];
+    };
+    expect(d.capabilities.map((c) => c.id)).toEqual(
+      expect.arrayContaining(["subagents", "background_jobs"]),
+    );
+    expect(
+      d.capabilities.find((c) => c.id === "background_jobs")?.methods,
+    ).toEqual(["jobs.list", "jobs.stop"]);
+  });
+});
