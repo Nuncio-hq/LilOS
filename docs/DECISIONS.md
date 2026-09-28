@@ -99,10 +99,14 @@ PR does not exist.
 - **D-#8 A model is `{provider?, id}` — never a joined `provider/model`
   string — carrying the engine's per-model `efforts`/`fast`; the picker's
   hide/show list is LilOS-owned (relay `settings`, one list for all
-  employees). Hiring still speaks `agents.*`; the protocol has no profile
-  delete.** Not: `splitModelRef`-style splitting, a sticky last-used model
-  for new sessions (the engine owns defaults, #85), a hide list in
-  localStorage or engine state, LilOS-owned profile CRUD. — #8 · #92 · PR #129
+  employees). Hiring, the picker and persona edits speak `agents.*` /
+  `models.*`: `agents.update` writes the fields the engine advertises
+  (`detail.updatable`); there is still no profile delete — firing removes
+  only the LilOS employee record.** Not: `splitModelRef`-style splitting, a
+  sticky last-used model for new sessions (the engine owns defaults, #85), a
+  hide list in localStorage or engine state, LilOS-owned profile CRUD, a
+  persona read-only wire (was #8), or a delete method "for cleanup".
+  — #8, #92, #123 · PR #46, #129, #146
 - **D-#26 The harness supervises the engine and is the only thing that talks
   to it.** It owns launch (`hermes serve` on 127.0.0.1 with a generated
   token, via `packages/engine-hermes`), crash restart with bounded backoff,

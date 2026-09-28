@@ -1,6 +1,7 @@
 import {
   type AgentsCreateParams,
   type AgentsDescribeParams,
+  type AgentsUpdateParams,
   type ApprovalOutcome,
   type Capability,
   type ContentBlock,
@@ -31,6 +32,7 @@ import {
   listModels,
   requireAgent,
   setSessionModel,
+  updateAgent,
 } from "./catalog.js";
 import { RpcError } from "./errors.js";
 import type { GatewayLike } from "./gateway.js";
@@ -170,6 +172,12 @@ export class HermesEngine {
           this.opts.gateway,
           parsed.data as AgentsCreateParams,
         );
+      case "agents.update":
+        return updateAgent(
+          this.opts.gateway,
+          parsed.data as AgentsUpdateParams,
+          this.opts.provider,
+        );
       case "models.list":
         return listModels(this.opts.gateway, {
           refresh: (parsed.data as ModelsListParams).refresh,
@@ -215,8 +223,17 @@ export class HermesEngine {
         id: "agents",
         name: "Hireable agents",
         description:
-          "Agents are Hermes profiles: agents.list/describe/create map to profiles.*; session.start runs under the profile.",
-        methods: ["agents.list", "agents.describe", "agents.create"],
+          "Agents are Hermes profiles: agents.list/describe/create map to profiles.*, agents.update to profiles.configure; session.start runs under the profile.",
+        methods: [
+          "agents.list",
+          "agents.describe",
+          "agents.create",
+          "agents.update",
+        ],
+        detail: {
+          // profiles.configure writes these; profile rename is CLI-only.
+          updatable: ["description", "soul", "model"],
+        },
       },
       {
         id: "models",

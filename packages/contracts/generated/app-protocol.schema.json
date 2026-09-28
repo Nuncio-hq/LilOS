@@ -408,6 +408,7 @@
         "agents.list",
         "agents.describe",
         "agents.create",
+        "agents.update",
         "models.list"
       ]
     },
