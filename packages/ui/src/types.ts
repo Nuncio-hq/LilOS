@@ -202,6 +202,11 @@ export type WsPick = {
   mode: WsMode;
   existing?: string;
 };
+
+/* One row of the `@` menu's Files section (#105): a file or dir inside the
+   session's folder, relative to it. The mention sent is the plain `@path`
+   text — contents are never inlined (the issue's "Path only" decision). */
+export type FileMention = { path: string; kind: "file" | "dir" };
 export type Workspace = {
   folder: string;
   project: string;

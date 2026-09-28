@@ -54,6 +54,7 @@ import type {
   EmpFn,
   Employee,
   EngineProfile,
+  FileMention,
   Folder,
   HumanFn,
   ModelChoice,
@@ -185,6 +186,8 @@ export function EmployeeHome({
   onModel,
   picker,
   composerNote,
+  mentionables,
+  onSearchFiles,
   draft: composerDraft,
   onDraftChange,
 }: {
@@ -238,6 +241,11 @@ export function EmployeeHome({
   /* Plain reason the engine is unavailable ("Hermes not found at …", #85);
      renders above the composer so a dead engine never looks sendable. */
   composerNote?: ReactNode;
+  /* `@` menu sections (#105): employees listed for mention, and — only when
+     the picked folder is searchable — a file/dir search for the Files
+     section. Both omitted → bare composer like before. */
+  mentionables?: Employee[];
+  onSearchFiles?: (query: string) => Promise<FileMention[]>;
 }) {
   const pickFolder = folders.find((x) => x.id === pick.folder);
   const [filter, setFilter] = useState("");
@@ -500,7 +508,8 @@ export function EmployeeHome({
             ? `New session with ${e.name} in ${folderLabel(pickFolder, folders)}…`
             : `New session with ${e.name}…`
         }
-        employees={[]}
+        employees={mentionables ?? []}
+        onSearchFiles={onSearchFiles}
         hint={wsHint(pickFolder, pick, !onWorktree)}
         onSend={(t, files) => onSend(t, pick, files)}
         draft={composerDraft}

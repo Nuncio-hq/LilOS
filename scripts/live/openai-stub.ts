@@ -46,11 +46,18 @@ Bun.serve({
             p !== null &&
             (p as { type?: string }).type === "image_url",
         );
-        const textSample = (body.messages ?? [])
-          .map((m) => (typeof m.content === "string" ? m.content : ""))
-          .join(" ")
-          .slice(0, 300);
-        const line = `${JSON.stringify({ image_parts: images.length, content_blocks: parts.length, text_sample: textSample })}\n`;
+        const texts = (body.messages ?? []).map((m) =>
+          (typeof m.content === "string"
+            ? m.content
+            : Array.isArray(m.content)
+              ? (m.content as { type?: string; text?: string }[])
+                  .filter((p) => p?.type === "text")
+                  .map((p) => p.text ?? "")
+                  .join(" ")
+              : ""
+          ).slice(0, 1000),
+        );
+        const line = `${JSON.stringify({ image_parts: images.length, content_blocks: parts.length, text_sample: texts.join(" ").slice(0, 300), texts })}\n`;
         const { appendFileSync } = await import("node:fs");
         appendFileSync(process.env.STUB_REQUEST_LOG, line);
       }

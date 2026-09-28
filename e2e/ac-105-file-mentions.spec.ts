@@ -190,7 +190,6 @@ const fileRows = (page: Page) => page.locator("[data-mention-file]");
 
 /** Employees sit above the Files section; ↓ walks the flat list (wraps). */
 async function arrowDownTo(
-  page: Page,
   box: ReturnType<Page["locator"]>,
   row: ReturnType<Page["locator"]>,
 ) {
@@ -201,22 +200,32 @@ async function arrowDownTo(
   await expect(row).toHaveAttribute("aria-selected", "true");
 }
 
-/** Add the fixture repo through the Add-folder dialog (adds + picks it). */
+/** Pick the fixture repo for this DM: the pick survives between the serial
+    tests (shared LILOS_HOME), so an earlier test may have added it already —
+    then the folder menu lists it (data-wsfolder = path = id). */
 async function addAndPickRepo(page: Page) {
-  await page.locator('[data-ws="folder"]').click();
+  const wsBtn = page.locator('[data-ws="folder"]');
+  if ((await wsBtn.innerText()).includes("lilos-105-repo")) return;
+  await wsBtn.click();
   const pickerMenu = page.locator('[role="menu"]').last();
-  await pickerMenu.getByText("Add a folder").click();
-  const dialog = page.locator("[data-addfolder]");
-  await expect(dialog).toBeVisible();
-  await dialog.locator("[data-pathinput]").fill(repoDir);
-  await expect(dialog.locator("[data-folderinfo]")).toContainText("Git repo", {
-    timeout: 15_000,
-  });
-  await dialog.locator("[data-addbtn]").click();
-  await expect(dialog).toHaveCount(0);
-  await expect(page.locator('[data-ws="folder"]')).toContainText(
-    "lilos-105-repo",
-  );
+  const existing = pickerMenu.locator(`[data-wsfolder="${repoDir}"]`);
+  // Wait for the menu to render before counting (count() doesn't wait).
+  await pickerMenu.getByText("Add a folder").waitFor({ state: "visible" });
+  if ((await existing.count()) > 0) {
+    await existing.click();
+  } else {
+    await pickerMenu.getByText("Add a folder").click();
+    const dialog = page.locator("[data-addfolder]");
+    await expect(dialog).toBeVisible();
+    await dialog.locator("[data-pathinput]").fill(repoDir);
+    await expect(dialog.locator("[data-folderinfo]")).toContainText(
+      "Git repo",
+      { timeout: 15_000 },
+    );
+    await dialog.locator("[data-addbtn]").click();
+    await expect(dialog).toHaveCount(0);
+  }
+  await expect(wsBtn).toContainText("lilos-105-repo");
 }
 
 test("AC-2 with no folder picked the @ menu has an Employees section only (D-#19)", async ({
@@ -230,9 +239,7 @@ test("AC-2 with no folder picked the @ menu has an Employees section only (D-#19
   await expect(
     page.locator('[data-mention-section="employees"]'),
   ).toBeVisible();
-  await expect(
-    page.locator('[data-mention-section="files"]'),
-  ).toHaveCount(0);
+  await expect(page.locator('[data-mention-section="files"]')).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-2-no-folder.png` });
   await page.keyboard.press("Escape");
   await expect(menu(page)).toHaveCount(0);
@@ -265,7 +272,7 @@ test("AC-1 @ opens one menu: Employees then Files, fuzzy match, cap 20, arrows +
 
   // Arrow keys move the highlight across both sections; Enter inserts the
   // token as text instead of submitting.
-  await arrowDownTo(page, box, appRow);
+  await arrowDownTo(box, appRow);
   await box.press("Enter");
   await expect(box).toHaveValue("@src/app.tsx ");
   await expect(menu(page)).toHaveCount(0);
@@ -287,16 +294,14 @@ test("AC-2 files come from the session folder: gitignored out, untracked in, fol
   await box.click();
   await box.pressSequentially("@sec");
   await expect(menu(page)).toBeVisible();
-  await expect(
-    page.locator('[data-mention-file="secret.env"]'),
-  ).toHaveCount(0);
+  await expect(page.locator('[data-mention-file="secret.env"]')).toHaveCount(0);
   await expect(
     page.locator('[data-mention-section="files"]').getByText("No matches"),
   ).toBeVisible();
   await box.fill("@untrack");
-  await expect(
-    page.locator('[data-mention-file="untracked.ts"]'),
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[data-mention-file="untracked.ts"]')).toBeVisible({
+    timeout: 15_000,
+  });
   await box.fill("@sr");
   const dirRow = page.locator('[data-mention-file="src"][data-kind="dir"]');
   await expect(dirRow).toBeVisible({ timeout: 15_000 });
@@ -316,7 +321,7 @@ test("AC-3 + AC-4 picking a file inserts a chip; Backspace removes it; it surviv
   await box.pressSequentially("read @app");
   const row = page.locator('[data-mention-file="src/app.tsx"]');
   await expect(row).toBeVisible({ timeout: 15_000 });
-  await arrowDownTo(page, box, row);
+  await arrowDownTo(box, row);
   await box.press("Enter");
   await expect(box).toHaveValue("read @src/app.tsx ");
 
@@ -327,7 +332,7 @@ test("AC-3 + AC-4 picking a file inserts a chip; Backspace removes it; it surviv
   // Re-insert, verify the draft survives a reload (draft store #103).
   await box.pressSequentially("@app");
   await expect(row).toBeVisible({ timeout: 15_000 });
-  await arrowDownTo(page, box, row);
+  await arrowDownTo(box, row);
   await box.press("Enter");
   await expect(box).toHaveValue("read @src/app.tsx ");
   await page.screenshot({ path: `${SHOTS}/ac-3-chip-draft.png` });
@@ -356,7 +361,11 @@ test("AC-3 + AC-4 picking a file inserts a chip; Backspace removes it; it surviv
   await expect(replyBox).toHaveValue("read @src/app.tsx");
 
   // AC-4: a follow-up mention reaches the engine as plain text — the fake's
-  // reply plan echoes it verbatim.
+  // reply plan echoes it verbatim. Wait for turn 1 to settle first: a message
+  // sent mid-turn is a steer (no new reply), not a follow-up.
+  await expect(page.getByText("Short answer").last()).toBeVisible({
+    timeout: 30_000,
+  });
   await replyBox.fill("note @docs/guide.md ");
   await replyBox.press("Enter");
   await expect(
@@ -385,11 +394,7 @@ test("AC-5 the first results land inside the keystroke budget and fs.search is c
     }
   });
   await dmDefault(page);
-  // Last session ran in the repo → the pick comes up pre-selected (#113 AC-6).
-  await expect(page.locator('[data-ws="folder"]')).toContainText(
-    "lilos-105-repo",
-    { timeout: 15_000 },
-  );
+  await addAndPickRepo(page);
   const box = homeBox(page);
   await box.click();
   const t0 = Date.now();
@@ -398,9 +403,9 @@ test("AC-5 the first results land inside the keystroke budget and fs.search is c
   const firstMs = Date.now() - t0;
   expect(firstMs).toBeLessThan(2000); // e2e smoke bound; the ~200ms AC is asserted in the host vitest
   await box.pressSequentially("app");
-  await expect(
-    page.locator('[data-mention-file="src/app.tsx"]'),
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[data-mention-file="src/app.tsx"]')).toBeVisible({
+    timeout: 15_000,
+  });
   expect(searchCalls.length).toBeGreaterThanOrEqual(2);
   await page.screenshot({ path: `${SHOTS}/ac-5-responsive.png` });
 });

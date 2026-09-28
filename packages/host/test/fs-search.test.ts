@@ -28,7 +28,11 @@ const git = (cwd: string, args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8" });
 
 const search = (path: string, query: string, limit?: number) =>
-  callHost("fs.search", { path, query, ...(limit ? { limit } : {}) }) as Promise<SearchResult>;
+  callHost("fs.search", {
+    path,
+    query,
+    ...(limit ? { limit } : {}),
+  }) as Promise<SearchResult>;
 
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), "lilos-search-"));

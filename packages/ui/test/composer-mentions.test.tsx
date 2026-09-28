@@ -4,7 +4,7 @@
    onSearchFiles handler, fuzzy-matched by it; picking one inserts an `@path`
    token that Backspace removes whole, and the wire text stays plain (`@path`,
    never file contents). */
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { Composer } from "../src/chat/composer";
 import type { Employee, FileMention } from "../src/types";
@@ -170,7 +170,10 @@ describe("issue #105 file mentions in the composer", () => {
     const row = await c.findByText("docs/guide.md");
     fireEvent.click(row);
     expect(el.value).toBe("read @docs/guide.md ");
-    fireEvent.submit(c.container.querySelector("form")!);
+    fireEvent.submit(c.container.querySelector("form") as HTMLFormElement);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
     expect(sent).toEqual(["read @docs/guide.md"]);
   });
 });

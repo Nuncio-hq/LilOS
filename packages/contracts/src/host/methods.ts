@@ -14,6 +14,8 @@ import {
   FsListResult,
   FsReadParams,
   FsReadResult,
+  FsSearchParams,
+  FsSearchResult,
   FsTreeParams,
   FsTreeResult,
 } from "./fs";
@@ -67,6 +69,11 @@ export const HOST_METHODS = {
     params: FsTreeParams,
     result: FsTreeResult,
     doc: "Recursive file listing of a folder (skips .git/node_modules; honors .gitignore in repos).",
+  },
+  "fs.search": {
+    params: FsSearchParams,
+    result: FsSearchResult,
+    doc: "Fuzzy file/dir search inside a folder (gitignore-aware in repos) for `@`-mention picking.",
   },
   "fs.read": {
     params: FsReadParams,

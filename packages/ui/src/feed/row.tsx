@@ -6,6 +6,7 @@ import {
 } from "../components/ai-elements/message";
 import { Badge } from "../components/ui/badge";
 import { AttachmentChips } from "../conversation/turns";
+import { withFileMentionChips } from "../lib/mentions";
 import { cn } from "../lib/utils";
 import { HermesAvatar, HumanAvatar } from "../shell/avatars";
 import type { EmpFn, HireDraft, HumanFn, Msg, Work } from "../types";
@@ -92,7 +93,7 @@ export function Body({ text }: { text: string }) {
   return (
     <MessageContent className="w-full">
       <MessageResponse className="lilos-prose compact break-words">
-        {text}
+        {withFileMentionChips(text)}
       </MessageResponse>
     </MessageContent>
   );
