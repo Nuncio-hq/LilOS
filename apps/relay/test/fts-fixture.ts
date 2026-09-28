@@ -16,11 +16,13 @@ const out = (step: string, data: unknown) =>
 const sqlite = new Database(":memory:");
 const store = createDrizzleStore(drizzle(sqlite, { schema }));
 
-// Land at v8 first, seed pre-index rows, then migrate to v9 — proves the
-// backfill picks up messages written before the index existed.
-for (const m of MIGRATIONS.filter((m) => m.version <= 8)) {
+// Land on every migration except #138's FTS one (v9), seed pre-index rows
+// through today's store, then run v9's own statements — proves the backfill
+// picks up messages written before the index existed. (Later migrations such
+// as #137's title_source must be in place first: the store writes them.)
+const FTS_VERSION = 9;
+for (const m of MIGRATIONS.filter((m) => m.version !== FTS_VERSION)) {
   for (const s of m.statements) sqlite.exec(s);
-  sqlite.exec(`PRAGMA user_version = ${m.version}`);
 }
 const employee = await store.createEmployee({
   name: "Ada",
@@ -79,7 +81,13 @@ await store.appendMessage({
   text: "rate limit on the other channel",
 });
 
-applyMigrations(sqlite);
+const fts = MIGRATIONS.find((m) => m.version === FTS_VERSION);
+if (!fts) throw new Error("FTS migration missing");
+for (const s of fts.statements) sqlite.exec(s);
+sqlite.exec(
+  `PRAGMA user_version = ${Math.max(...MIGRATIONS.map((m) => m.version))}`,
+);
+applyMigrations(sqlite); // no-op now: the schema is at the latest version
 out("version", sqlite.query("PRAGMA user_version").get());
 
 const search = (params: {
