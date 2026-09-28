@@ -125,6 +125,8 @@ export function FocusView({
   scrollTo,
   onScrolled,
   children,
+  onOpenSession,
+  onStopJob,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -203,6 +205,10 @@ export function FocusView({
   onScrolled?: () => void;
   /* Extra surface content below the composer (the question card, #114). */
   children?: ReactNode;
+  /* A subagent row that is another employee links to their session (issue #170). */
+  onOpenSession?: (employeeId: string, session: string) => void;
+  /* Workbench → Background: Stop a process (issue #170). */
+  onStopJob?: (id: string) => void;
 }) {
   const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024);
   const [tab, setTab] = useState<WbTab>(() =>
@@ -570,6 +576,7 @@ export function FocusView({
                       onRetry={onRetry}
                       models={models}
                       onOpen={pickTab}
+                      onOpenSession={onOpenSession}
                       pending={steer ? pendingSteers : []}
                       cards={
                         <>
@@ -782,6 +789,7 @@ export function FocusView({
                 onPrComment={onPrComment}
                 onPrMerge={onPrMerge}
                 live={surfaces}
+                onStopJob={onStopJob}
                 running={running}
                 editors={editorsProp}
                 onOpenPath={onOpenPath}

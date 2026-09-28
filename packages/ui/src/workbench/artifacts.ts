@@ -1,9 +1,17 @@
-import type { Diff, Thread } from "../types";
+import type { Diff, Reply, Step, Thread } from "../types";
 
 /* Everything the workbench shows is derived from the session's tool calls — one source, no app state:
-   inline_diff → Changes (merged per file), terminal output → Terminal, git commit → Commits. */
+   inline_diff → Changes (merged per file), terminal output → Terminal, git commit → Commits.
+   A subagent works in the same checkout, so its steps count too; another employee's help does
+   not — that ran in their own session (issue #170). */
+export function turnSteps(r: Reply): Step[] {
+  return [
+    ...(r.steps ?? []),
+    ...(r.subagents ?? []).flatMap((a) => (a.employee ? [] : a.steps)),
+  ];
+}
 export function sessionArtifacts(thread: Thread) {
-  const steps = thread.replies.flatMap((r) => r.steps ?? []);
+  const steps = thread.replies.flatMap(turnSteps);
   const diffs = new Map<string, Diff>();
   for (const s of steps) {
     if (!s.diff) continue;
