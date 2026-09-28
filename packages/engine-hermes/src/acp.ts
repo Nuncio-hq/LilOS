@@ -2,12 +2,15 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type {
-  ApprovalOption,
   ContentBlock,
   EngineRequest,
   McpServer,
   SessionStartParams,
 } from "@lilos/contracts/engine";
+import {
+  acpOfferedOutcomes,
+  acpPickOptionId,
+} from "./acp-permissions.js";
 import type { HermesEngine } from "./engine.js";
 import type { Session } from "./session.js";
 
@@ -210,14 +213,9 @@ export class AcpDriver {
     params: acp.RequestPermissionRequest,
   ): Promise<acp.RequestPermissionResponse> {
     const options = params.options ?? [];
-    const lilos = new Set<ApprovalOption>();
-    for (const o of options) {
-      if (o.kind === "allow_once") lilos.add("once");
-      if (o.kind === "allow_always") lilos.add("always");
-      if (o.kind === "reject_once" || o.kind === "reject_always")
-        lilos.add("deny");
-    }
-    if (lilos.size === 0) lilos.add("deny");
+    // Hermes sends two `allow_always`-kind options — allow_session is
+    // session-scoped, not offerable as LilOS "always" (#133).
+    const lilos = acpOfferedOutcomes(options);
     const tc = params.toolCall;
     const command =
       (typeof tc?.title === "string" && tc.title) ||
@@ -226,7 +224,7 @@ export class AcpDriver {
     const request: EngineRequest = {
       kind: "approval",
       command,
-      options: [...lilos],
+      options: lilos,
     };
     const wireId = `acp-${++AcpDriver.reqCounter}`;
     // No wire send: the promise return IS the answer.
@@ -239,17 +237,18 @@ export class AcpDriver {
     );
     const { outcome } = await answered;
     if (outcome === "cancel") return { outcome: { outcome: "cancelled" } };
-    const pick = (kind: string) =>
-      options.find((o) => o.kind === kind)?.optionId;
+    // Exact optionId first, kind fallback for unknown ids only; an
+    // unanswerable outcome falls back to deny, never to "whatever came first"
+    // (#133 — that first option was session-scoped allow_session).
     const optionId =
-      (outcome === "always" && pick("allow_always")) ||
-      (outcome === "once" && pick("allow_once")) ||
-      (outcome === "deny" && (pick("reject_once") ?? pick("reject_always"))) ||
-      options[0]?.optionId;
+      acpPickOptionId(options, outcome) ??
+      acpPickOptionId(options, "deny") ??
+      options[0]?.optionId ??
+      "";
     return {
       outcome: {
         outcome: "selected",
-        optionId: optionId ?? "",
+        optionId,
       },
     };
   }
