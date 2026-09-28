@@ -47,7 +47,11 @@ const pick = <T extends string>(v: string | null, all: { id: T }[]) =>
   all.find((o) => o.id === v)?.id;
 
 /** Applies `pair=…&link=…&scan=…&reset=1` from a lilos://preview link. */
-export function applyPreviewQuery(query: string): { reset: boolean } {
+export function applyPreviewQuery(query: string): {
+  reset: boolean;
+  team: boolean;
+  open: string | null;
+} {
   const q = new URLSearchParams(query);
   const pair = pick(q.get("pair"), PAIR_OUTCOMES);
   const link = pick(q.get("link"), LINK_OUTCOMES);
@@ -58,7 +62,11 @@ export function applyPreviewQuery(query: string): { reset: boolean } {
     $preview.setKey("link", link);
     $reconnectTick.set($reconnectTick.get() + 1);
   }
-  return { reset: q.get("reset") === "1" };
+  return {
+    reset: q.get("reset") === "1",
+    team: q.get("team") === "reset",
+    open: q.get("open"),
+  };
 }
 
 export type PairResult =

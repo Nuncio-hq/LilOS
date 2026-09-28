@@ -6,7 +6,9 @@ type Tone =
   | "destructive"
   | "success"
   | "warning"
-  | "inverse";
+  | "inverse"
+  /** No color class: the caller's className sets it (avoids two competing text-* colors). */
+  | "none";
 type Size = "xs" | "sm" | "base" | "lg" | "title" | "hero";
 
 const TONE: Record<Tone, string> = {
@@ -16,6 +18,7 @@ const TONE: Record<Tone, string> = {
   success: "text-success",
   warning: "text-warning",
   inverse: "text-primary-foreground",
+  none: "",
 };
 
 const SIZE: Record<Size, string> = {
