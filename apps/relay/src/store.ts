@@ -11,6 +11,8 @@ import type {
   Employee,
   EmployeeStatus,
   MessageAttachment,
+  MessageSearchHit,
+  MessagesSearchParams,
   PendingTurn,
   ProfileSettings,
   RecentFolder,
@@ -90,6 +92,53 @@ export interface ListMessagesQuery {
 export interface ListMessagesPage {
   messages: AppMessage[];
   lastSeq: number;
+}
+
+/**
+ * #138: search semantics shared by both stores — whitespace-split lowercase
+ * terms, all must match (AND), except the last which is a prefix so the box
+ * can filter while the user is mid-word.
+ */
+export function searchTerms(query: string): string[] {
+  return query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** Word tokens the way the FTS unicode61 tokenizer sees them. */
+const textTokens = (text: string): string[] =>
+  text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}_]+/u)
+    .filter(Boolean);
+
+/** Term match: earlier terms must hit a whole token; the last is a prefix. */
+export function messageMatchesTerms(text: string, terms: string[]): boolean {
+  if (!terms.length) return false;
+  const toks = textTokens(text);
+  return terms.every((t, i) =>
+    i < terms.length - 1 ? toks.includes(t) : toks.some((w) => w.startsWith(t)),
+  );
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/* A relay-snippet-shaped excerpt for the memory store: a window around the
+   first match, `…` at clipped edges, `<mark>` around every term hit. */
+export function markSnippet(text: string, terms: string[]): string {
+  if (!terms.length) return text.slice(0, 96);
+  const patterns = terms.map(
+    (t, i) =>
+      (i < terms.length - 1 ? `(?<![\\w])` : `(?<![\\w])`) +
+      escapeRe(t) +
+      (i < terms.length - 1 ? `(?![\\w])` : `[\\w]*`),
+  );
+  const re = new RegExp(patterns.join("|"), "gi");
+  const first = re.exec(text);
+  if (!first) return text.slice(0, 96);
+  const start = Math.max(0, first.index - 48);
+  const end = Math.min(text.length, first.index + first[0].length + 48);
+  const window = text.slice(start, end);
+  const marked = window.replace(re, (s) => `<mark>${s}</mark>`);
+  return `${start > 0 ? "…" : ""}${marked}${end < text.length ? "…" : ""}`;
 }
 
 export interface ListConversationsQuery {
@@ -181,6 +230,13 @@ export interface RelayStore {
     channelId: string,
     query: ListMessagesQuery,
   ): Promise<ListMessagesPage>;
+  /**
+   * Full-text search over stored message text (#138). Hits come back ordered
+   * by relevance (best first); `includeArchived` keeps hits in archived
+   * conversations, off by default like `conversations.list`. Only the hit
+   * set is contractual — rank order differs between implementations.
+   */
+  searchMessages(params: MessagesSearchParams): Promise<MessageSearchHit[]>;
   /**
    * Appends with the channel's next seq (atomic with the counter bump).
    * `dedupeKey` makes the write idempotent: `created: false` returns the
@@ -479,6 +535,30 @@ export function createMemoryStore(): RelayStore {
         list = list.slice(-limit);
       }
       return { messages: list, lastSeq: channel.lastSeq };
+    },
+    async searchMessages({ query, channelId, includeArchived, limit }) {
+      const terms = searchTerms(query);
+      if (!terms.length) return [];
+      const hits: MessageSearchHit[] = [];
+      for (const m of messages.values()) {
+        if (channelId && m.channelId !== channelId) continue;
+        if (!includeArchived && m.conversationId) {
+          const conversation = conversations.get(m.conversationId);
+          if (conversation?.archived) continue;
+        }
+        if (!messageMatchesTerms(m.text, terms)) continue;
+        hits.push({
+          messageId: m.id,
+          conversationId: m.conversationId,
+          channelId: m.channelId,
+          authorId: m.authorId,
+          snippet: markSnippet(m.text, terms),
+          createdAt: m.createdAt,
+        });
+      }
+      // Newest-first standing in for relevance rank (see RelayStore docs).
+      hits.sort((a, b) => b.createdAt - a.createdAt);
+      return hits.slice(0, limit);
     },
     async appendMessage(input) {
       return appendMessage(input);

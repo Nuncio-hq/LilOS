@@ -35,6 +35,7 @@ import {
   effortLabel,
   type Human,
   type HumanFn,
+  type MessageHit,
   type Msg,
   type Project,
   type Reply,
@@ -284,7 +285,7 @@ const DM_FEEDS: Record<string, Msg[]> = {
         session: "ses_4a19", usage: { input: 38400, output: 2900, reasoning: 1100, cache: 24000 },
         replies: [
           {
-            from: "builder", time: "Yesterday", thought: 6,
+            id: "d1r1", from: "builder", time: "Yesterday", thought: 6,
             reasoning: "Oscar asks for the gap list, not a build plan. No ticket, so read `main` only. Check the relay package and the contracts, list only what blocks one harness from connecting.",
             steps: [
               { tool: "search_files", input: { pattern: "WebSocketServer", path: "apps/relay" }, output: "0 matches" },
@@ -292,8 +293,8 @@ const DM_FEEDS: Record<string, Msg[]> = {
             ],
             text: "Three things block it:\n\n1. **Relay has no socket yet.** `apps/relay` is an empty package.\n2. **No auth handshake.** The envelope has `seq` but no member token.\n3. **No harness package.** Nothing dials out yet.\n\n(1) and (2) are one ticket. (3) is its own.",
           },
-          { from: "oscar", time: "Yesterday", text: "Which one first?" },
-          { from: "builder", time: "Yesterday", thought: 2, reasoning: "Order by dependency: the harness needs something to dial.", text: "Relay socket + token check first. The harness has nothing to dial without it, and it is the smaller change (about 150 lines)." },
+          { id: "d1r2", from: "oscar", time: "Yesterday", text: "Which one first?" },
+          { id: "d1r3", from: "builder", time: "Yesterday", thought: 2, reasoning: "Order by dependency: the harness needs something to dial.", text: "Relay socket + token check first. The harness has nothing to dial without it, and it is the smaller change (about 150 lines)." },
         ],
       },
     },
@@ -303,7 +304,7 @@ const DM_FEEDS: Record<string, Msg[]> = {
         session: "ses_c03e", usage: { input: 12100, output: 640, reasoning: 210, cache: 9000 },
         replies: [
           {
-            from: "builder", time: "Yesterday", thought: 3, reasoning: "git log since Monday, group commits by package.",
+            id: "d2r1", from: "builder", time: "Yesterday", thought: 3, reasoning: "git log since Monday, group commits by package.",
             steps: [{ tool: "terminal", input: { command: "git log --since=monday --oneline main" }, output: "7 commits" }],
             text: "7 commits since Monday:\n\n- **contracts**: envelope gets `seq` (2)\n- **web**: Slack frame + thread panel (4)\n- **docs**: brainstorm reset (1)\n\nNothing touched `apps/relay`.",
           },
@@ -316,7 +317,7 @@ const DM_FEEDS: Record<string, Msg[]> = {
       kind: "msg", id: "v1", from: "oscar", time: "08:05", text: "What do you check first on a PR from Builder?",
       thread: {
         session: "ses_77e2", usage: { input: 6400, output: 380, reasoning: 90, cache: 4100 },
-        replies: [{ from: "reviewer", time: "08:06", thought: 1, reasoning: "Answer from my SOUL.md checklist.", text: "Package boundaries first (`client-runtime` must stay DOM-free), then tests for the changed paths, then the diff itself. I never push; I comment with file:line." }],
+        replies: [{ id: "v1r1", from: "reviewer", time: "08:06", thought: 1, reasoning: "Answer from my SOUL.md checklist.", text: "Package boundaries first (`client-runtime` must stay DOM-free), then tests for the changed paths, then the diff itself. I never push; I comment with file:line." }],
       },
     },
   ],
@@ -533,6 +534,8 @@ export default function App() {
   const [employees, setEmployees] = useState<Employee[]>(SEED_EMPLOYEES)
   const [view, setView] = useState<View>({ kind: "channel", id: "engineering" })
   const [threadId, setThreadId] = useState<string | null>("m2")
+  // #138 AC-3: search hit opened → thread scrolls to this message id, flashes it.
+  const [scrollTo, setScrollTo] = useState<string | null>(null)
   const [focus, setFocus] = useState(false)
   const [panelTab, setPanelTab] = useState<"thread" | "employee" | "tickets">("thread")
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 1280)
@@ -690,6 +693,39 @@ export default function App() {
   const project = PROJECTS.find((p) => p.channels.some((c) => c.id === channel.id))
   const feedKey = channel.id
   const feed: Msg[] = feeds[feedKey] ?? []
+
+  // #138 AC-6: mock message search over this DM's feed — same box, same
+  // semantics as the relay FTS query (terms AND'd, last term a word prefix).
+  const searchDmMessages = async (query: string): Promise<MessageHit[]> => {
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    if (!terms.length) return []
+    const toks = (t: string) => t.toLowerCase().split(/[^\p{L}\p{N}_]+/u).filter(Boolean)
+    const matches = (t: string) => {
+      const w = toks(t)
+      return terms.every((term, i) => i < terms.length - 1 ? w.includes(term) : w.some((x) => x.startsWith(term)))
+    }
+    const mark = (t: string) => {
+      let s = t.length > 160 ? `${t.slice(0, 80)} … ${t.slice(-80)}` : t
+      for (const term of terms) {
+        const re = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\w*`, "gi")
+        s = s.replace(re, (m) => `<mark>${m}</mark>`)
+      }
+      return s
+    }
+    const hits: MessageHit[] = []
+    for (const m of feed) {
+      if (m.kind !== "msg" || !m.thread) continue
+      const rows = [
+        { id: m.id, from: m.from, time: m.time, text: m.text },
+        ...m.thread.replies.map((r, i) => ({ id: r.id ?? `${m.id}-r${i}`, from: r.from, time: r.time, text: r.text })),
+      ]
+      for (const r of rows) {
+        if (!matches(r.text)) continue
+        hits.push({ rootId: m.id, messageId: r.id, from: r.from, time: r.time, snippet: mark(r.text), archived: m.thread.archived })
+      }
+    }
+    return hits
+  }
   const openThread = feed.find((m): m is Extract<Msg, { kind: "msg" }> => m.kind === "msg" && m.id === threadId && !!m.thread)
 
   // Unsent composer text survives switching threads/employees and reloads (issue #103):
@@ -1139,6 +1175,7 @@ export default function App() {
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
       models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined} picker={pickerExtras}
+      scrollTo={scrollTo ?? undefined} onScrolled={() => setScrollTo(null)}
     />
   ) : null
 
@@ -1208,6 +1245,8 @@ export default function App() {
               draft={dmDraft} onDraftChange={setDmDraft}
               mentionables={employees} onSearchFiles={fileMentions((wsPicks[view.id] ?? NO_WS).folder)}
               onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying session ${m.thread?.session}`) }}
+              onSearchMessages={searchDmMessages}
+              onOpenHit={(h) => { setScrollTo(h.messageId); showThread(h.rootId) }}
               accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say}
               models={canModels ? MODEL_OPTS : undefined}
               modelChoice={draftPick[view.id] ?? choiceFor(emp(view.id)?.model ?? "", MODEL_OPTS)}

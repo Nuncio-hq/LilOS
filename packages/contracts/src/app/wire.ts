@@ -117,6 +117,7 @@ export const AppMethod = z.enum([
   "conversations.update",
   "messages.list",
   "messages.post",
+  "messages.search",
   "attachments.get",
   "channel.subscribe",
   "channel.unsubscribe",
@@ -399,6 +400,43 @@ export const MessagesPostParams = z.object({
 });
 export type MessagesPostParams = z.infer<typeof MessagesPostParams>;
 export const MessageResult = z.object({ message: AppMessage });
+
+/**
+ * Full-text search over the relay's stored messages (issue #138). Search
+ * covers visible message text only (D-#25): engine transcripts, tool output
+ * and attachment bytes are never indexed. `query` is the user's raw text —
+ * the relay builds the FTS expression (terms AND'd, the last term matched
+ * as a prefix so the box can filter while typing). `conversationId` is null
+ * on hits belonging to no thread.
+ */
+export const MessagesSearchParams = z.object({
+  query: z.string().min(1),
+  channelId: z.string().min(1).optional(),
+  includeArchived: z.boolean().default(false),
+  limit: z.int().min(1).max(200).default(50),
+});
+export type MessagesSearchParams = z.infer<typeof MessagesSearchParams>;
+
+/**
+ * One matched message. `snippet` is an excerpt of the message text with
+ * each matched term wrapped in `<mark>…</mark>` (the UI parses the tags
+ * back into elements — it never renders the string as HTML).
+ */
+export const MessageSearchHit = z.object({
+  messageId: z.string().min(1),
+  conversationId: z.string().min(1).nullable(),
+  channelId: z.string().min(1),
+  /* Who wrote the matching message — the hit row shows it ("anyone said it"). */
+  authorId: z.string().min(1),
+  snippet: z.string(),
+  createdAt: Timestamp,
+});
+export type MessageSearchHit = z.infer<typeof MessageSearchHit>;
+
+export const MessagesSearchResult = z.object({
+  hits: z.array(MessageSearchHit),
+});
+export type MessagesSearchResult = z.infer<typeof MessagesSearchResult>;
 
 /**
  * Resumable subscription (T3 Code `afterSequence` pattern, see

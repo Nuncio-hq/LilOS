@@ -4,7 +4,12 @@ import {
   type SessionModel,
   toStatusComponents,
 } from "@lilos/client-runtime";
-import type { AppMessage, Ask, Conversation } from "@lilos/contracts/app";
+import type {
+  AppMessage,
+  Ask,
+  Conversation,
+  MessageSearchHit,
+} from "@lilos/contracts/app";
 import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_MESSAGE,
@@ -25,6 +30,7 @@ import type {
   AttachedFile,
   Channel,
   FileMention,
+  MessageHit,
   ModelChoice,
   ModelPickerExtras,
   Msg,
@@ -34,7 +40,7 @@ import type {
 } from "@lilos/ui/types";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { atom } from "nanostores";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   archiveConversation,
   clearPending,
@@ -250,6 +256,39 @@ export function DmPage() {
   );
   const openConv = convs.find((c) => c.id === conversationId);
 
+  /* #138: full-text message search behind the session filter. Wire hits are
+     conversation-scoped; the box groups by the session's root message id, so
+     map conversationId → rootMessageId. Archived sessions are searched too —
+     their hits carry the marker (AC-4). */
+  const [scrollTo, setScrollTo] = useState<string | null>(null);
+  const searchMessages = useCallback(
+    async (query: string): Promise<MessageHit[]> => {
+      if (!channel?.id) return [];
+      const res = await relay.request<{ hits: MessageSearchHit[] }>(
+        "messages.search",
+        { query, channelId: channel.id, includeArchived: true, limit: 50 },
+      );
+      return res.hits.flatMap((h) => {
+        const conv = convs.find((c) => c.id === h.conversationId);
+        if (h.conversationId && !conv) return [];
+        return [
+          {
+            rootId: conv?.rootMessageId ?? h.messageId,
+            messageId: h.messageId,
+            from: h.authorId,
+            time: new Date(h.createdAt).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            snippet: h.snippet,
+            archived: conv?.archived,
+          },
+        ];
+      });
+    },
+    [channel?.id, convs],
+  );
+
   /* Unsent drafts live outside the composer: one key per conversation and
      one per employee home (issue #103). Switching sessions or employees — or
      reloading — swaps in the stored text instead of throwing it away. */
@@ -440,6 +479,12 @@ export function DmPage() {
         to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: conv.id },
       });
+  };
+
+  /* #138 AC-3: click a hit → open the session scrolled to the message. */
+  const onOpenHit = (h: MessageHit) => {
+    setScrollTo(h.messageId);
+    openThread(h.rootId);
   };
 
   const pick = wsPicks[employeeId] ?? NO_WS;
@@ -658,6 +703,8 @@ export function DmPage() {
           onFocus={undefined}
           mentionables={mentionables}
           onSearchFiles={fileSearch(conv.cwd)}
+          scrollTo={scrollTo ?? undefined}
+          onScrolled={() => setScrollTo(null)}
           work={null}
         />
         {openQuestion && (
@@ -709,6 +756,8 @@ export function DmPage() {
         composerNote={composerNote}
         mentionables={mentionables}
         onSearchFiles={fileSearch(pickFolderPath)}
+        onSearchMessages={searchMessages}
+        onOpenHit={onOpenHit}
         models={catalog.length ? catalog : undefined}
         modelChoice={
           draftPick[employeeId] ??
