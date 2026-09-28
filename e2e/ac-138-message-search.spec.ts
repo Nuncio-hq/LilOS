@@ -223,8 +223,11 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
 
   /* engine-fake steers mid-turn sends into the running turn — a follow-up
      only gets its own reply once the composer is back to its idle
-     placeholder ("Reply to Default…"). */
-  const idleComposer = page.getByPlaceholder(/Reply to Default/);
+     placeholder ("Reply to Default…" in the peek panel, "Continue session
+     … with Default…" in Focus, where a send lands since #114). */
+  const idleComposer = page.getByPlaceholder(
+    /Reply to Default|Continue session .* with Default/,
+  );
 
   // Session A: open, wait for the fake reply, then send a follow-up holding
   // the term — a message that is NOT the title or first message.
