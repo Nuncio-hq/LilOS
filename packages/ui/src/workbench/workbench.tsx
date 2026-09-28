@@ -104,6 +104,8 @@ export function Workbench({
   onPrMerge,
   live,
   running,
+  editors: editorsProp,
+  onOpenPath,
 }: {
   thread: Thread;
   work: Work | null;
@@ -127,6 +129,13 @@ export function Workbench({
   live?: LiveSurfaces;
   /** A turn is running — Changes/Files poll while the agent edits (#114 AC-3). */
   running?: boolean;
+  /* os.editors + a bound os.open (issue #110, same pair ThreadView takes):
+     the caller probes `host.describe` — onOpenPath={null} means os.open was
+     absent, so rows show no open menu even when the accessors object
+     statically carries the method (D-#19). Undefined keeps the component's
+     own host.osEditors/osOpen path (prototype). */
+  editors?: OsEditor[];
+  onOpenPath?: ((path: string, app: OsApp, line?: number) => void) | null;
 }) {
   const a = sessionArtifacts(thread);
   const [sel, setSel] = useState<string | null>(null);
@@ -151,19 +160,20 @@ export function Workbench({
   /* Open-in-editor affordances (issue #110): editors detected on this host
      (os.editors) + one bound os.open call. No os.open → no controls (D-#19);
      no editors → the menus offer Reveal in Finder only. */
-  const [editors, setEditors] = useState<OsEditor[]>([]);
+  const [hostEditors, setHostEditors] = useState<OsEditor[]>([]);
   useEffect(() => {
     let off = false;
-    if (host?.osEditors && liveCwd)
+    if (editorsProp === undefined && host?.osEditors && liveCwd)
       void host
         .osEditors()
-        .then((e) => !off && setEditors(e))
+        .then((e) => !off && setHostEditors(e))
         .catch(() => {});
-    else setEditors([]);
+    else setHostEditors([]);
     return () => {
       off = true;
     };
-  }, [liveCwd]);
+  }, [liveCwd, editorsProp]);
+  const editors = editorsProp ?? hostEditors;
   const reloadPr = async () => {
     if (!host?.pr || !liveCwd) return;
     const r = await host.pr(liveCwd).catch(() => null);
@@ -276,13 +286,15 @@ export function Workbench({
   /* One bound "open this path" for every workbench surface: `line` opens at
      the diff row's new-file line when the editor takes one; "finder" reveals. */
   const openPath =
-    host?.osOpen && liveCwd
-      ? (path: string, app: OsApp, line?: number) => {
-          void host
-            .osOpen?.(liveCwd, path, app, line)
-            .catch((e) => say?.(`Open failed — ${ghError(e)}`));
-        }
-      : undefined;
+    onOpenPath && liveCwd
+      ? (path: string, app: OsApp, line?: number) => onOpenPath(path, app, line)
+      : onOpenPath === undefined && host?.osOpen && liveCwd
+        ? (path: string, app: OsApp, line?: number) => {
+            void host
+              .osOpen?.(liveCwd, path, app, line)
+              .catch((e) => say?.(`Open failed — ${ghError(e)}`));
+          }
+        : undefined;
   const prComment =
     liveForge && host?.prComment && liveCwd
       ? async (t: string) => {

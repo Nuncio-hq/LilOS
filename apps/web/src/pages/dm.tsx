@@ -705,6 +705,20 @@ export function DmPage() {
           steer={steer}
           draft={threadDraft}
           onDraftChange={setThreadDraft}
+          /* Same capability probe as the thread panel (#110): null pins the
+             badge to a plain label when os.open isn't on the host. */
+          editors={editors ?? undefined}
+          onOpenPath={
+            openCwd && editors !== null
+              ? (path, app, line) => {
+                  void hostOsOpen(openCwd, path, app, line).catch((e) =>
+                    say(
+                      `Open failed — ${e instanceof Error ? e.message : String(e)}`,
+                    ),
+                  );
+                }
+              : null
+          }
         >
           {openQuestion && (
             <QuestionCard

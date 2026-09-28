@@ -67,6 +67,7 @@ import type {
   ModelOption,
   ModelPickerExtras,
   Msg,
+  OsApp,
   OsEditor,
   Project,
   Thread,
@@ -75,8 +76,8 @@ import type {
 } from "../types";
 import { sessionArtifacts } from "../workbench/artifacts";
 import type { LiveSurfaces } from "../workbench/live";
-import { OpenPathButton } from "../workbench/open-path";
 import { Workbench } from "../workbench/workbench";
+import { WsBadge } from "../workbench/ws-badges";
 import { SessionUsage } from "./session-usage";
 
 export function FocusView({
@@ -118,6 +119,8 @@ export function FocusView({
   pending,
   steer = false,
   onRemovePending,
+  editors: editorsProp,
+  onOpenPath,
   draft,
   onDraftChange,
   transcriptNote,
@@ -170,6 +173,13 @@ export function FocusView({
   surfaces?: LiveSurfaces;
   /* Mid-turn sends: pending-steer chips when `steer` is declared, the queued tray without it. */
   pending?: string[];
+  /* os.editors + a bound os.open (issue #110, same pair ThreadView takes):
+     the caller probes `host.describe` — onOpenPath={null} means os.open was
+     absent, so the badge stays a plain label even when the accessors object
+     statically carries the method (D-#19). Undefined keeps the prototype's
+     own host.osEditors/osOpen path. */
+  editors?: OsEditor[];
+  onOpenPath?: ((path: string, app: OsApp, line?: number) => void) | null;
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
   accept?: string;
   /* Attachment byte cap + where rejections surface (issue #31). */
@@ -241,21 +251,22 @@ export function FocusView({
   const [planOpen, setPlanOpen] = useState(running);
   useEffect(() => setPlanOpen(running), [running]);
   /* Header "Open folder" affordance (issue #110): editors on the session's
-     host; the button renders only when os.open exists there (D-#19). */
+     host; the badge is a menu only when os.open exists there (D-#19). */
   const wsCwd = thread.ws?.cwd;
-  const [editors, setEditors] = useState<OsEditor[]>([]);
+  const [hostEditors, setHostEditors] = useState<OsEditor[]>([]);
   useEffect(() => {
     let off = false;
-    if (host?.osEditors && wsCwd)
+    if (editorsProp === undefined && host?.osEditors && wsCwd)
       void host
         .osEditors()
-        .then((e) => !off && setEditors(e))
+        .then((e) => !off && setHostEditors(e))
         .catch(() => {});
-    else setEditors([]);
+    else setHostEditors([]);
     return () => {
       off = true;
     };
-  }, [wsCwd]);
+  }, [wsCwd, editorsProp]);
+  const editors = editorsProp ?? hostEditors;
   const where = isDM ? "Direct" : (project?.name ?? "Company");
   const chLabel = isDM ? channel.name : `#${channel.name}`;
   /* The Workbench exists only where there is a real folder to read (D-#19):
@@ -330,25 +341,29 @@ export function FocusView({
             {/* The session's folder + branch — same badge the thread panel
                 shows (#113); Focus is the session's main view (#114). */}
             {thread.ws ? (
-              <span
-                data-wsbadge
-                className="hidden shrink-0 items-center gap-1 rounded bg-emerald-50 px-1 text-emerald-800 md:flex"
-                title={thread.ws.cwd}
-              >
-                <FolderIcon className="size-3" />
-                <span className="truncate">{thread.ws.project}</span>
-                {thread.ws.branch && (
-                  <>
-                    <GitBranchIcon className="size-3" />
-                    <span className="truncate font-mono">
-                      {thread.ws.branch}
-                    </span>
-                  </>
-                )}
-                <span className="shrink-0 text-emerald-700/80">
-                  · {thread.ws.mode === "direct" ? "direct" : "worktree"}
-                </span>
-              </span>
+              /* Same WsBadge the thread header shows (#113) — with the
+                 open-in-editor / Reveal-in-Finder menu when the host has
+                 os.open (#110); Focus is the session's main view (#114). */
+              <WsBadge
+                ws={thread.ws}
+                openMenu={
+                  onOpenPath
+                    ? { editors, onOpen: (app) => onOpenPath(".", app) }
+                    : onOpenPath === undefined && host?.osOpen
+                      ? {
+                          editors,
+                          onOpen: (app) =>
+                            void host
+                              .osOpen?.(thread.ws!.cwd, ".", app)
+                              .catch((e) =>
+                                say?.(
+                                  `Open failed — ${e instanceof Error ? e.message : String(e)}`,
+                                ),
+                              ),
+                        }
+                      : undefined
+                }
+              />
             ) : work?.branch ? (
               <span className="hidden shrink-0 items-center gap-1 rounded bg-emerald-50 px-1 text-emerald-800 md:flex">
                 <GitBranchIcon className="size-3" />
@@ -366,22 +381,6 @@ export function FocusView({
                 <EyeIcon className="size-3" />
                 read-only
               </span>
-            )}
-            {thread.ws && host?.osOpen && (
-              <OpenPathButton
-                editors={editors}
-                onOpen={(app) =>
-                  void host
-                    .osOpen?.(thread.ws!.cwd, ".", app)
-                    .catch((e) =>
-                      say?.(
-                        `Open failed — ${e instanceof Error ? e.message : String(e)}`,
-                      ),
-                    )
-                }
-                label={`${thread.ws.cwd} — open in an editor or reveal in Finder`}
-                className="hidden shrink-0 md:inline-flex"
-              />
             )}
           </div>
         </div>
@@ -721,6 +720,8 @@ export function FocusView({
                 onPrMerge={onPrMerge}
                 live={surfaces}
                 running={running}
+                editors={editorsProp}
+                onOpenPath={onOpenPath}
               />
             </aside>
           </>
