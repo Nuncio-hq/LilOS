@@ -2,15 +2,51 @@
    props in, callbacks out; no navigation, stores or native modules beyond
    rendering. Apps (prototype/mobile now, apps/mobile later) wire them. */
 
-export { HomeScreen } from "./app/home-screen";
 export { type MacLink, MacStatusCard } from "./app/mac-status-card";
 export { SettingsScreen } from "./app/settings-screen";
 export { AppText } from "./components/app-text";
+export { LargeTitle, Pill, SectionTitle, StateChip } from "./components/bits";
 export { Button } from "./components/button";
+export { Glass } from "./components/glass";
 export { Choice, Row, Section } from "./components/grouped-list";
 export { Icon, type IconTone, useThemeColor } from "./components/icon";
+export { Orb, type OrbState, type OrbTone } from "./components/orb";
+export { ProviderLogo } from "./components/provider-logo";
 export { Screen } from "./components/screen";
 export { Mono, StateBlock } from "./components/state-block";
+export { ApprovalsSheet } from "./employees/approvals-sheet";
+export { DmHeaderTitle, EmployeeDmScreen } from "./employees/dm-screen";
+export { FolderPickerSheet, pickLabel } from "./employees/folder-picker";
+export {
+  EmployeesHomeScreen,
+  NeedsYouAccessory,
+} from "./employees/home-screen";
+export { type MacDetail, MacSheet } from "./employees/mac-sheet";
+export {
+  effortLabel,
+  ModelPickerSheet,
+  modelLabel,
+} from "./employees/model-picker";
+export { ThreadInfoSheet } from "./employees/thread-info-sheet";
+export { ThreadHeaderTitle, ThreadScreen } from "./employees/thread-screen";
+export type {
+  AgentEntry,
+  Approval,
+  ChannelRow,
+  EmployeeRow,
+  FolderOption,
+  ModelPick,
+  ModelProviderRow,
+  ModelRow,
+  ProjectGroup,
+  PullRequestRef,
+  SessionState,
+  SessionTurn,
+  ThreadDetail,
+  ThreadEntry,
+  ToolStep,
+  WorkspacePick,
+} from "./employees/types";
 export {
   buildPairingUrl,
   CODE_LENGTH,
