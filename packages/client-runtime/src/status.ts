@@ -30,7 +30,7 @@ const sentence = (s: string): string => {
   return /[.!?]$/.test(cased) ? cased : `${cased}.`;
 };
 
-/** Looks like a raw exception chain rather than a sentence Oscar can read. */
+/** Looks like a raw exception chain rather than a sentence the user can read. */
 const LOOKS_TECHNICAL =
   /Error:|ENOENT|EACCES|EADDRINUSE|ECONN[A-Z]*|posix_spawn|spawn\b|exit code|signal \w+|exception|TypeError|ReferenceError|at [\w.<>]+ \(|0x[0-9a-f]+/i;
 
@@ -260,7 +260,7 @@ function wireComponents(input: {
 /**
  * Wire result → the four rows the status UI renders (`packages/ui` shares the
  * shape plus `hint`/`detail`). With no result — socket down, handshake fatal —
- * the rows are synthesized so Oscar always sees all four legs with a reason.
+ * the rows are synthesized so the user always sees all four legs with a reason.
  */
 export function toStatusComponents(input: {
   result?: SystemStatusResult;

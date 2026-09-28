@@ -352,7 +352,7 @@ function probeHermesVersion(hermesBin: string): string | undefined {
   }
 }
 
-/** Connect to an engine the harness does not supervise (e.g. Oscar's own). */
+/** Connect to an engine the harness does not supervise (e.g. the user's own). */
 export function externalEngineLauncher(url: string): EngineLauncher {
   return {
     name: "external",

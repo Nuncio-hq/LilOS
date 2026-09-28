@@ -1,6 +1,6 @@
 /**
  * Issue #32 — AC-1 + AC-2 renderer logic: engine events become desktop
- * notifications only for conversations Oscar is not looking at, and every
+ * notifications only for conversations the user is not looking at, and every
  * notification carries the conversation it belongs to so a click can open it.
  * Pure/injected deps — the Electron sink is a stub here; the real
  * Notification + click path is covered in apps/desktop/test.
@@ -435,7 +435,7 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
         request: approval,
       }),
     );
-    // Oscar answered it while it was on screen — no notification is owed.
+    // the user answered it while it was on screen — no notification is owed.
     state.open = [];
     state.openConv = "c2";
     viewChanged();

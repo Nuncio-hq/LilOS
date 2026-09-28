@@ -44,7 +44,7 @@ export function AddFolderDialog({
      dialog renders purely off `fs` (mock). */
   onNeedDir?: (path: string) => void;
 }) {
-  const [path, setPath] = useState("~/Desktop/Oscar");
+  const [path, setPath] = useState("~/Desktop");
   const [target, setTarget] = useState<string>(defaultProject ?? "__new");
   const [newName, setNewName] = useState("");
   const clean = path.trim().replace(/\/+$/, "") || "~";

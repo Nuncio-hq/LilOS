@@ -581,8 +581,6 @@ export default function App() {
   /* Settings (issue #139): ⌘, or the sidebar gear. All values are prototype
      mock state — the real app's persistence lands in #132. */
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [me, setMe] = useState<Human>(HUMANS.oscar)
-  const [company, setCompany] = useState("Oscar Co")
   const [policy, setPolicy] = useState<ApprovalPolicy>("smart")
   const [access, setAccess] = useState<ConversationAccess>("ask")
   const [defaultEditor, setDefaultEditor] = useState("vscode")
@@ -597,6 +595,10 @@ export default function App() {
     return null
   })
   const [firstDone, setFirstDone] = useState(false)
+  /* #118 AC-5: the identity is live state — the first-run card edits it and
+     every surface (sidebar, headers, messages) reads it. Mock keeps Oscar. */
+  const [me, setMe] = useState<Human>(HUMANS.oscar)
+  const [company, setCompany] = useState("Oscar Co")
   const [editEmp, setEditEmp] = useState<string | null>(null)
   // Employees removed from the company stay in `removed` so their past messages keep a name/avatar.
   const [removed, setRemoved] = useState<Record<string, Employee>>({})
@@ -657,7 +659,10 @@ export default function App() {
   }
 
   const emp: EmpFn = (id) => employees.find((e) => e.id === id) ?? removed[id] ?? (id === "default" ? DEFAULT_EMP : undefined)
-  const human: HumanFn = (id) => (id === "oscar" ? me : HUMANS[id])
+  /* `user` is the real app's author id — in mock data it aliases the seeded
+     human so components keying on VIEWER_ID resolve the same person. */
+  const human: HumanFn = (id) =>
+    id === "user" || id === "oscar" ? me : HUMANS[id]
   /* ⌘, / Ctrl+, opens Settings from anywhere (issue #139, AC-1). */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1193,7 +1198,7 @@ export default function App() {
           ) : (
           <main className="flex min-h-0 min-w-0 flex-col">
             <ChannelHeader
-              channel={channel} projectName={project?.name} company={company} employees={employees}
+              channel={channel} companyName={company} projectName={project?.name} employees={employees}
               onNav={() => setNavOpen(true)} onOpenTickets={() => { setPanelTab("tickets"); setPanelOpen(true) }}
               panelOpen={panelOpen} onOpenPanel={() => setPanelOpen(true)} onShowEmp={showEmp}
             />
@@ -1220,7 +1225,7 @@ export default function App() {
             <RightPanel
               tab={panelTab} onTab={setPanelTab} onClose={() => setPanelOpen(false)}
               threadPanel={threadPanel}
-              employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} profiles={PROFILES} engineName={engineName ?? undefined} onDM={() => goDM(selectedEmp)} onEdit={() => setEditEmp(selectedEmp)} onSwitchProfile={(p) => switchProfile(selectedEmp, p)} /> : null}
+              employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} profiles={PROFILES} engineName={engineName ?? undefined} ownerName={me.name} onDM={() => goDM(selectedEmp)} onEdit={() => setEditEmp(selectedEmp)} onSwitchProfile={(p) => switchProfile(selectedEmp, p)} /> : null}
               tickets={tickets} emp={emp} dm={!!channel.dm}
             />
           )}
@@ -1229,7 +1234,7 @@ export default function App() {
 
       {startRoot?.thread && (
         <StartWorkDialog
-          root={startRoot} thread={startRoot.thread} channel={channel} ticket={nextTicket} emp={emp} granted={!!selfStart[channel.id]}
+          root={startRoot} thread={startRoot.thread} channel={channel} ticket={nextTicket} emp={emp} me={me.name} granted={!!selfStart[channel.id]}
           onClose={() => setStartFor(null)}
           onStart={(w, lead, grant) => startWork(startRoot.id, w, lead, grant)}
         />
@@ -1283,7 +1288,13 @@ export default function App() {
       {scenario === "first-run" && !firstDone && (
         <FirstRun
           employee={DEFAULT_EMP}
-          onOpenDM={() => { setFirstDone(true); goDM("default") }}
+          identity={{ name: me.name, company }}
+          onOpenDM={(id) => {
+            setFirstDone(true)
+            if (id.name) setMe((m) => ({ ...m, name: id.name }))
+            if (id.company) setCompany(id.company)
+            goDM("default")
+          }}
           onSkip={() => setFirstDone(true)}
         />
       )}

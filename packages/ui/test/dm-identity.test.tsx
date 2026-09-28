@@ -29,7 +29,7 @@ if (typeof Element.prototype.getAnimations === "undefined") {
 }
 afterEach(cleanup);
 
-const ME: Human = { name: "Oscar", color: "bg-blue-600" };
+const ME: Human = { name: "Ada", color: "bg-blue-600" };
 
 const EMP: Employee = {
   id: "emp_default",
@@ -48,7 +48,7 @@ describe("issue #80", () => {
   test("AC-1 the human avatar falls back to a high-contrast initial (white on the person's colour)", () => {
     const { container } = render(<HumanAvatar human={ME} />);
     const fb = container.querySelector('[data-slot="avatar-fallback"]');
-    expect(fb?.textContent).toBe("O");
+    expect(fb?.textContent).toBe("A");
     // white on bg-blue-600 (#2563eb) ≈ 5.17:1 — WCAG AA for normal text.
     expect(fb?.className).toContain("text-white");
     expect(fb?.className).toContain("bg-blue-600");
@@ -56,7 +56,7 @@ describe("issue #80", () => {
 
   test("AC-1 a user message row wears the same avatar the sidebar footer shows", () => {
     // A different identity than the shipped one proves the footer follows the
-    // app's `me`, not a hardcoded "O" — on main this row/footer pair diverges.
+    // app's `me`, not a hardcoded initial — on main this row/footer pair diverges.
     const who: Human = { name: "Minh", color: "bg-cyan-600" };
     const whoFor = (id: string) => (id === "user" ? who : undefined);
     const { container } = render(
@@ -73,6 +73,7 @@ describe("issue #80", () => {
         navOpen
         hiddenWhenClosed={false}
         me={who}
+        company="Minh Co"
         companyChannels={[]}
         projects={[]}
         folders={[]}
@@ -109,11 +110,11 @@ describe("issue #80", () => {
       }
     } as unknown as typeof window.Image;
     const { container } = render(
-      <HumanAvatar human={{ ...ME, image: "/oscar.png" }} />,
+      <HumanAvatar human={{ ...ME, image: "/ada.png" }} />,
     );
     await waitFor(() =>
       expect(container.querySelector("img")?.getAttribute("src")).toBe(
-        "/oscar.png",
+        "/ada.png",
       ),
     );
     cleanup();
@@ -121,7 +122,8 @@ describe("issue #80", () => {
       <Sidebar
         navOpen
         hiddenWhenClosed={false}
-        me={{ ...ME, image: "/oscar.png" }}
+        me={{ ...ME, image: "/ada.png" }}
+        company="Ada Co"
         companyChannels={[]}
         projects={[]}
         folders={[]}
@@ -139,7 +141,7 @@ describe("issue #80", () => {
     );
     await waitFor(() =>
       expect(side.container.querySelector("img")?.getAttribute("src")).toBe(
-        "/oscar.png",
+        "/ada.png",
       ),
     );
     window.Image = RealImage;

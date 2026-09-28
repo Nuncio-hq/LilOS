@@ -37,15 +37,15 @@ const EMP: Employee = {
   respondTo: "me",
 };
 
-const OSCAR = { name: "Oscar", color: "bg-blue-600" };
+const ADA = { name: "Ada", color: "bg-blue-600" };
 const emp = (id: string) => (id === EMP.id ? EMP : undefined);
-const human = (id: string) => (id === "oscar" ? OSCAR : undefined);
+const human = (id: string) => (id === "ada" ? ADA : undefined);
 
 const FEED: Msg[] = [
   {
     kind: "msg",
     id: "m1",
-    from: "oscar",
+    from: "ada",
     time: "07:20 PM",
     text: "What does the replay contract carry?",
     thread: {
@@ -101,7 +101,7 @@ describe("issue #83", () => {
     // name line itself.
     const content = grid?.lastElementChild;
     const line1 = content?.firstElementChild;
-    expect(line1?.textContent).toContain("Oscar");
+    expect(line1?.textContent).toContain("Ada");
     expect(line1?.textContent).toContain("07:20 PM");
     expect(line1?.querySelector("[aria-label='Session actions']")).toBeTruthy();
   });
@@ -111,7 +111,7 @@ describe("issue #83", () => {
       {
         kind: "msg",
         id: "m1",
-        from: "oscar",
+        from: "ada",
         time: "07:20 PM",
         text: "What does the replay contract carry?",
         thread: {
@@ -133,7 +133,7 @@ describe("issue #83", () => {
       "[data-session] > .grid",
     )?.lastElementChild;
     const lines = [...(content?.children ?? [])];
-    expect(lines[0]?.textContent).toContain("Oscar");
+    expect(lines[0]?.textContent).toContain("Ada");
     expect(lines[1]?.textContent).toContain("Repo summary");
     expect(lines[2]?.textContent).toContain(
       "What does the replay contract carry?",

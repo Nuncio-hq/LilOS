@@ -7,6 +7,7 @@ import { HermesAvatar } from "./avatars";
 /* Channel header + the employee chip strip under it. */
 export function ChannelHeader({
   channel,
+  companyName,
   projectName,
   company = "Oscar Co",
   employees,
@@ -17,6 +18,8 @@ export function ChannelHeader({
   onShowEmp,
 }: {
   channel: Channel;
+  /** The user's company — the breadcrumb's left half (#118). */
+  companyName: string;
   projectName?: string;
   /* Company name in the breadcrumb (#139: editable in Settings → General). */
   company?: string;
@@ -40,7 +43,7 @@ export function ChannelHeader({
         </Button>
         <div className="min-w-0">
           <div className="truncate text-muted-foreground text-xs">
-            {company} / {projectName ?? "Company"}
+            {companyName} / {projectName ?? "Company"}
           </div>
           <div className="flex items-center gap-1 font-semibold text-base">
             <HashIcon className="size-4 shrink-0" />
