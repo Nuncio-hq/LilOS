@@ -108,6 +108,7 @@ Repo: `Nuncio-hq/LilOS`. Use the `gh` CLI.
 | Tier | Examples | Steps |
 |---|---|---|
 | **Small** | typo, copy text, docs-only, comment, config that doesn't change behavior | Make the change → build if code was touched → PR with a one-line note. An issue is optional. |
+| **Prototype** | UX in `prototype/*` + the `ui`/`ui-native` parts it shows, mock data | Issue → build → typecheck + lint → look at it (browser/simulator) → PR with screenshots. No tests, no `verify`: it only has to look right; tests come with the real implementation. |
 | **Normal** | anything a user can see or any behavior change | All 7 steps below |
 
 If you are unsure, pick **Normal**. Anything that touches the engine/protocol

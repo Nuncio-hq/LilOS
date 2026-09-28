@@ -1,4 +1,3 @@
-import type { SFSymbol } from "expo-symbols";
 import { useState } from "react";
 import { LayoutAnimation, Pressable, Text, View } from "react-native";
 import { AppText } from "../components/app-text";
@@ -6,7 +5,9 @@ import { Card, CommandLine, Pill } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb, type OrbTone } from "../components/orb";
 import { Prose, Pulse } from "../components/prose";
-import type { AgentEntry, Approval, ToolStep } from "./types";
+import { StepRow, tool } from "./step-row";
+import { SubagentsCard } from "./subagents";
+import type { AgentEntry, Approval, SubagentRow, ToolStep } from "./types";
 
 /* One conversation turn — the mobile twin of the web AgentTurn/UserTurn
    (packages/ui/src/conversation/turns.tsx): who + time, "Thought for Ns"
@@ -44,12 +45,15 @@ export function AgentTurn({
   tone,
   onApprove,
   onDeny,
+  onOpenSubagent,
 }: {
   e: AgentEntry;
   name: string;
   tone: OrbTone;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
+  /** Opens a subagent's sheet (issue #170); absent = rows don't open. */
+  onOpenSubagent?: (a: SubagentRow) => void;
 }) {
   const steps = e.steps ?? [];
   // Thinking = reasoning is still streaming (no "Thought for" yet).
@@ -76,6 +80,9 @@ export function AgentTurn({
       )}
       {steps.length > 0 && (
         <Steps steps={steps} live={!!e.live && !e.writing} />
+      )}
+      {!!e.subagents?.length && (
+        <SubagentsCard agents={e.subagents} onOpen={onOpenSubagent} />
       )}
       {e.text ? (
         <Prose text={e.text} />
@@ -164,30 +171,6 @@ function Reasoning({
   );
 }
 
-const TOOL: Record<string, { verb: string; now: string; icon: SFSymbol }> = {
-  terminal: { verb: "Ran", now: "Running", icon: "terminal" },
-  read_file: { verb: "Read", now: "Reading", icon: "doc.text" },
-  write_file: { verb: "Created", now: "Creating", icon: "doc.badge.plus" },
-  patch: { verb: "Edited", now: "Editing", icon: "pencil" },
-  search_files: {
-    verb: "Searched",
-    now: "Searching",
-    icon: "magnifyingglass",
-  },
-  web_search: {
-    verb: "Searched the web",
-    now: "Searching the web",
-    icon: "globe",
-  },
-  view_image: { verb: "Looked at", now: "Looking at", icon: "photo" },
-};
-const tool = (t: string) =>
-  TOOL[t] ?? {
-    verb: t,
-    now: t,
-    icon: "wrench.and.screwdriver" as SFSymbol,
-  };
-
 /* All of a turn's tool calls behind one "N steps" row (web: Task block).
    Live turns keep it open so you watch the work land. */
 function Steps({ steps, live }: { steps: ToolStep[]; live: boolean }) {
@@ -260,66 +243,6 @@ function ToolIcons({ steps }: { steps: ToolStep[] }) {
         <Icon key={k} name={tool(k).icon} size={12} tone="muted-foreground" />
       ))}
     </View>
-  );
-}
-
-function StepRow({ s }: { s: ToolStep }) {
-  const [open, setOpen] = useState(false);
-  const t = tool(s.tool);
-  const canOpen = !!s.output && !s.running;
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${t.verb} ${s.arg ?? ""}`}
-      disabled={!canOpen}
-      onPress={() => {
-        ease();
-        setOpen(!open);
-      }}
-      className="gap-2 px-3.5 py-2.5 active:bg-fill"
-    >
-      {/* Hairline inset to the text, like an iOS list. */}
-      <View className="absolute top-0 right-0 left-[42px] h-[0.5px] bg-border" />
-      <View className="flex-row items-center gap-2.5">
-        <View className="w-4 items-center">
-          <Icon
-            name={t.icon}
-            size={13}
-            tone={s.running ? "work" : "muted-foreground"}
-          />
-        </View>
-        <Text numberOfLines={1} className="flex-1 text-[14px]">
-          <Text className="text-subtle-foreground">{`${s.running ? t.now : t.verb} `}</Text>
-          {s.arg && (
-            <Text
-              className={`font-mono text-[12.5px] ${s.running ? "text-foreground" : "text-subtle-foreground"}`}
-            >
-              {s.tool === "terminal" ? `$ ${s.arg}` : s.arg}
-            </Text>
-          )}
-        </Text>
-        {s.add !== undefined && (
-          <Text className="font-mono text-[12px]">
-            <Text className="text-success">{`+${s.add}`}</Text>
-            {!!s.del && (
-              <Text className="text-destructive">{` −${s.del}`}</Text>
-            )}
-          </Text>
-        )}
-        {s.running && (
-          <Pulse>
-            <View className="size-1.5 rounded-full bg-work" />
-          </Pulse>
-        )}
-      </View>
-      {open && s.output && (
-        <View className="ml-[26px] rounded-xl bg-background px-3 py-2">
-          <Text className="font-mono text-[12px] leading-[17px] text-subtle-foreground">
-            {s.output}
-          </Text>
-        </View>
-      )}
-    </Pressable>
   );
 }
 

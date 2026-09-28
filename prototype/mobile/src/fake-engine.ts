@@ -6,12 +6,19 @@ import type {
   ProjectGroup,
   PullRequestRef,
   SessionTurn,
+  SubagentRow,
   ThreadDetail,
   ThreadEntry,
   ToolStep,
   WorkspacePick,
 } from "@lilos/ui-native";
 import { atom, computed } from "nanostores";
+import {
+  SLEEP_FIX,
+  SLEEP_THREAD,
+  SUBAGENT_THREADS,
+  type SubagentSpec,
+} from "./fake-subagents";
 import {
   APPROVALS,
   EMPLOYEES,
@@ -31,7 +38,8 @@ import {
 
 // ── Store ───────────────────────────────────────────────────────────────────
 
-export const $threads = atom<ThreadDetail[]>(THREADS);
+const SEED = [...THREADS, ...SUBAGENT_THREADS];
+export const $threads = atom<ThreadDetail[]>(SEED);
 
 /** Order approvals were asked in (oldest first → the dock shows the oldest). */
 const ASKED = ["a-flake", "a-post"];
@@ -167,6 +175,8 @@ type Script = {
   onDeny?: Script;
   /** A PR this turn opens (added to the session when the turn ends). */
   pr?: PullRequestRef;
+  /** Helpers that run side by side after the steps (issue #170). */
+  subagents?: SubagentSpec[];
 };
 
 /** Scripts waiting on an approval, by approval id. */
@@ -190,10 +200,11 @@ class Stopped extends Error {}
 async function run(tid: string, s: Script, eid?: string) {
   const g = gen;
   const id = eid ?? `g-${uid()}`;
+  let dead = false;
   const tick = async (ms: number) => {
     await new Promise((r) => setTimeout(r, ms));
     if (g !== gen) throw new Stopped("reset");
-    if (stops.has(tid)) throw new Stopped("stop");
+    if (dead || stops.has(tid)) throw new Stopped("stop");
   };
   stops.delete(tid);
   mapThread(tid, (t) => ({
@@ -260,6 +271,7 @@ async function run(tid: string, s: Script, eid?: string) {
         ),
       }));
     }
+    if (s.subagents?.length) await helpers(s.subagents, set, tick);
     if (s.text) {
       await tick(300);
       set((e) => ({ ...e, writing: true, text: "" }));
@@ -290,7 +302,10 @@ async function run(tid: string, s: Script, eid?: string) {
           effort,
           files:
             new Set(
-              (e.steps ?? [])
+              [
+                ...(e.steps ?? []),
+                ...(e.subagents ?? []).flatMap((a) => a.steps),
+              ]
                 .filter((x) => x.add !== undefined)
                 .map((x) => x.arg),
             ).size || undefined,
@@ -305,6 +320,7 @@ async function run(tid: string, s: Script, eid?: string) {
       }));
     }
   } catch (err) {
+    dead = true;
     if (!(err instanceof Stopped) || g !== gen) return;
     set((e) => ({
       ...e,
@@ -312,6 +328,15 @@ async function run(tid: string, s: Script, eid?: string) {
       writing: false,
       stopped: true,
       steps: e.steps?.map((x) => ({ ...x, running: false })),
+      subagents: e.subagents?.map((a) =>
+        a.status === "running"
+          ? {
+              ...a,
+              status: "stopped",
+              steps: a.steps.map((x) => ({ ...x, running: false })),
+            }
+          : a,
+      ),
       footer: { dur: Math.round((Date.now() - started) / 1000) },
     }));
     mapThread(tid, (x) => ({ ...x, state: "stopped", when: "now" }));
@@ -333,6 +358,80 @@ async function run(tid: string, s: Script, eid?: string) {
     }));
     void run(tid, followUp(q.text, t));
   }
+}
+
+/* Subagents (issue #170): all start at once, each plays its steps on its
+   own clock, then reports. An employee helper just works for `wait` ms —
+   its steps live in its own thread. Resolves when every helper is done. */
+async function helpers(
+  specs: SubagentSpec[],
+  set: (f: (e: AgentEntry) => AgentEntry) => void,
+  tick: (ms: number) => Promise<void>,
+) {
+  set((e) => ({
+    ...e,
+    subagents: [
+      ...(e.subagents ?? []),
+      ...specs.map((sp) => ({
+        id: sp.id,
+        name: sp.name,
+        task: sp.task,
+        employee: sp.employee,
+        status: "running" as const,
+        steps: [],
+      })),
+    ],
+  }));
+  const setA = (aid: string, f: (a: SubagentRow) => SubagentRow) =>
+    set((e) => ({
+      ...e,
+      subagents: e.subagents?.map((a) => (a.id === aid ? f(a) : a)),
+    }));
+  await Promise.all(
+    specs.map(async (sp) => {
+      const t0 = Date.now();
+      await tick(sp.delay ?? 300);
+      for (const { ms, ...st } of sp.steps) {
+        const sid = uid();
+        setA(sp.id, (a) => ({
+          ...a,
+          steps: [
+            ...a.steps,
+            {
+              ...st,
+              id: sid,
+              output: undefined,
+              add: undefined,
+              del: undefined,
+              running: true,
+            },
+          ],
+        }));
+        await tick(ms ?? 1200);
+        setA(sp.id, (a) => ({
+          ...a,
+          steps: a.steps.map((x) => (x.id === sid ? { ...st, id: sid } : x)),
+        }));
+      }
+      if (sp.wait) await tick(sp.wait);
+      setA(sp.id, (a) => ({
+        ...a,
+        status: sp.ends ?? "done",
+        result: sp.result,
+        dur: Math.max(1, Math.round((Date.now() - t0) / 1000)),
+      }));
+    }),
+  );
+}
+
+/** Background → Stop: the process ends, its log keeps the tail. */
+export function stopJob(tid: string, jid: string) {
+  mapThread(tid, (t) => ({
+    ...t,
+    jobs: t.jobs?.map((j) =>
+      j.id === jid ? { ...j, status: "stopped", log: `${j.log}\n^C` } : j,
+    ),
+  }));
 }
 
 // ── What you can do ─────────────────────────────────────────────────────────
@@ -454,14 +553,24 @@ export function startLife() {
   setTimeout(() => g === gen && void run("s-ci", CI, "g1"), 2400);
 }
 
+/* Builder's sleep fix fans out to two subagents + Reviewer (issue #170) —
+   played the first time its thread opens, so you watch it from the start. */
+let sleepPlayed = false;
+export function playOnOpen(tid: string) {
+  if (tid !== SLEEP_THREAD || sleepPlayed) return;
+  sleepPlayed = true;
+  void run(SLEEP_THREAD, SLEEP_FIX_TURN, "g2");
+}
+
 /** Put the whole team back to the start and play it again. */
 export function resetTeam() {
   gen++;
   alive = false;
+  sleepPlayed = false;
   stops.clear();
   pending.clear();
   asked.set(ASKED);
-  $threads.set(THREADS);
+  $threads.set(SEED);
   startLife();
 }
 
@@ -475,6 +584,11 @@ const slug = (s: string) =>
     .split("-")
     .slice(0, 3)
     .join("-") || "task";
+
+const SLEEP_FIX_TURN: Script = {
+  subagents: SLEEP_FIX,
+  text: "Fixed on `lil-9-sleep-replay`: the harness resumes from `lastSeq` after the Mac wakes, with a regression test. **Reviewer approved.** The dev server and test watcher are still running in the background.",
+};
 
 const CI: Script = {
   steps: [

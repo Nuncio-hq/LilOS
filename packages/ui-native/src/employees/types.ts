@@ -90,6 +90,36 @@ export type SessionTurn = {
   prs?: PullRequestRef[];
 };
 
+/** A helper a turn spun off (web: Subagent): its own subagent, with its
+    steps + report, or another employee working in their own session —
+    then only a link to that thread. */
+export type SubagentRow = {
+  id: string;
+  name: string;
+  /** The brief the parent handed it. */
+  task: string;
+  status: "running" | "done" | "failed" | "stopped";
+  steps: ToolStep[];
+  result?: string;
+  /** Seconds it ran. */
+  dur?: number;
+  employee?: { id: string; name: string; tone: OrbTone; threadId?: string };
+};
+
+/** A process left running for the session (web: BackgroundJob). */
+export type BackgroundJobRow = {
+  id: string;
+  command: string;
+  status: "running" | "exited" | "failed" | "stopped";
+  started: string;
+  uptime: string;
+  url?: string;
+  exitCode?: number;
+  /** Output tail. */
+  log: string;
+  by?: string;
+};
+
 /** One tool call inside an agent turn (web: Step). */
 export type ToolStep = {
   id: string;
@@ -121,6 +151,8 @@ export type AgentEntry = {
   /** What you decided on this turn's approval — kept as a receipt. */
   decided?: { approved: boolean; what: string };
   approval?: Approval;
+  /** Helpers this turn spun off (issue #170; web: Subagent). */
+  subagents?: SubagentRow[];
   /** Worked for 21s · Opus 5.5 · High · 5 steps · 2 files changed */
   footer?: { dur?: number; model?: string; effort?: string; files?: number };
 };
@@ -155,6 +187,8 @@ export type ThreadDetail = {
   usage?: string;
   /** PRs this session opened, oldest first. */
   prs?: PullRequestRef[];
+  /** Background processes of this session, newest last. */
+  jobs?: BackgroundJobRow[];
   entries: ThreadEntry[];
 };
 

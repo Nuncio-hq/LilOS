@@ -81,6 +81,7 @@ export function ThreadView({
   onDraftChange,
   editors,
   onOpenPath,
+  onOpenSession,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -146,6 +147,8 @@ export function ThreadView({
   scrollTo?: string;
   /* Fired once the scroll happened; the host clears `scrollTo` there. */
   onScrolled?: () => void;
+  /* A subagent row that is another employee links to their session (issue #170). */
+  onOpenSession?: (employeeId: string, session: string) => void;
 }) {
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
@@ -308,6 +311,7 @@ export function ThreadView({
                     last={i === thread.replies.length - 1}
                     onRetry={onRetry}
                     models={models}
+                    onOpenSession={onOpenSession}
                     pending={steer ? pending : []}
                     cards={
                       <ReplyCards

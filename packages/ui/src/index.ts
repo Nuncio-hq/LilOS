@@ -21,6 +21,7 @@ export {
 } from "./chat/model-visibility-dialog";
 // conversation (shared by the thread panel and Focus — issue #19)
 export { ReplyCards } from "./conversation/cards";
+export { TurnSubagents } from "./conversation/subagents";
 export {
   AgentTurn,
   AttachmentChips,
@@ -91,7 +92,8 @@ export { ChannelItem, NavItem, Section } from "./sidebar/nav";
 export { ThreadView } from "./thread/thread-view";
 export * from "./types";
 export type { TreeNode } from "./workbench/artifacts";
-export { buildTree, sessionArtifacts } from "./workbench/artifacts";
+export { buildTree, sessionArtifacts, turnSteps } from "./workbench/artifacts";
+export { BackgroundPanel } from "./workbench/background-panel";
 export type { DiffRow } from "./workbench/diff-view";
 export { DiffStat, DiffView, parsePatch } from "./workbench/diff-view";
 export { TreeNodes } from "./workbench/file-tree-nodes";
