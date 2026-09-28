@@ -4,11 +4,12 @@
    the harness feed's. The prototype keeps its own dev-plugin client
    (prototype/web/src/host.ts). */
 
-import { HOST_ERRORS } from "@lilos/contracts/host";
+import { ForgeGhErrorData, HOST_ERRORS } from "@lilos/contracts/host";
 import type {
   CheckRun,
   Diff,
   HostAccessors,
+  PrError,
   PullRequest,
 } from "@lilos/ui/types";
 
@@ -45,6 +46,8 @@ export function hostRoots(): string[] {
     e.g. NOT_A_REPO means the tab stays hidden, GH_FAILED reads plainly. */
 export class HostError extends Error {
   code?: number;
+  /** Host-side error data (e.g. forge's `{reason, detail}` on GH_FAILED). */
+  data?: unknown;
 }
 
 async function host<T>(method: string, params?: unknown): Promise<T> {
@@ -59,11 +62,12 @@ async function host<T>(method: string, params?: unknown): Promise<T> {
   if (!res.ok) throw new Error(`host ${method}: HTTP ${res.status}`);
   const frame = (await res.json()) as {
     result?: T;
-    error?: { code: number; message: string };
+    error?: { code: number; message: string; data?: unknown };
   };
   if (frame.error) {
     const err = new HostError(frame.error.message);
     err.code = frame.error.code;
+    err.data = frame.error.data;
     throw err;
   }
   return frame.result as T;
@@ -164,15 +168,19 @@ export const hostAccessors: HostAccessors = {
       path: `${cwd}/${path}`,
     }).catch(() => null),
   /* forge.pr → {pr} for the checkout's branch; outer null = the method didn't
-     answer, {pr:null} = no PR on the branch, {error} = gh failed (AC-5). */
+     answer, {pr:null} = no PR on the branch, {error} = gh failed, with the
+     host-classified reason the tab maps to plain copy (#114 AC-5). */
   pr: (cwd) =>
     host<{ branch?: string; pr: WirePr | null }>("forge.pr", { path: cwd })
       .then((r) => ({ pr: r.pr ? mapPr(r.pr) : null, branch: r.branch }))
       .catch((e) => {
         if (!(e instanceof HostError)) return null;
-        return e.code === HOST_ERRORS.NOT_A_REPO
-          ? null
-          : { pr: null, error: e.message };
+        if (e.code === HOST_ERRORS.NOT_A_REPO) return null;
+        const d = ForgeGhErrorData.safeParse(e.data);
+        const error: PrError = d.success
+          ? d.data
+          : { reason: "other", detail: e.message };
+        return { pr: null, error };
       }),
   /* forge.comment → the new comment's URL (errors bubble to the panel). */
   prComment: (cwd, body) =>

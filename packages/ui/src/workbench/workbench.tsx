@@ -68,6 +68,7 @@ import type {
   MergeMethod,
   OsApp,
   OsEditor,
+  PrError,
   PullRequest,
   Thread,
   WbTab,
@@ -79,6 +80,7 @@ import { DiffView } from "./diff-view";
 import { TreeNodes } from "./file-tree-nodes";
 import { LivePreview, type LiveSurfaces, LiveTerminal } from "./live";
 import { OpenPathButton } from "./open-path";
+import { PrFailure } from "./pr-failure";
 import { PrPanel } from "./pr-panel";
 
 /* Right-hand workbench of Focus, derived from the session's steps, or — when the session
@@ -155,7 +157,7 @@ export function Workbench({
   const [probe, setProbe] = useState<{
     files: string[] | null;
     diffs: Diff[] | null;
-    pr: { pr: PullRequest | null; branch?: string; error?: string } | null;
+    pr: { pr: PullRequest | null; branch?: string; error?: PrError } | null;
   } | null>(null);
   /* Open-in-editor affordances (issue #110): editors detected on this host
      (os.editors) + one bound os.open call. No os.open → no controls (D-#19);
@@ -752,19 +754,22 @@ export function Workbench({
               say={say}
             />
           ) : (
-            /* No PR on the branch, or `gh` failed — read plainly (#114 AC-5). */
+            /* No PR on the branch, or `gh` failed — plain copy per reason
+               with one next step; raw stderr stays behind Details (#114 AC-5). */
             <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground text-xs">
-              <EyeIcon className="size-5" />
               {prError ? (
-                <p className="max-w-full break-words">{prError}</p>
+                <PrFailure error={prError} onRetry={reloadPr} />
               ) : (
-                <p>
-                  No pull request on{" "}
-                  <span className="font-mono">
-                    ⎇ {probe?.pr?.branch || work?.branch || "this branch"}
-                  </span>{" "}
-                  yet.
-                </p>
+                <>
+                  <EyeIcon className="size-5" />
+                  <p>
+                    No pull request on{" "}
+                    <span className="font-mono">
+                      ⎇ {probe?.pr?.branch || work?.branch || "this branch"}
+                    </span>{" "}
+                    yet.
+                  </p>
+                </>
               )}
             </div>
           )}
