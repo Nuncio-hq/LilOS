@@ -22,9 +22,7 @@ describe("AC-1 (#85) a signed bundle ships the real engine only", () => {
   const plan = engineBundlePlan(SIGNED);
 
   it("compiles lilos-engine-nous and no fake", () => {
-    expect(plan.binaries.map((b) => b.outfile)).toEqual([
-      "lilos-engine-nous",
-    ]);
+    expect(plan.binaries.map((b) => b.outfile)).toEqual(["lilos-engine-nous"]);
   });
 
   it("stamps hermes as the harness engine default", () => {

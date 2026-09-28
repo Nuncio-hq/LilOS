@@ -34,11 +34,7 @@ export interface EngineBundlePlan {
  * the bundle ships may have "hermes" in its name: managed Macs kill such
  * executables on sight — the MDM kill-by-name policy (#141).
  */
-export const BUNDLE_EXECUTABLES = [
-  "lilos-svc",
-  "lilos-relay",
-  "lilos-harness",
-];
+export const BUNDLE_EXECUTABLES = ["lilos-svc", "lilos-relay", "lilos-harness"];
 
 const HERMES_ADAPTER: EngineBinary = {
   // "nous" (Nous Research, Hermes' maker), never "hermes" — managed Macs
