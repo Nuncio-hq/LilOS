@@ -217,6 +217,18 @@ async function sessionOnRepo(page: Page) {
 }
 
 const logLines = () => readFileSync(LOG, "utf8").split("\n").filter(Boolean);
+/* Wait out the menu's fade-in so captures are fully opaque. */
+const openMenuSettled = async (page: Page) => {
+  const m = page
+    .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
+    .last();
+  await expect(m).toBeVisible();
+  await expect(m).toHaveCSS("opacity", "1");
+  return m;
+};
+
+/* PR screenshots are reviewed at 1288x700. */
+test.use({ viewport: { width: 1288, height: 700 } });
 
 test("AC-1 + AC-5 the folder badge is a menu listing the detected editors, default first", async ({
   page,
@@ -226,7 +238,8 @@ test("AC-1 + AC-5 the folder badge is a menu listing the detected editors, defau
   // os.open exists on this host → the badge is a button that opens the menu.
   await expect(badge).toHaveRole("button", { timeout: 15_000 });
   await badge.click();
-  const items = page.locator("[data-openwith]");
+  const menu = await openMenuSettled(page);
+  const items = menu.locator("[data-openwith]");
   await expect(items).toHaveCount(3);
   await expect(items.nth(0)).toHaveAttribute("data-openwith", "cursor");
   await expect(items.nth(0)).toContainText("Open in Cursor");
@@ -245,7 +258,7 @@ test("AC-2 + AC-4 Open in Zed runs the Zed CLI on the session folder (no shell)"
   const badge = await sessionOnRepo(page);
   await expect(badge).toHaveRole("button", { timeout: 15_000 });
   await badge.click();
-  await page.locator('[data-openwith="zed"]').click();
+  await (await openMenuSettled(page)).locator('[data-openwith="zed"]').click();
   await expect
     .poll(() => logLines().join("|"), { timeout: 10_000 })
     .toContain(`arg:${repoDir}`);
@@ -255,7 +268,9 @@ test("AC-2 + AC-4 Open in Zed runs the Zed CLI on the session folder (no shell)"
   expect(logLines()[idx + 1]).toBe(`arg:${repoDir}`);
   // "Open in Cursor" uses `cursor -g <folder>` (the -g syntax, no line).
   await badge.click();
-  await page.locator('[data-openwith="cursor"]').click();
+  await (await openMenuSettled(page))
+    .locator('[data-openwith="cursor"]')
+    .click();
   await expect
     .poll(() => logLines().join("|"), { timeout: 10_000 })
     .toContain("exec:cursor");
@@ -272,7 +287,9 @@ test("AC-3 Reveal in Finder runs `open -R` on the session folder", async ({
   const badge = await sessionOnRepo(page);
   await expect(badge).toHaveRole("button", { timeout: 15_000 });
   await badge.click();
-  await page.locator('[data-openwith="finder"]').click();
+  await (await openMenuSettled(page))
+    .locator('[data-openwith="finder"]')
+    .click();
   await expect
     .poll(() => logLines().join("|"), { timeout: 10_000 })
     .toContain("exec:open");
@@ -326,7 +343,8 @@ test("AC-5 without os.open the badge is a plain label; without editors the menu 
   await expect(badge2).toContainText("lilos-repo-110", { timeout: 15_000 });
   await expect(badge2).toHaveRole("button");
   await badge2.click();
-  const items = page.locator("[data-openwith]");
+  const menu2 = await openMenuSettled(page);
+  const items = menu2.locator("[data-openwith]");
   await expect(items).toHaveCount(1);
   await expect(items.nth(0)).toHaveAttribute("data-openwith", "finder");
   await page.screenshot({ path: `${SHOTS}/ac-5-no-editors.png` });

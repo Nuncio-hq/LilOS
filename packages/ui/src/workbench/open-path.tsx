@@ -73,7 +73,6 @@ export function OpenPathButton({
       trigger={
         <button
           type="button"
-          title={label}
           aria-label={label}
           className={cn(
             "inline-flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground",

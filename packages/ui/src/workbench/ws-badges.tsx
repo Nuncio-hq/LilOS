@@ -59,7 +59,7 @@ export function WsBadge({
           <button
             type="button"
             className={`${badgeClass} cursor-pointer hover:bg-emerald-100`}
-            title={`${ws.cwd} — open in an editor or reveal in Finder`}
+            aria-label={`${ws.cwd} — open in an editor or reveal in Finder`}
             data-wsbadge
           />
         }

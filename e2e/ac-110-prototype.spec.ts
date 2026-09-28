@@ -50,7 +50,16 @@ appendFileSync(path.join(repoDir, "main.swift"), "let c = 3\nlet d = 4\n");
 const logLines = () => readFileSync(LOG, "utf8").split("\n").filter(Boolean);
 const menu = (page: Page) =>
   page.locator('[role="menu"], [data-slot="dropdown-menu-content"]').last();
+/* Wait out the menu's fade-in so captures are fully opaque. */
+const menuSettled = async (page: Page) => {
+  const m = menu(page);
+  await expect(m).toBeVisible();
+  await expect(m).toHaveCSS("opacity", "1");
+  return m;
+};
 
+/* PR screenshots are reviewed at 1288x700. */
+test.use({ viewport: { width: 1288, height: 700 } });
 test.afterAll(() => rmSync(ROOT, { recursive: true, force: true }));
 
 test("AC-2/AC-3 workbench: open file, open file at line, reveal — real os.open argv", async ({
@@ -91,8 +100,9 @@ test("AC-2/AC-3 workbench: open file, open file at line, reveal — real os.open
   // os.editors resolves async — the badge becomes a menu trigger once it has.
   await expect(badge).toHaveRole("button");
   await badge.click();
-  await expect(page.locator('[data-openwith="cursor"]')).toBeVisible();
-  await page.locator('[data-openwith="zed"]').click();
+  const badgeMenu = await menuSettled(page);
+  await expect(badgeMenu.locator('[data-openwith="cursor"]')).toBeVisible();
+  await badgeMenu.locator('[data-openwith="zed"]').click();
   await expect
     .poll(() => logLines().join("|"), { timeout: 10_000 })
     .toContain(`arg:${repoDir}`);
@@ -103,8 +113,12 @@ test("AC-2/AC-3 workbench: open file, open file at line, reveal — real os.open
   await page.getByRole("tab", { name: "Files" }).click();
   const row = page.getByRole("treeitem", { name: /main\.swift/ });
   await expect(row.first()).toBeVisible({ timeout: 15_000 });
+  // Screenshot the Files tree with the row's open button before switching
+  // tabs — the review wants this leg visible, not the Changes pane.
+  await page.screenshot({ path: `${SHOTS}/ac-2-files.png` });
   await row.first().locator("[data-openpath]").click();
-  await page.locator('[data-openwith="finder"]').click();
+  const rowMenu = await menuSettled(page);
+  await rowMenu.locator('[data-openwith="finder"]').click();
   const target = path.join(repoDir, "main.swift");
   await expect
     .poll(() => logLines().join("|"), { timeout: 10_000 })
@@ -116,7 +130,7 @@ test("AC-2/AC-3 workbench: open file, open file at line, reveal — real os.open
   await expect(page.locator("[data-openline]").first()).toBeVisible({
     timeout: 15_000,
   });
-  await page.screenshot({ path: `${SHOTS}/ac-2-workbench.png` });
+  await page.screenshot({ path: `${SHOTS}/ac-2-changes.png` });
   await page.locator("[data-openline]").first().click();
   await expect
     .poll(() => logLines().join("|"), { timeout: 10_000 })
