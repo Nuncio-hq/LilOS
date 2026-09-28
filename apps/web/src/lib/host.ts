@@ -75,6 +75,41 @@ export const hostDiscoverRepos = (roots: string[]) =>
   host<{
     repos: { path: string; head: string | null; remote: string | null }[];
   }>("git.discoverRepos", { roots, depth: 2 });
+export type OsEditor = {
+  id: "vscode" | "cursor" | "zed" | "xcode";
+  name: string;
+};
+export type OsApp = OsEditor["id"] | "finder";
+
+/* Capability check (issue #110, D-#19): os.open/os.editors exist on the host
+   — controls render only then. One describe per app boot, cached; an
+   unreachable host answers "no methods" so the controls simply hide. */
+let methodsP: Promise<Set<string>> | null = null;
+const hostMethods = () =>
+  (methodsP ??= host<{ methods: string[] }>("host.describe")
+    .then((r) => new Set(r.methods))
+    .catch(() => new Set<string>()));
+
+/** Editors the host detected (os.editors); null when os.open isn't there. */
+export async function hostEditors(): Promise<OsEditor[] | null> {
+  const m = await hostMethods();
+  if (!m.has("os.open")) return null;
+  if (!m.has("os.editors")) return [];
+  return host<{ editors: OsEditor[] }>("os.editors", {})
+    .then((r) => r.editors)
+    .catch(() => [] as OsEditor[]);
+}
+
+/** os.open: open `path` inside `root` in `app`, at `line` if given. */
+export const hostOsOpen = (
+  root: string,
+  path: string,
+  app: OsApp,
+  line?: number,
+) =>
+  host<Record<string, never>>("os.open", { root, path, app, line }).then(
+    () => undefined,
+  );
 
 export type SearchResult = {
   path: string;

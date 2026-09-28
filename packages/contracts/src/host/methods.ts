@@ -31,6 +31,12 @@ import {
   GitStatusParams,
   GitStatusResult,
 } from "./git";
+import {
+  OsEditorsParams,
+  OsEditorsResult,
+  OsOpenParams,
+  OsOpenResult,
+} from "./os";
 import { HOST_API } from "./protocol";
 import { HostUserParams, HostUserResult } from "./user";
 
@@ -120,6 +126,16 @@ export const HOST_METHODS = {
     params: ForgeMergeParams,
     result: ForgeMergeResult,
     doc: "Merge the PR via `gh` (squash|merge|rebase); returns the re-read PR, never stdout trust.",
+  },
+  "os.editors": {
+    params: OsEditorsParams,
+    result: OsEditorsResult,
+    doc: "Editors detected on this Mac (VS Code, Cursor, Zed, Xcode by bundle id), preference order; first = default.",
+  },
+  "os.open": {
+    params: OsOpenParams,
+    result: OsOpenResult,
+    doc: "Open a path inside the session folder in an editor (`code -g`/`cursor -g`/`zed` line syntax; Xcode file-only) or reveal it in Finder. argv exec, no shell.",
   },
   "host.user": {
     params: HostUserParams,

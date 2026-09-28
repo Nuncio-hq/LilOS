@@ -97,6 +97,7 @@ export { DiffStat, DiffView, parsePatch } from "./workbench/diff-view";
 export { TreeNodes } from "./workbench/file-tree-nodes";
 export type { LiveBrowserInput, LiveSurfaces } from "./workbench/live";
 export { LivePreview, LiveTerminal } from "./workbench/live";
+export { OpenPathButton, OpenPathMenu } from "./workbench/open-path";
 export { PrPanel } from "./workbench/pr-panel";
 export { StepRow } from "./workbench/step-row";
 // workbench

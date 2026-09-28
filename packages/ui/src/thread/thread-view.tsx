@@ -29,6 +29,8 @@ import type {
   ModelOption,
   ModelPickerExtras,
   Msg,
+  OsApp,
+  OsEditor,
   Thread,
   Work,
 } from "../types";
@@ -73,6 +75,8 @@ export function ThreadView({
   onSearchFiles,
   draft,
   onDraftChange,
+  editors,
+  onOpenPath,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -123,6 +127,11 @@ export function ThreadView({
   /* Why the working transcript can't be shown (harness down, engine restarted) —
      rendered as a muted note where the transcript would be (issue #28). */
   transcriptNote?: string;
+  /* os.editors result + the os.open call bound to the session folder
+     (issue #110): the folder badge gains an "Open in …/Reveal in Finder"
+     menu only when both are passed (D-#19). */
+  editors?: OsEditor[];
+  onOpenPath?: (path: string, app: OsApp, line?: number) => void;
   /* `@` menu sections (#105): employees for mention; a file/dir search for
      the Files section — passed only when the session has a folder (cwd). */
   mentionables?: Employee[];
@@ -155,7 +164,17 @@ export function ThreadView({
             <code className="rounded bg-muted px-1">{thread.session}</code>
           </div>
           {thread.ws ? (
-            <WsBadge ws={thread.ws} />
+            <WsBadge
+              ws={thread.ws}
+              openMenu={
+                onOpenPath
+                  ? {
+                      editors: editors ?? [],
+                      onOpen: (app) => onOpenPath(".", app),
+                    }
+                  : undefined
+              }
+            />
           ) : (
             <WorkspaceBadge work={work} repo={repo} />
           )}
