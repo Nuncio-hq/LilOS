@@ -9,7 +9,6 @@ export function ChannelHeader({
   channel,
   companyName,
   projectName,
-  company = "Oscar Co",
   employees,
   onNav,
   onOpenTickets,
@@ -21,8 +20,6 @@ export function ChannelHeader({
   /** The user's company — the breadcrumb's left half (#118). */
   companyName: string;
   projectName?: string;
-  /* Company name in the breadcrumb (#139: editable in Settings → General). */
-  company?: string;
   employees: Employee[];
   onNav: () => void;
   onOpenTickets: () => void;
