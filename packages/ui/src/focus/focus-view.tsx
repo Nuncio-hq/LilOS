@@ -17,7 +17,7 @@ import {
   PlayIcon,
   Undo2Icon,
 } from "lucide-react";
-import { Fragment, type ReactNode, useEffect, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import {
   ConversationKeepBottom,
   NotSentTray,
@@ -124,6 +124,8 @@ export function FocusView({
   draft,
   onDraftChange,
   transcriptNote,
+  scrollTo,
+  onScrolled,
   children,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
@@ -190,6 +192,10 @@ export function FocusView({
   /* Why the working transcript can't be shown — same note ThreadView renders
      where the transcript would be (issue #28). */
   transcriptNote?: string;
+  /* #138 AC-3 jump-to-hit, same contract as ThreadView: scroll the message
+     with this id into view, flash it, then call onScrolled. */
+  scrollTo?: string;
+  onScrolled?: () => void;
   /* Extra surface content below the composer (the question card, #114). */
   children?: ReactNode;
 }) {
@@ -198,6 +204,37 @@ export function FocusView({
     sessionArtifacts(thread).diffs.length ? "changes" : "terminal",
   );
   const [follow, setFollow] = useState(true);
+  /* #138 AC-3: a search hit opens the session in Focus (#114) scrolled to
+     that message with a short flash — mirrors ThreadView's jump-to-hit.
+     Waits for the row to render (history may still be loading). */
+  const turnsRef = useRef<HTMLElement>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  const flashedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!scrollTo) {
+      flashedRef.current = null;
+      return;
+    }
+    if (flashedRef.current === scrollTo) return;
+    const el = turnsRef.current?.querySelector(
+      `[data-msg="${CSS.escape(scrollTo)}"]`,
+    );
+    if (!el) return;
+    flashedRef.current = scrollTo;
+    el.scrollIntoView({ block: "center" });
+    setFlash(scrollTo);
+    onScrolled?.();
+  }, [scrollTo, thread.replies, onScrolled]);
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(null), 1800);
+    return () => clearTimeout(t);
+  }, [flash]);
+  const flashCls = (id?: string) =>
+    cn(
+      "rounded-lg transition-colors duration-500",
+      id && flash === id && "bg-amber-100 dark:bg-amber-900/40",
+    );
   const isDM = !!channel.dm;
   const model = thread.model ?? lead?.model ?? defaultModel ?? models?.[0]?.id;
   const live = thread.replies.find((r) => r.live);
@@ -484,59 +521,66 @@ export function FocusView({
             "lg:grid-cols-[minmax(0,1fr)_minmax(400px,46%)]",
         )}
       >
-        <section className="flex min-h-0 min-w-0 flex-col">
+        <section ref={turnsRef} className="flex min-h-0 min-w-0 flex-col">
           <Conversation className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]">
             <ConversationContent className="mx-auto w-full max-w-[46rem] gap-7 px-5 py-8">
-              <UserTurn
-                from={root.from}
-                time={root.time}
-                text={root.text}
-                note={`opened session ${thread.session}`}
-                human={human}
-                attachments={root.attachments}
-              />
+              <div data-msg={root.id} className={flashCls(root.id)}>
+                <UserTurn
+                  from={root.from}
+                  time={root.time}
+                  text={root.text}
+                  note={`opened session ${thread.session}`}
+                  human={human}
+                  attachments={root.attachments}
+                />
+              </div>
               {thread.replies.map((r, i) =>
                 emp(r.from) ? (
-                  <AgentTurn
+                  <div
                     key={r.id ?? i}
-                    r={r}
-                    emp={emp}
-                    human={human}
-                    last={i === thread.replies.length - 1}
-                    onRetry={onRetry}
-                    models={models}
-                    onOpen={pickTab}
-                    pending={steer ? pendingSteers : []}
-                    cards={
-                      <>
-                        <ReplyCards
-                          r={r}
-                          i={i}
-                          last={i === thread.replies.length - 1}
-                          work={work}
-                          repo={channel.repo}
-                          emp={emp}
-                          human={human}
-                          resolved={resolved}
-                          setResolved={setResolved}
-                          onStart={onStart}
-                        />
-                        {pr &&
-                          !r.live &&
-                          r.steps?.some((s) =>
-                            String(s.input.command ?? "").startsWith(
-                              "gh pr create",
-                            ),
-                          ) && (
-                            <PrCard
-                              pr={pr}
-                              author={lead?.name ?? pr.author}
-                              onOpen={() => pickTab("pr")}
-                            />
-                          )}
-                      </>
-                    }
-                  />
+                    data-msg={r.id}
+                    className={flashCls(r.id)}
+                  >
+                    <AgentTurn
+                      r={r}
+                      emp={emp}
+                      human={human}
+                      last={i === thread.replies.length - 1}
+                      onRetry={onRetry}
+                      models={models}
+                      onOpen={pickTab}
+                      pending={steer ? pendingSteers : []}
+                      cards={
+                        <>
+                          <ReplyCards
+                            r={r}
+                            i={i}
+                            last={i === thread.replies.length - 1}
+                            work={work}
+                            repo={channel.repo}
+                            emp={emp}
+                            human={human}
+                            resolved={resolved}
+                            setResolved={setResolved}
+                            onStart={onStart}
+                          />
+                          {pr &&
+                            !r.live &&
+                            r.steps?.some((s) =>
+                              String(s.input.command ?? "").startsWith(
+                                "gh pr create",
+                              ),
+                            ) && (
+                              <PrCard
+                                pr={pr}
+                                author={lead?.name ?? pr.author}
+                                onOpen={() => pickTab("pr")}
+                              />
+                            )}
+                        </>
+                      }
+                    />
+                  </div>
                 ) : (
                   <Fragment key={r.id ?? i}>
                     {!running && onRewind && (
@@ -552,13 +596,15 @@ export function FocusView({
                         </CheckpointTrigger>
                       </Checkpoint>
                     )}
-                    <UserTurn
-                      from={r.from}
-                      time={r.time}
-                      text={r.text}
-                      human={human}
-                      attachments={r.attachments}
-                    />
+                    <div data-msg={r.id} className={flashCls(r.id)}>
+                      <UserTurn
+                        from={r.from}
+                        time={r.time}
+                        text={r.text}
+                        human={human}
+                        attachments={r.attachments}
+                      />
+                    </div>
                   </Fragment>
                 ),
               )}

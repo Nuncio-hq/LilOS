@@ -182,9 +182,12 @@ test.describe
         .getByRole("button", { name: /Marketer/ })
         .click();
       await page.getByRole("button", { name: "Profile" }).click();
-      await expect(page.getByText(/Profile missing/)).toBeVisible();
+      // Scoped to the profile panel: under load the "Preview states" menu can
+      // still be closing, and its "Profile missing" radio matches too.
+      const panel = page.getByRole("tabpanel", { name: "Employee" });
+      await expect(panel.getByText(/Profile missing/)).toBeVisible();
       await page.getByText(/Switch profile/).click();
       await page.getByRole("option", { name: /reviewer/ }).click();
-      await expect(page.getByText(/Profile missing/)).toHaveCount(0);
+      await expect(panel.getByText(/Profile missing/)).toHaveCount(0);
     });
   });

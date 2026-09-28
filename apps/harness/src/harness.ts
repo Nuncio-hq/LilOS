@@ -698,8 +698,13 @@ export class Harness {
             if (res.status === "steered") {
               this.markDelivered(binding, message);
             } else {
+              // not_running: the turn ended between our check and the steer
+              // (e.g. a Stop just landed). The engine consumed nothing — send
+              // it as the next prompt now, or queue it if a new turn already
+              // started. Queuing alone stranded it: the queue only drains on
+              // turn.completed, and no turn was running.
               binding.consumed.delete(message.id);
-              binding.queue.push(message);
+              this.promptOrQueue(binding, message);
             }
           })
           .catch((error) => {
@@ -707,7 +712,7 @@ export class Harness {
               error: String(error),
             });
             binding.consumed.delete(message.id);
-            binding.queue.push(message);
+            this.promptOrQueue(binding, message);
           });
         return;
       }
@@ -719,6 +724,16 @@ export class Harness {
       });
       return;
     }
+    void this.sendPrompt(binding, message);
+  }
+
+  /** Prompt now when idle; queue behind the running turn otherwise. */
+  private promptOrQueue(binding: SessionBinding, message: AppMessage) {
+    if (binding.runningTurnId) {
+      binding.queue.push(message);
+      return;
+    }
+    binding.consumed.add(message.id);
     void this.sendPrompt(binding, message);
   }
 
