@@ -694,6 +694,7 @@ export const AppEventMethod = z.enum([
   "conversation.modelRequested",
   "profile.updated",
   "settings.changed",
+  "host.changed",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 
@@ -821,5 +822,15 @@ export const SettingsChangedEvent = z.object({
   value: z.unknown(),
 });
 export type SettingsChangedEvent = z.infer<typeof SettingsChangedEvent>;
+
+/**
+ * Broadcast when the engine host registers or its socket dies. Clients
+ * re-poll `system.status` on receipt so host presence heals/fails over
+ * immediately instead of on the next status tick (issue #148).
+ */
+export const HostChangedEvent = z.object({
+  connected: z.boolean(),
+});
+export type HostChangedEvent = z.infer<typeof HostChangedEvent>;
 
 export { APP_PROTOCOL_VERSION };

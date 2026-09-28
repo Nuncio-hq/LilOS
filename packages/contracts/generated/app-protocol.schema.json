@@ -428,7 +428,8 @@
         "employee.removed",
         "conversation.modelRequested",
         "profile.updated",
-        "settings.changed"
+        "settings.changed",
+        "host.changed"
       ]
     },
     "HelloParams": {
@@ -3948,6 +3949,18 @@
           }
         }
       }
+    },
+    "HostChangedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "connected": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "connected"
+      ]
     },
     "StatusComponent": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

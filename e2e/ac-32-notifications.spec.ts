@@ -47,7 +47,9 @@ interface Stack {
 async function waitForHttp(url: string, ms = 30_000): Promise<void> {
   const start = Date.now();
   for (;;) {
-    const ok = await fetch(url)
+    // Bound each poll: a socket that completes the handshake but never
+    // answers would otherwise hang the wait past its budget (#84).
+    const ok = await fetch(url, { signal: AbortSignal.timeout(1_000) })
       .then((r) => r.ok || r.status === 404)
       .catch(() => false);
     if (ok) return;
@@ -113,12 +115,18 @@ async function bootStack(
     );
   });
   try {
-    await Promise.race([waitForHttp(webUrl), procDied]);
-    // The page connects to relay + feed the moment it loads and only retries
-    // post-handshake drops — wait for them to listen so a slow boot under
-    // parallel load can't strand the client on "could not start".
-    await waitForHttp(`http://127.0.0.1:${ports.relay}/`);
-    await waitForHttp(`http://127.0.0.1:${ports.feed}/`);
+    // Race every readiness probe against the umbrella's exit — a supervised
+    // child dying between probes used to burn the full 30s timeout against
+    // dead air (and misreported the port as the failure).
+    const ready = (async () => {
+      await waitForHttp(webUrl);
+      // The page connects to relay + feed the moment it loads and only
+      // retries post-handshake drops — wait for them to listen so a slow
+      // boot under parallel load can't strand the client.
+      await waitForHttp(`http://127.0.0.1:${ports.relay}/`);
+      await waitForHttp(`http://127.0.0.1:${ports.feed}/`);
+    })();
+    await Promise.race([ready, procDied]);
     const tokenPath = path.join(home, "relay-token");
     let relayToken = "";
     // 30s headroom: under a full-suite run several stacks boot at once and
@@ -314,9 +322,13 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
   await expect(page).toHaveURL(
     new RegExp(`/dm/${convA.employeeId}/${convB.conversationId}`),
   );
-  await expect(page.getByText("Approval needed").first()).toBeVisible({
+  // Deterministic wait: the card carries data-ask-state once the relay ask
+  // is in the store — this used to race channel.subscribe vs ask.opened
+  // and could lose the ask permanently (issue #148).
+  await expect(page.locator('[data-ask-state="open"]').first()).toBeVisible({
     timeout: 30_000,
   });
+  await expect(page.getByText("Approval needed").first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-2-click-through.png` });
   await page.getByRole("button", { name: "Allow once" }).first().click();
 
