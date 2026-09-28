@@ -1,8 +1,14 @@
-import { formatDiagnostics, toStatusComponents } from "@lilos/client-runtime";
+import {
+  formatDiagnostics,
+  RelayError,
+  toStatusComponents,
+} from "@lilos/client-runtime";
 import {
   type EngineProfile,
   HireDialog,
   type HireDraft,
+  PairPhoneDialog,
+  type PairPhoneState,
   Sidebar,
   StatusDialog,
   useTheme,
@@ -44,7 +50,7 @@ import {
   relay,
   sessionModels,
 } from "./lib/runtime";
-import { toast } from "./lib/toast";
+import { say, toast } from "./lib/toast";
 import { DmPage } from "./pages/dm";
 import { IndexPage } from "./pages/index";
 
@@ -53,6 +59,46 @@ function AppShell() {
   const employees = useAtom(relay.employees);
   const relayState = useAtom(relay.state);
   const [statusOpen, setStatusOpen] = useState(false);
+  /* Pair phone (#153): `ready` carries the relay's one-time grant;
+     `no-remote` is the `tailscale_unavailable` answer. `pairBaseline`
+     remembers the device ids at open so `devices.changed` flips the dialog
+     to `paired` the moment a phone exchanges its grant. */
+  const [pairPhone, setPairPhone] = useState<PairPhoneState | null>(null);
+  const pairedDevices = useAtom(relay.devices);
+  const pairBaseline = useRef<Set<string>>(new Set());
+  const openPairPhone = async () => {
+    pairBaseline.current = new Set(relay.devices.get().map((d) => d.id));
+    try {
+      const offer = await relay.pairingOffer();
+      setPairPhone({
+        kind: "ready",
+        offer: {
+          host: offer.host,
+          code: offer.code,
+          name: offer.name,
+          expiresAt: offer.expiresAt,
+        },
+      });
+    } catch (e) {
+      if (e instanceof RelayError && e.code === "tailscale_unavailable") {
+        setPairPhone({ kind: "no-remote" });
+      } else {
+        say("Couldn't reach the relay — try again.");
+      }
+    }
+  };
+  // A new device while the dialog is open means the phone spent its grant.
+  useEffect(() => {
+    if (pairPhone?.kind !== "ready") return;
+    const fresh = pairedDevices.find((d) => !pairBaseline.current.has(d.id));
+    if (fresh) {
+      setPairPhone({
+        kind: "paired",
+        device: fresh.name,
+        macName: pairPhone.offer.name,
+      });
+    }
+  }, [pairedDevices, pairPhone]);
   const nav = useAtom(navOpen);
   // #118: identity surfaces re-render when the profile or OS name lands.
   useAtom(profile);
@@ -258,6 +304,7 @@ function AppShell() {
         status={comps}
         buildLabel={label}
         onOpenStatus={() => setStatusOpen(true)}
+        onPairPhone={openPairPhone}
       />
       <Outlet />
       {hireOpen && (
@@ -272,6 +319,24 @@ function AppShell() {
           pending={hirePending}
           onClose={() => setHireOpen(false)}
           onHire={(d, profile) => hire(d, profile)}
+        />
+      )}
+      {pairPhone && (
+        <PairPhoneDialog
+          state={pairPhone}
+          devices={pairedDevices}
+          onNewCode={() => void openPairPhone()}
+          onRevokeDevice={(id) =>
+            void relay
+              .revokeDevice(id)
+              .catch(() => say("Couldn't remove that phone — try again."))
+          }
+          onTurnOff={() => {
+            void relay.pairingDisable().catch(() => {});
+            setPairPhone(null);
+          }}
+          onClose={() => setPairPhone(null)}
+          onCopied={say}
         />
       )}
       {statusOpen && (
