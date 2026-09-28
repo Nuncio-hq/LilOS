@@ -534,7 +534,10 @@ export class FakeEngine {
   private agentsUpdate(p: AgentsUpdateParams) {
     const a = this.agents.get(p.id);
     if (!a) throw new RpcError(RPC_ERRORS.AGENT_NOT_FOUND, `no agent ${p.id}`);
-    if (p.model !== undefined && !MODEL_CATALOG.some((m) => m.id === p.model))
+    if (
+      p.model !== undefined &&
+      ![...MODEL_CATALOG, REFRESH_MODEL].some((m) => m.id === p.model)
+    )
       throw new RpcError(
         RPC_ERRORS.MODEL_NOT_FOUND,
         `no model ${p.model} — see models.list`,
