@@ -964,17 +964,24 @@ export default function App() {
     walk(path, "", 0)
     return rows
   }
-  const fileMentions = (folderId: string | null | undefined) => {
-    const f = folders.find((x) => x.id === folderId)
-    if (!folderId || !f || f.missing) return undefined
-    const rows = FOLDER_FILES[folderId] ?? mockFilesOf(f.path)
-    return (q: string): Promise<FileMention[]> => {
-      const s = q.toLowerCase()
-      return Promise.resolve(
-        rows.filter((r) => !s || r.path.toLowerCase().includes(s)).slice(0, 20),
-      )
+  /* Stable searcher identity per folder: the composer's effect keys on the
+     function — a fresh lambda each render would refire the search in a loop. */
+  const fileMentionSearch = useMemo(() => {
+    const m = new Map<string, (q: string) => Promise<FileMention[]>>()
+    for (const f of folders) {
+      if (f.missing) continue
+      const rows = FOLDER_FILES[f.id] ?? mockFilesOf(f.path)
+      m.set(f.id, (q: string) => {
+        const s = q.toLowerCase()
+        return Promise.resolve(
+          rows.filter((r) => !s || r.path.toLowerCase().includes(s)).slice(0, 20),
+        )
+      })
     }
-  }
+    return m
+  }, [folders])
+  const fileMentions = (folderId: string | null | undefined) =>
+    folderId ? fileMentionSearch.get(folderId) : undefined
   const sendTop = (text: string, pick?: WsPick, files?: AttachedFile[]) => {
     const target = view.kind === "dm" ? view.id : mentionIn(text)?.id
     const id = `s-${Date.now()}`
