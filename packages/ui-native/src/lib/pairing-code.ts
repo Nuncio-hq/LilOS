@@ -5,7 +5,7 @@
    `lilos://pair?host=<tailscale-host>:<port>#code=<grant>` (#153, D-#153). */
 
 export type PairingOffer = {
-  /** Where the relay is reachable, e.g. a Tailscale name `mac.tail1a2b.ts.net`. */
+  /** Where the relay is reachable, e.g. a Tailscale name `mac.tail0000.ts.net`. */
   host: string;
   /** One-time pairing grant, normalized: 12 uppercase letters/digits. */
   code: string;

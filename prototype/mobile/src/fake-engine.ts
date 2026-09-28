@@ -6,12 +6,20 @@ import type {
   ProjectGroup,
   PullRequestRef,
   SessionTurn,
+  SubagentRow,
   ThreadDetail,
   ThreadEntry,
   ToolStep,
   WorkspacePick,
 } from "@lilos/ui-native";
 import { atom, computed } from "nanostores";
+import { nextVersion, PLAN_THREADS, workFor } from "./fake-plan";
+import {
+  SLEEP_FIX,
+  SLEEP_THREAD,
+  SUBAGENT_THREADS,
+  type SubagentSpec,
+} from "./fake-subagents";
 import {
   APPROVALS,
   EMPLOYEES,
@@ -31,7 +39,8 @@ import {
 
 // ── Store ───────────────────────────────────────────────────────────────────
 
-export const $threads = atom<ThreadDetail[]>(THREADS);
+const SEED = [...THREADS, ...SUBAGENT_THREADS, ...PLAN_THREADS];
+export const $threads = atom<ThreadDetail[]>(SEED);
 
 /** Order approvals were asked in (oldest first → the dock shows the oldest). */
 const ASKED = ["a-flake", "a-post"];
@@ -167,6 +176,10 @@ type Script = {
   onDeny?: Script;
   /** A PR this turn opens (added to the session when the turn ends). */
   pr?: PullRequestRef;
+  /** Helpers that run side by side after the steps (issue #170). */
+  subagents?: SubagentSpec[];
+  /** Step i ticks plan step i (issue #175): the entry holding the approved plan. */
+  followPlan?: string;
 };
 
 /** Scripts waiting on an approval, by approval id. */
@@ -190,10 +203,11 @@ class Stopped extends Error {}
 async function run(tid: string, s: Script, eid?: string) {
   const g = gen;
   const id = eid ?? `g-${uid()}`;
+  let dead = false;
   const tick = async (ms: number) => {
     await new Promise((r) => setTimeout(r, ms));
     if (g !== gen) throw new Stopped("reset");
-    if (stops.has(tid)) throw new Stopped("stop");
+    if (dead || stops.has(tid)) throw new Stopped("stop");
   };
   stops.delete(tid);
   mapThread(tid, (t) => ({
@@ -236,7 +250,23 @@ async function run(tid: string, s: Script, eid?: string) {
         thought: Math.max(1, Math.round((Date.now() - t0) / 1000)),
       }));
     } else if (!eid) set((e) => ({ ...e, thought: 1 }));
-    for (const { ms, ...st } of s.steps ?? []) {
+    const planStep = (i: number, status: PlanStatus) =>
+      s.followPlan &&
+      mapEntry(tid, s.followPlan, (e) =>
+        e.plan
+          ? {
+              ...e,
+              plan: {
+                ...e.plan,
+                steps: e.plan.steps.map((x, j) =>
+                  j === i ? { ...x, status } : x,
+                ),
+              },
+            }
+          : e,
+      );
+    for (const [i, { ms, ...st }] of (s.steps ?? []).entries()) {
+      planStep(i, "in_progress");
       const sid = uid();
       set((e) => ({
         ...e,
@@ -259,7 +289,9 @@ async function run(tid: string, s: Script, eid?: string) {
           x.id === sid ? { ...st, id: sid } : x,
         ),
       }));
+      planStep(i, "completed");
     }
+    if (s.subagents?.length) await helpers(s.subagents, set, tick);
     if (s.text) {
       await tick(300);
       set((e) => ({ ...e, writing: true, text: "" }));
@@ -290,7 +322,10 @@ async function run(tid: string, s: Script, eid?: string) {
           effort,
           files:
             new Set(
-              (e.steps ?? [])
+              [
+                ...(e.steps ?? []),
+                ...(e.subagents ?? []).flatMap((a) => a.steps),
+              ]
                 .filter((x) => x.add !== undefined)
                 .map((x) => x.arg),
             ).size || undefined,
@@ -305,6 +340,23 @@ async function run(tid: string, s: Script, eid?: string) {
       }));
     }
   } catch (err) {
+    dead = true;
+    if (s.followPlan)
+      mapEntry(tid, s.followPlan, (e) =>
+        e.plan
+          ? {
+              ...e,
+              plan: {
+                ...e.plan,
+                steps: e.plan.steps.map((x) =>
+                  x.status === "in_progress"
+                    ? { ...x, status: "cancelled" }
+                    : x,
+                ),
+              },
+            }
+          : e,
+      );
     if (!(err instanceof Stopped) || g !== gen) return;
     set((e) => ({
       ...e,
@@ -312,6 +364,15 @@ async function run(tid: string, s: Script, eid?: string) {
       writing: false,
       stopped: true,
       steps: e.steps?.map((x) => ({ ...x, running: false })),
+      subagents: e.subagents?.map((a) =>
+        a.status === "running"
+          ? {
+              ...a,
+              status: "stopped",
+              steps: a.steps.map((x) => ({ ...x, running: false })),
+            }
+          : a,
+      ),
       footer: { dur: Math.round((Date.now() - started) / 1000) },
     }));
     mapThread(tid, (x) => ({ ...x, state: "stopped", when: "now" }));
@@ -333,6 +394,80 @@ async function run(tid: string, s: Script, eid?: string) {
     }));
     void run(tid, followUp(q.text, t));
   }
+}
+
+/* Subagents (issue #170): all start at once, each plays its steps on its
+   own clock, then reports. An employee helper just works for `wait` ms —
+   its steps live in its own thread. Resolves when every helper is done. */
+async function helpers(
+  specs: SubagentSpec[],
+  set: (f: (e: AgentEntry) => AgentEntry) => void,
+  tick: (ms: number) => Promise<void>,
+) {
+  set((e) => ({
+    ...e,
+    subagents: [
+      ...(e.subagents ?? []),
+      ...specs.map((sp) => ({
+        id: sp.id,
+        name: sp.name,
+        task: sp.task,
+        employee: sp.employee,
+        status: "running" as const,
+        steps: [],
+      })),
+    ],
+  }));
+  const setA = (aid: string, f: (a: SubagentRow) => SubagentRow) =>
+    set((e) => ({
+      ...e,
+      subagents: e.subagents?.map((a) => (a.id === aid ? f(a) : a)),
+    }));
+  await Promise.all(
+    specs.map(async (sp) => {
+      const t0 = Date.now();
+      await tick(sp.delay ?? 300);
+      for (const { ms, ...st } of sp.steps) {
+        const sid = uid();
+        setA(sp.id, (a) => ({
+          ...a,
+          steps: [
+            ...a.steps,
+            {
+              ...st,
+              id: sid,
+              output: undefined,
+              add: undefined,
+              del: undefined,
+              running: true,
+            },
+          ],
+        }));
+        await tick(ms ?? 1200);
+        setA(sp.id, (a) => ({
+          ...a,
+          steps: a.steps.map((x) => (x.id === sid ? { ...st, id: sid } : x)),
+        }));
+      }
+      if (sp.wait) await tick(sp.wait);
+      setA(sp.id, (a) => ({
+        ...a,
+        status: sp.ends ?? "done",
+        result: sp.result,
+        dur: Math.max(1, Math.round((Date.now() - t0) / 1000)),
+      }));
+    }),
+  );
+}
+
+/** Background → Stop: the process ends, its log keeps the tail. */
+export function stopJob(tid: string, jid: string) {
+  mapThread(tid, (t) => ({
+    ...t,
+    jobs: t.jobs?.map((j) =>
+      j.id === jid ? { ...j, status: "stopped", log: `${j.log}\n^C` } : j,
+    ),
+  }));
 }
 
 // ── What you can do ─────────────────────────────────────────────────────────
@@ -421,6 +556,7 @@ export function startSession(
 export function reply(tid: string, text: string) {
   const t = $threads.get().find((x) => x.id === tid);
   if (!t) return;
+  if (waitingPlan(t)) return changePlan(t, text);
   const busy = t.state === "working";
   mapThread(tid, (x) => ({
     ...x,
@@ -430,6 +566,101 @@ export function reply(tid: string, text: string) {
     ],
   }));
   if (!busy) void run(tid, followUp(text, t));
+}
+
+// ── Plans (issue #175) ──────────────────────────────────────────────────────
+
+type PlanStatus = NonNullable<AgentEntry["plan"]>["steps"][number]["status"];
+const waitingPlan = (t: ThreadDetail) =>
+  t.entries.find(
+    (e): e is AgentEntry => e.kind === "agent" && e.plan?.status === "proposed",
+  );
+const setPlan = (
+  tid: string,
+  planId: string,
+  f: (p: NonNullable<AgentEntry["plan"]>) => NonNullable<AgentEntry["plan"]>,
+) =>
+  mapThread(tid, (t) => ({
+    ...t,
+    entries: t.entries.map((e) =>
+      e.kind === "agent" && e.plan?.id === planId
+        ? { ...e, plan: f(e.plan) }
+        : e,
+    ),
+  }));
+
+/** Approve: the plan becomes the checklist and the employee works through it. */
+export function approvePlan(tid: string, planId: string) {
+  const t = $threads.get().find((x) => x.id === tid);
+  const holder = t?.entries.find(
+    (e): e is AgentEntry => e.kind === "agent" && e.plan?.id === planId,
+  );
+  if (!holder?.plan) return;
+  setPlan(tid, planId, (p) => ({ ...p, status: "approved" }));
+  void run(tid, {
+    reasoning: "Plan approved. Working through it in order.",
+    steps: holder.plan.steps.map((s) => ({
+      ...workFor(s.files?.[0]),
+      ms: 1800,
+    })),
+    followPlan: holder.id,
+    text: `All ${holder.plan.steps.length} steps done on \`lil-11-reconnect\`: the client backs off up to 30s with jitter and resumes from the last seq. Tests pass. The banner says **Reconnecting…** while it waits.`,
+  });
+}
+
+/** Reject: nothing was edited; the employee says so. */
+export function rejectPlan(tid: string, planId: string) {
+  setPlan(tid, planId, (p) => ({ ...p, status: "rejected" }));
+  mapThread(tid, (t) => ({
+    ...t,
+    state: "done",
+    when: "now",
+    entries: [
+      ...t.entries,
+      {
+        kind: "agent",
+        id: `g-${uid()}`,
+        time: now(),
+        text: "OK, I won't start. Nothing was edited. The plan stays here if you change your mind.",
+      },
+    ],
+  }));
+}
+
+/* A reply while a plan waits is a change request: the next version replaces it. */
+function changePlan(t: ThreadDetail, text: string) {
+  const old = waitingPlan(t)?.plan;
+  if (!old) return;
+  mapThread(t.id, (x) => ({
+    ...x,
+    state: "working",
+    when: "now",
+    entries: [
+      ...x.entries,
+      { kind: "user", id: `u-${uid()}`, time: now(), text },
+    ],
+  }));
+  setPlan(t.id, old.id, (p) => ({ ...p, status: "replaced" }));
+  setTimeout(() => {
+    mapThread(t.id, (x) => ({
+      ...x,
+      state: "needs-you",
+      when: "now",
+      entries: [
+        ...x.entries,
+        {
+          kind: "agent",
+          id: `g-${uid()}`,
+          time: now(),
+          thought: 2,
+          reasoning:
+            "Fold Oscar's change into the plan; everything else stays.",
+          text: "Updated the plan with your change. Still nothing edited.",
+          plan: nextVersion(old, text),
+        },
+      ],
+    }));
+  }, 1400);
 }
 
 // ── Life: the team keeps working while you watch ────────────────────────────
@@ -454,14 +685,24 @@ export function startLife() {
   setTimeout(() => g === gen && void run("s-ci", CI, "g1"), 2400);
 }
 
+/* Builder's sleep fix fans out to two subagents + Reviewer (issue #170) —
+   played the first time its thread opens, so you watch it from the start. */
+let sleepPlayed = false;
+export function playOnOpen(tid: string) {
+  if (tid !== SLEEP_THREAD || sleepPlayed) return;
+  sleepPlayed = true;
+  void run(SLEEP_THREAD, SLEEP_FIX_TURN, "g2");
+}
+
 /** Put the whole team back to the start and play it again. */
 export function resetTeam() {
   gen++;
   alive = false;
+  sleepPlayed = false;
   stops.clear();
   pending.clear();
   asked.set(ASKED);
-  $threads.set(THREADS);
+  $threads.set(SEED);
   startLife();
 }
 
@@ -476,7 +717,13 @@ const slug = (s: string) =>
     .slice(0, 3)
     .join("-") || "task";
 
+const SLEEP_FIX_TURN: Script = {
+  subagents: SLEEP_FIX,
+  text: "Fixed on `lil-9-sleep-replay`: the harness resumes from `lastSeq` after the Mac wakes, with a regression test. **Reviewer approved.** The dev server and test watcher are still running in the background.",
+};
+
 const CI: Script = {
+  followPlan: "g1",
   steps: [
     {
       tool: "terminal",

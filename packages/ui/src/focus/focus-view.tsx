@@ -51,6 +51,7 @@ import {
 } from "../components/ai-elements/queue";
 import { Button } from "../components/ui/button";
 import { openStartRequest, ReplyCards } from "../conversation/cards";
+import type { PlanAction } from "../conversation/plan-card";
 import { AgentTurn, PrCard, UserTurn } from "../conversation/turns";
 import { PHASE_LABEL } from "../lib/helpers";
 import { cn } from "../lib/utils";
@@ -76,6 +77,7 @@ import type {
 } from "../types";
 import { sessionArtifacts } from "../workbench/artifacts";
 import type { LiveSurfaces } from "../workbench/live";
+import { planTodos } from "../workbench/plan-panel";
 import { Workbench } from "../workbench/workbench";
 import { WsBadge } from "../workbench/ws-badges";
 import { SessionUsage } from "./session-usage";
@@ -127,6 +129,9 @@ export function FocusView({
   scrollTo,
   onScrolled,
   children,
+  onOpenSession,
+  onStopJob,
+  onPlan,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -198,6 +203,12 @@ export function FocusView({
   onScrolled?: () => void;
   /* Extra surface content below the composer (the question card, #114). */
   children?: ReactNode;
+  /* A subagent row that is another employee links to their session (issue #170). */
+  onOpenSession?: (employeeId: string, session: string) => void;
+  /* Workbench → Background: Stop a process (issue #170). */
+  onStopJob?: (id: string) => void;
+  /* Plan card decisions (issue #175). */
+  onPlan?: (a: PlanAction, planId: string) => void;
 }) {
   const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024);
   const [tab, setTab] = useState<WbTab>(() =>
@@ -244,7 +255,9 @@ export function FocusView({
       ? "submitted"
       : "streaming"
     : "ready";
-  const todos = thread.todos ?? [];
+  // The latest approved plan / task list (issue #175), else the engine's session todos.
+  const fromPlan = planTodos(thread);
+  const todos = fromPlan.length ? fromPlan : (thread.todos ?? []);
   const queue = thread.queue ?? [];
   const pendingSteers = pending ?? [];
   // The open "asks to start work" card, if any, is the single start-work entry point (issue #15).
@@ -555,6 +568,8 @@ export function FocusView({
                       onRetry={onRetry}
                       models={models}
                       onOpen={pickTab}
+                      onOpenSession={onOpenSession}
+                      onPlan={onPlan}
                       pending={steer ? pendingSteers : []}
                       cards={
                         <>
@@ -771,6 +786,7 @@ export function FocusView({
                 onPrComment={onPrComment}
                 onPrMerge={onPrMerge}
                 live={surfaces}
+                onStopJob={onStopJob}
                 running={running}
                 editors={editorsProp}
                 onOpenPath={onOpenPath}

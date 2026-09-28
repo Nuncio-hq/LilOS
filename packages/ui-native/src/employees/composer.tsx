@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { Glass } from "../components/glass";
 import { Icon, useThemeColor } from "../components/icon";
@@ -19,6 +19,7 @@ export function Composer({
   onPickFolder,
   onPickModel,
   onLayoutHeight,
+  prefill,
 }: {
   placeholder: string;
   /** Omit in a thread: the session already runs somewhere. */
@@ -34,8 +35,16 @@ export function Composer({
   onPickModel: () => void;
   /** Floating callers pad their scroll content by this. */
   onLayoutHeight?: (h: number) => void;
+  /** Put this text in the box and focus it — a new object each time (plan "Change…"). */
+  prefill?: { text: string };
 }) {
   const [draft, setDraft] = useState("");
+  const input = useRef<TextInput>(null);
+  useEffect(() => {
+    if (!prefill) return;
+    setDraft(prefill.text);
+    input.current?.focus();
+  }, [prefill]);
   const muted = useThemeColor("muted-foreground");
   const ready = !!draft.trim();
   const send = () => {
@@ -55,6 +64,7 @@ export function Composer({
         style={{ borderRadius: 26, borderCurve: "continuous" }}
       >
         <TextInput
+          ref={input}
           value={draft}
           onChangeText={setDraft}
           placeholder={placeholder}

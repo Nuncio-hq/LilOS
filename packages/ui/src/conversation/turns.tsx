@@ -51,6 +51,9 @@ import type {
   WbTab,
 } from "../types";
 import { VIEWER_ID } from "../types";
+import { turnSteps } from "../workbench/artifacts";
+import { type PlanAction, PlanCard } from "./plan-card";
+import { TurnSubagents } from "./subagents";
 
 /* The conversation's turns — ONE implementation used by both frames (issue #19):
    ThreadView renders it for channel threads and DM sessions, FocusView for Focus.
@@ -194,6 +197,8 @@ export function AgentTurn({
   cards,
   pending = [],
   models,
+  onOpenSession,
+  onPlan,
 }: {
   r: Reply;
   emp: EmpFn;
@@ -210,11 +215,18 @@ export function AgentTurn({
   /** Frame-attached pieces under the turn (approval card, start-work card, PR card). */
   cards?: React.ReactNode;
   pending?: string[];
+  /** Opens another employee's session a subagent row links to (issue #170). */
+  onOpenSession?: (employeeId: string, session: string) => void;
+  /** Approve / Change / Reject on the plan this turn proposed (issue #175). */
+  onPlan?: (a: PlanAction, planId: string) => void;
 }) {
   const e = emp(r.from);
   const steps = r.steps ?? [];
-  const files = new Set(steps.filter((s) => s.diff).map((s) => s.diff!.path))
-    .size;
+  const files = new Set(
+    turnSteps(r)
+      .filter((s) => s.diff)
+      .map((s) => s.diff!.path),
+  ).size;
   return (
     <Message from="assistant" className="max-w-full gap-2.5" data-agentturn>
       <div className="flex items-center gap-2 text-[13px]">
@@ -249,6 +261,13 @@ export function AgentTurn({
           steps={steps}
           autoOpen={r.live && (r.phase === "tools" || r.phase === "waiting")}
           waitingApproval={r.waitingOn === "approval"}
+        />
+      )}
+      {!!r.subagents?.length && (
+        <TurnSubagents
+          agents={r.subagents}
+          emp={emp}
+          onOpenSession={onOpenSession}
         />
       )}
       {r.live && r.phase === "tools" && !steps.some((s) => s.running) && (
@@ -290,57 +309,66 @@ export function AgentTurn({
           Stopped · session.interrupt
         </div>
       )}
-      {cards}
-      {!r.live && !r.streaming && (r.text || steps.length > 0) && (
-        /* data-turnsettled: the footer only renders once the turn has ended —
-           the stable "turn is over" anchor for specs (text lands earlier). */
-        <div
-          data-turnsettled
-          className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-muted-foreground"
-        >
-          {r.dur !== undefined && <span>Worked for {r.dur}s</span>}
-          {r.model && (
-            <span>
-              · {models?.find((m) => m.id === r.model)?.name ?? r.model}
-              {r.effort && ` · ${effortLabel(r.effort)}`}
-              {r.fast && " · Fast"}
-            </span>
-          )}
-          {steps.length > 0 && <span>· {plural(steps.length, "step")}</span>}
-          {files > 0 &&
-            (onOpen ? (
-              <button
-                type="button"
-                className="underline-offset-2 hover:text-foreground hover:underline"
-                onClick={() => onOpen("changes")}
-              >
-                · {plural(files, "file")} changed
-              </button>
-            ) : (
-              <span>· {plural(files, "file")} changed</span>
-            ))}
-          <MessageActions className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
-            {r.text && (
-              <MessageAction
-                tooltip="Copy"
-                label="Copy"
-                onClick={() => navigator.clipboard?.writeText(r.text)}
-              >
-                <CopyIcon className="size-3.5" />
-              </MessageAction>
-            )}
-            {last && onRetry && (
-              <MessageAction
-                tooltip="Retry turn"
-                label="Retry"
-                onClick={() => onRetry(r.from)}
-              >
-                <RefreshCcwIcon className="size-3.5" />
-              </MessageAction>
-            )}
-          </MessageActions>
-        </div>
+      {r.plan && (
+        <PlanCard
+          plan={r.plan}
+          onAction={onPlan}
+          onOpen={onOpen ? () => onOpen("plan") : undefined}
+        />
       )}
+      {cards}
+      {!r.live &&
+        !r.streaming &&
+        (r.text || steps.length > 0 || !!r.subagents?.length) && (
+          /* data-turnsettled: the footer only renders once the turn has ended —
+           the stable "turn is over" anchor for specs (text lands earlier). */
+          <div
+            data-turnsettled
+            className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-muted-foreground"
+          >
+            {r.dur !== undefined && <span>Worked for {r.dur}s</span>}
+            {r.model && (
+              <span>
+                · {models?.find((m) => m.id === r.model)?.name ?? r.model}
+                {r.effort && ` · ${effortLabel(r.effort)}`}
+                {r.fast && " · Fast"}
+              </span>
+            )}
+            {steps.length > 0 && <span>· {plural(steps.length, "step")}</span>}
+            {files > 0 &&
+              (onOpen ? (
+                <button
+                  type="button"
+                  className="underline-offset-2 hover:text-foreground hover:underline"
+                  onClick={() => onOpen("changes")}
+                >
+                  · {plural(files, "file")} changed
+                </button>
+              ) : (
+                <span>· {plural(files, "file")} changed</span>
+              ))}
+            <MessageActions className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
+              {r.text && (
+                <MessageAction
+                  tooltip="Copy"
+                  label="Copy"
+                  onClick={() => navigator.clipboard?.writeText(r.text)}
+                >
+                  <CopyIcon className="size-3.5" />
+                </MessageAction>
+              )}
+              {last && onRetry && (
+                <MessageAction
+                  tooltip="Retry turn"
+                  label="Retry"
+                  onClick={() => onRetry(r.from)}
+                >
+                  <RefreshCcwIcon className="size-3.5" />
+                </MessageAction>
+              )}
+            </MessageActions>
+          </div>
+        )}
     </Message>
   );
 }

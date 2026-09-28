@@ -2,6 +2,7 @@ import "../global.css";
 
 import {
   ApprovalsSheet,
+  BackgroundSheet,
   buildPairingUrl,
   Choice,
   ConnectedScreen,
@@ -19,11 +20,13 @@ import {
   NeedsYouAccessory,
   PairIntroScreen,
   type PairingOffer,
+  PlanSheet,
   parsePairingUrl,
   pickLabel,
   ScanScreen,
   Section,
   SettingsScreen,
+  SubagentSheet,
   ThreadHeaderTitle,
   ThreadInfoSheet,
   ThreadScreen,
@@ -69,12 +72,16 @@ import {
   $projects,
   $threads,
   approve,
+  approvePlan,
   deny,
+  playOnOpen,
+  rejectPlan,
   reply,
   resetTeam,
   startLife,
   startSession,
   stop,
+  stopJob,
   turnsOf,
 } from "./fake-engine";
 import {
@@ -128,6 +135,11 @@ type Routes = {
   Dm: { employeeId: string };
   Thread: { id: string };
   ThreadInfo: { id: string };
+  /** A subagent of a turn in that thread (issue #170). */
+  Subagent: { thread: string; id: string };
+  Background: { thread: string };
+  /** The thread's plan, every version (issue #175). */
+  Plan: { thread: string };
   Approvals: undefined;
   Mac: undefined;
   FolderPicker: undefined;
@@ -565,6 +577,9 @@ function Thread({ navigation, route }: Props<"Thread">) {
   const title = t?.title;
   const state = t?.state;
   const prs = t?.prs;
+  // Plan "Change…" puts this in the composer (a new object each tap).
+  const [prefill, setPrefill] = useState<{ text: string }>();
+  useEffect(() => playOnOpen(route.params.id), [route.params.id]);
   useLayoutEffect(() => {
     if (!title || !state) return;
     const info = () =>
@@ -603,6 +618,20 @@ function Thread({ navigation, route }: Props<"Thread">) {
         stop(t.id);
       }}
       onPickModel={() => navigation.navigate("ModelPicker", { thread: t.id })}
+      onOpenSubagent={(a) =>
+        navigation.navigate("Subagent", { thread: t.id, id: a.id })
+      }
+      onOpenBackground={() =>
+        navigation.navigate("Background", { thread: t.id })
+      }
+      onPlan={(a, planId) => {
+        void Haptics.selectionAsync();
+        if (a === "approve") approvePlan(t.id, planId);
+        else if (a === "reject") rejectPlan(t.id, planId);
+        else setPrefill({ text: "Change the plan: " });
+      }}
+      onOpenPlan={() => navigation.navigate("Plan", { thread: t.id })}
+      prefill={prefill}
     />
   );
 }
@@ -611,6 +640,50 @@ function ThreadInfo({ navigation, route }: Props<"ThreadInfo">) {
   const t = useStore($threads).find((x) => x.id === route.params.id);
   if (!t) return null;
   return <ThreadInfoSheet t={t} onDone={() => navigation.goBack()} />;
+}
+
+/* Live: the sheet re-reads the store, so a running helper finishes in it. */
+function Subagent({ navigation, route }: Props<"Subagent">) {
+  const t = useStore($threads).find((x) => x.id === route.params.thread);
+  const a = t?.entries
+    .flatMap((e) => (e.kind === "agent" ? (e.subagents ?? []) : []))
+    .find((x) => x.id === route.params.id);
+  if (!a) return null;
+  return (
+    <SubagentSheet
+      a={a}
+      onDone={() => navigation.goBack()}
+      onOpenThread={(id) => {
+        navigation.goBack();
+        const emp = $threads.get().find((x) => x.id === id)?.employee.id;
+        if (emp) navigation.navigate("Dm", { employeeId: emp });
+        navigation.navigate("Thread", { id });
+      }}
+    />
+  );
+}
+
+function Plan({ navigation, route }: Props<"Plan">) {
+  const t = useStore($threads).find((x) => x.id === route.params.thread);
+  const plans =
+    t?.entries.flatMap((e) => (e.kind === "agent" && e.plan ? [e.plan] : [])) ??
+    [];
+  return <PlanSheet plans={plans} onDone={() => navigation.goBack()} />;
+}
+
+function Background({ navigation, route }: Props<"Background">) {
+  const t = useStore($threads).find((x) => x.id === route.params.thread);
+  if (!t) return null;
+  return (
+    <BackgroundSheet
+      jobs={t.jobs ?? []}
+      onStop={(id) => {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        stopJob(t.id, id);
+      }}
+      onDone={() => navigation.goBack()}
+    />
+  );
 }
 
 function FolderPicker({ navigation }: Props<"FolderPicker">) {
@@ -939,6 +1012,17 @@ export default function App() {
               <Stack.Screen
                 name="ThreadInfo"
                 component={ThreadInfo}
+                options={SHEET}
+              />
+              <Stack.Screen
+                name="Subagent"
+                component={Subagent}
+                options={SHEET}
+              />
+              <Stack.Screen name="Plan" component={Plan} options={SHEET} />
+              <Stack.Screen
+                name="Background"
+                component={Background}
                 options={SHEET}
               />
               <Stack.Screen

@@ -69,6 +69,7 @@ import {
   draftKey,
   dropDrafts,
   useDraft,
+  type PlanAction,
 } from "@lilos/ui"
 import { cn } from "@lilos/ui/lib/utils"
 import { MAX_ATTACHMENT_BYTES } from "@lilos/contracts/app"
@@ -82,6 +83,8 @@ import {
 } from "./engine"
 import { hostAccessors, hostDir, hostDiscover, hostPick } from "./host"
 import { useFakeSurfaces } from "./fake-surfaces"
+import { DEMO_ROOT, playSubagents, stopJob, SUBAGENT_DMS } from "./fake-subagents"
+import { approvePlan, pendingPlan, PLAN_DMS, rejectPlan, revisePlan, stopTasks, tasksFrom, tickTask } from "./fake-plan"
 import { useLiveStatus } from "./live-status"
 import { liveAttachFromLocation, useLiveSurfaces } from "./live-surfaces"
 
@@ -228,6 +231,13 @@ const FEEDS: Record<string, Msg[]> = {
         replies: [
           {
             from: "builder", time: "10:04", thought: 4, dur: 48,
+            // The employee's own task list for this turn, finished (#175): folds to one green line.
+            plan: { id: "tasks-lil3", kind: "tasks", version: 1, status: "approved", steps: [
+              { text: "Create branch + pnpm workspace", status: "completed" },
+              { text: "Scaffold contracts, client-runtime, web, relay", status: "completed" },
+              { text: "Strict TS + no DOM in client-runtime", status: "completed" },
+              { text: "Run the tests and commit", status: "completed" },
+            ] },
             reasoning: "Ticket LIL-3 on its own worktree, so I can edit. Four packages; `client-runtime` must never import the DOM, so enforce it in tsconfig instead of hoping.",
             text: "On it. Scaffolded on `lil-3-monorepo`: pnpm workspaces, strict TS, no DOM imports in `client-runtime`. **@Reviewer** please check the package boundaries.",
             steps: [
@@ -352,7 +362,7 @@ const DEFAULT_EMP: Employee = { id: "default", name: "Default", role: "Assistant
 /* Mock pairing offer — same host/code/name the mobile prototype's fake Mac uses
    (prototype/mobile/src/fake-mac.ts DEMO_OFFER). */
 const pairOffer = (seconds: number) => ({
-  host: "oscars-macbook-pro.tail1a2b.ts.net",
+  host: "my-mac.tail0000.ts.net",
   code: "7K4MQR2X9TBP",
   name: "Oscar's MacBook Pro",
   expiresAt: Date.now() + seconds * 1000,
@@ -572,7 +582,12 @@ export default function App() {
   const [tickets, setTickets] = useState<TicketRow[]>(TICKETS)
   const [startFor, setStartFor] = useState<string | null>(null)
   const [selfStart, setSelfStart] = useState<Record<string, boolean>>({})
-  const [feeds, setFeeds] = useState<Record<string, Msg[]>>(() => ({ ...FEEDS, ...DM_FEEDS }))
+  const [feeds, setFeeds] = useState<Record<string, Msg[]>>(() => ({
+    ...FEEDS, ...DM_FEEDS,
+    // Subagents + background work demo (issue #170): newest session in each DM.
+    // …then the plan demo (issue #175), so it is the session Builder's DM opens on.
+    ...Object.fromEntries(Object.entries(SUBAGENT_DMS).map(([k, ms]) => [k, [...(DM_FEEDS[k] ?? []), ...ms, ...(PLAN_DMS[k] ?? [])]])),
+  }))
   const stops = useRef<Record<string, boolean>>({})
   // The engine's declared steer capability: the real app reads describe().capabilities once at connect.
   // The prototype's built-in engine declares it; ?steer=off simulates an engine without it — mid-turn
@@ -892,7 +907,8 @@ export default function App() {
     const started0 = Date.now()
     mapRoot(key, rootId, (t) => ({
       ...t,
-      replies: [...t.replies, { id: rid, from: empId, time: nowTime(), text: "", steps: [], live: true, phase: "submitted", ...turnPick(t, empId) }],
+      // A longer turn keeps its own task list, ticked as it goes (#175); short ones don't bother.
+      replies: [...t.replies, { id: rid, from: empId, time: nowTime(), text: "", steps: [], live: true, phase: "submitted", ...turnPick(t, empId), plan: s.steps.length >= 3 ? tasksFrom(s.steps) : undefined }],
       // todo.updated: the employee adds its own item and marks it in_progress
       todos: s.todo ? [...(t.todos ?? []).filter((x) => x.content !== s.todo), { content: s.todo, status: "in_progress" }] : t.todos,
     }))
@@ -917,11 +933,11 @@ export default function App() {
       const t0 = Date.now()
       for (const w of words(s.reasoning)) { await tick(45); set((r) => ({ ...r, reasoning: (r.reasoning ?? "") + w })) }
       set((r) => ({ ...r, phase: "tools", thought: Math.max(1, Math.round((Date.now() - t0) / 1000)) }))
-      for (const st of s.steps) {
+      for (const [n, st] of s.steps.entries()) {
         applySteers() // boundary: the next tool call is about to start
-        set((r) => ({ ...r, steps: [...(r.steps ?? []), { ...st, output: "", running: true, diff: undefined, commit: undefined }] }))
+        set((r) => ({ ...r, plan: tickTask(r.plan, n, "in_progress"), steps: [...(r.steps ?? []), { ...st, output: "", running: true, diff: undefined, commit: undefined }] }))
         await tick(650)
-        set((r) => ({ ...r, steps: (r.steps ?? []).map((x, i, a) => (i === a.length - 1 ? { ...st } : x)) }))
+        set((r) => ({ ...r, plan: tickTask(r.plan, n, "completed"), steps: (r.steps ?? []).map((x, i, a) => (i === a.length - 1 ? { ...st } : x)) }))
       }
       applySteers() // last boundary: nothing more lands between tools, so apply before message.delta
       if (applied.length) s.text += `\n\nFolded in your steer: *“${plain(applied.join(" "))}”.`
@@ -943,7 +959,7 @@ export default function App() {
         s.pr.checks.forEach((_, i) => setTimeout(() => mapRoot(key, rootId, (t) => t.pr ? { ...t, pr: { ...t.pr, checks: t.pr.checks.map((c, j) => (j === i ? { ...c, status: outcome[i] } : c)) } } : t), 1200 + i * 900))
       }
     } catch {
-      set((r) => ({ ...r, phase: "stopped", live: false, steps: (r.steps ?? []).map((x) => ({ ...x, running: false })) }))
+      set((r) => ({ ...r, phase: "stopped", live: false, plan: stopTasks(r.plan), steps: (r.steps ?? []).map((x) => ({ ...x, running: false })) }))
       mapRoot(key, rootId, (t) => ({ ...t, todos: s.todo ? (t.todos ?? []).map((x) => (x.content === s.todo ? { ...x, status: "cancelled" } : x)) : t.todos }))
     }
     // session.interrupt (■): undelivered steers must not silently land in a LATER turn —
@@ -1002,6 +1018,36 @@ export default function App() {
   const threadRunning = (m?: Extract<Msg, { kind: "msg" }>) => !!m?.thread?.replies.some((r) => r.live)
   // Live harness surfaces shown in Workbench Terminal/Preview while a turn runs (issue #36, prototype fake).
   const fakeSurfaces = useFakeSurfaces(threadRunning(openThread))
+  /* Subagents demo (issue #170): the live turn plays once, the first time its thread opens. */
+  const demoPlayed = useRef(false)
+  useEffect(() => {
+    if (openThread?.id !== DEMO_ROOT || demoPlayed.current) return
+    demoPlayed.current = true
+    playSubagents((fn) => mapRoot("dm-builder", DEMO_ROOT, fn), () => !!stops.current[DEMO_ROOT])
+  }, [openThread?.id])
+  /* A subagent row that is another employee → that employee's session in their DM. */
+  const openSession = (empId: string, session: string) => {
+    const m = (feeds[`dm-${empId}`] ?? []).find((x) => x.kind === "msg" && x.thread?.session === session)
+    if (!m) return say(`Session ${session} isn't in this prototype`)
+    setView({ kind: "dm", id: empId }); setThreadId(m.id); setPanelTab("thread"); setPanelOpen(true)
+  }
+  /* Plan card decisions (issue #175). Change prefills the composer; sending it revises. */
+  const planAction = (m: Extract<Msg, { kind: "msg" }>, a: PlanAction, planId: string) => {
+    const plan = m.thread?.replies.find((r) => r.plan?.id === planId)?.plan
+    if (!plan) return
+    if (a === "approve") {
+      stops.current[m.id] = false
+      approvePlan(plan, (fn) => mapRoot(feedKey, m.id, fn), () => !!stops.current[m.id])
+    } else if (a === "reject") mapRoot(feedKey, m.id, rejectPlan(planId))
+    else {
+      setThreadDraft("Change the plan: ")
+      say("Say what to change, then send")
+    }
+  }
+  const stopJobIn = (m: Extract<Msg, { kind: "msg" }>, id: string) => {
+    mapRoot(feedKey, m.id, stopJob(id))
+    say(`Stopped ${m.thread?.jobs?.find((j) => j.id === id)?.command ?? id}`)
+  }
   // Real harness attach when ?surfaces=…&session=…&token=… is present (AC-4):
   // the Workbench Terminal/Preview tabs then show the live session, not a mock.
   const realSurfaces = useLiveSurfaces(useMemo(liveAttachFromLocation, []))
@@ -1120,6 +1166,12 @@ export default function App() {
       return
     }
     mapRoot(feedKey, root.id, (t) => ({ ...t, replies: [...t.replies, { id: `o-${Date.now()}`, from: "oscar", time: nowTime(), text: bold(text), attachments: files?.length ? files : undefined }] }))
+    // A reply while a plan waits is a change request: the employee answers with the next version (#175).
+    const waiting = pendingPlan(root.thread)
+    if (waiting) {
+      setTimeout(() => mapRoot(feedKey, root.id, revisePlan(waiting.id, text)), 1400)
+      return
+    }
     const lead = view.kind === "dm" ? view.id : mentionIn(text)?.id ?? root.thread?.replies.find((r) => emp(r.from))?.from ?? mentionIn(root.text)?.id
     if (lead) runTurn(feedKey, root.id, lead, text, undefined, files)
   }
@@ -1291,7 +1343,7 @@ export default function App() {
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
       models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined} picker={pickerExtras}
       scrollTo={scrollTo ?? undefined} onScrolled={() => setScrollTo(null)}
-      editors={openEditors ?? undefined}
+      editors={openEditors ?? undefined} onOpenSession={openSession} onPlan={(a, id) => planAction(openThread, a, id)}
       onOpenPath={openWsCwd && openEditors !== null
         ? (path, app, line) => void hostAccessors.osOpen(openWsCwd, path, app, line).catch((e) => say(`Open failed — ${e instanceof Error ? e.message : String(e)}`))
         : undefined}
@@ -1344,6 +1396,7 @@ export default function App() {
           surfaces={realSurfaces ?? fakeSurfaces}
           models={canModels ? MODEL_OPTS : undefined} picker={pickerExtras} repoFiles={REPO_FILES} host={hostAccessors}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
+          onOpenSession={openSession} onStopJob={(id) => stopJobIn(openThread, id)} onPlan={(a, id) => planAction(openThread, a, id)}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />
       ) : (

@@ -99,6 +99,70 @@ export type Reply = {
   steers?: string[];
   dur?: number;
   attachments?: AttachedFile[];
+  /** Helpers this turn spun off (issue #170), in start order. */
+  subagents?: Subagent[];
+  /** The plan this turn proposed (issue #175); its steps tick as the work runs. */
+  plan?: Plan;
+};
+/* A plan an employee proposes before touching code (issue #175): Claude Code
+   plan mode, Codex plan updates, Hermes todo. Proposed → you approve, ask for
+   a change (the next version replaces it) or reject. Once approved its steps
+   are the live checklist. */
+export type PlanStep = {
+  text: string;
+  /** Files the step expects to touch. */
+  files?: string[];
+  status: Todo["status"];
+};
+export type Plan = {
+  id: string;
+  /* plan = proposed for your OK first; tasks = the employee's own working
+     list (Claude Code TodoWrite, Codex plan, Hermes todo) — never asks,
+     starts "approved" and just ticks. Same card either way. */
+  kind?: "plan" | "tasks";
+  version: number;
+  /** One line: what done looks like (tasks lists may have none). */
+  goal?: string;
+  steps: PlanStep[];
+  risks?: string[];
+  status: "proposed" | "approved" | "replaced" | "rejected";
+};
+/* A helper an employee spun off inside one turn (issue #170): its own subagent
+   (Hermes delegate_task, Claude Code Task) — steps and result live here — or
+   another employee, who works in their own session (D-#25: no group DMs), so
+   the row carries only a link to that session, never a copy of its turns. */
+export type Subagent = {
+  id: string;
+  /** Short label: "Map relay reconnect paths". */
+  name: string;
+  /** The brief the parent handed it. */
+  task: string;
+  status: "running" | "done" | "failed" | "stopped";
+  steps: Step[];
+  /** Its final report back to the parent (done / failed). */
+  result?: string;
+  /** Seconds it ran. */
+  dur?: number;
+  /** Set when the helper is another employee: their id + the session it opened. */
+  employee?: { id: string; session: string };
+};
+/* A long-running process the agent left running in the session's machine
+   (issue #170): dev server, test watcher, build. Hermes terminal(background)
+   + process, Claude Code background Bash. `log` is the output tail. */
+export type BackgroundJob = {
+  id: string;
+  command: string;
+  status: "running" | "exited" | "failed" | "stopped";
+  /** Clock time it started: "10:12". */
+  started: string;
+  /** How long it has run / ran: "14m". */
+  uptime: string;
+  /** Local URL when it serves one. */
+  url?: string;
+  exitCode?: number;
+  log: string;
+  /** Who started it: a subagent's name when not the employee itself. */
+  by?: string;
 };
 export type Usage = {
   input: number;
@@ -165,6 +229,8 @@ export type Thread = {
   fast?: boolean;
   pr?: PullRequest;
   ws?: Workspace;
+  /** Background processes of this session (issue #170), newest last. */
+  jobs?: BackgroundJob[];
 };
 export type Work = {
   ticket: string;
@@ -387,7 +453,14 @@ export type ModelPickerExtras = {
 };
 
 /* Workbench tab ids (Focus). */
-export type WbTab = "changes" | "files" | "terminal" | "preview" | "pr";
+export type WbTab =
+  | "changes"
+  | "files"
+  | "terminal"
+  | "preview"
+  | "background"
+  | "plan"
+  | "pr";
 
 /* Open-in-editor / Reveal-in-Finder targets (issue #110): the apps os.open
    knows. Editors arrive from os.editors, already in preference order —

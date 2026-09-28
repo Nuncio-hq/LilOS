@@ -1,5 +1,6 @@
 import {
   CircleDotIcon,
+  CpuIcon,
   EyeIcon,
   FileDiffIcon,
   FolderGit2Icon,
@@ -7,6 +8,7 @@ import {
   GitCommitHorizontalIcon,
   GitPullRequestIcon,
   GlobeIcon,
+  ListChecksIcon,
   PanelRightCloseIcon,
   PlayIcon,
   RefreshCcwIcon,
@@ -76,10 +78,12 @@ import type {
 } from "../types";
 import type { TreeNode } from "./artifacts";
 import { buildTree, sessionArtifacts } from "./artifacts";
+import { BackgroundPanel } from "./background-panel";
 import { DiffView } from "./diff-view";
 import { TreeNodes } from "./file-tree-nodes";
 import { LivePreview, type LiveSurfaces, LiveTerminal } from "./live";
 import { OpenPathButton } from "./open-path";
+import { PlanPanel, threadPlans } from "./plan-panel";
 import { PrFailure } from "./pr-failure";
 import { PrPanel } from "./pr-panel";
 
@@ -108,6 +112,7 @@ export function Workbench({
   running,
   editors: editorsProp,
   onOpenPath,
+  onStopJob,
 }: {
   thread: Thread;
   work: Work | null;
@@ -138,8 +143,14 @@ export function Workbench({
      own host.osEditors/osOpen path (prototype). */
   editors?: OsEditor[];
   onOpenPath?: ((path: string, app: OsApp, line?: number) => void) | null;
+  /** Stops a background process (issue #170); absent = no Stop button. */
+  onStopJob?: (id: string) => void;
 }) {
   const a = sessionArtifacts(thread);
+  const jobs = thread.jobs ?? [];
+  const jobsRunning = jobs.filter((j) => j.status === "running").length;
+  const plans = threadPlans(thread);
+  const plan = plans[plans.length - 1];
   const [sel, setSel] = useState<string | null>(null);
   const [viewFile, setViewFile] = useState<{
     path: string;
@@ -269,11 +280,16 @@ export function Workbench({
   const filesOn = !liveMode || probe?.files != null;
   const surfacesOn = !liveMode || live != null;
   const prOn = !liveMode ? prShown != null : probe?.pr != null;
+  /* Background (issue #170): no host method yet — shows in the prototype, or
+     when the session carries jobs. */
+  const bgOn = !liveMode || jobs.length > 0;
   const allowed: Record<WbTab, boolean> = {
     changes: changesOn,
     files: filesOn,
     terminal: surfacesOn,
     preview: surfacesOn,
+    background: bgOn,
+    plan: plans.length > 0,
     pr: prOn,
   };
   /* The caller's tab choice yields to availability: when its method never
@@ -334,7 +350,15 @@ export function Workbench({
       </div>
     );
   }
-  if (liveMode && !changesOn && !filesOn && !surfacesOn && !prOn) {
+  if (
+    liveMode &&
+    !changesOn &&
+    !filesOn &&
+    !surfacesOn &&
+    !prOn &&
+    !bgOn &&
+    !plan
+  ) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-muted-foreground text-xs">
         <p>
@@ -381,6 +405,34 @@ export function Workbench({
             <TabsTrigger value="preview">
               <GlobeIcon />
               Preview
+            </TabsTrigger>
+          )}
+          {plan && (
+            <TabsTrigger value="plan">
+              <ListChecksIcon />
+              Plan
+              {plan.status === "proposed" ? (
+                <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+              ) : (
+                plan.status === "approved" && (
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {plan.steps.filter((s) => s.status === "completed").length}/
+                    {plan.steps.length}
+                  </span>
+                )
+              )}
+            </TabsTrigger>
+          )}
+          {bgOn && (
+            <TabsTrigger value="background">
+              <CpuIcon />
+              Background
+              {jobsRunning > 0 && (
+                <span className="flex items-center gap-1 font-mono text-[11px] text-emerald-600">
+                  <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+                  {jobsRunning}
+                </span>
+              )}
             </TabsTrigger>
           )}
           {prOn && (
@@ -738,6 +790,18 @@ export function Workbench({
           </WebPreview>
         )}
       </TabsContent>
+
+      {plan && (
+        <TabsContent value="plan" className="min-h-0 flex-1">
+          <PlanPanel plans={plans} />
+        </TabsContent>
+      )}
+
+      {bgOn && (
+        <TabsContent value="background" className="min-h-0 flex-1">
+          <BackgroundPanel jobs={jobs} onStop={onStopJob} />
+        </TabsContent>
+      )}
 
       {prOn && (
         <TabsContent value="pr" className="min-h-0 flex-1">

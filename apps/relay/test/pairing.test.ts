@@ -47,7 +47,7 @@ function spiedStore() {
   return { store, grants, devices };
 }
 
-const tailscaleUp = (host = "mac.tail1a2b.ts.net:4577"): PhoneAccess => ({
+const tailscaleUp = (host = "my-mac.tail0000.ts.net:4577"): PhoneAccess => ({
   enable: async () => ({ host }),
   disable: async () => {},
 });
@@ -423,7 +423,7 @@ describe("AC-1 pairing.offer — Tailscale opt-in", () => {
       store,
       token: TOKEN,
       pairing,
-      phoneAccess: tailscaleUp("mac.tail1a2b.ts.net:4577"),
+      phoneAccess: tailscaleUp("my-mac.tail0000.ts.net:4577"),
       macName: "macbook-pro",
     });
     const mac = connectPeer(relay);
@@ -444,7 +444,7 @@ describe("AC-1 pairing.offer — Tailscale opt-in", () => {
         };
       }
     ).offer;
-    expect(offer.host).toBe("mac.tail1a2b.ts.net:4577");
+    expect(offer.host).toBe("my-mac.tail0000.ts.net:4577");
     expect(offer.code).toHaveLength(12);
     // No profile yet → the hostname stands in as the Mac's display name.
     expect(offer.name).toBe("macbook-pro");

@@ -16,6 +16,7 @@ import {
 } from "../components/ai-elements/conversation";
 import { Button } from "../components/ui/button";
 import { openStartRequest, ReplyCards } from "../conversation/cards";
+import type { PlanAction } from "../conversation/plan-card";
 import { AgentTurn, AttachmentChips } from "../conversation/turns";
 import { Body, Row, Who } from "../feed/row";
 import { SessionUsage } from "../focus/session-usage";
@@ -81,6 +82,8 @@ export function ThreadView({
   onDraftChange,
   editors,
   onOpenPath,
+  onOpenSession,
+  onPlan,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -146,6 +149,10 @@ export function ThreadView({
   scrollTo?: string;
   /* Fired once the scroll happened; the host clears `scrollTo` there. */
   onScrolled?: () => void;
+  /* A subagent row that is another employee links to their session (issue #170). */
+  onOpenSession?: (employeeId: string, session: string) => void;
+  /* Plan card decisions (issue #175). */
+  onPlan?: (a: PlanAction, planId: string) => void;
 }) {
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
@@ -308,6 +315,8 @@ export function ThreadView({
                     last={i === thread.replies.length - 1}
                     onRetry={onRetry}
                     models={models}
+                    onOpenSession={onOpenSession}
+                    onPlan={onPlan}
                     pending={steer ? pending : []}
                     cards={
                       <ReplyCards

@@ -197,7 +197,6 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
   {
     // #153: phone pairing — one-time grants (hash only) and paired devices
     // (credential hash only; revoked_at closes sockets + blocks hello).
-    // v10 = #162 (merged); renumber if another lands first.
     version: 11,
     statements: [
       `CREATE TABLE IF NOT EXISTS pairing_grants (

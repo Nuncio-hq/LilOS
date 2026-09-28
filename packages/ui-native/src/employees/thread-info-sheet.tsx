@@ -92,6 +92,30 @@ export function ThreadInfoSheet({
         </Group>
       )}
 
+      {!!t.jobs?.length && (
+        <Group title="Background">
+          {t.jobs.map((j, i) => (
+            <Fact
+              key={j.id}
+              icon={j.status === "running" ? "play.circle" : "stop.circle"}
+              label={
+                j.status === "running"
+                  ? "Running"
+                  : j.status === "failed"
+                    ? "Failed"
+                    : "Ended"
+              }
+              value={j.command}
+              detail={
+                j.status === "running" ? `up ${j.uptime}` : `ran ${j.uptime}`
+              }
+              mono
+              first={i === 0}
+            />
+          ))}
+        </Group>
+      )}
+
       <Group title="Session">
         <Fact icon="calendar" label="Started" value={t.started} first />
         <Fact icon="sparkle" label="Model" value={t.model} />
