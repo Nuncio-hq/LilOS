@@ -481,7 +481,9 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new sess
     .click();
   /* Already sitting on convC's /focus URL — wait until it changes. */
   await page.waitForURL(
-    (u) => /\/dm\/[^/]+\/[^/]+\/focus$/.test(u.pathname) && !u.pathname.includes(convC),
+    (u) =>
+      /\/dm\/[^/]+\/[^/]+\/focus$/.test(u.pathname) &&
+      !u.pathname.includes(convC),
     { timeout: 30_000 },
   );
   const convD = page.url().split("/dm/")[1].split("/")[1];
