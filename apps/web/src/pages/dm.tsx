@@ -550,8 +550,9 @@ export function DmPage() {
     ).then((c) => {
       if (!c) return;
       setFilesOnly(null);
+      /* Sessions land on Focus (#149) — the seeded session does too. */
       void navigate({
-        to: "/dm/$employeeId/$conversationId",
+        to: "/dm/$employeeId/$conversationId/focus",
         params: { employeeId, conversationId: c.id },
       });
     });

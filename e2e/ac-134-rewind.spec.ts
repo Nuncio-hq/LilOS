@@ -220,7 +220,18 @@ const empId = (page: Page) =>
 
 /** Pick `dir` in the home composer's folder picker (Add folder dialog). */
 async function pickFolder(page: Page, dir: string) {
-  await page.locator('[data-ws="folder"]').click();
+  /* The pick persists on the composer — a second session in the same folder
+     finds the chip already set and needs nothing at all. */
+  const chip = page.locator('[data-ws="folder"]');
+  const base = dir.split("/").pop() ?? dir;
+  /* The remembered pick lands when folders.list arrives — poll the chip
+     instead of a single read so we don't open the picker before hydration. */
+  for (let i = 0; i < 40; i++) {
+    if ((await chip.innerText().catch(() => "")).includes(base)) return;
+    if (i >= 10) break; /* ~2s then give up — fresh stacks stay "No folder" */
+    await page.waitForTimeout(200);
+  }
+  await chip.click();
   const menu = page
     .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
     .last();
@@ -228,10 +239,13 @@ async function pickFolder(page: Page, dir: string) {
      folder bound to a live session is filtered out of "discovered", so
      picking it again for a second session only works through this list. */
   const recent = menu.locator("[data-wsfolder]").filter({ hasText: dir });
+  /* folders.list lands asynchronously — give the rows a beat to populate
+     before deciding the folder isn't in the picker yet (session B re-picks
+     a folder that session A already added). */
   if (
     await recent
       .first()
-      .isVisible()
+      .isVisible({ timeout: 8_000 })
       .catch(() => false)
   ) {
     await recent.first().click();
@@ -249,6 +263,10 @@ async function pickFolder(page: Page, dir: string) {
   });
   await dialog.locator("[data-addbtn]").click();
   await expect(dialog).toHaveCount(0);
+  /* The pick lands asynchronously (`addFolder().then(setPick)`) — wait for
+     the chip to show the folder before sending, or the conversation binds
+     the harness workdir instead of the repo. */
+  await expect(chip).toContainText(base, { timeout: 10_000 });
 }
 
 let convA = "";
@@ -410,7 +428,9 @@ test("AC-5 a folder shared with another session warns + names it before rewindin
   await expect(thread.getByText(/session B alpha/)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-5-shared.png` });
   await thread.getByRole("button", { name: "Cancel" }).click();
-  await expect(rowText(thread, "alpha marker one")).toBeVisible();
+  /* The row plus the "I remember 1 earlier turn" list item — cancelling
+     must leave the thread exactly as it was. */
+  await expect(rowText(thread, "alpha marker one")).toHaveCount(2);
   await thread.locator("[data-rewind]").first().click();
   await thread.getByRole("button", { name: "Rewind anyway" }).click();
   /* Rewound to the root: the whole thread is gone, the rewind note shows
@@ -447,9 +467,8 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new sess
 
   /* Files restore and the thread still drops the tail — but the banner says
      plainly the agent still remembers, with the escape hatch. */
-  await expect(
-    page.locator("[data-thread]").getByText(/still remembers/),
-  ).toBeVisible();
+  /* Both the relay's in-thread system note and the amber banner say it. */
+  await expect(page.getByText(/still remembers/)).toHaveCount(2);
   await expect(
     page.getByRole("button", { name: "Start a new session from here" }),
   ).toBeVisible();
@@ -460,7 +479,11 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new sess
   await page
     .getByRole("button", { name: "Start a new session from here" })
     .click();
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  /* Already sitting on convC's /focus URL — wait until it changes. */
+  await page.waitForURL(
+    (u) => /\/dm\/[^/]+\/[^/]+\/focus$/.test(u.pathname) && !u.pathname.includes(convC),
+    { timeout: 30_000 },
+  );
   const convD = page.url().split("/dm/")[1].split("/")[1];
   expect(convD).not.toBe(convC);
   /* The fresh session's root carries the surviving transcript as quoted
@@ -487,11 +510,16 @@ test("AC-8 prototype shows the action and the result", async ({ page }) => {
   const box = page.getByPlaceholder(/New session with Builder/);
   await box.fill("prototype alpha");
   await box.press("Enter");
-  /* In the thread composer: a second user turn gets its own checkpoint.
-     Wait for its turn to end so the trigger isn't running-disabled. */
+  /* A message sent while a turn runs is folded in as a steer — no new user
+     turn, no checkpoint trigger. Wait for alpha's trigger to enable (turn
+     done) before sending beta as a second turn. */
+  await expect(page.locator("[data-rewind]").nth(0)).toBeEnabled({
+    timeout: 60_000,
+  });
   const thread = page.locator("textarea").last();
   await thread.fill("prototype beta");
   await thread.press("Enter");
+  /* Same story for beta's own turn — wait for its trigger to enable. */
   await expect(page.locator("[data-rewind]").nth(1)).toBeEnabled({
     timeout: 60_000,
   });

@@ -258,11 +258,12 @@ export class HermesEngine {
       },
       {
         ...REWIND_CAPABILITY,
-        /* #134: real only for WS sessions — `command.dispatch` /undo N
-           truncates Hermes history. ACP sessions hit `session.rewind`'s
-           METHOD_NOT_FOUND and take the files-only fallback (AC-3). */
+        /* #134: real only for WS sessions — `session.undo` truncates
+           Hermes history (one call per dropped turn). ACP sessions hit
+           `session.rewind`'s METHOD_NOT_FOUND and take the files-only
+           fallback (AC-3). */
         description:
-          "session.rewind maps to hermes `command.dispatch` /undo N on WS sessions (soft-deletes the tail on disk). ACP sessions expose no history undo — they answer METHOD_NOT_FOUND.",
+          "session.rewind maps to hermes `session.undo` on WS sessions (soft-deletes the tail on disk, looped N times). ACP sessions expose no history undo — they answer METHOD_NOT_FOUND.",
       },
     ];
     if (this.opts.acp) {
@@ -634,12 +635,14 @@ export class HermesEngine {
 
   /**
    * `session.rewind {toTurn}` (#134) — drop every user turn after `toTurn`
-   * from the agent's context. Maps to the WS gateway's
-   * `command.dispatch {name: "undo", arg: N}` (`_cmd_undo` in
-   * tui_gateway/methods_tools.py): it truncates the live history AND
-   * soft-deletes the rows on disk, so a resumed session can't remember
-   * them either. ACP sessions have no undo (spike on #134): they answer
-   * METHOD_NOT_FOUND so callers take the files-only fallback.
+   * from the agent's context. Maps to the WS gateway's `session.undo`
+   * (tui_gateway/methods_session.py): one call drops the last real user
+   * turn, truncating live history AND soft-deleting the rows on disk, so a
+   * resumed session can't remember them either — called `drop` times. The
+   * slash `/undo N` path (`command.dispatch`) is not used: it routes through
+   * `_confirm_destructive_slash`, which expects a TUI-side confirm. ACP
+   * sessions have no undo (spike on #134): they answer METHOD_NOT_FOUND so
+   * callers take the files-only fallback.
    */
   private async sessionRewind(p: SessionRewindParams) {
     const s = this.require(p.sessionId);
@@ -658,11 +661,10 @@ export class HermesEngine {
     const drop = Math.max(0, s.userTurns - p.toTurn);
     if (drop === 0) return { removed: 0 };
     try {
-      await this.opts.gateway.request("command.dispatch", {
-        name: "undo",
-        arg: String(drop),
-        session_id: s.runtimeSid,
-      });
+      for (let i = 0; i < drop; i++)
+        await this.opts.gateway.request("session.undo", {
+          session_id: s.runtimeSid,
+        });
     } catch (e) {
       // Hermes 4009 = agent busy; the adapter's own running check raced a
       // turn that started in between — translate to the contract's code.
