@@ -1,18 +1,19 @@
-/* Pairing offer: what the Mac's "Pair phone" screen hands the iPhone, as a QR
-   (lilos://pair?...) or typed by hand. Prototype-only format — the real
-   pairing grant is a backend slice (see the mobile notes in AGENTS.md); only
-   the host + one-time code + display name shape is assumed here. */
+/* Pairing offer: what the Mac's "Pair phone" dialog hands the iPhone, as a QR
+   (lilos://pair?...) or typed by hand. The URL is the wire format — the code
+   is a real one-time grant (5-min TTL, single use) minted by the relay, and it
+   always rides the URL fragment so proxies/logs never see it:
+   `lilos://pair?host=<tailscale-host>:<port>#code=<grant>` (#153, D-#153). */
 
 export type PairingOffer = {
   /** Where the relay is reachable, e.g. a Tailscale name `mac.tail1a2b.ts.net`. */
   host: string;
-  /** One-time pairing code, normalized: 6 uppercase letters/digits. */
+  /** One-time pairing grant, normalized: 12 uppercase letters/digits. */
   code: string;
   /** The Mac's display name, when the offer carries one. */
   name?: string;
 };
 
-export const CODE_LENGTH = 6;
+export const CODE_LENGTH = 12;
 
 export function normalizeCode(raw: string): string {
   return raw
@@ -21,10 +22,10 @@ export function normalizeCode(raw: string): string {
     .slice(0, CODE_LENGTH);
 }
 
-/** "7K4M2P" → "7K4-M2P" (how the Mac shows it). */
+/** "7K4MQR2X9TBP" → "7K4M-QR2X-9TBP" (how the Mac shows it). */
 export function formatCode(code: string): string {
   const c = normalizeCode(code);
-  return c.length > 3 ? `${c.slice(0, 3)}-${c.slice(3)}` : c;
+  return c.match(/.{1,4}/g)?.join("-") ?? c;
 }
 
 const HOST_RE =
@@ -43,18 +44,20 @@ export function isValidHost(raw: string): boolean {
 }
 
 export function buildPairingUrl(offer: PairingOffer): string {
-  const q = new URLSearchParams({ host: offer.host, code: offer.code });
+  const q = new URLSearchParams({ host: offer.host });
   if (offer.name) q.set("name", offer.name);
-  return `lilos://pair?${q.toString()}`;
+  // The grant is the secret — it lives in the fragment, off the wire logs.
+  return `lilos://pair?${q.toString()}#code=${offer.code}`;
 }
 
 /** A scanned/opened URL → offer, or null when it isn't a LilOS pairing code. */
 export function parsePairingUrl(raw: string): PairingOffer | null {
-  const m = /^lilos:\/\/pair\/?\?(.*)$/i.exec(raw.trim());
+  const m = /^lilos:\/\/pair\/?\?([^#]*)(?:#(.*))?$/i.exec(raw.trim());
   if (!m) return null;
   const q = new URLSearchParams(m[1]);
   const host = normalizeHost(q.get("host") ?? "");
-  const code = normalizeCode(q.get("code") ?? "");
+  const fragment = new URLSearchParams(m[2] ?? "");
+  const code = normalizeCode(fragment.get("code") ?? "");
   if (!isValidHost(host) || code.length !== CODE_LENGTH) return null;
   const name = q.get("name")?.trim();
   return name ? { host, code, name } : { host, code };

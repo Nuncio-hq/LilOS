@@ -143,6 +143,22 @@ PR does not exist.
   order is the default until #132). Not: `open -a` guessed by name, or a
   persisted editor choice. — #110 · PR #143
 
+## Mobile
+- **D-#153 The relay binds the Tailscale address only when Oscar turns on
+  phone access (opt-in); otherwise loopback only (D-#25). A QR never falls
+  back to a loopback address** — it must name a host the phone can reach.
+  Not: always-on LAN/tailnet listeners, or loopback in a QR. — #153
+- **D-#153 Pairing = one-time grant (5 min TTL, single use, stored hashed)
+  exchanged over the tailnet listener for a per-device credential (stored
+  hashed; raw only in the exchange response). The phone keeps it in the
+  Keychain; the Mac lists and revokes devices (revoke drops the live
+  socket).** Not: sharing the install token (D-#25) with phones, a cloud
+  relay, or DPoP. — #153
+- **D-#153 The pairing URL keeps the secret in the fragment:
+  `lilos://pair?host=<tailscale-host>:<port>#code=<grant>` — fragments never
+  leave the device in a URL copy or server log.** Not: secret in the query
+  string. — #153
+
 ## UX
 - **D-#19 A control renders only when its handler is passed; the app shows
   only working surfaces (no placeholder buttons).** Conversation UI = shared

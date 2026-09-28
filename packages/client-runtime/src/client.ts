@@ -9,6 +9,7 @@ import {
   type Conversation,
   type ConversationSummary,
   ConversationUpdatedEvent,
+  DevicesChangedEvent,
   type Employee,
   type EmployeePatch,
   type EmployeesCreateParamsInput,
@@ -16,6 +17,8 @@ import {
   JsonRpcNotification,
   JsonRpcResponse,
   MessageCreatedEvent,
+  type PairedDevice,
+  type PairingOffer,
   type ProfileSettings,
   ProfileUpdatedEvent,
   type RequestId,
@@ -138,6 +141,8 @@ export class RelayClient {
   });
   /** Fatal handshake failure (version mismatch, bad token) once raised. */
   readonly fatal: WritableAtom<RelayError | undefined> = atom(undefined);
+  /** Phones paired to this install (#153) — live via `devices.changed`. */
+  readonly devices: WritableAtom<PairedDevice[]> = atom([]);
 
   private readonly options: Required<
     Pick<
@@ -392,6 +397,41 @@ export class RelayClient {
     return await this.request<ModelsListResult>("models.list", params ?? {});
   }
 
+  /* --------------------- phone pairing (#153) ----------------------- */
+
+  /**
+   * "Turn on phone access": binds the Tailscale listener and mints a fresh
+   * one-time grant for the Pair phone dialog to render. Rejects with
+   * `tailscale_unavailable` when the tailnet is down — the dialog shows its
+   * no-remote state then.
+   */
+  async pairingOffer(): Promise<PairingOffer> {
+    const { offer } = await this.request<{ offer: PairingOffer }>(
+      "pairing.offer",
+      {},
+    );
+    return offer;
+  }
+
+  /** Turn phone access back off: unbinds the Tailscale listener. */
+  async pairingDisable(): Promise<void> {
+    await this.request("pairing.disable", {});
+  }
+
+  async listDevices(): Promise<PairedDevice[]> {
+    const { devices } = await this.request<{ devices: PairedDevice[] }>(
+      "devices.list",
+      {},
+    );
+    this.devices.set(devices);
+    return devices;
+  }
+
+  /** Revoke a paired device — the relay closes its live socket too. */
+  async revokeDevice(deviceId: string): Promise<void> {
+    await this.request("devices.revoke", { deviceId });
+  }
+
   async request<T>(
     method: string,
     params?: Record<string, unknown>,
@@ -555,7 +595,7 @@ export class RelayClient {
 
   private async refreshDirectory(): Promise<void> {
     try {
-      const [employees, channels, conversations, summaries, settings] =
+      const [employees, channels, conversations, summaries, settings, devices] =
         await Promise.all([
           this.request<{ employees: Employee[] }>("employees.list", {}),
           this.request<{ channels: AppChannel[] }>("channels.list", {}),
@@ -569,12 +609,14 @@ export class RelayClient {
             { includeArchived: true },
           ),
           this.request<{ profile: ProfileSettings }>("profile.get", {}),
+          this.request<{ devices: PairedDevice[] }>("devices.list", {}),
         ]);
       this.employees.set(employees.employees);
       this.channels.set(channels.channels);
       this.conversations.set(conversations.conversations);
       this.conversationSummaries.set(summaries.summaries);
       this.profile.set(settings.profile);
+      this.devices.set(devices.devices);
     } catch {
       // Directory refresh is best-effort on reconnect; stores keep stale data.
     }
@@ -732,6 +774,10 @@ export class RelayClient {
       }
       case "profile.updated": {
         this.profile.set(ProfileUpdatedEvent.parse(params).profile);
+        return;
+      }
+      case "devices.changed": {
+        this.devices.set(DevicesChangedEvent.parse(params).devices);
         return;
       }
       case "employee.upserted": {

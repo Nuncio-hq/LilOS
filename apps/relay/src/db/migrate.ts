@@ -155,6 +155,28 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       )`,
     ],
   },
+  {
+    // #153: phone pairing — one-time grants (hash only) and paired devices
+    // (credential hash only; revoked_at closes sockets + blocks hello).
+    // v9 was claimed by open PRs #151/#162 at branch time.
+    version: 10,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS pairing_grants (
+        code_hash TEXT PRIMARY KEY,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        consumed_at INTEGER
+      )`,
+      `CREATE TABLE IF NOT EXISTS paired_devices (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        credential_hash TEXT NOT NULL UNIQUE,
+        paired_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      )`,
+    ],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

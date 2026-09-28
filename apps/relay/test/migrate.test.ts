@@ -50,14 +50,17 @@ describe("relay migrations", () => {
     expect(out.tablesAt6).not.toContain("settings");
 
     // v7 adds #92's pick columns + the LilOS-owned settings KV; v8 adds
-    // #118's profile row.
-    expect(out.version).toBe(8);
+    // #118's profile row; v10 adds #153's phone pairing tables (v9 was
+    // claimed by open sibling PRs #151/#162 at branch time).
+    expect(out.version).toBe(10);
     for (const col of ["provider", "effort", "fast"])
       expect(out.colsAt7).toContain(col);
     for (const col of ["provider", "effort", "fast"])
       expect(out.msgCols).toContain(col);
     expect(out.tables).toContain("settings");
     expect(out.tables).toContain("profile");
+    expect(out.tables).toContain("pairing_grants");
+    expect(out.tables).toContain("paired_devices");
     // …and keeps everything v6 shipped.
     expect(out.colsAt7).toContain("cwd");
     expect(out.tables).toContain("recent_folders");

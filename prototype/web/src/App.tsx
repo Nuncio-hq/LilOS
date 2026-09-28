@@ -344,7 +344,7 @@ const DEFAULT_EMP: Employee = { id: "default", name: "Default", role: "Assistant
    (prototype/mobile/src/fake-mac.ts DEMO_OFFER). */
 const pairOffer = (seconds: number) => ({
   host: "oscars-macbook-pro.tail1a2b.ts.net",
-  code: "7K4M2P",
+  code: "7K4MQR2X9TBP",
   name: "Oscar's MacBook Pro",
   expiresAt: Date.now() + seconds * 1000,
 })

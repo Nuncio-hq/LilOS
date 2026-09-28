@@ -6,12 +6,24 @@ import type {
   ConversationSummary,
   Employee,
   MessageAttachment,
+  PairedDevice,
   PendingTurn,
   ProfileSettings,
   RecentFolder,
 } from "@lilos/contracts/app";
 import { ApprovalOutcome, EngineRequest } from "@lilos/contracts/engine";
-import { and, asc, desc, eq, gt, inArray, max, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  max,
+  ne,
+  sql,
+} from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import type {
   AppendMessageInput,
@@ -21,6 +33,7 @@ import type {
   ListMessagesPage,
   ListMessagesQuery,
   NewAsk,
+  NewPairedDevice,
   OpenConversationInput,
   RelayStore,
   ResolveAskInput,
@@ -74,6 +87,15 @@ const rowToAsk = (row: AskRow): Ask => ({
   answer: row.answer ?? undefined,
   createdAt: row.createdAt,
   resolvedAt: row.resolvedAt ?? undefined,
+});
+
+type PairedDeviceRow = typeof schema.pairedDevices.$inferSelect;
+/** Rows keep the credential hash; the public device record never carries it. */
+const rowToDevice = (row: PairedDeviceRow): PairedDevice => ({
+  id: row.id,
+  name: row.name,
+  pairedAt: row.pairedAt,
+  lastSeenAt: row.lastSeenAt,
 });
 
 type ProfileRow = typeof schema.profile.$inferSelect;
@@ -574,6 +596,93 @@ export function createDrizzleStore(db: Db): RelayStore {
             .all()
         : base.orderBy(asc(schema.asks.createdAt)).all();
       return rows.map(rowToAsk);
+    },
+    async insertPairingGrant(grant: {
+      codeHash: string;
+      createdAt: number;
+      expiresAt: number;
+    }) {
+      db.insert(schema.pairingGrants).values(grant).run();
+    },
+    async consumePairingGrant(codeHash: string, at: number) {
+      /* Atomic spend: the UPDATE's WHERE is the single-use+TTL gate, so a
+         replay that races the first spend loses. A miss is then classified
+         for the exchange answer. */
+      const spent = db
+        .update(schema.pairingGrants)
+        .set({ consumedAt: at })
+        .where(
+          and(
+            eq(schema.pairingGrants.codeHash, codeHash),
+            isNull(schema.pairingGrants.consumedAt),
+            gt(schema.pairingGrants.expiresAt, at),
+          ),
+        )
+        .returning({ codeHash: schema.pairingGrants.codeHash })
+        .get();
+      if (spent) return "ok";
+      const row = db
+        .select()
+        .from(schema.pairingGrants)
+        .where(eq(schema.pairingGrants.codeHash, codeHash))
+        .get();
+      if (!row) return "unknown";
+      if (row.consumedAt !== null) return "used";
+      return "expired";
+    },
+    async insertPairedDevice(device: NewPairedDevice) {
+      const row = db
+        .insert(schema.pairedDevices)
+        .values(device)
+        .returning()
+        .get();
+      return rowToDevice(row);
+    },
+    async authenticateDevice({
+      deviceId,
+      credentialHash,
+      seenAt,
+    }: {
+      deviceId: string;
+      credentialHash: string;
+      seenAt: number;
+    }) {
+      const row = db
+        .update(schema.pairedDevices)
+        .set({ lastSeenAt: seenAt })
+        .where(
+          and(
+            eq(schema.pairedDevices.id, deviceId),
+            eq(schema.pairedDevices.credentialHash, credentialHash),
+            isNull(schema.pairedDevices.revokedAt),
+          ),
+        )
+        .returning()
+        .get();
+      return row ? rowToDevice(row) : null;
+    },
+    async listPairedDevices() {
+      const rows = db
+        .select()
+        .from(schema.pairedDevices)
+        .where(isNull(schema.pairedDevices.revokedAt))
+        .orderBy(asc(schema.pairedDevices.pairedAt))
+        .all();
+      return rows.map(rowToDevice);
+    },
+    async revokePairedDevice(id: string, revokedAt: number) {
+      const row = db
+        .update(schema.pairedDevices)
+        .set({ revokedAt })
+        .where(
+          and(
+            eq(schema.pairedDevices.id, id),
+            isNull(schema.pairedDevices.revokedAt),
+          ),
+        )
+        .returning()
+        .get();
+      return row ? rowToDevice(row) : null;
     },
     async getSetting(key: string) {
       const row = db
