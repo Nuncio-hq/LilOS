@@ -160,6 +160,18 @@ export const AppMessage = z.object({
   provider: z.string().optional(),
   effort: z.string().optional(),
   fast: z.boolean().optional(),
+  /**
+   * True when a `conversations.rewind` dropped this message (issue #134):
+   * hidden from every thread/summary read, kept in the store for audit —
+   * never hard-deleted.
+   */
+  rewound: z.boolean().default(false),
+  /**
+   * Pre-turn folder checkpoint id stamped by the harness (#134): the point
+   * `conversations.rewind` restores the session folder to. Only user
+   * messages that ran a turn carry one.
+   */
+  checkpoint: z.string().optional(),
 });
 export type AppMessage = z.infer<typeof AppMessage>;
 

@@ -104,6 +104,10 @@ export const messages = sqliteTable(
     seq: integer("seq").notNull(),
     /** Exactly-once write key (#28): retries return the original row. */
     dedupeKey: text("dedupe_key"),
+    /** Rewound by `conversations.rewind` (#134): hidden, kept for audit. */
+    rewound: integer("rewound", { mode: "boolean" }).notNull().default(false),
+    /** Pre-turn folder checkpoint id stamped by the harness (#134). */
+    checkpoint: text("checkpoint"),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [

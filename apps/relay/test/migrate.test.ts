@@ -50,11 +50,11 @@ describe("relay migrations", () => {
     expect(out.tablesAt6).not.toContain("settings");
 
     // v7 adds #92's pick columns + the LilOS-owned settings KV; v8 adds
-    // #118's profile row.
-    expect(out.version).toBe(8);
+    // #118's profile row; v9 adds #134's rewind marks.
+    expect(out.version).toBe(9);
     for (const col of ["provider", "effort", "fast"])
       expect(out.colsAt7).toContain(col);
-    for (const col of ["provider", "effort", "fast"])
+    for (const col of ["provider", "effort", "fast", "rewound", "checkpoint"])
       expect(out.msgCols).toContain(col);
     expect(out.tables).toContain("settings");
     expect(out.tables).toContain("profile");

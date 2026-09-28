@@ -196,6 +196,28 @@ export type SessionSetHiddenParams = z.infer<typeof SessionSetHiddenParams>;
 export const SessionSetHiddenResult = z.object({ hidden: z.boolean() });
 export type SessionSetHiddenResult = z.infer<typeof SessionSetHiddenResult>;
 
+// ── session.rewind (capability: rewind) ─────────────────────────────────────
+/**
+ * Rewind the session's conversation to just before a user turn (issue #134):
+ * `toTurn` counts how many leading user turns to KEEP — the engine drops the
+ * rest of the turns from its context so the next prompt continues from the
+ * earlier state. File restoration is NOT part of this method: the harness
+ * owns folder checkpoints, so rewind works the same on engines that never
+ * touch the filesystem (and on transports without history rewind, e.g. ACP
+ * today, the capability is simply not declared).
+ */
+export const SessionRewindParams = z.strictObject({
+  sessionId: SessionId,
+  /** Number of leading user turns to keep; the rest are forgotten. */
+  toTurn: z.int().min(0),
+});
+export type SessionRewindParams = z.infer<typeof SessionRewindParams>;
+export const SessionRewindResult = z.object({
+  /** User turns the engine dropped. */
+  removed: z.int().min(0),
+});
+export type SessionRewindResult = z.infer<typeof SessionRewindResult>;
+
 // ── the table ────────────────────────────────────────────────────────────────
 export interface EngineMethodContract {
   params: z.ZodType;
@@ -288,6 +310,12 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
     result: SessionSetHiddenResult,
     doc: "Move the engine session out of / back into its default list — the engine-side counterpart of archive/unarchive.",
     capability: "session_meta",
+  },
+  "session.rewind": {
+    params: SessionRewindParams,
+    result: SessionRewindResult,
+    doc: "Drop all user turns after `toTurn` from the session's context (issue #134). Refuses INVALID_STATE while a turn runs. Engines on transports without history rewind (ACP today) don't declare the capability.",
+    capability: "rewind",
   },
 };
 export type EngineMethodName = keyof typeof ENGINE_METHODS;

@@ -385,8 +385,10 @@
         "conversations.summaries",
         "conversations.open",
         "conversations.update",
+        "conversations.rewind",
         "messages.list",
         "messages.post",
+        "messages.setCheckpoint",
         "attachments.get",
         "channel.subscribe",
         "channel.unsubscribe",
@@ -428,7 +430,8 @@
         "employee.removed",
         "conversation.modelRequested",
         "profile.updated",
-        "settings.changed"
+        "settings.changed",
+        "conversation.rewound"
       ]
     },
     "HelloParams": {
@@ -1773,6 +1776,13 @@
             },
             "fast": {
               "type": "boolean"
+            },
+            "rewound": {
+              "default": false,
+              "type": "boolean"
+            },
+            "checkpoint": {
+              "type": "string"
             }
           },
           "required": [
@@ -2103,6 +2113,13 @@
         },
         "fast": {
           "type": "boolean"
+        },
+        "rewound": {
+          "default": false,
+          "type": "boolean"
+        },
+        "checkpoint": {
+          "type": "string"
         }
       },
       "required": [
@@ -2247,6 +2264,13 @@
               },
               "fast": {
                 "type": "boolean"
+              },
+              "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "checkpoint": {
+                "type": "string"
               }
             },
             "required": [
@@ -2443,6 +2467,13 @@
             },
             "fast": {
               "type": "boolean"
+            },
+            "rewound": {
+              "default": false,
+              "type": "boolean"
+            },
+            "checkpoint": {
+              "type": "string"
             }
           },
           "required": [
@@ -2992,6 +3023,13 @@
             },
             "fast": {
               "type": "boolean"
+            },
+            "rewound": {
+              "default": false,
+              "type": "boolean"
+            },
+            "checkpoint": {
+              "type": "string"
             }
           },
           "required": [
@@ -3097,6 +3135,13 @@
               },
               "fast": {
                 "type": "boolean"
+              },
+              "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "checkpoint": {
+                "type": "string"
               }
             },
             "required": [
@@ -3494,6 +3539,13 @@
                   },
                   "fast": {
                     "type": "boolean"
+                  },
+                  "rewound": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "checkpoint": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -3599,6 +3651,13 @@
                     },
                     "fast": {
                       "type": "boolean"
+                    },
+                    "rewound": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "checkpoint": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -4860,6 +4919,13 @@
             },
             "fast": {
               "type": "boolean"
+            },
+            "rewound": {
+              "default": false,
+              "type": "boolean"
+            },
+            "checkpoint": {
+              "type": "string"
             }
           },
           "required": [
@@ -4978,6 +5044,13 @@
               },
               "fast": {
                 "type": "boolean"
+              },
+              "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "checkpoint": {
+                "type": "string"
               }
             },
             "required": [

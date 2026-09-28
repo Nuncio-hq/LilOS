@@ -7,13 +7,13 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { realpathSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCheckpointStore } from "../src/index";
 
@@ -52,10 +52,7 @@ const snapshotUserGit = (dir: string) => {
 const metaDir = () =>
   join(
     root,
-    createHash("sha256")
-      .update(realpathSync(cwd))
-      .digest("hex")
-      .slice(0, 16),
+    createHash("sha256").update(realpathSync(cwd)).digest("hex").slice(0, 16),
   );
 
 beforeEach(() => {
@@ -105,7 +102,10 @@ describe("AC-1 rewind restores files; user git state untouched", () => {
       expect(read("sub/gone.txt")).toBe("old\n");
       expect(existsSync(join(cwd, "new-file.txt"))).toBe(false);
       expect(existsSync(join(cwd, "deep"))).toBe(false);
-      expect(res.removed.sort()).toEqual(["deep/new/extra.txt", "new-file.txt"]);
+      expect(res.removed.sort()).toEqual([
+        "deep/new/extra.txt",
+        "new-file.txt",
+      ]);
 
       if (userGitBefore) {
         // the user's own .git is byte-identical — index, refs, stash, HEAD
@@ -139,7 +139,7 @@ describe("AC-1 rewind restores files; user git state untouched", () => {
     // restore snapshotted "v2" before rolling back — rewind it to get v2 back
     const v2 = (await store.list(cwd)).find((c) => c.id !== cp1);
     expect(v2).toBeDefined();
-    await store.restore(cwd, v2!.id);
+    await store.restore(cwd, v2?.id ?? "");
     expect(read("keep.txt")).toBe("v2\n");
   });
 });
@@ -151,7 +151,8 @@ describe("AC-6 snapshot cost and pruning", () => {
     for (let d = 0; d < 200; d++) {
       const dir = join(cwd, "bulk", `d${d}`);
       mkdirSync(dir, { recursive: true });
-      for (let i = 0; i < 250; i++) linkSync(join(cwd, "seed"), join(dir, `f${i}`));
+      for (let i = 0; i < 250; i++)
+        linkSync(join(cwd, "seed"), join(dir, `f${i}`));
     }
     const store = createCheckpointStore(root);
     await store.snapshot(cwd); // cold: builds the index once
@@ -174,14 +175,17 @@ describe("AC-6 snapshot cost and pruning", () => {
       checkpoints: { at: number }[];
     };
     const old = Date.now() - 8 * 24 * 60 * 60 * 1000;
-    for (let i = 0; i < 5; i++) meta.checkpoints[i]!.at = old;
+    for (let i = 0; i < 5; i++) {
+      const cp = meta.checkpoints[i];
+      if (cp) cp.at = old;
+    }
     writeFileSync(metaFile, JSON.stringify(meta));
 
     await store.prune();
     const list = await store.list(cwd);
     expect(list.map((c) => c.id)).toEqual(ids.slice(5).reverse());
     // a restore of a pruned checkpoint now honestly fails
-    await expect(store.restore(cwd, ids[0]!)).rejects.toThrow();
+    await expect(store.restore(cwd, ids[0] ?? "")).rejects.toThrow();
   });
 
   it("prunes to the retention window (last N)", async () => {

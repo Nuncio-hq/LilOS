@@ -85,6 +85,8 @@ export interface ListMessagesQuery {
   conversationId?: string;
   afterSeq?: number;
   limit?: number;
+  /** Audit reads can ask for dropped messages back (#134); default hides them. */
+  includeRewound?: boolean;
 }
 
 export interface ListMessagesPage {
@@ -190,6 +192,19 @@ export interface RelayStore {
     input: AppendMessageInput,
   ): Promise<{ message: AppMessage; created: boolean }>;
 
+  getMessage(id: string): Promise<AppMessage | null>;
+  /** Stamp the pre-turn folder checkpoint onto a user message (#134). */
+  setMessageCheckpoint(
+    messageId: string,
+    checkpoint: string,
+  ): Promise<AppMessage | null>;
+  /**
+   * Mark every message on the conversation with `seq >= fromSeq` as rewound
+   * (#134): hidden from thread/summary reads, kept for audit. Returns the
+   * messages it marked, oldest first.
+   */
+  markRewound(conversationId: string, fromSeq: number): Promise<AppMessage[]>;
+
   /**
    * Idempotent on (conversationId, requestId): re-opening the same engine
    * request returns the existing ask unchanged (the harness may re-open after
@@ -274,6 +289,7 @@ export function createMemoryStore(): RelayStore {
       conversationId: input.conversationId ?? null,
       authorId: input.authorId,
       authorKind: input.authorKind,
+      rewound: false,
       text: input.text,
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.provider !== undefined ? { provider: input.provider } : {}),
@@ -294,6 +310,7 @@ export function createMemoryStore(): RelayStore {
     [...messages.values()]
       .filter((m) => m.conversationId === conversationId)
       .sort((a, b) => a.seq - b.seq);
+  const visible = (list: AppMessage[]) => list.filter((m) => !m.rewound);
 
   return {
     async listEmployees() {
@@ -398,11 +415,14 @@ export function createMemoryStore(): RelayStore {
         .sort((a, b) => a.createdAt - b.createdAt);
       const summaries: ConversationSummary[] = [];
       for (const conversation of convs) {
-        const convMessages = conversationMessages(conversation.id);
-        const root = convMessages.find(
-          (m) => m.id === conversation.rootMessageId,
-        );
-        const last = convMessages.at(-1);
+        const all = conversationMessages(conversation.id);
+        const convMessages = visible(all);
+        /* A rewind to the root message leaves zero visible messages — the
+           list row still renders the (rewound) root for context. */
+        const root =
+          convMessages.find((m) => m.id === conversation.rootMessageId) ??
+          all.find((m) => m.id === conversation.rootMessageId);
+        const last = convMessages.at(-1) ?? all.at(-1);
         if (!root || !last) continue;
         summaries.push({
           conversation,
@@ -466,12 +486,16 @@ export function createMemoryStore(): RelayStore {
       Object.assign(conversation, patch);
       return conversation;
     },
-    async listMessages(channelId, { conversationId, afterSeq, limit }) {
+    async listMessages(
+      channelId,
+      { conversationId, afterSeq, limit, includeRewound },
+    ) {
       const channel = channels.get(channelId);
       if (!channel) throw new Error(`unknown channel ${channelId}`);
       let list = conversationId
         ? conversationMessages(conversationId)
         : channelMessages(channelId);
+      if (!includeRewound) list = visible(list);
       if (afterSeq !== undefined) {
         list = list.filter((m) => m.seq > afterSeq);
         if (limit !== undefined) list = list.slice(0, limit);
@@ -482,6 +506,25 @@ export function createMemoryStore(): RelayStore {
     },
     async appendMessage(input) {
       return appendMessage(input);
+    },
+    async getMessage(id) {
+      return messages.get(id) ?? null;
+    },
+    async setMessageCheckpoint(messageId, checkpoint) {
+      const message = messages.get(messageId);
+      if (!message) return null;
+      message.checkpoint = checkpoint;
+      return message;
+    },
+    async markRewound(conversationId, fromSeq) {
+      const marked: AppMessage[] = [];
+      for (const m of conversationMessages(conversationId)) {
+        if (m.seq >= fromSeq && !m.rewound) {
+          m.rewound = true;
+          marked.push(m);
+        }
+      }
+      return marked;
     },
     async createAsk(input) {
       const existing = [...asks.values()].find(
@@ -531,7 +574,10 @@ export function createMemoryStore(): RelayStore {
         const channel = channels.get(conversation.channelId);
         if (!channel) continue;
         const owed = conversationMessages(conversation.id).filter(
-          (m) => m.authorKind === "user" && m.seq > conversation.deliveredSeq,
+          (m) =>
+            m.authorKind === "user" &&
+            !m.rewound &&
+            m.seq > conversation.deliveredSeq,
         );
         const message = owed.at(-1);
         if (message) {

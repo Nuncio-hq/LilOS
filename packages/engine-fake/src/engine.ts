@@ -16,9 +16,11 @@ import {
   type KnownCapability,
   type ModelsListParams,
   type PromptParams,
+  REWIND_CAPABILITY,
   type RequestRespondParams,
   RPC_ERRORS,
   SESSION_META_CAPABILITY,
+  type SessionRewindParams,
   type SessionSetHiddenParams,
   type SessionSetModelParams,
   type SessionSetTitleParams,
@@ -107,6 +109,9 @@ interface FakeSession {
   hidden: boolean;
   usage: Usage;
   steers: string[];
+  /** #134: every user input the session heard (prompt + accepted steer),
+      in order — `session.rewind {toTurn}` truncates this list. */
+  userTurns: string[];
   turn?: FakeTurn;
   turnCount: number;
   toolCounter: number;
@@ -231,6 +236,8 @@ export class FakeEngine {
         return this.sessionStop(parsed.data as SessionStopParams);
       case "session.steer":
         return this.sessionSteer(parsed.data as SessionSteerParams);
+      case "session.rewind":
+        return this.sessionRewind(parsed.data as SessionRewindParams);
       case "agents.list":
         return this.agentsList();
       case "agents.describe":
@@ -287,6 +294,7 @@ export class FakeEngine {
           ]
         : []),
       ...(this.capOn("session_meta") ? [SESSION_META_CAPABILITY] : []),
+      ...(this.capOn("rewind") ? [REWIND_CAPABILITY] : []),
     ];
     return {
       name: "engine-fake",
@@ -331,6 +339,7 @@ export class FakeEngine {
       hidden: false,
       usage: { input: 0, output: 0, reasoning: 0, cache: 0 },
       steers: [],
+      userTurns: [],
       turnCount: 0,
       toolCounter: 0,
       requestCounter: 0,
@@ -374,6 +383,7 @@ export class FakeEngine {
       mimeType: b.mimeType,
       sizeBytes: decodedBytes(b.data),
     }));
+    s.userTurns.push(text);
     return this.runTurn(s, text, images, p.ref);
   }
 
@@ -483,7 +493,35 @@ export class FakeEngine {
       // not_running consumes nothing — the client sends the text as prompt.
       return { status: "not_running" as const };
     s.steers.push(p.text);
+    /* A steer is a user turn the agent heard mid-run — counted so a rewind
+       drops it like a prompt (#134). */
+    s.userTurns.push(p.text);
     return { status: "steered" as const };
+  }
+
+  /**
+   * `session.rewind` (#134): drop every user turn after `toTurn` — the
+   * memory half of "Rewind to here" (the folder restore is the harness's
+   * checkpoint store). Refuses while a turn runs, like a real engine.
+   */
+  private sessionRewind(p: SessionRewindParams) {
+    const s = this.require(p.sessionId);
+    if (s.state === "closed")
+      throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    if (s.turn)
+      throw new RpcError(
+        RPC_ERRORS.INVALID_STATE,
+        `session ${s.id} has a running turn — interrupt it first`,
+      );
+    const removed = Math.max(0, s.userTurns.length - p.toTurn);
+    if (removed > 0) {
+      s.userTurns.length = p.toTurn;
+      s.turnCount = s.userTurns.length;
+      /* Queued steers always post-date the rewind target (they were accepted
+         inside a turn the rewind now removes). */
+      s.steers.length = 0;
+    }
+    return { removed };
   }
 
   private agentsList() {
@@ -678,6 +716,10 @@ export class FakeEngine {
       "Nuncio-hq/LilOS",
       s.cwd,
       images,
+      /* Earlier turns the session still remembers — the recall: probe echoes
+         them. The current input is userTurns' last entry on the prompt path;
+         for a pumped steer it sits earlier, so drop it by match either way. */
+      s.userTurns.filter((_, i) => i !== s.userTurns.lastIndexOf(promptText)),
     );
     s.turn = { turnId, phase: "reasoning", interrupted: false };
     s.turnCount += 1;

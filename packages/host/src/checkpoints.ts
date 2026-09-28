@@ -63,7 +63,11 @@ const identity = [
 function shadowEnv(f: Folder, cwd: string): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
-    if (key === "GIT_DIR" || key === "GIT_WORK_TREE" || key === "GIT_INDEX_FILE") {
+    if (
+      key === "GIT_DIR" ||
+      key === "GIT_WORK_TREE" ||
+      key === "GIT_INDEX_FILE"
+    ) {
       delete env[key];
     }
   }
@@ -202,9 +206,7 @@ export function createCheckpointStore(root: string): CheckpointStore {
     }
     const seq = ++meta.count;
     const commitArgs = ["commit-tree", tree, "-m", `checkpoint ${seq}`];
-    const sha = (
-      await git(f, cwd, commitArgs)
-    ).trim();
+    const sha = (await git(f, cwd, commitArgs)).trim();
     await git(f, cwd, ["update-ref", TIP, sha]);
     /* Each checkpoint gets its own ref and NO parent — the chain would keep
        every ancestor reachable and make retention pruning impossible. */
@@ -229,10 +231,15 @@ export function createCheckpointStore(root: string): CheckpointStore {
     const keep = opts?.keep ?? CHECKPOINT_KEEP;
     const cutoff = Date.now() - (opts?.maxAgeMs ?? CHECKPOINT_MAX_AGE_MS);
     const cps = meta.checkpoints;
-    const kept = cps.filter((c, i) => cps.length - 1 - i < keep && c.at >= cutoff);
+    const kept = cps.filter(
+      (c, i) => cps.length - 1 - i < keep && c.at >= cutoff,
+    );
     /* Never drop the tip: it seeds the next snapshot's index and is the
        restore path's safety snapshot target. */
-    if (kept.length === 0 && cps.length > 0) kept.push(cps[cps.length - 1]!);
+    if (kept.length === 0 && cps.length > 0) {
+      const tip = cps[cps.length - 1];
+      if (tip) kept.push(tip);
+    }
     if (kept.length === cps.length) return;
     const dropping = cps.filter((c) => !kept.some((k) => k.id === c.id));
     for (const c of dropping) {

@@ -69,6 +69,21 @@ export const IMAGE_PROMPT_CAPABILITY: Capability = {
 };
 
 /**
+ * The canonical `rewind` descriptor (issue #134): `session.rewind { toTurn }`
+ * drops all user turns after the given count from the session's context so
+ * the next prompt continues from the earlier state. Not declared on
+ * transports that cannot rewind history (ACP today): the app then restores
+ * files alone and offers "Start a new session from here".
+ */
+export const REWIND_CAPABILITY: Capability = {
+  id: "rewind",
+  name: "Conversation rewind",
+  description:
+    "session.rewind drops user turns after a count from the session's context.",
+  methods: ["session.rewind"],
+};
+
+/**
  * The canonical `session_meta` descriptor (issue #28): the app's rename /
  * archive writes mirror onto the engine session as title / hidden so the
  * engine's own session lists stay consistent with the app's.

@@ -115,8 +115,12 @@ export const AppMethod = z.enum([
   "conversations.summaries",
   "conversations.open",
   "conversations.update",
+  /* Rewind a conversation to just before one of its user messages (#134). */
+  "conversations.rewind",
   "messages.list",
   "messages.post",
+  /* Host-only: stamp the pre-turn folder checkpoint onto a user message. */
+  "messages.setCheckpoint",
   "attachments.get",
   "channel.subscribe",
   "channel.unsubscribe",
@@ -370,6 +374,8 @@ export const MessagesListParams = z.object({
   conversationId: z.string().min(1).optional(),
   afterSeq: z.int().min(0).optional(),
   limit: z.int().min(1).optional(),
+  /** #134: include the hidden rewound tail (audit reads); default hides it. */
+  includeRewound: z.boolean().optional(),
 });
 export type MessagesListParams = z.infer<typeof MessagesListParams>;
 export const MessagesListResult = z.object({
@@ -654,6 +660,63 @@ export const TurnsInterruptParams = z.object({
 export type TurnsInterruptParams = z.infer<typeof TurnsInterruptParams>;
 
 /**
+ * Any client: rewind a conversation to just before one of its user messages
+ * (issue #134). The relay forwards to the engine host, which restores the
+ * folder checkpoint stamped on that message (harness-owned shadow git store)
+ * and — when the bound engine session declares the `rewind` capability —
+ * drops the message and everything after it from the engine's context. On
+ * success the relay marks those messages `rewound` (hidden, kept for audit)
+ * and emits `conversation.rewound`; the UI puts the message's text and
+ * images back into the composer.
+ */
+export const ConversationsRewindParams = z
+  .object({
+    conversationId: z.string().min(1),
+    /** The user message to rewind to — it and everything after are dropped. */
+    messageId: z.string().min(1),
+  })
+  .strict();
+export type ConversationsRewindParams = z.infer<
+  typeof ConversationsRewindParams
+>;
+
+export const ConversationsRewindResult = z.object({
+  /** The rewound user message — its text + attachments feed the composer. */
+  message: AppMessage,
+  /**
+   * False when the session's transport cannot rewind history (ACP today):
+   * files were restored but the engine still remembers the later turns —
+   * the UI explains that and offers "Start a new session from here".
+   */
+  engineRewound: z.boolean(),
+  /**
+   * False when no pre-turn checkpoint was stamped on the message (e.g. it
+   * predates #134) — the conversation still dropped but no files moved.
+   */
+  filesRestored: z.boolean(),
+  /** Number of trailing messages the relay marked rewound. */
+  removedCount: z.int().min(0),
+});
+export type ConversationsRewindResult = z.infer<
+  typeof ConversationsRewindResult
+>;
+
+/**
+ * Host-only: stamp the pre-turn folder checkpoint id onto a user message
+ * (issue #134) — the rewind target `conversations.rewind` restores.
+ */
+export const MessagesSetCheckpointParams = z
+  .object({
+    channelId: z.string().min(1),
+    messageId: z.string().min(1),
+    checkpoint: z.string().min(1),
+  })
+  .strict();
+export type MessagesSetCheckpointParams = z.infer<
+  typeof MessagesSetCheckpointParams
+>;
+
+/**
  * Any client: pin the model for the conversation's next turn (issue #30).
  * The relay does NOT store it here — it emits `conversation.modelRequested`
  * so the registered engine host can run `session.setModel`; the host writes
@@ -694,6 +757,7 @@ export const AppEventMethod = z.enum([
   "conversation.modelRequested",
   "profile.updated",
   "settings.changed",
+  "conversation.rewound",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 
@@ -783,6 +847,23 @@ export const ConversationModelRequestedEvent = z.object({
 export type ConversationModelRequestedEvent = z.infer<
   typeof ConversationModelRequestedEvent
 >;
+
+/**
+ * A conversation was rewound (issue #134): every message on it with
+ * `seq >= fromSeq` is now marked `rewound` — hidden, kept for audit. Clients
+ * drop them from the rendered thread and refresh summaries.
+ */
+export const ConversationRewoundEvent = z.object({
+  channelId: z.string().min(1),
+  conversationId: z.string().min(1),
+  /** First rewound seq — the target user message itself. */
+  fromSeq: z.int().min(0),
+  /** The user message whose checkpoint was the restore point. */
+  messageId: z.string().min(1),
+  /** Whether the engine session also dropped the turns (false = ACP). */
+  engineRewound: z.boolean(),
+});
+export type ConversationRewoundEvent = z.infer<typeof ConversationRewoundEvent>;
 
 /* -------------------------------- settings ------------------------------- */
 

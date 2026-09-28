@@ -50,5 +50,6 @@ test("AC-1 suite registry: core implemented, per-capability suites registered", 
   const pending = SUITES.filter((s) => !s.implemented).map((s) => s.capability);
   expect(pending).not.toContain("image_prompt");
   expect(pending).not.toContain("mcp_servers"); // #133 approval grant scenario
-  expect(pending.length).toBeGreaterThan(2); // the other capabilities are registered but empty
+  expect(pending).not.toContain("rewind"); // #134 rewind scenarios
+  expect(pending.length).toBeGreaterThanOrEqual(2); // the other capabilities are registered but empty
 });

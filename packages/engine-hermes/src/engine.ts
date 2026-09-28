@@ -12,8 +12,10 @@ import {
   type InterruptParams,
   type ModelsListParams,
   type PromptParams,
+  REWIND_CAPABILITY,
   type RequestRespondParams,
   RPC_ERRORS,
+  type SessionRewindParams,
   type SessionSetHiddenParams,
   type SessionSetModelParams,
   type SessionSetTitleParams,
@@ -158,6 +160,8 @@ export class HermesEngine {
         return this.sessionStop(parsed.data as SessionStopParams);
       case "session.steer":
         return this.sessionSteer(parsed.data as SessionSteerParams);
+      case "session.rewind":
+        return this.sessionRewind(parsed.data as SessionRewindParams);
       case "agents.list":
         return listAgents(this.opts.gateway);
       case "agents.describe":
@@ -234,6 +238,14 @@ export class HermesEngine {
         description:
           "session.setTitle/setHidden map to hermes session.title / session.set_hidden (live id first, else stored key).",
         methods: ["session.setTitle", "session.setHidden"],
+      },
+      {
+        ...REWIND_CAPABILITY,
+        /* #134: real only for WS sessions — `command.dispatch` /undo N
+           truncates Hermes history. ACP sessions hit `session.rewind`'s
+           METHOD_NOT_FOUND and take the files-only fallback (AC-3). */
+        description:
+          "session.rewind maps to hermes `command.dispatch` /undo N on WS sessions (soft-deletes the tail on disk). ACP sessions expose no history undo — they answer METHOD_NOT_FOUND.",
       },
     ];
     if (this.opts.acp) {
@@ -468,6 +480,7 @@ export class HermesEngine {
           session_id: s.runtimeSid,
           text,
         });
+        s.userTurns += 1;
       } else {
         const driver = this.acpDrivers.get(s.id);
         if (!driver)
@@ -592,6 +605,7 @@ export class HermesEngine {
       throw e;
     }
     if (r.status === "queued" || r.status === "redirected") {
+      s.userTurns += 1;
       s.emit("turn.steered", {
         turnId: s.turn?.turnId ?? s.lastTurnId,
         text: p.text,
@@ -599,6 +613,48 @@ export class HermesEngine {
       return { status: "steered" as const };
     }
     return { status: "not_running" as const };
+  }
+
+  /**
+   * `session.rewind {toTurn}` (#134) — drop every user turn after `toTurn`
+   * from the agent's context. Maps to the WS gateway's
+   * `command.dispatch {name: "undo", arg: N}` (`_cmd_undo` in
+   * tui_gateway/methods_tools.py): it truncates the live history AND
+   * soft-deletes the rows on disk, so a resumed session can't remember
+   * them either. ACP sessions have no undo (spike on #134): they answer
+   * METHOD_NOT_FOUND so callers take the files-only fallback.
+   */
+  private async sessionRewind(p: SessionRewindParams) {
+    const s = this.require(p.sessionId);
+    if (s.state === "closed")
+      throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    if (s.turn)
+      throw new RpcError(
+        RPC_ERRORS.INVALID_STATE,
+        `session ${s.id} has a running turn — interrupt it first`,
+      );
+    if (s.driver !== "ws")
+      throw new RpcError(
+        RPC_ERRORS.METHOD_NOT_FOUND,
+        "session.rewind needs the WS transport — ACP exposes no history undo",
+      );
+    const drop = Math.max(0, s.userTurns - p.toTurn);
+    if (drop === 0) return { removed: 0 };
+    try {
+      await this.opts.gateway.request("command.dispatch", {
+        name: "undo",
+        arg: String(drop),
+        session_id: s.runtimeSid,
+      });
+    } catch (e) {
+      // Hermes 4009 = agent busy; the adapter's own running check raced a
+      // turn that started in between — translate to the contract's code.
+      if (e instanceof RpcError && e.code === 4009)
+        throw new RpcError(RPC_ERRORS.INVALID_STATE, e.message);
+      throw e;
+    }
+    s.userTurns = Math.min(p.toTurn, s.userTurns);
+    return { removed: drop };
   }
 
   // ── gateway inbound routing ───────────────────────────────────────────────
