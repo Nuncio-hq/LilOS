@@ -56,9 +56,9 @@ function fullProps() {
   return {
     onClose: vi.fn(),
     general: {
-      me: { name: "Oscar", color: "bg-blue-600" },
+      me: { name: "Ada", color: "bg-blue-600" },
       onMeChange: vi.fn(),
-      company: "Oscar Co",
+      company: "Ada Co",
       onCompanyChange: vi.fn(),
       theme: "system" as const,
       onThemeChange: vi.fn(),
@@ -147,13 +147,13 @@ describe("AC-2 (#139) sections carry working controls", () => {
     });
 
     fireEvent.change(within(dialog).getByLabelText("Company name"), {
-      target: { value: "Oscar Industries" },
+      target: { value: "Ada Industries" },
     });
-    expect(p.general.onCompanyChange).toHaveBeenCalledWith("Oscar Industries");
+    expect(p.general.onCompanyChange).toHaveBeenCalledWith("Ada Industries");
 
     fireEvent.click(within(dialog).getByRole("radio", { name: "Rose" }));
     expect(p.general.onMeChange).toHaveBeenCalledWith({
-      name: "Oscar",
+      name: "Ada",
       color: "bg-rose-600",
     });
 
