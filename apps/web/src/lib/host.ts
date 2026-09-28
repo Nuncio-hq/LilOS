@@ -75,7 +75,6 @@ export const hostDiscoverRepos = (roots: string[]) =>
   host<{
     repos: { path: string; head: string | null; remote: string | null }[];
   }>("git.discoverRepos", { roots, depth: 2 });
-
 export type OsEditor = {
   id: "vscode" | "cursor" | "zed" | "xcode";
   name: string;
@@ -111,3 +110,7 @@ export const hostOsOpen = (
   host<Record<string, never>>("os.open", { root, path, app, line }).then(
     () => undefined,
   );
+
+/** OS account name — first-run prefill source for the identity fields (#118). */
+export const hostUser = () =>
+  host<{ username: string; fullName: string | null }>("host.user", {});

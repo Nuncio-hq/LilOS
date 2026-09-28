@@ -36,6 +36,7 @@ import {
   OsOpenResult,
 } from "./os";
 import { HOST_API } from "./protocol";
+import { HostUserParams, HostUserResult } from "./user";
 
 /** One host method: request params, result shape, doc line. */
 export interface HostMethodContract {
@@ -128,5 +129,10 @@ export const HOST_METHODS = {
     params: OsOpenParams,
     result: OsOpenResult,
     doc: "Open a path inside the session folder in an editor (`code -g`/`cursor -g`/`zed` line syntax; Xcode file-only) or reveal it in Finder. argv exec, no shell.",
+  },
+  "host.user": {
+    params: HostUserParams,
+    result: HostUserResult,
+    doc: "OS account name/full name — prefill source for the identity fields (#118).",
   },
 } as const satisfies Record<string, HostMethodContract>;

@@ -4,3 +4,4 @@ export * from "./git";
 export * from "./methods";
 export * from "./os";
 export * from "./protocol";
+export * from "./user";

@@ -10,6 +10,7 @@ import {
   gitStatus,
 } from "./git.js";
 import { osEditors, osOpen } from "./os.js";
+import { hostUser } from "./user.js";
 
 type Handler = (params: never) => Promise<unknown>;
 
@@ -32,6 +33,7 @@ const HANDLERS: Record<keyof typeof HOST_METHODS, Handler> = {
   "forge.merge": forgeMerge,
   "os.editors": osEditors,
   "os.open": osOpen,
+  "host.user": hostUser,
 };
 
 /**

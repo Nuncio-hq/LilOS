@@ -1,6 +1,6 @@
 /**
  * Issue #32 — AC-3: per-employee sidebar badges derived from live engine
- * session models. Approvals waiting on Oscar and running turns are counted
+ * session models. Approvals waiting on the user and running turns are counted
  * per employee across that employee's DM conversations; the sidebar renders
  * approvals first (amber, priority) then running (blue).
  */
