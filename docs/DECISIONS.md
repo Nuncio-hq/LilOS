@@ -96,7 +96,7 @@ PR does not exist.
   (`detail.updatable`); there is still no profile delete — firing removes
   only the LilOS employee record.** Not: LilOS-owned profile CRUD, a persona
   read-only wire (was #8), or a delete method "for cleanup".
-  — #8, #123 · PR #46
+  — #8, #123 · PR #46, #146
 - **D-#26 The harness supervises the engine and is the only thing that talks
   to it.** It owns launch (`hermes serve` on 127.0.0.1 with a generated
   token, via `packages/engine-hermes`), crash restart with bounded backoff,
