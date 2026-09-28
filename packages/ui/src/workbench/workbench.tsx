@@ -8,6 +8,7 @@ import {
   GitCommitHorizontalIcon,
   GitPullRequestIcon,
   GlobeIcon,
+  ListChecksIcon,
   PanelRightCloseIcon,
   PlayIcon,
   RefreshCcwIcon,
@@ -82,6 +83,7 @@ import { DiffView } from "./diff-view";
 import { TreeNodes } from "./file-tree-nodes";
 import { LivePreview, type LiveSurfaces, LiveTerminal } from "./live";
 import { OpenPathButton } from "./open-path";
+import { PlanPanel, threadPlans } from "./plan-panel";
 import { PrFailure } from "./pr-failure";
 import { PrPanel } from "./pr-panel";
 
@@ -147,6 +149,8 @@ export function Workbench({
   const a = sessionArtifacts(thread);
   const jobs = thread.jobs ?? [];
   const jobsRunning = jobs.filter((j) => j.status === "running").length;
+  const plans = threadPlans(thread);
+  const plan = plans[plans.length - 1];
   const [sel, setSel] = useState<string | null>(null);
   const [viewFile, setViewFile] = useState<{
     path: string;
@@ -285,6 +289,7 @@ export function Workbench({
     terminal: surfacesOn,
     preview: surfacesOn,
     background: bgOn,
+    plan: plans.length > 0,
     pr: prOn,
   };
   /* The caller's tab choice yields to availability: when its method never
@@ -345,7 +350,15 @@ export function Workbench({
       </div>
     );
   }
-  if (liveMode && !changesOn && !filesOn && !surfacesOn && !prOn && !bgOn) {
+  if (
+    liveMode &&
+    !changesOn &&
+    !filesOn &&
+    !surfacesOn &&
+    !prOn &&
+    !bgOn &&
+    !plan
+  ) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-muted-foreground text-xs">
         <p>
@@ -392,6 +405,22 @@ export function Workbench({
             <TabsTrigger value="preview">
               <GlobeIcon />
               Preview
+            </TabsTrigger>
+          )}
+          {plan && (
+            <TabsTrigger value="plan">
+              <ListChecksIcon />
+              Plan
+              {plan.status === "proposed" ? (
+                <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+              ) : (
+                plan.status === "approved" && (
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {plan.steps.filter((s) => s.status === "completed").length}/
+                    {plan.steps.length}
+                  </span>
+                )
+              )}
             </TabsTrigger>
           )}
           {bgOn && (
@@ -761,6 +790,12 @@ export function Workbench({
           </WebPreview>
         )}
       </TabsContent>
+
+      {plan && (
+        <TabsContent value="plan" className="min-h-0 flex-1">
+          <PlanPanel plans={plans} />
+        </TabsContent>
+      )}
 
       {bgOn && (
         <TabsContent value="background" className="min-h-0 flex-1">

@@ -52,6 +52,7 @@ import type {
 } from "../types";
 import { VIEWER_ID } from "../types";
 import { turnSteps } from "../workbench/artifacts";
+import { type PlanAction, PlanCard } from "./plan-card";
 import { TurnSubagents } from "./subagents";
 
 /* The conversation's turns — ONE implementation used by both frames (issue #19):
@@ -197,6 +198,7 @@ export function AgentTurn({
   pending = [],
   models,
   onOpenSession,
+  onPlan,
 }: {
   r: Reply;
   emp: EmpFn;
@@ -215,6 +217,8 @@ export function AgentTurn({
   pending?: string[];
   /** Opens another employee's session a subagent row links to (issue #170). */
   onOpenSession?: (employeeId: string, session: string) => void;
+  /** Approve / Change / Reject on the plan this turn proposed (issue #175). */
+  onPlan?: (a: PlanAction, planId: string) => void;
 }) {
   const e = emp(r.from);
   const steps = r.steps ?? [];
@@ -304,6 +308,13 @@ export function AgentTurn({
         <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
           Stopped · session.interrupt
         </div>
+      )}
+      {r.plan && (
+        <PlanCard
+          plan={r.plan}
+          onAction={onPlan}
+          onOpen={onOpen ? () => onOpen("plan") : undefined}
+        />
       )}
       {cards}
       {!r.live &&
