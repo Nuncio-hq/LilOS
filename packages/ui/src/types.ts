@@ -366,6 +366,24 @@ export type ModelPickerExtras = {
 /* Workbench tab ids (Focus). */
 export type WbTab = "changes" | "files" | "terminal" | "preview" | "pr";
 
+/* Settings surface (issue #139; prototyped first, real app in #132). Each
+   section renders only when its props are passed (D-#19); all values and
+   callbacks are app-owned state. */
+export type SettingsSectionId =
+  | "general"
+  | "approvals"
+  | "editors"
+  | "models"
+  | "status"
+  | "about";
+/* Engine approval policy: Smart = routine steps run, risky ones ask;
+   Manual = every ask surfaces; Off = never asks. */
+export type ApprovalPolicy = "smart" | "manual" | "off";
+/* What a brand-new conversation may touch without asking (#106). */
+export type ConversationAccess = "ask" | "full";
+/* An editor found on this Mac (#110) — `path` is the .app bundle. */
+export type DetectedEditor = { id: string; name: string; path?: string };
+
 /* Live host accessors for a session's real cwd (fs/git issue #11, forge #37).
    An accessor resolves null when the host is unreachable → the caller falls
    back to mock data; `forge.pr` resolving `{ pr: null }` is the host's real
