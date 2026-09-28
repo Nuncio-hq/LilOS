@@ -45,6 +45,7 @@ export function ThreadScreen({
   const running = t.state === "working";
   // The composer's height lands after the first layout; once it does, the
   // newest turn (and its Approve) must sit above it, not under it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: composerHeight is a deliberate retrigger — it fires the scroll when the composer resizes.
   useEffect(() => {
     const id = setTimeout(
       () => scroller.current?.scrollToEnd({ animated: false }),
