@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { WORKER, wport } from "./ports";
 
 /**
  * Issue #28 — sessions: history after restart, rename/archive, filter,
@@ -92,16 +93,15 @@ async function spawnRelay(home: string, port: number): Promise<ChildProcess> {
  * worker boots the whole stack, so ports (and the vite cache dir below) are
  * offset per worker — otherwise 4 relays race the same port and die (#84).
  */
-const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
 const viteCacheDir = `node_modules/.vite-ac28-w${WORKER}`;
 
 async function boot(tag: string, home?: string): Promise<Procs> {
   const base = home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-28-${tag}-`));
   const leakTag = engineTag(tag);
   const ports = {
-    relay: 4688 + WORKER * 10,
-    feed: 4692 + WORKER * 10,
-    web: 5301 + WORKER * 10,
+    relay: wport(4688, 10),
+    feed: wport(4692, 10),
+    web: wport(5301, 10),
   };
   let viteOut = "";
   const procs: Procs["procs"] = {

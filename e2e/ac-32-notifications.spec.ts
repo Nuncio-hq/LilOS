@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { wport } from "./ports";
 
 /**
  * Issue #32 — macOS notifications + per-employee badges. ACs:
@@ -28,8 +29,6 @@ const repo = path.resolve(here, "..");
 // Pick bases whose port%100 avoids real service ports — worker indices run
 // past 18, and 4579+18*100 lands on Redis's 6379 on Oscar's/dev VMs, which
 // left the relay retry-loop dead and the web port never served (#84).
-const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
-const wport = (p: number) => p + WORKER * 100;
 
 const webDir = path.join(repo, "apps", "web");
 const SHOTS = path.join(repo, "test-results", "ac-32");

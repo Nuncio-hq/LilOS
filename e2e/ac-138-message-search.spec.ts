@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { WORKER, wport } from "./ports";
 
 /**
  * Issue #138 — full-text search inside sessions: the DM session filter also
@@ -66,16 +67,15 @@ async function waitForToken(home: string): Promise<string> {
   throw new Error("relay never wrote its token file");
 }
 
-const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
 const viteCacheDir = `node_modules/.vite-ac138-w${WORKER}`;
 
 async function boot(tag: string): Promise<Procs> {
   const base = mkdtempSync(path.join(tmpdir(), `lilos-e2e-138-${tag}-`));
   const leakTag = engineTag(tag);
   const ports = {
-    relay: 4710 + WORKER * 10,
-    feed: 4714 + WORKER * 10,
-    web: 5340 + WORKER * 10,
+    relay: wport(4710, 10),
+    feed: wport(4714, 10),
+    web: wport(5340, 10),
   };
   const procs: Procs["procs"] = {
     relay: undefined,
