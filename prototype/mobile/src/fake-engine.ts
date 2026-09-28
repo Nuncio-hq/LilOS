@@ -13,6 +13,7 @@ import type {
   WorkspacePick,
 } from "@lilos/ui-native";
 import { atom, computed } from "nanostores";
+import { nextVersion, PLAN_THREADS, workFor } from "./fake-plan";
 import {
   SLEEP_FIX,
   SLEEP_THREAD,
@@ -38,7 +39,7 @@ import {
 
 // ── Store ───────────────────────────────────────────────────────────────────
 
-const SEED = [...THREADS, ...SUBAGENT_THREADS];
+const SEED = [...THREADS, ...SUBAGENT_THREADS, ...PLAN_THREADS];
 export const $threads = atom<ThreadDetail[]>(SEED);
 
 /** Order approvals were asked in (oldest first → the dock shows the oldest). */
@@ -177,6 +178,8 @@ type Script = {
   pr?: PullRequestRef;
   /** Helpers that run side by side after the steps (issue #170). */
   subagents?: SubagentSpec[];
+  /** Step i ticks plan step i (issue #175): the entry holding the approved plan. */
+  followPlan?: string;
 };
 
 /** Scripts waiting on an approval, by approval id. */
@@ -247,7 +250,23 @@ async function run(tid: string, s: Script, eid?: string) {
         thought: Math.max(1, Math.round((Date.now() - t0) / 1000)),
       }));
     } else if (!eid) set((e) => ({ ...e, thought: 1 }));
-    for (const { ms, ...st } of s.steps ?? []) {
+    const planStep = (i: number, status: PlanStatus) =>
+      s.followPlan &&
+      mapEntry(tid, s.followPlan, (e) =>
+        e.plan
+          ? {
+              ...e,
+              plan: {
+                ...e.plan,
+                steps: e.plan.steps.map((x, j) =>
+                  j === i ? { ...x, status } : x,
+                ),
+              },
+            }
+          : e,
+      );
+    for (const [i, { ms, ...st }] of (s.steps ?? []).entries()) {
+      planStep(i, "in_progress");
       const sid = uid();
       set((e) => ({
         ...e,
@@ -270,6 +289,7 @@ async function run(tid: string, s: Script, eid?: string) {
           x.id === sid ? { ...st, id: sid } : x,
         ),
       }));
+      planStep(i, "completed");
     }
     if (s.subagents?.length) await helpers(s.subagents, set, tick);
     if (s.text) {
@@ -321,6 +341,22 @@ async function run(tid: string, s: Script, eid?: string) {
     }
   } catch (err) {
     dead = true;
+    if (s.followPlan)
+      mapEntry(tid, s.followPlan, (e) =>
+        e.plan
+          ? {
+              ...e,
+              plan: {
+                ...e.plan,
+                steps: e.plan.steps.map((x) =>
+                  x.status === "in_progress"
+                    ? { ...x, status: "cancelled" }
+                    : x,
+                ),
+              },
+            }
+          : e,
+      );
     if (!(err instanceof Stopped) || g !== gen) return;
     set((e) => ({
       ...e,
@@ -520,6 +556,7 @@ export function startSession(
 export function reply(tid: string, text: string) {
   const t = $threads.get().find((x) => x.id === tid);
   if (!t) return;
+  if (waitingPlan(t)) return changePlan(t, text);
   const busy = t.state === "working";
   mapThread(tid, (x) => ({
     ...x,
@@ -529,6 +566,101 @@ export function reply(tid: string, text: string) {
     ],
   }));
   if (!busy) void run(tid, followUp(text, t));
+}
+
+// ── Plans (issue #175) ──────────────────────────────────────────────────────
+
+type PlanStatus = NonNullable<AgentEntry["plan"]>["steps"][number]["status"];
+const waitingPlan = (t: ThreadDetail) =>
+  t.entries.find(
+    (e): e is AgentEntry => e.kind === "agent" && e.plan?.status === "proposed",
+  );
+const setPlan = (
+  tid: string,
+  planId: string,
+  f: (p: NonNullable<AgentEntry["plan"]>) => NonNullable<AgentEntry["plan"]>,
+) =>
+  mapThread(tid, (t) => ({
+    ...t,
+    entries: t.entries.map((e) =>
+      e.kind === "agent" && e.plan?.id === planId
+        ? { ...e, plan: f(e.plan) }
+        : e,
+    ),
+  }));
+
+/** Approve: the plan becomes the checklist and the employee works through it. */
+export function approvePlan(tid: string, planId: string) {
+  const t = $threads.get().find((x) => x.id === tid);
+  const holder = t?.entries.find(
+    (e): e is AgentEntry => e.kind === "agent" && e.plan?.id === planId,
+  );
+  if (!holder?.plan) return;
+  setPlan(tid, planId, (p) => ({ ...p, status: "approved" }));
+  void run(tid, {
+    reasoning: "Plan approved. Working through it in order.",
+    steps: holder.plan.steps.map((s) => ({
+      ...workFor(s.files?.[0]),
+      ms: 1800,
+    })),
+    followPlan: holder.id,
+    text: `All ${holder.plan.steps.length} steps done on \`lil-11-reconnect\`: the client backs off up to 30s with jitter and resumes from the last seq. Tests pass. The banner says **Reconnecting…** while it waits.`,
+  });
+}
+
+/** Reject: nothing was edited; the employee says so. */
+export function rejectPlan(tid: string, planId: string) {
+  setPlan(tid, planId, (p) => ({ ...p, status: "rejected" }));
+  mapThread(tid, (t) => ({
+    ...t,
+    state: "done",
+    when: "now",
+    entries: [
+      ...t.entries,
+      {
+        kind: "agent",
+        id: `g-${uid()}`,
+        time: now(),
+        text: "OK, I won't start. Nothing was edited. The plan stays here if you change your mind.",
+      },
+    ],
+  }));
+}
+
+/* A reply while a plan waits is a change request: the next version replaces it. */
+function changePlan(t: ThreadDetail, text: string) {
+  const old = waitingPlan(t)?.plan;
+  if (!old) return;
+  mapThread(t.id, (x) => ({
+    ...x,
+    state: "working",
+    when: "now",
+    entries: [
+      ...x.entries,
+      { kind: "user", id: `u-${uid()}`, time: now(), text },
+    ],
+  }));
+  setPlan(t.id, old.id, (p) => ({ ...p, status: "replaced" }));
+  setTimeout(() => {
+    mapThread(t.id, (x) => ({
+      ...x,
+      state: "needs-you",
+      when: "now",
+      entries: [
+        ...x.entries,
+        {
+          kind: "agent",
+          id: `g-${uid()}`,
+          time: now(),
+          thought: 2,
+          reasoning:
+            "Fold Oscar's change into the plan; everything else stays.",
+          text: "Updated the plan with your change. Still nothing edited.",
+          plan: nextVersion(old, text),
+        },
+      ],
+    }));
+  }, 1400);
 }
 
 // ── Life: the team keeps working while you watch ────────────────────────────
@@ -591,6 +723,7 @@ const SLEEP_FIX_TURN: Script = {
 };
 
 const CI: Script = {
+  followPlan: "g1",
   steps: [
     {
       tool: "terminal",

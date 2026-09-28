@@ -1,21 +1,21 @@
 # LilOS — Agent Guide
 
-Every coding agent (Claude Code, Codex, Hermes, OpenCode, ...) follows this
-file. `CLAUDE.md` is a symlink to it. Edit `AGENTS.md`, never the link.
+Every coding agent follows this file. `CLAUDE.md` is a symlink to it;
+edit `AGENTS.md`, never the link.
 
 ## What LilOS is
 
-A Slack-style "CompanyOS" where the employees are AI agents. One company
-sidebar: company channels → projects (each with its own channels, e.g.
-`#engineering` bound to a repo) → employees. An @mention or a DM opens a
-thread, and each thread is one engine session. Engines plug in through a
-generic engine protocol; Hermes is the first engine but is never glued in.
-The engine owns sessions, memory, skills, and profiles. LilOS owns only its
-own domain objects: company, channels, messages, tickets, employee records.
+A Slack-style "CompanyOS" where the employees are AI agents. One sidebar:
+company channels → projects (each with channels, e.g. `#engineering` bound
+to a repo) → employees. An @mention or DM opens a thread = one engine
+session. Engines plug in through a generic engine protocol (Hermes first,
+never glued in). The engine owns sessions, memory, skills, profiles; LilOS
+owns only its domain objects: company, channels, messages, tickets,
+employee records.
 
 Stage: **prototype**. `prototype/` is the UI/UX source of truth: a UI change
-lands in `packages/ui` (`ui-native` for mobile) and shows in the prototype first. Mock data is not a
-contract.
+lands in `packages/ui` (`ui-native` for mobile) in the prototype first.
+Mock data is not a contract.
 
 ## Repo map
 
@@ -31,7 +31,7 @@ contract.
 
 Setup: `bun install` (Bun per `.bun-version`). Prototype: `bun run
 prototype:dev`. Verify all: `bun run verify` (biome, typecheck, vitest,
-prototype build, Playwright).
+prototype build, e2e).
 
 ## Stack & Structure
 
@@ -39,7 +39,7 @@ Runtime/PM **Bun** (workspaces; pinned `packageManager` + `.bun-version`);
 server **Hono** on Bun; DB SQLite (`bun:sqlite`) via Drizzle; web React 19 +
 Vite + Tailwind v4 + shadcn (base-nova) + AI Elements (mandatory) + TanStack
 Router + nanostores; desktop Electron (later); lint/format Biome; tests
-Vitest + Playwright; CI GitHub Actions (setup-bun) → `bun run verify`.
+Vitest + Playwright; CI GitHub Actions → `bun run verify`.
 
 ```
 apps/web apps/relay apps/harness apps/desktop   (created by the slice needing them)
@@ -54,8 +54,9 @@ prototype/web prototype/mobile   packages/ui(-native) + mock data
 - Bun-only APIs (`bun:sqlite`, `Bun.serve`) only at app entry points;
   `packages/*` stay runtime-neutral.
 - Organize code by feature folder; split a file past ~400 lines.
-- Biome lints/formats everything except `prototype/web/src`, assets, and vendored
-  shadcn/AI Elements in `packages/ui` (typecheck + build still cover them).
+- Biome lints/formats all but `prototype/web/src`, `site/`, assets, and
+  vendored shadcn/AI Elements in `packages/ui` (typecheck + build still
+  cover them).
 - CI never calls a real LLM; `engine-fake` is the deterministic engine.
 
 ## Learn from these projects
@@ -75,7 +76,7 @@ frameworks (T3/Synara use Effect-TS).
 Oscar is the **client**, not a reviewer: he doesn't write code and rarely
 reads diffs; he accepts or rejects the *product* he can see and try.
 
-- You own correctness end to end: implementation, tests, review, and docs.
+- You own correctness end to end: implementation, tests, review, docs.
 - "Done" means Oscar can try it without reading code, with evidence it works.
 - Talk to him in plain product language: what changed, how to try it.
 - Oscar chats in Vietnamese. Everything in the repo (code, docs, issues,
@@ -89,7 +90,7 @@ Repo: `Nuncio-hq/LilOS`. Use the `gh` CLI.
   vertical slices.
 - **Labels** (only these): `agent-ready` (acceptance criteria + verify
   plan; any agent may take it), `later` (parked; don't take it),
-  `needs-human` (blocked on Oscar: a decision or a local test).
+  `needs-human` (blocked on Oscar: decision or local test).
 - **What to work on next**: open `agent-ready` slices with no open PR
   (`label:agent-ready -linked:pr`). No priority order; finish slices inside
   a feature before starting a new one.
@@ -97,6 +98,7 @@ Repo: `Nuncio-hq/LilOS`. Use the `gh` CLI.
   a PR with `Closes #N` early. One slice at a time. Stuck → `needs-human`.
   Keep **one** comment titled `Status` on the issue and edit it in place
   (Now / Next / Blocked); no log-comment series.
+  Commits need DCO sign-off (`git commit -s`, bots too).
 - **Done**: the slice closes with its merged PR (hand-off note there); when
   the last slice closes, close the feature.
 - Work outside the slice? Open a new issue; don't widen your PR.
@@ -138,18 +140,13 @@ checklist plus screenshots is enough evidence.
 
 **A decision is real only if it has an issue and a merged PR.** One agreed in
 chat, a brainstorm, or an old doc without both was never implemented; don't
-build on it — open an issue. Discussion, alternatives, and evidence live in
-the **issue**; `docs/DECISIONS.md` is the **one** index of decisions in force
-now, not a history log.
+build on it — open an issue. Discussion and evidence live in the **issue**;
+`docs/DECISIONS.md` is the **one** index of decisions in force, not a
+history log.
 
-- Each entry is 1–3 lines, ID = issue number. Say what was rejected so nobody
-  proposes it again:
-
-  ```markdown
-  ## Engine
-  - **D-#12 Hermes owns sessions/transcripts; LilOS never stores them.**
-    Not: own session DB (drift). — #12 · PR #15
-  ```
+- Each entry is 1–3 lines, ID = issue number, e.g. `- **D-#12 Hermes owns
+  sessions/transcripts.** Not: own session DB (drift). — #12 · PR #15`.
+  Say what was rejected so nobody proposes it again.
 
 - Group entries by area (`Engine`, `Data`, `Stack`, `UX`, ...); read that
   area's section before touching it.
@@ -162,8 +159,8 @@ now, not a history log.
 
 ## Docs
 
-The repo keeps only knowledge that outlives a single issue; plans, progress,
-logs, and research notes go in issues and PRs.
+The repo keeps only knowledge that outlives an issue; plans, logs and
+research notes go in issues/PRs.
 
 - Permanent docs: `AGENTS.md` (rules, auto-loaded), `docs/DECISIONS.md`
   (in force), and `docs/ARCHITECTURE.md` (how pieces fit; once real code

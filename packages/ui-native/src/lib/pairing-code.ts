@@ -4,7 +4,7 @@
    the host + one-time code + display name shape is assumed here. */
 
 export type PairingOffer = {
-  /** Where the relay is reachable, e.g. a Tailscale name `mac.tail1a2b.ts.net`. */
+  /** Where the relay is reachable, e.g. a Tailscale name `mac.tail0000.ts.net`. */
   host: string;
   /** One-time pairing code, normalized: 6 uppercase letters/digits. */
   code: string;

@@ -106,6 +106,23 @@ export type SubagentRow = {
   employee?: { id: string; name: string; tone: OrbTone; threadId?: string };
 };
 
+/** A plan an employee proposes before editing (web: Plan). Approved, its
+    steps are the live checklist; replaced = a newer version took over. */
+export type PlanRow = {
+  id: string;
+  /** tasks = the employee's own working list: no OK asked, it just ticks. */
+  kind?: "plan" | "tasks";
+  version: number;
+  goal?: string;
+  steps: {
+    text: string;
+    files?: string[];
+    status: "pending" | "in_progress" | "completed" | "cancelled";
+  }[];
+  risks?: string[];
+  status: "proposed" | "approved" | "replaced" | "rejected";
+};
+
 /** A process left running for the session (web: BackgroundJob). */
 export type BackgroundJobRow = {
   id: string;
@@ -151,6 +168,8 @@ export type AgentEntry = {
   /** What you decided on this turn's approval — kept as a receipt. */
   decided?: { approved: boolean; what: string };
   approval?: Approval;
+  /** The plan this turn proposed (issue #175; web: Plan). */
+  plan?: PlanRow;
   /** Helpers this turn spun off (issue #170; web: Subagent). */
   subagents?: SubagentRow[];
   /** Worked for 21s · Opus 5.5 · High · 5 steps · 2 files changed */

@@ -528,6 +528,20 @@ export const THREADS: ThreadDetail[] = [
         id: "g1",
         time: "09:31",
         live: true,
+        // Builder's own task list for this turn (issue #175): ticks as it works.
+        plan: {
+          id: "tasks-ci",
+          kind: "tasks",
+          version: 1,
+          status: "approved",
+          steps: [
+            { text: "Reproduce ac-83 locally", status: "pending" },
+            { text: "Find where img.avatar comes from", status: "pending" },
+            { text: "Scope the locator in the spec", status: "pending" },
+            { text: "Re-run ac-83", status: "pending" },
+            { text: "Commit the fix", status: "pending" },
+          ],
+        },
         reasoning:
           "Start from the failing run, not from guesses. The last green was c91ad23; only ac-83 changed since.",
         thought: 3,

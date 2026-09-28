@@ -21,6 +21,7 @@ export {
 } from "./chat/model-visibility-dialog";
 // conversation (shared by the thread panel and Focus — issue #19)
 export { ReplyCards } from "./conversation/cards";
+export { type PlanAction, PlanCard } from "./conversation/plan-card";
 export { TurnSubagents } from "./conversation/subagents";
 export {
   AgentTurn,
@@ -100,6 +101,11 @@ export { TreeNodes } from "./workbench/file-tree-nodes";
 export type { LiveBrowserInput, LiveSurfaces } from "./workbench/live";
 export { LivePreview, LiveTerminal } from "./workbench/live";
 export { OpenPathButton, OpenPathMenu } from "./workbench/open-path";
+export {
+  PlanPanel,
+  planTodos,
+  threadPlans,
+} from "./workbench/plan-panel";
 export { PrPanel } from "./workbench/pr-panel";
 export { StepRow } from "./workbench/step-row";
 // workbench

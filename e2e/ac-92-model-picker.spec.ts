@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { wport } from "./ports";
 
 /**
  * Issue #92 — model picker v2 in the REAL app (apps/web over relay + harness
@@ -17,8 +18,6 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "..");
-const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
-const wport = (p: number) => p + WORKER * 100;
 const webDir = path.join(repo, "apps", "web");
 
 interface Stack {

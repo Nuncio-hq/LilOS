@@ -1,5 +1,6 @@
 {
   "name": "@lilos/desktop",
+  "license": "Elastic-2.0",
   "productName": "LilOS",
   "private": true,
   "version": "0.0.0",

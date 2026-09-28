@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { wport } from "./ports";
 
 /**
  * Issue #103 — unsent DM drafts are kept per conversation. Each acceptance
@@ -19,9 +20,8 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 // Per-worker port offsets so parallel spec files never race one port (#84).
-const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
-const wport = (p: number) => p + WORKER * 10;
-const PORTS = { relay: wport(4700), feed: wport(4705), web: wport(5290) };
+const wportN = (p: number) => wport(p, 10);
+const PORTS = { relay: wportN(4700), feed: wportN(4705), web: wportN(5290) };
 
 const webDir = path.join(repo, "apps", "web");
 const SHOTS = path.join(repo, "test-results", "ac-103");
