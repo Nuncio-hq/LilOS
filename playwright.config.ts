@@ -7,6 +7,10 @@ const repo = dirname(fileURLToPath(import.meta.url));
    API shells out to it for forge.* calls and reads/writes e2e/.gh-fake. */
 const fakeGh = join(repo, "packages/host/test/fake-gh");
 const ghFakeDir = join(repo, "e2e/.gh-fake");
+/* Fake Cursor/Zed bundles + a fake `open` for issue #110: os.editors sees
+   them via LILOS_APP_DIRS and every launched binary logs argv to
+   LILOS_OPEN_LOG (e2e/ac-110-*.spec.ts asserts on it). */
+const fakeOs = join(repo, "e2e/os-fake");
 
 /**
  * E2E smoke for the prototype: boots the vite dev server, loads the home
@@ -29,9 +33,11 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
     env: {
-      PATH: `${fakeGh}:${process.env.PATH}`,
+      PATH: `${fakeGh}:${join(fakeOs, "bin")}:${process.env.PATH}`,
       GH_FAKE_DIR: ghFakeDir,
       GH_FAKE_LOG: join(ghFakeDir, "gh.log"),
+      LILOS_APP_DIRS: join(fakeOs, "Applications"),
+      LILOS_OPEN_LOG: join(repo, "e2e/.os-fake/proto-open.log"),
     },
   },
 });

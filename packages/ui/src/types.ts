@@ -366,6 +366,12 @@ export type ModelPickerExtras = {
 /* Workbench tab ids (Focus). */
 export type WbTab = "changes" | "files" | "terminal" | "preview" | "pr";
 
+/* Open-in-editor / Reveal-in-Finder targets (issue #110): the apps os.open
+   knows. Editors arrive from os.editors, already in preference order —
+   [0] is the default until the settings picker lands (#132). */
+export type OsApp = "vscode" | "cursor" | "zed" | "xcode" | "finder";
+export type OsEditor = { id: Exclude<OsApp, "finder">; name: string };
+
 /* Settings surface (issue #139; prototyped first, real app in #132). Each
    section renders only when its props are passed (D-#19); all values and
    callbacks are app-owned state. */
@@ -383,7 +389,6 @@ export type ApprovalPolicy = "smart" | "manual" | "off";
 export type ConversationAccess = "ask" | "full";
 /* An editor found on this Mac (#110) — `path` is the .app bundle. */
 export type DetectedEditor = { id: string; name: string; path?: string };
-
 /* Live host accessors for a session's real cwd (fs/git issue #11, forge #37).
    An accessor resolves null when the host is unreachable → the caller falls
    back to mock data; `forge.pr` resolving `{ pr: null }` is the host's real
@@ -405,4 +410,15 @@ export type HostAccessors = {
   prComment?: (cwd: string, body: string) => Promise<string>;
   /** Merges via `gh`; resolves the re-read PR; throws on failure. */
   prMerge?: (cwd: string, method: MergeMethod) => Promise<PullRequest>;
+  /** os.editors (issue #110): editors detected on the session machine, in
+     preference order; [] when none. */
+  osEditors?: () => Promise<OsEditor[]>;
+  /** os.open (issue #110): open `path` (or cwd itself) in an editor, at `line`
+     when the editor takes one, or reveal it in Finder; throws on failure. */
+  osOpen?: (
+    cwd: string,
+    path: string,
+    app: OsApp,
+    line?: number,
+  ) => Promise<void>;
 };

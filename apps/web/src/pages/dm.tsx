@@ -72,7 +72,12 @@ import {
   wsFor,
 } from "../lib/folders";
 import { useAtom } from "../lib/hooks";
-import { hostSearch } from "../lib/host";
+import {
+  hostEditors,
+  hostOsOpen,
+  hostSearch,
+  type OsEditor,
+} from "../lib/host";
 import {
   conversationReplies,
   mergeTurns,
@@ -288,6 +293,24 @@ export function DmPage() {
     },
     [channel?.id, convs],
   );
+
+  /* Open-in-editor affordance for the session header (issue #110): editors
+     the host detected — `null` while unknown or when os.open isn't on this
+     host (the badge menu hides entirely then, D-#19); `[]` means os.open
+     works but no editor was found (Reveal in Finder only). */
+  const openCwd = openConv?.cwd;
+  const [editors, setEditors] = useState<OsEditor[] | null>(null);
+  useEffect(() => {
+    let off = false;
+    setEditors(null);
+    if (openCwd)
+      void hostEditors().then((e) => {
+        if (!off) setEditors(e);
+      });
+    return () => {
+      off = true;
+    };
+  }, [openCwd]);
 
   /* Unsent drafts live outside the composer: one key per conversation and
      one per employee home (issue #103). Switching sessions or employees — or
@@ -706,6 +729,18 @@ export function DmPage() {
           scrollTo={scrollTo ?? undefined}
           onScrolled={() => setScrollTo(null)}
           work={null}
+          editors={editors ?? undefined}
+          onOpenPath={
+            openCwd && editors !== null
+              ? (path, app, line) => {
+                  void hostOsOpen(openCwd, path, app, line).catch((e) =>
+                    say(
+                      `Open failed — ${e instanceof Error ? e.message : String(e)}`,
+                    ),
+                  );
+                }
+              : undefined
+          }
         />
         {openQuestion && (
           <QuestionCard

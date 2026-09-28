@@ -140,6 +140,12 @@ PR does not exist.
   shelling out to `gh` with the signed-in user's auth; the merge result is the
   re-read PR state, not gh's stdout.** Not: a GitHub token stored by LilOS, or
   forge on the engine. — #37
+- **D-#110 Opening files on the session machine is host API `os.*`:**
+  `os.open {root, path, app, line?}` (argv exec, never a shell, target must
+  stay inside the session folder) and `os.editors` (VS Code/Cursor/Zed/Xcode
+  detected by bundle id in /Applications + ~/Applications; first in that
+  order is the default until #132). Not: `open -a` guessed by name, or a
+  persisted editor choice. — #110 · PR #143
 
 ## UX
 - **D-#19 A control renders only when its handler is passed; the app shows

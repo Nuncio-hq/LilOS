@@ -37,6 +37,7 @@ import {
   type HumanFn,
   type MessageHit,
   type Msg,
+  type OsEditor,
   type Project,
   type Reply,
   type Step,
@@ -762,6 +763,19 @@ export default function App() {
   }
   const openThread = feed.find((m): m is Extract<Msg, { kind: "msg" }> => m.kind === "msg" && m.id === threadId && !!m.thread)
 
+  /* Open-in-editor affordance for the session header (issue #110): editors
+     the dev-middleware host detected; null until asked. os.open rides the
+     same /api/host channel as the workbench reads. */
+  const openWsCwd = openThread?.thread?.ws?.cwd
+  const [openEditors, setOpenEditors] = useState<OsEditor[] | null>(null)
+  useEffect(() => {
+    let off = false
+    setOpenEditors(null)
+    if (openWsCwd)
+      void hostAccessors.osEditors().then((e) => { if (!off) setOpenEditors(e) }).catch(() => {})
+    return () => { off = true }
+  }, [openWsCwd])
+
   // Unsent composer text survives switching threads/employees and reloads (issue #103):
   // one draft key per session thread, one per employee DM home.
   const [threadDraft, setThreadDraft] = useDraft(openThread ? draftKey.thread(openThread.id) : undefined)
@@ -1210,6 +1224,10 @@ export default function App() {
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
       models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined} picker={pickerExtras}
       scrollTo={scrollTo ?? undefined} onScrolled={() => setScrollTo(null)}
+      editors={openEditors ?? undefined}
+      onOpenPath={openWsCwd && openEditors !== null
+        ? (path, app, line) => void hostAccessors.osOpen(openWsCwd, path, app, line).catch((e) => say(`Open failed — ${e instanceof Error ? e.message : String(e)}`))
+        : undefined}
     />
   ) : null
 

@@ -66,6 +66,7 @@ import type {
   ModelOption,
   ModelPickerExtras,
   Msg,
+  OsEditor,
   Project,
   Thread,
   WbTab,
@@ -73,6 +74,7 @@ import type {
 } from "../types";
 import { sessionArtifacts } from "../workbench/artifacts";
 import type { LiveSurfaces } from "../workbench/live";
+import { OpenPathButton } from "../workbench/open-path";
 import { Workbench } from "../workbench/workbench";
 import { SessionUsage } from "./session-usage";
 
@@ -230,6 +232,22 @@ export function FocusView({
   // Plan tray opens while the agent works and folds away when the turn ends (user can still toggle).
   const [planOpen, setPlanOpen] = useState(running);
   useEffect(() => setPlanOpen(running), [running]);
+  /* Header "Open folder" affordance (issue #110): editors on the session's
+     host; the button renders only when os.open exists there (D-#19). */
+  const wsCwd = thread.ws?.cwd;
+  const [editors, setEditors] = useState<OsEditor[]>([]);
+  useEffect(() => {
+    let off = false;
+    if (host?.osEditors && wsCwd)
+      void host
+        .osEditors()
+        .then((e) => !off && setEditors(e))
+        .catch(() => {});
+    else setEditors([]);
+    return () => {
+      off = true;
+    };
+  }, [wsCwd]);
   const where = isDM ? "Direct" : (project?.name ?? "Company");
   const chLabel = isDM ? channel.name : `#${channel.name}`;
 
@@ -286,6 +304,22 @@ export function FocusView({
                 <FolderIcon className="size-3" />
                 {thread.ws.project}
               </span>
+            )}
+            {thread.ws && host?.osOpen && (
+              <OpenPathButton
+                editors={editors}
+                onOpen={(app) =>
+                  void host
+                    .osOpen?.(thread.ws!.cwd, ".", app)
+                    .catch((e) =>
+                      say?.(
+                        `Open failed — ${e instanceof Error ? e.message : String(e)}`,
+                      ),
+                    )
+                }
+                label={`${thread.ws.cwd} — open in an editor or reveal in Finder`}
+                className="hidden shrink-0 md:inline-flex"
+              />
             )}
             {work?.branch ? (
               <span className="hidden shrink-0 items-center gap-1 rounded bg-emerald-50 px-1 text-emerald-800 md:flex">

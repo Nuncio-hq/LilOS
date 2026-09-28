@@ -1,4 +1,4 @@
-import type { CheckRun, Diff, FsDir, MergeMethod, PullRequest } from "@lilos/ui"
+import type { CheckRun, Diff, FsDir, MergeMethod, OsApp, OsEditor, PullRequest } from "@lilos/ui"
 
 /* Host API client for the prototype: POST /api/host carries one JSON-RPC frame to the
    dev middleware (vite.config.ts → host-plugin.ts), which runs packages/host on this
@@ -151,4 +151,9 @@ export const hostAccessors = {
   /* forge.merge → the re-read PR (never stdout trust). */
   prMerge: (cwd: string, method: MergeMethod) =>
     host<{ pr: WirePr }>("forge.merge", { path: cwd, method }).then((r) => mapPr(r.pr)),
+  /* os.editors / os.open (issue #110): editors detected on this Mac
+     (preference order, first = default) + open/reveal inside a folder. */
+  osEditors: () => host<{ editors: OsEditor[] }>("os.editors", {}).then((r) => r.editors),
+  osOpen: (cwd: string, path: string, app: OsApp, line?: number) =>
+    host<Record<string, never>>("os.open", { root: cwd, path, app, line }).then(() => undefined),
 }
