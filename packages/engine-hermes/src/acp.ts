@@ -7,10 +7,7 @@ import type {
   McpServer,
   SessionStartParams,
 } from "@lilos/contracts/engine";
-import {
-  acpOfferedOutcomes,
-  acpPickOptionId,
-} from "./acp-permissions.js";
+import { acpOfferedOutcomes, acpPickOptionId } from "./acp-permissions.js";
 import type { HermesEngine } from "./engine.js";
 import type { Session } from "./session.js";
 

@@ -1,12 +1,9 @@
 import type * as acp from "@agentclientprotocol/sdk";
-import type {
-  ApprovalOutcome,
-  EngineRequest,
-} from "@lilos/contracts/engine";
+import type { ApprovalOutcome, EngineRequest } from "@lilos/contracts/engine";
 import { describe, expect, test } from "vitest";
 import { AcpDriver } from "../src/acp.js";
 import type { HermesEngine } from "../src/engine.js";
-import { Session, resolveOutcomeValid } from "../src/session.js";
+import { resolveOutcomeValid, Session } from "../src/session.js";
 
 /**
  * Issue #133 — ACP permission mapping. `hermes acp` offers two options of

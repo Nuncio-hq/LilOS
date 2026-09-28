@@ -1332,8 +1332,7 @@ const MCP_SCENARIOS: Scenario[] = [
         h.forSession(
           s1.sessionId,
           (e) =>
-            e.type === "request.resolved" &&
-            e.payload.requestId === requestId,
+            e.type === "request.resolved" && e.payload.requestId === requestId,
         ),
       );
       assert(

@@ -1,7 +1,4 @@
-import type {
-  ApprovalOption,
-  ApprovalOutcome,
-} from "@lilos/contracts/engine";
+import type { ApprovalOption, ApprovalOutcome } from "@lilos/contracts/engine";
 
 /**
  * ACP permission option -> LilOS approval mapping (issue #133).
