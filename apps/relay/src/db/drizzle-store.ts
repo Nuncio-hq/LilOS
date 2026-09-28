@@ -533,7 +533,7 @@ export function createDrizzleStore(db: Db): RelayStore {
                m.conversation_id AS conversationId,
                m.channel_id AS channelId,
                m.author_id AS authorId,
-               snippet(messages_fts, 0, '<mark>', '</mark>', '…', 40) AS snippet,
+               snippet(messages_fts, 0, '<mark>', '</mark>', '…', 12) AS snippet,
                m.created_at AS createdAt
         FROM messages_fts
         JOIN messages m ON m.rowid = messages_fts.rowid

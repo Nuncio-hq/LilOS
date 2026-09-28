@@ -739,13 +739,28 @@ export default function App() {
       const w = toks(t)
       return terms.every((term, i) => i < terms.length - 1 ? w.includes(term) : w.some((x) => x.startsWith(term)))
     }
+    // Same excerpt shape as the relay snippet: a ~12-word window opening a
+    // few words before the first match so the row never clips the <mark>.
     const mark = (t: string) => {
-      let s = t.length > 160 ? `${t.slice(0, 80)} … ${t.slice(-80)}` : t
-      for (const term of terms) {
-        const re = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\w*`, "gi")
-        s = s.replace(re, (m) => `<mark>${m}</mark>`)
+      const re = new RegExp(terms.map((term) => `\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\w*`).join("|"), "gi")
+      const first = re.exec(t)
+      let s = t
+      let lead = ""
+      let tail = ""
+      if (first) {
+        const words = [...t.matchAll(/\S+/g)]
+        const hit = words.findIndex((w) => w.index + w[0].length > first.index)
+        if (hit >= 0) {
+          const from = Math.max(0, hit - 3)
+          const last = Math.min(words.length - 1, from + 11)
+          const start = words[from].index
+          const end = words[last].index + words[last][0].length
+          s = t.slice(start, end)
+          if (start > 0) lead = "…"
+          if (end < t.length) tail = "…"
+        }
       }
-      return s
+      return lead + s.replace(re, (m) => `<mark>${m}</mark>`) + tail
     }
     const hits: MessageHit[] = []
     for (const m of feed) {

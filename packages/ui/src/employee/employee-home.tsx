@@ -613,7 +613,7 @@ export function EmployeeHome({
                             <span className="text-muted-foreground">
                               {h.time}
                             </span>
-                            <div className="truncate text-foreground/90">
+                            <div className="line-clamp-2 break-words text-foreground/90">
                               <Marks text={h.snippet} />
                             </div>
                           </button>

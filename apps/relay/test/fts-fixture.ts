@@ -130,6 +130,19 @@ out(
 // FTS syntax in the input is data, never an error.
 out("syntax-safe", await search({ query: 'rate" OR "x' }));
 
+// AC-2: a match buried at the end of a long message still produces a marked
+// snippet — the excerpt opens a few tokens before it with a leading ….
+await store.appendMessage({
+  channelId: otherChannel.id,
+  authorId: "user",
+  authorKind: "user",
+  text: `${"routine status note ".repeat(40)}needle lands at the tail`,
+});
+out(
+  "deep-snippet",
+  (await search({ query: "needle" })).map((h) => h.snippet),
+);
+
 // AC-4 second half: removing the employee deletes its messages — the index
 // follows via the delete trigger.
 await store.removeEmployee(employee.id);

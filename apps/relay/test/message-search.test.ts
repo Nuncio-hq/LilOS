@@ -162,6 +162,37 @@ describe("messages.search over the session wire (memory store)", () => {
     expect(hitsOf(frames)).toEqual([]);
   });
 
+  it("AC-2 a match deep in a long message yields a …-led marked snippet", async () => {
+    const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
+    const { frames, connection } = await helloed(relay);
+    const s = await seed(connection, frames);
+    const longText = `${"routine status note ".repeat(40)}needle lands at the tail`;
+    await connection.receive(
+      req("messages.post", {
+        channelId: s.channelId,
+        conversationId: s.convId,
+        text: longText,
+        authorKind: "user",
+      }),
+    );
+
+    await search(connection, { query: "needle" });
+    const hits = hitsOf(frames);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].snippet.startsWith("…")).toBe(true);
+    expect(hits[0].snippet).toContain("<mark>needle</mark>");
+    // The window opens on a word boundary a few words before the match —
+    // never a mid-word slice — and stays short enough for the hit row.
+    const firstWord = hits[0].snippet
+      .slice(1)
+      .split(/\s/)[0]
+      .replace(/<[^>]+>/g, "");
+    expect("routine status note needle lands at the tail".split(" ")).toContain(
+      firstWord,
+    );
+    expect(hits[0].snippet.length).toBeLessThan(160);
+  });
+
   it("rejects bad params and scopes by channelId", async () => {
     const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
     const { frames, connection } = await helloed(relay);
@@ -232,6 +263,16 @@ describe("messages.search over real SQLite FTS5 (bun fixture)", () => {
   it("FTS syntax in input never throws", () => {
     expect(res.status).toBe(0);
     expect(hitsAt("syntax-safe")).toEqual([]);
+  });
+
+  it("AC-2 a deep match opens the excerpt a few tokens before it (…+mark)", () => {
+    expect(res.status).toBe(0);
+    const snippets = (steps.get("deep-snippet") ?? []) as string[];
+    expect(snippets).toHaveLength(1);
+    expect(snippets[0]).toMatch(/^…/);
+    expect(snippets[0]).toContain("<mark>needle</mark>");
+    // The mark lands within the first few words so the row never clips it.
+    expect(snippets[0].indexOf("<mark>")).toBeLessThan(80);
   });
 
   it("AC-5 answers a query on 100k messages under 100ms", () => {

@@ -121,23 +121,26 @@ export function messageMatchesTerms(text: string, terms: string[]): boolean {
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/* A relay-snippet-shaped excerpt for the memory store: a window around the
-   first match, `…` at clipped edges, `<mark>` around every term hit. */
+/* A relay-snippet-shaped excerpt for the memory store: a ~12-word window
+   opening a few words before the first match (the SQLite side uses
+   snippet(…, 12)), `…` at clipped edges, `<mark>` around every term hit. */
 export function markSnippet(text: string, terms: string[]): string {
   if (!terms.length) return text.slice(0, 96);
   const patterns = terms.map(
     (t, i) =>
-      (i < terms.length - 1 ? `(?<![\\w])` : `(?<![\\w])`) +
-      escapeRe(t) +
-      (i < terms.length - 1 ? `(?![\\w])` : `[\\w]*`),
+      `(?<![\\w])${escapeRe(t)}${i < terms.length - 1 ? `(?![\\w])` : `[\\w]*`}`,
   );
   const re = new RegExp(patterns.join("|"), "gi");
   const first = re.exec(text);
   if (!first) return text.slice(0, 96);
-  const start = Math.max(0, first.index - 48);
-  const end = Math.min(text.length, first.index + first[0].length + 48);
-  const window = text.slice(start, end);
-  const marked = window.replace(re, (s) => `<mark>${s}</mark>`);
+  const words = [...text.matchAll(/\S+/g)];
+  const hit = words.findIndex((w) => w.index + w[0].length > first.index);
+  if (hit < 0) return text.slice(0, 96);
+  const from = Math.max(0, hit - 3);
+  const last = Math.min(words.length - 1, from + 11);
+  const start = words[from].index;
+  const end = words[last].index + words[last][0].length;
+  const marked = text.slice(start, end).replace(re, (s) => `<mark>${s}</mark>`);
   return `${start > 0 ? "…" : ""}${marked}${end < text.length ? "…" : ""}`;
 }
 

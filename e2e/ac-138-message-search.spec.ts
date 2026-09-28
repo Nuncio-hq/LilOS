@@ -200,8 +200,15 @@ test.afterAll(async () => {
 test.describe.configure({ mode: "serial" });
 
 /* Terms live only inside messages (never in a title/first message), so a
-   hit proves the message index — not the old title filter — found it. */
-const HIT_TEXT = "the quaggmire throttle kicked in mid-ingest";
+   hit proves the message index — not the old title filter — found it.
+   HIT_TEXT is a long message with the term near its end: the fake's reply
+   echoes it back (a second long hit), and under the old 40-token excerpt the
+   <mark> fell outside the one-line row — the regression this spec guards. */
+const HIT_TEXT =
+  "deploy log for the ingest run: build green cache warm smoke tests " +
+  "passed dashboards quiet queue drained workers healthy region failover " +
+  "idle retries zero latency flat alarms silent and then the quaggmire " +
+  "throttle kicked in mid-ingest";
 const HIT_ARCHIVED = "quaggmire shows inside the archived session too";
 const ROOT_A = "Summarize the repo layout in one line";
 const ROOT_B = "Second session for the archive marker check";
@@ -214,6 +221,11 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
   await dmDefault(stack, page);
   const dmHome = page.url();
 
+  /* engine-fake steers mid-turn sends into the running turn — a follow-up
+     only gets its own reply once the composer is back to its idle
+     placeholder ("Reply to Default…"). */
+  const idleComposer = page.getByPlaceholder(/Reply to Default/);
+
   // Session A: open, wait for the fake reply, then send a follow-up holding
   // the term — a message that is NOT the title or first message.
   await send(page, ROOT_A);
@@ -224,8 +236,17 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
       .getByText(/Short answer|Done on/i)
       .first(),
   ).toBeVisible({ timeout: 60_000 });
+  await expect(idleComposer).toBeVisible({ timeout: 60_000 });
   await send(page, HIT_TEXT);
   await expect(page.getByText(HIT_TEXT).first()).toBeVisible();
+  /* The fake's follow-up reply echoes the message with its first letter
+     capitalized, deep in its own text — waiting for "Deploy" makes the
+     "Default" hit row deterministic: its excerpt used to be clipped before
+     the <mark> was reached. (The thread panel is outside `main`.) */
+  await expect(
+    page.getByText(/Deploy log for the ingest run/).first(),
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(idleComposer).toBeVisible({ timeout: 60_000 });
 
   // Session B: same shape, then archived — its hit must carry the marker.
   await page.goto(dmHome);
@@ -237,8 +258,13 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
       .getByText(/Short answer|Done on/i)
       .first(),
   ).toBeVisible({ timeout: 60_000 });
+  await expect(idleComposer).toBeVisible({ timeout: 60_000 });
   await send(page, HIT_ARCHIVED);
   await expect(page.getByText(HIT_ARCHIVED).first()).toBeVisible();
+  await expect(
+    page.getByText(/Quaggmire shows inside the archived session too/).first(),
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(idleComposer).toBeVisible({ timeout: 60_000 });
 
   // Back to the DM home; archive session B via its session menu.
   await page.goto(dmHome);
@@ -263,18 +289,51 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
   await expect(hitsPanel.getByText(ROOT_A)).toBeVisible();
   await expect(hitsPanel.locator("mark").first()).toHaveText("quaggmire");
   await expect(hitsPanel.locator("[data-archived-hit]").first()).toBeVisible();
+
+  /* Every hit row must visibly show the matched term: each row's <mark>
+     renders inside the row's own box and in the viewport — not clipped away
+     by the excerpt (the fake's follow-up reply echoes the term deep in its
+     text, which is exactly the row that used to lose its mark). */
+  const hitRows = hitsPanel.locator("[data-message-hit]");
+  // 4 hits: both user follow-ups + both fake replies echoing the term.
+  await expect(hitRows).toHaveCount(4, { timeout: 10_000 });
+  const hitCount = await hitRows.count();
+  expect(hitCount).toBeGreaterThan(0);
+  for (let i = 0; i < hitCount; i++) {
+    const row = hitRows.nth(i);
+    expect(
+      await row.locator("mark").count(),
+      `hit row ${i} shows no marked term`,
+    ).toBeGreaterThan(0);
+    const mark = row.locator("mark").first();
+    await expect(mark).toBeInViewport();
+    const rowBox = await row.boundingBox();
+    const markBox = await mark.boundingBox();
+    expect(rowBox, `hit row ${i} has no box`).not.toBeNull();
+    expect(markBox, `hit row ${i} mark is not rendered`).not.toBeNull();
+    if (!rowBox || !markBox) continue;
+    expect(markBox.x).toBeGreaterThanOrEqual(rowBox.x - 1);
+    expect(markBox.y).toBeGreaterThanOrEqual(rowBox.y - 1);
+    expect(markBox.x + markBox.width).toBeLessThanOrEqual(
+      rowBox.x + rowBox.width + 1,
+    );
+    expect(markBox.y + markBox.height).toBeLessThanOrEqual(
+      rowBox.y + rowBox.height + 1,
+    );
+  }
   await page.screenshot({ path: `${SHOTS}/ac2-message-hits.png` });
 
-  // AC-3: clicking the live session's hit opens it and flashes the message.
-  await hitsPanel
+  // AC-3: clicking a hit opens the session and flashes THAT message —
+  // the row's data-message-hit id names the anchor it scrolls to.
+  const clicked = hitsPanel
     .locator("[data-message-hit]")
     .filter({ hasText: "mid-ingest" })
-    .click();
+    .first();
+  const hitId = await clicked.getAttribute("data-message-hit");
+  expect(hitId).toBeTruthy();
+  await clicked.click();
   await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_/, { timeout: 10_000 });
-  /* The live-turn overlay can echo the phrase too — anchor the stored row. */
-  const anchor = page
-    .locator('[data-msg^="msg_"]')
-    .filter({ hasText: "mid-ingest" });
+  const anchor = page.locator(`[data-msg="${hitId}"]`);
   await expect(anchor).toBeVisible({ timeout: 15_000 });
   await expect(anchor).toHaveClass(/amber/, { timeout: 5_000 });
   await page.screenshot({ path: `${SHOTS}/ac3-hit-scrolled.png` });
