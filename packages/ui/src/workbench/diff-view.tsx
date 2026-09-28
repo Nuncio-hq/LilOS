@@ -160,7 +160,9 @@ export function DiffView({
                           className="cursor-pointer text-inherit hover:text-foreground hover:underline"
                           title={`Open ${d.path} at line ${r.b}`}
                           data-openline={r.b}
-                          onClick={() => onOpenLine(r.b!)}
+                          onClick={() => {
+                            if (r.b != null) onOpenLine(r.b);
+                          }}
                         >
                           {r.b}
                         </button>
