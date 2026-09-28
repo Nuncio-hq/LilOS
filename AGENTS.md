@@ -31,7 +31,8 @@ Mock data is not a contract.
 
 Setup: `bun install` (Bun per `.bun-version`). Prototype: `bun run
 prototype:dev`. Verify all: `bun run verify` (biome, typecheck, vitest,
-prototype build, e2e).
+prototype build, e2e). Try the real app on a Mac:
+`bun run app:local`.
 
 ## Stack & Structure
 

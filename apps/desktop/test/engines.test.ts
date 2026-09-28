@@ -12,8 +12,10 @@ import { engineBundlePlan } from "../scripts/engines";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
+const SIGNED = "Developer ID Application: Example Dev";
+
 describe("AC-1 (#85) a signed bundle ships the real engine only", () => {
-  const plan = engineBundlePlan("Developer ID Application: Example Dev");
+  const plan = engineBundlePlan(SIGNED);
 
   it("compiles lilos-engine-hermes and no fake", () => {
     expect(plan.binaries.map((b) => b.outfile)).toEqual([
@@ -24,9 +26,13 @@ describe("AC-1 (#85) a signed bundle ships the real engine only", () => {
   it("stamps hermes as the harness engine default", () => {
     expect(plan.defaultEngine).toBe("hermes");
   });
+
+  it("--engine=hermes produces the same release plan (#141)", () => {
+    expect(engineBundlePlan(SIGNED, "hermes")).toEqual(plan);
+  });
 });
 
-describe("AC-4 (#85) a dev bundle keeps the fake engine explicit", () => {
+describe("AC-4 (#85/#141) a dev bundle keeps the fake engine explicit", () => {
   const plan = engineBundlePlan("-");
 
   it("ships both engine binaries", () => {
@@ -38,6 +44,33 @@ describe("AC-4 (#85) a dev bundle keeps the fake engine explicit", () => {
 
   it("stamps fake as the harness engine default so the build is labeled", () => {
     expect(plan.defaultEngine).toBe("fake");
+  });
+
+  it("--engine=fake produces the same dev plan (#141 AC-3)", () => {
+    expect(engineBundlePlan("-", "fake")).toEqual(plan);
+  });
+});
+
+describe("AC-1 (#141) an ad-hoc bundle can opt into real Hermes", () => {
+  const plan = engineBundlePlan("-", "hermes");
+
+  it("still ships both engine binaries (dev bundle, not a release)", () => {
+    expect(plan.binaries.map((b) => b.outfile).sort()).toEqual([
+      "lilos-engine-fake",
+      "lilos-engine-hermes",
+    ]);
+  });
+
+  it("stamps hermes as the harness engine default", () => {
+    expect(plan.defaultEngine).toBe("hermes");
+  });
+});
+
+describe("AC-4 (#141) --engine=fake on a signed build is an error", () => {
+  it("rejects with a plain message, not a bundle", () => {
+    expect(() => engineBundlePlan(SIGNED, "fake")).toThrow(
+      /--engine=fake .*ad-hoc|ad-hoc .*--engine=fake|signed .*fake|fake .*signed/i,
+    );
   });
 });
 

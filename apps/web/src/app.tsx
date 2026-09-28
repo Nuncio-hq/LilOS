@@ -19,6 +19,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { employeeBadges } from "./lib/badges";
+import { buildLabel } from "./lib/build-label";
 import {
   HIRE_TEMPLATES,
   hireEmployee,
@@ -83,12 +84,9 @@ function AppShell() {
     () => employees.map((e) => toUiEmployee(e, engineDown)),
     [employees, engineDown],
   );
-  // #85 AC-4: a build running the fake engine is labeled — never indistinguishable
-  // from a release running Hermes.
-  const buildLabel =
-    statusPoll.result?.engine?.name === "engine-fake"
-      ? "dev · fake engine"
-      : undefined;
+  // #85 AC-4 / #141: the label follows the engine the harness actually runs
+  // (system.status engine name), not the build identity.
+  const label = buildLabel(statusPoll.result?.engine?.name);
   // live badges: running turns + open approvals per employee (AC-3, #32)
   const models = useAtom(sessionModels);
   const convs = useAtom(relay.conversations);
@@ -258,7 +256,7 @@ function AppShell() {
         onHire={canHire ? openHire : undefined}
         badges={badges}
         status={comps}
-        buildLabel={buildLabel}
+        buildLabel={label}
         onOpenStatus={() => setStatusOpen(true)}
       />
       <Outlet />
