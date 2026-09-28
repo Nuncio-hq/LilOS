@@ -558,6 +558,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         JOIN messages m ON m.rowid = messages_fts.rowid
         LEFT JOIN conversations c ON c.id = m.conversation_id
         WHERE messages_fts MATCH ${match}
+          AND m.rewound = 0
           ${channelId ? sql`AND m.channel_id = ${channelId}` : sql``}
           ${includeArchived ? sql`` : sql`AND (c.id IS NULL OR c.archived = 0)`}
         ORDER BY bm25(messages_fts), m.created_at DESC

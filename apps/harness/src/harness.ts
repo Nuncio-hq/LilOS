@@ -16,8 +16,10 @@ import {
   ConversationModelRequestedEvent,
   ConversationUpdatedEvent,
   ENGINE_PASSTHROUGH_METHODS,
+  ConversationsRewindHostParams,
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
+import type { ConversationsRewindHostResult } from "@lilos/contracts/app";
 import type {
   AgentDescriptor,
   ContentBlock,
@@ -923,14 +925,9 @@ export class Harness {
    * -32009 conflict) while a turn runs; throwing before the mark means the
    * relay leaves the thread untouched.
    */
-  private async rewindConversation(params: {
-    conversationId: string;
-    engineRef: string | null;
-    checkpoint: string | null;
-    cwd: string | null;
-    fromSeq: number;
-    toTurn: number;
-  }): Promise<{ engineRewound: boolean; filesRestored: boolean }> {
+  private async rewindConversation(
+    params: ConversationsRewindHostParams,
+  ): Promise<ConversationsRewindHostResult> {
     const binding = this.bindings.get(params.conversationId);
     if (binding?.runningTurnId) {
       throw Object.assign(
@@ -941,19 +938,8 @@ export class Harness {
     /* Stored cwd may be `~/x` (host fs echoes collapsed): expand before
        any spawn/fs use — literal `~` is not a valid cwd for execFile. */
     const cwd = expandPath(params.cwd ?? binding?.cwd ?? this.opts.workdir);
-    let filesRestored = false;
-    if (params.checkpoint && this.opts.checkpoints) {
-      await this.opts.checkpoints.restore(cwd, params.checkpoint);
-      filesRestored = true;
-    }
-    /* Queued-behind-a-turn user messages at/after the rewind point never
-       send; release their delivery claims so nothing re-prompts them. */
-    if (binding) {
-      binding.queue = binding.queue.filter((m) => {
-        if (m.seq >= params.fromSeq) binding.consumed.delete(m.id);
-        return m.seq < params.fromSeq;
-      });
-    }
+    /* Engine first: a refusal (INVALID_STATE — a turn is running) must leave
+       everything untouched, before any file or queue mutation. */
     let engineRewound = false;
     const conn = this.engine;
     const sessionId = binding?.sessionId ?? params.engineRef ?? undefined;
@@ -980,6 +966,27 @@ export class Harness {
           error: String(error),
         });
       }
+    }
+    let filesRestored = false;
+    if (params.checkpoint && this.opts.checkpoints) {
+      await this.opts.checkpoints.restore(cwd, params.checkpoint);
+      filesRestored = true;
+    }
+    /* Queued-behind-a-turn user messages at/after the rewind point never
+       send; release their delivery claims so nothing re-prompts them. The
+       `early` map holds the same kind of queued sends for sessions with no
+       binding yet — prune it identically. */
+    if (binding) {
+      binding.queue = binding.queue.filter((m) => {
+        if (m.seq >= params.fromSeq) binding.consumed.delete(m.id);
+        return m.seq < params.fromSeq;
+      });
+    }
+    const early = this.early.get(params.conversationId);
+    if (early?.length) {
+      const kept = early.filter((m) => m.seq < params.fromSeq);
+      if (kept.length) this.early.set(params.conversationId, kept);
+      else this.early.delete(params.conversationId);
     }
     return { engineRewound, filesRestored };
   }
@@ -1386,7 +1393,7 @@ export class Harness {
        when its transport can. */
     if (method === "conversations.rewind") {
       return this.rewindConversation(
-        params as unknown as Parameters<Harness["rewindConversation"]>[0],
+        ConversationsRewindHostParams.parse(params),
       );
     }
     if (!(ENGINE_PASSTHROUGH_METHODS as readonly string[]).includes(method)) {

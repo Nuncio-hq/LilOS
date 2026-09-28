@@ -738,9 +738,49 @@ export const ConversationsRewindResult = z.object({
   filesRestored: z.boolean(),
   /** Number of trailing messages the relay marked rewound. */
   removedCount: z.int().min(0),
+  /** The dropped messages' ids — the engine feed's `ref`s to filter by. */
+  removedIds: z.array(z.string()),
 });
 export type ConversationsRewindResult = z.infer<
   typeof ConversationsRewindResult
+>;
+
+/**
+ * The relay→host `conversations.rewind` call (issue #134): the relay computes
+ * the surviving user-turn count and the checkpoint to restore; the host owns
+ * the folder restore and the engine-side rewind.
+ */
+export const ConversationsRewindHostParams = z
+  .object({
+    conversationId: z.string().min(1),
+    /** The conversation's engine session id, when one was bound. */
+    engineRef: z.string().nullable(),
+    /** The rewound message (echo for the host's logs/dedup). */
+    messageId: z.string().min(1),
+    /** Shadow-git checkpoint stamped on the message; null = no restore. */
+    checkpoint: z.string().nullable(),
+    /** Session folder to restore; null = the host's workdir. */
+    cwd: z.string().nullable(),
+    /** First seq to drop — queued sends at/after it are discarded. */
+    fromSeq: z.int().min(0),
+    /** Visible user turns that survive — the engine drops the rest. */
+    toTurn: z.int().min(0),
+  })
+  .strict();
+export type ConversationsRewindHostParams = z.infer<
+  typeof ConversationsRewindHostParams
+>;
+
+export const ConversationsRewindHostResult = z
+  .object({
+    /** The engine's session actually dropped its turns (capability path). */
+    engineRewound: z.boolean(),
+    /** The folder was restored to the checkpoint. */
+    filesRestored: z.boolean(),
+  })
+  .strict();
+export type ConversationsRewindHostResult = z.infer<
+  typeof ConversationsRewindHostResult
 >;
 
 /**
@@ -905,6 +945,8 @@ export const ConversationRewoundEvent = z.object({
   messageId: z.string().min(1),
   /** Whether the engine session also dropped the turns (false = ACP). */
   engineRewound: z.boolean(),
+  /** The dropped messages' ids — the engine feed's `ref`s to filter by. */
+  removedIds: z.array(z.string()),
 });
 export type ConversationRewoundEvent = z.infer<typeof ConversationRewoundEvent>;
 

@@ -238,6 +238,39 @@ describe("conversations.rewind (#134)", () => {
     ]);
   });
 
+  it("AC-2 rewound messages don't leak back through search", async () => {
+    const relay = newRelay();
+    const user = await helloed(relay);
+    const host = await fakeHost(relay);
+    const { at, channel, conversation } = await setupConversation(user, [
+      "rate limit question",
+      "retry with backoff plan",
+      "rate limit follow-up",
+    ]);
+
+    const hitsBefore = async () => {
+      await user.connection.receive(
+        req("messages.search", { query: "rate limit" }),
+      );
+      return (
+        resultOf(user.frames, lastId()).result as { hits: unknown[] }
+      ).hits;
+    };
+    expect(await hitsBefore()).toHaveLength(2);
+
+    await rewind(
+      user,
+      host,
+      { conversationId: conversation.id, messageId: at(1).id },
+      { result: { engineRewound: true, filesRestored: true } },
+    );
+    // Rewound rows stay in the DB for audit but stop surfacing as hits.
+    const hits = (await hitsBefore()) as { messageId: string }[];
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.messageId).toBe(at(0).id);
+    void channel;
+  });
+
   it("AC-3 files-only fallback: engineRewound=false posts the plain note", async () => {
     const relay = newRelay();
     const user = await helloed(relay);

@@ -354,12 +354,15 @@ export function DmPage() {
   const [filesOnly, setFilesOnly] = useState<{
     conversationId: string;
     target: AppMessage;
+    filesRestored: boolean;
   } | null>(null);
   /* Both clear when the open session changes — the render-time reset keeps
      them from leaking into the next thread. */
-  /* Employee texts the relay marked rewound — their engine-feed turns must
-     not resurrect via mergeTurns' unmatched-append (#134). */
-  const [rewoundTexts, setRewoundTexts] = useState<ReadonlySet<string>>(
+  /* Ids of the open conversation's rewound messages — a feed turn prompted
+     by one (its `ref`) must not resurrect via mergeTurns' unmatched-append
+     (#134). The event's removedIds cover live rewinds; this covers the
+     fetched history and the window before the event lands. */
+  const [localRewoundIds, setLocalRewoundIds] = useState<ReadonlySet<string>>(
     new Set(),
   );
   const [seedConv, setSeedConv] = useState<string | undefined>();
@@ -370,11 +373,25 @@ export function DmPage() {
     setSeedConv(openConv.id);
     setSeedFiles(undefined);
     setFilesOnly(null);
-    setRewoundTexts(new Set());
+    setLocalRewoundIds(new Set());
   }
   /* Latest rewind per conversation — the fetched tail is dropped
      client-side as soon as the relay emits `conversation.rewound`. */
   const rewinds = useAtom(relay.rewinds);
+  /* Rewound message ids per conversation: the event's removedIds cover any
+     rewound conv (feed previews included); local ids cover the open one. */
+  const rewoundRefs = useMemo(() => {
+    const map = new Map<string, ReadonlySet<string>>();
+    for (const [convId, r] of Object.entries(rewinds)) {
+      map.set(convId, new Set(r.removedIds));
+    }
+    if (openConv && localRewoundIds.size) {
+      const s = new Set(map.get(openConv.id) ?? []);
+      for (const id of localRewoundIds) s.add(id);
+      map.set(openConv.id, s);
+    }
+    return map;
+  }, [rewinds, localRewoundIds, openConv]);
 
   /* The open thread needs its whole visible history, not just the channel
      window (#28 AC-2): page messages.list scoped to the conversation. */
@@ -382,7 +399,7 @@ export function DmPage() {
   const [threadMsgs, setThreadMsgs] = useState<AppMessage[]>([]);
   useEffect(() => {
     setThreadMsgs([]);
-    setRewoundTexts(new Set());
+    setLocalRewoundIds(new Set());
     if (!conversationId || !channelId) return;
     let dead = false;
     void (async () => {
@@ -402,12 +419,8 @@ export function DmPage() {
       }
       if (dead) return;
       setThreadMsgs(all.filter((m) => !m.rewound));
-      setRewoundTexts(
-        new Set(
-          all
-            .filter((m) => m.rewound && m.authorKind === "employee")
-            .map((m) => m.text.trim()),
-        ),
+      setLocalRewoundIds(
+        new Set(all.filter((m) => m.rewound).map((m) => m.id)),
       );
     })().catch(() => {});
     return () => {
@@ -420,7 +433,9 @@ export function DmPage() {
      drops the fetched copy too (#134). */
   const openConvId = openConv?.id;
   const threadPool = useMemo(() => {
-    const rewoundFrom = openConvId ? rewinds[openConvId] : undefined;
+    const rewoundFrom = openConvId
+      ? rewinds[openConvId]?.fromSeq
+      : undefined;
     const seen = new Set<string>();
     const out: AppMessage[] = [];
     /* `threadMsgs` is a fetch-time snapshot: a rewind landing between the
@@ -477,20 +492,19 @@ export function DmPage() {
      as attachment chips (AC-4). On a transport without `rewind` (ACP) the
      banner offers "Start a new session from here" (AC-3). */
   const rewindTo = (conv: Conversation, messageId: string) => {
-    /* Capture the about-to-drop employee texts up front — their engine-feed
-       turns would otherwise re-append as rich cards after the thread drops
-       the relay rows (mergeTurns). */
+    /* Capture the about-to-drop message ids up front — the engine-feed
+       turns they prompted would otherwise re-append as rich cards after
+       the thread drops the relay rows (mergeTurns). The relay's event
+       carries the same ids; this covers the window until it lands. */
     const target = threadPool.find((m) => m.id === messageId);
-    const doomedTexts = target
+    const doomedIds = target
       ? threadPool
           .filter(
-            (m) =>
-              m.conversationId === conv.id &&
-              m.seq >= target.seq &&
-              m.authorKind === "employee",
+            (m) => m.conversationId === conv.id && m.seq >= target.seq,
           )
-          .map((m) => m.text.trim())
+          .map((m) => m.id)
       : [];
+
     void (async () => {
       try {
         const res = await relay.request<ConversationsRewindResult>(
@@ -498,14 +512,18 @@ export function DmPage() {
           { conversationId: conv.id, messageId },
         );
         setThreadDraft(res.message.text);
-        if (doomedTexts.length)
-          setRewoundTexts((prev) => new Set([...prev, ...doomedTexts]));
+        if (doomedIds.length)
+          setLocalRewoundIds((prev) => new Set([...prev, ...doomedIds]));
         const files = await hydrateAttachments(res.message.attachments);
         if (files.length) setSeedFiles(files);
         setFilesOnly(
           res.engineRewound
             ? null
-            : { conversationId: conv.id, target: res.message },
+            : {
+                conversationId: conv.id,
+                target: res.message,
+                filesRestored: res.filesRestored,
+              },
         );
       } catch (e) {
         say(`Rewind failed — ${e instanceof Error ? e.message : String(e)}`);
@@ -627,7 +645,7 @@ export function DmPage() {
           model,
           employeeId,
           convAsks(conv),
-          conv.id === openConvId ? rewoundTexts : undefined,
+          rewoundRefs.get(conv.id),
         ),
         wsFor(conv.cwd, cwdBranches),
       ),
@@ -819,7 +837,7 @@ export function DmPage() {
       model,
       employeeId,
       asksHere,
-      rewoundTexts,
+      rewoundRefs.get(conv.id),
     );
     // An open question ask gets a real answer card (asks.respond).
     const openQuestion = asksHere.find(
@@ -974,9 +992,11 @@ export function DmPage() {
                 onClick: () => startFreshFrom(conv, filesOnly.target),
               }}
             >
-              Files restored to the earlier checkpoint — but this session's
-              transport can't rewind the agent's memory: it still remembers the
-              dropped messages.
+              {filesOnly.filesRestored
+                ? "Files restored to the earlier checkpoint — but this "
+                : "The folder kept its current state (no checkpoint stored) — and this "}
+              session's transport can't rewind the agent's memory: it still
+              remembers the dropped messages.
             </StatusBanner>
           )}
           {openQuestion && (
@@ -1005,9 +1025,11 @@ export function DmPage() {
               onClick: () => startFreshFrom(conv, filesOnly.target),
             }}
           >
-            Files restored to the earlier checkpoint — but this session's
-            transport can't rewind the agent's memory: it still remembers the
-            dropped messages.
+            {filesOnly.filesRestored
+              ? "Files restored to the earlier checkpoint — but this "
+              : "The folder kept its current state (no checkpoint stored) — and this "}
+            session's transport can't rewind the agent's memory: it still
+            remembers the dropped messages.
           </StatusBanner>
         )}
         <ThreadView

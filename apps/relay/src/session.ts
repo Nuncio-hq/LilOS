@@ -36,6 +36,8 @@ import {
   MessagesPostParams,
   MessagesSearchParams,
   MessagesSetCheckpointParams,
+  type ConversationsRewindHostParams,
+  type ConversationsRewindHostResult,
   ProfileUpdateParams,
   SettingsGetParams,
   SettingsSetParams,
@@ -324,7 +326,11 @@ export function createRelay(options: RelayOptions): Relay {
    * numeric code maps back to an AppErrorCode so `conflict` (a turn still
    * running) reaches the caller intact.
    */
-  const callHost = (method: string, params: unknown): Promise<unknown> => {
+  const callHost = (
+    method: string,
+    params: unknown,
+    timeoutMs = hostCallTimeoutMs,
+  ): Promise<unknown> => {
     if (!host) {
       return Promise.reject(
         new RpcError(
@@ -346,7 +352,7 @@ export function createRelay(options: RelayOptions): Relay {
             "engine host did not answer in time",
           ),
         );
-      }, hostCallTimeoutMs);
+      }, timeoutMs);
       hostCalls.set(hostReqId, {
         caller: hostPeer,
         callerId: hostReqId,
@@ -385,10 +391,12 @@ export function createRelay(options: RelayOptions): Relay {
     if (error) {
       const numeric =
         typeof error.code === "number" ? error.code : JsonRpcCode.internal;
+      /* Engine INVALID_STATE (-32003) — "a turn is running / session is in
+         the wrong state" — is a state conflict, not a generic failure. */
       const appCode: AppErrorCode =
         numeric === JsonRpcCode.unavailable
           ? "engine_unavailable"
-          : numeric === JsonRpcCode.conflict
+          : numeric === JsonRpcCode.conflict || numeric === -32_003
             ? "conflict"
             : "engine_error";
       if (call.reject) {
@@ -792,7 +800,7 @@ export function createRelay(options: RelayOptions): Relay {
           ).length;
           /* The engine host owns the restore + engine-side rewind; on its
              success the relay marks the tail and tells subscribers. */
-          const hostResult = (await callHost("conversations.rewind", {
+          const hostParams: ConversationsRewindHostParams = {
             conversationId: conversation.id,
             engineRef: conversation.engineRef,
             messageId: target.id,
@@ -800,25 +808,39 @@ export function createRelay(options: RelayOptions): Relay {
             cwd: conversation.cwd ?? null,
             fromSeq: target.seq,
             toTurn,
-          })) as {
-            engineRewound?: unknown;
-            filesRestored?: unknown;
-          } | null;
+          };
+          const hostResult = (await callHost(
+            "conversations.rewind",
+            hostParams,
+            /* A folder restore can touch thousands of files — well past the
+               generic host-call timeout. */
+            120_000,
+          )) as ConversationsRewindHostResult | null;
           const engineRewound = hostResult?.engineRewound === true;
           const filesRestored = hostResult?.filesRestored === true;
           const marked = await store.markRewound(conversation.id, target.seq);
+          const removedIds = marked.map((m) => m.id);
           emit(conversation.channelId, "conversation.rewound", {
             channelId: conversation.channelId,
             conversationId: conversation.id,
             fromSeq: target.seq,
             messageId: target.id,
             engineRewound,
+            removedIds,
           });
           /* The plain note (AC-3) is a relay-owned system message: written
-             AFTER the mark so it survives, no host round-trip needed. */
-          const note = engineRewound
-            ? `Rewound to before your message — ${marked.length} message${marked.length === 1 ? "" : "s"} dropped${filesRestored ? ", files restored to the earlier checkpoint" : ""}.`
-            : `Files restored to the earlier checkpoint. This session's transport can't rewind the agent's memory — it still remembers the later messages.`;
+             AFTER the mark so it survives, no host round-trip needed. It says
+             exactly what happened — a message can predate checkpoints or
+             carry a failed stamp, so "files restored" is only claimed when
+             the host actually restored them. */
+          const parts = [
+            `Rewound to before your message — ${marked.length} message${marked.length === 1 ? "" : "s"} dropped`,
+          ];
+          if (filesRestored) parts.push("files restored to the earlier checkpoint");
+          else parts.push("no file checkpoint was stored for it — the folder kept its current state");
+          if (!engineRewound)
+            parts.push("this session's transport can't rewind the agent's memory — it still remembers the later messages");
+          const note = `${parts.join("; ").replace(/^./, (c) => c.toUpperCase())}.`;
           const { message: noteMessage } = await store.appendMessage({
             channelId: conversation.channelId,
             conversationId: conversation.id,
@@ -832,6 +854,7 @@ export function createRelay(options: RelayOptions): Relay {
             engineRewound,
             filesRestored,
             removedCount: marked.length,
+            removedIds,
           });
           return;
         }

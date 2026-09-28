@@ -141,16 +141,17 @@ export function conversationReplies(
  * Merge engine turns into the relay reply list: a turn whose text landed as
  * an employee message swaps into that slot (rich card: reasoning, steps,
  * approvals); turns not yet posted — and the live one — append at the end.
- * `rewoundTexts` (#134) holds the texts of rewound employee messages: their
- * feed turns would otherwise resurrect as unmatched appends even though the
- * relay thread dropped them.
+ * `rewoundRefs` (#134) holds the ids of a conversation's rewound messages:
+ * a feed turn prompted by one (`turn.started.ref` = its message id) would
+ * otherwise resurrect as an unmatched append even though the relay thread
+ * dropped the tail — e.g. after a files-only (no-`rewind`-capability) rewind.
  */
 export function mergeTurns(
   replies: Reply[],
   model: SessionModel | undefined,
   employeeId: string,
   asks: Ask[] = [],
-  rewoundTexts?: ReadonlySet<string>,
+  rewoundRefs?: ReadonlySet<string>,
 ): Reply[] {
   if (!model) return replies;
   const used = new Set<TurnModel>();
@@ -173,7 +174,7 @@ export function mergeTurns(
      The live turn is always the newest, so it still goes last. */
   for (const t of model.turns) {
     if (used.has(t) || t === model.live) continue;
-    if (rewoundTexts?.has(t.text.trim())) continue;
+    if (t.ref && rewoundRefs?.has(t.ref)) continue;
     if (!t.text.trim() && t.phase !== "stopped") continue;
     const at = t.ref ? out.findIndex((r) => r.id === t.ref) : -1;
     if (at < 0) out.push(liveTurnReply(t, employeeId, asks));

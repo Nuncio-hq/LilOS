@@ -143,10 +143,14 @@ export class RelayClient {
   readonly fatal: WritableAtom<RelayError | undefined> = atom(undefined);
   /**
    * #134: latest rewind per conversation (conversationId -> first rewound
-   * seq). Views holding fetched history outside the channel atoms re-render
-   * off this so the dropped tail disappears in every open window.
+   * seq + the dropped message ids). Views holding fetched history outside
+   * the channel atoms re-render off this so the dropped tail disappears in
+   * every open window; `removedIds` lets the engine feed drop turns whose
+   * `ref` points at a rewound user message (files-only rewind keeps them).
    */
-  readonly rewinds: WritableAtom<Record<string, number>> = atom({});
+  readonly rewinds: WritableAtom<
+    Record<string, { fromSeq: number; removedIds: string[] }>
+  > = atom({});
 
   private readonly options: Required<
     Pick<
@@ -848,9 +852,16 @@ export class RelayClient {
             ),
           );
         }
+        const prevRewind = this.rewinds.get()[event.conversationId];
         this.rewinds.set({
           ...this.rewinds.get(),
-          [event.conversationId]: event.fromSeq,
+          [event.conversationId]: {
+            fromSeq: event.fromSeq,
+            removedIds: [
+              ...(prevRewind?.removedIds ?? []),
+              ...event.removedIds,
+            ],
+          },
         });
         void this.refreshSummaries();
         return;

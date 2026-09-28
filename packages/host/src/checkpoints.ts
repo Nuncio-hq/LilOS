@@ -13,7 +13,7 @@ export const CHECKPOINT_KEEP = 50;
 export const CHECKPOINT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Folders never snapshotted — the user's own .git first among them. */
-const DEFAULT_EXCLUDES = [
+const DEFAULT_EXCLUDE_NAMES = [
   ".git",
   ".lilos",
   "node_modules",
@@ -28,7 +28,25 @@ const DEFAULT_EXCLUDES = [
   "venv",
   "__pycache__",
   ".DS_Store",
-].join("\n");
+];
+const DEFAULT_EXCLUDES = DEFAULT_EXCLUDE_NAMES.join("\n");
+
+/* `git add -f` bypasses EVERY ignore source — the worktree's own .gitignore
+   (which must not apply: a `.env` the user ignores still needs to rewind),
+   and our own info/exclude — so the exclude list goes on the command line
+   instead. Bare `NAME` excludes the entry itself, `NAME` + `/**` its
+   contents; the `**`-prefixed variants cover nested dirs (root needs the
+   bare form — a leading `**` does not match zero directories in exclude
+   pathspecs). */
+const EXCLUDE_ARGS = DEFAULT_EXCLUDE_NAMES.flatMap((n) => [
+  ":(exclude)" + n,
+  ":(exclude)" + n + "/**",
+  ":(exclude)**/" + n,
+  ":(exclude)**/" + n + "/**",
+]);
+
+const isExcluded = (rel: string) =>
+  rel.split("/").some((seg) => DEFAULT_EXCLUDE_NAMES.includes(seg));
 
 interface Meta {
   /** Canonical session-folder path this store shadows. */
@@ -179,8 +197,13 @@ export function createCheckpointStore(root: string): CheckpointStore {
       (o) => o?.trim() || null,
     );
 
-  const enqueue = <T>(cwd: string, fn: () => Promise<T>): Promise<T> => {
-    const key = cwd;
+  const enqueue = async <T>(
+    cwd: string,
+    fn: () => Promise<T>,
+  ): Promise<T> => {
+    /* Key the chain on the real path — `~/x`, `x/` and symlinks would
+       otherwise run parallel chains into the same shadow index. */
+    const key = await fsp.realpath(cwd).catch(() => cwd);
     const next = (chains.get(key) ?? Promise.resolve()).then(fn, fn);
     chains.set(
       key,
@@ -196,7 +219,10 @@ export function createCheckpointStore(root: string): CheckpointStore {
     if (before && meta.indexSeed !== before) {
       await git(f, cwd, ["read-tree", before]);
     }
-    await git(f, cwd, ["add", "-A", "--", "."]);
+    /* `-f`: the worktree's own .gitignore must NOT apply here — a `.env`
+       the user ignores is still theirs to rewind. Exclusions come from
+       EXCLUDE_ARGS only. */
+    await git(f, cwd, ["add", "-A", "-f", "--", ".", ...EXCLUDE_ARGS]);
     const tree = (await git(f, cwd, ["write-tree"])).trim();
     if (before) {
       const beforeTree = (
@@ -251,7 +277,10 @@ export function createCheckpointStore(root: string): CheckpointStore {
     }
     meta.checkpoints = kept;
     await writeMeta(f, meta);
-    await gitOr(f, cwd, ["gc", "--prune=now", "--quiet"]);
+    /* `--auto` not `--prune=now`: a full repack on every snapshot past the
+       keep window would blow the AC-6 budget; git runs real gc only when
+       its own object thresholds say so. */
+    await gitOr(f, cwd, ["gc", "--auto", "--quiet"]);
   };
 
   const restoreIn = async (cwd: string, checkpoint: string) => {
@@ -272,14 +301,14 @@ export function createCheckpointStore(root: string): CheckpointStore {
     meta.indexSeed = checkpoint;
     await writeMeta(f, meta);
     /* Files created after the checkpoint aren't in its tree — the index is
-       now exactly that tree, so untracked non-excluded paths are the extras. */
-    const raw = await git(f, cwd, [
-      "ls-files",
-      "--others",
-      "--exclude-standard",
-      "-z",
-    ]);
-    const extras = raw.split("\0").filter(Boolean);
+       now exactly that tree, so untracked non-excluded paths are the extras.
+       No `--exclude-standard`: the worktree's .gitignore must not hide
+       extras (a `.env` created after the checkpoint still gets removed);
+       only DEFAULT_EXCLUDE names are filtered, in JS. */
+    const raw = await git(f, cwd, ["ls-files", "--others", "-z"]);
+    const extras = raw
+      .split("\0")
+      .filter((p) => p && !isExcluded(p));
     const dirs = new Set<string>();
     for (const rel of extras) {
       await fsp.rm(join(cwd, rel), { recursive: true, force: true });

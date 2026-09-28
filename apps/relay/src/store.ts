@@ -637,6 +637,8 @@ export function createMemoryStore(): RelayStore {
       const hits: MessageSearchHit[] = [];
       for (const m of messages.values()) {
         if (channelId && m.channelId !== channelId) continue;
+        // Hidden messages don't surface as search hits (#134).
+        if (m.rewound) continue;
         if (!includeArchived && m.conversationId) {
           const conversation = conversations.get(m.conversationId);
           if (conversation?.archived) continue;
