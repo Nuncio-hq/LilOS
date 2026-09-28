@@ -162,9 +162,14 @@ export function ThreadView({
     el.scrollIntoView({ block: "center" });
     setFlash(scrollTo);
     onScrolled?.();
+  }, [scrollTo, thread.replies, onScrolled]);
+  /* The flash window lives in its own effect — the scroll effect's cleanup
+     would cancel it when onScrolled clears scrollTo. */
+  useEffect(() => {
+    if (!flash) return;
     const t = setTimeout(() => setFlash(null), 1800);
     return () => clearTimeout(t);
-  }, [scrollTo, thread.replies, onScrolled]);
+  }, [flash]);
   const status: ChatStatus = running
     ? thread.replies.some((r) => r.live && r.phase === "submitted")
       ? "submitted"

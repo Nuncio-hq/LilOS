@@ -264,7 +264,10 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
     .filter({ hasText: "mid-ingest" })
     .click();
   await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_/, { timeout: 10_000 });
-  const anchor = page.locator("[data-msg]", { hasText: "mid-ingest" });
+  /* The live-turn overlay can echo the phrase too — anchor the stored row. */
+  const anchor = page
+    .locator('[data-msg^="msg_"]')
+    .filter({ hasText: "mid-ingest" });
   await expect(anchor).toBeVisible({ timeout: 15_000 });
   await expect(anchor).toHaveClass(/amber/, { timeout: 5_000 });
   await page.screenshot({ path: `${SHOTS}/ac3-hit-scrolled.png` });
