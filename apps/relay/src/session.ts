@@ -508,6 +508,8 @@ export function createRelay(options: RelayOptions): Relay {
             }
           }
           if (hello.protocolVersion !== protocolVersion) {
+            /* Undo the device-branch pre-tag — the hello fails here. */
+            devicePeers.delete(peer);
             recordRejection({
               kind: "hello",
               claimed: hello.protocolVersion,
