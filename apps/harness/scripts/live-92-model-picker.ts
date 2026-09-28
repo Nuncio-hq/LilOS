@@ -7,6 +7,12 @@
  * Driven by scripts/live/92-model-picker.sh:
  *   default   — `hermes serve` against a deterministic OpenAI stub (STUB)
  *   real      — HERMES_PROVIDER + HERMES_MODEL env -> your signed-in engine
+ *     knobs   — LIVE_ALT_PROVIDER/LIVE_ALT_MODEL pick the switch target
+ *               (default: a different authenticated provider's model),
+ *               LIVE_EFFORT sets the effort verbatim (a provider's accepted
+ *               set can differ from the reported ladder — hpc takes only
+ *               low/medium/xhigh). `hermes serve` boot budget comes from
+ *               HERMES_SERVE_TIMEOUT_MS (serve.ts default 240s) + margin.
  *
  * The engine runs on a throwaway HERMES_HOME the shell prepared (the real
  * ~/.hermes is never touched). Children launch detached so cleanup kills
@@ -141,7 +147,20 @@ const user = new RelayClient({
   token: relayToken,
   client: { name: "lilos-live-92", version: "0" },
 });
-await user.connect().catch((e) => fail(`connect: ${e}`));
+{
+  let lastErr: unknown;
+  for (let i = 0; i < 40; i++) {
+    try {
+      await user.connect();
+      lastErr = undefined;
+      break;
+    } catch (e) {
+      lastErr = e;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+  if (lastErr !== undefined) fail(`connect: ${lastErr}`);
+}
 
 type ModelRow = {
   id: string;
@@ -164,19 +183,51 @@ const engineStatus = async () =>
   ).engine;
 const canModels = (e?: EngineBlob) =>
   e?.capabilities?.some((c) => c.id === "models") ?? false;
+/* `hermes serve` can take ~194s to report ready on a cold Mac; serve.ts
+   allows HERMES_SERVE_TIMEOUT_MS (default 240s). Wait that long plus a
+   margin, printing progress so a slow boot doesn't read as a hang. */
+const bootBudgetMs =
+  Number(process.env.HERMES_SERVE_TIMEOUT_MS ?? "240000") + 30_000;
 {
-  const deadline = Date.now() + 60_000;
+  const start = Date.now();
+  const deadline = start + bootBudgetMs;
   let eng = await engineStatus();
+  let announced = 0;
   while (!canModels(eng) && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 500));
+    const waited = Math.floor((Date.now() - start) / 1000);
+    if (waited - announced >= 15) {
+      announced = waited;
+      out(`waiting for the models capability… ${waited}s elapsed`);
+    }
+    await new Promise((r) => setTimeout(r, 1000));
     eng = await engineStatus();
   }
   if (!canModels(eng))
-    fail(`engine lacks the models capability: ${JSON.stringify(eng ?? null)}`);
+    fail(
+      `engine lacks the models capability after ${Math.round(bootBudgetMs / 1000)}s: ${JSON.stringify(eng ?? null)}`,
+    );
 }
 
 // ── AC-1 live: every authenticated provider's models, grouped ─────────
-const host = await engineStatus();
+/* The capability can arrive a beat before the catalog fills on a slow boot —
+   poll until the status reports models rather than failing on the first
+   empty snapshot. */
+let host: EngineBlob | undefined;
+{
+  const start = Date.now();
+  const deadline = start + 60_000;
+  let announced = 0;
+  while (Date.now() < deadline) {
+    host = await engineStatus();
+    if (host?.models?.length) break;
+    const waited = Math.floor((Date.now() - start) / 1000);
+    if (waited - announced >= 15) {
+      announced = waited;
+      out(`waiting for the model catalog… ${waited}s elapsed`);
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
 const models = host?.models ?? [];
 const providers = host?.providers ?? [];
 if (models.length < 2)
@@ -275,14 +326,35 @@ out(`turn 1 answered (model=${first.model ?? "?"})`);
 // ── AC-2/3/4 live: pick model + provider + effort + fast; next turn ────
 // Stub leg: stay on lilos-stub (other providers would call a real API), and
 // prefer the model whose id contains "/" — that exercises AC-8 for real.
-// Live leg: prefer a different provider than the ambient one (the switch is
-// the point), falling back to any other model.
+// Live leg: prefer a model from a DIFFERENT authenticated provider than the
+// ambient one (a cross-provider switch is the point), falling back to any
+// other model. LIVE_ALT_MODEL (+LIVE_ALT_PROVIDER) pin the target exactly.
 const stubLeg = process.env.HERMES_PROVIDER === "lilos-stub";
+const ambientProvider = models.find((m) => m.id === first.model)?.provider;
+const envAlt = (() => {
+  const want = process.env.LIVE_ALT_MODEL;
+  if (!want) return undefined;
+  const provider = process.env.LIVE_ALT_PROVIDER;
+  return (
+    models.find(
+      (m) =>
+        m.id === want && (provider === undefined || m.provider === provider),
+    ) ??
+    fail(
+      `LIVE_ALT_MODEL=${want}${provider ? ` provider=${provider}` : ""} is not in the catalog`,
+    )
+  );
+})();
 const alt =
+  envAlt ??
   (stubLeg
     ? (models.find((m) => m.provider === "lilos-stub" && m.id.includes("/")) ??
       models.find((m) => m.provider === "lilos-stub"))
-    : (models.find((m) => m.id !== first.model) ?? models.at(1))) ??
+    : (models.find(
+        (m) => m.id !== first.model && m.provider !== ambientProvider,
+      ) ??
+      models.find((m) => m.id !== first.model) ??
+      models.at(1))) ??
   fail("catalog has no alternate model to pick");
 const pick: {
   conversationId: string;
@@ -292,10 +364,19 @@ const pick: {
   fast?: boolean;
 } = { conversationId: conversation.id, model: alt.id };
 if (alt.provider) pick.provider = alt.provider;
-// A non-default effort, when the model reports a ladder.
-if (alt.efforts && alt.efforts.length > 1) {
+/* Effort: LIVE_EFFORT wins verbatim — a provider's accepted set can differ
+   from the reported ladder (hpc takes only low/medium/xhigh, and Hermes
+   can't know that). Otherwise a non-default stop from the ladder. */
+const envEffort = process.env.LIVE_EFFORT;
+if (envEffort !== undefined) {
+  pick.effort = envEffort;
+} else if (alt.efforts && alt.efforts.length > 1) {
+  /* Prefer a non-default, non-"none" stop: "none" unsets reasoning, which
+     is correct but leaves nothing on the wire for the stub check to see. */
   pick.effort =
-    alt.efforts.find((e) => e !== alt.defaultEffort) ?? alt.efforts[0];
+    alt.efforts.find((e) => e !== alt.defaultEffort && e !== "none") ??
+    alt.efforts.find((e) => e !== alt.defaultEffort) ??
+    alt.efforts[0];
 }
 if (alt.fast) pick.fast = true;
 out(
@@ -357,12 +438,13 @@ if (stubLeg) {
     fail(
       `pick ran on ${String(pick.model)} but WITHOUT a fast tier — a second deferred apply dropped request_overrides`,
     );
-  if (pick.effort && last.reasoning_effort !== pick.effort)
-    fail(
-      `request effort=${String(last.reasoning_effort ?? null)}; expected ${pick.effort}`,
-    );
+  /* Effort is NOT wire-observable on a custom endpoint: Hermes only puts
+     `reasoning` in extra_body for routes it knows are reasoning-capable
+     (agent/reasoning_params.py::_supports_reasoning_extra_body — OpenRouter,
+     Nous, GitHub Models, LM Studio, Ollama), never a plain chat_completions
+     provider. `second.effort` above is the proof the pick applied. */
   out(
-    `wire check ok: request on ${String(last.model)} tier=${String(last.service_tier ?? last.speed ?? "-")} effort=${String(last.reasoning_effort ?? "-")}`,
+    `wire check ok: request on ${String(last.model)} tier=${String(last.service_tier ?? last.speed ?? "-")}`,
   );
 }
 

@@ -12,6 +12,17 @@
 #   HERMES_MODEL=<model> \
 #   bash scripts/live/92-model-picker.sh
 #
+# Two-provider example (the pick switches provider, which is the point of
+# the live leg); LIVE_* pin the switch target and effort exactly:
+#
+#   HERMES_PROVIDER=hpc HERMES_MODEL=qwen3.8-flash-next \
+#   LIVE_ALT_PROVIDER=openai-codex LIVE_ALT_MODEL=gpt-6-astra \
+#   LIVE_EFFORT=medium \
+#   bash scripts/live/92-model-picker.sh
+#
+# Slow machines: hermes serve's boot budget is HERMES_SERVE_TIMEOUT_MS
+# (default 240s); the driver waits that long +30s for the models capability.
+#
 # Isolation rules (never violated):
 #   * the run works on a throwaway HERMES_HOME copied from the real one —
 #     ~/.hermes/config.yaml is never edited, the temp copy is removed on exit;
@@ -134,7 +145,7 @@ if [ "$LABEL" = "stub" ]; then
   : > "$STUB_REQ_LOG"
   STUB_REQUEST_LOG="$STUB_REQ_LOG" bun scripts/live/openai-stub.ts 0 >"$STUB_OUT_LOG" 2>&1 &
   STUB_PID=$!
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
+  for _ in $(seq 1 100); do
     STUB_PORT="$(sed -n 's/.*127.0.0.1:\([0-9]*\).*/\1/p' "$STUB_OUT_LOG" | head -1)"
     [ -n "$STUB_PORT" ] && break
     sleep 0.3
