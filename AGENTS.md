@@ -97,6 +97,7 @@ Repo: `Nuncio-hq/LilOS`. Use the `gh` CLI.
   a PR with `Closes #N` early. One slice at a time. Stuck → `needs-human`.
   Keep **one** comment titled `Status` on the issue and edit it in place
   (Now / Next / Blocked); no log-comment series.
+  Commit with `git commit -s` — DCO sign-off is enforced on PRs (bots too).
 - **Done**: the slice closes with its merged PR (hand-off note there); when
   the last slice closes, close the feature.
 - Work outside the slice? Open a new issue; don't widen your PR.

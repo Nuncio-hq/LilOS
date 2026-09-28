@@ -6,6 +6,7 @@
       "!**/node_modules",
       "!**/dist",
       "!apps/desktop/build",
+      "!site",
       "!prototype/mobile/ios",
       "!prototype/mobile/android",
       "!prototype/mobile/.expo",

@@ -4,6 +4,13 @@ Index of decisions that are in force now — not a history log. Rules for
 entries live in `AGENTS.md` (Decisions). One agreed without an issue + merged
 PR does not exist.
 
+## Repo
+- **D-#172 LilOS is source-available under the Elastic License 2.0** (licensor
+  Nuncio; SPDX `Elastic-2.0` on every package; free to use/fork/modify/
+  self-host incl. at work — never resell LilOS as a hosted service).
+  Not: PolyForm NC (bans use at work), BSL (auto-converts), MIT (resale as a
+  service). — #172
+
 ## Stack
 - **D-#3 Bun is the runtime + package manager** (workspaces, pinned
   `packageManager` + `.bun-version`); Biome for lint/format; Vitest (unit) +

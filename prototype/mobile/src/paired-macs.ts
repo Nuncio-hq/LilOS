@@ -72,7 +72,7 @@ export const ROUTE_LABEL: Record<Route, string> = {
   local: "on this network",
 };
 
-/** "oscars-macbook-pro.tail1a2b.ts.net" → "oscars-macbook-pro" when the QR had no name. */
+/** "my-mac.tail0000.ts.net" → "my-mac" when the QR had no name. */
 export function fallbackName(host: string): string {
   return host.split(".")[0]?.split(":")[0] || host;
 }

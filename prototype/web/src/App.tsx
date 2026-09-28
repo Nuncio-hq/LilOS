@@ -352,7 +352,7 @@ const DEFAULT_EMP: Employee = { id: "default", name: "Default", role: "Assistant
 /* Mock pairing offer — same host/code/name the mobile prototype's fake Mac uses
    (prototype/mobile/src/fake-mac.ts DEMO_OFFER). */
 const pairOffer = (seconds: number) => ({
-  host: "oscars-macbook-pro.tail1a2b.ts.net",
+  host: "my-mac.tail0000.ts.net",
   code: "7K4M2P",
   name: "Oscar's MacBook Pro",
   expiresAt: Date.now() + seconds * 1000,

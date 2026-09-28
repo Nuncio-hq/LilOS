@@ -32,11 +32,13 @@ describe("AC-1 Elastic License 2.0", () => {
     expect(has("LICENSE.md")).toBe(true);
     const text = read("LICENSE.md");
     expect(text).toContain("Elastic License 2.0");
-    // Canonical ELv2 limitation clauses (verbatim terms, not paraphrases).
-    expect(text).toContain("hosted or managed service");
-    expect(text).toContain("license key");
-    expect(text).toContain("#### Patents");
-    expect(text).toContain("#### No Liability");
+    // Canonical ELv2 limitation clauses (verbatim terms; unwrap line breaks
+    // before matching since the canonical text wraps at ~80 chars).
+    const flat = text.replace(/\s+/g, " ");
+    expect(flat).toContain("hosted or managed service");
+    expect(flat).toContain("license key");
+    expect(text).toContain("## Patents");
+    expect(text).toContain("## No Liability");
     expect(/nuncio/i.test(text)).toBe(true);
   });
 
