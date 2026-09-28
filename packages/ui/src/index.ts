@@ -63,6 +63,8 @@ export {
   useDraft,
 } from "./lib/drafts";
 export * from "./lib/helpers";
+// settings
+export { SettingsView } from "./settings/settings-view";
 // shell
 export { HermesAvatar, HumanAvatar } from "./shell/avatars";
 export { StatusBanner } from "./shell/banner";
@@ -74,7 +76,12 @@ export {
 } from "./shell/preview-menu";
 export { RightPanel, TicketsList } from "./shell/right-panel";
 export { Sidebar } from "./shell/sidebar";
-export { StatusDialog, StatusRow, statusSummary } from "./shell/status";
+export {
+  StatusDialog,
+  StatusList,
+  StatusRow,
+  statusSummary,
+} from "./shell/status";
 export { ThemeToggle } from "./shell/theme-toggle";
 export { useTheme } from "./shell/use-theme";
 
