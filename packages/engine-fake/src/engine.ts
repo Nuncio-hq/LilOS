@@ -149,8 +149,8 @@ export class FakeEngine {
   private listeners = new Set<(e: EngineEvent) => void>();
   /**
    * Permanent approval grants — `${agent}\n${command}` recorded on every
-   * "always" answer (#133). Hermes' real `allow_always` writes the command to
-   * the profile's `command_allowlist`, which outlives the session; a
+   * "always" answer (#133). A real engine's permanent allow writes the
+   * command to a profile allowlist that outlives the session; a
    * session-scoped flag (the old `alwaysApproved`) mimicked the
    * `allow_session` bug instead — a new session must NOT re-ask a granted
    * command, and MUST still ask for a different one.

@@ -1285,17 +1285,18 @@ for line in sys.stdin:
 
 /**
  * `mcp_servers` capability: a `session.start` that carries stdio MCP servers.
- * On Hermes that routes the session onto the ACP transport (`hermes acp`),
- * where #133 lived — the fake accepts the same sessions inertly.
+ * An engine whose primary transport has no mcp_servers routes the session
+ * onto its secondary (e.g. ACP) transport — where #133 lived; the fake
+ * accepts the same sessions inertly.
  */
 const MCP_SCENARIOS: Scenario[] = [
   {
     id: "approval over mcp_servers: 'always' grants permanently, no re-ask",
     async run(h) {
-      // Leg 1 — mcpServers session (ACP transport on Hermes). Its option
-      // list carries two `allow_always`-kind entries and the session-scoped
-      // `allow_session` sorts first; answering "always" must pick the
-      // permanent `allow_always` id, not the first kind match.
+      // Leg 1 — mcpServers session: the ACP transport's option list carries
+      // two `allow_always`-kind entries and the session-scoped `allow_session`
+      // sorts first; answering "always" must pick the permanent
+      // `allow_always` id, not the first kind match.
       const s1 = (await h.request("session.start", {
         agent: "builder",
         cwd: "/tmp/lilos-fake",
