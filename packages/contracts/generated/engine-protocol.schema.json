@@ -1823,6 +1823,102 @@
         "additionalProperties": false
       }
     },
+    "agents.update": {
+      "doc": "Write persona fields back to the agent (soul, default model, name, description — the capability's `detail.updatable` lists which). New sessions started after the call use the update; running sessions keep the persona/model they began with.",
+      "capability": "agents",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "soul": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "confirmModel": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "skillCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "soul": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "confirmModel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "additionalProperties": false
+      }
+    },
     "models.list": {
       "doc": "List the engine's selectable models for the model picker.",
       "capability": "models",

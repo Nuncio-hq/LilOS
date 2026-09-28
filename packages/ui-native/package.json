@@ -9,19 +9,23 @@
     ".": "./src/index.ts"
   },
   "peerDependencies": {
+    "expo-glass-effect": "*",
     "expo-symbols": "*",
     "react": "*",
     "react-native": "*",
     "react-native-safe-area-context": "*",
+    "react-native-svg": "*",
     "uniwind": "*"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
     "expo": "~57.0.25",
+    "expo-glass-effect": "~57.0.4",
     "expo-symbols": "~57.0.3",
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.7.0",
+    "react-native-svg": "15.15.4",
     "tailwindcss": "^4.3.3",
     "uniwind": "^1.12.0"
   }

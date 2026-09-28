@@ -108,7 +108,11 @@ interface StartResult {
 interface DescribeResultShape {
   name: string;
   version: string;
-  capabilities: { id: string; methods?: string[] }[];
+  capabilities: {
+    id: string;
+    methods?: string[];
+    detail?: Record<string, unknown>;
+  }[];
 }
 interface AgentRow {
   id: string;
@@ -1153,6 +1157,195 @@ export const AGENTS_SCENARIOS: Scenario[] = [
         code === -32003 || code === -32602,
         `duplicate name create must fail (-32003/-32602), got ${code}`,
       );
+    },
+  },
+  {
+    // #123: the update path — the capability names its writable fields in
+    // `detail.updatable`, the call writes them, describe reflects them.
+    id: "AC-2 agents.update rewrites the persona; agents.describe reflects it",
+    async run(h) {
+      const d = (await h.request("describe")) as DescribeResultShape;
+      const cap = d.capabilities.find((c) => c.id === "agents");
+      assert(cap, "agents capability missing");
+      assert(
+        cap.methods?.includes("agents.update"),
+        "agents capability must enable agents.update",
+      );
+      const updatable = Array.isArray(cap.detail?.updatable)
+        ? (cap.detail.updatable as unknown[]).filter(
+            (f): f is string => typeof f === "string",
+          )
+        : [];
+      assert(
+        updatable.includes("soul"),
+        "updatable must include 'soul' — persona editing is the feature",
+      );
+
+      const name = `lilos-conf-upd-${Math.random().toString(36).slice(2, 8)}`;
+      const created = (await h.request("agents.create", {
+        name,
+        description: "conformance update probe",
+        soul: "Persona v1.",
+      })) as { agent: AgentRow };
+      const id = created.agent.id;
+
+      // Only send fields the engine advertised; `model` needs a valid id
+      // from models.list, so a second distinct model id must exist.
+      let newModel: string | undefined;
+      if (
+        updatable.includes("model") &&
+        d.capabilities.some((c) => c.id === "models")
+      ) {
+        const { models } = (await h.request("models.list")) as {
+          models: ModelRow[];
+        };
+        const before = (
+          (await h.request("agents.describe", { id })) as {
+            agent: AgentRow;
+          }
+        ).agent.model;
+        newModel = models.find((m) => m.id !== before)?.id;
+      }
+
+      const params: Record<string, unknown> = { id };
+      if (updatable.includes("soul")) params.soul = "Persona v2 — updated.";
+      if (updatable.includes("description"))
+        params.description = "updated probe agent";
+      if (newModel !== undefined) params.model = newModel;
+      const r = (await h.request("agents.update", params)) as {
+        agent: AgentRow;
+        confirmModel?: string;
+      };
+      assert(
+        r.confirmModel === undefined,
+        "a conforming update of a listed model must not need confirm here",
+      );
+      assert(r.agent?.id === id, "update returns the same agent id");
+
+      const desc = (await h.request("agents.describe", { id })) as {
+        agent: AgentRow;
+      };
+      if (updatable.includes("soul"))
+        assert(
+          desc.agent.soul === "Persona v2 — updated.",
+          `describe must see the new soul, got ${JSON.stringify(desc.agent.soul)}`,
+        );
+      if (updatable.includes("description"))
+        assert(
+          desc.agent.description === "updated probe agent",
+          "describe must see the new description",
+        );
+      if (newModel !== undefined)
+        assert(
+          desc.agent.model === newModel,
+          `describe must see the new default model, got ${desc.agent.model}`,
+        );
+
+      // Fields not sent are untouched.
+      assert(
+        desc.agent.name === name || desc.agent.name === r.agent.name,
+        "untouched fields keep their value",
+      );
+
+      assert(
+        (await errorCode(h, "agents.update", { id: "no-such-agent" })) ===
+          -32004,
+        "agents.update unknown id -> AGENT_NOT_FOUND (-32004)",
+      );
+      if (newModel !== undefined)
+        assert(
+          (await errorCode(h, "agents.update", {
+            id,
+            model: "no-such-model",
+          })) === -32005,
+          "agents.update unknown model -> MODEL_NOT_FOUND (-32005)",
+        );
+    },
+  },
+  {
+    // #123 AC-4/AC-5: sessions snapshot the persona+model at start — a
+    // running session keeps what it began with, the next session.start of the
+    // same agent picks up the update (the profile default is engine-side).
+    id: "AC-4 agents.update applies to new sessions only — a running session keeps its model",
+    async run(h) {
+      const d = (await h.request("describe")) as DescribeResultShape;
+      const cap = d.capabilities.find((c) => c.id === "agents");
+      const updatable = Array.isArray(cap?.detail?.updatable)
+        ? (cap.detail.updatable as unknown[]).filter(
+            (f): f is string => typeof f === "string",
+          )
+        : [];
+      if (
+        !updatable.includes("model") ||
+        !d.capabilities.some((c) => c.id === "models")
+      )
+        return; // nothing observable without an updatable model field
+      const { models } = (await h.request("models.list")) as {
+        models: ModelRow[];
+      };
+      const m0 = models[0];
+      const m1 = models.find((m) => m.id !== m0.id);
+      if (!m0 || !m1) return; // need two distinct model ids to observe the swap
+
+      const name = `lilos-conf-run-${Math.random().toString(36).slice(2, 8)}`;
+      const created = (await h.request("agents.create", {
+        name,
+        soul: "Persona v1.",
+        model: m0.id,
+      })) as { agent: AgentRow };
+      const id = created.agent.id;
+
+      const { sessionId: s1 } = (await h.request("session.start", {
+        agent: id,
+        cwd: "/tmp/lilos-conf",
+      })) as StartResult;
+      const ev1 = await h.waitEvent(
+        h.forSession(s1, (e) => e.type === "session.started"),
+      );
+      // Engines that stamp the effective model on session.started must stamp
+      // the create-time one; an engine that stamps nothing skips this check
+      // (the store-side truth is the describe leg above).
+      const startModel = (ev1.payload as { model?: string }).model;
+      if (startModel !== undefined)
+        assert(
+          startModel === m0.id,
+          `session must start on the create-time model, got ${JSON.stringify(ev1.payload)}`,
+        );
+
+      await h.request("agents.update", { id, model: m1.id });
+
+      // The session that started before the update still runs on v1.
+      const turn = h.request(
+        "prompt",
+        textPrompt(s1, READ_PROMPT),
+      ) as Promise<PromptResult>;
+      const started = await h.waitEvent(
+        h.forSession(s1, (e) => e.type === "turn.started"),
+      );
+      const turnModel = (started.payload as { model?: string }).model;
+      if (turnModel !== undefined)
+        assert(
+          started.type === "turn.started" && turnModel === m0.id,
+          `running session must keep its start model ${m0.id}, got ${JSON.stringify(started.payload)}`,
+        );
+      await turn;
+      await h.request("session.stop", { sessionId: s1 });
+
+      // A session started after the update picks up the new default.
+      const { sessionId: s2 } = (await h.request("session.start", {
+        agent: id,
+        cwd: "/tmp/lilos-conf",
+      })) as StartResult;
+      const ev2 = await h.waitEvent(
+        h.forSession(s2, (e) => e.type === "session.started"),
+      );
+      const newModel = (ev2.payload as { model?: string }).model;
+      if (newModel !== undefined)
+        assert(
+          newModel === m1.id,
+          `new session must start on the updated model ${m1.id}, got ${JSON.stringify(ev2.payload)}`,
+        );
+      await h.request("session.stop", { sessionId: s2 });
     },
   },
   {

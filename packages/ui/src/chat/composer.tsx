@@ -60,7 +60,7 @@ function SendButton({
 /* Rewind prefill (issue #134 AC-4): a user message's stored images come
    back as real attachment chips — fetched bytes turned back into Files so a
    resend ships them again untouched. */
-function FileSeeder({
+export function FileSeeder({
   seed,
   onSeeded,
 }: {

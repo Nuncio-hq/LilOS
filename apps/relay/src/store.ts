@@ -11,6 +11,8 @@ import type {
   Employee,
   EmployeeStatus,
   MessageAttachment,
+  MessageSearchHit,
+  MessagesSearchParams,
   PendingTurn,
   ProfileSettings,
   RecentFolder,
@@ -92,6 +94,56 @@ export interface ListMessagesQuery {
 export interface ListMessagesPage {
   messages: AppMessage[];
   lastSeq: number;
+}
+
+/**
+ * #138: search semantics shared by both stores — whitespace-split lowercase
+ * terms, all must match (AND), except the last which is a prefix so the box
+ * can filter while the user is mid-word.
+ */
+export function searchTerms(query: string): string[] {
+  return query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** Word tokens the way the FTS unicode61 tokenizer sees them. */
+const textTokens = (text: string): string[] =>
+  text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}_]+/u)
+    .filter(Boolean);
+
+/** Term match: earlier terms must hit a whole token; the last is a prefix. */
+export function messageMatchesTerms(text: string, terms: string[]): boolean {
+  if (!terms.length) return false;
+  const toks = textTokens(text);
+  return terms.every((t, i) =>
+    i < terms.length - 1 ? toks.includes(t) : toks.some((w) => w.startsWith(t)),
+  );
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/* A relay-snippet-shaped excerpt for the memory store: a ~12-word window
+   opening a few words before the first match (the SQLite side uses
+   snippet(…, 12)), `…` at clipped edges, `<mark>` around every term hit. */
+export function markSnippet(text: string, terms: string[]): string {
+  if (!terms.length) return text.slice(0, 96);
+  const patterns = terms.map(
+    (t, i) =>
+      `(?<![\\w])${escapeRe(t)}${i < terms.length - 1 ? `(?![\\w])` : `[\\w]*`}`,
+  );
+  const re = new RegExp(patterns.join("|"), "gi");
+  const first = re.exec(text);
+  if (!first) return text.slice(0, 96);
+  const words = [...text.matchAll(/\S+/g)];
+  const hit = words.findIndex((w) => w.index + w[0].length > first.index);
+  if (hit < 0) return text.slice(0, 96);
+  const from = Math.max(0, hit - 3);
+  const last = Math.min(words.length - 1, from + 11);
+  const start = words[from].index;
+  const end = words[last].index + words[last][0].length;
+  const marked = text.slice(start, end).replace(re, (s) => `<mark>${s}</mark>`);
+  return `${start > 0 ? "…" : ""}${marked}${end < text.length ? "…" : ""}`;
 }
 
 export interface ListConversationsQuery {
@@ -183,6 +235,13 @@ export interface RelayStore {
     channelId: string,
     query: ListMessagesQuery,
   ): Promise<ListMessagesPage>;
+  /**
+   * Full-text search over stored message text (#138). Hits come back ordered
+   * by relevance (best first); `includeArchived` keeps hits in archived
+   * conversations, off by default like `conversations.list`. Only the hit
+   * set is contractual — rank order differs between implementations.
+   */
+  searchMessages(params: MessagesSearchParams): Promise<MessageSearchHit[]>;
   /**
    * Appends with the channel's next seq (atomic with the counter bump).
    * `dedupeKey` makes the write idempotent: `created: false` returns the
@@ -503,6 +562,30 @@ export function createMemoryStore(): RelayStore {
         list = list.slice(-limit);
       }
       return { messages: list, lastSeq: channel.lastSeq };
+    },
+    async searchMessages({ query, channelId, includeArchived, limit }) {
+      const terms = searchTerms(query);
+      if (!terms.length) return [];
+      const hits: MessageSearchHit[] = [];
+      for (const m of messages.values()) {
+        if (channelId && m.channelId !== channelId) continue;
+        if (!includeArchived && m.conversationId) {
+          const conversation = conversations.get(m.conversationId);
+          if (conversation?.archived) continue;
+        }
+        if (!messageMatchesTerms(m.text, terms)) continue;
+        hits.push({
+          messageId: m.id,
+          conversationId: m.conversationId,
+          channelId: m.channelId,
+          authorId: m.authorId,
+          snippet: markSnippet(m.text, terms),
+          createdAt: m.createdAt,
+        });
+      }
+      // Newest-first standing in for relevance rank (see RelayStore docs).
+      hits.sort((a, b) => b.createdAt - a.createdAt);
+      return hits.slice(0, limit);
     },
     async appendMessage(input) {
       return appendMessage(input);

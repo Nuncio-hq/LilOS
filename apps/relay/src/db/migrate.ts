@@ -156,9 +156,39 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     ],
   },
   {
-    // #134: `conversations.rewind` marks dropped messages (hidden, kept for
-    // audit) and the harness stamps each user message's pre-turn checkpoint.
+    /* #138: full-text search over stored messages. A FTS5 external-content
+       index (content='messages' — text is not duplicated) backfilled from
+       existing rows and kept in sync by triggers on write/delete/text-edit.
+       Deliberately raw SQL, not a Drizzle table: drizzle can't model virtual
+       tables, and the schema test asserts the exact persisted table list. */
     version: 9,
+    statements: [
+      `CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+        text, content='messages', content_rowid='rowid'
+      )`,
+      `INSERT INTO messages_fts(rowid, text) SELECT rowid, text FROM messages`,
+      `CREATE TRIGGER IF NOT EXISTS messages_fts_insert
+        AFTER INSERT ON messages BEGIN
+          INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+        END`,
+      `CREATE TRIGGER IF NOT EXISTS messages_fts_delete
+        AFTER DELETE ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, text)
+            VALUES ('delete', old.rowid, old.text);
+        END`,
+      `CREATE TRIGGER IF NOT EXISTS messages_fts_update
+        AFTER UPDATE OF text ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, text)
+            VALUES ('delete', old.rowid, old.text);
+          INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+        END`,
+    ],
+  },
+  {
+    /* #134: `conversations.rewind` marks dropped messages (hidden, kept for
+       audit) and the harness stamps each user message's pre-turn checkpoint.
+       v10 is reserved for #162 — this one is 11. */
+    version: 11,
     statements: [
       `ALTER TABLE messages ADD COLUMN rewound INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE messages ADD COLUMN checkpoint TEXT`,

@@ -165,6 +165,7 @@ describe("#29 employee lifecycle + engine passthrough contracts", () => {
       "agents.list",
       "agents.describe",
       "agents.create",
+      "agents.update",
       "models.list",
     ]) {
       expect(AppMethod.safeParse(method).success).toBe(true);
@@ -173,6 +174,7 @@ describe("#29 employee lifecycle + engine passthrough contracts", () => {
       "agents.list",
       "agents.describe",
       "agents.create",
+      "agents.update",
       "models.list",
     ]);
   });

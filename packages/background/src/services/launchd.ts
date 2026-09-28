@@ -38,6 +38,12 @@ export const HARNESS_AGENT: LaunchAgentSpec = {
   bundleProgram: "Contents/MacOS/lilos-harness",
   stdoutPath: `${LILOS_LOG_DIR}/${LILOS_BUNDLE_ID}.harness.stdout.log`,
   stderrPath: `${LILOS_LOG_DIR}/${LILOS_BUNDLE_ID}.harness.stderr.log`,
+  /* launchd's default PATH is /usr/bin:/bin:… — the host API shells out to
+     user tools (gh for forge.*) which live in Homebrew. Include the standard
+     user prefix dirs so they resolve. */
+  environment: {
+    PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+  },
 };
 
 export const LILOS_AGENTS: readonly LaunchAgentSpec[] = [

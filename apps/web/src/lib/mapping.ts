@@ -164,7 +164,8 @@ export function mergeTurns(
     );
     if (!t) return r;
     used.add(t);
-    return liveTurnReply(t, employeeId, asks);
+    // Keep the relay message id — it's the search-hit scroll anchor (#138).
+    return { ...liveTurnReply(t, employeeId, asks), id: r.id };
   });
   for (const t of model.turns) {
     if (used.has(t)) continue;

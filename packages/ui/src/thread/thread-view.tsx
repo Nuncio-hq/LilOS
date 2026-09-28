@@ -1,6 +1,6 @@
 import type { ChatStatus } from "ai";
 import { CheckIcon, Maximize2Icon, PlayIcon, Undo2Icon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ConversationKeepBottom,
   NotSentTray,
@@ -24,6 +24,7 @@ import { openStartRequest, ReplyCards } from "../conversation/cards";
 import { AgentTurn, AttachmentChips } from "../conversation/turns";
 import { Body, Row, Who } from "../feed/row";
 import { SessionUsage } from "../focus/session-usage";
+import { cn } from "../lib/utils";
 import type {
   AttachedFile,
   Channel,
@@ -46,7 +47,7 @@ import { WorkspaceBadge, WsBadge } from "../workbench/ws-badges";
    affordance FocusView ships (issue #38), keyed by message id here. A shared
    folder (`warning`) turns the click into an inline confirm; a running turn
    greys it out (AC-5). */
-function RewindCheckpoint({
+export function RewindCheckpoint({
   running,
   warning,
   onRewind,
@@ -137,6 +138,8 @@ export function ThreadView({
   transcriptNote,
   mentionables,
   onSearchFiles,
+  scrollTo,
+  onScrolled,
   draft,
   onDraftChange,
   editors,
@@ -204,6 +207,12 @@ export function ThreadView({
      the Files section — passed only when the session has a folder (cwd). */
   mentionables?: Employee[];
   onSearchFiles?: (query: string) => Promise<FileMention[]>;
+  /* A message id to bring into view — set when the user opens a search hit
+     (issue #138 AC-3): scrolls the message center into view and flashes it
+     briefly. Retried while replies stream in. */
+  scrollTo?: string;
+  /* Fired once the scroll happened; the host clears `scrollTo` there. */
+  onScrolled?: () => void;
   /* #134 "Rewind to here" on every user row (root included): the host drops
      the message + everything after and restores the folder to the pre-turn
      checkpoint. Disabled while a turn runs (AC-5). */
@@ -221,13 +230,40 @@ export function ThreadView({
   const isDM = !!channel.dm;
   const channelLabel = isDM ? `DM · ${channel.name}` : `#${channel.name}`;
   const startCardOpen = openStartRequest(thread, resolved);
+  /* #138 AC-3: jump-to-hit — scroll the message into view, flash it, hand
+     back control. Waits for the row to render (history may still load). */
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  const flashedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!scrollTo) {
+      flashedRef.current = null;
+      return;
+    }
+    if (flashedRef.current === scrollTo) return;
+    const el = bodyRef.current?.querySelector(
+      `[data-msg="${CSS.escape(scrollTo)}"]`,
+    );
+    if (!el) return;
+    flashedRef.current = scrollTo;
+    el.scrollIntoView({ block: "center" });
+    setFlash(scrollTo);
+    onScrolled?.();
+  }, [scrollTo, thread.replies, onScrolled]);
+  /* The flash window lives in its own effect — the scroll effect's cleanup
+     would cancel it when onScrolled clears scrollTo. */
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(null), 1800);
+    return () => clearTimeout(t);
+  }, [flash]);
   const status: ChatStatus = running
     ? thread.replies.some((r) => r.live && r.phase === "submitted")
       ? "submitted"
       : "streaming"
     : "ready";
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-background">
+    <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col bg-background">
       <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 font-semibold">
@@ -308,15 +344,23 @@ export function ThreadView({
               onRewind={() => onRewind(root.id ?? "")}
             />
           )}
-          <Row from={root.from} emp={emp} human={human}>
-            <Who id={root.from} time={root.time} emp={emp} human={human} />
-            <Body text={root.text} />
-            {root.attachments && <AttachmentChips files={root.attachments} />}
-            <div className="text-muted-foreground text-xs">
-              opened session{" "}
-              <code className="rounded bg-muted px-1">{thread.session}</code>
-            </div>
-          </Row>
+          <div
+            data-msg={root.id}
+            className={cn(
+              "transition-colors duration-500",
+              flash === root.id && "bg-amber-100 dark:bg-amber-900/40",
+            )}
+          >
+            <Row from={root.from} emp={emp} human={human}>
+              <Who id={root.from} time={root.time} emp={emp} human={human} />
+              <Body text={root.text} />
+              {root.attachments && <AttachmentChips files={root.attachments} />}
+              <div className="text-muted-foreground text-xs">
+                opened session{" "}
+                <code className="rounded bg-muted px-1">{thread.session}</code>
+              </div>
+            </Row>
+          </div>
           <div className="my-1 flex items-center gap-2 px-3 text-muted-foreground text-xs sm:px-5">
             <span>
               {thread.replies.length}{" "}
@@ -324,55 +368,62 @@ export function ThreadView({
             </span>
             <span className="h-px flex-1 bg-border" />
           </div>
-          {thread.replies.map((r, i) =>
+          {thread.replies.map((r, i) => (
             /* Employee turns render through the one shared AgentTurn — same DOM as Focus,
-               wrapped in the row's padding/hover chrome only (issue #19). */
-            emp(r.from) ? (
-              <div
-                key={r.id ?? i}
-                className="group px-3 py-2 hover:bg-muted/40 sm:px-5"
-              >
-                <AgentTurn
-                  r={r}
-                  emp={emp}
-                  human={human}
-                  last={i === thread.replies.length - 1}
-                  onRetry={onRetry}
-                  models={models}
-                  pending={steer ? pending : []}
-                  cards={
-                    <ReplyCards
-                      r={r}
-                      i={i}
-                      last={i === thread.replies.length - 1}
-                      work={work}
-                      repo={repo}
-                      emp={emp}
-                      human={human}
-                      resolved={resolved}
-                      setResolved={setResolved}
-                      onStart={onStart}
-                    />
-                  }
-                />
-              </div>
-            ) : (
-              <div key={r.id ?? i}>
-                {onRewind && r.id && human(r.from) && (
-                  <RewindCheckpoint
-                    running={running}
-                    warning={rewindWarning}
-                    onRewind={() => onRewind(r.id ?? "")}
+               wrapped in the row's padding/hover chrome only (issue #19). The
+               data-msg wrapper is the search-hit scroll/flash anchor (#138). */
+            <div
+              key={r.id ?? i}
+              data-msg={r.id}
+              className={cn(
+                "transition-colors duration-500",
+                flash === r.id && "bg-amber-100 dark:bg-amber-900/40",
+              )}
+            >
+              {emp(r.from) ? (
+                <div className="group px-3 py-2 hover:bg-muted/40 sm:px-5">
+                  <AgentTurn
+                    r={r}
+                    emp={emp}
+                    human={human}
+                    last={i === thread.replies.length - 1}
+                    onRetry={onRetry}
+                    models={models}
+                    pending={steer ? pending : []}
+                    cards={
+                      <ReplyCards
+                        r={r}
+                        i={i}
+                        last={i === thread.replies.length - 1}
+                        work={work}
+                        repo={repo}
+                        emp={emp}
+                        human={human}
+                        resolved={resolved}
+                        setResolved={setResolved}
+                        onStart={onStart}
+                      />
+                    }
                   />
-                )}
-                <Row from={r.from} emp={emp} human={human}>
-                  <Who id={r.from} time={r.time} emp={emp} human={human} />
-                  <Body text={r.text} />
-                  {r.attachments && <AttachmentChips files={r.attachments} />}
-                </Row>
-              </div>
-            ),
-          )}
+                </div>
+              ) : (
+                <>
+                  {onRewind && r.id && human(r.from) && (
+                    <RewindCheckpoint
+                      running={running}
+                      warning={rewindWarning}
+                      onRewind={() => onRewind(r.id ?? "")}
+                    />
+                  )}
+                  <Row from={r.from} emp={emp} human={human}>
+                    <Who id={r.from} time={r.time} emp={emp} human={human} />
+                    <Body text={r.text} />
+                    {r.attachments && <AttachmentChips files={r.attachments} />}
+                  </Row>
+                </>
+              )}
+            </div>
+          ))}
           {transcriptNote && (
             <div
               data-transcript-note

@@ -34,6 +34,7 @@ import {
   type MessageAttachment,
   MessagesListParams,
   MessagesPostParams,
+  MessagesSearchParams,
   MessagesSetCheckpointParams,
   ProfileUpdateParams,
   SettingsGetParams,
@@ -872,6 +873,14 @@ export function createRelay(options: RelayOptions): Relay {
           }
           return;
         }
+        case "messages.search": {
+          const parsed = MessagesSearchParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          respond(peer, id, {
+            hits: await store.searchMessages(parsed.data),
+          });
+          return;
+        }
         case "attachments.get": {
           const parsed = AttachmentsGetParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
@@ -939,6 +948,20 @@ export function createRelay(options: RelayOptions): Relay {
                 );
               }
             }
+            // Asks carry no seq watermark: an ask that opened between the
+            // client's seed read and this subscribe would otherwise be lost
+            // for good (issue #148). Replay the channel's current set — live
+            // ask events dedupe by id on the client, same as messages.
+            for (const ask of await store.listAsks({ channelId })) {
+              peer.send(
+                JSON.stringify({
+                  jsonrpc: "2.0",
+                  method:
+                    ask.state === "resolved" ? "ask.resolved" : "ask.opened",
+                  params: { channelId, ask },
+                }),
+              );
+            }
             peer.send(
               JSON.stringify({
                 jsonrpc: "2.0",
@@ -999,6 +1022,7 @@ export function createRelay(options: RelayOptions): Relay {
               "an engine host is already registered",
             );
           }
+          const wasEmpty = !host;
           if (!host) {
             host = {
               peer,
@@ -1012,6 +1036,7 @@ export function createRelay(options: RelayOptions): Relay {
             host.protocolVersion = parsed.data.protocolVersion;
           }
           log(`harness.register accepted (${host.hostId} v${host.version})`);
+          if (wasEmpty) broadcast("host.changed", { connected: true });
           respond(peer, id, {
             hostId: host.hostId,
             pending: await store.listPendingTurns(),
@@ -1314,6 +1339,7 @@ export function createRelay(options: RelayOptions): Relay {
             log(`harness ${host.hostId} disconnected`);
             host = null;
             lastHostDisconnectedAt = now();
+            broadcast("host.changed", { connected: false });
           }
           // Fail or drop every forwarded call this peer is a party to.
           for (const [reqId, call] of hostCalls) {

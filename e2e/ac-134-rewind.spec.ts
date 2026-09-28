@@ -228,7 +228,12 @@ async function pickFolder(page: Page, dir: string) {
      folder bound to a live session is filtered out of "discovered", so
      picking it again for a second session only works through this list. */
   const recent = menu.locator("[data-wsfolder]").filter({ hasText: dir });
-  if (await recent.first().isVisible().catch(() => false)) {
+  if (
+    await recent
+      .first()
+      .isVisible()
+      .catch(() => false)
+  ) {
     await recent.first().click();
     return;
   }
@@ -274,7 +279,7 @@ test("AC-2/4 + AC-1 files: rewind drops the tail, restores the folder, refills t
   await pickFolder(page, repoDir);
   await expect(page.locator('[data-ws="folder"]')).toContainText("lilos-repo");
   await send(page, "alpha marker one");
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
   convA = decodeURIComponent(page.url().split("/dm/")[1].split("/")[1]);
   empA = empId(page);
   await expect(
@@ -357,7 +362,7 @@ test("AC-5 rewind triggers are disabled while a turn runs", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  await page.goto(`${stackA.webUrl}/dm/${empA}/${convA}`);
+  await page.goto(`${stackA.webUrl}/dm/${empA}/${convA}/focus`);
   await expect(page.locator("[data-rewind]").first()).toBeVisible({
     timeout: 30_000,
   });
@@ -386,7 +391,7 @@ test("AC-5 a folder shared with another session warns + names it before rewindin
   await page.goto(`${stackA.webUrl}/dm/${empA}?roots=${ROOT}`);
   await pickFolder(page, repoDir);
   await send(page, "session B alpha");
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
   const convB = page.url().split("/dm/")[1].split("/")[1];
   expect(convB).not.toBe(convA);
   await expect(
@@ -395,7 +400,7 @@ test("AC-5 a folder shared with another session warns + names it before rewindin
 
   /* Back on session A: the click asks first, naming session B; cancelling
      leaves the thread untouched. */
-  await page.goto(`${stackA.webUrl}/dm/${empA}/${convA}`);
+  await page.goto(`${stackA.webUrl}/dm/${empA}/${convA}/focus`);
   const thread = page.locator("[data-thread]");
   await expect(thread.locator("[data-rewind]").first()).toBeEnabled({
     timeout: 30_000,
@@ -411,9 +416,7 @@ test("AC-5 a folder shared with another session warns + names it before rewindin
   /* Rewound to the root: the whole thread is gone, the rewind note shows
      alone at the top, and the opener is back in the composer. */
   await expect(page.locator("textarea").last()).toHaveValue("alpha marker one");
-  await expect(
-    rowText(thread, /Rewound to before your message/),
-  ).toBeVisible();
+  await expect(rowText(thread, /Rewound to before your message/)).toBeVisible();
   await expect(rowText(thread, "alpha marker one")).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-5-root.png` });
 });
@@ -425,7 +428,7 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new sess
   await dmDefault(stackB, page, ROOT);
   await pickFolder(page, repoDir);
   await send(page, "alpha in the no-rewind session");
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
   const convC = page.url().split("/dm/")[1].split("/")[1];
   await expect(
     page.locator("[data-thread]").getByText("If you want me to change code"),
@@ -450,22 +453,22 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new sess
   await expect(
     page.getByRole("button", { name: "Start a new session from here" }),
   ).toBeVisible();
-  await expect(
-    rowText(thread, "beta in the no-rewind session"),
-  ).toHaveCount(0);
+  await expect(rowText(thread, "beta in the no-rewind session")).toHaveCount(0);
   await expect(existsSync(path.join(repoDir, "stackb-marker.txt"))).toBe(false);
   await page.screenshot({ path: `${SHOTS}/ac-3-banner.png` });
 
   await page
     .getByRole("button", { name: "Start a new session from here" })
     .click();
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
   const convD = page.url().split("/dm/")[1].split("/")[1];
   expect(convD).not.toBe(convC);
   /* The fresh session's root carries the surviving transcript as quoted
      context, then the rewound text. */
   await expect(
-    page.locator("[data-thread]").getByText(/Picking up mid-session after a rewind/),
+    page
+      .locator("[data-thread]")
+      .getByText(/Picking up mid-session after a rewind/),
   ).toBeVisible({ timeout: 60_000 });
   await expect(
     page.locator("[data-thread]").getByText(/alpha in the no-rewind session/),

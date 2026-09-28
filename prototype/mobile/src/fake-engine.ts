@@ -1,0 +1,725 @@
+import type {
+  AgentEntry,
+  Approval,
+  EmployeeRow,
+  OrbState,
+  ProjectGroup,
+  PullRequestRef,
+  SessionTurn,
+  ThreadDetail,
+  ThreadEntry,
+  ToolStep,
+  WorkspacePick,
+} from "@lilos/ui-native";
+import { atom, computed } from "nanostores";
+import {
+  APPROVALS,
+  EMPLOYEES,
+  FOLDERS,
+  IDLE_NOW,
+  PROJECTS,
+  THREADS,
+} from "./fake-team";
+
+/* The prototype's fake engine: the mobile twin of the web prototype's
+   runTurn (prototype/web/src/App.tsx). Canned turns play out on a clock —
+   reasoning streams word by word, each tool call runs then lands its
+   output, the reply streams, and approvals arrive and resolve — so the
+   screens show real behaviour (spinning orbs, live steps, the dock filling
+   and emptying). Real app: relay events over the socket. Mock data, not a
+   contract. */
+
+// ── Store ───────────────────────────────────────────────────────────────────
+
+export const $threads = atom<ThreadDetail[]>(THREADS);
+
+/** Order approvals were asked in (oldest first → the dock shows the oldest). */
+const ASKED = ["a-flake", "a-post"];
+const asked = atom<string[]>(ASKED);
+
+/** Every pending approval, read off the sessions so both always agree. */
+export const $approvals = computed([$threads, asked], (threads, order) => {
+  const all = threads.flatMap((t) =>
+    t.entries.flatMap((e) =>
+      e.kind === "agent" && e.approval ? [e.approval] : [],
+    ),
+  );
+  return all.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+});
+
+const VERB: Record<string, string> = {
+  terminal: "$",
+  read_file: "Reading",
+  write_file: "Writing",
+  patch: "Editing",
+  search_files: "Searching",
+  web_search: "Searching the web for",
+  email: "Mail:",
+  x_post: "Posting",
+};
+
+function liveLine(t: ThreadDetail) {
+  const last = t.entries[t.entries.length - 1];
+  if (last?.kind !== "agent" || !last.live) return undefined;
+  const run = last.steps?.find((s) => s.running);
+  if (run) return `${VERB[run.tool] ?? run.tool} ${run.arg ?? ""}`.trim();
+  if (last.thought === undefined) return "Thinking…";
+  return "Writing the reply…";
+}
+
+export const $employees = computed($threads, (threads): EmployeeRow[] =>
+  EMPLOYEES.map((e) => {
+    const mine = threads.filter((t) => t.employee.id === e.id);
+    const asks = mine
+      .flatMap((t) => t.entries)
+      .filter((x): x is AgentEntry => x.kind === "agent" && !!x.approval)
+      .map((x) => x.approval);
+    const ask = asks[0];
+    const live = mine.find((t) => t.state === "working");
+    const state: OrbState = ask ? "needs-you" : live ? "working" : "idle";
+    const fresh = [...mine].reverse().find((t) => t.when === "now");
+    return {
+      ...e,
+      state,
+      ticket: state === "idle" ? undefined : e.ticket,
+      when: ask ? ask.age : live || fresh ? "now" : e.when,
+      // Several threads waiting: the count is what sends you into the DM.
+      now: ask
+        ? asks.length > 1
+          ? `${asks.length} need you`
+          : `Waiting on you · ${ask.session}`
+        : live
+          ? (liveLine(live) ?? live.title)
+          : fresh
+            ? `Done · ${fresh.title}`
+            : (IDLE_NOW[e.id] ?? ""),
+    };
+  }),
+);
+
+/** #engineering shows Builder's orb + dots only while Builder is at work. */
+export const $projects = computed($employees, (emps): ProjectGroup[] => {
+  const busy = emps.find((e) => e.id === "builder")?.state === "working";
+  return PROJECTS.map((p) => ({
+    ...p,
+    channels: p.channels.map((c) =>
+      c.id === "lilos-eng"
+        ? { ...c, activeTone: busy ? ("blue" as const) : undefined }
+        : c,
+    ),
+  }));
+});
+
+/** One employee's DM: each session summarised as a card. */
+export function turnsOf(threads: ThreadDetail[], employeeId: string) {
+  return threads
+    .filter((t) => t.employee.id === employeeId)
+    .map((t): SessionTurn => {
+      const agents = t.entries.filter(
+        (e): e is AgentEntry => e.kind === "agent",
+      );
+      const steps = agents.flatMap((a) => a.steps ?? []);
+      const edits = steps.filter((s) => s.add !== undefined);
+      return {
+        id: t.id,
+        prompt: t.entries[0]?.kind === "user" ? t.entries[0].text : t.title,
+        title: t.title,
+        state: t.state,
+        when: t.when,
+        folder: t.folder?.name,
+        branch: t.branch?.name,
+        added: edits.length
+          ? edits.reduce((n, s) => n + (s.add ?? 0), 0)
+          : undefined,
+        removed: edits.reduce((n, s) => n + (s.del ?? 0), 0),
+        replies: t.entries.length - 1,
+        preview: [...agents].reverse().find((a) => a.text)?.text,
+        live: liveLine(t),
+        approval: agents.find((a) => a.approval)?.approval,
+        prs: t.prs,
+      };
+    });
+}
+
+function mapThread(id: string, f: (t: ThreadDetail) => ThreadDetail) {
+  $threads.set($threads.get().map((t) => (t.id === id ? f(t) : t)));
+}
+function mapEntry(tid: string, eid: string, f: (e: AgentEntry) => AgentEntry) {
+  mapThread(tid, (t) => ({
+    ...t,
+    entries: t.entries.map((e) =>
+      e.kind === "agent" && e.id === eid ? f(e) : e,
+    ),
+  }));
+}
+
+// ── The turn runner ─────────────────────────────────────────────────────────
+
+type StepSpec = Omit<ToolStep, "id" | "running"> & { ms?: number };
+type Script = {
+  reasoning?: string;
+  steps?: StepSpec[];
+  text?: string;
+  /** Ends the turn blocked on you instead of done. */
+  approval?: Omit<Approval, "age">;
+  /** Runs when that approval is approved / denied. */
+  onApprove?: Script;
+  onDeny?: Script;
+  /** A PR this turn opens (added to the session when the turn ends). */
+  pr?: PullRequestRef;
+};
+
+/** Scripts waiting on an approval, by approval id. */
+const pending = new Map<
+  string,
+  { tid: string; eid: string; yes?: Script; no?: Script }
+>();
+/** Bumped by a reset: every running turn from an older generation stops writing. */
+let gen = 0;
+const stops = new Set<string>();
+
+const now = () => {
+  const d = new Date();
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${two(d.getHours())}:${two(d.getMinutes())}`;
+};
+const uid = () => Math.random().toString(36).slice(2, 8);
+class Stopped extends Error {}
+
+/** Play one turn. With `eid`, continue that entry (after an approval). */
+async function run(tid: string, s: Script, eid?: string) {
+  const g = gen;
+  const id = eid ?? `g-${uid()}`;
+  const tick = async (ms: number) => {
+    await new Promise((r) => setTimeout(r, ms));
+    if (g !== gen) throw new Stopped("reset");
+    if (stops.has(tid)) throw new Stopped("stop");
+  };
+  stops.delete(tid);
+  mapThread(tid, (t) => ({
+    ...t,
+    state: "working",
+    when: "now",
+    entries: eid
+      ? t.entries
+      : [
+          ...t.entries,
+          {
+            kind: "agent",
+            id,
+            time: now(),
+            live: true,
+            ...(s.reasoning ? { reasoning: "" } : {}),
+          },
+        ],
+  }));
+  if (eid)
+    mapEntry(tid, id, (e) => ({
+      ...e,
+      live: true,
+      writing: false,
+      approval: undefined,
+    }));
+  const started = Date.now();
+  const set = (f: (e: AgentEntry) => AgentEntry) => mapEntry(tid, id, f);
+  try {
+    await tick(700);
+    if (s.reasoning && !eid) {
+      const t0 = Date.now();
+      for (const w of s.reasoning.split(/(?<=\s)/)) {
+        await tick(38);
+        set((e) => ({ ...e, reasoning: (e.reasoning ?? "") + w }));
+      }
+      await tick(350);
+      set((e) => ({
+        ...e,
+        thought: Math.max(1, Math.round((Date.now() - t0) / 1000)),
+      }));
+    } else if (!eid) set((e) => ({ ...e, thought: 1 }));
+    for (const { ms, ...st } of s.steps ?? []) {
+      const sid = uid();
+      set((e) => ({
+        ...e,
+        steps: [
+          ...(e.steps ?? []),
+          {
+            ...st,
+            id: sid,
+            output: undefined,
+            add: undefined,
+            del: undefined,
+            running: true,
+          },
+        ],
+      }));
+      await tick(ms ?? 900);
+      set((e) => ({
+        ...e,
+        steps: (e.steps ?? []).map((x) =>
+          x.id === sid ? { ...st, id: sid } : x,
+        ),
+      }));
+    }
+    if (s.text) {
+      await tick(300);
+      set((e) => ({ ...e, writing: true, text: "" }));
+      for (const w of s.text.split(/(?<=\s)/)) {
+        await tick(26);
+        set((e) => ({ ...e, text: (e.text ?? "") + w }));
+      }
+    }
+    await tick(250);
+    const t = $threads.get().find((x) => x.id === tid);
+    const [model, effort] = (t?.model ?? "")
+      .replace(/^Claude /, "")
+      .split(" · ");
+    if (s.approval) {
+      const a: Approval = { ...s.approval, age: "now" };
+      asked.set([...asked.get().filter((x) => x !== a.id), a.id]);
+      pending.set(a.id, { tid, eid: id, yes: s.onApprove, no: s.onDeny });
+      set((e) => ({ ...e, live: false, writing: false, approval: a }));
+      mapThread(tid, (x) => ({ ...x, state: "needs-you", when: "now" }));
+    } else {
+      set((e) => ({
+        ...e,
+        live: false,
+        writing: false,
+        footer: {
+          dur: Math.round((Date.now() - started) / 1000) + (e.footer?.dur ?? 0),
+          model,
+          effort,
+          files:
+            new Set(
+              (e.steps ?? [])
+                .filter((x) => x.add !== undefined)
+                .map((x) => x.arg),
+            ).size || undefined,
+        },
+      }));
+      const pr = s.pr;
+      mapThread(tid, (x) => ({
+        ...x,
+        state: "done",
+        when: "now",
+        prs: pr ? [...(x.prs ?? []), pr] : x.prs,
+      }));
+    }
+  } catch (err) {
+    if (!(err instanceof Stopped) || g !== gen) return;
+    set((e) => ({
+      ...e,
+      live: false,
+      writing: false,
+      stopped: true,
+      steps: e.steps?.map((x) => ({ ...x, running: false })),
+      footer: { dur: Math.round((Date.now() - started) / 1000) },
+    }));
+    mapThread(tid, (x) => ({ ...x, state: "stopped", when: "now" }));
+    stops.delete(tid);
+  }
+  // A message you sent mid-turn runs next, as its own turn.
+  if (g !== gen) return;
+  const t = $threads.get().find((x) => x.id === tid);
+  const q = t?.entries.find(
+    (e): e is Extract<ThreadEntry, { kind: "user" }> =>
+      e.kind === "user" && !!e.queued,
+  );
+  if (t && q && t.state !== "needs-you") {
+    mapThread(tid, (x) => ({
+      ...x,
+      entries: x.entries.map((e) =>
+        e.id === q.id ? { ...e, queued: false } : e,
+      ),
+    }));
+    void run(tid, followUp(q.text, t));
+  }
+}
+
+// ── What you can do ─────────────────────────────────────────────────────────
+
+export function approve(id: string) {
+  settle(id, true);
+}
+export function deny(id: string) {
+  settle(id, false);
+}
+function settle(id: string, yes: boolean) {
+  const p = pending.get(id);
+  if (!p) return;
+  pending.delete(id);
+  const next = (yes ? p.yes : p.no) ?? {
+    text: yes ? "Done." : "OK, I won't.",
+  };
+  mapEntry(p.tid, p.eid, (e) => ({
+    ...e,
+    approval: undefined,
+    decided: {
+      approved: yes,
+      what:
+        e.approval?.command ??
+        e.approval?.file?.name ??
+        e.approval?.reason ??
+        "",
+    },
+  }));
+  void run(p.tid, next);
+}
+
+/** Stop the running turn (■). What it already did stays. */
+export function stop(tid: string) {
+  stops.add(tid);
+}
+
+/** A new session from a DM: it opens as a thread and starts working. */
+export function startSession(
+  employeeId: string,
+  text: string,
+  model: string,
+  ws: WorkspacePick,
+) {
+  const emp = EMPLOYEES.find((e) => e.id === employeeId) ?? EMPLOYEES[0];
+  const f = FOLDERS.find((x) => x.id === ws.folder);
+  const branch = f?.branches.length
+    ? ws.mode === "existing"
+      ? (ws.existing ?? ws.base)
+      : ws.mode === "new"
+        ? `ws/${slug(text)}`
+        : ws.base
+    : undefined;
+  const id = `s-${uid()}`;
+  $threads.set([
+    ...$threads.get(),
+    {
+      id,
+      title: text.length > 34 ? `${text.slice(0, 32).trimEnd()}…` : text,
+      state: "working",
+      employee: { id: emp.id, name: emp.name, tone: emp.tone },
+      when: "now",
+      started: `Today ${now()}`,
+      folder: f ? { name: f.project, path: f.path } : undefined,
+      branch: branch
+        ? {
+            name: branch,
+            detail:
+              ws.mode === "new"
+                ? `new worktree off ${ws.base} · .lilos/wt/${slug(text)}`
+                : ws.mode === "existing"
+                  ? "existing workstream"
+                  : "edits land directly",
+          }
+        : undefined,
+      model,
+      session: `ses_${uid().slice(0, 4)}`,
+      entries: [{ kind: "user", id: `u-${uid()}`, time: now(), text }],
+    },
+  ]);
+  void run(id, firstTurn(text, f?.path, branch, ws));
+  return id;
+}
+
+/** Reply in a session. Mid-turn it queues and runs when this turn ends. */
+export function reply(tid: string, text: string) {
+  const t = $threads.get().find((x) => x.id === tid);
+  if (!t) return;
+  const busy = t.state === "working";
+  mapThread(tid, (x) => ({
+    ...x,
+    entries: [
+      ...x.entries,
+      { kind: "user", id: `u-${uid()}`, time: now(), text, queued: busy },
+    ],
+  }));
+  if (!busy) void run(tid, followUp(text, t));
+}
+
+// ── Life: the team keeps working while you watch ────────────────────────────
+
+let alive = false;
+/** Start the background work once the app is open (idempotent). */
+export function startLife() {
+  if (alive) return;
+  alive = true;
+  const g = gen;
+  const wait = (tid: string, s: Pick<Script, "onApprove" | "onDeny">) => ({
+    tid,
+    eid: "g1",
+    yes: s.onApprove,
+    no: s.onDeny,
+  });
+  pending.set("a-flake", wait("s-flake", FLAKE));
+  pending.set("a-post", wait("s-launch", POST));
+  // Builder has two sessions going: the relay one hits a wall and asks you
+  // (the dock grows), the CI one finds the bug and asks to push.
+  setTimeout(() => g === gen && void run("s-relay", RELAY, "g1"), 900);
+  setTimeout(() => g === gen && void run("s-ci", CI, "g1"), 2400);
+}
+
+/** Put the whole team back to the start and play it again. */
+export function resetTeam() {
+  gen++;
+  alive = false;
+  stops.clear();
+  pending.clear();
+  asked.set(ASKED);
+  $threads.set(THREADS);
+  startLife();
+}
+
+// ── Scripts ─────────────────────────────────────────────────────────────────
+
+const slug = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .split("-")
+    .slice(0, 3)
+    .join("-") || "task";
+
+const CI: Script = {
+  steps: [
+    {
+      tool: "terminal",
+      arg: "bunx playwright test ac-83",
+      output:
+        "✗ ac-83 › DM feed row avatar\n  locator('img.avatar') resolved to 2 elements\n\n1 failed · 12 passed (21.4s)",
+      ms: 2800,
+    },
+    {
+      tool: "search_files",
+      arg: "img.avatar in packages/ui",
+      output: "2 matches · feed-row.tsx, thread-header.tsx",
+      ms: 900,
+    },
+    {
+      tool: "patch",
+      arg: "e2e/ac-83.spec.ts",
+      output: "scope the avatar locator to the feed row",
+      add: 2,
+      del: 1,
+      ms: 1300,
+    },
+    {
+      tool: "terminal",
+      arg: "bunx playwright test ac-83",
+      output: "✓ 13 passed (19.8s)",
+      ms: 2600,
+    },
+    {
+      tool: "terminal",
+      arg: 'git commit -am "e2e: scope ac-83 avatar locator"',
+      output:
+        "[fix/ac-83 4be21c9] 1 file changed, 2 insertions(+), 1 deletion(-)",
+      ms: 700,
+    },
+  ],
+  text: "Found it. The test looked for `img.avatar` anywhere on the page, and #83 added a second avatar in the thread header, so it matched **2 elements** and timed out.\n\n- Scoped the locator to the feed row.\n- `ac-83` passes locally, 13 of 13.\n\nOK to push and open a PR?",
+  approval: {
+    id: "a-push",
+    employeeId: "builder",
+    employee: "Builder",
+    tone: "blue",
+    session: "CI red on main",
+    reason: "Push fix/ac-83 and open a PR so CI runs on the fix.",
+    command: "git push -u origin fix/ac-83 && gh pr create --fill",
+  },
+  onApprove: {
+    steps: [
+      {
+        tool: "terminal",
+        arg: "git push -u origin fix/ac-83",
+        output: "branch 'fix/ac-83' set up to track 'origin/fix/ac-83'",
+        ms: 1400,
+      },
+      {
+        tool: "terminal",
+        arg: "gh pr create --fill",
+        output: "https://github.com/Nuncio-hq/LilOS/pull/97",
+        ms: 1600,
+      },
+    ],
+    text: "Opened **PR #97**. CI is running on it; I'll tell you if it goes red.",
+    pr: {
+      number: 97,
+      title: "e2e: scope ac-83 avatar locator",
+      status: "open",
+      checks: "pending",
+    },
+  },
+  onDeny: {
+    text: "OK, not pushing. The fix is committed on `fix/ac-83` if you want to look first.",
+  },
+};
+
+const RELAY: Script = {
+  steps: [
+    {
+      tool: "terminal",
+      arg: "bun test apps/relay",
+      output:
+        "✗ reconnect › replays the gap\n  SqliteError: no such table: device_cursor\n\n1 fail · 11 pass",
+      ms: 3200,
+    },
+  ],
+  text: "Replay works in code, but the test fails: the `device_cursor` table doesn't exist yet. I need to run the migration first.",
+  approval: APPROVALS[0],
+  onApprove: {
+    steps: [
+      {
+        tool: "terminal",
+        arg: "bun run db:migrate --env dev",
+        output: "✓ 0007_device_cursor · 1 table created",
+        ms: 2000,
+      },
+      {
+        tool: "terminal",
+        arg: "bun test apps/relay",
+        output: "✓ 12 pass · 0 fail (1.9s)",
+        ms: 2400,
+      },
+      {
+        tool: "terminal",
+        arg: 'git commit -am "relay: replay the gap after sleep"',
+        output: "[feat/relay-reconnect 8d02a1e] 3 files changed",
+        ms: 700,
+      },
+    ],
+    text: "Migration ran and the relay tests are green, **12 of 12**. After the Mac wakes, the phone now replays everything it missed from `afterSequence`.",
+  },
+  onDeny: {
+    text: "You said no, so I left the database alone. The reconnect code is on the branch; the test stays red until the table exists.",
+  },
+};
+
+const FLAKE: Pick<Script, "onApprove" | "onDeny"> = {
+  onApprove: {
+    steps: [
+      {
+        tool: "terminal",
+        arg: "bunx playwright test ac-80 --repeat-each 20",
+        output: "✓ 20 passed (1m 12s)",
+        ms: 5200,
+      },
+    ],
+    text: "**20 of 20 passed.** The fix holds, so #86 is safe to merge.",
+  },
+  onDeny: {
+    text: "OK, skipping the repeat run. One green run is weak proof for a flake, so I'd hold #86 until it's shown.",
+  },
+};
+
+const POST: Pick<Script, "onApprove" | "onDeny"> = {
+  onApprove: {
+    steps: [
+      {
+        tool: "x_post",
+        arg: "launch-thread.md · 6 posts",
+        output: "posted · x.com/lilos_app/status/1839204",
+        ms: 2600,
+      },
+    ],
+    text: "Posted. The first post is live; I'll watch the replies for an hour and flag anything that needs you.",
+  },
+  onDeny: {
+    text: "Not posting. The draft stays in `launch-thread.md` if you want to edit it.",
+  },
+};
+
+function firstTurn(
+  text: string,
+  path: string | undefined,
+  branch: string | undefined,
+  ws: WorkspacePick,
+): Script {
+  const words = text
+    .replace(/[^\w\s-]/g, "")
+    .split(/\s+/)
+    .filter((w) => w.length > 3);
+  const key = (words[1] ?? words[0] ?? "thing").toLowerCase();
+  if (!path)
+    return {
+      reasoning: `No folder, so this is a question, not a change. Look it up, then answer in a few lines.`,
+      steps: [
+        {
+          tool: "web_search",
+          arg: text.slice(0, 48),
+          output: "6 results",
+          ms: 1400,
+        },
+      ],
+      text: `Short answer: it depends on how often **${key}** changes. If it's weekly, keep it manual; if it's daily, it's worth a script. Want me to draft one?`,
+    };
+  const pre: StepSpec[] =
+    ws.mode === "new" && branch
+      ? [
+          {
+            tool: "terminal",
+            arg: `git worktree add .lilos/wt/${slug(text)} -b ${branch} ${ws.base}`,
+            output: `Preparing worktree (new branch '${branch}')`,
+            ms: 900,
+          },
+        ]
+      : [];
+  return {
+    reasoning: `Find where ${key} lives before touching anything. Change the smallest thing that does it, then prove it with typecheck and the tests.`,
+    steps: [
+      ...pre,
+      { tool: "terminal", arg: "pwd", output: path, ms: 400 },
+      { tool: "search_files", arg: key, output: "3 matches", ms: 1000 },
+      {
+        tool: "read_file",
+        arg: `packages/ui/src/${key}.tsx`,
+        output: "142 lines",
+        ms: 900,
+      },
+      {
+        tool: "patch",
+        arg: `packages/ui/src/${key}.tsx`,
+        output: "the change",
+        add: 14,
+        del: 3,
+        ms: 1500,
+      },
+      {
+        tool: "terminal",
+        arg: "bun run typecheck",
+        output: "✓ no errors",
+        ms: 1800,
+      },
+    ],
+    text: `Done${branch ? ` on \`${branch}\`` : ""}. I changed \`${key}.tsx\` (**+14 −3**) and typecheck is clean.\n\n- Nothing else touched.\n- Say the word and I'll open a PR.`,
+  };
+}
+
+function followUp(text: string, t: ThreadDetail): Script {
+  if (!t.folder)
+    return {
+      reasoning: "A follow-up question; answer it directly.",
+      text: `Got it: "${text}". I'd keep it simple and do that first.`,
+    };
+  const file =
+    [...t.entries]
+      .reverse()
+      .flatMap((e) => (e.kind === "agent" ? (e.steps ?? []) : []))
+      .find((s) => s.add !== undefined)?.arg ?? "packages/ui/src/app.tsx";
+  return {
+    reasoning: `Small follow-up on the same change. Edit ${file.split("/").pop()} and re-run the check.`,
+    steps: [
+      {
+        tool: "patch",
+        arg: file,
+        output: "follow-up",
+        add: 4,
+        del: 2,
+        ms: 1300,
+      },
+      {
+        tool: "terminal",
+        arg: "bun run typecheck",
+        output: "✓ no errors",
+        ms: 1500,
+      },
+    ],
+    text: `Done. \`${file.split("/").pop()}\` updated (**+4 −2**), typecheck clean.`,
+  };
+}
