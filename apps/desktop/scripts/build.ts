@@ -58,6 +58,11 @@ const ENGINE = ENGINE_FLAG?.slice(9) as "hermes" | "fake" | undefined;
 const positional = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const VERSION = positional[0] ?? "1";
 const IDENTITY = positional[1] ?? "-";
+// #85/#141: the signing identity decides the engine bundle — a signed release
+// ships only the Hermes adapter; an ad-hoc dev bundle ships both engines and
+// boots the fake one unless --engine= overrides the default (app:local).
+// Resolved up front so an invalid combination fails before any work runs.
+const engines = engineBundlePlan(IDENTITY, ENGINE);
 // One release version shared by app + relay + harness (#35): stamped into
 // each binary so a bundle's components always agree in `system.status`.
 const RELEASE_VERSION = `1.0.${VERSION}`;
@@ -145,10 +150,6 @@ if (!existsSync(harnessEntry) && !skipHarness) {
   );
   process.exit(1);
 }
-// #85/#141: the signing identity decides the engine bundle — a signed release
-// ships only the Hermes adapter; an ad-hoc dev bundle ships both engines and
-// boots the fake one unless --engine= overrides the default (app:local).
-const engines = engineBundlePlan(IDENTITY, ENGINE);
 if (!skipHarness) {
   console.log(
     `==> compile lilos-harness (bun standalone, engine default: ${engines.defaultEngine})`,
