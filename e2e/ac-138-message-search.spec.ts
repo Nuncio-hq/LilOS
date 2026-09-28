@@ -259,6 +259,8 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
   const hitsPanel = page.locator("[data-message-hits]");
   await expect(hitsPanel).toBeVisible({ timeout: 10_000 });
   await expect(hitsPanel.getByText("Messages")).toBeVisible();
+  // Group headers carry the session title (falls back to its first message).
+  await expect(hitsPanel.getByText(ROOT_A)).toBeVisible();
   await expect(hitsPanel.locator("mark").first()).toHaveText("quaggmire");
   await expect(hitsPanel.locator("[data-archived-hit]").first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac2-message-hits.png` });

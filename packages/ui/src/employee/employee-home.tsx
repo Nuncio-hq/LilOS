@@ -583,7 +583,7 @@ export function EmployeeHome({
                       <div key={rootId}>
                         <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-muted-foreground text-xs">
                           <span className="truncate font-medium text-foreground/80">
-                            {m?.thread?.title ?? m?.text ?? "Session"}
+                            {m?.thread?.title || m?.text || "Session"}
                           </span>
                           {isArchived && (
                             <span
