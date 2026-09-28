@@ -186,4 +186,19 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
     expect(selected(out)).not.toBe("allow_session");
     expect(selected(out)).toBe("deny");
   });
+
+  test("AC-2 deny on an allow-only list cancels — never lands on an allow id", async () => {
+    const r = rig();
+    // No deny/reject option at all: `options[0]` would be allow_once and the
+    // old last-resort fallback would turn a deny into a grant. Cancel is
+    // ACP's not-granted answer.
+    const pending = r.permission([
+      opt("allow_once", "allow_once", "Allow once"),
+      opt("allow_session", "allow_always", "Allow for session"),
+      opt("allow_always", "allow_always", "Allow always"),
+    ]);
+    r.respond("deny");
+    const out = await pending;
+    expect(out.outcome.outcome).toBe("cancelled");
+  });
 });

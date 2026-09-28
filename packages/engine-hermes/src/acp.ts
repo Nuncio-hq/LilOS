@@ -235,13 +235,12 @@ export class AcpDriver {
     const { outcome } = await answered;
     if (outcome === "cancel") return { outcome: { outcome: "cancelled" } };
     // Exact optionId first, kind fallback for unknown ids only; an
-    // unanswerable outcome falls back to deny, never to "whatever came first"
-    // (#133 — that first option was session-scoped allow_session).
+    // unanswerable outcome falls back to deny. With no deny option there is
+    // no safe pick — answering options[0] would be the same silent upgrade
+    // #133 was (a deny could land on allow_session), so cancel instead.
     const optionId =
-      acpPickOptionId(options, outcome) ??
-      acpPickOptionId(options, "deny") ??
-      options[0]?.optionId ??
-      "";
+      acpPickOptionId(options, outcome) ?? acpPickOptionId(options, "deny");
+    if (!optionId) return { outcome: { outcome: "cancelled" } };
     return {
       outcome: {
         outcome: "selected",
