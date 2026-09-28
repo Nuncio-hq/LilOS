@@ -128,7 +128,10 @@ async function startRelay(env: Record<string, string> = {}): Promise<{
 /**
  * Connect, retrying refusal until the deadline. A refused socket is the
  * observable answer to "nothing bound yet" — the relay's tailnet bind lands
- * just after its "listening" line, so callers race startup.
+ * just after its "listening" line, so callers race startup. Each attempt
+ * gives up at the deadline too: on a host with a firewall that drops rather
+ * than refuses (or a connect aimed at a tunnel interface), an attempt that
+ * neither connects nor errors must not hang the test.
  */
 async function tcpConnect(host: string, port: number, timeoutMs = 1500) {
   const deadline = Date.now() + timeoutMs;
@@ -136,11 +139,22 @@ async function tcpConnect(host: string, port: number, timeoutMs = 1500) {
   for (;;) {
     const attempt = await new Promise<void>((resolve, reject) => {
       const socket = net.connect({ host, port });
+      const timer = setTimeout(
+        () => {
+          socket.destroy();
+          reject(new Error("connect timeout"));
+        },
+        Math.max(1, deadline - Date.now()),
+      );
       socket.on("connect", () => {
+        clearTimeout(timer);
         socket.destroy();
         resolve();
       });
-      socket.on("error", reject);
+      socket.on("error", (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
     }).then(
       () => null,
       (error: unknown) => error,
@@ -227,14 +241,21 @@ function waitFor<T>(atom: Listenable<T>, pred: (value: T) => boolean) {
   });
 }
 
+/**
+ * A non-loopback IPv4 the relay can bind. macOS also lists tunnel/virtual
+ * interfaces (utun, awdl, llw, bridge, ipsec) — binding or connecting to
+ * those can hang or fail outright, so physical `en*` interfaces win.
+ */
 function lanAddress(): string | undefined {
-  for (const addresses of Object.values(os.networkInterfaces())) {
+  const physical: string[] = [];
+  const other: string[] = [];
+  for (const [name, addresses] of Object.entries(os.networkInterfaces())) {
     for (const address of addresses ?? []) {
-      if (address.family === "IPv4" && !address.internal)
-        return address.address;
+      if (address.family !== "IPv4" || address.internal) continue;
+      (name.startsWith("en") ? physical : other).push(address.address);
     }
   }
-  return undefined;
+  return physical[0] ?? other[0];
 }
 
 describe("relay e2e (real Bun process + bun:sqlite)", () => {

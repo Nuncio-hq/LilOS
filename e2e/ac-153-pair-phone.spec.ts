@@ -37,13 +37,18 @@ const freePort = () =>
     });
   });
 
+/** Physical-interface IPv4 first: tunnel/virtual ifaces (utun, awdl, llw,
+    bridge) on a dev Mac can blackhole connects instead of refusing. */
 function lanAddress(): string | undefined {
-  for (const addrs of Object.values(os.networkInterfaces())) {
+  const physical: string[] = [];
+  const other: string[] = [];
+  for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
     for (const a of addrs ?? []) {
-      if (a.family === "IPv4" && !a.internal) return a.address;
+      if (a.family === "IPv4" && !a.internal)
+        (name.startsWith("en") ? physical : other).push(a.address);
     }
   }
-  return undefined;
+  return physical[0] ?? other[0];
 }
 
 async function waitForHttp(url: string, tries = 300) {
@@ -232,6 +237,7 @@ test("AC-2/AC-4/AC-6 grant shows a QR, exchange pairs, revoke drops it", async (
         code: shownCode.replaceAll("-", ""),
         name: "E2E iPhone",
       }),
+      signal: AbortSignal.timeout(10_000),
     }).then(
       (r) => r.json() as Promise<{ deviceId: string; credential: string }>,
     );
