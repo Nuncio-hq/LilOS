@@ -256,6 +256,26 @@ test("AC-1 the Edit dialog shows only the fields the engine advertises", async (
   await dlg.getByRole("button", { name: "Cancel" }).click();
 });
 
+test("AC-1b the Edit dialog fits a short window — body scrolls, Save stays reachable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await openApp(stackA, page);
+  const dlg = await openEdit(page);
+  // The dialog card is capped inside the viewport; the footer with Save is
+  // pinned, the field body is the part that scrolls.
+  const box = await dlg.locator("div.max-w-md").boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) return;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(600);
+  const save = dlg.getByRole("button", { name: "Save" });
+  await expect(save).toBeVisible();
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(dlg).toHaveCount(0);
+});
+
 test("AC-2 saving a new persona + model writes the engine profile (agents.update → agents.describe)", async ({
   page,
 }) => {

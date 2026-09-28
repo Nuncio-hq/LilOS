@@ -95,7 +95,7 @@ export function EditEmployeeDialog({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md overflow-hidden rounded-2xl border bg-background shadow-2xl"
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl"
         onClick={(ev) => ev.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b p-4">
@@ -112,7 +112,7 @@ export function EditEmployeeDialog({
             <XIcon />
           </Button>
         </div>
-        <div className="space-y-4 p-4">
+        <div className="min-h-0 space-y-4 overflow-y-auto p-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Display name">
               <Input
@@ -151,7 +151,7 @@ export function EditEmployeeDialog({
           {showModel &&
             (models.length > 0 ? (
               <Field label="Default model">
-                <div className="grid gap-1.5 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
                   {models.map((m) => (
                     <button
                       key={m.id}
@@ -282,8 +282,12 @@ export function EditEmployeeDialog({
           </div>
         )}
         <div className="flex items-center gap-2 border-t bg-muted/30 p-3">
-          <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
-            <UserIcon className="size-3.5" />@{e.id}
+          <span
+            className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs"
+            title={e.id}
+          >
+            <UserIcon className="size-3.5 shrink-0" />
+            <span className="truncate">@{e.id}</span>
           </span>
           <div className="ml-auto flex items-center gap-2">
             {!confirming && (
