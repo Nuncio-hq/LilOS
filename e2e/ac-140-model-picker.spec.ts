@@ -261,6 +261,24 @@ test("AC-1 + AC-2 a session on a catalog-absent model: hint → Refresh → swit
   await expect(trigger).toContainText("Fake Fresh");
   await page.keyboard.press("Escape");
 
+  /* The trigger shows the pick optimistically; the send races the
+     conversations.setModel round-trip on slow runners — wait for the pin
+     to land before typing or the turn stamps the old model. */
+  await expect
+    .poll(
+      async () => {
+        const rows = await rpc(stack.home, RELAY, [
+          { method: "conversations.list", params: { channelId } },
+        ]);
+        const { conversations } = rows[0] as {
+          conversations: { id: string; model?: string }[];
+        };
+        return conversations.find((c) => c.id === conv.id)?.model;
+      },
+      { timeout: 30_000 },
+    )
+    .toBe("fake-fresh");
+
   // The next turn really runs on it (the footer stamps the turn's model).
   const box = page.locator("textarea").last();
   await box.fill("back on the refreshed model");
