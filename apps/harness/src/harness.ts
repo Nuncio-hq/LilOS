@@ -58,15 +58,40 @@ interface SessionBinding {
   runningTurnId?: string;
   /** Buffered answer text per running turn. */
   textByTurn: Map<string, string>;
-  /** `turn.started.model` per running turn — stamped on the answer message. */
-  modelByTurn: Map<string, string>;
+  /** The `turn.started` pick per running turn — stamped on the answer (#92). */
+  pickByTurn: Map<
+    string,
+    { model?: string; provider?: string; effort?: string; fast?: boolean }
+  >;
   /** User messages queued while a turn runs (delivered in order). */
   queue: AppMessage[];
   /** Relay message ids the engine consumed (replayed `turn.started.ref`). */
   consumed: Set<string>;
   /** turnId -> relay message id that prompted it — the answer's dedupe key. */
   turnSource: Map<string, string>;
+  /** Latest pick made while a turn runs — applied to the idle session
+      before the next prompt goes out (#92). */
+  heldPick?: ModelPick;
+  /** The conversation's pick before `heldPick`'s intent was written —
+      restored when the held apply fails so a dead pick can't linger. */
+  heldPickPrev?: ConversationPickPatch;
 }
+
+/** A pick as the app sends it (#92): `{provider?, id}` plus its legs. */
+type ModelPick = {
+  model: string;
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
+};
+
+/** Pick fields as the conversation row stores them — `null` clears. */
+type ConversationPickPatch = {
+  model?: string | null;
+  provider?: string | null;
+  effort?: string | null;
+  fast?: boolean | null;
+};
 
 export interface HarnessOptions {
   relay: RelayClient;
@@ -85,6 +110,9 @@ export interface HarnessOptions {
   ) => {
     agent: string;
     model?: string;
+    provider?: string;
+    effort?: string;
+    fast?: boolean;
   };
   /** Wake hook: a new user message while the engine is down asks the supervisor to self-heal. */
   onNeedEngine?: () => void;
@@ -104,6 +132,7 @@ export class Harness {
   private hostId?: string;
   private started = false;
   private readonly bindings = new Map<string, SessionBinding>(); // convId -> binding
+  private readonly modelPickQueue = new Map<string, Promise<void>>();
   private readonly conversationBySession = new Map<string, string>(); // sessionId -> convId
   private readonly rebinds = new Map<string, Promise<void>>(); // convId -> in-flight rebind
   /** engine requestId -> relay ask id (per session). */
@@ -513,7 +542,11 @@ export class Harness {
       lastSeq: 0,
       runningTurnId: undefined,
       textByTurn: new Map(),
-      modelByTurn: new Map(),
+      pickByTurn: new Map(),
+      /* A held pick already sits on the conversation row — the new session
+         starts on it via `sessionParams`; nothing left to apply. */
+      heldPick: undefined,
+      heldPickPrev: undefined,
     };
     this.bindings.set(binding.conversationId, rebound);
     this.conversationBySession.set(started.sessionId, binding.conversationId);
@@ -645,9 +678,17 @@ export class Harness {
       // turn; without it the message queues as the next prompt.
       // `session.steer` carries text only — a mid-turn message with
       // attachments queues so its image blocks go out through sendPrompt
-      // instead of being silently dropped (#112).
+      // instead of being silently dropped (#112). So does a message while a
+      // pick is held: the pick applies before the next prompt, so the
+      // message runs as that next prompt on the new model instead of
+      // steering the old turn (#92).
       const conn = this.engine;
-      if (conn && this.hasCapability("steer") && !message.attachments?.length) {
+      if (
+        conn &&
+        this.hasCapability("steer") &&
+        !message.attachments?.length &&
+        !binding.heldPick
+      ) {
         void conn
           .request<{ status: "steered" | "not_running" }>("session.steer", {
             sessionId: binding.sessionId,
@@ -688,6 +729,9 @@ export class Harness {
       binding.queue.push(message);
       return;
     }
+    // A pick held while the last turn ran lands now, before this prompt —
+    // the session is idle so setModel applies straight away (#92).
+    await this.applyHeldPick(binding);
     // Attachment bytes never ride the message row — the harness fetches each
     // ref via `attachments.get` and sends ACP-shaped image blocks (issue #31).
     const images: ContentBlock[] = [];
@@ -816,13 +860,14 @@ export class Harness {
           lastSeq: 0,
           queue: [],
           textByTurn: new Map(),
-          modelByTurn: new Map(),
+          pickByTurn: new Map(),
           consumed: new Set(),
           turnSource: new Map(),
         };
         this.bindings.set(conv.id, binding);
         this.conversationBySession.set(conv.engineRef, conv.id);
         this.applyReplay(binding, replay);
+        this.rebuildHeldPick(binding, conv, replay.snapshot);
         return binding;
       } catch (error) {
         if (engineErrorCode(error) !== SESSION_NOT_FOUND) throw error;
@@ -843,7 +888,7 @@ export class Harness {
       lastSeq: 0,
       queue: [],
       textByTurn: new Map(),
-      modelByTurn: new Map(),
+      pickByTurn: new Map(),
       consumed: new Set(),
       turnSource: new Map(),
     };
@@ -884,8 +929,24 @@ export class Harness {
         if (!binding) return;
         binding.runningTurnId = event.payload.turnId;
         binding.textByTurn.set(event.payload.turnId, "");
-        if (event.payload.model) {
-          binding.modelByTurn.set(event.payload.turnId, event.payload.model);
+        // The pick the turn actually runs on — engine truth for the footer's
+        // `· model · effort · Fast` (issue #92 AC-4).
+        if (
+          event.payload.model ||
+          event.payload.provider ||
+          event.payload.effort ||
+          event.payload.fast !== undefined
+        ) {
+          binding.pickByTurn.set(event.payload.turnId, {
+            ...(event.payload.model ? { model: event.payload.model } : {}),
+            ...(event.payload.provider
+              ? { provider: event.payload.provider }
+              : {}),
+            ...(event.payload.effort ? { effort: event.payload.effort } : {}),
+            ...(event.payload.fast !== undefined
+              ? { fast: event.payload.fast }
+              : {}),
+          });
         }
         // `ref` proves which relay message this turn consumed — recorded so a
         // pending-tail redelivery can't re-prompt it, and so the turn's answer
@@ -898,6 +959,19 @@ export class Harness {
         this.updateConversation(binding.conversationId, {
           state: "active",
         }).catch(() => {});
+        break;
+      case "session.note":
+        /* Engine-authored note (e.g. a deferred model switch that failed at
+           turn start — "Couldn't switch to X — staying on Y"). Surfaced as a
+           system message; deduped by seq AND session — a rebound session
+           restarts its seq at 1 (#92). */
+        if (binding) {
+          this.postSystem(
+            binding,
+            event.payload.text,
+            `sys:${binding.conversationId}:note:${event.sessionId}:${event.seq}`,
+          ).catch(() => {});
+        }
         break;
       case "turn.delta":
         if (binding && event.payload.stream === "text") {
@@ -1090,10 +1164,25 @@ export class Harness {
       case "conversation.modelRequested": {
         const parsed = ConversationModelRequestedEvent.safeParse(params);
         if (parsed.success) {
-          void this.onModelRequested(
-            parsed.data.conversationId,
-            parsed.data.model,
+          const { conversationId } = parsed.data;
+          // Serialize picks per conversation: a slow ack (confirm_required,
+          // deferred-while-running) would otherwise let an earlier pick's
+          // ack overwrite the last one — last-ack-wins must mean last-sent.
+          const prev =
+            this.modelPickQueue.get(conversationId) ?? Promise.resolve();
+          const next = prev.then(() =>
+            this.onModelRequested(conversationId, {
+              model: parsed.data.model,
+              provider: parsed.data.provider,
+              effort: parsed.data.effort,
+              fast: parsed.data.fast,
+            }),
           );
+          this.modelPickQueue.set(
+            conversationId,
+            next.catch(() => {}),
+          );
+          void next;
         }
         break;
       }
@@ -1217,37 +1306,192 @@ export class Harness {
    * conversation stores); without one the pin rides on the conversation and
    * `session.start` picks it up via `sessionParams`.
    */
-  private async onModelRequested(conversationId: string, model: string) {
+  private async onModelRequested(conversationId: string, pick: ModelPick) {
     const binding = this.bindings.get(conversationId);
     const conn = this.engine;
-    let pinned = model;
+    /* The pick is the whole intended state: a field the new model drops
+       (provider on a single-provider engine, effort on a non-reasoning
+       model, fast on a model with no tier) writes NULL so the old pick
+       can't linger on the conversation row or the footer (#92 AC-4). */
+    const patch: ConversationPickPatch = {
+      model: pick.model,
+      provider: pick.provider ?? null,
+      effort: pick.effort ?? null,
+      fast: pick.fast ?? null,
+    };
     if (binding && conn) {
-      try {
-        const ack = await conn.request<{ model: string }>("session.setModel", {
-          sessionId: binding.sessionId,
-          model,
-        });
-        pinned = ack.model;
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        this.opts.log.warn("session.setModel failed", {
-          conversationId,
-          error: detail,
-        });
-        await this.postSystem(
-          binding,
-          `Couldn't switch to ${model}: ${detail}`,
-        );
-        return;
+      if (binding.runningTurnId) {
+        /* Hold the pick while a turn runs: a mid-turn setModel would either
+           mutate the running session (a live fast flip is checked against
+           the OLD model, and its provider request overrides can ride onto
+           the new one) or land in an engine deferred stash the next prompt
+           races. Held here and applied on the idle session before the next
+           prompt, the engine only ever sees a plain setModel — no deferral,
+           no stash (#92 AC-4). Latest pick wins; a failed apply restores
+           the row to what the session actually runs. */
+        const conv = this.conversationFromAtom(conversationId);
+        binding.heldPickPrev ??= {
+          model: conv?.model ?? null,
+          provider: conv?.provider ?? null,
+          effort: conv?.effort ?? null,
+          fast: conv?.fast ?? null,
+        };
+        binding.heldPick = pick;
+      } else {
+        /* A fresh pick on an idle session supersedes any pick still held
+           from the turn that just ended — drop it so the queue-serialized
+           apply can't land an older pick after this one. */
+        binding.heldPick = undefined;
+        binding.heldPickPrev = undefined;
+        try {
+          Object.assign(patch, await this.setSessionModel(binding, pick));
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          this.opts.log.warn("session.setModel failed", {
+            conversationId,
+            error: detail,
+          });
+          await this.postSystem(
+            binding,
+            `Couldn't switch to ${pick.model}: ${detail}`,
+          );
+          return;
+        }
       }
     }
-    await this.updateConversation(conversationId, { model: pinned }).catch(
-      (error) =>
-        this.opts.log.warn("conversation model update failed", {
-          conversationId,
-          error: String(error),
-        }),
+    await this.updateConversation(conversationId, patch).catch((error) =>
+      this.opts.log.warn("conversation model update failed", {
+        conversationId,
+        error: String(error),
+      }),
     );
+  }
+
+  /**
+   * `session.setModel` on an idle session, returning the corrections the
+   * ack implies for the conversation row: the engine's canonical model id,
+   * any field it rewrites, and `fast: null` + a short note when fast was
+   * requested but the ack doesn't carry it (the pick runs without it).
+   */
+  private async setSessionModel(
+    binding: SessionBinding,
+    pick: ModelPick,
+  ): Promise<ConversationPickPatch> {
+    const conn = this.engine;
+    if (!conn) throw new Error("engine not connected");
+    const ack = await conn.request<{
+      model: string;
+      provider?: string;
+      effort?: string;
+      fast?: boolean;
+      deferred?: boolean;
+    }>("session.setModel", {
+      sessionId: binding.sessionId,
+      ...pick,
+    });
+    const patch: ConversationPickPatch = { model: ack.model };
+    if (ack.provider !== undefined) patch.provider = ack.provider;
+    if (ack.effort !== undefined) patch.effort = ack.effort;
+    if (ack.fast !== undefined) {
+      patch.fast = ack.fast;
+    } else if (pick.fast !== undefined) {
+      /* Fast was requested but the ack omits it — record the refusal so the
+         picker doesn't show ⚡ on a turn that ran without it. */
+      patch.fast = null;
+      await this.postSystem(
+        binding,
+        `⚡ Fast isn't available for ${ack.model} — the pick runs without it.`,
+        /* Unique key: a repeat refusal on the same model must still post —
+           the picker showing ⚡ on a turn that ran without it is the bug
+           the note exists for (#92 review). */
+        `sys:${binding.conversationId}:pick-fast:${ack.model}:${Date.now()}`,
+      );
+    }
+    return patch;
+  }
+
+  /**
+   * A pick made while a turn ran, applied to the now-idle session before
+   * the next prompt goes out. The intent already sits on the conversation
+   * row; a failed apply restores the previous pick so the dead model can't
+   * linger or be retried on restart, and `turn.started` keeps stamping what
+   * the session actually ran. Serialized with `onModelRequested` through
+   * `modelPickQueue` — a newer pick always lands after the held one.
+   */
+  private applyHeldPick(binding: SessionBinding): Promise<void> {
+    const conversationId = binding.conversationId;
+    const prev = this.modelPickQueue.get(conversationId) ?? Promise.resolve();
+    const next = prev.then(() => this.doApplyHeldPick(binding));
+    this.modelPickQueue.set(
+      conversationId,
+      next.catch(() => {}),
+    );
+    return next;
+  }
+
+  /**
+   * Reattach after a harness restart: a pick written while the harness was
+   * down sits only on the row — the session snapshot still shows the old
+   * model while the UI shows the new one. When they differ, hold the row's
+   * pick (prev = what the session actually runs) so it applies before the
+   * next prompt; a failed apply restores the snapshot's values (#92).
+   */
+  private rebuildHeldPick(
+    binding: SessionBinding,
+    conv: Conversation,
+    snap: EventsSinceResult["snapshot"],
+  ) {
+    if (!conv.model) return;
+    const rowPick: ModelPick = { model: conv.model };
+    if (conv.provider) rowPick.provider = conv.provider;
+    if (conv.effort) rowPick.effort = conv.effort;
+    if (conv.fast !== undefined) rowPick.fast = conv.fast;
+    if (
+      snap.model === rowPick.model &&
+      snap.provider === rowPick.provider &&
+      snap.effort === rowPick.effort &&
+      snap.fast === rowPick.fast
+    )
+      return;
+    binding.heldPickPrev = {
+      model: snap.model ?? null,
+      provider: snap.provider ?? null,
+      effort: snap.effort ?? null,
+      fast: snap.fast ?? null,
+    };
+    binding.heldPick = rowPick;
+  }
+
+  private async doApplyHeldPick(binding: SessionBinding) {
+    const pick = binding.heldPick;
+    if (!pick) return;
+    const prev = binding.heldPickPrev;
+    binding.heldPick = undefined;
+    binding.heldPickPrev = undefined;
+    if (!this.engine) return; // intent stays on the row; session.start applies it
+    try {
+      const correction = await this.setSessionModel(binding, pick);
+      await this.updateConversation(binding.conversationId, correction).catch(
+        () => {},
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.opts.log.warn("held session.setModel failed", {
+        conversationId: binding.conversationId,
+        error: detail,
+      });
+      if (prev) {
+        await this.updateConversation(binding.conversationId, prev).catch(
+          () => {},
+        );
+      }
+      await this.postSystem(
+        binding,
+        `Couldn't switch to ${pick.model}: ${detail}`,
+        // Unique key: every failed apply surfaces, not just the first (#92).
+        `sys:${binding.conversationId}:pick-failed:${pick.model}:${Date.now()}`,
+      );
+    }
   }
 
   /* --------------------------- turn completion -------------------------- */
@@ -1258,9 +1502,9 @@ export class Harness {
   ) {
     const { turnId, stopReason } = event.payload;
     const text = binding.textByTurn.get(turnId) ?? "";
-    const model = binding.modelByTurn.get(turnId);
+    const pick = binding.pickByTurn.get(turnId);
     binding.textByTurn.delete(turnId);
-    binding.modelByTurn.delete(turnId);
+    binding.pickByTurn.delete(turnId);
     binding.runningTurnId = undefined;
     this.opts.sleep.release();
 
@@ -1280,7 +1524,10 @@ export class Harness {
           authorKind: "employee",
           authorId: employeeId,
           text: text.trim(),
-          ...(model ? { model } : {}),
+          ...(pick?.model ? { model: pick.model } : {}),
+          ...(pick?.provider ? { provider: pick.provider } : {}),
+          ...(pick?.effort ? { effort: pick.effort } : {}),
+          ...(pick?.fast !== undefined ? { fast: pick.fast } : {}),
           dedupeKey: `answer:${binding.conversationId}:${source}`,
         }),
       );
@@ -1392,12 +1639,24 @@ export class Harness {
       agent: agentId,
       ...(employee?.model ? { model: employee.model } : {}),
     };
-    // A model pinned on the conversation (#30) wins over the profile default.
+    // A pick pinned on the conversation (#30/#92) wins over the profile
+    // default — each field falls back independently so a bare `model` pin
+    // (old rows) still resolves its provider/effort on the engine.
     const model = conv?.model ?? base.model;
+    const provider = conv?.provider ?? base.provider;
+    const effort = conv?.effort ?? base.effort;
+    const fast = conv?.fast ?? base.fast;
     // The session's folder is owned by the conversation (#113); absent → the
     // harness default workdir, as before.
     const cwd = conv?.cwd ?? this.opts.workdir;
-    return { ...base, ...(model ? { model } : {}), cwd };
+    return {
+      ...base,
+      ...(model ? { model } : {}),
+      ...(provider ? { provider } : {}),
+      ...(effort ? { effort } : {}),
+      ...(fast !== undefined ? { fast } : {}),
+      cwd,
+    };
   }
 
   private employeeIdFor(conv: Conversation | undefined) {
@@ -1461,7 +1720,10 @@ export class Harness {
     patch: {
       engineRef?: string;
       state?: "idle" | "active" | "closed";
-      model?: string;
+      model?: string | null;
+      provider?: string | null;
+      effort?: string | null;
+      fast?: boolean | null;
       deliveredSeq?: number;
     },
   ) {

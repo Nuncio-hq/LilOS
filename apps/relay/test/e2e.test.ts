@@ -331,6 +331,50 @@ describe("relay e2e (real Bun process + bun:sqlite)", () => {
     back.close();
   }, 30_000);
 
+  it("AC-7 (#92) the Edit-models hide list survives a relay restart on sqlite", async () => {
+    const first = await startRelay();
+    const client = new RelayClient({
+      url: first.url,
+      token: first.token,
+      socketFactory: wsFactory().factory,
+      autoReconnect: false,
+      client: { name: "e2e-settings" },
+    });
+    await client.connect();
+    const hidden = {
+      providers: ["hpc"],
+      models: ["devin::devin/claude-opus-5"],
+    };
+    await client.request("settings.set", {
+      key: "modelVisibility",
+      value: hidden,
+    });
+    const { value: got } = await client.request<{ value: unknown }>(
+      "settings.get",
+      { key: "modelVisibility" },
+    );
+    expect(got).toEqual(hidden);
+    client.close();
+    spawned[spawned.length - 1]?.kill("SIGKILL");
+
+    // Fresh process over the same LILOS_RELAY_HOME → same sqlite file.
+    const second = await startRelay({ LILOS_RELAY_HOME: first.home });
+    const back = new RelayClient({
+      url: second.url,
+      token: first.token,
+      socketFactory: wsFactory().factory,
+      autoReconnect: false,
+      client: { name: "e2e-settings-2" },
+    });
+    await back.connect();
+    const { value: restored } = await back.request<{ value: unknown }>(
+      "settings.get",
+      { key: "modelVisibility" },
+    );
+    expect(restored).toEqual(hidden);
+    back.close();
+  }, 30_000);
+
   it("AC-4 live: a newer client is told to update the server", async () => {
     const relay = await startRelay();
     const newer = new RelayClient({

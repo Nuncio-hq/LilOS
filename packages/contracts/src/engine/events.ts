@@ -43,6 +43,9 @@ export const SessionStartedPayload = z.strictObject({
   agent: z.string().min(1),
   cwd: z.string().min(1),
   model: z.string().optional(),
+  provider: z.string().optional(),
+  effort: z.string().optional(),
+  fast: z.boolean().optional(),
 });
 
 export const SessionStatePayload = z.strictObject({
@@ -50,10 +53,23 @@ export const SessionStatePayload = z.strictObject({
   reason: z.string().optional(),
 });
 
+/**
+ * A note the engine wants surfaced in the thread — e.g. a deferred model
+ * switch that failed at turn start ("Couldn't switch to X — staying on Y").
+ * The host posts it as a system message; it is not a turn failure (#92).
+ */
+export const SessionNotePayload = z.strictObject({
+  text: z.string().min(1),
+});
+
 export const TurnStartedPayload = z.strictObject({
   turnId: TurnId,
   /** Model this turn runs on (engines with the models capability set it). */
   model: z.string().optional(),
+  /** The rest of the pick the turn runs on: provider slug, effort, fast. */
+  provider: z.string().optional(),
+  effort: z.string().optional(),
+  fast: z.boolean().optional(),
   /** Echo of `prompt.ref` when the client tagged the prompt. */
   ref: z.string().optional(),
 });
@@ -155,6 +171,12 @@ export const EngineEvent = z.discriminatedUnion("type", [
     sessionId: SessionId,
     type: z.literal("session.state"),
     payload: SessionStatePayload,
+  }),
+  z.strictObject({
+    seq: Seq,
+    sessionId: SessionId,
+    type: z.literal("session.note"),
+    payload: SessionNotePayload,
   }),
   z.strictObject({
     seq: Seq,

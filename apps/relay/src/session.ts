@@ -33,6 +33,8 @@ import {
   type MessageAttachment,
   MessagesListParams,
   MessagesPostParams,
+  SettingsGetParams,
+  SettingsSetParams,
   SystemStatusParams,
   TurnsInterruptParams,
   type WelcomeResult,
@@ -447,7 +449,9 @@ export function createRelay(options: RelayOptions): Relay {
               detail: host?.engine?.detail,
               capabilities: host?.status?.capabilities,
               models: host?.status?.models,
+              providers: host?.status?.providers,
               defaultModel: host?.status?.defaultModel,
+              defaultProvider: host?.status?.defaultProvider,
             },
           };
           respond(peer, id, welcome);
@@ -583,20 +587,25 @@ export function createRelay(options: RelayOptions): Relay {
         case "conversations.update": {
           const parsed = ConversationsUpdateParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
-          // engineRef/state/model/deliveredSeq are owned by the engine host
-          // (the model lands once the engine acks `session.setModel`);
-          // title/archive are user-facing fields any client may set.
-          if (
-            (parsed.data.engineRef !== undefined ||
-              parsed.data.state !== undefined ||
-              parsed.data.model !== undefined ||
-              parsed.data.deliveredSeq !== undefined) &&
-            !isHost(peer)
-          ) {
+          // engineRef/state/model(+provider/effort/fast)/deliveredSeq are
+          // owned by the engine host (the pick lands once the engine acks
+          // `session.setModel`); title/archive are user-facing fields any
+          // client may set. Key presence (`in`) is the write intent — an
+          // explicit `null` clear follows the same host-only rule as a value.
+          const HOST_KEYS = [
+            "engineRef",
+            "state",
+            "model",
+            "provider",
+            "effort",
+            "fast",
+            "deliveredSeq",
+          ] as const;
+          if (HOST_KEYS.some((k) => k in parsed.data) && !isHost(peer)) {
             throw new RpcError(
               JsonRpcCode.forbidden,
               "forbidden",
-              "only the registered engine host may write engineRef/state/model/deliveredSeq",
+              "only the registered engine host may write engineRef/state/model/provider/effort/fast/deliveredSeq",
             );
           }
           const { conversationId, ...patch } = parsed.data;
@@ -926,6 +935,26 @@ export function createRelay(options: RelayOptions): Relay {
           respond(peer, id, { asks: await store.listAsks(parsed.data) });
           return;
         }
+        case "settings.get": {
+          const parsed = SettingsGetParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const value = await store.getSetting(parsed.data.key);
+          respond(peer, id, { value });
+          return;
+        }
+        case "settings.set": {
+          const parsed = SettingsSetParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          await store.setSetting(parsed.data.key, parsed.data.value);
+          // One list for every connected client (#92 AC-7): a write by any
+          // peer is broadcast so all surfaces update at once.
+          broadcast("settings.changed", {
+            key: parsed.data.key,
+            value: parsed.data.value,
+          });
+          respond(peer, id, { ok: true });
+          return;
+        }
         case "turns.interrupt": {
           const parsed = TurnsInterruptParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
@@ -960,11 +989,21 @@ export function createRelay(options: RelayOptions): Relay {
             );
           }
           // The pick lands via the engine host (session.setModel ack → the
-          // host writes conversation.model), so the relay only notifies.
+          // host writes conversation.model/provider/effort/fast), so the
+          // relay only notifies — the whole pick rides the event (#92).
           emit(conversation.channelId, "conversation.modelRequested", {
             channelId: conversation.channelId,
             conversationId: conversation.id,
             model: parsed.data.model,
+            ...(parsed.data.provider !== undefined
+              ? { provider: parsed.data.provider }
+              : {}),
+            ...(parsed.data.effort !== undefined
+              ? { effort: parsed.data.effort }
+              : {}),
+            ...(parsed.data.fast !== undefined
+              ? { fast: parsed.data.fast }
+              : {}),
           });
           respond(peer, id, { ok: true });
           return;
