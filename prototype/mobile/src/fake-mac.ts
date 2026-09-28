@@ -38,7 +38,7 @@ export const $reconnectTick = atom(0);
 
 /** What the fake Mac's Pair phone dialog shows (same values as the web prototype). */
 export const DEMO_OFFER: PairingOffer = {
-  host: "oscars-macbook-pro.tail1a2b.ts.net",
+  host: "my-mac.tail0000.ts.net",
   code: "7K4M2P",
   name: "Oscar's MacBook Pro",
 };
