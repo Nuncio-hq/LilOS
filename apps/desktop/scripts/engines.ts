@@ -41,7 +41,10 @@ export const BUNDLE_EXECUTABLES = [
 ];
 
 const HERMES_ADAPTER: EngineBinary = {
-  outfile: "lilos-engine-hermes",
+  // "nous" (Nous Research, Hermes' maker), never "hermes" — managed Macs
+  // SIGKILL executables whose basename contains it (#141). The engine id in
+  // protocol/status stays `hermes`; only this file name changes.
+  outfile: "lilos-engine-nous",
   entry: "packages/engine-hermes/scripts/serve.ts",
 };
 const FAKE_ADAPTER: EngineBinary = {

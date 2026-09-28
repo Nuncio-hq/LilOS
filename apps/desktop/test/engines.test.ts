@@ -21,9 +21,9 @@ const SIGNED = "Developer ID Application: Example Dev";
 describe("AC-1 (#85) a signed bundle ships the real engine only", () => {
   const plan = engineBundlePlan(SIGNED);
 
-  it("compiles lilos-engine-hermes and no fake", () => {
+  it("compiles lilos-engine-nous and no fake", () => {
     expect(plan.binaries.map((b) => b.outfile)).toEqual([
-      "lilos-engine-hermes",
+      "lilos-engine-nous",
     ]);
   });
 
@@ -42,7 +42,7 @@ describe("AC-4 (#85/#141) a dev bundle keeps the fake engine explicit", () => {
   it("ships both engine binaries", () => {
     expect(plan.binaries.map((b) => b.outfile).sort()).toEqual([
       "lilos-engine-fake",
-      "lilos-engine-hermes",
+      "lilos-engine-nous",
     ]);
   });
 
@@ -61,7 +61,7 @@ describe("AC-1 (#141) an ad-hoc bundle can opt into real Hermes", () => {
   it("still ships both engine binaries (dev bundle, not a release)", () => {
     expect(plan.binaries.map((b) => b.outfile).sort()).toEqual([
       "lilos-engine-fake",
-      "lilos-engine-hermes",
+      "lilos-engine-nous",
     ]);
   });
 

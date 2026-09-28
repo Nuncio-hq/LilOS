@@ -16,7 +16,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { engineBundlePlan } from "./engines";
+import { BUNDLE_EXECUTABLES, engineBundlePlan } from "./engines";
 
 /**
  * Build dist/LilOS.app — issue #34.
@@ -36,7 +36,7 @@ import { engineBundlePlan } from "./engines";
  *
  * Layout produced:
  *   Contents/MacOS/{Electron→LilOS, lilos-svc, lilos-relay, lilos-harness,
- *                  lilos-engine-hermes (+ lilos-engine-fake on dev builds)}
+ *                  lilos-engine-nous (+ lilos-engine-fake on dev builds)}
  *   Contents/Resources/app/{main.cjs, preload.cjs, index.html, package.json}
  *   Contents/Resources/LilOS.icns
  *   Contents/Library/LaunchAgents/*.plist
@@ -287,11 +287,10 @@ for (const plist of [
   );
 }
 for (const bin of [
-  "lilos-svc",
-  "lilos-relay",
   ...(skipHarness
-    ? []
-    : ["lilos-harness", ...engines.binaries.map((b) => b.outfile)]),
+    ? BUNDLE_EXECUTABLES.filter((b) => b !== "lilos-harness")
+    : BUNDLE_EXECUTABLES),
+  ...(skipHarness ? [] : engines.binaries.map((b) => b.outfile)),
 ]) {
   copyFileSync(join(BUILD, bin), join(APP, "Contents", "MacOS", bin));
   chmodSync(join(APP, "Contents", "MacOS", bin), 0o755);

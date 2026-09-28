@@ -140,9 +140,12 @@ PR does not exist.
   instead.** Provider/model come from Hermes' own config — LilOS stores no
   defaults. Hermes is found without PATH (`HERMES_BIN`, `~/.lilos/hermes-bin`,
   then known install locations), and a missing engine surfaces as a plain
-  status reason — never a silent fake. Not: a fake default in release, or
-  hand-editing installed launch-agent plists to pick an engine (lost on
-  every rebuild). — #85, #141
+  status reason — never a silent fake. Bundled executables never contain
+  "hermes" in their name — managed Macs SIGKILL them by name, so the adapter
+  ships as `lilos-engine-nous` (the engine id stays `hermes`).
+  Not: a fake default in release, hand-editing installed launch-agent
+  plists to pick an engine (lost on every rebuild), or asking for an MDM
+  exception. — #85, #141
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the
