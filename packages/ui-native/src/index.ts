@@ -31,6 +31,11 @@ export {
   ModelPickerSheet,
   modelLabel,
 } from "./employees/model-picker";
+export {
+  type PlanAction,
+  PlanCard,
+  PlanSheet,
+} from "./employees/plan-card";
 export { SubagentSheet, SubagentsCard } from "./employees/subagents";
 export { ThreadInfoSheet } from "./employees/thread-info-sheet";
 export { ThreadHeaderTitle, ThreadScreen } from "./employees/thread-screen";
@@ -44,6 +49,7 @@ export type {
   ModelPick,
   ModelProviderRow,
   ModelRow,
+  PlanRow,
   ProjectGroup,
   PullRequestRef,
   SessionState,

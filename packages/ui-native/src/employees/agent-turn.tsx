@@ -5,6 +5,7 @@ import { Card, CommandLine, Pill } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb, type OrbTone } from "../components/orb";
 import { Prose, Pulse } from "../components/prose";
+import { type PlanAction, PlanCard } from "./plan-card";
 import { StepRow, tool } from "./step-row";
 import { SubagentsCard } from "./subagents";
 import type { AgentEntry, Approval, SubagentRow, ToolStep } from "./types";
@@ -46,6 +47,8 @@ export function AgentTurn({
   onApprove,
   onDeny,
   onOpenSubagent,
+  onPlan,
+  onOpenPlan,
 }: {
   e: AgentEntry;
   name: string;
@@ -54,6 +57,9 @@ export function AgentTurn({
   onDeny: (id: string) => void;
   /** Opens a subagent's sheet (issue #170); absent = rows don't open. */
   onOpenSubagent?: (a: SubagentRow) => void;
+  /** Approve / Change / Reject on this turn's plan (issue #175). */
+  onPlan?: (a: PlanAction, planId: string) => void;
+  onOpenPlan?: () => void;
 }) {
   const steps = e.steps ?? [];
   // Thinking = reasoning is still streaming (no "Thought for" yet).
@@ -94,6 +100,9 @@ export function AgentTurn({
             </AppText>
           </Pulse>
         )
+      )}
+      {e.plan && (
+        <PlanCard plan={e.plan} onAction={onPlan} onOpen={onOpenPlan} />
       )}
       {e.decided && <Receipt d={e.decided} />}
       {e.stopped && (

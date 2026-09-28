@@ -69,6 +69,7 @@ import {
   draftKey,
   dropDrafts,
   useDraft,
+  type PlanAction,
 } from "@lilos/ui"
 import { cn } from "@lilos/ui/lib/utils"
 import { MAX_ATTACHMENT_BYTES } from "@lilos/contracts/app"
@@ -83,6 +84,7 @@ import {
 import { hostAccessors, hostDir, hostDiscover, hostPick } from "./host"
 import { useFakeSurfaces } from "./fake-surfaces"
 import { DEMO_ROOT, playSubagents, stopJob, SUBAGENT_DMS } from "./fake-subagents"
+import { approvePlan, pendingPlan, PLAN_DMS, rejectPlan, revisePlan } from "./fake-plan"
 import { useLiveStatus } from "./live-status"
 import { liveAttachFromLocation, useLiveSurfaces } from "./live-surfaces"
 
@@ -576,7 +578,8 @@ export default function App() {
   const [feeds, setFeeds] = useState<Record<string, Msg[]>>(() => ({
     ...FEEDS, ...DM_FEEDS,
     // Subagents + background work demo (issue #170): newest session in each DM.
-    ...Object.fromEntries(Object.entries(SUBAGENT_DMS).map(([k, ms]) => [k, [...(DM_FEEDS[k] ?? []), ...ms]])),
+    // …then the plan demo (issue #175), so it is the session Builder's DM opens on.
+    ...Object.fromEntries(Object.entries(SUBAGENT_DMS).map(([k, ms]) => [k, [...(DM_FEEDS[k] ?? []), ...ms, ...(PLAN_DMS[k] ?? [])]])),
   }))
   const stops = useRef<Record<string, boolean>>({})
   // The engine's declared steer capability: the real app reads describe().capabilities once at connect.
@@ -1020,6 +1023,19 @@ export default function App() {
     if (!m) return say(`Session ${session} isn't in this prototype`)
     setView({ kind: "dm", id: empId }); setThreadId(m.id); setPanelTab("thread"); setPanelOpen(true)
   }
+  /* Plan card decisions (issue #175). Change prefills the composer; sending it revises. */
+  const planAction = (m: Extract<Msg, { kind: "msg" }>, a: PlanAction, planId: string) => {
+    const plan = m.thread?.replies.find((r) => r.plan?.id === planId)?.plan
+    if (!plan) return
+    if (a === "approve") {
+      stops.current[m.id] = false
+      approvePlan(plan, (fn) => mapRoot(feedKey, m.id, fn), () => !!stops.current[m.id])
+    } else if (a === "reject") mapRoot(feedKey, m.id, rejectPlan(planId))
+    else {
+      setThreadDraft("Change the plan: ")
+      say("Say what to change, then send")
+    }
+  }
   const stopJobIn = (m: Extract<Msg, { kind: "msg" }>, id: string) => {
     mapRoot(feedKey, m.id, stopJob(id))
     say(`Stopped ${m.thread?.jobs?.find((j) => j.id === id)?.command ?? id}`)
@@ -1142,6 +1158,12 @@ export default function App() {
       return
     }
     mapRoot(feedKey, root.id, (t) => ({ ...t, replies: [...t.replies, { id: `o-${Date.now()}`, from: "oscar", time: nowTime(), text: bold(text), attachments: files?.length ? files : undefined }] }))
+    // A reply while a plan waits is a change request: the employee answers with the next version (#175).
+    const waiting = pendingPlan(root.thread)
+    if (waiting) {
+      setTimeout(() => mapRoot(feedKey, root.id, revisePlan(waiting.id, text)), 1400)
+      return
+    }
     const lead = view.kind === "dm" ? view.id : mentionIn(text)?.id ?? root.thread?.replies.find((r) => emp(r.from))?.from ?? mentionIn(root.text)?.id
     if (lead) runTurn(feedKey, root.id, lead, text, undefined, files)
   }
@@ -1313,7 +1335,7 @@ export default function App() {
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
       models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined} picker={pickerExtras}
       scrollTo={scrollTo ?? undefined} onScrolled={() => setScrollTo(null)}
-      editors={openEditors ?? undefined} onOpenSession={openSession}
+      editors={openEditors ?? undefined} onOpenSession={openSession} onPlan={(a, id) => planAction(openThread, a, id)}
       onOpenPath={openWsCwd && openEditors !== null
         ? (path, app, line) => void hostAccessors.osOpen(openWsCwd, path, app, line).catch((e) => say(`Open failed — ${e instanceof Error ? e.message : String(e)}`))
         : undefined}
@@ -1366,7 +1388,7 @@ export default function App() {
           surfaces={realSurfaces ?? fakeSurfaces}
           models={canModels ? MODEL_OPTS : undefined} picker={pickerExtras} repoFiles={REPO_FILES} host={hostAccessors}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
-          onOpenSession={openSession} onStopJob={(id) => stopJobIn(openThread, id)}
+          onOpenSession={openSession} onStopJob={(id) => stopJobIn(openThread, id)} onPlan={(a, id) => planAction(openThread, a, id)}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />
       ) : (

@@ -20,6 +20,7 @@ import {
   NeedsYouAccessory,
   PairIntroScreen,
   type PairingOffer,
+  PlanSheet,
   parsePairingUrl,
   pickLabel,
   ScanScreen,
@@ -71,8 +72,10 @@ import {
   $projects,
   $threads,
   approve,
+  approvePlan,
   deny,
   playOnOpen,
+  rejectPlan,
   reply,
   resetTeam,
   startLife,
@@ -135,6 +138,8 @@ type Routes = {
   /** A subagent of a turn in that thread (issue #170). */
   Subagent: { thread: string; id: string };
   Background: { thread: string };
+  /** The thread's plan, every version (issue #175). */
+  Plan: { thread: string };
   Approvals: undefined;
   Mac: undefined;
   FolderPicker: undefined;
@@ -572,6 +577,8 @@ function Thread({ navigation, route }: Props<"Thread">) {
   const title = t?.title;
   const state = t?.state;
   const prs = t?.prs;
+  // Plan "Change…" puts this in the composer (a new object each tap).
+  const [prefill, setPrefill] = useState<{ text: string }>();
   useEffect(() => playOnOpen(route.params.id), [route.params.id]);
   useLayoutEffect(() => {
     if (!title || !state) return;
@@ -617,6 +624,14 @@ function Thread({ navigation, route }: Props<"Thread">) {
       onOpenBackground={() =>
         navigation.navigate("Background", { thread: t.id })
       }
+      onPlan={(a, planId) => {
+        void Haptics.selectionAsync();
+        if (a === "approve") approvePlan(t.id, planId);
+        else if (a === "reject") rejectPlan(t.id, planId);
+        else setPrefill({ text: "Change the plan: " });
+      }}
+      onOpenPlan={() => navigation.navigate("Plan", { thread: t.id })}
+      prefill={prefill}
     />
   );
 }
@@ -646,6 +661,14 @@ function Subagent({ navigation, route }: Props<"Subagent">) {
       }}
     />
   );
+}
+
+function Plan({ navigation, route }: Props<"Plan">) {
+  const t = useStore($threads).find((x) => x.id === route.params.thread);
+  const plans =
+    t?.entries.flatMap((e) => (e.kind === "agent" && e.plan ? [e.plan] : [])) ??
+    [];
+  return <PlanSheet plans={plans} onDone={() => navigation.goBack()} />;
 }
 
 function Background({ navigation, route }: Props<"Background">) {
@@ -996,6 +1019,7 @@ export default function App() {
                 component={Subagent}
                 options={SHEET}
               />
+              <Stack.Screen name="Plan" component={Plan} options={SHEET} />
               <Stack.Screen
                 name="Background"
                 component={Background}

@@ -101,6 +101,27 @@ export type Reply = {
   attachments?: AttachedFile[];
   /** Helpers this turn spun off (issue #170), in start order. */
   subagents?: Subagent[];
+  /** The plan this turn proposed (issue #175); its steps tick as the work runs. */
+  plan?: Plan;
+};
+/* A plan an employee proposes before touching code (issue #175): Claude Code
+   plan mode, Codex plan updates, Hermes todo. Proposed → you approve, ask for
+   a change (the next version replaces it) or reject. Once approved its steps
+   are the live checklist. */
+export type PlanStep = {
+  text: string;
+  /** Files the step expects to touch. */
+  files?: string[];
+  status: Todo["status"];
+};
+export type Plan = {
+  id: string;
+  version: number;
+  /** One line: what done looks like. */
+  goal: string;
+  steps: PlanStep[];
+  risks?: string[];
+  status: "proposed" | "approved" | "replaced" | "rejected";
 };
 /* A helper an employee spun off inside one turn (issue #170): its own subagent
    (Hermes delegate_task, Claude Code Task) — steps and result live here — or
@@ -434,6 +455,7 @@ export type WbTab =
   | "terminal"
   | "preview"
   | "background"
+  | "plan"
   | "pr";
 
 /* Open-in-editor / Reveal-in-Finder targets (issue #110): the apps os.open

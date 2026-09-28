@@ -11,6 +11,7 @@ import { StateChip } from "../components/bits";
 import { AgentTurn, UserBubble } from "./agent-turn";
 import { BackgroundPill } from "./background-sheet";
 import { Composer } from "./composer";
+import type { PlanAction } from "./plan-card";
 import { PrBadge, prHeadline } from "./pr-badges";
 import type {
   PullRequestRef,
@@ -36,6 +37,9 @@ export function ThreadScreen({
   onPickModel,
   onOpenSubagent,
   onOpenBackground,
+  onPlan,
+  onOpenPlan,
+  prefill,
 }: {
   t: ThreadDetail;
   model: string;
@@ -50,6 +54,11 @@ export function ThreadScreen({
   onOpenSubagent?: (a: SubagentRow) => void;
   /** The "N running in background" pill → the background sheet. */
   onOpenBackground?: () => void;
+  /** Plan card decisions + the plan sheet (issue #175). */
+  onPlan?: (a: PlanAction, planId: string) => void;
+  onOpenPlan?: () => void;
+  /** Composer text to put in and focus (plan "Change…"). */
+  prefill?: { text: string };
 }) {
   const insets = useSafeAreaInsets();
   const scroller = useRef<ScrollView>(null);
@@ -107,6 +116,8 @@ export function ThreadScreen({
                 onApprove={onApprove}
                 onDeny={onDeny}
                 onOpenSubagent={onOpenSubagent}
+                onPlan={onPlan}
+                onOpenPlan={onOpenPlan}
               />
             ),
           )}
@@ -129,6 +140,7 @@ export function ThreadScreen({
             onStop={running ? onStop : undefined}
             onPickModel={onPickModel}
             onLayoutHeight={setComposerHeight}
+            prefill={prefill}
           />
         </View>
       </View>

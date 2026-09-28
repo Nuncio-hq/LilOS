@@ -51,6 +51,7 @@ import {
 } from "../components/ai-elements/queue";
 import { Button } from "../components/ui/button";
 import { openStartRequest, ReplyCards } from "../conversation/cards";
+import type { PlanAction } from "../conversation/plan-card";
 import { AgentTurn, PrCard, UserTurn } from "../conversation/turns";
 import { PHASE_LABEL } from "../lib/helpers";
 import { cn } from "../lib/utils";
@@ -76,6 +77,7 @@ import type {
 } from "../types";
 import { sessionArtifacts } from "../workbench/artifacts";
 import type { LiveSurfaces } from "../workbench/live";
+import { planTodos } from "../workbench/plan-panel";
 import { Workbench } from "../workbench/workbench";
 import { WsBadge } from "../workbench/ws-badges";
 import { SessionUsage } from "./session-usage";
@@ -129,6 +131,7 @@ export function FocusView({
   children,
   onOpenSession,
   onStopJob,
+  onPlan,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -204,6 +207,8 @@ export function FocusView({
   onOpenSession?: (employeeId: string, session: string) => void;
   /* Workbench → Background: Stop a process (issue #170). */
   onStopJob?: (id: string) => void;
+  /* Plan card decisions (issue #175). */
+  onPlan?: (a: PlanAction, planId: string) => void;
 }) {
   const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024);
   const [tab, setTab] = useState<WbTab>(() =>
@@ -250,7 +255,8 @@ export function FocusView({
       ? "submitted"
       : "streaming"
     : "ready";
-  const todos = thread.todos ?? [];
+  // The engine's todo list, else the approved plan's steps (issue #175).
+  const todos = thread.todos?.length ? thread.todos : planTodos(thread);
   const queue = thread.queue ?? [];
   const pendingSteers = pending ?? [];
   // The open "asks to start work" card, if any, is the single start-work entry point (issue #15).
@@ -562,6 +568,7 @@ export function FocusView({
                       models={models}
                       onOpen={pickTab}
                       onOpenSession={onOpenSession}
+                      onPlan={onPlan}
                       pending={steer ? pendingSteers : []}
                       cards={
                         <>
