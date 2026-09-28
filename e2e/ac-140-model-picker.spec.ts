@@ -283,12 +283,44 @@ test("AC-1 + AC-2 a session on a catalog-absent model: hint → Refresh → swit
   const box = page.locator("textarea").last();
   await box.fill("back on the refreshed model");
   await box.press("Enter");
-  await expect(
-    page
-      .locator("[data-agentturn]")
-      .last()
-      .getByText(/Fake Fresh/),
-  ).toBeVisible({ timeout: 90_000 });
+  const lastTurn = page.locator("[data-agentturn]").last();
+  try {
+    /* Settle first — the model footer only renders once the turn has ended,
+       so a still-running turn keeps this wait honest (and tells "turn never
+       finished" apart from "finished on the wrong model"). */
+    await expect(lastTurn.locator("[data-turnsettled]")).toBeVisible({
+      timeout: 90_000,
+    });
+    await expect(lastTurn.locator("[data-turnsettled]")).toContainText(
+      "Fake Fresh",
+    );
+  } catch (e) {
+    const turns = await page.locator("[data-agentturn]").allInnerTexts();
+    const settled = await page
+      .locator("[data-turnsettled]")
+      .allInnerTexts()
+      .catch(() => [] as string[]);
+    const state = await rpc(stack.home, RELAY, [
+      { method: "conversations.list", params: { channelId } },
+    ]).catch(() => null);
+    console.log("[ac140 diag] url:", page.url());
+    console.log("[ac140 diag] console errors:", JSON.stringify(errors));
+    console.log(
+      "[ac140 diag] turns:",
+      turns.map((t) => t.slice(0, 300)),
+    );
+    console.log("[ac140 diag] settled:", settled);
+    console.log(
+      "[ac140 diag] conv:",
+      JSON.stringify(
+        state?.[0] &&
+          (state[0] as { conversations: { id: string }[] }).conversations.find(
+            (c) => c.id === conv.id,
+          ),
+      ),
+    );
+    throw e;
+  }
   await page.screenshot({ path: `${SHOTS}/ac-2-switched-back.png` });
   expect(errors).toEqual([]);
 });
