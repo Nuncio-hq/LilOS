@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { wport } from "./ports";
 
 /**
  * AC-140: the picker always shows the model the session runs, even when the
@@ -25,8 +26,6 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
  */
 const ROOT = path.dirname(fileURLToPath(import.meta.url)).replace(/\/e2e$/, "");
 const WEB = path.join(ROOT, "apps", "web");
-const wport = (base: number) =>
-  base + Number(process.env.TEST_WORKER_INDEX ?? 0) * 100;
 const SHOTS = path.join(ROOT, "test-results", "ac-140");
 const RELAY = wport(4757);
 const FEED = wport(4758);
