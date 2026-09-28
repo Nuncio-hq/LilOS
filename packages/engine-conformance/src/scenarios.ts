@@ -1710,11 +1710,11 @@ export const SUBAGENT_SCENARIOS: Scenario[] = [
         (e): e is Extract<EngineEvent, { type: "subagent.started" }> =>
           mine(e) && e.type === "subagent.started",
       );
-      /* Hermes runs a top-level delegate batch async (delegate_tool
-         _run_batch): the tool returns the dispatch handle at turn end while
-         children still finish — their subagent.completed frames can land
-         after turn.completed. Wait for every started row to close out
-         instead of snapshotting the backlog once (live flake on #179). */
+      /* A top-level delegate batch can run async on real engines: the
+         tool returns the dispatch handle at turn end while children still
+         finish — their subagent.completed frames can land after
+         turn.completed. Wait for every started row to close out instead of
+         snapshotting the backlog once (live flake on #179). */
       const completedIdsFor = () =>
         new Set(
           h.events
