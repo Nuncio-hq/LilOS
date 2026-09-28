@@ -138,11 +138,21 @@ test("DM page: with no session open the feed fills the window (no empty right co
       1,
     );
 
-    // With a session open, the thread panel takes the right column.
+    // With a session open, Focus takes over and fills the window (#114) —
+    // still no reserved-but-empty column. (This session has no folder, so
+    // the Workbench stays hidden; AC-114 covers the Workbench layout.)
     const box = page.locator("textarea").last();
     await box.fill(PROMPT);
     await box.press("Enter");
-    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
+    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/, {
+      timeout: 30_000,
+    });
+    expect(await rightGap(page), "focus fills the window").toBeLessThanOrEqual(
+      1,
+    );
+
+    // The plain thread URL still gives the quick-peek panel (right column).
+    await page.goto(page.url().replace(/\/focus$/, ""));
     const panel = page.getByText("Session", { exact: true }).first();
     await expect(panel).toBeVisible({ timeout: 30_000 });
     expect(await rightGap(page)).toBeGreaterThan(300);

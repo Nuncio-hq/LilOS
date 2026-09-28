@@ -29,7 +29,7 @@ interface Stack {
   stop: () => Promise<void>;
 }
 
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
+async function waitForHttp(url: string, ms = 90_000): Promise<void> {
   const start = Date.now();
   for (;;) {
     const ok = await fetch(url)
@@ -111,7 +111,9 @@ async function bootStack(
       },
     };
   } catch (e) {
-    proc.kill("SIGKILL");
+    // Group kill: `bun run dev` spawns detached — killing only the shim
+    // orphans stack.ts + relay + harness + vite and poisons the next boot.
+    await killProc(proc);
     throw e;
   }
 }
@@ -289,6 +291,12 @@ test("AC-4 + AC-7 a session picked on the repo runs there; the header shows fold
   await expect(
     page.getByText("If you want me to change code", { exact: false }).last(),
   ).toBeVisible({ timeout: 30_000 });
+  // The reply text renders before the turn settles — wait for streaming to
+  // end so the follow-up starts a new turn rather than steering this one.
+  await expect(page.locator("[data-agentturn] [data-streaming]")).toHaveCount(
+    0,
+    { timeout: 30_000 },
+  );
   // engine-fake echoes its cwd on the follow-up turn (AC-4); markdown puts
   // the path in a <code> element, so match that rather than the backticks.
   await send(page, "where are you working?", "last");

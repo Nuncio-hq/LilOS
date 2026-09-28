@@ -412,6 +412,15 @@ export type ApprovalPolicy = "smart" | "manual" | "off";
 export type ConversationAccess = "ask" | "full";
 /* An editor found on this Mac (#110) — `path` is the .app bundle. */
 export type DetectedEditor = { id: string; name: string; path?: string };
+/* A `forge.pr` failure already classified by the host (#114 AC-5) — mirrors
+   contracts `ForgeGhReason` (packages/ui doesn't import contracts): "missing"
+   = gh isn't installed, "unauthenticated" = run `gh auth login`, "other" =
+   anything else. `detail` is the raw stderr — a Details disclosure only,
+   never the headline. */
+export type PrError = {
+  reason: "missing" | "unauthenticated" | "other";
+  detail: string;
+};
 /* Live host accessors for a session's real cwd (fs/git issue #11, forge #37).
    An accessor resolves null when the host is unreachable → the caller falls
    back to mock data; `forge.pr` resolving `{ pr: null }` is the host's real
@@ -428,7 +437,16 @@ export type HostAccessors = {
     binary: boolean;
     truncated: boolean;
   } | null>;
-  pr?: (cwd: string) => Promise<{ pr: PullRequest | null } | null>;
+  /* `forge.pr` resolves the checkout's branch PR. `{ pr: null }` = real
+     checkout with no PR on the branch; `{ pr: null, error }` = the forge call
+     itself failed (gh missing/unauthenticated — shown plainly in the tab,
+     issue #114 AC-5); outer null = the method didn't answer → tab hidden. */
+  pr?: (cwd: string) => Promise<{
+    pr: PullRequest | null;
+    /** The checkout branch the forge probed — labels the "no PR" state. */
+    branch?: string;
+    error?: PrError;
+  } | null>;
   /** Posts a comment via `gh`; resolves the comment URL; throws on failure. */
   prComment?: (cwd: string, body: string) => Promise<string>;
   /** Merges via `gh`; resolves the re-read PR; throws on failure. */
