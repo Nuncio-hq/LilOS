@@ -41,6 +41,7 @@ describe("engine wire contract", () => {
       "session.setModel",
       "session.setTitle",
       "session.setHidden",
+      "session.rewind",
     ]);
     for (const [name, m] of Object.entries(ENGINE_METHODS)) {
       expect(m.doc.length, name).toBeGreaterThan(0);

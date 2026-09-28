@@ -22,6 +22,13 @@ for (const m of MIGRATIONS.filter((m) => m.version <= 8)) {
   for (const s of m.statements) sqlite.exec(s);
   sqlite.exec(`PRAGMA user_version = ${m.version}`);
 }
+/* The store inserts the current message shape — later column-only
+   migrations (v11's `rewound`/`checkpoint`, #134) must exist on this v8
+   snapshot without bumping user_version, or the migrate-to-9 step the
+   backfill premise relies on would be skipped. */
+for (const s of MIGRATIONS.find((m) => m.version === 11)?.statements ?? []) {
+  sqlite.exec(s);
+}
 const employee = await store.createEmployee({
   name: "Ada",
   role: "eng",
@@ -79,7 +86,12 @@ await store.appendMessage({
   text: "rate limit on the other channel",
 });
 
-applyMigrations(sqlite);
+/* v9 is the FTS migration under test — apply it alone (v11's columns were
+   already added above; running every later migration would replay them). */
+for (const s of MIGRATIONS.find((m) => m.version === 9)?.statements ?? []) {
+  sqlite.exec(s);
+}
+sqlite.exec("PRAGMA user_version = 9");
 out("version", sqlite.query("PRAGMA user_version").get());
 
 const search = (params: {

@@ -515,7 +515,7 @@ export function DmPage() {
 
   /* AC-3 follow-up: a fresh session on the same folder, seeded with the
      surviving transcript as quoted context + the rewound message's text
-     (the composer's current draft — Oscar may have edited it). */
+     (the composer's current draft — the user may have edited it). */
   const startFreshFrom = (conv: Conversation, target: AppMessage) => {
     const kept = threadPool.filter((m) => m.seq < target.seq).slice(-20);
     const quote = kept
