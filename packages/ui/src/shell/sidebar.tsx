@@ -4,6 +4,7 @@ import {
   FolderGit2Icon,
   FolderIcon,
   InboxIcon,
+  SettingsIcon,
   ShieldAlertIcon,
   SmartphoneIcon,
   TicketIcon,
@@ -66,6 +67,7 @@ export function Sidebar({
   badges,
   status,
   onOpenStatus,
+  onOpenSettings,
   onPairPhone,
   realApp,
   preview,
@@ -98,6 +100,8 @@ export function Sidebar({
   /* The status surface — a control renders only when its handler is passed. */
   status?: StatusComponent[];
   onOpenStatus?: () => void;
+  /* Settings gear in the footer — same rule: no handler, no affordance. */
+  onOpenSettings?: () => void;
   /* Mobile onboarding: opens the Pair phone QR. Omit to hide the row. */
   onPairPhone?: () => void;
   /* realApp = what the shipped app sidebar will show today: Employees + status only. */
@@ -299,6 +303,17 @@ export function Sidebar({
         <span className="min-w-0 truncate font-medium text-sm">{me.name}</span>
         {preview}
         <ThemeToggle theme={theme} setTheme={onSetTheme} />
+        {onOpenSettings && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Settings"
+            className="size-11 md:size-7"
+            onClick={onOpenSettings}
+          >
+            <SettingsIcon />
+          </Button>
+        )}
       </div>
     </aside>
   );
