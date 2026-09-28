@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { wport } from "./ports";
 
 /**
  * AC-112: image attachments in the real app's DM composers — the same path
@@ -20,8 +21,6 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
  */
 const ROOT = path.dirname(fileURLToPath(import.meta.url)).replace(/\/e2e$/, "");
 const WEB = path.join(ROOT, "apps", "web");
-const wport = (base: number) =>
-  base + Number(process.env.TEST_WORKER_INDEX ?? 0) * 100;
 const SHOTS = path.join(ROOT, "test-results", "ac-112");
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVQI12P8z/CfAQMwMCooKOgDAu2zC+h6pBe+AAAAAElFTkSuQmCC",

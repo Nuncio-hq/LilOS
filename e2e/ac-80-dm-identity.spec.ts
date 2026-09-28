@@ -11,6 +11,7 @@ import {
   test,
 } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { wport } from "./ports";
 
 /**
  * Issue #80 — DM identity + streaming markdown. AC-1 asserts the user's
@@ -24,8 +25,6 @@ const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 // --repeat-each spreads a file's repeats across worker processes; each boots
 // the stack again, so ports are offset per worker or relays race one port (#84).
-const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
-const wport = (p: number) => p + WORKER * 100;
 
 const webDir = path.join(repo, "apps", "web");
 const desktopDir = path.join(repo, "apps", "desktop");

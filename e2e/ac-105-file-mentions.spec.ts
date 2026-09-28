@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { wport } from "./ports";
 
 /**
  * Issue #105 — `@`-mention files and folders in the DM composer, end to end
@@ -23,8 +24,6 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
-const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
-const wport = (p: number) => p + WORKER * 100;
 const webDir = path.join(repo, "apps", "web");
 
 interface Stack {

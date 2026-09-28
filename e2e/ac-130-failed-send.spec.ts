@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { WORKER, wport } from "./ports";
 
 /**
  * AC-130: a send the relay refuses (killed mid-send / down) keeps the draft —
@@ -20,8 +21,6 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 const ROOT = path.dirname(fileURLToPath(import.meta.url)).replace(/\/e2e$/, "");
 const webDir = path.join(ROOT, "apps", "web");
 const SHOTS = path.join(ROOT, "test-results", "ac-130");
-const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
-const wport = (p: number) => p + WORKER * 100;
 const PORTS = { relay: wport(4740), feed: wport(4741), web: wport(5300) };
 
 const TOAST = "div.fixed.bottom-5";
