@@ -259,9 +259,10 @@ function AppShell() {
             conversations: relay.conversations.get(),
             channels: relay.channels.get(),
           });
+          /* A notification click opens the session in Focus (#114 AC-1). */
           if (params) {
             void navigate({
-              to: "/dm/$employeeId/$conversationId",
+              to: "/dm/$employeeId/$conversationId/focus",
               params,
             });
           }
@@ -410,7 +411,19 @@ const threadRoute = createRoute({
   path: "/dm/$employeeId/$conversationId",
   component: DmPage,
 });
-const routeTree = rootRoute.addChildren([indexRoute, dmRoute, threadRoute]);
+/* `/focus` opens the session in Focus — same page component, Focus reads
+   the suffix itself (#114). */
+const focusRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/dm/$employeeId/$conversationId/focus",
+  component: DmPage,
+});
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  dmRoute,
+  threadRoute,
+  focusRoute,
+]);
 
 // file:// gives the app a path URL that matches no route; hash history keeps
 // navigation inside the page. http(s) dev and _electron test pages keep

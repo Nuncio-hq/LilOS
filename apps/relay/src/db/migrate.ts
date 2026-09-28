@@ -156,9 +156,38 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     ],
   },
   {
+    /* #138: full-text search over stored messages. A FTS5 external-content
+       index (content='messages' — text is not duplicated) backfilled from
+       existing rows and kept in sync by triggers on write/delete/text-edit.
+       Deliberately raw SQL, not a Drizzle table: drizzle can't model virtual
+       tables, and the schema test asserts the exact persisted table list. */
+    version: 9,
+    statements: [
+      `CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+        text, content='messages', content_rowid='rowid'
+      )`,
+      `INSERT INTO messages_fts(rowid, text) SELECT rowid, text FROM messages`,
+      `CREATE TRIGGER IF NOT EXISTS messages_fts_insert
+        AFTER INSERT ON messages BEGIN
+          INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+        END`,
+      `CREATE TRIGGER IF NOT EXISTS messages_fts_delete
+        AFTER DELETE ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, text)
+            VALUES ('delete', old.rowid, old.text);
+        END`,
+      `CREATE TRIGGER IF NOT EXISTS messages_fts_update
+        AFTER UPDATE OF text ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, text)
+            VALUES ('delete', old.rowid, old.text);
+          INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+        END`,
+    ],
+  },
+  {
     // #153: phone pairing — one-time grants (hash only) and paired devices
     // (credential hash only; revoked_at closes sockets + blocks hello).
-    // v9 was claimed by open PRs #151/#162 at branch time.
+    // v9 was claimed by PR #151 (merged); renumber if another lands first.
     version: 10,
     statements: [
       `CREATE TABLE IF NOT EXISTS pairing_grants (

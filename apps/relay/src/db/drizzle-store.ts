@@ -38,7 +38,7 @@ import type {
   RelayStore,
   ResolveAskInput,
 } from "../store";
-import { newId } from "../store";
+import { newId, searchTerms } from "../store";
 import * as schema from "./schema";
 
 type Db = BunSQLiteDatabase<typeof schema>;
@@ -528,6 +528,44 @@ export function createDrizzleStore(db: Db): RelayStore {
               .all()
               .reverse();
       return { messages: rows.map(rowToMessage), lastSeq: channel.lastSeq };
+    },
+    /* #138: FTS5 over the messages_fts external-content index (migration v9
+       keeps it in sync via triggers). Terms are AND'd double-quoted tokens —
+       quoting also neutralizes FTS syntax in the input; the last term gets
+       `*` so the box can filter while the user is mid-word. The snippet is
+       excerpted by SQLite with `<mark>` around each matched token. */
+    async searchMessages({ query, channelId, includeArchived, limit }) {
+      const terms = searchTerms(query);
+      if (!terms.length) return [];
+      const match = terms
+        .map(
+          (t, i) =>
+            `"${t.replace(/"/g, '""')}"${i === terms.length - 1 ? "*" : ""}`,
+        )
+        .join(" AND ");
+      return db.all<{
+        messageId: string;
+        conversationId: string | null;
+        channelId: string;
+        authorId: string;
+        snippet: string;
+        createdAt: number;
+      }>(sql`
+        SELECT m.id AS messageId,
+               m.conversation_id AS conversationId,
+               m.channel_id AS channelId,
+               m.author_id AS authorId,
+               snippet(messages_fts, 0, '<mark>', '</mark>', '…', 12) AS snippet,
+               m.created_at AS createdAt
+        FROM messages_fts
+        JOIN messages m ON m.rowid = messages_fts.rowid
+        LEFT JOIN conversations c ON c.id = m.conversation_id
+        WHERE messages_fts MATCH ${match}
+          ${channelId ? sql`AND m.channel_id = ${channelId}` : sql``}
+          ${includeArchived ? sql`` : sql`AND (c.id IS NULL OR c.archived = 0)`}
+        ORDER BY bm25(messages_fts), m.created_at DESC
+        LIMIT ${limit}
+      `);
     },
     async appendMessage(input) {
       return db.transaction(() => appendMessageTx(input));

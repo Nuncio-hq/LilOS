@@ -17,7 +17,7 @@ import {
   TriangleAlertIcon,
   UserIcon,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Composer } from "../chat/composer";
 import { choiceFor, ModelPicker } from "../chat/model-picker";
 import {
@@ -57,6 +57,7 @@ import type {
   FileMention,
   Folder,
   HumanFn,
+  MessageHit,
   ModelChoice,
   ModelOption,
   ModelPickerExtras,
@@ -152,6 +153,33 @@ function SessionAlertRow({
   );
 }
 
+/* `<mark>`-tagged search excerpt → elements (parsed, never set as HTML —
+   the relay's snippet() doesn't entity-escape, so only the mark tags are
+   structural). */
+function Marks({ text }: { text: string }) {
+  const out: ReactNode[] = [];
+  let rest = text;
+  for (let k = 0; ; k++) {
+    const open = rest.indexOf("<mark>");
+    const close = open < 0 ? -1 : rest.indexOf("</mark>", open + 6);
+    if (open < 0 || close < 0) {
+      out.push(rest);
+      break;
+    }
+    if (open) out.push(rest.slice(0, open));
+    out.push(
+      <mark
+        key={k}
+        className="rounded-sm bg-amber-200/70 px-0.5 dark:bg-amber-800/60"
+      >
+        {rest.slice(open + 6, close)}
+      </mark>,
+    );
+    rest = rest.slice(close + 7);
+  }
+  return out;
+}
+
 /* Employee screen (DM). Left: the conversation list — each top-level message is ONE engine session,
    with rename / archive / filter and designed failure states (alert card + Retry). Right panel: the
    open session as a thread. Composer at the bottom always starts a NEW session. */
@@ -188,6 +216,8 @@ export function EmployeeHome({
   composerNote,
   mentionables,
   onSearchFiles,
+  onSearchMessages,
+  onOpenHit,
   draft: composerDraft,
   onDraftChange,
 }: {
@@ -246,9 +276,15 @@ export function EmployeeHome({
      section. Both omitted → bare composer like before. */
   mentionables?: Employee[];
   onSearchFiles?: (query: string) => Promise<FileMention[]>;
+  /* Full-text message search behind the same session filter (issue #138):
+     omit → the box matches titles and first messages only. */
+  onSearchMessages?: (query: string) => Promise<MessageHit[]>;
+  /* Opens a hit's session scrolled to that message (AC-3); omitted → onOpen. */
+  onOpenHit?: (hit: MessageHit) => void;
 }) {
   const pickFolder = folders.find((x) => x.id === pick.folder);
   const [filter, setFilter] = useState("");
+  const [hits, setHits] = useState<MessageHit[]>([]);
   const [showArchived, setShowArchived] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -260,6 +296,38 @@ export function EmployeeHome({
   const matches = (m: Extract<Msg, { kind: "msg" }>) =>
     !q || `${m.thread?.title ?? ""}\n${m.text}`.toLowerCase().includes(q);
   const roots = sessions.filter((m) => !m.thread!.archived && matches(m));
+  /* Debounced message-level search behind the same box (AC-2); ref keeps the
+     latest callback so the effect re-fires only on the query. */
+  const searchRef = useRef(onSearchMessages);
+  searchRef.current = onSearchMessages;
+  useEffect(() => {
+    if (!q || !searchRef.current) {
+      setHits([]);
+      return;
+    }
+    let dead = false;
+    const t = setTimeout(() => {
+      void searchRef
+        .current?.(q)
+        .then((h) => {
+          if (!dead) setHits(h);
+        })
+        .catch(() => {});
+    }, 120);
+    return () => {
+      dead = true;
+      clearTimeout(t);
+    };
+  }, [q]);
+  const hitGroups = useMemo(() => {
+    const map = new Map<string, MessageHit[]>();
+    for (const h of hits) {
+      const g = map.get(h.rootId) ?? [];
+      g.push(h);
+      map.set(h.rootId, g);
+    }
+    return [...map.entries()];
+  }, [hits]);
   const archived = sessions.filter((m) => m.thread!.archived && matches(m));
 
   const sessionRow = (m: Extract<Msg, { kind: "msg" }>, isArchived = false) => {
@@ -462,7 +530,9 @@ export function EmployeeHome({
                 </div>
               ))}
             </div>
-          ) : roots.length === 0 && archived.length === 0 ? (
+          ) : roots.length === 0 &&
+            archived.length === 0 &&
+            hits.length === 0 ? (
             <ConversationEmptyState
               icon={<HermesAvatar name={e.name} className="size-12" />}
               title={
@@ -472,7 +542,9 @@ export function EmployeeHome({
               }
               description={
                 q
-                  ? "Titles and first messages are searched. Clear the filter to see everything."
+                  ? onSearchMessages
+                    ? "Titles and messages are searched. Clear the filter to see everything."
+                    : "Titles and first messages are searched. Clear the filter to see everything."
                   : "Your first message opens a new engine session. Replies stay in its thread."
               }
             />
@@ -495,6 +567,65 @@ export function EmployeeHome({
                     Archived ({archived.length})
                   </button>
                   {showArchived && archived.map((m) => sessionRow(m, true))}
+                </div>
+              )}
+              {q && hitGroups.length > 0 && (
+                <div className="px-3 sm:px-5" data-message-hits>
+                  <div className="flex items-center gap-1.5 py-1 text-muted-foreground text-xs">
+                    <SearchIcon className="size-3.5" />
+                    Messages
+                  </div>
+                  {hitGroups.map(([rootId, group]) => {
+                    const m = sessions.find((s) => s.id === rootId);
+                    const isArchived =
+                      group.some((h) => h.archived) || m?.thread?.archived;
+                    return (
+                      <div key={rootId}>
+                        <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-muted-foreground text-xs">
+                          <span className="truncate font-medium text-foreground/80">
+                            {m?.thread?.title || m?.text || "Session"}
+                          </span>
+                          {isArchived && (
+                            <span
+                              className="flex shrink-0 items-center gap-0.5"
+                              data-archived-hit
+                            >
+                              <ArchiveIcon className="size-3" /> archived
+                            </span>
+                          )}
+                        </div>
+                        {group.map((h) => (
+                          <button
+                            key={h.messageId}
+                            type="button"
+                            data-message-hit={h.messageId}
+                            onClick={() =>
+                              onOpenHit ? onOpenHit(h) : onOpen(h.rootId)
+                            }
+                            className="block w-full rounded-md py-1.5 pr-2 pl-6 text-left text-xs hover:bg-accent/50"
+                          >
+                            <span className="text-muted-foreground">
+                              {emp(h.from)?.name ?? human(h.from)?.name}
+                            </span>
+                            <span className="mx-1.5 text-muted-foreground">
+                              ·
+                            </span>
+                            <span className="text-muted-foreground">
+                              {h.time}
+                            </span>
+                            <div className="line-clamp-2 break-words text-foreground/90">
+                              <Marks text={h.snippet} />
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                  {hits.length >= 50 && (
+                    <div className="px-2 py-1 text-muted-foreground text-xs">
+                      More matches exist — refine the search.
+                    </div>
+                  )}
                 </div>
               )}
             </>

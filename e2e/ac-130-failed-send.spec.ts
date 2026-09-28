@@ -327,10 +327,12 @@ test("AC-1 a refused send in the home composer keeps the text and image chips", 
 
   // Relay back: pressing send again posts the kept draft and opens the session.
   await stack.restartRelay();
-  await sendUntil(page, "home", async () =>
-    /\/dm\/[^/]+\/[^/]+$/.test(page.url()),
+  await sendUntil(
+    page,
+    "home",
+    async () => /\/dm\/[^/]+\/[^/]+\/focus$/.test(page.url()), // sessions open in Focus (#114)
   );
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 30_000 });
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/, { timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac1-retry-sent.png` });
 });
 
@@ -344,7 +346,7 @@ test("AC-2 a refused reply in the thread composer keeps the text and image chips
   await formOf(page, "home").evaluate((f: HTMLFormElement) =>
     f.requestSubmit(),
   );
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
   await expect(formOf(page, "thread")).toBeVisible();
 
   await boxOf(page, "thread").fill("reply kept through a refused send");
@@ -388,7 +390,7 @@ test("AC-3 a successful send clears the composer and Enter-Enter sends once", as
   await formOf(page, "home").evaluate((f: HTMLFormElement) =>
     f.requestSubmit(),
   );
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
 
   // Reply via a real Enter-Enter: one send, composer cleared.
   const text = "double-enter sends once";
@@ -401,7 +403,7 @@ test("AC-3 a successful send clears the composer and Enter-Enter sends once", as
   });
 
   // Wire check: exactly one message with that text reached the relay.
-  const conv = page.url().match(/\/dm\/[^/]+\/([^/]+)$/)?.[1];
+  const conv = page.url().match(/\/dm\/[^/]+\/([^/]+?)(?:\/focus)?$/)?.[1];
   const channelId = await channelIdFor(page, stack);
   const listed = await rpc(stack.home, [
     { method: "messages.list", params: { channelId, conversationId: conv } },

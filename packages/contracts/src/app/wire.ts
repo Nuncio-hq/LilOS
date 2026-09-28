@@ -3,6 +3,7 @@ import {
   AgentsCreateParams,
   AgentsDescribeParams,
   AgentsListParams,
+  AgentsUpdateParams,
 } from "../engine/agents";
 import { Capability } from "../engine/capabilities";
 import { ModelOption, ModelProvider, ModelsListParams } from "../engine/models";
@@ -120,6 +121,7 @@ export const AppMethod = z.enum([
   "conversations.update",
   "messages.list",
   "messages.post",
+  "messages.search",
   "attachments.get",
   "channel.subscribe",
   "channel.unsubscribe",
@@ -148,6 +150,7 @@ export const AppMethod = z.enum([
   "agents.list",
   "agents.describe",
   "agents.create",
+  "agents.update",
   "models.list",
   /* Phone pairing (#153): minting a grant is the opt-in that also binds the
      Tailscale listener; devices.list/revoke manage what the grant exchange
@@ -171,6 +174,7 @@ export const ENGINE_PASSTHROUGH_METHODS = [
   "agents.list",
   "agents.describe",
   "agents.create",
+  "agents.update",
   "models.list",
 ] as const;
 export type EnginePassthroughMethod =
@@ -181,6 +185,7 @@ export const ENGINE_PASSTHROUGH_PARAMS = {
   "agents.list": AgentsListParams,
   "agents.describe": AgentsDescribeParams,
   "agents.create": AgentsCreateParams,
+  "agents.update": AgentsUpdateParams,
   "models.list": ModelsListParams,
 } as const satisfies Record<EnginePassthroughMethod, z.ZodType>;
 
@@ -426,6 +431,43 @@ export const MessagesPostParams = z.object({
 });
 export type MessagesPostParams = z.infer<typeof MessagesPostParams>;
 export const MessageResult = z.object({ message: AppMessage });
+
+/**
+ * Full-text search over the relay's stored messages (issue #138). Search
+ * covers visible message text only (D-#25): engine transcripts, tool output
+ * and attachment bytes are never indexed. `query` is the user's raw text —
+ * the relay builds the FTS expression (terms AND'd, the last term matched
+ * as a prefix so the box can filter while typing). `conversationId` is null
+ * on hits belonging to no thread.
+ */
+export const MessagesSearchParams = z.object({
+  query: z.string().min(1),
+  channelId: z.string().min(1).optional(),
+  includeArchived: z.boolean().default(false),
+  limit: z.int().min(1).max(200).default(50),
+});
+export type MessagesSearchParams = z.infer<typeof MessagesSearchParams>;
+
+/**
+ * One matched message. `snippet` is an excerpt of the message text with
+ * each matched term wrapped in `<mark>…</mark>` (the UI parses the tags
+ * back into elements — it never renders the string as HTML).
+ */
+export const MessageSearchHit = z.object({
+  messageId: z.string().min(1),
+  conversationId: z.string().min(1).nullable(),
+  channelId: z.string().min(1),
+  /* Who wrote the matching message — the hit row shows it ("anyone said it"). */
+  authorId: z.string().min(1),
+  snippet: z.string(),
+  createdAt: Timestamp,
+});
+export type MessageSearchHit = z.infer<typeof MessageSearchHit>;
+
+export const MessagesSearchResult = z.object({
+  hits: z.array(MessageSearchHit),
+});
+export type MessagesSearchResult = z.infer<typeof MessagesSearchResult>;
 
 /**
  * Resumable subscription (T3 Code `afterSequence` pattern, see
@@ -722,6 +764,7 @@ export const AppEventMethod = z.enum([
   "profile.updated",
   "settings.changed",
   "devices.changed",
+  "host.changed",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 
@@ -919,5 +962,15 @@ export const PairingExchangeError = z.object({
   error: z.enum(["unknown", "expired", "used"]),
 });
 export type PairingExchangeError = z.infer<typeof PairingExchangeError>;
+
+/**
+ * Broadcast when the engine host registers or its socket dies. Clients
+ * re-poll `system.status` on receipt so host presence heals/fails over
+ * immediately instead of on the next status tick (issue #148).
+ */
+export const HostChangedEvent = z.object({
+  connected: z.boolean(),
+});
+export type HostChangedEvent = z.infer<typeof HostChangedEvent>;
 
 export { APP_PROTOCOL_VERSION };

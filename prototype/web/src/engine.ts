@@ -78,3 +78,37 @@ export function engineCreateAgent(p: {
     ...(p.model ? { model: p.model } : {}),
   })
 }
+
+/** `agents.describe` — one profile, for the Edit dialog's prefilled fields. */
+export function engineDescribe(id: string): Promise<AgentDescriptor> {
+  return engine<{ agent: AgentDescriptor }>("agents.describe", { id }).then(
+    (r) => r.agent,
+  )
+}
+
+/** `agents.update` (#123) — writes persona/model/name onto the engine profile. */
+export function engineUpdateAgent(p: {
+  id: string
+  name?: string
+  soul?: string
+  model?: string
+  description?: string
+  confirmModel?: boolean
+}): Promise<{ agent: AgentDescriptor; confirmModel?: string }> {
+  return engine("agents.update", p)
+}
+
+/** `detail.updatable` of the `agents` capability — null when unreachable, [] when it can't edit. */
+export async function engineUpdatable(): Promise<string[] | null> {
+  try {
+    const d = await engine<{
+      capabilities: { id: string; detail?: { updatable?: unknown } }[]
+    }>("describe")
+    const u = d.capabilities.find((c) => c.id === "agents")?.detail?.updatable
+    return Array.isArray(u)
+      ? u.filter((x): x is string => typeof x === "string")
+      : []
+  } catch {
+    return null
+  }
+}

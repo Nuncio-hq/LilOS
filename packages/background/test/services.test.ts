@@ -62,6 +62,13 @@ describe("launch agents (AC-1)", () => {
     ]);
   });
 
+  it("AC-1 the harness agent carries a user PATH — launchd's default hides Homebrew tools like gh", () => {
+    const xml = renderLaunchAgentPlist(HARNESS_AGENT);
+    expect(xml).toContain("<key>EnvironmentVariables</key>");
+    expect(xml).toContain("<key>PATH</key>");
+    expect(xml).toContain("/opt/homebrew/bin");
+  });
+
   it("AC-1 first launch registers both agents", async () => {
     const control = fakeControl();
     const versions = memStore();

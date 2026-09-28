@@ -36,6 +36,7 @@ describe("engine wire contract", () => {
       "agents.list",
       "agents.describe",
       "agents.create",
+      "agents.update",
       "models.list",
       "session.setModel",
       "session.setTitle",
