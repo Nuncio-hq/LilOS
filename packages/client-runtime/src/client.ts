@@ -730,6 +730,12 @@ export class RelayClient {
         this.dropChannel(event.channelId);
         return;
       }
+      case "host.changed": {
+        // The engine host registered or disconnected — refresh status now
+        // instead of waiting for the next poll tick (#148).
+        void this.refreshSystemStatus();
+        return;
+      }
       case "profile.updated": {
         this.profile.set(ProfileUpdatedEvent.parse(params).profile);
         return;

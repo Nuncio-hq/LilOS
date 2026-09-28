@@ -36,7 +36,9 @@ interface Stack {
 async function waitForHttp(url: string, ms = 30_000): Promise<void> {
   const start = Date.now();
   for (;;) {
-    const ok = await fetch(url)
+    // Bound each poll: a socket that completes the handshake but never
+    // answers would otherwise hang the wait past its budget (#84).
+    const ok = await fetch(url, { signal: AbortSignal.timeout(1_000) })
       .then((r) => r.ok || r.status === 404)
       .catch(() => false);
     if (ok) return;
@@ -93,8 +95,15 @@ async function bootStack(
     stdio: ["ignore", "inherit", "inherit"],
   });
   const webUrl = `http://127.0.0.1:${ports.web}`;
+  // Fail on the umbrella exiting instead of timing out against dead air —
+  // same guard ac-32's stack has (#84, #148).
+  const procDied = new Promise<never>((_, reject) => {
+    proc.once("exit", (code) =>
+      reject(new Error(`dev stack exited early (code ${code})`)),
+    );
+  });
   try {
-    await waitForHttp(webUrl);
+    await Promise.race([waitForHttp(webUrl), procDied]);
     const tokenPath = path.join(home, "relay-token");
     let relayToken = "";
     for (let i = 0; i < 100 && !relayToken; i++) {
@@ -249,10 +258,24 @@ test("AC-4 an approval-blocked session reads `needs you` / `Waiting for approval
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 30_000,
   });
+  const firstAskId = await page
+    .locator('[data-ask-state="open"]')
+    .first()
+    .getAttribute("data-ask-id");
   await page.getByRole("button", { name: "Allow once" }).first().click();
-  await expect(page.getByText("Waiting for approval")).toHaveCount(0, {
-    timeout: 30_000,
-  });
+  // The fake's script has more approval-gated steps (patch → write_file →
+  // git commit): `request.opened(r2)` re-adds "Waiting for approval" ~one
+  // engine tick after `request.resolved(r1)` lands, so a zero count — or a
+  // resolved card — is a race window, not a state (issue #148). The stable
+  // end-state is a NEW open ask with a different id: the engine cannot emit
+  // r2's `request.opened` until r1's approval resolved, so its card proves
+  // the answer unblocked the turn.
+  await expect(
+    page.locator(`[data-ask-state="open"]:not([data-ask-id="${firstAskId}"])`),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.locator("[data-tasksteps]").getByText("Waiting for approval"),
+  ).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-4-resolved.png` });
 });
 
