@@ -41,6 +41,9 @@ const NO_PR = /no pull requests found|no open pull requests|not found/i;
    GH_TOKEN (older versions print the same text on exit 1). */
 const AUTH = /gh auth login|GH_TOKEN|not logged in|authenticat/i;
 
+// biome-ignore lint/suspicious/noControlCharactersInRegex: gh colors stderr on a TTY — strip ANSI for display
+const ANSI = /\u001B\[[0-9;]*m/g;
+
 function ghFailed(e: unknown): HostError {
   const err = e as {
     stderr?: string;
@@ -49,7 +52,9 @@ function ghFailed(e: unknown): HostError {
   };
   // Bun attaches stderr:"" on ENOENT (Node doesn't) — an empty stderr must
   // fall back to err.message or the failure reads "gh failed:" blank.
-  const detail = (err.stderr?.trim() || err.message || String(e)).trim();
+  const detail = (err.stderr?.trim() || err.message || String(e))
+    .replace(ANSI, "")
+    .trim();
   /* The typed reason rides in error data (contracts `ForgeGhReason`) so the
      Workbench maps it to plain copy; `detail` stays raw for a Details
      disclosure, never the headline (#114 AC-5). */
