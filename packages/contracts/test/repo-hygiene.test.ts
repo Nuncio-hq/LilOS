@@ -140,7 +140,11 @@ describe("AC-5 site moves in", () => {
 
 describe("AC-6 pre-publication scrub", () => {
   it("no private hostnames, tailnet ids or local usernames in tracked files", () => {
-    const banned = ["oscars" + "-macbook-pro", "tail" + "1a2b", "a1241" + "968"];
+    const banned = [
+      "oscars" + "-macbook-pro",
+      "tail" + "1a2b",
+      "a1241" + "968",
+    ];
     const self = "packages/contracts/test/repo-hygiene.test.ts";
     for (const file of trackedFiles()) {
       if (file === self || file === "bun.lock") continue;
