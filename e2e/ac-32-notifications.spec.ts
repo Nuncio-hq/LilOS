@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 /**
  * Issue #32 — macOS notifications + per-employee badges. ACs:
@@ -22,6 +23,14 @@ import { expect, type Page, test } from "@playwright/test";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "..");
+// --repeat-each spreads a file's repeats across worker processes; each boots
+// the stack again, so ports are offset per worker or relays race one port (#84).
+// Pick bases whose port%100 avoids real service ports — worker indices run
+// past 18, and 4579+18*100 lands on Redis's 6379 on Oscar's/dev VMs, which
+// left the relay retry-loop dead and the web port never served (#84).
+const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
+const wport = (p: number) => p + WORKER * 100;
+
 const webDir = path.join(repo, "apps", "web");
 const SHOTS = path.join(repo, "test-results", "ac-32");
 const LIVE = process.env.LILOS_ENGINE === "hermes";
@@ -49,16 +58,29 @@ async function waitForHttp(url: string, ms = 30_000): Promise<void> {
 }
 
 function killProc(proc: ChildProcess): Promise<void> {
+  // `bun run dev` stacks intermediate shim layers between `proc` and the
+  // real dev-stack children, and bun doesn't forward signals through them —
+  // signal the whole process group (the spawn is `detached`) or the stack
+  // orphans and keeps its ports bound, poisoning the next boot (#84).
+  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
+    try {
+      if (proc.pid) process.kill(-proc.pid, sig);
+    } catch {
+      try {
+        proc.kill(sig);
+      } catch {}
+    }
+  };
   return new Promise((resolve) => {
     const t = setTimeout(() => {
-      proc.kill("SIGKILL");
+      killGroup("SIGKILL");
       resolve();
     }, 8_000);
     proc.once("exit", () => {
       clearTimeout(t);
       resolve();
     });
-    proc.kill("SIGTERM");
+    killGroup("SIGTERM");
   });
 }
 
@@ -67,11 +89,14 @@ async function bootStack(
   ports: { relay: number; feed: number; web: number },
 ): Promise<Stack> {
   const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
+  const leakTag = engineTag(tag);
   const proc = spawn("bun", ["run", "dev"], {
     cwd: webDir,
+    detached: true,
     env: {
       ...process.env,
       LILOS_HOME: home,
+      LILOS_ENGINE_TAG: leakTag,
       LILOS_RELAY_PORT: String(ports.relay),
       LILOS_FEED_PORT: String(ports.feed),
       LILOS_WEB_PORT: String(ports.web),
@@ -79,8 +104,16 @@ async function bootStack(
     stdio: ["ignore", "inherit", "inherit"],
   });
   const webUrl = `http://127.0.0.1:${ports.web}`;
+  // The stack umbrella exits as soon as any supervised child dies (e.g. a
+  // vite whose --strictPort is still held by the previous repeat's draining
+  // child) — fail on that exit instead of timing out against dead air (#84).
+  const procDied = new Promise<never>((_, reject) => {
+    proc.once("exit", (code) =>
+      reject(new Error(`dev stack exited early (code ${code})`)),
+    );
+  });
   try {
-    await waitForHttp(webUrl);
+    await Promise.race([waitForHttp(webUrl), procDied]);
     // The page connects to relay + feed the moment it loads and only retries
     // post-handshake drops — wait for them to listen so a slow boot under
     // parallel load can't strand the client on "could not start".
@@ -105,7 +138,10 @@ async function bootStack(
       relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
       feedWs: `ws://127.0.0.1:${ports.feed}/ws`,
       relayToken,
-      stop: () => killProc(proc),
+      stop: async () => {
+        await killProc(proc);
+        await expectNoEngineLeak(leakTag);
+      },
     };
   } catch (e) {
     proc.kill("SIGKILL");
@@ -116,7 +152,11 @@ async function bootStack(
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac32", { relay: 4579, feed: 4584, web: 5205 });
+  stack = await bootStack("ac32", {
+    relay: wport(4663),
+    feed: wport(4668),
+    web: wport(5255),
+  });
 });
 test.afterAll(async () => {
   await stack?.stop();

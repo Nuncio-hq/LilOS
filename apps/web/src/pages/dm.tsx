@@ -5,39 +5,93 @@ import {
   toStatusComponents,
 } from "@lilos/client-runtime";
 import type { AppMessage, Ask, Conversation } from "@lilos/contracts/app";
+import {
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+} from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
-import { EmployeeHome, NO_WS, ThreadView } from "@lilos/ui";
-import type { Channel, Msg, Reply, Thread } from "@lilos/ui/types";
+import {
+  AddFolderDialog,
+  choiceFor,
+  clearDraftIfSent,
+  draftKey,
+  EditEmployeeDialog,
+  EmployeeHome,
+  NO_WS,
+  ThreadView,
+  useDraft,
+} from "@lilos/ui";
+import type {
+  AttachedFile,
+  Channel,
+  FileMention,
+  ModelChoice,
+  ModelPickerExtras,
+  Msg,
+  Reply,
+  Thread,
+  WsPick,
+} from "@lilos/ui/types";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { atom } from "nanostores";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   archiveConversation,
   clearPending,
   hasCapability,
   interruptSession,
   pendingStart,
+  refreshModels,
   renameConversation,
   respondToRequest,
   sendDm,
   setConversationModel,
+  setModelVisibility,
 } from "../lib/actions";
+import {
+  attachmentUrls,
+  ensureAttachments,
+  toAttachedFiles,
+} from "../lib/attachments";
+import { removeEmployee, saveEmployee } from "../lib/employees";
+import {
+  addFolder,
+  cwdInfo,
+  discovered,
+  folders,
+  fsRows,
+  loadDir,
+  loadDiscovered,
+  refreshFolders,
+  wsFor,
+} from "../lib/folders";
 import { useAtom } from "../lib/hooks";
+import {
+  hostEditors,
+  hostOsOpen,
+  hostSearch,
+  type OsEditor,
+} from "../lib/host";
 import {
   conversationReplies,
   mergeTurns,
   toFeed,
   toUiEmployee,
 } from "../lib/mapping";
-import { humanFor, ME } from "../lib/me";
+import { currentName, humanFor, osFullName, profile } from "../lib/me";
 import {
   asks as asksAtom,
   engine,
+  engineDefaultModel,
+  engineDefaultProvider,
   engineModels,
+  engineProviders,
+  modelVisibility,
   navOpen,
   relay,
   sessionModels,
 } from "../lib/runtime";
+import { say } from "../lib/toast";
 
 const EMPTY_MESSAGES = atom<ChannelMessagesState>({
   channelId: "",
@@ -54,12 +108,21 @@ const EMPTY_FEED = atom<SessionFeedState>({
   openRequests: [],
 });
 
-const OUTCOME_LABEL: Record<ApprovalOutcome, string> = {
-  once: `Allowed once by ${ME.name}`,
-  always: "Always allowed here",
-  deny: `Denied by ${ME.name}`,
-  cancel: "Cancelled",
-  answer: "Answered",
+/* Resolved-ask labels carry the signed-in human's name — computed per render
+   so a settings change lands without a reload (#118). */
+const outcomeLabel = (o: ApprovalOutcome, name: string): string => {
+  switch (o) {
+    case "once":
+      return `Allowed once by ${name}`;
+    case "always":
+      return "Always allowed here";
+    case "deny":
+      return `Denied by ${name}`;
+    case "cancel":
+      return "Cancelled";
+    case "answer":
+      return "Answered";
+  }
 };
 
 function outcomeFromLabel(v: string): ApprovalOutcome {
@@ -70,8 +133,8 @@ function outcomeFromLabel(v: string): ApprovalOutcome {
   return "once";
 }
 
-/* User messages render as the signed-in human — the same `ME` the sidebar
-   footer shows (issue #80, AC-1). */
+/* User messages render as the signed-in human — the same identity the
+   sidebar footer shows (issue #80 AC-1, #118: relay-owned). */
 const human = humanFor;
 
 /**
@@ -89,27 +152,87 @@ export function DmPage() {
 
   const employees = useAtom(relay.employees);
   const channels = useAtom(relay.channels);
+  // #118: the human's name/avatar re-render live on a settings change.
+  useAtom(profile);
+  useAtom(osFullName);
   const summaries = useAtom(relay.conversationSummaries);
   const models = useAtom(sessionModels);
   const catalog = useAtom(engineModels);
+  const defaultModel = useAtom(engineDefaultModel);
+  const defaultProvider = useAtom(engineDefaultProvider);
+  const providers = useAtom(engineProviders);
+  const visibility = useAtom(modelVisibility);
+  const description = useAtom(engine.description);
   const allAsks = useAtom(asksAtom);
   const pending = useAtom(pendingStart);
   const engineState = useAtom(engine.state);
   const statusPoll = useAtom(relay.status);
   const fatal = useAtom(relay.fatal);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  /* The picker's pick for a session that doesn't exist yet (#92 AC-5): held
+     per employee, stamped on `conversations.open`, cleared once sent. */
+  const [draftPick, setDraftPick] = useState<Record<string, ModelChoice>>({});
+
+  /* Picker extras (#92): Edit models rides the relay-persisted visibility
+     list; Refresh renders only when the engine's `models` capability
+     declares `refreshable` (D-#19 — no control without a handler). */
+  const picker = useMemo<ModelPickerExtras | undefined>(() => {
+    if (!catalog.length) return undefined;
+    const detail = description?.capabilities.find((c) => c.id === "models")
+      ?.detail as { refreshable?: boolean } | undefined;
+    return {
+      providers: providers.length
+        ? providers.map((p) => ({ id: p.id, name: p.name ?? p.id }))
+        : undefined,
+      visibility,
+      onVisibility: (v) => void setModelVisibility(v),
+      ...(detail?.refreshable === true ? { onRefresh: refreshModels } : {}),
+    };
+  }, [catalog, providers, visibility, description]);
+
+  /* Folder picking (#113): shared recents from the relay (probed live for
+     missing/git) + a per-employee pick (its last session's folder, AC-6).
+     Direct mode only — the picker gets no onWorktree (AC-3).
+     `git.discoverRepos` stays lazy: it runs when the web Add-folder dialog
+     opens, never on DM mount (desktop uses the native panel instead — a
+     scan would only trip macOS folder-access prompts). */
+  const folderRows = useAtom(folders);
+  const fsListing = useAtom(fsRows);
+  const discoveredRows = useAtom(discovered);
+  const cwdBranches = useAtom(cwdInfo);
+  const [wsPicks, setWsPicks] = useState<Record<string, WsPick>>({});
+  const [addFolderOpen, setAddFolderOpen] = useState(false);
+  useEffect(() => {
+    void refreshFolders().catch(() => {});
+  }, []);
+
+  /* Image attachments (#112): the composers offer pick/drop/paste only when
+     the engine declares `image_prompt` (D-#19); thumbnails resolve lazily
+     from the relay store, so subscribe to the resolved-URL cache. */
+  const canAttachImages =
+    description?.capabilities.some((c) => c.id === "image_prompt") ?? false;
+  useAtom(attachmentUrls);
 
   /* AC-2 (#85): an engine that's down (Hermes missing, crashed out) shows
      its plain reason above the composer — never silently sendable. */
-  const composerNote = useMemo(() => {
-    const row = toStatusComponents({
-      result: statusPoll.result,
-      connection: "ready",
-      fatal,
-    }).find((c) => c.id === "engine");
-    if (row?.state !== "down" || !row.reason) return undefined;
-    return row.hint ? `${row.reason} ${row.hint}` : row.reason;
-  }, [statusPoll, fatal]);
+  const engineRow = useMemo(
+    () =>
+      toStatusComponents({
+        result: statusPoll.result,
+        connection: "ready",
+        fatal,
+      }).find((c) => c.id === "engine"),
+    [statusPoll, fatal],
+  );
+  const engineDown = engineRow?.state === "down";
+  const composerNote =
+    engineDown && engineRow?.reason
+      ? engineRow.hint
+        ? `${engineRow.reason} ${engineRow.hint}`
+        : engineRow.reason
+      : undefined;
 
   const employee = employees.find((e) => e.id === employeeId);
   const channel = channels.find(
@@ -131,6 +254,32 @@ export function DmPage() {
     [summaries, channel],
   );
   const openConv = convs.find((c) => c.id === conversationId);
+
+  /* Open-in-editor affordance for the session header (issue #110): editors
+     the host detected — `null` while unknown or when os.open isn't on this
+     host (the badge menu hides entirely then, D-#19); `[]` means os.open
+     works but no editor was found (Reveal in Finder only). */
+  const openCwd = openConv?.cwd;
+  const [editors, setEditors] = useState<OsEditor[] | null>(null);
+  useEffect(() => {
+    let off = false;
+    setEditors(null);
+    if (openCwd)
+      void hostEditors().then((e) => {
+        if (!off) setEditors(e);
+      });
+    return () => {
+      off = true;
+    };
+  }, [openCwd]);
+
+  /* Unsent drafts live outside the composer: one key per conversation and
+     one per employee home (issue #103). Switching sessions or employees — or
+     reloading — swaps in the stored text instead of throwing it away. */
+  const [homeDraft, setHomeDraft] = useDraft(draftKey.dm(employeeId));
+  const [threadDraft, setThreadDraft] = useDraft(
+    openConv ? draftKey.thread(openConv.id) : undefined,
+  );
 
   /* The open thread needs its whole visible history, not just the channel
      window (#28 AC-2): page messages.list scoped to the conversation. */
@@ -177,10 +326,25 @@ export function DmPage() {
     openConv?.engineRef ? engine.sessionFeed(openConv.engineRef) : EMPTY_FEED,
   );
 
-  const uiEmp = employee ? toUiEmployee(employee) : undefined;
+  /* Attachment blobs behind every visible ref — channel window, open
+     thread, and the summary roots/previews that feed rows render (AC-3). */
+  useEffect(() => {
+    const refs = [
+      ...messages,
+      ...threadMsgs,
+      ...summaries.flatMap((s) =>
+        [s.root, s.firstAnswer, s.last].filter(
+          (m): m is AppMessage => m !== undefined,
+        ),
+      ),
+    ].flatMap((m) => m.attachments ?? []);
+    ensureAttachments(refs);
+  }, [messages, threadMsgs, summaries]);
+
+  const uiEmp = employee ? toUiEmployee(employee, engineDown) : undefined;
   const empFn = (id: string) => {
     const e = employees.find((x) => x.id === id);
-    return e ? toUiEmployee(e) : undefined;
+    return e ? toUiEmployee(e, engineDown) : undefined;
   };
 
   const summaryOf = (conv: Conversation) =>
@@ -213,6 +377,27 @@ export function DmPage() {
     return out;
   };
 
+  /* AC-6: pre-select the employee's last session's folder once it and the
+     recents are known — but never stomp a pick the user already made. */
+  useEffect(() => {
+    if (wsPicks[employeeId] !== undefined) return;
+    const lastCwd = [...convs].reverse().find((c) => c.cwd)?.cwd;
+    const f = folderRows.find((x) => x.path === lastCwd && !x.missing);
+    if (!f) return;
+    setWsPicks((w) =>
+      w[employeeId] !== undefined
+        ? w
+        : {
+            ...w,
+            [employeeId]: {
+              folder: f.id,
+              base: f.branches[0] ?? "",
+              mode: "direct",
+            },
+          },
+    );
+  }, [employeeId, convs, folderRows, wsPicks]);
+
   const modelFor = (conv: Conversation): SessionModel | undefined =>
     conv.engineRef ? models[conv.engineRef] : undefined;
 
@@ -230,6 +415,7 @@ export function DmPage() {
         root,
         conv,
         mergeTurns(repliesOf(conv), model, employeeId, convAsks(conv)),
+        wsFor(conv.cwd, cwdBranches),
       ),
     ];
   });
@@ -241,6 +427,19 @@ export function DmPage() {
   useEffect(() => {
     if (openConv && openModel?.live) clearPending(openConv.id);
   }, [openConv, openModel]);
+
+  /* `@` mentions (#105): every employee in the Employees section, and — when
+     the session has a folder — fs.search over it for the Files section. No
+     folder (or a missing one) → no Files section at all (D-#19). */
+  const mentionables = useMemo(
+    () => employees.map((e) => toUiEmployee(e, engineDown)),
+    [employees, engineDown],
+  );
+  /* Stable searcher identity per folder: the composer's effect keys on the
+     function — a fresh lambda each render would refire fs.search in a loop. */
+  const fileSearchers = useRef(
+    new Map<string, (q: string) => Promise<FileMention[]>>(),
+  );
 
   if (!employee || !uiEmp) {
     return (
@@ -266,14 +465,91 @@ export function DmPage() {
       });
   };
 
-  const send = (text: string) => {
-    void sendDm(employeeId, text).then((conv) =>
-      navigate({
+  const pick = wsPicks[employeeId] ?? NO_WS;
+  const setPick = (p: WsPick) => setWsPicks((w) => ({ ...w, [employeeId]: p }));
+
+  const fileSearch = (folderPath: string | null | undefined) => {
+    if (!folderPath) return undefined;
+    let f = fileSearchers.current.get(folderPath);
+    if (!f) {
+      f = (q: string) => hostSearch(folderPath, q).then((r) => r.files);
+      fileSearchers.current.set(folderPath, f);
+    }
+    return f;
+  };
+  const pickFolderPath = pick.folder
+    ? (folderRows.find((f) => f.id === pick.folder && !f.missing)?.path ?? null)
+    : null;
+
+  /* Add folder: native dialog in the packaged app (AC-2), the host-API
+     browser dialog on plain web. */
+  const onAddFolder = () => {
+    if (window.lilos?.pickFolder) {
+      void window.lilos.pickFolder().then((path) => {
+        if (!path) return;
+        void addFolder(path).then((f) => {
+          if (f)
+            setPick({
+              folder: f.id,
+              base: f.branches[0] ?? "",
+              mode: "direct",
+            });
+        });
+      });
+    } else {
+      setAddFolderOpen(true);
+      void loadDiscovered().catch(() => {});
+    }
+  };
+  const onDialogAdd = (path: string) => {
+    void addFolder(path).then((f) => {
+      if (f)
+        setPick({
+          folder: f.id,
+          base: f.branches[0] ?? "",
+          mode: "direct",
+        });
+    });
+    setAddFolderOpen(false);
+  };
+
+  /* The returned promise is the composer's clear signal (AC-5): resolved →
+     this DM channel's stored draft is dropped by key (not whatever composer
+     is open at resolve time), rejected → the text stays. sendDm resolves
+     undefined when nothing was sent (#112: unreadable file or relay error,
+     already toasted) — surface it as a rejection so nothing is cleared. */
+  const send = (text: string, p?: WsPick, files?: AttachedFile[]) => {
+    const folder = p?.folder
+      ? folderRows.find((f) => f.id === p.folder && !f.missing)
+      : undefined;
+    const modelPick = draftPick[employeeId];
+    return sendDm(
+      employeeId,
+      text,
+      undefined,
+      modelPick,
+      files,
+      folder?.path,
+    ).then((conv) => {
+      if (!conv) throw new Error("send failed");
+      clearDraftIfSent(draftKey.dm(employeeId), text);
+      setDraftPick(({ [employeeId]: _drop, ...rest }) => rest);
+      return navigate({
         to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: conv.id },
-      }),
-    );
+      });
+    });
   };
+
+  /* ↑ recall for the home composer: the last top-level message the user sent
+     in this DM is the newest conversation's root message (#104 AC-5). */
+  const lastSentTop = [...convs]
+    .reverse()
+    .map(
+      (c) =>
+        summaryOf(c)?.root ?? messages.find((m) => m.id === c.rootMessageId),
+    )
+    .find((m) => m?.authorKind === "user")?.text;
 
   /* thread panel ---------------------------------------------------------- */
 
@@ -301,7 +577,7 @@ export function DmPage() {
     const resolved: Record<string, string> = {};
     for (const a of asksHere) {
       if (a.state === "resolved" && a.outcome)
-        resolved[a.id] = OUTCOME_LABEL[a.outcome];
+        resolved[a.id] = outcomeLabel(a.outcome, currentName());
     }
     const engineRef = conv.engineRef;
     const replies = mergeTurns(
@@ -317,6 +593,9 @@ export function DmPage() {
     const openQuestion = asksHere.find(
       (a) => a.state === "open" && a.request.kind === "question",
     );
+    /* AC-7: the conversation's folder (+ branch for a repo) in the header;
+       sessions without one show nothing extra. */
+    const convWs = wsFor(conv.cwd, cwdBranches);
 
     const thread: Thread = {
       session: engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
@@ -324,9 +603,22 @@ export function DmPage() {
       archived: conv.archived,
       replies,
       usage: model?.turns.at(-1)?.usage as Thread["usage"],
+      // The session's pick: the pinned conversation fields win; the session
+      // snapshot fills what a bare `model` pin (pre-#92 rows) never set.
       model: conv.model ?? model?.model,
+      provider: conv.provider ?? model?.provider,
+      effort: conv.effort ?? model?.effort,
+      fast: conv.fast ?? model?.fast,
+      ...(convWs ? { ws: convWs } : {}),
     };
     const running = !!modelLive || pending[conv.id] === true;
+    /* ↑ recall in the open session: the user's last sent message in it — the
+       root counts too (#104 AC-5). */
+    const lastSent = threadPool.reduce<AppMessage | undefined>(
+      (last, m) =>
+        m.authorKind === "user" && (!last || m.seq > last.seq) ? m : last,
+      undefined,
+    )?.text;
     const steer = hasCapability("steer");
     const rootMsg: Msg = root
       ? {
@@ -338,6 +630,7 @@ export function DmPage() {
             minute: "2-digit",
           }),
           text: root.text,
+          attachments: toAttachedFiles(root.attachments),
           thread,
         }
       : { kind: "msg", id: conv.id, from: "user", time: "", text: "", thread };
@@ -362,11 +655,45 @@ export function DmPage() {
           steer={steer}
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}
-          onModel={(c) => void setConversationModel(conv.id, c.model)}
-          onSend={(text) => void sendDm(employeeId, text, conv.id)}
+          onModel={
+            catalog.length
+              ? (c) => void setConversationModel(conv.id, c)
+              : undefined
+          }
+          picker={picker}
+          defaultModel={defaultModel}
+          defaultProvider={defaultProvider}
+          onSend={(text, files) =>
+            sendDm(employeeId, text, conv.id, undefined, files).then((c) => {
+              if (!c) throw new Error("send failed");
+              clearDraftIfSent(draftKey.thread(conv.id), text);
+              return c;
+            })
+          }
+          draft={threadDraft}
+          onDraftChange={setThreadDraft}
+          accept={canAttachImages ? "image/*" : undefined}
+          maxFileSize={MAX_ATTACHMENT_BYTES}
+          maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
+          onAttachError={say}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
+          lastSent={lastSent}
           onFocus={undefined}
+          mentionables={mentionables}
+          onSearchFiles={fileSearch(conv.cwd)}
           work={null}
+          editors={editors ?? undefined}
+          onOpenPath={
+            openCwd && editors !== null
+              ? (path, app, line) => {
+                  void hostOsOpen(openCwd, path, app, line).catch((e) =>
+                    say(
+                      `Open failed — ${e instanceof Error ? e.message : String(e)}`,
+                    ),
+                  );
+                }
+              : undefined
+          }
         />
         {openQuestion && (
           <QuestionCard
@@ -393,6 +720,13 @@ export function DmPage() {
         onProfile={() => setProfileOpen((v) => !v)}
         onOpen={openThread}
         onSend={send}
+        draft={homeDraft}
+        onDraftChange={setHomeDraft}
+        accept={canAttachImages ? "image/*" : undefined}
+        maxFileSize={MAX_ATTACHMENT_BYTES}
+        maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
+        onAttachError={say}
+        lastSent={lastSentTop}
         panelOpen={!!openConv}
         onPanel={() => {
           const last = convs.at(-1);
@@ -402,11 +736,30 @@ export function DmPage() {
               params: { employeeId, conversationId: last.id },
             });
         }}
-        folders={[]}
-        pick={NO_WS}
-        setPick={() => {}}
+        folders={folderRows}
+        pick={pick}
+        setPick={setPick}
+        onAddFolder={onAddFolder}
         loading={!channel}
         composerNote={composerNote}
+        mentionables={mentionables}
+        onSearchFiles={fileSearch(pickFolderPath)}
+        models={catalog.length ? catalog : undefined}
+        modelChoice={
+          draftPick[employeeId] ??
+          choiceFor(
+            employee.model || defaultModel || "",
+            catalog,
+            /* the engine default's provider disambiguates a shared id */
+            employee.model ? undefined : defaultProvider,
+          )
+        }
+        onModel={
+          catalog.length
+            ? (c) => setDraftPick((d) => ({ ...d, [employeeId]: c }))
+            : undefined
+        }
+        picker={picker}
         onRename={(id, title) => {
           const conv = convs.find((c) => c.rootMessageId === id);
           if (conv) void renameConversation(conv.id, title);
@@ -417,13 +770,52 @@ export function DmPage() {
         }}
       />
       {threadEl}
-      {profileOpen && (
+      {addFolderOpen && (
+        <AddFolderDialog
+          folders={folderRows}
+          fs={fsListing}
+          discovered={discoveredRows}
+          onNeedDir={loadDir}
+          onClose={() => setAddFolderOpen(false)}
+          onAdd={onDialogAdd}
+        />
+      )}
+      {profileOpen && !editOpen && (
         <EmployeeProfileCard
           name={uiEmp.name}
           profile={uiEmp.profile}
           model={uiEmp.model}
           instructions={uiEmp.instructions}
+          onEdit={() => {
+            setEditError(null);
+            setEditOpen(true);
+          }}
           onClose={() => setProfileOpen(false)}
+        />
+      )}
+      {editOpen && (
+        <EditEmployeeDialog
+          e={uiEmp}
+          error={editError ?? undefined}
+          onClose={() => setEditOpen(false)}
+          onSave={(name, role) => {
+            void saveEmployee(employee.id, name, role)
+              .then(() => setEditOpen(false))
+              .catch((e) =>
+                setEditError(e instanceof Error ? e.message : String(e)),
+              );
+          }}
+          onRemove={() => {
+            void removeEmployee(employee.id)
+              .then(() => {
+                setEditOpen(false);
+                setProfileOpen(false);
+                void navigate({ to: "/" });
+              })
+              .catch((e) =>
+                setEditError(e instanceof Error ? e.message : String(e)),
+              );
+          }}
         />
       )}
     </div>
@@ -502,17 +894,27 @@ function EmployeeProfileCard({
   profile,
   model,
   instructions,
+  onEdit,
   onClose,
 }: {
   name: string;
   profile: string;
   model: string;
   instructions: string;
+  onEdit: () => void;
   onClose: () => void;
 }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-background/60 p-6">
-      <div className="w-full max-w-sm rounded-xl border bg-background p-5 shadow-2xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${name} profile`}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onClose();
+        }}
+        className="w-full max-w-sm rounded-xl border bg-background p-5 shadow-2xl"
+      >
         <div className="font-semibold">{name}</div>
         <dl className="mt-3 space-y-1.5 text-xs">
           <div className="flex gap-2">
@@ -528,13 +930,22 @@ function EmployeeProfileCard({
             <dd className="min-w-0 flex-1">{instructions || "—"}</dd>
           </div>
         </dl>
-        <button
-          type="button"
-          className="mt-4 w-full rounded-md border px-2 py-1.5 text-sm hover:bg-muted"
-          onClick={onClose}
-        >
-          Close
-        </button>
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            className="flex-1 rounded-md bg-foreground px-2 py-1.5 text-background text-sm"
+            onClick={onEdit}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            className="flex-1 rounded-md border px-2 py-1.5 text-sm hover:bg-muted"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, expect, type Page, test } from "@playwright/test";
+import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 /**
  * Issue #71 — desktop DM polish (incl. the AC-7 model-display-name scope
@@ -15,6 +16,11 @@ import { _electron, expect, type Page, test } from "@playwright/test";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
+// --repeat-each spreads a file's repeats across worker processes; each boots
+// the stack again, so ports are offset per worker or relays race one port (#84).
+const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
+const wport = (p: number) => p + WORKER * 100;
+
 const webDir = path.join(repo, "apps", "web");
 const desktopDir = path.join(repo, "apps", "desktop");
 
@@ -41,16 +47,29 @@ async function waitForHttp(url: string, ms = 30_000): Promise<void> {
 }
 
 function killProc(proc: ChildProcess): Promise<void> {
+  // `bun run dev` stacks intermediate shim layers between `proc` and the
+  // real dev-stack children, and bun doesn't forward signals through them —
+  // signal the whole process group (the spawn is `detached`) or the stack
+  // orphans and keeps its ports bound, poisoning the next boot (#84).
+  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
+    try {
+      if (proc.pid) process.kill(-proc.pid, sig);
+    } catch {
+      try {
+        proc.kill(sig);
+      } catch {}
+    }
+  };
   return new Promise((resolve) => {
     const t = setTimeout(() => {
-      proc.kill("SIGKILL");
+      killGroup("SIGKILL");
       resolve();
     }, 8_000);
     proc.once("exit", () => {
       clearTimeout(t);
       resolve();
     });
-    proc.kill("SIGTERM");
+    killGroup("SIGTERM");
   });
 }
 
@@ -59,11 +78,14 @@ async function bootStack(
   ports: { relay: number; feed: number; web: number },
 ): Promise<Stack> {
   const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
+  const leakTag = engineTag(tag);
   const proc = spawn("bun", ["run", "dev"], {
     cwd: webDir,
+    detached: true,
     env: {
       ...process.env,
       LILOS_HOME: home,
+      LILOS_ENGINE_TAG: leakTag,
       LILOS_RELAY_PORT: String(ports.relay),
       LILOS_FEED_PORT: String(ports.feed),
       LILOS_WEB_PORT: String(ports.web),
@@ -87,7 +109,10 @@ async function bootStack(
       relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
       feedWs: `ws://127.0.0.1:${ports.feed}/ws`,
       relayToken,
-      stop: () => killProc(proc),
+      stop: async () => {
+        await killProc(proc);
+        await expectNoEngineLeak(leakTag);
+      },
     };
   } catch (e) {
     proc.kill("SIGKILL");
@@ -100,7 +125,11 @@ const SHOTS = path.join(repo, "test-results", "ac-71");
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac71", { relay: 4590, feed: 4591, web: 5206 });
+  stack = await bootStack("ac71", {
+    relay: wport(4656),
+    feed: wport(4657),
+    web: wport(5258),
+  });
 });
 test.afterAll(async () => {
   await stack?.stop();

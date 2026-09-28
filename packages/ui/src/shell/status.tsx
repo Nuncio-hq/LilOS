@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { ScrollArea } from "../components/ui/scroll-area";
+import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
 import type { ComponentState, StatusComponent } from "../types";
 
@@ -90,6 +91,64 @@ export function StatusRow({
   );
 }
 
+/* The legs list itself, shared by StatusDialog and the Settings Status pane
+   (issue #139): one row per component with state chip, reason, hint and the
+   collapsed raw detail. */
+export function StatusList({ components }: { components: StatusComponent[] }) {
+  return (
+    <div className="divide-y">
+      {components.map((c) => {
+        const Icon = COMPONENT_ICON[c.id];
+        const st = STATE_STYLE[c.state];
+        const StateIcon = STATE_ICON[c.state].icon;
+        return (
+          <div key={c.id} className="flex items-start gap-3 px-4 py-3">
+            <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-sm">{c.label}</span>
+                <span
+                  className={cn(
+                    "flex items-center gap-1 font-medium text-xs",
+                    st.chip,
+                  )}
+                >
+                  <span className={cn("size-1.5 rounded-full", st.dot)} />
+                  {c.state}
+                </span>
+                <StateIcon
+                  className={cn(
+                    "ml-auto size-4 shrink-0",
+                    STATE_ICON[c.state].className,
+                  )}
+                />
+              </div>
+              <p className="mt-0.5 text-muted-foreground text-xs">
+                <InlineCodeText text={c.reason} />
+              </p>
+              {c.hint && (
+                <p className="mt-0.5 text-foreground/80 text-xs">
+                  <InlineCodeText text={c.hint} />
+                </p>
+              )}
+              {c.detail && (
+                <details className="mt-1">
+                  <summary className="cursor-pointer select-none text-muted-foreground text-xs">
+                    Details
+                  </summary>
+                  <pre className="mt-1 whitespace-pre-wrap break-all rounded bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                    {c.detail}
+                  </pre>
+                </details>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function StatusDialog({
   components,
   diagnostics,
@@ -131,56 +190,7 @@ export function StatusDialog({
           </Button>
         </div>
         <ScrollArea className="max-h-[60dvh]">
-          <div className="divide-y">
-            {components.map((c) => {
-              const Icon = COMPONENT_ICON[c.id];
-              const st = STATE_STYLE[c.state];
-              const StateIcon = STATE_ICON[c.state].icon;
-              return (
-                <div key={c.id} className="flex items-start gap-3 px-4 py-3">
-                  <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm">{c.label}</span>
-                      <span
-                        className={cn(
-                          "flex items-center gap-1 font-medium text-xs",
-                          st.chip,
-                        )}
-                      >
-                        <span className={cn("size-1.5 rounded-full", st.dot)} />
-                        {c.state}
-                      </span>
-                      <StateIcon
-                        className={cn(
-                          "ml-auto size-4 shrink-0",
-                          STATE_ICON[c.state].className,
-                        )}
-                      />
-                    </div>
-                    <p className="mt-0.5 text-muted-foreground text-xs">
-                      {c.reason}
-                    </p>
-                    {c.hint && (
-                      <p className="mt-0.5 text-foreground/80 text-xs">
-                        {c.hint}
-                      </p>
-                    )}
-                    {c.detail && (
-                      <details className="mt-1">
-                        <summary className="cursor-pointer select-none text-muted-foreground text-xs">
-                          Details
-                        </summary>
-                        <pre className="mt-1 whitespace-pre-wrap break-all rounded bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
-                          {c.detail}
-                        </pre>
-                      </details>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <StatusList components={components} />
         </ScrollArea>
         <div className="flex items-center gap-2 border-t bg-muted/30 p-3">
           <code className="hidden min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs sm:block">

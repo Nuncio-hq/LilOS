@@ -184,6 +184,8 @@ export type Folder = {
   repo?: string;
   branches: string[];
   workstreams: Workstream[];
+  /* The path is gone from disk (#113): shows in recents, can't be picked. */
+  missing?: boolean;
 }; // branches [] = not a git repo
 /* The machine's folders as the gateway sees them (complete.path / projects.for_cwd). Passed IN to AddFolderDialog. */
 export type FsDir = {
@@ -200,6 +202,11 @@ export type WsPick = {
   mode: WsMode;
   existing?: string;
 };
+
+/* One row of the `@` menu's Files section (#105): a file or dir inside the
+   session's folder, relative to it. The mention sent is the plain `@path`
+   text — contents are never inlined (the issue's "Path only" decision). */
+export type FileMention = { path: string; kind: "file" | "dir" };
 export type Workspace = {
   folder: string;
   project: string;
@@ -215,7 +222,10 @@ export type HireDraft = {
   name: string;
   role: string;
   instructions: string;
+  /** Engine model id — opaque, may contain `/` (#92 AC-8). */
   model: string;
+  /** The model's provider — ids are unique only per provider. */
+  provider?: string;
 };
 export type TicketRow = {
   id: string;
@@ -270,7 +280,7 @@ export type StatusComponent = {
   detail?: string;
 };
 
-/* Sidebar badge per employee: running turns (blue) / turns waiting on Oscar (amber). */
+/* Sidebar badge per employee: running turns (blue) / turns waiting on the user (amber). */
 export type EmpBadge = { running?: number; approvals?: number };
 
 /* People (non-employee) as display metadata for avatars/names. Passed IN from the app.
@@ -286,6 +296,9 @@ export type Human = {
 export type EmpFn = (id: string) => Employee | undefined;
 /* Lookup used across surfaces: human (non-employee) by id. */
 export type HumanFn = (id: string) => Human | undefined;
+/* The signed-in human's author id — surfaces resolve the viewer's display
+   name via `human(VIEWER_ID)` so it always reads the live identity (#118). */
+export const VIEWER_ID = "user";
 
 /* Theme: light / dark / follow the OS. State lives in the app; ThemeToggle is presentational. */
 export type Theme = "light" | "dark" | "system";
@@ -337,6 +350,29 @@ export type ModelPickerExtras = {
 /* Workbench tab ids (Focus). */
 export type WbTab = "changes" | "files" | "terminal" | "preview" | "pr";
 
+/* Open-in-editor / Reveal-in-Finder targets (issue #110): the apps os.open
+   knows. Editors arrive from os.editors, already in preference order —
+   [0] is the default until the settings picker lands (#132). */
+export type OsApp = "vscode" | "cursor" | "zed" | "xcode" | "finder";
+export type OsEditor = { id: Exclude<OsApp, "finder">; name: string };
+
+/* Settings surface (issue #139; prototyped first, real app in #132). Each
+   section renders only when its props are passed (D-#19); all values and
+   callbacks are app-owned state. */
+export type SettingsSectionId =
+  | "general"
+  | "approvals"
+  | "editors"
+  | "models"
+  | "status"
+  | "about";
+/* Engine approval policy: Smart = routine steps run, risky ones ask;
+   Manual = every ask surfaces; Off = never asks. */
+export type ApprovalPolicy = "smart" | "manual" | "off";
+/* What a brand-new conversation may touch without asking (#106). */
+export type ConversationAccess = "ask" | "full";
+/* An editor found on this Mac (#110) — `path` is the .app bundle. */
+export type DetectedEditor = { id: string; name: string; path?: string };
 /* Live host accessors for a session's real cwd (fs/git issue #11, forge #37).
    An accessor resolves null when the host is unreachable → the caller falls
    back to mock data; `forge.pr` resolving `{ pr: null }` is the host's real
@@ -358,4 +394,15 @@ export type HostAccessors = {
   prComment?: (cwd: string, body: string) => Promise<string>;
   /** Merges via `gh`; resolves the re-read PR; throws on failure. */
   prMerge?: (cwd: string, method: MergeMethod) => Promise<PullRequest>;
+  /** os.editors (issue #110): editors detected on the session machine, in
+     preference order; [] when none. */
+  osEditors?: () => Promise<OsEditor[]>;
+  /** os.open (issue #110): open `path` (or cwd itself) in an editor, at `line`
+     when the editor takes one, or reveal it in Finder; throws on failure. */
+  osOpen?: (
+    cwd: string,
+    path: string,
+    app: OsApp,
+    line?: number,
+  ) => Promise<void>;
 };

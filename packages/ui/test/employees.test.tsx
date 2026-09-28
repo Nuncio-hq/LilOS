@@ -126,6 +126,38 @@ describe("AC-1/AC-6 HireDialog", () => {
     fireEvent.click(second.getByRole("button", { name: /Hire Ada Lovelace/ }));
     expect(hired).toEqual([null]);
   });
+
+  test("#115 pending disables Hire while a request is in flight", () => {
+    const hired: (string | null)[] = [];
+    const { getByRole, getByText } = render(
+      <HireDialog
+        {...dialogProps}
+        usedProfiles={[]}
+        pending
+        onHire={(_d, profile) => hired.push(profile)}
+      />,
+    );
+    fireEvent.click(getByRole("button", { name: "Use profile" }));
+    fireEvent.click(getByText("reviewer").closest("button")!);
+    const hireBtn = getByRole("button", {
+      name: /Hire Reviewer/,
+    }) as HTMLButtonElement;
+    expect(hireBtn.disabled).toBe(true);
+    fireEvent.click(hireBtn);
+    expect(hired).toEqual([]);
+  });
+
+  test("#115 an engine rejection renders plainly under the form", () => {
+    const { getByText } = render(
+      <HireDialog
+        {...dialogProps}
+        usedProfiles={[]}
+        error="agent senior-engineer already exists — LilOS never overwrites a profile"
+        onHire={() => {}}
+      />,
+    );
+    expect(getByText(/already exists/)).toBeTruthy();
+  });
 });
 
 describe("AC-5 EmployeeCard profile-missing state", () => {
@@ -135,6 +167,7 @@ describe("AC-5 EmployeeCard profile-missing state", () => {
       <EmployeeCard
         e={{ ...EMPLOYEE, profile: "ghost" }}
         profiles={PROFILES}
+        ownerName="Ada"
         onDM={() => {}}
         onEdit={() => {}}
         onSwitchProfile={(id) => switches.push(id)}
@@ -153,6 +186,7 @@ describe("AC-5 EmployeeCard profile-missing state", () => {
       <EmployeeCard
         e={{ ...EMPLOYEE, profile: "ghost" }}
         profiles={PROFILES}
+        ownerName="Ada"
         onDM={() => {}}
       />,
     );
@@ -189,6 +223,21 @@ describe("AC-3/AC-4 EditEmployeeDialog", () => {
     const confirm = getAllByRole("button", { name: /remove from company/i });
     fireEvent.click(confirm[confirm.length - 1]!);
     expect(removed).toBe(1);
+  });
+
+  test("#115 a failed save/remove reason renders and the dialog stays", () => {
+    const { getByText, getByLabelText } = render(
+      <EditEmployeeDialog
+        e={EMPLOYEE}
+        onClose={() => {}}
+        onSave={() => {}}
+        onRemove={() => {}}
+        error="employee not found"
+      />,
+    );
+    expect(getByText("employee not found")).toBeTruthy();
+    // Still editable — the rejection didn't close anything.
+    expect(getByLabelText(/display name/i)).toBeTruthy();
   });
 });
 

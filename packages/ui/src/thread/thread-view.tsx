@@ -22,11 +22,15 @@ import type {
   AttachedFile,
   Channel,
   EmpFn,
+  Employee,
+  FileMention,
   HumanFn,
   ModelChoice,
   ModelOption,
   ModelPickerExtras,
   Msg,
+  OsApp,
+  OsEditor,
   Thread,
   Work,
 } from "../types";
@@ -50,19 +54,29 @@ export function ThreadView({
   running,
   onSend,
   onStop,
+  lastSent,
   onRetry,
   onUnqueue,
   onSendQueued,
   pending = [],
   accept,
   maxFileSize,
+  maxFiles,
   onAttachError,
   steer = false,
   onRemovePending,
   models,
   onModel,
   picker,
+  defaultModel,
+  defaultProvider,
   transcriptNote,
+  mentionables,
+  onSearchFiles,
+  draft,
+  onDraftChange,
+  editors,
+  onOpenPath,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -76,13 +90,26 @@ export function ThreadView({
   repo?: string;
   onStart?: () => void;
   running: boolean;
-  onSend: (text: string, files?: AttachedFile[]) => void;
+  /* Return a promise to delay clearing the composer draft until it resolves;
+     a rejected send keeps the text (issue #103, AC-5). */
+  onSend: (text: string, files?: AttachedFile[]) => void | Promise<unknown>;
   onStop?: () => void;
+  /* Host-held composer draft for this conversation (issue #103); omitted, the
+     composer keeps its own state. */
+  draft?: string;
+  onDraftChange?: (v: string) => void;
+  /* ↑ recall for the thread composer: the host's last sent message in this
+     conversation (issue #104 AC-5). */
+  lastSent?: string;
   /* Engine-reported models + pick handler (issue #30); no onModel → no picker (D-#19). */
   models?: ModelOption[];
   onModel?: (c: ModelChoice) => void;
   /* Refresh / Edit models… / provider names — each renders only with its handler. */
   picker?: ModelPickerExtras;
+  /* The engine's `models.list.default` — the unpinned-employee pick (#92 AC-5). */
+  defaultModel?: string;
+  /* The default's provider — a `{provider?, id}` pair disambiguates a shared id. */
+  defaultProvider?: string;
   onRetry?: (empId: string) => void;
   onUnqueue?: (i: number) => void;
   onSendQueued?: (i: number) => void;
@@ -91,14 +118,24 @@ export function ThreadView({
   pending?: string[];
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
   accept?: string;
-  /* Attachment byte cap + where rejections surface (issue #31). */
+  /* Attachment byte cap + count cap + where rejections surface (issue #31). */
   maxFileSize?: number;
+  maxFiles?: number;
   onAttachError?: (message: string) => void;
   steer?: boolean;
   onRemovePending?: (i: number) => void;
   /* Why the working transcript can't be shown (harness down, engine restarted) —
      rendered as a muted note where the transcript would be (issue #28). */
   transcriptNote?: string;
+  /* os.editors result + the os.open call bound to the session folder
+     (issue #110): the folder badge gains an "Open in …/Reveal in Finder"
+     menu only when both are passed (D-#19). */
+  editors?: OsEditor[];
+  onOpenPath?: (path: string, app: OsApp, line?: number) => void;
+  /* `@` menu sections (#105): employees for mention; a file/dir search for
+     the Files section — passed only when the session has a folder (cwd). */
+  mentionables?: Employee[];
+  onSearchFiles?: (query: string) => Promise<FileMention[]>;
 }) {
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
@@ -127,7 +164,17 @@ export function ThreadView({
             <code className="rounded bg-muted px-1">{thread.session}</code>
           </div>
           {thread.ws ? (
-            <WsBadge ws={thread.ws} />
+            <WsBadge
+              ws={thread.ws}
+              openMenu={
+                onOpenPath
+                  ? {
+                      editors: editors ?? [],
+                      onOpen: (app) => onOpenPath(".", app),
+                    }
+                  : undefined
+              }
+            />
           ) : (
             <WorkspaceBadge work={work} repo={repo} />
           )}
@@ -202,6 +249,7 @@ export function ThreadView({
                 <AgentTurn
                   r={r}
                   emp={emp}
+                  human={human}
                   last={i === thread.replies.length - 1}
                   onRetry={onRetry}
                   models={models}
@@ -214,6 +262,7 @@ export function ThreadView({
                       work={work}
                       repo={repo}
                       emp={emp}
+                      human={human}
                       resolved={resolved}
                       setResolved={setResolved}
                       onStart={onStart}
@@ -286,7 +335,8 @@ export function ThreadView({
             ? runningComposer(leadEmp?.name ?? "Employee", steer).placeholder
             : `Reply to ${leadEmp?.name ?? "the thread"} in this session…`
         }
-        employees={[]}
+        employees={mentionables ?? []}
+        onSearchFiles={onSearchFiles}
         hint={
           running
             ? runningComposer(leadEmp?.name ?? "Employee", steer).hint
@@ -299,15 +349,25 @@ export function ThreadView({
                   : `session ${thread.session}`
         }
         onSend={onSend}
+        draft={draft}
+        onDraftChange={onDraftChange}
         status={status}
+        lastSent={lastSent}
         accept={accept}
         maxFileSize={maxFileSize}
+        maxFiles={maxFiles}
         onAttachError={onAttachError}
         onStop={onStop}
         tools={
           onModel && models?.length ? (
             <ModelPicker
-              value={sessionChoice(thread, leadEmp?.model, models)}
+              value={sessionChoice(
+                thread,
+                leadEmp?.model,
+                models,
+                defaultModel,
+                defaultProvider,
+              )}
               models={models}
               onChoice={onModel}
               {...picker}

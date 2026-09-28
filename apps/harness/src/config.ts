@@ -12,7 +12,7 @@ import type { Logger } from "./log";
 
 /**
  * Harness configuration from env (runtime-portable: the same build runs on
- * Oscar's Mac or any other host — nothing macOS-specific outside `caffeinate`,
+ * the user's Mac or any other host — nothing macOS-specific outside `caffeinate`,
  * which is itself platform-gated).
  */
 export interface HarnessConfig {
@@ -29,7 +29,12 @@ export interface HarnessConfig {
         readyPattern?: RegExp;
         url?: string;
       }
-    | { kind: "fake"; tick?: number }
+    | {
+        kind: "fake";
+        tick?: number;
+        /** Argv marker for e2e leak assertions (`pgrep -f "--tag <t>"`). */
+        tag?: string;
+      }
     | { kind: "hermes"; provider?: string; model?: string }
     | { kind: "url"; url: string };
   /** ws port of the client-facing session feed (read-only engine surface). */
@@ -78,6 +83,7 @@ export function resolveHarnessConfig(
                 ...(env.ENGINE_FAKE_TICK
                   ? { tick: Number(env.ENGINE_FAKE_TICK) }
                   : {}),
+                ...(env.LILOS_ENGINE_TAG ? { tag: env.LILOS_ENGINE_TAG } : {}),
               }
             : (() => {
                 // An unknown kind must never quietly become the fake engine.
@@ -113,6 +119,7 @@ export function launcherFor(
         ...(config.engine.tick !== undefined
           ? { tick: config.engine.tick }
           : {}),
+        ...(config.engine.tag ? { tag: config.engine.tag } : {}),
         ...(serveBins.fake ? { serveBin: serveBins.fake } : {}),
         log,
       });

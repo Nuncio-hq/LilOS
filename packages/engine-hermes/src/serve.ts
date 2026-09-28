@@ -87,9 +87,12 @@ export async function startHermesServe(
         resolve(Number(m[1]));
       }
     };
-    const onExit = (code: number | null) => {
+    const onExit = (code: number | null, signal: string | null) => {
       cleanup();
-      reject(new Error(`hermes serve exited early (code ${code}):\n${logs}`));
+      // #95: a signal kill names the signal — the harness surfaces this
+      // verbatim, and "code null" says nothing about a device policy.
+      const why = signal ? `killed by ${signal}` : `code ${code}`;
+      reject(new Error(`hermes serve exited early (${why}):\n${logs}`));
     };
     child.stdout?.on("data", onData);
     child.stderr?.on("data", onData);

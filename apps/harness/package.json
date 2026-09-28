@@ -16,6 +16,8 @@
     "@lilos/background": "workspace:*",
     "@lilos/client-runtime": "workspace:*",
     "@lilos/contracts": "workspace:*",
+    "@lilos/engine-hermes": "workspace:*",
+    "@lilos/host": "workspace:*",
     "@lilos/surfaces": "workspace:*",
     "playwright": "1.63.0"
   },

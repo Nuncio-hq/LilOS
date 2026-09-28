@@ -6,9 +6,12 @@ import {
   type SessionModel,
 } from "@lilos/client-runtime";
 import type { Ask } from "@lilos/contracts/app";
-import type { ModelOption } from "@lilos/contracts/engine";
+import type { ModelOption, ModelProvider } from "@lilos/contracts/engine";
+import type { ModelVisibility } from "@lilos/ui";
 import { atom, computed, type ReadableAtom } from "nanostores";
 import type { LilosConfig } from "./config";
+import { hostUser, initHost } from "./host";
+import { osFullName, profile } from "./me";
 
 export const booted = atom(false);
 export const bootError = atom<string | null>(null);
@@ -28,6 +31,15 @@ export let engine: EngineClient;
 export async function bootRuntime(cfg: LilosConfig): Promise<void> {
   relay = new RelayClient({ url: cfg.relayWs, token: cfg.relayToken });
   engine = new EngineClient({ url: cfg.engineWs });
+  // #118: the signed-in human's profile is relay-owned — mirror it into the
+  // identity atoms; the OS full name prefills the fields the relay left empty.
+  relay.profile.listen((s) => profile.set(s));
+  // #113: the harness serves the host API on the feed port; folder picking
+  // and the thread header's branch badge ride it.
+  initHost(cfg);
+  void hostUser()
+    .then((u) => osFullName.set(u.fullName))
+    .catch(() => {});
   try {
     await relay.connect();
   } catch (e) {
@@ -47,8 +59,31 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
     un();
     void relay
       .listModels()
-      .then((r) => engineModels.set(r.models))
+      .then((r) => {
+        engineModels.set(r.models);
+        engineProviders.set(r.providers ?? []);
+        engineDefaultModel.set(r.default);
+        engineDefaultProvider.set(r.defaultProvider);
+      })
       .catch(() => {});
+  });
+  // The LilOS-owned Edit-models list (#92 AC-7) lives in the relay's settings
+  // store: seed it once, then follow `settings.changed` so a second window
+  // sees the same hide list.
+  void relay
+    .request<{ value: unknown }>("settings.get", { key: "modelVisibility" })
+    .then((r) => {
+      if (r.value) modelVisibility.set(r.value as ModelVisibility);
+    })
+    .catch(() => {});
+  relay.onEvent((method, params) => {
+    if (method !== "settings.changed") return;
+    const { key, value } = params as { key?: string; value?: unknown };
+    if (key === "modelVisibility") {
+      modelVisibility.set(
+        (value as ModelVisibility) ?? { providers: [], models: [] },
+      );
+    }
   });
 }
 
@@ -72,6 +107,24 @@ function keepEngineAlive(): void {
 
 /** The engine's selectable-model catalog (`models.list`); empty without the capability. */
 export const engineModels = atom<ModelOption[]>([]);
+
+/** `models.list`'s `default` — the engine-owned default a new session starts
+    on (#92 AC-5) and the hire-template fallback for a blank model (#115);
+    never a LilOS-side default (D-#85). */
+export const engineDefaultModel = atom<string | undefined>(undefined);
+
+/** Provider the engine's default model belongs to — ids are unique only
+    per provider on multi-provider engines (#92). */
+export const engineDefaultProvider = atom<string | undefined>(undefined);
+
+/** Provider rows `models.list` reported — names/logos for picker groups. */
+export const engineProviders = atom<ModelProvider[]>([]);
+
+/** The ONE hide list for every employee (#92 AC-7), relay-persisted. */
+export const modelVisibility = atom<ModelVisibility>({
+  providers: [],
+  models: [],
+});
 
 const modelCache = new Map<string, ReadableAtom<SessionModel>>();
 

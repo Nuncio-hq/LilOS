@@ -45,7 +45,8 @@ import {
 import { AttachmentChips } from "../conversation/turns";
 import { WorkspacePicker, wsHint } from "../dialogs/workspace-picker";
 import { Body, Row, Who } from "../feed/row";
-import { PHASE_LABEL, preview } from "../lib/helpers";
+import { folderLabel, PHASE_LABEL, preview } from "../lib/helpers";
+import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import type {
@@ -53,6 +54,7 @@ import type {
   EmpFn,
   Employee,
   EngineProfile,
+  FileMention,
   Folder,
   HumanFn,
   ModelChoice,
@@ -163,24 +165,31 @@ export function EmployeeHome({
   onProfile,
   onOpen,
   onSend,
+  lastSent,
   panelOpen,
   onPanel,
   folders,
   pick,
   setPick,
   onAddFolder,
+  onWorktree,
   loading,
   onRename,
   onArchive,
   onRetrySession,
   accept,
   maxFileSize,
+  maxFiles,
   onAttachError,
   models,
   modelChoice,
   onModel,
   picker,
   composerNote,
+  mentionables,
+  onSearchFiles,
+  draft: composerDraft,
+  onDraftChange,
 }: {
   e: Employee;
   feed: Msg[];
@@ -190,7 +199,20 @@ export function EmployeeHome({
   onNav: () => void;
   onProfile: () => void;
   onOpen: (id: string) => void;
-  onSend: (t: string, pick?: WsPick, files?: AttachedFile[]) => void;
+  /* Return a promise to delay clearing the composer draft until it resolves;
+     a rejected send keeps the text (issue #103, AC-5). */
+  onSend: (
+    t: string,
+    pick?: WsPick,
+    files?: AttachedFile[],
+  ) => void | Promise<unknown>;
+  /* Host-held composer draft for this DM channel (issue #103); omitted, the
+     composer keeps its own state. */
+  draft?: string;
+  onDraftChange?: (v: string) => void;
+  /* ↑ recall for the new-session composer: the last top-level message sent in
+     this DM (issue #104 AC-5). */
+  lastSent?: string;
   panelOpen: boolean;
   onPanel: () => void;
   folders: Folder[];
@@ -198,14 +220,17 @@ export function EmployeeHome({
   setPick: (p: WsPick) => void;
   /* Folder picking lands with the workspace slice (#11) — omit to hide it. */
   onAddFolder?: () => void;
+  /* Workstream picks (#10) — render only when passed (D-#19, #113). */
+  onWorktree?: (p: WsPick) => void;
   loading?: boolean;
   onRename?: (id: string, title: string) => void;
   onArchive?: (id: string, archived: boolean) => void;
   onRetrySession?: (root: Extract<Msg, { kind: "msg" }>) => void;
   /* Composer attachment types the host accepts; absent = no attach UI. */
   accept?: string;
-  /* Attachment byte cap + where rejections surface (issue #31). */
+  /* Attachment byte cap + count cap + where rejections surface (issue #31). */
   maxFileSize?: number;
+  maxFiles?: number;
   onAttachError?: (message: string) => void;
   /* Model for the NEW session: starts at the employee's default (never the last
      session's pick). No onModel → no picker (D-#19). */
@@ -216,6 +241,11 @@ export function EmployeeHome({
   /* Plain reason the engine is unavailable ("Hermes not found at …", #85);
      renders above the composer so a dead engine never looks sendable. */
   composerNote?: ReactNode;
+  /* `@` menu sections (#105): employees listed for mention, and — only when
+     the picked folder is searchable — a file/dir search for the Files
+     section. Both omitted → bare composer like before. */
+  mentionables?: Employee[];
+  onSearchFiles?: (query: string) => Promise<FileMention[]>;
 }) {
   const pickFolder = folders.find((x) => x.id === pick.folder);
   const [filter, setFilter] = useState("");
@@ -322,10 +352,14 @@ export function EmployeeHome({
               <span className="flex items-center gap-1 text-muted-foreground">
                 <FolderIcon className="size-3" />
                 {t.ws.project}
-                <GitBranchIcon className="size-3" />
-                <span className="font-mono text-emerald-700">
-                  {t.ws.branch}
-                </span>
+                {t.ws.branch && (
+                  <>
+                    <GitBranchIcon className="size-3" />
+                    <span className="font-mono text-emerald-700">
+                      {t.ws.branch}
+                    </span>
+                  </>
+                )}
               </span>
             )}
             {running ? (
@@ -471,23 +505,34 @@ export function EmployeeHome({
       <Composer
         placeholder={
           pickFolder
-            ? `New session with ${e.name} in ${pickFolder.project}…`
+            ? `New session with ${e.name} in ${folderLabel(pickFolder, folders)}…`
             : `New session with ${e.name}…`
         }
-        employees={[]}
-        hint={wsHint(pickFolder, pick)}
+        employees={mentionables ?? []}
+        onSearchFiles={onSearchFiles}
+        hint={wsHint(pickFolder, pick, !onWorktree)}
         onSend={(t, files) => onSend(t, pick, files)}
+        draft={composerDraft}
+        onDraftChange={onDraftChange}
+        lastSent={lastSent}
         accept={accept}
         maxFileSize={maxFileSize}
+        maxFiles={maxFiles}
         onAttachError={onAttachError}
         queued={
           composerNote ? (
             <div
               data-composer-note
-              className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-50/60 px-3 py-2 text-amber-900 text-xs dark:bg-amber-950/20 dark:text-amber-200"
+              className="mb-2 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-50/60 px-3 py-2 text-amber-900 text-xs dark:bg-amber-950/20 dark:text-amber-200"
             >
               <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
-              <span>{composerNote}</span>
+              <span>
+                {typeof composerNote === "string" ? (
+                  <InlineCodeText text={composerNote} />
+                ) : (
+                  composerNote
+                )}
+              </span>
             </div>
           ) : undefined
         }
@@ -499,6 +544,7 @@ export function EmployeeHome({
                 pick={pick}
                 setPick={setPick}
                 onAddFolder={onAddFolder}
+                onWorktree={onWorktree}
               />
             ) : null}
             {onModel && models?.length ? (
@@ -522,6 +568,7 @@ export function EmployeeCard({
   e,
   profiles,
   engineName,
+  ownerName,
   onDM,
   onEdit,
   onSwitchProfile,
@@ -530,6 +577,8 @@ export function EmployeeCard({
   profiles: EngineProfile[];
   /** The engine's own name (`engine-fake`, `hermes`, ...) for the Engine row. */
   engineName?: string;
+  /** The signed-in human's name for the "owned by …" line (#118). */
+  ownerName: string;
   onDM: () => void;
   onEdit?: () => void;
   onSwitchProfile?: (profileId: string) => void;
@@ -543,7 +592,7 @@ export function EmployeeCard({
           <div>
             <div className="font-semibold text-base">{e.name}</div>
             <div className="text-muted-foreground text-xs">
-              {e.role} · owned by Oscar
+              {e.role} · owned by {ownerName}
             </div>
           </div>
           <div className="ml-auto flex gap-1">

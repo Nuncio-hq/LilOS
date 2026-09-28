@@ -36,10 +36,20 @@ const SPECIAL_KEYS: Record<string, { code: string; vk: number }> = {
 };
 
 export class ChromiumBrowser implements BrowserDriver {
+  /**
+   * `args` land verbatim on the Chromium process's command line — the e2e
+   * leak watchdog uses it to pgrep a spec's browser (`--lilos-demo-tag=`).
+   */
+  constructor(private options: { args?: string[] } = {}) {}
   private vp = { ...VIEWPORT };
   /** The page's live viewport — follows `resize` (issue #56 AC-4). */
   get viewport() {
     return this.vp;
+  }
+
+  /** Gone = closed page or no page yet surviving to serve ops (#84). */
+  get closed() {
+    return !this.page || this.page.isClosed();
   }
   private browser?: Browser;
   private context?: BrowserContext;
@@ -53,7 +63,10 @@ export class ChromiumBrowser implements BrowserDriver {
   private async ensure(): Promise<Page> {
     if (this.page && !this.page.isClosed()) return this.page;
     this.starting ??= (async () => {
-      this.browser = await chromium.launch({ headless: true });
+      this.browser = await chromium.launch({
+        headless: true,
+        args: this.options.args,
+      });
       this.context = await this.browser.newContext({
         viewport: this.vp,
         deviceScaleFactor: 1,
@@ -105,6 +118,24 @@ export class ChromiumBrowser implements BrowserDriver {
     const cur = page.viewportSize();
     if (!cur || cur.width !== size.width || cur.height !== size.height) {
       await page.setViewportSize(size);
+      // Screencast frames only emit on compositor damage — a static page can
+      // skip re-raster on a viewport resize, leaving the viewer on a frame
+      // captured at the old size (#84: remote resized, frame stayed stale for
+      // the whole poll). Push one fresh capture so a resize always lands a
+      // new-size frame.
+      if (this.casting) {
+        const cdp = this.cdp;
+        cdp
+          ?.send("Page.captureScreenshot", { format: "jpeg" })
+          .then((r) => {
+            const data = (r as { data?: string }).data;
+            if (data)
+              this.frameCb?.(
+                Uint8Array.from(atob(data), (c) => c.charCodeAt(0)),
+              );
+          })
+          .catch(() => {});
+      }
     }
     this.vp = { ...size };
   }

@@ -25,6 +25,8 @@ import { StatusReporter, teeLogger } from "../src/status";
  *                     HERMES_PROVIDER / HERMES_MODEL for a live model
  *   LILOS_MODEL       model name reported on the status surface
  *   LILOS_DEMO_SESSIONS  open N engine sessions so the live count is real
+ *   LILOS_DEMO_LOG    log file (default ~/.lilos/harness-demo.log — e2e
+ *                     specs always pass a temp-dir path, issue #96 AC-3)
  */
 const repoRoot = join(import.meta.dir, "../../..");
 const url = process.env.LILOS_RELAY_URL ?? "ws://127.0.0.1:4577/ws";
@@ -46,7 +48,9 @@ const statusIntervalMs = Number.parseInt(
 
 const log = teeLogger(
   createFileLogger({
-    file: join(homedir(), ".lilos", "harness-demo.log"),
+    file:
+      process.env.LILOS_DEMO_LOG ??
+      join(homedir(), ".lilos", "harness-demo.log"),
     console: true,
   }),
 );
@@ -62,12 +66,42 @@ const client = new RelayClient({
     });
   },
 });
+/**
+ * Register on every "ready" — a dropped socket makes the relay drop this
+ * host (`host = null`), and without re-registering the reconnecting client
+ * is an anonymous app forever while status reports a down harness (#84).
+ * Same pattern as apps/harness/src/harness.ts's onRelayReady.
+ */
+let registering = false;
+let registerAgain = false;
+const register = async () => {
+  if (registering) {
+    registerAgain = true;
+    return;
+  }
+  registering = true;
+  try {
+    do {
+      registerAgain = false;
+      const { hostId } = await client.request<{ hostId: string }>(
+        "harness.register",
+        { protocolVersion: APP_PROTOCOL_VERSION, version: packageJson.version },
+      );
+      log.info("registered with relay", { hostId, url });
+    } while (registerAgain);
+  } finally {
+    registering = false;
+  }
+};
+client.state.listen((state) => {
+  if (state === "ready")
+    void register().catch((e) =>
+      log.warn("harness.register failed", { error: String(e) }),
+    );
+});
 await client.connect();
-const { hostId } = await client.request<{ hostId: string }>(
-  "harness.register",
-  { protocolVersion: APP_PROTOCOL_VERSION, version: packageJson.version },
-);
-log.info("registered with relay", { hostId, url });
+// The first ready fired during connect() — wait out that registration.
+while (registering) await new Promise((r) => setTimeout(r, 25));
 
 const live = new Set<string>();
 const supervisor = new EngineSupervisor({
@@ -87,7 +121,13 @@ const supervisor = new EngineSupervisor({
             startupTimeoutMs: 1_000,
             log,
           })
-        : fakeEngineLauncher({ repoRoot, log }),
+        : fakeEngineLauncher({
+            repoRoot,
+            ...(process.env.LILOS_ENGINE_TAG
+              ? { tag: process.env.LILOS_ENGINE_TAG }
+              : {}),
+            log,
+          }),
   connect: (engineUrl) => connectEngineWs(engineUrl),
   onConnection: (conn) => {
     // A dropped engine socket means those sessions may be gone — recount

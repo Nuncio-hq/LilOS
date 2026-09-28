@@ -52,7 +52,19 @@ export { FirstRun } from "./first-run/first-run";
 // focus mode
 export { FocusView } from "./focus/focus-view";
 export { SessionUsage } from "./focus/session-usage";
+// per-conversation composer drafts (issue #103)
+export {
+  clearDraft,
+  clearDraftIfSent,
+  draftKey,
+  dropDrafts,
+  getDraft,
+  setDraft,
+  useDraft,
+} from "./lib/drafts";
 export * from "./lib/helpers";
+// settings
+export { SettingsView } from "./settings/settings-view";
 // shell
 export { HermesAvatar, HumanAvatar } from "./shell/avatars";
 export { StatusBanner } from "./shell/banner";
@@ -64,7 +76,12 @@ export {
 } from "./shell/preview-menu";
 export { RightPanel, TicketsList } from "./shell/right-panel";
 export { Sidebar } from "./shell/sidebar";
-export { StatusDialog, StatusRow, statusSummary } from "./shell/status";
+export {
+  StatusDialog,
+  StatusList,
+  StatusRow,
+  statusSummary,
+} from "./shell/status";
 export { ThemeToggle } from "./shell/theme-toggle";
 export { useTheme } from "./shell/use-theme";
 
@@ -80,6 +97,7 @@ export { DiffStat, DiffView, parsePatch } from "./workbench/diff-view";
 export { TreeNodes } from "./workbench/file-tree-nodes";
 export type { LiveBrowserInput, LiveSurfaces } from "./workbench/live";
 export { LivePreview, LiveTerminal } from "./workbench/live";
+export { OpenPathButton, OpenPathMenu } from "./workbench/open-path";
 export { PrPanel } from "./workbench/pr-panel";
 export { StepRow } from "./workbench/step-row";
 // workbench

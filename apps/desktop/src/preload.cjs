@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld("lilos", {
   openStatus: () => ipcRenderer.invoke("lilos:open-status"),
   openApp: () => ipcRenderer.invoke("lilos:open-app"),
   checkUpdate: () => ipcRenderer.invoke("lilos:check-update"),
+  // #113: native folder picker for the DM composer (nil on plain web, where
+  // the app opens its own AddFolderDialog over the host API instead).
+  pickFolder: () => ipcRenderer.invoke("lilos:pick-folder"),
   // #32 notifications: renderer posts a DesktopNotification; a click on the
   // macOS notification delivers the conversation id back over
   // lilos:open-conversation.

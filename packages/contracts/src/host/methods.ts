@@ -14,6 +14,8 @@ import {
   FsListResult,
   FsReadParams,
   FsReadResult,
+  FsSearchParams,
+  FsSearchResult,
   FsTreeParams,
   FsTreeResult,
 } from "./fs";
@@ -29,7 +31,14 @@ import {
   GitStatusParams,
   GitStatusResult,
 } from "./git";
+import {
+  OsEditorsParams,
+  OsEditorsResult,
+  OsOpenParams,
+  OsOpenResult,
+} from "./os";
 import { HOST_API } from "./protocol";
+import { HostUserParams, HostUserResult } from "./user";
 
 /** One host method: request params, result shape, doc line. */
 export interface HostMethodContract {
@@ -67,6 +76,11 @@ export const HOST_METHODS = {
     params: FsTreeParams,
     result: FsTreeResult,
     doc: "Recursive file listing of a folder (skips .git/node_modules; honors .gitignore in repos).",
+  },
+  "fs.search": {
+    params: FsSearchParams,
+    result: FsSearchResult,
+    doc: "Fuzzy file/dir search inside a folder (gitignore-aware in repos) for `@`-mention picking.",
   },
   "fs.read": {
     params: FsReadParams,
@@ -112,5 +126,20 @@ export const HOST_METHODS = {
     params: ForgeMergeParams,
     result: ForgeMergeResult,
     doc: "Merge the PR via `gh` (squash|merge|rebase); returns the re-read PR, never stdout trust.",
+  },
+  "os.editors": {
+    params: OsEditorsParams,
+    result: OsEditorsResult,
+    doc: "Editors detected on this Mac (VS Code, Cursor, Zed, Xcode by bundle id), preference order; first = default.",
+  },
+  "os.open": {
+    params: OsOpenParams,
+    result: OsOpenResult,
+    doc: "Open a path inside the session folder in an editor (`code -g`/`cursor -g`/`zed` line syntax; Xcode file-only) or reveal it in Finder. argv exec, no shell.",
+  },
+  "host.user": {
+    params: HostUserParams,
+    result: HostUserResult,
+    doc: "OS account name/full name — prefill source for the identity fields (#118).",
   },
 } as const satisfies Record<string, HostMethodContract>;

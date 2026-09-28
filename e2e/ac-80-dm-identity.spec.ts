@@ -10,6 +10,7 @@ import {
   type Page,
   test,
 } from "@playwright/test";
+import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 /**
  * Issue #80 — DM identity + streaming markdown. AC-1 asserts the user's
@@ -21,6 +22,11 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
+// --repeat-each spreads a file's repeats across worker processes; each boots
+// the stack again, so ports are offset per worker or relays race one port (#84).
+const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
+const wport = (p: number) => p + WORKER * 100;
+
 const webDir = path.join(repo, "apps", "web");
 const desktopDir = path.join(repo, "apps", "desktop");
 
@@ -32,10 +38,12 @@ interface Stack {
   stop: () => Promise<void>;
 }
 
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
+async function waitForHttp(url: string, ms = 120_000): Promise<void> {
   const start = Date.now();
   for (;;) {
-    const ok = await fetch(url)
+    // A wedged fetch (accepted socket, starved handler) hangs the loop for
+    // the whole budget otherwise — cap each attempt so retries stay cheap.
+    const ok = await fetch(url, { signal: AbortSignal.timeout(5_000) })
       .then((r) => r.ok || r.status === 404)
       .catch(() => false);
     if (ok) return;
@@ -46,16 +54,29 @@ async function waitForHttp(url: string, ms = 30_000): Promise<void> {
 }
 
 function killProc(proc: ChildProcess): Promise<void> {
+  // `bun run dev` stacks intermediate shim layers between `proc` and the
+  // real dev-stack children, and bun doesn't forward signals through them —
+  // signal the whole process group (the spawn is `detached`) or the stack
+  // orphans and keeps its ports bound, poisoning the next boot (#84).
+  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
+    try {
+      if (proc.pid) process.kill(-proc.pid, sig);
+    } catch {
+      try {
+        proc.kill(sig);
+      } catch {}
+    }
+  };
   return new Promise((resolve) => {
     const t = setTimeout(() => {
-      proc.kill("SIGKILL");
+      killGroup("SIGKILL");
       resolve();
     }, 8_000);
     proc.once("exit", () => {
       clearTimeout(t);
       resolve();
     });
-    proc.kill("SIGTERM");
+    killGroup("SIGTERM");
   });
 }
 
@@ -65,11 +86,14 @@ async function bootStack(
   extraEnv: Record<string, string> = {},
 ): Promise<Stack> {
   const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
+  const leakTag = engineTag(tag);
   const proc = spawn("bun", ["run", "dev"], {
     cwd: webDir,
+    detached: true,
     env: {
       ...process.env,
       LILOS_HOME: home,
+      LILOS_ENGINE_TAG: leakTag,
       LILOS_RELAY_PORT: String(ports.relay),
       LILOS_FEED_PORT: String(ports.feed),
       LILOS_WEB_PORT: String(ports.web),
@@ -79,13 +103,21 @@ async function bootStack(
   });
   const webUrl = `http://127.0.0.1:${ports.web}`;
   try {
+    // vite answers HTTP before the relay accepts WS — wait for both or the
+    // page hits "WebSocket error before open" under parallel load (#84). The
+    // app's first WS connect has no retry, so the relay port must listen
+    // before the page ever loads.
     await waitForHttp(webUrl);
+    await waitForHttp(`http://127.0.0.1:${ports.relay}/`);
     return {
       home,
       webUrl,
       relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
       feedWs: `ws://127.0.0.1:${ports.feed}/ws`,
-      stop: () => killProc(proc),
+      stop: async () => {
+        await killProc(proc);
+        await expectNoEngineLeak(leakTag);
+      },
     };
   } catch (e) {
     proc.kill("SIGKILL");
@@ -116,7 +148,7 @@ async function dmDefault(page: Page, webUrl: string) {
   await page.goto(`${webUrl}/`);
   const aside = page.locator("aside");
   await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
+    timeout: 90_000,
   });
   const dmBtn = page.getByRole("button", {
     name: /open dm|set up later|message/i,
@@ -145,11 +177,18 @@ test.describe.configure({ mode: "serial" });
 test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", async ({
   page,
 }) => {
-  const stack = await bootStack("ac80a", {
-    relay: 4610,
-    feed: 4611,
-    web: 5210,
-  });
+  test.setTimeout(180_000);
+  const stack = await bootStack(
+    "ac80a",
+    {
+      relay: wport(4660),
+      feed: wport(4661),
+      web: wport(5262),
+    },
+    // #118: the signed-in name is the OS user's — pin it so the identity
+    // assertions below stay deterministic on any machine.
+    { LILOS_USER_NAME: "Oscar" },
+  );
   try {
     await dmDefault(page, stack.webUrl);
     await send(page, PROMPT);
@@ -177,8 +216,9 @@ test("AC-2 markdown renders while the reply streams, then settles unchanged", as
 }) => {
   const stack = await bootStack(
     "ac80b",
-    { relay: 4612, feed: 4613, web: 5211 },
-    { ENGINE_FAKE_TICK: "150" }, // ~6s text phase → observable mid-stream
+    { relay: wport(4664), feed: wport(4665), web: wport(5264) },
+    // ~6s text phase → observable mid-stream; pin the human's name (#118).
+    { ENGINE_FAKE_TICK: "150", LILOS_USER_NAME: "Oscar" },
   );
   try {
     await dmDefault(page, stack.webUrl);
@@ -210,8 +250,8 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
   test.setTimeout(240_000);
   const stack = await bootStack(
     "ac80c",
-    { relay: 4614, feed: 4615, web: 5212 },
-    { ENGINE_FAKE_TICK: "150" },
+    { relay: wport(4667), feed: wport(4669), web: wport(5266) },
+    { ENGINE_FAKE_TICK: "150", LILOS_USER_NAME: "Oscar" },
   );
   try {
     const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
@@ -236,6 +276,7 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
         LILOS_RELAY_PORT: portOf(stack.relayWs),
         LILOS_FEED_PORT: portOf(stack.feedWs),
         LILOS_WEB_URL: stack.webUrl,
+        LILOS_USER_NAME: "Oscar",
       },
     });
     try {

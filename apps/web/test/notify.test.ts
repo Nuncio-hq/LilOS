@@ -1,6 +1,6 @@
 /**
  * Issue #32 — AC-1 + AC-2 renderer logic: engine events become desktop
- * notifications only for conversations Oscar is not looking at, and every
+ * notifications only for conversations the user is not looking at, and every
  * notification carries the conversation it belongs to so a click can open it.
  * Pure/injected deps — the Electron sink is a stub here; the real
  * Notification + click path is covered in apps/desktop/test.
@@ -347,6 +347,99 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  const stateHarness = () => {
+    const posted: DesktopNotification[] = [];
+    const listeners = new Set<(e: EngineEvent) => void>();
+    const viewListeners = new Set<() => void>();
+    const askListeners = new Set<() => void>();
+    const state = {
+      openConv: "c1" as string | null,
+      foreground: true,
+      open: [{ sessionId: "s1", requestId: "r1", request: approval }],
+    };
+    watchNotifications({
+      onEvent: (fn) => {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+      onViewChange: (fn) => {
+        viewListeners.add(fn);
+        return () => viewListeners.delete(fn);
+      },
+      onOpenAsksChange: (fn) => {
+        askListeners.add(fn);
+        return () => askListeners.delete(fn);
+      },
+      openAsks: () => state.open,
+      context: () => ctx(conv("c1", "s1"), conv("c2", "s2")),
+      openConversationId: () => state.openConv,
+      inForeground: () => state.foreground,
+      isRequestOpen: (id) => state.open.some((r) => r.requestId === id),
+      post: (n) => posted.push(n),
+    });
+    const emit = (e: EngineEvent) => {
+      for (const fn of listeners) fn(e);
+    };
+    const viewChanged = () => {
+      for (const fn of viewListeners) fn();
+    };
+    const asksChanged = () => {
+      for (const fn of askListeners) fn();
+    };
+    return { posted, state, emit, viewChanged, asksChanged };
+  };
+
+  it("posts an ask suppressed while in view once the user navigates away (#84)", () => {
+    const { posted, state, emit, viewChanged } = stateHarness();
+
+    // The ask arrives while its conversation is in view → suppressed.
+    emit(
+      ev("request.opened", "s1", {
+        turnId: "t1",
+        requestId: "r1",
+        request: approval,
+      }),
+    );
+    expect(posted).toEqual([]);
+
+    // Navigating away while the ask is still open posts it now — the losing
+    // ordering CI hit: engine-fake's request.opened beat the goto.
+    state.openConv = "c2";
+    viewChanged();
+    expect(posted.map((n) => n.conversationId)).toEqual(["c1"]);
+    expect(posted[0]?.kind).toBe("ask");
+
+    // No double-post on further view changes.
+    state.openConv = null;
+    viewChanged();
+    expect(posted).toHaveLength(1);
+  });
+
+  it("posts a replayed ask after a reload without any live event (#84)", () => {
+    // Remount with the ask already pending (events.since replay feeds
+    // openRequests; request.opened never re-fires live).
+    const { posted, state, asksChanged } = stateHarness();
+    state.openConv = "c2";
+    asksChanged(); // the sessionModels tick that carried the replayed ask
+    expect(posted.map((n) => n.conversationId)).toEqual(["c1"]);
+  });
+
+  it("drops a suppressed ask that was resolved while in view", () => {
+    const { posted, state, emit, viewChanged } = stateHarness();
+    emit(
+      ev("request.opened", "s1", {
+        turnId: "t1",
+        requestId: "r1",
+        request: approval,
+      }),
+    );
+    // the user answered it while it was on screen — no notification is owed.
+    state.open = [];
+    state.openConv = "c2";
+    viewChanged();
+    expect(posted).toEqual([]);
   });
 });
 

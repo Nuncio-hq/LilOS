@@ -1,9 +1,10 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 /**
  * Issue #28 — sessions: history after restart, rename/archive, filter,
@@ -25,6 +26,8 @@ interface Procs {
   relayToken: string;
   ports: { relay: number; feed: number; web: number };
   procs: Record<"relay" | "harness" | "web", ChildProcess | undefined>;
+  /** Vite's captured output — the re-optimize reload line must never appear. */
+  viteLog: () => string;
   /** Kill one process (or all) and wait for exit. */
   kill: (which?: "relay" | "harness" | "web") => Promise<void>;
   /** Respawn the relay against the same home (used after kill("relay")). */
@@ -84,9 +87,23 @@ async function spawnRelay(home: string, port: number): Promise<ChildProcess> {
   return p;
 }
 
+/**
+ * --repeat-each spreads this file's repeats across worker processes; each
+ * worker boots the whole stack, so ports (and the vite cache dir below) are
+ * offset per worker — otherwise 4 relays race the same port and die (#84).
+ */
+const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
+const viteCacheDir = `node_modules/.vite-ac28-w${WORKER}`;
+
 async function boot(tag: string, home?: string): Promise<Procs> {
   const base = home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-28-${tag}-`));
-  const ports = { relay: 4688, feed: 4692, web: 5301 };
+  const leakTag = engineTag(tag);
+  const ports = {
+    relay: 4688 + WORKER * 10,
+    feed: 4692 + WORKER * 10,
+    web: 5301 + WORKER * 10,
+  };
+  let viteOut = "";
   const procs: Procs["procs"] = {
     relay: undefined,
     harness: undefined,
@@ -109,6 +126,7 @@ async function boot(tag: string, home?: string): Promise<Procs> {
       LILOS_REPO_ROOT: repo,
       LILOS_WORKDIR: path.join(harnessHome, "work"),
       LILOS_FEED_PORT: String(ports.feed),
+      LILOS_ENGINE_TAG: leakTag,
     },
     stdio: ["ignore", "inherit", "inherit"],
   });
@@ -134,10 +152,14 @@ async function boot(tag: string, home?: string): Promise<Procs> {
         LILOS_RELAY_TOKEN: relayToken,
         LILOS_ENGINE_WS: `ws://127.0.0.1:${ports.feed}/ws`,
         LILOS_WEB_PORT: String(ports.web),
+        LILOS_VITE_CACHE_DIR: viteCacheDir,
       },
-      stdio: ["ignore", "inherit", "inherit"],
+      // Captured so the spec can assert no mid-boot re-optimize reload (#84).
+      stdio: ["ignore", "pipe", "pipe"],
     },
   );
+  procs.web.stdout?.on("data", (d) => (viteOut += d));
+  procs.web.stderr?.on("data", (d) => (viteOut += d));
   await waitForHttp(`http://127.0.0.1:${ports.web}`);
 
   return {
@@ -146,6 +168,7 @@ async function boot(tag: string, home?: string): Promise<Procs> {
     relayToken,
     ports,
     procs,
+    viteLog: () => viteOut,
     kill: async (which) => {
       const names: (keyof typeof procs)[] = which
         ? [which]
@@ -157,6 +180,7 @@ async function boot(tag: string, home?: string): Promise<Procs> {
           await killProc(p);
         }
       }
+      if (names.includes("harness")) await expectNoEngineLeak(leakTag);
     },
     restartRelay: async () => {
       procs.relay = await spawnRelay(base, ports.relay);
@@ -166,7 +190,38 @@ async function boot(tag: string, home?: string): Promise<Procs> {
 
 /** Open the app, land on Default's DM home (dismissing the first-run card). */
 async function dmDefault(stack: Procs, page: Page) {
-  await page.goto(`${stack.webUrl}/`);
+  // #84: a vite re-optimize mid-navigation sends a full reload that can
+  // abort the in-flight page.goto (ERR_ABORTED on PR #87's CI). A reload
+  // wipes the JS context but sessionStorage survives — count navigations.
+  await page.addInitScript(() => {
+    sessionStorage.setItem(
+      "__lilos_navs",
+      String(Number(sessionStorage.getItem("__lilos_navs") ?? 0) + 1),
+    );
+  });
+  const navs = () =>
+    page.evaluate(() => Number(sessionStorage.getItem("__lilos_navs") ?? 0));
+  // #84: goto ERR_ABORTED can come from a vite re-optimize reload OR the
+  // page navigating itself — record every navigation + console line so the
+  // losing ordering is in the failure message either way.
+  const navLog: string[] = [];
+  page.on("framenavigated", (f) => {
+    if (f === page.mainFrame()) navLog.push(`nav -> ${f.url()}`);
+  });
+  page.on("console", (m) =>
+    navLog.push(`console.${m.type()} ${m.text().slice(0, 200)}`),
+  );
+  page.on("requestfailed", (r) =>
+    navLog.push(`reqfail ${r.url()} ${r.failure()?.errorText ?? ""}`),
+  );
+  try {
+    await page.goto(`${stack.webUrl}/`);
+  } catch (e) {
+    throw new Error(
+      `${(e as Error).message}\nvite log tail:\n${stack.viteLog().slice(-2000)}\nnav log:\n${navLog.join("\n")}`,
+    );
+  }
+  const nav0 = await navs();
   const aside = page.locator("aside");
   await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
     timeout: 60_000, // the first run spawns the engine; suite runs are parallel
@@ -185,6 +240,27 @@ async function dmDefault(stack: Procs, page: Page) {
     await aside.getByRole("button", { name: /default/i }).click();
   }
   await expect(page).toHaveURL(/\/dm\//);
+  // Any mid-flight full reload bumps the count past what this goto saw —
+  // and the navigation entry flips to "reload" even when goto survived it.
+  const tail = stack.viteLog().slice(-2000);
+  expect(await navs(), `vite log tail:\n${tail}`).toBe(nav0);
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          performance.getEntriesByType(
+            "navigation",
+          )[0] as PerformanceNavigationTiming
+        )?.type,
+    ),
+    `vite log tail:\n${stack.viteLog().slice(-2000)}`,
+  ).not.toBe("reload");
+  // Vite-side view too: once the dep optimizer has settled (it can outlast
+  // the navigation under load), it must never have broadcast a reload.
+  if (stack.viteLog().includes("dependencies optimized")) {
+    expect(stack.viteLog()).not.toContain("optimized dependencies changed");
+    expect(stack.viteLog()).not.toContain("new dependencies optimized");
+  }
 }
 
 const send = async (page: Page, text: string) => {
@@ -196,12 +272,21 @@ const send = async (page: Page, text: string) => {
 let stack: Procs;
 test.beforeAll(async () => {
   test.setTimeout(180_000);
+  // Cold dep cache — a warm cache would never re-optimize and the vite-log
+  // assertion above would be vacuous. Per-worker dir: a sibling worker's
+  // rm must not invalidate this worker's running optimizer (#84).
+  rmSync(path.join(webDir, viteCacheDir), {
+    recursive: true,
+    force: true,
+  });
   stack = await boot("main");
 });
 test.afterAll(async () => {
   await stack?.kill();
 });
 test.describe.configure({ mode: "serial" });
+// #84: keep a trace on failure so a mid-goto abort shows what navigated.
+test.use({ trace: "retain-on-failure" });
 
 const ROOT_TEXT = "Summarize the repo layout in one line";
 /** Carried across tests (each test gets a fresh page). */
@@ -220,10 +305,16 @@ test("AC-1/4 restart keeps conversations listed; filter narrows them", async ({
       .getByText(/repo|layout|readme/i)
       .last(),
   ).toBeVisible({ timeout: 60_000 });
+  // The reply preview can land in the home feed before the send's async
+  // navigate commits — wait for the thread URL instead of racing it (#103).
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_/, { timeout: 10_000 });
   convUrl = page.url();
 
-  // Full app restart — same LILOS_HOME, new processes.
+  // Full app restart — same LILOS_HOME, new processes. Detach the page
+  // while vite is down: a stale vite ws client reloads on reconnect, and
+  // that reload aborts the next in-flight goto (ERR_ABORTED, #84).
   await stack.kill();
+  await page.goto("about:blank");
   stack = await boot("restart", stack.home);
   await dmDefault(stack, page);
 
@@ -298,8 +389,10 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   await expect(page.getByText("Repo summary thread").first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac3-archived.png` });
 
-  // Restart: renamed title + archived placement survive.
+  // Restart: renamed title + archived placement survive. Same detach
+  // before the new vite can accept the stale client's reconnect.
   await stack.kill();
+  await page.goto("about:blank");
   stack = await boot("restart2", stack.home);
   await dmDefault(stack, page);
   await page.getByText(/Archived/).click();

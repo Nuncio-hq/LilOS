@@ -30,7 +30,7 @@ const sentence = (s: string): string => {
   return /[.!?]$/.test(cased) ? cased : `${cased}.`;
 };
 
-/** Looks like a raw exception chain rather than a sentence Oscar can read. */
+/** Looks like a raw exception chain rather than a sentence the user can read. */
 const LOOKS_TECHNICAL =
   /Error:|ENOENT|EACCES|EADDRINUSE|ECONN[A-Z]*|posix_spawn|spawn\b|exit code|signal \w+|exception|TypeError|ReferenceError|at [\w.<>]+ \(|0x[0-9a-f]+/i;
 
@@ -65,6 +65,22 @@ const PLAIN_RULES: {
     plain: (_c, m) => ({
       reason: sentence(m[0]),
       hint: "Install Hermes, or point LilOS at it with HERMES_BIN or ~/.lilos/hermes-bin — then restart the app.",
+    }),
+  },
+  {
+    // #95 AC-1: the too-old verdict is already the exact plain sentence —
+    // surface it verbatim. The remedy (`hermes update`) is in the sentence,
+    // so no separate hint.
+    match: /Hermes [^\n]*?is too old[^\n]*/,
+    plain: (_c, m) => ({ reason: sentence(m[0]) }),
+  },
+  {
+    // #95 AC-2: the child died from a signal — the system stopped it, which
+    // on a managed Mac usually means a device security policy. Explain, never
+    // work around it.
+    match: /killed by (SIG\w+)/,
+    plain: (c, m) => ({
+      reason: `The ${c.label.toLowerCase()} was stopped by the system (${m[1]}) — a device security policy may be blocking it.`,
     }),
   },
   {
@@ -244,7 +260,7 @@ function wireComponents(input: {
 /**
  * Wire result → the four rows the status UI renders (`packages/ui` shares the
  * shape plus `hint`/`detail`). With no result — socket down, handshake fatal —
- * the rows are synthesized so Oscar always sees all four legs with a reason.
+ * the rows are synthesized so the user always sees all four legs with a reason.
  */
 export function toStatusComponents(input: {
   result?: SystemStatusResult;

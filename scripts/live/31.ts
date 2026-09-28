@@ -215,6 +215,25 @@ if (!answers.length) fail("no employee answer arrived");
 const answer = answers[answers.length - 1];
 out(`answer: ${answer.text.slice(0, 400)}`);
 
+// Assertion 3b (#112): an image-only follow-up — empty text, attachment only.
+// The harness prompts with just image blocks; hermes must accept an empty
+// prompt.submit and still answer.
+const beforeOnly = answers.length;
+await user.request("messages.post", {
+  channelId: channel.id,
+  conversationId: conversation.id,
+  text: "",
+  authorKind: "user",
+  attachments: [{ name: "only.png", mimeType: "image/png", dataBase64: PNG }],
+});
+out("image-only follow-up posted (empty text + attachment)");
+while (Date.now() < deadline && answers.length <= beforeOnly) {
+  await new Promise((r) => setTimeout(r, 250));
+}
+if (answers.length <= beforeOnly)
+  fail("no employee answer to the image-only message");
+out(`image-only answer: ${answers[answers.length - 1].text.slice(0, 400)}`);
+
 // Assertion 4 (stub only): the image reached the model boundary.
 if (requestLog && existsSync(requestLog)) {
   const lines = readFileSync(requestLog, "utf8")

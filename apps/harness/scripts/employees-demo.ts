@@ -183,6 +183,55 @@ check(
   hiredNew.profile === created.id,
   `employee ${hiredNew.id} bound to new profile ${created.id}`,
 );
+// #115: the hire flow then opens the employee's DM channel.
+const dm = await user.request<{ channel: { id: string; employeeId?: string } }>(
+  "channels.openDm",
+  { employeeId: hiredNew.id },
+);
+check(
+  "AC-2-dm",
+  !!dm.channel?.id && dm.channel.employeeId === hiredNew.id,
+  `channels.openDm -> ${dm.channel?.id}`,
+);
+// #115: an engine rejection (duplicate profile name) surfaces plainly and
+// nothing else was created.
+let rejection = "";
+try {
+  await user.createAgent({ name: slug });
+} catch (e) {
+  rejection = e instanceof Error ? e.message : String(e);
+}
+check(
+  "AC-3-reject",
+  /already exists/.test(rejection),
+  `duplicate agents.create rejected: ${rejection || "(accepted!)"}`,
+);
+// #115 review: a display-style (mixed-case) name must still land — Hermes
+// lowercases profile names, so the adapter resolves the canonical id for the
+// post-create describe; and a name differing only in case is still a duplicate.
+const mixedRaw = `DemoCase-${slug.slice(5)}`;
+const mixed = await user
+  .createAgent({ name: mixedRaw, model })
+  .catch((e) => fail(`agents.create (mixed case): ${e}`));
+check(
+  "AC-3-case",
+  mixed.id === mixedRaw.toLowerCase(),
+  `agents.create("${mixedRaw}") -> canonical ${mixed.id}`,
+);
+let caseDup = "";
+try {
+  await user.createAgent({ name: mixedRaw.toUpperCase(), model });
+} catch (e) {
+  caseDup = e instanceof Error ? e.message : String(e);
+}
+check(
+  "AC-3-case-dup",
+  /already exists/.test(caseDup),
+  `case-only duplicate rejected: ${caseDup || "(accepted!)"}`,
+);
+// Printed for scripts/live/115.sh so it can cross-check `hermes profile list`.
+console.log(`PROFILE_SLUG=${slug}`);
+console.log(`PROFILE_CASE=${mixed.id}`);
 let hiredExisting = "skip (no pre-existing profile)";
 let empB = hiredNew;
 if (agents.length > 0) {
@@ -217,10 +266,14 @@ const remaining = await user.request<{ employees: { id: string }[] }>(
 const after = await user.listAgents();
 const recordGone = !remaining.employees.some((e) => e.id === hiredNew.id);
 const profileLives = after.some((a) => a.id === created.id);
+const { channels } = await user.request<{
+  channels: { id: string; kind: string }[];
+}>("channels.list", {});
+const dmGone = !channels.some((c) => c.id === dm.channel?.id);
 check(
   "AC-4",
-  recordGone && profileLives,
-  `removed record=${recordGone}; profile ${created.id} still on engine=${profileLives}`,
+  recordGone && profileLives && dmGone,
+  `removed record=${recordGone}; dm channel gone=${dmGone}; profile ${created.id} still on engine=${profileLives}`,
 );
 
 const failed = checks.filter((c) => !c.ok);

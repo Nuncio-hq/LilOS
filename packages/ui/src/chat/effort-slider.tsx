@@ -1,5 +1,5 @@
 import { Slider as SliderPrimitive } from "@base-ui/react/slider";
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 
 /* Reasoning-effort control, "neural network" style: the filled part of the
    capsule is a small network of nodes and links; the further right, the
@@ -51,15 +51,25 @@ export function EffortSlider({
   index,
   label,
   onPick,
+  onPreview,
 }: {
   efforts: string[];
   index: number;
   label: (e: string) => string;
   onPick: (effort: string) => void;
+  /* Live drag feedback (label/fill move with the thumb); `onPick` still
+     fires only on commit. */
+  onPreview?: (effort: string) => void;
 }) {
   const { nodes, links, signals } = useMemo(network, []);
   const last = efforts.length - 1;
-  const i = Math.max(index, 0);
+  /* Drag previews locally; `onPick` fires once on commit (release / arrow
+     settle) — the pick is an RPC against the engine, not a per-step hop.
+     `start` remembers where the gesture began: the preview moves `index`,
+     so comparing the released stop against it would swallow the pick. */
+  const [drag, setDrag] = useState<number | null>(null);
+  const start = useRef<number | null>(null);
+  const i = drag ?? Math.max(index, 0);
   const t = last ? i / last : 0;
   const max = i === last;
   /* Where the fill ends: the thumb's centre. */
@@ -80,7 +90,26 @@ export function EffortSlider({
         thumbAlignment="edge"
         onValueChange={(v) => {
           const n = Array.isArray(v) ? v[0] : v;
-          if (efforts[n] && n !== index) onPick(efforts[n]);
+          if (efforts[n] !== undefined) {
+            if (start.current === null) start.current = i;
+            setDrag(n);
+            onPreview?.(efforts[n]);
+          }
+        }}
+        onValueCommitted={(v) => {
+          const n = Array.isArray(v) ? v[0] : v;
+          const from = start.current;
+          start.current = null;
+          setDrag(null);
+          if (!efforts[n]) return;
+          /* A press that never moved the thumb fires no onValueChange, so
+             `from` stays null — commit nothing: onPick is for a real change,
+             not for landing on the shown level (the middle when unset).
+             Released where the gesture began: undo the preview so the label
+             returns to the confirmed pick. */
+          if (from === null) return;
+          if (n !== from) onPick(efforts[n]);
+          else onPreview?.(efforts[n]);
         }}
       >
         <SliderPrimitive.Control className="relative flex h-7 w-full cursor-pointer touch-none select-none items-center">

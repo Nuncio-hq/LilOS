@@ -87,12 +87,16 @@ Repo: `Nuncio-hq/LilOS`. Use the `gh` CLI.
 
 - **Feature** = parent issue describing a product outcome; sub-issues are
   vertical slices.
-- **What to work on next**: any open slice labelled `agent-ready` (has
-  acceptance criteria + verify plan; if not, ask, don't take it). No priority
-  order; finish slices inside a feature before starting a new one.
-- **Now**: when you take a slice, label it `in-progress` and assign it. Hold
-  one `in-progress` slice at a time. Keep **one** comment titled `Status` on
-  the issue and edit it in place (Now / Next / Blocked); no log-comment series.
+- **Labels** (only these): `agent-ready` (acceptance criteria + verify
+  plan; any agent may take it), `later` (parked; don't take it),
+  `needs-human` (blocked on Oscar: a decision or a local test).
+- **What to work on next**: open `agent-ready` slices with no open PR
+  (`label:agent-ready -linked:pr`). No priority order; finish slices inside
+  a feature before starting a new one.
+- **Now**: when you take a slice, remove `agent-ready`, assign it, and open
+  a PR with `Closes #N` early. One slice at a time. Stuck → `needs-human`.
+  Keep **one** comment titled `Status` on the issue and edit it in place
+  (Now / Next / Blocked); no log-comment series.
 - **Done**: the slice closes with its merged PR (hand-off note there); when
   the last slice closes, close the feature.
 - Work outside the slice? Open a new issue; don't widen your PR.

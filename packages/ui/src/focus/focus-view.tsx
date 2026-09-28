@@ -66,6 +66,7 @@ import type {
   ModelOption,
   ModelPickerExtras,
   Msg,
+  OsEditor,
   Project,
   Thread,
   WbTab,
@@ -73,6 +74,7 @@ import type {
 } from "../types";
 import { sessionArtifacts } from "../workbench/artifacts";
 import type { LiveSurfaces } from "../workbench/live";
+import { OpenPathButton } from "../workbench/open-path";
 import { Workbench } from "../workbench/workbench";
 import { SessionUsage } from "./session-usage";
 
@@ -93,12 +95,15 @@ export function FocusView({
   running,
   onSend,
   onStop,
+  lastSent,
   onRetry,
   onUnqueue,
   onSendQueued,
   onRewind,
   onModel,
   picker,
+  defaultModel,
+  defaultProvider,
   accept,
   maxFileSize,
   onAttachError,
@@ -112,6 +117,8 @@ export function FocusView({
   pending,
   steer = false,
   onRemovePending,
+  draft,
+  onDraftChange,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -127,8 +134,17 @@ export function FocusView({
   onNav?: () => void;
   onStart?: () => void;
   running: boolean;
-  onSend: (t: string, files?: AttachedFile[]) => void;
+  /* Return a promise to delay clearing the composer draft until it resolves;
+     a rejected send keeps the text (issue #103, AC-5). */
+  onSend: (t: string, files?: AttachedFile[]) => void | Promise<unknown>;
+  /* Host-held composer draft for this conversation (issue #103); omitted, the
+     composer keeps its own state. */
+  draft?: string;
+  onDraftChange?: (v: string) => void;
   onStop?: () => void;
+  /* ↑ recall for the composer: the host's last sent message in this
+     conversation (issue #104 AC-5). */
+  lastSent?: string;
   onRetry?: (empId: string) => void;
   onUnqueue?: (i: number) => void;
   onSendQueued?: (i: number) => void;
@@ -136,6 +152,10 @@ export function FocusView({
   onModel?: (c: ModelChoice) => void;
   /* Refresh / Edit models… / provider names — each renders only with its handler. */
   picker?: ModelPickerExtras;
+  /* The engine's `models.list.default` — the unpinned-employee pick (#92 AC-5). */
+  defaultModel?: string;
+  /* The default's provider — a `{provider?, id}` pair disambiguates a shared id. */
+  defaultProvider?: string;
   say?: (t: string) => void;
   models?: ModelOption[];
   repoFiles?: string[];
@@ -161,7 +181,7 @@ export function FocusView({
   );
   const [follow, setFollow] = useState(true);
   const isDM = !!channel.dm;
-  const model = thread.model ?? lead?.model ?? models?.[0]?.id;
+  const model = thread.model ?? lead?.model ?? defaultModel ?? models?.[0]?.id;
   const live = thread.replies.find((r) => r.live);
   const lastStep = live?.steps?.[live.steps.length - 1];
   const status: ChatStatus = running
@@ -212,6 +232,22 @@ export function FocusView({
   // Plan tray opens while the agent works and folds away when the turn ends (user can still toggle).
   const [planOpen, setPlanOpen] = useState(running);
   useEffect(() => setPlanOpen(running), [running]);
+  /* Header "Open folder" affordance (issue #110): editors on the session's
+     host; the button renders only when os.open exists there (D-#19). */
+  const wsCwd = thread.ws?.cwd;
+  const [editors, setEditors] = useState<OsEditor[]>([]);
+  useEffect(() => {
+    let off = false;
+    if (host?.osEditors && wsCwd)
+      void host
+        .osEditors()
+        .then((e) => !off && setEditors(e))
+        .catch(() => {});
+    else setEditors([]);
+    return () => {
+      off = true;
+    };
+  }, [wsCwd]);
   const where = isDM ? "Direct" : (project?.name ?? "Company");
   const chLabel = isDM ? channel.name : `#${channel.name}`;
 
@@ -268,6 +304,22 @@ export function FocusView({
                 <FolderIcon className="size-3" />
                 {thread.ws.project}
               </span>
+            )}
+            {thread.ws && host?.osOpen && (
+              <OpenPathButton
+                editors={editors}
+                onOpen={(app) =>
+                  void host
+                    .osOpen?.(thread.ws!.cwd, ".", app)
+                    .catch((e) =>
+                      say?.(
+                        `Open failed — ${e instanceof Error ? e.message : String(e)}`,
+                      ),
+                    )
+                }
+                label={`${thread.ws.cwd} — open in an editor or reveal in Finder`}
+                className="hidden shrink-0 md:inline-flex"
+              />
             )}
             {work?.branch ? (
               <span className="hidden shrink-0 items-center gap-1 rounded bg-emerald-50 px-1 text-emerald-800 md:flex">
@@ -395,6 +447,7 @@ export function FocusView({
                     key={r.id ?? i}
                     r={r}
                     emp={emp}
+                    human={human}
                     last={i === thread.replies.length - 1}
                     onRetry={onRetry}
                     models={models}
@@ -409,6 +462,7 @@ export function FocusView({
                           work={work}
                           repo={channel.repo}
                           emp={emp}
+                          human={human}
                           resolved={resolved}
                           setResolved={setResolved}
                           onStart={onStart}
@@ -529,13 +583,20 @@ export function FocusView({
               status={status}
               choice={
                 models?.length
-                  ? sessionChoice(thread, lead?.model, models)
+                  ? sessionChoice(
+                      thread,
+                      lead?.model,
+                      models,
+                      defaultModel,
+                      defaultProvider,
+                    )
                   : undefined
               }
               models={models}
               onModel={onModel}
               picker={picker}
               onStop={onStop}
+              lastSent={lastSent}
               placeholder={
                 // Terminal takeover (issue #69 AC-2): while the human holds
                 // the session's terminal, the agent can't run or write there —
@@ -557,6 +618,8 @@ export function FocusView({
                       : "Read-only on main"
               }
               onSend={(t, files) => onSend(t, files)}
+              draft={draft}
+              onDraftChange={onDraftChange}
               accept={accept}
               maxFileSize={maxFileSize}
               onAttachError={onAttachError}

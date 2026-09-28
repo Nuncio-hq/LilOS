@@ -2,7 +2,7 @@
  * Diagnostics redaction (issue #33). The single redaction boundary is the
  * relay's `system.status` assembly: own log lines and harness-reported tails
  * are scrubbed here before they leave the process, so a component that logs a
- * secret never leaks it into the bundle Oscar pastes into a chat.
+ * secret never leaks it into the bundle the user pastes into a chat.
  */
 const SECRET_KEY =
   /token|secret|password|passwd|api[_-]?key|apikey|authorization|credential|private[_-]?key/i;

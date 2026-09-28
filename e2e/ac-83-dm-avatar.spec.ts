@@ -10,6 +10,7 @@ import {
   type Page,
   test,
 } from "@playwright/test";
+import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 /**
  * Issue #83 — DM feed row avatar alignment. A session row's first content
@@ -24,6 +25,11 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
+// --repeat-each spreads a file's repeats across worker processes; each boots
+// the stack again, so ports are offset per worker or relays race one port (#84).
+const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
+const wport = (p: number) => p + WORKER * 100;
+
 const webDir = path.join(repo, "apps", "web");
 const desktopDir = path.join(repo, "apps", "desktop");
 
@@ -49,16 +55,29 @@ async function waitForHttp(url: string, ms = 30_000): Promise<void> {
 }
 
 function killProc(proc: ChildProcess): Promise<void> {
+  // `bun run dev` stacks intermediate shim layers between `proc` and the
+  // real dev-stack children, and bun doesn't forward signals through them —
+  // signal the whole process group (the spawn is `detached`) or the stack
+  // orphans and keeps its ports bound, poisoning the next boot (#84).
+  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
+    try {
+      if (proc.pid) process.kill(-proc.pid, sig);
+    } catch {
+      try {
+        proc.kill(sig);
+      } catch {}
+    }
+  };
   return new Promise((resolve) => {
     const t = setTimeout(() => {
-      proc.kill("SIGKILL");
+      killGroup("SIGKILL");
       resolve();
     }, 8_000);
     proc.once("exit", () => {
       clearTimeout(t);
       resolve();
     });
-    proc.kill("SIGTERM");
+    killGroup("SIGTERM");
   });
 }
 
@@ -68,11 +87,14 @@ async function bootStack(
   extraEnv: Record<string, string> = {},
 ): Promise<Stack> {
   const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
+  const leakTag = engineTag(tag);
   const proc = spawn("bun", ["run", "dev"], {
     cwd: webDir,
+    detached: true,
     env: {
       ...process.env,
       LILOS_HOME: home,
+      LILOS_ENGINE_TAG: leakTag,
       LILOS_RELAY_PORT: String(ports.relay),
       LILOS_FEED_PORT: String(ports.feed),
       LILOS_WEB_PORT: String(ports.web),
@@ -88,7 +110,10 @@ async function bootStack(
       webUrl,
       relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
       feedWs: `ws://127.0.0.1:${ports.feed}/ws`,
-      stop: () => killProc(proc),
+      stop: async () => {
+        await killProc(proc);
+        await expectNoEngineLeak(leakTag);
+      },
     };
   } catch (e) {
     proc.kill("SIGKILL");
@@ -107,11 +132,8 @@ const PROMPT = "What does the replay contract carry?"; // engine-fake script
 const feedRow = (page: Page) => page.locator("[data-session]").first();
 const rowAvatar = (row: Locator) => row.locator("[data-slot='avatar']").first();
 const nameLine = (row: Locator) => row.getByText("Oscar", { exact: true });
-/* The first content line of the row — the element holding the name/time row.
-   Measured alongside the "Oscar" span so the check doesn't depend on text-node
-   boxes (font metric differences across platforms). */
-const nameLineRow = (row: Locator) =>
-  row.locator(":scope > .grid > *:nth-child(2) > *:first-child");
+/* The name/time line is selected in-page (see tops()): the element at
+   ":scope > .grid > *:nth-child(2) > *:first-child". */
 
 async function dmDefault(page: Page, webUrl: string) {
   await page.goto(`${webUrl}/`);
@@ -146,11 +168,17 @@ test.describe.configure({ mode: "serial" });
 test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
   page,
 }) => {
-  const stack = await bootStack("ac83a", {
-    relay: 4620,
-    feed: 4621,
-    web: 5215,
-  });
+  const stack = await bootStack(
+    "ac83a",
+    {
+      relay: wport(4670),
+      feed: wport(4671),
+      web: wport(5273),
+    },
+    // #118: the row's name is the OS user's — pin it for the exact-text
+    // name-line measurements.
+    { LILOS_USER_NAME: "Oscar" },
+  );
   try {
     await dmDefault(page, stack.webUrl);
     await send(page, PROMPT);
@@ -160,13 +188,47 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
     await expect(row.getByText(/\d+ repl(y|ies)/)).toBeVisible({
       timeout: 60_000,
     });
-    const tops = async () => {
-      const avatar = await rowAvatar(row).boundingBox();
-      const name = await nameLine(row).boundingBox();
-      if (!avatar || !name) {
-        throw new Error("row avatar or name line not laid out");
+    // All three boxes are sampled inside ONE evaluate so they always come
+    // from the same rendered frame — separate boundingBox() calls can straddle
+    // a reflow and mix frames (#84).
+    const tops = async () =>
+      row.evaluate((el) => {
+        const yOf = (n: Element | null | undefined) =>
+          n ? n.getBoundingClientRect().y : null;
+        const nameSpan = [...el.querySelectorAll("span")].find(
+          (n) => n.childElementCount === 0 && n.textContent?.trim() === "Oscar",
+        );
+        const avatarTop = yOf(el.querySelector("[data-slot='avatar']"));
+        const nameTop = yOf(nameSpan);
+        const lineTop = yOf(
+          el.querySelector(":scope > .grid > *:nth-child(2) > *:first-child"),
+        );
+        if (avatarTop === null || nameTop === null) {
+          throw new Error("row avatar or name line not laid out");
+        }
+        return { avatarTop, nameTop, lineTop };
+      });
+    // Geometry asserts must sample the layout's fixed point: the
+    // reply-preview strip lands a feed-tick after the message and grows the
+    // row, so a single read can catch mid-reflow geometry (#84). Read until
+    // two consecutive samples are pixel-stable.
+    const settledTops = async () => {
+      let prev = await tops();
+      for (let i = 0; i < 40; i++) {
+        await page.waitForTimeout(100);
+        const next = await tops();
+        if (
+          Math.abs(next.avatarTop - prev.avatarTop) < 0.5 &&
+          Math.abs(next.nameTop - prev.nameTop) < 0.5 &&
+          next.lineTop !== null &&
+          prev.lineTop !== null &&
+          Math.abs(next.lineTop - prev.lineTop) < 0.5
+        ) {
+          return next;
+        }
+        prev = next;
       }
-      return { avatarTop: avatar.y, nameTop: name.y };
+      return prev;
     };
     // On failure, dump what was measured so CI (which can't upload artifacts)
     // still shows the real DOM + boxes.
@@ -216,9 +278,7 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
     // Assert the measured top-edge delta; on failure dump the row's DOM and
     // all avatar/name boxes so CI (no artifact upload) still shows cause.
     const expectAligned = async (tag: string) => {
-      const { avatarTop, nameTop } = await tops();
-      const lineBox = await nameLineRow(row).boundingBox();
-      const lineTop = lineBox ? lineBox.y : null;
+      const { avatarTop, nameTop, lineTop } = await settledTops();
       const delta = Math.abs(nameTop - avatarTop);
       const lineDelta = lineTop === null ? null : Math.abs(lineTop - avatarTop);
       if (delta > 4 || lineDelta === null || lineDelta > 4) {
@@ -239,8 +299,19 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
     await expectAligned("900px viewport");
     await page.setViewportSize({ width: 1280, height: 720 });
     // AC-1: text + reply chip sit in the column to the RIGHT of the avatar.
-    const avatarBox = await rowAvatar(row).boundingBox();
-    const chipBox = await row.locator("button").last().boundingBox();
+    // Same single-frame rule as tops(): separate boundingBox() calls can
+    // straddle a reflow and mix frames (#84 — CI hit a 7px false negative).
+    const { avatarBox, chipBox } = await row.evaluate((el) => {
+      const r = (n: Element | null | undefined) => {
+        const b = n?.getBoundingClientRect();
+        return b ? { x: b.x, width: b.width } : null;
+      };
+      const buttons = el.querySelectorAll("button");
+      return {
+        avatarBox: r(el.querySelector("[data-slot='avatar']")),
+        chipBox: r(buttons[buttons.length - 1]),
+      };
+    });
     if (!avatarBox || !chipBox) throw new Error("row boxes missing");
     expect(chipBox.x).toBeGreaterThanOrEqual(avatarBox.x + avatarBox.width - 1);
     // AC-1: hover (and its background change) doesn't shift the row's layout.
@@ -263,11 +334,15 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
 
 test("AC-3 desktop app: the DM feed row in Electron", async () => {
   test.setTimeout(240_000);
-  const stack = await bootStack("ac83b", {
-    relay: 4622,
-    feed: 4623,
-    web: 5216,
-  });
+  const stack = await bootStack(
+    "ac83b",
+    {
+      relay: wport(4674),
+      feed: wport(4676),
+      web: wport(5277),
+    },
+    { LILOS_USER_NAME: "Oscar" },
+  );
   try {
     const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
       cwd: desktopDir,
@@ -304,12 +379,22 @@ test("AC-3 desktop app: the DM feed row in Electron", async () => {
       });
       // Screenshot first — the buggy run's shot is the "before" evidence.
       await win.screenshot({ path: `${SHOTS}/ac-3-desktop-dm.png` });
-      const [a, n] = await Promise.all([
-        rowAvatar(row).boundingBox(),
-        nameLine(row).boundingBox(),
-      ]);
-      if (!a || !n) throw new Error("row avatar or name line not laid out");
-      expect(Math.abs(n.y - a.y)).toBeLessThanOrEqual(4);
+      // One evaluate → one frame; Promise.all of two boundingBox() calls can
+      // still straddle a reflow (#84).
+      const { a, n } = await row.evaluate((el) => {
+        const y = (e: Element | null | undefined) =>
+          e?.getBoundingClientRect().y ?? null;
+        const nameSpan = [...el.querySelectorAll("span")].find(
+          (s) => s.childElementCount === 0 && s.textContent?.trim() === "Oscar",
+        );
+        return {
+          a: y(el.querySelector("[data-slot='avatar']")),
+          n: y(nameSpan),
+        };
+      });
+      if (a === null || n === null)
+        throw new Error("row avatar or name line not laid out");
+      expect(Math.abs(n - a)).toBeLessThanOrEqual(4);
     } finally {
       await app.close();
     }

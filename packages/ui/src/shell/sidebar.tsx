@@ -4,6 +4,7 @@ import {
   FolderGit2Icon,
   FolderIcon,
   InboxIcon,
+  SettingsIcon,
   ShieldAlertIcon,
   SmartphoneIcon,
   TicketIcon,
@@ -32,9 +33,20 @@ import { HermesAvatar, HumanAvatar } from "./avatars";
 import { StatusRow } from "./status";
 import { ThemeToggle } from "./theme-toggle";
 
+/* Header chip initials from the company name ("Ada Labs" → "AL"). */
+const companyInitials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "·";
+
 /* The company sidebar: nav, company channels, projects (with folders + channels), employees, me-row.
    All data (company channels, projects, folders, employees) comes in as props. */
 export function Sidebar({
+  company,
   navOpen,
   hiddenWhenClosed,
   me,
@@ -55,6 +67,7 @@ export function Sidebar({
   badges,
   status,
   onOpenStatus,
+  onOpenSettings,
   onPairPhone,
   realApp,
   preview,
@@ -65,6 +78,8 @@ export function Sidebar({
   /* The signed-in human — the footer renders the same avatar + name the
      app's `human` lookup puts on that person's messages (issue #80, AC-1). */
   me: Human;
+  /* The user's company — the header shows its initials + name (#118). */
+  company: string;
   companyChannels: Channel[];
   projects: Project[];
   folders: import("../types").Folder[];
@@ -80,11 +95,13 @@ export function Sidebar({
   onAddFolder: () => void;
   /* Hiring lands in its own slice — omit the handler, hide the affordance. */
   onHire?: () => void;
-  /* Per-employee counts: running turns / turns waiting on Oscar's approval. */
+  /* Per-employee counts: running turns / turns waiting on the user's approval. */
   badges?: Record<string, EmpBadge>;
   /* The status surface — a control renders only when its handler is passed. */
   status?: StatusComponent[];
   onOpenStatus?: () => void;
+  /* Settings gear in the footer — same rule: no handler, no affordance. */
+  onOpenSettings?: () => void;
   /* Mobile onboarding: opens the Pair phone QR. Omit to hide the row. */
   onPairPhone?: () => void;
   /* realApp = what the shipped app sidebar will show today: Employees + status only. */
@@ -110,9 +127,9 @@ export function Sidebar({
     >
       <div className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
         <div className="grid size-7 place-items-center rounded-md bg-foreground font-bold text-background text-xs">
-          OC
+          {companyInitials(company)}
         </div>
-        <div className="min-w-0 truncate font-semibold">Oscar Co</div>
+        <div className="min-w-0 truncate font-semibold">{company}</div>
         {buildLabel && (
           <span
             data-build-label
@@ -189,7 +206,7 @@ export function Sidebar({
                         >
                           <FolderIcon className="size-3.5 shrink-0" />
                           <span className="truncate font-mono">
-                            {f.path.replace(/^~\/Desktop\/Oscar\//, "…/")}
+                            {f.path.replace(/^~\/Desktop\/[^/]+\//, "…/")}
                           </span>
                         </div>
                       ))}
@@ -286,6 +303,17 @@ export function Sidebar({
         <span className="min-w-0 truncate font-medium text-sm">{me.name}</span>
         {preview}
         <ThemeToggle theme={theme} setTheme={onSetTheme} />
+        {onOpenSettings && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Settings"
+            className="size-11 md:size-7"
+            onClick={onOpenSettings}
+          >
+            <SettingsIcon />
+          </Button>
+        )}
       </div>
     </aside>
   );

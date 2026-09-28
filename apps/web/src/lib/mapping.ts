@@ -11,17 +11,24 @@ import type {
   Reply,
   Step,
   Employee as UiEmployee,
+  Workspace,
 } from "@lilos/ui/types";
+import { toAttachedFiles } from "./attachments";
 
 /** relay domain -> ui/domain type mapping (the only place it lives). */
 
-export function toUiEmployee(e: Employee): UiEmployee {
+/**
+ * `engineDown` (#99): an employee can't answer while the engine is down, so
+ * presence reads offline — never a green dot next to a red "Engine down".
+ */
+export function toUiEmployee(e: Employee, engineDown = false): UiEmployee {
   return {
     id: e.id,
     name: e.name,
     role: e.role,
-    status:
-      e.status === "busy"
+    status: engineDown
+      ? "offline"
+      : e.status === "busy"
         ? "busy"
         : e.status === "offline"
           ? "offline"
@@ -97,6 +104,8 @@ export function liveTurnReply(
     streaming: turn.phase === "text" ? turn.text : undefined,
     approval,
     model: turn.model,
+    effort: turn.effort,
+    fast: turn.fast,
     phase: PHASE_MAP[turn.phase],
     live: turn.phase !== "done" && turn.phase !== "stopped",
     waitingOn: turn.phase === "waiting" ? open?.request.kind : undefined,
@@ -120,7 +129,10 @@ export function conversationReplies(
         time: clock(m.createdAt),
         text: m.authorKind === "system" ? `⚠ ${m.text}` : m.text,
         model: m.model,
+        effort: m.effort,
+        fast: m.fast,
         phase: m.authorKind === "employee" ? "done" : undefined,
+        attachments: toAttachedFiles(m.attachments),
       }))
   );
 }
@@ -166,6 +178,8 @@ export function toFeed(
   root: AppMessage,
   conv: Conversation,
   replies: Reply[],
+  /** Folder the session works in (#113) — feeds the row + header badges. */
+  ws?: Workspace,
 ): Msg {
   return {
     kind: "msg",
@@ -173,11 +187,13 @@ export function toFeed(
     from: root.authorId,
     time: clock(root.createdAt),
     text: root.text,
+    attachments: toAttachedFiles(root.attachments),
     thread: {
       session: conv.engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
       title: conv.title ?? undefined,
       archived: conv.archived,
       replies,
+      ...(ws ? { ws } : {}),
     },
   };
 }

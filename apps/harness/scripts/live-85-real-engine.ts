@@ -205,7 +205,7 @@ const answer = await waitFor("an employee reply", async () => {
 });
 out(`reply: "${answer.text.slice(0, 120)}" (model=${answer.model ?? "?"})`);
 
-// ── 3: status legs as Oscar sees them ──────────────────────────────────
+// ── 3: status legs as the user sees them ──────────────────────────────────
 const finalStatus = await systemStatus();
 const legs = (finalStatus.components ?? [])
   .map((c) => `${c.id}=${c.state}(${c.reason})`)

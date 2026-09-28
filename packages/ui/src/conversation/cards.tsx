@@ -11,11 +11,12 @@ import {
 } from "../components/ai-elements/confirmation";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
-import type { EmpFn, Reply, Thread, Work } from "../types";
+import type { EmpFn, HumanFn, Reply, Thread, Work } from "../types";
+import { VIEWER_ID } from "../types";
 
 /* The one "asks to start work" request that currently owns the start-work action (issue #15).
    Decision (recorded on #15): while a request card is OPEN — the LAST reply proposed work, work has
-   not started, and Oscar has not answered "Not yet" — the card is the single entry point: the header
+   not started, and the user has not answered "Not yet" — the card is the single entry point: the header
    "Start work" button stays visible but disabled with tooltip "Answer the request below". Once a
    newer turn follows the card, or the card is answered, the card goes inactive and the header button
    is the normal one again. Same rule in the thread panel and Focus. */
@@ -42,6 +43,7 @@ export function ReplyCards({
   resolved,
   setResolved,
   onStart,
+  human,
 }: {
   r: Reply;
   /** Index of this reply in thread.replies (keys the start-work card's answered state). */
@@ -51,11 +53,14 @@ export function ReplyCards({
   work: Work | null;
   repo?: string;
   emp: EmpFn;
+  /** Resolves the approver's name (the signed-in human; #118). */
+  human: HumanFn;
   resolved: Record<string, string>;
   setResolved?: (r: Record<string, string>) => void;
   onStart?: () => void;
 }) {
   const done = r.approval && resolved[r.approval.id];
+  const viewer = human(VIEWER_ID)?.name ?? "you";
   return (
     <>
       {r.startProposal &&
@@ -63,9 +68,9 @@ export function ReplyCards({
           const key = startKey(r, i);
           const answered = resolved[key];
           /* Issue #15: while this card is the OPEN request (it is on the last reply, no work started,
-             Oscar hasn't answered) it is THE entry point for start work — the header button yields to
-             it. Once a newer turn follows the card (superseded) or Oscar answers "Not yet", the card
-             goes inactive and the header button is the single entry point again. */
+             the user hasn't answered) it is THE entry point for start work — the header button yields
+             to it. Once a newer turn follows the card (superseded) or the user answers "Not yet", the
+             card goes inactive and the header button is the single entry point again. */
           const open = !work && !answered && last;
           return (
             <div
@@ -168,7 +173,7 @@ export function ReplyCards({
               <ConfirmationTitle className="flex flex-wrap items-center gap-1.5 pr-2 font-medium text-foreground">
                 <ConfirmationRequest>
                   <ShieldAlertIcon className="size-3.5 text-amber-600" />
-                  Approval needed · only Oscar can answer
+                  Approval needed · only {viewer} can answer
                 </ConfirmationRequest>
                 <ConfirmationAccepted>
                   <CheckIcon className="size-3.5 text-emerald-600" />
@@ -190,7 +195,7 @@ export function ReplyCards({
               {setResolved && (
                 <ConfirmationActions className="flex-wrap self-start">
                   <ConfirmationAction
-                    onClick={() => answer("Allowed once by Oscar")}
+                    onClick={() => answer(`Allowed once by ${viewer}`)}
                   >
                     Allow once
                   </ConfirmationAction>
@@ -202,7 +207,7 @@ export function ReplyCards({
                   </ConfirmationAction>
                   <ConfirmationAction
                     variant="ghost"
-                    onClick={() => answer("Denied by Oscar")}
+                    onClick={() => answer(`Denied by ${viewer}`)}
                   >
                     Deny
                   </ConfirmationAction>

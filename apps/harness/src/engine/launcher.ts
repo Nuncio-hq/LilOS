@@ -1,6 +1,12 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import {
+  HERMES_TOO_OLD_EXIT_CODE,
+  hermesTooOldMessage,
+  isHermesVersionSupported,
+  parseHermesVersion,
+} from "@lilos/engine-hermes";
 import type { Logger } from "../log";
 import { resolveHermesBin } from "./discover";
 
@@ -18,12 +24,37 @@ export interface LaunchedEngine {
   process?: EngineProcess;
 }
 
+/** How the child ended: an exit code, or the signal that killed it. */
+export interface EngineExit {
+  code: number | null;
+  signal: string | null;
+}
+
 export interface EngineProcess {
   pid: number | undefined;
-  /** Resolves with the exit code once the child exits. */
-  exited: Promise<number | null>;
+  /** Resolves once the child exits — with the code, or the killing signal. */
+  exited: Promise<EngineExit>;
   kill(): void;
 }
+
+/**
+ * A start failure that retrying cannot fix (AC-1, #95) — e.g. a Hermes older
+ * than the minimum. The supervisor fails the engine instead of burning the
+ * restart budget on a verdict that will not change.
+ */
+export class FatalEngineStart extends Error {}
+
+export const isFatalEngineStart = (e: unknown): e is FatalEngineStart =>
+  e instanceof FatalEngineStart;
+
+/** "killed by SIGKILL" when a signal ended the child, else "code 3". */
+const exitReason = (code: number | null, signal: string | null): string =>
+  signal ? `killed by ${signal}` : `code ${code}`;
+
+// ANSI color sequences — the string form keeps the control byte out of a
+// regex literal (noControlCharactersInRegex).
+// biome-ignore lint/complexity/useRegexLiterals: the literal form is lint-rejected
+const ANSI_RE = new RegExp("\\u001b\\[[0-9;]*m", "g");
 
 export interface EngineLauncher {
   /** Name used in logs/state reports ("engine-fake", "hermes"). */
@@ -45,6 +76,12 @@ export interface CommandLauncherOptions {
   readyPattern: RegExp;
   url?: string;
   startupTimeoutMs?: number;
+  /**
+   * Reserved exit codes that mean "retrying won't help" (#95): a child
+   * exiting with one rejects with FatalEngineStart — the supervisor fails
+   * the engine immediately instead of counting a restartable crash.
+   */
+  fatalExitCodes?: number[];
   log: Logger;
 }
 
@@ -70,10 +107,13 @@ export function commandLauncher(
         const child = spawn(bin, args, {
           cwd: options.cwd,
           env: { ...process.env, ...options.env } as NodeJS.ProcessEnv,
-          stdio: ["ignore", "pipe", "pipe"],
+          // stdin stays an open pipe: engines that watch it (serve.ts
+          // --watch-stdin) see EOF the moment this process dies — even via
+          // SIGKILL, which skips every shutdown handler (#84).
+          stdio: ["pipe", "pipe", "pipe"],
         });
-        const exited = new Promise<number | null>((r) => {
-          child.once("exit", (code) => r(code));
+        const exited = new Promise<EngineExit>((r) => {
+          child.once("exit", (code, signal) => r({ code, signal }));
         });
         const proc: EngineProcess = {
           pid: child.pid,
@@ -124,15 +164,28 @@ export function commandLauncher(
           clearTimeout(timer);
           reject(new Error(`engine ${options.name} spawn failed: ${error}`));
         });
-        child.once("exit", (code) => {
+        child.once("exit", (code, signal) => {
           clearTimeout(timer);
+          const why = exitReason(code, signal);
+          const tail = err
+            .replace(ANSI_RE, "") // keep color junk out of status text
+            .trim()
+            .split("\n")
+            .slice(-3)
+            .join(" | ");
+          // A reserved fatal code carries its plain verdict on stderr (#95);
+          // otherwise the generic reason names the signal it died from.
+          if (code !== null && options.fatalExitCodes?.includes(code)) {
+            reject(
+              new FatalEngineStart(
+                tail || `engine ${options.name} exited before ready (${why})`,
+              ),
+            );
+            return;
+          }
           reject(
             new Error(
-              `engine ${options.name} exited before ready (code ${code}): ${err
-                .trim()
-                .split("\n")
-                .slice(-3)
-                .join(" | ")}`,
+              `engine ${options.name} exited before ready (${why})${tail ? `: ${tail}` : ""}`,
             ),
           );
         });
@@ -152,6 +205,10 @@ export function fakeServeCommand(options: {
   bun?: string;
   /** Pre-compiled fake-engine binary; replaces the `bun serve.ts` command. */
   serveBin?: string;
+  /**
+   * Argv marker for e2e leak assertions (`pgrep -f "--tag <tag>">`).
+   */
+  tag?: string;
 }): string[] {
   const script = join(
     options.repoRoot,
@@ -166,7 +223,16 @@ export function fakeServeCommand(options: {
             "The fake engine is not part of this build — it ships in dev bundles only. Remove LILOS_ENGINE=fake or use a dev build.",
           );
         })();
-  return [...serve, "--port", "0", "--tick", String(options.tick ?? 25)];
+  return [
+    ...serve,
+    "--port",
+    "0",
+    "--tick",
+    String(options.tick ?? 25),
+    // Die with the harness: stdin EOF means the launcher process is gone.
+    "--watch-stdin",
+    ...(options.tag ? ["--tag", options.tag] : []),
+  ];
 }
 
 /** `fake serve` through the command launcher — the CI/dev engine. */
@@ -175,6 +241,7 @@ export function fakeEngineLauncher(options: {
   tick?: number;
   bun?: string;
   serveBin?: string;
+  tag?: string;
   log: Logger;
 }): EngineLauncher {
   return {
@@ -249,6 +316,15 @@ export function hermesEngineLauncher(options: {
     name: "hermes",
     start: async () => {
       const hermesBin = options.hermesBin ?? resolveHermesBin();
+      // Up-front gate (AC-1, #95): a Hermes older than the minimum would die
+      // on the handshake anyway — fail fatally now with the plain verdict
+      // instead of looping retries. An unreadable probe never blocks: the
+      // adapter's reserved exit code still catches it on the handshake.
+      const found = probeHermesVersion(hermesBin);
+      if (found !== undefined && !isHermesVersionSupported(found)) {
+        options.log.warn("hermes too old", { hermesBin, found });
+        throw new FatalEngineStart(hermesTooOldMessage(found));
+      }
       const command = hermesServeCommand({ ...options, hermesBin });
       options.log.info("hermes binary", { hermesBin });
       return commandLauncher({
@@ -256,13 +332,27 @@ export function hermesEngineLauncher(options: {
         command,
         readyPattern: /LISTENING (ws:\/\/\S+)/,
         startupTimeoutMs: 300_000, // hermes serve cold-starts ACP tooling
+        fatalExitCodes: [HERMES_TOO_OLD_EXIT_CODE],
         log: options.log,
       }).start();
     },
   };
 }
 
-/** Connect to an engine the harness does not supervise (e.g. Oscar's own). */
+/** `hermes --version`, best-effort; undefined when the answer has no semver. */
+function probeHermesVersion(hermesBin: string): string | undefined {
+  try {
+    const r = spawnSync(hermesBin, ["--version"], {
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+    return parseHermesVersion(`${r.stdout ?? ""}\n${r.stderr ?? ""}`);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Connect to an engine the harness does not supervise (e.g. the user's own). */
 export function externalEngineLauncher(url: string): EngineLauncher {
   return {
     name: "external",

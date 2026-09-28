@@ -350,6 +350,90 @@ describe("steer capability gating", () => {
       await w.cleanup();
     }
   });
+
+  it("queues a mid-turn message with attachments even though `steer` is advertised (#112)", {
+    timeout: 90_000,
+  }, async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await openConversation(
+        w.user,
+        channel.id,
+        "Add a release note to the readme",
+      );
+      // Hold the first turn open on its approval ask.
+      await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: { state: string }[] }>(
+          "asks.list",
+          { conversationId: conversation.id },
+        );
+        return asks.find((a) => a.state === "open");
+      }, "open approval");
+      // Mid-turn message carrying an image: session.steer is text-only, so
+      // this must queue and prompt (with image blocks) once the turn ends.
+      const png =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      await w.user.request("messages.post", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        text: "look at this screenshot meanwhile",
+        authorKind: "user",
+        attachments: [
+          { name: "shot.png", mimeType: "image/png", dataBase64: png },
+        ],
+      });
+      // Unblock approvals until both turns finish and the conv goes idle.
+      const done = await waitFor(
+        async () => {
+          await answeredConvs(w, conversation.id);
+          const { conversations } = await w.user.request<{
+            conversations: { id: string; state: string }[];
+          }>("conversations.list", {});
+          return conversations.find((c) => c.id === conversation.id)?.state ===
+            "idle"
+            ? true
+            : undefined;
+        },
+        "conversation idle after queued image turn",
+        60_000,
+      );
+      expect(done).toBe(true);
+      const sessionId = (
+        await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {})
+      ).conversations.find((c) => c.id === conversation.id)?.engineRef;
+      expect(sessionId).toBeTruthy();
+      if (!sessionId) return;
+      const { events } = (await w.harness.eventsSince(sessionId, 0)) as {
+        events: EngineEvent[];
+      };
+      // The image message never steered — it ran as the next turn.
+      expect(events.some((e) => e.type === "turn.steered")).toBe(false);
+      expect(
+        events.filter((e) => e.type === "turn.started").length,
+      ).toBeGreaterThanOrEqual(2);
+      // And that second turn's prompt carried the image block — the fake's
+      // reply echoes the decoded mimeType + size it was handed.
+      const answer = await waitFor(async () => {
+        const { messages } = await w.user.request<{ messages: AppMessage[] }>(
+          "messages.list",
+          { channelId: channel.id, limit: 50 },
+        );
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" &&
+            m.conversationId === conversation.id &&
+            m.text.includes("image/png"),
+        );
+      }, "answer referencing the queued image");
+      expect(answer.text).toContain("image/png (70 bytes)");
+      expect(answer.text).toContain("prompt content block");
+    } finally {
+      await w.cleanup();
+    }
+  });
 });
 
 describe("first-run auto-hire", () => {

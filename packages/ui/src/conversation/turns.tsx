@@ -37,6 +37,7 @@ import {
   ToolOutput,
 } from "../components/ai-elements/tool";
 import { plural } from "../lib/helpers";
+import { withFileMentionChips } from "../lib/mentions";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import type {
@@ -49,6 +50,7 @@ import type {
   Step,
   WbTab,
 } from "../types";
+import { VIEWER_ID } from "../types";
 
 /* The conversation's turns — ONE implementation used by both frames (issue #19):
    ThreadView renders it for channel threads and DM sessions, FocusView for Focus.
@@ -103,7 +105,7 @@ export function UserTurn({
     <Message from="user" className="max-w-[80%] gap-1" data-userturn>
       <MessageContent className="rounded-2xl px-4 py-2.5 text-[15px] leading-[1.6]">
         <MessageResponse className="lilos-prose break-words">
-          {text}
+          {withFileMentionChips(text)}
         </MessageResponse>
         {attachments && <AttachmentChips files={attachments} />}
       </MessageContent>
@@ -115,7 +117,7 @@ export function UserTurn({
   );
 }
 
-/* All tool calls of a turn collapse into ONE Task block (the panel style Oscar picked in
+/* All tool calls of a turn collapse into ONE Task block (the panel style the client picked in
    #19): a "N steps" trigger — or the running tool's name — that expands into one Tool card
    per step. While the turn is in the tools phase the block is forced open. */
 export function TurnSteps({
@@ -185,6 +187,7 @@ export function TurnSteps({
 export function AgentTurn({
   r,
   emp,
+  human,
   last,
   onRetry,
   onOpen,
@@ -194,6 +197,8 @@ export function AgentTurn({
 }: {
   r: Reply;
   emp: EmpFn;
+  /** Resolves the steer rows' author label (viewer name; #118). */
+  human?: HumanFn;
   /** Engine catalog — the footer renders the model's display name, not the id. */
   models?: ModelOption[];
   /** True on the last reply of the thread — Retry only makes sense there. */
@@ -270,11 +275,16 @@ export function AgentTurn({
       ) : r.text ? (
         <MessageContent className="w-full">
           <MessageResponse className="lilos-prose break-words">
-            {r.text}
+            {withFileMentionChips(r.text)}
           </MessageResponse>
         </MessageContent>
       ) : null}
-      <SteerRows steers={r.steers} pending={pending} live={r.live} />
+      <SteerRows
+        steers={r.steers}
+        pending={pending}
+        live={r.live}
+        by={human?.(VIEWER_ID)?.name ?? "You"}
+      />
       {r.phase === "stopped" && (
         <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
           Stopped · session.interrupt

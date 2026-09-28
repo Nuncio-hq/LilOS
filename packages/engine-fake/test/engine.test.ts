@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { MODEL_CATALOG } from "../src/catalog.js";
 import { FakeEngine, RpcError } from "../src/engine.js";
 import { connectFake, handleJsonRpc } from "../src/transport.js";
 
@@ -224,6 +225,59 @@ describe("engine-fake", () => {
     await expect(
       c.request("session.steer", { sessionId: "s1", text: "hi" }),
     ).rejects.toMatchObject({ code: -32601 });
+    c.close();
+  });
+
+  test("AC-4 a deferred pick that fails at turn start posts session.note and still answers on the old model", async () => {
+    const c = conn(30);
+    const notes: string[] = [];
+    const startedModels: (string | undefined)[] = [];
+    c.onEvent((e) => {
+      if (e.type === "session.note")
+        notes.push((e.payload as { text: string }).text);
+      if (e.type === "turn.started")
+        startedModels.push((e.payload as { model?: string }).model);
+    });
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+    })) as { sessionId: string };
+
+    // Pick mid-turn → deferred to the stash.
+    const p1 = promptText(c, sessionId, "one");
+    const deadline = Date.now() + 5_000;
+    while (!startedModels.length && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 5));
+    const ack = (await c.request("session.setModel", {
+      sessionId,
+      model: "fake/opus-2",
+      provider: "fake",
+      effort: "high",
+    })) as { deferred?: boolean };
+    expect(ack.deferred).toBe(true);
+    await p1;
+
+    /* The stashed model is gone by the time the next turn applies it — a
+       refresh dropped it. The apply must post a pick-specific note and run
+       the turn on the CURRENT model, never jam and never fail the prompt
+       (#92 review). MODEL_CATALOG is the fake's only mutable surface. */
+    const i = MODEL_CATALOG.findIndex((m) => m.id === "fake/opus-2");
+    const removed = MODEL_CATALOG.splice(i, 1)[0];
+    try {
+      const p2 = promptText(c, sessionId, "two");
+      const noteDeadline = Date.now() + 5_000;
+      while (!notes.length && Date.now() < noteDeadline)
+        await new Promise((r) => setTimeout(r, 5));
+      const res = await p2;
+      expect(res.stopReason).toBe("end_turn");
+      expect(notes).toHaveLength(1);
+      expect(notes[0]).toContain("Couldn't switch to fake/opus-2");
+      expect(notes[0]).toContain("staying on");
+      // The turn ran on the model it already had (the session default).
+      expect(startedModels.at(-1)).toBe("fake-large");
+    } finally {
+      MODEL_CATALOG.push(removed);
+    }
     c.close();
   });
 

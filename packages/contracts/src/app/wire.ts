@@ -5,7 +5,7 @@ import {
   AgentsListParams,
 } from "../engine/agents";
 import { Capability } from "../engine/capabilities";
-import { ModelOption, ModelsListParams } from "../engine/models";
+import { ModelOption, ModelProvider, ModelsListParams } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
 import {
   AppChannel,
@@ -21,6 +21,8 @@ import {
   EngineHostStatus,
   MessageAttachment,
   PendingTurn,
+  ProfileSettings,
+  RecentFolder,
   RespondTo,
   Timestamp,
 } from "./domain";
@@ -127,6 +129,18 @@ export const AppMethod = z.enum([
   "conversations.setModel",
   "system.status",
   "employees.remove",
+  /* LilOS-owned client settings (engine keeps no such state): a generic KV
+     store — model visibility picks, UI prefs the app wants shared across
+     surfaces and restarts. */
+  "settings.get",
+  "settings.set",
+  /* LilOS-owned recent folders for the session folder picker (#113) */
+  "folders.list",
+  "folders.add",
+  /* The signed-in human's identity — name, company, avatar colour (#118).
+     `settings.*` is #92's KV namespace, so the profile uses `profile.*`. */
+  "profile.get",
+  "profile.update",
   /* engine passthrough: forwarded verbatim to the registered engine host */
   "agents.list",
   "agents.describe",
@@ -290,15 +304,31 @@ export const ConversationsSummariesResult = z.object({
 
 /**
  * Opens a thread in a channel with its root message; the returned
- * conversation is `idle` until the harness attaches `engineRef`.
+ * conversation is `idle` until the harness attaches `engineRef`. An
+ * image-only send (#112: attachment chips with no typed text) opens one too,
+ * so the text may be empty only when `attachments` carry it.
  */
-export const ConversationsOpenParams = z.object({
-  channelId: z.string().min(1),
-  text: z.string().min(1),
-  title: z.string().default(""),
-  authorId: z.string().min(1).default("user"),
-  attachments: AttachmentsField,
-});
+export const ConversationsOpenParams = z
+  .object({
+    channelId: z.string().min(1),
+    text: z.string(),
+    title: z.string().default(""),
+    authorId: z.string().min(1).default("user"),
+    attachments: AttachmentsField,
+    /** The user's pick made in the composer before the first send (#92): stamped
+        on the conversation so the harness applies it at `session.start` — no
+        post-open `setModel` race. */
+    model: z.string().min(1).optional(),
+    provider: z.string().optional(),
+    effort: z.string().optional(),
+    fast: z.boolean().optional(),
+    /** Folder the session works in (#113); absent = harness default workdir. */
+    cwd: z.string().min(1).optional(),
+  })
+  .refine(
+    (p) => p.text.length > 0 || (p.attachments?.length ?? 0) > 0,
+    "conversations.open needs text or at least one attachment",
+  );
 export type ConversationsOpenParams = z.infer<typeof ConversationsOpenParams>;
 export const ConversationsOpenResult = z.object({
   conversation: Conversation,
@@ -315,8 +345,13 @@ export const ConversationsUpdateParams = z.object({
   archived: z.boolean().optional(),
   state: ConversationState.optional(),
   engineRef: z.string().min(1).optional(),
-  /** Host-only: the model the engine acked / will apply at session.start. */
-  model: z.string().min(1).optional(),
+  /** Host-only: the pick the engine acked / will apply at session.start.
+      `null` clears a field the new pick dropped (e.g. a model with no
+      effort/fast control) or a failed pick restore (#92). */
+  model: z.string().min(1).nullable().optional(),
+  provider: z.string().nullable().optional(),
+  effort: z.string().nullable().optional(),
+  fast: z.boolean().nullable().optional(),
   deliveredSeq: z.int().min(0).optional(),
 });
 export type ConversationsUpdateParams = z.infer<
@@ -351,6 +386,10 @@ export const MessagesPostParams = z.object({
   attachments: AttachmentsField,
   /** Engine `turn.started.model` — set by the host on employee answers. */
   model: z.string().min(1).optional(),
+  /** The rest of the turn's pick (`turn.started.provider/effort/fast`). */
+  provider: z.string().optional(),
+  effort: z.string().optional(),
+  fast: z.boolean().optional(),
   /**
    * Exactly-once key for retried writes: a re-post with a key the channel
    * already recorded returns the original message instead of duplicating it
@@ -383,6 +422,33 @@ export const ChannelUnsubscribeParams = z.object({
   channelId: z.string().min(1),
 });
 export const OkResult = z.object({ ok: z.literal(true) });
+
+/**
+ * Recent folders (#113): `folders.list` returns the shared list newest-first;
+ * `folders.add` records a pick (a `conversations.open` with `cwd` bumps it
+ * the same way). Not scoped to an employee — one company, one recents list.
+ */
+export const FoldersListParams = z.object({}).strict();
+export const FoldersListResult = z.object({
+  folders: z.array(RecentFolder),
+});
+export const FoldersAddParams = z.object({ path: z.string().min(1) });
+export const FoldersAddResult = z.object({ folder: RecentFolder });
+
+/**
+ * Profile settings (#118): `profile.get` returns the stored profile — `{}`
+ * on an untouched install, the app prefills from the OS (AC-4).
+ * `profile.update` merges the given keys and returns the stored profile.
+ * (`settings.*` belongs to #92's generic KV namespace.)
+ */
+export const ProfileGetParams = z.object({}).strict();
+export const ProfileGetResult = z.object({ profile: ProfileSettings });
+export const ProfileUpdateParams = ProfileSettings.refine(
+  (p) => Object.values(p).some((v) => v !== undefined),
+  { message: "at least one setting required" },
+);
+export type ProfileUpdateParams = z.infer<typeof ProfileUpdateParams>;
+export const ProfileUpdateResult = z.object({ profile: ProfileSettings });
 
 /** Fetch one stored attachment's bytes — the read path behind display refs. */
 export const AttachmentsGetParams = z.object({
@@ -468,6 +534,8 @@ export const SystemStatusResult = z.object({
       capabilities: z.array(Capability).optional(),
       models: z.array(ModelOption).optional(),
       defaultModel: z.string().optional(),
+      /** Provider the engine's default model id belongs to (#92). */
+      defaultProvider: z.string().optional(),
     })
     .optional(),
   mismatch: StatusMismatch.optional(),
@@ -528,8 +596,11 @@ export const HarnessStatusReport = z.object({
    */
   capabilities: z.array(Capability).optional(),
   models: z.array(ModelOption).optional(),
-  /** The engine's default model id (`models.list.default`). */
+  /** Provider rows from the same `models.list` (group headers in the picker). */
+  providers: z.array(ModelProvider).optional(),
+  /** The engine's default model id (`models.list.default`) and its provider. */
   defaultModel: z.string().optional(),
+  defaultProvider: z.string().optional(),
   /** RSS of the supervised engine process, bytes. */
   engineRssBytes: z.int().min(0).optional(),
   /** Sessions the harness believes are live. */
@@ -591,8 +662,15 @@ export type TurnsInterruptParams = z.infer<typeof TurnsInterruptParams>;
 export const ConversationsSetModelParams = z
   .object({
     conversationId: z.string().min(1),
-    /** Model id from the engine's `models.list` answer. */
+    /** Model id from the engine's `models.list` answer (opaque; may
+        contain `/` — it is never split into a `provider/model` string). */
     model: z.string().min(1),
+    /** Provider slug when the model list grouped it under one. */
+    provider: z.string().optional(),
+    /** Reasoning-effort level the picker chose (from `ModelOption.efforts`). */
+    effort: z.string().optional(),
+    /** Fast/priority tier toggle. */
+    fast: z.boolean().optional(),
   })
   .strict();
 export type ConversationsSetModelParams = z.infer<
@@ -614,6 +692,8 @@ export const AppEventMethod = z.enum([
   "employee.upserted",
   "employee.removed",
   "conversation.modelRequested",
+  "profile.updated",
+  "settings.changed",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 
@@ -659,6 +739,10 @@ export type EmployeeUpsertedEvent = z.infer<typeof EmployeeUpsertedEvent>;
 export const EmployeeRemovedEvent = z.object({ employeeId: z.string().min(1) });
 export type EmployeeRemovedEvent = z.infer<typeof EmployeeRemovedEvent>;
 
+/** Broadcast on profile.update — every connected surface sees the edit. */
+export const ProfileUpdatedEvent = z.object({ profile: ProfileSettings });
+export type ProfileUpdatedEvent = z.infer<typeof ProfileUpdatedEvent>;
+
 export const AskOpenedEvent = z.object({
   channelId: z.string().min(1),
   ask: Ask,
@@ -692,9 +776,50 @@ export const ConversationModelRequestedEvent = z.object({
   channelId: z.string().min(1),
   conversationId: z.string().min(1),
   model: z.string().min(1),
+  provider: z.string().optional(),
+  effort: z.string().optional(),
+  fast: z.boolean().optional(),
 });
 export type ConversationModelRequestedEvent = z.infer<
   typeof ConversationModelRequestedEvent
 >;
+
+/* -------------------------------- settings ------------------------------- */
+
+/**
+ * LilOS-owned settings KV (`settings.get`/`settings.set`): client-owned data
+ * that must survive restarts and be shared by every surface — e.g. the
+ * model picker's hide list (#92). Keys are namespaced by the writer
+ * ("modelVisibility", ...); `value` is any JSON-serializable value.
+ */
+export const SettingsGetParams = z.strictObject({
+  key: z.string().min(1),
+});
+export type SettingsGetParams = z.infer<typeof SettingsGetParams>;
+
+export const SettingsGetResult = z.object({
+  /** The stored value, or null when the key was never set. */
+  value: z.unknown(),
+});
+export type SettingsGetResult = z.infer<typeof SettingsGetResult>;
+
+export const SettingsSetParams = z.strictObject({
+  key: z.string().min(1),
+  /* `z.unknown()` alone makes the key optional — an absent `value` parsed
+     clean and hit the store's NOT NULL column as a 500. The write is a
+     value store: the field is required (any JSON, `null` included). */
+  value: z.json(),
+});
+export type SettingsSetParams = z.infer<typeof SettingsSetParams>;
+
+export const SettingsSetResult = z.object({ ok: z.literal(true) });
+export type SettingsSetResult = z.infer<typeof SettingsSetResult>;
+
+/** Broadcast on `settings.set` so every client sees the change live. */
+export const SettingsChangedEvent = z.object({
+  key: z.string().min(1),
+  value: z.unknown(),
+});
+export type SettingsChangedEvent = z.infer<typeof SettingsChangedEvent>;
 
 export { APP_PROTOCOL_VERSION };
