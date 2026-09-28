@@ -113,6 +113,7 @@ const EMPTY_FEED = atom<SessionFeedState>({
   sessionId: "",
   synced: false,
   latestSeq: 0,
+  coverageSeq: 0,
   events: [],
   openRequests: [],
 });
