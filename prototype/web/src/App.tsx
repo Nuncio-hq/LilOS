@@ -46,11 +46,15 @@ import {
   type Work,
   type SessionAlert,
   type StatusComponent,
+  type ApprovalPolicy,
+  type ConversationAccess,
+  type DetectedEditor,
   type WsPick,
   type Workspace,
   NO_WS,
   RightPanel,
   Sidebar,
+  SettingsView,
   StartWorkDialog,
   ThreadView,
   baseName,
@@ -113,6 +117,14 @@ const HUMANS: Record<string, Human> = {
   oscar: { name: "Oscar", color: "bg-blue-600" },
   minh: { name: "Minh", color: "bg-cyan-600", guest: true },
 }
+
+/* What #110's real editor detection will report — hardcoded here so Settings →
+   Editors has believable data. */
+const DETECTED_EDITORS: DetectedEditor[] = [
+  { id: "vscode", name: "Visual Studio Code", path: "/Applications/Visual Studio Code.app" },
+  { id: "cursor", name: "Cursor", path: "/Applications/Cursor.app" },
+  { id: "zed", name: "Zed", path: "/Applications/Zed.app" },
+]
 
 /* What a multi-provider engine (Hermes) reports via models.list — shaped after
    Oscar's real `model.options` (providers + slugs are real). `efforts` is the
@@ -566,6 +578,15 @@ export default function App() {
      status mock for the real system.status poll from the relay. */
   const liveStatus = useLiveStatus()
   const [statusOpen, setStatusOpen] = useState(false)
+  /* Settings (issue #139): ⌘, or the sidebar gear. All values are prototype
+     mock state — the real app's persistence lands in #132. */
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [me, setMe] = useState<Human>(HUMANS.oscar)
+  const [company, setCompany] = useState("Oscar Co")
+  const [policy, setPolicy] = useState<ApprovalPolicy>("smart")
+  const [access, setAccess] = useState<ConversationAccess>("ask")
+  const [defaultEditor, setDefaultEditor] = useState("vscode")
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null)
   /* Pair phone (mobile onboarding, Mac side). Mock offer; `?pair=no-remote|expired|paired`
      opens it straight into that state (the phone side lives in prototype/mobile). */
   const [pairPhone, setPairPhone] = useState<PairPhoneState | null>(() => {
@@ -636,7 +657,22 @@ export default function App() {
   }
 
   const emp: EmpFn = (id) => employees.find((e) => e.id === id) ?? removed[id] ?? (id === "default" ? DEFAULT_EMP : undefined)
-  const human: HumanFn = (id) => HUMANS[id]
+  const human: HumanFn = (id) => (id === "oscar" ? me : HUMANS[id])
+  /* ⌘, / Ctrl+, opens Settings from anywhere (issue #139, AC-1). */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault()
+        setSettingsOpen(true)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+  const checkUpdates = () => {
+    setUpdateMsg("Checking…")
+    setTimeout(() => setUpdateMsg("LilOS is up to date"), 900)
+  }
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 2200) }
 
   // Per-employee sidebar badges: a blue count for live turns, amber for turns waiting on approval.
@@ -1089,7 +1125,8 @@ export default function App() {
       <Sidebar
         navOpen={navOpen}
         hiddenWhenClosed={focus && !!openThread?.thread}
-        me={HUMANS.oscar}
+        me={me}
+        company={company}
         companyChannels={COMPANY_CHANNELS}
         projects={[...PROJECTS, ...newProjects]}
         folders={folders}
@@ -1099,6 +1136,7 @@ export default function App() {
         badges={badges}
         status={liveStatus?.components ?? STATUS[scenario]}
         onOpenStatus={() => setStatusOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
         onPairPhone={() => setPairPhone({ kind: "ready", offer: pairOffer(300) })}
         realApp={realApp || scenario === "first-run"}
         preview={<PrototypePreviewMenu scenario={scenario} realApp={realApp} onScenario={pickScenario} onRealApp={setRealApp} />}
@@ -1155,7 +1193,7 @@ export default function App() {
           ) : (
           <main className="flex min-h-0 min-w-0 flex-col">
             <ChannelHeader
-              channel={channel} projectName={project?.name} employees={employees}
+              channel={channel} projectName={project?.name} company={company} employees={employees}
               onNav={() => setNavOpen(true)} onOpenTickets={() => { setPanelTab("tickets"); setPanelOpen(true) }}
               panelOpen={panelOpen} onOpenPanel={() => setPanelOpen(true)} onShowEmp={showEmp}
             />
@@ -1209,6 +1247,21 @@ export default function App() {
           initial={hireOpen} templates={TEMPLATES} profiles={PROFILES} models={MODEL_OPTS}
           allChannels={PROJECTS.flatMap((p) => p.channels.map((c) => ({ id: c.id, label: `${p.name} / #${c.name}` })))}
           onClose={() => setHireOpen(null)} onHire={hire} usedProfiles={employees.map((e) => e.profile)}
+        />
+      )}
+      {settingsOpen && (
+        <SettingsView
+          onClose={() => setSettingsOpen(false)}
+          general={{ me, onMeChange: setMe, company, onCompanyChange: setCompany, theme, onThemeChange: setTheme }}
+          approvals={{ policy, onPolicy: setPolicy, access, onAccess: setAccess }}
+          editors={{ detected: DETECTED_EDITORS, defaultId: defaultEditor, onDefault: setDefaultEditor }}
+          models={canModels ? { models: MODEL_OPTS, providers: PROVIDERS, visibility, onVisibility: saveVisibility } : undefined}
+          status={{
+            components: liveStatus?.components ?? STATUS[scenario],
+            diagnostics: liveStatus?.diagnostics ?? STATUS[scenario].map((c) => `${c.id}: ${c.state} — ${c.reason}`).join("\n"),
+            onCopied: () => say("Diagnostics copied"),
+          }}
+          about={{ version: "0.1.0", build: "prototype", onCheckUpdates: checkUpdates, updateStatus: updateMsg ?? undefined }}
         />
       )}
       {statusOpen && (

@@ -8,6 +8,7 @@ import { HermesAvatar } from "./avatars";
 export function ChannelHeader({
   channel,
   projectName,
+  company = "Oscar Co",
   employees,
   onNav,
   onOpenTickets,
@@ -17,6 +18,8 @@ export function ChannelHeader({
 }: {
   channel: Channel;
   projectName?: string;
+  /* Company name in the breadcrumb (#139: editable in Settings → General). */
+  company?: string;
   employees: Employee[];
   onNav: () => void;
   onOpenTickets: () => void;
@@ -37,7 +40,7 @@ export function ChannelHeader({
         </Button>
         <div className="min-w-0">
           <div className="truncate text-muted-foreground text-xs">
-            Oscar Co / {projectName ?? "Company"}
+            {company} / {projectName ?? "Company"}
           </div>
           <div className="flex items-center gap-1 font-semibold text-base">
             <HashIcon className="size-4 shrink-0" />

@@ -2,7 +2,13 @@
 /* AC tests for issue #139 — the prototype Settings screen. SettingsView lives
    in @lilos/ui (props in, callbacks out); every section renders only when its
    props are passed (D-#19). Esc/Close return the user to the app. */
-import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { SettingsView } from "../src/settings/settings-view";
 import type { DetectedEditor, StatusComponent } from "../src/types";
@@ -11,13 +17,32 @@ afterEach(cleanup);
 
 const STATUS_ROWS: StatusComponent[] = [
   { id: "relay", label: "Relay", state: "ok", reason: "Connected" },
-  { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
-  { id: "engine", label: "Engine", state: "down", reason: "Engine couldn't start — the engine program wasn't found." },
-  { id: "model", label: "Model", state: "blocked", reason: "Waiting for the engine." },
+  {
+    id: "harness",
+    label: "Harness",
+    state: "ok",
+    reason: "Running · 3 sessions",
+  },
+  {
+    id: "engine",
+    label: "Engine",
+    state: "down",
+    reason: "Engine couldn't start — the engine program wasn't found.",
+  },
+  {
+    id: "model",
+    label: "Model",
+    state: "blocked",
+    reason: "Waiting for the engine.",
+  },
 ];
 
 const EDITORS: DetectedEditor[] = [
-  { id: "vscode", name: "Visual Studio Code", path: "/Applications/Visual Studio Code.app" },
+  {
+    id: "vscode",
+    name: "Visual Studio Code",
+    path: "/Applications/Visual Studio Code.app",
+  },
   { id: "cursor", name: "Cursor", path: "/Applications/Cursor.app" },
   { id: "zed", name: "Zed", path: "/Applications/Zed.app" },
 ];
@@ -64,7 +89,9 @@ describe("AC-1 (#139) SettingsView lives in @lilos/ui with a section list", () =
     const p = fullProps();
     render(<SettingsView {...p} />);
     const dialog = within(body()).getByRole("dialog", { name: "Settings" });
-    const tabs = within(dialog).getAllByRole("tab").map((t) => t.textContent);
+    const tabs = within(dialog)
+      .getAllByRole("tab")
+      .map((t) => t.textContent);
     expect(tabs).toEqual([
       "General",
       "Approvals",
@@ -78,14 +105,12 @@ describe("AC-1 (#139) SettingsView lives in @lilos/ui with a section list", () =
   test("a section renders only when its props are passed (D-#19)", () => {
     const p = fullProps();
     render(
-      <SettingsView
-        onClose={p.onClose}
-        general={p.general}
-        about={p.about}
-      />,
+      <SettingsView onClose={p.onClose} general={p.general} about={p.about} />,
     );
     const dialog = within(body()).getByRole("dialog", { name: "Settings" });
-    const tabs = within(dialog).getAllByRole("tab").map((t) => t.textContent);
+    const tabs = within(dialog)
+      .getAllByRole("tab")
+      .map((t) => t.textContent);
     expect(tabs).toEqual(["General", "About"]);
   });
 
@@ -95,10 +120,14 @@ describe("AC-1 (#139) SettingsView lives in @lilos/ui with a section list", () =
     const dialog = within(body()).getByRole("dialog", { name: "Settings" });
     fireEvent.click(within(dialog).getByRole("tab", { name: "Status" }));
     expect(
-      within(dialog).getByText("Engine couldn't start — the engine program wasn't found."),
+      within(dialog).getByText(
+        "Engine couldn't start — the engine program wasn't found.",
+      ),
     ).toBeTruthy();
     expect(
-      within(dialog).getByRole("tab", { name: "Status" }).getAttribute("aria-selected"),
+      within(dialog)
+        .getByRole("tab", { name: "Status" })
+        .getAttribute("aria-selected"),
     ).toBe("true");
   });
 });
@@ -158,7 +187,9 @@ describe("AC-2 (#139) sections carry working controls", () => {
     const dialog = within(body()).getByRole("dialog", { name: "Settings" });
     fireEvent.click(within(dialog).getByRole("tab", { name: "Models" }));
     await act(async () =>
-      fireEvent.click(within(dialog).getByRole("button", { name: /Manage models/ })),
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: /Manage models/ }),
+      ),
     );
     const modelsDialog = within(body()).getByRole("dialog", { name: "Models" });
     await act(async () =>

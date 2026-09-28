@@ -30,7 +30,14 @@ test("AC-1 ⌘, and the sidebar gear open Settings", async ({ page }) => {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = settingsDialog(page);
   await expect(dialog).toBeVisible();
-  for (const tab of ["General", "Approvals", "Editors", "Models", "Status", "About"]) {
+  for (const tab of [
+    "General",
+    "Approvals",
+    "Editors",
+    "Models",
+    "Status",
+    "About",
+  ]) {
     await expect(dialog.getByRole("tab", { name: tab })).toBeVisible();
   }
   await page.keyboard.press("Escape");
@@ -63,9 +70,10 @@ test("AC-2 sections carry mock data and controls update mock state", async ({
   // Approvals — policy + default access switch.
   await dialog.getByRole("tab", { name: "Approvals" }).click();
   await dialog.getByRole("radio", { name: "Manual" }).click();
-  await expect(
-    dialog.getByRole("radio", { name: "Manual" }),
-  ).toHaveAttribute("aria-checked", "true");
+  await expect(dialog.getByRole("radio", { name: "Manual" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
   await dialog.getByRole("radio", { name: "Full access" }).click();
   await expect(
     dialog.getByRole("radio", { name: "Full access" }),
@@ -74,16 +82,19 @@ test("AC-2 sections carry mock data and controls update mock state", async ({
   // Editors — pick a new default.
   await dialog.getByRole("tab", { name: "Editors" }).click();
   await dialog.getByRole("radio", { name: /Zed/ }).click();
-  await expect(
-    dialog.getByRole("radio", { name: /Zed/ }),
-  ).toHaveAttribute("aria-checked", "true");
+  await expect(dialog.getByRole("radio", { name: /Zed/ })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
 
   // Models — the existing visibility dialog opens from here.
   await dialog.getByRole("tab", { name: "Models" }).click();
   await dialog.getByRole("button", { name: /Manage models/ }).click();
   const modelsDialog = page.getByRole("dialog", { name: "Models" });
   await expect(modelsDialog).toBeVisible();
-  await modelsDialog.getByRole("switch", { name: "Show Qwen 3.8 Flash-Next" }).click();
+  await modelsDialog
+    .getByRole("switch", { name: "Show Qwen 3.8 Flash-Next" })
+    .click();
   await expect(
     modelsDialog.getByRole("switch", { name: "Show Qwen 3.8 Flash-Next" }),
   ).not.toBeChecked();
@@ -108,8 +119,10 @@ test("AC-2 sections carry mock data and controls update mock state", async ({
   // Close returns to the app; the renamed human shows in the sidebar footer.
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
-  await expect(page.locator("aside").getByText("Ozzy")).toBeVisible();
-  await expect(page.locator("aside").getByText("Oscar Industries")).toBeVisible();
+  await expect(page.locator("aside").getByText("Ozzy").first()).toBeVisible();
+  await expect(
+    page.locator("aside").getByText("Oscar Industries"),
+  ).toBeVisible();
   expect(errors).toEqual([]);
 });
 
