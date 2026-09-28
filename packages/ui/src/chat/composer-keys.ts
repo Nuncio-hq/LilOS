@@ -27,7 +27,9 @@ const OPEN_OVERLAY = [
   '[role="listbox"]',
 ].join(", ");
 
-const overlayOpen = () => !!document.querySelector(OPEN_OVERLAY);
+/** True while a popup/menu/dialog owns Esc — exported so surfaces that add
+    their own Esc handling (Focus exits, issue #114) yield to it too. */
+export const overlayOpen = () => !!document.querySelector(OPEN_OVERLAY);
 
 export function composerKeyDown({
   running,

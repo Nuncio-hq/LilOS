@@ -35,6 +35,10 @@ PR does not exist.
   `cwd`, the relay stores it (nullable), and the engine sees it only as
   `cwd` on `session.start`.** Not: a per-employee fixed workdir, or folder
   moves inside a session (#10). — #113
+- **D-#138 Message search indexes only the relay's stored messages via a
+  SQLite FTS5 external-content table + triggers (migration v9).** Engine
+  transcripts, tool output and attachments are never indexed (D-#25).
+  Not: a separate search service, or indexing transcripts. — #138
 - **D-#118 The signed-in human's identity (name, company, avatar colour) is
   relay-owned profile data: `profile.get`/`profile.update` on a singleton
   `profile` row (`settings.*` is #92's KV namespace); every surface reads it, nothing is hardcoded.** Prefill
@@ -99,10 +103,14 @@ PR does not exist.
 - **D-#8 A model is `{provider?, id}` — never a joined `provider/model`
   string — carrying the engine's per-model `efforts`/`fast`; the picker's
   hide/show list is LilOS-owned (relay `settings`, one list for all
-  employees). Hiring still speaks `agents.*`; the protocol has no profile
-  delete.** Not: `splitModelRef`-style splitting, a sticky last-used model
-  for new sessions (the engine owns defaults, #85), a hide list in
-  localStorage or engine state, LilOS-owned profile CRUD. — #8 · #92 · PR #129
+  employees). Hiring, the picker and persona edits speak `agents.*` /
+  `models.*`: `agents.update` writes the fields the engine advertises
+  (`detail.updatable`); there is still no profile delete — firing removes
+  only the LilOS employee record.** Not: `splitModelRef`-style splitting, a
+  sticky last-used model for new sessions (the engine owns defaults, #85), a
+  hide list in localStorage or engine state, LilOS-owned profile CRUD, a
+  persona read-only wire (was #8), or a delete method "for cleanup".
+  — #8, #92, #123 · PR #46, #129, #146
 - **D-#26 The harness supervises the engine and is the only thing that talks
   to it.** It owns launch (`hermes serve` on 127.0.0.1 with a generated
   token, via `packages/engine-hermes`), crash restart with bounded backoff,
@@ -144,6 +152,11 @@ PR does not exist.
   persisted editor choice. — #110 · PR #143
 
 ## UX
+- **D-#114 The Workbench lives only in Focus mode, and opening a session
+  goes straight into Focus** (`/dm/$employeeId/$conversationId/focus`; the
+  420px thread panel stays the quick peek). Changes = uncommitted files vs
+  `HEAD` (`git.diff` with no `base`; untracked included). Not: Workbench in
+  the thread panel, or a review step between DM and Focus. — #114 · PR #149
 - **D-#19 A control renders only when its handler is passed; the app shows
   only working surfaces (no placeholder buttons).** Conversation UI = shared
   pieces (`AgentTurn`, `UserTurn`, cards, composers) + thin frames

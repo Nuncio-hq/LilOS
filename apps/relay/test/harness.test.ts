@@ -327,4 +327,93 @@ describe("relay harness surface (#26)", () => {
     );
     expect(errorData(watcher.frames, lastId())).toBe("not_found");
   });
+
+  it("channel.subscribe replays the channel's asks in their current state (#148)", async () => {
+    const relay = newRelay();
+    const host = await helloed(relay);
+    const watcher = await helloed(relay);
+    const { channel, conversation } = await dmWithConversation(
+      host.connection,
+      host.frames,
+    );
+    await host.connection.receive(
+      req("harness.register", { protocolVersion: 1, version: "0.0.0-test" }),
+    );
+
+    // Open an approval ask and a question ask BEFORE the watcher subscribes,
+    // then resolve the question — the ask set is already non-trivial when the
+    // subscription lands, exactly like a page that loaded late.
+    await host.connection.receive(
+      req("asks.open", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        turnId: "t1",
+        requestId: "r1",
+        request: {
+          kind: "approval",
+          command: "patch README.md",
+          options: ["once", "always", "deny"],
+        },
+      }),
+    );
+    const { ask: open1 } = resultOf(host.frames, lastId()).result as {
+      ask: { id: string };
+    };
+    await host.connection.receive(
+      req("asks.open", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        turnId: "t1",
+        requestId: "r2",
+        request: { kind: "question", question: "Which file?" },
+      }),
+    );
+    const { ask: open2 } = resultOf(host.frames, lastId()).result as {
+      ask: { id: string };
+    };
+    await watcher.connection.receive(
+      req("asks.respond", { askId: open2.id, outcome: "answer", answer: "x" }),
+    );
+
+    watcher.frames.length = 0;
+    await watcher.connection.receive(
+      req("channel.subscribe", { channelId: channel.id }),
+    );
+
+    const askIds = (method: string) =>
+      eventsNamed(watcher.frames, method).map(
+        (e) => (e.params as { ask: { id: string } }).ask.id,
+      );
+    expect(askIds("ask.opened")).toContain(open1.id);
+    // The resolved ask replays with its terminal state so a fresh subscriber
+    // never resurrects it as still-open.
+    expect(askIds("ask.resolved")).toContain(open2.id);
+    const resolvedReplay = eventsNamed(watcher.frames, "ask.resolved").find(
+      (e) => (e.params as { ask: { id: string } }).ask.id === open2.id,
+    );
+    expect(
+      (resolvedReplay?.params as { ask: { state: string } } | undefined)?.ask
+        .state,
+    ).toBe("resolved");
+  });
+
+  it("broadcasts host.changed on harness.register and host disconnect (#53)", async () => {
+    const relay = newRelay();
+    const host = await helloed(relay);
+    const watcher = await helloed(relay);
+
+    watcher.frames.length = 0;
+    await host.connection.receive(
+      req("harness.register", { protocolVersion: 1, version: "0.0.0-test" }),
+    );
+    const ups = eventsNamed(watcher.frames, "host.changed");
+    expect(ups).toHaveLength(1);
+    expect((ups[0].params as { connected: boolean }).connected).toBe(true);
+
+    watcher.frames.length = 0;
+    host.connection.closed();
+    const downs = eventsNamed(watcher.frames, "host.changed");
+    expect(downs).toHaveLength(1);
+    expect((downs[0].params as { connected: boolean }).connected).toBe(false);
+  });
 });

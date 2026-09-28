@@ -159,6 +159,8 @@ export function ReplyCards({
                     : "border-emerald-200"
                   : "border-amber-300 bg-amber-50/50",
               )}
+              data-ask-id={a.id}
+              data-ask-state={done ? "resolved" : "open"}
               state={done ? "approval-responded" : "approval-requested"}
               approval={
                 done

@@ -38,17 +38,33 @@ interface Stack {
   stop: () => Promise<void>;
 }
 
-async function waitForHttp(url: string, ms = 120_000): Promise<void> {
+async function waitForHttp(
+  url: string,
+  proc?: ChildProcess,
+  ms = 120_000,
+): Promise<void> {
   const start = Date.now();
+  let last = "unreachable";
   for (;;) {
     // A wedged fetch (accepted socket, starved handler) hangs the loop for
     // the whole budget otherwise — cap each attempt so retries stay cheap.
     const ok = await fetch(url, { signal: AbortSignal.timeout(5_000) })
-      .then((r) => r.ok || r.status === 404)
-      .catch(() => false);
+      .then((r) => {
+        if (r.ok || r.status === 404) return true;
+        last = `HTTP ${r.status}`;
+        return false;
+      })
+      .catch((e) => {
+        last = String(e?.cause ?? e);
+        return false;
+      });
     if (ok) return;
+    // A dead stack never serves (vite --strictPort losing a port race,
+    // relay dying) — fail fast instead of burning the whole budget.
+    if (proc && proc.exitCode !== null)
+      throw new Error(`stack exited ${proc.exitCode} before ${url}`);
     if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
+      throw new Error(`timed out waiting for ${url}: last=${last}`);
     await new Promise((r) => setTimeout(r, 200));
   }
 }
@@ -107,8 +123,8 @@ async function bootStack(
     // page hits "WebSocket error before open" under parallel load (#84). The
     // app's first WS connect has no retry, so the relay port must listen
     // before the page ever loads.
-    await waitForHttp(webUrl);
-    await waitForHttp(`http://127.0.0.1:${ports.relay}/`);
+    await waitForHttp(webUrl, proc);
+    await waitForHttp(`http://127.0.0.1:${ports.relay}/`, proc);
     return {
       home,
       webUrl,
@@ -120,7 +136,9 @@ async function bootStack(
       },
     };
   } catch (e) {
-    proc.kill("SIGKILL");
+    // Group kill: `bun run dev` spawns detached — killing only the shim
+    // orphans stack.ts + relay + harness + vite and poisons the next boot.
+    await killProc(proc);
     throw e;
   }
 }
@@ -177,6 +195,7 @@ test.describe.configure({ mode: "serial" });
 test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", async ({
   page,
 }) => {
+  // bootStack + send + Focus navigation need headroom under parallel load.
   test.setTimeout(180_000);
   const stack = await bootStack(
     "ac80a",
@@ -192,6 +211,8 @@ test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", asy
   try {
     await dmDefault(page, stack.webUrl);
     await send(page, PROMPT);
+    // Sending opens the session in Focus (#114); Back lands on the feed.
+    await page.getByRole("button", { name: "Back to DM" }).click();
     const row = userRow(page, PROMPT);
     await expect(row).toBeVisible({ timeout: 30_000 });
     const rowFb = row.locator('[data-slot="avatar-fallback"]');
@@ -214,6 +235,7 @@ test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", asy
 test("AC-2 markdown renders while the reply streams, then settles unchanged", async ({
   page,
 }) => {
+  test.setTimeout(150_000);
   const stack = await bootStack(
     "ac80b",
     { relay: wport(4664), feed: wport(4665), web: wport(5264) },
@@ -223,6 +245,10 @@ test("AC-2 markdown renders while the reply streams, then settles unchanged", as
   try {
     await dmDefault(page, stack.webUrl);
     await send(page, PROMPT);
+    // Send lands in Focus (#114); the peek panel (conv URL minus /focus)
+    // keeps this test covering the thread-panel markdown path.
+    await page.waitForURL(/\/focus$/);
+    await page.goto(page.url().replace(/\/focus$/, ""));
     const turn = page.locator("[data-agentturn]").first();
     const streaming = turn.locator("[data-streaming]");
     await expect(streaming).toBeVisible({ timeout: 60_000 });
@@ -283,6 +309,8 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
       const win = await app.firstWindow();
       await dmDefault(win, stack.webUrl);
       await send(win, PROMPT);
+      // Send opens Focus (#114); Back returns to the feed the row lives on.
+      await win.getByRole("button", { name: "Back to DM" }).click();
       // AC-1 in the desktop window: the user's row avatar IS the footer avatar.
       const row = userRow(win, PROMPT);
       await expect(row).toBeVisible({ timeout: 30_000 });
@@ -290,7 +318,11 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
       const footFb = footerAvatar(win);
       expect(await bg(rowFb)).toBe(await bg(footFb));
       await win.screenshot({ path: `${SHOTS}/ac-3-desktop-avatar.png` });
-      // AC-2 in the desktop window: markdown mid-stream.
+      // AC-2 in the desktop window: markdown mid-stream — reopen the session.
+      await row.getByRole("button", { name: /repl/i }).click();
+      await expect(win.locator("[data-agentturn]")).toHaveCount(1, {
+        timeout: 15_000,
+      });
       const streaming = win.locator("[data-agentturn] [data-streaming]");
       await expect(streaming.locator("li")).toBeVisible({ timeout: 60_000 });
       await expect(streaming.locator("code").first()).toBeVisible();

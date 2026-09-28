@@ -537,7 +537,11 @@ describe("engine-hermes #8: agents + models capabilities", () => {
   test("describe declares agents + models with their methods", async () => {
     const { h } = setup();
     const d = (await h.request("describe")) as {
-      capabilities: { id: string; methods?: string[] }[];
+      capabilities: {
+        id: string;
+        methods?: string[];
+        detail?: Record<string, unknown>;
+      }[];
     };
     const agents = d.capabilities.find((c) => c.id === "agents");
     const models = d.capabilities.find((c) => c.id === "models");
@@ -545,7 +549,9 @@ describe("engine-hermes #8: agents + models capabilities", () => {
       "agents.list",
       "agents.describe",
       "agents.create",
+      "agents.update",
     ]);
+    expect(agents?.detail?.updatable).toEqual(["description", "soul", "model"]);
     expect(models?.methods).toEqual(["models.list", "session.setModel"]);
   });
 
@@ -582,6 +588,47 @@ describe("engine-hermes #8: agents + models capabilities", () => {
     await expect(
       h.request("agents.create", { name: "reviewer" }),
     ).rejects.toMatchObject({ code: -32003 });
+  });
+
+  test("agents.update maps to profiles.configure; guarded model asks for confirm", async () => {
+    const { gw, h } = setup();
+    const r = (await h.request("agents.update", {
+      id: "builder",
+      soul: "You are Builder v2.",
+      description: "updated",
+      model: "stub-model-b",
+    })) as { agent: { soul?: string; description?: string; model?: string } };
+    expect(r.agent.soul).toBe("You are Builder v2.");
+    expect(r.agent.description).toBe("updated");
+    expect(r.agent.model).toBe("stub-model-b");
+    const pr = gw.profiles.get("builder");
+    expect(pr?.soul).toBe("You are Builder v2.");
+    expect(pr?.model).toBe("stub-model-b");
+
+    // Rename is CLI-only in Hermes — the wire refuses it.
+    await expect(
+      h.request("agents.update", { id: "builder", name: "boss" }),
+    ).rejects.toMatchObject({ code: -32602 });
+    await expect(
+      h.request("agents.update", { id: "ghost", soul: "x" }),
+    ).rejects.toMatchObject({ code: -32004 });
+
+    // Guarded models surface the engine's confirm message; a confirm:true
+    // re-send pins them.
+    gw.guardedModels.add("stub-model-a");
+    const ask = (await h.request("agents.update", {
+      id: "builder",
+      model: "stub-model-a",
+    })) as { agent: { model?: string }; confirmModel?: string };
+    expect(ask.confirmModel).toContain("stub-model-a");
+    expect(ask.agent.model).toBe("stub-model-b"); // not applied yet
+    const done = (await h.request("agents.update", {
+      id: "builder",
+      model: "stub-model-a",
+      confirmModel: true,
+    })) as { agent: { model?: string } };
+    expect(done.agent.model).toBe("stub-model-a");
+    expect(gw.profiles.get("builder")?.model).toBe("stub-model-a");
   });
 
   test("AC-1 models.list returns every authenticated provider's models, grouped by provider", async () => {

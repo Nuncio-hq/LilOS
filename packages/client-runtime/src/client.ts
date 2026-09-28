@@ -26,6 +26,8 @@ import {
 import type {
   AgentDescriptor,
   AgentsCreateParams,
+  AgentsUpdateParams,
+  AgentsUpdateResult,
   ModelsListResult,
 } from "@lilos/contracts/engine";
 import { atom, type WritableAtom } from "nanostores";
@@ -388,6 +390,18 @@ export class RelayClient {
     return agent;
   }
 
+  /**
+   * `agents.update` — edit a profile's persona/model (#123). The engine may
+   * answer `confirmModel` instead of applying a guarded model: the caller
+   * asks the user and re-sends with `confirmModel: true`.
+   */
+  async updateAgent(params: AgentsUpdateParams): Promise<AgentsUpdateResult> {
+    return await this.request<AgentsUpdateResult>(
+      "agents.update",
+      params as Record<string, unknown>,
+    );
+  }
+
   async listModels(params?: { refresh?: boolean }): Promise<ModelsListResult> {
     return await this.request<ModelsListResult>("models.list", params ?? {});
   }
@@ -728,6 +742,12 @@ export class RelayClient {
       case "channel.removed": {
         const event = ChannelRemovedEvent.parse(params);
         this.dropChannel(event.channelId);
+        return;
+      }
+      case "host.changed": {
+        // The engine host registered or disconnected — refresh status now
+        // instead of waiting for the next poll tick (#148).
+        void this.refreshSystemStatus();
         return;
       }
       case "profile.updated": {

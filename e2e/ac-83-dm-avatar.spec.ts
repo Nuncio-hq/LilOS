@@ -3,13 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  _electron,
-  expect,
-  type Locator,
-  type Page,
-  test,
-} from "@playwright/test";
+import { _electron, expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 /**
@@ -41,15 +35,31 @@ interface Stack {
   stop: () => Promise<void>;
 }
 
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
+async function waitForHttp(
+  url: string,
+  proc?: ChildProcess,
+  ms = 90_000,
+): Promise<void> {
   const start = Date.now();
+  let last = "unreachable";
   for (;;) {
     const ok = await fetch(url)
-      .then((r) => r.ok || r.status === 404)
-      .catch(() => false);
+      .then((r) => {
+        if (r.ok || r.status === 404) return true;
+        last = `HTTP ${r.status}`;
+        return false;
+      })
+      .catch((e) => {
+        last = String(e?.cause ?? e);
+        return false;
+      });
     if (ok) return;
+    // A dead stack never serves (vite --strictPort losing a port race,
+    // relay dying) — fail fast instead of burning the whole budget.
+    if (proc && proc.exitCode !== null)
+      throw new Error(`stack exited ${proc.exitCode} before ${url}`);
     if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
+      throw new Error(`timed out waiting for ${url}: last=${last}`);
     await new Promise((r) => setTimeout(r, 200));
   }
 }
@@ -104,7 +114,7 @@ async function bootStack(
   });
   const webUrl = `http://127.0.0.1:${ports.web}`;
   try {
-    await waitForHttp(webUrl);
+    await waitForHttp(webUrl, proc);
     return {
       home,
       webUrl,
@@ -116,7 +126,9 @@ async function bootStack(
       },
     };
   } catch (e) {
-    proc.kill("SIGKILL");
+    // Group kill: `bun run dev` spawns detached — killing only the shim
+    // orphans stack.ts + relay + harness + vite and poisons the next boot.
+    await killProc(proc);
     throw e;
   }
 }
@@ -130,8 +142,6 @@ const PROMPT = "What does the replay contract carry?"; // engine-fake script
    line's top is measured at the "Oscar" span — exact text, since the avatar
    fallback "O" also carries `font-semibold`. */
 const feedRow = (page: Page) => page.locator("[data-session]").first();
-const rowAvatar = (row: Locator) => row.locator("[data-slot='avatar']").first();
-const nameLine = (row: Locator) => row.getByText("Oscar", { exact: true });
 /* The name/time line is selected in-page (see tops()): the element at
    ":scope > .grid > *:nth-child(2) > *:first-child". */
 
@@ -168,6 +178,7 @@ test.describe.configure({ mode: "serial" });
 test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
   page,
 }) => {
+  test.setTimeout(150_000);
   const stack = await bootStack(
     "ac83a",
     {
@@ -182,6 +193,8 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
   try {
     await dmDefault(page, stack.webUrl);
     await send(page, PROMPT);
+    // Sending opens the session in Focus (#114); Back lands on the feed.
+    await page.getByRole("button", { name: "Back to DM" }).click();
     const row = feedRow(page);
     await expect(row).toBeVisible({ timeout: 30_000 });
     // Settled state: engine-fake's reply is in, the session chip is rendered.
@@ -325,6 +338,10 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
     await expect(row).toBeVisible({ timeout: 30_000 });
     await expectAligned("idle (no open session)");
     await row.locator("button").last().click(); // chip reopens the session
+    // The click lands in Focus (#114); the feed row isn't rendered there, so
+    // measure the selected state on the peek URL for the same session.
+    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/);
+    await page.goto(page.url().replace(/\/focus$/, ""));
     await expect(row).toBeVisible({ timeout: 30_000 });
     await expectAligned("selected (session open)");
   } finally {
@@ -372,6 +389,8 @@ test("AC-3 desktop app: the DM feed row in Electron", async () => {
       const win = await app.firstWindow();
       await dmDefault(win, stack.webUrl);
       await send(win, PROMPT);
+      // Send opens Focus (#114); Back returns to the feed the row lives on.
+      await win.getByRole("button", { name: "Back to DM" }).click();
       const row = feedRow(win);
       await expect(row).toBeVisible({ timeout: 30_000 });
       await expect(row.getByText(/\d+ repl(y|ies)/)).toBeVisible({
