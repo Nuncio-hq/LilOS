@@ -5,11 +5,20 @@ import {
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
+import type { ModelChoice, ModelVisibility } from "@lilos/ui";
 import type { AttachedFile } from "@lilos/ui/types";
 import { atom } from "nanostores";
 import { toAttachmentInputs } from "./attachments";
 import { USER_ID } from "./me";
-import { engine, relay } from "./runtime";
+import {
+  engine,
+  engineDefaultModel,
+  engineDefaultProvider,
+  engineModels,
+  engineProviders,
+  modelVisibility,
+  relay,
+} from "./runtime";
 import { say } from "./toast";
 
 export { USER_ID };
@@ -47,6 +56,7 @@ export async function sendDm(
   employeeId: string,
   text: string,
   conversationId?: string,
+  pick?: ModelChoice,
   files?: AttachedFile[],
   /** Folder the new session works in (#113); ignored on thread replies. */
   cwd?: string,
@@ -82,6 +92,12 @@ export async function sendDm(
       authorId: USER_ID,
       text,
       ...(attachments ? { attachments } : {}),
+      // The pick the composer showed for this fresh session (#92) rides the
+      // open call so `session.start` sees it — never a second message.
+      ...(pick?.model !== undefined ? { model: pick.model } : {}),
+      ...(pick?.provider !== undefined ? { provider: pick.provider } : {}),
+      ...(pick?.effort !== undefined ? { effort: pick.effort } : {}),
+      ...(pick?.fast !== undefined ? { fast: pick.fast } : {}),
       ...(cwd !== undefined ? { cwd } : {}),
     });
     pendingStart.set({ ...pendingStart.get(), [res.conversation.id]: true });
@@ -158,12 +174,33 @@ export async function renameConversation(
   await relay.request("conversations.update", { conversationId, title });
 }
 
-/** Pin the model a conversation's next turn runs on (`conversations.setModel`). */
+/** Pin the pick a conversation's next turn runs on (`conversations.setModel`, #92). */
 export async function setConversationModel(
   conversationId: string,
-  model: string,
+  pick: ModelChoice,
 ): Promise<void> {
-  await relay.request("conversations.setModel", { conversationId, model });
+  await relay.request("conversations.setModel", {
+    conversationId,
+    model: pick.model,
+    ...(pick.provider !== undefined ? { provider: pick.provider } : {}),
+    ...(pick.effort !== undefined ? { effort: pick.effort } : {}),
+    ...(pick.fast !== undefined ? { fast: pick.fast } : {}),
+  });
+}
+
+/** Re-fetch the engine's model catalog (`models.list {refresh:true}`, #92 AC-6). */
+export async function refreshModels(): Promise<void> {
+  const r = await relay.listModels({ refresh: true });
+  engineModels.set(r.models);
+  engineProviders.set(r.providers ?? []);
+  engineDefaultModel.set(r.default);
+  engineDefaultProvider.set(r.defaultProvider);
+}
+
+/** Write the ONE Edit-models hide list (#92 AC-7) — the relay persists and broadcasts it. */
+export async function setModelVisibility(v: ModelVisibility): Promise<void> {
+  modelVisibility.set(v);
+  await relay.request("settings.set", { key: "modelVisibility", value: v });
 }
 
 /** Shared recent folders (relay-owned, #113). */

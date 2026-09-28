@@ -104,6 +104,8 @@ export function liveTurnReply(
     streaming: turn.phase === "text" ? turn.text : undefined,
     approval,
     model: turn.model,
+    effort: turn.effort,
+    fast: turn.fast,
     phase: PHASE_MAP[turn.phase],
     live: turn.phase !== "done" && turn.phase !== "stopped",
     waitingOn: turn.phase === "waiting" ? open?.request.kind : undefined,
@@ -127,6 +129,8 @@ export function conversationReplies(
         time: clock(m.createdAt),
         text: m.authorKind === "system" ? `⚠ ${m.text}` : m.text,
         model: m.model,
+        effort: m.effort,
+        fast: m.fast,
         phase: m.authorKind === "employee" ? "done" : undefined,
         attachments: toAttachedFiles(m.attachments),
       }))

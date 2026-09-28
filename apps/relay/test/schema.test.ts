@@ -19,6 +19,7 @@ describe("AC-5 relay stores no engine transcript", () => {
       "employees",
       "messages",
       "recentFolders",
+      "settings",
     ]);
     for (const [name, table] of Object.entries(schema)) {
       for (const column of Object.keys(

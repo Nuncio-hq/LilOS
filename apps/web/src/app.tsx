@@ -37,6 +37,7 @@ import {
   booted,
   engine,
   engineDefaultModel,
+  engineDefaultProvider,
   engineModels,
   navOpen,
   relay,
@@ -101,6 +102,7 @@ function AppShell() {
   const canHire = desc?.capabilities.some((c) => c.id === "agents") ?? false;
   const catalog = useAtom(engineModels);
   const defaultModel = useAtom(engineDefaultModel);
+  const defaultProvider = useAtom(engineDefaultProvider);
   const [hireOpen, setHireOpen] = useState(false);
   const [hireError, setHireError] = useState<string | null>(null);
   const [hirePending, setHirePending] = useState(false);
@@ -111,11 +113,20 @@ function AppShell() {
   const [engineProfiles, setEngineProfiles] = useState<EngineProfile[]>([]);
   const hireTemplates = useMemo(
     () =>
-      HIRE_TEMPLATES.map((t) => ({
-        ...t,
-        model: t.model || defaultModel || catalog[0]?.id || "",
-      })),
-    [catalog, defaultModel],
+      HIRE_TEMPLATES.map((t) => {
+        const model = t.model || defaultModel || catalog[0]?.id || "";
+        /* The model is `{provider?, id}`: a template that left it unset
+           inherits the engine default's provider; a bare-id template
+           resolves to the first catalog row with that id (#92 AC-8). */
+        const row =
+          !t.model && model === defaultModel && defaultProvider !== undefined
+            ? catalog.find(
+                (m) => m.id === model && m.provider === defaultProvider,
+              )
+            : catalog.find((m) => m.id === model);
+        return { ...t, model, provider: row?.provider };
+      }),
+    [catalog, defaultModel, defaultProvider],
   );
   const openHire = () => {
     setHireError(null);

@@ -12,6 +12,7 @@ import {
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
 import {
   AddFolderDialog,
+  choiceFor,
   clearDraftIfSent,
   draftKey,
   EditEmployeeDialog,
@@ -23,6 +24,8 @@ import {
 import type {
   AttachedFile,
   Channel,
+  ModelChoice,
+  ModelPickerExtras,
   Msg,
   Reply,
   Thread,
@@ -37,10 +40,12 @@ import {
   hasCapability,
   interruptSession,
   pendingStart,
+  refreshModels,
   renameConversation,
   respondToRequest,
   sendDm,
   setConversationModel,
+  setModelVisibility,
 } from "../lib/actions";
 import {
   attachmentUrls,
@@ -71,7 +76,11 @@ import { humanFor, ME } from "../lib/me";
 import {
   asks as asksAtom,
   engine,
+  engineDefaultModel,
+  engineDefaultProvider,
   engineModels,
+  engineProviders,
+  modelVisibility,
   navOpen,
   relay,
   sessionModels,
@@ -131,6 +140,11 @@ export function DmPage() {
   const summaries = useAtom(relay.conversationSummaries);
   const models = useAtom(sessionModels);
   const catalog = useAtom(engineModels);
+  const defaultModel = useAtom(engineDefaultModel);
+  const defaultProvider = useAtom(engineDefaultProvider);
+  const providers = useAtom(engineProviders);
+  const visibility = useAtom(modelVisibility);
+  const description = useAtom(engine.description);
   const allAsks = useAtom(asksAtom);
   const pending = useAtom(pendingStart);
   const engineState = useAtom(engine.state);
@@ -139,6 +153,26 @@ export function DmPage() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  /* The picker's pick for a session that doesn't exist yet (#92 AC-5): held
+     per employee, stamped on `conversations.open`, cleared once sent. */
+  const [draftPick, setDraftPick] = useState<Record<string, ModelChoice>>({});
+
+  /* Picker extras (#92): Edit models rides the relay-persisted visibility
+     list; Refresh renders only when the engine's `models` capability
+     declares `refreshable` (D-#19 — no control without a handler). */
+  const picker = useMemo<ModelPickerExtras | undefined>(() => {
+    if (!catalog.length) return undefined;
+    const detail = description?.capabilities.find((c) => c.id === "models")
+      ?.detail as { refreshable?: boolean } | undefined;
+    return {
+      providers: providers.length
+        ? providers.map((p) => ({ id: p.id, name: p.name ?? p.id }))
+        : undefined,
+      visibility,
+      onVisibility: (v) => void setModelVisibility(v),
+      ...(detail?.refreshable === true ? { onRefresh: refreshModels } : {}),
+    };
+  }, [catalog, providers, visibility, description]);
 
   /* Folder picking (#113): shared recents from the relay (probed live for
      missing/git) + a per-employee pick (its last session's folder, AC-6).
@@ -159,7 +193,6 @@ export function DmPage() {
   /* Image attachments (#112): the composers offer pick/drop/paste only when
      the engine declares `image_prompt` (D-#19); thumbnails resolve lazily
      from the relay store, so subscribe to the resolved-URL cache. */
-  const description = useAtom(engine.description);
   const canAttachImages =
     description?.capabilities.some((c) => c.id === "image_prompt") ?? false;
   useAtom(attachmentUrls);
@@ -443,16 +476,23 @@ export function DmPage() {
     const folder = p?.folder
       ? folderRows.find((f) => f.id === p.folder && !f.missing)
       : undefined;
-    return sendDm(employeeId, text, undefined, files, folder?.path).then(
-      (conv) => {
-        if (!conv) throw new Error("send failed");
-        clearDraftIfSent(draftKey.dm(employeeId), text);
-        return navigate({
-          to: "/dm/$employeeId/$conversationId",
-          params: { employeeId, conversationId: conv.id },
-        });
-      },
-    );
+    const modelPick = draftPick[employeeId];
+    return sendDm(
+      employeeId,
+      text,
+      undefined,
+      modelPick,
+      files,
+      folder?.path,
+    ).then((conv) => {
+      if (!conv) throw new Error("send failed");
+      clearDraftIfSent(draftKey.dm(employeeId), text);
+      setDraftPick(({ [employeeId]: _drop, ...rest }) => rest);
+      return navigate({
+        to: "/dm/$employeeId/$conversationId",
+        params: { employeeId, conversationId: conv.id },
+      });
+    });
   };
 
   /* ↑ recall for the home composer: the last top-level message Oscar sent in
@@ -517,7 +557,12 @@ export function DmPage() {
       archived: conv.archived,
       replies,
       usage: model?.turns.at(-1)?.usage as Thread["usage"],
+      // The session's pick: the pinned conversation fields win; the session
+      // snapshot fills what a bare `model` pin (pre-#92 rows) never set.
       model: conv.model ?? model?.model,
+      provider: conv.provider ?? model?.provider,
+      effort: conv.effort ?? model?.effort,
+      fast: conv.fast ?? model?.fast,
       ...(convWs ? { ws: convWs } : {}),
     };
     const running = !!modelLive || pending[conv.id] === true;
@@ -564,9 +609,16 @@ export function DmPage() {
           steer={steer}
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}
-          onModel={(c) => void setConversationModel(conv.id, c.model)}
+          onModel={
+            catalog.length
+              ? (c) => void setConversationModel(conv.id, c)
+              : undefined
+          }
+          picker={picker}
+          defaultModel={defaultModel}
+          defaultProvider={defaultProvider}
           onSend={(text, files) =>
-            sendDm(employeeId, text, conv.id, files).then((c) => {
+            sendDm(employeeId, text, conv.id, undefined, files).then((c) => {
               if (!c) throw new Error("send failed");
               clearDraftIfSent(draftKey.thread(conv.id), text);
               return c;
@@ -634,6 +686,22 @@ export function DmPage() {
         composerNote={composerNote}
         mentionables={mentionables}
         onSearchFiles={fileSearch(pickFolderPath)}
+        models={catalog.length ? catalog : undefined}
+        modelChoice={
+          draftPick[employeeId] ??
+          choiceFor(
+            employee.model || defaultModel || "",
+            catalog,
+            /* the engine default's provider disambiguates a shared id */
+            employee.model ? undefined : defaultProvider,
+          )
+        }
+        onModel={
+          catalog.length
+            ? (c) => setDraftPick((d) => ({ ...d, [employeeId]: c }))
+            : undefined
+        }
+        picker={picker}
         onRename={(id, title) => {
           const conv = convs.find((c) => c.rootMessageId === id);
           if (conv) void renameConversation(conv.id, title);

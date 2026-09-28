@@ -226,8 +226,7 @@ if (!hits.files.some((f) => f.path === "docs/guide.md" && f.kind === "file"))
 if (!hits.files.some((f) => f.path === "docs" && f.kind === "dir"))
   fail("fs.search missed the docs dir");
 if (paths.has("secret.env")) fail("fs.search leaked the gitignored secret.env");
-if (!paths.has("untracked.ts"))
-  fail("fs.search missed the untracked file");
+if (!paths.has("untracked.ts")) fail("fs.search missed the untracked file");
 out(`PASS leg1: fs.search ${picked} -> ${hits.files.length} rows`);
 
 const engine = new EngineClient({
@@ -304,12 +303,17 @@ if (stubLog) {
       return undefined;
     }
   });
-  const userText = (saw.texts ?? []).find((t) => t.includes("@docs/guide.md")) ?? "";
+  const userText =
+    (saw.texts ?? []).find((t) => t.includes("@docs/guide.md")) ?? "";
   if (!userText.includes("the guide say"))
-    fail(`stub got the mention but a mangled prompt: ${userText.slice(0, 200)}`);
+    fail(
+      `stub got the mention but a mangled prompt: ${userText.slice(0, 200)}`,
+    );
   out(`PASS leg2b: provider received "${MENTION}" verbatim in the prompt`);
 } else {
-  out("no STUB_REQUEST_LOG (live provider) — leg2b skipped; wire text is transport-identical");
+  out(
+    "no STUB_REQUEST_LOG (live provider) — leg2b skipped; wire text is transport-identical",
+  );
 }
 
 user.close();
