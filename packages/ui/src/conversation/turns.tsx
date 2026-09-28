@@ -37,6 +37,7 @@ import {
   ToolOutput,
 } from "../components/ai-elements/tool";
 import { plural } from "../lib/helpers";
+import { withFileMentionChips } from "../lib/mentions";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import type {
@@ -104,7 +105,7 @@ export function UserTurn({
     <Message from="user" className="max-w-[80%] gap-1" data-userturn>
       <MessageContent className="rounded-2xl px-4 py-2.5 text-[15px] leading-[1.6]">
         <MessageResponse className="lilos-prose break-words">
-          {text}
+          {withFileMentionChips(text)}
         </MessageResponse>
         {attachments && <AttachmentChips files={attachments} />}
       </MessageContent>
@@ -274,7 +275,7 @@ export function AgentTurn({
       ) : r.text ? (
         <MessageContent className="w-full">
           <MessageResponse className="lilos-prose break-words">
-            {r.text}
+            {withFileMentionChips(r.text)}
           </MessageResponse>
         </MessageContent>
       ) : null}

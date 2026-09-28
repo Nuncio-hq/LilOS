@@ -76,6 +76,15 @@ export const hostDiscoverRepos = (roots: string[]) =>
     repos: { path: string; head: string | null; remote: string | null }[];
   }>("git.discoverRepos", { roots, depth: 2 });
 
+export type SearchResult = {
+  path: string;
+  files: { path: string; kind: "file" | "dir" }[];
+};
+
+/** `@`-mention file search inside a session folder (issue #105). */
+export const hostSearch = (path: string, query: string, limit?: number) =>
+  host<SearchResult>("fs.search", { path, query, ...(limit ? { limit } : {}) });
+
 /** OS account name — first-run prefill source for the identity fields (#118). */
 export const hostUser = () =>
   host<{ username: string; fullName: string | null }>("host.user", {});

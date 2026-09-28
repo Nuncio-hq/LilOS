@@ -65,6 +65,31 @@ export const FsTreeResult = z.object({
 });
 export type FsTreeResult = z.infer<typeof FsTreeResult>;
 
+// ── fs.search ───────────────────────────────────────────────────────────────
+/** One `@`-mentionable entry inside a folder (issue #105). */
+export const FsSearchEntry = z.object({
+  /** Path relative to `path`, "/" separated. Dirs carry no trailing slash. */
+  path: z.string().min(1),
+  kind: z.enum(["file", "dir"]),
+});
+export type FsSearchEntry = z.infer<typeof FsSearchEntry>;
+
+/** Fuzzy path search inside a folder for `@`-mention file picking. */
+export const FsSearchParams = z.strictObject({
+  path: Path,
+  /** Substring/subsequence match against the relative path; "" lists top entries. */
+  query: z.string(),
+  /** Max matches (default 20, hard cap 100). */
+  limit: z.int().min(1).max(100).optional(),
+});
+export type FsSearchParams = z.infer<typeof FsSearchParams>;
+
+export const FsSearchResult = z.object({
+  path: Path,
+  files: z.array(FsSearchEntry),
+});
+export type FsSearchResult = z.infer<typeof FsSearchResult>;
+
 // ── fs.read ─────────────────────────────────────────────────────────────────
 export const FsReadParams = z.strictObject({
   path: Path,

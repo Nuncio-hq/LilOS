@@ -23,6 +23,7 @@ import {
   type EmpBadge,
   type Employee,
   type EmpFn,
+  type FileMention,
   type FsDir,
   type HireDraft,
   type EngineProfile,
@@ -508,6 +509,24 @@ const REPO_FILES = [
   "packages/contracts/package.json", "packages/contracts/src/envelope.ts",
 ]
 
+/* The `@` menu's Files section (issue #105): the real app asks the harness
+   host's fs.search over the session's folder; the prototype fakes it — a
+   fixed listing for the seeded folders, a shallow walk of the mock FS tree
+   for folders added at runtime. */
+const FOLDER_FILES: Record<string, FileMention[]> = {
+  lilos: [
+    { path: "apps", kind: "dir" }, { path: "apps/relay", kind: "dir" }, { path: "apps/web", kind: "dir" },
+    { path: "docs", kind: "dir" }, { path: "packages", kind: "dir" },
+    ...REPO_FILES.map((path) => ({ path, kind: "file" as const })),
+  ],
+  qrit: [
+    { path: "ios", kind: "dir" }, { path: "web", kind: "dir" },
+    { path: "ios/QritApp.swift", kind: "file" }, { path: "ios/PaywallView.swift", kind: "file" },
+    { path: "web/index.html", kind: "file" }, { path: "web/styles.css", kind: "file" },
+    { path: "README.md", kind: "file" },
+  ],
+}
+
 type View = { kind: "channel"; id: string } | { kind: "dm"; id: string }
 
 export default function App() {
@@ -937,6 +956,39 @@ export default function App() {
     setFolders((fs) => fs.map((x) => (x.id === f0.id ? { ...x, workstreams: [...x.workstreams, { branch, path: worktree, from: pick.base }] } : x)))
     return { folder: f.id, project: f.project, repo: f.repo, mode: "new", base: pick.base, branch, cwd: `${f.path}/${worktree}`, worktree }
   }
+  /* fs.search stand-in (#105): substring match on the mock listing, capped
+     like the real 20-row section. No folder → no handler → no section. */
+  const mockFilesOf = (path: string): FileMention[] => {
+    const rows: FileMention[] = []
+    const walk = (p: string, rel: string, depth: number) => {
+      if (depth > 3 || rows.length > 200) return
+      for (const c of fsMap[p]?.children ?? []) {
+        const r = rel ? `${rel}/${c}` : c
+        rows.push({ path: r, kind: "dir" })
+        walk(p === "~" ? `~/${c}` : `${p}/${c}`, r, depth + 1)
+      }
+    }
+    walk(path, "", 0)
+    return rows
+  }
+  /* Stable searcher identity per folder: the composer's effect keys on the
+     function — a fresh lambda each render would refire the search in a loop. */
+  const fileMentionSearch = useMemo(() => {
+    const m = new Map<string, (q: string) => Promise<FileMention[]>>()
+    for (const f of folders) {
+      if (f.missing) continue
+      const rows = FOLDER_FILES[f.id] ?? mockFilesOf(f.path)
+      m.set(f.id, (q: string) => {
+        const s = q.toLowerCase()
+        return Promise.resolve(
+          rows.filter((r) => !s || r.path.toLowerCase().includes(s)).slice(0, 20),
+        )
+      })
+    }
+    return m
+  }, [folders])
+  const fileMentions = (folderId: string | null | undefined) =>
+    folderId ? fileMentionSearch.get(folderId) : undefined
   const sendTop = (text: string, pick?: WsPick, files?: AttachedFile[]) => {
     const target = view.kind === "dm" ? view.id : mentionIn(text)?.id
     const id = `s-${Date.now()}`
@@ -1082,6 +1134,7 @@ export default function App() {
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
       running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
       draft={threadDraft} onDraftChange={setThreadDraft}
+      mentionables={employees} onSearchFiles={fileMentions(openThread.thread.ws?.folder)}
       lastSent={lastSentIn(openThread)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
@@ -1153,6 +1206,7 @@ export default function App() {
                 if (archived) dropDrafts([draftKey.thread(id)])
               }}
               draft={dmDraft} onDraftChange={setDmDraft}
+              mentionables={employees} onSearchFiles={fileMentions((wsPicks[view.id] ?? NO_WS).folder)}
               onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying session ${m.thread?.session}`) }}
               accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say}
               models={canModels ? MODEL_OPTS : undefined}

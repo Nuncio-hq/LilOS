@@ -49,9 +49,12 @@ export function scriptFor(
   cwd = ".",
   images?: FakeImage[],
 ): FakeScript {
+  /* Employee `@Mentions` are stripped for the reply's readable gist; file
+     mentions (`@dir/file.ext` — the token continues past `\w`, #105) stay
+     verbatim so the echo proves the engine got the path as plain text. */
   const q = prompt
     .replace(/\*\*/g, "")
-    .replace(/@\w+\s*/g, "")
+    .replace(/@\w+(?![\w./-])\s*/g, "")
     .trim()
     .replace(/[?.!]+$/, "");
   const tail = `I'm in \`${cwd}\` on ⎇ \`${branch}\`. Tell me what to change and I'll edit there.`;

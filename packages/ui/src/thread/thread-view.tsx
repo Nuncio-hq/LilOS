@@ -22,6 +22,8 @@ import type {
   AttachedFile,
   Channel,
   EmpFn,
+  Employee,
+  FileMention,
   HumanFn,
   ModelChoice,
   ModelOption,
@@ -67,6 +69,8 @@ export function ThreadView({
   defaultModel,
   defaultProvider,
   transcriptNote,
+  mentionables,
+  onSearchFiles,
   draft,
   onDraftChange,
 }: {
@@ -119,6 +123,10 @@ export function ThreadView({
   /* Why the working transcript can't be shown (harness down, engine restarted) —
      rendered as a muted note where the transcript would be (issue #28). */
   transcriptNote?: string;
+  /* `@` menu sections (#105): employees for mention; a file/dir search for
+     the Files section — passed only when the session has a folder (cwd). */
+  mentionables?: Employee[];
+  onSearchFiles?: (query: string) => Promise<FileMention[]>;
 }) {
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
@@ -308,7 +316,8 @@ export function ThreadView({
             ? runningComposer(leadEmp?.name ?? "Employee", steer).placeholder
             : `Reply to ${leadEmp?.name ?? "the thread"} in this session…`
         }
-        employees={[]}
+        employees={mentionables ?? []}
+        onSearchFiles={onSearchFiles}
         hint={
           running
             ? runningComposer(leadEmp?.name ?? "Employee", steer).hint
