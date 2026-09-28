@@ -289,6 +289,11 @@ test("AC-4 + AC-7 a session picked on the repo runs there; the header shows fold
   await expect(
     page.getByText("If you want me to change code", { exact: false }).last(),
   ).toBeVisible({ timeout: 30_000 });
+  // The reply text renders before the turn settles — wait for streaming to
+  // end so the follow-up starts a new turn rather than steering this one.
+  await expect(
+    page.locator("[data-agentturn] [data-streaming]"),
+  ).toHaveCount(0, { timeout: 30_000 });
   // engine-fake echoes its cwd on the follow-up turn (AC-4); markdown puts
   // the path in a <code> element, so match that rather than the backticks.
   await send(page, "where are you working?", "last");

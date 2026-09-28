@@ -3,13 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  _electron,
-  expect,
-  type Locator,
-  type Page,
-  test,
-} from "@playwright/test";
+import { _electron, expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 /**
@@ -130,8 +124,6 @@ const PROMPT = "What does the replay contract carry?"; // engine-fake script
    line's top is measured at the "Oscar" span — exact text, since the avatar
    fallback "O" also carries `font-semibold`. */
 const feedRow = (page: Page) => page.locator("[data-session]").first();
-const rowAvatar = (row: Locator) => row.locator("[data-slot='avatar']").first();
-const nameLine = (row: Locator) => row.getByText("Oscar", { exact: true });
 /* The name/time line is selected in-page (see tops()): the element at
    ":scope > .grid > *:nth-child(2) > *:first-child". */
 
@@ -176,6 +168,8 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
   try {
     await dmDefault(page, stack.webUrl);
     await send(page, PROMPT);
+    // Sending opens the session in Focus (#114); Back lands on the feed.
+    await page.getByRole("button", { name: "Back to DM" }).click();
     const row = feedRow(page);
     await expect(row).toBeVisible({ timeout: 30_000 });
     // Settled state: engine-fake's reply is in, the session chip is rendered.
@@ -366,6 +360,8 @@ test("AC-3 desktop app: the DM feed row in Electron", async () => {
       const win = await app.firstWindow();
       await dmDefault(win, stack.webUrl);
       await send(win, PROMPT);
+      // Send opens Focus (#114); Back returns to the feed the row lives on.
+      await win.getByRole("button", { name: "Back to DM" }).click();
       const row = feedRow(win);
       await expect(row).toBeVisible({ timeout: 30_000 });
       await expect(row.getByText(/\d+ repl(y|ies)/)).toBeVisible({

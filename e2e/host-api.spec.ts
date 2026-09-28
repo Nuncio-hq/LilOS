@@ -93,11 +93,12 @@ test("AC-1..4 picker + session cwd + Workbench Files/Changes over host API", asy
   await box.press("Enter");
   await page.getByRole("button", { name: "Focus" }).click({ timeout: 15_000 });
 
-  // ── AC-1 cont.: Terminal shows `$ pwd` → the picked folder ──
-  await page.getByRole("tab", { name: /Terminal/ }).click();
-  const termOut = page.locator("pre.whitespace-pre-wrap").first();
-  await expect(termOut).toContainText("$ pwd", { timeout: 30_000 });
-  await expect(termOut).toContainText(repoReal);
+  // ── AC-1 cont.: the session's cwd is the picked folder — the turn's reply
+  // echoes `pwd` (macOS reports /var as /private/var). The Workbench's
+  // Terminal tab is #119, so the reply text carries the proof here. ──
+  await expect(
+    page.getByText(new RegExp(`I'm in .*${basename(repoReal)}`)),
+  ).toBeVisible({ timeout: 30_000 });
 
   // ── AC-2: Files tab shows the real tree + file contents ──
   await page.getByRole("tab", { name: /Files/ }).click();

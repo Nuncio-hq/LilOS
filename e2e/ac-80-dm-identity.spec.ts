@@ -181,6 +181,8 @@ test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", asy
   try {
     await dmDefault(page, stack.webUrl);
     await send(page, PROMPT);
+    // Sending opens the session in Focus (#114); Back lands on the feed.
+    await page.getByRole("button", { name: "Back to DM" }).click();
     const row = userRow(page, PROMPT);
     await expect(row).toBeVisible({ timeout: 30_000 });
     const rowFb = row.locator('[data-slot="avatar-fallback"]');
@@ -211,6 +213,10 @@ test("AC-2 markdown renders while the reply streams, then settles unchanged", as
   try {
     await dmDefault(page, stack.webUrl);
     await send(page, PROMPT);
+    // Send lands in Focus (#114); the peek panel (conv URL minus /focus)
+    // keeps this test covering the thread-panel markdown path.
+    await page.waitForURL(/\/focus$/);
+    await page.goto(page.url().replace(/\/focus$/, ""));
     const turn = page.locator("[data-agentturn]").first();
     const streaming = turn.locator("[data-streaming]");
     await expect(streaming).toBeVisible({ timeout: 60_000 });
@@ -270,6 +276,8 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
       const win = await app.firstWindow();
       await dmDefault(win, stack.webUrl);
       await send(win, PROMPT);
+      // Send opens Focus (#114); Back returns to the feed the row lives on.
+      await win.getByRole("button", { name: "Back to DM" }).click();
       // AC-1 in the desktop window: the user's row avatar IS the footer avatar.
       const row = userRow(win, PROMPT);
       await expect(row).toBeVisible({ timeout: 30_000 });
@@ -277,7 +285,11 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
       const footFb = footerAvatar(win);
       expect(await bg(rowFb)).toBe(await bg(footFb));
       await win.screenshot({ path: `${SHOTS}/ac-3-desktop-avatar.png` });
-      // AC-2 in the desktop window: markdown mid-stream.
+      // AC-2 in the desktop window: markdown mid-stream — reopen the session.
+      await row.getByRole("button", { name: /repl/i }).click();
+      await expect(win.locator("[data-agentturn]")).toHaveCount(1, {
+        timeout: 15_000,
+      });
       const streaming = win.locator("[data-agentturn] [data-streaming]");
       await expect(streaming.locator("li")).toBeVisible({ timeout: 60_000 });
       await expect(streaming.locator("code").first()).toBeVisible();

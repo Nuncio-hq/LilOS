@@ -431,8 +431,7 @@ test("AC-3 thumbnails render from stored refs, survive reload + reopen", async (
   ).toBeVisible({ timeout: 15_000 });
   await page.screenshot({ path: `${SHOTS}/ac3-feed.png` });
   await page
-    .locator("[data-session]")
-    .first()
+    .locator("[data-session]", { hasText: "look at this" })
     .getByRole("button", { name: /repl/i })
     .click();
   await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);

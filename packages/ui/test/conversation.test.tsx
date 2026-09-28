@@ -26,6 +26,9 @@ if (typeof globalThis.ResizeObserver === "undefined") {
 if (typeof Element.prototype.scrollTo === "undefined") {
   Element.prototype.scrollTo = () => {};
 }
+if (typeof Element.prototype.getAnimations === "undefined") {
+  Element.prototype.getAnimations = () => [];
+}
 if (typeof Element.prototype.scrollIntoView === "undefined") {
   Element.prototype.scrollIntoView = () => {};
 }
@@ -230,7 +233,7 @@ describe("issue #19 — one conversation from shared pieces", () => {
     ).toBeNull();
   });
 
-  test("AC-4 optional controls render only when their handler is passed", () => {
+  test("AC-4 optional controls render only when their handler is passed", async () => {
     /* No optional handlers anywhere: only required props. The conversation still renders
        (turns, card titles, step block) but none of the optional controls exist. */
     const quietPanel = render(<ThreadView {...panelProps} channel={channel} />);
@@ -333,6 +336,14 @@ describe("issue #19 — one conversation from shared pieces", () => {
       <FocusView
         {...focusProps}
         thread={{ ...thread, pr }}
+        /* Live wiring (#114): the Workbench shows only with a host + folder. */
+        work={{ ticket: "", title: "Envelope contract", path: "/tmp/repo-x" }}
+        host={{
+          tree: async () => ["a.txt"],
+          diff: async () => [],
+          read: async () => null,
+          pr: async () => ({ pr, branch: "lil-1" }),
+        }}
         onBack={() => {}}
         onNav={() => {}}
         onStart={() => {}}
@@ -356,7 +367,10 @@ describe("issue #19 — one conversation from shared pieces", () => {
     const wf = within(wiredFocus.container);
     expect(wf.getByRole("button", { name: /Restore to here/ })).toBeTruthy();
     expect(wf.getByRole("button", { name: /gpt-test-1/ })).toBeTruthy();
-    expect(wf.getByRole("button", { name: /Squash and merge/ })).toBeTruthy();
+    /* PR tab resolves async off the host probe, then its merge control shows. */
+    const prTab = await wf.findByRole("tab", { name: /PR #12/ });
+    fireEvent.click(prTab);
+    await wf.findByRole("button", { name: /Squash and merge/ });
     expect(
       wiredFocus.container.querySelector('[title="Exit focus"]'),
     ).toBeTruthy();

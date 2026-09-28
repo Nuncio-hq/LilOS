@@ -9,7 +9,6 @@ import type {
   CheckRun,
   Diff,
   HostAccessors,
-  MergeMethod,
   PullRequest,
 } from "@lilos/ui/types";
 
