@@ -124,7 +124,7 @@ PR does not exist.
   {refresh:true}`), the engine's live catalog.** Not: merging configured or
   preset models into `models.list` — that re-advertises exactly what the
   engine hides on purpose (Hermes' account-gated models), so picks would
-  fail — or engine-specific picker branches. — #140 · PR #TBD
+  fail — or engine-specific picker branches. — #140 · PR #177
 - **D-#26 The harness supervises the engine and is the only thing that talks
   to it.** It owns launch (`hermes serve` on 127.0.0.1 with a generated
   token, via `packages/engine-hermes`), crash restart with bounded backoff,
