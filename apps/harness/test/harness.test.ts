@@ -94,9 +94,13 @@ interface World {
   cleanup: () => Promise<void>;
 }
 
-async function setupWorld(tick = 1, attachEngine = true): Promise<World> {
+async function setupWorld(
+  tick = 1,
+  attachEngine = true,
+  engineOpts?: ConstructorParameters<typeof FakeEngine>[0],
+): Promise<World> {
   const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
-  const engine = new FakeEngine({ tick });
+  const engine = new FakeEngine({ tick, ...engineOpts });
   const engineConn = connectFake(engine) as unknown as EngineConnection;
   const engineCalls: { method: string; params: unknown }[] = [];
   const origRequest = engineConn.request.bind(engineConn);
@@ -1242,6 +1246,38 @@ describe("auto titles (#137)", () => {
         .filter((c) => c.method === "session.setTitle")
         .map((c) => (c.params as { title?: string }).title);
       expect(titles).toEqual(["My footer session"]);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-3 an engine without autoTitle leaves the placeholder as the title", {
+    timeout: 30000,
+  }, async () => {
+    // session_meta off → no autoTitle detail and no session.titled events.
+    const w = await setupWorld(1, true, {
+      capabilities: { session_meta: false },
+    });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string; title: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Tell me about the layout of this repo please",
+      });
+      expect(conversation.title).toBe("Tell me about the layout of…");
+
+      // The turn completes; no engine title may ever write.
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.authorKind === "employee");
+      }, "turn completes");
+      const conv = await convById(w.user, conversation.id);
+      expect(conv).toMatchObject({
+        title: "Tell me about the layout of…",
+        titleSource: "auto",
+      });
     } finally {
       await w.cleanup();
     }

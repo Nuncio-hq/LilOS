@@ -288,9 +288,9 @@ export function FocusView({
               leads; untitled threads keep the first message. */}
           <div
             className="truncate font-semibold"
-            title={thread.title ?? plain(root.text)}
+            title={thread.title || plain(root.text)}
           >
-            {thread.title ?? plain(root.text)}
+            {thread.title || plain(root.text)}
           </div>
           <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
             <span className="truncate">

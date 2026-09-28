@@ -155,7 +155,7 @@ export function ThreadView({
             {/* #137 AC-4: the session's title (placeholder → engine-written)
                 leads the header; untitled threads keep the kind label. */}
             <span className="truncate" data-session-title>
-              {thread.title ?? (isDM ? "Session" : "Thread")}
+              {thread.title || (isDM ? "Session" : "Thread")}
             </span>
             {work?.ticket && (
               <span className="shrink-0 font-mono text-muted-foreground text-xs">

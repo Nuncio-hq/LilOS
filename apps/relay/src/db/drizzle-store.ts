@@ -470,6 +470,11 @@ export function createDrizzleStore(db: Db): RelayStore {
             deliveredSeq: Math.max(current.deliveredSeq, patch.deliveredSeq),
           };
         }
+        if (Object.keys(patch).length === 0) {
+          // A title-only write dropped by the provenance rule (#137) is a
+          // no-op: answer with the current row rather than `set({})`.
+          return this.getConversation(id);
+        }
       }
       const updated = db
         .update(schema.conversations)
