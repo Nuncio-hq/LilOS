@@ -26,19 +26,23 @@ export const plain = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-/* One steer Oscar sent into a running turn, in one of its two states — same shape in both, so the chip
+/* One steer the user sent into a running turn, in one of its two states — same shape in both, so the chip
    that waits is recognisably the same object as the row that landed:
    · pending: waiting at the bottom of the live turn (dashed border, clock) — session.steer accepted, not
      yet delivered.
    · landed: applied at a tool boundary inside the turn (solid border, check).
-   Right-aligned and labelled "Oscar" so it reads as Oscar's message inside the agent's turn, not agent
-   output. Solid amber-100 + amber-950 text keeps the chip AA-readable (the old /40 bg with 70% text was not). */
+   Right-aligned and labelled with the user's name so it reads as their message inside the agent's turn,
+   not agent output. Solid amber-100 + amber-950 text keeps the chip AA-readable (the old /40 bg with
+   70% text was not). */
 export function SteerRow({
   text,
   state,
+  by,
 }: {
   text: string;
   state: "pending" | "landed";
+  /** The human who steered — the label reads "{by} steered" (#118). */
+  by: string;
 }) {
   const waiting = state === "pending";
   return (
@@ -60,7 +64,7 @@ export function SteerRow({
         <CheckIcon className="mt-0.5 size-3 shrink-0 text-emerald-700" />
       )}
       <span className="shrink-0 font-semibold">
-        {waiting ? "Oscar steers" : "Oscar steered"}
+        {waiting ? `${by} steers` : `${by} steered`}
       </span>
       <span className="min-w-0">{plain(text)}</span>
     </div>
@@ -73,19 +77,22 @@ export function SteerRows({
   steers,
   pending,
   live,
+  by,
 }: {
   steers?: string[];
   pending: string[];
   live?: boolean;
+  /** The human who steered — shown on each row (#118). */
+  by: string;
 }) {
   return (
     <>
       {(steers ?? []).map((s, k) => (
-        <SteerRow key={k} text={s} state="landed" />
+        <SteerRow key={k} text={s} state="landed" by={by} />
       ))}
       {live &&
         pending.map((s, k) => (
-          <SteerRow key={`p${k}`} text={s} state="pending" />
+          <SteerRow key={`p${k}`} text={s} state="pending" by={by} />
         ))}
     </>
   );
@@ -110,7 +117,7 @@ export function ConversationKeepBottom({
   return null;
 }
 
-/* Messages that did NOT land because Oscar pressed ■ (session.interrupt). There is no "this turn"
+/* Messages that did NOT land because the user pressed ■ (session.interrupt). There is no "this turn"
    anymore, so nothing is "sent after this turn" and nothing auto-runs: each item waits with visible,
    keyboard-reachable actions — Send (runs it now as a new prompt in this thread) and remove.
    thread.queue holds ONLY these. Used by the thread panel composer and the Focus tray.

@@ -222,6 +222,7 @@ export function ThreadView({
                 <AgentTurn
                   r={r}
                   emp={emp}
+                  human={human}
                   last={i === thread.replies.length - 1}
                   onRetry={onRetry}
                   models={models}
@@ -234,6 +235,7 @@ export function ThreadView({
                       work={work}
                       repo={repo}
                       emp={emp}
+                      human={human}
                       resolved={resolved}
                       setResolved={setResolved}
                       onStart={onStart}

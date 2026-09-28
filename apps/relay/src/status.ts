@@ -140,7 +140,7 @@ export function buildSystemStatus(input: StatusInput): SystemStatusResult {
           );
         } else {
           engineOk = true;
-          // AC-4: RSS + live sessions ride on the row reason so Oscar sees
+          // AC-4: RSS + live sessions ride on the row reason so the user sees
           // them without opening the diagnostics bundle.
           const meters: string[] = [];
           if (host.status?.engineRssBytes !== undefined) {
