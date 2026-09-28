@@ -28,6 +28,18 @@ export interface EngineBundlePlan {
   binaries: EngineBinary[];
 }
 
+/**
+ * Non-engine executables `build.ts` always places in `Contents/MacOS` (the
+ * Electron binary itself is renamed to `LilOS` at assemble time). No file
+ * the bundle ships may have "hermes" in its name: managed Macs kill such
+ * executables on sight — the MDM kill-by-name policy (#141).
+ */
+export const BUNDLE_EXECUTABLES = [
+  "lilos-svc",
+  "lilos-relay",
+  "lilos-harness",
+];
+
 const HERMES_ADAPTER: EngineBinary = {
   outfile: "lilos-engine-hermes",
   entry: "packages/engine-hermes/scripts/serve.ts",

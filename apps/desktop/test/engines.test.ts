@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { engineBundlePlan } from "../scripts/engines";
+import {
+  BUNDLE_EXECUTABLES,
+  type EngineBundlePlan,
+  engineBundlePlan,
+} from "../scripts/engines";
 
 /**
  * Issue #85 — what the DMG ships. `sign-local.sh`/`release.yml` pass a
@@ -71,6 +75,28 @@ describe("AC-4 (#141) --engine=fake on a signed build is an error", () => {
     expect(() => engineBundlePlan(SIGNED, "fake")).toThrow(
       /--engine=fake .*ad-hoc|ad-hoc .*--engine=fake|signed .*fake|fake .*signed/i,
     );
+  });
+});
+
+describe("MDM kill-by-name guard (#141)", () => {
+  /* Managed Macs (e.g. Oscar's work Mac, CrowdStrike/Jamf) SIGKILL any
+     executable whose file name contains "hermes" — case-insensitive, in any
+     directory, signed or ad-hoc. No executable the build ships may carry
+     that substring in its basename, or the engine dies before ready. */
+  const shipped = (plan: EngineBundlePlan) => [
+    "LilOS", // the Electron binary, renamed at assemble time
+    ...BUNDLE_EXECUTABLES,
+    ...plan.binaries.map((b) => b.outfile),
+  ];
+
+  it.each([
+    ["signed", engineBundlePlan(SIGNED)],
+    ["dev", engineBundlePlan("-")],
+    ["dev --engine=hermes", engineBundlePlan("-", "hermes")],
+  ])("the %s bundle ships no executable named *hermes*", (_label, plan) => {
+    for (const name of shipped(plan)) {
+      expect(name).not.toMatch(/hermes/i);
+    }
   });
 });
 
