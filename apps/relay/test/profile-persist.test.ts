@@ -12,7 +12,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 
 /**
- * Issue #118 AC-1 + AC-4: profile settings live in sqlite, so a migration-7
+ * Issue #118 AC-1 + AC-4: the profile lives in sqlite, so a migration-8
  * DB reports an empty profile on a fresh/existing install (the app prefills
  * from the OS) and values written once survive a relay restart. The
  * spawn/ws helpers mirror folders-persist.test.ts.
@@ -114,23 +114,23 @@ const connect = (url: string, token: string) =>
     token,
     socketFactory: wsFactory(),
     autoReconnect: false,
-    client: { name: "e2e-settings" },
+    client: { name: "e2e-profile" },
   });
 
 describe("AC-1/AC-4 profile settings persist in sqlite", () => {
-  it("fresh DB reports empty settings; an update survives a relay restart", async () => {
+  it("fresh DB reports empty profile; an update survives a relay restart", async () => {
     const first = await startRelay();
     const client = connect(first.url, first.token);
     await client.connect();
 
     // Migrated-but-untouched install: nothing stored, the app prefills.
-    const before = await client.request<{ settings: Record<string, string> }>(
-      "settings.get",
+    const before = await client.request<{ profile: Record<string, string> }>(
+      "profile.get",
       {},
     );
-    expect(before.settings).toEqual({});
+    expect(before.profile).toEqual({});
 
-    await client.request("settings.update", {
+    await client.request("profile.update", {
       userName: "Ada",
       companyName: "Ada Labs",
       avatarColor: "bg-rose-600",
@@ -143,10 +143,10 @@ describe("AC-1/AC-4 profile settings persist in sqlite", () => {
     const back = connect(second.url, first.token);
     await back.connect();
 
-    const { settings } = await back.request<{
-      settings: Record<string, string>;
-    }>("settings.get", {});
-    expect(settings).toEqual({
+    const { profile } = await back.request<{
+      profile: Record<string, string>;
+    }>("profile.get", {});
+    expect(profile).toEqual({
       userName: "Ada",
       companyName: "Ada Labs",
       avatarColor: "bg-rose-600",

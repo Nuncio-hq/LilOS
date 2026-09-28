@@ -63,7 +63,7 @@ export function IndexPage() {
           // Persist what was typed — an emptied company keeps the derived
           // "<first>'s Co" rather than storing a blank.
           void relay
-            .updateSettings({
+            .updateProfile({
               userName: id.name,
               companyName: id.company || undefined,
               avatarColor: DEFAULT_AVATAR_COLOR,

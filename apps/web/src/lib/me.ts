@@ -6,11 +6,11 @@ import { atom } from "nanostores";
    the relay puts on that person's messages; every surface renders it as one
    identity, never an anonymous "You" (issue #80, AC-1).
    Issue #118: the identity itself is relay-owned domain data — `profile`
-   mirrors `relay.settings`; when the store is empty (an install predating
+   mirrors `relay.profile`; when the store is empty (an install predating
    profile settings, AC-4) the OS user's full name prefills it. */
 export const USER_ID = "user";
 
-/** The relay-stored profile, bound to `relay.settings` in runtime.ts. */
+/** The relay-stored profile, bound to `relay.profile` in runtime.ts. */
 export const profile = atom<ProfileSettings>({});
 /** The OS account's full name — host.user, fetched once at boot. */
 export const osFullName = atom<string | null>(null);

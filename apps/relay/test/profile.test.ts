@@ -4,8 +4,8 @@ import { createMemoryStore } from "../src/store";
 
 /**
  * Issue #118 AC-1: the signed-in human's profile (name, company name,
- * avatar colour) is relay-owned domain data — `settings.get` /
- * `settings.update` on the app protocol, with `settings.updated` broadcast
+ * avatar colour) is relay-owned domain data — `profile.get` /
+ * `profile.update` on the app protocol, with `profile.updated` broadcast
  * so every connected surface sees an edit (seq-less sync, same pattern as
  * employee.upserted). AC-4: an untouched store returns an empty profile —
  * the app layers OS-derived prefill on top.
@@ -52,25 +52,25 @@ describe("AC-1 relay owns the profile settings", () => {
   it("AC-1 a fresh store reports an empty profile (AC-4: prefill happens app-side)", async () => {
     const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
     const { frames, connection } = await helloed(relay);
-    await connection.receive(req("settings.get"));
+    await connection.receive(req("profile.get"));
     expect(resultOf(frames, `t${nextId - 1}`).result).toEqual({
-      settings: {},
+      profile: {},
     });
   });
 
-  it("AC-1 settings.update persists the profile and broadcasts settings.updated", async () => {
+  it("AC-1 profile.update persists the profile and broadcasts profile.updated", async () => {
     const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
     const writer = await helloed(relay);
     const watcher = await helloed(relay);
     await writer.connection.receive(
-      req("settings.update", {
+      req("profile.update", {
         userName: "Ada",
         companyName: "Ada Labs",
         avatarColor: "bg-rose-600",
       }),
     );
     expect(resultOf(writer.frames, `t${nextId - 1}`).result).toEqual({
-      settings: {
+      profile: {
         userName: "Ada",
         companyName: "Ada Labs",
         avatarColor: "bg-rose-600",
@@ -78,17 +78,17 @@ describe("AC-1 relay owns the profile settings", () => {
     });
     const event = (
       watcher.frames as { method?: string; params?: unknown }[]
-    ).find((f) => f.method === "settings.updated");
+    ).find((f) => f.method === "profile.updated");
     expect(event?.params).toEqual({
-      settings: {
+      profile: {
         userName: "Ada",
         companyName: "Ada Labs",
         avatarColor: "bg-rose-600",
       },
     });
-    await writer.connection.receive(req("settings.get"));
+    await writer.connection.receive(req("profile.get"));
     expect(resultOf(writer.frames, `t${nextId - 1}`).result).toEqual({
-      settings: {
+      profile: {
         userName: "Ada",
         companyName: "Ada Labs",
         avatarColor: "bg-rose-600",
@@ -100,13 +100,13 @@ describe("AC-1 relay owns the profile settings", () => {
     const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
     const { frames, connection } = await helloed(relay);
     await connection.receive(
-      req("settings.update", { userName: "Ada", companyName: "Ada Labs" }),
+      req("profile.update", { userName: "Ada", companyName: "Ada Labs" }),
     );
     await connection.receive(
-      req("settings.update", { avatarColor: "bg-violet-600" }),
+      req("profile.update", { avatarColor: "bg-violet-600" }),
     );
     expect(resultOf(frames, `t${nextId - 1}`).result).toEqual({
-      settings: {
+      profile: {
         userName: "Ada",
         companyName: "Ada Labs",
         avatarColor: "bg-violet-600",
@@ -117,7 +117,7 @@ describe("AC-1 relay owns the profile settings", () => {
   it("AC-1 update with no fields is rejected", async () => {
     const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
     const { frames, connection } = await helloed(relay);
-    await connection.receive(req("settings.update", {}));
+    await connection.receive(req("profile.update", {}));
     expect(resultOf(frames, `t${nextId - 1}`).error).toBeTruthy();
   });
 });

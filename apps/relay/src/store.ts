@@ -36,8 +36,14 @@ export interface ConversationPatch {
   archived?: boolean;
   state?: ConversationState;
   engineRef?: string;
-  /** The model pinned on the engine session (issue #30). */
-  model?: string;
+  /** The model pinned on the engine session (issue #30). `null` clears
+      (a failed-pick restore, #92) — like the other pick fields. */
+  model?: string | null;
+  /** The rest of the session's pick (issue #92). `null` clears — a pick
+      that drops a field must not leave the old value on the row. */
+  provider?: string | null;
+  effort?: string | null;
+  fast?: boolean | null;
   deliveredSeq?: number;
 }
 
@@ -48,6 +54,11 @@ export interface OpenConversationInput {
   authorId: string;
   /** Display refs only — bytes already stored via the AttachmentStore. */
   attachments?: MessageAttachment[];
+  /** The composer's pick stamped at open (#92) — `session.start` applies it. */
+  model?: string;
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
   /** Folder the session works in (#113); also bumps the recents list. */
   cwd?: string;
 }
@@ -62,6 +73,10 @@ export interface AppendMessageInput {
   attachments?: MessageAttachment[];
   /** Engine `turn.started.model` on employee answers (issue #30). */
   model?: string;
+  /** Engine `turn.started` provider / effort / fast on employee answers (#92). */
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
   /** Exactly-once key: a retry with a recorded key returns the original message. */
   dedupeKey?: string;
 }
@@ -140,11 +155,11 @@ export interface RelayStore {
   addRecentFolder(path: string): Promise<RecentFolder>;
   /**
    * The signed-in human's profile (#118) — `{}` until the user sets it; the
-   * app layers OS-derived prefill on top (AC-4). `updateSettings` merges
+   * app layers OS-derived prefill on top (AC-4). `updateProfile` merges
    * the given keys and returns the stored profile.
    */
-  getSettings(): Promise<ProfileSettings>;
-  updateSettings(patch: ProfileSettings): Promise<ProfileSettings>;
+  getProfile(): Promise<ProfileSettings>;
+  updateProfile(patch: ProfileSettings): Promise<ProfileSettings>;
   /**
    * One row per conversation carrying the messages the session list renders
    * — the list survives the channel's snapshot window (#28 AC-1).
@@ -190,6 +205,14 @@ export interface RelayStore {
    * turns the engine host still owes. Surfaced by `harness.register`.
    */
   listPendingTurns(): Promise<PendingTurn[]>;
+
+  /**
+   * LilOS-owned key/value settings (#92): `settings.get` returns the stored
+   * JSON value or null; `settings.set` upserts it. The Edit-models hide
+   * list (`modelVisibility`) lives here — one list for the whole company.
+   */
+  getSetting(key: string): Promise<unknown | null>;
+  setSetting(key: string, value: unknown): Promise<void>;
 }
 
 export function newId(prefix: string): string {
@@ -204,7 +227,8 @@ export function createMemoryStore(): RelayStore {
   const messages = new Map<string, AppMessage>();
   const asks = new Map<string, Ask>();
   const folders = new Map<string, RecentFolder>();
-  let settings: ProfileSettings = {};
+  const settings = new Map<string, unknown>();
+  let profile: ProfileSettings = {};
 
   /** Strictly increasing recents tick — survives same-ms calls in tests. */
   const folderTick = () =>
@@ -252,6 +276,9 @@ export function createMemoryStore(): RelayStore {
       authorKind: input.authorKind,
       text: input.text,
       ...(input.model !== undefined ? { model: input.model } : {}),
+      ...(input.provider !== undefined ? { provider: input.provider } : {}),
+      ...(input.effort !== undefined ? { effort: input.effort } : {}),
+      ...(input.fast !== undefined ? { fast: input.fast } : {}),
       seq,
       createdAt: now(),
       attachments: input.attachments,
@@ -354,12 +381,12 @@ export function createMemoryStore(): RelayStore {
     async addRecentFolder(path) {
       return touchFolder(path);
     },
-    async getSettings() {
-      return { ...settings };
+    async getProfile() {
+      return { ...profile };
     },
-    async updateSettings(patch) {
-      settings = { ...settings, ...patch };
-      return { ...settings };
+    async updateProfile(patch) {
+      profile = { ...profile, ...patch };
+      return { ...profile };
     },
     async getConversation(id) {
       return conversations.get(id) ?? null;
@@ -399,6 +426,10 @@ export function createMemoryStore(): RelayStore {
         archived: false,
         deliveredSeq: 0,
         createdAt: now(),
+        ...(input.model !== undefined ? { model: input.model } : {}),
+        ...(input.provider !== undefined ? { provider: input.provider } : {}),
+        ...(input.effort !== undefined ? { effort: input.effort } : {}),
+        ...(input.fast !== undefined ? { fast: input.fast } : {}),
       };
       conversations.set(conversation.id, conversation);
       if (input.cwd !== undefined) touchFolder(input.cwd);
@@ -423,6 +454,14 @@ export function createMemoryStore(): RelayStore {
           conversation.deliveredSeq,
           patch.deliveredSeq,
         );
+      }
+      /* `null` in a patch clears an engine-pinned field (#92); the domain
+         object holds `undefined`, never `null`. */
+      for (const k of ["model", "provider", "effort", "fast"] as const) {
+        if (patch[k] === null) {
+          delete (conversation as Record<string, unknown>)[k];
+          patch = { ...patch, [k]: undefined };
+        }
       }
       Object.assign(conversation, patch);
       return conversation;
@@ -501,6 +540,12 @@ export function createMemoryStore(): RelayStore {
       }
       pending.sort((a, b) => a.message.seq - b.message.seq);
       return pending;
+    },
+    async getSetting(key) {
+      return settings.has(key) ? (settings.get(key) as unknown) : null;
+    },
+    async setSetting(key, value) {
+      settings.set(key, value);
     },
   };
 }

@@ -8,7 +8,7 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 /**
  * Issue #118 — the user's name, company name and avatar colour are
- * relay-owned domain data (settings.get / settings.update), not hardcoded.
+ * relay-owned domain data (profile.get / profile.update), not hardcoded.
  * AC-1: a name set at first run is stored in the relay's sqlite and every
  * surface shows it. AC-2: the fields fold into the existing first-run card,
  * prefilled from the OS user's full name ("<First>'s Co"), first run stays
@@ -118,7 +118,7 @@ function storedSettings(home: string): Record<string, string> {
       `const db = new (await import("bun:sqlite")).Database(${JSON.stringify(
         path.join(home, "relay.sqlite"),
       )});
-       console.log(JSON.stringify(db.query("SELECT user_name, company_name, avatar_color FROM settings WHERE id = 1").get() ?? {}));`,
+       console.log(JSON.stringify(db.query("SELECT user_name, company_name, avatar_color FROM profile WHERE id = 1").get() ?? {}));`,
     ],
     { encoding: "utf8" },
   );

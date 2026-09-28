@@ -19,7 +19,7 @@ import {
   type ProfileSettings,
   type RequestId,
   type RpcError,
-  SettingsUpdatedEvent,
+  ProfileUpdatedEvent,
   SystemStatusResult,
   type WelcomeResult,
 } from "@lilos/contracts/app";
@@ -123,7 +123,7 @@ export class RelayClient {
   readonly conversations: WritableAtom<Conversation[]> = atom([]);
   /** Relay-owned profile (#118) — `{}` on an untouched install; the app
       layers OS-derived prefill on top (AC-4). */
-  readonly settings: WritableAtom<ProfileSettings> = atom({});
+  readonly profile: WritableAtom<ProfileSettings> = atom({});
   /**
    * Per-conversation list rows (title, root, answer preview, state) that
    * survive the channel snapshot window — refreshed on connect and patched
@@ -352,15 +352,15 @@ export class RelayClient {
 
   /**
    * Merge profile settings (#118). The result is the stored profile; the
-   * `settings.updated` broadcast lands the same value on every open window.
+   * `profile.updated` broadcast lands the same value on every open window.
    */
-  async updateSettings(patch: ProfileSettings): Promise<ProfileSettings> {
-    const { settings } = await this.request<{ settings: ProfileSettings }>(
-      "settings.update",
+  async updateProfile(patch: ProfileSettings): Promise<ProfileSettings> {
+    const { profile } = await this.request<{ profile: ProfileSettings }>(
+      "profile.update",
       patch as Record<string, unknown>,
     );
-    this.settings.set(settings);
-    return settings;
+    this.profile.set(profile);
+    return profile;
   }
 
   /** Engine roster + model catalog, forwarded through the relay to the host. */
@@ -388,8 +388,8 @@ export class RelayClient {
     return agent;
   }
 
-  async listModels(): Promise<ModelsListResult> {
-    return await this.request<ModelsListResult>("models.list", {});
+  async listModels(params?: { refresh?: boolean }): Promise<ModelsListResult> {
+    return await this.request<ModelsListResult>("models.list", params ?? {});
   }
 
   async request<T>(
@@ -568,13 +568,13 @@ export class RelayClient {
             "conversations.summaries",
             { includeArchived: true },
           ),
-          this.request<{ settings: ProfileSettings }>("settings.get", {}),
+          this.request<{ profile: ProfileSettings }>("profile.get", {}),
         ]);
       this.employees.set(employees.employees);
       this.channels.set(channels.channels);
       this.conversations.set(conversations.conversations);
       this.conversationSummaries.set(summaries.summaries);
-      this.settings.set(settings.settings);
+      this.profile.set(settings.profile);
     } catch {
       // Directory refresh is best-effort on reconnect; stores keep stale data.
     }
@@ -730,8 +730,8 @@ export class RelayClient {
         this.dropChannel(event.channelId);
         return;
       }
-      case "settings.updated": {
-        this.settings.set(SettingsUpdatedEvent.parse(params).settings);
+      case "profile.updated": {
+        this.profile.set(ProfileUpdatedEvent.parse(params).profile);
         return;
       }
       case "employee.upserted": {

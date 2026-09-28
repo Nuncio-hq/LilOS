@@ -217,7 +217,10 @@ export type HireDraft = {
   name: string;
   role: string;
   instructions: string;
+  /** Engine model id — opaque, may contain `/` (#92 AC-8). */
   model: string;
+  /** The model's provider — ids are unique only per provider. */
+  provider?: string;
 };
 export type TicketRow = {
   id: string;

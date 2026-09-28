@@ -244,7 +244,9 @@ export function buildSystemStatus(input: StatusInput): SystemStatusResult {
         sessions: host.status.sessions,
         capabilities: host.status.capabilities,
         models: host.status.models,
+        providers: host.status.providers,
         defaultModel: host.status.defaultModel,
+        defaultProvider: host.status.defaultProvider,
       }
     : host?.engine
       ? {}

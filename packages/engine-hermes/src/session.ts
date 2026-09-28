@@ -57,7 +57,6 @@ export class Session {
   /** Hermes tool_call id -> LilOS toolCallId (stable per session). */
   toolIds = new Map<string, string>();
   toolCounter = 0;
-
   constructor(
     readonly id: string,
     readonly agent: string,
@@ -65,6 +64,10 @@ export class Session {
     /** Current model pin (session.setModel rewrites it). */
     public model: string | undefined,
     readonly mcpServers: McpServer[],
+    /** The rest of the session's pick (#92): provider slug, effort, fast. */
+    public provider: string | undefined,
+    public effort: string | undefined,
+    public fast: boolean | undefined,
     readonly driver: DriverKind,
     /** Hermes gateway sid (stable for the connection's life). */
     public runtimeSid: string,
@@ -98,6 +101,10 @@ export class Session {
         ? { turnId: this.turn.turnId, phase: this.turn.phase }
         : undefined,
       usage: this.usage,
+      model: this.model,
+      provider: this.provider,
+      effort: this.effort,
+      fast: this.fast,
     };
   }
 
