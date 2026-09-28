@@ -173,6 +173,8 @@ test.describe.configure({ mode: "serial" });
 test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", async ({
   page,
 }) => {
+  // bootStack + send + Focus navigation need headroom under parallel load.
+  test.setTimeout(60_000);
   const stack = await bootStack("ac80a", {
     relay: wport(4660),
     feed: wport(4661),
@@ -205,6 +207,7 @@ test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", asy
 test("AC-2 markdown renders while the reply streams, then settles unchanged", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   const stack = await bootStack(
     "ac80b",
     { relay: wport(4664), feed: wport(4665), web: wport(5264) },

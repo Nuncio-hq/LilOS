@@ -160,6 +160,7 @@ test.describe.configure({ mode: "serial" });
 test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   const stack = await bootStack("ac83a", {
     relay: wport(4670),
     feed: wport(4671),

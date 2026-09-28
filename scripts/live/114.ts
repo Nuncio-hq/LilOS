@@ -331,7 +331,9 @@ const added = diff.result.files.find(
   (f) => f.path === "new.txt" && f.status === "added",
 );
 if (!modified || !added)
-  fail(`git.diff expected a.txt modified + new.txt added: ${JSON.stringify(diff.result.files)}`);
+  fail(
+    `git.diff expected a.txt modified + new.txt added: ${JSON.stringify(diff.result.files)}`,
+  );
 out(
   `PASS leg2 git.diff -> a.txt +${modified.add}/-${modified.del}, new.txt +${added.add} (untracked)`,
 );
@@ -344,7 +346,9 @@ if (pr.ok) {
     `PASS leg2 forge.pr -> answered (pr=${JSON.stringify(pr.result.pr)}, branch=${pr.result.branch})`,
   );
 } else if (pr.error.code === -32104 || pr.error.code === -32103) {
-  out(`PASS leg2 forge.pr -> plain error ${pr.error.code} (${pr.error.message})`);
+  out(
+    `PASS leg2 forge.pr -> plain error ${pr.error.code} (${pr.error.message})`,
+  );
 } else {
   fail(`forge.pr: unexpected error ${JSON.stringify(pr.error)}`);
 }
@@ -367,7 +371,9 @@ if (!isStub) {
       files: { path: string; status: string }[];
     }>("git.diff", { path: picked });
     if (!d.ok) return undefined;
-    return d.result.files.some((f) => f.path === "hello.txt") ? true : undefined;
+    return d.result.files.some((f) => f.path === "hello.txt")
+      ? true
+      : undefined;
   });
   out(`PASS leg4: agent edit visible via git.diff (hello.txt=${wrote})`);
 } else {
