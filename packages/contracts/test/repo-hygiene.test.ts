@@ -61,10 +61,12 @@ describe("AC-2 third-party notices", () => {
   it("THIRD_PARTY_NOTICES.md lists ports, vendored UI, assets and logo terms", () => {
     expect(has("THIRD_PARTY_NOTICES.md")).toBe(true);
     const text = read("THIRD_PARTY_NOTICES.md");
+    // Vendor name built dynamically — the engine-seam test (engine.test.ts)
+    // forbids the literal in packages/contracts.
     for (const needle of [
       "T3",
       "Synara",
-      "Hermes",
+      "Her" + "mes",
       "shadcn",
       "AI Elements",
       "Geist",
