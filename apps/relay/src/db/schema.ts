@@ -156,7 +156,6 @@ export const recentFolders = sqliteTable("recent_folders", {
   lastUsedAt: integer("last_used_at").notNull(),
 });
 
-
 /**
  * LilOS-owned key/value settings (#92): the one home for app-level state the
  * engine doesn't own — e.g. `modelVisibility` (the Edit-models hide list).

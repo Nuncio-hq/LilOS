@@ -17,9 +17,9 @@ import {
   JsonRpcResponse,
   MessageCreatedEvent,
   type ProfileSettings,
+  ProfileUpdatedEvent,
   type RequestId,
   type RpcError,
-  ProfileUpdatedEvent,
   SystemStatusResult,
   type WelcomeResult,
 } from "@lilos/contracts/app";
