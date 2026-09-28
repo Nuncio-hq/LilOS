@@ -69,6 +69,11 @@ export const conversations = sqliteTable(
     /** Folder the session runs in (issue #113); null = harness default dir. */
     cwd: text("cwd"),
     title: text("title").notNull().default(""),
+    /** Who named the conversation (#137): `user` wins over every later
+        engine/auto title write; `auto` is free to be upgraded. */
+    titleSource: text("title_source", { enum: ["auto", "user"] })
+      .notNull()
+      .default("auto"),
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),
     /** Host watermark: highest user-message seq handed to the engine (#28). */
     deliveredSeq: integer("delivered_seq").notNull().default(0),

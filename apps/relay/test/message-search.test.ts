@@ -232,7 +232,7 @@ describe("messages.search over real SQLite FTS5 (bun fixture)", () => {
 
   it("fixture ran clean", () => {
     expect(res.status, res.stderr).toBe(0);
-    expect(steps.get("version")).toEqual({ user_version: 9 });
+    expect(steps.get("version")).toEqual({ user_version: 10 });
   });
 
   it("AC-1 backfills pre-index rows and index follows writes", () => {

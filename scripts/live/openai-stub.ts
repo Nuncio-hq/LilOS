@@ -33,7 +33,7 @@ const server = Bun.serve({
       const body = (await req.json()) as {
         model?: string;
         stream?: boolean;
-        messages?: { content?: unknown }[];
+        messages?: { role?: string; content?: unknown }[];
         /* #92: the pick fields live scripts assert on — fast tier rides
            `service_tier` (OpenAI/xAI) or `speed` (Anthropic); effort rides
            `reasoning_effort` (or a `reasoning` object on Anthropic-style). */
@@ -41,8 +41,57 @@ const server = Bun.serve({
         speed?: string;
         reasoning_effort?: string;
         reasoning?: { effort?: string };
+        /* #137: Hermes' auto-titler constrains replies with
+           `response_format: {type:"json_schema", json_schema:{name:"session_title"}}`
+           — answer it so the llm title stage exercises end to end. */
+        response_format?: {
+          type?: string;
+          json_schema?: { name?: string };
+        };
       };
       const model = body.model ?? "stub-model";
+      const flatText = (c: unknown): string =>
+        typeof c === "string"
+          ? c
+          : Array.isArray(c)
+            ? (c as { type?: string; text?: string }[])
+                .filter((p) => p?.type === "text")
+                .map((p) => p.text ?? "")
+                .join(" ")
+            : "";
+      /* The title task is a one-shot non-streaming call; answer it with a
+         deterministic schema-valid title derived from the opener. */
+      if (body.response_format?.json_schema?.name === "session_title") {
+        const opener = [...(body.messages ?? [])]
+          .reverse()
+          .find((m) => m.role === "user");
+        const words = flatText(opener?.content)
+          .replace(/\s+/g, " ")
+          .trim()
+          .split(" ")
+          .filter(Boolean)
+          .slice(0, 5);
+        const title =
+          words.map((w) => w[0].toUpperCase() + w.slice(1)).join(" ") ||
+          "Untitled session";
+        return Response.json({
+          id: "chatcmpl-stub",
+          object: "chat.completion",
+          created: 0,
+          model,
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: "assistant",
+                content: JSON.stringify({ title }),
+              },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        });
+      }
       // Live-image runs (issue #31): record whether the request carried image
       // parts so the runner can prove the screenshot reached the model side.
       if (process.env.STUB_REQUEST_LOG) {

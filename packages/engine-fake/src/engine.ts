@@ -106,6 +106,9 @@ interface FakeSession {
   /** session_meta (#28): user-visible title + archive flag, mirrored from LilOS. */
   title: string;
   hidden: boolean;
+  /** #137: once `session.setTitle` lands, the title is user-provenance —
+      derived/llm stages never overwrite it. */
+  titleUserSet: boolean;
   usage: Usage;
   steers: string[];
   turn?: FakeTurn;
@@ -341,6 +344,7 @@ export class FakeEngine {
       openRequests: new Map(),
       title: "",
       hidden: false,
+      titleUserSet: false,
       usage: { input: 0, output: 0, reasoning: 0, cache: 0 },
       steers: [],
       turnCount: 0,
@@ -668,6 +672,7 @@ export class FakeEngine {
   private sessionSetTitle(p: SessionSetTitleParams) {
     const s = this.require(p.sessionId);
     s.title = p.title;
+    s.titleUserSet = true;
     return { title: s.title };
   }
 
@@ -725,6 +730,7 @@ export class FakeEngine {
       ...(ref ? { ref } : {}),
     });
     this.setState(s, "running");
+    this.autoTitle(s, "derived", promptText);
     try {
       // Deterministic failure path (#32): a prompt starting with "fail" ends
       // the turn as a refusal with an error, so failure surfaces are testable.
@@ -850,9 +856,28 @@ export class FakeEngine {
     s.turn = undefined;
     this.emit(s, "turn.completed", { turnId, stopReason, usage: s.usage });
     if (s.state !== "closed") this.setState(s, "idle");
+    this.autoTitle(s, "llm", promptText);
     // A steer that never hit a boundary becomes the next turn's input — never lost.
     this.pumpSteers(s);
     return { turnId, stopReason, usage: s.usage };
+  }
+
+  /* #137 AC-5: two-stage titling — a derived title (verbatim first line,
+     capped at 48 chars) as the first turn opens, then an llm title as it
+     settles. First turn only; a user title (session.setTitle) suppresses
+     both stages. */
+  private autoTitle(
+    s: FakeSession,
+    stage: "derived" | "llm",
+    promptText: string,
+  ): void {
+    if (!this.capOn("session_meta") || s.titleUserSet || s.turnCount !== 1)
+      return;
+    const title =
+      stage === "derived" ? derivedTitle(promptText) : llmTitle(promptText);
+    if (!title) return;
+    s.title = title;
+    this.emit(s, "session.titled", { title, source: stage });
   }
 
   /** If the session is idle and steers are queued, the next one becomes a turn. */
@@ -945,6 +970,7 @@ export class FakeEngine {
       provider: s.provider,
       effort: s.effort,
       fast: s.fast,
+      ...(s.title ? { title: s.title } : {}),
     };
   }
 
@@ -996,6 +1022,28 @@ export class FakeEngine {
 }
 
 class Interrupted extends Error {}
+
+/** Instant-title rule: first line, whitespace-collapsed, ≤48 chars. */
+const MAX_DERIVED_TITLE_CHARS = 48;
+
+function derivedTitle(promptText: string): string {
+  const clean = promptText.split("\n")[0].replace(/\s+/g, " ").trim();
+  if (clean.length <= MAX_DERIVED_TITLE_CHARS) return clean;
+  return `${clean.slice(0, MAX_DERIVED_TITLE_CHARS - 1).trimEnd()}…`;
+}
+
+/** Deterministic stand-in for the small-model rewrite: Title Case the
+    first clause (up to 8 words), so it always differs from `derived`. */
+function llmTitle(promptText: string): string {
+  const clause = (promptText.split(/[:;.!\n]/)[0] ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return clause
+    .split(" ")
+    .slice(0, 8)
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
 
 const words = (t: string) => t.split(/(?<=\s)/);
 

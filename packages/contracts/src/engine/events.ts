@@ -62,6 +62,17 @@ export const SessionNotePayload = z.strictObject({
   text: z.string().min(1),
 });
 
+/**
+ * The engine named the session itself (#137). `derived` is the instant,
+ * deterministic stage (first words of the prompt); `llm` is the model-written
+ * upgrade. A user-chosen title never travels this event — renames go the
+ * other way via `session.setTitle` (#28).
+ */
+export const SessionTitledPayload = z.strictObject({
+  title: z.string().min(1),
+  source: z.enum(["derived", "llm"]),
+});
+
 export const TurnStartedPayload = z.strictObject({
   turnId: TurnId,
   /** Model this turn runs on (engines with the models capability set it). */
@@ -177,6 +188,12 @@ export const EngineEvent = z.discriminatedUnion("type", [
     sessionId: SessionId,
     type: z.literal("session.note"),
     payload: SessionNotePayload,
+  }),
+  z.strictObject({
+    seq: Seq,
+    sessionId: SessionId,
+    type: z.literal("session.titled"),
+    payload: SessionTitledPayload,
   }),
   z.strictObject({
     seq: Seq,

@@ -184,6 +184,16 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
         END`,
     ],
   },
+  {
+    // #137: title provenance — every title that exists was client-chosen
+    // before this column, so backfill those as `user`; new opens default to
+    // `auto` (placeholder/engine titles the engine may upgrade).
+    version: 10,
+    statements: [
+      `ALTER TABLE conversations ADD COLUMN title_source TEXT NOT NULL DEFAULT 'auto'`,
+      `UPDATE conversations SET title_source = 'user' WHERE title != ''`,
+    ],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

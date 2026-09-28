@@ -162,7 +162,7 @@ export class Harness {
   /** Last relay-side title/archive seen per conversation (meta mirror diff). */
   private readonly metaSeen = new Map<
     string,
-    { title: string; archived: boolean }
+    { title: string; archived: boolean; titleSource?: "auto" | "user" }
   >();
   /** Latest `describe` result (hideCaps already filtered out). */
   private describeResult?: DescribeResult;
@@ -330,6 +330,15 @@ export class Harness {
     return this.describeResult?.capabilities.some((c) => c.id === id) ?? false;
   }
 
+  /** The engine writes titles itself (#137) — declared via
+      `session_meta.detail.autoTitle`, emitted as `session.titled`. */
+  private hasAutoTitle(): boolean {
+    return (
+      this.describeResult?.capabilities.find((c) => c.id === "session_meta")
+        ?.detail?.autoTitle === true
+    );
+  }
+
   /**
    * On (re)connect: cache `describe` (minus hidden capabilities) and hire the
    * `default` engine profile as the first employee when the roster is empty.
@@ -472,6 +481,19 @@ export class Harness {
       ).catch(() => {});
     }
     for (const event of replay.events) this.onEngineEvent(event);
+    /* #137 AC-2: the snapshot title is the engine's persisted truth — it
+       lands whatever the (possibly truncated) event log missed. The relay
+       still refuses it over a user rename. */
+    const snapshotTitle = replay.snapshot.title;
+    if (
+      snapshotTitle &&
+      this.hasAutoTitle() &&
+      this.metaSeen.get(binding.conversationId)?.titleSource !== "user"
+    ) {
+      this.updateConversation(binding.conversationId, {
+        title: snapshotTitle,
+      }).catch(() => {});
+    }
     // AC-4: a turn that vanished across sleep/restart must end as
     // `interrupted` with Retry — never a spinner. Lost iff the replay shows
     // it neither still running nor terminated by a replayed turn.completed.
@@ -569,17 +591,30 @@ export class Harness {
    */
   private mirrorMeta(
     binding: SessionBinding,
-    conv: { title: string; archived: boolean } | undefined,
+    conv:
+      | { title: string; archived: boolean; titleSource?: "auto" | "user" }
+      | undefined,
   ): void {
     if (!conv) return;
     const seen = this.metaSeen.get(binding.conversationId);
     this.metaSeen.set(binding.conversationId, {
       title: conv.title,
       archived: conv.archived,
+      titleSource: conv.titleSource,
     });
     const conn = this.engine;
     if (!conn || !this.hasCapability("session_meta")) return;
-    if (conv.title && (!seen || seen.title !== conv.title)) {
+    /* Only USER-chosen titles mirror onto the engine (#137): mirroring an
+       engine-written title back via session.setTitle would mark it
+       user-provenance on the engine side (Hermes `title_source=user`) and
+       permanently block the derived → llm upgrade. */
+    const titleIsUserChosen =
+      conv.titleSource === undefined || conv.titleSource === "user";
+    if (
+      conv.title &&
+      titleIsUserChosen &&
+      (!seen || seen.title !== conv.title)
+    ) {
       void conn
         .request("session.setTitle", {
           sessionId: binding.sessionId,
@@ -975,6 +1010,23 @@ export class Harness {
           state: "active",
         }).catch(() => {});
         break;
+      case "session.titled": {
+        /* #137: the engine named its session (derived → llm). Write it as the
+           conversation title — a host "auto" write, so the relay drops it
+           atomically once the row is user-named; the metaSeen check just
+           skips a doomed write when we've already seen the rename. */
+        if (!binding || !this.hasAutoTitle()) break;
+        if (this.metaSeen.get(binding.conversationId)?.titleSource === "user")
+          break;
+        this.updateConversation(binding.conversationId, {
+          title: event.payload.title,
+        }).catch((error) =>
+          this.opts.log.warn("engine title write failed", {
+            error: String(error),
+          }),
+        );
+        break;
+      }
       case "session.note":
         /* Engine-authored note (e.g. a deferred model switch that failed at
            turn start — "Couldn't switch to X — staying on Y"). Surfaced as a
@@ -1155,6 +1207,7 @@ export class Harness {
             this.metaSeen.set(conv.id, {
               title: conv.title,
               archived: conv.archived,
+              titleSource: conv.titleSource,
             });
           }
           break;
@@ -1162,7 +1215,8 @@ export class Harness {
         if (
           seen &&
           seen.title === conv.title &&
-          seen.archived === conv.archived
+          seen.archived === conv.archived &&
+          seen.titleSource === conv.titleSource
         ) {
           break;
         }
@@ -1735,6 +1789,7 @@ export class Harness {
     patch: {
       engineRef?: string;
       state?: "idle" | "active" | "closed";
+      title?: string;
       model?: string | null;
       provider?: string | null;
       effort?: string | null;

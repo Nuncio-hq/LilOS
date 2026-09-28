@@ -1435,6 +1435,98 @@ const SESSION_META_SCENARIOS: Scenario[] = [
       assert(shown.hidden === false, "setHidden(false) must return false");
     },
   },
+  {
+    // #137 AC-1+AC-5: the engine names its session itself — `session.titled`
+    // {title, source} flows derived → llm, both strictly seq-ordered, and a
+    // user title (session.setTitle) outranks a late engine upgrade.
+    id: "AC-5 session.titled arrives derived then llm and yields to a user title",
+    async run(h) {
+      const describe = (await h.request("describe")) as DescribeResultShape;
+      const meta = describe.capabilities.find((c) => c.id === "session_meta");
+      assert(
+        meta && meta.detail?.autoTitle === true,
+        "session_meta must declare detail.autoTitle for auto titles",
+      );
+      const titled = (sid: string, source?: string) =>
+        h.forSession(
+          sid,
+          (e) =>
+            e.type === "session.titled" &&
+            (source === undefined ||
+              (e.payload as { source: string }).source === source),
+        );
+
+      // Ordering leg: a clean first turn upgrades derived → llm in seq order.
+      const { sessionId: s1 } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const p1 = h.request("prompt", textPrompt(s1, READ_PROMPT));
+      const derived = await h.waitEvent(titled(s1, "derived"));
+      const llm = await h.waitEvent(titled(s1, "llm"));
+      await p1;
+      assert(
+        llm.seq > derived.seq,
+        `llm title (seq ${llm.seq}) must follow derived (seq ${derived.seq})`,
+      );
+      assert(
+        (derived.payload as { title: string }).title.length > 0 &&
+          (llm.payload as { title: string }).title.length > 0,
+        "both stages carry a non-empty title",
+      );
+
+      // No-overwrite leg: setTitle while the first turn still runs — the
+      // derived write may already be out (it fires at turn start) but the
+      // llm upgrade must never land over a user title.
+      const { sessionId: s2 } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const p2 = h.request("prompt", textPrompt(s2, APPROVAL_PROMPT));
+      await h.waitEvent(h.forSession(s2, (e) => e.type === "request.opened"));
+      await h.waitEvent(titled(s2, "derived"));
+      await h.request("session.setTitle", {
+        sessionId: s2,
+        title: "Named by hand",
+      });
+      // The canned turn may ask more than once — answer each open request
+      // until the prompt settles.
+      const answered = new Set<string>();
+      let settled = false;
+      void p2.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
+      const answerOpen = async () => {
+        for (const e of h.events) {
+          if (e.sessionId !== s2 || e.type !== "request.opened") continue;
+          const requestId = (e.payload as { requestId: string }).requestId;
+          if (answered.has(requestId)) continue;
+          answered.add(requestId);
+          await h.request("request.respond", {
+            sessionId: s2,
+            requestId,
+            outcome: "once",
+          });
+        }
+      };
+      await answerOpen();
+      while (!settled) {
+        await new Promise((r) => setTimeout(r, 10));
+        await answerOpen();
+      }
+      await p2;
+      const s2Titles = h.events.filter(titled(s2));
+      assert(
+        s2Titles.every(
+          (e) => (e.payload as { source: string }).source === "derived",
+        ),
+        `an llm title must not land after session.setTitle; got ${JSON.stringify(
+          s2Titles.map((e) => e.payload),
+        )}`,
+      );
+    },
+  },
 ];
 
 /**
