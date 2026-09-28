@@ -403,6 +403,8 @@
         "settings.set",
         "folders.list",
         "folders.add",
+        "profile.get",
+        "profile.update",
         "agents.list",
         "agents.describe",
         "agents.create",
@@ -425,6 +427,7 @@
         "employee.upserted",
         "employee.removed",
         "conversation.modelRequested",
+        "profile.updated",
         "settings.changed"
       ]
     },
@@ -1237,6 +1240,100 @@
       },
       "required": [
         "folder"
+      ]
+    },
+    "ProfileSettings": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "userName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "companyName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "avatarColor": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ProfileGetParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ProfileGetResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "object",
+          "properties": {
+            "userName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "companyName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "avatarColor": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "required": [
+        "profile"
+      ]
+    },
+    "ProfileUpdateParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "userName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "companyName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "avatarColor": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ProfileUpdateResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "object",
+          "properties": {
+            "userName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "companyName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "avatarColor": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "required": [
+        "profile"
       ]
     },
     "Conversation": {
@@ -5531,6 +5628,32 @@
         "channelId",
         "conversationId",
         "model"
+      ]
+    },
+    "ProfileUpdatedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "object",
+          "properties": {
+            "userName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "companyName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "avatarColor": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "required": [
+        "profile"
       ]
     },
     "SettingsGetParams": {

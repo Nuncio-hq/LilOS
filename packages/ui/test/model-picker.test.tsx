@@ -2,7 +2,7 @@
 /* Model picker v2 (Codex-style): one popover with the reasoning slider, the
    fast toggle and a "Model ›" drill-in list grouped by provider. Issue #30's
    ACs still hold (engine list, pick reports the engine id, no picker without
-   the capability); the rest pins the v2 behaviour agreed with Oscar. */
+   the capability); the rest pins the v2 behaviour agreed with the client. */
 import {
   act,
   cleanup,

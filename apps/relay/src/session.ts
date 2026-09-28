@@ -33,6 +33,7 @@ import {
   type MessageAttachment,
   MessagesListParams,
   MessagesPostParams,
+  ProfileUpdateParams,
   SettingsGetParams,
   SettingsSetParams,
   SystemStatusParams,
@@ -520,6 +521,18 @@ export function createRelay(options: RelayOptions): Relay {
           respond(peer, id, {
             folder: await store.addRecentFolder(parsed.data.path),
           });
+          return;
+        }
+        case "profile.get": {
+          respond(peer, id, { profile: await store.getProfile() });
+          return;
+        }
+        case "profile.update": {
+          const parsed = ProfileUpdateParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const profile = await store.updateProfile(parsed.data);
+          broadcast("profile.updated", { profile });
+          respond(peer, id, { profile });
           return;
         }
         case "channels.openDm": {

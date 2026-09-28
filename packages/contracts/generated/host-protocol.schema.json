@@ -1059,6 +1059,35 @@
         ],
         "additionalProperties": false
       }
+    },
+    "host.user": {
+      "doc": "OS account name/full name — prefill source for the identity fields (#118).",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "fullName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "username",
+          "fullName"
+        ],
+        "additionalProperties": false
+      }
     }
   }
 }

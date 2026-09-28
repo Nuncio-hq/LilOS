@@ -3,11 +3,13 @@ import { Button } from "../components/ui/button";
 import { HermesAvatar } from "../shell/avatars";
 import type { EmpFn, HireDraft } from "../types";
 
-/* The hire-proposal card an employee posts in a channel. Only Oscar can approve. */
+/* The hire-proposal card an employee posts in a channel. Only the signed-in
+   human can approve — `me` carries their display name (#118). */
 export function HireCardInline({
   draft,
   by,
   emp,
+  me,
   done,
   onReview,
   onReject,
@@ -15,6 +17,8 @@ export function HireCardInline({
   draft: HireDraft;
   by: string;
   emp: EmpFn;
+  /** The signed-in human's display name — "only {me} can approve". */
+  me: string;
   done?: string;
   onReview: () => void;
   onReject: () => void;
@@ -23,7 +27,7 @@ export function HireCardInline({
     <div className="mt-1 w-full max-w-xl overflow-hidden rounded-lg border border-violet-300">
       <div className="flex items-center gap-2 bg-violet-50 px-3 py-2 font-medium text-violet-900 text-xs">
         <UserPlusIcon className="size-3.5" />
-        {done ?? `${emp(by)?.name} proposes a hire · only Oscar can approve`}
+        {done ?? `${emp(by)?.name} proposes a hire · only ${me} can approve`}
       </div>
       {!done && (
         <div className="space-y-2 p-3">

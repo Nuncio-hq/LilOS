@@ -15,6 +15,7 @@ export function StartWorkDialog({
   channel,
   ticket,
   emp,
+  me,
   granted,
   onClose,
   onStart,
@@ -24,6 +25,8 @@ export function StartWorkDialog({
   channel: Channel;
   ticket: string;
   emp: EmpFn;
+  /** The signed-in human's name — the work's `by` (#118). */
+  me: string;
   granted: boolean;
   onClose: () => void;
   onStart: (w: Work, lead: string, grant: boolean) => void;
@@ -189,7 +192,7 @@ export function StartWorkDialog({
                   ticket,
                   title: title.trim(),
                   branch: channel.repo ? branch : undefined,
-                  by: "Oscar",
+                  by: me,
                 },
                 lead,
                 grant,

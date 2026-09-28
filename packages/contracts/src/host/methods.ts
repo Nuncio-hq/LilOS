@@ -32,6 +32,7 @@ import {
   GitStatusResult,
 } from "./git";
 import { HOST_API } from "./protocol";
+import { HostUserParams, HostUserResult } from "./user";
 
 /** One host method: request params, result shape, doc line. */
 export interface HostMethodContract {
@@ -119,5 +120,10 @@ export const HOST_METHODS = {
     params: ForgeMergeParams,
     result: ForgeMergeResult,
     doc: "Merge the PR via `gh` (squash|merge|rebase); returns the re-read PR, never stdout trust.",
+  },
+  "host.user": {
+    params: HostUserParams,
+    result: HostUserResult,
+    doc: "OS account name/full name — prefill source for the identity fields (#118).",
   },
 } as const satisfies Record<string, HostMethodContract>;

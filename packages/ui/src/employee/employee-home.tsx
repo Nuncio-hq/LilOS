@@ -568,6 +568,7 @@ export function EmployeeCard({
   e,
   profiles,
   engineName,
+  ownerName,
   onDM,
   onEdit,
   onSwitchProfile,
@@ -576,6 +577,8 @@ export function EmployeeCard({
   profiles: EngineProfile[];
   /** The engine's own name (`engine-fake`, `hermes`, ...) for the Engine row. */
   engineName?: string;
+  /** The signed-in human's name for the "owned by …" line (#118). */
+  ownerName: string;
   onDM: () => void;
   onEdit?: () => void;
   onSwitchProfile?: (profileId: string) => void;
@@ -589,7 +592,7 @@ export function EmployeeCard({
           <div>
             <div className="font-semibold text-base">{e.name}</div>
             <div className="text-muted-foreground text-xs">
-              {e.role} · owned by Oscar
+              {e.role} · owned by {ownerName}
             </div>
           </div>
           <div className="ml-auto flex gap-1">
