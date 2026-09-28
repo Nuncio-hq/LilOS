@@ -71,7 +71,7 @@ import {
   toFeed,
   toUiEmployee,
 } from "../lib/mapping";
-import { humanFor, ME } from "../lib/me";
+import { currentName, humanFor, osFullName, profile } from "../lib/me";
 import {
   asks as asksAtom,
   engine,
@@ -101,12 +101,21 @@ const EMPTY_FEED = atom<SessionFeedState>({
   openRequests: [],
 });
 
-const OUTCOME_LABEL: Record<ApprovalOutcome, string> = {
-  once: `Allowed once by ${ME.name}`,
-  always: "Always allowed here",
-  deny: `Denied by ${ME.name}`,
-  cancel: "Cancelled",
-  answer: "Answered",
+/* Resolved-ask labels carry the signed-in human's name — computed per render
+   so a settings change lands without a reload (#118). */
+const outcomeLabel = (o: ApprovalOutcome, name: string): string => {
+  switch (o) {
+    case "once":
+      return `Allowed once by ${name}`;
+    case "always":
+      return "Always allowed here";
+    case "deny":
+      return `Denied by ${name}`;
+    case "cancel":
+      return "Cancelled";
+    case "answer":
+      return "Answered";
+  }
 };
 
 function outcomeFromLabel(v: string): ApprovalOutcome {
@@ -117,8 +126,8 @@ function outcomeFromLabel(v: string): ApprovalOutcome {
   return "once";
 }
 
-/* User messages render as the signed-in human — the same `ME` the sidebar
-   footer shows (issue #80, AC-1). */
+/* User messages render as the signed-in human — the same identity the
+   sidebar footer shows (issue #80 AC-1, #118: relay-owned). */
 const human = humanFor;
 
 /**
@@ -136,6 +145,9 @@ export function DmPage() {
 
   const employees = useAtom(relay.employees);
   const channels = useAtom(relay.channels);
+  // #118: the human's name/avatar re-render live on a settings change.
+  useAtom(profile);
+  useAtom(osFullName);
   const summaries = useAtom(relay.conversationSummaries);
   const models = useAtom(sessionModels);
   const catalog = useAtom(engineModels);
@@ -478,8 +490,8 @@ export function DmPage() {
     });
   };
 
-  /* ↑ recall for the home composer: the last top-level message Oscar sent in
-     this DM is the newest conversation's root message (#104 AC-5). */
+  /* ↑ recall for the home composer: the last top-level message the user sent
+     in this DM is the newest conversation's root message (#104 AC-5). */
   const lastSentTop = [...convs]
     .reverse()
     .map(
@@ -514,7 +526,7 @@ export function DmPage() {
     const resolved: Record<string, string> = {};
     for (const a of asksHere) {
       if (a.state === "resolved" && a.outcome)
-        resolved[a.id] = OUTCOME_LABEL[a.outcome];
+        resolved[a.id] = outcomeLabel(a.outcome, currentName());
     }
     const engineRef = conv.engineRef;
     const replies = mergeTurns(
@@ -549,7 +561,7 @@ export function DmPage() {
       ...(convWs ? { ws: convWs } : {}),
     };
     const running = !!modelLive || pending[conv.id] === true;
-    /* ↑ recall in the open session: Oscar's last sent message in it — the
+    /* ↑ recall in the open session: the user's last sent message in it — the
        root counts too (#104 AC-5). */
     const lastSent = threadPool.reduce<AppMessage | undefined>(
       (last, m) =>

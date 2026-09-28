@@ -12,6 +12,7 @@ import type {
   EmployeeStatus,
   MessageAttachment,
   PendingTurn,
+  ProfileSettings,
   RecentFolder,
   RespondTo,
 } from "@lilos/contracts/app";
@@ -153,6 +154,13 @@ export interface RelayStore {
   listRecentFolders(): Promise<RecentFolder[]>;
   addRecentFolder(path: string): Promise<RecentFolder>;
   /**
+   * The signed-in human's profile (#118) — `{}` until the user sets it; the
+   * app layers OS-derived prefill on top (AC-4). `updateProfile` merges
+   * the given keys and returns the stored profile.
+   */
+  getProfile(): Promise<ProfileSettings>;
+  updateProfile(patch: ProfileSettings): Promise<ProfileSettings>;
+  /**
    * One row per conversation carrying the messages the session list renders
    * — the list survives the channel's snapshot window (#28 AC-1).
    */
@@ -220,6 +228,7 @@ export function createMemoryStore(): RelayStore {
   const asks = new Map<string, Ask>();
   const folders = new Map<string, RecentFolder>();
   const settings = new Map<string, unknown>();
+  let profile: ProfileSettings = {};
 
   /** Strictly increasing recents tick — survives same-ms calls in tests. */
   const folderTick = () =>
@@ -371,6 +380,13 @@ export function createMemoryStore(): RelayStore {
     },
     async addRecentFolder(path) {
       return touchFolder(path);
+    },
+    async getProfile() {
+      return { ...profile };
+    },
+    async updateProfile(patch) {
+      profile = { ...profile, ...patch };
+      return { ...profile };
     },
     async getConversation(id) {
       return conversations.get(id) ?? null;

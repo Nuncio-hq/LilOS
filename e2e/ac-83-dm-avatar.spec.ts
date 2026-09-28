@@ -168,11 +168,17 @@ test.describe.configure({ mode: "serial" });
 test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
   page,
 }) => {
-  const stack = await bootStack("ac83a", {
-    relay: wport(4670),
-    feed: wport(4671),
-    web: wport(5273),
-  });
+  const stack = await bootStack(
+    "ac83a",
+    {
+      relay: wport(4670),
+      feed: wport(4671),
+      web: wport(5273),
+    },
+    // #118: the row's name is the OS user's — pin it for the exact-text
+    // name-line measurements.
+    { LILOS_USER_NAME: "Oscar" },
+  );
   try {
     await dmDefault(page, stack.webUrl);
     await send(page, PROMPT);
@@ -328,11 +334,15 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
 
 test("AC-3 desktop app: the DM feed row in Electron", async () => {
   test.setTimeout(240_000);
-  const stack = await bootStack("ac83b", {
-    relay: wport(4674),
-    feed: wport(4676),
-    web: wport(5277),
-  });
+  const stack = await bootStack(
+    "ac83b",
+    {
+      relay: wport(4674),
+      feed: wport(4676),
+      web: wport(5277),
+    },
+    { LILOS_USER_NAME: "Oscar" },
+  );
   try {
     const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
       cwd: desktopDir,

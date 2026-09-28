@@ -26,7 +26,7 @@ import {
 } from "./lib/employees";
 import { useAtom } from "./lib/hooks";
 import { toUiEmployee } from "./lib/mapping";
-import { ME } from "./lib/me";
+import { currentCompany, currentMe, osFullName, profile } from "./lib/me";
 import {
   openConversationFromPath,
   routeForConversation,
@@ -53,6 +53,9 @@ function AppShell() {
   const relayState = useAtom(relay.state);
   const [statusOpen, setStatusOpen] = useState(false);
   const nav = useAtom(navOpen);
+  // #118: identity surfaces re-render when the profile or OS name lands.
+  useAtom(profile);
+  useAtom(osFullName);
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const toastMsg = useAtom(toast);
@@ -230,7 +233,8 @@ function AppShell() {
         realApp
         navOpen={nav}
         hiddenWhenClosed={false}
-        me={ME}
+        me={currentMe()}
+        company={currentCompany()}
         companyChannels={[]}
         projects={[]}
         folders={[]}

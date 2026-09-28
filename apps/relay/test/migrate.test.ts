@@ -12,7 +12,7 @@ const BUN = process.env.LILOS_BUN_BIN ?? "bun";
  * The check itself runs under bun:sqlite (no driver in vitest's Node).
  */
 describe("relay migrations", () => {
-  it("upgrades a DB already at v6 (main's schema) to v7", () => {
+  it("upgrades a DB already at v6 (main's schema) to the latest version", () => {
     const script = `
       import { Database } from "bun:sqlite";
       import { MIGRATIONS, applyMigrations } from "./src/db/migrate.ts";
@@ -49,13 +49,15 @@ describe("relay migrations", () => {
     expect(out.tablesAt6).toContain("recent_folders");
     expect(out.tablesAt6).not.toContain("settings");
 
-    // v7 adds #92's pick columns + the LilOS-owned settings KV.
-    expect(out.version).toBe(7);
+    // v7 adds #92's pick columns + the LilOS-owned settings KV; v8 adds
+    // #118's profile row.
+    expect(out.version).toBe(8);
     for (const col of ["provider", "effort", "fast"])
       expect(out.colsAt7).toContain(col);
     for (const col of ["provider", "effort", "fast"])
       expect(out.msgCols).toContain(col);
     expect(out.tables).toContain("settings");
+    expect(out.tables).toContain("profile");
     // …and keeps everything v6 shipped.
     expect(out.colsAt7).toContain("cwd");
     expect(out.tables).toContain("recent_folders");

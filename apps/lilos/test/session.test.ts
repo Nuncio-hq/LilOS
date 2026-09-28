@@ -60,7 +60,7 @@ describe("AC-3 session.start { mcpServers } scopes tools to the session", () => 
         content: [
           {
             type: "text",
-            text: "surfaces: open http://localhost:4321; run echo from-pty; say hi oscar; previews",
+            text: "surfaces: open http://localhost:4321; run echo from-pty; say hi ada; previews",
           },
         ],
       })) as { stopReason: string };
@@ -78,7 +78,7 @@ describe("AC-3 session.start { mcpServers } scopes tools to the session", () => 
       // The calls really happened — against sess-1's surfaces, not globally.
       expect(browser.url).toBe("http://localhost:4321");
       expect(spawner.last.written.join("")).toContain("echo from-pty");
-      expect(appOps.posted).toEqual(["hi oscar"]);
+      expect(appOps.posted).toEqual(["hi ada"]);
     } finally {
       engine.closeAllMcp();
       api.server.close();

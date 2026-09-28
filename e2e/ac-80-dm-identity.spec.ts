@@ -178,11 +178,17 @@ test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", asy
   page,
 }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack("ac80a", {
-    relay: wport(4660),
-    feed: wport(4661),
-    web: wport(5262),
-  });
+  const stack = await bootStack(
+    "ac80a",
+    {
+      relay: wport(4660),
+      feed: wport(4661),
+      web: wport(5262),
+    },
+    // #118: the signed-in name is the OS user's — pin it so the identity
+    // assertions below stay deterministic on any machine.
+    { LILOS_USER_NAME: "Oscar" },
+  );
   try {
     await dmDefault(page, stack.webUrl);
     await send(page, PROMPT);
@@ -211,7 +217,8 @@ test("AC-2 markdown renders while the reply streams, then settles unchanged", as
   const stack = await bootStack(
     "ac80b",
     { relay: wport(4664), feed: wport(4665), web: wport(5264) },
-    { ENGINE_FAKE_TICK: "150" }, // ~6s text phase → observable mid-stream
+    // ~6s text phase → observable mid-stream; pin the human's name (#118).
+    { ENGINE_FAKE_TICK: "150", LILOS_USER_NAME: "Oscar" },
   );
   try {
     await dmDefault(page, stack.webUrl);
@@ -244,7 +251,7 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
   const stack = await bootStack(
     "ac80c",
     { relay: wport(4667), feed: wport(4669), web: wport(5266) },
-    { ENGINE_FAKE_TICK: "150" },
+    { ENGINE_FAKE_TICK: "150", LILOS_USER_NAME: "Oscar" },
   );
   try {
     const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
@@ -269,6 +276,7 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
         LILOS_RELAY_PORT: portOf(stack.relayWs),
         LILOS_FEED_PORT: portOf(stack.feedWs),
         LILOS_WEB_URL: stack.webUrl,
+        LILOS_USER_NAME: "Oscar",
       },
     });
     try {
