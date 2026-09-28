@@ -11,6 +11,7 @@ import {
   type EngineRequest,
   type EventsSinceParams,
   type InterruptParams,
+  type ModelsListParams,
   type PromptParams,
   type RequestRespondParams,
   RPC_ERRORS,
@@ -31,7 +32,6 @@ import {
   listModels,
   requireAgent,
   setSessionModel,
-  splitModelRef,
   updateAgent,
 } from "./catalog.js";
 import { RpcError } from "./errors.js";
@@ -179,7 +179,9 @@ export class HermesEngine {
           this.opts.provider,
         );
       case "models.list":
-        return listModels(this.opts.gateway, this.opts.provider);
+        return listModels(this.opts.gateway, {
+          refresh: (parsed.data as ModelsListParams).refresh,
+        });
       case "session.setModel":
         return this.sessionSetModel(parsed.data as SessionSetModelParams);
       case "session.setTitle":
@@ -237,8 +239,11 @@ export class HermesEngine {
         id: "models",
         name: "Model picker",
         description:
-          "models.list flattens model.options; session.setModel runs slash.exec /model (session-scoped, next turn picks it up).",
+          "models.list flattens model.options (all providers, refreshable); session.setModel runs config.set model/fast — session-scoped, next turn picks it up.",
         methods: ["models.list", "session.setModel"],
+        /* #92: Refresh button / effort slider / ⚡Fast render only on engines
+           that declare them here. */
+        detail: { refreshable: true, effort: true, fast: true },
       },
       {
         id: "session_meta",
@@ -287,10 +292,13 @@ export class HermesEngine {
     // The LilOS `agent` is a Hermes profile name: refuse unknown ones up front
     // (AGENT_NOT_FOUND) and run the session under that profile.
     await requireAgent(this.opts.gateway, p.agent);
-    const modelRef = splitModelRef(
-      p.model ?? this.opts.model,
-      this.opts.provider,
-    );
+    /* #92 AC-8: `p.model` is an opaque id — it may itself contain `/`
+       (aggregator ids like `devin/claude-opus-5`); it is never split into a
+       `provider/model` pair. `p.provider` is a separate wire field. */
+    const model = p.model ?? this.opts.model;
+    const provider = p.provider ?? this.opts.provider;
+    const effort = p.effort;
+    const fast = p.fast;
     if (mcp.length === 0) {
       const r = (await this.createSessionCompat({
         profile: p.agent,
@@ -299,8 +307,10 @@ export class HermesEngine {
         cwd_explicit: true,
         source: "lilos",
         close_on_disconnect: true,
-        ...(modelRef.model ? { model: modelRef.model } : {}),
-        ...(modelRef.provider ? { provider: modelRef.provider } : {}),
+        ...(model ? { model } : {}),
+        ...(provider ? { provider } : {}),
+        ...(effort ? { reasoning_effort: effort } : {}),
+        ...(fast !== undefined ? { fast } : {}),
       })) as { session_id?: unknown; stored_session_id?: unknown };
       if (typeof r.session_id !== "string" || !r.session_id)
         throw new RpcError(
@@ -313,8 +323,11 @@ export class HermesEngine {
         p.cwd,
         // effective model (what session.create got), not the bare request —
         // the ambient default still answers `turn.started.model` (#30).
-        modelRef.model ?? p.model,
+        model,
         mcp,
+        provider,
+        effort,
+        fast,
         "ws",
         r.session_id,
         typeof r.stored_session_id === "string" ? r.stored_session_id : "",
@@ -326,6 +339,9 @@ export class HermesEngine {
         agent: p.agent,
         cwd: p.cwd,
         ...(s.model ? { model: s.model } : {}),
+        ...(s.provider ? { provider: s.provider } : {}),
+        ...(s.effort ? { effort: s.effort } : {}),
+        ...(s.fast !== undefined ? { fast: s.fast } : {}),
       });
       s.setState("idle");
       return { sessionId: id };
@@ -342,8 +358,11 @@ export class HermesEngine {
       id,
       p.agent,
       p.cwd,
-      modelRef.model ?? p.model,
+      model,
       mcp,
+      provider,
+      effort,
+      fast,
       "acp",
       opened.runtimeSid,
       opened.ref,
@@ -356,6 +375,9 @@ export class HermesEngine {
       agent: p.agent,
       cwd: p.cwd,
       ...(s.model ? { model: s.model } : {}),
+      ...(s.provider ? { provider: s.provider } : {}),
+      ...(s.effort ? { effort: s.effort } : {}),
+      ...(s.fast !== undefined ? { fast: s.fast } : {}),
     });
     s.setState("idle");
     return { sessionId: id };
@@ -415,6 +437,12 @@ export class HermesEngine {
         RPC_ERRORS.INVALID_STATE,
         `session ${s.id} already has a running turn`,
       );
+    /* A mid-turn pick needs no replay here: Hermes stashes the deferred
+       `config.set model` itself (`pending_model_switch`) and applies it at
+       turn start inside prompt_turn.py — a driver-side replay would run a
+       second `_commit_agent_switch`, write a second switch marker, and
+       `switch_model`'s request_overrides reset could drop the fast tier
+       the live `config.set fast` already applied (#92 AC-4 review). */
     const images = p.content.filter(
       (b): b is Extract<ContentBlock, { type: "image" }> => b.type === "image",
     );
@@ -435,6 +463,9 @@ export class HermesEngine {
     s.emit("turn.started", {
       turnId,
       ...(s.model ? { model: s.model } : {}),
+      ...(s.provider ? { provider: s.provider } : {}),
+      ...(s.effort ? { effort: s.effort } : {}),
+      ...(s.fast !== undefined ? { fast: s.fast } : {}),
       ...(p.ref ? { ref: p.ref } : {}),
     });
     s.setState("running");
@@ -600,6 +631,9 @@ export class HermesEngine {
     s.emit("turn.started", {
       turnId,
       ...(s.model ? { model: s.model } : {}),
+      ...(s.provider ? { provider: s.provider } : {}),
+      ...(s.effort ? { effort: s.effort } : {}),
+      ...(s.fast !== undefined ? { fast: s.fast } : {}),
     });
     if (s.state !== "closed") s.setState("running");
   }
@@ -613,9 +647,40 @@ export class HermesEngine {
         RPC_ERRORS.METHOD_NOT_FOUND,
         "session.setModel needs the WS transport (no ACP equivalent yet)",
       );
-    await setSessionModel(this.opts.gateway, s.runtimeSid, p.model);
-    s.model = p.model;
-    return { model: p.model };
+    /* config.set trio: `<id> --provider <p> --reasoning <e> --session` +
+       fast on/off. A running session defers the MODEL leg to the next turn
+       (Hermes stashes `pending_model_switch` and applies it at turn start;
+       `confirm_required` is answered inside setSessionModel). The fast leg
+       is sent live even mid-turn: `_set_fast` has no running check — it
+       mutates service_tier + request_overrides immediately, and the stash
+       apply keeps those keys through `switch_model` (#92 AC-4 review). */
+    const ack = await setSessionModel(this.opts.gateway, s.runtimeSid, {
+      model: p.model,
+      provider: p.provider,
+      effort: p.effort,
+      fast: p.fast,
+    });
+    /* A deferred ack describes the NEXT turn's pick — the session still
+       runs the old model, so only the live fast leg lands on `s` now.
+       Model/effort arrive as `session.info` when the stash applies at turn
+       start — that mirror stamps `turn.started` with what actually ran,
+       never with a request that might fail at apply (#92 review). */
+    if (ack.deferred === true) {
+      if (ack.fast !== undefined) s.fast = ack.fast;
+    } else {
+      s.model = ack.model;
+      if (ack.provider !== undefined) s.provider = ack.provider;
+      // Hermes keeps the session's reasoning override across a model switch.
+      if (ack.effort !== undefined) s.effort = ack.effort;
+      if (ack.fast !== undefined) s.fast = ack.fast;
+    }
+    return {
+      model: ack.model,
+      ...(ack.provider ? { provider: ack.provider } : {}),
+      ...(ack.effort ? { effort: ack.effort } : {}),
+      ...(ack.fast !== undefined ? { fast: ack.fast } : {}),
+      ...(ack.deferred === true ? { deferred: true } : {}),
+    };
   }
 
   /**
@@ -761,11 +826,29 @@ export class HermesEngine {
           s.ref = stored;
           s.emit("session.ref.changed", { ref: stored, previousRef: prev });
         }
+        /* Engine truth for the footer + picker (#92 AC-4): config.set acks,
+           a deferred pick's commit, and turn boundaries re-emit session.info
+           with what the session ACTUALLY runs — mirror it so `turn.started`
+           and the snapshot never read a stale cached pick. Hermes reports a
+           queued model switch as `pending_model_switch` fields already
+           folded into `model`/`provider` here. `reasoning_effort` "" means
+           provider default (unset); `fast` is the resolved tier boolean. */
+        if (typeof p.model === "string" && p.model) s.model = p.model;
+        if (typeof p.provider === "string" && p.provider)
+          s.provider = p.provider;
+        if (typeof p.reasoning_effort === "string")
+          s.effort = p.reasoning_effort || undefined;
+        if (typeof p.fast === "boolean") s.fast = p.fast;
         break;
       }
       case "message.complete":
         void this.completeTurn(s, p);
         break;
+      /* `error`/`notice` stay unmapped: they also fire on user Stop
+         ("Turn cancelled…"), agent-init and resume failures — too broad to
+         post as system messages. The harness holds picks while a turn
+         runs, so a deferred model-switch failure can't reach us this way
+         anyway (#92 review). */
       default:
         break; // status.update, session.title, sessions.changed, ...
     }

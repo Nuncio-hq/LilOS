@@ -38,10 +38,12 @@ interface Stack {
   stop: () => Promise<void>;
 }
 
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
+async function waitForHttp(url: string, ms = 120_000): Promise<void> {
   const start = Date.now();
   for (;;) {
-    const ok = await fetch(url)
+    // A wedged fetch (accepted socket, starved handler) hangs the loop for
+    // the whole budget otherwise — cap each attempt so retries stay cheap.
+    const ok = await fetch(url, { signal: AbortSignal.timeout(5_000) })
       .then((r) => r.ok || r.status === 404)
       .catch(() => false);
     if (ok) return;
@@ -102,9 +104,11 @@ async function bootStack(
   const webUrl = `http://127.0.0.1:${ports.web}`;
   try {
     // vite answers HTTP before the relay accepts WS — wait for both or the
-    // page hits "WebSocket error before open" under parallel load (#84).
+    // page hits "WebSocket error before open" under parallel load (#84). The
+    // app's first WS connect has no retry, so the relay port must listen
+    // before the page ever loads.
     await waitForHttp(webUrl);
-    await waitForHttp(`http://127.0.0.1:${ports.relay}`);
+    await waitForHttp(`http://127.0.0.1:${ports.relay}/`);
     return {
       home,
       webUrl,
@@ -144,7 +148,7 @@ async function dmDefault(page: Page, webUrl: string) {
   await page.goto(`${webUrl}/`);
   const aside = page.locator("aside");
   await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
+    timeout: 90_000,
   });
   const dmBtn = page.getByRole("button", {
     name: /open dm|set up later|message/i,
@@ -173,11 +177,18 @@ test.describe.configure({ mode: "serial" });
 test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", async ({
   page,
 }) => {
-  const stack = await bootStack("ac80a", {
-    relay: wport(4660),
-    feed: wport(4661),
-    web: wport(5262),
-  });
+  test.setTimeout(180_000);
+  const stack = await bootStack(
+    "ac80a",
+    {
+      relay: wport(4660),
+      feed: wport(4661),
+      web: wport(5262),
+    },
+    // #118: the signed-in name is the OS user's — pin it so the identity
+    // assertions below stay deterministic on any machine.
+    { LILOS_USER_NAME: "Oscar" },
+  );
   try {
     await dmDefault(page, stack.webUrl);
     await send(page, PROMPT);
@@ -206,7 +217,8 @@ test("AC-2 markdown renders while the reply streams, then settles unchanged", as
   const stack = await bootStack(
     "ac80b",
     { relay: wport(4664), feed: wport(4665), web: wport(5264) },
-    { ENGINE_FAKE_TICK: "150" }, // ~6s text phase → observable mid-stream
+    // ~6s text phase → observable mid-stream; pin the human's name (#118).
+    { ENGINE_FAKE_TICK: "150", LILOS_USER_NAME: "Oscar" },
   );
   try {
     await dmDefault(page, stack.webUrl);
@@ -239,7 +251,7 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
   const stack = await bootStack(
     "ac80c",
     { relay: wport(4667), feed: wport(4669), web: wport(5266) },
-    { ENGINE_FAKE_TICK: "150" },
+    { ENGINE_FAKE_TICK: "150", LILOS_USER_NAME: "Oscar" },
   );
   try {
     const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
@@ -264,6 +276,7 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
         LILOS_RELAY_PORT: portOf(stack.relayWs),
         LILOS_FEED_PORT: portOf(stack.feedWs),
         LILOS_WEB_URL: stack.webUrl,
+        LILOS_USER_NAME: "Oscar",
       },
     });
     try {

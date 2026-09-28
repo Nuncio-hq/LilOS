@@ -9,6 +9,7 @@ import { AttachmentChips } from "../conversation/turns";
 import { cn } from "../lib/utils";
 import { HermesAvatar, HumanAvatar } from "../shell/avatars";
 import type { EmpFn, HireDraft, HumanFn, Msg, Work } from "../types";
+import { VIEWER_ID } from "../types";
 import { HireCardInline } from "./hire-card";
 import { ThreadSummary } from "./thread-summary";
 
@@ -161,6 +162,7 @@ export function FeedList({
                 draft={m.hire}
                 by={m.from}
                 emp={emp}
+                me={human(VIEWER_ID)?.name ?? "you"}
                 done={resolved[m.id]}
                 onReview={() => onReviewHire(m.hire!)}
                 onReject={() => onRejectHire(m.id)}

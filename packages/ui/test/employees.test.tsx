@@ -172,6 +172,7 @@ describe("AC-5 EmployeeCard profile-missing state", () => {
       <EmployeeCard
         e={{ ...EMPLOYEE, profile: "ghost" }}
         profiles={PROFILES}
+        ownerName="Ada"
         onDM={() => {}}
         onEdit={() => {}}
         onSwitchProfile={(id) => switches.push(id)}
@@ -190,6 +191,7 @@ describe("AC-5 EmployeeCard profile-missing state", () => {
       <EmployeeCard
         e={{ ...EMPLOYEE, profile: "ghost" }}
         profiles={PROFILES}
+        ownerName="Ada"
         onDM={() => {}}
       />,
     );

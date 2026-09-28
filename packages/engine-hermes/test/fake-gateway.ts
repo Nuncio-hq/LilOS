@@ -51,6 +51,7 @@ export class FakeGateway implements GatewayLike {
       description?: string;
       soul?: string;
       model?: string;
+      provider?: string;
       skill_count?: number;
     }
   >([
@@ -65,9 +66,50 @@ export class FakeGateway implements GatewayLike {
       },
     ],
   ]);
-  /** model.options backing store. */
-  modelProviders: { slug: string; name: string; models: string[] }[] = [
-    { slug: "stub", name: "Stub", models: ["stub-model-a", "stub-model-b"] },
+  /**
+   * model.options backing store (issue #92): two authenticated providers +
+   * one unauthenticated row the engine must skip (AC-1). `capabilities`
+   * mirrors `inventory.py::_apply_capabilities` — per-model {fast,
+   * reasoning, can_disable_reasoning}; no supported_efforts upstream.
+   */
+  modelProviders: {
+    slug: string;
+    name: string;
+    models: string[];
+    capabilities?: Record<
+      string,
+      { fast?: boolean; reasoning?: boolean; can_disable_reasoning?: boolean }
+    >;
+    authenticated?: boolean;
+  }[] = [
+    {
+      slug: "stub",
+      name: "Stub",
+      models: ["stub-model-a", "stub-model-b"],
+      capabilities: {
+        "stub-model-a": { fast: true, reasoning: true },
+        "stub-model-b": { fast: false, reasoning: false },
+      },
+    },
+    {
+      slug: "devin",
+      name: "Devin",
+      /* An aggregator-style id that itself contains "/" — AC-8. */
+      models: ["devin/claude-opus-5"],
+      capabilities: {
+        "devin/claude-opus-5": {
+          fast: true,
+          reasoning: true,
+          can_disable_reasoning: false,
+        },
+      },
+    },
+    {
+      slug: "ghost",
+      name: "Ghost",
+      models: ["ghost-model"],
+      authenticated: false,
+    },
   ];
   defaultModel = "stub-model-a";
   /**
@@ -76,9 +118,41 @@ export class FakeGateway implements GatewayLike {
    * `confirm_expensive_model:true` is sent).
    */
   guardedModels = new Set<string>();
-  /** session_id -> model set via slash.exec /model. */
+  /** session_id -> model set via config.set model. */
   sessionModels = new Map<string, string>();
+  /** session_id -> provider / effort / fast set via config.set (#92). */
+  sessionProviders = new Map<string, string>();
+  sessionEfforts = new Map<string, string>();
+  sessionFast = new Map<string, boolean>();
+  /** config.set calls in order — {key, value, session_id, confirm_expensive_model}. */
+  configSetCalls: Record<string, unknown>[] = [];
+  /** `method[:key]` in arrival order — order-sensitive assertions, e.g.
+      model→fast→prompt.submit for a deferred pick (#92 AC-4). */
+  callLog: string[] = [];
+  /** model.options calls in order (records the `refresh` flag, #92 AC-6). */
+  modelOptionsCalls: Record<string, unknown>[] = [];
+  /** sids currently mid-turn: config.set model answers deferred (#92 AC-4). */
+  runningSids = new Set<string>();
+  /** Model ids that require confirm_expensive_model on config.set. */
+  confirmModels = new Set<string>();
+  /** sids whose deferred model switch fails when the next prompt.submit
+      applies it — Hermes emits `error {message}` and keeps the old model
+      (tui_gateway session_compression._apply_pending_model_switch). */
+  failDeferredSwitch = new Set<string>();
+  /** When set, `config.set fast` rejects with it — transport/5001-style
+      failures the engine must not swallow (#92 review). */
+  fastError?: RpcError;
+  /** sid -> stashed config.set model args while a turn runs (the real
+      `pending_model_switch` — applied by prompt_turn at turn start). */
+  private pendingSwitches = new Map<
+    string,
+    { model: string; provider: string; reasoning: string }
+  >();
   slashCommands: string[] = [];
+  /** Extra provider rows appended on the NEXT model.options refresh:true
+      (the "new model appeared" fixture). */
+  refreshProviders: FakeGateway["modelProviders"] = [];
+  refreshCount = 0;
   /** When set, session.steer resolves with this status instead of "queued". */
   steerStatus: "queued" | "rejected" = "queued";
   /** When set, session.steer rejects with this error code (e.g. 4010 build window). */
@@ -132,6 +206,9 @@ export class FakeGateway implements GatewayLike {
 
   request(method: string, params: unknown = {}): Promise<unknown> {
     const p = (params ?? {}) as Record<string, unknown>;
+    this.callLog.push(
+      method === "config.set" ? `config.set:${String(p.key ?? "")}` : method,
+    );
     switch (method) {
       case "session.create": {
         this.createCalls.push({ ...p });
@@ -162,9 +239,43 @@ export class FakeGateway implements GatewayLike {
           info: { version: "v0.21.5+test", release_date: "2026.9.24" },
         });
       }
-      case "prompt.submit":
+      case "prompt.submit": {
         this.lastPrompt = p;
+        const sid = String(p.session_id);
+        /* prompt_turn.py applies `pending_model_switch` at turn start —
+           before the prompt runs. On failure the gateway emits `error` and
+           the turn still runs on the previous model (#92 review). */
+        const stash = this.pendingSwitches.get(sid);
+        if (stash) {
+          this.pendingSwitches.delete(sid);
+          if (this.failDeferredSwitch.has(sid)) {
+            this.emit(sid, "error", {
+              message: `Could not switch model: no model ${stash.model} — see models.list`,
+            });
+          } else {
+            this.sessionModels.set(sid, stash.model);
+            if (stash.provider) this.sessionProviders.set(sid, stash.provider);
+            if (stash.reasoning) this.sessionEfforts.set(sid, stash.reasoning);
+          }
+        }
+        /* Hermes re-reports session state at turn start (a deferred pick's
+           commit folds into model/provider here) — the engine mirrors it so
+           `turn.started` stamps what the session ACTUALLY runs, which is
+           what keeps a failed apply from stamping the dead model (#92). */
+        const provider = this.sessionProviders.get(sid);
+        const effort = this.sessionEfforts.get(sid);
+        const fast = this.sessionFast.get(sid);
+        this.emit(sid, "session.info", {
+          model: this.sessionModels.get(sid) ?? this.defaultModel,
+          ...(provider ? { provider } : {}),
+          ...(effort ? { reasoning_effort: effort } : {}),
+          ...(fast !== undefined ? { fast } : {}),
+        });
+        /* Mid-turn state is real: config.set model on a running sid
+           answers deferred until `complete()` (#92 AC-4). */
+        this.runningSids.add(sid);
         return Promise.resolve({ status: "streaming", user_row_id: "u1" });
+      }
       case "session.interrupt":
         return Promise.resolve({ status: "interrupted" });
       case "session.steer":
@@ -212,7 +323,7 @@ export class FakeGateway implements GatewayLike {
           name: pr.name,
           description: pr.description ?? "",
           soul: pr.soul ?? "",
-          model: { provider: "stub", default: pr.model ?? "" },
+          model: { provider: pr.provider ?? "stub", default: pr.model ?? "" },
           skills: Array.from({ length: pr.skill_count ?? 0 }, (_, i) => ({
             name: `skill-${i}`,
           })),
@@ -231,6 +342,7 @@ export class FakeGateway implements GatewayLike {
             : {}),
           ...(typeof p.soul === "string" ? { soul: p.soul } : {}),
           ...(typeof p.model === "string" ? { model: p.model } : {}),
+          ...(typeof p.provider === "string" ? { provider: p.provider } : {}),
           skill_count: 0,
         });
         return Promise.resolve({
@@ -283,11 +395,111 @@ export class FakeGateway implements GatewayLike {
         return Promise.resolve({ ok: true, name: pr.name, applied });
       }
       case "model.options":
+        this.modelOptionsCalls.push({ ...p });
+        if (p.refresh === true) {
+          this.refreshCount++;
+          if (this.refreshProviders.length)
+            this.modelProviders = [
+              ...this.modelProviders,
+              ...this.refreshProviders.splice(0),
+            ];
+        }
         return Promise.resolve({
           providers: this.modelProviders,
           model: this.defaultModel,
           provider: this.modelProviders[0]?.slug ?? "",
         });
+      case "config.set": {
+        /* Mirrors tui_gateway/methods_config_set.py: `model` parses
+           `<id> --provider <slug> --reasoning <level>`; running sessions
+           answer {deferred:true}; a guarded model answers
+           confirm_required until confirm_expensive_model. */
+        const key = String(p.key ?? "");
+        const value = String(p.value ?? "");
+        const sid = String(p.session_id ?? "");
+        this.configSetCalls.push({
+          key,
+          value,
+          session_id: sid,
+          confirm_expensive_model: p.confirm_expensive_model === true,
+        });
+        if (key === "model") {
+          let modelId = "";
+          let provider = "";
+          let reasoning = "";
+          const tokens = value.split(/\s+/).filter(Boolean);
+          for (let i = 0; i < tokens.length; i++) {
+            const t = tokens[i];
+            if (t === "--provider") provider = tokens[++i] ?? "";
+            else if (t === "--reasoning") reasoning = tokens[++i] ?? "";
+            else if (!t.startsWith("--") && !modelId) modelId = t;
+          }
+          if (!modelId)
+            return Promise.reject(new RpcError(4002, "model value required"));
+          if (
+            this.confirmModels.has(modelId) &&
+            p.confirm_expensive_model !== true
+          )
+            return Promise.resolve({
+              key,
+              value: modelId,
+              confirm_required: true,
+              confirm_message: `${modelId} is a paid model — confirm?`,
+              scope: "session",
+            });
+          if (this.runningSids.has(sid)) {
+            /* The stash, not a live write: `_stash_pending_model_switch`
+               parks the parsed args; the session's effective model changes
+               only when the next turn applies it (#92 review). */
+            this.pendingSwitches.set(sid, {
+              model: modelId,
+              provider,
+              reasoning,
+            });
+            return Promise.resolve({
+              key,
+              value: modelId,
+              scope: "session",
+              deferred: true,
+            });
+          }
+          this.sessionModels.set(sid, modelId);
+          if (provider) this.sessionProviders.set(sid, provider);
+          if (reasoning) this.sessionEfforts.set(sid, reasoning);
+          return Promise.resolve({ key, value: modelId, scope: "session" });
+        }
+        if (key === "fast") {
+          if (this.fastError) return Promise.reject(this.fastError);
+          const v =
+            value === "on" || value === "fast"
+              ? "fast"
+              : value === "off" || value === "normal"
+                ? "normal"
+                : undefined;
+          if (!v)
+            return Promise.reject(
+              new RpcError(4002, `unknown fast mode: ${value}`),
+            );
+          /* `_set_fast` has no running check — it mutates the live session
+             mid-turn and 4002s only for an unknown mode or a model whose
+             catalog caps say no fast tier (#92 review). */
+          const cur = this.sessionModels.get(sid) ?? this.defaultModel;
+          const caps = this.modelProviders
+            .flatMap((pr) => Object.entries(pr.capabilities ?? {}))
+            .find(([id]) => id === cur)?.[1];
+          if (caps && caps.fast === false)
+            return Promise.reject(
+              new RpcError(4002, "fast mode is not available for this model"),
+            );
+          this.sessionFast.set(sid, v === "fast");
+          return Promise.resolve({ key, value: v, scope: "session" });
+        }
+        if (key === "reasoning") {
+          this.sessionEfforts.set(sid, value);
+          return Promise.resolve({ key, value, scope: "session" });
+        }
+        return Promise.resolve({ key, value });
+      }
       case "slash.exec": {
         const command = String(p.command ?? "");
         this.slashCommands.push(command);
@@ -354,6 +566,7 @@ export class FakeGateway implements GatewayLike {
     sid: string,
     opts: { text?: string; status?: string; error?: string } = {},
   ) {
+    this.runningSids.delete(sid);
     this.emit(sid, "message.complete", {
       text: opts.text ?? "done",
       status: opts.status ?? "complete",

@@ -217,7 +217,10 @@ export type HireDraft = {
   name: string;
   role: string;
   instructions: string;
+  /** Engine model id — opaque, may contain `/` (#92 AC-8). */
   model: string;
+  /** The model's provider — ids are unique only per provider. */
+  provider?: string;
 };
 /**
  * What the Edit employee dialog hands back on Save (#123). Engine fields are
@@ -295,7 +298,7 @@ export type StatusComponent = {
   detail?: string;
 };
 
-/* Sidebar badge per employee: running turns (blue) / turns waiting on Oscar (amber). */
+/* Sidebar badge per employee: running turns (blue) / turns waiting on the user (amber). */
 export type EmpBadge = { running?: number; approvals?: number };
 
 /* People (non-employee) as display metadata for avatars/names. Passed IN from the app.
@@ -311,6 +314,9 @@ export type Human = {
 export type EmpFn = (id: string) => Employee | undefined;
 /* Lookup used across surfaces: human (non-employee) by id. */
 export type HumanFn = (id: string) => Human | undefined;
+/* The signed-in human's author id — surfaces resolve the viewer's display
+   name via `human(VIEWER_ID)` so it always reads the live identity (#118). */
+export const VIEWER_ID = "user";
 
 /* Theme: light / dark / follow the OS. State lives in the app; ThemeToggle is presentational. */
 export type Theme = "light" | "dark" | "system";

@@ -110,6 +110,15 @@
           "model": {
             "type": "string"
           },
+          "provider": {
+            "type": "string"
+          },
+          "effort": {
+            "type": "string"
+          },
+          "fast": {
+            "type": "boolean"
+          },
           "mcpServers": {
             "type": "array",
             "items": {
@@ -542,6 +551,15 @@
                         },
                         "model": {
                           "type": "string"
+                        },
+                        "provider": {
+                          "type": "string"
+                        },
+                        "effort": {
+                          "type": "string"
+                        },
+                        "fast": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -620,6 +638,44 @@
                     },
                     "type": {
                       "type": "string",
+                      "const": "session.note"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "text"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "sessionId",
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "type": {
+                      "type": "string",
                       "const": "turn.started"
                     },
                     "payload": {
@@ -631,6 +687,15 @@
                         },
                         "model": {
                           "type": "string"
+                        },
+                        "provider": {
+                          "type": "string"
+                        },
+                        "effort": {
+                          "type": "string"
+                        },
+                        "fast": {
+                          "type": "boolean"
                         },
                         "ref": {
                           "type": "string"
@@ -1445,6 +1510,15 @@
               },
               "model": {
                 "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "fast": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -1683,6 +1757,9 @@
           "model": {
             "type": "string"
           },
+          "provider": {
+            "type": "string"
+          },
           "detail": {
             "type": "object",
             "propertyNames": {
@@ -1848,7 +1925,11 @@
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
-        "properties": {},
+        "properties": {
+          "refresh": {
+            "type": "boolean"
+          }
+        },
         "additionalProperties": false
       },
       "result": {
@@ -1870,6 +1951,18 @@
                 "provider": {
                   "type": "string"
                 },
+                "efforts": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "defaultEffort": {
+                  "type": "string"
+                },
+                "fast": {
+                  "type": "boolean"
+                },
                 "detail": {
                   "type": "object",
                   "propertyNames": {
@@ -1886,6 +1979,28 @@
           },
           "default": {
             "type": "string"
+          },
+          "defaultProvider": {
+            "type": "string"
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -1908,6 +2023,15 @@
           "model": {
             "type": "string",
             "minLength": 1
+          },
+          "provider": {
+            "type": "string"
+          },
+          "effort": {
+            "type": "string"
+          },
+          "fast": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1923,6 +2047,18 @@
           "model": {
             "type": "string",
             "minLength": 1
+          },
+          "provider": {
+            "type": "string"
+          },
+          "effort": {
+            "type": "string"
+          },
+          "fast": {
+            "type": "boolean"
+          },
+          "deferred": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2038,6 +2174,15 @@
                   },
                   "model": {
                     "type": "string"
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "effort": {
+                    "type": "string"
+                  },
+                  "fast": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -2116,6 +2261,44 @@
               },
               "type": {
                 "type": "string",
+                "const": "session.note"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "seq",
+              "sessionId",
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
                 "const": "turn.started"
               },
               "payload": {
@@ -2127,6 +2310,15 @@
                   },
                   "model": {
                     "type": "string"
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "effort": {
+                    "type": "string"
+                  },
+                  "fast": {
+                    "type": "boolean"
                   },
                   "ref": {
                     "type": "string"

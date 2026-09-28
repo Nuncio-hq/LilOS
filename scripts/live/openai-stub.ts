@@ -16,7 +16,9 @@ const reply =
 
 const sse = (chunks: string[]) => chunks.join("");
 
-Bun.serve({
+const server = Bun.serve({
+  /* `0` = kernel picks a free port — live scripts pass it and read the
+     bound port off this line so a stale process can't shadow the stub. */
   port,
   hostname: "127.0.0.1",
   async fetch(req) {
@@ -32,6 +34,13 @@ Bun.serve({
         model?: string;
         stream?: boolean;
         messages?: { content?: unknown }[];
+        /* #92: the pick fields live scripts assert on — fast tier rides
+           `service_tier` (OpenAI/xAI) or `speed` (Anthropic); effort rides
+           `reasoning_effort` (or a `reasoning` object on Anthropic-style). */
+        service_tier?: string;
+        speed?: string;
+        reasoning_effort?: string;
+        reasoning?: { effort?: string };
       };
       const model = body.model ?? "stub-model";
       // Live-image runs (issue #31): record whether the request carried image
@@ -50,7 +59,7 @@ Bun.serve({
           .map((m) => (typeof m.content === "string" ? m.content : ""))
           .join(" ")
           .slice(0, 300);
-        const line = `${JSON.stringify({ image_parts: images.length, content_blocks: parts.length, text_sample: textSample })}\n`;
+        const line = `${JSON.stringify({ model, service_tier: body.service_tier, speed: body.speed, reasoning_effort: body.reasoning_effort ?? body.reasoning?.effort, image_parts: images.length, content_blocks: parts.length, text_sample: textSample })}\n`;
         const { appendFileSync } = await import("node:fs");
         appendFileSync(process.env.STUB_REQUEST_LOG, line);
       }
@@ -91,4 +100,4 @@ Bun.serve({
     return new Response("openai-stub", { status: 404 });
   },
 });
-console.log(`openai-stub listening on http://127.0.0.1:${port}/v1`);
+console.log(`openai-stub listening on http://127.0.0.1:${server.port}/v1`);

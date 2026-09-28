@@ -35,6 +35,11 @@ PR does not exist.
   `cwd`, the relay stores it (nullable), and the engine sees it only as
   `cwd` on `session.start`.** Not: a per-employee fixed workdir, or folder
   moves inside a session (#10). — #113
+- **D-#118 The signed-in human's identity (name, company, avatar colour) is
+  relay-owned profile data: `profile.get`/`profile.update` on a singleton
+  `profile` row (`settings.*` is #92's KV namespace); every surface reads it, nothing is hardcoded.** Prefill
+  comes from `host.user` (the OS account's full name). Not: a `ME` constant
+  in the web app, or identity fields on the employee record. — #118
 
 ## Web
 - **D-#3 Web: React 19 + Vite + Tailwind v4 + shadcn (base-nova) + AI
@@ -91,12 +96,17 @@ PR does not exist.
   Not: Hermes-specific names or types in `contracts`/`engine-fake`/
   `engine-conformance`, `if engine == "..."` branches, server-to-client
   request frames. — #6 · PR #39
-- **D-#8 Hiring, the model picker and persona edits speak `agents.*` /
+- **D-#8 A model is `{provider?, id}` — never a joined `provider/model`
+  string — carrying the engine's per-model `efforts`/`fast`; the picker's
+  hide/show list is LilOS-owned (relay `settings`, one list for all
+  employees). Hiring, the picker and persona edits speak `agents.*` /
   `models.*`: `agents.update` writes the fields the engine advertises
   (`detail.updatable`); there is still no profile delete — firing removes
-  only the LilOS employee record.** Not: LilOS-owned profile CRUD, a persona
-  read-only wire (was #8), or a delete method "for cleanup".
-  — #8, #123 · PR #46, #146
+  only the LilOS employee record.** Not: `splitModelRef`-style splitting, a
+  sticky last-used model for new sessions (the engine owns defaults, #85), a
+  hide list in localStorage or engine state, LilOS-owned profile CRUD, a
+  persona read-only wire (was #8), or a delete method "for cleanup".
+  — #8, #92, #123 · PR #46, #129, #146
 - **D-#26 The harness supervises the engine and is the only thing that talks
   to it.** It owns launch (`hermes serve` on 127.0.0.1 with a generated
   token, via `packages/engine-hermes`), crash restart with bounded backoff,

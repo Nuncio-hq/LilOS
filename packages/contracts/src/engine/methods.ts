@@ -52,7 +52,14 @@ export const SessionStartParams = z.strictObject({
   /** Engine-side agent/profile id the session runs as. */
   agent: z.string().min(1),
   cwd: z.string().min(1),
+  /** Opaque model id (may contain `/`) — never a joined `provider/model`. */
   model: z.string().optional(),
+  /** Provider slug when the engine is multi-provider (with `model`). */
+  provider: z.string().optional(),
+  /** Session reasoning-effort level, when the picker pinned one. */
+  effort: z.string().optional(),
+  /** Fast/priority tier the session should run on. */
+  fast: z.boolean().optional(),
   /** ACP-shaped MCP server list; the LilOS MCP server rides in here (#23). */
   mcpServers: z.array(McpServer).optional(),
 });
@@ -129,6 +136,10 @@ export const SessionSnapshot = z.object({
   usage: Usage.optional(),
   /** Model the session is currently pinned to, when the engine tracks it. */
   model: z.string().optional(),
+  /** The rest of the session's pick: provider slug, effort level, fast tier. */
+  provider: z.string().optional(),
+  effort: z.string().optional(),
+  fast: z.boolean().optional(),
 });
 export type SessionSnapshot = z.infer<typeof SessionSnapshot>;
 

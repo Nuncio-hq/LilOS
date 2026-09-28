@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { Capability } from "../engine/capabilities";
-import { ModelOption } from "../engine/models";
+import { ModelOption, ModelProvider } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
 import { ChannelMessage } from "../index";
 
@@ -78,6 +78,10 @@ export const Conversation = z.object({
    * at `session.start` before a binding exists. Absent = engine default.
    */
   model: z.string().min(1).optional(),
+  /** The rest of the pinned pick — provider slug, effort level, fast tier. */
+  provider: z.string().optional(),
+  effort: z.string().optional(),
+  fast: z.boolean().optional(),
   /**
    * The folder the session works in (issue #113), picked at open time. The
    * engine only ever sees it as `session.start { cwd }`; absent = the
@@ -106,6 +110,20 @@ export const RecentFolder = z.object({
   lastUsedAt: Timestamp,
 });
 export type RecentFolder = z.infer<typeof RecentFolder>;
+
+/**
+ * The signed-in human's identity — name, company name, avatar colour
+ * (#118). LilOS-owned domain data (D-#25): the relay stores it and every
+ * surface rendering `ME` or the company reads it. All fields optional — an
+ * untouched install stores nothing and the app prefills from the OS.
+ */
+export const ProfileSettings = z.object({
+  userName: z.string().min(1).optional(),
+  companyName: z.string().min(1).optional(),
+  /** Tailwind `bg-*` class backing the human's avatar chip. */
+  avatarColor: z.string().min(1).optional(),
+});
+export type ProfileSettings = z.infer<typeof ProfileSettings>;
 
 export const AuthorKind = z.enum(["user", "employee", "system"]);
 export type AuthorKind = z.infer<typeof AuthorKind>;
@@ -138,6 +156,10 @@ export const AppMessage = z.object({
    * passed through by the harness). Absent on user/system lines.
    */
   model: z.string().min(1).optional(),
+  /** The turn's provider slug / effort level / fast tier, when reported. */
+  provider: z.string().optional(),
+  effort: z.string().optional(),
+  fast: z.boolean().optional(),
 });
 export type AppMessage = z.infer<typeof AppMessage>;
 
@@ -235,7 +257,10 @@ export const EngineHostStatus = z.object({
   capabilities: z.array(Capability).optional(),
   /** The engine's selectable models (`models.list`), grouped by `provider`. */
   models: z.array(ModelOption).optional(),
-  /** The engine's default model id (`models.list.default`). */
+  /** Provider rows from the same `models.list` (group headers in the picker). */
+  providers: z.array(ModelProvider).optional(),
+  /** The engine's default model id (`models.list.default`) and its provider. */
   defaultModel: z.string().optional(),
+  defaultProvider: z.string().optional(),
 });
-export type EngineHostStatus = z.infer<typeof EngineHostState>;
+export type EngineHostStatus = z.infer<typeof EngineHostStatus>;

@@ -475,8 +475,8 @@ export function PrPanel({
           <div className="space-y-4">
             {pr.comments.map((c, i) => (
               <div key={i} className="flex gap-3">
-                {c.from === "oscar" && human("oscar") ? (
-                  <HumanAvatar human={human("oscar")!} />
+                {human(c.from) ? (
+                  <HumanAvatar human={human(c.from)!} />
                 ) : (
                   <HermesAvatar className="size-8" />
                 )}
@@ -485,11 +485,9 @@ export function PrPanel({
                     <span className="font-medium">
                       {/* Real forge comments carry the gh login; mock ones an
                           employee id — show the comment's own author. */}
-                      {c.from === "oscar"
-                        ? "Oscar"
-                        : c.from === lead?.id
-                          ? author
-                          : (human(c.from)?.name ?? c.from)}
+                      {c.from === lead?.id
+                        ? author
+                        : (human(c.from)?.name ?? c.from)}
                     </span>
                     <span className="text-[12px] text-muted-foreground">
                       {c.time}

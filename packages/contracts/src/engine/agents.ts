@@ -62,8 +62,11 @@ export const AgentsCreateParams = z.strictObject({
   description: z.string().optional(),
   /** Persona text to seed the profile with. */
   soul: z.string().optional(),
-  /** Model id to pin on the new agent (from `models.list`). */
+  /** Model id to pin on the new agent (from `models.list`). Opaque — may
+      itself contain `/`; never a joined `provider/model` ref (D-#8). */
   model: z.string().optional(),
+  /** Provider slug when `models.list` grouped the model under one. */
+  provider: z.string().optional(),
   /** Engine-specific create options (clone sources, provider ids, ...). */
   detail: z.record(z.string(), z.unknown()).optional(),
 });

@@ -15,6 +15,7 @@ import {
   IMAGE_PROMPT_CAPABILITY,
   type InterruptParams,
   type KnownCapability,
+  type ModelsListParams,
   type PromptParams,
   type RequestRespondParams,
   RPC_ERRORS,
@@ -33,6 +34,7 @@ import {
   DEFAULT_MODEL,
   type FakeAgent,
   MODEL_CATALOG,
+  REFRESH_MODEL,
   SEED_AGENTS,
 } from "./catalog.js";
 import { type McpClient, startMcpServer } from "./mcp.js";
@@ -81,6 +83,18 @@ interface FakeSession {
   agent: string;
   cwd: string;
   model?: string;
+  /** The rest of the session's pick (issue #92): provider, effort, fast. */
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
+  /** A pick taken mid-turn — model/provider/effort apply at the next turn
+      (#92 AC-4); fast is already live on the session (engines mutate the
+      running tier, no deferral). */
+  pendingPick?: {
+    model: string;
+    provider?: string;
+    effort?: string;
+  };
   mcpServers: unknown[];
   /** Spawned lazily on first mcp__<server>__<tool> step — a session that never drives surfaces costs zero children. */
   mcpClients: Map<string, McpClient>;
@@ -220,7 +234,7 @@ export class FakeEngine {
       case "agents.update":
         return this.agentsUpdate(parsed.data as AgentsUpdateParams);
       case "models.list":
-        return this.modelsList();
+        return this.modelsList(parsed.data as ModelsListParams);
       case "session.setModel":
         return this.sessionSetModel(parsed.data as SessionSetModelParams);
       case "session.setTitle":
@@ -271,6 +285,9 @@ export class FakeEngine {
               description:
                 "List selectable models and pin a session's model for its next turn.",
               methods: ["models.list", "session.setModel"],
+              /* #92: the picker shows Refresh / effort / ⚡Fast only when the
+                 engine declares them — the fake declares all three. */
+              detail: { refreshable: true, effort: true, fast: true },
             },
           ]
         : []),
@@ -298,12 +315,16 @@ export class FakeEngine {
         `no agent ${p.agent} — hire it via agents.create first`,
       );
     const id = `s-${this.sessionNamespace}-${++this.sessionCounter}`;
+    const picked = MODEL_CATALOG.find((m) => m.id === (p.model ?? spec.model));
     const s: FakeSession = {
       ref: id,
       id,
       agent: p.agent,
       cwd: p.cwd,
       model: p.model ?? spec.model,
+      provider: p.provider ?? picked?.provider,
+      effort: p.effort ?? picked?.defaultEffort,
+      fast: p.fast,
       mcpServers: p.mcpServers ?? [],
       mcpClients: new Map(),
       branch: `work/${p.agent}-${id}`,
@@ -325,6 +346,9 @@ export class FakeEngine {
       agent: p.agent,
       cwd: p.cwd,
       model: s.model,
+      provider: s.provider,
+      effort: s.effort,
+      fast: s.fast,
     });
     this.setState(s, "idle");
     return { sessionId: id };
@@ -522,10 +546,18 @@ export class FakeEngine {
     return { agent: { ...a } satisfies AgentDescriptor };
   }
 
-  private modelsList() {
+  private modelsList(p: ModelsListParams) {
+    /* refresh:true re-probes the catalog — the fake gains REFRESH_MODEL
+       deterministically so "a new model appears without restart" is
+       testable (#92 AC-6). */
+    const catalog = p.refresh
+      ? [...MODEL_CATALOG, REFRESH_MODEL]
+      : MODEL_CATALOG;
     return {
-      models: MODEL_CATALOG.map((m) => ({ ...m })),
+      models: catalog.map((m) => ({ ...m })),
       default: DEFAULT_MODEL,
+      defaultProvider: "fake",
+      providers: [{ id: "fake", name: "Fake" }],
     };
   }
 
@@ -533,13 +565,95 @@ export class FakeEngine {
     const s = this.require(p.sessionId);
     if (s.state === "closed")
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
-    if (!MODEL_CATALOG.some((m) => m.id === p.model))
+    /* Model ids are opaque — `p.model` is matched verbatim, never split on
+       "/" (issue #92 AC-8); `provider` is a separate field end to end. */
+    const m = [...MODEL_CATALOG, REFRESH_MODEL].find((x) => x.id === p.model);
+    if (!m)
       throw new RpcError(
         RPC_ERRORS.MODEL_NOT_FOUND,
         `no model ${p.model} — see models.list`,
       );
+    if (p.effort !== undefined && !(m.efforts ?? []).includes(p.effort))
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        `model ${p.model} has no effort level "${p.effort}"`,
+      );
+    if (p.fast === true && !m.fast)
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        `model ${p.model} has no fast tier`,
+      );
+    /* A pick mid-turn defers the model leg to the next turn — the ack
+       carries the requested values plus `deferred` (issue #92 AC-4). The
+       fast leg applies LIVE (engines that support fast mutate the running
+       session's tier — no running check), so `s.fast` moves now; the stash
+       carries it so the deferred apply can't drop it at turn start. */
+    if (s.turn) {
+      s.pendingPick = {
+        model: p.model,
+        ...(p.provider !== undefined ? { provider: p.provider } : {}),
+        ...(p.effort !== undefined ? { effort: p.effort } : {}),
+      };
+      if (p.fast !== undefined) s.fast = p.fast;
+      return {
+        model: p.model,
+        ...(p.provider !== undefined
+          ? { provider: p.provider }
+          : m.provider !== undefined
+            ? { provider: m.provider }
+            : {}),
+        ...(p.effort !== undefined ? { effort: p.effort } : {}),
+        ...(p.fast !== undefined ? { fast: p.fast } : {}),
+        deferred: true,
+      };
+    }
+    return this.applyPick(s, p);
+  }
+
+  /* Apply a validated pick to the session — a bare model switch resets
+     effort/fast to the picked model's defaults (the old model's levels
+     don't transfer); an explicit pick wins. */
+  private applyPick(
+    s: FakeSession,
+    p: {
+      model: string;
+      provider?: string;
+      effort?: string;
+      fast?: boolean;
+    },
+  ) {
+    const m = [...MODEL_CATALOG, REFRESH_MODEL].find((x) => x.id === p.model);
+    if (!m)
+      throw new RpcError(
+        RPC_ERRORS.MODEL_NOT_FOUND,
+        `no model ${p.model} — see models.list`,
+      );
+    if (p.effort !== undefined && !(m.efforts ?? []).includes(p.effort))
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        `model ${p.model} has no effort level "${p.effort}"`,
+      );
+    if (p.fast === true && !m.fast)
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        `model ${p.model} has no fast tier`,
+      );
+    const prevModel = s.model;
     s.model = p.model;
-    return { model: s.model };
+    s.provider = p.provider ?? m.provider;
+    s.effort = p.effort ?? m.defaultEffort;
+    s.fast =
+      p.fast !== undefined
+        ? p.fast
+        : p.model === prevModel
+          ? s.fast
+          : undefined;
+    return {
+      model: s.model,
+      provider: s.provider,
+      effort: s.effort,
+      fast: s.fast,
+    };
   }
 
   private sessionSetTitle(p: SessionSetTitleParams) {
@@ -562,6 +676,24 @@ export class FakeEngine {
     images?: { mimeType: string; sizeBytes: number }[],
     ref?: string,
   ) {
+    // A pick deferred while the previous turn ran lands before the new turn
+    // reads model/effort/fast for `turn.started` (#92 AC-4). Every turn path
+    // funnels here — `prompt` and steered follow-ups via `pumpSteers`. The
+    // fast tier was already applied at pick time — pass it through so the
+    // apply can't reset it. If the stashed model no longer applies (it left
+    // the catalog), post a note and run the turn on the current model — a
+    // failed deferred apply must not jam or fail the prompt (#92 review).
+    if (s.pendingPick) {
+      const pick = s.pendingPick;
+      s.pendingPick = undefined;
+      try {
+        this.applyPick(s, { ...pick, fast: s.fast });
+      } catch {
+        this.emit(s, "session.note", {
+          text: `Couldn't switch to ${pick.model} — staying on ${s.model ?? "the default model"}.`,
+        });
+      }
+    }
     const turnId = `t${++this.turnCounter}`;
     const script = scriptFor(
       s.agent,
@@ -578,6 +710,9 @@ export class FakeEngine {
     this.emit(s, "turn.started", {
       turnId,
       model: s.model,
+      provider: s.provider,
+      effort: s.effort,
+      fast: s.fast,
       ...(ref ? { ref } : {}),
     });
     this.setState(s, "running");
@@ -791,6 +926,9 @@ export class FakeEngine {
       turn: s.turn ? { turnId: s.turn.turnId, phase: s.turn.phase } : undefined,
       usage: s.usage,
       model: s.model,
+      provider: s.provider,
+      effort: s.effort,
+      fast: s.fast,
     };
   }
 

@@ -759,7 +759,7 @@ describe("workspace harness", () => {
         channelId: channel.id,
         text: "describe the repo",
       });
-      // Oscar sends a screenshot: base64 bytes on messages.post.
+      // The user sends a screenshot: base64 bytes on messages.post.
       const png =
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
       const { message } = await w.user.request<{ message: AppMessage }>(

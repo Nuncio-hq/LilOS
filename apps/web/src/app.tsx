@@ -26,7 +26,7 @@ import {
 } from "./lib/employees";
 import { useAtom } from "./lib/hooks";
 import { toUiEmployee } from "./lib/mapping";
-import { ME } from "./lib/me";
+import { currentCompany, currentMe, osFullName, profile } from "./lib/me";
 import {
   openConversationFromPath,
   routeForConversation,
@@ -37,6 +37,7 @@ import {
   booted,
   engine,
   engineDefaultModel,
+  engineDefaultProvider,
   engineModels,
   navOpen,
   relay,
@@ -52,6 +53,9 @@ function AppShell() {
   const relayState = useAtom(relay.state);
   const [statusOpen, setStatusOpen] = useState(false);
   const nav = useAtom(navOpen);
+  // #118: identity surfaces re-render when the profile or OS name lands.
+  useAtom(profile);
+  useAtom(osFullName);
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const toastMsg = useAtom(toast);
@@ -101,6 +105,7 @@ function AppShell() {
   const canHire = desc?.capabilities.some((c) => c.id === "agents") ?? false;
   const catalog = useAtom(engineModels);
   const defaultModel = useAtom(engineDefaultModel);
+  const defaultProvider = useAtom(engineDefaultProvider);
   const [hireOpen, setHireOpen] = useState(false);
   const [hireError, setHireError] = useState<string | null>(null);
   const [hirePending, setHirePending] = useState(false);
@@ -111,11 +116,20 @@ function AppShell() {
   const [engineProfiles, setEngineProfiles] = useState<EngineProfile[]>([]);
   const hireTemplates = useMemo(
     () =>
-      HIRE_TEMPLATES.map((t) => ({
-        ...t,
-        model: t.model || defaultModel || catalog[0]?.id || "",
-      })),
-    [catalog, defaultModel],
+      HIRE_TEMPLATES.map((t) => {
+        const model = t.model || defaultModel || catalog[0]?.id || "";
+        /* The model is `{provider?, id}`: a template that left it unset
+           inherits the engine default's provider; a bare-id template
+           resolves to the first catalog row with that id (#92 AC-8). */
+        const row =
+          !t.model && model === defaultModel && defaultProvider !== undefined
+            ? catalog.find(
+                (m) => m.id === model && m.provider === defaultProvider,
+              )
+            : catalog.find((m) => m.id === model);
+        return { ...t, model, provider: row?.provider };
+      }),
+    [catalog, defaultModel, defaultProvider],
   );
   const openHire = () => {
     setHireError(null);
@@ -219,7 +233,8 @@ function AppShell() {
         realApp
         navOpen={nav}
         hiddenWhenClosed={false}
-        me={ME}
+        me={currentMe()}
+        company={currentCompany()}
         companyChannels={[]}
         projects={[]}
         folders={[]}
