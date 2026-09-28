@@ -67,6 +67,7 @@ import type {
   ModelOption,
   ModelPickerExtras,
   Msg,
+  OsEditor,
   Project,
   Thread,
   WbTab,
@@ -74,6 +75,7 @@ import type {
 } from "../types";
 import { sessionArtifacts } from "../workbench/artifacts";
 import type { LiveSurfaces } from "../workbench/live";
+import { OpenPathButton } from "../workbench/open-path";
 import { Workbench } from "../workbench/workbench";
 import { SessionUsage } from "./session-usage";
 
@@ -101,6 +103,8 @@ export function FocusView({
   onRewind,
   onModel,
   picker,
+  defaultModel,
+  defaultProvider,
   accept,
   maxFileSize,
   onAttachError,
@@ -151,6 +155,10 @@ export function FocusView({
   onModel?: (c: ModelChoice) => void;
   /* Refresh / Edit models… / provider names — each renders only with its handler. */
   picker?: ModelPickerExtras;
+  /* The engine's `models.list.default` — the unpinned-employee pick (#92 AC-5). */
+  defaultModel?: string;
+  /* The default's provider — a `{provider?, id}` pair disambiguates a shared id. */
+  defaultProvider?: string;
   say?: (t: string) => void;
   models?: ModelOption[];
   repoFiles?: string[];
@@ -181,7 +189,7 @@ export function FocusView({
   );
   const [follow, setFollow] = useState(true);
   const isDM = !!channel.dm;
-  const model = thread.model ?? lead?.model ?? models?.[0]?.id;
+  const model = thread.model ?? lead?.model ?? defaultModel ?? models?.[0]?.id;
   const live = thread.replies.find((r) => r.live);
   const lastStep = live?.steps?.[live.steps.length - 1];
   const status: ChatStatus = running
@@ -232,6 +240,22 @@ export function FocusView({
   // Plan tray opens while the agent works and folds away when the turn ends (user can still toggle).
   const [planOpen, setPlanOpen] = useState(running);
   useEffect(() => setPlanOpen(running), [running]);
+  /* Header "Open folder" affordance (issue #110): editors on the session's
+     host; the button renders only when os.open exists there (D-#19). */
+  const wsCwd = thread.ws?.cwd;
+  const [editors, setEditors] = useState<OsEditor[]>([]);
+  useEffect(() => {
+    let off = false;
+    if (host?.osEditors && wsCwd)
+      void host
+        .osEditors()
+        .then((e) => !off && setEditors(e))
+        .catch(() => {});
+    else setEditors([]);
+    return () => {
+      off = true;
+    };
+  }, [wsCwd]);
   const where = isDM ? "Direct" : (project?.name ?? "Company");
   const chLabel = isDM ? channel.name : `#${channel.name}`;
   /* The Workbench exists only where there is a real folder to read (D-#19):
@@ -342,6 +366,22 @@ export function FocusView({
                 <EyeIcon className="size-3" />
                 read-only
               </span>
+            )}
+            {thread.ws && host?.osOpen && (
+              <OpenPathButton
+                editors={editors}
+                onOpen={(app) =>
+                  void host
+                    .osOpen?.(thread.ws!.cwd, ".", app)
+                    .catch((e) =>
+                      say?.(
+                        `Open failed — ${e instanceof Error ? e.message : String(e)}`,
+                      ),
+                    )
+                }
+                label={`${thread.ws.cwd} — open in an editor or reveal in Finder`}
+                className="hidden shrink-0 md:inline-flex"
+              />
             )}
           </div>
         </div>
@@ -462,6 +502,7 @@ export function FocusView({
                     key={r.id ?? i}
                     r={r}
                     emp={emp}
+                    human={human}
                     last={i === thread.replies.length - 1}
                     onRetry={onRetry}
                     models={models}
@@ -476,6 +517,7 @@ export function FocusView({
                           work={work}
                           repo={channel.repo}
                           emp={emp}
+                          human={human}
                           resolved={resolved}
                           setResolved={setResolved}
                           onStart={onStart}
@@ -604,7 +646,13 @@ export function FocusView({
               status={status}
               choice={
                 models?.length
-                  ? sessionChoice(thread, lead?.model, models)
+                  ? sessionChoice(
+                      thread,
+                      lead?.model,
+                      models,
+                      defaultModel,
+                      defaultProvider,
+                    )
                   : undefined
               }
               models={models}

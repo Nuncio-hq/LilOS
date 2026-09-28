@@ -24,5 +24,11 @@ export const HOST_ERRORS = {
   /** `gh` CLI failed: missing, unauthenticated, or the forge rejected the op
       (stderr is carried in error data `detail`). */
   GH_FAILED: -32104,
+  /** `os.open` path resolves outside the given session root. */
+  OUTSIDE_ROOT: -32105,
+  /** `os.open` asked for an app that isn't detected on this host. */
+  APP_NOT_FOUND: -32106,
+  /** `os.open` launch failed (argv exec error; detail in error data). */
+  OPEN_FAILED: -32107,
 } as const;
 export type HostErrorCode = (typeof HOST_ERRORS)[keyof typeof HOST_ERRORS];

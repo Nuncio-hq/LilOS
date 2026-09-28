@@ -54,6 +54,7 @@ import type {
   EmpFn,
   Employee,
   EngineProfile,
+  FileMention,
   Folder,
   HumanFn,
   ModelChoice,
@@ -185,6 +186,8 @@ export function EmployeeHome({
   onModel,
   picker,
   composerNote,
+  mentionables,
+  onSearchFiles,
   draft: composerDraft,
   onDraftChange,
 }: {
@@ -238,6 +241,11 @@ export function EmployeeHome({
   /* Plain reason the engine is unavailable ("Hermes not found at …", #85);
      renders above the composer so a dead engine never looks sendable. */
   composerNote?: ReactNode;
+  /* `@` menu sections (#105): employees listed for mention, and — only when
+     the picked folder is searchable — a file/dir search for the Files
+     section. Both omitted → bare composer like before. */
+  mentionables?: Employee[];
+  onSearchFiles?: (query: string) => Promise<FileMention[]>;
 }) {
   const pickFolder = folders.find((x) => x.id === pick.folder);
   const [filter, setFilter] = useState("");
@@ -500,7 +508,8 @@ export function EmployeeHome({
             ? `New session with ${e.name} in ${folderLabel(pickFolder, folders)}…`
             : `New session with ${e.name}…`
         }
-        employees={[]}
+        employees={mentionables ?? []}
+        onSearchFiles={onSearchFiles}
         hint={wsHint(pickFolder, pick, !onWorktree)}
         onSend={(t, files) => onSend(t, pick, files)}
         draft={composerDraft}
@@ -559,6 +568,7 @@ export function EmployeeCard({
   e,
   profiles,
   engineName,
+  ownerName,
   onDM,
   onEdit,
   onSwitchProfile,
@@ -567,6 +577,8 @@ export function EmployeeCard({
   profiles: EngineProfile[];
   /** The engine's own name (`engine-fake`, `hermes`, ...) for the Engine row. */
   engineName?: string;
+  /** The signed-in human's name for the "owned by …" line (#118). */
+  ownerName: string;
   onDM: () => void;
   onEdit?: () => void;
   onSwitchProfile?: (profileId: string) => void;
@@ -580,7 +592,7 @@ export function EmployeeCard({
           <div>
             <div className="font-semibold text-base">{e.name}</div>
             <div className="text-muted-foreground text-xs">
-              {e.role} · owned by Oscar
+              {e.role} · owned by {ownerName}
             </div>
           </div>
           <div className="ml-auto flex gap-1">

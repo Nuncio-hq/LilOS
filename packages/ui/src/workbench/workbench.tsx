@@ -66,6 +66,8 @@ import type {
   HostAccessors,
   HumanFn,
   MergeMethod,
+  OsApp,
+  OsEditor,
   PullRequest,
   Thread,
   WbTab,
@@ -76,6 +78,7 @@ import { buildTree, sessionArtifacts } from "./artifacts";
 import { DiffView } from "./diff-view";
 import { TreeNodes } from "./file-tree-nodes";
 import { LivePreview, type LiveSurfaces, LiveTerminal } from "./live";
+import { OpenPathButton } from "./open-path";
 import { PrPanel } from "./pr-panel";
 
 /* Right-hand workbench of Focus, derived from the session's steps, or — when the session
@@ -145,6 +148,22 @@ export function Workbench({
     diffs: Diff[] | null;
     pr: { pr: PullRequest | null; branch?: string; error?: string } | null;
   } | null>(null);
+  /* Open-in-editor affordances (issue #110): editors detected on this host
+     (os.editors) + one bound os.open call. No os.open → no controls (D-#19);
+     no editors → the menus offer Reveal in Finder only. */
+  const [editors, setEditors] = useState<OsEditor[]>([]);
+  useEffect(() => {
+    let off = false;
+    if (host?.osEditors && liveCwd)
+      void host
+        .osEditors()
+        .then((e) => !off && setEditors(e))
+        .catch(() => {});
+    else setEditors([]);
+    return () => {
+      off = true;
+    };
+  }, [liveCwd]);
   const reloadPr = async () => {
     if (!host?.pr || !liveCwd) return;
     const r = await host.pr(liveCwd).catch(() => null);
@@ -254,6 +273,16 @@ export function Workbench({
       );
   const ghError = (e: unknown) =>
     (e instanceof Error ? e.message : String(e)).slice(0, 160);
+  /* One bound "open this path" for every workbench surface: `line` opens at
+     the diff row's new-file line when the editor takes one; "finder" reveals. */
+  const openPath =
+    host?.osOpen && liveCwd
+      ? (path: string, app: OsApp, line?: number) => {
+          void host
+            .osOpen?.(liveCwd, path, app, line)
+            .catch((e) => say?.(`Open failed — ${ghError(e)}`));
+        }
+      : undefined;
   const prComment =
     liveForge && host?.prComment && liveCwd
       ? async (t: string) => {
@@ -440,7 +469,23 @@ export function Workbench({
                 )}
               </div>
               {shown.map((d) => (
-                <DiffView key={d.path} d={d} />
+                <DiffView
+                  key={d.path}
+                  d={d}
+                  openMenu={
+                    openPath
+                      ? {
+                          editors,
+                          onOpen: (app) => openPath(d.path, app),
+                        }
+                      : undefined
+                  }
+                  onOpenLine={
+                    openPath && editors.length
+                      ? (line) => openPath(d.path, editors[0]!.id, line)
+                      : undefined
+                  }
+                />
               ))}
               {a.commits.length > 0 && (
                 <div className="space-y-2 pt-2">
@@ -499,6 +544,13 @@ export function Workbench({
             <div className="mb-2 flex items-center gap-1.5 text-muted-foreground text-xs">
               <FolderGit2Icon className="size-3.5" />
               <span className="font-mono">{cwd}</span>
+              {openPath && (
+                <OpenPathButton
+                  editors={editors}
+                  onOpen={(app) => openPath(".", app)}
+                  label="Open this folder in an editor or Finder"
+                />
+              )}
               {diffs.length > 0 && (
                 <span>
                   · {plural(diffs.length, "file")}{" "}
@@ -523,6 +575,13 @@ export function Workbench({
                   <span className="min-w-0 truncate font-mono text-muted-foreground">
                     {viewFile.path}
                   </span>
+                  {openPath && (
+                    <OpenPathButton
+                      editors={editors}
+                      onOpen={(app) => openPath(viewFile.path, app)}
+                      label={`Open ${viewFile.path} in an editor or Finder`}
+                    />
+                  )}
                 </div>
                 {viewFile.binary ? (
                   <p className="py-4 text-center text-muted-foreground text-xs">
@@ -572,7 +631,15 @@ export function Workbench({
                 }}
                 className="border-0 text-xs"
               >
-                <TreeNodes node={tree} changed={changed} />
+                <TreeNodes
+                  node={tree}
+                  changed={changed}
+                  openPath={
+                    openPath
+                      ? { editors, onOpen: (p, app) => openPath(p, app) }
+                      : undefined
+                  }
+                />
               </FileTree>
             )}
           </div>

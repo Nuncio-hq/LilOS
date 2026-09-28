@@ -62,6 +62,10 @@ export const conversations = sqliteTable(
       .default("idle"),
     /** Model pinned on the engine session (issue #30); null = engine default. */
     model: text("model"),
+    /** The rest of the session's pick (issue #92): provider slug, effort, fast. */
+    provider: text("provider"),
+    effort: text("effort"),
+    fast: integer("fast", { mode: "boolean" }),
     /** Folder the session runs in (issue #113); null = harness default dir. */
     cwd: text("cwd"),
     title: text("title").notNull().default(""),
@@ -92,6 +96,10 @@ export const messages = sqliteTable(
     attachments: text("attachments"),
     /** Engine `turn.started.model` on employee answers (issue #30). */
     model: text("model"),
+    /** Engine `turn.started` provider / effort / fast on employee answers (#92). */
+    provider: text("provider"),
+    effort: text("effort"),
+    fast: integer("fast", { mode: "boolean" }),
     /** Monotonic per channel; replay cursor (`afterSeq`) points here. */
     seq: integer("seq").notNull(),
     /** Exactly-once write key (#28): retries return the original row. */
@@ -146,4 +154,26 @@ export const asks = sqliteTable(
 export const recentFolders = sqliteTable("recent_folders", {
   path: text("path").primaryKey(),
   lastUsedAt: integer("last_used_at").notNull(),
+});
+
+/**
+ * LilOS-owned key/value settings (#92): the one home for app-level state the
+ * engine doesn't own — e.g. `modelVisibility` (the Edit-models hide list).
+ * `value` is JSON text; `settings.get`/`settings.set` expose it on the wire.
+ */
+export const settings = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});
+
+/**
+ * The signed-in human's profile (#118): one row (`id` = 1) of relay-owned
+ * identity — name, company name, avatar colour. Columns stay NULL until the
+ * user sets them; the app prefills from the OS on an untouched install.
+ */
+export const profile = sqliteTable("profile", {
+  id: integer("id").primaryKey(),
+  userName: text("user_name"),
+  companyName: text("company_name"),
+  avatarColor: text("avatar_color"),
 });

@@ -49,12 +49,14 @@ const BUILDER = {
 };
 const emp: EmpFn = (id) => (id === "builder" ? BUILDER : undefined);
 const human: HumanFn = (id) =>
-  id === "oscar" ? { name: "Oscar", color: "bg-blue-600" } : undefined;
+  id === "ada" || id === "user"
+    ? { name: "Ada", color: "bg-blue-600" }
+    : undefined;
 
 const root: Extract<Msg, { kind: "msg" }> = {
   kind: "msg",
   id: "m1",
-  from: "oscar",
+  from: "ada",
   time: "10:00",
   text: "@builder walk me through the envelope contract",
 };
@@ -83,7 +85,7 @@ const stepTurn: Reply = {
 };
 const humanTurn: Reply = {
   id: "r2",
-  from: "oscar",
+  from: "ada",
   time: "10:05",
   text: "and the PR?",
 };
@@ -250,9 +252,7 @@ describe("issue #19 — one conversation from shared pieces", () => {
     ])
       expect(qp.queryByRole("button", { name })).toBeNull();
     // the cards still render their information — only the actions are gone
-    expect(
-      qp.getByText("Approval needed · only Oscar can answer"),
-    ).toBeTruthy();
+    expect(qp.getByText("Approval needed · only Ada can answer")).toBeTruthy();
     expect(qp.getByText(/Builder asks to start work/)).toBeTruthy();
     // not-sent tray lists items but its Send/Remove actions need handlers
     expect(quietPanel.container.querySelector("[data-notsent]")).toBeTruthy();

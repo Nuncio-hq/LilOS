@@ -35,6 +35,11 @@ PR does not exist.
   `cwd`, the relay stores it (nullable), and the engine sees it only as
   `cwd` on `session.start`.** Not: a per-employee fixed workdir, or folder
   moves inside a session (#10). — #113
+- **D-#118 The signed-in human's identity (name, company, avatar colour) is
+  relay-owned profile data: `profile.get`/`profile.update` on a singleton
+  `profile` row (`settings.*` is #92's KV namespace); every surface reads it, nothing is hardcoded.** Prefill
+  comes from `host.user` (the OS account's full name). Not: a `ME` constant
+  in the web app, or identity fields on the employee record. — #118
 
 ## Web
 - **D-#3 Web: React 19 + Vite + Tailwind v4 + shadcn (base-nova) + AI
@@ -91,10 +96,13 @@ PR does not exist.
   Not: Hermes-specific names or types in `contracts`/`engine-fake`/
   `engine-conformance`, `if engine == "..."` branches, server-to-client
   request frames. — #6 · PR #39
-- **D-#8 Hiring and the model picker speak `agents.*` / `models.*`; the
-  protocol has no profile delete — firing removes only the LilOS employee
-  record.** Not: LilOS-owned profile CRUD, or a delete method "for cleanup".
-  — #8 · PR #46
+- **D-#8 A model is `{provider?, id}` — never a joined `provider/model`
+  string — carrying the engine's per-model `efforts`/`fast`; the picker's
+  hide/show list is LilOS-owned (relay `settings`, one list for all
+  employees). Hiring still speaks `agents.*`; the protocol has no profile
+  delete.** Not: `splitModelRef`-style splitting, a sticky last-used model
+  for new sessions (the engine owns defaults, #85), a hide list in
+  localStorage or engine state, LilOS-owned profile CRUD. — #8 · #92 · PR #129
 - **D-#26 The harness supervises the engine and is the only thing that talks
   to it.** It owns launch (`hermes serve` on 127.0.0.1 with a generated
   token, via `packages/engine-hermes`), crash restart with bounded backoff,
@@ -128,6 +136,12 @@ PR does not exist.
   shelling out to `gh` with the signed-in user's auth; the merge result is the
   re-read PR state, not gh's stdout.** Not: a GitHub token stored by LilOS, or
   forge on the engine. — #37
+- **D-#110 Opening files on the session machine is host API `os.*`:**
+  `os.open {root, path, app, line?}` (argv exec, never a shell, target must
+  stay inside the session folder) and `os.editors` (VS Code/Cursor/Zed/Xcode
+  detected by bundle id in /Applications + ~/Applications; first in that
+  order is the default until #132). Not: `open -a` guessed by name, or a
+  persisted editor choice. — #110 · PR #143
 
 ## UX
 - **D-#114 The Workbench lives only in Focus mode, and opening a session
@@ -141,6 +155,10 @@ PR does not exist.
   (`ThreadView`, `FocusView`); frame-only features are pieces the frame adds,
   not props of `AgentTurn`. Not: variant/mode props inside `AgentTurn`, a god
   component accumulating optional props. — #19 · PR #40
+- **D-#105 `@`-file mentions send the relative path as plain text
+  (`@src/app.tsx`), never file contents or engine-specific blocks; one `@`
+  menu lists Employees then Files.** Not: content inlining, a second
+  popover, a `#` trigger. — #105
 
 ## Status
 - **D-#33 `system.status` legs carry `{state, reason}`; `blocked` (#53) means

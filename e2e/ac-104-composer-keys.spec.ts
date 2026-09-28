@@ -376,7 +376,8 @@ test("AC-7 prototype: Esc stops the turn; ↑ recalls; Esc closes the @ menu", a
   await page.goto("/");
   const chan = page.getByPlaceholder(/Message #engineering/);
   await chan.fill("@");
-  const menu = page.getByRole("listbox", { name: "Mention an employee" });
+  // #105 renamed the @ menu's label (it lists files too now).
+  const menu = page.getByRole("listbox", { name: "Mention" });
   await expect(menu).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);

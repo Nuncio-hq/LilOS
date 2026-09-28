@@ -67,7 +67,7 @@ export async function listHirableProfiles(): Promise<EngineProfile[]> {
 
 /**
  * Engine profile ids are lowercase slugs (Hermes: letters, numbers, `-`/`_`,
- * leading alnum, ≤64 chars); the employee keeps the display name Oscar typed.
+ * leading alnum, ≤64 chars); the employee keeps the display name the user typed.
  */
 export const profileSlug = (name: string): string =>
   name
@@ -94,6 +94,8 @@ export async function hireEmployee(
       name: profileSlug(d.name),
       ...(d.instructions ? { soul: d.instructions } : {}),
       ...(d.model ? { model: d.model } : {}),
+      /* `{provider?, id}` — the id may itself contain `/` (#92 AC-8). */
+      ...(d.provider ? { provider: d.provider } : {}),
     });
     profileId = agent.id;
   }

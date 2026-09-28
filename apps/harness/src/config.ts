@@ -12,7 +12,7 @@ import type { Logger } from "./log";
 
 /**
  * Harness configuration from env (runtime-portable: the same build runs on
- * Oscar's Mac or any other host — nothing macOS-specific outside `caffeinate`,
+ * the user's Mac or any other host — nothing macOS-specific outside `caffeinate`,
  * which is itself platform-gated).
  */
 export interface HarnessConfig {

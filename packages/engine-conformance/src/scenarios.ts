@@ -49,6 +49,8 @@ export const SCENARIO_LIVE_PROMPTS: Record<string, string> = {
     APPROVAL_PROMPT,
   "resume mid-turn: events.since replays and returns open requests":
     APPROVAL_PROMPT,
+  "approval over mcp_servers: 'always' grants permanently, no re-ask":
+    APPROVAL_PROMPT,
 };
 
 /**
@@ -120,6 +122,9 @@ interface ModelRow {
   id: string;
   name?: string;
   provider?: string;
+  efforts?: string[];
+  defaultEffort?: string;
+  fast?: boolean;
 }
 interface PromptResult {
   turnId: string;
@@ -333,12 +338,19 @@ export const CORE_SCENARIOS: Scenario[] = [
         requestId,
         outcome: "once",
       });
-      await h.waitEvent(
+      const resolved = await h.waitEvent(
         h.forSession(
           sessionId,
           (e) =>
             e.type === "request.resolved" && e.payload.requestId === requestId,
         ),
+      );
+      // #133 AC-3 — the engine echoes back the outcome it actually granted;
+      // a downgrade (or upgrade) surfaces here instead of silently sticking.
+      assert(
+        resolved.type === "request.resolved" &&
+          resolved.payload.outcome === "once",
+        "request.resolved must echo the chosen option",
       );
       // "once" covers only this ask; later gated steps ask again and get
       // "once" too — "always" would persist the pattern to the profile's
@@ -1066,6 +1078,48 @@ export const MODELS_SCENARIOS: Scenario[] = [
           r.models.some((m) => m.id === r.default),
           "default must be one of the listed ids",
         );
+      // #92: per-model data rides the same rows — when present, `efforts` is a
+      // non-empty ordered list, `defaultEffort` one of its stops.
+      for (const m of r.models) {
+        if (m.efforts !== undefined)
+          assert(
+            Array.isArray(m.efforts) && m.efforts.length > 0,
+            `efforts must be a non-empty list: ${JSON.stringify(m)}`,
+          );
+        if (m.defaultEffort !== undefined && m.efforts !== undefined)
+          assert(
+            m.efforts.includes(m.defaultEffort),
+            `defaultEffort must be one of efforts: ${JSON.stringify(m)}`,
+          );
+        if (m.provider !== undefined)
+          assert(
+            typeof m.provider === "string" && m.provider.length > 0,
+            `provider must be a non-empty slug: ${JSON.stringify(m)}`,
+          );
+      }
+    },
+  },
+  {
+    id: "AC-6 models.list honors refresh when the capability declares it",
+    async run(h) {
+      const d = (await h.request("describe")) as {
+        capabilities?: { id: string; detail?: { refreshable?: boolean } }[];
+      };
+      const cap = d.capabilities?.find((c) => c.id === "models");
+      const detail = cap?.detail;
+      if (detail?.refreshable !== true) {
+        // No declared refresh path — the engine may still accept the param,
+        // but conformance only requires it not to break.
+        await h.request("models.list", { refresh: true });
+        return;
+      }
+      const fresh = (await h.request("models.list", {
+        refresh: true,
+      })) as { models: ModelRow[] };
+      assert(
+        Array.isArray(fresh.models) && fresh.models.length >= 1,
+        "a refreshable catalog must still return models on refresh:true",
+      );
     },
   },
   {
@@ -1191,6 +1245,138 @@ const SESSION_META_SCENARIOS: Scenario[] = [
 ];
 
 /**
+ * Minimal MCP stdio server, inlined as a `python3 -c` program so the scenario
+ * stays self-contained (a package file can't assume a repo-relative path the
+ * engine's cwd will resolve). It answers the `session/new` handshake —
+ * initialize, tools/list, tools/call, ping — and nothing else.
+ */
+const MCP_NOOP_SERVER = `import json, sys
+
+RESPONDERS = {
+    "initialize": lambda p: {
+        "protocolVersion": p.get("protocolVersion", "2025-03-26"),
+        "capabilities": {"tools": {}},
+        "serverInfo": {"name": "lilos-noop", "version": "0"},
+    },
+    "tools/list": lambda p: {"tools": []},
+    "tools/call": lambda p: {
+        "isError": True,
+        "content": [{"type": "text", "text": "lilos-noop has no tools"}],
+    },
+    "ping": lambda p: {},
+}
+
+for line in sys.stdin:
+    try:
+        msg = json.loads(line)
+    except ValueError:
+        continue
+    if msg.get("id") is None:
+        continue
+    fn = RESPONDERS.get(msg.get("method"))
+    out = {"jsonrpc": "2.0", "id": msg["id"]}
+    if fn is None:
+        out["error"] = {"code": -32601, "message": "method not found"}
+    else:
+        out["result"] = fn(msg.get("params") or {})
+    sys.stdout.write(json.dumps(out) + "\\n")
+    sys.stdout.flush()
+`;
+
+/**
+ * `mcp_servers` capability: a `session.start` that carries stdio MCP servers.
+ * An engine whose primary transport has no mcp_servers routes the session
+ * onto its secondary (e.g. ACP) transport — where #133 lived; the fake
+ * accepts the same sessions inertly.
+ */
+const MCP_SCENARIOS: Scenario[] = [
+  {
+    id: "approval over mcp_servers: 'always' grants permanently, no re-ask",
+    async run(h) {
+      // Leg 1 — mcpServers session: the ACP transport's option list carries
+      // two `allow_always`-kind entries and the session-scoped `allow_session`
+      // sorts first; answering "always" must pick the permanent
+      // `allow_always` id, not the first kind match.
+      const s1 = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+        mcpServers: [
+          {
+            name: "noop",
+            command: "python3",
+            args: ["-c", MCP_NOOP_SERVER],
+            env: [],
+          },
+        ],
+      })) as StartResult;
+      const turn1 = h.request(
+        "prompt",
+        textPrompt(s1.sessionId, SCENARIO_LIVE_PROMPTS[this.id]),
+      ) as Promise<PromptResult>;
+      const opened = await h.waitEvent(
+        h.forSession(s1.sessionId, (e) => e.type === "request.opened"),
+      );
+      assert(opened.type === "request.opened", "gated step opens an ask");
+      const { requestId, request } = opened.payload;
+      assert(request.kind === "approval", "gated step opens an approval ask");
+      for (const o of ["once", "always", "deny"])
+        assert(
+          (request.options as string[]).includes(o),
+          `the approval card offers "${o}"`,
+        );
+      await h.request("request.respond", {
+        sessionId: s1.sessionId,
+        requestId,
+        outcome: "always",
+      });
+      const resolved = await h.waitEvent(
+        h.forSession(
+          s1.sessionId,
+          (e) =>
+            e.type === "request.resolved" && e.payload.requestId === requestId,
+        ),
+      );
+      assert(
+        resolved.type === "request.resolved" &&
+          resolved.payload.outcome === "always",
+        "the chosen 'always' round-trips through the transport",
+      );
+      const done1 = await answerAsks(h, s1.sessionId, "always");
+      const r1 = await turn1;
+      assert(
+        done1.type === "turn.completed" && r1.stopReason === "end_turn",
+        "leg-1 turn completes on the grant",
+      );
+
+      // Leg 2 — a fresh session on the plain transport re-runs the same
+      // command. A real `allow_always` grant survives the session that made
+      // it, so nothing may re-ask; the session-scoped `allow_session` grant
+      // the bug picked dies with leg 1 and re-opens the ask here.
+      const s2 = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const turn2 = h.request(
+        "prompt",
+        textPrompt(s2.sessionId, SCENARIO_LIVE_PROMPTS[this.id]),
+      ) as Promise<PromptResult>;
+      const ev2 = await h.waitEvent(
+        h.forSession(
+          s2.sessionId,
+          (e) => e.type === "turn.completed" || e.type === "request.opened",
+        ),
+      );
+      assert(
+        ev2.type === "turn.completed",
+        `an always-granted command must not re-ask in a new session (got ${ev2.type})`,
+      );
+      const r2 = await turn2;
+      assert(r2.stopReason === "end_turn", "leg-2 turn completes");
+    },
+  },
+];
+
+/**
  * Suite registry: `core` always runs; each capability the engine declares on
  * `describe` adds its suite. Pending suites are registered so engines (and CI)
  * can list them; they are intentionally empty until the capability lands.
@@ -1207,7 +1393,11 @@ export const SUITES: {
     implemented: true,
     scenarios: IMAGE_PROMPT_SCENARIOS,
   },
-  { capability: "mcp_servers", implemented: false, scenarios: [] },
+  {
+    capability: "mcp_servers",
+    implemented: true,
+    scenarios: MCP_SCENARIOS,
+  },
   { capability: "models", implemented: true, scenarios: MODELS_SCENARIOS },
   { capability: "agents", implemented: true, scenarios: AGENTS_SCENARIOS },
   {

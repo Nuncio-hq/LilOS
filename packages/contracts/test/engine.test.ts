@@ -69,6 +69,7 @@ describe("engine wire contract", () => {
     expect(ENGINE_EVENT_TYPES).toEqual([
       "session.started",
       "session.state",
+      "session.note",
       "turn.started",
       "turn.delta",
       "tool.started",

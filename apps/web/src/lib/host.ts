@@ -184,4 +184,61 @@ export const hostAccessors: HostAccessors = {
     host<{ pr: WirePr }>("forge.merge", { path: cwd, method }).then((r) =>
       mapPr(r.pr),
     ),
+  /* os.editors / os.open (issue #110): the Focus header's OpenPathButton and
+     the Workbench rows render only when these answer (D-#19). */
+  osEditors: () =>
+    host<{ editors: OsEditor[] }>("os.editors", {}).then((r) => r.editors),
+  osOpen: (cwd, path, app, line) =>
+    host<Record<string, never>>("os.open", { root: cwd, path, app, line }).then(
+      () => undefined,
+    ),
 };
+
+export type OsEditor = {
+  id: "vscode" | "cursor" | "zed" | "xcode";
+  name: string;
+};
+export type OsApp = OsEditor["id"] | "finder";
+
+/* Capability check (issue #110, D-#19): os.open/os.editors exist on the host
+   — controls render only then. One describe per app boot, cached; an
+   unreachable host answers "no methods" so the controls simply hide. */
+let methodsP: Promise<Set<string>> | null = null;
+const hostMethods = () =>
+  (methodsP ??= host<{ methods: string[] }>("host.describe")
+    .then((r) => new Set(r.methods))
+    .catch(() => new Set<string>()));
+
+/** Editors the host detected (os.editors); null when os.open isn't there. */
+export async function hostEditors(): Promise<OsEditor[] | null> {
+  const m = await hostMethods();
+  if (!m.has("os.open")) return null;
+  if (!m.has("os.editors")) return [];
+  return host<{ editors: OsEditor[] }>("os.editors", {})
+    .then((r) => r.editors)
+    .catch(() => [] as OsEditor[]);
+}
+
+/** os.open: open `path` inside `root` in `app`, at `line` if given. */
+export const hostOsOpen = (
+  root: string,
+  path: string,
+  app: OsApp,
+  line?: number,
+) =>
+  host<Record<string, never>>("os.open", { root, path, app, line }).then(
+    () => undefined,
+  );
+
+export type SearchResult = {
+  path: string;
+  files: { path: string; kind: "file" | "dir" }[];
+};
+
+/** `@`-mention file search inside a session folder (issue #105). */
+export const hostSearch = (path: string, query: string, limit?: number) =>
+  host<SearchResult>("fs.search", { path, query, ...(limit ? { limit } : {}) });
+
+/** OS account name — first-run prefill source for the identity fields (#118). */
+export const hostUser = () =>
+  host<{ username: string; fullName: string | null }>("host.user", {});

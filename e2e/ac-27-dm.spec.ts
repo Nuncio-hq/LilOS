@@ -140,11 +140,17 @@ const SHOTS = path.join(repo, "test-results", "ac-27");
 let stackA: Stack; // engine-fake advertising every capability (incl. steer)
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stackA = await bootStack("main", {
-    relay: wport(4643),
-    feed: wport(4647),
-    web: wport(5241),
-  });
+  stackA = await bootStack(
+    "main",
+    {
+      relay: wport(4643),
+      feed: wport(4647),
+      web: wport(5241),
+    },
+    // #118: the signed-in name is the OS user's — pin it so the approval
+    // label assertions below stay deterministic on any machine.
+    { LILOS_USER_NAME: "Oscar" },
+  );
 });
 test.afterAll(async () => {
   await stackA?.stop();

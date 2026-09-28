@@ -2,6 +2,8 @@ import { ChevronDownIcon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
 import type { Diff } from "../types";
+import { OpenPathButton } from "./open-path";
+import type { OpenMenuFor } from "./ws-badges";
 
 export function DiffStat({ add, del }: { add: number; del: number }) {
   return (
@@ -45,9 +47,15 @@ export function parsePatch(patch: string): DiffRow[] {
 export function DiffView({
   d,
   collapsible = true,
+  openMenu,
+  onOpenLine,
 }: {
   d: Diff;
   collapsible?: boolean;
+  /* Open/reveal menu on the file header + per-row open-at-line on the new
+     line numbers (issue #110); absent → static diff (D-#19). */
+  openMenu?: OpenMenuFor;
+  onOpenLine?: (line: number) => void;
 }) {
   const [open, setOpen] = useState(true);
   const [viewed, setViewed] = useState(false);
@@ -93,6 +101,13 @@ export function DiffView({
           {dir && <span className="ml-1.5 text-muted-foreground">{dir}</span>}
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-2.5">
+          {openMenu && (
+            <OpenPathButton
+              editors={openMenu.editors}
+              onOpen={openMenu.onOpen}
+              label={`Open ${d.path} in an editor or Finder`}
+            />
+          )}
           <DiffStat add={d.add} del={d.del} />
           {collapsible && (
             <label className="flex cursor-pointer items-center gap-1.5 border-l pl-2.5 text-muted-foreground text-xs">
@@ -139,7 +154,21 @@ export function DiffView({
                       {r.a ?? ""}
                     </td>
                     <td className="w-9 select-none border-r px-1.5 text-right align-top text-[11px] text-muted-foreground/70 tabular-nums">
-                      {r.b ?? ""}
+                      {onOpenLine && r.b != null ? (
+                        <button
+                          type="button"
+                          className="cursor-pointer text-inherit hover:text-foreground hover:underline"
+                          title={`Open ${d.path} at line ${r.b}`}
+                          data-openline={r.b}
+                          onClick={() => {
+                            if (r.b != null) onOpenLine(r.b);
+                          }}
+                        >
+                          {r.b}
+                        </button>
+                      ) : (
+                        (r.b ?? "")
+                      )}
                     </td>
                     <td className="whitespace-pre px-3 text-foreground/90">
                       <span

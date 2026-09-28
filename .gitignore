@@ -9,3 +9,4 @@ apps/desktop/build/
 *.tsbuildinfo
 tsconfig.*.tsbuildinfo
 e2e/.gh-fake/
+e2e/.os-fake/

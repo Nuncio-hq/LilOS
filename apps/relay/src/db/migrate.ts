@@ -5,7 +5,7 @@ import type { Database } from "bun:sqlite";
  * Runs against bun:sqlite in the entry point; the statements themselves are
  * plain SQL so a later driver swap reuses them verbatim.
  */
-const MIGRATIONS: { version: number; statements: string[] }[] = [
+export const MIGRATIONS: { version: number; statements: string[] }[] = [
   {
     version: 1,
     statements: [
@@ -121,6 +121,37 @@ const MIGRATIONS: { version: number; statements: string[] }[] = [
       `CREATE TABLE IF NOT EXISTS recent_folders (
         path TEXT PRIMARY KEY,
         last_used_at INTEGER NOT NULL
+      )`,
+    ],
+  },
+  {
+    // #92: the session pick rides conversations (provider/effort/fast), the
+    // answering metadata rides messages, and the LilOS-owned settings KV
+    // (modelVisibility = the Edit-models hide list) lands as a table.
+    // Shipped after #113's v6 — DBs already at 6 still run this one.
+    version: 7,
+    statements: [
+      `ALTER TABLE conversations ADD COLUMN provider TEXT`,
+      `ALTER TABLE conversations ADD COLUMN effort TEXT`,
+      `ALTER TABLE conversations ADD COLUMN fast INTEGER`,
+      `ALTER TABLE messages ADD COLUMN provider TEXT`,
+      `ALTER TABLE messages ADD COLUMN effort TEXT`,
+      `ALTER TABLE messages ADD COLUMN fast INTEGER`,
+      `CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )`,
+    ],
+  },
+  {
+    // #118: the signed-in human's profile — one row, NULL columns until set.
+    version: 8,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS profile (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        user_name TEXT,
+        company_name TEXT,
+        avatar_color TEXT
       )`,
     ],
   },

@@ -23,6 +23,7 @@ import {
   type EmpBadge,
   type Employee,
   type EmpFn,
+  type FileMention,
   type FsDir,
   type HireDraft,
   type EngineProfile,
@@ -35,6 +36,7 @@ import {
   type Human,
   type HumanFn,
   type Msg,
+  type OsEditor,
   type Project,
   type Reply,
   type Step,
@@ -46,11 +48,15 @@ import {
   type Work,
   type SessionAlert,
   type StatusComponent,
+  type ApprovalPolicy,
+  type ConversationAccess,
+  type DetectedEditor,
   type WsPick,
   type Workspace,
   NO_WS,
   RightPanel,
   Sidebar,
+  SettingsView,
   StartWorkDialog,
   ThreadView,
   baseName,
@@ -113,6 +119,14 @@ const HUMANS: Record<string, Human> = {
   oscar: { name: "Oscar", color: "bg-blue-600" },
   minh: { name: "Minh", color: "bg-cyan-600", guest: true },
 }
+
+/* What #110's real editor detection will report — hardcoded here so Settings →
+   Editors has believable data. */
+const DETECTED_EDITORS: DetectedEditor[] = [
+  { id: "vscode", name: "Visual Studio Code", path: "/Applications/Visual Studio Code.app" },
+  { id: "cursor", name: "Cursor", path: "/Applications/Cursor.app" },
+  { id: "zed", name: "Zed", path: "/Applications/Zed.app" },
+]
 
 /* What a multi-provider engine (Hermes) reports via models.list — shaped after
    Oscar's real `model.options` (providers + slugs are real). `efforts` is the
@@ -508,6 +522,24 @@ const REPO_FILES = [
   "packages/contracts/package.json", "packages/contracts/src/envelope.ts",
 ]
 
+/* The `@` menu's Files section (issue #105): the real app asks the harness
+   host's fs.search over the session's folder; the prototype fakes it — a
+   fixed listing for the seeded folders, a shallow walk of the mock FS tree
+   for folders added at runtime. */
+const FOLDER_FILES: Record<string, FileMention[]> = {
+  lilos: [
+    { path: "apps", kind: "dir" }, { path: "apps/relay", kind: "dir" }, { path: "apps/web", kind: "dir" },
+    { path: "docs", kind: "dir" }, { path: "packages", kind: "dir" },
+    ...REPO_FILES.map((path) => ({ path, kind: "file" as const })),
+  ],
+  qrit: [
+    { path: "ios", kind: "dir" }, { path: "web", kind: "dir" },
+    { path: "ios/QritApp.swift", kind: "file" }, { path: "ios/PaywallView.swift", kind: "file" },
+    { path: "web/index.html", kind: "file" }, { path: "web/styles.css", kind: "file" },
+    { path: "README.md", kind: "file" },
+  ],
+}
+
 type View = { kind: "channel"; id: string } | { kind: "dm"; id: string }
 
 export default function App() {
@@ -566,6 +598,13 @@ export default function App() {
      status mock for the real system.status poll from the relay. */
   const liveStatus = useLiveStatus()
   const [statusOpen, setStatusOpen] = useState(false)
+  /* Settings (issue #139): ⌘, or the sidebar gear. All values are prototype
+     mock state — the real app's persistence lands in #132. */
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [policy, setPolicy] = useState<ApprovalPolicy>("smart")
+  const [access, setAccess] = useState<ConversationAccess>("ask")
+  const [defaultEditor, setDefaultEditor] = useState("vscode")
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null)
   /* Pair phone (mobile onboarding, Mac side). Mock offer; `?pair=no-remote|expired|paired`
      opens it straight into that state (the phone side lives in prototype/mobile). */
   const [pairPhone, setPairPhone] = useState<PairPhoneState | null>(() => {
@@ -576,6 +615,10 @@ export default function App() {
     return null
   })
   const [firstDone, setFirstDone] = useState(false)
+  /* #118 AC-5: the identity is live state — the first-run card edits it and
+     every surface (sidebar, headers, messages) reads it. Mock keeps Oscar. */
+  const [me, setMe] = useState<Human>(HUMANS.oscar)
+  const [company, setCompany] = useState("Oscar Co")
   const [editEmp, setEditEmp] = useState<string | null>(null)
   // Employees removed from the company stay in `removed` so their past messages keep a name/avatar.
   const [removed, setRemoved] = useState<Record<string, Employee>>({})
@@ -636,7 +679,25 @@ export default function App() {
   }
 
   const emp: EmpFn = (id) => employees.find((e) => e.id === id) ?? removed[id] ?? (id === "default" ? DEFAULT_EMP : undefined)
-  const human: HumanFn = (id) => HUMANS[id]
+  /* `user` is the real app's author id — in mock data it aliases the seeded
+     human so components keying on VIEWER_ID resolve the same person. */
+  const human: HumanFn = (id) =>
+    id === "user" || id === "oscar" ? me : HUMANS[id]
+  /* ⌘, / Ctrl+, opens Settings from anywhere (issue #139, AC-1). */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault()
+        setSettingsOpen(true)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+  const checkUpdates = () => {
+    setUpdateMsg("Checking…")
+    setTimeout(() => setUpdateMsg("LilOS is up to date"), 900)
+  }
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 2200) }
 
   // Per-employee sidebar badges: a blue count for live turns, amber for turns waiting on approval.
@@ -665,6 +726,19 @@ export default function App() {
   const feedKey = channel.id
   const feed: Msg[] = feeds[feedKey] ?? []
   const openThread = feed.find((m): m is Extract<Msg, { kind: "msg" }> => m.kind === "msg" && m.id === threadId && !!m.thread)
+
+  /* Open-in-editor affordance for the session header (issue #110): editors
+     the dev-middleware host detected; null until asked. os.open rides the
+     same /api/host channel as the workbench reads. */
+  const openWsCwd = openThread?.thread?.ws?.cwd
+  const [openEditors, setOpenEditors] = useState<OsEditor[] | null>(null)
+  useEffect(() => {
+    let off = false
+    setOpenEditors(null)
+    if (openWsCwd)
+      void hostAccessors.osEditors().then((e) => { if (!off) setOpenEditors(e) }).catch(() => {})
+    return () => { off = true }
+  }, [openWsCwd])
 
   // Unsent composer text survives switching threads/employees and reloads (issue #103):
   // one draft key per session thread, one per employee DM home.
@@ -930,6 +1004,39 @@ export default function App() {
     setFolders((fs) => fs.map((x) => (x.id === f0.id ? { ...x, workstreams: [...x.workstreams, { branch, path: worktree, from: pick.base }] } : x)))
     return { folder: f.id, project: f.project, repo: f.repo, mode: "new", base: pick.base, branch, cwd: `${f.path}/${worktree}`, worktree }
   }
+  /* fs.search stand-in (#105): substring match on the mock listing, capped
+     like the real 20-row section. No folder → no handler → no section. */
+  const mockFilesOf = (path: string): FileMention[] => {
+    const rows: FileMention[] = []
+    const walk = (p: string, rel: string, depth: number) => {
+      if (depth > 3 || rows.length > 200) return
+      for (const c of fsMap[p]?.children ?? []) {
+        const r = rel ? `${rel}/${c}` : c
+        rows.push({ path: r, kind: "dir" })
+        walk(p === "~" ? `~/${c}` : `${p}/${c}`, r, depth + 1)
+      }
+    }
+    walk(path, "", 0)
+    return rows
+  }
+  /* Stable searcher identity per folder: the composer's effect keys on the
+     function — a fresh lambda each render would refire the search in a loop. */
+  const fileMentionSearch = useMemo(() => {
+    const m = new Map<string, (q: string) => Promise<FileMention[]>>()
+    for (const f of folders) {
+      if (f.missing) continue
+      const rows = FOLDER_FILES[f.id] ?? mockFilesOf(f.path)
+      m.set(f.id, (q: string) => {
+        const s = q.toLowerCase()
+        return Promise.resolve(
+          rows.filter((r) => !s || r.path.toLowerCase().includes(s)).slice(0, 20),
+        )
+      })
+    }
+    return m
+  }, [folders])
+  const fileMentions = (folderId: string | null | undefined) =>
+    folderId ? fileMentionSearch.get(folderId) : undefined
   const sendTop = (text: string, pick?: WsPick, files?: AttachedFile[]) => {
     const target = view.kind === "dm" ? view.id : mentionIn(text)?.id
     const id = `s-${Date.now()}`
@@ -1075,10 +1182,15 @@ export default function App() {
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
       running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
       draft={threadDraft} onDraftChange={setThreadDraft}
+      mentionables={employees} onSearchFiles={fileMentions(openThread.thread.ws?.folder)}
       lastSent={lastSentIn(openThread)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
       models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined} picker={pickerExtras}
+      editors={openEditors ?? undefined}
+      onOpenPath={openWsCwd && openEditors !== null
+        ? (path, app, line) => void hostAccessors.osOpen(openWsCwd, path, app, line).catch((e) => say(`Open failed — ${e instanceof Error ? e.message : String(e)}`))
+        : undefined}
     />
   ) : null
 
@@ -1089,7 +1201,8 @@ export default function App() {
       <Sidebar
         navOpen={navOpen}
         hiddenWhenClosed={focus && !!openThread?.thread}
-        me={HUMANS.oscar}
+        me={me}
+        company={company}
         companyChannels={COMPANY_CHANNELS}
         projects={[...PROJECTS, ...newProjects]}
         folders={folders}
@@ -1099,6 +1212,7 @@ export default function App() {
         badges={badges}
         status={liveStatus?.components ?? STATUS[scenario]}
         onOpenStatus={() => setStatusOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
         onPairPhone={() => setPairPhone({ kind: "ready", offer: pairOffer(300) })}
         realApp={realApp || scenario === "first-run"}
         preview={<PrototypePreviewMenu scenario={scenario} realApp={realApp} onScenario={pickScenario} onRealApp={setRealApp} />}
@@ -1145,6 +1259,7 @@ export default function App() {
                 if (archived) dropDrafts([draftKey.thread(id)])
               }}
               draft={dmDraft} onDraftChange={setDmDraft}
+              mentionables={employees} onSearchFiles={fileMentions((wsPicks[view.id] ?? NO_WS).folder)}
               onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying session ${m.thread?.session}`) }}
               accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say}
               models={canModels ? MODEL_OPTS : undefined}
@@ -1155,7 +1270,7 @@ export default function App() {
           ) : (
           <main className="flex min-h-0 min-w-0 flex-col">
             <ChannelHeader
-              channel={channel} projectName={project?.name} employees={employees}
+              channel={channel} companyName={company} projectName={project?.name} employees={employees}
               onNav={() => setNavOpen(true)} onOpenTickets={() => { setPanelTab("tickets"); setPanelOpen(true) }}
               panelOpen={panelOpen} onOpenPanel={() => setPanelOpen(true)} onShowEmp={showEmp}
             />
@@ -1182,7 +1297,7 @@ export default function App() {
             <RightPanel
               tab={panelTab} onTab={setPanelTab} onClose={() => setPanelOpen(false)}
               threadPanel={threadPanel}
-              employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} profiles={PROFILES} engineName={engineName ?? undefined} onDM={() => goDM(selectedEmp)} onEdit={() => setEditEmp(selectedEmp)} onSwitchProfile={(p) => switchProfile(selectedEmp, p)} /> : null}
+              employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} profiles={PROFILES} engineName={engineName ?? undefined} ownerName={me.name} onDM={() => goDM(selectedEmp)} onEdit={() => setEditEmp(selectedEmp)} onSwitchProfile={(p) => switchProfile(selectedEmp, p)} /> : null}
               tickets={tickets} emp={emp} dm={!!channel.dm}
             />
           )}
@@ -1191,7 +1306,7 @@ export default function App() {
 
       {startRoot?.thread && (
         <StartWorkDialog
-          root={startRoot} thread={startRoot.thread} channel={channel} ticket={nextTicket} emp={emp} granted={!!selfStart[channel.id]}
+          root={startRoot} thread={startRoot.thread} channel={channel} ticket={nextTicket} emp={emp} me={me.name} granted={!!selfStart[channel.id]}
           onClose={() => setStartFor(null)}
           onStart={(w, lead, grant) => startWork(startRoot.id, w, lead, grant)}
         />
@@ -1209,6 +1324,21 @@ export default function App() {
           initial={hireOpen} templates={TEMPLATES} profiles={PROFILES} models={MODEL_OPTS}
           allChannels={PROJECTS.flatMap((p) => p.channels.map((c) => ({ id: c.id, label: `${p.name} / #${c.name}` })))}
           onClose={() => setHireOpen(null)} onHire={hire} usedProfiles={employees.map((e) => e.profile)}
+        />
+      )}
+      {settingsOpen && (
+        <SettingsView
+          onClose={() => setSettingsOpen(false)}
+          general={{ me, onMeChange: setMe, company, onCompanyChange: setCompany, theme, onThemeChange: setTheme }}
+          approvals={{ policy, onPolicy: setPolicy, access, onAccess: setAccess }}
+          editors={{ detected: DETECTED_EDITORS, defaultId: defaultEditor, onDefault: setDefaultEditor }}
+          models={canModels ? { models: MODEL_OPTS, providers: PROVIDERS, visibility, onVisibility: saveVisibility } : undefined}
+          status={{
+            components: liveStatus?.components ?? STATUS[scenario],
+            diagnostics: liveStatus?.diagnostics ?? STATUS[scenario].map((c) => `${c.id}: ${c.state} — ${c.reason}`).join("\n"),
+            onCopied: () => say("Diagnostics copied"),
+          }}
+          about={{ version: "0.1.0", build: "prototype", onCheckUpdates: checkUpdates, updateStatus: updateMsg ?? undefined }}
         />
       )}
       {statusOpen && (
@@ -1230,7 +1360,13 @@ export default function App() {
       {scenario === "first-run" && !firstDone && (
         <FirstRun
           employee={DEFAULT_EMP}
-          onOpenDM={() => { setFirstDone(true); goDM("default") }}
+          identity={{ name: me.name, company }}
+          onOpenDM={(id) => {
+            setFirstDone(true)
+            if (id.name) setMe((m) => ({ ...m, name: id.name }))
+            if (id.company) setCompany(id.company)
+            goDM("default")
+          }}
           onSkip={() => setFirstDone(true)}
         />
       )}

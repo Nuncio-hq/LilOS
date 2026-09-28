@@ -12,6 +12,7 @@ import {
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
 import {
   AddFolderDialog,
+  choiceFor,
   clearDraftIfSent,
   draftKey,
   EditEmployeeDialog,
@@ -24,6 +25,9 @@ import {
 import type {
   AttachedFile,
   Channel,
+  FileMention,
+  ModelChoice,
+  ModelPickerExtras,
   Msg,
   Reply,
   Thread,
@@ -32,17 +36,19 @@ import type {
 } from "@lilos/ui/types";
 import { useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import { atom } from "nanostores";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   archiveConversation,
   clearPending,
   hasCapability,
   interruptSession,
   pendingStart,
+  refreshModels,
   renameConversation,
   respondToRequest,
   sendDm,
   setConversationModel,
+  setModelVisibility,
 } from "../lib/actions";
 import {
   attachmentUrls,
@@ -62,18 +68,28 @@ import {
   wsFor,
 } from "../lib/folders";
 import { useAtom } from "../lib/hooks";
-import { hostAccessors } from "../lib/host";
+import {
+  hostAccessors,
+  hostEditors,
+  hostOsOpen,
+  hostSearch,
+  type OsEditor,
+} from "../lib/host";
 import {
   conversationReplies,
   mergeTurns,
   toFeed,
   toUiEmployee,
 } from "../lib/mapping";
-import { humanFor, ME } from "../lib/me";
+import { currentName, humanFor, osFullName, profile } from "../lib/me";
 import {
   asks as asksAtom,
   engine,
+  engineDefaultModel,
+  engineDefaultProvider,
   engineModels,
+  engineProviders,
+  modelVisibility,
   navOpen,
   relay,
   sessionModels,
@@ -95,12 +111,21 @@ const EMPTY_FEED = atom<SessionFeedState>({
   openRequests: [],
 });
 
-const OUTCOME_LABEL: Record<ApprovalOutcome, string> = {
-  once: `Allowed once by ${ME.name}`,
-  always: "Always allowed here",
-  deny: `Denied by ${ME.name}`,
-  cancel: "Cancelled",
-  answer: "Answered",
+/* Resolved-ask labels carry the signed-in human's name — computed per render
+   so a settings change lands without a reload (#118). */
+const outcomeLabel = (o: ApprovalOutcome, name: string): string => {
+  switch (o) {
+    case "once":
+      return `Allowed once by ${name}`;
+    case "always":
+      return "Always allowed here";
+    case "deny":
+      return `Denied by ${name}`;
+    case "cancel":
+      return "Cancelled";
+    case "answer":
+      return "Answered";
+  }
 };
 
 function outcomeFromLabel(v: string): ApprovalOutcome {
@@ -111,8 +136,8 @@ function outcomeFromLabel(v: string): ApprovalOutcome {
   return "once";
 }
 
-/* User messages render as the signed-in human — the same `ME` the sidebar
-   footer shows (issue #80, AC-1). */
+/* User messages render as the signed-in human — the same identity the
+   sidebar footer shows (issue #80 AC-1, #118: relay-owned). */
 const human = humanFor;
 
 /**
@@ -135,9 +160,17 @@ export function DmPage() {
 
   const employees = useAtom(relay.employees);
   const channels = useAtom(relay.channels);
+  // #118: the human's name/avatar re-render live on a settings change.
+  useAtom(profile);
+  useAtom(osFullName);
   const summaries = useAtom(relay.conversationSummaries);
   const models = useAtom(sessionModels);
   const catalog = useAtom(engineModels);
+  const defaultModel = useAtom(engineDefaultModel);
+  const defaultProvider = useAtom(engineDefaultProvider);
+  const providers = useAtom(engineProviders);
+  const visibility = useAtom(modelVisibility);
+  const description = useAtom(engine.description);
   const allAsks = useAtom(asksAtom);
   const pending = useAtom(pendingStart);
   const engineState = useAtom(engine.state);
@@ -146,6 +179,26 @@ export function DmPage() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  /* The picker's pick for a session that doesn't exist yet (#92 AC-5): held
+     per employee, stamped on `conversations.open`, cleared once sent. */
+  const [draftPick, setDraftPick] = useState<Record<string, ModelChoice>>({});
+
+  /* Picker extras (#92): Edit models rides the relay-persisted visibility
+     list; Refresh renders only when the engine's `models` capability
+     declares `refreshable` (D-#19 — no control without a handler). */
+  const picker = useMemo<ModelPickerExtras | undefined>(() => {
+    if (!catalog.length) return undefined;
+    const detail = description?.capabilities.find((c) => c.id === "models")
+      ?.detail as { refreshable?: boolean } | undefined;
+    return {
+      providers: providers.length
+        ? providers.map((p) => ({ id: p.id, name: p.name ?? p.id }))
+        : undefined,
+      visibility,
+      onVisibility: (v) => void setModelVisibility(v),
+      ...(detail?.refreshable === true ? { onRefresh: refreshModels } : {}),
+    };
+  }, [catalog, providers, visibility, description]);
 
   /* Folder picking (#113): shared recents from the relay (probed live for
      missing/git) + a per-employee pick (its last session's folder, AC-6).
@@ -166,7 +219,6 @@ export function DmPage() {
   /* Image attachments (#112): the composers offer pick/drop/paste only when
      the engine declares `image_prompt` (D-#19); thumbnails resolve lazily
      from the relay store, so subscribe to the resolved-URL cache. */
-  const description = useAtom(engine.description);
   const canAttachImages =
     description?.capabilities.some((c) => c.id === "image_prompt") ?? false;
   useAtom(attachmentUrls);
@@ -210,6 +262,24 @@ export function DmPage() {
     [summaries, channel],
   );
   const openConv = convs.find((c) => c.id === conversationId);
+
+  /* Open-in-editor affordance for the session header (issue #110): editors
+     the host detected — `null` while unknown or when os.open isn't on this
+     host (the badge menu hides entirely then, D-#19); `[]` means os.open
+     works but no editor was found (Reveal in Finder only). */
+  const openCwd = openConv?.cwd;
+  const [editors, setEditors] = useState<OsEditor[] | null>(null);
+  useEffect(() => {
+    let off = false;
+    setEditors(null);
+    if (openCwd)
+      void hostEditors().then((e) => {
+        if (!off) setEditors(e);
+      });
+    return () => {
+      off = true;
+    };
+  }, [openCwd]);
 
   /* Unsent drafts live outside the composer: one key per conversation and
      one per employee home (issue #103). Switching sessions or employees — or
@@ -366,6 +436,19 @@ export function DmPage() {
     if (openConv && openModel?.live) clearPending(openConv.id);
   }, [openConv, openModel]);
 
+  /* `@` mentions (#105): every employee in the Employees section, and — when
+     the session has a folder — fs.search over it for the Files section. No
+     folder (or a missing one) → no Files section at all (D-#19). */
+  const mentionables = useMemo(
+    () => employees.map((e) => toUiEmployee(e, engineDown)),
+    [employees, engineDown],
+  );
+  /* Stable searcher identity per folder: the composer's effect keys on the
+     function — a fresh lambda each render would refire fs.search in a loop. */
+  const fileSearchers = useRef(
+    new Map<string, (q: string) => Promise<FileMention[]>>(),
+  );
+
   if (!employee || !uiEmp) {
     return (
       <div className="grid min-w-0 flex-1 place-items-center text-muted-foreground text-sm">
@@ -394,6 +477,19 @@ export function DmPage() {
 
   const pick = wsPicks[employeeId] ?? NO_WS;
   const setPick = (p: WsPick) => setWsPicks((w) => ({ ...w, [employeeId]: p }));
+
+  const fileSearch = (folderPath: string | null | undefined) => {
+    if (!folderPath) return undefined;
+    let f = fileSearchers.current.get(folderPath);
+    if (!f) {
+      f = (q: string) => hostSearch(folderPath, q).then((r) => r.files);
+      fileSearchers.current.set(folderPath, f);
+    }
+    return f;
+  };
+  const pickFolderPath = pick.folder
+    ? (folderRows.find((f) => f.id === pick.folder && !f.missing)?.path ?? null)
+    : null;
 
   /* Add folder: native dialog in the packaged app (AC-2), the host-API
      browser dialog on plain web. */
@@ -436,21 +532,28 @@ export function DmPage() {
     const folder = p?.folder
       ? folderRows.find((f) => f.id === p.folder && !f.missing)
       : undefined;
-    return sendDm(employeeId, text, undefined, files, folder?.path).then(
-      (conv) => {
-        if (!conv) throw new Error("send failed");
-        clearDraftIfSent(draftKey.dm(employeeId), text);
-        // A fresh session opens in Focus too (#114).
-        return navigate({
-          to: "/dm/$employeeId/$conversationId/focus",
-          params: { employeeId, conversationId: conv.id },
-        });
-      },
-    );
+    const modelPick = draftPick[employeeId];
+    return sendDm(
+      employeeId,
+      text,
+      undefined,
+      modelPick,
+      files,
+      folder?.path,
+    ).then((conv) => {
+      if (!conv) throw new Error("send failed");
+      clearDraftIfSent(draftKey.dm(employeeId), text);
+      setDraftPick(({ [employeeId]: _drop, ...rest }) => rest);
+      // A fresh session opens in Focus too (#114).
+      return navigate({
+        to: "/dm/$employeeId/$conversationId/focus",
+        params: { employeeId, conversationId: conv.id },
+      });
+    });
   };
 
-  /* ↑ recall for the home composer: the last top-level message Oscar sent in
-     this DM is the newest conversation's root message (#104 AC-5). */
+  /* ↑ recall for the home composer: the last top-level message the user sent
+     in this DM is the newest conversation's root message (#104 AC-5). */
   const lastSentTop = [...convs]
     .reverse()
     .map(
@@ -485,7 +588,7 @@ export function DmPage() {
     const resolved: Record<string, string> = {};
     for (const a of asksHere) {
       if (a.state === "resolved" && a.outcome)
-        resolved[a.id] = OUTCOME_LABEL[a.outcome];
+        resolved[a.id] = outcomeLabel(a.outcome, currentName());
     }
     const engineRef = conv.engineRef;
     const replies = mergeTurns(
@@ -521,11 +624,16 @@ export function DmPage() {
       archived: conv.archived,
       replies,
       usage: model?.turns.at(-1)?.usage as Thread["usage"],
+      // The session's pick: the pinned conversation fields win; the session
+      // snapshot fills what a bare `model` pin (pre-#92 rows) never set.
       model: conv.model ?? model?.model,
+      provider: conv.provider ?? model?.provider,
+      effort: conv.effort ?? model?.effort,
+      fast: conv.fast ?? model?.fast,
       ...(convWs ? { ws: convWs } : {}),
     };
     const running = !!modelLive || pending[conv.id] === true;
-    /* ↑ recall in the open session: Oscar's last sent message in it — the
+    /* ↑ recall in the open session: the user's last sent message in it — the
        root counts too (#104 AC-5). */
     const lastSent = threadPool.reduce<AppMessage | undefined>(
       (last, m) =>
@@ -578,7 +686,7 @@ export function DmPage() {
           onNav={() => navOpen.set(true)}
           running={running}
           onSend={(text, files) =>
-            sendDm(employeeId, text, conv.id, files).then((c) => {
+            sendDm(employeeId, text, conv.id, undefined, files).then((c) => {
               if (!c) throw new Error("send failed");
               clearDraftIfSent(draftKey.thread(conv.id), text);
               return c;
@@ -586,7 +694,7 @@ export function DmPage() {
           }
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           lastSent={lastSent}
-          onModel={(c) => void setConversationModel(conv.id, c.model)}
+          onModel={(c) => void setConversationModel(conv.id, c)}
           models={catalog.length ? catalog : undefined}
           accept={canAttachImages ? "image/*" : undefined}
           maxFileSize={MAX_ATTACHMENT_BYTES}
@@ -631,9 +739,16 @@ export function DmPage() {
           steer={steer}
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}
-          onModel={(c) => void setConversationModel(conv.id, c.model)}
+          onModel={
+            catalog.length
+              ? (c) => void setConversationModel(conv.id, c)
+              : undefined
+          }
+          picker={picker}
+          defaultModel={defaultModel}
+          defaultProvider={defaultProvider}
           onSend={(text, files) =>
-            sendDm(employeeId, text, conv.id, files).then((c) => {
+            sendDm(employeeId, text, conv.id, undefined, files).then((c) => {
               if (!c) throw new Error("send failed");
               clearDraftIfSent(draftKey.thread(conv.id), text);
               return c;
@@ -654,7 +769,21 @@ export function DmPage() {
               params: { employeeId, conversationId: conv.id },
             })
           }
+          mentionables={mentionables}
+          onSearchFiles={fileSearch(conv.cwd)}
           work={null}
+          editors={editors ?? undefined}
+          onOpenPath={
+            openCwd && editors !== null
+              ? (path, app, line) => {
+                  void hostOsOpen(openCwd, path, app, line).catch((e) =>
+                    say(
+                      `Open failed — ${e instanceof Error ? e.message : String(e)}`,
+                    ),
+                  );
+                }
+              : undefined
+          }
         />
         {openQuestion && (
           <QuestionCard
@@ -703,6 +832,24 @@ export function DmPage() {
         onAddFolder={onAddFolder}
         loading={!channel}
         composerNote={composerNote}
+        mentionables={mentionables}
+        onSearchFiles={fileSearch(pickFolderPath)}
+        models={catalog.length ? catalog : undefined}
+        modelChoice={
+          draftPick[employeeId] ??
+          choiceFor(
+            employee.model || defaultModel || "",
+            catalog,
+            /* the engine default's provider disambiguates a shared id */
+            employee.model ? undefined : defaultProvider,
+          )
+        }
+        onModel={
+          catalog.length
+            ? (c) => setDraftPick((d) => ({ ...d, [employeeId]: c }))
+            : undefined
+        }
+        picker={picker}
         onRename={(id, title) => {
           const conv = convs.find((c) => c.rootMessageId === id);
           if (conv) void renameConversation(conv.id, title);
