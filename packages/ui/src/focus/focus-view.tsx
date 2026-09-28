@@ -284,8 +284,13 @@ export function FocusView({
           />
         )}
         <div className="min-w-0">
-          <div className="truncate font-semibold" title={plain(root.text)}>
-            {plain(root.text)}
+          {/* #137 AC-4: the session's title (placeholder → engine-written)
+              leads; untitled threads keep the first message. */}
+          <div
+            className="truncate font-semibold"
+            title={thread.title ?? plain(root.text)}
+          >
+            {thread.title ?? plain(root.text)}
           </div>
           <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
             <span className="truncate">

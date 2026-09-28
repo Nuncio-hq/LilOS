@@ -138,6 +138,9 @@ export const SessionSnapshot = z.object({
   provider: z.string().optional(),
   effort: z.string().optional(),
   fast: z.boolean().optional(),
+  /** Engine-set session title (#137): present once the engine has persisted
+      one — replays after an engine restart land the same title. */
+  title: z.string().optional(),
 });
 export type SessionSnapshot = z.infer<typeof SessionSnapshot>;
 

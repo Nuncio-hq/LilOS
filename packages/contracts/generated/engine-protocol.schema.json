@@ -676,6 +676,52 @@
                     },
                     "type": {
                       "type": "string",
+                      "const": "session.titled"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "title": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "derived",
+                            "llm"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "title",
+                        "source"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "sessionId",
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "type": {
+                      "type": "string",
                       "const": "turn.started"
                     },
                     "payload": {
@@ -1519,6 +1565,9 @@
               },
               "fast": {
                 "type": "boolean"
+              },
+              "title": {
+                "type": "string"
               }
             },
             "required": [
@@ -2177,6 +2226,52 @@
                 },
                 "required": [
                   "text"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "seq",
+              "sessionId",
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "const": "session.titled"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "derived",
+                      "llm"
+                    ]
+                  }
+                },
+                "required": [
+                  "title",
+                  "source"
                 ],
                 "additionalProperties": false
               }

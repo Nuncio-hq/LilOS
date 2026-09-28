@@ -285,8 +285,11 @@ export class FakeGateway implements GatewayLike {
         this.closedSessions.push(String(p.session_id));
         return Promise.resolve({ closed: true });
       case "session.title":
+        /* The gateway echoes the just-set title back (tui_gateway/methods
+           _session_title returns the stored row); tests need the echo to be
+           the requested value, not a canned one. */
         return Promise.resolve({
-          title: "t",
+          title: String(p.title ?? "t"),
           session_key: this.refs.get(String(p.session_id)) ?? "",
         });
       case "image.attach_bytes":

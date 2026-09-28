@@ -143,7 +143,14 @@ test("DM page: with no session open the feed fills the window (no empty right co
     await box.fill(PROMPT);
     await box.press("Enter");
     await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
-    const panel = page.getByText("Session", { exact: true }).first();
+    // The thread header shows the session's auto title (placeholder →
+    // engine-written, #137) — the prompt's own words land there first.
+    const panel = page
+      .locator("main")
+      .getByText(
+        /What does the replay contract carry|What Does The Replay Contract Carry/,
+      )
+      .first();
     await expect(panel).toBeVisible({ timeout: 30_000 });
     expect(await rightGap(page)).toBeGreaterThan(300);
 

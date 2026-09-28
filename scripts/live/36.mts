@@ -33,7 +33,6 @@ import { join } from "node:path";
  * Prints PASS/FAIL per check plus a summary line. Exit 0 = all pass.
  */
 import { serveSurfaces } from "../../apps/harness/src/surfaces/server.ts";
-import { SURFACES_ENV } from "../../packages/surfaces/src/config.ts";
 
 const ROOT = new URL("../..", import.meta.url).pathname;
 const MARKER = `LIVE36-${Math.random().toString(36).slice(2, 8)}`;

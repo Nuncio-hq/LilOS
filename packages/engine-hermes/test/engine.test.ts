@@ -264,6 +264,85 @@ describe("engine-hermes AC-3: ref rotation on compression", () => {
   });
 });
 
+describe("engine-hermes #137: auto titles map to session.titled", () => {
+  test("AC-1 session.title event -> session.titled (derived then llm)", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    // tui_gateway/prompt_turn.py:_on_session_title — Hermes fires
+    // `session.title` for the persisted auto title only, first with the
+    // instant "derived" title, then the model-written upgrade.
+    gw.emit(gw.lastSid, "session.title", {
+      title: "Explain the relay package",
+    });
+    const derived = await h.waitEvent(
+      h.forSession(sessionId, (e) => e.type === "session.titled"),
+    );
+    expect(derived.payload).toEqual({
+      title: "Explain the relay package",
+      source: "derived",
+    });
+    gw.emit(gw.lastSid, "session.title", {
+      title: "Explain the Relay Package",
+    });
+    const llm = await h.waitEvent(
+      h.forSession(
+        sessionId,
+        (e) =>
+          e.type === "session.titled" &&
+          (e.payload as { source: string }).source === "llm",
+      ),
+    );
+    expect(llm.payload).toEqual({
+      title: "Explain the Relay Package",
+      source: "llm",
+    });
+
+    // The settled title rides the replay snapshot too (events.since).
+    const snap = (await h.request("events.since", {
+      sessionId,
+      after: 0,
+    })) as { snapshot: { title?: string } };
+    expect(snap.snapshot.title).toBe("Explain the Relay Package");
+  });
+
+  test("AC-1 session.info title change -> session.titled llm", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    // tui_gateway/server.py:_session_info — a `session.title` set call emits
+    // session.info, and any engine-side rename (CLI `hermes title`) also
+    // surfaces there; the first title seen is the instant one.
+    gw.emit(gw.lastSid, "session.info", { title: "Deploy notes" });
+    const e = await h.waitEvent(
+      h.forSession(sessionId, (x) => x.type === "session.titled"),
+    );
+    expect(e.payload).toEqual({ title: "Deploy notes", source: "derived" });
+    gw.emit(gw.lastSid, "session.info", { title: "Deploy notes v2" });
+    const e2 = await h.waitEvent(
+      h.forSession(
+        sessionId,
+        (x) =>
+          x.type === "session.titled" &&
+          (x.payload as { title: string }).title === "Deploy notes v2",
+      ),
+    );
+    expect((e2.payload as { source: string }).source).toBe("llm");
+  });
+
+  test("AC-2 our own session.setTitle does not bounce back as session.titled", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    // The app-side rename (#28) answers session.title then Hermes echoes it
+    // in session.info — the engine must not re-report it as an engine title.
+    await h.request("session.setTitle", {
+      sessionId,
+      title: "Named by Oscar",
+    });
+    gw.emit(gw.lastSid, "session.info", { title: "Named by Oscar" });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(h.events.filter((e) => e.type === "session.titled")).toHaveLength(0);
+  });
+});
+
 describe("engine-hermes AC-4: interrupt & steer", () => {
   test("AC-4a interrupt mid-turn -> cancelled turn", async () => {
     const { gw, h } = setup();
