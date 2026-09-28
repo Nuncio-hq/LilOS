@@ -144,6 +144,10 @@ PR does not exist.
   (`ThreadView`, `FocusView`); frame-only features are pieces the frame adds,
   not props of `AgentTurn`. Not: variant/mode props inside `AgentTurn`, a god
   component accumulating optional props. — #19 · PR #40
+- **D-#105 `@`-file mentions send the relative path as plain text
+  (`@src/app.tsx`), never file contents or engine-specific blocks; one `@`
+  menu lists Employees then Files.** Not: content inlining, a second
+  popover, a `#` trigger. — #105
 
 ## Status
 - **D-#33 `system.status` legs carry `{state, reason}`; `blocked` (#53) means
