@@ -174,9 +174,13 @@ test("AC-3/AC-4 placeholder then engine titles land live in header, list, search
   await page.screenshot({ path: `${SHOTS}/ac34-header-llm-title.png` });
 
   // AC-4: the session list row + title search show the engine title.
+  // #195: back out of Focus lands on the session's peek panel — the feed
+  // (and its session rows) stays mounted beside it.
   await page.goBack();
-  await expect(page).toHaveURL(/\/dm\/[^/]+$/, { timeout: 10_000 });
-  const row = page.getByText(STAGE[2]).first();
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_[^/]+$/, {
+    timeout: 10_000,
+  });
+  const row = page.locator("[data-session]", { hasText: STAGE[2] });
   await expect(row).toBeVisible({ timeout: 30_000 });
   await page.getByPlaceholder("Filter sessions").fill("Detail Please");
   await expect(row).toBeVisible();
