@@ -431,7 +431,7 @@ export function toThreadDetail(opts: {
         })
       : "",
     /* The Folder row shows the picked folder (repoPath on a workstream —
-       the worktree path in cwd is #156 plumbing, not what Oscar picked). */
+       the worktree path in cwd is #156 plumbing, not the picked folder). */
     folder:
       (conv.workspace?.repoPath ?? conv.cwd)
         ? {
