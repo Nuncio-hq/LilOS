@@ -10,6 +10,7 @@ import {
   type Page,
   test,
 } from "@playwright/test";
+import { TRAFFIC_LIGHTS_END } from "../apps/desktop/src/window-chrome";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
 import { wport } from "./ports";
 
@@ -219,18 +220,19 @@ test("AC-1 no title bar strip; traffic lights inset into the sidebar header", as
     expect(contentH).toBe(winH);
 
     // The sidebar header is a drag region and its content clears the lights
-    // (~72px of buttons from x≈16).
+    // (inset x=16 + a ~52-62px cluster → TRAFFIC_LIGHTS_END ≈ 78 worst case),
+    // with the ~10px gap macOS leaves before content.
     await expect
       .poll(() => appRegion(win, "aside.lilos-glass-side > div"))
       .toBe("drag");
     const head = sidebarHeader(win);
     const pad = await head.evaluate((el) => getComputedStyle(el).paddingLeft);
-    expect(Number.parseFloat(pad)).toBeGreaterThanOrEqual(70);
-    const logoX = await head
-      .locator("div")
-      .first()
-      .evaluate((el) => el.getBoundingClientRect().x);
-    expect(logoX).toBeGreaterThanOrEqual(70);
+    expect(Number.parseFloat(pad)).toBeGreaterThanOrEqual(
+      TRAFFIC_LIGHTS_END + 10,
+    );
+    const logoBox = await head.locator("div").first().boundingBox();
+    if (!logoBox) throw new Error("company avatar has no box");
+    expect(logoBox.x - TRAFFIC_LIGHTS_END).toBeGreaterThanOrEqual(10);
     await win.screenshot({ path: `${SHOTS}/ac-1-inset.png` });
   } finally {
     await app.close();
@@ -328,7 +330,7 @@ test("AC-4 full screen hides the lights and drops the sidebar inset", async () =
         Number.parseFloat(getComputedStyle(el).paddingLeft),
       );
     const inset = await padLeft();
-    expect(inset).toBeGreaterThanOrEqual(70);
+    expect(inset).toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
 
     await app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].setFullScreen(true),
@@ -354,7 +356,7 @@ test("AC-4 full screen hides the lights and drops the sidebar inset", async () =
         ),
       )
       .toBe(false);
-    await expect.poll(padLeft).toBeGreaterThanOrEqual(70);
+    await expect.poll(padLeft).toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
   } finally {
     await app.close();
   }

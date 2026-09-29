@@ -93,8 +93,24 @@ describe("desktop chrome stylesheet", () => {
   });
 
   test("AC-2 the sidebar goes transparent so the vibrancy shows", () => {
-    expect(css).toMatch(
-      /html\[data-desktop\][^{]*lilos-glass-side[^{]*\{[^}]*background[^}]*transparent/,
+    // #254 moved the glass theme to packages/ui/theme.css: under
+    // .lilos-desktop (Electron) the sidebar keeps only a translucent tint so
+    // the vibrancy material reads through; a plain browser tab keeps glass.
+    const themeCss = readFileSync(
+      join(
+        dirname(fileURLToPath(import.meta.url)),
+        "..",
+        "..",
+        "..",
+        "packages",
+        "ui",
+        "src",
+        "theme.css",
+      ),
+      "utf8",
+    );
+    expect(themeCss).toMatch(
+      /\.lilos-desktop:not\(\.lilos-float\)[^{]*lilos-glass-side[^{]*\{[^}]*background:\s*rgb\([^)]*\/\s*0\./,
     );
   });
 });

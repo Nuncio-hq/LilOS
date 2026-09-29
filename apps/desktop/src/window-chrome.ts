@@ -13,6 +13,13 @@ import type { BrowserWindow, BrowserWindowConstructorOptions } from "electron";
 /** Sidebar header height (`h-14` in packages/ui); the lights centre on it. */
 export const SIDEBAR_HEADER_HEIGHT = 56;
 
+/** The x where the green button's right edge sits, worst case: the inset is
+    x=16 and the three-button cluster spans ~52-62px depending on macOS
+    version and display scale (measured ~62 on a Retina box, ~54 at 1x). The
+    sidebar header's reserve must clear this plus the ~10px gap macOS leaves
+    between the lights and content; e2e ac-232 asserts both. */
+export const TRAFFIC_LIGHTS_END = 78;
+
 /** BrowserWindow options shared by the app and status windows. */
 export function nativeWindowChrome(
   _kind: "app" | "status" = "app",

@@ -73,12 +73,11 @@ export interface DesktopBridgeConfig {
  */
 export interface DesktopBridge {
   config?: DesktopBridgeConfig;
-  /** true in the Electron shell — the OS window is the frame (#246). */
+  /** True in the Electron shell (any window with the preload); absent in a
+   * plain browser tab — the OS window is the frame (#246) and the app scopes
+   * all window-chrome CSS to it (#232). */
   isDesktop?: boolean;
   platform?: string;
-  /** True in the Electron shell (any window with the preload); absent in a
-   * plain browser tab — the app scopes all window-chrome CSS to it (#232). */
-  isDesktop?: boolean;
   /** Native full-screen state (#232 AC-4): the lights hide and the sidebar
    * header drops the inset it kept for them. */
   fullscreen?: {

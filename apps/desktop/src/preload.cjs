@@ -27,7 +27,9 @@ ipcRenderer.on("lilos:fullscreen", (_e, fs) => {
 
 contextBridge.exposeInMainWorld("lilos", {
   // #246: the renderer floats its window only in a plain browser tab; inside
-  // Electron the OS window is the frame.
+  // Electron the OS window is the frame. #232: `isDesktop` also flips
+  // `data-desktop` on <html> (traffic-light inset, drag regions, sidebar
+  // vibrancy); main pushes full-screen changes over lilos:fullscreen.
   isDesktop: true,
   config: {
     relayWs: arg("relay"),
@@ -35,10 +37,6 @@ contextBridge.exposeInMainWorld("lilos", {
     engineWs: arg("engine"),
   },
   platform: process.platform,
-  // #232 window chrome: `isDesktop` flips `data-desktop` on <html> (traffic-
-  // light inset, drag regions, sidebar vibrancy); main pushes full-screen
-  // changes over lilos:fullscreen.
-  isDesktop: true,
   fullscreen: {
     current: () => fullScreen,
     onChange: (cb) => {

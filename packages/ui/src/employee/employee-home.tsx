@@ -448,13 +448,19 @@ export function EmployeeHome({
         </Button>
         <HermesAvatar name={e.name} status={e.status} className="size-8" />
         <div className="min-w-0">
-          <div
-            className="truncate font-semibold text-[17px] tracking-tight"
-            title={e.now ? `Now: ${e.now}` : undefined}
-          >
+          <div className="truncate font-semibold text-[17px] tracking-tight">
             {e.name}
           </div>
-          <div className="truncate text-muted-foreground text-xs">
+          <div
+            className="truncate text-muted-foreground text-xs"
+            onPointerEnter={(ev) => {
+              const el = ev.currentTarget;
+              el.title =
+                el.scrollWidth > el.clientWidth
+                  ? `${e.role}${e.now ? ` · now: ${e.now}` : ""}`
+                  : "";
+            }}
+          >
             {e.role}
             {e.now ? ` · now: ${e.now}` : ""}
           </div>
