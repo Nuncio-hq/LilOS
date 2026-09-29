@@ -1,7 +1,6 @@
 import type { PushPrefs } from "@lilos/contracts/app";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
-import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { atom } from "nanostores";
 import { AppState, type AppStateStatus } from "react-native";
@@ -26,10 +25,6 @@ import { nav } from "./routes";
  *   reported via `push.visibility` in `visibility.ts`).
  * - Forget this Mac sends `push.unregister` before the socket dies (the
  *   relay also drops the row on `devices.revoke`, so either order works).
- *
- * Simulators can't register with Expo push — `Device.isDevice` gates the
- * token call while everything else (prefs, toggles, the denied row) still
- * works, which is also what makes the settings screen testable.
  */
 
 const PREFS_KEY = "lilos.push.prefs.v1";
@@ -68,13 +63,13 @@ const persistPrefs = async (prefs: PushPrefs) => {
   await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(prefs)).catch(() => {});
 };
 
-/** AC-1: token + prefs upsert. No token (simulator/denied) → still nothing
-    registered — registration is what arms pushes on this device. */
+/** AC-1: token + prefs upsert. No token (no entitlement, Expo unreachable)
+    → nothing registered — registration is what arms pushes on this device.
+    Tried everywhere: iOS 16+ simulators can register too. */
 const register = async (): Promise<void> => {
   const client = $client.get();
   if (!client || $link.get() !== "online") return;
   await refreshPermission();
-  if (!Device.isDevice) return;
   try {
     const projectId =
       Constants.expoConfig?.extra?.eas?.projectId ??
