@@ -107,10 +107,21 @@ export function toAgentEntry(
     planCapable?: boolean;
     /** Resolves an employee helper's refs to its row link (#181). */
     resolveEmployee?: ResolveEmployee;
+    /** The conversation's PRs (#159) — a finished turn that ran
+       `gh pr create` gets the PR card under its reply (web: PrCard). */
+    prs?: readonly PullRequestRef[];
     now: number;
   },
 ): AgentEntry {
   const live = turn.phase !== "done" && turn.phase !== "stopped";
+  const openedPr =
+    !live &&
+    opts.prs?.length &&
+    turn.steps.some((s) =>
+      String(s.input.command ?? "").startsWith("gh pr create"),
+    )
+      ? opts.prs[0]
+      : undefined;
   const lastPlan = opts.planCapable === false ? undefined : turn.plans.at(-1);
   const stopped = turn.phase === "stopped";
   const files = new Set(
@@ -144,6 +155,7 @@ export function toAgentEntry(
           ),
         }
       : {}),
+    ...(openedPr ? { pr: openedPr } : {}),
     footer:
       !live && (opts.dur !== undefined || turn.model)
         ? {
@@ -202,6 +214,8 @@ export function mergeThreadEntries(
     planCapable?: boolean;
     /** Resolves an employee helper's refs to its row link (#181). */
     resolveEmployee?: ResolveEmployee;
+    /** The conversation's PRs (#159) — passed to turns that opened one. */
+    prs?: readonly PullRequestRef[];
     rewoundRefs?: ReadonlySet<string>;
     rewoundTexts?: ReadonlySet<string>;
     now: number;
@@ -277,6 +291,7 @@ export function mergeThreadEntries(
       sessionId: opts.sessionId ?? model.sessionId,
       planCapable: opts.planCapable,
       resolveEmployee: opts.resolveEmployee,
+      prs: opts.prs,
       now: opts.now,
     });
     const superseded = supersededPlanEntries(turn, opts.planCapable);
@@ -318,6 +333,7 @@ export function mergeThreadEntries(
       sessionId: opts.sessionId ?? model.sessionId,
       planCapable: opts.planCapable,
       resolveEmployee: opts.resolveEmployee,
+      prs: opts.prs,
       now: opts.now,
     });
   const byRef = new Map<string, number>();
@@ -454,6 +470,7 @@ export function toThreadDetail(opts: {
       sessionId: conv.engineRef ?? undefined,
       planCapable: opts.planCapable,
       resolveEmployee,
+      prs: opts.prs,
       rewoundRefs,
       rewoundTexts,
       now: opts.now,

@@ -131,6 +131,43 @@ export function prHeadline(prs: PullRequestRef[]) {
       : `${prs.length} PRs`;
 }
 
+/** The card under the turn that opened a PR (web: PrCard) — the reply
+   "status is live on the card below" points at this. */
+export function PrCard({ pr }: { pr: PullRequestRef }) {
+  const l = LOOK[pr.status];
+  return (
+    <View
+      accessible
+      accessibilityLabel={`PR ${pr.number}, ${pr.title}, ${prStatusLabel(pr)}`}
+      className="flex-row items-center gap-3 self-start rounded-[18px] bg-card px-3.5 py-3"
+      style={{ borderCurve: "continuous" }}
+    >
+      <View className="grid size-8 shrink-0 place-items-center rounded-xl bg-fill">
+        <Icon name={l.icon} size={15} tone={l.tone} weight="semibold" />
+      </View>
+      <View className="min-w-0">
+        <AppText weight="medium" numberOfLines={1} className="text-[15px]">
+          {pr.title}
+        </AppText>
+        <View className="mt-0.5 flex-row items-center gap-1.5">
+          <Text
+            className={`font-medium text-[13px] ${l.text}`}
+            style={{ fontVariant: ["tabular-nums"] }}
+          >
+            {`#${pr.number}`}
+          </Text>
+          <AppText tone="muted" className="text-[13px]">
+            ·
+          </AppText>
+          <AppText tone="muted" className="text-[13px]">
+            {prStatusLabel(pr)}
+          </AppText>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 /** A DM row's PR line. One PR says its state in words ("#96 Draft ·
     checks failing"); several show as badges, open first, then "+N". */
 export function PrLine({ prs }: { prs: PullRequestRef[] }) {

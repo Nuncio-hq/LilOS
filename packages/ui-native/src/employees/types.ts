@@ -187,6 +187,8 @@ export type AgentEntry = {
   plan?: PlanRow;
   /** Helpers this turn spun off (issue #170; web: Subagent). */
   subagents?: SubagentRow[];
+  /** The PR this turn opened — card under the reply (#159; web: PrCard). */
+  pr?: PullRequestRef;
   /** Worked for 21s · Opus 5.5 · High · 5 steps · 2 files changed */
   footer?: { dur?: number; model?: string; effort?: string; files?: number };
 };

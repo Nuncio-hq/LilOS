@@ -1,9 +1,11 @@
+import { reduceSessionEvents } from "@lilos/client-runtime";
 import type {
   AppMessage,
   Ask,
   Conversation,
   ConversationSummary,
 } from "@lilos/contracts/app";
+import type { EngineEvent } from "@lilos/contracts/engine";
 import type { ForgePrListItem } from "@lilos/contracts/host";
 import type { PullRequestRef } from "@lilos/ui-native";
 import { describe, expect, it } from "vitest";
@@ -14,7 +16,7 @@ import {
   toPullRequestRef,
   watchPrs,
 } from "../src/prs";
-import { toThreadDetail } from "../src/thread-model";
+import { mergeThreadEntries, toThreadDetail } from "../src/thread-model";
 
 /* #159: the gh list row -> PullRequestRef mapping, the per-conversation
    $prs store the screens read, and the DM/thread models carrying prs onto
@@ -236,5 +238,86 @@ describe("#159 AC-5 watchPrs — a finished turn re-lists that thread's PRs", ()
     });
     await new Promise((r) => setTimeout(r, 0));
     expect(calls).toHaveLength(1); // only the turn.completed fired, once
+  });
+});
+
+describe("#159 AC-3 the reply's PR card (web: PrCard under the turn)", () => {
+  let seq = 0;
+  const ev = (type: string, payload: Record<string, unknown>): EngineEvent =>
+    ({ seq: ++seq, sessionId: "sess-1", type, payload }) as EngineEvent;
+  const OPTS = {
+    conversationId: "conv-1",
+    asks: [] as Ask[],
+    employeeId: "builder",
+    employeeName: "Builder",
+    sessionId: "sess-1",
+    prs: PRS,
+    now: T0,
+  };
+
+  it("a finished turn that ran `gh pr create` carries the PR onto its card", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small" }),
+      ev("tool.started", {
+        turnId: "t1",
+        toolCallId: "c1",
+        tool: "terminal",
+        input: { command: "gh pr create --fill" },
+      }),
+      ev("tool.completed", {
+        turnId: "t1",
+        toolCallId: "c1",
+        output: "https://github.com/acme/widgets/pull/96",
+      }),
+      ev("turn.delta", {
+        turnId: "t1",
+        stream: "text",
+        delta: "Opened PR #96 — status is live on the card below.",
+      }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    ]);
+    const detail = toThreadDetail({
+      conversation: conv(),
+      messages: [],
+      model,
+      asks: [],
+      pending: new Set(),
+      now: T0,
+      prs: PRS,
+    });
+    const entry = detail.entries.at(-1);
+    if (entry?.kind !== "agent") throw new Error("expected agent entry");
+    expect(entry.pr).toEqual(PRS[0]);
+  });
+
+  it("no `gh pr create` step or a still-live turn: no card", () => {
+    const noPr = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1" }),
+      ev("tool.started", {
+        turnId: "t1",
+        toolCallId: "c1",
+        tool: "terminal",
+        input: { command: "bun test" },
+      }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    ]);
+    const done = mergeThreadEntries([], noPr, OPTS);
+    const doneEntry = done.at(-1);
+    if (doneEntry?.kind !== "agent") throw new Error("expected agent entry");
+    expect(doneEntry.pr).toBeUndefined();
+
+    const liveModel = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t2" }),
+      ev("tool.started", {
+        turnId: "t2",
+        toolCallId: "c2",
+        tool: "terminal",
+        input: { command: "gh pr create --fill" },
+      }),
+    ]);
+    const live = mergeThreadEntries([], liveModel, OPTS);
+    const liveEntry = live.at(-1);
+    if (liveEntry?.kind !== "agent") throw new Error("expected agent entry");
+    expect(liveEntry.pr).toBeUndefined();
   });
 });
