@@ -206,8 +206,12 @@ export function createPushFanout(options: {
         if (error || stopReason === "refusal") {
           alert = {
             kind: "failed",
+            /* The cause over the title — same precedence session.state
+               gives `reason`: "what went wrong" reads better in a banner
+               than the thread name. */
             body:
-              conversation.title || (error ? `Error: ${error}` : "Turn failed"),
+              (error ? `Error: ${error}` : undefined) ??
+              (conversation.title || "Turn failed"),
           };
         } else {
           alert = {

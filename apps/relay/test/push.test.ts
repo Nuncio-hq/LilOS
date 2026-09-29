@@ -360,7 +360,8 @@ describe("push fan-out — transition → push decision (#161)", () => {
       turnCompleted(2, { stopReason: "end_turn", error: "boom" }),
     );
     expect(sent).toHaveLength(2);
-    expect(sent[1]?.body).toBe("Fix the readme");
+    // The failure body leads with the cause, like session.state's reason.
+    expect(sent[1]?.body).toBe("Error: boom");
 
     await engineEvent(
       host,
