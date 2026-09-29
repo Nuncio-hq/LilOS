@@ -114,13 +114,18 @@ export function toAgentEntry(
   },
 ): AgentEntry {
   const live = turn.phase !== "done" && turn.phase !== "stopped";
+  /* The PR card under the reply (web: PrCard): the turn must have run
+     `gh pr create`; the card is the PR the step's output URL names
+     ("…/pull/N") — the conversation's top PR when it didn't (same rule as
+     web's branch-HEAD lookup). */
+  const prStep = turn.steps.findLast((s) =>
+    String(s.input.command ?? "").startsWith("gh pr create"),
+  );
+  const createdNumber = prStep?.output?.match(/\/pull\/(\d+)/)?.[1];
   const openedPr =
-    !live &&
-    opts.prs?.length &&
-    turn.steps.some((s) =>
-      String(s.input.command ?? "").startsWith("gh pr create"),
-    )
-      ? opts.prs[0]
+    !live && opts.prs?.length && prStep
+      ? (opts.prs.find((p) => p.number === Number(createdNumber)) ??
+        opts.prs[0])
       : undefined;
   const lastPlan = opts.planCapable === false ? undefined : turn.plans.at(-1);
   const stopped = turn.phase === "stopped";

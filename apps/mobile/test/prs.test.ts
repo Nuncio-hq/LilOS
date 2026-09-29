@@ -290,6 +290,29 @@ describe("#159 AC-3 the reply's PR card (web: PrCard under the turn)", () => {
     expect(entry.pr).toEqual(PRS[0]);
   });
 
+  it("the card names the PR the step's output URL points at, not just prs[0]", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small" }),
+      ev("tool.started", {
+        turnId: "t1",
+        toolCallId: "c1",
+        tool: "terminal",
+        input: { command: "gh pr create --fill" },
+      }),
+      ev("tool.completed", {
+        turnId: "t1",
+        toolCallId: "c1",
+        output: "https://github.com/acme/widgets/pull/91",
+      }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    ]);
+    const done = mergeThreadEntries([], model, OPTS);
+    const entry = done.at(-1);
+    if (entry?.kind !== "agent") throw new Error("expected agent entry");
+    // PRS[0] is #96 (open first); the step created #91 — the card shows #91.
+    expect(entry.pr).toEqual(PRS[1]);
+  });
+
   it("no `gh pr create` step or a still-live turn: no card", () => {
     const noPr = reduceSessionEvents("sess-1", [
       ev("turn.started", { turnId: "t1" }),
