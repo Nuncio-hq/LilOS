@@ -680,6 +680,69 @@ describe("engine-hermes #8: agents + models capabilities", () => {
     expect(opus?.fast).toBe(true);
   });
 
+  test("AC-4 (#194) models.list derives names from bare ids — the real Hermes catalog shapes", async () => {
+    const { gw, h } = setup();
+    /* A catalog like Oscar's live `model.options`: several providers × many
+       models — date-pinned Anthropic ids, `[1m]` routes, `-fast` variants,
+       `-900k` context ids, aggregator ids with `/` inside (never split or
+       rejoined for identity, #92 AC-8). */
+    gw.modelProviders = [
+      {
+        slug: "hpc",
+        name: "HPC",
+        models: ["qwen3.8-flash-next", "qwen3-32b"],
+      },
+      {
+        slug: "anthropic-cliproxy",
+        name: "Anthropic – CLIProxyAPI",
+        models: [
+          "claude-opus-4-5-20251101",
+          "claude-sonnet-5[1m]",
+          "claude-opus-4.8",
+          "claude-opus-4.8-fast",
+        ],
+      },
+      {
+        slug: "openai-codex",
+        name: "ChatGPT or Codex Subscription",
+        models: ["gpt-6-sol-900k", "gpt-5.5-preview"],
+      },
+      {
+        slug: "agentauth",
+        name: "AgentAuth (Devin Cascade)",
+        models: ["devin/claude-opus-5", "devin/kimi-k3"],
+      },
+      {
+        slug: "xai-oauth",
+        name: "xAI Grok OAuth",
+        models: ["grok-4.6", "grok-4.20-0309-non-reasoning"],
+      },
+    ];
+    const r = (await h.request("models.list")) as {
+      models: { id: string; name?: string; provider?: string }[];
+    };
+    expect(r.models.map((m) => [m.id, m.name])).toEqual([
+      ["qwen3.8-flash-next", "Qwen3.8 Flash Next"],
+      ["qwen3-32b", "Qwen3 32B"],
+      ["claude-opus-4-5-20251101", "Opus 4.5"],
+      ["claude-sonnet-5[1m]", "Sonnet 5 1M"],
+      ["claude-opus-4.8", "Opus 4.8"],
+      ["claude-opus-4.8-fast", "Opus 4.8 Fast"],
+      ["gpt-6-sol-900k", "GPT-6-sol-900k"],
+      ["gpt-5.5-preview", "GPT-5.5 Preview"],
+      ["devin/claude-opus-5", "Opus 5"],
+      ["devin/kimi-k3", "Kimi K3"],
+      ["grok-4.6", "Grok 4.6"],
+      ["grok-4.20-0309-non-reasoning", "Grok 4.20 0309 Non Reasoning"],
+    ]);
+    // Ids come back verbatim — `devin/…` keeps its slash; the name is display
+    // only and never feeds identity (#92 AC-8).
+    expect(r.models.map((m) => m.id)).toContain("devin/claude-opus-5");
+    // Look-alike ids never collapse to one label.
+    const names = r.models.map((m) => m.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
   test("AC-6 models.list passes refresh through; a new provider's model appears", async () => {
     const { gw, h } = setup();
     gw.refreshProviders.push({

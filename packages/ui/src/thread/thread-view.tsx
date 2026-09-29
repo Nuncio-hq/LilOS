@@ -229,7 +229,11 @@ export function ThreadView({
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {thread.usage && leadEmp && (
-            <SessionUsage usage={thread.usage} model={leadEmp.model} />
+            <SessionUsage
+              usage={thread.usage}
+              model={leadEmp.model}
+              models={models}
+            />
           )}
           {!work && !isDM && onStart && (
             // While the request card below is open the header button must not compete with it (issue

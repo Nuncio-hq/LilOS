@@ -1,3 +1,4 @@
+import { useCommandState } from "cmdk";
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -257,6 +258,20 @@ export function ModelPicker({
     groups.set(p, [...(groups.get(p) ?? []), m]);
   }
 
+  /* #194: a real catalog is hundreds of rows — provider groups start
+     collapsed except the current model's. `overrides` holds the groups the
+     user explicitly toggled (remembered for the picker's lifetime); an
+     untouched group follows the default rule, so a new current model's
+     provider opens on its own. While searching, collapse is ignored. */
+  const [overrides, setOverrides] = useState<Map<string, boolean> | null>(null);
+  const curProvider = cur?.provider ?? shown0.provider ?? "";
+  const expanded = (p: string) => overrides?.get(p) ?? p === curProvider;
+  const toggleGroup = (p: string) => {
+    const next = new Map(overrides ?? []);
+    next.set(p, !expanded(p));
+    setOverrides(next);
+  };
+
   const pickModel = (m: ModelOption) => {
     const keep = effort && m.efforts?.includes(effort);
     choose({
@@ -406,7 +421,14 @@ export function ModelPicker({
               </button>
             </div>
           ) : (
-            <Command className="rounded-lg!">
+            <Command
+              className="rounded-lg!"
+              /* Open with the current model selected → cmdk scrolls its row
+                 into view (#194 AC-1). */
+              defaultValue={
+                cur ? `${cur.provider ?? ""}::${cur.id}` : undefined
+              }
+            >
               <div className="flex items-center gap-1 pl-1">
                 <button
                   type="button"
@@ -421,40 +443,15 @@ export function ModelPicker({
                 </div>
               </div>
               <CommandList className="max-h-80">
-                <CommandEmpty>No model found.</CommandEmpty>
-                {[...groups.entries()].map(([p, items]) =>
-                  items.length ? (
-                    <CommandGroup
-                      key={p || "other"}
-                      heading={p ? pName(p) : "Other"}
-                    >
-                      {items.map((m) => {
-                        const on = m === cur;
-                        return (
-                          <CommandItem
-                            key={`${m.provider ?? ""}::${m.id}`}
-                            value={`${m.provider ?? ""}::${m.id}`}
-                            keywords={[m.id, m.name ?? "", p ? pName(p) : ""]}
-                            data-checked={on}
-                            onSelect={() => pickModel(m)}
-                          >
-                            <ModelLogo provider={m.provider} logo={logoOf(p)} />
-                            <span className="min-w-0 flex-1 truncate">
-                              {m.name ?? m.id}
-                            </span>
-                            {m.fast && (
-                              <ZapIcon
-                                aria-label="Has fast mode"
-                                className="size-3 text-muted-foreground"
-                              />
-                            )}
-                            {on && <CheckIcon className="sr-only" />}
-                          </CommandItem>
-                        );
-                      })}
-                    </CommandGroup>
-                  ) : null,
-                )}
+                <PickerGroups
+                  groups={groups}
+                  expanded={expanded}
+                  onToggle={toggleGroup}
+                  cur={cur}
+                  pickModel={pickModel}
+                  pName={pName}
+                  logoOf={logoOf}
+                />
                 {(onRefresh || onVisibility) && (
                   <>
                     <CommandSeparator />
@@ -504,6 +501,92 @@ export function ModelPicker({
           visibility={visibility ?? { providers: [], models: [] }}
           onVisibility={onVisibility}
         />
+      )}
+    </>
+  );
+}
+
+/* The provider groups of the drill-in list (#194). Each heading is a toggle
+   showing provider name + model count; while the search box has text, every
+   match renders expanded across providers (collapse ignored) and the empty
+   note only makes sense then — cmdk hides a group whose rows all filtered
+   out, so no "no matches" heading lingers. */
+function PickerGroups({
+  groups,
+  expanded,
+  onToggle,
+  cur,
+  pickModel,
+  pName,
+  logoOf,
+}: {
+  groups: Map<string, ModelOption[]>;
+  expanded: (p: string) => boolean;
+  onToggle: (p: string) => void;
+  cur: ModelOption | undefined;
+  pickModel: (m: ModelOption) => void;
+  pName: (p: string) => string;
+  logoOf: (p?: string) => string | undefined;
+}) {
+  const searching = useCommandState((s) => s.search.trim() !== "");
+  return (
+    <>
+      {searching && <CommandEmpty>No model found.</CommandEmpty>}
+      {[...groups.entries()].map(([p, items]) =>
+        items.length ? (
+          <CommandGroup
+            /* Remounting on the search flip restores the catalog order cmdk's
+               score-sort reorders while filtering. */
+            key={`${p || "other"}:${searching ? "search" : "browse"}`}
+            heading={
+              <button
+                type="button"
+                aria-expanded={searching || expanded(p)}
+                onClick={() => onToggle(p)}
+                className="flex w-full cursor-pointer items-center gap-1 text-left"
+              >
+                <ChevronRightIcon
+                  className={cn(
+                    "size-3 shrink-0 transition-transform",
+                    (searching || expanded(p)) && "rotate-90",
+                  )}
+                />
+                <span className="min-w-0 flex-1 truncate">
+                  {p ? pName(p) : "Other"}
+                </span>
+                <span className="text-muted-foreground/70 tabular-nums">
+                  {items.length}
+                </span>
+              </button>
+            }
+          >
+            {(searching || expanded(p)) &&
+              items.map((m) => {
+                const on = m === cur;
+                return (
+                  <CommandItem
+                    key={`${m.provider ?? ""}::${m.id}`}
+                    value={`${m.provider ?? ""}::${m.id}`}
+                    keywords={[m.id, m.name ?? "", p ? pName(p) : ""]}
+                    data-checked={on}
+                    onSelect={() => pickModel(m)}
+                  >
+                    <ModelLogo provider={m.provider} logo={logoOf(p)} />
+                    <span className="min-w-0 flex-1 truncate">
+                      {m.name ?? m.id}
+                    </span>
+                    {m.fast && (
+                      <ZapIcon
+                        aria-label="Has fast mode"
+                        className="size-3 text-muted-foreground"
+                      />
+                    )}
+                    {on && <CheckIcon className="sr-only" />}
+                  </CommandItem>
+                );
+              })}
+          </CommandGroup>
+        ) : null,
       )}
     </>
   );

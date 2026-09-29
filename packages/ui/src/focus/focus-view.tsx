@@ -448,7 +448,7 @@ export function FocusView({
             </span>
           )}
           {thread.usage && model && (
-            <SessionUsage usage={thread.usage} model={model} />
+            <SessionUsage usage={thread.usage} model={model} models={models} />
           )}
           {!work && !isDM && onStart && (
             // Same rule as the thread panel (issue #15): while the request card in the conversation

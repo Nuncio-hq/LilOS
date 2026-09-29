@@ -56,6 +56,63 @@ const MODELS: ModelOption[] = [
   { id: "orphan-1" },
 ];
 
+/* #194: a catalog shaped like Oscar's live `model.options` — several
+   providers × many models with real Hermes id shapes (date pins, `[1m]`
+   routes, `-fast` variants, `-900k` context ids, `devin/…` slashes). Names
+   are what `listModels` derives; `custom-raw-id` is the id-only fallback. */
+const CATALOG_PROVIDERS = [
+  { id: "hpc", name: "HPC" },
+  { id: "anthropic-cliproxy", name: "Anthropic – CLIProxyAPI" },
+  { id: "openai-codex", name: "ChatGPT or Codex Subscription" },
+  { id: "agentauth", name: "AgentAuth (Devin Cascade)" },
+  { id: "xai-oauth", name: "xAI Grok OAuth" },
+  { id: "cliproxy" },
+];
+const CATALOG: ModelOption[] = [
+  {
+    id: "qwen3.8-flash-next",
+    name: "Qwen3.8 Flash Next",
+    provider: "hpc",
+    efforts: LADDER,
+    defaultEffort: "medium",
+  },
+  { id: "qwen3-32b", name: "Qwen3 32B", provider: "hpc" },
+  {
+    id: "claude-opus-4-5-20251101",
+    name: "Opus 4.5",
+    provider: "anthropic-cliproxy",
+    efforts: LADDER,
+    defaultEffort: "high",
+    fast: true,
+  },
+  {
+    id: "claude-sonnet-5[1m]",
+    name: "Sonnet 5 1M",
+    provider: "anthropic-cliproxy",
+  },
+  {
+    id: "claude-opus-4.8-fast",
+    name: "Opus 4.8 Fast",
+    provider: "anthropic-cliproxy",
+  },
+  {
+    id: "gpt-6-sol-900k",
+    name: "GPT-6-sol-900k",
+    provider: "openai-codex",
+    fast: true,
+  },
+  { id: "gpt-6-sol", name: "GPT-6-sol", provider: "openai-codex" },
+  {
+    id: "devin/claude-opus-5",
+    name: "Opus 5",
+    provider: "agentauth",
+    fast: true,
+  },
+  { id: "devin/kimi-k3", name: "Kimi K3", provider: "agentauth" },
+  { id: "grok-4.6", name: "Grok 4.6", provider: "xai-oauth" },
+  { id: "custom-raw-id", provider: "cliproxy" },
+];
+
 const body = () => document.body as HTMLElement;
 const trigger = () => {
   const el = body().querySelector('[data-slot="model-picker-trigger"]');
@@ -90,8 +147,165 @@ function Harness(
   );
 }
 
+const list = () => body().querySelector("[cmdk-list]") as HTMLElement;
+const headings = () =>
+  [...body().querySelectorAll("[cmdk-group-heading]")] as HTMLElement[];
+const headingFor = (name: string) => {
+  const h = headings().find((el) => el.textContent?.includes(name));
+  if (!h) throw new Error(`no heading ${name}`);
+  return h;
+};
+const searchBox = () => {
+  const el = body().querySelector('[data-slot="command-input"]');
+  if (!el) throw new Error("no search input");
+  return el as HTMLInputElement;
+};
+
 describe("model picker v2", () => {
-  test("AC-1 the Model list shows the engine's models grouped by provider", async () => {
+  test("AC-1 groups collapse except the current model's provider — headings carry name + count", async () => {
+    render(
+      <ModelPicker
+        value={choiceFor("qwen3.8-flash-next", CATALOG)}
+        models={CATALOG}
+        onChoice={() => {}}
+        providers={CATALOG_PROVIDERS}
+      />,
+    );
+    await openModels();
+    // Only HPC (the current model's provider) is expanded: its two rows are
+    // visible, every other provider's rows stay collapsed behind a heading
+    // with the model count.
+    expect(within(list()).getByText("Qwen3.8 Flash Next")).toBeTruthy();
+    expect(within(list()).getByText("Qwen3 32B")).toBeTruthy();
+    for (const label of [
+      "Opus 4.5",
+      "GPT-6-sol-900k",
+      "Opus 5",
+      "Grok 4.6",
+      "custom-raw-id",
+    ]) {
+      expect(within(list()).queryByText(label)).toBeNull();
+    }
+    // Headings show the provider name + model count, collapsed.
+    const heads = headings().map((el) => el.textContent);
+    expect(heads).toEqual([
+      "HPC2",
+      "Anthropic – CLIProxyAPI3",
+      "ChatGPT or Codex Subscription2",
+      "AgentAuth (Devin Cascade)2",
+      "xAI Grok OAuth1",
+      "Cliproxy1",
+    ]);
+    // The current row is the selected one — scrolled into view.
+    const curRow = within(list())
+      .getByText("Qwen3.8 Flash Next")
+      .closest("[cmdk-item]") as HTMLElement;
+    expect(curRow.getAttribute("aria-selected")).toBe("true");
+  });
+
+  test("AC-2 a heading toggles its group; search expands matches across providers and clearing restores", async () => {
+    render(
+      <ModelPicker
+        value={choiceFor("qwen3.8-flash-next", CATALOG)}
+        models={CATALOG}
+        onChoice={() => {}}
+        providers={CATALOG_PROVIDERS}
+      />,
+    );
+    await openModels();
+    // Click the AgentAuth heading → its rows open.
+    await act(async () =>
+      fireEvent.click(
+        headingFor("AgentAuth").querySelector("button") as HTMLElement,
+      ),
+    );
+    expect(within(list()).getByText("Opus 5")).toBeTruthy();
+    expect(within(list()).getByText("Kimi K3")).toBeTruthy();
+    // HPC is still open; others still collapsed.
+    expect(within(list()).getByText("Qwen3.8 Flash Next")).toBeTruthy();
+    expect(within(list()).queryByText("Grok 4.6")).toBeNull();
+    // Search `opus` → matches from every provider, expanded.
+    await act(async () =>
+      fireEvent.change(searchBox(), { target: { value: "opus" } }),
+    );
+    expect(within(list()).getByText("Opus 4.5")).toBeTruthy();
+    expect(within(list()).getByText("Opus 4.8 Fast")).toBeTruthy();
+    expect(within(list()).getByText("Opus 5")).toBeTruthy();
+    // Non-matching providers/rows are filtered out entirely.
+    expect(within(list()).queryByText("Grok 4.6")).toBeNull();
+    expect(within(list()).queryByText("Qwen3.8 Flash Next")).toBeNull();
+    // Search matches the id too, not only the name.
+    await act(async () =>
+      fireEvent.change(searchBox(), { target: { value: "devin/" } }),
+    );
+    expect(within(list()).getByText("Opus 5")).toBeTruthy();
+    expect(within(list()).getByText("Kimi K3")).toBeTruthy();
+    // Clearing search restores the remembered collapsed/open state.
+    await act(async () =>
+      fireEvent.change(searchBox(), { target: { value: "" } }),
+    );
+    expect(within(list()).getByText("Opus 5")).toBeTruthy(); // toggled open earlier
+    expect(within(list()).queryByText("Grok 4.6")).toBeNull();
+    expect(within(list()).queryByText("Opus 4.5")).toBeNull();
+    // Toggle AgentAuth back closed → remembered.
+    await act(async () =>
+      fireEvent.click(
+        headingFor("AgentAuth").querySelector("button") as HTMLElement,
+      ),
+    );
+    expect(within(list()).queryByText("Opus 5")).toBeNull();
+    expect(within(list()).getByText("Qwen3.8 Flash Next")).toBeTruthy();
+  });
+
+  test("AC-3 rows show names — the raw id is only a fallback, the chip shows the same name", async () => {
+    render(
+      <ModelPicker
+        value={choiceFor("qwen3.8-flash-next", CATALOG)}
+        models={CATALOG}
+        onChoice={() => {}}
+        providers={CATALOG_PROVIDERS}
+      />,
+    );
+    // Composer chip: the derived name, not `qwen3.8-flash-next`.
+    expect(trigger().textContent).toContain("Qwen3.8 Flash Next");
+    expect(trigger().textContent).not.toContain("qwen3.8-flash-next");
+    await openModels();
+    // Rows show the name; a model without a derivable name keeps the id.
+    await act(async () =>
+      fireEvent.click(
+        headingFor("Cliproxy").querySelector("button") as HTMLElement,
+      ),
+    );
+    expect(within(list()).getByText("custom-raw-id")).toBeTruthy();
+    expect(within(list()).queryByText("claude-opus-4-5-20251101")).toBeNull();
+  });
+
+  test("the default-collapse rule applies on first open; toggles live for the picker's lifetime", async () => {
+    render(
+      <ModelPicker
+        value={choiceFor("gpt-6-sol", CATALOG)}
+        models={CATALOG}
+        onChoice={() => {}}
+        providers={CATALOG_PROVIDERS}
+      />,
+    );
+    await openModels();
+    // Current = openai-codex → only that group is open on first open.
+    expect(within(list()).getByText("GPT-6-sol-900k")).toBeTruthy();
+    expect(within(list()).queryByText("Qwen3.8 Flash Next")).toBeNull();
+    // Toggle HPC open, close the popover, reopen → still open.
+    await act(async () =>
+      fireEvent.click(headingFor("HPC").querySelector("button") as HTMLElement),
+    );
+    expect(within(list()).getByText("Qwen3.8 Flash Next")).toBeTruthy();
+    await act(async () => fireEvent.keyDown(body(), { key: "Escape" }));
+    await openModels();
+    expect(within(list()).getByText("Qwen3.8 Flash Next")).toBeTruthy();
+    expect(within(list()).getByText("GPT-6-sol-900k")).toBeTruthy();
+    expect(within(list()).queryByText("Grok 4.6")).toBeNull();
+  });
+
+  test("the engine's models group by provider (name + count headings)", async () => {
     render(
       <Harness
         providers={[
@@ -101,19 +315,20 @@ describe("model picker v2", () => {
       />,
     );
     await openModels();
-    const headings = [...body().querySelectorAll("[cmdk-group-heading]")].map(
-      (el) => el.textContent,
-    );
+    const heads = headings().map((el) => el.textContent);
     // Engine-named providers win; unknown slugs get the models.dev name;
-    // providerless models land in Other.
-    expect(headings).toEqual([
-      "HPC",
-      "ChatGPT or Codex Subscription",
-      "Anthropic",
-      "Other",
+    // providerless models land in Other. Only openai (current) is expanded.
+    expect(heads).toEqual([
+      "HPC1",
+      "ChatGPT or Codex Subscription2",
+      "Anthropic1",
+      "Other1",
     ]);
-    for (const label of ["gpt-test-4o", "Claude test 4.5", "orphan-1"]) {
-      expect(within(body()).getByText(label)).toBeTruthy();
+    for (const label of ["GPT test 5", "gpt-test-4o"]) {
+      expect(within(list()).getByText(label)).toBeTruthy();
+    }
+    for (const label of ["Qwen", "Claude test 4.5", "orphan-1"]) {
+      expect(within(list()).queryByText(label)).toBeNull();
     }
   });
 
@@ -121,8 +336,14 @@ describe("model picker v2", () => {
     const picks: ModelChoice[] = [];
     render(<Harness picks={picks} />);
     await openModels();
+    // #194: the Anthropic group starts collapsed — open it to pick.
     await act(async () =>
-      fireEvent.click(within(body()).getByText("Claude test 4.5")),
+      fireEvent.click(
+        headingFor("Anthropic").querySelector("button") as HTMLElement,
+      ),
+    );
+    await act(async () =>
+      fireEvent.click(within(list()).getByText("Claude test 4.5")),
     );
     // Claude test 4.5 reports no efforts → no effort in the pick; fast is
     // sent as false so an engine that retains the tier across switches
@@ -249,6 +470,13 @@ describe("model picker v2", () => {
     expect(within(list).queryByText("Claude test 4.5")).toBeNull();
     // Qwen is hidden but it is the session's model — still shown.
     expect(within(list).getByText("Qwen")).toBeTruthy();
+    // Openai starts collapsed (the current model sits in hpc) — open it to
+    // check its rows survived. No `providers` prop here → models.dev name.
+    await act(async () =>
+      fireEvent.click(
+        headingFor("OpenAI").querySelector("button") as HTMLElement,
+      ),
+    );
     expect(within(list).getByText("GPT test 5")).toBeTruthy();
   });
 });

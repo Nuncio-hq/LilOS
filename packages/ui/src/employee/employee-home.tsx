@@ -745,7 +745,7 @@ export function EmployeeCard({
           <dt className="text-muted-foreground">Profile</dt>
           <dd className="font-mono text-xs">{e.profile}</dd>
           <dt className="text-muted-foreground">Model</dt>
-          <dd>{e.model}</dd>
+          <dd>{models?.find((m) => m.id === e.model)?.name ?? e.model}</dd>
           <dt className="text-muted-foreground">Now</dt>
           <dd>{e.now}</dd>
         </dl>
