@@ -10,6 +10,7 @@ import { EngineEvent } from "../engine/events";
 import { JobsListParams, JobsStopParams } from "../engine/methods";
 import { ModelOption, ModelProvider, ModelsListParams } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
+import { ForgePrListItem } from "../host/forge";
 import {
   AppChannel,
   AppMessage,
@@ -156,6 +157,11 @@ export const AppMethod = z.enum([
   /* Host-only: re-publish one engine event of a conversation-bound session
      so the relay can re-emit it on the conversation's channel (#157). */
   "engine.event",
+  /* A thread's pull requests (#159): conversationId-scoped like
+     `session.events` — the relay resolves the conversation's folder +
+     branch(es) and calls the host's `forge.prs`; the raw path never crosses
+     the phone boundary. */
+  "conversations.prs",
   "system.status",
   "employees.remove",
   /* LilOS-owned client settings (engine keeps no such state): a generic KV
@@ -1035,6 +1041,29 @@ export const EngineEventParams = z
   })
   .strict();
 export type EngineEventParams = z.infer<typeof EngineEventParams>;
+
+/**
+ * A thread's pull requests through the relay (#159): `{conversationId}` —
+ * the relay resolves the conversation's folder (`cwd` or the picked
+ * `workspace.repoPath`) and head branch(es) and calls the host's
+ * `forge.prs` on the harness. A device peer can only ever ask inside a
+ * conversation the relay already knows; a just-chat thread (no folder)
+ * answers `prs: []` without a host call. Host failures — not a repo, `gh`
+ * missing or signed out — surface as errors; the app treats them as "no
+ * PRs" (AC-4).
+ */
+export const ConversationsPrsParams = z
+  .object({
+    conversationId: z.string().min(1),
+  })
+  .strict();
+export type ConversationsPrsParams = z.infer<typeof ConversationsPrsParams>;
+
+export const ConversationsPrsResult = z.object({
+  /** Open → draft → merged → closed, newest first inside each state. */
+  prs: z.array(ForgePrListItem),
+});
+export type ConversationsPrsResult = z.infer<typeof ConversationsPrsResult>;
 
 /* -------------------------------- events ------------------------------- */
 

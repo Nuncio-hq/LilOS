@@ -45,6 +45,7 @@ import {
 } from "../dm-store";
 import { $client, $welcome } from "../link";
 import { describeError, toneOf } from "../mapping";
+import { $prs, refreshPrsFor } from "../prs";
 import type { DmRoutes } from "../routes";
 
 /* The employee's DM (#156): the real relay's conversation.summaries grouped
@@ -93,6 +94,7 @@ export function Dm({
   const wsPicks = useStore($wsPicks);
   const modelPicks = useStore($modelPicks);
   const pending = useStore($pendingOpens);
+  const prsMap = useStore($prs);
   const now = useNow();
 
   const employee = employees.find((e) => e.id === employeeId);
@@ -114,6 +116,26 @@ export function Dm({
   useEffect(() => {
     if (client && channel) void client.channelMessages(channel.id);
   }, [client, channel]);
+
+  /* The channel's thread ids — a new thread re-arms the PR refresh below. */
+  const threadKey = useMemo(
+    () =>
+      conversations
+        .filter((c) => c.channelId === channel?.id)
+        .map((c) => c.id)
+        .join(","),
+    [conversations, channel?.id],
+  );
+
+  // Refresh each visible thread's PRs when the DM opens (#159 AC-5:
+  // thread-open trigger; turn-end refreshes run through watchPrs).
+  useEffect(() => {
+    if (!client || !channel || !threadKey) return;
+    refreshPrsFor(
+      client,
+      client.conversations.get().filter((c) => c.channelId === channel.id),
+    );
+  }, [client, channel, threadKey]);
 
   /* First visit for an employee with no DM yet: open one (idempotent).
      Retries whenever the link comes back ready. */
@@ -167,6 +189,7 @@ export function Dm({
           : { id: employeeId, name: employeeId, tone: "stone" },
         openAsks,
         pending,
+        prs: prsMap,
         now,
       })
     : [];

@@ -13,6 +13,7 @@ import {
   ChannelUnsubscribeParams,
   ConversationsListParams,
   ConversationsOpenParams,
+  ConversationsPrsParams,
   type ConversationsRewindHostParams,
   type ConversationsRewindHostResult,
   ConversationsRewindParams,
@@ -54,6 +55,7 @@ import {
   type WelcomeResult,
   WS_CLOSE_DEVICE_REVOKED,
 } from "@lilos/contracts/app";
+import type { ForgePrsResult } from "@lilos/contracts/host";
 import { collapsePath, resolveUnderHome } from "@lilos/host";
 import {
   type AttachmentStore,
@@ -1489,6 +1491,40 @@ export function createRelay(options: RelayOptions): Relay {
             sessionId: conversation.engineRef,
             after: parsed.data.after,
           });
+          return;
+        }
+        case "conversations.prs": {
+          /* A thread's pull requests (#159): conversationId-scoped like
+             `session.events` — the conversation's folder + branch(es)
+             resolve here so a device peer can never name a host path it
+             picked itself. A just-chat thread (no folder) answers an empty
+             list without a host call; host failures (not a repo, `gh`
+             missing/signed out) surface as errors the app treats as "no
+             PRs" (AC-4). */
+          const parsed = ConversationsPrsParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const conversation = await store.getConversation(
+            parsed.data.conversationId,
+          );
+          if (!conversation) {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "conversation not found",
+            );
+          }
+          const path = conversation.cwd ?? conversation.workspace?.repoPath;
+          if (!path) {
+            respond(peer, id, { prs: [] });
+            return;
+          }
+          const result = (await callHost("forge.prs", {
+            path,
+            ...(conversation.workspace?.branch
+              ? { branches: [conversation.workspace.branch] }
+              : {}),
+          })) as ForgePrsResult | null;
+          respond(peer, id, { prs: result?.prs ?? [] });
           return;
         }
         case "engine.event": {

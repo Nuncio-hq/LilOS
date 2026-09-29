@@ -16,6 +16,7 @@ import type {
   AgentEntry,
   Approval,
   ModelRow,
+  PullRequestRef,
   SubagentRow,
   ThreadDetail,
   ThreadEntry,
@@ -106,10 +107,26 @@ export function toAgentEntry(
     planCapable?: boolean;
     /** Resolves an employee helper's refs to its row link (#181). */
     resolveEmployee?: ResolveEmployee;
+    /** The conversation's PRs (#159) — a finished turn that ran
+       `gh pr create` gets the PR card under its reply (web: PrCard). */
+    prs?: readonly PullRequestRef[];
     now: number;
   },
 ): AgentEntry {
   const live = turn.phase !== "done" && turn.phase !== "stopped";
+  /* The PR card under the reply (web: PrCard): the turn must have run
+     `gh pr create`; the card is the PR the step's output URL names
+     ("…/pull/N") — the conversation's top PR when it didn't (same rule as
+     web's branch-HEAD lookup). */
+  const prStep = turn.steps.findLast((s) =>
+    String(s.input.command ?? "").startsWith("gh pr create"),
+  );
+  const createdNumber = prStep?.output?.match(/\/pull\/(\d+)/)?.[1];
+  const openedPr =
+    !live && opts.prs?.length && prStep
+      ? (opts.prs.find((p) => p.number === Number(createdNumber)) ??
+        opts.prs[0])
+      : undefined;
   const lastPlan = opts.planCapable === false ? undefined : turn.plans.at(-1);
   const stopped = turn.phase === "stopped";
   const files = new Set(
@@ -143,6 +160,7 @@ export function toAgentEntry(
           ),
         }
       : {}),
+    ...(openedPr ? { pr: openedPr } : {}),
     footer:
       !live && (opts.dur !== undefined || turn.model)
         ? {
@@ -201,6 +219,8 @@ export function mergeThreadEntries(
     planCapable?: boolean;
     /** Resolves an employee helper's refs to its row link (#181). */
     resolveEmployee?: ResolveEmployee;
+    /** The conversation's PRs (#159) — passed to turns that opened one. */
+    prs?: readonly PullRequestRef[];
     rewoundRefs?: ReadonlySet<string>;
     rewoundTexts?: ReadonlySet<string>;
     now: number;
@@ -276,6 +296,7 @@ export function mergeThreadEntries(
       sessionId: opts.sessionId ?? model.sessionId,
       planCapable: opts.planCapable,
       resolveEmployee: opts.resolveEmployee,
+      prs: opts.prs,
       now: opts.now,
     });
     const superseded = supersededPlanEntries(turn, opts.planCapable);
@@ -317,6 +338,7 @@ export function mergeThreadEntries(
       sessionId: opts.sessionId ?? model.sessionId,
       planCapable: opts.planCapable,
       resolveEmployee: opts.resolveEmployee,
+      prs: opts.prs,
       now: opts.now,
     });
   const byRef = new Map<string, number>();
@@ -399,6 +421,8 @@ export function toThreadDetail(opts: {
   /** `jobs.list` rows for this session — they cover jobs the event stream
      can't (started before a harness restart); job.* events overlay them. */
   listedJobs?: readonly Job[];
+  /** The thread's PRs (#159) — header headline + Session sheet group. */
+  prs?: readonly PullRequestRef[];
 }): ThreadDetail {
   const { conversation: conv } = opts;
   const employee = opts.employee;
@@ -451,6 +475,7 @@ export function toThreadDetail(opts: {
       sessionId: conv.engineRef ?? undefined,
       planCapable: opts.planCapable,
       resolveEmployee,
+      prs: opts.prs,
       rewoundRefs,
       rewoundTexts,
       now: opts.now,
@@ -520,6 +545,7 @@ export function toThreadDetail(opts: {
     usage:
       usage && (usage.input || usage.output) ? usageLabel(usage) : undefined,
     jobs,
+    ...(opts.prs?.length ? { prs: [...opts.prs] } : {}),
     entries,
   };
 }

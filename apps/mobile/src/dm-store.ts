@@ -14,6 +14,7 @@ import type {
 } from "@lilos/ui-native";
 import { atom } from "nanostores";
 import { toModelCatalog } from "./dm-model";
+import { watchPrs } from "./prs";
 
 /* Shared DM state (#156): open asks, folder recents, the engine model
    catalog, the composer's per-employee picks, and opens the phone itself
@@ -42,6 +43,9 @@ const watched = new WeakSet<RelayClient>();
 export function watchDm(client: RelayClient): void {
   if (watched.has(client)) return;
   watched.add(client);
+  /* #159: the turn-end PR refresh watcher lives beside the ask watcher —
+     same once-per-client registration. */
+  watchPrs(client);
 
   const seed = () => {
     void client

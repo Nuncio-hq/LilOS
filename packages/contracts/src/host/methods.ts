@@ -6,6 +6,8 @@ import {
   ForgeMergeResult,
   ForgePrParams,
   ForgePrResult,
+  ForgePrsParams,
+  ForgePrsResult,
 } from "./forge";
 import {
   FsCompleteParams,
@@ -123,6 +125,11 @@ export const HOST_METHODS = {
     params: ForgePrParams,
     result: ForgePrResult,
     doc: "PR for the checkout's branch (title/body/checks/comments/state) via `gh`.",
+  },
+  "forge.prs": {
+    params: ForgePrsParams,
+    result: ForgePrsResult,
+    doc: "Every PR for the checkout's branch(es) via `gh pr list` — badge facts + CI rollup (#159).",
   },
   "forge.comment": {
     params: ForgeCommentParams,

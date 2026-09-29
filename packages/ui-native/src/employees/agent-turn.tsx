@@ -7,6 +7,7 @@ import { Orb, type OrbTone } from "../components/orb";
 import { Prose, Pulse } from "../components/prose";
 import { approvalSentence } from "./approval-copy";
 import { type PlanAction, PlanCard } from "./plan-card";
+import { PrCard } from "./pr-badges";
 import { StepRow, tool } from "./step-row";
 import { SubagentsCard } from "./subagents";
 import type { AgentEntry, Approval, SubagentRow, ToolStep } from "./types";
@@ -102,6 +103,7 @@ export function AgentTurn({
           </Pulse>
         )
       )}
+      {e.pr && <PrCard pr={e.pr} />}
       {e.plan && (
         <PlanCard plan={e.plan} onAction={onPlan} onOpen={onOpenPlan} />
       )}

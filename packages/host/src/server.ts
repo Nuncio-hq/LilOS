@@ -1,6 +1,6 @@
 import { HOST_API, HOST_ERRORS, HOST_METHODS } from "@lilos/contracts/host";
 import { HostError } from "./errors.js";
-import { forgeComment, forgeMerge, forgePr } from "./forge.js";
+import { forgeComment, forgeMerge, forgePr, forgePrs } from "./forge.js";
 import { fsComplete, fsList, fsRead, fsSearch, fsTree } from "./fs.js";
 import {
   gitBranches,
@@ -32,6 +32,7 @@ const HANDLERS: Record<keyof typeof HOST_METHODS, Handler> = {
   "git.worktrees": gitWorktrees,
   "git.discoverRepos": gitDiscoverRepos,
   "forge.pr": forgePr,
+  "forge.prs": forgePrs,
   "forge.comment": forgeComment,
   "forge.merge": forgeMerge,
   "os.editors": osEditors,

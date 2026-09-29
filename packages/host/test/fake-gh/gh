@@ -74,6 +74,20 @@ switch (`${args[0]} ${args[1]}`) {
     process.stdout.write(raw);
     break;
   }
+  case "pr list": {
+    /* `gh pr list --head <branch>` (#159): serves `list-<branch>.json`
+       (`/` sanitized to `__`); a missing fixture = no PRs for that head —
+       real gh prints `[]` for that, never an error. */
+    const head = flag("--head");
+    if (!head) fail("pr list needs --head");
+    const listPath = join(dir, `list-${head.replaceAll("/", "__")}.json`);
+    if (!existsSync(listPath)) {
+      process.stdout.write("[]\n");
+      break;
+    }
+    process.stdout.write(readFileSync(listPath, "utf8"));
+    break;
+  }
   case "pr comment": {
     if (!existsSync(viewPath)) noPr();
     const body = flag("--body") ?? fail("comment needs --body");
