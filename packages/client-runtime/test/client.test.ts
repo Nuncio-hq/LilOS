@@ -722,6 +722,7 @@ describe("mobile instant-connect seam (#154)", () => {
     socket.respondTo("conversations.list", { conversations: [] });
     socket.respondTo("conversations.summaries", { summaries: [] });
     socket.respondTo("profile.get", { profile: {} });
+    socket.respondTo("asks.list", { asks: [] });
     const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
     await flush();
     await flush();
