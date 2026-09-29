@@ -21,12 +21,18 @@ prebuilds the iOS project, archives, exports an `.ipa` and uploads it.
 
 What it needs on your Mac:
 
-- **Xcode** signed into the Apple ID on team `R8GJL3N9WX` (the archive signs
-  automatically via `-allowProvisioningUpdates`).
-- **CocoaPods** (`brew install cocoapods`) for `expo prebuild`.
+- **Xcode** on team `R8GJL3N9WX` — no Apple ID sign-in needed: the script
+  passes the ASC API key to xcodebuild (`-authenticationKeyPath`/`ID`/
+  `IssuerID` + `-allowProvisioningUpdates`). An Apple ID signed in works too.
+- **CocoaPods** for `expo prebuild` — auto-installed via
+  `brew install cocoapods` when `pod` is missing (needs brew).
 - The **ASC API key** in env: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`
   (the org secret — same key the desktop notarization uses). The script writes
-  the `.p8` to a temp file for `altool` and deletes it after.
+  the `.p8` to a chmod-600 temp file for xcodebuild/`altool` and deletes it
+  after.
+
+On a bare machine, `--dry-run` lists every missing prerequisite with the exact
+remedy (bun, clone, `bun install`, Xcode, pods, ASC key).
 
 Useful flags/env: `--dry-run` (preflight + build-number check only),
 `--skip-upload` or `LILOS_SKIP_UPLOAD=1` (build + export, no upload),
