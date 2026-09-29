@@ -1,6 +1,6 @@
 ---
 name: testing-mobile-simulator
-description: How to test the LilOS iOS app (apps/mobile) end-to-end in Simulator on this macOS VM — picking the right booted device, simctl app control, the relay, pairing state, cache/offline behavior, evidence capture quirks, plan/task-list leg timings, building with Xcode-27-RC for iOS 26.x devices, custom/cap-less engine-fake variants, and harness capability plumbing gotchas.
+description: How to test the LilOS iOS app (apps/mobile) end-to-end in Simulator on this macOS VM — picking the right booted device, simctl app control, the relay, pairing state, cache/offline behavior, evidence capture quirks, plan/task-list leg timings, building with Xcode 26.x (never the Xcode 27 RC, #275), custom/cap-less engine-fake variants, and harness capability plumbing gotchas.
 ---
 
 # Testing the LilOS iOS app in Simulator on the macOS VM
@@ -224,10 +224,13 @@ the Simulator window is never covered.
 ## Building the app for the simulator (when no DerivedData .app exists)
 
 - `pod` may be missing: `brew install cocoapods` (installs Ruby 4.x as a dep).
-- The default selected Xcode (`xcode-select -p` → Xcode.app, 26.6) fails on
-  iOS 26.5 devices with error 70 "iOS 26.5 is not installed". Build with the
-  newer Xcode RC instead:
-  `cd apps/mobile && LANG=en_US.UTF-8 DEVELOPER_DIR=/Applications/Xcode-27.0-RC.app/Contents/Developer PATH="$HOME/.bun/bin:$PATH" bunx expo run:ios --device <udid>`
+- Build with the default Xcode 26.x (`xcode-select -p` → Xcode.app, 26.6).
+  **Never set `DEVELOPER_DIR` to the Xcode 27 RC**: the app hasn't adopted
+  the UIScene lifecycle (#275), and an iOS-27-SDK build crashes at launch
+  (TestFlight build 7 did). If Xcode 26.6 fails with error 70 "iOS 26.5 is
+  not installed", fetch the platform once: `xcodebuild -downloadPlatform iOS`
+  (~8.5 GB). Then:
+  `cd apps/mobile && LANG=en_US.UTF-8 PATH="$HOME/.bun/bin:$PATH" bunx expo run:ios --device <udid>`
   (prebuild + pods + xcodebuild ≈ 15 min).
 - The resulting `.app` lands at
   `~/Library/Developer/Xcode/DerivedData/LilOS-*/Build/Products/Debug-iphonesimulator/LilOS.app`
