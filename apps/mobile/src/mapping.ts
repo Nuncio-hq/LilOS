@@ -14,7 +14,7 @@ const TONES: OrbTone[] = ["blue", "violet", "sunset", "stone", "mint", "rose"];
 
 /** Deterministic orb tone from the employee id (the web picks a tone per
    employee too; the wire has no color field). */
-function toneOf(id: string): OrbTone {
+export function toneOf(id: string): OrbTone {
   let h = 0;
   for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return TONES[h % TONES.length] ?? "blue";

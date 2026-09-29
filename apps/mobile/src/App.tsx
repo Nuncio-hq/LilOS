@@ -69,6 +69,9 @@ import {
   routeFor,
   savePairedMac,
 } from "./paired-macs";
+import type { DmRoutes } from "./routes";
+import { Dm, FolderPicker, ModelPicker } from "./screens/dm";
+import { Thread } from "./screens/thread";
 
 /* apps/mobile — the real app (#154): the prototype's onboarding screens from
    @lilos/ui-native wired to the actual relay. Pairing runs the #153 grant →
@@ -85,7 +88,7 @@ type Routes = {
   Connected: undefined;
   Tabs: NavigatorScreenParams<TabRoutes>;
   Mac: undefined;
-};
+} & DmRoutes;
 type TabRoutes = {
   Home: undefined;
   Settings: undefined;
@@ -299,7 +302,7 @@ function Home() {
       company={company}
       projects={projects}
       onOpenMac={() => nav.navigate("Mac")}
-      onOpenEmployee={() => soon("Direct messages")}
+      onOpenEmployee={(id) => nav.navigate("Dm", { employeeId: id })}
       onOpenChannel={() => soon("Channels")}
     />
   );
@@ -462,6 +465,25 @@ const MAC_SHEET: NativeStackNavigationOptions = {
   presentation: "modal",
 };
 
+/* Native iOS form sheet: medium + large detents, grabber, content sized to
+   the stack so it can grow. */
+const SHEET: NativeStackNavigationOptions = {
+  headerShown: false,
+  presentation: "formSheet",
+  sheetAllowedDetents: [0.62, 1],
+  sheetGrabberVisible: true,
+  sheetCornerRadius: 28,
+  // No painted background: iOS 26 draws the sheet as Liquid Glass.
+  contentStyle: { backgroundColor: "transparent" },
+};
+
+/* A conversation's nav bar: transparent over a native blur material, so the
+   chat scrolls on under the title and stays readable. */
+const CHAT_HEADER: NativeStackNavigationOptions = {
+  headerTransparent: true,
+  scrollEdgeEffects: { top: "soft", bottom: "soft" },
+};
+
 function useNavTheme(): Theme {
   const dark = useColorScheme() === "dark";
   const base = dark ? DarkTheme : DefaultTheme;
@@ -567,6 +589,22 @@ export default function App() {
                 options={{ headerShown: false }}
               />
               <Stack.Screen name="Mac" component={Mac} options={MAC_SHEET} />
+              <Stack.Screen name="Dm" component={Dm} options={CHAT_HEADER} />
+              <Stack.Screen
+                name="Thread"
+                component={Thread}
+                options={CHAT_HEADER}
+              />
+              <Stack.Screen
+                name="FolderPicker"
+                component={FolderPicker}
+                options={SHEET}
+              />
+              <Stack.Screen
+                name="ModelPicker"
+                component={ModelPicker}
+                options={SHEET}
+              />
             </>
           )}
         </Stack.Navigator>
