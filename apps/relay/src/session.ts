@@ -45,6 +45,9 @@ import {
   MessagesSearchParams,
   MessagesSetCheckpointParams,
   ProfileUpdateParams,
+  PushRegisterParams,
+  PushUnregisterParams,
+  PushVisibilityParams,
   SessionEventsParams,
   SessionPingParams,
   SettingsGetParams,
@@ -61,6 +64,7 @@ import {
 } from "./attachments";
 import { createLogTail, type LogTail } from "./logtail";
 import type { PairingService } from "./pairing";
+import type { PushFanout } from "./push";
 import { buildSystemStatus, type RejectedHandshake } from "./status";
 import {
   type ConversationPatch,
@@ -115,6 +119,12 @@ export interface RelayOptions {
    * OS home dir (injectable for tests).
    */
   homeDir?: string;
+  /**
+   * Push fan-out (#161): turns `asks.open`/`engine.event` transitions into
+   * Expo pushes for registered phones. Absent = the push methods still
+   * serve (registration persists) but nothing is sent (tests, bare relays).
+   */
+  push?: PushFanout;
 }
 
 /** The opt-in Tailscale bind — implemented in index.ts over `Bun.serve`. */
@@ -340,6 +350,19 @@ export function createRelay(options: RelayOptions): Relay {
         "only the registered engine host may call this",
       );
     }
+  };
+
+  /** `push.*` is device scope — the caller's deviceId is its identity. */
+  const requireDevice = (peer: RelayWsPeer): string => {
+    const deviceId = devicePeers.get(peer);
+    if (!deviceId) {
+      throw new RpcError(
+        JsonRpcCode.forbidden,
+        "forbidden",
+        "push methods are for paired devices",
+      );
+    }
+    return deviceId;
   };
 
   const emitMessage = (channelId: string, message: unknown) =>
@@ -1320,6 +1343,12 @@ export function createRelay(options: RelayOptions): Relay {
               channelId: ask.channelId,
               ask,
             });
+            /* #161: a created ask IS the needs-you transition — push. A
+               replayed open returns created=false, so a host retry can't
+               re-notify. Fire-and-forget: push never blocks the relay. */
+            options.push
+              ?.askOpened(ask)
+              .catch((error) => log(`push fan-out failed: ${error}`));
           }
           respond(peer, id, { ask });
           return;
@@ -1515,6 +1544,15 @@ export function createRelay(options: RelayOptions): Relay {
               // The host pushed it — no need to send its own stream back.
               host?.peer,
             );
+            /* #161: turn.completed / session.state-error transitions push;
+               the fan-out's seq watermark drops replays. */
+            options.push
+              ?.engineEvent(
+                conversation,
+                parsed.data.sessionId,
+                parsed.data.event,
+              )
+              .catch((error) => log(`push fan-out failed: ${error}`));
           }
           respond(peer, id, { ok: true });
           return;
@@ -1586,6 +1624,46 @@ export function createRelay(options: RelayOptions): Relay {
             if (did === device.id)
               p.close(WS_CLOSE_DEVICE_REVOKED, "device revoked");
           }
+          /* #161 AC-1: revoke drops the push token too — the store cascade
+             deletes the row; the fan-out forgets its visibility report. */
+          options.push?.deviceGone(device.id);
+          respond(peer, id, { ok: true });
+          return;
+        }
+        /* ---------------- push registration (#161) ---------------- */
+        case "push.register": {
+          /* The phone reports its Expo push token + per-kind toggles, tied
+             to the deviceId its hello authenticated. Idempotent upsert —
+             sent after pairing and on every foreground. */
+          const deviceId = requireDevice(peer);
+          const parsed = PushRegisterParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          await store.setDevicePush({
+            deviceId,
+            token: parsed.data.token,
+            prefs: parsed.data.prefs,
+            at: now(),
+          });
+          respond(peer, id, { ok: true });
+          return;
+        }
+        case "push.unregister": {
+          const deviceId = requireDevice(peer);
+          const parsed = PushUnregisterParams.safeParse(params ?? {});
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          await store.dropDevicePush(deviceId);
+          options.push?.deviceGone(deviceId);
+          respond(peer, id, { ok: true });
+          return;
+        }
+        case "push.visibility": {
+          /* Which thread this phone has open right now — the suppression
+             input (AC-5). In-memory on the fan-out: a dead socket clears it
+             in `closed()`, so a stale report can't mute pushes forever. */
+          const deviceId = requireDevice(peer);
+          const parsed = PushVisibilityParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          options.push?.setVisibility(deviceId, parsed.data.conversationId);
           respond(peer, id, { ok: true });
           return;
         }
@@ -1696,7 +1774,11 @@ export function createRelay(options: RelayOptions): Relay {
           }
           state.subscriptions.clear();
           helloedPeers.delete(peer);
+          const deviceId = devicePeers.get(peer);
           devicePeers.delete(peer);
+          /* A dead/backgrounded phone's suppression dies with the socket —
+             pushes resume rather than staying muted by a stale report. */
+          if (deviceId) options.push?.deviceGone(deviceId);
           if (host?.peer === peer) {
             log(`harness ${host.hostId} disconnected`);
             host = null;

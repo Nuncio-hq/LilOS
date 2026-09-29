@@ -26,6 +26,7 @@ import {
   PairedDevice,
   PendingTurn,
   ProfileSettings,
+  PushPrefs,
   RecentFolder,
   RespondTo,
   Timestamp,
@@ -201,6 +202,12 @@ export const AppMethod = z.enum([
      live socket before deciding to replace it; a request that can't answer
      inside a small timeout marks the transport dead. */
   "session.ping",
+  /* Push notifications (#161): a paired phone registers its Expo push token
+     + per-kind toggles, reports which thread it has open (push suppression),
+     and unregisters on forget. Device scope only. */
+  "push.register",
+  "push.unregister",
+  "push.visibility",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -1297,5 +1304,43 @@ export const HostChangedEvent = z.object({
   connected: z.boolean(),
 });
 export type HostChangedEvent = z.infer<typeof HostChangedEvent>;
+
+/* ------------------------ push notifications (#161) ------------------------
+ *
+ * Device-scope only: the registration is tied to the `deviceId` a phone's
+ * `session.hello` authenticated with — `devices.revoke` drops the token
+ * alongside the device. The relay fans one Expo push per transition
+ * (`asks.open` created; `engine.event` `turn.completed`/`session.state`
+ * error) out to every registered device whose prefs + visibility allow it.
+ */
+
+/**
+ * `push.register` — upsert this device's Expo push token and per-kind
+ * toggles. Sent after pairing and on every foreground; re-sends are
+ * idempotent. `token` is the `ExponentPushToken[...]` from
+ * `getExpoPushTokenAsync` (opaque to the relay).
+ */
+export const PushRegisterParams = z.strictObject({
+  token: z.string().min(1),
+  prefs: PushPrefs,
+});
+export type PushRegisterParams = z.infer<typeof PushRegisterParams>;
+
+export const PushOkResult = z.object({ ok: z.literal(true) });
+export type PushOkResult = z.infer<typeof PushOkResult>;
+
+/** `push.unregister` — drop this device's registration (forget-Mac path). */
+export const PushUnregisterParams = z.object({}).strict();
+export type PushUnregisterParams = z.infer<typeof PushUnregisterParams>;
+
+/**
+ * `push.visibility` — which thread this phone currently has open in the
+ * foreground (null = none visible / app backgrounded). The relay suppresses
+ * pushes for a conversation the phone is already looking at.
+ */
+export const PushVisibilityParams = z.strictObject({
+  conversationId: z.string().nullable(),
+});
+export type PushVisibilityParams = z.infer<typeof PushVisibilityParams>;
 
 export { APP_PROTOCOL_VERSION };
