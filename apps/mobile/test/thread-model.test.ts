@@ -7,7 +7,11 @@ import type {
 } from "@lilos/contracts/app";
 import type { EngineEvent } from "@lilos/contracts/engine";
 import { describe, expect, it } from "vitest";
-import { mergeThreadEntries, toThreadDetail } from "../src/thread-model";
+import {
+  dropRewound,
+  mergeThreadEntries,
+  toThreadDetail,
+} from "../src/thread-model";
 
 /* #157: the mobile live thread's pure projection — relay messages + engine
    events -> ui-native ThreadEntry[]. The reducer is the same one the Mac
@@ -321,6 +325,94 @@ describe("thread-model — #157 AC mapping", () => {
     const texts = entries.map((e) => e.text);
     expect(texts).not.toContain("old answer");
     expect(entries.filter((e) => e.id === "turn-t2")).toHaveLength(1);
+  });
+
+  it("#134 dropRewound cuts the tail and files-only ids, reporting removed rows", () => {
+    const msgs = [
+      msg({ id: "m1", seq: 1, text: "a" }),
+      msg({ id: "m2", seq: 2, text: "b", authorKind: "employee" }),
+      msg({ id: "m3", seq: 3, text: "c" }),
+      msg({ id: "m4", seq: 4, text: "mid" }),
+    ];
+    const cut = dropRewound(msgs, { fromSeq: 3, removedIds: ["m4"] });
+    expect(cut.messages.map((m) => m.id)).toEqual(["m1", "m2"]);
+    expect(cut.removed.map((m) => m.id)).toEqual(["m3", "m4"]);
+    // Files-only rewind: a mid-list id drop, no tail cut.
+    const partial = dropRewound(msgs, { fromSeq: 99, removedIds: ["m2"] });
+    expect(partial.messages.map((m) => m.id)).toEqual(["m1", "m3", "m4"]);
+    expect(dropRewound(msgs).messages).toHaveLength(4);
+  });
+
+  it("#134 a rewind while viewing hides the turn its prompt spawned", () => {
+    /* The rewind removed m-dead (the prompt) and its answer; the screen's
+       dropRewound already cut both rows — the rewind record must still stop
+       the finished turn resurrecting as an orphaned card. */
+    const user = msg({ id: "m1", seq: 1, text: "earlier" });
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small", ref: "m-dead" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "dead answer" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    ]);
+    const detail = toThreadDetail({
+      conversation: conv(),
+      employee: ada,
+      messages: [user],
+      model,
+      asks: [],
+      pending: new Set(),
+      now: T0 + 60_000,
+      rewound: {
+        refs: new Set(["m-dead"]),
+        texts: new Set(["dead answer"]),
+      },
+    });
+    expect(detail.entries.map((e) => e.id)).toEqual(["m1"]);
+  });
+
+  it("#134 a live ref wins over a rewound-text match (web rule)", () => {
+    /* A legit turn whose text happens to duplicate a rewound answer stays:
+       the rewound-texts check only applies to ref-less turns. */
+    const user = msg({ id: "m2", seq: 2, text: "again" });
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small", ref: "m2" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "same words" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    ]);
+    const entries = mergeThreadEntries([user], model, {
+      ...OPTS,
+      rewoundRefs: new Set(["m-dead"]),
+      rewoundTexts: new Set(["same words"]),
+    });
+    expect(entries.map((e) => e.id)).toEqual(["m2", "turn-t1"]);
+  });
+
+  it("an empty finished turn never renders a bare card; stopped keeps its receipt", () => {
+    const user = msg({ id: "m1", seq: 1, text: "go" });
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small", ref: "m1" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+      ev("turn.started", { turnId: "t2", model: "fake-small", ref: "m1" }),
+      ev("turn.completed", { turnId: "t2", stopReason: "cancelled" }),
+    ]);
+    const entries = mergeThreadEntries([user], model, OPTS);
+    expect(entries.map((e) => e.id)).toEqual(["m1", "turn-t2"]);
+    const card = entries[1];
+    if (card.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.stopped).toBe(true);
+  });
+
+  it("two leftover turns sharing one prompt ref keep turn order", () => {
+    const user = msg({ id: "m1", seq: 1, text: "go" });
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small", ref: "m1" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "first" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+      ev("turn.started", { turnId: "t2", model: "fake-small", ref: "m1" }),
+      ev("turn.delta", { turnId: "t2", stream: "text", delta: "second" }),
+      ev("turn.completed", { turnId: "t2", stopReason: "end_turn" }),
+    ]);
+    const entries = mergeThreadEntries([user], model, OPTS);
+    expect(entries.map((e) => e.id)).toEqual(["m1", "turn-t1", "turn-t2"]);
   });
 
   it("#179 subagents and jobs render as neutral rows, never crash", () => {

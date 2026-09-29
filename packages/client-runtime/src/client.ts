@@ -99,7 +99,9 @@ export interface RelaySessionFeedState {
   synced: boolean;
   /** Engine's reported seq horizon at last sync. */
   latestSeq: number;
-  /** Watermark the caller replays from — highest seq applied. */
+  /** Watermark the caller replays from — highest seq applied. Seq restarts
+     at 1 per engine session, so this always tracks the *current* sessionId's
+     seq space and rebases when the bound session changes. */
   coverageSeq: number;
   /** Every event applied so far, arrival order (seq order per session). */
   events: EngineEvent[];
@@ -790,6 +792,16 @@ export class RelayClient {
         conversationId,
         after: f.coverageSeq,
       });
+      /* coverageSeq is f.sessionId's seq space; if the host rebound the
+         conversation to a different session while we were away, that `after`
+         silently skipped the new log's head. Re-pull from zero once — the
+         merge dedupes, so this is one extra round trip only on rebind. */
+      if (f.sessionId && f.sessionId !== res.snapshot.sessionId) {
+        res = await this.request<EventsSinceResult>("session.events", {
+          conversationId,
+          after: 0,
+        });
+      }
     } catch (error) {
       // `not_found` = no engine session bound yet — an honestly empty feed,
       // not a sync failure: mark synced so the screen stops waiting.
@@ -824,7 +836,10 @@ export class RelayClient {
       sessionId: res.snapshot.sessionId,
       synced: true,
       latestSeq: res.latestSeq,
-      coverageSeq: Math.max(res.latestSeq, cur.coverageSeq),
+      coverageSeq:
+        res.snapshot.sessionId === cur.sessionId
+          ? Math.max(res.latestSeq, cur.coverageSeq)
+          : res.latestSeq,
       events: merged,
       openRequests: res.openRequests,
       snapshot: res.snapshot,
@@ -1159,13 +1174,26 @@ export class RelayClient {
         const store = this.sessionFeeds.get(event.conversationId);
         if (!store) return;
         const f = store.get();
-        const seen = new Set(f.events.map((e) => `${e.sessionId}#${e.seq}`));
-        const key = `${event.event.sessionId}#${event.event.seq}`;
-        if (seen.has(key)) return;
+        const sid = event.event.sessionId;
+        /* Live frames arrive ordered per session, so only a seq at/under the
+           watermark can be a duplicate worth the O(n) scan — the common
+           append path just checks the watermark. A rebound session restarts
+           seq at 1: coverage tracks the current session's space, not a
+           global max that would skip the new log's head on the next replay. */
+        const dup =
+          sid === f.sessionId && event.event.seq > f.coverageSeq
+            ? false
+            : f.events.some(
+                (e) => e.sessionId === sid && e.seq === event.event.seq,
+              );
+        if (dup) return;
         store.set({
           ...f,
           sessionId: event.sessionId,
-          coverageSeq: Math.max(f.coverageSeq, event.event.seq),
+          coverageSeq:
+            event.sessionId === f.sessionId
+              ? Math.max(f.coverageSeq, event.event.seq)
+              : event.event.seq,
           events: [...f.events, event.event],
         });
         return;
@@ -1295,6 +1323,18 @@ export class RelayClient {
         .get()
         .filter((s) => s.conversation.channelId !== channelId),
     );
+    /* Per-conversation state on this channel goes too — otherwise feeds
+       and rewind records for deleted conversations live forever. */
+    const convIds = new Set(
+      this.conversations
+        .get()
+        .filter((c) => c.channelId === channelId)
+        .map((c) => c.id),
+    );
+    for (const id of convIds) this.sessionFeeds.delete(id);
+    const rewinds = { ...this.rewinds.get() };
+    for (const id of convIds) delete rewinds[id];
+    this.rewinds.set(rewinds);
     this.subscribedChannels.delete(channelId);
     this.catchingUp.delete(channelId);
     this.watermarks.delete(channelId);

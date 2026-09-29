@@ -319,4 +319,73 @@ describe("AC-1 sessionFeed — conversation-scoped engine feed (#157)", () => {
       after: 0,
     });
   });
+
+  it("a rebind while disconnected replays the new session's full log", async () => {
+    const { client, socket } = makeClient({ autoReconnect: false });
+    await connectClient(client, socket);
+    const feed = client.sessionFeed("conv-1");
+    socket.respondTo("session.events", {
+      events: [ev(1), ev(2), ev(3), ev(4), ev(5)],
+      latestSeq: 5,
+      truncated: false,
+      openRequests: [],
+      snapshot: SNAPSHOT,
+    });
+    await flush();
+    expect(feed.get().coverageSeq).toBe(5);
+
+    // The host rebinds conv-1 to sess-2 while the phone is away; seq
+    // restarts at 1 in the new session's space.
+    socket.emitClose();
+    const pending = client.connect();
+    await flush();
+    socket.openSocket();
+    await flush();
+    socket.respondTo("session.hello", WELCOME);
+    await pending;
+    socket.respondTo("employees.list", { employees: [] });
+    socket.respondTo("channels.list", { channels: [] });
+    socket.respondTo("conversations.list", { conversations: [] });
+    await flush();
+
+    // The resync sent `after: 5` — in sess-1's space — but the relay answers
+    // scoped to the now-bound sess-2: a stale watermark would skip its head.
+    const SNAPSHOT2 = { ...SNAPSHOT, sessionId: "sess-2" };
+    socket.respondTo("session.events", {
+      events: [
+        { ...ev(6), sessionId: "sess-2" },
+        { ...ev(7), sessionId: "sess-2" },
+      ],
+      latestSeq: 7,
+      truncated: false,
+      openRequests: [],
+      snapshot: SNAPSHOT2,
+    });
+    await flush();
+    const replays = socket.requestsOf("session.events");
+    expect(replays.at(-1)?.params).toMatchObject({
+      conversationId: "conv-1",
+      after: 0,
+    });
+    socket.respondTo("session.events", {
+      events: [1, 2, 3, 4, 5, 6, 7].map((s) => ({
+        ...ev(s),
+        sessionId: "sess-2",
+      })),
+      latestSeq: 7,
+      truncated: false,
+      openRequests: [],
+      snapshot: SNAPSHOT2,
+    });
+    await flush();
+    const got = feed.get();
+    expect(got.sessionId).toBe("sess-2");
+    expect(got.coverageSeq).toBe(7);
+    expect(
+      got.events.filter((e) => e.sessionId === "sess-2").map((e) => e.seq),
+    ).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(
+      got.events.filter((e) => e.sessionId === "sess-1").map((e) => e.seq),
+    ).toEqual([1, 2, 3, 4, 5]);
+  });
 });

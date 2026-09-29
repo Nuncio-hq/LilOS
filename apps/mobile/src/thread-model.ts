@@ -4,14 +4,7 @@
    values in. Mirrors apps/web/src/lib/mapping.ts mergeTurns onto
    ThreadEntry[] — same swap/append rules, phone-shaped rows. */
 
-import type {
-  JobModel,
-  SessionModel,
-  SubagentModel,
-  TurnModel,
-  TurnPlan,
-  TurnStep,
-} from "@lilos/client-runtime";
+import type { SessionModel, TurnModel } from "@lilos/client-runtime";
 import type {
   AppMessage,
   Ask,
@@ -21,13 +14,9 @@ import type {
 import type {
   AgentEntry,
   Approval,
-  BackgroundJobRow,
   ModelRow,
-  PlanRow,
-  SubagentRow,
   ThreadDetail,
   ThreadEntry,
-  ToolStep,
 } from "@lilos/ui-native";
 import {
   askReason,
@@ -36,115 +25,16 @@ import {
   timeLabel,
 } from "./dm-model";
 import { toneOf } from "./mapping";
+import {
+  toJobRow,
+  toPlanRow,
+  toSubagentRow,
+  toToolStep,
+  usageLabel,
+} from "./thread-rows";
 
 const clock = (ts: number) =>
   new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-/** The one argument worth showing on a step: a path, a command, a query. */
-const argOf = (input: Record<string, unknown>): string | undefined => {
-  const hit =
-    input.command ?? input.path ?? input.query ?? input.pattern ?? input.url;
-  if (typeof hit === "string" && hit) return hit;
-  const first = Object.values(input).find((v) => typeof v === "string");
-  return typeof first === "string" ? first : undefined;
-};
-
-export function toToolStep(s: TurnStep): ToolStep {
-  return {
-    id: s.id,
-    tool: s.tool,
-    arg: argOf(s.input),
-    output: s.output,
-    running: s.status === "running",
-    add: s.diff?.add,
-    del: s.diff?.del,
-  };
-}
-
-/* #180: a tasks list under 2 items is noise and never maps (web rule). */
-export function toPlanRow(p: TurnPlan): PlanRow | undefined {
-  if (p.kind === "tasks" && p.steps.length < 2) return undefined;
-  return {
-    id: p.planId,
-    kind: p.kind,
-    version: p.version,
-    ...(p.goal !== undefined ? { goal: p.goal } : {}),
-    steps: p.steps.map((s) => ({
-      text: s.text,
-      ...(s.files ? { files: s.files } : {}),
-      status: s.status,
-    })),
-    ...(p.risks ? { risks: p.risks } : {}),
-    status: p.status,
-  };
-}
-
-/** `SubagentRow.dur` reads seconds; the model tracks ms. */
-export function toSubagentRow(
-  s: SubagentModel,
-  resolveEmployee: (employeeRef: string) => string = (r) => r,
-): SubagentRow {
-  return {
-    id: s.subagentId,
-    name: s.name,
-    task: s.task,
-    status: s.status,
-    steps: s.steps.map(toToolStep),
-    ...(s.result !== undefined ? { result: s.result } : {}),
-    ...(s.durationMs !== undefined
-      ? { dur: Math.round(s.durationMs / 10) / 100 }
-      : {}),
-    /* Another employee's helper: the engine reports its profile ref; without
-       a LilOS employee id the row renders neutral (name/task only). */
-    ...(s.employee
-      ? {
-          employee: {
-            id: resolveEmployee(s.employee.employeeRef),
-            name: resolveEmployee(s.employee.employeeRef),
-            tone: "stone" as const,
-          },
-        }
-      : {}),
-  };
-}
-
-/** "38s" / "14m" / "1h 5m" — the Background tab's uptime column. */
-export function formatUptime(seconds: number): string {
-  const s = Math.max(0, Math.round(seconds));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
-}
-
-export function toJobRow(j: JobModel, now = Date.now()): BackgroundJobRow {
-  return {
-    id: j.jobId,
-    command: j.command,
-    status: j.status,
-    started: j.startedAt ? clock(j.startedAt) : "",
-    uptime: j.startedAt ? formatUptime((now - j.startedAt) / 1000) : "0s",
-    ...(j.url ? { url: j.url } : {}),
-    ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
-    log: j.tail,
-    ...(j.by ? { by: j.by } : {}),
-  };
-}
-
-/** "22.4k in · 1.8k out · 15k cached" — the session sheet's usage row. */
-export function usageLabel(u: {
-  input: number;
-  output: number;
-  reasoning?: number;
-  cache?: number;
-}): string {
-  const k = (n: number) =>
-    n < 1000 ? `${n}` : `${Math.round((n / 1000) * 10) / 10}k`;
-  const bits = [`${k(u.input)} in`, `${k(u.output + (u.reasoning ?? 0))} out`];
-  if (u.cache) bits.push(`${k(u.cache)} cached`);
-  return bits.join(" · ");
-}
 
 /** Ask -> the approval card (or the after-you-chose receipt). */
 function turnApproval(
@@ -321,13 +211,27 @@ export function mergeThreadEntries(
 
   /* Unmatched turns: finished ones slot after their `ref` message (the
      prompt that started them); the live turn goes last. Rewound turns —
-     those the rewind dropped — never resurrect (refs = their prompt's id,
-     texts = the dropped answers' bodies). */
+     those the rewind dropped — never resurrect. Web rule: the ref check
+     wins; a turn with no ref falls back to matching the dropped answer's
+     body, so a legit turn quoting a rewound answer survives. */
   const leftover = model.turns.filter((t) => {
     if (swapped.has(t.turnId)) return false;
-    if (opts.rewoundRefs?.has(t.ref ?? "")) return false;
     const text = t.text.trim();
-    if (text && opts.rewoundTexts?.has(text)) return false;
+    /* A finished turn with no content renders a bare card — drop it unless
+       it was stopped mid-flight (the "You stopped this turn" row is the
+       receipt). Same rule as web's mergeTurns; a text-less turn that did
+       work (steps/subagents/plan/reasoning) still has rows to show. */
+    const empty =
+      !text &&
+      !t.steps.length &&
+      !t.reasoning &&
+      !t.subagents.length &&
+      !t.plans.length;
+    if (empty && t.phase !== "stopped" && t !== model.live) return false;
+    const wasRewound = t.ref
+      ? (opts.rewoundRefs?.has(t.ref) ?? false)
+      : text.length > 0 && (opts.rewoundTexts?.has(text) ?? false);
+    if (wasRewound) return false;
     return true;
   });
   const entryFor = (t: TurnModel) =>
@@ -341,21 +245,48 @@ export function mergeThreadEntries(
     });
   const byRef = new Map<string, number>();
   for (const [i, e] of entries.entries()) byRef.set(e.id, i);
-  let insertAt = entries.length;
+  /* Two leftover turns can share one ref; each lands after the previous so
+     they keep turn order instead of stacking in reverse. */
+  const insertAfter = new Map<string, number>();
   for (const t of leftover) {
     if (t === model.live) continue;
-    const refIdx = t.ref ? byRef.get(t.ref) : undefined;
+    const refIdx = t.ref
+      ? (insertAfter.get(t.ref) ?? byRef.get(t.ref))
+      : undefined;
     if (refIdx === undefined) {
       entries.push(entryFor(t));
     } else {
       entries.splice(refIdx + 1, 0, entryFor(t));
+      if (t.ref) insertAfter.set(t.ref, refIdx + 1);
     }
-    insertAt = entries.length;
   }
-  if (model.live) {
-    entries.splice(insertAt, 0, entryFor(model.live));
-  }
+  if (model.live) entries.push(entryFor(model.live));
   return entries;
+}
+
+/** A conversation's rewind record (client.rewinds) — #134. */
+export interface RewindRecord {
+  fromSeq: number;
+  removedIds: readonly string[];
+}
+
+/** #134: drop the rewound tail from a fetched message list. The channel
+   atoms already strip it server-side on conversation.rewound, but a
+   messages.list snapshot held by the screen does not — apply the same
+   predicate (removed ids + channel seq >= fromSeq) so a live rewind
+   disappears without a reopen. The removed rows come back too, so the
+   caller can hide the turns they prompted/answered. */
+export function dropRewound(
+  messages: readonly AppMessage[],
+  rewind?: RewindRecord,
+): { messages: AppMessage[]; removed: AppMessage[] } {
+  if (!rewind) return { messages: [...messages], removed: [] };
+  const ids = new Set(rewind.removedIds);
+  const dropped = (m: AppMessage) => ids.has(m.id) || m.seq >= rewind.fromSeq;
+  return {
+    messages: messages.filter((m) => !dropped(m)),
+    removed: messages.filter(dropped),
+  };
 }
 
 /** Conversation + session model -> the whole ThreadScreen view model. */
@@ -369,6 +300,12 @@ export function toThreadDetail(opts: {
   now: number;
   /** Catalog models for the sheet's Model row label. */
   models?: readonly ModelRow[];
+  /** Rewound prompt ids + removed answer bodies (from dropRewound), so the
+     turns they spawned stay hidden once the messages are gone. */
+  rewound?: {
+    refs: ReadonlySet<string>;
+    texts: ReadonlySet<string>;
+  };
 }): ThreadDetail {
   const { conversation: conv } = opts;
   const employee = opts.employee;
@@ -380,8 +317,21 @@ export function toThreadDetail(opts: {
     (m) => m.id === (conv.model ?? sessionModel?.model),
   );
   /* #134: rewound rows hide from the thread; their ids/bodies also hide the
-     turns they prompted/answered (never resurrect a rewound turn). */
-  const rewound = opts.messages.filter((m) => m.rewound);
+     turns they prompted/answered (never resurrect a rewound turn). Two
+     sources: rows still flagged rewound on the wire, and the rewind record
+     the screen already applied to its fetched history (ids + the removed
+     answers' bodies it captured before dropping them). */
+  const flagged = opts.messages.filter((m) => m.rewound);
+  const rewoundRefs = new Set<string>([
+    ...flagged.map((m) => m.id),
+    ...(opts.rewound?.refs ?? []),
+  ]);
+  const rewoundTexts = new Set<string>([
+    ...flagged
+      .filter((m) => m.authorKind === "employee")
+      .map((m) => m.text.trim()),
+    ...(opts.rewound?.texts ?? []),
+  ]);
   const entries = mergeThreadEntries(
     opts.messages.filter((m) => !m.rewound),
     sessionModel,
@@ -392,12 +342,8 @@ export function toThreadDetail(opts: {
       employeeId: empId,
       employeeName,
       sessionId: conv.engineRef ?? undefined,
-      rewoundRefs: new Set(rewound.map((m) => m.id)),
-      rewoundTexts: new Set(
-        rewound
-          .filter((m) => m.authorKind === "employee")
-          .map((m) => m.text.trim()),
-      ),
+      rewoundRefs,
+      rewoundTexts,
       now: opts.now,
     },
   );

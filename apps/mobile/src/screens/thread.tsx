@@ -27,7 +27,7 @@ import { $asks, $catalog, $pendingOpens, watchDm } from "../dm-store";
 import { $client, $welcome } from "../link";
 import { describeError } from "../mapping";
 import type { DmRoutes } from "../routes";
-import { toThreadDetail } from "../thread-model";
+import { dropRewound, toThreadDetail } from "../thread-model";
 
 /* #157 — the live thread: messages.list + channel.subscribe resume (AC-1),
    engine turns projected live through sessionFeed -> reduceSessionEvents ->
@@ -54,6 +54,9 @@ const $noFeed = atom<RelaySessionFeedState>({
   events: [],
   openRequests: [],
 });
+const $noRewinds = atom<
+  Record<string, { fromSeq: number; removedIds: string[] }>
+>({});
 
 /** Everything a thread screen needs from the wire, packed for the view. */
 function useThread(conversationId: string) {
@@ -82,6 +85,11 @@ function useThread(conversationId: string) {
     [client, conversationId],
   );
   const feed = useStore(feedAtom ?? $noFeed);
+  /* #134 live: a rewind while this screen is open strips the tail from
+     chanState but not from the fetched history — dropRewound applies the
+     same cut here (removedIds for files-only rewinds, seq for the tail). */
+  const rewinds = useStore(client?.rewinds ?? $noRewinds);
+  const rewind = rewinds[conversationId];
   const sessionModel = useMemo(
     () =>
       feed.sessionId
@@ -113,7 +121,9 @@ function useThread(conversationId: string) {
         .then((res) => {
           if (alive) setHistory(res.messages);
         })
-        .catch(() => {});
+        .catch((e) => {
+          if (alive) Alert.alert("Couldn't load the thread", describeError(e));
+        });
     };
     pull();
     const unsub = client.state.listen((s) => {
@@ -125,15 +135,16 @@ function useThread(conversationId: string) {
     };
   }, [client, channelId, conversationId]);
 
-  const messages = useMemo(() => {
+  const { messages, removed: rewoundMessages } = useMemo(() => {
     const byId = new Map<string, AppMessage>();
     for (const m of history) byId.set(m.id, m);
     for (const m of chanState.messages) {
       if (m.conversationId === conversationId) byId.set(m.id, m);
     }
     if (pendingEntry) byId.set(pendingEntry.root.id, pendingEntry.root);
-    return [...byId.values()].sort((a, b) => a.seq - b.seq);
-  }, [history, chanState.messages, conversationId, pendingEntry]);
+    const all = [...byId.values()].sort((a, b) => a.seq - b.seq);
+    return dropRewound(all, rewind);
+  }, [history, chanState.messages, conversationId, pendingEntry, rewind]);
 
   const detail = useMemo(
     () =>
@@ -147,9 +158,27 @@ function useThread(conversationId: string) {
             pending: new Set(pending.keys()),
             now: Date.now(),
             models: catalog.models,
+            rewound: {
+              refs: new Set(rewind?.removedIds ?? []),
+              texts: new Set(
+                rewoundMessages
+                  .filter((m) => m.authorKind === "employee")
+                  .map((m) => m.text.trim()),
+              ),
+            },
           })
         : undefined,
-    [conv, employee, messages, sessionModel, asks, pending, catalog],
+    [
+      conv,
+      employee,
+      messages,
+      sessionModel,
+      asks,
+      pending,
+      catalog,
+      rewind,
+      rewoundMessages,
+    ],
   );
 
   return { client, conv, channelId, employee, detail, catalog };

@@ -384,18 +384,28 @@ export function ModelPicker({
       value={value}
       onPick={(p: ModelPick) => {
         void Haptics.selectionAsync();
-        if (conv && client) {
-          setPicked(p);
-          const row = catalog.models.find((m) => m.id === p.model);
-          void client
-            .request("conversations.setModel", {
-              conversationId: conv.id,
-              model: p.model,
-              ...(row?.provider ? { provider: row.provider } : {}),
-              ...(p.effort ? { effort: p.effort } : {}),
-              ...(p.fast !== undefined ? { fast: p.fast } : {}),
-            })
-            .catch((e) => Alert.alert("Couldn't switch", describeError(e)));
+        /* Thread scope asked for but the conversation isn't in the client
+           yet (pending-open window): a pick here must not silently land as
+           the employee's DM default. */
+        if (conversationId !== undefined) {
+          if (conv && client) {
+            setPicked(p);
+            const row = catalog.models.find((m) => m.id === p.model);
+            void client
+              .request("conversations.setModel", {
+                conversationId: conv.id,
+                model: p.model,
+                ...(row?.provider ? { provider: row.provider } : {}),
+                ...(p.effort ? { effort: p.effort } : {}),
+                ...(p.fast !== undefined ? { fast: p.fast } : {}),
+              })
+              .catch((e) => Alert.alert("Couldn't switch", describeError(e)));
+          } else {
+            Alert.alert(
+              "Couldn't switch",
+              "This thread isn't loaded yet — try again in a moment.",
+            );
+          }
           return;
         }
         $modelPicks.set({ ...$modelPicks.get(), [employeeId]: p });
