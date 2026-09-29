@@ -205,8 +205,12 @@ async function openDefault(page: Page) {
   await expect(page).toHaveURL(/\/dm\//);
 }
 
-/** Navigate to an employee's DM home from the sidebar. */
+/** Navigate to an employee's DM home from the sidebar. Focus has no
+    sidebar (#246) — leave it first when the URL is a /focus one. */
 async function openEmployee(page: Page, name: RegExp | string) {
+  if (page.url().endsWith("/focus")) {
+    await page.getByTitle("Back to DM").click();
+  }
   await page.locator("aside").getByRole("button", { name }).click();
   await expect(page).toHaveURL(/\/dm\//);
 }

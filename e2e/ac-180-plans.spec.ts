@@ -277,6 +277,8 @@ test("AC-3 a proposed plan asks Approve / Change… / Reject and counts in the s
   await expect(card.getByRole("button", { name: "Change…" })).toBeVisible();
   await expect(card.getByRole("button", { name: "Reject" })).toBeVisible();
   // The session reads "needs you" in the sidebar like an approval (AC-3).
+  // Focus has no sidebar (#246) — back to the panel, which shows the card too.
+  await page.getByTitle("Back to DM").click();
   await expect(page.locator("[data-badge-approvals]")).toBeVisible({
     timeout: 30_000,
   });
