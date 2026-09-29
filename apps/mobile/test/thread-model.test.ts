@@ -105,6 +105,26 @@ describe("thread-model — #157 AC mapping", () => {
     expect(card.footer).toMatchObject({ dur: 5, model: "fake-small" });
   });
 
+  it("AC-md reply markdown reaches the agent entry verbatim (Prose renders it)", () => {
+    /* The placeholder screen printed raw `**`/backticks; the real screen
+       renders `text` through Prose — so the mapping must pass markdown
+       through untouched, not strip or escape it. */
+    const md = "Short answer:\n\n- `seq` is monotonic\n- **bold** claim\n\nTail.";
+    const user = msg({ id: "m1", seq: 1, text: "go" });
+    const reply = msg({
+      id: "m2",
+      seq: 2,
+      authorKind: "employee",
+      authorId: ada.id,
+      text: md,
+    });
+    const model = reduceSessionEvents("sess-1", []);
+    const entries = mergeThreadEntries([user, reply], model, OPTS);
+    const card = entries[1];
+    if (card.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.text).toBe(md);
+  });
+
   it("AC-2 a live turn shows reasoning, a running step, then streaming text", () => {
     const model = reduceSessionEvents("sess-1", [
       ev("turn.started", { turnId: "t1", model: "fake-small" }),
