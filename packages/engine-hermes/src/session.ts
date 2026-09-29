@@ -33,6 +33,8 @@ export interface HermesJob {
 export interface Turn {
   turnId: string;
   phase: "reasoning" | "tools" | "text" | "waiting";
+  /** #180: ACP `plan` updates bump this per snapshot so versions increase. */
+  plan?: { planId: string; version: number };
   resolve: (r: { turnId: string; stopReason: string; usage?: Usage }) => void;
   reject: (e: unknown) => void;
 }

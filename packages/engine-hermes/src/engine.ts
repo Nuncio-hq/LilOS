@@ -17,6 +17,8 @@ import {
   type JobsListParams,
   type JobsStopParams,
   type ModelsListParams,
+  PLAN_CAPABILITY,
+  type PlanStepStatus,
   type PromptParams,
   REWIND_CAPABILITY,
   type RequestRespondParams,
@@ -297,6 +299,12 @@ export class HermesEngine {
           "session.start mcpServers ride `hermes acp` session/new (#23 verdict); WS path refuses them.",
         detail: { transports: ["stdio", "http", "sse"], transport: "acp" },
         methods: ["session.start"],
+      });
+      /* #180: ACP `plan` updates (Hermes `todo`) map to plan.updated
+         kind:"tasks"; no proposal surface exists on ACP, so proposals: false. */
+      capabilities.push({
+        ...PLAN_CAPABILITY,
+        detail: { proposals: false },
       });
     }
     /* #179: WS sessions stream real subagent.* + process frames; ACP
@@ -1287,6 +1295,35 @@ export class HermesEngine {
         if (typeof p.title === "string") s.applyTitle(p.title);
         break;
       }
+      /* #180: WS `todo.updated` carries the agent's working list (Hermes
+         `todo_list`) as a full snapshot `{todos: [{content,status}], revision}`
+         — same mapping as the ACP `plan` update in acp.ts: plan.updated
+         kind:"tasks" on a stable per-turn planId, statuses verbatim (WS does
+         carry cancelled). */
+      case "todo.updated": {
+        if (!s.turn) break;
+        const todos = p.todos as
+          | { content?: string; status?: string }[]
+          | undefined;
+        if (!todos?.length) break;
+        const plan = s.turn.plan ?? {
+          planId: `plan-${turnId}`,
+          version: 0,
+        };
+        s.turn.plan = plan;
+        plan.version += 1;
+        s.emit("plan.updated", {
+          turnId,
+          planId: plan.planId,
+          kind: "tasks",
+          version: plan.version,
+          steps: todos.map((t) => ({
+            text: String(t.content ?? ""),
+            status: todoStatus(t.status),
+          })),
+        });
+        break;
+      }
       case "message.complete":
         void this.completeTurn(s, p);
         break;
@@ -1518,4 +1555,16 @@ export class HermesEngine {
     }
     this.opts.gateway.close();
   }
+}
+
+/** #180: WS `todo` status -> contracts PlanStepStatus. The four states map
+   verbatim; anything novel stays pending so one update can't crash a turn. */
+function todoStatus(status: unknown): PlanStepStatus {
+  if (
+    status === "in_progress" ||
+    status === "completed" ||
+    status === "cancelled"
+  )
+    return status;
+  return "pending";
 }

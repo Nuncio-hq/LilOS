@@ -1278,7 +1278,14 @@ export function createRelay(options: RelayOptions): Relay {
           const valid =
             kind === "approval"
               ? outcome !== "answer"
-              : outcome === "answer" || outcome === "cancel";
+              : kind === "plan"
+                ? /* #180: a plan ask answers approve / reject / change
+                     (with text) — never the question kind's "answer". */
+                  outcome === "approve" ||
+                  outcome === "reject" ||
+                  outcome === "change" ||
+                  outcome === "cancel"
+                : outcome === "answer" || outcome === "cancel";
           if (!valid) {
             throw new RpcError(
               JsonRpcCode.invalidParams,
@@ -1286,11 +1293,14 @@ export function createRelay(options: RelayOptions): Relay {
               `outcome ${outcome} is not valid for a ${kind} ask`,
             );
           }
-          if (outcome === "answer" && !parsed.data.answer) {
+          if (
+            (outcome === "answer" || outcome === "change") &&
+            !parsed.data.answer
+          ) {
             throw new RpcError(
               JsonRpcCode.invalidParams,
               "invalid_params",
-              "outcome answer requires an answer",
+              `outcome ${outcome} requires an answer`,
             );
           }
           const ask = await store.resolveAsk(existing.id, {

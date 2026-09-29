@@ -3,6 +3,7 @@ import type {
   SessionModel,
   SubagentModel,
   TurnModel,
+  TurnPlan,
 } from "@lilos/client-runtime";
 import type {
   AppMessage,
@@ -18,6 +19,7 @@ import type {
   Step,
   Subagent,
   Employee as UiEmployee,
+  Plan as UiPlan,
   Workspace,
 } from "@lilos/ui/types";
 import { toAttachedFiles } from "./attachments";
@@ -60,6 +62,32 @@ const PHASE_MAP: Record<TurnModel["phase"], Phase> = {
   done: "done",
   stopped: "stopped",
 };
+
+/* #180: a turn's plan/task-list snapshot -> the ui Plan the PlanCard renders.
+   A tasks list under 2 items is noise (issue default) and is never mapped. */
+export function toUiPlan(p: TurnPlan): UiPlan | undefined {
+  if (p.kind === "tasks" && p.steps.length < 2) return undefined;
+  return {
+    id: p.planId,
+    kind: p.kind,
+    version: p.version,
+    ...(p.goal !== undefined ? { goal: p.goal } : {}),
+    steps: p.steps.map((s) => ({
+      text: s.text,
+      ...(s.files ? { files: s.files } : {}),
+      status: s.status,
+    })),
+    ...(p.risks ? { risks: p.risks } : {}),
+    status: p.status,
+  };
+}
+
+/** The turn's current plan: its latest snapshot entry (tasks or newest
+    proposed version). Older superseded versions ride synthetic replies. */
+function currentPlan(turn: TurnModel): UiPlan | undefined {
+  const last = turn.plans.at(-1);
+  return last ? toUiPlan(last) : undefined;
+}
 
 function toStep(s: TurnModel["steps"][number]): Step {
   return {
@@ -179,6 +207,7 @@ export function liveTurnReply(
     fast: turn.fast,
     phase: PHASE_MAP[turn.phase],
     live: turn.phase !== "done" && turn.phase !== "stopped",
+    plan: currentPlan(turn),
     waitingOn: turn.phase === "waiting" ? open?.request.kind : undefined,
     /* #179: helpers the turn delegated to (the Subagents block renders only
        when this is non-empty — the UI's own check). */
@@ -188,6 +217,57 @@ export function liveTurnReply(
         }
       : {}),
   };
+}
+
+/* #180: a superseded plan version folds into its own employee reply
+   ("Replaced by vN") right before the turn's card, like the prototype. */
+function supersededPlanReplies(turn: TurnModel, employeeId: string): Reply[] {
+  return turn.plans.slice(0, -1).flatMap((p) => {
+    const plan = toUiPlan(p);
+    return plan
+      ? [
+          {
+            id: `${turn.turnId}-plan-${p.version}`,
+            from: employeeId,
+            time: "",
+            text: "",
+            plan,
+          } satisfies Reply,
+        ]
+      : [];
+  });
+}
+
+/** The live reply plus any superseded plan versions folded ahead of it. */
+function liveReplies(
+  turn: TurnModel,
+  employeeId: string,
+  asks: Ask[],
+  resolveEmployee: (employeeRef: string) => string = (r) => r,
+): Reply[] {
+  return [
+    ...supersededPlanReplies(turn, employeeId),
+    liveTurnReply(turn, employeeId, asks, resolveEmployee),
+  ];
+}
+
+/* AC-6 (D-#19): plan surfaces render only when the engine declares `plan` —
+   drop plan cards and the empty synthetic rows that carried them. */
+export function stripPlans(replies: Reply[]): Reply[] {
+  return replies
+    .map((r) => (r.plan ? { ...r, plan: undefined } : r))
+    .filter(
+      (r) =>
+        !!(
+          r.text ||
+          r.reasoning ||
+          r.streaming ||
+          r.steps?.length ||
+          r.steers?.length ||
+          r.approval ||
+          r.plan
+        ),
+    );
 }
 
 /** Relay channel messages for one conversation -> ui Reply[]. */
@@ -236,7 +316,8 @@ export function mergeTurns(
 ): Reply[] {
   if (!model) return replies;
   const used = new Set<TurnModel>();
-  const out = replies.map((r) => {
+  const flat: Reply[] = [];
+  for (const r of replies) {
     const t = model.turns.find(
       (x) =>
         !used.has(x) &&
@@ -244,11 +325,16 @@ export function mergeTurns(
         x.text.trim() &&
         x.text.trim() === r.text.trim(),
     );
-    if (!t) return r;
+    if (!t) {
+      flat.push(r);
+      continue;
+    }
     used.add(t);
     // Keep the relay message id — it's the search-hit scroll anchor (#138).
-    return { ...liveTurnReply(t, employeeId, asks, resolveEmployee), id: r.id };
-  });
+    const live = liveReplies(t, employeeId, asks, resolveEmployee);
+    live[live.length - 1] = { ...live[live.length - 1], id: r.id };
+    flat.push(...live);
+  }
   /* A finished turn with no relay message (a stop before any text) sits
      right after the user message that prompted it (`turn.started.ref`), not
      at the end — appended, it jumped below every later message and answer.
@@ -260,18 +346,14 @@ export function mergeTurns(
     if (t.ref ? rewound?.refs?.has(t.ref) : rewound?.texts?.has(t.text.trim()))
       continue;
     if (!t.text.trim() && t.phase !== "stopped") continue;
-    const at = t.ref ? out.findIndex((r) => r.id === t.ref) : -1;
-    if (at < 0) out.push(liveTurnReply(t, employeeId, asks, resolveEmployee));
-    else
-      out.splice(
-        at + 1,
-        0,
-        liveTurnReply(t, employeeId, asks, resolveEmployee),
-      );
+    const at = t.ref ? flat.findIndex((r) => r.id === t.ref) : -1;
+    const rs = liveReplies(t, employeeId, asks, resolveEmployee);
+    if (at < 0) flat.push(...rs);
+    else flat.splice(at + 1, 0, ...rs);
   }
   if (model.live && !used.has(model.live))
-    out.push(liveTurnReply(model.live, employeeId, asks, resolveEmployee));
-  return out;
+    flat.push(...liveReplies(model.live, employeeId, asks, resolveEmployee));
+  return flat;
 }
 
 /**

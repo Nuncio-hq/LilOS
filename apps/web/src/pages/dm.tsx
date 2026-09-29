@@ -29,6 +29,7 @@ import {
   EmployeeHome,
   FocusView,
   NO_WS,
+  type PlanAction,
   StatusBanner,
   ThreadView,
   useDraft,
@@ -101,6 +102,7 @@ import {
   conversationReplies,
   formatUptime,
   mergeTurns,
+  stripPlans,
   toFeed,
   toJob,
   toUiEmployee,
@@ -135,6 +137,10 @@ const EMPTY_FEED = atom<SessionFeedState>({
   events: [],
   openRequests: [],
 });
+
+/* #180 AC-4: Change… prefills the composer with this prefix; a send that
+   keeps it answers the open plan request instead of posting a message. */
+const PLAN_CHANGE_PREFIX = "Change the plan: ";
 
 /* Resolved-ask labels carry the signed-in human's name — computed per render
    so a settings change lands without a reload (#118). */
@@ -960,7 +966,9 @@ export function DmPage() {
         resolved[a.id] = outcomeLabel(a.outcome, currentName());
     }
     const engineRef = conv.engineRef;
-    const replies = mergeTurns(
+    /* AC-6 (D-#19): plan surfaces only exist when the engine declares `plan`. */
+    const planCap = hasCapability("plan");
+    let replies = mergeTurns(
       conversationReplies(
         threadPool.filter(
           (m) => m.id !== conv.rootMessageId && m.id !== root?.id,
@@ -973,10 +981,65 @@ export function DmPage() {
       rewoundInfo.get(conv.id),
       empRefToId,
     );
+    if (!planCap) replies = stripPlans(replies);
     // An open question ask gets a real answer card (asks.respond).
     const openQuestion = asksHere.find(
       (a) => a.state === "open" && a.request.kind === "question",
     );
+    /* #180: a proposed plan opens a `plan` ask on the relay — Approve/Reject
+       answer it straight; Change… prefills the composer (AC-3/AC-4). */
+    const openPlanAsk = asksHere.find(
+      (a) => a.state === "open" && a.request.kind === "plan",
+    );
+    /* The card can beat `asks.open` by a frame — plan.updated lands in the
+       feed before the relay mints the ask — so a fast Approve/Reject waits
+       a short window for the ask instead of dropping the click (AC-4). */
+    const findOpenPlanAsk = (planId: string): Ask | undefined =>
+      asksAtom
+        .get()
+        .find(
+          (x) =>
+            x.conversationId === conv.id &&
+            x.state === "open" &&
+            x.request.kind === "plan" &&
+            x.request.planId === planId,
+        );
+    const awaitPlanAsk = (planId: string) =>
+      new Promise<Ask | undefined>((resolve) => {
+        let tries = 0;
+        const tick = () => {
+          const hit = findOpenPlanAsk(planId);
+          if (hit || ++tries >= 60) return resolve(hit);
+          setTimeout(tick, 50);
+        };
+        tick();
+      });
+    const onPlan = (a: PlanAction, planId: string) => {
+      if (a === "change") {
+        setThreadDraft(PLAN_CHANGE_PREFIX);
+        return;
+      }
+      void awaitPlanAsk(planId).then((ask) => {
+        if (ask) void respondToRequest(ask.id, a);
+      });
+    };
+    /* The thread composer send: a send that keeps the "Change the plan: "
+       prefix answers the open plan request instead of posting (AC-4). */
+    const sendInThread = (text: string, files?: AttachedFile[]) => {
+      const t = text.trimStart();
+      if (openPlanAsk && t.startsWith(PLAN_CHANGE_PREFIX)) {
+        const answer = t.slice(PLAN_CHANGE_PREFIX.length).trim();
+        return respondToRequest(openPlanAsk.id, "change", answer).then(() => {
+          clearDraftIfSent(draftKey.thread(conv.id), text);
+          return conv;
+        });
+      }
+      return sendDm(employeeId, text, conv.id, undefined, files).then((c) => {
+        if (!c) throw new Error("send failed");
+        clearDraftIfSent(draftKey.thread(conv.id), text);
+        return c;
+      });
+    };
     /* AC-7: the conversation's folder (+ branch for a repo) in the header;
        sessions without one show nothing extra. */
     const convWs = wsFor(conv.cwd, cwdBranches);
@@ -1149,13 +1212,8 @@ export function DmPage() {
           }
           onNav={() => navOpen.set(true)}
           running={running}
-          onSend={(text, files) =>
-            sendDm(employeeId, text, conv.id, undefined, files).then((c) => {
-              if (!c) throw new Error("send failed");
-              clearDraftIfSent(draftKey.thread(conv.id), text);
-              return c;
-            })
-          }
+          onSend={sendInThread}
+          onPlan={planCap ? onPlan : undefined}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           lastSent={lastSent}
           onRewind={conv.engineRef ? (id) => rewindTo(conv, id) : undefined}
@@ -1271,13 +1329,8 @@ export function DmPage() {
           picker={picker}
           defaultModel={defaultModel}
           defaultProvider={defaultProvider}
-          onSend={(text, files) =>
-            sendDm(employeeId, text, conv.id, undefined, files).then((c) => {
-              if (!c) throw new Error("send failed");
-              clearDraftIfSent(draftKey.thread(conv.id), text);
-              return c;
-            })
-          }
+          onSend={sendInThread}
+          onPlan={planCap ? onPlan : undefined}
           draft={threadDraft}
           onDraftChange={setThreadDraft}
           accept={canAttachImages ? "image/*" : undefined}
