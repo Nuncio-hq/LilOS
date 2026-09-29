@@ -103,8 +103,8 @@ open "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
   setup) — stage curated screenshots in /tmp or ~/screenshots and copy into
   `test-results/` only at the end; keep a mirror copy elsewhere.
 - Packaged harness default workdir is `~/.lilos/harness/work` (NOT
-  `~/.lilos/work`): a no-folder session posts
-  `No folder: working in ~/.lilos/harness/work`. engine-fake's follow-up
+  `~/.lilos/work`): a no-folder session runs there as a plain chat — no
+  `No folder` note and no header chip (#196). engine-fake's follow-up
   reply echoes `I'm in `<cwd>` on ⎇ `work/<agent>-<session>`` — the ⎇ name
   is the fake's synthetic session branch; the real git branch (e.g.
   `trunk`) is asserted on the thread header's green workspace badge.

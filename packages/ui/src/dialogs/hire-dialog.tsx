@@ -210,7 +210,10 @@ export function HireDialog({
                       <dt className="text-muted-foreground">Profile</dt>
                       <dd className="font-mono">{picked.id}</dd>
                       <dt className="text-muted-foreground">Model</dt>
-                      <dd>{picked.model}</dd>
+                      <dd>
+                        {models.find((m) => m.id === picked.model)?.name ??
+                          picked.model}
+                      </dd>
                       <dt className="text-muted-foreground">Skills</dt>
                       <dd>{picked.skills}</dd>
                       <dt className="text-muted-foreground">SOUL.md</dt>

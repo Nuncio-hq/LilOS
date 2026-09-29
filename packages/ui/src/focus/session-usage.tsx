@@ -7,15 +7,19 @@ import {
   ContextContentHeader,
   ContextTrigger,
 } from "../components/ai-elements/context";
-import type { Usage } from "../types";
+import type { ModelOption, Usage } from "../types";
 
 /* Token/context meter for one Hermes session (AI Elements Context). */
 export function SessionUsage({
   usage,
   model,
+  models,
 }: {
   usage: Usage;
+  /** The session's model id — drives the context window heuristic. */
   model: string;
+  /** Catalog to resolve the display name from; falls back to the id (#194). */
+  models?: ModelOption[];
 }) {
   const used = usage.input + usage.output;
   const max = model.startsWith("qwen") ? 262_000 : 200_000;
@@ -62,7 +66,9 @@ export function SessionUsage({
         </ContextContentBody>
         <ContextContentFooter>
           <span className="text-muted-foreground">Model</span>
-          <span className="truncate">{model}</span>
+          <span className="truncate">
+            {models?.find((m) => m.id === model)?.name ?? model}
+          </span>
         </ContextContentFooter>
       </ContextContent>
     </Context>

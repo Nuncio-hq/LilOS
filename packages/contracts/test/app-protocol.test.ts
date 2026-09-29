@@ -179,6 +179,8 @@ describe("#29 employee lifecycle + engine passthrough contracts", () => {
       "agents.create",
       "agents.update",
       "models.list",
+      "jobs.list",
+      "jobs.stop",
     ]) {
       expect(AppMethod.safeParse(method).success).toBe(true);
     }
@@ -188,6 +190,8 @@ describe("#29 employee lifecycle + engine passthrough contracts", () => {
       "agents.create",
       "agents.update",
       "models.list",
+      "jobs.list",
+      "jobs.stop",
     ]);
   });
 

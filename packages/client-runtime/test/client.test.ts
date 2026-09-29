@@ -688,3 +688,66 @@ describe("mobile instant-connect seam (#154)", () => {
     expect(cold.snapshot()).toEqual({ ...snap, savedAt: expect.any(Number) });
   });
 });
+
+describe("directory refresh for a paired phone", () => {
+  const employee = {
+    id: "emp_1",
+    name: "Ada",
+    role: "eng",
+    status: "online",
+    profile: "default",
+    model: "fake-small",
+    now: "",
+    instructions: "",
+    respondTo: "me",
+    createdAt: 0,
+  };
+
+  /** Answers every directory read like the relay does for a device peer. */
+  async function refreshAsPhone(device?: {
+    deviceId: string;
+    credential: string;
+  }) {
+    const { client, socket } = makeClient(device ? { device } : {});
+    const pending = client.connect();
+    await Promise.resolve();
+    socket.openSocket();
+    await Promise.resolve();
+    socket.respondTo("session.hello", WELCOME);
+    await pending;
+    socket.respondTo("employees.list", { employees: [employee] });
+    socket.respondTo("channels.list", { channels: [] });
+    socket.respondTo("conversations.list", { conversations: [] });
+    socket.respondTo("conversations.summaries", { summaries: [] });
+    socket.respondTo("profile.get", { profile: { name: "", company: "" } });
+    const askedDevices = socket.sent.some(
+      (raw) =>
+        (JSON.parse(raw) as { method?: string }).method === "devices.list",
+    );
+    if (askedDevices)
+      socket.failTo("devices.list", {
+        code: -32003,
+        message: "forbidden",
+        data: { code: "forbidden" },
+      });
+    await new Promise((r) => setTimeout(r, 0));
+    return { client, askedDevices };
+  }
+
+  it("a phone (device credential) gets employees even though devices.list is admin-only", async () => {
+    const { client, askedDevices } = await refreshAsPhone({
+      deviceId: "dev_1",
+      credential: "devcred_x",
+    });
+    expect(askedDevices).toBe(false);
+    expect(client.employees.get().map((e) => e.id)).toEqual(["emp_1"]);
+    expect(client.directoryReady.get()).toBe(true);
+  });
+
+  it("a refused devices.list never blanks the directory", async () => {
+    const { client, askedDevices } = await refreshAsPhone();
+    expect(askedDevices).toBe(true);
+    expect(client.employees.get().map((e) => e.id)).toEqual(["emp_1"]);
+    expect(client.directoryReady.get()).toBe(true);
+  });
+});

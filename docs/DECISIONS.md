@@ -91,8 +91,13 @@ PR does not exist.
   #35 · PR #81
 
 ## Testing
-- **D-#3 CI (GitHub Actions, setup-bun) runs `bun run verify` with
-  `engine-fake`; never a real LLM.** Not: real LLM in CI. — #3 · PR #14
+- **D-#3 CI (GitHub Actions, setup-bun) runs with `engine-fake`; never a
+  real LLM.** Not: real LLM in CI. — #3 · PR #14
+- **D-#201 CI runs the fast checks (`verify:fast`) on every PR push and E2E
+  only on `main` and ready, non-docs-only PRs; a PR's newer push cancels its
+  older run; a failed E2E test retries once and is flagged flaky; the macOS
+  release build runs on tags/dispatch only.** Not: full `verify` on every
+  push, or re-running the whole job for a flake. — #201 · PR #202
 - **D-#3 Local verify uses a real LLM via Hermes (HPC `qwen3.8-flash-next`
   local / `openai-codex` cloud); hand-offs state which was used; if both
   fail, tell Oscar.** Not: silently falling back to mock. — #3 · PR #14
@@ -161,6 +166,14 @@ PR does not exist.
   approve / reject / change{text}. Not: a LilOS-owned plan store, patch or
   delta plan events, or rendering these without a declared `plan`
   capability (D-#19). — #180
+- **D-#179 Subagent runs and background jobs exist only as engine events /
+  `jobs.*` answers — LilOS stores no job/subagent state** (`subagent.*`,
+  `job.*`, `jobs.list`/`jobs.stop` under `background_jobs`; a helper that is
+  another employee surfaces as `subagent.started.employee` + a session link
+  in its DM, per D-#25). Job output lives in engine memory (rolling tail);
+  after a reconnect the list comes from `jobs.list`, never a LilOS copy.
+  Not: a LilOS-side jobs/subagents table, or a copy of a helper's turns. —
+  #179
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the
@@ -203,10 +216,11 @@ PR does not exist.
 
 ## UX
 - **D-#114 The Workbench lives only in Focus mode, and opening a session
-  goes straight into Focus** (`/dm/$employeeId/$conversationId/focus`; the
-  420px thread panel stays the quick peek). Changes = uncommitted files vs
-  `HEAD` (`git.diff` with no `base`; untracked included). Not: Workbench in
-  the thread panel, or a review step between DM and Focus. — #114 · PR #149
+  goes to the thread panel first — the panel's ↗ is the way into Focus**
+  (`/dm/$employeeId/$conversationId`, then `…/focus`; the 420px peek stays
+  beside the feed). Changes = uncommitted files vs `HEAD` (`git.diff` with
+  no `base`; untracked included). Not: straight to Focus (was #114);
+  Workbench in the thread panel. — #114 · PR #149, #195
 - **D-#19 A control renders only when its handler is passed; the app shows
   only working surfaces (no placeholder buttons).** Conversation UI = shared
   pieces (`AgentTurn`, `UserTurn`, cards, composers) + thin frames

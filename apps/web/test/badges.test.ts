@@ -46,6 +46,7 @@ const model = (opts: {
   sessionId: "s",
   state: opts.live ? "running" : "idle",
   turns: [],
+  jobs: [],
   live: opts.live
     ? {
         turnId: "t",
@@ -56,6 +57,7 @@ const model = (opts: {
         steers: [],
         plans: [],
         requests: [],
+        subagents: [],
       }
     : undefined,
   openRequests: Array.from({ length: opts.openRequests ?? 0 }, (_, i) => ({

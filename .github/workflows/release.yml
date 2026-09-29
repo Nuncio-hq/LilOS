@@ -3,14 +3,12 @@ name: release
 # Issue #35 AC-1: CI builds the DMG. Signing + notarization run only when the
 # Apple secrets exist; otherwise the job builds the unsigned (dev) DMG and
 # says so — credentials are read from env, never written to the repo.
+# Not on pull_request: macOS minutes cost 10x (#201). Before merging a change
+# to apps/desktop packaging or scripts/release, run it by hand (Actions → release
+# → Run workflow on your branch).
 on:
   push:
     tags: ["v*"]
-  pull_request:
-    paths:
-      - "apps/desktop/**"
-      - "scripts/release/**"
-      - ".github/workflows/release.yml"
   workflow_dispatch:
     inputs:
       build:

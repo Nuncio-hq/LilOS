@@ -225,10 +225,13 @@ out(`dm channel ${channel.id}`);
 
 const messages = user.channelMessages(channel.id);
 const sysNotes: string[] = [];
+const answers = new Set<string>();
 messages.subscribe((s) => {
   for (const m of s.messages) {
     if (m.authorKind === "system" && !sysNotes.includes(m.text))
       sysNotes.push(m.text);
+    if (m.authorKind === "employee" && m.conversationId)
+      answers.add(m.conversationId);
   }
 });
 
@@ -302,10 +305,15 @@ const cwd2 = await waitFor("session.started cwd (default)", () =>
 if (cwd2 !== workdir)
   fail(`no-folder cwd ${cwd2} != harness workdir ${workdir}`);
 out(`PASS leg2: no-folder session.started cwd = ${cwd2}`);
-const note = await waitFor('"No folder" system note', () =>
-  sysNotes.find((t) => t.startsWith("No folder: working in ")),
+// #196: a no-folder session is a plain chat — no system note at all.
+// Waiting for its answer first proves the session ran before asserting.
+await waitFor(
+  "no-folder session answer",
+  () => answers.has(conv2.id) || undefined,
 );
-out(`PASS leg2: thread note "${note}"`);
+if (sysNotes.some((t) => t.startsWith("No folder:")))
+  fail(`no-folder session posted a note: ${sysNotes.join(" | ")}`);
+out("PASS leg2: no 'No folder' note in the thread (#196)");
 
 user.close();
 engine.close();

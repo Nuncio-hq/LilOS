@@ -3,6 +3,7 @@ import {
   type AgentsDescribeParams,
   type AgentsUpdateParams,
   type ApprovalOutcome,
+  BACKGROUND_JOBS_CAPABILITY,
   type Capability,
   type ContentBlock,
   ENGINE_METHODS,
@@ -11,6 +12,10 @@ import {
   type EngineRequest,
   type EventsSinceParams,
   type InterruptParams,
+  type Job,
+  type JobStatus,
+  type JobsListParams,
+  type JobsStopParams,
   type ModelsListParams,
   type PromptParams,
   type RequestRespondParams,
@@ -22,6 +27,7 @@ import {
   type SessionSteerParams,
   type SessionStopParams,
   type StopReason,
+  SUBAGENTS_CAPABILITY,
   type Usage,
 } from "@lilos/contracts/engine";
 import { AcpDriver, type AcpOptions } from "./acp.js";
@@ -38,15 +44,21 @@ import { RpcError } from "./errors.js";
 import type { GatewayLike } from "./gateway.js";
 import {
   approvalOutcomeToResult,
+  firstLocalUrl,
   mapApprovalParams,
   mapClarifyParams,
+  mapProcessStatus,
   mapStopReason,
+  mapSubagentStatus,
   mapToolStatus,
   mapUsage,
+  parseToolResultJson,
+  subagentKey,
 } from "./mapping.js";
 import {
   cancelAllAsks,
   cancelAsk,
+  type HermesJob,
   type PendingAsk,
   requestNotFound,
   resolveOutcomeValid,
@@ -188,6 +200,11 @@ export class HermesEngine {
         return this.sessionSetTitle(parsed.data as SessionSetTitleParams);
       case "session.setHidden":
         return this.sessionSetHidden(parsed.data as SessionSetHiddenParams);
+      /* #179 */
+      case "jobs.list":
+        return this.jobsList(parsed.data as JobsListParams);
+      case "jobs.stop":
+        return this.jobsStop(parsed.data as JobsStopParams);
       default:
         throw new RpcError(
           RPC_ERRORS.METHOD_NOT_FOUND,
@@ -269,6 +286,10 @@ export class HermesEngine {
         methods: ["session.start"],
       });
     }
+    /* #179: WS sessions stream real subagent.* + process frames; ACP
+       sessions synthesize the same rows from delegate/terminal tool calls
+       (jobs.stop is WS-only and refuses per-session like setModel). */
+    capabilities.push(SUBAGENTS_CAPABILITY, BACKGROUND_JOBS_CAPABILITY);
     capabilities.push({
       id: "hermes_gateway",
       name: "Hermes gateway",
@@ -579,6 +600,12 @@ export class HermesEngine {
         /* session may already be gone server-side */
       }
     }
+    for (const timer of s.jobFlush.values()) clearTimeout(timer);
+    s.jobFlush.clear();
+    if (s.jobPoll) {
+      clearInterval(s.jobPoll);
+      s.jobPoll = undefined;
+    }
     s.state = "closed";
     s.emit("session.state", { state: "closed" });
     if (t) {
@@ -622,6 +649,218 @@ export class HermesEngine {
       return { status: "steered" as const };
     }
     return { status: "not_running" as const };
+  }
+
+  // ── #179: background jobs (Hermes process registry) ───────────────────────
+
+  /** The tracked row for a registry process id, creating it if unknown. */
+  private ensureJob(s: Session, procId: string): HermesJob {
+    let job = s.jobs.get(procId);
+    if (!job) {
+      job = {
+        jobId: procId,
+        command: "",
+        status: "running",
+        startedAt: Date.now(),
+        tail: "",
+        startedEmitted: false,
+        flushedLen: 0,
+      };
+      s.jobs.set(procId, job);
+      /* Output can race the spawn result (or the adapter may join late):
+         pull the registry row for the command/pid before job.started. */
+      if (s.driver === "ws") void this.syncJobs(s, procId);
+    }
+    return job;
+  }
+
+  /** Mint the job.started row once command (and pid) are known. */
+  startJob(s: Session, procId: string, command: string, pid?: number) {
+    const job = this.ensureJob(s, procId);
+    if (command && !job.command) job.command = command;
+    if (pid !== undefined && Number.isFinite(pid)) {
+      job.pid = pid;
+      s.jobByPid.set(pid, procId);
+    }
+    if (!job.startedEmitted) {
+      job.startedEmitted = true;
+      s.emit("job.started", {
+        jobId: procId,
+        command: job.command || procId,
+        startedAt: job.startedAt,
+        ...(job.url ? { url: job.url } : {}),
+      });
+      this.scheduleJobFlush(s, job);
+      this.ensureJobPoller(s);
+    }
+  }
+
+  /* #179: Hermes pushes nothing when a bg process exits silently
+     (`terminal background:true` without notify_on_complete), so while any
+     job runs we reconcile the registry on a timer — the row lands
+     job.exited within ~2s of a real exit. */
+  private ensureJobPoller(s: Session) {
+    if (s.driver !== "ws" || s.jobPoll) return;
+    s.jobPoll = setInterval(() => void this.syncJobs(s), 2_000);
+    s.jobPoll.unref?.();
+  }
+
+  /** Emit job.output once the row has announced itself (throttled tail). */
+  private scheduleJobFlush(s: Session, job: HermesJob) {
+    if (!job.startedEmitted || job.status !== "running") return;
+    if (s.jobFlush.has(job.jobId)) return;
+    s.jobFlush.set(
+      job.jobId,
+      setTimeout(() => {
+        s.jobFlush.delete(job.jobId);
+        this.flushJob(s, job);
+      }, 300),
+    );
+  }
+
+  private flushJob(s: Session, job: HermesJob) {
+    if (job.tail.length === job.flushedLen) return;
+    job.flushedLen = job.tail.length;
+    s.emit("job.output", {
+      jobId: job.jobId,
+      tail: job.tail,
+      ...(job.url ? { url: job.url } : {}),
+    });
+  }
+
+  private emitJobExited(
+    s: Session,
+    job: HermesJob,
+    status: Extract<JobStatus, "exited" | "failed" | "stopped">,
+    exitCode?: number,
+  ) {
+    if (job.status !== "running") return;
+    job.status = status;
+    if (exitCode !== undefined) job.exitCode = exitCode;
+    const timer = s.jobFlush.get(job.jobId);
+    if (timer) {
+      clearTimeout(timer);
+      s.jobFlush.delete(job.jobId);
+    }
+    this.flushJob(s, job); // last tail beats job.exited on the wire
+    s.emit("job.exited", {
+      jobId: job.jobId,
+      status,
+      ...(job.exitCode !== undefined ? { exitCode: job.exitCode } : {}),
+    });
+  }
+
+  /**
+   * Reconcile tracked jobs against `process.list` — fills the command/pid a
+   * racing `agent.terminal.output` couldn't see, and lands job.exited for
+   * rows whose close frame we only learned about by pid (or missed).
+   */
+  private async syncJobs(s: Session, onlyProcId?: string) {
+    if (s.driver !== "ws") return;
+    let rows: Record<string, unknown>[];
+    try {
+      const r = (await this.opts.gateway.request("process.list", {
+        session_id: s.runtimeSid,
+      })) as { processes?: unknown };
+      rows = Array.isArray(r?.processes)
+        ? (r.processes as Record<string, unknown>[])
+        : [];
+    } catch {
+      return; /* an old gateway without process.* leaves rows memory-only */
+    }
+    for (const row of rows) {
+      const jobId = typeof row.session_id === "string" ? row.session_id : "";
+      if (!jobId || (onlyProcId && jobId !== onlyProcId)) continue;
+      const job = this.ensureJob(s, jobId);
+      if (!job.command && typeof row.command === "string")
+        job.command = row.command;
+      if (typeof row.pid === "number" && Number.isFinite(row.pid)) {
+        job.pid = row.pid;
+        s.jobByPid.set(row.pid, jobId);
+      }
+      const startedAt = Date.parse(String(row.started_at ?? ""));
+      if (Number.isFinite(startedAt)) job.startedAt = startedAt;
+      if (
+        typeof row.output_tail === "string" &&
+        row.output_tail.length > job.tail.length
+      ) {
+        job.tail = row.output_tail;
+        if (!job.url) job.url = firstLocalUrl(job.tail);
+      }
+      if (!job.startedEmitted) this.startJob(s, jobId, job.command, job.pid);
+      else this.scheduleJobFlush(s, job);
+      const status = mapProcessStatus(row);
+      if (job.status === "running" && status !== "running")
+        this.emitJobExited(
+          s,
+          job,
+          status,
+          typeof row.exit_code === "number" ? row.exit_code : undefined,
+        );
+    }
+    if (
+      s.jobPoll &&
+      ![...s.jobs.values()].some((j) => j.status === "running")
+    ) {
+      clearInterval(s.jobPoll);
+      s.jobPoll = undefined;
+    }
+  }
+
+  private async jobsList(p: JobsListParams) {
+    const s = this.require(p.sessionId);
+    /* WS truth is the registry — refresh so a late-joining web sees the rows
+       a past turn left running even without a live output frame. */
+    await this.syncJobs(s);
+    const jobs: Job[] = [...s.jobs.values()].map((j) => ({
+      jobId: j.jobId,
+      command: j.command || j.jobId,
+      status: j.status,
+      startedAt: j.startedAt,
+      uptimeSeconds: Math.max(0, Math.round((Date.now() - j.startedAt) / 1000)),
+      ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
+      ...(j.url ? { url: j.url } : {}),
+      ...(j.tail ? { tail: j.tail } : {}),
+    }));
+    return { jobs };
+  }
+
+  private async jobsStop(p: JobsStopParams) {
+    const s = this.require(p.sessionId);
+    if (s.driver !== "ws")
+      throw new RpcError(
+        RPC_ERRORS.METHOD_NOT_FOUND,
+        "jobs.stop needs the WS transport (no ACP equivalent yet)",
+      );
+    const job = s.jobs.get(p.jobId);
+    if (job && job.status !== "running") return { stopped: false };
+    let r: Record<string, unknown> | undefined;
+    try {
+      r = (await this.opts.gateway.request("process.kill", {
+        session_id: s.runtimeSid,
+        process_id: p.jobId,
+      })) as Record<string, unknown>;
+    } catch (e) {
+      /* 4044 "no such process" = already gone — the row reads stopped, not an
+         error the user has to clear. */
+      if (e instanceof RpcError && e.code === 4044) return { stopped: false };
+      throw e;
+    }
+    if (r?.status === "error")
+      throw new RpcError(
+        RPC_ERRORS.INTERNAL_ERROR,
+        typeof r.error === "string" ? r.error : "process.kill failed",
+      );
+    /* killed | already_exited: either way the row is done — land the event
+       here so a gateway that skips terminal.close stays consistent. */
+    if (job && job.status === "running")
+      this.emitJobExited(
+        s,
+        job,
+        r?.status === "killed" ? "stopped" : "exited",
+        typeof r?.exit_code === "number" ? r.exit_code : undefined,
+      );
+    return { stopped: r?.status === "killed" };
   }
 
   // ── gateway inbound routing ───────────────────────────────────────────────
@@ -805,27 +1044,151 @@ export class HermesEngine {
       }
       case "tool.start": {
         if (s.turn) s.turn.phase = "tools";
+        const tool = String(p.name ?? "tool");
+        const callId = s.toolCallId(String(p.tool_id ?? ""));
+        const input =
+          typeof p.args === "object" && p.args !== null
+            ? (p.args as Record<string, unknown>)
+            : {};
         s.emit("tool.started", {
           turnId,
-          toolCallId: s.toolCallId(String(p.tool_id ?? "")),
-          tool: String(p.name ?? "tool"),
-          input:
-            typeof p.args === "object" && p.args !== null
-              ? (p.args as Record<string, unknown>)
-              : {},
+          toolCallId: callId,
+          tool,
+          input,
         });
+        /* #179: an in-flight delegate call owns the subagent.* frames that
+           follow; a background terminal mints its job row on completion. */
+        if (tool === "delegate_task") s.delegateStack.push(callId);
+        if (tool === "terminal")
+          s.terminalCalls.set(
+            callId,
+            typeof input.command === "string" ? input.command : "",
+          );
         break;
       }
       case "tool.complete": {
         const mapped = mapToolStatus(p);
+        const callId = s.toolCallId(String(p.tool_id ?? ""));
+        const tool = String(p.name ?? "tool");
         s.emit("tool.completed", {
           turnId,
-          toolCallId: s.toolCallId(String(p.tool_id ?? "")),
-          tool: String(p.name ?? "tool"),
+          toolCallId: callId,
+          tool,
           status: mapped.status,
           ...(mapped.output !== undefined ? { output: mapped.output } : {}),
           ...(mapped.diff ? { diff: mapped.diff } : {}),
         });
+        /* #179: the delegate call closed — children keep their own ids. */
+        s.delegateStack = s.delegateStack.filter((id) => id !== callId);
+        const command = s.terminalCalls.get(callId);
+        s.terminalCalls.delete(callId);
+        /* A backgrounded (or timeout-yielded) terminal answers with the
+           registry row — mint the job from its process id + pid. */
+        if (tool === "terminal" && mapped.status === "completed") {
+          const result =
+            parseToolResultJson(p.result) ?? parseToolResultJson(mapped.output);
+          const procId =
+            typeof result?.session_id === "string" ? result.session_id : "";
+          const pid = typeof result?.pid === "number" ? result.pid : undefined;
+          if (procId) this.startJob(s, procId, command ?? "", pid);
+        }
+        break;
+      }
+      /* #179: subagent.* — the gateway relays the whole child lifecycle
+         (tool_progress._progress_subagent); flat rows keyed on any stable
+         child id, tool moments nest under the row via parentToolCallId. */
+      case "subagent.spawn_requested":
+      case "subagent.start": {
+        const key = subagentKey(p);
+        if (!key || s.subIds.has(key)) break;
+        const subagentId = s.subagentId(key);
+        const idx = typeof p.task_index === "number" ? p.task_index : 0;
+        s.emit("subagent.started", {
+          turnId,
+          subagentId,
+          name: `task ${idx + 1}`,
+          task:
+            typeof p.goal === "string" && p.goal
+              ? p.goal
+              : typeof p.text === "string"
+                ? p.text
+                : "",
+          ...(s.delegateStack.length
+            ? { parentToolCallId: s.delegateStack.at(-1) }
+            : {}),
+        });
+        break;
+      }
+      case "subagent.tool": {
+        const key = subagentKey(p);
+        const subagentId = key ? s.subIds.get(key) : undefined;
+        if (!subagentId) break;
+        const callId = s.toolCallId(`sub:${subagentId}:${++s.subToolCounter}`);
+        const tool =
+          typeof p.tool_name === "string" && p.tool_name ? p.tool_name : "tool";
+        /* The relay fires on the child's tool_started carrying a preview —
+           open and close the step at once so no row hangs "running". */
+        s.emit("tool.started", {
+          turnId,
+          toolCallId: callId,
+          tool,
+          input: {},
+          parentToolCallId: subagentId,
+        });
+        s.emit("tool.completed", {
+          turnId,
+          toolCallId: callId,
+          tool,
+          status: "completed",
+          ...(typeof p.tool_preview === "string" && p.tool_preview
+            ? { output: p.tool_preview }
+            : {}),
+          parentToolCallId: subagentId,
+        });
+        break;
+      }
+      case "subagent.complete": {
+        const key = subagentKey(p);
+        const subagentId = key ? s.subIds.get(key) : undefined;
+        if (!subagentId) break;
+        s.emit("subagent.completed", {
+          subagentId,
+          status: mapSubagentStatus(p.status),
+          ...(typeof p.summary === "string" && p.summary
+            ? { result: p.summary }
+            : {}),
+          ...(typeof p.duration_seconds === "number"
+            ? { durationMs: Math.round(p.duration_seconds * 1000) }
+            : {}),
+        });
+        break;
+      }
+      /* #179: background process frames — `agent.terminal.output` keys on the
+         registry process id, `terminal.close` on the OS pid (jobByPid). */
+      case "agent.terminal.output": {
+        const procId = typeof p.process_id === "string" ? p.process_id : "";
+        const chunk = typeof p.chunk === "string" ? p.chunk : "";
+        if (!procId || !chunk) break;
+        const job = this.ensureJob(s, procId);
+        job.tail = `${job.tail}${chunk}`.slice(-4000);
+        if (!job.url) job.url = firstLocalUrl(job.tail);
+        this.scheduleJobFlush(s, job);
+        break;
+      }
+      /* `terminal.close` fires only for a desktop GUI tab close — a bg
+         process exiting on its own surfaces as `status.update`
+         (kind:"process", notify_on_complete delivery). Reconcile the
+         registry rows so the job row lands job.exited (#179). */
+      case "status.update": {
+        if (p.kind === "process") void this.syncJobs(s);
+        break;
+      }
+      case "terminal.close": {
+        const pid = Number(p.process_id);
+        const jobId = Number.isFinite(pid) ? s.jobByPid.get(pid) : undefined;
+        /* Close carries only the pid — sync reads the registry row for the
+           exit code + completion_reason (killed -> stopped). */
+        void this.syncJobs(s, jobId);
         break;
       }
       case "session.info": {

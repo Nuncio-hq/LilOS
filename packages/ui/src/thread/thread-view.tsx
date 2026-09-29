@@ -8,6 +8,7 @@ import {
   runningComposer,
 } from "../chat/agent-chat";
 import { Composer } from "../chat/composer";
+import { useEscapeKey } from "../chat/composer-keys";
 import { ModelPicker, sessionChoice } from "../chat/model-picker";
 import {
   Conversation,
@@ -51,6 +52,7 @@ export function ThreadView({
   resolved,
   setResolved,
   onFocus,
+  onClose,
   work,
   repo,
   onStart,
@@ -93,6 +95,8 @@ export function ThreadView({
   resolved: Record<string, string>;
   setResolved?: (r: Record<string, string>) => void;
   onFocus?: () => void;
+  /* Esc → close the panel (issue #195 AC-1); absent → Esc does nothing (D-#19). */
+  onClose?: () => void;
   work: Work | null;
   repo?: string;
   onStart?: () => void;
@@ -157,6 +161,9 @@ export function ThreadView({
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
   const isDM = !!channel.dm;
+  /* Esc closes the peek — same ownership rules as Focus's Esc→back (issue
+     #195 AC-1): a field's Esc and an open overlay's Esc stay theirs. */
+  useEscapeKey(onClose);
   const channelLabel = isDM ? `DM · ${channel.name}` : `#${channel.name}`;
   const startCardOpen = openStartRequest(thread, resolved);
   /* #138 AC-3: jump-to-hit — scroll the message into view, flash it, hand
@@ -211,6 +218,8 @@ export function ThreadView({
             {channelLabel} · {leadEmp && !isDM && `${leadEmp.name} · `}Hermes{" "}
             <code className="rounded bg-muted px-1">{thread.session}</code>
           </div>
+          {/* A folder-less DM session is a plain chat — no folder label
+              at all (#196). */}
           {thread.ws ? (
             <WsBadge
               ws={thread.ws}
@@ -223,13 +232,17 @@ export function ThreadView({
                   : undefined
               }
             />
-          ) : (
+          ) : isDM && !work && !repo ? null : (
             <WorkspaceBadge work={work} repo={repo} />
           )}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {thread.usage && leadEmp && (
-            <SessionUsage usage={thread.usage} model={leadEmp.model} />
+            <SessionUsage
+              usage={thread.usage}
+              model={leadEmp.model}
+              models={models}
+            />
           )}
           {!work && !isDM && onStart && (
             // While the request card below is open the header button must not compete with it (issue
@@ -411,7 +424,9 @@ export function ThreadView({
                 ? "Ticket only. No repo on this channel."
                 : repo
                   ? "Read-only on main. Start work to edit code."
-                  : `session ${thread.session}`
+                  : isDM
+                    ? `Reply to ${leadEmp?.name ?? "the session"}…`
+                    : `session ${thread.session}`
         }
         onSend={onSend}
         draft={draft}

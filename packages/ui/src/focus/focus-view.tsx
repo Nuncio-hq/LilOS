@@ -25,7 +25,7 @@ import {
   QueuedTray,
   runningComposer,
 } from "../chat/agent-chat";
-import { overlayOpen } from "../chat/composer-keys";
+import { useEscapeKey } from "../chat/composer-keys";
 import { FocusComposer } from "../chat/focus-composer";
 import { sessionChoice } from "../chat/model-picker";
 import {
@@ -325,21 +325,10 @@ export function FocusView({
   const wbAvailable = host != null;
 
   /* Esc leaves Focus — but only when nothing else owns the key: the composer
-     takes it to stop a running turn, an open popup/menu takes it to close
-     (overlayOpen), and Esc pressed inside a field stays there (#114 AC-1,
-     same rules as issue #104). Capture phase: the check runs before the
-     overlay's own keydown handler dismisses it. */
-  useEffect(() => {
-    if (!onBack) return;
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented || overlayOpen()) return;
-      const t = e.target as HTMLElement | null;
-      if (t?.closest?.("input, textarea, select, [contenteditable]")) return;
-      onBack();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onBack]);
+     takes it to stop a running turn, an open popup/menu takes it to close,
+     and Esc pressed inside a field stays there (#114 AC-1, same rules as
+     issue #104). */
+  useEscapeKey(onBack);
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -395,7 +384,9 @@ export function FocusView({
               {thread.session}
             </code>
             {/* The session's folder + branch — same badge the thread panel
-                shows (#113); Focus is the session's main view (#114). */}
+                shows (#113); Focus is the session's main view (#114).
+                A folder-less DM session is a plain chat — no repo exists to
+                be read-only on, so no label at all (#196). */}
             {thread.ws ? (
               /* Same WsBadge the thread header shows (#113) — with the
                  open-in-editor / Reveal-in-Finder menu when the host has
@@ -432,7 +423,7 @@ export function FocusView({
                 <FolderIcon className="size-3" />
                 no git repo
               </span>
-            ) : (
+            ) : isDM ? null : (
               <span className="hidden shrink-0 items-center gap-1 rounded bg-muted px-1 md:flex">
                 <EyeIcon className="size-3" />
                 read-only
@@ -448,7 +439,7 @@ export function FocusView({
             </span>
           )}
           {thread.usage && model && (
-            <SessionUsage usage={thread.usage} model={model} />
+            <SessionUsage usage={thread.usage} model={model} models={models} />
           )}
           {!work && !isDM && onStart && (
             // Same rule as the thread panel (issue #15): while the request card in the conversation
@@ -746,7 +737,9 @@ export function FocusView({
                       ? `Edits go to ⎇ ${work.branch}`
                       : work
                         ? "Edits land in this folder"
-                        : "Read-only on main"
+                        : isDM
+                          ? `Reply to ${lead?.name ?? "the employee"}…`
+                          : "Read-only on main"
               }
               onSend={(t, files) => onSend(t, files)}
               draft={draft}

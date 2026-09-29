@@ -78,7 +78,8 @@ test.describe
       await expect(row).toContainText("skills");
       await row.click();
       // Read-only profile card: model + skill count + SOUL preview.
-      await expect(page.getByText("fake-small")).toBeVisible();
+      // #194: the picked card shows the model's display name, not the id.
+      await expect(page.getByText("Fake Small")).toBeVisible();
       await expect(page.getByText("Cited answers first")).toBeVisible();
       // AC-6: single user — no who-can-direct picker in either mode.
       await expect(page.getByText(/Who can direct/i)).toHaveCount(0);

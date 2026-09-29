@@ -14,7 +14,11 @@ import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@lilos/contracts/app";
-import type { AgentDescriptor, ApprovalOutcome } from "@lilos/contracts/engine";
+import type {
+  AgentDescriptor,
+  ApprovalOutcome,
+  Job,
+} from "@lilos/contracts/engine";
 import {
   AddFolderDialog,
   choiceFor,
@@ -29,10 +33,12 @@ import {
 } from "@lilos/ui";
 import type {
   AttachedFile,
+  BackgroundJob,
   Channel,
   FileMention,
   MessageHit,
   ModelChoice,
+  ModelOption,
   ModelPickerExtras,
   Msg,
   Reply,
@@ -40,7 +46,12 @@ import type {
   Work,
   WsPick,
 } from "@lilos/ui/types";
-import { useNavigate, useParams, useRouterState } from "@tanstack/react-router";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useRouterState,
+} from "@tanstack/react-router";
 import { atom } from "nanostores";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -48,6 +59,7 @@ import {
   clearPending,
   hasCapability,
   interruptSession,
+  openDmChannel,
   pendingStart,
   refreshModels,
   renameConversation,
@@ -83,8 +95,10 @@ import {
 } from "../lib/host";
 import {
   conversationReplies,
+  formatUptime,
   mergeTurns,
   toFeed,
+  toJob,
   toUiEmployee,
 } from "../lib/mapping";
 import { currentName, humanFor, osFullName, profile } from "../lib/me";
@@ -174,6 +188,7 @@ export function DmPage() {
 
   const employees = useAtom(relay.employees);
   const channels = useAtom(relay.channels);
+  const directoryReady = useAtom(relay.directoryReady);
   // #118: the human's name/avatar re-render live on a settings change.
   useAtom(profile);
   useAtom(osFullName);
@@ -276,6 +291,22 @@ export function DmPage() {
   const channel = channels.find(
     (c) => c.kind === "dm" && c.employeeId === employeeId,
   );
+
+  /* #193: an employee hired without a DM channel (relay-side
+     `employees.create`, pre-fix first-run hires) hung on the session
+     skeleton forever — `!channel` read as "still loading". Once the
+     directory confirms the channel is really absent the page opens it
+     itself (`channels.openDm` is idempotent server-side); the skeleton
+     lasts only until the channel lands, and a failed open settles into the
+     empty state instead of spinning. */
+  const dmOpenTried = useRef<Record<string, true>>({});
+  const [dmOpenFailed, setDmOpenFailed] = useState(false);
+  useEffect(() => {
+    if (!directoryReady || !employee || channel || dmOpenFailed) return;
+    if (dmOpenTried.current[employeeId]) return;
+    dmOpenTried.current[employeeId] = true;
+    openDmChannel(employeeId).catch(() => setDmOpenFailed(true));
+  }, [directoryReady, employee, channel, dmOpenFailed, employeeId]);
   const msgState = useAtom(
     channel ? relay.channelMessages(channel.id) : EMPTY_MESSAGES,
   );
@@ -397,6 +428,42 @@ export function DmPage() {
     openConv?.engineRef ? engine.sessionFeed(openConv.engineRef) : EMPTY_FEED,
   );
 
+  /* #179: the Workbench Background tab (D-#19) — `jobs.list` fills the rows
+     the event stream can't carry (a job the engine started before a harness
+     restart); job.* events keep it live after that. Rendered + Stop only
+     when the engine declares `background_jobs`. */
+  const jobsCapable = hasCapability("background_jobs");
+  const [listedJobs, setListedJobs] = useState<Record<string, Job[]>>({});
+  const openSid = openConv?.engineRef;
+  useEffect(() => {
+    if (!jobsCapable || !openSid || !openFeed.synced) return;
+    let dead = false;
+    relay
+      .request<{ jobs: Job[] }>("jobs.list", { sessionId: openSid })
+      .then((r) => {
+        if (!dead) setListedJobs((prev) => ({ ...prev, [openSid]: r.jobs }));
+      })
+      .catch(() => {});
+    return () => {
+      dead = true;
+    };
+  }, [jobsCapable, openSid, openFeed.synced]);
+
+  /* A running job ticks its uptime every second. */
+  const [, setJobsTick] = useState(0);
+  const hasRunningJob =
+    (openConv?.engineRef ? (models[openConv.engineRef]?.jobs ?? []) : []).some(
+      (j) => j.status === "running",
+    ) ||
+    (openSid ? (listedJobs[openSid] ?? []) : []).some(
+      (j) => j.status === "running",
+    );
+  useEffect(() => {
+    if (!hasRunningJob) return;
+    const t = setInterval(() => setJobsTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [hasRunningJob]);
+
   /* Attachment blobs behind every visible ref — channel window, open
      thread, and the summary roots/previews that feed rows render (AC-3). */
   useEffect(() => {
@@ -417,6 +484,11 @@ export function DmPage() {
     const e = employees.find((x) => x.id === id);
     return e ? toUiEmployee(e, engineDown) : undefined;
   };
+  /* #179: the engine reports a helper's profile ref; LilOS links speak in
+     employee ids — a subagent for an unknown profile keeps the ref (the
+     avatar falls back gracefully). */
+  const empRefToId = (ref: string) =>
+    employees.find((x) => x.profile === ref)?.id ?? ref;
 
   const summaryOf = (conv: Conversation) =>
     summaries.find((s) => s.conversation.id === conv.id);
@@ -485,7 +557,13 @@ export function DmPage() {
       toFeed(
         root,
         conv,
-        mergeTurns(repliesOf(conv), model, employeeId, convAsks(conv)),
+        mergeTurns(
+          repliesOf(conv),
+          model,
+          employeeId,
+          convAsks(conv),
+          empRefToId,
+        ),
         wsFor(conv.cwd, cwdBranches),
       ),
     ];
@@ -513,6 +591,30 @@ export function DmPage() {
   );
 
   if (!employee || !uiEmp) {
+    /* #189: a settled directory that has no such employee is a not-found
+       state, not "Loading…" — stale links across LilOS homes land here. */
+    if (directoryReady) {
+      return (
+        <div
+          className="grid min-w-0 flex-1 place-items-center text-sm"
+          data-employee-not-found
+        >
+          <div className="space-y-2 text-center">
+            <p className="text-foreground">Employee not found</p>
+            <p className="text-muted-foreground">
+              This employee doesn’t exist on this LilOS install — the link may
+              be stale.
+            </p>
+            <Link
+              to="/"
+              className="inline-block text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              Back to company
+            </Link>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="grid min-w-0 flex-1 place-items-center text-muted-foreground text-sm">
         Loading…
@@ -527,13 +629,13 @@ export function DmPage() {
     employees: [employeeId],
   };
 
-  /* Clicking a session opens it straight in Focus, like Claude Code /
-     Codex — the thread panel stays the quick peek (#114 AC-1). */
+  /* Clicking a session opens the thread panel beside the feed — the quick
+     peek (#195 AC-1); the panel's ↗ is the way into Focus. */
   const openThread = (id: string) => {
     const conv = convs.find((c) => c.rootMessageId === id);
     if (conv)
       void navigate({
-        to: "/dm/$employeeId/$conversationId/focus",
+        to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: conv.id },
       });
   };
@@ -613,11 +715,18 @@ export function DmPage() {
       if (!conv) throw new Error("send failed");
       clearDraftIfSent(draftKey.dm(employeeId), text);
       setDraftPick(({ [employeeId]: _drop, ...rest }) => rest);
-      // A fresh session opens in Focus too (#114).
+      /* A fresh session still lands in Focus (#195 keeps send-as-today),
+         but through the panel URL first — every way back out of Focus
+         (Back/Esc/browser back) then lands on the same open peek. */
       return navigate({
-        to: "/dm/$employeeId/$conversationId/focus",
+        to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: conv.id },
-      });
+      }).then(() =>
+        navigate({
+          to: "/dm/$employeeId/$conversationId/focus",
+          params: { employeeId, conversationId: conv.id },
+        }),
+      );
     });
   };
 
@@ -668,6 +777,7 @@ export function DmPage() {
       model,
       employeeId,
       asksHere,
+      empRefToId,
     );
     // An open question ask gets a real answer card (asks.respond).
     const openQuestion = asksHere.find(
@@ -687,6 +797,71 @@ export function DmPage() {
         }
       : null;
 
+    /* #179: the session's background processes — `jobs.list` rows cover the
+       engine-restart window the event stream can't; job.* events then win
+       (fresher). The tab renders only when the capability is declared. */
+    const jobsNow = Date.now();
+    const jobsById = new Map<string, BackgroundJob>();
+    if (jobsCapable) {
+      for (const j of listedJobs[conv.engineRef ?? ""] ?? []) {
+        jobsById.set(j.jobId, {
+          id: j.jobId,
+          command: j.command,
+          status: j.status,
+          started: j.startedAt
+            ? new Date(j.startedAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          uptime: j.startedAt
+            ? formatUptime((jobsNow - j.startedAt) / 1000)
+            : "0s",
+          ...(j.url ? { url: j.url } : {}),
+          ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
+          log: j.tail ?? "",
+        });
+      }
+      for (const j of model?.jobs ?? [])
+        jobsById.set(j.jobId, toJob(j, jobsNow));
+    }
+    const uiJobs = [...jobsById.values()].sort(
+      (a, b) => a.started.localeCompare(b.started) || a.id.localeCompare(b.id),
+    );
+    /* AC-3: a subagent row for another employee opens their own session in
+       their DM (D-#25) — resolve the engine sessionRef to its conversation. */
+    const onOpenSession = (empRef: string, sessionRef: string) => {
+      const target = summaries.find(
+        (s) => s.conversation.engineRef === sessionRef,
+      )?.conversation;
+      if (target) {
+        const ch = channels.find((c) => c.id === target.channelId);
+        void navigate({
+          to: "/dm/$employeeId/$conversationId",
+          params: {
+            employeeId: ch?.employeeId ?? empRef,
+            conversationId: target.id,
+          },
+        });
+      } else {
+        void navigate({
+          to: "/dm/$employeeId",
+          params: { employeeId: empRef },
+        });
+      }
+    };
+    const onStopJob = (jobId: string) => {
+      if (!conv.engineRef) return;
+      void relay
+        .request<{ stopped: boolean }>("jobs.stop", {
+          sessionId: conv.engineRef,
+          jobId,
+        })
+        .catch((e) =>
+          say(`Stop failed — ${e instanceof Error ? e.message : String(e)}`),
+        );
+    };
+
     const thread: Thread = {
       session: engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
       title: conv.title || undefined,
@@ -700,6 +875,10 @@ export function DmPage() {
       effort: conv.effort ?? model?.effort,
       fast: conv.fast ?? model?.fast,
       ...(convWs ? { ws: convWs } : {}),
+      /* #179 AC-4/AC-5: the Background tab reads this list only when the
+         engine declared `background_jobs` (uiJobs is empty otherwise — and
+         the tab hides itself when it is). */
+      ...(uiJobs.length ? { jobs: uiJobs } : {}),
     };
     const running = !!modelLive || pending[conv.id] === true;
     /* ↑ recall in the open session: the user's last sent message in it — the
@@ -729,7 +908,8 @@ export function DmPage() {
       /* Focus: the same live conversation the thread panel shows (shared
          AgentTurn/composer/draft/asks — issue #114 AC-2), plus the
          Workbench against the session's real folder (AC-3…5). Esc / the
-         back button return to the DM with the panel closed (AC-1). */
+         back button return to the DM with the panel open on this session
+         (#195 AC-2). */
       return (
         <FocusView
           root={rootMsg}
@@ -746,10 +926,12 @@ export function DmPage() {
             }
           }}
           work={work}
+          onOpenSession={onOpenSession}
+          onStopJob={jobsCapable ? onStopJob : undefined}
           onBack={() =>
             void navigate({
-              to: "/dm/$employeeId",
-              params: { employeeId },
+              to: "/dm/$employeeId/$conversationId",
+              params: { employeeId, conversationId: conv.id },
             })
           }
           onNav={() => navOpen.set(true)}
@@ -811,7 +993,10 @@ export function DmPage() {
     }
 
     threadEl = (
-      <div className="flex min-h-0 w-[420px] shrink-0 flex-col border-l xl:w-[460px]">
+      <div
+        data-thread-panel
+        className="flex min-h-0 w-[420px] shrink-0 flex-col border-l xl:w-[460px]"
+      >
         <ThreadView
           root={rootMsg}
           thread={thread}
@@ -828,6 +1013,7 @@ export function DmPage() {
           }}
           running={running}
           steer={steer}
+          onOpenSession={onOpenSession}
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}
           onModel={
@@ -853,11 +1039,18 @@ export function DmPage() {
           onAttachError={say}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           lastSent={lastSent}
-          /* The peek panel's Focus button jumps to the full view (#114). */
+          /* The peek panel's Focus button jumps to the full view (#114),
+             and Esc closes the panel back to the plain DM feed (#195). */
           onFocus={() =>
             void navigate({
               to: "/dm/$employeeId/$conversationId/focus",
               params: { employeeId, conversationId: conv.id },
+            })
+          }
+          onClose={() =>
+            void navigate({
+              to: "/dm/$employeeId",
+              params: { employeeId },
             })
           }
           mentionables={mentionables}
@@ -923,7 +1116,7 @@ export function DmPage() {
         pick={pick}
         setPick={setPick}
         onAddFolder={onAddFolder}
-        loading={!channel}
+        loading={!channel && !dmOpenFailed}
         composerNote={composerNote}
         mentionables={mentionables}
         onSearchFiles={fileSearch(pickFolderPath)}
@@ -970,6 +1163,7 @@ export function DmPage() {
           name={uiEmp.name}
           profile={uiEmp.profile}
           model={uiEmp.model}
+          models={catalog.length ? catalog : undefined}
           instructions={uiEmp.instructions}
           onEdit={() => {
             setEditError(null);
@@ -1094,6 +1288,7 @@ function EmployeeProfileCard({
   name,
   profile,
   model,
+  models,
   instructions,
   onEdit,
   onClose,
@@ -1101,6 +1296,7 @@ function EmployeeProfileCard({
   name: string;
   profile: string;
   model: string;
+  models?: ModelOption[];
   instructions: string;
   onEdit: () => void;
   onClose: () => void;
@@ -1124,7 +1320,10 @@ function EmployeeProfileCard({
           </div>
           <div className="flex gap-2">
             <dt className="w-20 text-muted-foreground">Model</dt>
-            <dd className="font-mono">{model || "engine default"}</dd>
+            <dd className="font-mono">
+              {models?.find((m) => m.id === model)?.name ??
+                (model || "engine default")}
+            </dd>
           </div>
           <div className="flex gap-2">
             <dt className="w-20 text-muted-foreground">Soul</dt>

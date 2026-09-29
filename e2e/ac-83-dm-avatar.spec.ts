@@ -337,10 +337,9 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
     await expect(row).toBeVisible({ timeout: 30_000 });
     await expectAligned("idle (no open session)");
     await row.locator("button").last().click(); // chip reopens the session
-    // The click lands in Focus (#114); the feed row isn't rendered there, so
-    // measure the selected state on the peek URL for the same session.
-    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/);
-    await page.goto(page.url().replace(/\/focus$/, ""));
+    // #195: the chip opens the peek panel — the feed row stays rendered
+    // beside it, so the selected state is measurable right here.
+    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/);
     await expect(row).toBeVisible({ timeout: 30_000 });
     await expectAligned("selected (session open)");
   } finally {
