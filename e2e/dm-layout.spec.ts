@@ -115,11 +115,20 @@ async function dmDefault(page: Page, webUrl: string) {
    reserved-but-empty column (Oscar's report on the desktop app). */
 const mainPane = (page: Page) => page.locator("main").first();
 
+/* The pane must reach the window's inner edge. In a browser tab the app is a
+   floating window with a 14px margin (#246), so measure against the frame,
+   not the viewport. */
 async function rightGap(page: Page): Promise<number> {
   const box = await mainPane(page).boundingBox();
-  const width = await page.evaluate(() => document.documentElement.clientWidth);
+  const edge = await page.evaluate(() => {
+    const frame = document.querySelector(".lilos-desktop");
+    if (!frame) return document.documentElement.clientWidth;
+    const r = frame.getBoundingClientRect();
+    const bw = parseFloat(getComputedStyle(frame).borderRightWidth) || 0;
+    return r.right - bw;
+  });
   if (!box) throw new Error("DM main pane not laid out");
-  return Math.round(width - (box.x + box.width));
+  return Math.round(edge - (box.x + box.width));
 }
 
 test("DM page: with no session open the feed fills the window (no empty right column)", async ({

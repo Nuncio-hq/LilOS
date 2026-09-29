@@ -41,6 +41,8 @@ export interface DesktopBridgeConfig {
  */
 export interface DesktopBridge {
   config?: DesktopBridgeConfig;
+  /** true in the Electron shell — the OS window is the frame (#246). */
+  isDesktop?: boolean;
   platform?: string;
   notifications?: {
     post(notification: DesktopNotification): void;

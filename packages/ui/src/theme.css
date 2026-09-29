@@ -1,0 +1,861 @@
+/* LilOS theme — the single source of truth for the accepted prototype look
+   (issue #246): every web/desktop surface imports this file, so the real app
+   and the prototype cannot drift again. Only the entry files keep the
+   vendored imports (tailwindcss, shadcn, font) and the @source directive.
+
+   Two frames hang off the app root:
+   - `.lilos-desktop`  — one merged window: panels flow into each other,
+     cards are borderless and float on soft shadows, no divider lines.
+     Applied in every host (browser and Electron).
+   - `.lilos-float`    — a plain browser tab only: the floating inset window
+     over the slow colour field. Inside Electron the OS window is the frame,
+     so there is no wallpaper and no margin (#232 owns that chrome). */
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  /* SF Pro on Apple devices (the mobile app's font); Geist elsewhere. */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Geist Variable",
+    system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --color-tint-soft: var(--tint-soft);
+  --color-tint-text: var(--tint-text);
+  --color-glass: var(--glass);
+  --color-work: var(--work);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* Apple system neutrals + one brand tint (teal), same palette as the
+     mobile prototype (prototype/mobile/global.css, PR #150): primary
+     actions, selection and "needs you" are teal; blue stays "working". */
+  --background: #ffffff;
+  --foreground: #1d1d1f;
+  --card: #ffffff;
+  --card-foreground: #1d1d1f;
+  --popover: #ffffffee;
+  --popover-foreground: #1d1d1f;
+  --primary: #00857f;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f2f7;
+  --secondary-foreground: #1d1d1f;
+  --muted: #f2f2f7;
+  --muted-foreground: #86868b;
+  --accent: #7676801a;
+  --accent-foreground: #1d1d1f;
+  --destructive: #ff3b30;
+  --border: #3c3c432b;
+  --input: #3c3c4333;
+  --ring: #00857f80;
+  --chart-1: #00857f;
+  --chart-2: #007aff;
+  --chart-3: #af52de;
+  --chart-4: #ff9500;
+  --chart-5: #8e8e93;
+  --radius: 0.75rem;
+  --sidebar: #f5f5f7cc;
+  --sidebar-foreground: #1d1d1f;
+  --sidebar-primary: #00857f;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #7676801f;
+  --sidebar-accent-foreground: #1d1d1f;
+  --sidebar-border: #3c3c4324;
+  --sidebar-ring: #00857f80;
+  --tint-soft: #e0f3f1;
+  --tint-text: #00716c;
+  --glass: #fbfbfdd9;
+  --work: #007aff;
+}
+
+.dark {
+  --background: #1c1c1e;
+  --foreground: #f5f5f7;
+  --card: #2c2c2e;
+  --card-foreground: #f5f5f7;
+  --popover: #2c2c2eee;
+  --popover-foreground: #f5f5f7;
+  --primary: #3cc4bc;
+  --primary-foreground: #00201e;
+  --secondary: #2c2c2e;
+  --secondary-foreground: #f5f5f7;
+  --muted: #2c2c2e;
+  --muted-foreground: #98989d;
+  --accent: #7676802e;
+  --accent-foreground: #f5f5f7;
+  --destructive: #ff453a;
+  --border: #54545880;
+  --input: #5454588c;
+  --ring: #3cc4bc80;
+  --chart-1: #3cc4bc;
+  --chart-2: #0a84ff;
+  --chart-3: #bf5af2;
+  --chart-4: #ff9f0a;
+  --chart-5: #98989d;
+  --sidebar: #161618d9;
+  --sidebar-foreground: #f5f5f7;
+  --sidebar-primary: #3cc4bc;
+  --sidebar-primary-foreground: #00201e;
+  --sidebar-accent: #7676803d;
+  --sidebar-accent-foreground: #f5f5f7;
+  --sidebar-border: #54545866;
+  --sidebar-ring: #3cc4bc80;
+  --tint-soft: #0f2f2d;
+  --tint-text: #5fd6ce;
+  --glass: #2c2c2ed9;
+  --work: #0a84ff;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    letter-spacing: -0.006em;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Agent transcript prose (focus mode + PR description). Plain CSS so it does not depend on Tailwind
+   scanning streamdown's classes in node_modules. Unlayered on purpose: must beat streamdown's utility classes
+   (text-sm / bg-muted / list-inside) that Tailwind emits in @layer utilities. Modelled on Claude / Cursor / Devin. */
+.lilos-prose {
+  font-size: 15px;
+  line-height: 1.6;
+  color: #1d1d1f;
+  letter-spacing: -0.01em;
+}
+.lilos-prose > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+.lilos-prose > * + * {
+  margin-top: 0.7em;
+}
+.lilos-prose p {
+  margin: 0;
+}
+.lilos-prose strong {
+  font-weight: 600;
+  color: oklch(0.13 0 0);
+}
+.lilos-prose h1,
+.lilos-prose h2,
+.lilos-prose h3 {
+  font-weight: 600;
+  color: oklch(0.13 0 0);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+.lilos-prose h1 {
+  font-size: 1.3em;
+}
+.lilos-prose h2 {
+  font-size: 1.15em;
+  margin-top: 1.2em;
+}
+.lilos-prose h3 {
+  font-size: 1.02em;
+  margin-top: 1em;
+}
+.lilos-prose > :first-child {
+  margin-top: 0;
+}
+.lilos-prose ul,
+.lilos-prose ol {
+  padding-left: 1.35em;
+  list-style-position: outside;
+}
+.lilos-prose ul {
+  list-style-type: disc;
+}
+.lilos-prose ol {
+  list-style-type: decimal;
+}
+.lilos-prose li {
+  padding: 0 0 0 0.15em !important;
+}
+.lilos-prose li + li {
+  margin-top: 0.2em;
+}
+.lilos-prose li::marker {
+  color: oklch(0.6 0 0);
+}
+.lilos-prose [data-streamdown="unordered-list"],
+.lilos-prose [data-streamdown="ordered-list"] {
+  list-style-position: outside;
+  white-space: normal;
+}
+.lilos-prose code:not(pre code) {
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  font-size: 0.85em;
+  padding: 0.1em 0.32em;
+  border-radius: 4px;
+  line-height: 1;
+  background: #7676801a;
+  color: #1d1d1f;
+  border: 0;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  overflow-wrap: anywhere;
+}
+.lilos-prose a {
+  color: #00716c;
+  text-decoration: none;
+}
+.lilos-prose a:hover {
+  text-decoration: underline;
+}
+.is-user .lilos-prose {
+  color: inherit;
+}
+/* Compact variant for Slack-style rows (channel feed, DM list, thread panel): same rules, chat density. */
+.lilos-prose.compact {
+  font-size: 14px;
+  line-height: 1.55;
+}
+.lilos-prose.compact > * + * {
+  margin-top: 0.45em;
+}
+.lilos-prose.compact li + li {
+  margin-top: 0.1em;
+}
+.lilos-prose.compact h1,
+.lilos-prose.compact h2,
+.lilos-prose.compact h3 {
+  font-size: 1em;
+  margin-top: 0.6em;
+}
+/* Horizontal tab strips scroll without a visible bar (overflow artefact next to the last tab). */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---- Dark mode ----
+   The UI uses tinted status colours (bg-emerald-50, text-amber-900…) that are tuned for white. Rather than
+   sprinkle dark: variants over ~150 call sites, remap them once here: pale fills become translucent tints,
+   deep text becomes the light shade. Unlayered so it beats @layer utilities. Generated from the classes in use. */
+.dark {
+  color-scheme: dark;
+  scrollbar-color: oklch(1 0 0 / 18%) transparent;
+}
+/* biome-ignore lint/style/noDescendingSpecificity: scrollbar colour must reach every descendant */
+.dark * {
+  scrollbar-color: oklch(1 0 0 / 18%) transparent;
+}
+.dark .bg-amber-50 {
+  background-color: oklch(76.9% 0.188 70.08 / 12%);
+}
+.dark .bg-amber-50\/50 {
+  background-color: oklch(76.9% 0.188 70.08 / 6%);
+}
+.dark .bg-blue-50 {
+  background-color: oklch(62.3% 0.214 259.815 / 12%);
+}
+.dark .bg-blue-50\/60 {
+  background-color: oklch(62.3% 0.214 259.815 / 7%);
+}
+.dark .bg-blue-50\/70 {
+  background-color: oklch(62.3% 0.214 259.815 / 8%);
+}
+.dark .bg-emerald-50 {
+  background-color: oklch(69.6% 0.17 162.48 / 12%);
+}
+.dark .bg-emerald-50\/40 {
+  background-color: oklch(69.6% 0.17 162.48 / 5%);
+}
+.dark .bg-green-100 {
+  background-color: oklch(72.3% 0.219 149.579 / 20%);
+}
+.dark .bg-red-100 {
+  background-color: oklch(63.7% 0.237 25.331 / 20%);
+}
+.dark .bg-red-50 {
+  background-color: oklch(63.7% 0.237 25.331 / 12%);
+}
+.dark .bg-violet-50 {
+  background-color: oklch(60.6% 0.25 292.717 / 12%);
+}
+.dark .bg-yellow-100 {
+  background-color: oklch(79.5% 0.184 86.047 / 20%);
+}
+.dark .border-amber-200 {
+  border-color: oklch(76.9% 0.188 70.08 / 30%);
+}
+.dark .border-amber-300 {
+  border-color: oklch(76.9% 0.188 70.08 / 40%);
+}
+.dark .border-blue-200 {
+  border-color: oklch(62.3% 0.214 259.815 / 30%);
+}
+.dark .border-emerald-200 {
+  border-color: oklch(69.6% 0.17 162.48 / 30%);
+}
+.dark .border-red-200 {
+  border-color: oklch(63.7% 0.237 25.331 / 30%);
+}
+.dark .border-violet-300 {
+  border-color: oklch(60.6% 0.25 292.717 / 40%);
+}
+.dark .text-amber-600 {
+  color: oklch(82.8% 0.189 84.429);
+}
+.dark .text-amber-700 {
+  color: oklch(87.9% 0.169 91.605);
+}
+.dark .text-amber-900 {
+  color: oklch(87.9% 0.169 91.605);
+}
+.dark .text-blue-600 {
+  color: oklch(70.7% 0.165 254.624);
+}
+.dark .text-blue-700 {
+  color: oklch(80.9% 0.105 251.813);
+}
+.dark .text-blue-700\/80 {
+  color: oklch(80.9% 0.105 251.813 / 80%);
+}
+.dark .text-blue-900 {
+  color: oklch(80.9% 0.105 251.813);
+}
+.dark .text-emerald-600 {
+  color: oklch(76.5% 0.177 163.223);
+}
+.dark .text-emerald-700 {
+  color: oklch(84.5% 0.143 164.978);
+}
+.dark .text-emerald-700\/80 {
+  color: oklch(84.5% 0.143 164.978 / 80%);
+}
+.dark .text-emerald-800 {
+  color: oklch(84.5% 0.143 164.978);
+}
+.dark .text-emerald-900 {
+  color: oklch(84.5% 0.143 164.978);
+}
+.dark .text-green-600 {
+  color: oklch(79.2% 0.209 151.711);
+}
+.dark .text-green-700 {
+  color: oklch(87.1% 0.15 154.449);
+}
+.dark .text-orange-600 {
+  color: oklch(75% 0.183 55.934);
+}
+.dark .text-red-600 {
+  color: oklch(70.4% 0.191 22.216);
+}
+.dark .text-red-700 {
+  color: oklch(80.8% 0.114 19.571);
+}
+.dark .text-violet-600 {
+  color: oklch(70.2% 0.183 293.541);
+}
+.dark .text-violet-700 {
+  color: oklch(81.1% 0.111 293.571);
+}
+.dark .text-violet-900 {
+  color: oklch(81.1% 0.111 293.571);
+}
+.dark .text-yellow-600 {
+  color: oklch(85.2% 0.199 91.936);
+}
+.dark .text-yellow-700 {
+  color: oklch(90.5% 0.182 98.111);
+}
+.dark .lilos-prose {
+  color: #e5e5ea;
+}
+.dark .lilos-prose strong,
+.dark .lilos-prose h1,
+.dark .lilos-prose h2,
+.dark .lilos-prose h3 {
+  color: oklch(0.97 0 0);
+}
+.dark .lilos-prose li::marker {
+  color: oklch(0.55 0 0);
+}
+.dark .lilos-prose code:not(pre code) {
+  background: oklch(1 0 0 / 9%);
+  color: oklch(0.92 0 0);
+}
+.dark .lilos-prose a {
+  color: #5fd6ce;
+}
+
+/* ---- Apple-native surfaces (issue #223) ----
+   The composer is a floating glass capsule like the mobile app's: every
+   PromptInput is an input group wrapping a textarea, so style it once here. */
+[data-slot="input-group"]:has(textarea) {
+  border-radius: 22px;
+  border-color: var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 4%),
+    0 8px 28px -12px rgb(0 0 0 / 18%);
+}
+.dark [data-slot="input-group"]:has(textarea) {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 30%),
+    0 10px 30px -12px rgb(0 0 0 / 60%);
+}
+[data-slot="input-group"]:has(textarea):focus-within {
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--primary) 14%, transparent),
+    0 8px 28px -12px rgb(0 0 0 / 18%);
+}
+/* Round send/stop buttons, like iMessage. */
+[data-slot="input-group"]:has(textarea) button[type="submit"] {
+  border-radius: 9999px;
+}
+/* Popovers, menus and dialogs float as frosted glass. */
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="hover-card-content"] {
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+}
+
+/* ---- Liquid glass colour field (issue #223, round 2; #246: browser only) ----
+   Glass only reads when something colourful moves behind it: a slow, blurred
+   colour field sits under the app. In the desktop shell the OS window is the
+   frame, so the field exists only under .lilos-float — the class the app root
+   carries outside Electron. */
+body:has(.lilos-float) {
+  background:
+    radial-gradient(40% 55% at 12% 18%, #5fd6ce66, transparent 70%),
+    radial-gradient(45% 50% at 88% 12%, #7b6cff4d, transparent 70%),
+    radial-gradient(50% 55% at 78% 92%, #ffb14a40, transparent 70%),
+    radial-gradient(45% 55% at 20% 95%, #3f7ff540, transparent 70%), #eef1f5;
+  background-attachment: fixed;
+}
+.dark body:has(.lilos-float) {
+  background:
+    radial-gradient(40% 55% at 12% 18%, #0f6f6a80, transparent 70%),
+    radial-gradient(45% 50% at 88% 12%, #3b2f8a80, transparent 70%),
+    radial-gradient(50% 55% at 78% 92%, #6a3a1060, transparent 70%),
+    radial-gradient(45% 55% at 20% 95%, #13306e80, transparent 70%), #0b0c10;
+}
+/* The colour field drifts, slowly — alive, never distracting. */
+body:has(.lilos-float)::before {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(30% 35% at 30% 40%, #3cc4bc38, transparent 70%),
+    radial-gradient(30% 35% at 70% 60%, #af52de2e, transparent 70%);
+  filter: blur(40px);
+  animation: lilos-drift 28s ease-in-out infinite alternate;
+}
+@keyframes lilos-drift {
+  0% {
+    transform: translate3d(-6%, -4%, 0) rotate(0deg) scale(1);
+  }
+  50% {
+    transform: translate3d(5%, 3%, 0) rotate(12deg) scale(1.08);
+  }
+  100% {
+    transform: translate3d(-3%, 6%, 0) rotate(-8deg) scale(1);
+  }
+}
+
+.lilos-desktop {
+  background: transparent;
+}
+@media (min-width: 1024px) {
+  .lilos-desktop {
+    padding: 10px;
+    gap: 10px;
+  }
+}
+.lilos-glass {
+  --glass-fill: rgb(255 255 255 / 0.62);
+  background: var(--glass-fill) !important;
+  backdrop-filter: blur(30px) saturate(1.8);
+  -webkit-backdrop-filter: blur(30px) saturate(1.8);
+  border: 1px solid rgb(255 255 255 / 0.7) !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.9),
+    inset 0 -1px 0 rgb(0 0 0 / 0.04),
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 20px 50px -20px rgb(20 30 60 / 0.28);
+}
+.dark .lilos-glass {
+  --glass-fill: rgb(28 28 32 / 0.62);
+  border-color: rgb(255 255 255 / 0.1) !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.1),
+    0 1px 2px rgb(0 0 0 / 0.4),
+    0 24px 60px -20px rgb(0 0 0 / 0.7);
+}
+@media (min-width: 1024px) {
+  .lilos-glass {
+    border-radius: 22px;
+    overflow: hidden;
+  }
+}
+/* The sidebar is a clearer, more tinted sheet — like Finder's. */
+.lilos-glass.lilos-glass-side {
+  --glass-fill: rgb(246 248 250 / 0.45);
+}
+.dark .lilos-glass.lilos-glass-side {
+  --glass-fill: rgb(20 20 24 / 0.45);
+}
+
+/* ---- Motion ----
+   Springy, short and physical. Things arrive (rise + unblur), lift under the
+   pointer, press in when clicked. Honours reduced motion. */
+@keyframes lilos-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+.lilos-rise {
+  animation: lilos-rise 0.5s cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
+}
+.lilos-lift {
+  transition:
+    transform 0.25s cubic-bezier(0.2, 0.9, 0.25, 1.2),
+    box-shadow 0.25s ease,
+    background-color 0.2s ease;
+}
+.lilos-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -12px rgb(20 30 60 / 0.35);
+}
+button:not(:disabled):active,
+[role="button"]:active {
+  transform: scale(0.97);
+  transition: transform 0.08s ease;
+}
+@keyframes lilos-orb {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.12);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+.lilos-orb-blobs {
+  animation: lilos-orb 14s linear infinite;
+}
+@keyframes lilos-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.lilos-orb-ring {
+  animation: lilos-spin 1.1s cubic-bezier(0.45, 0.1, 0.55, 0.9) infinite;
+}
+/* The composer grows a little when you start typing. */
+[data-slot="input-group"]:has(textarea) textarea {
+  transition: min-height 0.3s cubic-bezier(0.2, 0.9, 0.25, 1.1);
+}
+[data-slot="input-group"]:has(textarea):focus-within textarea {
+  min-height: 4.5rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  .lilos-orb-blobs,
+  .lilos-orb-ring,
+  .lilos-rise {
+    animation: none !important;
+  }
+  .lilos-lift:hover {
+    transform: none;
+  }
+}
+/* Composer hints show only while you type — calm at rest. */
+.lilos-hint {
+  display: none !important;
+}
+form:focus-within .lilos-hint {
+  display: inline !important;
+  animation: lilos-rise 0.3s ease both;
+}
+
+/* ---- One window (issue #223, round 3; #246: floating form is browser-only) ----
+   Not three floating boxes: the whole app is ONE window. Sidebar, content and
+   side panels flow into each other and differ only in how clear the glass is —
+   no gaps, no divider lines. Inside, cards are borderless and float on soft
+   shadows instead of being outlined. In a plain browser tab (.lilos-float) the
+   window floats over the colour field; inside Electron the same merged window
+   fills the OS frame edge to edge. */
+@media (min-width: 1024px) {
+  .lilos-desktop {
+    padding: 0;
+    gap: 0;
+  }
+  .lilos-desktop.lilos-float {
+    margin: 14px;
+    height: calc(100dvh - 28px) !important;
+    border-radius: 26px;
+    background: rgb(255 255 255 / 0.5);
+    backdrop-filter: blur(40px) saturate(1.8);
+    -webkit-backdrop-filter: blur(40px) saturate(1.8);
+    border: 1px solid rgb(255 255 255 / 0.75);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.9),
+      0 2px 6px rgb(0 0 0 / 0.05),
+      0 40px 90px -30px rgb(20 30 60 / 0.4);
+  }
+  .dark .lilos-desktop.lilos-float {
+    background: rgb(24 24 28 / 0.55);
+    border-color: rgb(255 255 255 / 0.1);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      0 40px 90px -30px rgb(0 0 0 / 0.8);
+  }
+  .lilos-desktop > div {
+    gap: 0 !important;
+  }
+  /* Panels inside the window are just tones of the same glass. */
+  .lilos-desktop .lilos-glass {
+    background: transparent !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 0 !important;
+    border-radius: 0;
+    box-shadow: none;
+    margin: 0 !important;
+  }
+  /* Sidebar: the clearest glass, the colour field shows through. */
+  .lilos-desktop .lilos-glass.lilos-glass-side {
+    background: rgb(255 255 255 / 0.18) !important;
+  }
+  .dark .lilos-desktop .lilos-glass.lilos-glass-side {
+    background: rgb(255 255 255 / 0.03) !important;
+  }
+  /* No field behind the desktop window: a whisper of tone keeps the sidebar
+     reading as the clearer sheet. */
+  .lilos-desktop:not(.lilos-float) .lilos-glass.lilos-glass-side {
+    background: rgb(0 0 0 / 0.03) !important;
+  }
+  .dark .lilos-desktop:not(.lilos-float) .lilos-glass.lilos-glass-side {
+    background: rgb(255 255 255 / 0.04) !important;
+  }
+  /* Content: the most opaque, where you read. */
+  .lilos-desktop main.lilos-glass {
+    background: rgb(255 255 255 / 0.55) !important;
+  }
+  .dark .lilos-desktop main.lilos-glass {
+    background: rgb(28 28 32 / 0.5) !important;
+  }
+  .lilos-desktop:not(.lilos-float) main.lilos-glass {
+    background: transparent !important;
+  }
+  /* Side panels melt in from the content with a soft gradient edge, no line. */
+  .lilos-desktop aside.lilos-glass:not(.lilos-glass-side) {
+    background: linear-gradient(
+      to right,
+      rgb(255 255 255 / 0.2),
+      rgb(255 255 255 / 0.4) 48px
+    ) !important;
+  }
+  .dark .lilos-desktop aside.lilos-glass:not(.lilos-glass-side) {
+    background: linear-gradient(
+      to right,
+      rgb(255 255 255 / 0.01),
+      rgb(255 255 255 / 0.04) 48px
+    ) !important;
+  }
+  /* Focus: the workbench floats as one soft inset sheet inside the window. */
+  .lilos-desktop main aside.lilos-glass {
+    margin: 8px 8px 8px 0 !important;
+    border-radius: 20px;
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.04),
+      0 16px 40px -20px rgb(20 30 60 / 0.3);
+  }
+}
+/* No structural divider lines anywhere: headers, strips and panel edges. */
+.lilos-desktop :is(header, aside, .lilos-glass > div, [data-slot="tabs-list"]) {
+  border-color: transparent !important;
+}
+/* Cards: borderless, floating on a soft shadow. */
+.lilos-desktop
+  :is(main, aside)
+  :is(.rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl).border:not(
+    [data-slot="input-group"]
+  ):not(input):not(textarea):not(button):not([data-slot="button"]):not(
+    .fixed *
+  ) {
+  border-color: transparent !important;
+  background-color: rgb(255 255 255 / 0.6);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 8px 24px -14px rgb(20 30 60 / 0.25);
+}
+.dark
+  .lilos-desktop
+  :is(main, aside)
+  :is(.rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl).border:not(
+    [data-slot="input-group"]
+  ):not(input):not(textarea):not(button):not([data-slot="button"]):not(
+    .fixed *
+  ) {
+  background-color: rgb(255 255 255 / 0.05);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.3),
+    0 10px 28px -14px rgb(0 0 0 / 0.6);
+}
+/* A plan waiting on you glows teal instead of being outlined. */
+.lilos-desktop [data-planphase="waiting"] {
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--primary) 45%, transparent),
+    0 12px 32px -12px color-mix(in srgb, var(--primary) 45%, transparent) !important;
+}
+/* Composer: part of the window, a raised pill without a hard edge. */
+.lilos-desktop [data-slot="input-group"]:has(textarea) {
+  border-color: transparent;
+  background: rgb(255 255 255 / 0.75);
+}
+.dark .lilos-desktop [data-slot="input-group"]:has(textarea) {
+  background: rgb(255 255 255 / 0.06);
+}
+/* Changing view is a soft cross-fade, not a jump. */
+.lilos-desktop main {
+  animation: lilos-rise 0.45s cubic-bezier(0.2, 0.9, 0.25, 1.1) both;
+}
+/* The selected sidebar item reads as lit, not boxed. */
+.lilos-desktop .lilos-glass-side .text-tint-text {
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--primary) 18%, transparent);
+}
+/* Single-side borders are dividers — gone; structure comes from spacing. */
+.lilos-desktop :is(.border-b, .border-t, .border-l, .border-r):not(.border) {
+  border-color: transparent !important;
+}
+/* The terminal is dark glass inside the window, not a black slab. */
+.lilos-desktop .bg-zinc-950 {
+  background-color: rgb(22 22 28 / 0.88) !important;
+}
+.lilos-desktop .bg-zinc-950 .border {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Modals: the scrim blurs what's behind, the sheet is near-opaque glass so
+   text behind never shows through. */
+.lilos-desktop .fixed.inset-0 {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.lilos-desktop .fixed.inset-0 > :is(.border, [role="dialog"]),
+[data-slot="dialog-content"],
+[role="alertdialog"] {
+  background: rgb(255 255 255 / 0.94) !important;
+  backdrop-filter: blur(30px) saturate(1.8);
+  -webkit-backdrop-filter: blur(30px) saturate(1.8);
+  border-color: rgb(255 255 255 / 0.8) !important;
+  border-radius: 22px;
+  box-shadow:
+    0 30px 80px -20px rgb(20 30 60 / 0.45),
+    0 2px 6px rgb(0 0 0 / 0.06);
+}
+.dark .lilos-desktop .fixed.inset-0 > :is(.border, [role="dialog"]),
+.dark [data-slot="dialog-content"],
+.dark [role="alertdialog"] {
+  background: rgb(36 36 40 / 0.94) !important;
+  border-color: rgb(255 255 255 / 0.1) !important;
+}
+
+/* Panels that float over the content (the sidebar opened from Focus, the
+   side panel or workbench on narrow windows) are sheets, not tints: near-
+   opaque frosted glass with a shadow, so nothing behind reads through. */
+.lilos-desktop .lilos-glass.fixed,
+.lilos-desktop .lilos-glass.lilos-glass-side.fixed {
+  background: rgb(246 247 250 / 0.92) !important;
+  backdrop-filter: blur(30px) saturate(1.8) !important;
+  -webkit-backdrop-filter: blur(30px) saturate(1.8) !important;
+  box-shadow:
+    0 30px 80px -20px rgb(20 30 60 / 0.45),
+    1px 0 0 rgb(255 255 255 / 0.6) !important;
+}
+.dark .lilos-desktop .lilos-glass.fixed,
+.dark .lilos-desktop .lilos-glass.lilos-glass-side.fixed {
+  background: rgb(30 30 34 / 0.92) !important;
+  box-shadow:
+    0 30px 80px -20px rgb(0 0 0 / 0.8),
+    1px 0 0 rgb(255 255 255 / 0.06) !important;
+}
+@media (max-width: 1279px) {
+  .lilos-desktop .lilos-glass[class*="max-xl:fixed"] {
+    background: rgb(246 247 250 / 0.92) !important;
+    backdrop-filter: blur(30px) saturate(1.8) !important;
+  }
+  .dark .lilos-desktop .lilos-glass[class*="max-xl:fixed"] {
+    background: rgb(30 30 34 / 0.92) !important;
+  }
+}
+@media (max-width: 1023px) {
+  .lilos-desktop .lilos-glass[class*="max-lg:fixed"] {
+    background: rgb(246 247 250 / 0.92) !important;
+    backdrop-filter: blur(30px) saturate(1.8) !important;
+  }
+  .dark .lilos-desktop .lilos-glass[class*="max-lg:fixed"] {
+    background: rgb(30 30 34 / 0.92) !important;
+  }
+}

@@ -31,6 +31,7 @@ import {
   hireEmployee,
   listHirableProfiles,
 } from "./lib/employees";
+import { appFrameClass } from "./lib/frame";
 import { useAtom } from "./lib/hooks";
 import { toUiEmployee } from "./lib/mapping";
 import { currentCompany, currentMe, osFullName, profile } from "./lib/me";
@@ -110,6 +111,9 @@ function AppShell() {
   const view: { kind: "channel" | "dm"; id: string } = dmMatch
     ? { kind: "dm", id: decodeURIComponent(dmMatch[1]) }
     : { kind: "dm", id: "" };
+  /* #246: in Focus the window is one column and the sidebar opens as an
+     overlay — the same layout the prototype uses. */
+  const focus = pathname.endsWith("/focus");
 
   const statusPoll = useAtom(relay.status);
   const fatal = useAtom(relay.fatal);
@@ -274,11 +278,34 @@ function AppShell() {
   }, [navigate]);
 
   return (
-    <div className="flex h-dvh min-h-0 bg-background text-foreground">
+    <div
+      className={appFrameClass({
+        desktop: window.lilos?.isDesktop === true,
+        focus,
+      })}
+    >
+      {/* The sidebar's dim backdrop: narrow windows in every view, and at
+          any width in Focus where the sidebar is an overlay (prototype). */}
+      {nav && (
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          className="fixed inset-0 z-30 cursor-default bg-black/30 lg:hidden"
+          onClick={() => navOpen.set(false)}
+        />
+      )}
+      {nav && focus && (
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          className="fixed inset-0 z-30 hidden cursor-default bg-black/30 lg:block"
+          onClick={() => navOpen.set(false)}
+        />
+      )}
       <Sidebar
         realApp
         navOpen={nav}
-        hiddenWhenClosed={false}
+        hiddenWhenClosed={focus}
         me={currentMe()}
         company={currentCompany()}
         companyChannels={[]}
