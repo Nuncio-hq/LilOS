@@ -4,16 +4,13 @@ import {
   exchangePairingGrant,
   PairingExchangeFailed,
 } from "@lilos/client-runtime";
-import type { AppChannel, Employee } from "@lilos/contracts/app";
 import {
   ConnectedScreen,
   ConnectingScreen,
   type ConnectingState,
-  EmployeesHomeScreen,
   MacSheet,
   ManualCodeScreen,
   PairIntroScreen,
-  type PairingOffer,
   parsePairingUrl,
   ScanScreen,
   SettingsScreen,
@@ -23,32 +20,28 @@ import {
 import { useStore } from "@nanostores/react";
 import { createNativeBottomTabNavigator } from "@react-navigation/bottom-tabs/unstable";
 import {
-  createNavigationContainerRef,
   DarkTheme,
   DefaultTheme,
   NavigationContainer,
-  type NavigatorScreenParams,
   type Theme,
   useIsFocused,
 } from "@react-navigation/native";
 import {
   createNativeStackNavigator,
   type NativeStackNavigationOptions,
-  type NativeStackScreenProps,
 } from "@react-navigation/native-stack";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Device from "expo-device";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
 import { StatusBar } from "expo-status-bar";
-import { atom } from "nanostores";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, useColorScheme, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import logo from "../assets/logo.png";
 import { directoryCache } from "./cache";
+import { openAsks } from "./home-model";
 import {
-  $client,
   $latencyMs,
   $link,
   $linkError,
@@ -57,7 +50,6 @@ import {
   startLink,
   stopLink,
 } from "./link";
-import { toEmployeeRow, toHomeChannels } from "./mapping";
 import {
   $connections,
   $pairNotice,
@@ -69,8 +61,9 @@ import {
   routeFor,
   savePairedMac,
 } from "./paired-macs";
-import type { DmRoutes } from "./routes";
+import { nav, type Props, type Routes, type TabRoutes } from "./routes";
 import { Dm, FolderPicker, ModelPicker } from "./screens/dm";
+import { Activity, Home, NeedsYouSlot, useHomeWire } from "./screens/home";
 import { Thread } from "./screens/thread";
 
 /* apps/mobile — the real app (#154): the prototype's onboarding screens from
@@ -79,25 +72,8 @@ import { Thread } from "./screens/thread";
    socket for the app's whole life (cache-first render, afterSeq replay,
    [3,4,8,16]s backoff, probe-or-replace on foreground). */
 
-type Routes = {
-  Welcome: undefined;
-  Pair: undefined;
-  Scan: undefined;
-  Manual: undefined;
-  Connecting: { offer: PairingOffer };
-  Connected: undefined;
-  Tabs: NavigatorScreenParams<TabRoutes>;
-  Mac: undefined;
-} & DmRoutes;
-type TabRoutes = {
-  Home: undefined;
-  Settings: undefined;
-};
-type Props<T extends keyof Routes> = NativeStackScreenProps<Routes, T>;
-
 const Stack = createNativeStackNavigator<Routes>();
 const Tab = createNativeBottomTabNavigator<TabRoutes>();
-const nav = createNavigationContainerRef<Routes>();
 
 // ── Onboarding ──────────────────────────────────────────────────────────────
 
@@ -277,37 +253,6 @@ function Connected() {
 
 // ── The app after pairing ───────────────────────────────────────────────────
 
-const $noEmployees = atom<Employee[]>([]);
-const $noChannels = atom<AppChannel[]>([]);
-
-function soon(what: string) {
-  Alert.alert(`${what} come next`, "This release covers the Home list.");
-}
-
-function Home() {
-  const mac = useStore($connections)[0];
-  const client = useStore($client);
-  const link = useStore($link);
-  const employees = useStore(client?.employees ?? $noEmployees);
-  const channels = useStore(client?.channels ?? $noChannels);
-  const { company, projects } = toHomeChannels(channels);
-
-  if (!mac) return null;
-  return (
-    <EmployeesHomeScreen
-      workspace="LilOS"
-      macName={mac.name}
-      link={link}
-      employees={employees.map(toEmployeeRow)}
-      company={company}
-      projects={projects}
-      onOpenMac={() => nav.navigate("Mac")}
-      onOpenEmployee={(id) => nav.navigate("Dm", { employeeId: id })}
-      onOpenChannel={() => soon("Channels")}
-    />
-  );
-}
-
 function Settings() {
   const mac = useStore($connections)[0];
   return (
@@ -329,6 +274,8 @@ function Tabs() {
   const link = useStore($link);
   const tint = useThemeColor("primary");
   const destructive = useThemeColor("destructive");
+  const { wire } = useHomeWire();
+  const waiting = openAsks(wire.asks).length;
   return (
     <Tab.Navigator
       screenOptions={{
@@ -337,6 +284,11 @@ function Tabs() {
         headerShadowVisible: false,
         tabBarActiveTintColor: tint,
         tabBarMinimizeBehavior: "onScrollDown",
+        // The oldest waiting ask, Music-mini-player style — mounted only
+        // while any exist (AC-2).
+        bottomAccessory: waiting
+          ? ({ placement }) => <NeedsYouSlot placement={placement} />
+          : undefined,
       }}
     >
       <Tab.Screen
@@ -360,6 +312,21 @@ function Tabs() {
               onPress: () => nav.navigate("Mac"),
             },
           ],
+        }}
+      />
+      <Tab.Screen
+        name="Activity"
+        component={Activity}
+        options={{
+          title: "Needs you",
+          tabBarLabel: "Activity",
+          // This tab is the full list; the accessory would repeat it.
+          bottomAccessory: undefined,
+          tabBarBadge: waiting || undefined,
+          tabBarIcon: ({ focused }) => ({
+            type: "sfSymbol",
+            name: focused ? "tray.fill" : "tray",
+          }),
         }}
       />
       <Tab.Screen
