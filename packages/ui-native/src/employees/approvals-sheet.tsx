@@ -119,7 +119,7 @@ export function ApprovalsSheet({
               </View>
             )}
             <View className="mt-3 flex-row items-center gap-2">
-              {onApprove && (
+              {onApprove && a.kind !== "question" && (
                 <Pill label="Approve" onPress={() => onApprove(a.id)} />
               )}
               {onDeny && (

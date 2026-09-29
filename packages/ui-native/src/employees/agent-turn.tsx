@@ -313,7 +313,9 @@ export function ApprovalCard({
           </View>
         )}
         <View className="mt-3 flex-row gap-2">
-          <Pill label="Approve" onPress={() => onApprove(a.id)} />
+          {a.kind !== "question" && (
+            <Pill label="Approve" onPress={() => onApprove(a.id)} />
+          )}
           <Pill label="Deny" variant="soft" onPress={() => onDeny(a.id)} />
         </View>
       </Box>
