@@ -56,15 +56,14 @@ describe("issue #71", () => {
     expect(content?.className).toContain("col-start-2");
   });
 
-  test("AC-2 the Hermes avatar bundles its mark and falls back to an initial", () => {
+  test("AC-2 the Hermes avatar labels its orb with the employee's name", () => {
+    // #224's restyle replaced the bundled hermes mark + initial fallback
+    // with the mobile-style colour orb; the accessible name stays the
+    // employee's (AC-2's intent: the avatar reads as the employee).
     const { container } = render(<HermesAvatar name="Default" />);
-    const img = container.querySelector("img");
-    // Bundled asset URL, not the prototype-only absolute path that 404s in
-    // apps/web and under file:// in Electron.
-    expect(img?.getAttribute("src")).not.toBe("/hermes.svg");
     expect(
-      container.querySelector('[data-slot="avatar-fallback"]')?.textContent,
-    ).toBe("D");
+      container.querySelector('[role="img"]')?.getAttribute("aria-label"),
+    ).toBe("Default");
   });
 
   test("AC-3 `· now:` is hidden when the employee has no now value", () => {
@@ -107,9 +106,13 @@ describe("issue #71", () => {
         setPick={() => {}}
       />,
     );
+    // The subtitle shows the role; `now:` lives on the name's title
+    // tooltip since the #224 restyle.
     expect(
-      again.container.querySelector("header .text-xs")?.textContent,
-    ).toContain("now: shipping #71");
+      again.container
+        .querySelector("header .font-semibold")
+        ?.getAttribute("title"),
+    ).toBe("Now: shipping #71");
   });
 
   test("AC-4 a waiting session reads `needs you` in the DM list and the sidebar badge", () => {
@@ -185,8 +188,11 @@ describe("issue #71", () => {
         badges={{ [EMP.id]: { approvals: 1 } }}
       />,
     );
+    // The badge's visual glyph is "!"; the accessible label still reads
+    // "needs you" (sr-only, since #225's restyle).
     expect(
-      side.container.querySelector("[data-badge-approvals]")?.textContent,
+      side.container.querySelector("[data-badge-approvals] .sr-only")
+        ?.textContent,
     ).toBe("needs you");
   });
 
