@@ -104,6 +104,12 @@ PR does not exist.
   bootstrapped jobs — registering over one keeps the old binary and pins
   the version store. Not: trusting `status` alone, or failing the
   register on that error (rolls back working installs). — #206
+- **D-#232 Native chrome: `titleBarStyle: "hiddenInset"` + `vibrancy:
+  "sidebar"`; the renderer owns the drag regions** (`lilos-drag` on header
+  strips, interactive children `no-drag`) and pushes its theme to
+  `nativeTheme.themeSource` so the vibrancy material matches app tokens.
+  Not: a default framed window, or a frameless window with custom-drawn
+  traffic lights (misses native drag/zoom/full-screen for free). — #232
 
 ## Testing
 - **D-#3 CI (GitHub Actions, setup-bun) runs with `engine-fake`; never a

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import { App } from "./app";
 import { loadConfig } from "./lib/config";
+import { watchDesktopChrome } from "./lib/desktop";
 import { watchDraftPruning } from "./lib/drafts";
 import {
   bootError,
@@ -14,6 +15,9 @@ import {
 async function main() {
   const el = document.getElementById("root");
   if (!el) throw new Error("no #root");
+  // #232: under Electron, flip data-desktop/data-fullscreen before first
+  // paint so the chrome CSS (inset, drag regions, vibrancy) applies cleanly.
+  watchDesktopChrome();
   const root = createRoot(el);
   try {
     const cfg = await loadConfig();

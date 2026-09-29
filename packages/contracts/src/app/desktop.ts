@@ -14,10 +14,20 @@ export const DESKTOP_NOTIFY_CHANNEL = "lilos:notify" as const;
 /** IPC channel: main → renderer, carries the conversation id to open. */
 export const DESKTOP_OPEN_CONVERSATION_CHANNEL =
   "lilos:open-conversation" as const;
+/** IPC channel: main → renderer, carries the window's full-screen state
+ * (native macOS chrome, issue #232). */
+export const DESKTOP_FULLSCREEN_CHANNEL = "lilos:fullscreen" as const;
+/** IPC channel: renderer → main, carries the app's theme so the window's
+ * vibrancy/appearance follows it (issue #232). */
+export const DESKTOP_THEME_CHANNEL = "lilos:theme-source" as const;
 /** IPC channel: main → renderer, asks the app window to open Settings
  * (issue #132 — the ⌘, menu item). Distinct from `lilos:open-settings`,
  * which opens macOS Login Items. */
 export const DESKTOP_OPEN_SETTINGS_CHANNEL = "lilos:open-app-settings" as const;
+
+/** The app's stored theme — the window's appearance must match it or the
+ * sidebar vibrancy material turns unreadable (dark text on dark vibrancy). */
+export type ThemeSource = "light" | "dark" | "system";
 
 /** The #35 update check's verdict as the shell reports it to
  *  Settings → About (#132): "busy" means a check was already in flight.
@@ -63,9 +73,24 @@ export interface DesktopBridgeConfig {
  */
 export interface DesktopBridge {
   config?: DesktopBridgeConfig;
-  /** true in the Electron shell — the OS window is the frame (#246). */
+  /** True in the Electron shell (any window with the preload); absent in a
+   * plain browser tab — the OS window is the frame (#246) and the app scopes
+   * all window-chrome CSS to it (#232). */
   isDesktop?: boolean;
   platform?: string;
+  /** Native full-screen state (#232 AC-4): the lights hide and the sidebar
+   * header drops the inset it kept for them. */
+  fullscreen?: {
+    /** Latest pushed state — main sends it on load and on every change. */
+    current(): boolean;
+    /** Subscribe to changes; returns an unsubscribe function. */
+    onChange(cb: (fullScreen: boolean) => void): () => void;
+  };
+  /** Point the window's appearance (vibrancy material, prefers-color-scheme)
+   * at the app's theme (desktop only, #232). */
+  setThemeSource?: (theme: ThemeSource) => void;
+  /** Open the status/first-run window (desktop only). */
+  openStatus?: () => Promise<void>;
   notifications?: {
     post(notification: DesktopNotification): void;
   };

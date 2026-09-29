@@ -15,11 +15,21 @@ const arg = (key) =>
     .join("=") ?? "";
 
 // Channel names mirror DESKTOP_NOTIFY_CHANNEL / DESKTOP_OPEN_CONVERSATION_CHANNEL
-// in packages/contracts/src/app/desktop.ts — sandboxed preload requires only
-// expose electron's own modules, so the literals live here.
+// / DESKTOP_FULLSCREEN_CHANNEL in packages/contracts/src/app/desktop.ts —
+// sandboxed preload requires only expose electron's own modules, so the
+// literals live here.
+let fullScreen = false;
+const fsListeners = new Set();
+ipcRenderer.on("lilos:fullscreen", (_e, fs) => {
+  fullScreen = fs === true;
+  for (const cb of fsListeners) cb(fullScreen);
+});
+
 contextBridge.exposeInMainWorld("lilos", {
   // #246: the renderer floats its window only in a plain browser tab; inside
-  // Electron the OS window is the frame.
+  // Electron the OS window is the frame. #232: `isDesktop` also flips
+  // `data-desktop` on <html> (traffic-light inset, drag regions, sidebar
+  // vibrancy); main pushes full-screen changes over lilos:fullscreen.
   isDesktop: true,
   config: {
     relayWs: arg("relay"),
@@ -27,6 +37,15 @@ contextBridge.exposeInMainWorld("lilos", {
     engineWs: arg("engine"),
   },
   platform: process.platform,
+  fullscreen: {
+    current: () => fullScreen,
+    onChange: (cb) => {
+      fsListeners.add(cb);
+      return () => fsListeners.delete(cb);
+    },
+  },
+  // The app theme also drives the window's appearance (#232).
+  setThemeSource: (t) => ipcRenderer.send("lilos:theme-source", t),
   status: () => ipcRenderer.invoke("lilos:status"),
   ensure: () => ipcRenderer.invoke("lilos:ensure"),
   openSettings: () => ipcRenderer.invoke("lilos:open-settings"),
