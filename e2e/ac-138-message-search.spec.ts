@@ -326,8 +326,9 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
   }
   await page.screenshot({ path: `${SHOTS}/ac2-message-hits.png` });
 
-  // AC-3: clicking a hit opens the session and flashes THAT message —
-  // the row's data-message-hit id names the anchor it scrolls to.
+  // AC-3 + #195 AC-3: clicking a hit opens the session IN THE PEEK PANEL
+  // (the conversation URL, not /focus) scrolled to and flashing THAT
+  // message — the row's data-message-hit id names the anchor it scrolls to.
   const clicked = hitsPanel
     .locator("[data-message-hit]")
     .filter({ hasText: "mid-ingest" })
@@ -335,8 +336,12 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
   const hitId = await clicked.getAttribute("data-message-hit");
   expect(hitId).toBeTruthy();
   await clicked.click();
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_/, { timeout: 10_000 });
-  const anchor = page.locator(`[data-msg="${hitId}"]`);
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_[^/]+$/, {
+    timeout: 10_000,
+  });
+  const panel = page.locator("[data-thread-panel]");
+  await expect(panel).toBeVisible();
+  const anchor = panel.locator(`[data-msg="${hitId}"]`);
   await expect(anchor).toBeVisible({ timeout: 15_000 });
   await expect(anchor).toHaveClass(/amber/, { timeout: 5_000 });
   await page.screenshot({ path: `${SHOTS}/ac3-hit-scrolled.png` });

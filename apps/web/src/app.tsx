@@ -257,10 +257,11 @@ function AppShell() {
             conversations: relay.conversations.get(),
             channels: relay.channels.get(),
           });
-          /* A notification click opens the session in Focus (#114 AC-1). */
+          /* A notification click opens the session in the thread panel —
+             the quick peek (#195 AC-3); its ↗ is the way into Focus. */
           if (params) {
             void navigate({
-              to: "/dm/$employeeId/$conversationId/focus",
+              to: "/dm/$employeeId/$conversationId",
               params,
             });
           }
