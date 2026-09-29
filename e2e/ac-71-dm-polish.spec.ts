@@ -209,13 +209,15 @@ test("AC-1 tool events render once — as the tool cards inside the turn", async
   await page.screenshot({ path: `${SHOTS}/ac-1-tool-cards.png` });
 });
 
-test("AC-2 every avatar image loads (or falls back to an initial)", async ({
+test("AC-2 employee avatars render as colour orbs; no image on the page is broken", async ({
   page,
 }) => {
   await dmDefault(page);
-  await expect
-    .poll(async () => (await page.locator("img").count()) > 0)
-    .toBe(true);
+  // #224 orb design: an employee avatar is a tone-shifted colour orb
+  // (role=img + the name as its label), not a file <img>. The broken-image
+  // check still guards any <img> the page does render (human avatars).
+  const orbs = page.locator('[role="img"]:has(.lilos-orb-blobs)');
+  await expect(orbs.first()).toBeVisible({ timeout: 30_000 });
   expect(await brokenImages(page)).toEqual([]);
   await page.screenshot({ path: `${SHOTS}/ac-2-avatars.png` });
 });

@@ -436,7 +436,7 @@ export function Composer({
             {accept && <AttachButton />}
             {tools}
             <span
-              className={`lilos-hint ${busy ? "lilos-hint-live" : ""} hidden truncate text-muted-foreground text-xs sm:inline`}
+              className="lilos-hint hidden truncate text-muted-foreground text-xs sm:inline"
             >
               {hint}
             </span>

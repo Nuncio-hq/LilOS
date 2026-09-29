@@ -175,7 +175,7 @@ export function FocusComposer({
               />
             ) : null}
             <span
-              className={`lilos-hint ${running ? "lilos-hint-live" : ""} hidden truncate text-muted-foreground text-xs md:inline`}
+              className="lilos-hint hidden truncate text-muted-foreground text-xs md:inline"
             >
               {hint}
             </span>

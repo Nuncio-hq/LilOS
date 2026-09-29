@@ -327,9 +327,16 @@ test("AC-4 + AC-7 a session picked on the repo runs there; the header shows fold
   // engine-fake echoes its cwd on the follow-up turn (AC-4); markdown puts
   // the path in a <code> element, so match that rather than the backticks.
   await send(page, "where are you working?", "last");
-  await expect(page.locator("code").filter({ hasText: repoDir })).toBeVisible({
-    timeout: 30_000,
-  });
+  /* Scope to the last agent turn (#191): the answer's relay post and the
+     still-streaming live turn overlap in the DOM for a moment, so a bare
+     `code` search can resolve to both copies of the reply at once. */
+  await expect(
+    page
+      .locator("[data-agentturn]")
+      .last()
+      .locator("code")
+      .filter({ hasText: repoDir }),
+  ).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("on ⎇", { exact: false })).toBeVisible();
   // AC-7: header badge = folder name + real branch.
   const badge = page.locator("[data-wsbadge]");
@@ -363,12 +370,12 @@ test("AC-6 the employee pre-selects its last folder; a no-folder session is a pl
   ).toHaveCount(0);
   await expect(page.locator("[data-wsbadge]")).toHaveCount(0);
   await expect(page.getByText(/read-only/i)).toHaveCount(0);
-  // Composer hints reveal while typing — calm at rest (#246), so focus
-  // the composer first. Its name is "Continue session…" on Focus and
-  // "Reply to … in this session" on the panel (which mounts once the
-  // thread hydrates and sits outside `main`).
+  // Composer hints reveal once there's a draft — calm at rest (#246), so
+  // type a character first. The composer is named "Continue session…" on
+  // Focus and "Reply to … in this session" on the panel (which mounts
+  // once the thread hydrates and sits outside `main`).
   const focusBox = page.getByRole("textbox", { name: /Continue session/ });
-  await focusBox.focus();
+  await focusBox.pressSequentially("x");
   await expect(page.getByText(/Reply to .*…/).first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-6-no-folder-focus.png` });
   // The session panel is the same: no chip, no "discussion" label,
@@ -377,7 +384,7 @@ test("AC-6 the employee pre-selects its last folder; a no-folder session is a pl
   await page.goto(`${stack.webUrl}${dmPath}`);
   const replyBox = page.getByRole("textbox", { name: /Reply to/ });
   await expect(replyBox).toBeVisible({ timeout: 30_000 });
-  await replyBox.focus();
+  await replyBox.pressSequentially("x");
   await expect(page.getByText(/Reply to .*…/).first()).toBeVisible({
     timeout: 15_000,
   });
@@ -454,8 +461,12 @@ test("AC-3 (#208) a typed non-git folder says 'Not a git repo', adds, and the se
     { timeout: 30_000 },
   );
   await send(page, "where are you working?", "last");
-  await expect(page.locator("code").filter({ hasText: freshDir })).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(
+    page
+      .locator("[data-agentturn]")
+      .last()
+      .locator("code")
+      .filter({ hasText: freshDir }),
+  ).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-208-3-pwd.png` });
 });
