@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Conversation, ConversationContent, ConversationScrollButton } from "@lilos/ui/components/ai-elements/conversation"
 import {
   AddFolderDialog,
+  BrowserPanel,
+  type BrowserMode,
   ChannelHeader,
   Composer,
   EditEmployeeDialog,
@@ -86,6 +88,7 @@ import { useFakeSurfaces } from "./fake-surfaces"
 import { DEMO_ROOT, playSubagents, stopJob, SUBAGENT_DMS } from "./fake-subagents"
 import { approvePlan, pendingPlan, PLAN_DMS, rejectPlan, revisePlan, stopTasks, tasksFrom, tickTask } from "./fake-plan"
 import { useLiveStatus } from "./live-status"
+import { useFakeBrowser } from "./fake-browser"
 import { liveAttachFromLocation, useLiveSurfaces } from "./live-surfaces"
 
 /* Model: Company → Projects → Channels.
@@ -729,6 +732,48 @@ export default function App() {
     setTimeout(() => setUpdateMsg("LilOS is up to date"), 900)
   }
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 2200) }
+  /* LilOS Browser (issue #214): ⌘⇧B toggles it; a panel beside the chat that
+     pops out into its own window. Fake pages + a fake agent tab in fake-browser. */
+  const [browserOpen, setBrowserOpen] = useState(() => new URLSearchParams(location.search).has("browser"))
+  const [browserMode, setBrowserMode] = useState<BrowserMode>(() => (new URLSearchParams(location.search).get("browser") === "window" ? "window" : "panel"))
+  const [browserWidth, setBrowserWidth] = useState(600)
+  const browser = useFakeBrowser({ employees, say })
+  /* The docked browser and the thread/employee panel share the right side:
+     opening one closes the other, so the chat never gets squeezed. */
+  const docked = browserOpen && browserMode === "panel"
+  const prevPanel = useRef(panelOpen)
+  useEffect(() => { if (docked) setPanelOpen(false) }, [docked])
+  useEffect(() => {
+    if (panelOpen && !prevPanel.current) setBrowserOpen((o) => (browserMode === "panel" ? false : o))
+    prevPanel.current = panelOpen
+  }, [panelOpen])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "b") {
+        e.preventDefault()
+        setBrowserOpen((o) => !o)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+  const startResize = (e: React.PointerEvent) => {
+    const x0 = e.clientX, w0 = browserWidth
+    const move = (ev: PointerEvent) => setBrowserWidth(Math.min(Math.max(w0 + x0 - ev.clientX, 380), Math.round(window.innerWidth * 0.7)))
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.userSelect = "" }
+    document.body.style.userSelect = "none"
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", up)
+  }
+  const browserPanel = (mode: BrowserMode, extra?: { className?: string; style?: React.CSSProperties }) => {
+    const v = browser.view(null)
+    return <BrowserPanel {...v.props} page={v.page} mode={mode} onMode={setBrowserMode} onClose={() => setBrowserOpen(false)} {...extra} />
+  }
+  /* A thread's Workbench → Browser: the same browser, only this thread's tabs. */
+  const threadBrowser = (threadId: string) => {
+    const v = browser.view(threadId)
+    return <BrowserPanel {...v.props} page={v.page} mode="thread" className="min-h-0 flex-1" />
+  }
 
   // Per-employee sidebar badges: a blue count for live turns, amber for turns waiting on approval.
   const badges = useMemo(() => {
@@ -1404,6 +1449,7 @@ export default function App() {
         onOpenStatus={() => setStatusOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onPairPhone={() => setPairPhone({ kind: "ready", offer: pairOffer(300) })}
+        onOpenBrowser={() => setBrowserOpen((o) => !o)}
         realApp={realApp || scenario === "first-run"}
         preview={<PrototypePreviewMenu scenario={scenario} realApp={realApp} onScenario={pickScenario} onRealApp={setRealApp} />}
         isProjectDefaultOpen={(p) => p.id === "lilos" || newProjects.includes(p)}
@@ -1416,6 +1462,8 @@ export default function App() {
         onHire={() => setHireOpen(TEMPLATES[0])}
       />
 
+      <div className="flex min-h-0 min-w-0">
+      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1">
       {focus && openThread?.thread ? (
         <FocusView
           root={openThread} thread={openThread.thread} channel={channel} project={project} emp={emp} human={human}
@@ -1431,6 +1479,9 @@ export default function App() {
           models={canModels ? MODEL_OPTS : undefined} picker={pickerExtras} repoFiles={REPO_FILES} host={hostAccessors}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
           onOpenSession={openSession} onStopJob={(id) => stopJobIn(openThread, id)} onPlan={(a, id) => planAction(openThread, a, id)}
+          // A real harness attach (?surfaces=…) keeps its live Preview tab; the
+          // LilOS Browser (#214) replaces it only in the mock prototype.
+          browser={realSurfaces ? undefined : threadBrowser(openThread.id)}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />
       ) : (
@@ -1496,6 +1547,15 @@ export default function App() {
           )}
         </div>
       )}
+      </div>
+      {browserOpen && browserMode === "panel" && (
+        <>
+          <div role="separator" aria-orientation="vertical" onPointerDown={startResize} className="hidden w-1 shrink-0 cursor-col-resize bg-border/60 hover:bg-blue-500/60 md:block" />
+          {browserPanel("panel", { className: "max-md:fixed max-md:inset-0 max-md:z-40 max-md:!w-full shrink-0", style: { width: browserWidth } })}
+        </>
+      )}
+      </div>
+      {browserOpen && browserMode === "window" && browserPanel("window", { className: "fixed top-[6vh] right-[4vw] z-40 h-[min(760px,86vh)] w-[min(1080px,88vw)]" })}
 
       {startRoot?.thread && (
         <StartWorkDialog

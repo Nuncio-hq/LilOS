@@ -113,6 +113,7 @@ export function Workbench({
   editors: editorsProp,
   onOpenPath,
   onStopJob,
+  browser,
 }: {
   thread: Thread;
   work: Work | null;
@@ -145,6 +146,9 @@ export function Workbench({
   onOpenPath?: ((path: string, app: OsApp, line?: number) => void) | null;
   /** Stops a background process (issue #170); absent = no Stop button. */
   onStopJob?: (id: string) => void;
+  /** This thread's own browser tabs (the LilOS Browser in thread mode,
+      issue #214). When passed, the Preview tab becomes **Browser** and shows it. */
+  browser?: React.ReactNode;
 }) {
   const a = sessionArtifacts(thread);
   const jobs = thread.jobs ?? [];
@@ -287,7 +291,7 @@ export function Workbench({
     changes: changesOn,
     files: filesOn,
     terminal: surfacesOn,
-    preview: surfacesOn,
+    preview: surfacesOn || !!browser,
     background: bgOn,
     plan: plans.length > 0,
     pr: prOn,
@@ -401,10 +405,13 @@ export function Workbench({
               )}
             </TabsTrigger>
           )}
-          {surfacesOn && (
-            <TabsTrigger value="preview">
+          {(surfacesOn || browser) && (
+            <TabsTrigger
+              value="preview"
+              data-wb-browser={!!browser || undefined}
+            >
               <GlobeIcon />
-              Preview
+              {browser ? "Browser" : "Preview"}
             </TabsTrigger>
           )}
           {plan && (
@@ -749,7 +756,9 @@ export function Workbench({
       </TabsContent>
 
       <TabsContent value="preview" className="flex min-h-0 flex-1 flex-col">
-        {live ? (
+        {browser ? (
+          browser
+        ) : live ? (
           <LivePreview live={live} />
         ) : (
           <WebPreview

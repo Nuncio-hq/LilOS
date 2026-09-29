@@ -130,6 +130,7 @@ export function FocusView({
   onOpenSession,
   onStopJob,
   onPlan,
+  browser,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -214,6 +215,8 @@ export function FocusView({
   onStopJob?: (id: string) => void;
   /* Plan card decisions (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
+  /* This thread's own tabs of the LilOS Browser → Workbench Browser (#214). */
+  browser?: ReactNode;
 }) {
   const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024);
   const [tab, setTab] = useState<WbTab>(() =>
@@ -794,6 +797,7 @@ export function FocusView({
                 running={running}
                 editors={editorsProp}
                 onOpenPath={onOpenPath}
+                browser={browser}
               />
             </aside>
           </>

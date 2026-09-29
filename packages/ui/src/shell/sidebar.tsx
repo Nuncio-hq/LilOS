@@ -3,6 +3,7 @@ import {
   ChevronRightIcon,
   FolderGit2Icon,
   FolderIcon,
+  GlobeIcon,
   InboxIcon,
   SettingsIcon,
   ShieldAlertIcon,
@@ -69,6 +70,7 @@ export function Sidebar({
   onOpenStatus,
   onOpenSettings,
   onPairPhone,
+  onOpenBrowser,
   realApp,
   preview,
   buildLabel,
@@ -104,6 +106,8 @@ export function Sidebar({
   onOpenSettings?: () => void;
   /* Mobile onboarding: opens the Pair phone QR. Omit to hide the row. */
   onPairPhone?: () => void;
+  /* Toggles the LilOS Browser (⌘⇧B, issue #214). Omit to hide the row. */
+  onOpenBrowser?: () => void;
   /* realApp = what the shipped app sidebar will show today: Employees + status only. */
   realApp?: boolean;
   /* Prototype-only slot (e.g. the Preview states menu); omitted in production wiring. */
@@ -284,6 +288,20 @@ export function Sidebar({
           )}
         </div>
       </ScrollArea>
+      {onOpenBrowser && (
+        <button
+          type="button"
+          onClick={onOpenBrowser}
+          data-browser-open
+          className="flex w-full items-center gap-2 border-t px-4 py-2 text-left text-xs hover:bg-sidebar-accent"
+        >
+          <GlobeIcon className="size-3.5 text-muted-foreground" />
+          Browser
+          <span className="ml-auto text-muted-foreground tracking-wider">
+            ⌘⇧B
+          </span>
+        </button>
+      )}
       {onPairPhone && (
         <button
           type="button"
