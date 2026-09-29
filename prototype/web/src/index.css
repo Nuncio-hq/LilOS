@@ -355,16 +355,19 @@ button:not(:disabled):active, [role="button"]:active { transform: scale(0.97); t
 .lilos-orb-blobs { animation: lilos-orb 14s linear infinite; }
 @keyframes lilos-spin { to { transform: rotate(360deg); } }
 .lilos-orb-ring { animation: lilos-spin 1.1s cubic-bezier(0.45, 0.1, 0.55, 0.9) infinite; }
-/* The composer grows a little when you start typing. */
+/* The composer grows a little once there's a draft: the rule keys off the
+   draft, not focus, so the box never shifts under a pointer click. */
 [data-slot="input-group"]:has(textarea) textarea { transition: min-height 0.3s cubic-bezier(0.2, 0.9, 0.25, 1.1); }
-[data-slot="input-group"]:has(textarea):focus-within textarea { min-height: 4.5rem; }
+[data-slot="input-group"]:has(textarea:not(:placeholder-shown)) textarea { min-height: 4.5rem; }
 @media (prefers-reduced-motion: reduce) {
     body::before, .lilos-orb-blobs, .lilos-orb-ring, .lilos-rise { animation: none !important; }
     .lilos-lift:hover { transform: none; }
 }
-/* Composer hints show only while you type — calm at rest. */
+/* Composer hints show while there's a draft — and always while a turn is
+   running (the "Enter steers · ■ stop" line is the mid-turn affordance).
+   Neither keys off focus, so the row never shifts under a pointer click. */
 .lilos-hint { display: none !important; }
-form:focus-within .lilos-hint { display: inline !important; animation: lilos-rise 0.3s ease both; }
+form:has(textarea:not(:placeholder-shown), [aria-label="Stop (Esc)"]) .lilos-hint { display: inline !important; animation: lilos-rise 0.3s ease both; }
 
 /* ---- One window (issue #223, round 3) ----
    Not three floating boxes: the whole app is ONE glass window on the colour

@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 /* Issue #71, ui layer: AC-1 avatar-less feed rows keep the content column at
-   full width, AC-2 the Hermes avatar bundles its mark and falls back to an
-   initial, AC-3 `· now:` hides when empty, AC-4 waiting surfaces read
-   "needs you" / "Waiting for approval". */
+   full width, AC-2 the employee avatar is a colour orb toned by name (no
+   image), AC-3 `· now:` hides when empty, AC-4 waiting surfaces show the "!"
+   needs-you badge with an sr-only "needs you" / "Waiting for approval". */
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { ModelPicker } from "../src/chat/model-picker";
@@ -10,7 +10,7 @@ import { AgentTurn, TurnSteps } from "../src/conversation/turns";
 import { EmployeeHome } from "../src/employee/employee-home";
 import { Row } from "../src/feed/row";
 import { NO_WS, PHASE_LABEL } from "../src/lib/helpers";
-import { HermesAvatar } from "../src/shell/avatars";
+import { HermesAvatar, orbTone } from "../src/shell/avatars";
 import { Sidebar } from "../src/shell/sidebar";
 import type { Employee, Msg } from "../src/types";
 
@@ -56,15 +56,17 @@ describe("issue #71", () => {
     expect(content?.className).toContain("col-start-2");
   });
 
-  test("AC-2 the Hermes avatar bundles its mark and falls back to an initial", () => {
+  test("AC-2 the employee avatar is a colour orb toned by name, no image", () => {
     const { container } = render(<HermesAvatar name="Default" />);
-    const img = container.querySelector("img");
-    // Bundled asset URL, not the prototype-only absolute path that 404s in
-    // apps/web and under file:// in Electron.
-    expect(img?.getAttribute("src")).not.toBe("/hermes.svg");
-    expect(
-      container.querySelector('[data-slot="avatar-fallback"]')?.textContent,
-    ).toBe("D");
+    // No <img> at all — nothing can 404 in apps/web or under file:// in
+    // Electron (was: bundled mark + initial fallback, pre-#224).
+    expect(container.querySelector("img")).toBeNull();
+    const orb = container.querySelector('[role="img"]');
+    expect(orb?.getAttribute("aria-label")).toBe("Default");
+    expect(container.querySelector(".lilos-orb-blobs")).toBeTruthy();
+    // Name → tone ties every surface's orb to the same employee.
+    expect(orbTone("Default")).toBe("stone");
+    expect(orbTone("Builder")).toBe("blue");
   });
 
   test("AC-3 `· now:` is hidden when the employee has no now value", () => {
@@ -112,7 +114,7 @@ describe("issue #71", () => {
     ).toContain("now: shipping #71");
   });
 
-  test("AC-4 a waiting session reads `needs you` in the DM list and the sidebar badge", () => {
+  test("AC-4 a waiting session shows the `!` needs-you badge in the DM list and sidebar", () => {
     const waitingReply = {
       id: "r1",
       from: EMP.id,
@@ -185,9 +187,10 @@ describe("issue #71", () => {
         badges={{ [EMP.id]: { approvals: 1 } }}
       />,
     );
-    expect(
-      side.container.querySelector("[data-badge-approvals]")?.textContent,
-    ).toBe("needs you");
+    // The badge is an icon now: visible "!" (aria-hidden) + sr-only label.
+    const badge = side.container.querySelector("[data-badge-approvals]");
+    expect(badge?.querySelector("[aria-hidden]")?.textContent).toBe("!");
+    expect(badge?.querySelector(".sr-only")?.textContent).toBe("needs you");
   });
 
   test("AC-4 the blocked tool card says `Waiting for approval`", () => {
