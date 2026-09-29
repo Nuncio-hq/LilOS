@@ -45,19 +45,31 @@ const askNotification = (
   const c = conversationOf(sessionId, ctx);
   if (!c) return null;
   const name = employeeName(c, ctx);
-  return request.kind === "question"
-    ? {
+  switch (request.kind) {
+    case "question":
+      return {
         conversationId: c.id,
         kind: "ask",
         title: `${name} has a question`,
         body: request.question,
-      }
-    : {
+      };
+    /* #180: an engine proposing a plan needs the human the same way an
+       approval does; the card itself lands with the app half of the issue. */
+    case "plan":
+      return {
+        conversationId: c.id,
+        kind: "ask",
+        title: `${name} proposed a plan`,
+        body: "Approve, ask for a change, or reject it.",
+      };
+    default:
+      return {
         conversationId: c.id,
         kind: "ask",
         title: `${name} needs your approval`,
         body: request.command,
       };
+  }
 };
 
 /** The event → notification classifier. Null = not attention-worthy. */

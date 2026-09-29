@@ -49,6 +49,14 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
     ) => Promise<acp.RequestPermissionResponse>;
   }
 
+  /* #180: the EngineRequest union gained `plan`; these tests only ever ask
+     approval requests, so narrow once instead of asserting at each site. */
+  const approvalRequest = (request: EngineRequest) => {
+    if (request.kind !== "approval")
+      throw new Error(`expected approval, got ${request.kind}`);
+    return request;
+  };
+
   const rig = (): Rig => {
     let openRequest: EngineRequest | undefined;
     let settle: (v: { outcome: ApprovalOutcome }) => void = () => {};
@@ -116,7 +124,11 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
   test("AC-1 always -> allow_always, once -> allow_once (never the session-scope option)", async () => {
     const r = rig();
     const pending = r.permission(HERMES_FULL);
-    expect(r.ask().request.options).toEqual(["once", "always", "deny"]);
+    expect(approvalRequest(r.ask().request).options).toEqual([
+      "once",
+      "always",
+      "deny",
+    ]);
     r.respond("always");
     expect(selected(await pending)).toBe("allow_always");
 
@@ -136,7 +148,7 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
   test("AC-2 'always' is not offered when Hermes withholds allow_always (no silent downgrade)", async () => {
     const r = rig();
     const pending = r.permission(HERMES_NO_PERMANENT);
-    const { request } = r.ask();
+    const request = approvalRequest(r.ask().request);
     expect(request.options).toEqual(["once", "deny"]);
     // A client that answers "always" anyway is rejected, not downgraded.
     expect(
@@ -152,7 +164,7 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
   test("AC-2 once-only lists (smart_denied) offer exactly once + deny", async () => {
     const r = rig();
     const pending = r.permission(HERMES_ONCE_ONLY);
-    expect(r.ask().request.options).toEqual(["once", "deny"]);
+    expect(approvalRequest(r.ask().request).options).toEqual(["once", "deny"]);
     r.respond("once");
     expect(selected(await pending)).toBe("allow_once");
   });
@@ -164,7 +176,11 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
       opt("permit_forever", "allow_always", "Permit forever"),
       opt("nope", "reject_once", "Nope"),
     ]);
-    expect(r.ask().request.options).toEqual(["once", "always", "deny"]);
+    expect(approvalRequest(r.ask().request).options).toEqual([
+      "once",
+      "always",
+      "deny",
+    ]);
     r.respond("always");
     expect(selected(await pending)).toBe("permit_forever");
   });
@@ -178,7 +194,7 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
       opt("allow_session", "allow_always", "Allow for session"),
       opt("deny", "reject_once", "Deny"),
     ]);
-    expect(r.ask().request.options).toEqual(["once", "deny"]);
+    expect(approvalRequest(r.ask().request).options).toEqual(["once", "deny"]);
     r.respond("always"); // invalid for the offered set; the pick must not land on it
     // (a real client can't send this — resolveOutcomeValid rejects it — but
     // the pick must still fail closed if it somehow did).
@@ -200,5 +216,91 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
     r.respond("deny");
     const out = await pending;
     expect(out.outcome.outcome).toBe("cancelled");
+  });
+});
+
+/**
+ * Issue #180 — ACP `plan` sessionUpdate (Hermes `todo`) maps to
+ * `plan.updated` kind:"tasks" snapshots on a stable per-turn planId with
+ * increasing versions; status names map onto the contracts enum.
+ */
+describe("engine-hermes ACP plan mapping (#180)", () => {
+  const rig = () => {
+    const events: { type: string; payload: unknown }[] = [];
+    const engine = {} as unknown as HermesEngine;
+    const driver = new AcpDriver({ bin: "hermes" }, engine);
+    const session = new Session(
+      "s1",
+      "builder",
+      "/tmp",
+      undefined,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      "acp",
+      "rs1",
+      "rs1",
+      (e) => {
+        events.push({ type: e.type, payload: e.payload });
+      },
+    );
+    session.turn = {
+      turnId: "t1",
+      phase: "tools",
+      resolve: () => {},
+      reject: () => {},
+    };
+    const handler = driver as unknown as {
+      onUpdate(s: Session, n: acp.SessionNotification): void;
+    };
+    const planUpdate = (entries: unknown[]) =>
+      handler.onUpdate(session, {
+        sessionId: "rs1",
+        update: { sessionUpdate: "plan", entries },
+      } as acp.SessionNotification);
+    return { events, planUpdate };
+  };
+
+  test("AC-1 todo entries emit plan.updated kind:tasks snapshots that tick in place", () => {
+    const r = rig();
+    r.planUpdate([
+      { content: "read README", status: "in_progress", priority: "medium" },
+      { content: "edit README", status: "pending", priority: "medium" },
+    ]);
+    r.planUpdate([
+      { content: "read README", status: "completed", priority: "medium" },
+      { content: "edit README", status: "in_progress", priority: "medium" },
+    ]);
+    const updates = r.events.filter((e) => e.type === "plan.updated");
+    expect(updates).toHaveLength(2);
+    const p = updates.map(
+      (e) =>
+        e.payload as {
+          planId: string;
+          kind: string;
+          version: number;
+          steps: { text: string; status: string }[];
+        },
+    );
+    // One stable planId per turn; versions increase per snapshot.
+    expect(p[0].planId).toBe(p[1].planId);
+    expect(p[0].planId).toContain("t1");
+    expect(p.map((x) => x.version)).toEqual([1, 2]);
+    expect(p[0].kind).toBe("tasks");
+    expect(p[1].steps.map((s) => s.status)).toEqual([
+      "completed",
+      "in_progress",
+    ]);
+  });
+
+  test("AC-6 unknown statuses degrade to pending; a plan update with no open turn drops", () => {
+    const r = rig();
+    r.planUpdate([{ content: "x", status: "weird" }]);
+    const updates = r.events.filter((e) => e.type === "plan.updated");
+    expect(updates).toHaveLength(1);
+    expect(
+      (updates[0].payload as { steps: { status: string }[] }).steps[0].status,
+    ).toBe("pending");
   });
 });

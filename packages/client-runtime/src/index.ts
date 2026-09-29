@@ -54,6 +54,7 @@ export {
   type SubagentModel,
   type TurnModel,
   type TurnPhase,
+  type TurnPlan,
   type TurnRequest,
   type TurnStep,
 } from "./turn-model";

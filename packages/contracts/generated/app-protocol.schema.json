@@ -2942,6 +2942,24 @@
                 "question"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "plan"
+                },
+                "planId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "planId"
+              ],
+              "additionalProperties": false
             }
           ]
         },
@@ -2959,7 +2977,10 @@
             "always",
             "deny",
             "cancel",
-            "answer"
+            "answer",
+            "approve",
+            "reject",
+            "change"
           ]
         },
         "answer": {
@@ -4615,6 +4636,24 @@
                 "question"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "plan"
+                },
+                "planId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "planId"
+              ],
+              "additionalProperties": false
             }
           ]
         }
@@ -4733,6 +4772,24 @@
                     "question"
                   ],
                   "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "plan"
+                    },
+                    "planId": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "planId"
+                  ],
+                  "additionalProperties": false
                 }
               ]
             },
@@ -4750,7 +4807,10 @@
                 "always",
                 "deny",
                 "cancel",
-                "answer"
+                "answer",
+                "approve",
+                "reject",
+                "change"
               ]
             },
             "answer": {
@@ -4798,7 +4858,10 @@
             "always",
             "deny",
             "cancel",
-            "answer"
+            "answer",
+            "approve",
+            "reject",
+            "change"
           ]
         },
         "answer": {
@@ -4939,6 +5002,24 @@
                       "question"
                     ],
                     "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "plan"
+                      },
+                      "planId": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "planId"
+                    ],
+                    "additionalProperties": false
                   }
                 ]
               },
@@ -4956,7 +5037,10 @@
                   "always",
                   "deny",
                   "cancel",
-                  "answer"
+                  "answer",
+                  "approve",
+                  "reject",
+                  "change"
                 ]
               },
               "answer": {
@@ -5520,6 +5604,24 @@
                     "question"
                   ],
                   "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "plan"
+                    },
+                    "planId": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "planId"
+                  ],
+                  "additionalProperties": false
                 }
               ]
             },
@@ -5537,7 +5639,10 @@
                 "always",
                 "deny",
                 "cancel",
-                "answer"
+                "answer",
+                "approve",
+                "reject",
+                "change"
               ]
             },
             "answer": {
@@ -5681,6 +5786,24 @@
                     "question"
                   ],
                   "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "plan"
+                    },
+                    "planId": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "planId"
+                  ],
+                  "additionalProperties": false
                 }
               ]
             },
@@ -5698,7 +5821,10 @@
                 "always",
                 "deny",
                 "cancel",
-                "answer"
+                "answer",
+                "approve",
+                "reject",
+                "change"
               ]
             },
             "answer": {
