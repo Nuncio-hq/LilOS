@@ -6,6 +6,7 @@ import {
   AgentsUpdateParams,
 } from "../engine/agents";
 import { Capability } from "../engine/capabilities";
+import { JobsListParams, JobsStopParams } from "../engine/methods";
 import { ModelOption, ModelProvider, ModelsListParams } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
 import {
@@ -161,6 +162,8 @@ export const AppMethod = z.enum([
   "agents.create",
   "agents.update",
   "models.list",
+  "jobs.list",
+  "jobs.stop",
   /* Phone pairing (#153): minting a grant is the opt-in that also binds the
      Tailscale listener; devices.list/revoke manage what the grant exchange
      created. `pairing.disable` turns phone access off again. */
@@ -189,6 +192,8 @@ export const ENGINE_PASSTHROUGH_METHODS = [
   "agents.create",
   "agents.update",
   "models.list",
+  "jobs.list",
+  "jobs.stop",
 ] as const;
 export type EnginePassthroughMethod =
   (typeof ENGINE_PASSTHROUGH_METHODS)[number];
@@ -200,6 +205,8 @@ export const ENGINE_PASSTHROUGH_PARAMS = {
   "agents.create": AgentsCreateParams,
   "agents.update": AgentsUpdateParams,
   "models.list": ModelsListParams,
+  "jobs.list": JobsListParams,
+  "jobs.stop": JobsStopParams,
 } as const satisfies Record<EnginePassthroughMethod, z.ZodType>;
 
 const HelloClient = z
