@@ -809,6 +809,7 @@ export class HermesEngine {
     if (job.status !== "running") return;
     job.status = status;
     if (exitCode !== undefined) job.exitCode = exitCode;
+    job.endedAt = Date.now();
     const timer = s.jobFlush.get(job.jobId);
     if (timer) {
       clearTimeout(timer);
@@ -819,6 +820,7 @@ export class HermesEngine {
       jobId: job.jobId,
       status,
       ...(job.exitCode !== undefined ? { exitCode: job.exitCode } : {}),
+      endedAt: job.endedAt,
     });
   }
 
@@ -889,7 +891,11 @@ export class HermesEngine {
       command: j.command || j.jobId,
       status: j.status,
       startedAt: j.startedAt,
-      uptimeSeconds: Math.max(0, Math.round((Date.now() - j.startedAt) / 1000)),
+      uptimeSeconds: Math.max(
+        0,
+        Math.round(((j.endedAt ?? Date.now()) - j.startedAt) / 1000),
+      ),
+      ...(j.endedAt !== undefined ? { endedAt: j.endedAt } : {}),
       ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
       ...(j.url ? { url: j.url } : {}),
       ...(j.tail ? { tail: j.tail } : {}),

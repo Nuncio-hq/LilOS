@@ -155,7 +155,9 @@ export function toJob(j: JobModel, now = Date.now()): BackgroundJob {
           minute: "2-digit",
         })
       : "",
-    uptime: j.startedAt ? formatUptime((now - j.startedAt) / 1000) : "0s",
+    uptime: j.startedAt
+      ? formatUptime(((j.endedAt ?? now) - j.startedAt) / 1000)
+      : "0s",
     ...(j.url ? { url: j.url } : {}),
     ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
     log: j.tail,

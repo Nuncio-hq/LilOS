@@ -1759,6 +1759,11 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "endedAt": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
                         }
                       },
                       "required": [
@@ -2714,6 +2719,11 @@
                 "uptimeSeconds": {
                   "type": "number",
                   "minimum": 0
+                },
+                "endedAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
                 },
                 "exitCode": {
                   "type": "integer",
@@ -4023,6 +4033,11 @@
                   "exitCode": {
                     "type": "integer",
                     "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "endedAt": {
+                    "type": "integer",
+                    "minimum": 0,
                     "maximum": 9007199254740991
                   }
                 },

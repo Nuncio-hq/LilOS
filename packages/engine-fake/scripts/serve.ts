@@ -24,9 +24,23 @@ const arg = (name: string, dflt: number) => {
 };
 const flag = (name: string) => process.argv.includes(`--${name}`);
 
+/* `--no-cap <id>` (repeatable): serve an engine that does not declare that
+   capability — the cap-less harness run AC-5 legs need (e.g. --no-cap
+   subagents --no-cap background_jobs). */
+const noCap = new Set(
+  process.argv
+    .map((a, i) => (a === "--no-cap" ? process.argv[i + 1] : undefined))
+    .filter((x): x is string => Boolean(x)),
+);
+const cap = (id: string) => !noCap.has(id);
+
 const engine = new FakeEngine({
   tick: arg("tick", 25),
-  capabilities: { steer: !flag("no-steer") },
+  capabilities: {
+    steer: !flag("no-steer") && cap("steer"),
+    subagents: cap("subagents"),
+    background_jobs: cap("background_jobs"),
+  },
 });
 const clients = new Set<{ send: (s: string) => void }>();
 engine.onEvent((e) => {

@@ -25,6 +25,10 @@ export type Routes = {
   ThreadInfo: { conversationId: string };
   /* #182: the thread's plan sheet — every version, files per step, risks. */
   Plan: { conversationId: string };
+  /* #181: one subagent of a turn in that thread; the session's background
+     jobs sheet (pill above the composer opens it). */
+  Subagent: { conversationId: string; id: string };
+  Background: { conversationId: string };
   FolderPicker: { employeeId: string };
   /* "Other folder on the Mac…" browser (#238), pushed over FolderPicker. */
   BrowseMac: { employeeId: string };
@@ -38,6 +42,8 @@ export type DmRoutes = Pick<
   | "Thread"
   | "ThreadInfo"
   | "Plan"
+  | "Subagent"
+  | "Background"
   | "FolderPicker"
   | "BrowseMac"
   | "ModelPicker"

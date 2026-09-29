@@ -15,6 +15,7 @@ import { Composer } from "./composer";
 import { ContextRing } from "./context-meter";
 import type { PlanAction } from "./plan-card";
 import { PrBadge, prHeadline } from "./pr-badges";
+import { threadBottomInset } from "./thread-layout";
 import type {
   ContextUsage,
   PullRequestRef,
@@ -66,6 +67,7 @@ export function ThreadScreen({
   const insets = useSafeAreaInsets();
   const scroller = useRef<ScrollView>(null);
   const [composerHeight, setComposerHeight] = useState(96);
+  const [pillHeight, setPillHeight] = useState(0);
   const running = t.state === "working";
   // The background pill floats above the composer; keep the last turn clear of it.
   const pill =
@@ -93,17 +95,19 @@ export function ThreadScreen({
             scroller.current?.scrollToEnd({ animated: true })
           }
           contentInsetAdjustmentBehavior="automatic"
-          /* #182: the composer floats over this scroll view — a bottom
-             contentInset equal to its height is what keeps the last card
-             (and the scroll indicator) clear of it, alongside the small
-             padding below for the spacing/background-pill slack. */
-          contentInset={{ bottom: composerHeight }}
+          /* #182 + #181: the bottom stack floats over this scroll view —
+             the inset must clear ALL of it: the measured composer plus,
+             while a background pill shows, the pill and its stack gap.
+             Composer-only leaves the newest line under the pill. */
+          contentInset={{
+            bottom: threadBottomInset(composerHeight, pill ? pillHeight : 0),
+          }}
           keyboardDismissMode="interactive"
           contentContainerStyle={{
             flexGrow: 1,
             justifyContent: "flex-end",
             paddingTop: 12,
-            paddingBottom: 16 + (pill ? 44 : 0),
+            paddingBottom: 16,
             paddingHorizontal: 16,
             gap: 24,
           }}
@@ -132,8 +136,10 @@ export function ThreadScreen({
         </ScrollView>
 
         <View className="absolute inset-x-0 bottom-0 gap-2">
-          {onOpenBackground && (
-            <BackgroundPill jobs={t.jobs ?? []} onPress={onOpenBackground} />
+          {onOpenBackground && pill && (
+            <View onLayout={(e) => setPillHeight(e.nativeEvent.layout.height)}>
+              <BackgroundPill jobs={t.jobs ?? []} onPress={onOpenBackground} />
+            </View>
           )}
           <Composer
             placeholder={

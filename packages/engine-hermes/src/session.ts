@@ -21,6 +21,8 @@ export interface HermesJob {
   /** ms epoch — the row's started clock (process.list `started_at` wins). */
   startedAt: number;
   pid?: number;
+  /** ms epoch the job stopped running — uptime freezes at it. */
+  endedAt?: number;
   exitCode?: number;
   tail: string;
   url?: string;

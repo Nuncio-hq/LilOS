@@ -4,17 +4,19 @@
    values in. Mirrors apps/web/src/lib/mapping.ts mergeTurns onto
    ThreadEntry[] — same swap/append rules, phone-shaped rows. */
 
-import type { SessionModel, TurnModel } from "@lilos/client-runtime";
+import type { JobModel, SessionModel, TurnModel } from "@lilos/client-runtime";
 import type {
   AppMessage,
   Ask,
   Conversation,
   Employee,
 } from "@lilos/contracts/app";
+import type { Job } from "@lilos/contracts/engine";
 import type {
   AgentEntry,
   Approval,
   ModelRow,
+  SubagentRow,
   ThreadDetail,
   ThreadEntry,
 } from "@lilos/ui-native";
@@ -26,12 +28,21 @@ import {
 } from "./dm-model";
 import { toneOf } from "./mapping";
 import {
+  listedJobModel,
   toJobRow,
   toPlanRow,
   toSubagentRow,
   toToolStep,
   usageLabel,
 } from "./thread-rows";
+
+/** #181: engine `employeeRef`/`sessionRef` -> the row's employee + thread
+   link. The default keeps refs as plain labels (unknown profiles, the
+   helper's DM not yet seen). */
+type ResolveEmployee = (link: {
+  employeeRef: string;
+  sessionRef: string;
+}) => SubagentRow["employee"];
 
 const clock = (ts: number) =>
   new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -93,6 +104,8 @@ export function toAgentEntry(
     sessionId: string;
     /** The engine declared `plan` (D-#19) — plan rows render only then. */
     planCapable?: boolean;
+    /** Resolves an employee helper's refs to its row link (#181). */
+    resolveEmployee?: ResolveEmployee;
     now: number;
   },
 ): AgentEntry {
@@ -124,7 +137,11 @@ export function toAgentEntry(
     ),
     plan: lastPlan ? toPlanRow(lastPlan) : undefined,
     ...(turn.subagents.length
-      ? { subagents: turn.subagents.map((s) => toSubagentRow(s)) }
+      ? {
+          subagents: turn.subagents.map((s) =>
+            toSubagentRow(s, opts.resolveEmployee),
+          ),
+        }
       : {}),
     footer:
       !live && (opts.dur !== undefined || turn.model)
@@ -182,6 +199,8 @@ export function mergeThreadEntries(
     sessionId?: string;
     /** The engine declared `plan` (D-#19); false strips every plan row. */
     planCapable?: boolean;
+    /** Resolves an employee helper's refs to its row link (#181). */
+    resolveEmployee?: ResolveEmployee;
     rewoundRefs?: ReadonlySet<string>;
     rewoundTexts?: ReadonlySet<string>;
     now: number;
@@ -209,18 +228,37 @@ export function mergeThreadEntries(
   if (!model) return entries;
 
   /* A finished turn lands where its reply message sits: match on the exact
-     text the engine posted (stripMessages on web; relays keep full text). */
-  const byText = new Map<string, TurnModel>();
+     text the engine posted (stripMessages on web; relays keep full text).
+     Each turn claims ONE message in turn order — an engine that answers two
+     turns with the same text (canned replies repeat across sessions, #181)
+     must not stamp the same rich card on both rows. And the claim is
+     position-bounded: a turn only matches a message AFTER its `ref` prompt —
+     without it, a rebound session's turn (turn ids restart per session)
+     steals an older session's identical reply and shows the wrong card
+     (phantom subagents + a bogus duration, #181 AC-4). A settled turn
+     (done/stopped) only — a live turn's streamed text can already equal
+     the posted reply while the relay event that settles it is still
+     queued, and claiming it would render its card twice under the same
+     `turn-tN` key (once at the message, once at the tail). */
+  const promptIdx = new Map<TurnModel, number>();
   for (const t of model.turns) {
-    const text = t.text.trim();
-    if (text && !byText.has(text)) byText.set(text, t);
+    if (!t.ref) continue;
+    const i = messages.findIndex((x) => x.id === t.ref);
+    if (i >= 0) promptIdx.set(t, i);
   }
-  const swapped = new Set<string>();
-  for (const m of messages) {
+  const used = new Set<TurnModel>();
+  for (const [mi, m] of messages.entries()) {
     if (m.authorKind !== "employee") continue;
-    const turn = byText.get(m.text.trim());
+    const turn = model.turns.find(
+      (x) =>
+        !used.has(x) &&
+        (x.phase === "done" || x.phase === "stopped") &&
+        x.text.trim() &&
+        x.text.trim() === m.text.trim() &&
+        (promptIdx.get(x) ?? -1) < mi,
+    );
     if (!turn) continue;
-    swapped.add(turn.turnId);
+    used.add(turn);
     const idx = entries.findIndex((e) => e.id === m.id);
     /* dur = prompt -> reply latency, the only honest wall-clock available. */
     const prompt = turn.ref
@@ -237,6 +275,7 @@ export function mergeThreadEntries(
       employeeName: opts.employeeName,
       sessionId: opts.sessionId ?? model.sessionId,
       planCapable: opts.planCapable,
+      resolveEmployee: opts.resolveEmployee,
       now: opts.now,
     });
     const superseded = supersededPlanEntries(turn, opts.planCapable);
@@ -250,7 +289,7 @@ export function mergeThreadEntries(
      wins; a turn with no ref falls back to matching the dropped answer's
      body, so a legit turn quoting a rewound answer survives. */
   const leftover = model.turns.filter((t) => {
-    if (swapped.has(t.turnId)) return false;
+    if (used.has(t)) return false;
     const text = t.text.trim();
     /* A finished turn with no content renders a bare card — drop it unless
        it was stopped mid-flight (the "You stopped this turn" row is the
@@ -277,6 +316,7 @@ export function mergeThreadEntries(
       employeeName: opts.employeeName,
       sessionId: opts.sessionId ?? model.sessionId,
       planCapable: opts.planCapable,
+      resolveEmployee: opts.resolveEmployee,
       now: opts.now,
     });
   const byRef = new Map<string, number>();
@@ -349,6 +389,16 @@ export function toThreadDetail(opts: {
   };
   /** The engine declared `plan` (D-#19) — pass false to strip plan rows. */
   planCapable?: boolean;
+  /* #181: helper resolution needs the directory (profile ref -> employee)
+     and the session index (sessionRef -> the conversation to open). */
+  employees?: readonly Employee[];
+  conversations?: readonly Conversation[];
+  /** The engine declared `background_jobs` (D-#19): without it no pill,
+     sheet or job rows render — and `jobs.list` is never asked. */
+  jobsCapable?: boolean;
+  /** `jobs.list` rows for this session — they cover jobs the event stream
+     can't (started before a harness restart); job.* events overlay them. */
+  listedJobs?: readonly Job[];
 }): ThreadDetail {
   const { conversation: conv } = opts;
   const employee = opts.employee;
@@ -375,6 +425,20 @@ export function toThreadDetail(opts: {
       .map((m) => m.text.trim()),
     ...(opts.rewound?.texts ?? []),
   ]);
+  /* #181 AC-2: a helper that is another employee links to their DM thread —
+     the engine's profile ref -> Employee.profile, its sessionRef -> the
+     conversation bound to that session. */
+  const resolveEmployee: ResolveEmployee = ({ employeeRef, sessionRef }) => {
+    const emp = opts.employees?.find((e) => e.profile === employeeRef);
+    const id = emp?.id ?? employeeRef;
+    const thread = opts.conversations?.find((c) => c.engineRef === sessionRef);
+    return {
+      id,
+      name: emp?.name ?? employeeRef,
+      tone: toneOf(id),
+      ...(thread ? { threadId: thread.id } : {}),
+    };
+  };
   const entries = mergeThreadEntries(
     opts.messages.filter((m) => !m.rewound),
     sessionModel,
@@ -386,11 +450,24 @@ export function toThreadDetail(opts: {
       employeeName,
       sessionId: conv.engineRef ?? undefined,
       planCapable: opts.planCapable,
+      resolveEmployee,
       rewoundRefs,
       rewoundTexts,
       now: opts.now,
     },
   );
+  /* #181: the session's background processes — `jobs.list` rows fill the
+     engine-restart gap first; event-derived rows overwrite by jobId
+     (fresher). Nothing lists without `background_jobs` (AC-5). */
+  const jobsById = new Map<string, JobModel>();
+  if (opts.jobsCapable) {
+    for (const j of opts.listedJobs ?? [])
+      jobsById.set(j.jobId, listedJobModel(j));
+    for (const j of sessionModel?.jobs ?? []) jobsById.set(j.jobId, j);
+  }
+  const jobs = jobsById.size
+    ? [...jobsById.values()].map((j) => toJobRow(j, opts.now))
+    : undefined;
   const usage = sessionModel?.turns.reduce(
     (acc, t) =>
       t.usage
@@ -442,7 +519,7 @@ export function toThreadDetail(opts: {
     session: conv.engineRef ?? "",
     usage:
       usage && (usage.input || usage.output) ? usageLabel(usage) : undefined,
-    jobs: sessionModel?.jobs.map((j) => toJobRow(j, opts.now)),
+    jobs,
     entries,
   };
 }

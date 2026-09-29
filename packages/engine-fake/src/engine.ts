@@ -66,6 +66,8 @@ interface FakeJob {
   command: string;
   status: JobStatus;
   startedAt: number;
+  /** Set when the job exits — jobs.list freezes uptimeSeconds at it. */
+  endedAt?: number;
   exitCode?: number;
   url?: string;
   by?: string;
@@ -847,7 +849,8 @@ export class FakeEngine {
         command: j.command,
         status: j.status,
         startedAt: j.startedAt,
-        uptimeSeconds: Math.floor((now - j.startedAt) / 1000),
+        uptimeSeconds: Math.floor(((j.endedAt ?? now) - j.startedAt) / 1000),
+        ...(j.endedAt !== undefined ? { endedAt: j.endedAt } : {}),
         ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
         ...(j.url ? { url: j.url } : {}),
         ...(j.by ? { by: j.by } : {}),
@@ -874,10 +877,12 @@ export class FakeEngine {
     job.status = status;
     if (job.exitCode === undefined)
       job.exitCode = status === "stopped" ? 15 : 0;
+    job.endedAt = Date.now();
     this.emit(s, "job.exited", {
       jobId: job.jobId,
       status,
       exitCode: job.exitCode,
+      endedAt: job.endedAt,
     });
   }
 

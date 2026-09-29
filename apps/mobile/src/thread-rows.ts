@@ -7,6 +7,7 @@ import type {
   TurnPlan,
   TurnStep,
 } from "@lilos/client-runtime";
+import type { Job } from "@lilos/contracts/engine";
 import type {
   BackgroundJobRow,
   PlanRow,
@@ -59,7 +60,13 @@ export function toPlanRow(p: TurnPlan): PlanRow | undefined {
 /** `SubagentRow.dur` reads seconds; the model tracks ms. */
 export function toSubagentRow(
   s: SubagentModel,
-  resolveEmployee: (employeeRef: string) => string = (r) => r,
+  /* #181: the engine reports a helper's profile ref + session ref; LilOS
+     links speak in employee ids + conversation ids, so the caller maps both
+     (an unresolvable one keeps the ref as a plain label, like web). */
+  resolveEmployee?: (link: {
+    employeeRef: string;
+    sessionRef: string;
+  }) => SubagentRow["employee"],
 ): SubagentRow {
   return {
     id: s.subagentId,
@@ -71,17 +78,31 @@ export function toSubagentRow(
     ...(s.durationMs !== undefined
       ? { dur: Math.round(s.durationMs / 10) / 100 }
       : {}),
-    /* Another employee's helper: the engine reports its profile ref; without
-       a LilOS employee id the row renders neutral (name/task only). */
     ...(s.employee
       ? {
-          employee: {
-            id: resolveEmployee(s.employee.employeeRef),
-            name: resolveEmployee(s.employee.employeeRef),
+          employee: resolveEmployee?.(s.employee) ?? {
+            id: s.employee.employeeRef,
+            name: s.employee.employeeRef,
             tone: "stone" as const,
           },
         }
       : {}),
+  };
+}
+
+/** One `jobs.list` row as a JobModel so it merges under the event stream
+   (job.* wins when both list a jobId — web rule, dm.tsx). */
+export function listedJobModel(j: Job): JobModel {
+  return {
+    jobId: j.jobId,
+    command: j.command,
+    status: j.status,
+    ...(j.startedAt !== undefined ? { startedAt: j.startedAt } : {}),
+    ...(j.endedAt !== undefined ? { endedAt: j.endedAt } : {}),
+    ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
+    ...(j.url !== undefined ? { url: j.url } : {}),
+    ...(j.by !== undefined ? { by: j.by } : {}),
+    tail: j.tail ?? "",
   };
 }
 
@@ -101,7 +122,9 @@ export function toJobRow(j: JobModel, now = Date.now()): BackgroundJobRow {
     command: j.command,
     status: j.status,
     started: j.startedAt ? clock(j.startedAt) : "",
-    uptime: j.startedAt ? formatUptime((now - j.startedAt) / 1000) : "0s",
+    uptime: j.startedAt
+      ? formatUptime(((j.endedAt ?? now) - j.startedAt) / 1000)
+      : "0s",
     ...(j.url ? { url: j.url } : {}),
     ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
     log: j.tail,

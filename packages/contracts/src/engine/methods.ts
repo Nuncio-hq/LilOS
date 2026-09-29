@@ -242,6 +242,8 @@ export const Job = z.object({
   status: JobStatus,
   startedAt: z.int().min(0).optional(),
   uptimeSeconds: z.number().min(0).optional(),
+  /** Ms epoch the job stopped running — a finished job's uptime freezes here. */
+  endedAt: z.int().min(0).optional(),
   exitCode: z.int().optional(),
   url: z.string().min(1).optional(),
   by: z.string().min(1).optional(),

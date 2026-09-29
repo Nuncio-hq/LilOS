@@ -1057,7 +1057,7 @@ export function DmPage() {
               })
             : "",
           uptime: j.startedAt
-            ? formatUptime((jobsNow - j.startedAt) / 1000)
+            ? formatUptime(((j.endedAt ?? jobsNow) - j.startedAt) / 1000)
             : "0s",
           ...(j.url ? { url: j.url } : {}),
           ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
