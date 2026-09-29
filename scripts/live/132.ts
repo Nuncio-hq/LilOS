@@ -119,9 +119,7 @@ await waitForHttp(`http://127.0.0.1:${relayPort}`);
 out("launching LilOS (Electron)");
 const app = await _electron.launch({
   args:
-    process.platform === "linux"
-      ? [desktopDir, "--no-sandbox"]
-      : [desktopDir],
+    process.platform === "linux" ? [desktopDir, "--no-sandbox"] : [desktopDir],
   env: {
     ...process.env,
     LILOS_RELAY_HOME: home,
@@ -137,8 +135,8 @@ try {
 
   // The menu carries Settings… on ⌘,; Service Status has none.
   const menu = await app.evaluate(({ Menu }) =>
-    Menu.getApplicationMenu()?.items
-      .find((i) => i.label === "LilOS")
+    Menu.getApplicationMenu()
+      ?.items.find((i) => i.label === "LilOS")
       ?.submenu?.items.map((i) => ({
         id: i.id,
         label: i.label,
