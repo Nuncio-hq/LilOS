@@ -4,7 +4,9 @@
  * are inset into the sidebar's 56px header row — plus sidebar vibrancy so
  * the sidebar shows the desktop through the window's left column. The
  * renderer owns the drag regions (`-webkit-app-region`), so these options
- * are identical for the app and the status window.
+ * are identical for the app and the status window. Windows are
+ * square-cornered: a rounded silhouette leaves a corner notch no renderer
+ * surface can paint, so the desktop shows through as a light sliver.
  */
 
 import { DESKTOP_FULLSCREEN_CHANNEL } from "@lilos/contracts/app";
@@ -34,6 +36,10 @@ export function nativeWindowChrome(
     // Vibrancy needs the page to paint the window area transparently; the
     // renderer scopes that to html[data-desktop].
     backgroundColor: "#00000000",
+    // A rounded silhouette leaves an unpainted corner notch the desktop
+    // shows through; against light wallpaper it reads as a light sliver
+    // (issue #284). Square corners keep every edge uniform.
+    roundedCorners: false,
   };
 }
 

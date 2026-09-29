@@ -37,6 +37,14 @@ describe("window chrome options", () => {
     expect(nativeWindowChrome("status")).toEqual(nativeWindowChrome("app"));
     expect(nativeWindowChrome("app")).toEqual(nativeWindowChrome());
   });
+
+  it("#284 squares the window so no corner notch shows the desktop", () => {
+    // The rounded silhouette clips a notch the renderer cannot paint;
+    // on light wallpaper it reads as a light sliver at the top-right
+    // corner. roundedCorners:false removes the notch at every corner.
+    expect(nativeWindowChrome().roundedCorners).toBe(false);
+    expect(nativeWindowChrome("status").roundedCorners).toBe(false);
+  });
 });
 
 describe("full-screen reporting (AC-4)", () => {
