@@ -302,7 +302,8 @@ test("AC-2 saving a new persona + model writes the engine profile (agents.update
   // The still-open profile card reads the mirrored record — new soul + model.
   const card = page.getByRole("dialog", { name: /Default profile/ });
   await expect(card.getByText("You are Default v2.")).toBeVisible();
-  await expect(card.getByText("fake-small")).toBeVisible();
+  // #194: the card shows the model's display name, not the id.
+  await expect(card.getByText("Fake Small")).toBeVisible();
   await card.getByRole("button", { name: "Close" }).click();
 });
 
@@ -336,7 +337,12 @@ test("AC-4 a running session keeps its model; the next new session uses the upda
     .click();
 
   // A reply in the SAME conversation still runs on the start-time model.
+  // #195: the row opens the peek panel at /dm/e/c; its ↗ carries on to Focus.
   await openConvRow(page, "first session");
+  await page
+    .locator("[data-thread-panel]")
+    .getByTitle("Focus", { exact: true })
+    .click();
   await expect(page).toHaveURL(convUrl);
   await replyInSession(page, "still the old model");
   await expect(

@@ -9,6 +9,7 @@ import {
 } from "@lilos/contracts/engine";
 import { RpcError } from "./errors.js";
 import type { GatewayLike } from "./gateway.js";
+import { displayModelName } from "./model-label.js";
 
 /**
  * `agents` + `models` capabilities over `hermes serve` (#8).
@@ -313,7 +314,9 @@ export async function listModels(
           : undefined;
       models.push({
         id,
-        name: id,
+        /* Hermes reports ids only — the display name is derived with the
+           same rules Hermes Desktop's picker uses (model-label.ts, #194). */
+        name: displayModelName(id),
         provider: slug,
         ...(efforts ? { efforts } : {}),
         ...(cap?.fast === true ? { fast: true } : {}),

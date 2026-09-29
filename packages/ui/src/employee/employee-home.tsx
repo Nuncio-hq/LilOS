@@ -700,6 +700,7 @@ export function EmployeeCard({
   profiles,
   engineName,
   ownerName,
+  models,
   onDM,
   onEdit,
   onSwitchProfile,
@@ -710,6 +711,8 @@ export function EmployeeCard({
   engineName?: string;
   /** The signed-in human's name for the "owned by …" line (#118). */
   ownerName: string;
+  /** Catalog to resolve the model's display name; falls back to the id (#194). */
+  models?: ModelOption[];
   onDM: () => void;
   onEdit?: () => void;
   onSwitchProfile?: (profileId: string) => void;
@@ -745,7 +748,7 @@ export function EmployeeCard({
           <dt className="text-muted-foreground">Profile</dt>
           <dd className="font-mono text-xs">{e.profile}</dd>
           <dt className="text-muted-foreground">Model</dt>
-          <dd>{e.model}</dd>
+          <dd>{models?.find((m) => m.id === e.model)?.name ?? e.model}</dd>
           <dt className="text-muted-foreground">Now</dt>
           <dd>{e.now}</dd>
         </dl>

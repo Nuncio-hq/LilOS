@@ -174,9 +174,13 @@ test("AC-3/AC-4 placeholder then engine titles land live in header, list, search
   await page.screenshot({ path: `${SHOTS}/ac34-header-llm-title.png` });
 
   // AC-4: the session list row + title search show the engine title.
+  // #195: back out of Focus lands on the session's peek panel — the feed
+  // (and its session rows) stays mounted beside it.
   await page.goBack();
-  await expect(page).toHaveURL(/\/dm\/[^/]+$/, { timeout: 10_000 });
-  const row = page.getByText(STAGE[2]).first();
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_[^/]+$/, {
+    timeout: 10_000,
+  });
+  const row = page.locator("[data-session]", { hasText: STAGE[2] });
   await expect(row).toBeVisible({ timeout: 30_000 });
   await page.getByPlaceholder("Filter sessions").fill("Detail Please");
   await expect(row).toBeVisible();
@@ -216,8 +220,13 @@ test("AC-2 a mid-turn rename survives the late llm title", async ({ page }) => {
   // Finish the turn: the canned flow asks more than once — keep answering
   // "Allow once" until it completes; the llm title must not overwrite the
   // rename.
+  // The row opens the session's peek panel (#195) — the turn text lives
+  // there now, not in `main` (which stays the feed).
   await row.getByRole("button", { name: /\d+ repl(y|ies)/ }).click();
-  const doneOn = page.locator("main").getByText("Done on").first();
+  const doneOn = page
+    .locator("[data-thread-panel]")
+    .getByText("Done on")
+    .first();
   const deadline = Date.now() + 60_000;
   for (;;) {
     if (await doneOn.isVisible().catch(() => false)) break;

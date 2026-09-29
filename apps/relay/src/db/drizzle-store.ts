@@ -24,6 +24,7 @@ import {
   lte,
   max,
   ne,
+  notLike,
   or,
   sql,
 } from "drizzle-orm";
@@ -41,7 +42,13 @@ import type {
   RelayStore,
   ResolveAskInput,
 } from "../store";
-import { newId, openTitle, searchTerms, titlePatch } from "../store";
+import {
+  NO_FOLDER_DEDUPE_LIKE,
+  newId,
+  openTitle,
+  searchTerms,
+  titlePatch,
+} from "../store";
 import * as schema from "./schema";
 
 type Db = BunSQLiteDatabase<typeof schema>;
@@ -178,11 +185,24 @@ export function createDrizzleStore(db: Db): RelayStore {
     return { message: appMessage, created: true };
   };
 
+  /* #196: retired "No folder:" notes stay in the table but never read out
+     (their dedupe key marks them; NULL = a normal message). */
+  const messageVisible = () =>
+    or(
+      isNull(schema.messages.dedupeKey),
+      notLike(schema.messages.dedupeKey, NO_FOLDER_DEDUPE_LIKE),
+    );
+
   const conversationMessages = (conversationId: string) =>
     db
       .select()
       .from(schema.messages)
-      .where(eq(schema.messages.conversationId, conversationId))
+      .where(
+        and(
+          eq(schema.messages.conversationId, conversationId),
+          messageVisible(),
+        ),
+      )
       .orderBy(asc(schema.messages.seq))
       .all();
 
@@ -528,8 +548,9 @@ export function createDrizzleStore(db: Db): RelayStore {
           ? and(
               eq(schema.messages.channelId, channelId),
               eq(schema.messages.conversationId, conversationId),
+              messageVisible(),
             )
-          : eq(schema.messages.channelId, channelId),
+          : and(eq(schema.messages.channelId, channelId), messageVisible()),
         ...(includeRewound ? [] : [eq(schema.messages.rewound, false)]),
       );
       const rows =
@@ -584,6 +605,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         LEFT JOIN conversations c ON c.id = m.conversation_id
         WHERE messages_fts MATCH ${match}
           AND m.rewound = 0
+          AND (m.dedupe_key IS NULL OR m.dedupe_key NOT LIKE ${NO_FOLDER_DEDUPE_LIKE})
           ${channelId ? sql`AND m.channel_id = ${channelId}` : sql``}
           ${includeArchived ? sql`` : sql`AND (c.id IS NULL OR c.archived = 0)`}
         ORDER BY bm25(messages_fts), m.created_at DESC

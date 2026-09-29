@@ -21,6 +21,16 @@ import type {
 } from "@lilos/contracts/app";
 import type { ApprovalOutcome, EngineRequest } from "@lilos/contracts/engine";
 
+/**
+ * Retired system notes dropped on read (#196): the "No folder: working in
+ * …" note a pre-#196 harness stored under `sys:<conversationId>:no-folder`
+ * (#113 AC-6, superseded). `NO_FOLDER_DEDUPE_LIKE` is its SQL LIKE shape for
+ * the SQLite store; `noFolderDedupeKey` the row predicate for the memory one.
+ */
+export const NO_FOLDER_DEDUPE_LIKE = "sys:%:no-folder";
+export const noFolderDedupeKey = (key: string | null | undefined): boolean =>
+  !!key && key.startsWith("sys:") && key.endsWith(":no-folder");
+
 export interface NewEmployee {
   name: string;
   role: string;
@@ -468,9 +478,11 @@ export function createMemoryStore(): RelayStore {
   const now = () => Date.now();
   /** (channelId, dedupeKey) -> stored message id; side table so the wire type stays clean. */
   const dedupe = new Map<string, string>();
+  /** Ids of retired notes kept in storage but never read out (#196). */
+  const hiddenIds = new Set<string>();
   const channelMessages = (channelId: string) =>
     [...messages.values()]
-      .filter((m) => m.channelId === channelId)
+      .filter((m) => m.channelId === channelId && !hiddenIds.has(m.id))
       .sort((a, b) => a.seq - b.seq);
 
   const appendMessage = (
@@ -487,7 +499,10 @@ export function createMemoryStore(): RelayStore {
     if (input.dedupeKey) {
       const existingId = dedupe.get(`${input.channelId}|${input.dedupeKey}`);
       const existing = existingId ? messages.get(existingId) : undefined;
-      if (existing) return { message: existing, created: false };
+      if (existing) {
+        if (noFolderDedupeKey(input.dedupeKey)) hiddenIds.add(existing.id);
+        return { message: existing, created: false };
+      }
     }
     const seq = channel.lastSeq + 1;
     channel.lastSeq = seq;
@@ -508,6 +523,7 @@ export function createMemoryStore(): RelayStore {
       attachments: input.attachments,
     };
     messages.set(message.id, message);
+    if (noFolderDedupeKey(input.dedupeKey)) hiddenIds.add(message.id);
     if (input.dedupeKey) {
       dedupe.set(`${input.channelId}|${input.dedupeKey}`, message.id);
     }
@@ -516,7 +532,9 @@ export function createMemoryStore(): RelayStore {
 
   const conversationMessages = (conversationId: string) =>
     [...messages.values()]
-      .filter((m) => m.conversationId === conversationId)
+      .filter(
+        (m) => m.conversationId === conversationId && !hiddenIds.has(m.id),
+      )
       .sort((a, b) => a.seq - b.seq);
   const visible = (list: AppMessage[]) => list.filter((m) => !m.rewound);
 
@@ -718,6 +736,7 @@ export function createMemoryStore(): RelayStore {
       if (!terms.length) return [];
       const hits: MessageSearchHit[] = [];
       for (const m of messages.values()) {
+        if (hiddenIds.has(m.id)) continue;
         if (channelId && m.channelId !== channelId) continue;
         // Hidden messages don't surface as search hits (#134).
         if (m.rewound) continue;

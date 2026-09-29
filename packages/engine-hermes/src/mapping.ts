@@ -2,6 +2,8 @@ import type {
   ApprovalOption,
   ApprovalOutcome,
   EngineRequest,
+  Job,
+  JobStatus,
   QuestionRequest,
   StopReason,
   Usage,
@@ -143,6 +145,92 @@ export function approvalOutcomeToResult(outcome: ApprovalOutcome): {
     default:
       return { choice: "deny" };
   }
+}
+
+/* ── #179: subagent.* / process.* wire shapes ─────────────────────────────── */
+
+/** Hermes `SubagentStatus` -> protocol subagent.completed status. */
+export function mapSubagentStatus(
+  status: unknown,
+): "done" | "failed" | "stopped" {
+  switch (status) {
+    case "interrupted":
+      return "stopped";
+    case "failed":
+    case "error":
+    case "timeout":
+      return "failed";
+    default:
+      return "done"; // completed + anything unrecognized
+  }
+}
+
+/** First localhost URL in text — a dev server/banner URL for the job row. */
+export function firstLocalUrl(text: string): string | undefined {
+  const m =
+    /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?\/?/i.exec(text);
+  return m?.[0];
+}
+
+/** `process.list` row status+completion_reason -> protocol JobStatus. */
+export function mapProcessStatus(row: Record<string, unknown>): JobStatus {
+  if (row.status === "running") return "running";
+  switch (row.completion_reason) {
+    case "killed":
+      return "stopped";
+    case "failed_start":
+      return "failed";
+    default:
+      return "exited"; // exited | lost | already_exited
+  }
+}
+
+/** A `process.list` row -> one protocol `Job` row. */
+export function mapProcessRow(row: Record<string, unknown>): Job | undefined {
+  const jobId = typeof row.session_id === "string" ? row.session_id : "";
+  if (!jobId) return undefined;
+  const startedAt = Date.parse(String(row.started_at ?? ""));
+  const status = mapProcessStatus(row);
+  return {
+    jobId,
+    command:
+      typeof row.command === "string" && row.command ? row.command : jobId,
+    status,
+    ...(Number.isFinite(startedAt) ? { startedAt } : {}),
+    ...(typeof row.uptime_seconds === "number"
+      ? { uptimeSeconds: row.uptime_seconds }
+      : {}),
+    ...(typeof row.exit_code === "number" ? { exitCode: row.exit_code } : {}),
+    ...(typeof row.output_tail === "string" && row.output_tail
+      ? { tail: row.output_tail }
+      : {}),
+  };
+}
+
+/** A tool result that may arrive as a JSON string or an object. */
+export function parseToolResultJson(
+  result: unknown,
+): Record<string, unknown> | undefined {
+  let r = result;
+  if (typeof r === "string") {
+    try {
+      r = JSON.parse(r);
+    } catch {
+      return undefined;
+    }
+  }
+  return typeof r === "object" && r !== null
+    ? (r as Record<string, unknown>)
+    : undefined;
+}
+
+/** Any stable key a subagent.* frame can offer (SubagentEventPayload). */
+export function subagentKey(p: Record<string, unknown>): string | undefined {
+  const id = p.subagent_id ?? p.child_session_id;
+  if (id !== undefined && id !== null && String(id)) return String(id);
+  const idx = typeof p.task_index === "number" ? p.task_index : undefined;
+  if (idx === undefined) return undefined;
+  return `${String(p.delegation_id ?? p.parent_id ?? "d")}:${idx}`;
 }
 
 /** Tool completion status: hermes result fields -> protocol status. */

@@ -308,7 +308,9 @@ test("AC-1/4 restart keeps conversations listed; filter narrows them", async ({
   // The reply preview can land in the home feed before the send's async
   // navigate commits — wait for the thread URL instead of racing it (#103).
   await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_/, { timeout: 10_000 });
-  convUrl = page.url();
+  // A send lands on /focus; the conversation URL the panel opens at is it
+  // without the /focus tail (#195 — a click re-opens the peek, not Focus).
+  convUrl = page.url().replace(/\/focus$/, "");
 
   // Full app restart — same LILOS_HOME, new processes. Detach the page
   // while vite is down: a stale vite ws client reloads on reconnect, and

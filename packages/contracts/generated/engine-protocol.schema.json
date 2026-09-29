@@ -848,6 +848,10 @@
                             "type": "string"
                           },
                           "additionalProperties": {}
+                        },
+                        "parentToolCallId": {
+                          "type": "string",
+                          "minLength": 1
                         }
                       },
                       "required": [
@@ -995,6 +999,10 @@
                             "files"
                           ],
                           "additionalProperties": false
+                        },
+                        "parentToolCallId": {
+                          "type": "string",
+                          "minLength": 1
                         }
                       },
                       "required": [
@@ -1349,6 +1357,289 @@
                       "required": [
                         "turnId",
                         "stopReason"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "sessionId",
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "type": {
+                      "type": "string",
+                      "const": "subagent.started"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "turnId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "subagentId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "task": {
+                          "type": "string"
+                        },
+                        "parentToolCallId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "employee": {
+                          "type": "object",
+                          "properties": {
+                            "employeeRef": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "sessionRef": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "employeeRef",
+                            "sessionRef"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "turnId",
+                        "subagentId",
+                        "name",
+                        "task"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "sessionId",
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "type": {
+                      "type": "string",
+                      "const": "subagent.completed"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "subagentId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "done",
+                            "failed",
+                            "stopped"
+                          ]
+                        },
+                        "result": {
+                          "type": "string"
+                        },
+                        "durationMs": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "subagentId",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "sessionId",
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "type": {
+                      "type": "string",
+                      "const": "job.started"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "jobId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "command": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "startedAt": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "url": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "by": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "jobId",
+                        "command"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "sessionId",
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "type": {
+                      "type": "string",
+                      "const": "job.output"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "jobId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "tail": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "jobId",
+                        "tail"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "sessionId",
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "type": {
+                      "type": "string",
+                      "const": "job.exited"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "jobId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "exited",
+                            "failed",
+                            "stopped"
+                          ]
+                        },
+                        "exitCode": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "jobId",
+                        "status"
                       ],
                       "additionalProperties": false
                     }
@@ -2229,6 +2520,126 @@
         ],
         "additionalProperties": false
       }
+    },
+    "jobs.list": {
+      "doc": "List the engine-owned background processes of a session — the truth list a client re-reads after reconnect (job.* events are the live stream).",
+      "capability": "background_jobs",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "sessionId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "jobId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "command": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "running",
+                    "exited",
+                    "failed",
+                    "stopped"
+                  ]
+                },
+                "startedAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "uptimeSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "exitCode": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "url": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "by": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "tail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "jobId",
+                "command",
+                "status"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "jobs.stop": {
+      "doc": "Stop a background process by the jobId from job.started / jobs.list. The stop lands as a job.exited event with status stopped.",
+      "capability": "background_jobs",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "jobId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "sessionId",
+          "jobId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "stopped": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stopped"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "notifications": {
@@ -2563,6 +2974,10 @@
                       "type": "string"
                     },
                     "additionalProperties": {}
+                  },
+                  "parentToolCallId": {
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "required": [
@@ -2710,6 +3125,10 @@
                       "files"
                     ],
                     "additionalProperties": false
+                  },
+                  "parentToolCallId": {
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "required": [
@@ -3064,6 +3483,289 @@
                 "required": [
                   "turnId",
                   "stopReason"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "seq",
+              "sessionId",
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "const": "subagent.started"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "turnId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "subagentId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "task": {
+                    "type": "string"
+                  },
+                  "parentToolCallId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "employee": {
+                    "type": "object",
+                    "properties": {
+                      "employeeRef": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "sessionRef": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "employeeRef",
+                      "sessionRef"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "turnId",
+                  "subagentId",
+                  "name",
+                  "task"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "seq",
+              "sessionId",
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "const": "subagent.completed"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "subagentId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "done",
+                      "failed",
+                      "stopped"
+                    ]
+                  },
+                  "result": {
+                    "type": "string"
+                  },
+                  "durationMs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "subagentId",
+                  "status"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "seq",
+              "sessionId",
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "const": "job.started"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "jobId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "startedAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "url": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "by": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "jobId",
+                  "command"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "seq",
+              "sessionId",
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "const": "job.output"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "jobId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "tail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "jobId",
+                  "tail"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "seq",
+              "sessionId",
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "const": "job.exited"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "jobId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "exited",
+                      "failed",
+                      "stopped"
+                    ]
+                  },
+                  "exitCode": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "jobId",
+                  "status"
                 ],
                 "additionalProperties": false
               }

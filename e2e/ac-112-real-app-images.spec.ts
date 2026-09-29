@@ -433,7 +433,8 @@ test("AC-3 thumbnails render from stored refs, survive reload + reopen", async (
     .locator("[data-session]", { hasText: "look at this" })
     .getByRole("button", { name: /repl/i })
     .click();
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  // #195: the row opens the peek panel — the conversation URL, not /focus.
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
   await expect(
     page.locator('[data-attachments] img[alt="stored.png"]').first(),
   ).toBeVisible();

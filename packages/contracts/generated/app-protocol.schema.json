@@ -414,6 +414,8 @@
         "agents.create",
         "agents.update",
         "models.list",
+        "jobs.list",
+        "jobs.stop",
         "pairing.offer",
         "pairing.disable",
         "devices.list",

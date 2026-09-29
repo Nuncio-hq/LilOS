@@ -141,6 +141,9 @@ export class RelayClient {
   readonly employees: WritableAtom<Employee[]> = atom([]);
   readonly channels: WritableAtom<AppChannel[]> = atom([]);
   readonly conversations: WritableAtom<Conversation[]> = atom([]);
+  /** True once the first directory refresh has landed — until then the list
+      atoms above are empty snapshots, not "no rows" (#193). */
+  readonly directoryReady: WritableAtom<boolean> = atom(false);
   /** Relay-owned profile (#118) — `{}` on an untouched install; the app
       layers OS-derived prefill on top (AC-4). */
   readonly profile: WritableAtom<ProfileSettings> = atom({});
@@ -690,6 +693,15 @@ export class RelayClient {
   }
 
   private async refreshDirectory(): Promise<void> {
+    /* `devices.list` is pairing admin: the relay refuses it for a paired
+       phone (device scope). It must not sink the rest of the directory —
+       one rejected read inside the Promise.all below used to leave a phone
+       with an empty Home. Only token-scope clients (the Mac) ask for it. */
+    const devicesRead = this.options.device
+      ? Promise.resolve(undefined)
+      : this.request<{ devices: PairedDevice[] }>("devices.list", {}).catch(
+          () => undefined,
+        );
     try {
       const [employees, channels, conversations, summaries, settings, devices] =
         await Promise.all([
@@ -705,14 +717,15 @@ export class RelayClient {
             { includeArchived: true },
           ),
           this.request<{ profile: ProfileSettings }>("profile.get", {}),
-          this.request<{ devices: PairedDevice[] }>("devices.list", {}),
+          devicesRead,
         ]);
       this.employees.set(employees.employees);
       this.channels.set(channels.channels);
       this.conversations.set(conversations.conversations);
       this.conversationSummaries.set(summaries.summaries);
       this.profile.set(settings.profile);
-      this.devices.set(devices.devices);
+      if (devices) this.devices.set(devices.devices);
+      this.directoryReady.set(true);
     } catch {
       // Directory refresh is best-effort on reconnect; stores keep stale data.
     }

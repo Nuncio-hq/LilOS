@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { accessSync, constants } from "node:fs";
+import { networkInterfaces } from "node:os";
 
 /**
  * Tailscale self-address lookup (#153) — the injectable seam between the
@@ -101,6 +103,7 @@ export type TailscaleProbeResult =
  */
 export function probeTailscale(
   bin = "tailscale",
+  env: Record<string, string | undefined> = process.env,
 ): Promise<TailscaleProbeResult> {
   return new Promise((resolve) => {
     let done = false;
@@ -114,6 +117,10 @@ export function probeTailscale(
     try {
       child = spawn(bin, ["status", "--json"], {
         stdio: ["ignore", "pipe", "pipe"],
+        // The binary inside Tailscale.app decides between CLI and GUI from
+        // its environment; under launchd (no TERM/SHLVL) it tries to start
+        // the GUI and fails (#203). This asks it for the CLI explicitly.
+        env: { ...env, TAILSCALE_BE_CLI: "1" },
       });
     } catch {
       finish({ ok: false, reason: "missing" });
@@ -151,14 +158,73 @@ export function probeTailscale(
 }
 
 /**
+ * Where the Tailscale CLI lives on a Mac, most specific first (#203). The
+ * installed app's relay runs as a LaunchAgent with
+ * `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, so a bare `tailscale` is never
+ * found there. The app bundle comes before Homebrew: a Homebrew
+ * `tailscale` talks to its own `tailscaled`, not the one the Tailscale app
+ * runs, and reports it logged out.
+ */
+export const TAILSCALE_CLI_CANDIDATES: readonly string[] = [
+  "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+  "/Applications/Tailscale.app/Contents/MacOS/tailscale",
+  "/usr/local/bin/tailscale",
+  "/opt/homebrew/bin/tailscale",
+];
+
+function isExecutable(path: string): boolean {
+  try {
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** First executable candidate, else bare `tailscale` (PATH) as last resort. */
+export function resolveTailscaleBin(
+  candidates: readonly string[] = TAILSCALE_CLI_CANDIDATES,
+  exists: (path: string) => boolean = isExecutable,
+): string {
+  return candidates.find(exists) ?? "tailscale";
+}
+
+type Interfaces = ReturnType<typeof networkInterfaces>;
+
+/**
+ * No CLI at all: read this Mac's interfaces for a CGNAT IPv4 (#203). Gives
+ * an IP but no MagicDNS name. Never loopback (D-#153): only 100.64.0.0/10
+ * addresses qualify.
+ */
+export function tailscaleFromInterfaces(
+  ifaces: Interfaces = networkInterfaces(),
+): TailscaleSelf | null {
+  const ipv4s = Object.values(ifaces)
+    .flatMap((list) => list ?? [])
+    .filter(
+      (a) =>
+        a.family === "IPv4" && !a.internal && isTailscaleIpv4Address(a.address),
+    )
+    .map((a) => a.address);
+  return ipv4s.length > 0 ? { ipv4s } : null;
+}
+
+/**
  * Resolve which probe the relay uses. `LILOS_RELAY_TAILSCALE_IP` (with
  * optional `LILOS_RELAY_TAILSCALE_NAME`) pins a static self-identity — the
  * dev/test seam for machines without tailscaled (CI, this repo's e2e).
  * `LILOS_TAILSCALE_BIN` overrides the binary path (a fake CLI in tests).
- * The default is the real CLI probe.
+ * The default is the real CLI probe, with the binary found at a known
+ * install location rather than on PATH (#203). Only when no CLI exists at
+ * all does it fall back to this Mac's interfaces.
  */
 export function resolveTailscaleProbe(
   env: Record<string, string | undefined> = process.env,
+  deps: {
+    candidates?: readonly string[];
+    exists?: (path: string) => boolean;
+    interfaces?: () => Interfaces;
+  } = {},
 ): () => Promise<TailscaleProbeResult> {
   const ip = env.LILOS_RELAY_TAILSCALE_IP;
   if (ip) {
@@ -168,6 +234,15 @@ export function resolveTailscaleProbe(
       self: { ipv4s: [ip], ...(name ? { dnsName: name } : {}) },
     });
   }
-  const bin = env.LILOS_TAILSCALE_BIN ?? "tailscale";
-  return () => probeTailscale(bin);
+  const pinned = env.LILOS_TAILSCALE_BIN;
+  return async () => {
+    // Resolved per probe: installing Tailscale while LilOS runs just works.
+    const bin = pinned ?? resolveTailscaleBin(deps.candidates, deps.exists);
+    const result = await probeTailscale(bin, env);
+    if (result.ok || result.reason !== "missing" || pinned) return result;
+    const self = tailscaleFromInterfaces(
+      deps.interfaces ? deps.interfaces() : undefined,
+    );
+    return self ? { ok: true, self } : result;
+  };
 }

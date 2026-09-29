@@ -13,6 +13,7 @@ import type {
   PullRequest,
   Reply,
   Thread,
+  Workspace,
 } from "../src/types";
 
 /* happy-dom does not implement every browser API the vendored components touch. */
@@ -400,5 +401,83 @@ describe("issue #31 — images sent with the message show in the thread panel", 
     expect(chips).toBeTruthy();
     expect(chips?.textContent).toContain("shot.png");
     expect(chips?.querySelector("img")?.getAttribute("alt")).toBe("shot.png");
+  });
+});
+
+describe("issue #196 — a folder-less DM session is a plain chat", () => {
+  /* The real DM page passes work={null} and no repo to the panel. */
+  const dmPanelProps = { ...panelProps, repo: undefined } as const;
+  const wsFolder: Workspace = {
+    folder: "/repo",
+    project: "repo",
+    mode: "direct",
+    base: "main",
+    branch: "main",
+    cwd: "/repo",
+  };
+
+  test("AC-2 Focus: no folder means no chip at all and a neutral hint", () => {
+    const focus = render(
+      <FocusView {...focusProps} channel={dmChannel} lead={BUILDER} />,
+    );
+    expect(focus.container.querySelector("[data-wsbadge]")).toBeNull();
+    expect(focus.container.textContent).not.toMatch(/read-only/i);
+    expect(focus.container.textContent).not.toContain("no git repo");
+    expect(within(focus.container).getByText("Reply to Builder…")).toBeTruthy();
+  });
+
+  test("AC-2 Focus keeps today's folder surfaces: ws badge, branch chip, no-git-repo chip", () => {
+    const ws = render(
+      <FocusView
+        {...focusProps}
+        channel={dmChannel}
+        thread={{ ...thread, ws: wsFolder }}
+      />,
+    );
+    expect(ws.container.querySelector("[data-wsbadge]")).toBeTruthy();
+    expect(ws.container.textContent).toContain("main");
+    cleanup();
+    const branch = render(
+      <FocusView
+        {...focusProps}
+        channel={dmChannel}
+        work={{ ticket: "", title: "t", path: "/repo", branch: "main" }}
+      />,
+    );
+    expect(within(branch.container).getByText("main")).toBeTruthy();
+    expect(
+      within(branch.container).getByText("Edits go to ⎇ main"),
+    ).toBeTruthy();
+    cleanup();
+    const plain = render(
+      <FocusView
+        {...focusProps}
+        channel={dmChannel}
+        work={{ ticket: "", title: "t", path: "/plain" }}
+      />,
+    );
+    expect(within(plain.container).getByText("no git repo")).toBeTruthy();
+  });
+
+  test("AC-2 panel: no 'discussion' chip and a neutral hint for a no-folder session", () => {
+    const dm = render(<ThreadView {...dmPanelProps} channel={dmChannel} />);
+    expect(dm.container.querySelector("[data-wsbadge]")).toBeNull();
+    expect(dm.container.textContent).not.toContain("discussion");
+    expect(dm.container.textContent).not.toMatch(/read-only/i);
+    expect(within(dm.container).getByText("Reply to Builder…")).toBeTruthy();
+  });
+
+  test("AC-2 a channel thread keeps the read-only chip and main hint", () => {
+    const focus = render(<FocusView {...focusProps} />);
+    expect(within(focus.container).getByText("read-only")).toBeTruthy();
+    expect(within(focus.container).getByText("Read-only on main")).toBeTruthy();
+    cleanup();
+    const panel = render(<ThreadView {...panelProps} channel={channel} />);
+    expect(within(panel.container).getByText(/main · read-only/)).toBeTruthy();
+    expect(
+      within(panel.container).getByText(
+        "Read-only on main. Start work to edit code.",
+      ),
+    ).toBeTruthy();
   });
 });

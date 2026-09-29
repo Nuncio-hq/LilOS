@@ -396,6 +396,12 @@ export class Harness {
           ...(agent.soul ? { instructions: agent.soul } : {}),
         },
       );
+      // The web hire path opens the DM channel up front so the employee's DM
+      // never renders a perpetual skeleton (hireEmployee); the first-run
+      // hire does the same (#193). `channels.openDm` is idempotent.
+      await this.opts.relay.request("channels.openDm", {
+        employeeId: created.employee.id,
+      });
       this.opts.log.info("hired first employee", {
         employeeId: created.employee.id,
         agent: agent.id,
@@ -1074,16 +1080,6 @@ export class Harness {
       engineRef: started.sessionId,
       state: "active",
     });
-    // #113 AC-6: a session opened without a picked folder says where the
-    // agent actually works (the harness default). Deduped — a rebind after
-    // restart does not repost it.
-    if (!conv.cwd) {
-      await this.postSystem(
-        binding,
-        `No folder: working in ${collapsePath(this.opts.workdir)}`,
-        `sys:${conv.id}:no-folder`,
-      );
-    }
     return binding;
   }
 

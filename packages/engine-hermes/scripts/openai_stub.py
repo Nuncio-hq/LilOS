@@ -14,6 +14,19 @@ LLM). One HTTP server, stdlib only. Behaviour keyed on the last user message:
                                      makes for the approval/resume prompts —
                                      emitted once (until a tool result lands),
                                      then a text turn
+- contains "LILOS_DELEGATE"        -> tool_call `delegate_task` with a
+                                     three-task batch (#179 subagents) once,
+                                     then text after its result lands
+- contains "LILOS_CHILD"          -> the spawned children: tool_call
+                                     `terminal` echo once, then text — so a
+                                     child tool call nests under the
+                                     delegate call (parentToolCallId)
+- contains "LILOS_BG"              -> tool_call `terminal` with
+                                     background=true running `python3 -m
+                                     http.server` (prints an http:// URL),
+                                     then text
+- contains "LILOS_BG_EXIT"         -> tool_call `terminal` background=true on
+                                     a command that exits at once, then text
 - contains "Explain the relay package" -> tool_call `read_file` (read-only,
                                      no approval), then text
 - contains "Context builder"      -> "LILOS_OK" — since #76 the foldable
@@ -44,6 +57,16 @@ EDIT = "Fix the README title"
 READ = "Explain the relay package"
 CHMOD = "chmod 777"
 CHMOD_COMMAND = "chmod 777 README.md"
+DELEGATE = "LILOS_DELEGATE"
+CHILD = "LILOS_CHILD"
+BG = "LILOS_BG"
+BG_EXIT = "LILOS_BG_EXIT"
+# A long-running server whose banner carries an http://0.0.0.0 URL — the
+# engine's URL sniffing reads it into the job row.
+BG_COMMAND = "python3 -m http.server 8765 --bind 0.0.0.0"
+# Lives ~1s first: a process that dies inside the spawn window never reaches
+# the registry's running row, so the close/exit frame would never fire.
+BG_EXIT_COMMAND = "sleep 1 && echo LILOS_BUILD_DONE"
 
 
 def _log(rec):
@@ -99,21 +122,65 @@ def _decide(body):
         # gate on "no tool result yet" instead or this re-emits forever.
         if CHMOD in last and not _has_tool_result(body):
             return "tool_call", "terminal"
+        # #179: one delegate batch / one background terminal per prompt,
+        # then a plain-text finish once the tool result lands.
+        if DELEGATE in last and not _has_tool_result(body):
+            return "tool_call", "delegate_task"
+        if CHILD in last and not _has_tool_result(body):
+            return "tool_call", "terminal_child"
+        # BG_EXIT before BG: "LILOS_BG" is a prefix of "LILOS_BG_EXIT".
+        if BG_EXIT in last and not _has_tool_result(body):
+            return "tool_call", "terminal_bg_exit"
+        if BG in last and not _has_tool_result(body):
+            return "tool_call", "terminal_bg"
+    if (
+        DELEGATE in last
+        or BG_EXIT in last
+        or BG in last
+        or CHILD in last
+    ):
+        return "text", "LILOS_OK"
     return "text", "LILOS_E2E_OK " + last[:40]
 
 
 def _tool_call(name):
+    # terminal_bg* are scenario keys; the wire name is always `terminal`.
+    wire = {
+        "terminal_bg": "terminal",
+        "terminal_bg_exit": "terminal",
+        "terminal_child": "terminal",
+    }.get(name, name)
     if name == "execute_code":
         args = {"code": f'print("LILOS_TOOL_DONE {NONCE}")'}
     elif name == "terminal":
         args = {"command": CHMOD_COMMAND}
+    elif name == "delegate_task":
+        args = {
+            "tasks": [
+                {"goal": "LILOS_CHILD scan the checkout", "context": "live-179"},
+                {"goal": "LILOS_CHILD verify the findings", "context": "live-179"},
+                {"goal": "LILOS_CHILD draft the summary", "context": "live-179"},
+            ]
+        }
+    elif name == "terminal_child":
+        args = {"command": "echo LILOS_CHILD_DONE"}
+    elif name == "terminal_bg":
+        args = {"command": BG_COMMAND, "background": True}
+    elif name == "terminal_bg_exit":
+        args = {
+            "command": BG_EXIT_COMMAND,
+            "background": True,
+            "notify_on_complete": True,
+        }
     else:
         args = {"path": "README.md"}
     return {
         "id": "call_" + uuid.uuid4().hex[:24],
         "type": "function",
-        "function": {"name": name, "arguments": json.dumps(args)},
+        "function": {"name": wire, "arguments": json.dumps(args)},
     }
+
+
 
 
 def _sse(body, kind, text):

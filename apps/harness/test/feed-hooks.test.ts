@@ -501,6 +501,32 @@ describe("steer capability gating", () => {
 });
 
 describe("first-run auto-hire", () => {
+  /* AC-3 (#193): the first-run hire must leave a DM channel behind — the
+     same `channels.openDm` the web hire path makes — or the new employee's
+     DM renders a perpetual skeleton. */
+  it("AC-3 opens a DM channel for the auto-hired employee", async () => {
+    const w = await setupWorld();
+    try {
+      const employees = await waitFor(async () => {
+        const { employees } = await w.user.request<{
+          employees: { id: string }[];
+        }>("employees.list", {});
+        return employees.length > 0 ? employees : undefined;
+      }, "auto-hired employee");
+      const channel = await waitFor(async () => {
+        const { channels } = await w.user.request<{
+          channels: { id: string; kind: string; employeeId?: string }[];
+        }>("channels.list", {});
+        return channels.find(
+          (c) => c.kind === "dm" && c.employeeId === employees[0].id,
+        );
+      }, "DM channel for the auto-hired employee");
+      expect(channel).toBeTruthy();
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("hires the `default` engine profile when the roster is empty", async () => {
     const w = await setupWorld();
     try {

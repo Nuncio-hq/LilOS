@@ -302,9 +302,14 @@ test("AC-7 model display names — picker groups and the turn footer", async ({
   await trigger.click();
   // Picker v2: the popover's "Model ›" row drills into the grouped list.
   await page.getByRole("button", { name: /Model$/ }).click();
-  const group = page.getByRole("group", { name: "Fake", exact: true });
-  await expect(group).toBeVisible();
-  await expect(group.getByText("Fake Small")).toBeVisible();
+  // #194: the heading carries the provider's display name + count; the
+  // session's own provider (fake) starts expanded.
+  const fake = page.locator("[cmdk-group-heading]", { hasText: "Fake" });
+  await expect(fake).toBeVisible();
+  await expect(fake).toContainText("Fake");
+  await expect(
+    page.locator("[cmdk-item]", { hasText: "Fake Small" }),
+  ).toBeVisible();
   await expect(
     page.getByRole("group", { name: "fake", exact: true }),
   ).toHaveCount(0);

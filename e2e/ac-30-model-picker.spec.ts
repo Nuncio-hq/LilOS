@@ -44,6 +44,15 @@ const option = (page: Page, name: string) =>
   page.locator("[cmdk-item]", {
     hasText: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
   });
+/* #194: non-current provider groups start collapsed. Picking via the search
+   box is the real path — it expands matches across every provider. */
+const searchPick = async (page: Page, name: string) => {
+  await page.locator('[data-slot="command-input"]').fill(name);
+  await option(page, name).click();
+};
+/* A collapsed group's heading (name + count) and its toggle button. */
+const groupHeading = (page: Page, name: string) =>
+  page.locator("[cmdk-group-heading]", { hasText: name });
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -59,14 +68,16 @@ test("AC-1 picker lists engine models grouped by provider", async ({
   await sendDM(page, "Check the relay reconnect plan");
   await openModelList(page, "last");
   // The live catalog (engine-fake via /api/engine) lands under its provider group,
-  // beside the Hermes-shaped providers (engine-named groups).
-  const fake = page.getByRole("group", { name: "Fake", exact: true });
-  await expect(fake).toBeVisible();
-  await expect(fake.getByText("Fake Small")).toBeVisible();
-  await expect(fake.getByText("Fake Reasoning")).toBeVisible();
-  await expect(
-    page.getByRole("group", { name: "Anthropic – CLIProxyAPI" }),
-  ).toBeVisible();
+  // beside the Hermes-shaped providers (engine-named groups). #194: only the
+  // current model's group opens by default — the Fake heading shows name+count
+  // and expands on click.
+  const fakeHeading = groupHeading(page, "Fake");
+  await expect(fakeHeading).toContainText("4");
+  await expect(option(page, "Fake Small")).toHaveCount(0);
+  await fakeHeading.locator("button").click();
+  await expect(option(page, "Fake Small")).toBeVisible();
+  await expect(option(page, "Fake Reasoning")).toBeVisible();
+  await expect(groupHeading(page, "Anthropic – CLIProxyAPI")).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -84,7 +95,7 @@ test("AC-2 the next turn runs on the picked model (turn metadata)", async ({
     timeout: 60_000,
   });
   await openModelList(page, "last");
-  await option(page, "Fake Reasoning").click();
+  await searchPick(page, "Fake Reasoning");
   await page.keyboard.press("Escape");
   await expect(triggers(page).last()).toContainText("Fake Reasoning");
   const box = page.getByPlaceholder(/Reply to Builder/);
@@ -125,7 +136,7 @@ test("v2 new session: pick model + effort + fast first; the next new session sta
   // No per-level tick buttons: you drag (Codex-style).
   await expect(page.getByRole("button", { name: "Ultra" })).toHaveCount(0);
   await page.getByRole("button", { name: /Model$/ }).click();
-  await option(page, "GPT-6 Astra").click();
+  await searchPick(page, "GPT-6 Astra");
   // Astra reports its own levels: Low … Max (5 steps).
   await expect(slider).toHaveAttribute("max", "4");
   await page.getByRole("button", { name: "Fast mode" }).click();
@@ -167,7 +178,7 @@ test("v2 a model without reasoning control shows no slider", async ({
   await page.goto("/");
   await openBuilder(page);
   await openModelList(page, "first");
-  await option(page, "Claude 3.5 Haiku").click();
+  await searchPick(page, "Claude 3.5 Haiku");
   await expect(
     page.getByText("This model has no reasoning control."),
   ).toBeVisible();
@@ -185,7 +196,10 @@ test("v2 Edit models hides a provider for every employee; Refresh adds new model
   await openModelList(page, "first");
   await page.getByRole("option", { name: /Refresh models/ }).click();
   await expect(page.getByText("Models refreshed · 1 new model")).toBeVisible();
+  // The new row lands in its collapsed provider group — searching finds it.
+  await page.locator('[data-slot="command-input"]').fill("Claude Opus 5.6");
   await expect(option(page, "Claude Opus 5.6 (new)")).toHaveCount(1);
+  await page.locator('[data-slot="command-input"]').fill("");
   await page.getByRole("option", { name: /Edit models/ }).click();
   const dialog = page.getByRole("dialog", { name: "Models" });
   await dialog.getByRole("checkbox", { name: /Show all xAI/ }).click();
@@ -198,7 +212,9 @@ test("v2 Edit models hides a provider for every employee; Refresh adds new model
     .getByRole("button", { name: /Reviewer/ })
     .click();
   await openModelList(page, "first");
-  await expect(page.getByRole("group", { name: /xAI Grok/ })).toHaveCount(0);
+  await expect(groupHeading(page, "xAI Grok")).toHaveCount(0);
+  // The refreshed model is in Reviewer's collapsed provider too — search.
+  await page.locator('[data-slot="command-input"]').fill("GPT-6 Astra");
   await expect(option(page, "GPT-6 Astra")).toHaveCount(1);
   expect(errors).toEqual([]);
 });

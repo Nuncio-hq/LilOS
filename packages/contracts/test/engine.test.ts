@@ -44,6 +44,8 @@ describe("engine wire contract", () => {
       "session.setTitle",
       "session.setHidden",
       "session.rewind",
+      "jobs.list",
+      "jobs.stop",
     ]);
     for (const [name, m] of Object.entries(ENGINE_METHODS)) {
       expect(m.doc.length, name).toBeGreaterThan(0);
@@ -58,6 +60,8 @@ describe("engine wire contract", () => {
     expect(ENGINE_METHODS["session.setModel"].capability).toBe("models");
     expect(ENGINE_METHODS["session.setTitle"].capability).toBe("session_meta");
     expect(ENGINE_METHODS["session.setHidden"].capability).toBe("session_meta");
+    expect(ENGINE_METHODS["jobs.list"].capability).toBe("background_jobs");
+    expect(ENGINE_METHODS["jobs.stop"].capability).toBe("background_jobs");
   });
 
   test("AC-4 the protocol has no profile-delete method", () => {
@@ -84,6 +88,11 @@ describe("engine wire contract", () => {
       "session.ref.changed",
       "turn.steered",
       "turn.completed",
+      "subagent.started",
+      "subagent.completed",
+      "job.started",
+      "job.output",
+      "job.exited",
     ]);
   });
 
