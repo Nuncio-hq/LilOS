@@ -23,6 +23,8 @@ export type Routes = {
      thread-scoped model pick (conversationId present = thread scope). */
   Thread: { conversationId: string };
   ThreadInfo: { conversationId: string };
+  /* #182: the thread's plan sheet — every version, files per step, risks. */
+  Plan: { conversationId: string };
   FolderPicker: { employeeId: string };
   /* "Other folder on the Mac…" browser (#238), pushed over FolderPicker. */
   BrowseMac: { employeeId: string };
@@ -32,7 +34,13 @@ export type Routes = {
 /* The DM stack as the dm/thread screens see it. */
 export type DmRoutes = Pick<
   Routes,
-  "Dm" | "Thread" | "ThreadInfo" | "FolderPicker" | "BrowseMac" | "ModelPicker"
+  | "Dm"
+  | "Thread"
+  | "ThreadInfo"
+  | "Plan"
+  | "FolderPicker"
+  | "BrowseMac"
+  | "ModelPicker"
 >;
 
 export type TabRoutes = {

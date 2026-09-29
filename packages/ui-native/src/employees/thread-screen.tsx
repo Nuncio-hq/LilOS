@@ -93,12 +93,17 @@ export function ThreadScreen({
             scroller.current?.scrollToEnd({ animated: true })
           }
           contentInsetAdjustmentBehavior="automatic"
+          /* #182: the composer floats over this scroll view — a bottom
+             contentInset equal to its height is what keeps the last card
+             (and the scroll indicator) clear of it, alongside the small
+             padding below for the spacing/background-pill slack. */
+          contentInset={{ bottom: composerHeight }}
           keyboardDismissMode="interactive"
           contentContainerStyle={{
             flexGrow: 1,
             justifyContent: "flex-end",
             paddingTop: 12,
-            paddingBottom: composerHeight + 16 + (pill ? 44 : 0),
+            paddingBottom: 16 + (pill ? 44 : 0),
             paddingHorizontal: 16,
             gap: 24,
           }}

@@ -66,7 +66,7 @@ import { nav, type Props, type Routes, type TabRoutes } from "./routes";
 import { BrowseMac } from "./screens/browse-mac";
 import { Dm, FolderPicker, ModelPicker } from "./screens/dm";
 import { Activity, Home, NeedsYouSlot, useHomeWire } from "./screens/home";
-import { Thread, ThreadInfo } from "./screens/thread";
+import { Plan, Thread, ThreadInfo } from "./screens/thread";
 import { formatVersionLabel } from "./version-label";
 
 /* apps/mobile — the real app (#154): the prototype's onboarding screens from
@@ -581,6 +581,7 @@ export default function App() {
                 component={ThreadInfo}
                 options={SHEET}
               />
+              <Stack.Screen name="Plan" component={Plan} options={SHEET} />
               <Stack.Screen
                 name="FolderPicker"
                 component={FolderPicker}

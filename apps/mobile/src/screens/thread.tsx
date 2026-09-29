@@ -9,9 +9,10 @@ import type {
   Conversation,
   Employee,
 } from "@lilos/contracts/app";
-import type { ModelPick } from "@lilos/ui-native";
+import type { ModelPick, PlanAction } from "@lilos/ui-native";
 import {
   modelLabel,
+  PlanSheet,
   ThreadHeaderTitle,
   ThreadInfoSheet,
   ThreadScreen,
@@ -22,7 +23,13 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { atom } from "nanostores";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Alert, View } from "react-native";
-import { decide } from "../asks";
+import {
+  answerPlanChange,
+  awaitPlanAsk,
+  decide,
+  PLAN_CHANGE_PREFIX,
+  planChangeSend,
+} from "../asks";
 import { defaultModelPick } from "../dm-model";
 import { $asks, $catalog, $pendingOpens, watchDm } from "../dm-store";
 import { $client, $welcome } from "../link";
@@ -34,7 +41,10 @@ import { dropRewound, toThreadDetail } from "../thread-model";
    engine turns projected live through sessionFeed -> reduceSessionEvents ->
    ThreadEntry[] (AC-2), reply/steer via messages.post (AC-3), turns.interrupt
    stop (AC-4), per-thread model pick (AC-5), the ⓘ session sheet (AC-6).
-   #158: approve/deny runs asks.respond through `decide`. */
+   #158: approve/deny runs asks.respond through `decide`.
+   #182: plan/task cards + the plan ask (Approve / Change… / Reject), the
+   Change-composer prefill, and the Plan sheet — all behind the engine's
+   `plan` capability (D-#19). */
 
 type Nav = NativeStackNavigationProp<DmRoutes>;
 
@@ -62,6 +72,10 @@ const $noRewinds = atom<
 /** Everything a thread screen needs from the wire, packed for the view. */
 function useThread(conversationId: string) {
   const client = useStore($client);
+  const welcome = useStore($welcome);
+  /* D-#19: plan rows render only when the engine declares `plan`. */
+  const planCapable =
+    welcome?.engineHost?.capabilities?.some((c) => c.id === "plan") ?? false;
   const conversations = useStore(client?.conversations ?? $noConversations);
   const employees = useStore(client?.employees ?? $noEmployees);
   const channels = useStore(client?.channels ?? $noChannels);
@@ -159,6 +173,7 @@ function useThread(conversationId: string) {
             pending: new Set(pending.keys()),
             now: Date.now(),
             models: catalog.models,
+            planCapable,
             rewound: {
               refs: new Set(rewind?.removedIds ?? []),
               texts: new Set(
@@ -177,12 +192,13 @@ function useThread(conversationId: string) {
       asks,
       pending,
       catalog,
+      planCapable,
       rewind,
       rewoundMessages,
     ],
   );
 
-  return { client, conv, channelId, employee, detail, catalog };
+  return { client, conv, channelId, employee, detail, catalog, planCapable };
 }
 
 export function Thread({
@@ -193,7 +209,7 @@ export function Thread({
   route: RouteProp<DmRoutes, "Thread">;
 }) {
   const { conversationId } = route.params;
-  const { client, conv, channelId, employee, detail, catalog } =
+  const { client, conv, channelId, employee, detail, catalog, planCapable } =
     useThread(conversationId);
   const welcome = useStore($welcome);
   const [prefill, setPrefill] = useState<{ text: string }>();
@@ -228,6 +244,13 @@ export function Thread({
   const send = (text: string) => {
     const c = client;
     if (!c || !channelId) return;
+    /* A draft still carrying the change prefix answers the open plan ask
+       (outcome "change") instead of posting to the thread — web rule. */
+    const change = planChangeSend(text, $asks.get(), conversationId);
+    if (change) {
+      void answerPlanChange(c, change.askId, change.answer);
+      return;
+    }
     const dedupeKey = `u-${Date.now().toString(36)}-${Math.random()
       .toString(36)
       .slice(2, 10)}`;
@@ -242,6 +265,22 @@ export function Thread({
         Alert.alert("Couldn't send", describeError(e));
         setPrefill({ text });
       });
+  };
+
+  /* #182: the Plan card's pills — Approve/Reject answer the plan ask
+     through decide(); Change prefills the composer (focused by the
+     Composer's own prefill effect) and the send above answers it. */
+  const onPlan = (action: PlanAction, planId: string) => {
+    if (action === "change") {
+      setPrefill({ text: PLAN_CHANGE_PREFIX });
+      return;
+    }
+    const c = client;
+    if (!c) return;
+    void (async () => {
+      const ask = await awaitPlanAsk(conversationId, planId);
+      if (ask) await decide(c, ask.id, action === "approve");
+    })();
   };
 
   /* AC-4: the stop button only exists while a turn runs; turns.interrupt
@@ -289,9 +328,34 @@ export function Thread({
           conversationId,
         })
       }
+      {...(planCapable
+        ? {
+            onPlan,
+            onOpenPlan: () => navigation.navigate("Plan", { conversationId }),
+          }
+        : {})}
       prefill={prefill}
     />
   );
+}
+
+/** #182 — the Plan sheet: every version of this thread's plan(s), oldest
+    first (files per step, risks, earlier versions). */
+export function Plan({
+  navigation,
+  route,
+}: {
+  navigation: Nav;
+  route: RouteProp<DmRoutes, "Plan">;
+}) {
+  const { conversationId } = route.params;
+  const { detail } = useThread(conversationId);
+  const plans =
+    detail?.entries.flatMap((e) =>
+      e.kind === "agent" && e.plan ? [e.plan] : [],
+    ) ?? [];
+  if (!plans.length) return <View className="flex-1 bg-background" />;
+  return <PlanSheet plans={plans} onDone={() => navigation.goBack()} />;
 }
 
 /** ⓘ — the Session sheet (AC-6): folder, branch, model, usage, session id. */

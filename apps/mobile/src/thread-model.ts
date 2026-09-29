@@ -36,14 +36,17 @@ import {
 const clock = (ts: number) =>
   new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-/** Ask -> the approval card (or the after-you-chose receipt). */
+/** Ask -> the approval card (or the after-you-chose receipt). A `plan` ask
+    never lands here — the Plan card is that ask's own surface (#182). */
 function turnApproval(
   turn: TurnModel,
   asks: readonly Ask[],
   meta: { employeeId: string; employee: string; session: string },
   now: number,
 ): { approval?: Approval; decided?: AgentEntry["decided"] } {
-  const list = asks.filter((a) => a.turnId === turn.turnId);
+  const list = asks.filter(
+    (a) => a.turnId === turn.turnId && a.request.kind !== "plan",
+  );
   const open = list.find((a) => a.state === "open");
   if (open) {
     return {
@@ -88,11 +91,13 @@ export function toAgentEntry(
     employeeId: string;
     employeeName: string;
     sessionId: string;
+    /** The engine declared `plan` (D-#19) — plan rows render only then. */
+    planCapable?: boolean;
     now: number;
   },
 ): AgentEntry {
   const live = turn.phase !== "done" && turn.phase !== "stopped";
-  const lastPlan = turn.plans.at(-1);
+  const lastPlan = opts.planCapable === false ? undefined : turn.plans.at(-1);
   const stopped = turn.phase === "stopped";
   const files = new Set(
     turn.steps.flatMap((s) => (s.diff ? [s.diff.path] : [])),
@@ -133,6 +138,31 @@ export function toAgentEntry(
   };
 }
 
+/* #182: every plan version before the latest renders as its own folded
+   card ahead of the turn — the web supersededPlanReplies rule. The newest
+   stays on the turn's card itself. */
+function supersededPlanEntries(
+  turn: TurnModel,
+  planCapable: boolean | undefined,
+): AgentEntry[] {
+  if (planCapable === false) return [];
+  return turn.plans.slice(0, -1).flatMap((p) => {
+    const plan = toPlanRow(p);
+    if (!plan) return [];
+    return [
+      {
+        kind: "agent" as const,
+        id: `turn-${turn.turnId}-plan-v${plan.version}`,
+        time: "",
+        text: "",
+        steps: [],
+        live: false,
+        plan,
+      },
+    ];
+  });
+}
+
 /**
  * Merge engine turns into the relay message list (the web `mergeTurns`
  * port): a turn whose text landed as an employee message swaps into that
@@ -150,6 +180,8 @@ export function mergeThreadEntries(
     employeeId: string;
     employeeName: string;
     sessionId?: string;
+    /** The engine declared `plan` (D-#19); false strips every plan row. */
+    planCapable?: boolean;
     rewoundRefs?: ReadonlySet<string>;
     rewoundTexts?: ReadonlySet<string>;
     now: number;
@@ -204,10 +236,12 @@ export function mergeThreadEntries(
       employeeId: opts.employeeId,
       employeeName: opts.employeeName,
       sessionId: opts.sessionId ?? model.sessionId,
+      planCapable: opts.planCapable,
       now: opts.now,
     });
-    if (idx >= 0) entries[idx] = entry;
-    else entries.push(entry);
+    const superseded = supersededPlanEntries(turn, opts.planCapable);
+    if (idx >= 0) entries.splice(idx, 1, ...superseded, entry);
+    else entries.push(...superseded, entry);
   }
 
   /* Unmatched turns: finished ones slot after their `ref` message (the
@@ -242,6 +276,7 @@ export function mergeThreadEntries(
       employeeId: opts.employeeId,
       employeeName: opts.employeeName,
       sessionId: opts.sessionId ?? model.sessionId,
+      planCapable: opts.planCapable,
       now: opts.now,
     });
   const byRef = new Map<string, number>();
@@ -254,14 +289,19 @@ export function mergeThreadEntries(
     const refIdx = t.ref
       ? (insertAfter.get(t.ref) ?? byRef.get(t.ref))
       : undefined;
+    const superseded = supersededPlanEntries(t, opts.planCapable);
     if (refIdx === undefined) {
-      entries.push(entryFor(t));
+      entries.push(...superseded, entryFor(t));
     } else {
-      entries.splice(refIdx + 1, 0, entryFor(t));
-      if (t.ref) insertAfter.set(t.ref, refIdx + 1);
+      entries.splice(refIdx + 1, 0, ...superseded, entryFor(t));
+      if (t.ref) insertAfter.set(t.ref, refIdx + superseded.length + 1);
     }
   }
-  if (model.live) entries.push(entryFor(model.live));
+  if (model.live)
+    entries.push(
+      ...supersededPlanEntries(model.live, opts.planCapable),
+      entryFor(model.live),
+    );
   return entries;
 }
 
@@ -307,6 +347,8 @@ export function toThreadDetail(opts: {
     refs: ReadonlySet<string>;
     texts: ReadonlySet<string>;
   };
+  /** The engine declared `plan` (D-#19) — pass false to strip plan rows. */
+  planCapable?: boolean;
 }): ThreadDetail {
   const { conversation: conv } = opts;
   const employee = opts.employee;
@@ -343,6 +385,7 @@ export function toThreadDetail(opts: {
       employeeId: empId,
       employeeName,
       sessionId: conv.engineRef ?? undefined,
+      planCapable: opts.planCapable,
       rewoundRefs,
       rewoundTexts,
       now: opts.now,
