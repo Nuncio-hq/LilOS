@@ -765,9 +765,15 @@ export default function App() {
     window.addEventListener("pointermove", move)
     window.addEventListener("pointerup", up)
   }
-  const browserPanel = (mode: BrowserMode, extra?: { className?: string; style?: React.CSSProperties }) => (
-    <BrowserPanel {...browser.props} page={browser.page} mode={mode} onMode={setBrowserMode} onClose={() => setBrowserOpen(false)} {...extra} />
-  )
+  const browserPanel = (mode: BrowserMode, extra?: { className?: string; style?: React.CSSProperties }) => {
+    const v = browser.view(null)
+    return <BrowserPanel {...v.props} page={v.page} mode={mode} onMode={setBrowserMode} onClose={() => setBrowserOpen(false)} {...extra} />
+  }
+  /* A thread's Workbench → Browser: the same browser, only this thread's tabs. */
+  const threadBrowser = (threadId: string) => {
+    const v = browser.view(threadId)
+    return <BrowserPanel {...v.props} page={v.page} mode="thread" className="min-h-0 flex-1" />
+  }
 
   // Per-employee sidebar badges: a blue count for live turns, amber for turns waiting on approval.
   const badges = useMemo(() => {
@@ -1439,6 +1445,7 @@ export default function App() {
           models={canModels ? MODEL_OPTS : undefined} picker={pickerExtras} repoFiles={REPO_FILES} host={hostAccessors}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
           onOpenSession={openSession} onStopJob={(id) => stopJobIn(openThread, id)} onPlan={(a, id) => planAction(openThread, a, id)}
+          browser={threadBrowser(openThread.id)}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />
       ) : (

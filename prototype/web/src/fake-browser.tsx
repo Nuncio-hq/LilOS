@@ -6,6 +6,7 @@ import {
   type BrowserHistoryItem,
   type BrowserPanelProps,
   type BrowserTab,
+  type BrowserThread,
   type Employee,
   LoginSuggestions,
   displayUrl,
@@ -66,8 +67,24 @@ const AGENT_STEPS: { action: string; target?: string }[] = [
 
 type FakeTab = BrowserTab & { back: string[]; fwd: string[] }
 
+/* Threads that own tab groups (ids match the prototype's feed: m1 = LIL-3 in
+   #engineering). A new thread gets a group the first time its agent (or
+   Oscar, from the thread's Workbench) opens a tab. */
+export const BROWSER_THREADS: BrowserThread[] = [
+  { id: "m1", title: "LIL-3 · Scaffold monorepo", employeeId: "builder" },
+  { id: "m2", title: "Harness reconnect after sleep", employeeId: "builder" },
+  { id: "lil-2", title: "LIL-2 · Relay event log", employeeId: "reviewer" },
+]
+const ACTIONS = "https://github.com/Nuncio-hq/LilOS/actions"
+TITLES[ACTIONS] = "Actions · Nuncio-hq/LilOS"
+TITLES["https://github.com/Nuncio-hq/LilOS/pull/209/files"] = "Files changed · PR #209"
+
 let seq = 10
 const tab = (url: string, agent?: BrowserTab["agent"]): FakeTab => ({ id: `t${++seq}`, url, title: titleOf(url), agent, back: [], fwd: [] })
+const owned = (threadId: string, control: "agent" | "you" = "agent") => {
+  const th = BROWSER_THREADS.find((t) => t.id === threadId)
+  return { employeeId: th?.employeeId ?? "builder", threadId, control }
+}
 
 /* Find-in-page: pages render their text through <T>, which marks matches. */
 const FindCtx = createContext("")
@@ -78,34 +95,49 @@ function T({ children }: { children: string }) {
   return <>{parts.map((s, i) => (i % 2 ? <mark key={i} className="rounded-sm bg-yellow-300 text-black">{s}</mark> : s))}</>
 }
 
+/* Counts the page's find marks, highlights the current one, reports the count. */
+function PageFrame({ find, onCount, children, ...rest }: { find: BrowserFind | null; onCount: (n: number) => void; children: React.ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const marks = ref.current?.querySelectorAll("mark") ?? []
+    onCount(marks.length)
+    marks.forEach((m, i) => m.classList.toggle("!bg-orange-400", i === find?.index))
+    marks[find?.index ?? 0]?.scrollIntoView({ block: "center" })
+  })
+  return <FindCtx.Provider value={find?.query ?? ""}><div ref={ref} {...rest}>{children}</div></FindCtx.Provider>
+}
+
+type ViewUi = { zoom: number; find: BrowserFind | null; findCount: number }
+const UI0: ViewUi = { zoom: 1, find: null, findCount: 0 }
+
 export function useFakeBrowser({ employees, say }: { employees: Employee[]; say: (t: string) => void }) {
   const [tabs, setTabs] = useState<FakeTab[]>(() => [
     tab(PR),
     tab(LOGIN),
-    tab(DEV, { employeeId: employees[0]?.id ?? "builder", control: "agent", action: AGENT_STEPS[0].action }),
+    tab(DEV, { ...owned("m1"), action: AGENT_STEPS[0].action }),
+    tab(ACTIONS, owned("m1", "agent")),
+    tab("https://github.com/Nuncio-hq/LilOS/pull/209/files", { ...owned("lil-2"), action: "Reading the diff" }),
   ])
-  const [activeId, setActiveId] = useState(() => tabs[0].id)
+  /* Active tab per view: "you" = the ⌘⇧B browser, else a thread id. */
+  const [active, setActive] = useState<Record<string, string>>(() => ({ you: tabs[0].id }))
+  const [ui, setUi] = useState<Record<string, ViewUi>>({})
   const [history, setHistory] = useState(HISTORY)
   const [bookmarks, setBookmarks] = useState(BOOKMARKS)
   const [downloads, setDownloads] = useState<BrowserDownload[]>([
     { id: "d1", name: "invoices-2026-09.csv", size: "4.2 MB", progress: 0.35 },
     { id: "d2", name: "LilOS-1.0.23.dmg", size: "142 MB", when: "Today 09:12" },
   ])
-  const [zoom, setZoom] = useState(1)
-  const [find, setFind] = useState<BrowserFind | null>(null)
-  const [findCount, setFindCount] = useState(0)
   const [step, setStep] = useState(0)
   const [login, setLogin] = useState<{ focused: boolean; filled: boolean }>({ focused: true, filled: false })
-  const pageRef = useRef<HTMLDivElement>(null)
-  const active = tabs.find((t) => t.id === activeId) ?? tabs[0]
+  const emp = (id: string) => employees.find((e) => e.id === id)
 
-  // The fake agent keeps working on every tab it drives.
+  // Each thread's agent keeps working on the tabs it drives.
   useEffect(() => {
     const id = setInterval(() => setStep((s) => s + 1), 2200)
     return () => clearInterval(id)
   }, [])
   useEffect(() => {
-    setTabs((ts) => ts.map((t) => (t.agent?.control === "agent" ? { ...t, agent: { ...t.agent, action: t.url === DEV ? AGENT_STEPS[step % AGENT_STEPS.length].action : ["Reading the page", "Scrolling down", "Taking a screenshot"][step % 3] } } : t)))
+    setTabs((ts) => ts.map((t) => (t.agent?.control === "agent" ? { ...t, agent: { ...t.agent, action: t.url === DEV ? AGENT_STEPS[step % AGENT_STEPS.length].action : ["Reading the page", "Scrolling down", "Taking a screenshot"][(step + t.id.length) % 3] } } : t)))
   }, [step])
 
   // The in-progress download finishes on its own.
@@ -113,14 +145,6 @@ export function useFakeBrowser({ employees, say }: { employees: Employee[]; say:
     const id = setInterval(() => setDownloads((ds) => ds.map((d) => (d.progress === undefined ? d : d.progress >= 0.95 ? { id: d.id, name: d.name, size: d.size, when: "Just now" } : { ...d, progress: d.progress + 0.05 }))), 700)
     return () => clearInterval(id)
   }, [])
-
-  // Match count + current match come from the rendered page.
-  useEffect(() => {
-    const marks = pageRef.current?.querySelectorAll("mark") ?? []
-    setFindCount(marks.length)
-    marks.forEach((m, i) => m.classList.toggle("!bg-orange-400", i === find?.index))
-    marks[find?.index ?? 0]?.scrollIntoView({ block: "center" })
-  }, [find, activeId, active?.url])
 
   const patch = (id: string, fn: (t: FakeTab) => FakeTab) => setTabs((ts) => ts.map((t) => (t.id === id ? fn(t) : t)))
   const load = (id: string, url: string, push: "back" | "fwd" | null) => {
@@ -133,53 +157,71 @@ export function useFakeBrowser({ employees, say }: { employees: Employee[]; say:
     if (!url.startsWith("lilos://")) setHistory((h) => [{ url, title: titleOf(url), when: "Now" }, ...h.filter((x) => x.url !== url)])
   }
 
-  const props: Omit<BrowserPanelProps, "mode" | "onMode" | "onClose" | "page"> = {
-    tabs, activeId: active.id, emp: (id) => employees.find((e) => e.id === id), employees,
-    history, bookmarks, downloads,
-    canBack: active.back.length > 0, canForward: active.fwd.length > 0,
-    zoom, find, findCount, onFind: setFind,
-    onSelectTab: setActiveId,
-    onNewTab: () => { const t = tab(NEWTAB); setTabs((ts) => [...ts, t]); setActiveId(t.id) },
-    onCloseTab: (id) => setTabs((ts) => {
-      const next = ts.filter((t) => t.id !== id)
-      if (next.length === 0) { const t = tab(NEWTAB); setActiveId(t.id); return [t] }
-      if (id === activeId) setActiveId(next[Math.max(0, ts.findIndex((t) => t.id === id) - 1)].id)
-      return next
-    }),
-    onNavigate: (url) => load(active.id, url, "back"),
-    onBack: () => active.back.length && load(active.id, active.back[active.back.length - 1], "fwd"),
-    onForward: () => active.fwd.length && load(active.id, active.fwd[0], null),
-    onReload: () => { patch(active.id, (t) => ({ ...t, loading: true })); setTimeout(() => patch(active.id, (t) => ({ ...t, loading: false })), 450) },
-    onZoom: setZoom,
-    onToggleBookmark: () => setBookmarks((b) => (b.some((x) => x.url === active.url) ? b.filter((x) => x.url !== active.url) : [{ url: active.url, title: active.title }, ...b])),
-    onPrint: () => say("Print dialog opens (macOS)"),
-    onDevTools: () => say("DevTools opens for this tab"),
-    onTakeControl: (id) => patch(id, (t) => ({ ...t, agent: t.agent && { ...t.agent, control: "you" } })),
-    onHandBack: (id) => patch(id, (t) => ({ ...t, agent: t.agent && { ...t.agent, control: "agent", action: "Picking up where it left off" } })),
-    onHandTo: (id, employeeId) => {
-      patch(id, (t) => ({ ...t, agent: { employeeId, control: "agent", action: "Reading the page" } }))
-      say(`${employees.find((e) => e.id === employeeId)?.name} now has this tab`)
-    },
-    onClearHistory: () => setHistory([]),
-    onRemoveBookmark: (url) => setBookmarks((b) => b.filter((x) => x.url !== url)),
-    onShowDownload: () => say("Revealed in Finder"),
-  }
-
-  const agentOn = active.agent?.control === "agent"
-  const target = active.url === DEV && agentOn ? AGENT_STEPS[step % AGENT_STEPS.length].target : undefined
-  const page = (
-    <FindCtx.Provider value={find?.query ?? ""}>
-      <div ref={pageRef} data-fake-page={active.url} className={cn("min-h-full bg-white text-[14px] text-zinc-900 [&_*]:border-zinc-200", active.loading && "opacity-60")} style={{ zoom }}>
-        {active.url === NEWTAB ? <NewTabPage bookmarks={bookmarks} onGo={props.onNavigate} />
-          : active.url === PR ? <PrPage />
-          : active.url === LOGIN ? <LoginPage login={login} setLogin={setLogin} />
-          : active.url === DEV ? <DevPage target={target} customer={agentOn && step % AGENT_STEPS.length >= 3} />
-          : active.url.startsWith(SEARCH) ? <SearchPage q={displayUrl(active.url)} onGo={props.onNavigate} />
-          : <GenericPage url={active.url} />}
+  /* One view of the shared browser: the ⌘⇧B browser (every tab, grouped by
+     thread) or one thread's Workbench (only that thread's tabs). */
+  const view = (threadId: string | null) => {
+    const key = threadId ?? "you"
+    const list = threadId ? tabs.filter((t) => t.agent?.threadId === threadId) : tabs
+    const cur = list.find((t) => t.id === active[key]) ?? list[0]
+    const u = ui[key] ?? UI0
+    const setU = (f: Partial<ViewUi>) => setUi((x) => ({ ...x, [key]: { ...(x[key] ?? UI0), ...f } }))
+    const pick = (id: string) => setActive((a) => ({ ...a, [key]: id }))
+    const props: Omit<BrowserPanelProps, "mode" | "onMode" | "onClose" | "page"> = {
+      tabs: list, activeId: cur?.id ?? "", emp, threads: BROWSER_THREADS,
+      history, bookmarks, downloads,
+      canBack: !!cur?.back.length, canForward: !!cur?.fwd.length,
+      zoom: u.zoom, find: u.find, findCount: u.findCount, onFind: (find) => setU({ find }),
+      onSelectTab: pick,
+      onNewTab: () => { const t = tab(NEWTAB, threadId ? owned(threadId, "you") : undefined); setTabs((ts) => [...ts, t]); pick(t.id) },
+      onCloseTab: (id) => {
+        const i = list.findIndex((t) => t.id === id)
+        const rest = list.filter((t) => t.id !== id)
+        setTabs((ts) => ts.filter((t) => t.id !== id))
+        if (id === cur?.id && rest.length) pick(rest[Math.max(0, i - 1)].id)
+      },
+      onNavigate: (url) => cur && load(cur.id, url, "back"),
+      onBack: () => cur?.back.length && load(cur.id, cur.back[cur.back.length - 1], "fwd"),
+      onForward: () => cur?.fwd.length && load(cur.id, cur.fwd[0], null),
+      onReload: () => { if (!cur) return; patch(cur.id, (t) => ({ ...t, loading: true })); setTimeout(() => patch(cur.id, (t) => ({ ...t, loading: false })), 450) },
+      onZoom: (zoom) => setU({ zoom }),
+      onToggleBookmark: () => cur && setBookmarks((b) => (b.some((x) => x.url === cur.url) ? b.filter((x) => x.url !== cur.url) : [{ url: cur.url, title: cur.title }, ...b])),
+      onPrint: () => say("Print dialog opens (macOS)"),
+      onDevTools: () => say("DevTools opens for this tab"),
+      onTakeControl: (id) => patch(id, (t) => ({ ...t, agent: t.agent && { ...t.agent, control: "you" } })),
+      onHandBack: (id) => patch(id, (t) => ({ ...t, agent: t.agent && { ...t.agent, control: "agent", action: "Picking up where it left off" } })),
+      onHandTo: (id, th) => {
+        patch(id, (t) => ({ ...t, agent: { ...owned(th), action: "Reading the page" } }))
+        const thread = BROWSER_THREADS.find((x) => x.id === th)
+        say(`Moved to ${emp(thread?.employeeId ?? "")?.name}'s thread “${thread?.title}”`)
+      },
+      onClearHistory: () => setHistory([]),
+      onRemoveBookmark: (url) => setBookmarks((b) => b.filter((x) => x.url !== url)),
+      onShowDownload: () => say("Revealed in Finder"),
+    }
+    const agentOn = cur?.agent?.control === "agent"
+    const target = cur?.url === DEV && agentOn ? AGENT_STEPS[step % AGENT_STEPS.length].target : undefined
+    const lead = threadId ? emp(BROWSER_THREADS.find((t) => t.id === threadId)?.employeeId ?? "") : undefined
+    const page = !cur ? (
+      <div data-fake-page="empty" className="grid h-full place-items-center p-8 text-center text-muted-foreground text-sm">
+        <div>
+          <p>No pages in this thread yet.</p>
+          <p className="mt-1">{lead?.name ?? "The agent"} opens its tabs here when it needs the web. Sign-ins are shared with your browser.</p>
+          <button onClick={props.onNewTab} className="mt-4 rounded-md border px-3 py-1.5 text-foreground hover:bg-muted">New tab</button>
+        </div>
       </div>
-    </FindCtx.Provider>
-  )
-  return { props, page }
+    ) : (
+      <PageFrame find={u.find} onCount={(n) => n !== u.findCount && setU({ findCount: n })} data-fake-page={cur.url} className={cn("min-h-full bg-white text-[14px] text-zinc-900 [&_*]:border-zinc-200", cur.loading && "opacity-60")} style={{ zoom: u.zoom }}>
+        {cur.url === NEWTAB ? <NewTabPage bookmarks={bookmarks} onGo={props.onNavigate} />
+          : cur.url === PR ? <PrPage />
+          : cur.url === LOGIN ? <LoginPage login={login} setLogin={setLogin} canFill={!agentOn} />
+          : cur.url === DEV ? <DevPage target={target} customer={agentOn && step % AGENT_STEPS.length >= 3} />
+          : cur.url.startsWith(SEARCH) ? <SearchPage q={displayUrl(cur.url)} onGo={props.onNavigate} />
+          : <GenericPage url={cur.url} />}
+      </PageFrame>
+    )
+    return { props, page }
+  }
+  return { view }
 }
 
 function NewTabPage({ bookmarks, onGo }: { bookmarks: BrowserBookmark[]; onGo: (u: string) => void }) {
@@ -226,7 +268,9 @@ function PrPage() {
   )
 }
 
-function LoginPage({ login, setLogin }: { login: { focused: boolean; filled: boolean }; setLogin: (l: { focused: boolean; filled: boolean }) => void }) {
+/* Saved logins are offered only in a tab Oscar controls: never while an agent
+   drives it, so a filled password can't reach an agent (#218). */
+function LoginPage({ login, setLogin, canFill }: { login: { focused: boolean; filled: boolean }; setLogin: (l: { focused: boolean; filled: boolean }) => void; canFill: boolean }) {
   return (
     <div className="flex min-h-full flex-col items-center bg-zinc-50 pt-16">
       <div className="grid size-12 place-items-center rounded-full bg-zinc-900 font-bold text-white">G</div>
@@ -236,7 +280,7 @@ function LoginPage({ login, setLogin }: { login: { focused: boolean; filled: boo
           <div className="relative">
             <input value={login.filled ? "oscarlehuu" : ""} readOnly onFocus={() => setLogin({ ...login, focused: true })} onBlur={() => setLogin({ ...login, focused: false })}
               className={cn("mt-1 w-full rounded-md border px-2 py-1.5 outline-none", login.focused && "ring-2 ring-blue-500", login.filled && "bg-blue-50")} />
-            {login.focused && !login.filled && (
+            {canFill && login.focused && !login.filled && (
               <div className="absolute top-full left-0 z-10 mt-1">
                 <LoginSuggestions site="github.com" logins={[{ id: "l1", username: "oscarlehuu" }, { id: "l2", username: "oscar@nuncio.dev" }]} onPick={() => setLogin({ focused: false, filled: true })} onManage={() => {}} />
               </div>

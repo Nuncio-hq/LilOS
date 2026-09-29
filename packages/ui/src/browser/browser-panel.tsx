@@ -34,7 +34,7 @@ import {
 } from "../components/ui/dropdown-menu";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
-import type { EmpFn, Employee } from "../types";
+import type { EmpFn } from "../types";
 import { BrowserLibrary } from "./browser-library";
 import { BrowserOmnibox } from "./browser-omnibox";
 import { BrowserTabStrip } from "./browser-tab-strip";
@@ -46,6 +46,7 @@ import type {
   BrowserLibraryTab,
   BrowserMode,
   BrowserTab,
+  BrowserThread,
 } from "./browser-types";
 
 export type BrowserPanelProps = {
@@ -53,8 +54,9 @@ export type BrowserPanelProps = {
   tabs: BrowserTab[];
   activeId: string;
   emp: EmpFn;
-  /** Employees Oscar can hand a tab to. Omit to hide "Hand this tab to…". */
-  employees?: Employee[];
+  /** Threads Oscar can hand one of his tabs to (their agent then owns it).
+      Also names the tab groups. Omit to hide "Hand this tab to…". */
+  threads?: BrowserThread[];
   history: BrowserHistoryItem[];
   bookmarks: BrowserBookmark[];
   downloads: BrowserDownload[];
@@ -79,9 +81,9 @@ export type BrowserPanelProps = {
   onDevTools?: () => void;
   onTakeControl: (tabId: string) => void;
   onHandBack: (tabId: string) => void;
-  onHandTo?: (tabId: string, employeeId: string) => void;
+  onHandTo?: (tabId: string, threadId: string) => void;
   onMode?: (m: BrowserMode) => void;
-  onClose: () => void;
+  onClose?: () => void;
   onClearHistory?: () => void;
   onRemoveBookmark?: (url: string) => void;
   onShowDownload?: (id: string) => void;
@@ -146,9 +148,9 @@ export function BrowserPanel(p: BrowserPanelProps) {
       style={p.style}
       className={cn(
         "flex min-h-0 flex-col overflow-hidden bg-background",
-        p.mode === "panel"
-          ? "border-l"
-          : "rounded-xl border shadow-2xl ring-1 ring-black/5",
+        p.mode === "panel" && "border-l",
+        p.mode === "window" &&
+          "rounded-xl border shadow-2xl ring-1 ring-black/5",
         p.className,
       )}
     >
@@ -157,6 +159,7 @@ export function BrowserPanel(p: BrowserPanelProps) {
         activeId={p.activeId}
         emp={p.emp}
         mode={p.mode}
+        threads={p.threads}
         onSelect={(id) => {
           p.onSelectTab(id);
           setLibrary(null);
@@ -231,45 +234,54 @@ export function BrowserPanel(p: BrowserPanelProps) {
           )}
           <DownloadIcon />
         </Button>
-        {p.onHandTo && p.employees && tab && !agent && (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Hand this tab to an employee"
-                  title="Hand this tab to…"
-                  data-hand-to
-                />
-              }
-            >
-              <UserRoundPlusIcon />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-60">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Hand this tab to…</DropdownMenuLabel>
-                {p.employees.map((e) => (
-                  <DropdownMenuItem
-                    key={e.id}
-                    data-hand-to-emp={e.id}
-                    onClick={() => p.onHandTo?.(tab.id, e.id)}
-                  >
-                    <HermesAvatar
-                      name={e.name}
-                      status={e.status}
-                      className="size-5"
-                    />
-                    <span className="min-w-0 flex-1 truncate">{e.name}</span>
-                    <span className="text-muted-foreground text-xs">
-                      {e.role}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        {p.onHandTo &&
+          p.threads?.length &&
+          p.mode !== "thread" &&
+          tab &&
+          !agent && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Hand this tab to a thread"
+                    title="Hand this tab to…"
+                    data-hand-to
+                  />
+                }
+              >
+                <UserRoundPlusIcon />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Hand this tab to…</DropdownMenuLabel>
+                  {p.threads.map((th) => {
+                    const e = p.emp(th.employeeId);
+                    return (
+                      <DropdownMenuItem
+                        key={th.id}
+                        data-hand-to-thread={th.id}
+                        onClick={() => p.onHandTo?.(tab.id, th.id)}
+                      >
+                        <HermesAvatar
+                          name={e?.name}
+                          status={e?.status}
+                          className="size-5"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{th.title}</span>
+                          <span className="block text-muted-foreground text-xs">
+                            {e?.name}
+                          </span>
+                        </span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
