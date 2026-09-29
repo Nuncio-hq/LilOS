@@ -58,6 +58,11 @@ open "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
 
 - Stacked "App Background Activity" banners persist: hover a banner to reveal
   its X and click it (`killall NotificationCenter` alone does not clear them).
+- Careful WHERE you click a notification banner: clicking the banner body
+  (not the X) launches the underlying app — the Tahoe "See what's new"
+  banner opens the **Tips** app slideshow overlay. If it opens, quit it via
+  `osascript -e 'tell application "Tips" to quit'`. The X sits at the
+  banner's top-LEFT corner.
 - Hide unrelated windows (e.g. iOS Simulator) via
   `osascript -e 'tell application "System Events" to set visible of process "Simulator" to false'`.
 - Screen is small (1024×768 logical): windows larger than that get clamped —
@@ -75,30 +80,34 @@ open "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
 - AX `press` on web dropdown chips (Base UI menus) often does NOT open the
   menu — use real `left_click` at the control's screen coordinates instead;
   verify with a screenshot.
-- `git.discoverRepos` is lazy since #113: it only runs when the web
+- `git.discoverRepos` is lazy since #113: it only runs when the
   Add-folder dialog opens, never on DM mount — so a packaged-app DM open
-  produces NO TCC prompt. Caveat: a prompt DOES appear at folder-pick time
-  when the picked path is under a protected dir (probeFolder → hostList on
-  ~/Desktop/… prompts "access files in your Desktop folder"). Allow it.
+  produces NO TCC prompt. Since #208 the dialog is LilOS's own in-app
+  `AddFolderDialog` (`[data-addfolder]`) on desktop too — there is no
+  `lilos:pick-folder` / `dialog.showOpenDialog` path anymore. A TCC
+  prompt DOES appear right after clicking Add a folder: the dialog
+  starts on `~/Desktop` and `fs.list` / `git.discoverRepos` touch the
+  protected roots (~/Desktop, ~/Documents) — "access files in your
+  Desktop folder". Denying skips that root; the dialog stays usable.
   Strong laziness proof: `tccutil reset SystemPolicyDesktopFolder
   com.nuncio.lilos` (+ DocumentsFolder), reload the DM, then
   `sqlite3 ~/Library/Application\ Support/com.apple.TCC/TCC.db "select
-  client,service from access where client like '%lilos%'"` must stay EMPTY.
+  client,service from access where client like '%lilos%'"` must stay
+  EMPTY until Add a folder is clicked.
 - The composer's 📎 "Attach files" button sits immediately LEFT of the
   folder chip — a misclick opens Electron's FILE picker (dirs grayed,
-  Open navigates into folders instead of selecting, no New Folder button).
-  The real pickFolder dialog has a "New Folder" button and Open enabled
-  even with nothing selected — if you see neither, you opened the wrong
-  panel: Cancel and retry. Click the chip's center, not its left edge.
-- NSOpenPanel column view quirk: Cmd+Shift+G to a folder drills INTO it
-  (selection sits in the parent column) and Open can stay disabled.
-  Reliable path: switch to List view via the toolbar view menu, or after
-  Go-navigating into the folder just click Open — in openDirectory mode it
-  selects the current dir.
-- The native folder dialog (Electron `dialog.showOpenDialog`) is a real
-  NSOpenPanel: `key cmd+shift+g` opens "Go to Folder", `type` the absolute
-  path, `Return` selects it in its parent listing, then click the **Open**
-  button (bottom-right) to confirm.
+  Open navigates into folders instead of selecting, no New Folder
+  button). The real Add-folder dialog is in-app: "Found on this Mac"
+  chips, a path field with breadcrumb + folder listing, a folder status
+  card, Cancel/Add folder. If a macOS panel opens you hit the wrong
+  control: Cancel and click the chip's center, not its left edge.
+- Text inputs in the Electron webview (and Chrome): `ctrl+a` is the Emacs
+  "move to line start", NOT select-all — focus the field first, then use
+  `cmd+a` (or triple-click inside the field) before retyping.
+- The TCC prompt on Add a folder can be a QUEUE: Desktop first, then
+  Documents (~1 s apart) — answer each as it appears; denying only resets
+  what you deny (`tccutil reset SystemPolicyDesktopFolder` clears just
+  Desktop; the Documents grant survives).
 - `test-results/` is wiped by concurrent e2e/vitest runs (`rm -rf` during
   setup) — stage curated screenshots in /tmp or ~/screenshots and copy into
   `test-results/` only at the end; keep a mirror copy elsewhere.

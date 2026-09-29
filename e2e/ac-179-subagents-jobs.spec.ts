@@ -201,7 +201,7 @@ async function openEmployee(page: Page, name: RegExp | string) {
 const pickerButton = (page: Page) => page.locator('[data-ws="folder"]');
 
 /** Pick `dir` for the next session (ac-114's flow: recents or Add folder). */
-async function pickFolder(page: Page, dir: string) {
+async function pickSessionFolder(page: Page, dir: string) {
   await pickerButton(page).click();
   const menu = page
     .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
@@ -256,7 +256,7 @@ test("AC-1 a delegate turn shows one live row per helper; opening a row shows br
 }) => {
   test.setTimeout(180_000);
   await openDefault(page);
-  await pickFolder(page, repoDir);
+  await pickSessionFolder(page, repoDir);
   await send(page, "delegate the relay scan to subagents");
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
 

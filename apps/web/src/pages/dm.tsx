@@ -225,9 +225,8 @@ export function DmPage() {
   /* Folder picking (#113): shared recents from the relay (probed live for
      missing/git) + a per-employee pick (its last session's folder, AC-6).
      Direct mode only — the picker gets no onWorktree (AC-3).
-     `git.discoverRepos` stays lazy: it runs when the web Add-folder dialog
-     opens, never on DM mount (desktop uses the native panel instead — a
-     scan would only trip macOS folder-access prompts). */
+     `git.discoverRepos` stays lazy: it runs when the Add-folder dialog
+     opens, never on DM mount. */
   const folderRows = useAtom(folders);
   const fsListing = useAtom(fsRows);
   const discoveredRows = useAtom(discovered);
@@ -651,29 +650,15 @@ export function DmPage() {
     }
     return f;
   };
-  const pickFolderPath = pick.folder
+  const pickedFolderPath = pick.folder
     ? (folderRows.find((f) => f.id === pick.folder && !f.missing)?.path ?? null)
     : null;
 
-  /* Add folder: native dialog in the packaged app (AC-2), the host-API
-     browser dialog on plain web. */
+  /* Add folder (#208): LilOS's own dialog on every surface — plain web and
+     the packaged desktop app alike; no OS open panel anywhere. */
   const onAddFolder = () => {
-    if (window.lilos?.pickFolder) {
-      void window.lilos.pickFolder().then((path) => {
-        if (!path) return;
-        void addFolder(path).then((f) => {
-          if (f)
-            setPick({
-              folder: f.id,
-              base: f.branches[0] ?? "",
-              mode: "direct",
-            });
-        });
-      });
-    } else {
-      setAddFolderOpen(true);
-      void loadDiscovered().catch(() => {});
-    }
+    setAddFolderOpen(true);
+    void loadDiscovered().catch(() => {});
   };
   const onDialogAdd = (path: string) => {
     void addFolder(path).then((f) => {
@@ -1112,7 +1097,7 @@ export function DmPage() {
         loading={!channel && !dmOpenFailed}
         composerNote={composerNote}
         mentionables={mentionables}
-        onSearchFiles={fileSearch(pickFolderPath)}
+        onSearchFiles={fileSearch(pickedFolderPath)}
         onSearchMessages={searchMessages}
         onOpenHit={onOpenHit}
         models={catalog.length ? catalog : undefined}

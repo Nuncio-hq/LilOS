@@ -229,7 +229,7 @@ async function dmDefault(page: Page) {
 const pickerButton = (page: Page) => page.locator('[data-ws="folder"]');
 
 /** Pick `dir` for the next session: recents menu when listed, else Add folder. */
-async function pickFolder(page: Page, dir: string) {
+async function pickSessionFolder(page: Page, dir: string) {
   const menu = await (async () => {
     await pickerButton(page).click();
     return page
@@ -344,7 +344,7 @@ test("AC-1 a session opens in the panel; ↗ reaches Focus; Esc/Back return thro
 }) => {
   test.setTimeout(120_000);
   await dmDefault(page);
-  await pickFolder(page, repoDir);
+  await pickSessionFolder(page, repoDir);
   await send(page, "check in");
   // A send still lands in Focus, at its own URL (#195 routes it through the
   // panel URL so every way back out lands on the same open peek).
@@ -619,7 +619,7 @@ test("AC-6 tabs render only when their host method answers; a session without a 
 
   // A session on a plain (non-repo) folder: fs answers, git/forge don't →
   // only the Files tab renders. Browser/Terminal never render in this slice.
-  await pickFolder(page, plainDir);
+  await pickSessionFolder(page, plainDir);
   await send(page, "check the folder");
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
   await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
