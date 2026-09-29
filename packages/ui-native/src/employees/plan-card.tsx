@@ -301,7 +301,7 @@ export function PlanSheet({
             .reverse()
             .map((p, i) => (
               <View
-                key={p.id}
+                key={`${p.id}-v${p.version}`}
                 className={`flex-row items-center gap-3 px-4 py-3 ${i ? "border-border border-t" : ""}`}
               >
                 <AppText
