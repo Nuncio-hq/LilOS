@@ -134,6 +134,28 @@ The agent screen recording (15fps) is the primary evidence; the still is a bonus
   pairing/directory survive; navigate back in.
 - iOS autocapitalizes the composer draft — screenshot text differs from typed.
 
+## Asks / approvals on the phone (issue #158 surface)
+
+- `xcrun simctl ui $D appearance dark|light` toggles the theme — grab the dark
+  stills with `simctl io` after the switch, no reboot needed.
+- One mutating prompt raises SEVERAL sequential approval asks (each mutating
+  step: patch/write_file/git): approving an ask resumes the turn until the
+  next ask opens. `plan: propose` raises a kind:"plan" ask; engine-fake never
+  emits kind:"question" asks — that UI path is unreachable live.
+- iOS keyboard Return does NOT send the chat composer — tap the send arrow.
+- iOS autocorrect may rewrite prompts on send ("readme" → "resume") —
+  harmless for the mutating-prompt regex but check the sent bubble if the
+  text matters.
+- To answer an open ask as a second device (two-device ACs), from the repo
+  root with the relay home at <home>:
+
+```sh
+bun -e 'import {RelayClient} from "./packages/client-runtime/src/index";import{readFileSync}from"node:fs";const t=readFileSync("<home>/relay-token","utf8").trim();const c=new RelayClient({url:"ws://127.0.0.1:4577/ws",token:t,client:{name:"mac",version:"0"}});await c.connect();const{asks}=await c.request("asks.list",{});const a=asks.find(x=>x.state==="open");await c.request("asks.respond",{askId:a.id,outcome:"deny"});'
+```
+
+  The phone's ask card folds to its receipt on its own within ~1 update.
+- `bun` may not be on PATH in agent shells — it's at `~/.bun/bin/bun`.
+
 ## Desktop hygiene before recording
 
 Same as the desktop-app skill: 1024×768 logical screen; dismiss sticky

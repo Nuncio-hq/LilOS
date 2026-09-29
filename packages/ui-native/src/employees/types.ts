@@ -40,6 +40,9 @@ export type Approval = {
   employee: string;
   tone: OrbTone;
   session: string;
+  /** The wire ask's kind; a question can't be approved (it needs free text)
+      so surfaces hide its Approve pill. Absent = approval (prototype rows). */
+  kind?: "approval" | "plan" | "question";
   /** Why, in one sentence. */
   reason: string;
   /** A shell command it wants to run… */

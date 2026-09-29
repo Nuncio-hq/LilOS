@@ -22,6 +22,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { atom } from "nanostores";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Alert, View } from "react-native";
+import { decide } from "../asks";
 import { defaultModelPick } from "../dm-model";
 import { $asks, $catalog, $pendingOpens, watchDm } from "../dm-store";
 import { $client, $welcome } from "../link";
@@ -33,7 +34,7 @@ import { dropRewound, toThreadDetail } from "../thread-model";
    engine turns projected live through sessionFeed -> reduceSessionEvents ->
    ThreadEntry[] (AC-2), reply/steer via messages.post (AC-3), turns.interrupt
    stop (AC-4), per-thread model pick (AC-5), the ⓘ session sheet (AC-6).
-   Approvals render read-only — answering is sibling slice #158. */
+   #158: approve/deny runs asks.respond through `decide`. */
 
 type Nav = NativeStackNavigationProp<DmRoutes>;
 
@@ -274,18 +275,12 @@ export function Thread({
       t={detail}
       model={modelChip}
       modelLogo={provider?.logo}
-      onApprove={() =>
-        Alert.alert(
-          "Ask",
-          "Answering approvals from the phone lands in the next update — approve or deny on your Mac for now.",
-        )
-      }
-      onDeny={() =>
-        Alert.alert(
-          "Ask",
-          "Answering approvals from the phone lands in the next update — approve or deny on your Mac for now.",
-        )
-      }
+      onApprove={(id) => {
+        if (client) void decide(client, id, true);
+      }}
+      onDeny={(id) => {
+        if (client) void decide(client, id, false);
+      }}
       onSend={send}
       onStop={stop}
       onPickModel={() =>

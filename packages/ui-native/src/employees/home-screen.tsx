@@ -211,7 +211,7 @@ export function NeedsYouAccessory({
           {what}
         </AppText>
       </View>
-      {onApprove && (
+      {onApprove && top.kind !== "question" && (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Approve ${top.employee}`}
