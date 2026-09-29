@@ -1,6 +1,6 @@
 ---
 name: testing-mobile-simulator
-description: How to test the LilOS iOS app (apps/mobile) end-to-end in Simulator on this macOS VM — picking the right booted device, simctl app control, the relay, pairing state, cache/offline behavior, evidence capture quirks, and plan/task-list leg timings.
+description: How to test the LilOS iOS app (apps/mobile) end-to-end in Simulator on this macOS VM — picking the right booted device, simctl app control, the relay, pairing state, cache/offline behavior, evidence capture quirks, plan/task-list leg timings, building with Xcode-27-RC for iOS 26.x devices, custom/cap-less engine-fake variants, and harness capability plumbing gotchas.
 ---
 
 # Testing the LilOS iOS app in Simulator on the macOS VM
@@ -221,6 +221,72 @@ notification banners by hovering each to reveal its X (`killall
 NotificationCenter` doesn't clear them). Keep the Terminal to the left strip so
 the Simulator window is never covered.
 
+## Building the app for the simulator (when no DerivedData .app exists)
+
+- `pod` may be missing: `brew install cocoapods` (installs Ruby 4.x as a dep).
+- The default selected Xcode (`xcode-select -p` → Xcode.app, 26.6) fails on
+  iOS 26.5 devices with error 70 "iOS 26.5 is not installed". Build with the
+  newer Xcode RC instead:
+  `cd apps/mobile && LANG=en_US.UTF-8 DEVELOPER_DIR=/Applications/Xcode-27.0-RC.app/Contents/Developer PATH="$HOME/.bun/bin:$PATH" bunx expo run:ios --device <udid>`
+  (prebuild + pods + xcodebuild ≈ 15 min).
+- The resulting `.app` lands at
+  `~/Library/Developer/Xcode/DerivedData/LilOS-*/Build/Products/Debug-iphonesimulator/LilOS.app`
+  and can be installed on other booted sims with `xcrun simctl install <udid> <path>`.
+- **iOS-27-SDK builds crash on the iOS 27.0 simulator** ("UIScene lifecycle is
+  required" — new enforcement). Install/run the same build on the iOS 26.5
+  simulator instead (D0B64A8A-D5F1-4668-8FFC-A86B400AF527 is the known-good
+  iPhone 17 / iOS 26.5 device on this VM).
+- The harness spawns `bun` from `$PATH` for the bundled engine — always export
+  `PATH="$HOME/.bun/bin:$PATH"` when launching `apps/harness/src/index.ts`
+  directly, or the engine dies with `Executable not found in $PATH: "bun"`.
+
+## Running a custom / cap-less engine through the harness
+
+`LILOS_ENGINE=command` + `LILOS_ENGINE_COMMAND="<argv…>"` (space-split) makes
+the harness spawn any engine command; readiness defaults to
+`LISTENING (ws://\S+)` on stdout. engine-fake's `serve.ts` takes a repeatable
+`--no-cap <id>` flag (since e9072d6):
+`bun packages/engine-fake/scripts/serve.ts --port 0 --tick 25 --watch-stdin --no-cap subagents --no-cap background_jobs`
+`capOn()` returns false only for caps explicitly set `false`, which both omits
+them from `describe` AND skips the scripted event arcs — the clean way to
+exercise client-side capability gating (D-#19) end-to-end on the phone. For
+arbitrary engines copy `serve.ts` to /tmp and use absolute `.ts` imports.
+
+When restarting the relay manually (e.g. after `scripts/live/*.sh` runs — the
+script EXIT trap pkills ALL `apps/relay`/`apps/harness` processes, shared env
+included), pass `LILOS_RELAY_TAILSCALE_IP=172.16.4.2` or the phone's pairing
+(`ip-172-16-4-2...:4577`) can't connect — the relay binds only 127.0.0.1
+without it; the `phoneAccess` setting re-enables the second listener at boot.
+Reusing the existing `LILOS_RELAY_HOME`/`LILOS_HARNESS_HOME` keeps the pairing,
+employees, and conversation history (relay.sqlite).
+
+Restarting the harness with the same `LILOS_RELAY_URL`, `LILOS_RELAY_TOKEN`
+(`cat <relay-home>/relay-token`), `LILOS_HARNESS_HOME` and `LILOS_WORKDIR`
+rebinds conversations to a fresh engine session on the next message
+(`bindingFor` falls through to `session.start` when `engineRef` is dead).
+
+## Capability plumbing gotcha (LILOS_HIDE_CAPS)
+
+`LILOS_HIDE_CAPS=a,b` only filters the harness's internal `describeResult`
+(used by the feed `describe` RPC and `hasCapability`). The relay-facing
+welcome the phone gates on (`$welcome.engineHost.capabilities` ←
+`session.hello` ← `host.status.capabilities` ← the **unfiltered** probe in
+`apps/harness/src/status.ts`) still carries every capability — surfaces stay
+visible on the phone under hideCaps. To truly hide surfaces, run a cap-less
+engine (above) or an engine that genuinely lacks the caps.
+
+## Employee-helper (@mention → helper's own thread) seeding recipe
+
+- `ensureAgent` uses `employee.profile` (preferred) else `name` as the agent
+  id — the engine's mention resolution (`employeeLink`) requires
+  `agents.has(employeeRef)` **case-sensitively** plus a *live* session for
+  that agent. Seed e.g. `employees.create({name:"Blair", role:"reviewer",
+  profile:"blair"})` via the token-scoped RelayClient
+  (`<relay-home>/relay-token`, `ws://127.0.0.1:4577/ws`), then send any
+  message in that employee's DM first — `session.start` only fires on the
+  first message, and mentions resolve against the newest live session.
+
 ## Devin Secrets Needed
 
-None — the relay seeds deterministic demo data; pairing codes are minted locally.
+- `GITHUB_API_KEY` — read GitHub issues/PRs (gh CLI is not authenticated
+  without it).
