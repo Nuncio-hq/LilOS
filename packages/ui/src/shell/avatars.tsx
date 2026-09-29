@@ -43,20 +43,47 @@ export function HermesAvatar({
   className?: string;
 }) {
   const [base, a, b] = TONES[orbTone(name)];
+  const working = status === "busy";
   return (
     <span
       role="img"
       aria-label={name ?? "Employee"}
       className={cn("relative inline-block size-9 shrink-0", className)}
     >
+      {/* Working: a blue arc circles the orb (mobile's ring), instead of a dot. */}
+      {working && (
+        <span
+          data-presence={status}
+          className="lilos-orb-ring absolute -inset-[3px] rounded-full"
+          style={{
+            background:
+              "conic-gradient(from 0deg, var(--work, #007aff) 0 45%, transparent 45%)",
+            mask: "radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px))",
+            WebkitMask:
+              "radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px))",
+          }}
+        />
+      )}
       <span
-        className="block size-full rounded-full ring-1 ring-white/35 ring-inset"
-        style={{
-          backgroundColor: base,
-          backgroundImage: `radial-gradient(circle farthest-side at 30% 8%, rgba(255,255,255,.42), rgba(255,255,255,0) 55%), radial-gradient(circle closest-side at 72% 78%, ${a}, ${a}00), radial-gradient(circle farthest-side at 25% 72%, ${b}, ${b}00 70%)`,
-        }}
-      />
-      {status && (
+        className="relative block size-full overflow-hidden rounded-full ring-1 ring-white/40 ring-inset"
+        style={{ backgroundColor: base }}
+      >
+        {/* The colour blobs drift slowly, like a lava lamp out of focus. */}
+        <span
+          className="lilos-orb-blobs absolute -inset-1/4"
+          style={{
+            backgroundImage: `radial-gradient(circle closest-side at 62% 70%, ${a}, ${a}00), radial-gradient(circle farthest-side at 30% 62%, ${b}, ${b}00 70%)`,
+          }}
+        />
+        <span
+          className="absolute inset-0"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle farthest-side at 30% 8%, rgba(255,255,255,.45), rgba(255,255,255,0) 55%)",
+          }}
+        />
+      </span>
+      {status && !working && (
         <span
           data-presence={status}
           className={cn(

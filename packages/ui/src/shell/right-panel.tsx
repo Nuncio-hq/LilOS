@@ -33,7 +33,7 @@ export function RightPanel({
   dm: boolean;
 }) {
   return (
-    <aside className="flex min-h-0 flex-col border-l bg-background max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(420px,100vw)] max-xl:shadow-2xl">
+    <aside className="lilos-glass flex min-h-0 flex-col border-l bg-background max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(420px,100vw)] max-xl:shadow-2xl">
       <Tabs
         value={tab}
         onValueChange={(v) => onTab(v as "thread" | "employee" | "tickets")}

@@ -1385,7 +1385,7 @@ export default function App() {
   ) : null
 
   return (
-    <div className={cn("grid h-dvh grid-cols-1 overflow-hidden bg-background text-sm", !(focus && openThread?.thread) && "lg:grid-cols-[264px_minmax(0,1fr)]")}>
+    <div className={cn("lilos-desktop grid h-dvh grid-cols-1 overflow-hidden text-sm", !(focus && openThread?.thread) && "lg:grid-cols-[264px_minmax(0,1fr)]")}>
       {navOpen && <div className="fixed inset-0 z-30 bg-black/30 lg:hidden" onClick={() => setNavOpen(false)} />}
       {navOpen && focus && <div className="fixed inset-0 z-30 hidden bg-black/30 lg:block" onClick={() => setNavOpen(false)} />}
       <Sidebar
@@ -1434,7 +1434,7 @@ export default function App() {
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />
       ) : (
-        <div className={cn("grid min-h-0 min-w-0 grid-cols-1", panelOpen && "xl:grid-cols-[minmax(0,1fr)_420px]")}>
+        <div className={cn("grid min-h-0 min-w-0 grid-cols-1 lg:gap-[10px]", panelOpen && "xl:grid-cols-[minmax(0,1fr)_420px]")}>
           {banner && <div className="col-span-full">{banner}</div>}
           {channel.dm && emp(view.id) ? (
             <EmployeeHome
@@ -1461,7 +1461,7 @@ export default function App() {
               picker={pickerExtras}
             />
           ) : (
-          <main className="flex min-h-0 min-w-0 flex-col">
+          <main className="lilos-glass flex min-h-0 min-w-0 flex-col">
             <ChannelHeader
               channel={channel} companyName={company} projectName={project?.name} employees={employees}
               onNav={() => setNavOpen(true)} onOpenTickets={() => { setPanelTab("tickets"); setPanelOpen(true) }}

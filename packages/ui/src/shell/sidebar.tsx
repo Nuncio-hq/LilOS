@@ -115,7 +115,7 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "min-h-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground backdrop-blur-2xl backdrop-saturate-150",
+        "lilos-glass lilos-glass-side min-h-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground",
         navOpen
           ? "fixed inset-y-0 left-0 z-40 flex w-[264px] shadow-2xl"
           : hiddenWhenClosed
@@ -190,9 +190,6 @@ export function Sidebar({
                     <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform group-data-[panel-open]:rotate-90" />
                     <FolderGit2Icon className="size-4 text-muted-foreground" />
                     {p.name}
-                    <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-                      {p.key}
-                    </span>
                   </CollapsibleTrigger>
                   <CollapsibleContent className="ml-4 pl-2">
                     {folders
@@ -232,6 +229,7 @@ export function Sidebar({
             return (
               <button
                 key={e.id}
+                title={e.role}
                 onClick={() => onGoDM(e.id)}
                 className={cn(
                   "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[13.5px] hover:bg-sidebar-accent",
@@ -267,9 +265,6 @@ export function Sidebar({
                       {b.running}
                     </span>
                   )}
-                  <span className="max-w-[7rem] min-w-0 truncate text-muted-foreground text-xs">
-                    {e.role}
-                  </span>
                 </span>
               </button>
             );
@@ -284,24 +279,28 @@ export function Sidebar({
           )}
         </div>
       </ScrollArea>
-      {onPairPhone && (
-        <button
-          type="button"
-          onClick={onPairPhone}
-          data-pairphone-open
-          className="flex w-full items-center gap-2 border-sidebar-border border-t px-4 py-2 text-left text-xs hover:bg-sidebar-accent"
-        >
-          <SmartphoneIcon className="size-3.5 text-muted-foreground" />
-          Pair phone
-        </button>
-      )}
       {status && onOpenStatus && (
         <StatusRow components={status} onOpen={onOpenStatus} />
       )}
       <div className="flex shrink-0 items-center gap-2 border-sidebar-border border-t px-3 py-2.5">
         <HumanAvatar human={me} size="sm" className="rounded-full" />
-        <span className="min-w-0 truncate font-medium text-sm">{me.name}</span>
+        {/* The avatar is you; the name stays for screen readers. */}
+        <span className="sr-only">{me.name}</span>
+        <span className="flex-1" />
         {preview}
+        {onPairPhone && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            data-pairphone-open
+            aria-label="Pair phone"
+            title="Pair phone"
+            className="size-11 md:size-7"
+            onClick={onPairPhone}
+          >
+            <SmartphoneIcon />
+          </Button>
+        )}
         <ThemeToggle theme={theme} setTheme={onSetTheme} />
         {onOpenSettings && (
           <Button

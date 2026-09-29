@@ -435,7 +435,7 @@ export function Composer({
           <PromptInputTools className="min-w-0 flex-wrap">
             {accept && <AttachButton />}
             {tools}
-            <span className="hidden truncate text-muted-foreground text-xs sm:inline">
+            <span className="lilos-hint hidden truncate text-muted-foreground text-xs sm:inline">
               {hint}
             </span>
           </PromptInputTools>

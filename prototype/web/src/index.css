@@ -267,3 +267,101 @@
     backdrop-filter: blur(24px) saturate(1.6);
     -webkit-backdrop-filter: blur(24px) saturate(1.6);
 }
+
+/* ---- Liquid glass desktop (issue #223, round 2) ----
+   Glass only reads when something colourful moves behind it: a slow,
+   blurred colour field sits under the app, and every panel (sidebar, main,
+   side panels) floats above it as a frosted sheet with a specular rim and a
+   soft drop shadow — macOS window chrome, not flat white columns. */
+body {
+    background:
+        radial-gradient(40% 55% at 12% 18%, #5fd6ce66, transparent 70%),
+        radial-gradient(45% 50% at 88% 12%, #7b6cff4d, transparent 70%),
+        radial-gradient(50% 55% at 78% 92%, #ffb14a40, transparent 70%),
+        radial-gradient(45% 55% at 20% 95%, #3f7ff540, transparent 70%),
+        #eef1f5;
+    background-attachment: fixed;
+}
+.dark body {
+    background:
+        radial-gradient(40% 55% at 12% 18%, #0f6f6a80, transparent 70%),
+        radial-gradient(45% 50% at 88% 12%, #3b2f8a80, transparent 70%),
+        radial-gradient(50% 55% at 78% 92%, #6a3a1060, transparent 70%),
+        radial-gradient(45% 55% at 20% 95%, #13306e80, transparent 70%),
+        #0b0c10;
+}
+/* The colour field drifts, slowly — alive, never distracting. */
+body::before {
+    content: ""; position: fixed; inset: -20%; z-index: -1; pointer-events: none;
+    background:
+        radial-gradient(30% 35% at 30% 40%, #3cc4bc38, transparent 70%),
+        radial-gradient(30% 35% at 70% 60%, #af52de2e, transparent 70%);
+    filter: blur(40px);
+    animation: lilos-drift 28s ease-in-out infinite alternate;
+}
+@keyframes lilos-drift {
+    0% { transform: translate3d(-6%, -4%, 0) rotate(0deg) scale(1); }
+    50% { transform: translate3d(5%, 3%, 0) rotate(12deg) scale(1.08); }
+    100% { transform: translate3d(-3%, 6%, 0) rotate(-8deg) scale(1); }
+}
+
+.lilos-desktop { background: transparent; }
+@media (min-width: 1024px) {
+    .lilos-desktop { padding: 10px; gap: 10px; }
+}
+.lilos-glass {
+    --glass-fill: rgb(255 255 255 / 0.62);
+    background: var(--glass-fill) !important;
+    backdrop-filter: blur(30px) saturate(1.8);
+    -webkit-backdrop-filter: blur(30px) saturate(1.8);
+    border: 1px solid rgb(255 255 255 / 0.7) !important;
+    box-shadow:
+        inset 0 1px 0 rgb(255 255 255 / 0.9),
+        inset 0 -1px 0 rgb(0 0 0 / 0.04),
+        0 1px 2px rgb(0 0 0 / 0.06),
+        0 20px 50px -20px rgb(20 30 60 / 0.28);
+}
+.dark .lilos-glass {
+    --glass-fill: rgb(28 28 32 / 0.62);
+    border-color: rgb(255 255 255 / 0.1) !important;
+    box-shadow:
+        inset 0 1px 0 rgb(255 255 255 / 0.1),
+        0 1px 2px rgb(0 0 0 / 0.4),
+        0 24px 60px -20px rgb(0 0 0 / 0.7);
+}
+@media (min-width: 1024px) {
+    .lilos-glass { border-radius: 22px; overflow: hidden; }
+}
+/* The sidebar is a clearer, more tinted sheet — like Finder's. */
+.lilos-glass.lilos-glass-side { --glass-fill: rgb(246 248 250 / 0.45); }
+.dark .lilos-glass.lilos-glass-side { --glass-fill: rgb(20 20 24 / 0.45); }
+
+/* ---- Motion ----
+   Springy, short and physical. Things arrive (rise + unblur), lift under the
+   pointer, press in when clicked. Honours reduced motion. */
+@keyframes lilos-rise {
+    from { opacity: 0; transform: translateY(10px) scale(0.985); filter: blur(4px); }
+    to { opacity: 1; transform: none; filter: none; }
+}
+.lilos-rise { animation: lilos-rise 0.5s cubic-bezier(0.2, 0.9, 0.25, 1.15) both; }
+.lilos-lift { transition: transform 0.25s cubic-bezier(0.2, 0.9, 0.25, 1.2), box-shadow 0.25s ease, background-color 0.2s ease; }
+.lilos-lift:hover { transform: translateY(-2px); box-shadow: 0 10px 24px -12px rgb(20 30 60 / 0.35); }
+button:not(:disabled):active, [role="button"]:active { transform: scale(0.97); transition: transform 0.08s ease; }
+@keyframes lilos-orb {
+    0% { transform: rotate(0deg) scale(1); }
+    50% { transform: rotate(180deg) scale(1.12); }
+    100% { transform: rotate(360deg) scale(1); }
+}
+.lilos-orb-blobs { animation: lilos-orb 14s linear infinite; }
+@keyframes lilos-spin { to { transform: rotate(360deg); } }
+.lilos-orb-ring { animation: lilos-spin 1.1s cubic-bezier(0.45, 0.1, 0.55, 0.9) infinite; }
+/* The composer grows a little when you start typing. */
+[data-slot="input-group"]:has(textarea) textarea { transition: min-height 0.3s cubic-bezier(0.2, 0.9, 0.25, 1.1); }
+[data-slot="input-group"]:has(textarea):focus-within textarea { min-height: 4.5rem; }
+@media (prefers-reduced-motion: reduce) {
+    body::before, .lilos-orb-blobs, .lilos-orb-ring, .lilos-rise { animation: none !important; }
+    .lilos-lift:hover { transform: none; }
+}
+/* Composer hints show only while you type — calm at rest. */
+.lilos-hint { opacity: 0; transition: opacity 0.25s ease; }
+form:focus-within .lilos-hint { opacity: 1; }

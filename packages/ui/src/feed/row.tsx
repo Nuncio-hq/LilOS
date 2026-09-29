@@ -66,7 +66,7 @@ export function Row({
   return (
     <div
       className={cn(
-        "group relative grid grid-cols-[36px_minmax(0,1fr)] gap-3 px-3 py-2 hover:bg-muted/40 sm:px-5",
+        "lilos-rise group relative mx-1.5 grid grid-cols-[36px_minmax(0,1fr)] gap-3 rounded-2xl px-3 py-2 transition-colors hover:bg-foreground/[0.035] sm:mx-2 sm:px-4",
         active && "bg-primary/7 hover:bg-primary/7",
       )}
     >
