@@ -54,6 +54,8 @@ const WORK: Record<string, Omit<ToolStep, "id" | "running">> = {
     output: "24 lines",
     add: 14,
     del: 0,
+    patch:
+      "@@ -0,0 +1,5 @@\n+/** 250ms \u2026 30s, \u00b120% jitter. */\n+export function backoff(attempt: number) {\n+  const base = Math.min(30_000, 250 * 2 ** attempt)\n+  return base * (0.8 + Math.random() * 0.4)\n+}",
   },
   "packages/client-runtime/src/socket.ts": {
     tool: "patch",
@@ -61,6 +63,8 @@ const WORK: Record<string, Omit<ToolStep, "id" | "running">> = {
     output: "reconnect uses backoff()",
     add: 6,
     del: 2,
+    patch:
+      '@@ -41,3 +41,4 @@ function onClose() {\n-  setTimeout(connect, 1000)\n+  const wait = backoff(this.attempt++)\n+  this.emit("reconnecting", { in: wait })\n+  setTimeout(connect, wait)',
   },
   "packages/client-runtime/src/sync.ts": {
     tool: "patch",
@@ -68,6 +72,8 @@ const WORK: Record<string, Omit<ToolStep, "id" | "running">> = {
     output: "hello { afterSequence }",
     add: 3,
     del: 1,
+    patch:
+      '@@ -18,3 +18,3 @@ export function hello(s: Sync) {\n-  return { kind: "hello" }\n+  return { kind: "hello", afterSequence: s.lastSeq ?? 0 }',
   },
   "packages/client-runtime/test/reconnect.test.ts": {
     tool: "terminal",
@@ -81,6 +87,8 @@ const WORK: Record<string, Omit<ToolStep, "id" | "running">> = {
     output: "Reconnecting… banner",
     add: 4,
     del: 0,
+    patch:
+      '@@ -12,3 +12,5 @@\n+  if (state === "reconnecting")\n+    return <StatusBanner tone="amber">Reconnecting\u2026</StatusBanner>',
   },
 };
 export const workFor = (file?: string): Omit<ToolStep, "id" | "running"> =>

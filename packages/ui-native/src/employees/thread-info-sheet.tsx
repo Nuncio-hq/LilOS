@@ -4,6 +4,7 @@ import { AppText } from "../components/app-text";
 import { StateChip } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb } from "../components/orb";
+import { ContextMeter } from "./context-meter";
 import { Group, SheetHeader } from "./folder-picker";
 import { PrIcon, prHeadline, prStatusLabel, sortPrs } from "./pr-badges";
 import type { ThreadDetail } from "./types";
@@ -116,10 +117,12 @@ export function ThreadInfoSheet({
         </Group>
       )}
 
+      {t.context && <ContextMeter c={t.context} model={t.model} />}
+
       <Group title="Session">
         <Fact icon="calendar" label="Started" value={t.started} first />
-        <Fact icon="sparkle" label="Model" value={t.model} />
-        {t.usage && (
+        {!t.context && <Fact icon="sparkle" label="Model" value={t.model} />}
+        {t.usage && !t.context && (
           <Fact
             icon="gauge.with.dots.needle.33percent"
             label="Usage"
