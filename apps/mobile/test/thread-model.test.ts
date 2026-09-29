@@ -109,7 +109,8 @@ describe("thread-model — #157 AC mapping", () => {
     /* The placeholder screen printed raw `**`/backticks; the real screen
        renders `text` through Prose — so the mapping must pass markdown
        through untouched, not strip or escape it. */
-    const md = "Short answer:\n\n- `seq` is monotonic\n- **bold** claim\n\nTail.";
+    const md =
+      "Short answer:\n\n- `seq` is monotonic\n- **bold** claim\n\nTail.";
     const user = msg({ id: "m1", seq: 1, text: "go" });
     const reply = msg({
       id: "m2",
