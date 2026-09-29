@@ -167,6 +167,19 @@ test.afterAll(async () => {
 test.describe.configure({ mode: "serial" });
 
 const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
+const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
+
+/* #195: a feed row opens the peek panel, not Focus; the panel's ↗ carries
+   on into Focus. */
+async function openSessionFocus(page: Page) {
+  await sessionRow(page).click();
+  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
+  await page
+    .locator("[data-thread-panel]")
+    .getByTitle("Focus", { exact: true })
+    .click();
+  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+}
 
 /** Open the app past first-run, landed on the auto-hired Default's DM. */
 async function openDefault(page: Page) {
@@ -310,8 +323,7 @@ test("AC-2 a helper's file write counts in Workbench → Changes (same checkout)
 }) => {
   test.setTimeout(120_000);
   await openDefault(page);
-  await sessionRow(page).click();
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await openSessionFocus(page);
 
   const changes = tab(page, /Changes/);
   await expect(changes).toBeVisible({ timeout: 30_000 });
@@ -364,8 +376,7 @@ test("AC-3 an employee-helper row shows their avatar + Open session into their D
   // Back on Default's open conversation, delegate with a @reviewer mention:
   // the third helper is reported as that employee's own helper.
   await openEmployee(page, /Default/);
-  await sessionRow(page).click();
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await openSessionFocus(page);
   /* A mid-string @mention stays literal text in the outgoing message — the
      fake keys the employee-helper branch on `@<profile>`. (Leading the draft
      with it would leave the mention menu open on Enter.) */
@@ -400,8 +411,7 @@ test("AC-4 a background process lists in Background with command/status/uptime/U
 }) => {
   test.setTimeout(180_000);
   await openDefault(page);
-  await sessionRow(page).click();
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await openSessionFocus(page);
   await turnSettled(page);
 
   await send(page, "leave the dev server running in the background");
