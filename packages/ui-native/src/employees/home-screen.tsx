@@ -10,7 +10,18 @@ import {
 } from "react-native";
 import type { MacLink } from "../app/mac-status-card";
 import { AppText } from "../components/app-text";
-import { LargeTitle, SectionTitle } from "../components/bits";
+import { SectionTitle } from "../components/bits";
+
+/* "Oscar Co" → "OC" (web: the sidebar header chip). */
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "·";
+
 import { Icon } from "../components/icon";
 import { Orb } from "../components/orb";
 import type { Approval, ChannelRow, EmployeeRow, ProjectGroup } from "./types";
@@ -48,7 +59,38 @@ export function EmployeesHomeScreen({
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={{ paddingBottom: 24 }}
     >
-      <LargeTitle title={workspace} />
+      {/* The company, like the desktop sidebar header: a teal squircle with
+          its initials beside the name, in the large-title spot. */}
+      <View className="flex-row items-center gap-3 px-4 pt-1">
+        <View
+          className="size-10 items-center justify-center rounded-[11px] bg-primary"
+          style={{
+            borderCurve: "continuous",
+            experimental_backgroundImage: [
+              {
+                type: "linear-gradient",
+                direction: "to bottom",
+                colorStops: [{ color: "#14b8a6" }, { color: "#0f766e" }],
+              },
+            ],
+          }}
+        >
+          <AppText
+            weight="semibold"
+            tone="none"
+            className="text-[15px] text-white"
+          >
+            {initials(workspace)}
+          </AppText>
+        </View>
+        <AppText
+          accessibilityRole="header"
+          numberOfLines={1}
+          className="flex-1 font-bold text-[30px] leading-[36px] tracking-tight"
+        >
+          {workspace}
+        </AppText>
+      </View>
       {link === "offline" && (
         <Pressable
           accessibilityRole="button"

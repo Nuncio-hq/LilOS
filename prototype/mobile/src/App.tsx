@@ -380,7 +380,7 @@ function Home() {
   if (!mac) return null;
   return (
     <EmployeesHomeScreen
-      workspace="LilOS"
+      workspace="Oscar Co"
       macName={mac.name}
       link={link}
       employees={employees}
