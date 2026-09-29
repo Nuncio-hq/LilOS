@@ -41,7 +41,7 @@ const { conversation } = await store.openConversation({
   text: "please look at the rate limit errors",
   authorId: "user",
 });
-const { message: reply } = await store.appendMessage({
+await store.appendMessage({
   channelId: channel.id,
   conversationId: conversation.id,
   authorId: employee.id,
@@ -81,13 +81,14 @@ await store.appendMessage({
   text: "rate limit on the other channel",
 });
 
+/* v9 is the FTS migration under test — apply it alone (the other
+   migrations, including later column adds, were already run above). */
 const fts = MIGRATIONS.find((m) => m.version === FTS_VERSION);
 if (!fts) throw new Error("FTS migration missing");
 for (const s of fts.statements) sqlite.exec(s);
 sqlite.exec(
   `PRAGMA user_version = ${Math.max(...MIGRATIONS.map((m) => m.version))}`,
 );
-applyMigrations(sqlite); // no-op now: the schema is at the latest version
 out("version", sqlite.query("PRAGMA user_version").get());
 
 const search = (params: {

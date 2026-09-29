@@ -249,4 +249,7 @@ export const hostSearch = (path: string, query: string, limit?: number) =>
 
 /** OS account name — first-run prefill source for the identity fields (#118). */
 export const hostUser = () =>
-  host<{ username: string; fullName: string | null }>("host.user", {});
+  host<{ username: string; fullName: string | null; home: string }>(
+    "host.user",
+    {},
+  );

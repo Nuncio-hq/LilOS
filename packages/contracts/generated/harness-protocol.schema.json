@@ -414,6 +414,13 @@
             },
             "fast": {
               "type": "boolean"
+            },
+            "rewound": {
+              "default": false,
+              "type": "boolean"
+            },
+            "checkpoint": {
+              "type": "string"
             }
           },
           "required": [
@@ -539,6 +546,13 @@
               },
               "fast": {
                 "type": "boolean"
+              },
+              "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "checkpoint": {
+                "type": "string"
               }
             },
             "required": [

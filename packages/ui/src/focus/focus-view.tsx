@@ -15,7 +15,6 @@ import {
   PanelRightCloseIcon,
   PanelRightOpenIcon,
   PlayIcon,
-  Undo2Icon,
 } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import {
@@ -28,11 +27,6 @@ import {
 import { useEscapeKey } from "../chat/composer-keys";
 import { FocusComposer } from "../chat/focus-composer";
 import { sessionChoice } from "../chat/model-picker";
-import {
-  Checkpoint,
-  CheckpointIcon,
-  CheckpointTrigger,
-} from "../components/ai-elements/checkpoint";
 import {
   Conversation,
   ConversationContent,
@@ -56,6 +50,7 @@ import { AgentTurn, PrCard, UserTurn } from "../conversation/turns";
 import { PHASE_LABEL } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
+import { RewindCheckpoint } from "../thread/thread-view";
 import type {
   AttachedFile,
   Channel,
@@ -104,6 +99,9 @@ export function FocusView({
   onUnqueue,
   onSendQueued,
   onRewind,
+  rewindWarning,
+  seedFiles,
+  onSeededFiles,
   onModel,
   picker,
   defaultModel,
@@ -161,7 +159,14 @@ export function FocusView({
   onRetry?: (empId: string) => void;
   onUnqueue?: (i: number) => void;
   onSendQueued?: (i: number) => void;
-  onRewind?: (replyIndex: number) => void;
+  /* #134 "Rewind to here" — the picked user message's id (root included). */
+  onRewind?: (messageId: string) => void;
+  /* AC-5: a shared folder turns the click into an inline confirm naming the
+     other session. */
+  rewindWarning?: string;
+  /* AC-4: rewound message images re-entering the composer. */
+  seedFiles?: AttachedFile[];
+  onSeededFiles?: () => void;
   onModel?: (c: ModelChoice) => void;
   /* Refresh / Edit models… / provider names — each renders only with its handler. */
   picker?: ModelPickerExtras;
@@ -533,7 +538,17 @@ export function FocusView({
       >
         <section ref={turnsRef} className="flex min-h-0 min-w-0 flex-col">
           <Conversation className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]">
-            <ConversationContent className="mx-auto w-full max-w-[46rem] gap-7 px-5 py-8">
+            <ConversationContent
+              data-thread
+              className="mx-auto w-full max-w-[46rem] gap-7 px-5 py-8"
+            >
+              {onRewind && root.id && human(root.from) && (
+                <RewindCheckpoint
+                  running={running}
+                  warning={rewindWarning}
+                  onRewind={() => onRewind(root.id ?? "")}
+                />
+              )}
               <div data-msg={root.id} className={flashCls(root.id)}>
                 <UserTurn
                   from={root.from}
@@ -595,18 +610,12 @@ export function FocusView({
                   </div>
                 ) : (
                   <Fragment key={r.id ?? i}>
-                    {!running && onRewind && (
-                      <Checkpoint className="text-xs">
-                        <CheckpointIcon className="size-3.5" />
-                        <CheckpointTrigger
-                          size="xs"
-                          tooltip="session.undo + rollback.restore: drop this turn and everything after, files included"
-                          onClick={() => onRewind(i)}
-                        >
-                          <Undo2Icon className="size-3" />
-                          Restore to here
-                        </CheckpointTrigger>
-                      </Checkpoint>
+                    {onRewind && r.id && human(r.from) && (
+                      <RewindCheckpoint
+                        running={running}
+                        warning={rewindWarning}
+                        onRewind={() => onRewind(r.id ?? "")}
+                      />
                     )}
                     <div data-msg={r.id} className={flashCls(r.id)}>
                       <UserTurn
@@ -744,6 +753,8 @@ export function FocusView({
               onSend={(t, files) => onSend(t, files)}
               draft={draft}
               onDraftChange={onDraftChange}
+              seedFiles={seedFiles}
+              onSeededFiles={onSeededFiles}
               accept={accept}
               maxFileSize={maxFileSize}
               onAttachError={onAttachError}

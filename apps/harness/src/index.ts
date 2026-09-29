@@ -8,6 +8,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { systemClock, watchWake } from "@lilos/background";
 import { RelayClient } from "@lilos/client-runtime";
+import { createCheckpointStore } from "@lilos/host";
 import packageJson from "../package.json";
 import { launcherFor, resolveHarnessConfig } from "./config";
 import { connectEngineWs } from "./engine/client";
@@ -21,6 +22,7 @@ import { StatusReporter, teeLogger } from "./status";
 
 const config = resolveHarnessConfig();
 mkdirSync(config.workdir, { recursive: true });
+mkdirSync(config.checkpointsDir, { recursive: true });
 
 /** Release version — stamped at bundle build time (#35); repo builds report package.json's. */
 const releaseVersion = process.env.LILOS_RELEASE_VERSION ?? packageJson.version;
@@ -39,6 +41,8 @@ const harness = new Harness({
   workdir: config.workdir,
   log,
   hideCaps: config.hideCaps,
+  /* #134: per-folder shadow-git checkpoints, snapshotted before each turn. */
+  checkpoints: createCheckpointStore(config.checkpointsDir),
   onNeedEngine: () => supervisor.ensureRunning(),
   version: releaseVersion,
 });

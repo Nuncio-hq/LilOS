@@ -386,8 +386,10 @@
         "conversations.summaries",
         "conversations.open",
         "conversations.update",
+        "conversations.rewind",
         "messages.list",
         "messages.post",
+        "messages.setCheckpoint",
         "messages.search",
         "attachments.get",
         "channel.subscribe",
@@ -439,6 +441,7 @@
         "conversation.modelRequested",
         "profile.updated",
         "settings.changed",
+        "conversation.rewound",
         "devices.changed",
         "host.changed"
       ]
@@ -1849,6 +1852,13 @@
             },
             "fast": {
               "type": "boolean"
+            },
+            "rewound": {
+              "default": false,
+              "type": "boolean"
+            },
+            "checkpoint": {
+              "type": "string"
             }
           },
           "required": [
@@ -2187,6 +2197,13 @@
         },
         "fast": {
           "type": "boolean"
+        },
+        "rewound": {
+          "default": false,
+          "type": "boolean"
+        },
+        "checkpoint": {
+          "type": "string"
         }
       },
       "required": [
@@ -2230,6 +2247,9 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 9007199254740991
+        },
+        "includeRewound": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -2331,6 +2351,13 @@
               },
               "fast": {
                 "type": "boolean"
+              },
+              "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "checkpoint": {
+                "type": "string"
               }
             },
             "required": [
@@ -2527,6 +2554,13 @@
             },
             "fast": {
               "type": "boolean"
+            },
+            "rewound": {
+              "default": false,
+              "type": "boolean"
+            },
+            "checkpoint": {
+              "type": "string"
             }
           },
           "required": [
@@ -3233,6 +3267,13 @@
             },
             "fast": {
               "type": "boolean"
+            },
+            "rewound": {
+              "default": false,
+              "type": "boolean"
+            },
+            "checkpoint": {
+              "type": "string"
             }
           },
           "required": [
@@ -3338,6 +3379,13 @@
               },
               "fast": {
                 "type": "boolean"
+              },
+              "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "checkpoint": {
+                "type": "string"
               }
             },
             "required": [
@@ -3743,6 +3791,13 @@
                   },
                   "fast": {
                     "type": "boolean"
+                  },
+                  "rewound": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "checkpoint": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -3848,6 +3903,13 @@
                     },
                     "fast": {
                       "type": "boolean"
+                    },
+                    "rewound": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "checkpoint": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -5184,6 +5246,13 @@
             },
             "fast": {
               "type": "boolean"
+            },
+            "rewound": {
+              "default": false,
+              "type": "boolean"
+            },
+            "checkpoint": {
+              "type": "string"
             }
           },
           "required": [
@@ -5302,6 +5371,13 @@
               },
               "fast": {
                 "type": "boolean"
+              },
+              "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "checkpoint": {
+                "type": "string"
               }
             },
             "required": [

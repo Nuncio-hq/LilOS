@@ -22,6 +22,8 @@ export interface HarnessConfig {
   homeDir: string;
   /** Engine sessions' cwd (a repo/workspace the agents edit). */
   workdir: string;
+  /** Shadow-git checkpoint stores: <dir>/<folder-hash> per session cwd (#134). */
+  checkpointsDir: string;
   engine:
     | {
         kind: "command";
@@ -96,6 +98,10 @@ export function resolveHarnessConfig(
     relayToken,
     homeDir,
     workdir: env.LILOS_WORKDIR ?? join(homeDir, "work"),
+    /* ~/.lilos/checkpoints by default — sibling of the harness home, per
+       folder-hash (#134). */
+    checkpointsDir:
+      env.LILOS_CHECKPOINT_HOME ?? join(homeDir, "..", "checkpoints"),
     engine,
     feedPort: Number(env.LILOS_FEED_PORT ?? 4581),
     hideCaps: (env.LILOS_HIDE_CAPS ?? "")
