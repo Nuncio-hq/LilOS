@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { copyFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import type { DesktopUpdateOutcome } from "@lilos/contracts/app";
 import { renderApplyScript, stageRelease, writeApplier } from "./apply";
 import { inspectSignature, signatureBlock } from "./codesign";
 import { fetchLatestRelease, pickUpdate, resolveFeedUrl } from "./feed";
@@ -31,7 +32,9 @@ export interface UpdateEnv {
   fetchImpl?: typeof fetch;
 }
 
-export type CheckOutcome = "disabled" | "none" | "apply-ready" | "failed";
+/* The wire set lives in packages/contracts/src/app/desktop.ts
+   (DESKTOP_UPDATE_OUTCOMES adds "busy" for the renderer's in-flight case). */
+export type CheckOutcome = Exclude<DesktopUpdateOutcome, "busy">;
 
 export async function checkForUpdate(e: UpdateEnv): Promise<CheckOutcome> {
   const paths = updatePaths(e.baseDir);
