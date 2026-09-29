@@ -2,6 +2,7 @@ import { reduceSessionEvents } from "@lilos/client-runtime";
 import type { AppMessage, Conversation, Employee } from "@lilos/contracts/app";
 import type { EngineEvent, Job } from "@lilos/contracts/engine";
 import { describe, expect, it } from "vitest";
+import { threadBottomInset } from "../../../packages/ui-native/src/employees/thread-layout";
 import { toThreadDetail } from "../src/thread-model";
 
 /* #181 — subagents & background jobs on the phone's live thread. The reducer
@@ -431,6 +432,35 @@ describe("thread subagents & background jobs — #181", () => {
     expect(detail.entries.at(-1)?.id).toBe("turn-t2");
   });
 
+  it("AC-4 a live turn's streamed reply never claims its posted message (no duplicate turn-<id> key)", () => {
+    /* The relay can deliver the reply message a frame before turn.completed
+       — the live turn's streamed text already equals it, so an unconditional
+       claim renders the card at the message AND at the tail under the same
+       `turn-tN` key (the React duplicate-key warning the reviewer caught).
+       Only a settled turn may claim. */
+    const messages = [
+      msg({ id: "m1", seq: 1, text: "go" }),
+      msg({ id: "m2", seq: 2, authorKind: "employee", text: "same reply" }),
+    ];
+    const live = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small", ref: "m1" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "same reply" }),
+    ]);
+    const whileLive = toThreadDetail({ ...BASE, messages, model: live });
+    const ids = whileLive.entries.map((e) => e.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    /* The message stays a plain row until the turn settles; the live card
+       keeps the tail slot. */
+    expect(ids).toEqual(["m1", "m2", "turn-t1"]);
+    const done = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small", ref: "m1" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "same reply" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    ]);
+    const settled = toThreadDetail({ ...BASE, messages, model: done });
+    expect(settled.entries.map((e) => e.id)).toEqual(["m1", "turn-t1"]);
+  });
+
   it("AC-4 a finished job's uptime freezes at endedAt (no inflation past exit)", () => {
     const exited = reduceSessionEvents("sess-1", [
       ev("job.started", {
@@ -465,6 +495,13 @@ describe("thread subagents & background jobs — #181", () => {
       ],
     });
     expect(listed.jobs?.[0]?.uptime).toBe("20s");
+  });
+
+  it("the thread bottom inset clears the pill too — composer + gap + pill, not composer alone", () => {
+    /* Review fix: #182's composer-only inset left the newest line under the
+       floating pill — the inset must cover the whole bottom stack. */
+    expect(threadBottomInset(96, 0)).toBe(96);
+    expect(threadBottomInset(96, 32)).toBe(96 + 32 + 8);
   });
 
   it("AC-5 background surfaces stay empty when the engine did not declare the capability", () => {

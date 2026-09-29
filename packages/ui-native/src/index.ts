@@ -40,6 +40,7 @@ export {
 } from "./employees/plan-card";
 export { SubagentSheet, SubagentsCard } from "./employees/subagents";
 export { ThreadInfoSheet } from "./employees/thread-info-sheet";
+export { threadBottomInset } from "./employees/thread-layout";
 export { ThreadHeaderTitle, ThreadScreen } from "./employees/thread-screen";
 export type {
   AgentEntry,

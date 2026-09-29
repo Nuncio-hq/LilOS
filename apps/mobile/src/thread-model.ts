@@ -235,7 +235,11 @@ export function mergeThreadEntries(
      position-bounded: a turn only matches a message AFTER its `ref` prompt —
      without it, a rebound session's turn (turn ids restart per session)
      steals an older session's identical reply and shows the wrong card
-     (phantom subagents + a bogus duration, #181 AC-4). */
+     (phantom subagents + a bogus duration, #181 AC-4). A settled turn
+     (done/stopped) only — a live turn's streamed text can already equal
+     the posted reply while the relay event that settles it is still
+     queued, and claiming it would render its card twice under the same
+     `turn-tN` key (once at the message, once at the tail). */
   const promptIdx = new Map<TurnModel, number>();
   for (const t of model.turns) {
     if (!t.ref) continue;
@@ -248,6 +252,7 @@ export function mergeThreadEntries(
     const turn = model.turns.find(
       (x) =>
         !used.has(x) &&
+        (x.phase === "done" || x.phase === "stopped") &&
         x.text.trim() &&
         x.text.trim() === m.text.trim() &&
         (promptIdx.get(x) ?? -1) < mi,
