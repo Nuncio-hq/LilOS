@@ -1,0 +1,6 @@
+# Expo: generated native projects (continuous native generation — `expo prebuild`)
+ios/
+android/
+.expo/
+# Uniwind writes this on every Metro start
+uniwind-types.d.ts

@@ -36,11 +36,13 @@ import {
   MessagesPostParams,
   MessagesSearchParams,
   ProfileUpdateParams,
+  SessionPingParams,
   SettingsGetParams,
   SettingsSetParams,
   SystemStatusParams,
   TurnsInterruptParams,
   type WelcomeResult,
+  WS_CLOSE_DEVICE_REVOKED,
 } from "@lilos/contracts/app";
 import {
   type AttachmentStore,
@@ -551,6 +553,16 @@ export function createRelay(options: RelayOptions): Relay {
             },
           };
           respond(peer, id, welcome);
+          return;
+        }
+        case "session.ping": {
+          const parsed = SessionPingParams.safeParse(params ?? {});
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          /* #154 keep-vs-replace probe: the mobile supervisor pings the live
+             socket on foreground before deciding to replace it. Answers the
+             run identity so a probe across a relay restart also catches the
+             instanceId change. */
+          respond(peer, id, { ok: true, instanceId });
           return;
         }
         case "employees.list": {
@@ -1220,7 +1232,8 @@ export function createRelay(options: RelayOptions): Relay {
           // Drop the revoked phone's live sockets; `closed()` then cleans
           // devicePeers/helloedPeers/subscriptions for each.
           for (const [p, did] of devicePeers) {
-            if (did === device.id) p.close(4403, "device revoked");
+            if (did === device.id)
+              p.close(WS_CLOSE_DEVICE_REVOKED, "device revoked");
           }
           respond(peer, id, { ok: true });
           return;
