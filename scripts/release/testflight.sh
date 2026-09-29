@@ -88,6 +88,40 @@ command -v bun >/dev/null ||
   miss "dependencies not installed" "bun install"
 command -v xcodebuild >/dev/null ||
   miss "xcodebuild missing" "install Xcode from the App Store, then: sudo xcodebuild -license accept"
+# Xcode's iOS platform component downloads separately — a bare VM can have
+# xcodebuild yet no iphoneos SDK, and the archive dies with "Unable to find a
+# destination matching generic/platform=iOS". -showsdks lists only what the
+# active Xcode actually has.
+if command -v xcodebuild >/dev/null; then
+  IOS_SDKS="$(xcodebuild -showsdks 2>/dev/null || true)"
+  if [[ "$IOS_SDKS" != *iphoneos* ]]; then
+    if [ "$DRY_RUN" = 1 ]; then
+      miss "no iphoneos platform for the active Xcode" "xcodebuild -downloadPlatform iOS"
+    else
+      echo "  iOS platform component missing — downloading it (several GB): xcodebuild -downloadPlatform iOS"
+      xcodebuild -downloadPlatform iOS || die "xcodebuild -downloadPlatform iOS failed"
+      IOS_SDKS="$(xcodebuild -showsdks 2>/dev/null || true)"
+      [[ "$IOS_SDKS" == *iphoneos* ]] ||
+        die "iphoneos SDK still missing after 'xcodebuild -downloadPlatform iOS'"
+    fi
+  fi
+fi
+# Archives built against the iOS 27+ SDK are killed at launch until UIScene
+# lifecycle adoption lands (#275). A release must build on Xcode 26.x — point
+# xcode-select/DEVELOPER_DIR at a 26.x install so xcrun resolves that SDK.
+if command -v xcrun >/dev/null; then
+  IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || true)"
+  case "${IOS_SDK%%.*}" in
+    ''|*[!0-9]*) echo "  iphoneos SDK: ${IOS_SDK:-unreadable — continuing}" ;;
+    *)
+      if [ "${IOS_SDK%%.*}" -ge 27 ]; then
+        miss "iOS SDK $IOS_SDK: iOS 27 SDK builds crash on launch until UIScene lifecycle adoption lands — see issue #275" \
+          "build on Xcode 26.x (sudo xcode-select -s /Applications/Xcode-26.x.app) or pass an SDK path override (DEVELOPER_DIR=/Applications/Xcode-26.x.app/Contents/Developer)"
+      else
+        echo "  iphoneos SDK: $IOS_SDK"
+      fi ;;
+  esac
+fi
 if ! command -v pod >/dev/null; then
   if [ "$DRY_RUN" != 1 ] && command -v brew >/dev/null; then
     # brew's cocoapods (1.17.x) ships its own Ruby — no unicode_normalize patch.
