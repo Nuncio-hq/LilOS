@@ -75,12 +75,7 @@ export function SessionUsage({
   }, [open]);
 
   return (
-    <Context
-      usedTokens={used}
-      maxTokens={max}
-      usage={u}
-      onOpenChange={setOpen}
-    >
+    <Context usedTokens={used} maxTokens={max} usage={u} onOpenChange={setOpen}>
       <ContextTrigger size="sm" className="h-7 px-1.5 text-xs" />
       <ContextContent className="w-80 divide-y-0 rounded-2xl p-0">
         <div className="space-y-3 p-4" data-context-panel>
