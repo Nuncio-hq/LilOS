@@ -634,7 +634,8 @@ button:not(:disabled):active,
 .lilos-hint {
   display: none !important;
 }
-form:has(textarea:not(:placeholder-shown), [aria-label="Stop (Esc)"]) .lilos-hint {
+form:has(textarea:not(:placeholder-shown), [aria-label="Stop (Esc)"])
+  .lilos-hint {
   display: inline !important;
   animation: lilos-rise 0.3s ease both;
 }

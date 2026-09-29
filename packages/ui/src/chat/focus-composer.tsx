@@ -174,9 +174,7 @@ export function FocusComposer({
                 {...picker}
               />
             ) : null}
-            <span
-              className="lilos-hint hidden truncate text-muted-foreground text-xs md:inline"
-            >
+            <span className="lilos-hint hidden truncate text-muted-foreground text-xs md:inline">
               {hint}
             </span>
           </PromptInputTools>
