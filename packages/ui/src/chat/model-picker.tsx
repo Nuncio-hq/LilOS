@@ -379,7 +379,7 @@ export function ModelPicker({
           <ModelLogo provider={cur?.provider} logo={logoOf(cur?.provider)} />
           <span className="max-w-36 truncate">{cur?.name ?? value.model}</span>
           {effort && (
-            <span className="text-foreground/60">· {effortLabel(effort)}</span>
+            <span className="text-foreground/70">· {effortLabel(effort)}</span>
           )}
           {fast && (
             <ZapIcon
