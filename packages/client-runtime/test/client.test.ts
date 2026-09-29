@@ -770,6 +770,129 @@ describe("mobile instant-connect seam (#154)", () => {
   });
 });
 
+describe("asks read model (#155)", () => {
+  const askFixture = (over: Record<string, unknown> = {}) => ({
+    id: "ask_1",
+    channelId: "ch1",
+    conversationId: "conv1",
+    turnId: "t1",
+    requestId: "r1",
+    request: {
+      kind: "approval" as const,
+      command: "patch README.md",
+      options: ["once", "always", "deny"],
+    },
+    state: "open" as const,
+    createdAt: 1,
+    ...over,
+  });
+
+  /** Answer every directory read so the refresh fully lands. */
+  const answerDirectory = (socket: FakeSocket, asks: unknown[] = []) => {
+    socket.respondTo("employees.list", { employees: [] });
+    socket.respondTo("channels.list", {
+      channels: [
+        { id: "ch1", kind: "dm", employeeId: "e1", lastSeq: 0, createdAt: 1 },
+      ],
+    });
+    socket.respondTo("conversations.list", { conversations: [] });
+    socket.respondTo("conversations.summaries", { summaries: [] });
+    socket.respondTo("profile.get", { profile: {} });
+    socket.respondTo("devices.list", { devices: [] });
+    socket.respondTo("asks.list", { asks });
+  };
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("AC-3 asks.list seeds the asks atom; ask.opened/ask.resolved upsert live", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    answerDirectory(socket, [askFixture()]);
+    await flush();
+    expect(client.asks.get().map((a) => a.id)).toEqual(["ask_1"]);
+
+    const second = askFixture({ id: "ask_2", createdAt: 2 });
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "ask.opened",
+      params: { channelId: "ch1", ask: second },
+    });
+    expect(client.asks.get().map((a) => a.id)).toEqual(["ask_1", "ask_2"]);
+
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "ask.resolved",
+      params: {
+        channelId: "ch1",
+        ask: { ...second, state: "resolved", outcome: "once", resolvedAt: 3 },
+      },
+    });
+    expect(client.asks.get().find((a) => a.id === "ask_2")?.state).toBe(
+      "resolved",
+    );
+
+    // channel.subscribe replays the channel's ask set — dedupe by id.
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "ask.opened",
+      params: { channelId: "ch1", ask: askFixture() },
+    });
+    expect(client.asks.get()).toHaveLength(2);
+  });
+
+  it("channel.removed drops the channel's asks", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    answerDirectory(socket, [
+      askFixture(),
+      askFixture({ id: "ask_9", channelId: "ch2", createdAt: 2 }),
+    ]);
+    await flush();
+    expect(client.asks.get()).toHaveLength(2);
+
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "channel.removed",
+      params: { channelId: "ch1" },
+    });
+    expect(client.asks.get().map((a) => a.id)).toEqual(["ask_9"]);
+  });
+
+  it("AC-1 channel.synced re-pulls conversations: a turn that went active before subscribe still lands", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    answerDirectory(socket);
+    await flush();
+
+    // A DM channel the app subscribes late — its conversation went active
+    // between the directory refresh and the subscribe (no replay for it).
+    client.channelMessages("ch1");
+    socket.respondTo("channel.subscribe", { channel: { id: "ch1" } });
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "channel.synced",
+      params: { channelId: "ch1", lastSeq: 0 },
+    });
+    socket.respondTo("conversations.list", {
+      conversations: [
+        {
+          id: "conv_live",
+          channelId: "ch1",
+          rootMessageId: "m1",
+          engineRef: null,
+          state: "active",
+          title: "summarize the repo layout",
+          titleSource: "auto",
+          archived: false,
+          deliveredSeq: 1,
+          createdAt: 2,
+        },
+      ],
+    });
+    await flush();
+    expect(client.conversations.get().map((c) => c.id)).toEqual(["conv_live"]);
+  });
+});
+
 describe("directory refresh for a paired phone", () => {
   const employee = {
     id: "emp_1",
@@ -801,6 +924,7 @@ describe("directory refresh for a paired phone", () => {
     socket.respondTo("conversations.list", { conversations: [] });
     socket.respondTo("conversations.summaries", { summaries: [] });
     socket.respondTo("profile.get", { profile: { name: "", company: "" } });
+    socket.respondTo("asks.list", { asks: [] });
     const askedDevices = socket.sent.some(
       (raw) =>
         (JSON.parse(raw) as { method?: string }).method === "devices.list",
