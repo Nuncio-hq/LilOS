@@ -493,7 +493,7 @@ export function EmployeeHome({
         )}
       </div>
       <Conversation className="min-h-0">
-        <ConversationContent className="min-h-full gap-0 p-0 py-3">
+        <ConversationContent className="min-h-full justify-end gap-0 p-0 py-3">
           {loading ? (
             <div data-loading-sessions>
               {[0, 1, 2].map((i) => (
