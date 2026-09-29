@@ -236,7 +236,9 @@ test("AC-3 Esc closes an open popover/dialog first — the turn keeps running", 
   await expect(page.getByText(RUNNING_HINT)).toBeVisible();
   await expect(page.getByText(STOPPED)).toHaveCount(0);
 
-  // Status dialog: Esc inside it closes only the dialog.
+  // Status dialog: Esc inside it closes only the dialog. Focus has no
+  // sidebar (#246) — the status button lives there, so leave focus first.
+  await page.getByTitle("Back to DM").click();
   await page.getByRole("button", { name: "System status" }).click();
   const dialog = page.getByRole("dialog", { name: "System status" });
   await expect(dialog).toBeVisible({ timeout: 15_000 });

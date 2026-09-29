@@ -627,11 +627,14 @@ button:not(:disabled):active,
     transform: none;
   }
 }
-/* Composer hints show only while you type — calm at rest. */
+/* Composer hints show only while you type — calm at rest — except the
+   running-turn hint ("Enter steers · ■ stop"), which is the affordance for
+   the busy state itself and stays up while a turn runs. */
 .lilos-hint {
   display: none !important;
 }
-form:focus-within .lilos-hint {
+form:focus-within .lilos-hint,
+.lilos-hint.lilos-hint-live {
   display: inline !important;
   animation: lilos-rise 0.3s ease both;
 }

@@ -364,15 +364,20 @@ test("AC-6 the employee pre-selects its last folder; a no-folder session is a pl
   await expect(page.locator("[data-wsbadge]")).toHaveCount(0);
   await expect(page.getByText(/read-only/i)).toHaveCount(0);
   // Composer hints reveal while typing — calm at rest (#246), so focus
-  // the reply composer first (on the panel it sits outside `main`).
-  await page.getByPlaceholder(/Reply to/).focus();
+  // the composer first. Its name is "Continue session…" on Focus and
+  // "Reply to … in this session" on the panel (which mounts once the
+  // thread hydrates and sits outside `main`).
+  const focusBox = page.getByRole("textbox", { name: /Continue session/ });
+  await focusBox.focus();
   await expect(page.getByText(/Reply to .*…/).first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-6-no-folder-focus.png` });
   // The session panel is the same: no chip, no "discussion" label,
   // neutral hint.
   const dmPath = new URL(page.url()).pathname.replace(/\/focus$/, "");
   await page.goto(`${stack.webUrl}${dmPath}`);
-  await page.getByPlaceholder(/Reply to/).focus();
+  const replyBox = page.getByRole("textbox", { name: /Reply to/ });
+  await expect(replyBox).toBeVisible({ timeout: 30_000 });
+  await replyBox.focus();
   await expect(page.getByText(/Reply to .*…/).first()).toBeVisible({
     timeout: 15_000,
   });
