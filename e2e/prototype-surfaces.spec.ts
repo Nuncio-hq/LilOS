@@ -223,12 +223,10 @@ test("AC-5 employee management: edit name + role, remove keeps profile, missing 
   await page.getByLabel("Display name").fill("Wren");
   await page.getByLabel("Role").fill("Staff Engineer");
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(
-    sidebar(page).getByRole("button", { name: /Wren/ }),
-  ).toBeVisible();
-  await expect(
-    sidebar(page).getByRole("button", { name: /Staff Engineer/ }),
-  ).toBeVisible();
+  const wrenRow = sidebar(page).getByRole("button", { name: /Wren/ });
+  await expect(wrenRow).toBeVisible();
+  // The restyled row shows the name only; the role lives on the title.
+  await expect(wrenRow).toHaveAttribute("title", "Staff Engineer");
 
   // Remove from company: the confirm copy states the engine profile is kept.
   await panel.getByRole("button", { name: "Edit" }).click();
@@ -276,13 +274,13 @@ test("AC-6 sidebar badges: needs-approval count and running count per employee",
   await page.goto("/");
   const side = sidebar(page);
 
-  // Seeded approval from Reviewer (#engineering m1) → amber badge. The
-  // badge reads `needs you` since #71 (count stays in the tooltip).
-  await expect(
-    side
-      .getByRole("button", { name: /Reviewer/ })
-      .locator("[data-badge-approvals]"),
-  ).toHaveText("needs you");
+  // Seeded approval from Reviewer (#engineering m1) → the `!` badge with a
+  // sr-only `needs you` label; the count stays in the tooltip (#224 restyle).
+  const askBadge = side
+    .getByRole("button", { name: /Reviewer/ })
+    .locator("[data-badge-approvals]");
+  await expect(askBadge.locator("[aria-hidden]")).toHaveText("!");
+  await expect(askBadge.locator(".sr-only")).toHaveText("needs you");
 
   // A live turn → running badge on the employee while it works.
   await openDM(page, "Builder");

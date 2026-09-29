@@ -304,11 +304,13 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
   await page.goto(convUrl(convA.employeeId, convA.conversationId));
 
   // AC-3: approvals badge on the employee while the ask waits.
-  // #71 restyled the badge to `needs you`; the count lives on the title.
-  await expect(aside.locator("[data-badge-approvals]")).toHaveText(
-    "needs you",
-    { timeout: 60_000 },
-  );
+  // #224 restyle: a `!` mark; `needs you` is the sr-only label and the count
+  // lives on the title.
+  const approvals = aside.locator("[data-badge-approvals]");
+  await expect(approvals.locator("[aria-hidden]")).toHaveText("!", {
+    timeout: 60_000,
+  });
+  await expect(approvals.locator(".sr-only")).toHaveText("needs you");
   await page.screenshot({ path: `${SHOTS}/ac-3-badge-approvals.png` });
 
   await waitForPost(page, convB.conversationId, "ask");

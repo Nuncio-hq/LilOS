@@ -454,10 +454,10 @@ test("AC-6 Edit saves display name + role via employees.update; surfaces update 
   await expect(dlg).toHaveCount(0);
 
   // Sidebar row and DM header read the updated record without a reload.
-  await expect(
-    aside.getByRole("button", { name: /Engineer Prime/ }),
-  ).toBeVisible();
-  await expect(aside.getByText("Records lead")).toBeVisible();
+  const primeRow = aside.getByRole("button", { name: /Engineer Prime/ });
+  await expect(primeRow).toBeVisible();
+  // The restyled row shows the name only; the role lives on the title.
+  await expect(primeRow).toHaveAttribute("title", "Records lead");
   await expect(page.getByText("Records lead").last()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-6-updated.png` });
   const employees = await employeeRows(stackA);
