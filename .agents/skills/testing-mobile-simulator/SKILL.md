@@ -278,6 +278,35 @@ welcome the phone gates on (`$welcome.engineHost.capabilities` ←
 visible on the phone under hideCaps. To truly hide surfaces, run a cap-less
 engine (above) or an engine that genuinely lacks the caps.
 
+## Seed-world fixture dirs (`live-*-seed.ts` scripts)
+
+- Seeded worlds (`apps/harness/scripts/live-*-seed.ts`) create
+  `$TMPDIR/lilos<issue>-XXXX/` and only clean up on SIGINT — killed runs
+  leave stale dirs behind. NEVER glob the first `lilos159-*` match to find
+  the live gh-fake dir: the live one is the dir the seed printed at launch
+  (also `<work>/GH_FAKE_DIR` holds it, and `<work>/gh.log` shows fresh
+  `pr list --head ...` lines while the harness is actually probing it).
+- Seed scripts spawn relay+harness with `bun` from `$PATH` — on this VM bun
+  is `/opt/homebrew/bin/bun`. Launch seeds and RelayClient scripts with
+  `PATH="/opt/homebrew/bin:$PATH"`.
+
+## Triggering `turn.completed` on a seeded thread (refresh legs)
+
+- engine-fake's seeded threads arrive in **Needs you** — the opening message
+  already ran a turn that is blocked on a chain of asks (patch → write_file
+  → git commit). A thread CANNOT complete a new turn until the chain is
+  answered. Tapping **Approve** on each ask is the reliable `turn.completed`
+  trigger for "does the surface refresh" legs (one Approve per mutating
+  step; ~3 asks to Done).
+
+## Driving RN sheets on the simulator
+
+- `scroll` (mouse-wheel) does NOT move a React Native ScrollView inside a
+  sheet on this sim — it scrolls the view behind it. Drag inside the sheet
+  instead: `left_click_drag` from low on the sheet to higher (e.g. devY
+  560 → 420). A drag that starts a pull-to-refresh shows a "Refreshing..."
+  bar — harmless, re-screenshot after it settles.
+
 ## Employee-helper (@mention → helper's own thread) seeding recipe
 
 - `ensureAgent` uses `employee.profile` (preferred) else `name` as the agent
