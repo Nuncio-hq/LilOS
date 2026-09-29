@@ -76,6 +76,7 @@ const msg = (
   text,
   seq: 1,
   createdAt: 1,
+  rewound: false,
 });
 
 const sum = (
