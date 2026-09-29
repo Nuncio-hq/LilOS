@@ -589,6 +589,126 @@ export const CORE_SCENARIOS: Scenario[] = [
   },
 ];
 
+/**
+ * `rewind` capability (#134): `session.rewind {toTurn}` drops every user
+ * turn after `toTurn` from the agent's context. Proven by memory, not by
+ * shape: engine-fake's `recall:` canned leg echoes the turns the session
+ * still remembers, so the marker of a dropped turn must be absent from the
+ * echo while the kept turn's marker stays. On other engines the echo assert
+ * is skipped (no deterministic recall) — `removed` is the contract-wide bit.
+ */
+export const REWIND_SCENARIOS: Scenario[] = [
+  {
+    id: "describe wires session.rewind under the rewind capability",
+    async run(h) {
+      const r = (await h.request("describe")) as {
+        capabilities: { id: string; methods?: string[] }[];
+      };
+      const cap = r.capabilities.find((c) => c.id === "rewind");
+      assert(cap, "rewind suite runs only against engines declaring rewind");
+      assert(
+        cap?.methods?.includes("session.rewind") === true,
+        "the rewind descriptor names session.rewind",
+      );
+    },
+  },
+  {
+    id: "session.rewind drops trailing turns from the agent's memory",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      await h.request(
+        "prompt",
+        textPrompt(sessionId, "remember the codeword LILOS_REWIND_KEEP"),
+      );
+      await h.request(
+        "prompt",
+        textPrompt(
+          sessionId,
+          "remember the codeword LILOS_REWIND_DROP too — reply with exactly: LILOS_OK",
+        ),
+      );
+      const rewound = (await h.request("session.rewind", {
+        sessionId,
+        toTurn: 1,
+      })) as { removed: number };
+      assert(
+        rewound.removed === 1,
+        `session.rewind reports 1 removed turn, got ${JSON.stringify(rewound)}`,
+      );
+      const engineName = ((await h.request("describe")) as { name?: string })
+        .name;
+      // Memory proof needs a deterministic echo — engine-fake's recall leg.
+      if (engineName !== "engine-fake") return;
+      const before = h.events.length;
+      const probe = (await h.request(
+        "prompt",
+        textPrompt(sessionId, "recall: what do you remember?"),
+      )) as PromptResult;
+      const recalled = h.events
+        .slice(before)
+        .filter(
+          (e): e is Extract<EngineEvent, { type: "turn.delta" }> =>
+            e.type === "turn.delta" &&
+            e.payload.stream === "text" &&
+            e.payload.turnId === probe.turnId,
+        )
+        .map((e) => e.payload.delta)
+        .join("");
+      assert(
+        recalled.includes("LILOS_REWIND_KEEP"),
+        `the kept turn is still remembered, got: ${recalled.slice(0, 200)}`,
+      );
+      assert(
+        !recalled.includes("LILOS_REWIND_DROP"),
+        `the rewound turn is forgotten, got: ${recalled.slice(0, 200)}`,
+      );
+    },
+  },
+  {
+    id: "session.rewind refuses INVALID_STATE while a turn runs",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const pending = h.request(
+        "prompt",
+        textPrompt(sessionId, EDIT_PROMPT),
+      ) as Promise<PromptResult>;
+      // request.opened (manual approvals) or tool.started — either means
+      // the turn is mid-flight.
+      await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) => e.type === "request.opened" || e.type === "tool.started",
+        ),
+      );
+      const code = await errorCode(h, "session.rewind", {
+        sessionId,
+        toTurn: 0,
+      });
+      assert(
+        code === -32003,
+        `rewind mid-turn must fail INVALID_STATE (-32003), got ${code}`,
+      );
+      await answerAsks(h, sessionId, "once");
+      const res = await pending;
+      assert(res.stopReason === "end_turn", "the turn completes after asks");
+      const ok = (await h.request("session.rewind", {
+        sessionId,
+        toTurn: 0,
+      })) as { removed: number };
+      assert(
+        ok.removed === 1,
+        `idle rewind drops the one finished turn, got ${JSON.stringify(ok)}`,
+      );
+    },
+  },
+];
+
 /** Capability suites beyond core. Only scenarios for capabilities engine-fake declares are implemented. */
 export const STEER_SCENARIOS: Scenario[] = [
   {
@@ -2318,5 +2438,5 @@ export const SUITES: {
   },
   { capability: "usage", implemented: false, scenarios: [] },
   { capability: "plan", implemented: true, scenarios: PLAN_SCENARIOS },
-  { capability: "rewind", implemented: false, scenarios: [] },
+  { capability: "rewind", implemented: true, scenarios: REWIND_SCENARIOS },
 ];

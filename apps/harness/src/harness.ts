@@ -5,6 +5,7 @@ import type {
   Ask,
   AttachmentsGetResult,
   Conversation,
+  ConversationsRewindHostResult,
   Employee,
   PendingTurn,
 } from "@lilos/contracts/app";
@@ -14,6 +15,7 @@ import {
   ChannelCreatedEvent,
   ChannelRemovedEvent,
   ConversationModelRequestedEvent,
+  ConversationsRewindHostParams,
   ConversationUpdatedEvent,
   ENGINE_PASSTHROUGH_METHODS,
   TurnInterruptRequestedEvent,
@@ -26,6 +28,7 @@ import type {
   EngineRequest,
   EventsSinceResult,
 } from "@lilos/contracts/engine";
+import { type CheckpointStore, expandPath } from "@lilos/host";
 import type { EngineConnection } from "./engine/client";
 import { engineErrorCode, SESSION_NOT_FOUND } from "./engine/client";
 import type { EngineHostState } from "./engine/supervisor";
@@ -51,6 +54,8 @@ interface SessionBinding {
   sessionId: string;
   /** Durable ref stored as the conversation's engineRef. */
   ref: string;
+  /** Folder the session works in — the checkpoint store's work tree (#134). */
+  cwd: string;
   /** Highest engine event seq applied — the `events.since` watermark. */
   lastSeq: number;
   /** Running turn, if any. */
@@ -119,6 +124,12 @@ export interface HarnessOptions {
   version?: string;
   /** Capability ids hidden from clients and skipped by the driver (dev/e2e). */
   hideCaps?: string[];
+  /**
+   * Harness-owned folder checkpoints (#134): a shadow git store snapshotted
+   * before each turn and restored by `conversations.rewind`. Optional so
+   * unit fixtures can skip it — the real harness always has one.
+   */
+  checkpoints?: CheckpointStore;
 }
 
 const INVALID_STATE = -32003;
@@ -729,11 +740,20 @@ export class Harness {
         !message.attachments?.length &&
         !binding.heldPick
       ) {
-        void conn
-          .request<{ status: "steered" | "not_running" }>("session.steer", {
-            sessionId: binding.sessionId,
-            text: message.text,
-          })
+        void this.stampCheckpoint(binding, message)
+          .then(() =>
+            conn.request<{ status: "steered" | "not_running" }>(
+              "session.steer",
+              {
+                sessionId: binding.sessionId,
+                text: message.text,
+                /* Same link as `prompt.ref` — a steer that outlives its turn
+                   pumps as the next one, and its turn.started must still name
+                   the relay message (#134 rewind filtering keys off it). */
+                ref: message.id,
+              },
+            ),
+          )
           .then((res) => {
             if (res.status === "steered") {
               this.markDelivered(binding, message);
@@ -823,6 +843,9 @@ export class Harness {
       this.markDelivered(binding, message);
       return;
     }
+    /* #134: snapshot the session folder BEFORE the turn so a later
+       "Rewind to here" on this message can restore it. */
+    await this.stampCheckpoint(binding, message);
     try {
       // Turn lifecycle (`turn.started`/`turn.completed`) arrives as events
       // before the prompt call resolves — they alone own runningTurnId.
@@ -877,6 +900,108 @@ export class Harness {
   }
 
   /**
+   * #134: snapshot the session folder into the shadow-git checkpoint store
+   * and stamp the checkpoint id on the user message (the rewind target).
+   * Best-effort: a failed snapshot logs and continues — the turn still runs,
+   * its message just can't be a file rewind point.
+   */
+  private async stampCheckpoint(
+    binding: SessionBinding,
+    message: AppMessage,
+  ): Promise<void> {
+    const checkpoints = this.opts.checkpoints;
+    if (!checkpoints) return;
+    try {
+      const checkpoint = await checkpoints.snapshot(binding.cwd);
+      await this.opts.relay.request("messages.setCheckpoint", {
+        channelId: binding.channelId,
+        messageId: message.id,
+        checkpoint,
+      });
+    } catch (error) {
+      this.opts.log.warn("folder checkpoint failed", {
+        conversationId: binding.conversationId,
+        messageId: message.id,
+        error: String(error),
+      });
+    }
+  }
+
+  /**
+   * `conversations.rewind` arrives as a relay-forwarded host call (#134):
+   * restore the folder to the checkpoint stamped on the target message, drop
+   * queued user messages the rewind removes, and — when the session's engine
+   * declares `rewind` — drop the turns from its context too. Throws (code
+   * -32009 conflict) while a turn runs; throwing before the mark means the
+   * relay leaves the thread untouched.
+   */
+  private async rewindConversation(
+    params: ConversationsRewindHostParams,
+  ): Promise<ConversationsRewindHostResult> {
+    const binding = this.bindings.get(params.conversationId);
+    if (binding?.runningTurnId) {
+      throw Object.assign(
+        new Error("a turn is still running — stop it before rewinding"),
+        { code: -32009 },
+      );
+    }
+    /* Stored cwd may be `~/x` (host fs echoes collapsed): expand before
+       any spawn/fs use — literal `~` is not a valid cwd for execFile. */
+    const cwd = expandPath(params.cwd ?? binding?.cwd ?? this.opts.workdir);
+    /* Engine first: a refusal (INVALID_STATE — a turn is running) must leave
+       everything untouched, before any file or queue mutation. */
+    let engineRewound = false;
+    const conn = this.engine;
+    const sessionId = binding?.sessionId ?? params.engineRef ?? undefined;
+    if (conn && sessionId && this.hasCapability("rewind")) {
+      try {
+        await conn.request("session.rewind", {
+          sessionId,
+          toTurn: params.toTurn,
+        });
+        engineRewound = true;
+      } catch (error) {
+        const code = engineErrorCode(error);
+        if (code === INVALID_STATE) {
+          throw Object.assign(
+            new Error("the engine refused the rewind — a turn may be running"),
+            { code: -32009 },
+          );
+        }
+        // Method missing / transport can't rewind (ACP): the AC-3 path —
+        // files still restore, the note tells the user, and the app offers
+        // "Start a new session from here".
+        this.opts.log.warn("engine session.rewind failed", {
+          sessionId,
+          error: String(error),
+        });
+      }
+    }
+    let filesRestored = false;
+    if (params.checkpoint && this.opts.checkpoints) {
+      await this.opts.checkpoints.restore(cwd, params.checkpoint);
+      filesRestored = true;
+    }
+    /* Queued-behind-a-turn user messages at/after the rewind point never
+       send; release their delivery claims so nothing re-prompts them. The
+       `early` map holds the same kind of queued sends for sessions with no
+       binding yet — prune it identically. */
+    if (binding) {
+      binding.queue = binding.queue.filter((m) => {
+        if (m.seq >= params.fromSeq) binding.consumed.delete(m.id);
+        return m.seq < params.fromSeq;
+      });
+    }
+    const early = this.early.get(params.conversationId);
+    if (early?.length) {
+      const kept = early.filter((m) => m.seq < params.fromSeq);
+      if (kept.length) this.early.set(params.conversationId, kept);
+      else this.early.delete(params.conversationId);
+    }
+    return { engineRewound, filesRestored };
+  }
+
+  /**
    * Advance the conversation's delivery watermark: this user message reached
    * the engine, so a re-registering harness must not owe it again. Queued
    * messages stay under the watermark until they actually send.
@@ -912,6 +1037,7 @@ export class Harness {
           channelId,
           sessionId: conv.engineRef,
           ref: conv.engineRef,
+          cwd: expandPath(conv.cwd ?? this.opts.workdir),
           lastSeq: 0,
           queue: [],
           textByTurn: new Map(),
@@ -940,6 +1066,7 @@ export class Harness {
       channelId,
       sessionId: started.sessionId,
       ref: started.ref ?? started.sessionId,
+      cwd: expandPath(conv.cwd ?? this.opts.workdir),
       lastSeq: 0,
       queue: [],
       textByTurn: new Map(),
@@ -1261,6 +1388,14 @@ export class Harness {
    * set is honored; anything else is a JSON-RPC method-not-found.
    */
   private onRelayRequest(method: string, params: Record<string, unknown>) {
+    /* `conversations.rewind` is relay-initiated (not passthrough): the
+       harness restores the folder checkpoint and rewinds the engine session
+       when its transport can. */
+    if (method === "conversations.rewind") {
+      return this.rewindConversation(
+        ConversationsRewindHostParams.parse(params),
+      );
+    }
     if (!(ENGINE_PASSTHROUGH_METHODS as readonly string[]).includes(method)) {
       throw Object.assign(new Error(`harness does not answer ${method}`), {
         code: -32601,
@@ -1712,7 +1847,7 @@ export class Harness {
     const fast = conv?.fast ?? base.fast;
     // The session's folder is owned by the conversation (#113); absent → the
     // harness default workdir, as before.
-    const cwd = conv?.cwd ?? this.opts.workdir;
+    const cwd = expandPath(conv?.cwd ?? this.opts.workdir);
     return {
       ...base,
       ...(model ? { model } : {}),

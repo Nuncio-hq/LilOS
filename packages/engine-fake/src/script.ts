@@ -83,6 +83,10 @@ export function scriptFor(
   repo = "Nuncio-hq/LilOS",
   cwd = ".",
   images?: FakeImage[],
+  /* #134: every earlier user turn the session remembers — the `recall:` leg
+     echoes them verbatim so a test can prove `session.rewind` dropped the
+     tail from the agent's context (not just from the rendered thread). */
+  history?: string[],
 ): FakeScript {
   /* Employee `@Mentions` are stripped for the reply's readable gist; file
      mentions (`@dir/file.ext` — the token continues past `\w`, #105) stay
@@ -93,6 +97,27 @@ export function scriptFor(
     .trim()
     .replace(/[?.!]+$/, "");
   const tail = `I'm in \`${cwd}\` on ⎇ \`${branch}\`. Tell me what to change and I'll edit there.`;
+
+  /* `recall:` — echo the turns the session still remembers (#134 AC-2).
+     After a rewind to turn N this answer must name only turns 1..N. */
+  if (/^recall:/i.test(q)) {
+    const remembered = (history ?? []).map((t) =>
+      t.replace(/\s+/g, " ").trim().slice(0, 60),
+    );
+    return {
+      reasoning: "Rewind check: list every earlier turn still in context.",
+      steps: [
+        {
+          tool: "terminal",
+          input: { command: "history --turns" },
+          output: `${remembered.length} remembered turn(s)`,
+        },
+      ],
+      text: `I remember ${remembered.length} earlier turn${remembered.length === 1 ? "" : "s"}:\n${remembered.map((t, i) => `${i + 1}. ${t}`).join("\n") || "-"}
+
+${tail}`,
+    };
+  }
 
   // `surfaces:` — the fake's way to really drive the app's surfaces for the
   // harness demos (#36): `surfaces: open <url>; run <cmd>; read; previews;

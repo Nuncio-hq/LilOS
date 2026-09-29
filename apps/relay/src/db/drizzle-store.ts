@@ -73,6 +73,7 @@ const rowToMessage = (row: MessageRow): AppMessage => ({
   provider: row.provider ?? undefined,
   effort: row.effort ?? undefined,
   fast: row.fast ?? undefined,
+  checkpoint: row.checkpoint ?? undefined,
   attachments: row.attachments
     ? (JSON.parse(row.attachments) as MessageAttachment[])
     : undefined,
@@ -168,6 +169,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       conversationId: input.conversationId ?? null,
       authorId: input.authorId,
       authorKind: input.authorKind,
+      rewound: false,
       text: input.text,
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.provider !== undefined ? { provider: input.provider } : {}),
@@ -376,13 +378,14 @@ export function createDrizzleStore(db: Db): RelayStore {
       });
       const summaries: ConversationSummary[] = [];
       for (const conversation of convs) {
-        const convMessages = conversationMessages(conversation.id).map(
-          rowToMessage,
-        );
-        const root = convMessages.find(
-          (m) => m.id === conversation.rootMessageId,
-        );
-        const last = convMessages.at(-1);
+        const all = conversationMessages(conversation.id).map(rowToMessage);
+        /* Rewound rows are hidden (#134); a rewind to the root message
+           leaves none, and the list row still renders the root for context. */
+        const convMessages = all.filter((m) => !m.rewound);
+        const root =
+          convMessages.find((m) => m.id === conversation.rootMessageId) ??
+          all.find((m) => m.id === conversation.rootMessageId);
+        const last = convMessages.at(-1) ?? all.at(-1);
         if (!root || !last) continue;
         summaries.push({
           conversation,
@@ -450,6 +453,7 @@ export function createDrizzleStore(db: Db): RelayStore {
           conversationId,
           authorId: input.authorId,
           authorKind: "user",
+          rewound: false,
           text: input.text,
           seq: bumped.seq,
           createdAt: now(),
@@ -531,7 +535,7 @@ export function createDrizzleStore(db: Db): RelayStore {
     },
     async listMessages(
       channelId: string,
-      { conversationId, afterSeq, limit }: ListMessagesQuery,
+      { conversationId, afterSeq, limit, includeRewound }: ListMessagesQuery,
     ): Promise<ListMessagesPage> {
       const channel = db
         .select()
@@ -539,13 +543,16 @@ export function createDrizzleStore(db: Db): RelayStore {
         .where(eq(schema.channels.id, channelId))
         .get();
       if (!channel) throw new Error(`unknown channel ${channelId}`);
-      const scope = conversationId
-        ? and(
-            eq(schema.messages.channelId, channelId),
-            eq(schema.messages.conversationId, conversationId),
-            messageVisible(),
-          )
-        : and(eq(schema.messages.channelId, channelId), messageVisible());
+      const scope = and(
+        conversationId
+          ? and(
+              eq(schema.messages.channelId, channelId),
+              eq(schema.messages.conversationId, conversationId),
+              messageVisible(),
+            )
+          : and(eq(schema.messages.channelId, channelId), messageVisible()),
+        ...(includeRewound ? [] : [eq(schema.messages.rewound, false)]),
+      );
       const rows =
         afterSeq !== undefined
           ? db
@@ -597,6 +604,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         JOIN messages m ON m.rowid = messages_fts.rowid
         LEFT JOIN conversations c ON c.id = m.conversation_id
         WHERE messages_fts MATCH ${match}
+          AND m.rewound = 0
           AND (m.dedupe_key IS NULL OR m.dedupe_key NOT LIKE ${NO_FOLDER_DEDUPE_LIKE})
           ${channelId ? sql`AND m.channel_id = ${channelId}` : sql``}
           ${includeArchived ? sql`` : sql`AND (c.id IS NULL OR c.archived = 0)`}
@@ -606,6 +614,50 @@ export function createDrizzleStore(db: Db): RelayStore {
     },
     async appendMessage(input) {
       return db.transaction(() => appendMessageTx(input));
+    },
+    async getMessage(id) {
+      const row = db
+        .select()
+        .from(schema.messages)
+        .where(eq(schema.messages.id, id))
+        .get();
+      return row ? rowToMessage(row) : null;
+    },
+    async setMessageCheckpoint(messageId, checkpoint) {
+      const updated = db
+        .update(schema.messages)
+        .set({ checkpoint })
+        .where(eq(schema.messages.id, messageId))
+        .returning()
+        .get();
+      return updated ? rowToMessage(updated) : null;
+    },
+    async markRewound(conversationId, fromSeq) {
+      return db.transaction((tx) => {
+        const rows = tx
+          .select()
+          .from(schema.messages)
+          .where(
+            and(
+              eq(schema.messages.conversationId, conversationId),
+              sql`${schema.messages.seq} >= ${fromSeq}`,
+              eq(schema.messages.rewound, false),
+            ),
+          )
+          .orderBy(asc(schema.messages.seq))
+          .all();
+        if (rows.length === 0) return [];
+        tx.update(schema.messages)
+          .set({ rewound: true })
+          .where(
+            inArray(
+              schema.messages.id,
+              rows.map((r) => r.id),
+            ),
+          )
+          .run();
+        return rows.map((r) => rowToMessage({ ...r, rewound: true }));
+      });
     },
     async createAsk(input: NewAsk) {
       const existing = db
@@ -854,7 +906,10 @@ export function createDrizzleStore(db: Db): RelayStore {
         const owed = conversationMessages(conversation.id)
           .map(rowToMessage)
           .filter(
-            (m) => m.authorKind === "user" && m.seq > conversation.deliveredSeq,
+            (m) =>
+              m.authorKind === "user" &&
+              !m.rewound &&
+              m.seq > conversation.deliveredSeq,
           );
         const message = owed.at(-1);
         if (!message) continue;

@@ -215,6 +215,15 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       )`,
     ],
   },
+  {
+    /* #134: `conversations.rewind` marks dropped messages (hidden, kept for
+       audit) and the harness stamps each user message's pre-turn checkpoint. */
+    version: 12,
+    statements: [
+      `ALTER TABLE messages ADD COLUMN rewound INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE messages ADD COLUMN checkpoint TEXT`,
+    ],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

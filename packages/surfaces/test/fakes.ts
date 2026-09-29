@@ -150,6 +150,7 @@ export function fakeAppOps(initial: AppMessage[] = []): AppOps & {
         authorId: "agent",
         authorKind: "employee" as const,
         text,
+        rewound: false,
         createdAt: Date.now(),
       } satisfies AppMessage;
       messages.push(msg);

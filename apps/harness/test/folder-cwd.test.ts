@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import type { RelaySocket, SocketFactory } from "@lilos/client-runtime";
 import { RelayClient } from "@lilos/client-runtime";
 import type { AppMessage } from "@lilos/contracts/app";
@@ -204,6 +205,31 @@ describe("AC-4 the picked folder becomes session.start cwd", () => {
       // wire by the session.start assertion above; here we just confirm the
       // turn ran in that session (an answer landed).
       expect(lastSessionStart(w)?.cwd).toBe("/tmp/picked-folder");
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("a `~` cwd reaches the engine expanded (checkpoints/session.create need a real cwd)", async () => {
+    const w = await setupWorld();
+    try {
+      const channel = await openDm(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "tilde folder",
+        cwd: "~/lilos-tilde-cwd",
+      });
+      await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        if (!conversations.find((c) => c.id === conversation.id)?.engineRef)
+          return undefined;
+        return lastSessionStart(w);
+      }, "session.start for ~ folder");
+      expect(lastSessionStart(w)?.cwd).toBe(`${homedir()}/lilos-tilde-cwd`);
     } finally {
       await w.cleanup();
     }

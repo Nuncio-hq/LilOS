@@ -12,6 +12,9 @@ import {
   ChannelUnsubscribeParams,
   ConversationsListParams,
   ConversationsOpenParams,
+  type ConversationsRewindHostParams,
+  type ConversationsRewindHostResult,
+  ConversationsRewindParams,
   ConversationsSetModelParams,
   ConversationsSummariesParams,
   ConversationsUpdateParams,
@@ -35,6 +38,7 @@ import {
   MessagesListParams,
   MessagesPostParams,
   MessagesSearchParams,
+  MessagesSetCheckpointParams,
   ProfileUpdateParams,
   SessionPingParams,
   SettingsGetParams,
@@ -260,7 +264,12 @@ export function createRelay(options: RelayOptions): Relay {
     if (rejectedHandshakes.length > 20) rejectedHandshakes.shift();
   };
 
-  /** In-flight `agents.*`/`models.*` calls forwarded to the engine host. */
+  /**
+   * In-flight `agents.*`/`models.*`/`conversations.rewind` calls forwarded
+   * to the engine host. Passthrough entries pipe the answer to `caller`;
+   * relay-initiated calls (`conversations.rewind`) carry resolve/reject
+   * instead and `callHost` awaits them.
+   */
   const hostCalls = new Map<
     string,
     {
@@ -268,6 +277,8 @@ export function createRelay(options: RelayOptions): Relay {
       callerId: JsonRpcRequest["id"];
       hostPeer: RelayWsPeer;
       timer: ReturnType<typeof setTimeout>;
+      resolve?: (result: unknown) => void;
+      reject?: (error: RpcError) => void;
     }
   >();
   let hostCallSeq = 0;
@@ -355,6 +366,59 @@ export function createRelay(options: RelayOptions): Relay {
     );
   };
 
+  /**
+   * A relay-initiated engine-host call (#134): the relay itself needs the
+   * host's answer before it can mark messages rewound, so unlike
+   * `forwardToHost` this returns a promise the handler awaits. The host's
+   * numeric code maps back to an AppErrorCode so `conflict` (a turn still
+   * running) reaches the caller intact.
+   */
+  const callHost = (
+    method: string,
+    params: unknown,
+    timeoutMs = hostCallTimeoutMs,
+  ): Promise<unknown> => {
+    if (!host) {
+      return Promise.reject(
+        new RpcError(
+          JsonRpcCode.unavailable,
+          "engine_unavailable",
+          "no engine host connected",
+        ),
+      );
+    }
+    const hostPeer = host.peer;
+    const hostReqId = `hr-${++hostCallSeq}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        hostCalls.delete(hostReqId);
+        reject(
+          new RpcError(
+            JsonRpcCode.unavailable,
+            "engine_unavailable",
+            "engine host did not answer in time",
+          ),
+        );
+      }, timeoutMs);
+      hostCalls.set(hostReqId, {
+        caller: hostPeer,
+        callerId: hostReqId,
+        hostPeer,
+        timer,
+        resolve,
+        reject,
+      });
+      hostPeer.send(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: hostReqId,
+          method,
+          params: params ?? {},
+        }),
+      );
+    });
+  };
+
   /** A response frame (no `method`, has `result`|`error`) answers a forwarded call. */
   const resolveHostCall = (
     peer: RelayWsPeer,
@@ -374,18 +438,41 @@ export function createRelay(options: RelayOptions): Relay {
     if (error) {
       const numeric =
         typeof error.code === "number" ? error.code : JsonRpcCode.internal;
+      /* Engine INVALID_STATE (-32003) — "a turn is running / session is in
+         the wrong state" — is a state conflict, not a generic failure. */
+      const appCode: AppErrorCode =
+        numeric === JsonRpcCode.unavailable
+          ? "engine_unavailable"
+          : numeric === JsonRpcCode.conflict || numeric === -32_003
+            ? "conflict"
+            : "engine_error";
+      if (call.reject) {
+        call.reject(
+          new RpcError(
+            numeric,
+            appCode,
+            typeof error.message === "string"
+              ? error.message
+              : "engine call failed",
+            { engine: error.data },
+          ),
+        );
+        return;
+      }
       respondError(
         call.caller,
         call.callerId,
         numeric,
-        numeric === JsonRpcCode.unavailable
-          ? "engine_unavailable"
-          : "engine_error",
+        appCode,
         typeof error.message === "string"
           ? error.message
           : "engine call failed",
         { engine: error.data },
       );
+      return;
+    }
+    if (call.resolve) {
+      call.resolve(frame.result ?? null);
       return;
     }
     respond(call.caller, call.callerId, frame.result ?? null);
@@ -764,6 +851,129 @@ export function createRelay(options: RelayOptions): Relay {
           respond(peer, id, { conversation });
           return;
         }
+        case "messages.setCheckpoint": {
+          const parsed = MessagesSetCheckpointParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          requireHost(peer);
+          const message = await store.setMessageCheckpoint(
+            parsed.data.messageId,
+            parsed.data.checkpoint,
+          );
+          if (!message || message.channelId !== parsed.data.channelId) {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "message not found",
+            );
+          }
+          respond(peer, id, { message });
+          return;
+        }
+        case "conversations.rewind": {
+          const parsed = ConversationsRewindParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const conversation = await store.getConversation(
+            parsed.data.conversationId,
+          );
+          if (!conversation) {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "conversation not found",
+            );
+          }
+          const target = await store.getMessage(parsed.data.messageId);
+          if (!target || target.conversationId !== conversation.id) {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "message not found",
+            );
+          }
+          // The rewind point is a user turn's own message — an employee or
+          // system line has no folder checkpoint of its own to return to.
+          if (target.authorKind !== "user" || target.rewound) {
+            throw new RpcError(
+              JsonRpcCode.conflict,
+              "conflict",
+              target.rewound
+                ? "message is already rewound"
+                : "only a user message can be a rewind point",
+            );
+          }
+          /* toTurn for the engine = the visible user turns that stay. */
+          const before = await store.listMessages(conversation.channelId, {
+            conversationId: conversation.id,
+          });
+          const toTurn = before.messages.filter(
+            (m) => m.authorKind === "user" && m.seq < target.seq,
+          ).length;
+          /* The engine host owns the restore + engine-side rewind; on its
+             success the relay marks the tail and tells subscribers. */
+          const hostParams: ConversationsRewindHostParams = {
+            conversationId: conversation.id,
+            engineRef: conversation.engineRef,
+            messageId: target.id,
+            checkpoint: target.checkpoint ?? null,
+            cwd: conversation.cwd ?? null,
+            fromSeq: target.seq,
+            toTurn,
+          };
+          const hostResult = (await callHost(
+            "conversations.rewind",
+            hostParams,
+            /* A folder restore can touch thousands of files — well past the
+               generic host-call timeout. */
+            120_000,
+          )) as ConversationsRewindHostResult | null;
+          const engineRewound = hostResult?.engineRewound === true;
+          const filesRestored = hostResult?.filesRestored === true;
+          const marked = await store.markRewound(conversation.id, target.seq);
+          const removedIds = marked.map((m) => m.id);
+          emit(conversation.channelId, "conversation.rewound", {
+            channelId: conversation.channelId,
+            conversationId: conversation.id,
+            fromSeq: target.seq,
+            messageId: target.id,
+            engineRewound,
+            removedIds,
+          });
+          /* The plain note (AC-3) is a relay-owned system message: written
+             AFTER the mark so it survives, no host round-trip needed. It says
+             exactly what happened — a message can predate checkpoints or
+             carry a failed stamp, so "files restored" is only claimed when
+             the host actually restored them. */
+          const parts = [
+            `Rewound to before your message — ${marked.length} message${marked.length === 1 ? "" : "s"} dropped`,
+          ];
+          if (filesRestored)
+            parts.push("files restored to the earlier checkpoint");
+          else
+            parts.push(
+              "no file checkpoint was stored for it — the folder kept its current state",
+            );
+          if (!engineRewound)
+            parts.push(
+              "this session's transport can't rewind the agent's memory — it still remembers the later messages",
+            );
+          const note = `${parts.join("; ").replace(/^./, (c) => c.toUpperCase())}.`;
+          const { message: noteMessage } = await store.appendMessage({
+            channelId: conversation.channelId,
+            conversationId: conversation.id,
+            authorId: "system",
+            authorKind: "system",
+            text: note,
+          });
+          emitMessage(conversation.channelId, noteMessage);
+          respond(peer, id, {
+            message: target,
+            engineRewound,
+            filesRestored,
+            removedCount: marked.length,
+            removedIds,
+          });
+          return;
+        }
         case "messages.list": {
           const parsed = MessagesListParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
@@ -772,6 +982,7 @@ export function createRelay(options: RelayOptions): Relay {
               conversationId: parsed.data.conversationId,
               afterSeq: parsed.data.afterSeq,
               limit: parsed.data.limit,
+              includeRewound: parsed.data.includeRewound,
             });
             respond(peer, id, page);
           } catch {
@@ -1373,13 +1584,23 @@ export function createRelay(options: RelayOptions): Relay {
             if (call.hostPeer === peer) {
               hostCalls.delete(reqId);
               clearTimeout(call.timer);
-              respondError(
-                call.caller,
-                call.callerId,
-                JsonRpcCode.unavailable,
-                "engine_unavailable",
-                "engine host disconnected",
-              );
+              if (call.reject) {
+                call.reject(
+                  new RpcError(
+                    JsonRpcCode.unavailable,
+                    "engine_unavailable",
+                    "engine host disconnected",
+                  ),
+                );
+              } else {
+                respondError(
+                  call.caller,
+                  call.callerId,
+                  JsonRpcCode.unavailable,
+                  "engine_unavailable",
+                  "engine host disconnected",
+                );
+              }
             } else if (call.caller === peer) {
               hostCalls.delete(reqId);
               clearTimeout(call.timer);

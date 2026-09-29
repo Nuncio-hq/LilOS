@@ -8,6 +8,7 @@ import type {
   AppMessage,
   Ask,
   Conversation,
+  ConversationsRewindResult,
   MessageSearchHit,
 } from "@lilos/contracts/app";
 import {
@@ -29,6 +30,7 @@ import {
   FocusView,
   NO_WS,
   type PlanAction,
+  StatusBanner,
   ThreadView,
   useDraft,
 } from "@lilos/ui";
@@ -72,6 +74,7 @@ import {
 import {
   attachmentUrls,
   ensureAttachments,
+  hydrateAttachments,
   toAttachedFiles,
 } from "../lib/attachments";
 import { removeEmployee, saveEmployee } from "../lib/employees";
@@ -84,6 +87,7 @@ import {
   loadDir,
   loadDiscovered,
   refreshFolders,
+  sameFolder,
   wsFor,
 } from "../lib/folders";
 import { useAtom } from "../lib/hooks";
@@ -103,7 +107,7 @@ import {
   toJob,
   toUiEmployee,
 } from "../lib/mapping";
-import { currentName, humanFor, osFullName, profile } from "../lib/me";
+import { currentName, humanFor, osFullName, osHome, profile } from "../lib/me";
 import {
   asks as asksAtom,
   engine,
@@ -198,6 +202,7 @@ export function DmPage() {
   // #118: the human's name/avatar re-render live on a settings change.
   useAtom(profile);
   useAtom(osFullName);
+  const home = useAtom(osHome);
   const summaries = useAtom(relay.conversationSummaries);
   const models = useAtom(sessionModels);
   const catalog = useAtom(engineModels);
@@ -388,12 +393,70 @@ export function DmPage() {
     openConv ? draftKey.thread(openConv.id) : undefined,
   );
 
+  /* #134: rewound message attachments reseeded into the composer (AC-4),
+     and the files-only banner after a transport that can't rewind the
+     agent's memory (AC-3) — cleared when the open session changes. */
+  const [seedFiles, setSeedFiles] = useState<AttachedFile[] | undefined>();
+  const [filesOnly, setFilesOnly] = useState<{
+    conversationId: string;
+    target: AppMessage;
+    filesRestored: boolean;
+  } | null>(null);
+  /* Both clear when the open session changes — the render-time reset keeps
+     them from leaking into the next thread. */
+  /* Ids of the open conversation's rewound messages — a feed turn prompted
+     by one (its `ref`) must not resurrect via mergeTurns' unmatched-append
+     (#134). The event's removedIds cover live rewinds; this covers the
+     fetched history and the window before the event lands. `texts` holds
+     the dropped employee answers for turns the engine never tagged with a
+     `ref` (steer-pumped turns on engines that don't echo it). */
+  const [localRewoundIds, setLocalRewoundIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const [localRewoundTexts, setLocalRewoundTexts] = useState<
+    ReadonlySet<string>
+  >(new Set());
+  const [seedConv, setSeedConv] = useState<string | undefined>();
+  /* Only a different open conversation resets — a transient `undefined`
+     while summaries refetch (e.g. right after conversation.rewound) must
+     not clobber a composer seed that's mid-flight. */
+  if (openConv && openConv.id !== seedConv) {
+    setSeedConv(openConv.id);
+    setSeedFiles(undefined);
+    setFilesOnly(null);
+    setLocalRewoundIds(new Set());
+    setLocalRewoundTexts(new Set());
+  }
+  /* Latest rewind per conversation — the fetched tail is dropped
+     client-side as soon as the relay emits `conversation.rewound`. */
+  const rewinds = useAtom(relay.rewinds);
+  /* Rewound message ids (+ answer texts) per conversation: the event's
+     removedIds cover any rewound conv (feed previews included); the local
+     sets cover the open one, where texts are known. */
+  const rewoundInfo = useMemo(() => {
+    const map = new Map<
+      string,
+      { refs: ReadonlySet<string>; texts?: ReadonlySet<string> }
+    >();
+    for (const [convId, r] of Object.entries(rewinds)) {
+      map.set(convId, { refs: new Set(r.removedIds) });
+    }
+    if (openConv && (localRewoundIds.size || localRewoundTexts.size)) {
+      const s = new Set(map.get(openConv.id)?.refs ?? []);
+      for (const id of localRewoundIds) s.add(id);
+      map.set(openConv.id, { refs: s, texts: localRewoundTexts });
+    }
+    return map;
+  }, [rewinds, localRewoundIds, localRewoundTexts, openConv]);
+
   /* The open thread needs its whole visible history, not just the channel
      window (#28 AC-2): page messages.list scoped to the conversation. */
   const channelId = channel?.id;
   const [threadMsgs, setThreadMsgs] = useState<AppMessage[]>([]);
   useEffect(() => {
     setThreadMsgs([]);
+    setLocalRewoundIds(new Set());
+    setLocalRewoundTexts(new Set());
     if (!conversationId || !channelId) return;
     let dead = false;
     void (async () => {
@@ -406,28 +469,56 @@ export function DmPage() {
           conversationId,
           afterSeq: all.at(-1)?.seq ?? 0,
           limit: 200,
+          includeRewound: true,
         });
         all.push(...page.messages);
         if (page.messages.length < 200) break;
       }
-      if (!dead) setThreadMsgs(all);
+      if (dead) return;
+      setThreadMsgs(all.filter((m) => !m.rewound));
+      const rewound = all.filter((m) => m.rewound);
+      setLocalRewoundIds(new Set(rewound.map((m) => m.id)));
+      setLocalRewoundTexts(
+        new Set(
+          rewound
+            .filter((m) => m.authorKind === "employee")
+            .map((m) => m.text.trim()),
+        ),
+      );
     })().catch(() => {});
     return () => {
       dead = true;
     };
   }, [conversationId, channelId]);
 
-  /* Fetched history + live arrivals, deduped by id. */
+  /* Fetched history + live arrivals, deduped by id. Everything at/after the
+     latest rewind point is dropped — the live atoms already lost it, this
+     drops the fetched copy too (#134). */
+  const openConvId = openConv?.id;
   const threadPool = useMemo(() => {
+    const rewoundFrom = openConvId ? rewinds[openConvId]?.fromSeq : undefined;
     const seen = new Set<string>();
     const out: AppMessage[] = [];
-    for (const m of [...threadMsgs, ...messages]) {
-      if (m.conversationId !== openConv?.id || seen.has(m.id)) continue;
+    /* `threadMsgs` is a fetch-time snapshot: a rewind landing between the
+       fetch and now leaves its tail rows unmarked — drop them by seq. The
+       rewind note and later messages only arrive through `messages` (the
+       `conversation.rewound` event already pruned that store), so the seq
+       rule must not touch that source or it would hide the note. */
+    for (const m of threadMsgs) {
+      if (m.conversationId !== openConvId || seen.has(m.id) || m.rewound)
+        continue;
+      if (rewoundFrom !== undefined && m.seq >= rewoundFrom) continue;
+      seen.add(m.id);
+      out.push(m);
+    }
+    for (const m of messages) {
+      if (m.conversationId !== openConvId || seen.has(m.id) || m.rewound)
+        continue;
       seen.add(m.id);
       out.push(m);
     }
     return out;
-  }, [threadMsgs, messages, openConv?.id]);
+  }, [threadMsgs, messages, openConvId, rewinds]);
 
   const openFeed = useAtom(
     openConv?.engineRef ? engine.sessionFeed(openConv.engineRef) : EMPTY_FEED,
@@ -498,6 +589,99 @@ export function DmPage() {
   const summaryOf = (conv: Conversation) =>
     summaries.find((s) => s.conversation.id === conv.id);
 
+  /* #134: the relay rewinds files + conversation to just before the picked
+     message; the target's text lands in the composer and its images reseed
+     as attachment chips (AC-4). On a transport without `rewind` (ACP) the
+     banner offers "Start a new session from here" (AC-3). */
+  const rewindTo = (conv: Conversation, messageId: string) => {
+    /* Capture the about-to-drop message ids up front — the engine-feed
+       turns they prompted would otherwise re-append as rich cards after
+       the thread drops the relay rows (mergeTurns). The relay's event
+       carries the same ids; this covers the window until it lands. */
+    const target = threadPool.find((m) => m.id === messageId);
+    const doomed = target
+      ? threadPool.filter(
+          (m) => m.conversationId === conv.id && m.seq >= target.seq,
+        )
+      : [];
+    const doomedIds = doomed.map((m) => m.id);
+    const doomedTexts = doomed
+      .filter((m) => m.authorKind === "employee")
+      .map((m) => m.text.trim());
+
+    void (async () => {
+      try {
+        const res = await relay.request<ConversationsRewindResult>(
+          "conversations.rewind",
+          { conversationId: conv.id, messageId },
+        );
+        setThreadDraft(res.message.text);
+        if (doomedIds.length)
+          setLocalRewoundIds((prev) => new Set([...prev, ...doomedIds]));
+        if (doomedTexts.length)
+          setLocalRewoundTexts((prev) => new Set([...prev, ...doomedTexts]));
+        const files = await hydrateAttachments(res.message.attachments);
+        if (files.length) setSeedFiles(files);
+        setFilesOnly(
+          res.engineRewound
+            ? null
+            : {
+                conversationId: conv.id,
+                target: res.message,
+                filesRestored: res.filesRestored,
+              },
+        );
+      } catch (e) {
+        say(`Rewind failed — ${e instanceof Error ? e.message : String(e)}`);
+      }
+    })();
+  };
+
+  /* AC-3 follow-up: a fresh session on the same folder, seeded with the
+     surviving transcript as quoted context + the rewound message's text
+     (the composer's current draft — the user may have edited it). */
+  const startFreshFrom = (conv: Conversation, target: AppMessage) => {
+    const kept = threadPool.filter((m) => m.seq < target.seq).slice(-20);
+    const quote = kept
+      .map((m) => {
+        const who =
+          m.authorKind === "user"
+            ? currentName()
+            : m.authorKind === "employee"
+              ? (employee?.name ?? "Agent")
+              : "note";
+        return `> ${who}: ${m.text.replaceAll("\n", "\n> ")}`;
+      })
+      .join("\n");
+    const text =
+      "Picking up mid-session after a rewind — earlier transcript:\n\n" +
+      `${quote}\n\n—\n\n` +
+      (threadDraft.trim() || target.text);
+    void sendDm(
+      employeeId,
+      text,
+      undefined,
+      conv.model
+        ? {
+            model: conv.model,
+            provider: conv.provider,
+            effort: conv.effort,
+            fast: conv.fast,
+          }
+        : undefined,
+      seedFiles,
+      conv.cwd,
+    ).then((c) => {
+      if (!c) return;
+      setFilesOnly(null);
+      /* Sessions land on Focus (#149) — the seeded session does too. */
+      void navigate({
+        to: "/dm/$employeeId/$conversationId/focus",
+        params: { employeeId, conversationId: c.id },
+      });
+    });
+  };
+
   /* Replies for a list row: real messages inside the snapshot window, padded
      to the summary's count with the answer preview on top when it isn't. */
   const repliesOf = (conv: Conversation): Reply[] => {
@@ -567,6 +751,7 @@ export function DmPage() {
           model,
           employeeId,
           convAsks(conv),
+          rewoundInfo.get(conv.id),
           empRefToId,
         ),
         wsFor(conv.cwd, cwdBranches),
@@ -737,9 +922,15 @@ export function DmPage() {
   if (openConv) {
     const conv = openConv;
     const model = modelFor(conv);
-    const root =
-      threadPool.find((m) => m.id === conv.rootMessageId) ??
-      summaryOf(conv)?.root;
+    /* #134: after a rewind TO the root the relay keeps the (rewound) root on
+       the summary for list context — but the open thread must not show a
+       message it just dropped. Fall back to the first surviving message
+       (the "⚠ Files restored" note) instead. */
+    let root = threadPool.find((m) => m.id === conv.rootMessageId);
+    if (!root) {
+      const listed = summaryOf(conv)?.root;
+      root = listed && !listed.rewound ? listed : threadPool[0];
+    }
     const modelLive = model?.live;
     const asksHere = convAsks(conv);
     /* Visible messages are the relay's; the working transcript is the engine
@@ -764,12 +955,15 @@ export function DmPage() {
     const planCap = hasCapability("plan");
     let replies = mergeTurns(
       conversationReplies(
-        threadPool.filter((m) => m.id !== conv.rootMessageId),
+        threadPool.filter(
+          (m) => m.id !== conv.rootMessageId && m.id !== root?.id,
+        ),
         conv.id,
       ),
       model,
       employeeId,
       asksHere,
+      rewoundInfo.get(conv.id),
       empRefToId,
     );
     if (!planCap) replies = stripPlans(replies);
@@ -929,6 +1123,25 @@ export function DmPage() {
       ...(uiJobs.length ? { jobs: uiJobs } : {}),
     };
     const running = !!modelLive || pending[conv.id] === true;
+    /* #134 AC-5: another live session on the same folder -> the click asks
+       first (its files roll back too); the message names it. */
+    const sharer = summaries
+      .map((s) => s.conversation)
+      .find(
+        (c) =>
+          c.id !== conv.id &&
+          !c.archived &&
+          conv.cwd !== undefined &&
+          sameFolder(c.cwd, conv.cwd, home),
+      );
+    const sharerName = sharer
+      ? sharer.title ||
+        summaryOf(sharer)?.root?.text.slice(0, 60) ||
+        "another session"
+      : "";
+    const rewindWarning = sharer
+      ? `This folder is shared with “${sharerName}” — rewinding changes its files too.`
+      : undefined;
     /* ↑ recall in the open session: the user's last sent message in it — the
        root counts too (#104 AC-5). */
     const lastSent = threadPool.reduce<AppMessage | undefined>(
@@ -988,6 +1201,10 @@ export function DmPage() {
           onPlan={planCap ? onPlan : undefined}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           lastSent={lastSent}
+          onRewind={conv.engineRef ? (id) => rewindTo(conv, id) : undefined}
+          rewindWarning={rewindWarning}
+          seedFiles={seedFiles}
+          onSeededFiles={() => setSeedFiles(undefined)}
           onModel={(c) => void setConversationModel(conv.id, c)}
           models={catalog.length ? catalog : undefined}
           /* Focus is a picker surface too — the same Refresh / Edit models…
@@ -1022,6 +1239,21 @@ export function DmPage() {
               : null
           }
         >
+          {filesOnly?.conversationId === conv.id && (
+            <StatusBanner
+              tone="amber"
+              action={{
+                label: "Start a new session from here",
+                onClick: () => startFreshFrom(conv, filesOnly.target),
+              }}
+            >
+              {filesOnly.filesRestored
+                ? "Files restored to the earlier checkpoint — but this "
+                : "The folder kept its current state (no checkpoint stored) — and this "}
+              session's transport can't rewind the agent's memory: it still
+              remembers the dropped messages.
+            </StatusBanner>
+          )}
           {openQuestion && (
             <QuestionCard
               ask={openQuestion}
@@ -1040,6 +1272,21 @@ export function DmPage() {
         data-thread-panel
         className="flex min-h-0 w-[420px] shrink-0 flex-col border-l xl:w-[460px]"
       >
+        {filesOnly?.conversationId === conv.id && (
+          <StatusBanner
+            tone="amber"
+            action={{
+              label: "Start a new session from here",
+              onClick: () => startFreshFrom(conv, filesOnly.target),
+            }}
+          >
+            {filesOnly.filesRestored
+              ? "Files restored to the earlier checkpoint — but this "
+              : "The folder kept its current state (no checkpoint stored) — and this "}
+            session's transport can't rewind the agent's memory: it still
+            remembers the dropped messages.
+          </StatusBanner>
+        )}
         <ThreadView
           root={rootMsg}
           thread={thread}
@@ -1085,6 +1332,14 @@ export function DmPage() {
               params: { employeeId, conversationId: conv.id },
             })
           }
+          onRewind={
+            conv.engineRef
+              ? (messageId) => rewindTo(conv, messageId)
+              : undefined
+          }
+          rewindWarning={rewindWarning}
+          seedFiles={seedFiles}
+          onSeededFiles={() => setSeedFiles(undefined)}
           onClose={() =>
             void navigate({
               to: "/dm/$employeeId",

@@ -14,6 +14,8 @@ export const USER_ID = "user";
 export const profile = atom<ProfileSettings>({});
 /** The OS account's full name — host.user, fetched once at boot. */
 export const osFullName = atom<string | null>(null);
+/** The OS account's home dir — expands `~/` in stored cwd paths (#134). */
+export const osHome = atom<string | null>(null);
 
 /** Default avatar chip colour until the colour picker lands (#132). */
 export const DEFAULT_AVATAR_COLOR = "bg-blue-600";

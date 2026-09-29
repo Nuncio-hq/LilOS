@@ -8,5 +8,7 @@ export const HostUserResult = z.object({
   username: z.string(),
   /** The account's full/display name when the OS exposes one; else null. */
   fullName: z.string().nullable(),
+  /** The account's home dir — lets clients expand stored `~/…` paths (#134). */
+  home: z.string(),
 });
 export type HostUserResult = z.infer<typeof HostUserResult>;

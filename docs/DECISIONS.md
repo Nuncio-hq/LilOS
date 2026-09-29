@@ -166,6 +166,18 @@ PR does not exist.
   Not: a fake default in release, hand-editing installed launch-agent
   plists to pick an engine (lost on every rebuild), or asking for an MDM
   exception. — #85, #141
+- **D-#134 Rewind = harness-owned file checkpoints + an engine `rewind`
+  capability for conversation memory.** Before each user turn the harness
+  snapshots the session folder into a LilOS shadow git store
+  (`~/.lilos/checkpoints/<folder-hash>`, `GIT_DIR`+`GIT_WORK_TREE`+`GIT_INDEX_FILE`
+  — the user's `.git`/index/stash/HEAD are never touched, non-git folders
+  work); the checkpoint id rides on the user message, and the relay marks
+  the dropped tail `rewound` (hidden, kept for audit). `session.rewind
+  {toTurn}` is a declared capability — transports that can't rewind the
+  engine's memory (ACP today) still get the file restore plus a plain
+  "still remembers" note and Start a new session.
+  Not: engine-owned file checkpoints (opt-in, transport-dependent),
+  deleting messages, or the engine owning the folder snapshot. — #134
 - **D-#180 Plans and task lists are engine state: the engine streams a full
   snapshot on every change (`plan.updated` keyed by `planId`), and LilOS
   derives the Tasks card / Plan card / Workbench Plan tab from events
