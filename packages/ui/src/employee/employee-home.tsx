@@ -282,7 +282,7 @@ export function EmployeeHome({
   /* Opens a hit's session scrolled to that message (AC-3); omitted → onOpen. */
   onOpenHit?: (hit: MessageHit) => void;
 }) {
-  const pickFolder = folders.find((x) => x.id === pick.folder);
+  const pickedFolder = folders.find((x) => x.id === pick.folder);
   const [filter, setFilter] = useState("");
   const [hits, setHits] = useState<MessageHit[]>([]);
   const [showArchived, setShowArchived] = useState(false);
@@ -635,13 +635,13 @@ export function EmployeeHome({
       </Conversation>
       <Composer
         placeholder={
-          pickFolder
-            ? `New session with ${e.name} in ${folderLabel(pickFolder, folders)}…`
+          pickedFolder
+            ? `New session with ${e.name} in ${folderLabel(pickedFolder, folders)}…`
             : `New session with ${e.name}…`
         }
         employees={mentionables ?? []}
         onSearchFiles={onSearchFiles}
-        hint={wsHint(pickFolder, pick, !onWorktree)}
+        hint={wsHint(pickedFolder, pick, !onWorktree)}
         onSend={(t, files) => onSend(t, pick, files)}
         draft={composerDraft}
         onDraftChange={onDraftChange}

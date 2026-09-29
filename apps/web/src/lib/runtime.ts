@@ -11,7 +11,7 @@ import type { ModelVisibility } from "@lilos/ui";
 import { atom, computed, type ReadableAtom } from "nanostores";
 import type { LilosConfig } from "./config";
 import { hostUser, initHost } from "./host";
-import { osFullName, profile } from "./me";
+import { osFullName, osHome, profile } from "./me";
 
 export const booted = atom(false);
 export const bootError = atom<string | null>(null);
@@ -38,7 +38,10 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
   // and the thread header's branch badge ride it.
   initHost(cfg);
   void hostUser()
-    .then((u) => osFullName.set(u.fullName))
+    .then((u) => {
+      osFullName.set(u.fullName);
+      osHome.set(u.home);
+    })
     .catch(() => {});
   try {
     await relay.connect();

@@ -40,8 +40,9 @@ PR does not exist.
   Not: delete profile on remove. — #29
 - **D-#113 A DM conversation owns its folder: `conversations.open` carries
   `cwd`, the relay stores it (nullable), and the engine sees it only as
-  `cwd` on `session.start`.** Not: a per-employee fixed workdir, or folder
-  moves inside a session (#10). — #113
+  `cwd` on `session.start`. Add a folder always opens LilOS's in-app
+  dialog, desktop included.** Not: a per-employee fixed workdir, folder
+  moves inside a session (#10), or the macOS open panel (#208). — #113
 - **D-#138 Message search indexes only the relay's stored messages via a
   SQLite FTS5 external-content table + triggers (migration v9).** Engine
   transcripts, tool output and attachments are never indexed (D-#25).
@@ -89,6 +90,13 @@ PR does not exist.
   previous bundle and skips the release permanently.** Not: per-component
   versions, in-place binary patches, or auto-retrying a failed release. —
   #35 · PR #81
+- **D-#206 The signed register path boots out launchd jobs SMAppService
+  doesn't own (ad-hoc `bootstrap` leftovers, other-bundle programs) and
+  treats an "lacks required entitlement" `unregister()` error as
+  not-ours, not a failure.** `SMAppService.status` is blind to
+  bootstrapped jobs — registering over one keeps the old binary and pins
+  the version store. Not: trusting `status` alone, or failing the
+  register on that error (rolls back working installs). — #206
 
 ## Testing
 - **D-#3 CI (GitHub Actions, setup-bun) runs with `engine-fake`; never a
@@ -158,6 +166,18 @@ PR does not exist.
   Not: a fake default in release, hand-editing installed launch-agent
   plists to pick an engine (lost on every rebuild), or asking for an MDM
   exception. — #85, #141
+- **D-#134 Rewind = harness-owned file checkpoints + an engine `rewind`
+  capability for conversation memory.** Before each user turn the harness
+  snapshots the session folder into a LilOS shadow git store
+  (`~/.lilos/checkpoints/<folder-hash>`, `GIT_DIR`+`GIT_WORK_TREE`+`GIT_INDEX_FILE`
+  — the user's `.git`/index/stash/HEAD are never touched, non-git folders
+  work); the checkpoint id rides on the user message, and the relay marks
+  the dropped tail `rewound` (hidden, kept for audit). `session.rewind
+  {toTurn}` is a declared capability — transports that can't rewind the
+  engine's memory (ACP today) still get the file restore plus a plain
+  "still remembers" note and Start a new session.
+  Not: engine-owned file checkpoints (opt-in, transport-dependent),
+  deleting messages, or the engine owning the folder snapshot. — #134
 - **D-#180 Plans and task lists are engine state: the engine streams a full
   snapshot on every change (`plan.updated` keyed by `planId`), and LilOS
   derives the Tasks card / Plan card / Workbench Plan tab from events

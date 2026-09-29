@@ -57,6 +57,45 @@ function SendButton({
   );
 }
 
+/* Rewind prefill (issue #134 AC-4): a user message's stored images come
+   back as real attachment chips — fetched bytes turned back into Files so a
+   resend ships them again untouched. */
+export function FileSeeder({
+  seed,
+  onSeeded,
+}: {
+  seed: AttachedFile[];
+  onSeeded: () => void;
+}) {
+  const attachments = usePromptInputAttachments();
+  useEffect(() => {
+    /* No "already seeded" ref guard: StrictMode's mount→cleanup→mount
+       leaves the first fetch cancelled and the ref set, so the real seed
+       never lands. The second effect's fetch is what must complete. */
+    let cancelled = false;
+    void Promise.all(
+      seed.map(async (f) => {
+        if (!f.url) return null;
+        const blob = await fetch(f.url).then((r) => r.blob());
+        return new File([blob], f.name, { type: f.mediaType });
+      }),
+    )
+      .then((files) => {
+        if (cancelled) return;
+        const ok = files.filter((f): f is File => f !== null);
+        if (ok.length) attachments.add(ok);
+        onSeeded();
+      })
+      .catch(() => onSeeded());
+    return () => {
+      cancelled = true;
+    };
+    // attachments.add is stable; seed identity is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed]);
+  return null;
+}
+
 export function Composer({
   placeholder,
   employees,
@@ -74,6 +113,8 @@ export function Composer({
   onSearchFiles,
   draft: draftProp,
   onDraftChange,
+  seedFiles,
+  onSeededFiles,
 }: {
   placeholder: string;
   employees: Employee[];
@@ -106,6 +147,11 @@ export function Composer({
      stores it per conversation; omitted, the composer keeps its own state. */
   draft?: string;
   onDraftChange?: (v: string) => void;
+  /* Rewind prefill (issue #134 AC-4): message attachments (data-URL or blob
+     URL `url`s) re-enter as real chips once — the host clears the prop via
+     `onSeededFiles` so a reseed on the same composer works again. */
+  seedFiles?: AttachedFile[];
+  onSeededFiles?: () => void;
 }) {
   const [draft, setDraft] = useControllableState({
     prop: draftProp,
@@ -319,6 +365,9 @@ export function Composer({
           clearIfUnchanged();
         }}
       >
+        {seedFiles?.length && onSeededFiles ? (
+          <FileSeeder seed={seedFiles} onSeeded={onSeededFiles} />
+        ) : null}
         {accept && (
           <PromptInputAttachments className="px-3 pt-3 pb-0">
             {(file) => <PromptInputAttachment data={file} />}

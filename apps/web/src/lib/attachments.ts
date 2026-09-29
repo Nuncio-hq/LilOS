@@ -53,6 +53,33 @@ export function toAttachedFiles(
 }
 
 /**
+ * Refs -> AttachedFile[] with the bytes inlined as data URLs (issue #134
+ * AC-4): rewound message images re-enter the composer as real chips, so a
+ * resend ships them untouched. Refs whose blob can't be fetched are dropped.
+ */
+export async function hydrateAttachments(
+  refs: MessageAttachment[] | undefined,
+): Promise<AttachedFile[]> {
+  const out = await Promise.all(
+    (refs ?? []).map(
+      (r): Promise<AttachedFile | null> =>
+        relay
+          .request<{ attachment: MessageAttachment; dataBase64: string }>(
+            "attachments.get",
+            { id: r.id },
+          )
+          .then((res) => ({
+            name: r.name || "attachment",
+            mediaType: r.mimeType,
+            url: `data:${res.attachment.mimeType};base64,${res.dataBase64}`,
+          }))
+          .catch(() => null),
+    ),
+  );
+  return out.flatMap((f) => (f === null ? [] : [f]));
+}
+
+/**
  * Composer files (data URLs out of PromptInput) -> wire attachments. Anything
  * whose `url` isn't a base64 data URL can't cross the wire and is dropped.
  */

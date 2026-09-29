@@ -74,6 +74,9 @@ export class Session {
   openRequests = new Map<string, PendingAsk>();
   turn?: Turn;
   lastTurnId = "";
+  /** #134: user inputs delivered (prompts + accepted steers) —
+      `session.rewind` truncates Hermes history to this count's `toTurn`. */
+  userTurns = 0;
   /** Hermes tool_call id -> LilOS toolCallId (stable per session). */
   toolIds = new Map<string, string>();
   toolCounter = 0;

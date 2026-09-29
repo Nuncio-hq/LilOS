@@ -173,6 +173,10 @@ export type SessionStopResult = z.infer<typeof SessionStopResult>;
 export const SessionSteerParams = z.strictObject({
   sessionId: SessionId,
   text: z.string().min(1),
+  /* Client tag echo'd on `turn.started` like `prompt.ref` — a steer that
+     outlives its turn is pumped as the next prompt, and the link back to
+     the relay message must survive that requeue (#134 rewind needs it). */
+  ref: z.string().min(1).optional(),
 });
 export type SessionSteerParams = z.infer<typeof SessionSteerParams>;
 export const SessionSteerResult = z.object({
@@ -206,6 +210,28 @@ export const SessionSetHiddenParams = z.strictObject({
 export type SessionSetHiddenParams = z.infer<typeof SessionSetHiddenParams>;
 export const SessionSetHiddenResult = z.object({ hidden: z.boolean() });
 export type SessionSetHiddenResult = z.infer<typeof SessionSetHiddenResult>;
+
+// ── session.rewind (capability: rewind) ─────────────────────────────────────
+/**
+ * Rewind the session's conversation to just before a user turn (issue #134):
+ * `toTurn` counts how many leading user turns to KEEP — the engine drops the
+ * rest of the turns from its context so the next prompt continues from the
+ * earlier state. File restoration is NOT part of this method: the harness
+ * owns folder checkpoints, so rewind works the same on engines that never
+ * touch the filesystem (and on transports without history rewind, e.g. ACP
+ * today, the capability is simply not declared).
+ */
+export const SessionRewindParams = z.strictObject({
+  sessionId: SessionId,
+  /** Number of leading user turns to keep; the rest are forgotten. */
+  toTurn: z.int().min(0),
+});
+export type SessionRewindParams = z.infer<typeof SessionRewindParams>;
+export const SessionRewindResult = z.object({
+  /** User turns the engine dropped. */
+  removed: z.int().min(0),
+});
+export type SessionRewindResult = z.infer<typeof SessionRewindResult>;
 
 // ── jobs.list / jobs.stop (capability: background_jobs, #179) ───────────────
 /** One row of `jobs.list` — the engine-owned truth a client re-reads after
@@ -338,6 +364,12 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
     result: SessionSetHiddenResult,
     doc: "Move the engine session out of / back into its default list — the engine-side counterpart of archive/unarchive.",
     capability: "session_meta",
+  },
+  "session.rewind": {
+    params: SessionRewindParams,
+    result: SessionRewindResult,
+    doc: "Drop all user turns after `toTurn` from the session's context (issue #134). Refuses INVALID_STATE while a turn runs. Engines on transports without history rewind (ACP today) don't declare the capability.",
+    capability: "rewind",
   },
   "jobs.list": {
     params: JobsListParams,

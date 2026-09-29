@@ -299,12 +299,19 @@ export function conversationReplies(
  * Merge engine turns into the relay reply list: a turn whose text landed as
  * an employee message swaps into that slot (rich card: reasoning, steps,
  * approvals); turns not yet posted — and the live one — append at the end.
+ * `rewound` (#134) describes a conversation's rewound tail. `refs` holds the
+ * rewound message ids: a feed turn prompted by one (`turn.started.ref` =
+ * its message id) would otherwise resurrect as an unmatched append even
+ * though the relay thread dropped the tail. Turns the engine never tagged
+ * (a steer pumped into a fresh turn on an engine that doesn't echo `ref`)
+ * fall back to `texts` — the rewound employee answers' bodies.
  */
 export function mergeTurns(
   replies: Reply[],
   model: SessionModel | undefined,
   employeeId: string,
   asks: Ask[] = [],
+  rewound?: { refs?: ReadonlySet<string>; texts?: ReadonlySet<string> },
   resolveEmployee: (employeeRef: string) => string = (r) => r,
 ): Reply[] {
   if (!model) return replies;
@@ -334,6 +341,10 @@ export function mergeTurns(
      The live turn is always the newest, so it still goes last. */
   for (const t of model.turns) {
     if (used.has(t) || t === model.live) continue;
+    /* `ref` is authoritative when the engine tagged the turn; steer-pumped
+       turns without one match by their posted answer text instead. */
+    if (t.ref ? rewound?.refs?.has(t.ref) : rewound?.texts?.has(t.text.trim()))
+      continue;
     if (!t.text.trim() && t.phase !== "stopped") continue;
     const at = t.ref ? flat.findIndex((r) => r.id === t.ref) : -1;
     const rs = liveReplies(t, employeeId, asks, resolveEmployee);

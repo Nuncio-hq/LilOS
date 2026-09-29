@@ -7,6 +7,7 @@ import {
   ChannelSnapshotEvent,
   ChannelSyncedEvent,
   type Conversation,
+  ConversationRewoundEvent,
   type ConversationSummary,
   ConversationUpdatedEvent,
   DevicesChangedEvent,
@@ -160,6 +161,16 @@ export class RelayClient {
   });
   /** Fatal handshake failure (version mismatch, bad token) once raised. */
   readonly fatal: WritableAtom<RelayError | undefined> = atom(undefined);
+  /**
+   * #134: latest rewind per conversation (conversationId -> first rewound
+   * seq + the dropped message ids). Views holding fetched history outside
+   * the channel atoms re-render off this so the dropped tail disappears in
+   * every open window; `removedIds` lets the engine feed drop turns whose
+   * `ref` points at a rewound user message (files-only rewind keeps them).
+   */
+  readonly rewinds: WritableAtom<
+    Record<string, { fromSeq: number; removedIds: string[] }>
+  > = atom({});
   /** Phones paired to this install (#153) — live via `devices.changed`. */
   readonly devices: WritableAtom<PairedDevice[]> = atom([]);
   /**
@@ -944,6 +955,45 @@ export class RelayClient {
         if (event.lastSeq > wm)
           this.watermarks.set(event.channelId, event.lastSeq);
         this.setChannelSynced(event.channelId, true, event.lastSeq);
+        return;
+      }
+      case "conversation.rewound": {
+        const event = ConversationRewoundEvent.parse(params);
+        const store = this.channelStates.get(event.channelId);
+        if (store) {
+          const state = store.get();
+          store.set({
+            ...state,
+            messages: state.messages.filter(
+              (m) =>
+                m.conversationId !== event.conversationId ||
+                m.seq < event.fromSeq,
+            ),
+          });
+        }
+        const parked = this.parked.get(event.channelId);
+        if (parked) {
+          this.parked.set(
+            event.channelId,
+            parked.filter(
+              (m) =>
+                m.conversationId !== event.conversationId ||
+                m.seq < event.fromSeq,
+            ),
+          );
+        }
+        const prevRewind = this.rewinds.get()[event.conversationId];
+        this.rewinds.set({
+          ...this.rewinds.get(),
+          [event.conversationId]: {
+            fromSeq: event.fromSeq,
+            removedIds: [
+              ...(prevRewind?.removedIds ?? []),
+              ...event.removedIds,
+            ],
+          },
+        });
+        void this.refreshSummaries();
         return;
       }
       case "conversation.updated": {

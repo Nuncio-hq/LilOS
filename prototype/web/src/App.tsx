@@ -1234,9 +1234,38 @@ export default function App() {
     sendInThread(root, item)
   }
   // session.undo: drop the last exchange; real Hermes also rewinds files via rollback.restore to the turn checkpoint
-  const rewind = (root: Extract<Msg, { kind: "msg" }>, replyIndex: number) => {
-    mapRoot(feedKey, root.id, (t) => ({ ...t, replies: t.replies.slice(0, replyIndex) }))
-    say(`Rewound session ${root.thread?.session} · rollback.restore to checkpoint`)
+  // #134 "Rewind to here" in the DM panel: the picked user message and
+  // everything after it drop out, files roll back to the pre-turn
+  // checkpoint, and the message text returns to the composer (AC-4).
+  const rewindTo = (root: Extract<Msg, { kind: "msg" }>, messageId: string) => {
+    const t = root.thread
+    if (!t) return
+    const idx =
+      messageId === root.id
+        ? 0
+        : t.replies.findIndex((r, i) => (r.id ?? `p-${i}`) === messageId)
+    if (idx < 0) return
+    const target = idx === 0 ? root.text : t.replies[idx]?.text
+    const n = t.replies.length - idx
+    if (idx === 0) {
+      /* Rewinding to the root drops every message — the whole thread goes. */
+      setFeeds((fs) => ({ ...fs, [feedKey]: (fs[feedKey] ?? []).filter((m) => m.id !== root.id) }))
+      setPanelOpen(false)
+    } else {
+      mapRoot(feedKey, root.id, (tt) => ({
+        ...tt,
+        replies: [
+          ...tt.replies.slice(0, idx),
+          {
+            from: "",
+            time: "",
+            text: `⚠ Rewound to before your message — ${n} message${n === 1 ? "" : "s"} dropped, files restored to the earlier checkpoint.`,
+          },
+        ],
+      }))
+    }
+    if (target !== undefined) setThreadDraft(target)
+    say(`Rewound session ${t.session} · files + ${n} message${n === 1 ? "" : "s"}`)
   }
   // conversations.setModel: the pick pins the conversation's model; the next
   // turn's reply carries it back as `turn.started.model` (AC-2).
@@ -1376,12 +1405,17 @@ export default function App() {
 
   const threadPanel = openThread?.thread ? (
     <ThreadView
-      root={openThread} thread={openThread.thread} channel={channel}
+      root={openThread}
+      /* #134: seeded replies carry no relay ids — give each a positional one
+         so the Rewind-to-here affordance has a key to report. */
+      thread={{ ...openThread.thread, replies: openThread.thread.replies.map((r, i) => ({ ...r, id: r.id ?? `p-${i}` })) }}
+      channel={channel}
       emp={emp} human={human} resolved={resolved} setResolved={setResolved}
       onFocus={() => setFocus(!focus)}
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
       running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
       draft={threadDraft} onDraftChange={setThreadDraft}
+      onRewind={(id) => rewindTo(openThread, id)}
       mentionables={employees} onSearchFiles={fileMentions(openThread.thread.ws?.folder)}
       lastSent={lastSentIn(openThread)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
@@ -1439,7 +1473,7 @@ export default function App() {
           running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
           lastSent={lastSentIn(openThread)}
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
-          onRewind={(i) => rewind(openThread, i)} onModel={canModels ? (m) => setModel(openThread, m) : undefined} say={say}
+          onRewind={(id) => rewindTo(openThread, id)} onModel={canModels ? (m) => setModel(openThread, m) : undefined} say={say}
           draft={threadDraft} onDraftChange={setThreadDraft}
           surfaces={realSurfaces ?? fakeSurfaces}
           models={canModels ? MODEL_OPTS : undefined} picker={pickerExtras} repoFiles={REPO_FILES} host={hostAccessors}

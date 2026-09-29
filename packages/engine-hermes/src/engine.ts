@@ -20,8 +20,10 @@ import {
   PLAN_CAPABILITY,
   type PlanStepStatus,
   type PromptParams,
+  REWIND_CAPABILITY,
   type RequestRespondParams,
   RPC_ERRORS,
+  type SessionRewindParams,
   type SessionSetHiddenParams,
   type SessionSetModelParams,
   type SessionSetTitleParams,
@@ -174,6 +176,8 @@ export class HermesEngine {
         return this.sessionStop(parsed.data as SessionStopParams);
       case "session.steer":
         return this.sessionSteer(parsed.data as SessionSteerParams);
+      case "session.rewind":
+        return this.sessionRewind(parsed.data as SessionRewindParams);
       case "agents.list":
         return listAgents(this.opts.gateway);
       case "agents.describe":
@@ -276,6 +280,15 @@ export class HermesEngine {
            gateway events and `session.info.title` (`tui_gateway/server.py`
            `_session_info`), mapped to `session.titled` in applyEvent. */
         detail: { autoTitle: true },
+      },
+      {
+        ...REWIND_CAPABILITY,
+        /* #134: real only for WS sessions — `session.undo` truncates
+           Hermes history (one call per dropped turn). ACP sessions hit
+           `session.rewind`'s METHOD_NOT_FOUND and take the files-only
+           fallback (AC-3). */
+        description:
+          "session.rewind maps to hermes `session.undo` on WS sessions (soft-deletes the tail on disk, looped N times). ACP sessions expose no history undo — they answer METHOD_NOT_FOUND.",
       },
     ];
     if (this.opts.acp) {
@@ -520,6 +533,7 @@ export class HermesEngine {
           session_id: s.runtimeSid,
           text,
         });
+        s.userTurns += 1;
       } else {
         const driver = this.acpDrivers.get(s.id);
         if (!driver)
@@ -650,6 +664,7 @@ export class HermesEngine {
       throw e;
     }
     if (r.status === "queued" || r.status === "redirected") {
+      s.userTurns += 1;
       s.emit("turn.steered", {
         turnId: s.turn?.turnId ?? s.lastTurnId,
         text: p.text,
@@ -657,6 +672,55 @@ export class HermesEngine {
       return { status: "steered" as const };
     }
     return { status: "not_running" as const };
+  }
+
+  /**
+   * `session.rewind {toTurn}` (#134) — drop every user turn after `toTurn`
+   * from the agent's context. Maps to the WS gateway's `session.undo`
+   * (tui_gateway/methods_session.py): one call drops the last real user
+   * turn, truncating live history AND soft-deleting the rows on disk, so a
+   * resumed session can't remember them either — called `drop` times. The
+   * slash `/undo N` path (`command.dispatch`) is not used: it routes through
+   * `_confirm_destructive_slash`, which expects a TUI-side confirm. ACP
+   * sessions have no undo (spike on #134): they answer METHOD_NOT_FOUND so
+   * callers take the files-only fallback.
+   */
+  private async sessionRewind(p: SessionRewindParams) {
+    const s = this.require(p.sessionId);
+    if (s.state === "closed")
+      throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    if (s.turn)
+      throw new RpcError(
+        RPC_ERRORS.INVALID_STATE,
+        `session ${s.id} has a running turn — interrupt it first`,
+      );
+    if (s.driver !== "ws")
+      throw new RpcError(
+        RPC_ERRORS.METHOD_NOT_FOUND,
+        "session.rewind needs the WS transport — ACP exposes no history undo",
+      );
+    const drop = Math.max(0, s.userTurns - p.toTurn);
+    if (drop === 0) return { removed: 0 };
+    /* Track each landed undo: a mid-loop failure (e.g. a turn racing in)
+       must still count what Hermes already dropped or `userTurns` drifts. */
+    let done = 0;
+    try {
+      for (let i = 0; i < drop; i++) {
+        await this.opts.gateway.request("session.undo", {
+          session_id: s.runtimeSid,
+        });
+        done++;
+      }
+    } catch (e) {
+      s.userTurns -= done;
+      // Hermes 4009 = agent busy; the adapter's own running check raced a
+      // turn that started in between — translate to the contract's code.
+      if (e instanceof RpcError && e.code === 4009)
+        throw new RpcError(RPC_ERRORS.INVALID_STATE, e.message);
+      throw e;
+    }
+    s.userTurns = Math.min(p.toTurn, s.userTurns);
+    return { removed: drop };
   }
 
   // ── #179: background jobs (Hermes process registry) ───────────────────────

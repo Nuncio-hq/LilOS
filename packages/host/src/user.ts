@@ -28,5 +28,9 @@ export async function hostUser(): Promise<HostUserResult> {
   const username = os.userInfo().username;
   /* Dev/e2e hook: the name an install would read on the user's machine. */
   const override = process.env.LILOS_USER_NAME?.trim();
-  return { username, fullName: override || (await fullName(username)) };
+  return {
+    username,
+    fullName: override || (await fullName(username)),
+    home: os.homedir(),
+  };
 }

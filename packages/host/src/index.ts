@@ -1,3 +1,4 @@
+export * from "./checkpoints.js";
 export * from "./errors.js";
 export * from "./forge.js";
 export * from "./fs.js";
