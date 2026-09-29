@@ -47,5 +47,7 @@ UI change lands there first.
 
 - One change per PR; reference the issue (`Closes #N`).
 - Keep everything in English — code, docs, issues, commits.
-- Never commit secrets; CI runs `bun run verify` and a DCO check.
+- Never commit secrets; CI runs `bun run verify` and a DCO check. Open the PR
+  as a draft while you iterate: drafts run only the fast checks, and E2E runs
+  once the PR is marked ready for review.
 - Report security issues privately — see `SECURITY.md`.

@@ -19,7 +19,11 @@ const fakeOs = join(repo, "e2e/os-fake");
 export default defineConfig({
   testDir: "./e2e",
   outputDir: "./test-results",
-  reporter: [["list"]],
+  /* CI retries a failed test once instead of re-running the whole 20-minute
+     job (#201); the github reporter annotates a pass-on-retry as flaky, so it
+     never goes silently green. */
+  retries: process.env.CI ? 1 : 0,
+  reporter: process.env.CI ? [["list"], ["github"]] : [["list"]],
   use: {
     baseURL: "http://127.0.0.1:5199",
     screenshot: "off",

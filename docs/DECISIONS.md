@@ -91,8 +91,13 @@ PR does not exist.
   #35 · PR #81
 
 ## Testing
-- **D-#3 CI (GitHub Actions, setup-bun) runs `bun run verify` with
-  `engine-fake`; never a real LLM.** Not: real LLM in CI. — #3 · PR #14
+- **D-#3 CI (GitHub Actions, setup-bun) runs with `engine-fake`; never a
+  real LLM.** Not: real LLM in CI. — #3 · PR #14
+- **D-#201 CI runs the fast checks (`verify:fast`) on every PR push and E2E
+  only on `main` and ready, non-docs-only PRs; a PR's newer push cancels its
+  older run; a failed E2E test retries once and is flagged flaky; the macOS
+  release build runs on tags/dispatch only.** Not: full `verify` on every
+  push, or re-running the whole job for a flake. — #201 · PR #202
 - **D-#3 Local verify uses a real LLM via Hermes (HPC `qwen3.8-flash-next`
   local / `openai-codex` cloud); hand-offs state which was used; if both
   fail, tell Oscar.** Not: silently falling back to mock. — #3 · PR #14
