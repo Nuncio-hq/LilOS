@@ -231,12 +231,26 @@ export function mergeThreadEntries(
      text the engine posted (stripMessages on web; relays keep full text).
      Each turn claims ONE message in turn order — an engine that answers two
      turns with the same text (canned replies repeat across sessions, #181)
-     must not stamp the same rich card on both rows. */
+     must not stamp the same rich card on both rows. And the claim is
+     position-bounded: a turn only matches a message AFTER its `ref` prompt —
+     without it, a rebound session's turn (turn ids restart per session)
+     steals an older session's identical reply and shows the wrong card
+     (phantom subagents + a bogus duration, #181 AC-4). */
+  const promptIdx = new Map<TurnModel, number>();
+  for (const t of model.turns) {
+    if (!t.ref) continue;
+    const i = messages.findIndex((x) => x.id === t.ref);
+    if (i >= 0) promptIdx.set(t, i);
+  }
   const used = new Set<TurnModel>();
-  for (const m of messages) {
+  for (const [mi, m] of messages.entries()) {
     if (m.authorKind !== "employee") continue;
     const turn = model.turns.find(
-      (x) => !used.has(x) && x.text.trim() && x.text.trim() === m.text.trim(),
+      (x) =>
+        !used.has(x) &&
+        x.text.trim() &&
+        x.text.trim() === m.text.trim() &&
+        (promptIdx.get(x) ?? -1) < mi,
     );
     if (!turn) continue;
     used.add(turn);

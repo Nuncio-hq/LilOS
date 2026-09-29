@@ -381,6 +381,56 @@ describe("thread subagents & background jobs — #181", () => {
     expect(new Set(cardIds).size).toBe(cardIds.length);
   });
 
+  it("AC-4 a rebound turn never claims an older session's identical reply (no phantom card)", () => {
+    /* Session A ran two prompts whose replies were "same reply". After a
+       restart, session B's turn t2 (ids restart per session) produced the
+       same text — but its prompt (m5) sits AFTER A's replies. The claim is
+       position-bounded: t2 may only match a message after its ref prompt,
+       so m2/m4 keep their plain rows and t2 lands on its own reply m7. */
+    const model = reduceSessionEvents("sess-2", [
+      ev(
+        "turn.started",
+        { turnId: "t2", model: "fake-small", ref: "m5" },
+        "sess-2",
+      ),
+      ev(
+        "subagent.started",
+        {
+          turnId: "t2",
+          subagentId: "sa-1",
+          name: "Scan",
+          task: "scan",
+        },
+        "sess-2",
+      ),
+      ev(
+        "subagent.completed",
+        { subagentId: "sa-1", status: "done", durationMs: 900 },
+        "sess-2",
+      ),
+      ev(
+        "turn.delta",
+        { turnId: "t2", stream: "text", delta: "same reply" },
+        "sess-2",
+      ),
+      ev("turn.completed", { turnId: "t2", stopReason: "end_turn" }, "sess-2"),
+    ]);
+    const messages = [
+      msg({ id: "m1", seq: 1, text: "first" }),
+      msg({ id: "m2", seq: 2, authorKind: "employee", text: "same reply" }),
+      msg({ id: "m3", seq: 3, text: "second" }),
+      msg({ id: "m4", seq: 4, authorKind: "employee", text: "same reply" }),
+      msg({ id: "m5", seq: 5, text: "third" }),
+      msg({ id: "m7", seq: 6, authorKind: "employee", text: "same reply" }),
+    ];
+    const detail = toThreadDetail({ ...BASE, messages, model });
+    const agentIds = detail.entries
+      .filter((e) => e.kind === "agent")
+      .map((e) => e.id);
+    expect(agentIds).toEqual(["m2", "m4", "turn-t2"]);
+    expect(detail.entries.at(-1)?.id).toBe("turn-t2");
+  });
+
   it("AC-4 a finished job's uptime freezes at endedAt (no inflation past exit)", () => {
     const exited = reduceSessionEvents("sess-1", [
       ev("job.started", {
