@@ -149,21 +149,17 @@ console.log("  Deep link (valid ~5 min):");
 console.log(`    ${link}`);
 console.log("");
 console.log("  Simulator:");
-console.log(
-  `    xcrun simctl openurl booted '${link.replace(/'/g, "'\\''")}'`,
-);
+console.log(`    xcrun simctl openurl booted '${link.replace(/'/g, "'\\''")}'`);
 console.log("");
 console.log("  Then on the phone:");
-console.log(`    Home -> ${employeeName} -> DM (empty state) -> send a message`);
+console.log(
+  `    Home -> ${employeeName} -> DM (empty state) -> send a message`,
+);
 console.log(
   "    -> the new thread opens (AC-3) and the row lands under Working,",
 );
-console.log(
-  "    then Done when the turn completes (AC-1). A prompt like",
-);
-console.log(
-  "    \"add a note to the readme\" lands under Needs you (edit-ask).",
-);
+console.log("    then Done when the turn completes (AC-1). A prompt like");
+console.log('    "add a note to the readme" lands under Needs you (edit-ask).');
 console.log("");
 out("running until Ctrl-C");
 await new Promise(() => {});
