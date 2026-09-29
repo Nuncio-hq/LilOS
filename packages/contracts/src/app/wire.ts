@@ -6,6 +6,7 @@ import {
   AgentsUpdateParams,
 } from "../engine/agents";
 import { Capability } from "../engine/capabilities";
+import { EngineEvent } from "../engine/events";
 import { JobsListParams, JobsStopParams } from "../engine/methods";
 import { ModelOption, ModelProvider, ModelsListParams } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
@@ -147,6 +148,14 @@ export const AppMethod = z.enum([
   "asks.list",
   "turns.interrupt",
   "conversations.setModel",
+  /* Engine-event replay scoped to one conversation (#157): a device-scope
+     client (the phone) replays the turn stream through the relay — the
+     relay resolves the conversation's `engineRef` and forwards
+     `events.since` to the host; no engine socket, no verbatim passthrough. */
+  "session.events",
+  /* Host-only: re-publish one engine event of a conversation-bound session
+     so the relay can re-emit it on the conversation's channel (#157). */
+  "engine.event",
   "system.status",
   "employees.remove",
   /* LilOS-owned client settings (engine keeps no such state): a generic KV
@@ -931,6 +940,38 @@ export type ConversationsSetModelParams = z.infer<
   typeof ConversationsSetModelParams
 >;
 
+/**
+ * Engine-event replay for a client that only sees conversations (#157):
+ * `{conversationId, after}` — the relay resolves `engineRef` and calls the
+ * host's `events.since`; the result is the engine's `EventsSinceResult`
+ * verbatim. `not_found` when the conversation doesn't exist or has no engine
+ * session bound yet (nothing to replay — treat as an empty feed).
+ */
+export const SessionEventsParams = z
+  .object({
+    conversationId: z.string().min(1),
+    /** Replay watermark: events with seq > after are returned. */
+    after: z.int().min(0),
+  })
+  .strict();
+export type SessionEventsParams = z.infer<typeof SessionEventsParams>;
+
+/**
+ * Host-only push (#157): the registered engine host re-publishes every
+ * engine event of a conversation-bound session so the relay can re-emit it
+ * as the `engine.event` channel event. `conversationId` comes from the
+ * host's own session binding — the relay drops frames for unknown
+ * conversations (e.g. a session bound after the push raced its bind).
+ */
+export const EngineEventParams = z
+  .object({
+    conversationId: z.string().min(1),
+    sessionId: z.string().min(1),
+    event: EngineEvent,
+  })
+  .strict();
+export type EngineEventParams = z.infer<typeof EngineEventParams>;
+
 /* -------------------------------- events ------------------------------- */
 
 export const AppEventMethod = z.enum([
@@ -951,6 +992,7 @@ export const AppEventMethod = z.enum([
   "conversation.rewound",
   "devices.changed",
   "host.changed",
+  "engine.event",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 
@@ -1059,6 +1101,20 @@ export const ConversationRewoundEvent = z.object({
   removedIds: z.array(z.string()),
 });
 export type ConversationRewoundEvent = z.infer<typeof ConversationRewoundEvent>;
+
+/**
+ * A live engine event re-published by the registered host (#157): the relay
+ * emits it on the conversation's channel so subscribed clients (the phone)
+ * render the turn stream through `reduceSessionEvents` — the same feed the
+ * host exposes on its loopback port, scoped to what a channel reader may see.
+ */
+export const EngineEventEvent = z.object({
+  channelId: z.string().min(1),
+  conversationId: z.string().min(1),
+  sessionId: z.string().min(1),
+  event: EngineEvent,
+});
+export type EngineEventEvent = z.infer<typeof EngineEventEvent>;
 
 /* -------------------------------- settings ------------------------------- */
 

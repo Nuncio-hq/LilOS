@@ -24,13 +24,14 @@ import {
   FoldersDetailParams,
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
-import type {
-  AgentDescriptor,
-  ContentBlock,
-  DescribeResult,
-  EngineEvent,
-  EngineRequest,
-  EventsSinceResult,
+import {
+  type AgentDescriptor,
+  type ContentBlock,
+  type DescribeResult,
+  type EngineEvent,
+  type EngineRequest,
+  EventsSinceParams,
+  type EventsSinceResult,
 } from "@lilos/contracts/engine";
 import {
   type CheckpointStore,
@@ -1126,6 +1127,19 @@ export class Harness {
       }
     }
     const convId = this.conversationBySession.get(event.sessionId);
+    /* Live stream for paired phones (#157): every engine event of a
+       conversation-bound session is re-published on the relay, which
+       re-emits it on the conversation's channel. Errors are swallowed —
+       the phone heals itself via `session.events` replay. */
+    if (convId) {
+      this.opts.relay
+        .request("engine.event", {
+          conversationId: convId,
+          sessionId: event.sessionId,
+          event,
+        })
+        .catch(() => {});
+    }
     const binding = convId ? this.bindings.get(convId) : undefined;
     if (binding && event.seq > binding.lastSeq) binding.lastSeq = event.seq;
     switch (event.type) {
@@ -1432,6 +1446,14 @@ export class Harness {
        forwards here — the only process that can run git on this machine. */
     if (method === "folders.detail") {
       return this.folderDetail(FoldersDetailParams.parse(params));
+    }
+    /* `events.since` (#157): the relay's `session.events` maps a
+       conversationId onto its bound engine session and forwards here —
+       verbatim engine replay, so a device-scope client never sees a
+       session id it didn't resolve through the conversation. */
+    if (method === "events.since") {
+      const parsed = EventsSinceParams.parse(params);
+      return this.eventsSince(parsed.sessionId, parsed.after);
     }
     if (!(ENGINE_PASSTHROUGH_METHODS as readonly string[]).includes(method)) {
       throw Object.assign(new Error(`harness does not answer ${method}`), {
