@@ -71,12 +71,14 @@ export function toApproval(ask: Ask, wire: HomeWire, nowMs: number): Approval {
     tone: employee ? toneOf(employee.id) : "stone",
     session: sessionLabel(ask.conversationId, wire),
     kind: request.kind,
+    /* #264: like askReason — the reason is the command; the row's sentence
+       ("<employee> wants to run") is composed on the surface. */
     reason:
       request.kind === "question"
         ? request.question
         : request.kind === "plan"
           ? "Plan waiting for your review"
-          : (request.description ?? "Wants your approval"),
+          : request.command,
     command: request.kind === "approval" ? request.command : undefined,
     age: ageLabel(ask.createdAt, nowMs),
   };

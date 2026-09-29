@@ -271,7 +271,7 @@ describe("thread-model — #157 AC mapping", () => {
     if (card.kind !== "agent") throw new Error("expected agent entry");
     expect(card.approval).toMatchObject({
       id: "ask-1",
-      reason: "clean the build folder",
+      reason: "rm -rf build/",
       command: "rm -rf build/",
     });
   });
@@ -303,8 +303,38 @@ describe("thread-model — #157 AC mapping", () => {
     if (card.kind !== "agent") throw new Error("expected agent entry");
     expect(card.decided).toEqual({
       approved: false,
-      what: "clean the build folder",
+      what: "rm -rf build/",
     });
+  });
+
+  it("#264 the receipt carries the command verbatim — a long one never truncates", () => {
+    const command =
+      'git commit -am "fix: rebase the worktree index migration onto main and drop the stale checkpoint rows"';
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "done" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    ]);
+    const ask: Ask = {
+      id: "ask-1",
+      channelId: "ch-dm",
+      conversationId: "conv-1",
+      turnId: "t1",
+      requestId: "r1",
+      request: {
+        kind: "approval",
+        command,
+        description: `terminal wants to run: ${command}`,
+        options: ["once", "always", "deny"],
+      },
+      state: "resolved",
+      outcome: "once",
+      createdAt: T0,
+    };
+    const entries = mergeThreadEntries([], model, { ...OPTS, asks: [ask] });
+    const card = entries[0];
+    if (card.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.decided).toEqual({ approved: true, what: command });
   });
 
   it("#134 a rewound turn never resurrects (refs and texts both hide it)", () => {

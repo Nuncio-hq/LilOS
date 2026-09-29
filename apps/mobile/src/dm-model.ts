@@ -83,10 +83,14 @@ export function conversationState(
 
 /* ------------------------------- asks ---------------------------------- */
 
-/** The one-line reason a needs-you row shows (approval or question ask). */
+/** The one-line reason a needs-you row shows (approval or question ask).
+    #264: an approval's reason is its command — the wire `description` is
+    only the engine's own "wants to run: <cmd>" echo, so surfaces compose
+    their own sentence (the card's "<employee> wants to run", the decided
+    receipt's "You approved:") and the command shows once, untruncated. */
 export function askReason(ask: Ask): string {
   const r = ask.request;
-  if (r.kind === "approval") return r.description ?? r.command;
+  if (r.kind === "approval") return r.command;
   // Plans (#180) have no mobile surface yet; the row still says why it waits.
   if (r.kind === "plan") return "Plan waiting for your review";
   return r.question;

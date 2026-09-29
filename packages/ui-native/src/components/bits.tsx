@@ -135,7 +135,7 @@ export function CommandLine({ command }: { command: string }) {
 }
 
 /* U+2011 keeps "--repeat-each" on one line; lines break only at spaces. */
-function nonBreaking(command: string) {
+export function nonBreaking(command: string) {
   return command.replace(/-/g, "\u2011");
 }
 

@@ -4,6 +4,7 @@ import { AppText } from "../components/app-text";
 import { Card, CommandLine, LargeTitle, Pill } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb } from "../components/orb";
+import { approvalSentence } from "./approval-copy";
 import type { Approval } from "./types";
 
 /* Everything waiting on you, oldest first — as a modal sheet (onClose) or
@@ -95,7 +96,7 @@ export function ApprovalsSheet({
               </View>
             </View>
             <AppText size="sm" className="mt-2.5 leading-5">
-              {a.reason}
+              {approvalSentence(a)}
             </AppText>
             {a.command && (
               <View className="mt-2.5">

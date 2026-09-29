@@ -544,12 +544,12 @@ describe("dm-model helpers", () => {
     expect(approval.employee).toBe("Builder");
   });
 
-  it("askApproval prefers a description over the raw command, and reads questions", () => {
+  it("askApproval's reason is the command even with a description, and reads questions", () => {
     const a = ask("a1", {
       request: {
         kind: "approval",
         command: "rm -rf tmp",
-        description: "Wipe the temp dir",
+        description: "terminal wants to run: rm -rf tmp",
         options: ["once"],
       },
     });
@@ -561,7 +561,7 @@ describe("dm-model helpers", () => {
         session: "s",
         now: T0,
       }).reason,
-    ).toBe("Wipe the temp dir");
+    ).toBe("rm -rf tmp");
     const q = ask("a2", {
       request: { kind: "question", question: "Ship it?" },
     });
