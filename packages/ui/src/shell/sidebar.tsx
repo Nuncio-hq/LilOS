@@ -253,11 +253,16 @@ export function Sidebar({
                     <span
                       data-badge-approvals
                       title={`${b.approvals} waiting on your approval`}
-                      className="shrink-0 rounded-full bg-primary px-1.5 font-semibold text-[11px] text-primary-foreground"
+                      className="grid size-[18px] shrink-0 place-items-center rounded-full bg-primary font-bold text-[11px] text-primary-foreground shadow-[0_0_0_3px] shadow-primary/15"
                     >
-                      {b.approvals === 1
-                        ? "needs you"
-                        : `${b.approvals} need you`}
+                      <span aria-hidden>
+                        {b.approvals === 1 ? "!" : b.approvals}
+                      </span>
+                      <span className="sr-only">
+                        {b.approvals === 1
+                          ? "needs you"
+                          : `${b.approvals} need you`}
+                      </span>
                     </span>
                   )}
                   {!!b?.running && (
