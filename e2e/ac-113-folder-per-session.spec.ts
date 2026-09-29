@@ -327,9 +327,16 @@ test("AC-4 + AC-7 a session picked on the repo runs there; the header shows fold
   // engine-fake echoes its cwd on the follow-up turn (AC-4); markdown puts
   // the path in a <code> element, so match that rather than the backticks.
   await send(page, "where are you working?", "last");
-  await expect(page.locator("code").filter({ hasText: repoDir })).toBeVisible({
-    timeout: 30_000,
-  });
+  /* Scope to the last agent turn (#191): the answer's relay post and the
+     still-streaming live turn overlap in the DOM for a moment, so a bare
+     `code` search can resolve to both copies of the reply at once. */
+  await expect(
+    page
+      .locator("[data-agentturn]")
+      .last()
+      .locator("code")
+      .filter({ hasText: repoDir }),
+  ).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("on ⎇", { exact: false })).toBeVisible();
   // AC-7: header badge = folder name + real branch.
   const badge = page.locator("[data-wsbadge]");
@@ -445,8 +452,12 @@ test("AC-3 (#208) a typed non-git folder says 'Not a git repo', adds, and the se
     { timeout: 30_000 },
   );
   await send(page, "where are you working?", "last");
-  await expect(page.locator("code").filter({ hasText: freshDir })).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(
+    page
+      .locator("[data-agentturn]")
+      .last()
+      .locator("code")
+      .filter({ hasText: freshDir }),
+  ).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-208-3-pwd.png` });
 });

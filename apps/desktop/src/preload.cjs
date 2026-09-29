@@ -51,6 +51,15 @@ contextBridge.exposeInMainWorld("lilos", {
   openStatus: () => ipcRenderer.invoke("lilos:open-status"),
   openApp: () => ipcRenderer.invoke("lilos:open-app"),
   checkUpdate: () => ipcRenderer.invoke("lilos:check-update"),
+  // #132 Settings: the app's version/build for About, and the menu's ⌘, →
+  // lilos:open-app-settings event the renderer opens its Settings screen on.
+  about: () => ipcRenderer.invoke("lilos:about"),
+  onOpenSettings: (cb) => {
+    const listener = () => cb();
+    ipcRenderer.on("lilos:open-app-settings", listener);
+    return () =>
+      ipcRenderer.removeListener("lilos:open-app-settings", listener);
+  },
   // #32 notifications: renderer posts a DesktopNotification; a click on the
   // macOS notification delivers the conversation id back over
   // lilos:open-conversation.

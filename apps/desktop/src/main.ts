@@ -12,7 +12,9 @@ import { RelayClient } from "@lilos/client-runtime";
 import {
   DESKTOP_NOTIFY_CHANNEL,
   DESKTOP_OPEN_CONVERSATION_CHANNEL,
+  DESKTOP_OPEN_SETTINGS_CHANNEL,
   DESKTOP_THEME_CHANNEL,
+  type DesktopUpdateOutcome,
 } from "@lilos/contracts/app";
 import {
   app,
@@ -24,6 +26,7 @@ import {
   shell,
 } from "electron";
 import { diskVersionStore, helperServiceControl } from "./control";
+import { appMenuTemplate } from "./menu";
 import { postDesktopNotification } from "./notify";
 import { checkForUpdate } from "./update";
 import { settlePendingUpdate } from "./update/state";
@@ -267,9 +270,12 @@ function updateStatus() {
 let updateTimer: ReturnType<typeof setInterval> | undefined;
 let updateCheckInFlight = false;
 
-/** Feed check → stage → detached applier → quit. Dev builds skip. */
-async function checkAndApply(): Promise<void> {
-  if (!bundlePath || updateCheckInFlight) return;
+/** Feed check → stage → detached applier → quit. Dev builds skip.
+ *  Returns the outcome so Settings → About's "Check for updates" can show
+ *  it plainly (#132 AC-4). */
+async function checkAndApply(): Promise<DesktopUpdateOutcome> {
+  if (!bundlePath) return "disabled";
+  if (updateCheckInFlight) return "busy";
   updateCheckInFlight = true;
   try {
     const outcome = await checkForUpdate({
@@ -282,6 +288,7 @@ async function checkAndApply(): Promise<void> {
       // The applier waits for this process to exit before swapping.
       app.quit();
     }
+    return outcome;
   } finally {
     updateCheckInFlight = false;
   }
@@ -349,6 +356,28 @@ function appUrl(): { file: string } | { url: string } | undefined {
 }
 
 let mainWindow: BrowserWindow | undefined;
+
+/* #132 AC-1: ⌘, / LilOS → Settings… asks the app window to open its
+   Settings screen. When no app window exists yet (the approval gate is up),
+   one opens first and the request lands after it finishes loading. */
+function openAppSettings(): void {
+  if (!mainWindow) createAppWindow();
+  const win = mainWindow;
+  if (!win) return;
+  const send = () => {
+    // A Cmd+H-hidden app won't raise on win.focus() alone.
+    app.focus({ steal: true });
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    win.webContents.send(DESKTOP_OPEN_SETTINGS_CHANNEL);
+  };
+  if (win.webContents.isLoading()) {
+    win.webContents.once("did-finish-load", send);
+  } else {
+    send();
+  }
+}
 
 function openConversation(conversationId: string): void {
   const win = mainWindow;
@@ -486,6 +515,12 @@ ipcMain.handle("lilos:open-settings", openLoginItemsSettings);
 ipcMain.handle("lilos:open-status", createStatusWindow);
 ipcMain.handle("lilos:open-app", createAppWindow);
 ipcMain.handle("lilos:check-update", () => checkAndApply());
+/* #132: Settings → About reads the app's own version/build (the relay's
+   version comes from system.status in the renderer). */
+ipcMain.handle("lilos:about", () => ({
+  version: app.getVersion(),
+  build: currentBuild(),
+}));
 
 // #232: the app's theme drives the window's appearance — vibrancy material,
 // traffic lights and prefers-color-scheme — so the sidebar stays readable in
@@ -511,24 +546,12 @@ app.whenReady().then(async () => {
 
   await ensureServices();
   connectRelay();
-  // One menu item: the #34 status window stays one click away.
+  // The LilOS menu (#132): ⌘, opens Settings in the app window; the #34
+  // status window stays one click away on its own item, no accelerator.
   Menu.setApplicationMenu(
-    Menu.buildFromTemplate([
-      {
-        label: "LilOS",
-        submenu: [
-          {
-            label: "Service Status",
-            accelerator: "CmdOrCtrl+,",
-            click: createStatusWindow,
-          },
-          { type: "separator" },
-          { role: "quit" },
-        ],
-      },
-      { label: "Edit", role: "editMenu" },
-      { label: "View", role: "viewMenu" },
-    ]),
+    Menu.buildFromTemplate(
+      appMenuTemplate(openAppSettings, createStatusWindow),
+    ),
   );
   wireNotifications();
 

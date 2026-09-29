@@ -9,6 +9,7 @@ import type { Ask } from "@lilos/contracts/app";
 import type { ModelOption, ModelProvider } from "@lilos/contracts/engine";
 import type { ModelVisibility } from "@lilos/ui";
 import { atom, computed, type ReadableAtom } from "nanostores";
+import { defaultEditor } from "../settings/state";
 import type { LilosConfig } from "./config";
 import { hostUser, initHost } from "./host";
 import { osFullName, osHome, profile } from "./me";
@@ -72,11 +73,18 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
   });
   // The LilOS-owned Edit-models list (#92 AC-7) lives in the relay's settings
   // store: seed it once, then follow `settings.changed` so a second window
-  // sees the same hide list.
+  // sees the same hide list. The Settings default editor (#132) sits in the
+  // same KV, seeded + followed the same way.
   void relay
     .request<{ value: unknown }>("settings.get", { key: "modelVisibility" })
     .then((r) => {
       if (r.value) modelVisibility.set(r.value as ModelVisibility);
+    })
+    .catch(() => {});
+  void relay
+    .request<{ value: unknown }>("settings.get", { key: "defaultEditor" })
+    .then((r) => {
+      if (typeof r.value === "string") defaultEditor.set(r.value);
     })
     .catch(() => {});
   relay.onEvent((method, params) => {
@@ -86,6 +94,9 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
       modelVisibility.set(
         (value as ModelVisibility) ?? { providers: [], models: [] },
       );
+    }
+    if (key === "defaultEditor") {
+      defaultEditor.set(typeof value === "string" ? value : null);
     }
   });
 }

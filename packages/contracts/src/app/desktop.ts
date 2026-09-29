@@ -20,10 +20,32 @@ export const DESKTOP_FULLSCREEN_CHANNEL = "lilos:fullscreen" as const;
 /** IPC channel: renderer → main, carries the app's theme so the window's
  * vibrancy/appearance follows it (issue #232). */
 export const DESKTOP_THEME_CHANNEL = "lilos:theme-source" as const;
+/** IPC channel: main → renderer, asks the app window to open Settings
+ * (issue #132 — the ⌘, menu item). Distinct from `lilos:open-settings`,
+ * which opens macOS Login Items. */
+export const DESKTOP_OPEN_SETTINGS_CHANNEL = "lilos:open-app-settings" as const;
 
 /** The app's stored theme — the window's appearance must match it or the
  * sidebar vibrancy material turns unreadable (dark text on dark vibrancy). */
 export type ThemeSource = "light" | "dark" | "system";
+
+/** The #35 update check's verdict as the shell reports it to
+ *  Settings → About (#132): "busy" means a check was already in flight.
+ *  apps/desktop's `CheckOutcome` is the same set minus "busy". */
+export const DESKTOP_UPDATE_OUTCOMES = [
+  "disabled",
+  "none",
+  "apply-ready",
+  "failed",
+  "busy",
+] as const;
+export type DesktopUpdateOutcome = (typeof DESKTOP_UPDATE_OUTCOMES)[number];
+
+/** App identity the shell hands the renderer for Settings → About (#132). */
+export interface DesktopAbout {
+  version: string;
+  build?: number;
+}
 
 /** A notification the OS should post; `kind` drives nothing in main — it's
  * for the renderer's bookkeeping and any future styling. */
@@ -74,4 +96,12 @@ export interface DesktopBridge {
   /** Subscribe to "open this conversation" requests (notification clicks).
    * Returns an unsubscribe function. */
   onOpenConversation?: (cb: (conversationId: string) => void) => () => void;
+  /** Subscribe to "open Settings" requests — the ⌘, menu item (#132).
+   * Returns an unsubscribe function. */
+  onOpenSettings?: (cb: () => void) => () => void;
+  /** App version + build for Settings → About (#132). */
+  about?: () => Promise<DesktopAbout>;
+  /** Run the #35 update check now — Settings → About's "Check for
+   *  updates" (#132). Absent on plain web, so the control doesn't render. */
+  checkUpdate?: () => Promise<DesktopUpdateOutcome>;
 }
