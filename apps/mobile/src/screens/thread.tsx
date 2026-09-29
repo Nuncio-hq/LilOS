@@ -1,29 +1,39 @@
-import type { ChannelMessagesState } from "@lilos/client-runtime";
+import {
+  type ChannelMessagesState,
+  type RelaySessionFeedState,
+  reduceSessionEvents,
+} from "@lilos/client-runtime";
 import type {
   AppChannel,
   AppMessage,
   Conversation,
   Employee,
 } from "@lilos/contracts/app";
-import { AppText, Orb, ThreadHeaderTitle } from "@lilos/ui-native";
+import type { ModelPick } from "@lilos/ui-native";
+import {
+  modelLabel,
+  ThreadHeaderTitle,
+  ThreadInfoSheet,
+  ThreadScreen,
+} from "@lilos/ui-native";
 import { useStore } from "@nanostores/react";
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { atom } from "nanostores";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { Alert, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { conversationState, folderLeaf, timeLabel } from "../dm-model";
-import { $asks, $pendingOpens, watchDm } from "../dm-store";
-import { $client } from "../link";
-import { toneOf } from "../mapping";
+import { Alert, View } from "react-native";
+import { defaultModelPick } from "../dm-model";
+import { $asks, $catalog, $pendingOpens, watchDm } from "../dm-store";
+import { $client, $welcome } from "../link";
+import { describeError } from "../mapping";
 import type { DmRoutes } from "../routes";
+import { toThreadDetail } from "../thread-model";
 
-/* A thread, read-only for now (#156): its messages.list plainly rendered —
-   user bubbles right, the employee's words left, system lines muted. Live
-   because the channel subscription keeps streaming into channelMessages.
-   The full live thread (streaming turns, reply composer, approvals) is the
-   sibling slice #157 — until then this shows what already crossed the wire. */
+/* #157 — the live thread: messages.list + channel.subscribe resume (AC-1),
+   engine turns projected live through sessionFeed -> reduceSessionEvents ->
+   ThreadEntry[] (AC-2), reply/steer via messages.post (AC-3), turns.interrupt
+   stop (AC-4), per-thread model pick (AC-5), the ⓘ session sheet (AC-6).
+   Approvals render read-only — answering is sibling slice #158. */
 
 type Nav = NativeStackNavigationProp<DmRoutes>;
 
@@ -36,22 +46,24 @@ const $noChannel = atom<ChannelMessagesState>({
   lastSeq: 0,
   messages: [],
 });
+const $noFeed = atom<RelaySessionFeedState>({
+  conversationId: "",
+  synced: false,
+  latestSeq: 0,
+  coverageSeq: 0,
+  events: [],
+  openRequests: [],
+});
 
-export function Thread({
-  navigation,
-  route,
-}: {
-  navigation: Nav;
-  route: RouteProp<DmRoutes, "Thread">;
-}) {
-  const { conversationId } = route.params;
+/** Everything a thread screen needs from the wire, packed for the view. */
+function useThread(conversationId: string) {
   const client = useStore($client);
   const conversations = useStore(client?.conversations ?? $noConversations);
   const employees = useStore(client?.employees ?? $noEmployees);
   const channels = useStore(client?.channels ?? $noChannels);
   const asks = useStore($asks);
   const pending = useStore($pendingOpens);
-  const insets = useSafeAreaInsets();
+  const catalog = useStore($catalog);
 
   const pendingEntry = pending.get(conversationId);
   const conv =
@@ -63,6 +75,20 @@ export function Thread({
     [client, channelId],
   );
   const chanState = useStore(chanAtom ?? $noChannel);
+  /* The engine feed carries the turn events; the channel subscription it
+     rides is already open via channelMessages. */
+  const feedAtom = useMemo(
+    () => client?.sessionFeed(conversationId),
+    [client, conversationId],
+  );
+  const feed = useStore(feedAtom ?? $noFeed);
+  const sessionModel = useMemo(
+    () =>
+      feed.sessionId
+        ? reduceSessionEvents(feed.sessionId, feed.events, feed.snapshot)
+        : undefined,
+    [feed.sessionId, feed.events, feed.snapshot],
+  );
 
   const employee = conv
     ? employees.find(
@@ -71,8 +97,8 @@ export function Thread({
       )
     : undefined;
 
-  /* Full thread history once per conversation (the channel snapshot only
-     carries a window); live frames keep appending through the subscription. */
+  /* AC-1: full history once via messages.list (the channel snapshot is a
+     window); live frames keep appending on the subscription. */
   const [history, setHistory] = useState<AppMessage[]>([]);
   useEffect(() => {
     if (!client || !channelId) return;
@@ -109,96 +135,151 @@ export function Thread({
     return [...byId.values()].sort((a, b) => a.seq - b.seq);
   }, [history, chanState.messages, conversationId, pendingEntry]);
 
-  const state = conv
-    ? conversationState(conv, {
-        openAsks: asks,
-        pending: new Set(pending.keys()),
+  const detail = useMemo(
+    () =>
+      conv
+        ? toThreadDetail({
+            conversation: conv,
+            employee,
+            messages,
+            model: sessionModel,
+            asks,
+            pending: new Set(pending.keys()),
+            now: Date.now(),
+            models: catalog.models,
+          })
+        : undefined,
+    [conv, employee, messages, sessionModel, asks, pending, catalog],
+  );
+
+  return { client, conv, channelId, employee, detail, catalog };
+}
+
+export function Thread({
+  navigation,
+  route,
+}: {
+  navigation: Nav;
+  route: RouteProp<DmRoutes, "Thread">;
+}) {
+  const { conversationId } = route.params;
+  const { client, conv, channelId, employee, detail, catalog } =
+    useThread(conversationId);
+  const welcome = useStore($welcome);
+  const [prefill, setPrefill] = useState<{ text: string }>();
+
+  /* Composer chip = the thread's pick (pinned conv.model wins), or the
+     employee/engine default until one exists (AC-5). */
+  const threadPick: ModelPick | undefined = useMemo(() => {
+    const model = conv?.model;
+    if (model) {
+      return {
+        model,
+        ...(conv?.effort ? { effort: conv.effort } : {}),
+        ...(conv?.fast !== undefined ? { fast: conv.fast } : {}),
+      };
+    }
+    const engineHost = welcome?.engineHost;
+    return defaultModelPick({
+      employeeModel: employee?.model,
+      models: catalog.models,
+      defaultModel: catalog.defaultModel ?? engineHost?.defaultModel,
+      defaultProvider: catalog.defaultProvider ?? engineHost?.defaultProvider,
+    });
+  }, [conv, employee, catalog, welcome]);
+  const modelRow = threadPick
+    ? catalog.models.find((m) => m.id === threadPick.model)
+    : undefined;
+  const provider = catalog.providers.find((p) => p.id === modelRow?.provider);
+  const modelChip = threadPick
+    ? modelLabel(catalog.models, threadPick)
+    : (conv?.model ?? employee?.model ?? "");
+
+  const send = (text: string) => {
+    const c = client;
+    if (!c || !channelId) return;
+    const dedupeKey = `u-${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
+    void c
+      .request("messages.post", {
+        channelId,
+        conversationId,
+        text,
+        dedupeKey,
       })
-    : "working";
+      .catch((e) => {
+        Alert.alert("Couldn't send", describeError(e));
+        setPrefill({ text });
+      });
+  };
+
+  /* AC-4: the stop button only exists while a turn runs; turns.interrupt
+     ends it as "You stopped this turn". */
+  const stop = () => {
+    const c = client;
+    if (!c) return;
+    void c
+      .request("turns.interrupt", { conversationId })
+      .catch((e) => Alert.alert("Couldn't stop", describeError(e)));
+  };
 
   useLayoutEffect(() => {
     navigation.setOptions({
       headerTitle: () => (
         <ThreadHeaderTitle
-          title={conv?.title || pendingEntry?.root.text || "Thread"}
-          state={state}
-          onPress={() => {
-            if (!conv) return;
-            Alert.alert(
-              conv.title || "Thread",
-              [
-                state,
-                conv.cwd ? `Folder: ${folderLeaf(conv.cwd)}` : "",
-                conv.model ? `Model: ${conv.model}` : "",
-              ]
-                .filter(Boolean)
-                .join("\n"),
-            );
-          }}
+          title={detail?.title || "Thread"}
+          state={detail?.state ?? "working"}
+          onPress={() =>
+            conv &&
+            navigation.navigate("ThreadInfo", { conversationId: conv.id })
+          }
         />
       ),
     });
-  }, [navigation, conv, state, pendingEntry]);
+  }, [navigation, detail, conv]);
 
+  if (!detail) return <View className="flex-1 bg-background" />;
   return (
-    <View className="flex-1 bg-background">
-      <ScrollView
-        className="flex-1"
-        contentInsetAdjustmentBehavior="automatic"
-        keyboardDismissMode="interactive"
-        contentContainerStyle={{
-          flexGrow: 1,
-          justifyContent: "flex-end",
-          paddingTop: 12,
-          paddingBottom: Math.max(insets.bottom, 16),
-          paddingHorizontal: 16,
-          gap: 20,
-        }}
-      >
-        {!messages.length && (
-          <AppText tone="muted" className="text-center text-[15px]">
-            Nothing here yet.
-          </AppText>
-        )}
-        {messages.map((m) =>
-          m.authorKind === "user" ? (
-            <UserBubble key={m.id} text={m.text} time={m.createdAt} />
-          ) : (
-            <View key={m.id} className="flex-row gap-2.5">
-              <View className="pt-0.5">
-                <Orb
-                  tone={employee ? toneOf(employee.id) : "stone"}
-                  size={24}
-                />
-              </View>
-              <View className="min-w-0 flex-1">
-                <Text className="text-[15px] leading-5 text-muted-foreground">
-                  {m.text}
-                </Text>
-                <AppText tone="muted" className="mt-0.5 text-[12px]">
-                  {timeLabel(m.createdAt, Date.now())}
-                  {m.authorKind === "system" ? " · system" : ""}
-                </AppText>
-              </View>
-            </View>
-          ),
-        )}
-      </ScrollView>
-    </View>
+    <ThreadScreen
+      t={detail}
+      model={modelChip}
+      modelLogo={provider?.logo}
+      onApprove={() =>
+        Alert.alert(
+          "Ask",
+          "Answering approvals from the phone lands in the next update — approve or deny on your Mac for now.",
+        )
+      }
+      onDeny={() =>
+        Alert.alert(
+          "Ask",
+          "Answering approvals from the phone lands in the next update — approve or deny on your Mac for now.",
+        )
+      }
+      onSend={send}
+      onStop={stop}
+      onPickModel={() =>
+        navigation.navigate("ModelPicker", {
+          employeeId: detail.employee.id,
+          conversationId,
+        })
+      }
+      prefill={prefill}
+    />
   );
 }
 
-function UserBubble({ text, time }: { text: string; time: number }) {
-  return (
-    <View className="items-end">
-      <View className="max-w-[85%] rounded-[18px] bg-primary px-3.5 py-2">
-        <Text className="text-[16px] leading-[21px] text-primary-foreground">
-          {text}
-        </Text>
-      </View>
-      <AppText tone="muted" className="mt-1 text-[12px]">
-        {timeLabel(time, Date.now())}
-      </AppText>
-    </View>
-  );
+/** ⓘ — the Session sheet (AC-6): folder, branch, model, usage, session id. */
+export function ThreadInfo({
+  navigation,
+  route,
+}: {
+  navigation: Nav;
+  route: RouteProp<DmRoutes, "ThreadInfo">;
+}) {
+  const { conversationId } = route.params;
+  const { detail } = useThread(conversationId);
+  if (!detail) return <View className="flex-1 bg-background" />;
+  return <ThreadInfoSheet t={detail} onDone={() => navigation.goBack()} />;
 }

@@ -1,3 +1,4 @@
+import { RelayError } from "@lilos/client-runtime";
 import type { AppChannel } from "@lilos/contracts/app";
 import type { ChannelRow, OrbTone, ProjectGroup } from "@lilos/ui-native";
 
@@ -25,4 +26,14 @@ export function toHomeChannels(_channels: AppChannel[]): {
   projects: ProjectGroup[];
 } {
   return { company: [], projects: [] };
+}
+
+/** One plain line for a failed send/open — same mapping as web's. */
+export function describeError(e: unknown): string {
+  if (e instanceof RelayError) {
+    if (e.code === "not_connected" || e.code === "timeout")
+      return "Couldn't reach the relay — try again.";
+    if (e.code === "invalid_params") return "Couldn't send that. Try again.";
+  }
+  return "Couldn't send that. Try again.";
 }

@@ -1,4 +1,3 @@
-import { RelayError } from "@lilos/client-runtime";
 import type {
   AppChannel,
   AppMessage,
@@ -45,7 +44,7 @@ import {
   watchDm,
 } from "../dm-store";
 import { $client, $welcome } from "../link";
-import { toneOf } from "../mapping";
+import { describeError, toneOf } from "../mapping";
 import type { DmRoutes } from "../routes";
 
 /* The employee's DM (#156): the real relay's conversation.summaries grouped
@@ -70,16 +69,6 @@ function useNow(): number {
     return () => clearInterval(t);
   }, []);
   return now;
-}
-
-/** One plain line for a failed send/open — same mapping as web's. */
-function describeError(e: unknown): string {
-  if (e instanceof RelayError) {
-    if (e.code === "not_connected" || e.code === "timeout")
-      return "Couldn't reach the relay — try again.";
-    if (e.code === "invalid_params") return "Couldn't send that. Try again.";
-  }
-  return "Couldn't send that. Try again.";
 }
 
 export function Dm({
@@ -359,14 +348,28 @@ export function ModelPicker({
   navigation: Nav;
   route: RouteProp<DmRoutes, "ModelPicker">;
 }) {
-  const { employeeId } = route.params;
+  const { employeeId, conversationId } = route.params;
   const client = useStore($client);
   const employees = useStore(client?.employees ?? $noEmployees);
+  const conversations = useStore(client?.conversations ?? $noConversations);
   const employee = employees.find((e) => e.id === employeeId);
+  /* Thread scope (#157 AC-5): a conversationId pins this conversation via
+     conversations.setModel; the employee-scope pick stays the DM default. */
+  const conv = conversations.find((c) => c.id === conversationId);
   const catalog = useStore($catalog);
   const welcome = useStore($welcome);
   const picks = useStore($modelPicks);
-  const value = picks[employeeId] ??
+  const [picked, setPicked] = useState<ModelPick>();
+  const value = (conversationId
+    ? (picked ??
+      (conv?.model
+        ? {
+            model: conv.model,
+            ...(conv.effort ? { effort: conv.effort } : {}),
+            ...(conv.fast !== undefined ? { fast: conv.fast } : {}),
+          }
+        : undefined))
+    : picks[employeeId]) ??
     defaultModelPick({
       employeeModel: employee?.model,
       models: catalog.models,
@@ -381,6 +384,20 @@ export function ModelPicker({
       value={value}
       onPick={(p: ModelPick) => {
         void Haptics.selectionAsync();
+        if (conv && client) {
+          setPicked(p);
+          const row = catalog.models.find((m) => m.id === p.model);
+          void client
+            .request("conversations.setModel", {
+              conversationId: conv.id,
+              model: p.model,
+              ...(row?.provider ? { provider: row.provider } : {}),
+              ...(p.effort ? { effort: p.effort } : {}),
+              ...(p.fast !== undefined ? { fast: p.fast } : {}),
+            })
+            .catch((e) => Alert.alert("Couldn't switch", describeError(e)));
+          return;
+        }
         $modelPicks.set({ ...$modelPicks.get(), [employeeId]: p });
       }}
       onDone={() => navigation.goBack()}
