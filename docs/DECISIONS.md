@@ -170,6 +170,14 @@ PR does not exist.
   "still remembers" note and Start a new session.
   Not: engine-owned file checkpoints (opt-in, transport-dependent),
   deleting messages, or the engine owning the folder snapshot. — #134
+- **D-#180 Plans and task lists are engine state: the engine streams a full
+  snapshot on every change (`plan.updated` keyed by `planId`), and LilOS
+  derives the Tasks card / Plan card / Workbench Plan tab from events
+  only.** `kind:"tasks"` (Hermes `todo_list`, ACP `plan`) ticks without
+  approval; `kind:"plan"` waits on a `plan` EngineRequest answered
+  approve / reject / change{text}. Not: a LilOS-owned plan store, patch or
+  delta plan events, or rendering these without a declared `plan`
+  capability (D-#19). — #180
 - **D-#179 Subagent runs and background jobs exist only as engine events /
   `jobs.*` answers — LilOS stores no job/subagent state** (`subagent.*`,
   `job.*`, `jobs.list`/`jobs.stop` under `background_jobs`; a helper that is

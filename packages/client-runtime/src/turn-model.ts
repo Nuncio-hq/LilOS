@@ -5,6 +5,7 @@ import type {
   EngineRequest,
   FileDiff,
   JobStatus,
+  PlanStep,
   SessionState,
   Usage,
 } from "@lilos/contracts/engine";
@@ -20,13 +21,33 @@ export interface TurnStep {
   commit?: CommitInfo;
 }
 
-/** An open or answered engine request (approval / question). */
+/** An open or answered engine request (approval / question / plan). */
 export interface TurnRequest {
   requestId: string;
   turnId: string;
   request: EngineRequest;
   outcome?: ApprovalOutcome;
   answer?: string;
+}
+
+/**
+ * One snapshot of an engine plan / task list (`plan.updated`), with its
+ * decision state derived from the plan request lifecycle (#180):
+ * `kind:"tasks"` runs approved from the start (it never asks);
+ * `kind:"plan"` waits proposed until its request resolves — approve ->
+ * approved, reject -> rejected, change -> replaced (the next version is
+ * what the user decided on). A snapshot with a higher `version` supersedes
+ * the previous one, which stays in the list marked `replaced` for the
+ * Workbench's version history.
+ */
+export interface TurnPlan {
+  planId: string;
+  kind: "tasks" | "plan";
+  version: number;
+  goal?: string;
+  steps: PlanStep[];
+  risks?: string[];
+  status: "proposed" | "approved" | "replaced" | "rejected";
 }
 
 /* ── subagents + background jobs (#179) ────────────────────────────────── */
@@ -84,6 +105,8 @@ export interface TurnModel {
   steps: TurnStep[];
   steers: string[];
   requests: TurnRequest[];
+  /** Plan/task-list snapshots this turn produced, arrival order (#180). */
+  plans: TurnPlan[];
   /** Helpers this turn delegated to (subagent.* events, #179). */
   subagents: SubagentModel[];
   usage?: Usage;
@@ -148,6 +171,7 @@ export function reduceSessionEvents(
         steps: [],
         steers: [],
         requests: [],
+        plans: [],
         subagents: [],
       };
       turns.set(turnId, t);
@@ -353,7 +377,59 @@ export function reduceSessionEvents(
           req.outcome = outcome;
           req.answer = answer;
           if (t && t.phase === "waiting") t.phase = "reasoning";
+          /* A plan request's answer lands on the plan it decided (#180):
+             approve -> the checklist runs; reject -> nothing runs;
+             change -> this version is superseded by what comes back. */
+          if (t && req.request.kind === "plan") {
+            const plan = latestPlan(t, req.request.planId);
+            if (plan) {
+              if (outcome === "approve") plan.status = "approved";
+              else if (outcome === "reject") plan.status = "rejected";
+              else if (outcome === "change") plan.status = "replaced";
+            }
+          }
         }
+        break;
+      }
+      case "plan.updated": {
+        const t = turn(e.payload.turnId);
+        const { planId, kind, version, goal, steps, risks } = e.payload;
+        const current = latestPlan(t, planId);
+        if (!current) {
+          t.plans.push({
+            planId,
+            kind,
+            version,
+            ...(goal !== undefined ? { goal } : {}),
+            steps,
+            ...(risks !== undefined ? { risks } : {}),
+            /* Task lists never ask — they run approved from their first
+               snapshot. A proposal waits on its plan request. */
+            status: kind === "tasks" ? "approved" : "proposed",
+          });
+        } else if (kind === "tasks" || version === current.version) {
+          /* A task list's version counts ticks, not revisions — always
+             update the single entry in place. A proposal's version IS the
+             revision the user decided on, so equal versions merge and only
+             a bump supersedes. */
+          current.version = Math.max(current.version, version);
+          current.goal = goal;
+          current.steps = steps;
+          current.risks = risks;
+        } else if (version > current.version) {
+          current.status = "replaced";
+          t.plans.push({
+            planId,
+            kind,
+            version,
+            ...(goal !== undefined ? { goal } : {}),
+            steps,
+            ...(risks !== undefined ? { risks } : {}),
+            status: "proposed",
+          });
+        }
+        // kind "plan" with version < current: an out-of-order re-send —
+        // the latest wins.
         break;
       }
       case "turn.steered": {
@@ -365,6 +441,18 @@ export function reduceSessionEvents(
         t.phase = e.payload.stopReason === "cancelled" ? "stopped" : "done";
         t.stopReason = e.payload.stopReason;
         t.usage = e.payload.usage;
+        /* Stopped mid-list (#180 AC-2): engines don't re-emit a cancelled
+           snapshot on interrupt, so unfinished items derive it here — the
+           card reads "Stopped · n/m" from the steps alone. */
+        if (e.payload.stopReason === "cancelled") {
+          for (const p of t.plans) {
+            for (const s of p.steps) {
+              if (s.status === "pending" || s.status === "in_progress") {
+                s.status = "cancelled";
+              }
+            }
+          }
+        }
         /* #179: the turn ended without a subagent.completed for a helper the
            engine still listed running — its delegate call can't outlive the
            turn, so the row settles "stopped". */
@@ -376,6 +464,14 @@ export function reduceSessionEvents(
     }
   }
   if (snapshot) state = snapshot.state;
+
+  /* The newest snapshot for a planId, or undefined (#180). */
+  function latestPlan(t: TurnModel, planId: string): TurnPlan | undefined {
+    for (let i = t.plans.length - 1; i >= 0; i--) {
+      if (t.plans[i].planId === planId) return t.plans[i];
+    }
+    return undefined;
+  }
 
   const live = order.find((t) => t.phase !== "done" && t.phase !== "stopped");
   const openRequests: TurnRequest[] = [];

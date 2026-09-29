@@ -23,6 +23,8 @@ import {
   type JobsStopParams,
   type KnownCapability,
   type ModelsListParams,
+  PLAN_CAPABILITY,
+  type PlanStep,
   type PromptParams,
   REWIND_CAPABILITY,
   type RequestRespondParams,
@@ -374,6 +376,7 @@ export class FakeEngine {
         : []),
       ...(this.capOn("session_meta") ? [SESSION_META_CAPABILITY] : []),
       ...(this.capOn("rewind") ? [REWIND_CAPABILITY] : []),
+      ...(this.capOn("plan") ? [PLAN_CAPABILITY] : []),
       /* ── #179: declared only while the switch is on (AC-5). ── */
       ...(this.capOn("subagents") ? [SUBAGENTS_CAPABILITY] : []),
       ...(this.capOn("background_jobs") ? [BACKGROUND_JOBS_CAPABILITY] : []),
@@ -513,6 +516,33 @@ export class FakeEngine {
       throw new RpcError(
         RPC_ERRORS.INVALID_PARAMS,
         "a question takes answer or cancel",
+      );
+    }
+    /* #180 — a plan ask takes approve / reject / change (the change text in
+       `answer`) or cancel. Double-answering is already refused by the
+       openRequests lookup above (the id is gone once resolved). */
+    if (
+      ask.request.kind === "plan" &&
+      !(
+        p.outcome === "approve" ||
+        p.outcome === "reject" ||
+        p.outcome === "change" ||
+        p.outcome === "cancel"
+      )
+    ) {
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        "a plan request takes approve, reject, change or cancel",
+      );
+    }
+    if (
+      ask.request.kind === "plan" &&
+      p.outcome === "change" &&
+      !p.answer?.trim()
+    ) {
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        "a plan change needs the change text in answer",
       );
     }
     if (p.outcome === "answer" && p.answer === undefined) {
@@ -1034,6 +1064,20 @@ export class FakeEngine {
         this.pumpSteers(s);
         return { turnId, stopReason: "refusal" as const };
       }
+      /* Plans & task lists (#180): `plan:` prompts drive the plan
+         capability — `plan: tasks` plays the agent's own working list as
+         ticking `plan.updated` snapshots (kind "tasks", never asks),
+         `plan: propose` opens a `plan` request (approve → the steps tick;
+         reject → nothing runs; change → the next version asks again). */
+      const planMode = PLAN_PROMPT.exec(promptText);
+      if (planMode) {
+        return await this.runPlanTurn(
+          s,
+          turnId,
+          planMode[1].toLowerCase() === "propose",
+          promptText,
+        );
+      }
       for (const w of words(script.reasoning)) {
         await this.sleep(s);
         this.emit(s, "turn.delta", { turnId, stream: "reasoning", delta: w });
@@ -1155,6 +1199,249 @@ export class FakeEngine {
       this.pumpSteers(s);
       return { turnId, stopReason: "cancelled" as const };
     }
+  }
+
+  /* ------------------------- #180 plan turns --------------------------- */
+
+  /**
+   * A `plan:` turn. `tasks`: emit one snapshot per item — the i-th marks
+   * item i in_progress and i-1 completed, with a real tool step between —
+   * then a final all-completed snapshot; every snapshot is interruptible
+   * (`sleep` throws Interrupted), which is the stopped-card path.
+   * `propose`: emit the v1 proposal, open a `plan` request, and loop —
+   * change emits the next version and asks again; approve ticks the steps
+   * as the run works through them; reject finishes with nothing run.
+   */
+  private async runPlanTurn(
+    s: FakeSession,
+    turnId: string,
+    proposal: boolean,
+    promptText: string,
+  ) {
+    const planId = `plan-${turnId}`;
+    const reasoning = `Working a ${proposal ? "plan for approval" : "task list"} — steps appear as I go.`;
+    for (const w of words(reasoning)) {
+      await this.sleep(s);
+      this.emit(s, "turn.delta", { turnId, stream: "reasoning", delta: w });
+    }
+    if (s.turn) s.turn.phase = "tools";
+
+    if (!proposal) {
+      const items = PLAN_TASKS;
+      let version = 0;
+      const snap = (mark: number) =>
+        items.map((it, j) => ({
+          text: it.text,
+          files: it.files,
+          status:
+            j < mark
+              ? ("completed" as const)
+              : j === mark
+                ? ("in_progress" as const)
+                : ("pending" as const),
+        }));
+      this.emit(s, "plan.updated", {
+        turnId,
+        planId,
+        kind: "tasks",
+        version: ++version,
+        steps: snap(-1),
+      });
+      for (let i = 0; i < items.length; i++) {
+        this.drainSteers(s, turnId);
+        this.emit(s, "plan.updated", {
+          turnId,
+          planId,
+          kind: "tasks",
+          version: ++version,
+          steps: snap(i),
+        });
+        const toolCallId = `c${++s.toolCounter}`;
+        this.emit(s, "tool.started", {
+          turnId,
+          toolCallId,
+          tool: items[i].tool,
+          input: items[i].input,
+        });
+        await this.sleep(s);
+        await this.sleep(s);
+        this.emit(s, "tool.completed", {
+          turnId,
+          toolCallId,
+          tool: items[i].tool,
+          status: "completed",
+          output: items[i].output,
+        });
+      }
+      this.emit(s, "plan.updated", {
+        turnId,
+        planId,
+        kind: "tasks",
+        version: ++version,
+        steps: snap(items.length),
+      });
+      const text = `Worked the list — all ${items.length} items done. Read the client, wired the backoff, and the checks pass.`;
+      for (const w of words(text)) {
+        await this.sleep(s);
+        this.emit(s, "turn.delta", { turnId, stream: "text", delta: w });
+      }
+      return this.finishTurn(
+        s,
+        turnId,
+        "end_turn",
+        { reasoning, steps: [], text },
+        promptText,
+      );
+    }
+
+    /* ── proposal: versions are revisions; the plan request gates each ── */
+    const goal = `Reconnect the relay client on its own after a drop — "${promptText.trim()}"`;
+    let steps: PlanStep[] = PLAN_PROPOSAL_STEPS.map((x) => ({ ...x }));
+    const risks = [...PLAN_PROPOSAL_RISKS];
+    let version = 0;
+    const emitProposal = () =>
+      this.emit(s, "plan.updated", {
+        turnId,
+        planId,
+        kind: "plan",
+        version: ++version,
+        goal,
+        steps,
+        risks,
+      });
+    emitProposal();
+    for (;;) {
+      const { outcome, answer } = await this.awaitPlanDecision(
+        s,
+        turnId,
+        planId,
+      );
+      if (outcome === "cancel") throw new Interrupted();
+      if (outcome === "reject") {
+        const text =
+          "Plan rejected — nothing ran. The proposal stays on the card if you change your mind.";
+        for (const w of words(text)) {
+          await this.sleep(s);
+          this.emit(s, "turn.delta", { turnId, stream: "text", delta: w });
+        }
+        return this.finishTurn(
+          s,
+          turnId,
+          "end_turn",
+          { reasoning, steps: [], text },
+          promptText,
+        );
+      }
+      if (outcome === "change") {
+        /* The answer folds in as a real revision: the tail step moves after
+           a new "your change" step, every status resets to pending. */
+        const change = (answer ?? "").trim();
+        steps = [
+          ...steps
+            .slice(0, -1)
+            .map((x) => ({ ...x, status: "pending" as const })),
+          {
+            text: `Your change: ${change}`,
+            files: ["packages/client-runtime/src/retry-log.ts"],
+            status: "pending" as const,
+          },
+          { ...steps[steps.length - 1], status: "pending" as const },
+        ];
+        emitProposal();
+        continue;
+      }
+      // approve — run the steps, ticking the snapshot in place (same version).
+      for (let i = 0; i < steps.length; i++) {
+        this.drainSteers(s, turnId);
+        steps = steps.map((x, j) => ({
+          ...x,
+          status: j === i ? ("in_progress" as const) : x.status,
+        }));
+        this.emit(s, "plan.updated", {
+          turnId,
+          planId,
+          kind: "plan",
+          version,
+          goal,
+          steps,
+          risks,
+        });
+        const toolCallId = `c${++s.toolCounter}`;
+        this.emit(s, "tool.started", {
+          turnId,
+          toolCallId,
+          tool: "patch",
+          input: {
+            path:
+              steps[i].files?.[0] ?? "packages/client-runtime/src/retry-log.ts",
+          },
+        });
+        await this.sleep(s);
+        this.emit(s, "tool.completed", {
+          turnId,
+          toolCallId,
+          tool: "patch",
+          status: "completed",
+          output: "step done",
+        });
+        steps = steps.map((x, j) => ({
+          ...x,
+          status: j <= i ? ("completed" as const) : x.status,
+        }));
+        this.emit(s, "plan.updated", {
+          turnId,
+          planId,
+          kind: "plan",
+          version,
+          goal,
+          steps,
+          risks,
+        });
+      }
+      const text = `Plan v${version} ran to the end — ${steps.length} steps done. The reconnect backoff is wired, resume replays from the last seq, and tests pass.`;
+      for (const w of words(text)) {
+        await this.sleep(s);
+        this.emit(s, "turn.delta", { turnId, stream: "text", delta: w });
+      }
+      return this.finishTurn(
+        s,
+        turnId,
+        "end_turn",
+        { reasoning, steps: [], text },
+        promptText,
+      );
+    }
+  }
+
+  /** The `plan` ask behind a proposal — same lifecycle as awaitApproval. */
+  private async awaitPlanDecision(
+    s: FakeSession,
+    turnId: string,
+    planId: string,
+  ): Promise<{ outcome: ApprovalOutcome; answer?: string }> {
+    const requestId = `r${++s.requestCounter}`;
+    const request = { kind: "plan" as const, planId };
+    const promise = new Promise<{ outcome: ApprovalOutcome; answer?: string }>(
+      (resolve) => {
+        s.openRequests.set(requestId, {
+          turnId,
+          requestId,
+          request,
+          seq: s.seq + 1,
+          resolve,
+        });
+      },
+    );
+    this.emit(s, "request.opened", { turnId, requestId, request });
+    const t = s.turn;
+    if (t) t.phase = "waiting";
+    this.setState(s, "waiting");
+    const res = await promise;
+    if (s.turn && !s.turn.interrupted) {
+      s.turn.phase = "tools";
+      this.setState(s, "running");
+    }
+    return res;
   }
 
   private finishTurn(
@@ -1385,6 +1672,71 @@ function llmTitle(promptText: string): string {
 }
 
 const words = (t: string) => t.split(/(?<=\s)/);
+
+/* ── #180 plan scripts ──────────────────────────────────────────────────
+   `plan: tasks` = the agent's own working list, ticks live and never asks.
+   `plan: propose` = a plan gated by a `plan` request —
+   approve / reject / change (the next version asks again). */
+
+const PLAN_PROMPT = /^\s*plan:\s*(propose|tasks)\b/i;
+
+const PLAN_TASKS: {
+  text: string;
+  files: string[];
+  tool: string;
+  input: Record<string, unknown>;
+  output: string;
+}[] = [
+  {
+    text: "Read the relay client and its reconnect path",
+    files: ["packages/client-runtime/src/client.ts"],
+    tool: "read_file",
+    input: { path: "packages/client-runtime/src/client.ts" },
+    output: "96 lines",
+  },
+  {
+    text: "Add the reconnect backoff and wire the socket",
+    files: ["packages/client-runtime/src/socket.ts"],
+    tool: "patch",
+    input: { path: "packages/client-runtime/src/socket.ts" },
+    output: "reconnect loop uses backoff()",
+  },
+  {
+    text: "Resume from the last seq and run the checks",
+    files: ["packages/client-runtime/src/sync.ts"],
+    tool: "terminal",
+    input: { command: "bun test packages/client-runtime" },
+    output: "3 pass · 0 fail",
+  },
+];
+
+const PLAN_PROPOSAL_STEPS = [
+  {
+    text: "Add a backoff helper (250ms → 30s, with jitter)",
+    files: ["packages/client-runtime/src/backoff.ts"],
+    status: "pending" as const,
+  },
+  {
+    text: "Use it in the socket's reconnect loop",
+    files: ["packages/client-runtime/src/socket.ts"],
+    status: "pending" as const,
+  },
+  {
+    text: "Resume from the last seq after reconnect",
+    files: ["packages/client-runtime/src/sync.ts"],
+    status: "pending" as const,
+  },
+  {
+    text: "Tests: drop → retry → resume",
+    files: ["packages/client-runtime/test/reconnect.test.ts"],
+    status: "pending" as const,
+  },
+];
+
+const PLAN_PROPOSAL_RISKS = [
+  "Reconnect storms if many clients drop at once — jitter added to the backoff.",
+  "Touches the client used by web and mobile — both need a reload test.",
+];
 
 /** Runtime-neutral randomness (no process APIs — packages stay portable). */
 const randomNamespace = () => crypto.randomUUID().slice(0, 8);

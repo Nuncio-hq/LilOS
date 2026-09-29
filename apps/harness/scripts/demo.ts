@@ -187,8 +187,18 @@ user.onEvent((method, params) => {
     if (ask && !seenAsks.has(ask.id)) {
       seenAsks.add(ask.id);
       const req = ask.request;
-      const what = req.kind === "approval" ? req.command : req.question;
-      const outcome = req.kind === "question" ? "answer" : "once";
+      const what =
+        req.kind === "approval"
+          ? req.command
+          : req.kind === "question"
+            ? req.question
+            : `plan ${req.planId}`;
+      const outcome =
+        req.kind === "question"
+          ? "answer"
+          : req.kind === "plan"
+            ? "approve"
+            : "once";
       out(`ask.opened ${req.kind} ${what}`);
       void user
         .request("asks.respond", {

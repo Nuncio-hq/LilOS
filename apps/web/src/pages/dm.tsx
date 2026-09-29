@@ -150,6 +150,13 @@ const outcomeLabel = (o: ApprovalOutcome, name: string): string => {
       return "Cancelled";
     case "answer":
       return "Answered";
+    /* #180: plan requests resolve to these; labels match the card wording. */
+    case "approve":
+      return `Approved by ${name}`;
+    case "reject":
+      return `Rejected by ${name}`;
+    case "change":
+      return `Change requested by ${name}`;
   }
 };
 

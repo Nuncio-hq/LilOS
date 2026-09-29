@@ -84,6 +84,7 @@ describe("engine-fake", () => {
       "models",
       "session_meta",
       "rewind",
+      "plan",
       "subagents",
       "background_jobs",
     ]);

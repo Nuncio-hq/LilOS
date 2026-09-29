@@ -32,6 +32,7 @@ const turn = (over: Partial<TurnModel>): TurnModel => ({
   text: "",
   steps: [],
   steers: [],
+  plans: [],
   requests: [],
   subagents: [],
   ...over,

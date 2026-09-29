@@ -87,6 +87,7 @@ describe("engine wire contract", () => {
       "request.resolved",
       "session.ref.changed",
       "turn.steered",
+      "plan.updated",
       "turn.completed",
       "subagent.started",
       "subagent.completed",
