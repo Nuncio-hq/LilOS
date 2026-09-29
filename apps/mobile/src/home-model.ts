@@ -73,7 +73,9 @@ export function toApproval(ask: Ask, wire: HomeWire, nowMs: number): Approval {
     reason:
       request.kind === "question"
         ? request.question
-        : (request.description ?? "Wants your approval"),
+        : request.kind === "plan"
+          ? "Plan waiting for your review"
+          : (request.description ?? "Wants your approval"),
     command: request.kind === "approval" ? request.command : undefined,
     age: ageLabel(ask.createdAt, nowMs),
   };
