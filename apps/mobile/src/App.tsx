@@ -63,6 +63,7 @@ import {
   savePairedMac,
 } from "./paired-macs";
 import { nav, type Props, type Routes, type TabRoutes } from "./routes";
+import { BrowseMac } from "./screens/browse-mac";
 import { Dm, FolderPicker, ModelPicker } from "./screens/dm";
 import { Activity, Home, NeedsYouSlot, useHomeWire } from "./screens/home";
 import { Thread, ThreadInfo } from "./screens/thread";
@@ -583,6 +584,11 @@ export default function App() {
               <Stack.Screen
                 name="FolderPicker"
                 component={FolderPicker}
+                options={SHEET}
+              />
+              <Stack.Screen
+                name="BrowseMac"
+                component={BrowseMac}
                 options={SHEET}
               />
               <Stack.Screen

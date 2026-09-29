@@ -66,7 +66,11 @@ const APP_SCAN_CAP = 256;
    seam e2e/vitest use to plant fake bundles (same idea as fake-gh on PATH). */
 export function appDirs(): string[] {
   const env = process.env.LILOS_APP_DIRS;
-  if (env?.trim()) return env.split(":").filter(Boolean).map(expandPath);
+  if (env?.trim())
+    return env
+      .split(":")
+      .filter(Boolean)
+      .map((p) => expandPath(p));
   return ["/Applications", join(homedir(), "Applications")];
 }
 

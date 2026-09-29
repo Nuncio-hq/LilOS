@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { homedir } from "node:os";
 import {
   APP_PROTOCOL_VERSION,
   type AppErrorCode,
@@ -28,7 +29,9 @@ import {
   type EngineHostState,
   type EnginePassthroughMethod,
   FoldersAddParams,
+  FoldersBrowseParams,
   FoldersDetailParams,
+  FoldersDiscoverParams,
   FoldersListParams,
   HarnessRegisterParams,
   HarnessReportParams,
@@ -51,6 +54,7 @@ import {
   type WelcomeResult,
   WS_CLOSE_DEVICE_REVOKED,
 } from "@lilos/contracts/app";
+import { collapsePath, resolveUnderHome } from "@lilos/host";
 import {
   type AttachmentStore,
   createMemoryAttachmentStore,
@@ -104,6 +108,13 @@ export interface RelayOptions {
   phoneAccess?: PhoneAccess;
   /** Display name for the pairing offer ("Alice's Mac"). */
   macName?: string;
+  /**
+   * The home-folder boundary device peers may touch (#238): `folders.add`
+   * from a paired phone is refused outside it, and the harness applies the
+   * same boundary to `folders.browse`/`folders.discover`. Defaults to the
+   * OS home dir (injectable for tests).
+   */
+  homeDir?: string;
 }
 
 /** The opt-in Tailscale bind — implemented in index.ts over `Bun.serve`. */
@@ -149,13 +160,10 @@ const PAIRING_ADMIN_METHODS = new Set([
   "devices.revoke",
 ]);
 
-/* `folders.add` is also refused for device peers (#156): `folders.detail`
-   gates on the recents list, so a device that could write recents could
-   widen its own git-probe scope — recents stay Mac-written for them. */
-const DEVICE_FORBIDDEN_METHODS = new Set([
-  ...PAIRING_ADMIN_METHODS,
-  "folders.add",
-]);
+/* Pairing admin only: `folders.add` opened to device peers for #238, but
+   per-call — a phone may write only home-scoped recents (checked below), so
+   the `folders.detail` git-probe gate still can't be widened past home. */
+const DEVICE_FORBIDDEN_METHODS = PAIRING_ADMIN_METHODS;
 
 /** The peer that has `harness.register`ed — the single engine host. */
 interface HostRecord {
@@ -208,6 +216,7 @@ export function createRelay(options: RelayOptions): Relay {
   /** helloed phone clients by peer → device id (#153); revoke closes them. */
   const devicePeers = new Map<RelayWsPeer, string>();
   const now = options.now ?? (() => Date.now());
+  const homeDir = options.homeDir ?? homedir();
   const heartbeatFreshMs = options.heartbeatFreshMs ?? 45_000;
   const logTail = options.logTail ?? createLogTail();
   const log = (message: string) => logTail.log(message);
@@ -732,9 +741,22 @@ export function createRelay(options: RelayOptions): Relay {
         case "folders.add": {
           const parsed = FoldersAddParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
-          respond(peer, id, {
-            folder: await store.addRecentFolder(parsed.data.path),
-          });
+          let path = parsed.data.path;
+          if (devicePeers.has(peer)) {
+            /* The phone may add only what its browser could have listed —
+               a real folder under the Mac's home (#238). The stored path
+               is the canonical `~/x` form of the resolved one. */
+            const abs = resolveUnderHome(path, homeDir);
+            if (!abs) {
+              throw new RpcError(
+                JsonRpcCode.forbidden,
+                "forbidden",
+                "path is outside the Mac's home folder",
+              );
+            }
+            path = collapsePath(abs, homeDir);
+          }
+          respond(peer, id, { folder: await store.addRecentFolder(path) });
           return;
         }
         case "folders.detail": {
@@ -753,6 +775,22 @@ export function createRelay(options: RelayOptions): Relay {
             );
           }
           forwardToHost(peer, id, "folders.detail", parsed.data);
+          return;
+        }
+        case "folders.browse": {
+          /* The phone's folder browser (#238): forwarded to the harness,
+             which enforces the home-folder boundary server-side. */
+          const parsed = FoldersBrowseParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          forwardToHost(peer, id, "folders.browse", parsed.data);
+          return;
+        }
+        case "folders.discover": {
+          /* "Found on this Mac" for the phone browser (#238) — same scan
+             roots as the web dialog, computed by the harness. */
+          const parsed = FoldersDiscoverParams.safeParse(params ?? {});
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          forwardToHost(peer, id, "folders.discover", parsed.data);
           return;
         }
         case "profile.get": {
