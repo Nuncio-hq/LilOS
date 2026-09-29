@@ -16,6 +16,7 @@ import {
   choiceFor,
   ModelPicker,
   sessionChoice,
+  withSessionModel,
 } from "../src/chat/model-picker";
 import { isHidden, modelKey } from "../src/chat/model-visibility-dialog";
 import type { ModelChoice, ModelOption, ModelVisibility } from "../src/types";
@@ -545,5 +546,142 @@ describe("model choice rules", () => {
       'input[type="range"]',
     ) as HTMLInputElement;
     expect(range.getAttribute("aria-valuetext")).toBe("High");
+  });
+});
+
+describe("model picker #140: the session's own model missing from the catalog", () => {
+  /* The Hermes/Astra case: the session runs gpt-6-astra while a normal
+     models.list omits it (account-gated rows only show on refresh). */
+  const ASTRA = { id: "gpt-6-astra", provider: "openai-codex" };
+  const astraPick = { model: "gpt-6-astra", provider: "openai-codex" };
+
+  /* The list-row CommandItem carrying a label (the trigger shows the same
+     model name — text queries against body() would match both). */
+  const item = (label: string) => {
+    const el = [...body().querySelectorAll("[cmdk-item]")].find((i) =>
+      i.textContent?.includes(label),
+    );
+    if (!el) throw new Error(`no model row ${label}`);
+    return el as HTMLElement;
+  };
+
+  test("AC-1 withSessionModel appends only the session's pick, marked notInList", () => {
+    // Absent from the catalog → appended.
+    const merged = withSessionModel(MODELS, astraPick);
+    expect(merged).toHaveLength(MODELS.length + 1);
+    expect(merged.at(-1)).toEqual({ ...ASTRA, notInList: true });
+    // Already listed → the catalog row stands as-is.
+    expect(withSessionModel(MODELS, choiceFor("qwen", MODELS))).toBe(MODELS);
+    // The same id under a DIFFERENT provider is still a different model.
+    const other = withSessionModel(MODELS, {
+      model: "qwen",
+      provider: "other-co",
+    });
+    expect(other.at(-1)).toEqual({
+      id: "qwen",
+      provider: "other-co",
+      notInList: true,
+    });
+    // No session model → nothing to merge.
+    expect(withSessionModel(MODELS, { model: "" })).toBe(MODELS);
+  });
+
+  test("AC-1 the trigger and the checked row show the unlisted model, marked Not in list", async () => {
+    render(
+      <ModelPicker value={astraPick} models={MODELS} onChoice={() => {}} />,
+    );
+    expect(trigger().textContent).toContain("gpt-6-astra");
+    await openModels();
+    const row = item("gpt-6-astra");
+    expect(row.textContent).toContain("Not in list");
+    expect(row.getAttribute("data-checked")).toBe("true");
+    // Only the session's own row is added.
+    expect(within(body()).getAllByText("Not in list")).toHaveLength(1);
+    // A provider the engine never named still gets a group — not a leak.
+    // (#194: headings carry the model count, e.g. "Openai Codex1".)
+    expect(
+      headings()
+        .map((el) => el.textContent)
+        .join(" "),
+    ).toContain("Openai Codex");
+  });
+
+  test("AC-2 the row's hint runs Refresh; once the engine lists the model the hint is gone", async () => {
+    const refreshes: number[] = [];
+    const onRefresh = async () => {
+      refreshes.push(1);
+    };
+    const { rerender } = render(
+      <ModelPicker
+        value={astraPick}
+        models={MODELS}
+        onChoice={() => {}}
+        onRefresh={onRefresh}
+      />,
+    );
+    await openModels();
+    await act(async () => fireEvent.click(item("gpt-6-astra")));
+    expect(refreshes).toHaveLength(1);
+    // The engine now offers it: the parent's new models prop lands and the
+    // row is a normal catalog row again — no hint, still checked.
+    rerender(
+      <ModelPicker
+        value={astraPick}
+        models={[...MODELS, { ...ASTRA, name: "GPT 6 Astra" }]}
+        onChoice={() => {}}
+        onRefresh={onRefresh}
+      />,
+    );
+    expect(body().textContent).not.toContain("Not in list");
+    expect(item("GPT 6 Astra").getAttribute("data-checked")).toBe("true");
+  });
+
+  test("AC-3 after Refresh still omits it, switching away warns; cancel keeps, go ahead picks", async () => {
+    const picks: ModelChoice[] = [];
+    render(
+      <Harness value={astraPick} picks={picks} onRefresh={async () => {}} />,
+    );
+    await openModels();
+    // #194: Anthropic starts collapsed — open it to reach its rows.
+    await act(async () =>
+      fireEvent.click(
+        headingFor("Anthropic").querySelector("button") as HTMLElement,
+      ),
+    );
+    // Run Refresh (the engine still doesn't offer the model)…
+    await act(async () => fireEvent.click(item("gpt-6-astra")));
+    // …then pick a catalog model → the warning shows the exact copy.
+    await act(async () => fireEvent.click(item("Claude test 4.5")));
+    expect(body().textContent).toContain(
+      "You can't switch back to gpt-6-astra from LilOS",
+    );
+    // Cancel keeps the session's pick — nothing is sent.
+    await act(async () => fireEvent.click(within(body()).getByText("Cancel")));
+    expect(picks).toHaveLength(0);
+    // Going ahead sends the pick. The Anthropic toggle is remembered
+    // (#194), so its rows are still open here.
+    await openModels();
+    await act(async () => fireEvent.click(item("Claude test 4.5")));
+    await act(async () =>
+      fireEvent.click(within(body()).getByText("Switch anyway")),
+    );
+    expect(picks).toEqual([
+      { model: "claude-test-4.5", provider: "anthropic", fast: false },
+    ]);
+  });
+
+  test("AC-3 switching away warns only once a refresh ran — a stale cache alone doesn't warn", async () => {
+    const picks: ModelChoice[] = [];
+    render(<Harness value={astraPick} picks={picks} />);
+    await openModels();
+    // #194: Anthropic starts collapsed — open it to reach its rows.
+    await act(async () =>
+      fireEvent.click(
+        headingFor("Anthropic").querySelector("button") as HTMLElement,
+      ),
+    );
+    await act(async () => fireEvent.click(item("Claude test 4.5")));
+    expect(body().textContent).not.toContain("can't switch back");
+    expect(picks).toHaveLength(1);
   });
 });

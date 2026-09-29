@@ -162,4 +162,123 @@ describe("EngineClient session feed (#84 ac-32 race)", () => {
     await vi.waitFor(() => expect(feed.get().synced).toBe(true));
     expect(feed.get().openRequests).toEqual([]);
   });
+
+  it("a live event landing before the first replay does not move the replay cursor", async () => {
+    /* The ac-140 CI flake: the dm page subscribes a feed while the engine
+       socket is still connecting. Frames landing in that window used to move
+       `latestSeq`, and the first `events.since` then started mid-turn — the
+       turn's prefix never arrived and it rendered as a partial phantom row. */
+    const { socket, client } = makeClient();
+    const feed = client.sessionFeed("s1"); // subscribed while still connecting
+    const pending = client.connect();
+    await Promise.resolve();
+    socket.openSocket();
+    await Promise.resolve();
+
+    // Mid-turn: turn.started (seq 3) already went out before this socket
+    // attached; only the tail arrives live. latestSeq jumps past the gap.
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "event",
+      params: {
+        seq: 7,
+        sessionId: "s1",
+        type: "turn.delta",
+        payload: { turnId: "t1", stream: "text", delta: "tail " },
+      },
+    });
+    expect(feed.get().latestSeq).toBe(7);
+    expect(feed.get().coverageSeq).toBe(0);
+
+    socket.respondTo("describe", DESCRIBE);
+    await pending;
+    await vi.waitFor(() =>
+      expect(socket.sawRequest("events.since")).toBe(true),
+    );
+
+    // The replay must fetch from 0 — not from the live-inflated seq — or
+    // seqs 1-6 are never delivered.
+    const request = socket.sent
+      .map(
+        (raw) =>
+          JSON.parse(raw) as { method?: string; params?: { after?: number } },
+      )
+      .find((f) => f.method === "events.since");
+    expect(request?.params?.after).toBe(0);
+
+    socket.respondTo("events.since", {
+      events: [
+        {
+          seq: 1,
+          sessionId: "s1",
+          type: "session.started",
+          payload: { agent: "default", cwd: "/w", model: "fake-fresh" },
+        },
+        {
+          seq: 3,
+          sessionId: "s1",
+          type: "turn.started",
+          payload: { turnId: "t1", model: "fake-fresh" },
+        },
+        {
+          seq: 5,
+          sessionId: "s1",
+          type: "turn.delta",
+          payload: { turnId: "t1", stream: "text", delta: "head " },
+        },
+        {
+          seq: 9,
+          sessionId: "s1",
+          type: "turn.completed",
+          payload: { turnId: "t1", stopReason: "end_turn" },
+        },
+      ],
+      latestSeq: 9,
+      truncated: false,
+      openRequests: [],
+      snapshot: SNAPSHOT,
+    });
+
+    await vi.waitFor(() => expect(feed.get().synced).toBe(true));
+    expect(feed.get().events.map((e) => e.seq)).toEqual([1, 3, 5, 7, 9]);
+    expect(feed.get().coverageSeq).toBe(9);
+  });
+
+  it("contiguous live events extend the coverage watermark; gaps stall it", async () => {
+    /* After the first replay, in-order live events keep the watermark at
+       latestSeq so a reconnect resync stays incremental. */
+    const { socket, client } = makeClient();
+    await connectClient(client, socket);
+    const feed = client.sessionFeed("s1");
+    await vi.waitFor(() =>
+      expect(socket.sawRequest("events.since")).toBe(true),
+    );
+    socket.respondTo("events.since", {
+      events: [],
+      latestSeq: 4,
+      truncated: false,
+      openRequests: [],
+      snapshot: SNAPSHOT,
+    });
+    await vi.waitFor(() => expect(feed.get().synced).toBe(true));
+    expect(feed.get().coverageSeq).toBe(4);
+
+    const delta = (seq: number) => ({
+      jsonrpc: "2.0" as const,
+      method: "event" as const,
+      params: {
+        seq,
+        sessionId: "s1",
+        type: "turn.delta",
+        payload: { turnId: "t1", stream: "text", delta: "x" },
+      },
+    });
+    socket.emit(delta(5));
+    expect(feed.get().coverageSeq).toBe(5);
+    // A skipped seq must not pretend the gap is covered — the next resync
+    // refetches it.
+    socket.emit(delta(8));
+    expect(feed.get().coverageSeq).toBe(5);
+    expect(feed.get().latestSeq).toBe(8);
+  });
 });

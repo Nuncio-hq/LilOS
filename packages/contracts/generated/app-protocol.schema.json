@@ -415,7 +415,8 @@
         "pairing.offer",
         "pairing.disable",
         "devices.list",
-        "devices.revoke"
+        "devices.revoke",
+        "session.ping"
       ]
     },
     "AppEventMethod": {

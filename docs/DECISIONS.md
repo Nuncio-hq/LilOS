@@ -118,6 +118,13 @@ PR does not exist.
   hide list in localStorage or engine state, LilOS-owned profile CRUD, a
   persona read-only wire (was #8), or a delete method "for cleanup".
   — #8, #92, #123 · PR #46, #129, #146
+- **D-#140 The picker always shows the model the session runs — the catalog
+  plus the session's own pick when the catalog omits it, marked "Not in
+  list"; the path back is the existing Refresh (`models.list
+  {refresh:true}`), the engine's live catalog.** Not: merging configured or
+  preset models into `models.list` — that re-advertises exactly what the
+  engine hides on purpose (Hermes' account-gated models), so picks would
+  fail — or engine-specific picker branches. — #140 · PR #177
 - **D-#26 The harness supervises the engine and is the only thing that talks
   to it.** It owns launch (`hermes serve` on 127.0.0.1 with a generated
   token, via `packages/engine-hermes`), crash restart with bounded backoff,
@@ -134,12 +141,18 @@ PR does not exist.
   automatic when the last viewer leaves. Not: silent interleaving, or a
   UI-only pause badge. — #56
 - **D-#85 Release builds run the real engine (Hermes); `engine-fake` ships
-  only in ad-hoc dev bundles and stays available for `bun run verify`/CI
-  via `LILOS_ENGINE=fake`.** Provider/model come from Hermes' own config —
-  LilOS stores no defaults. Hermes is found without PATH (`HERMES_BIN`,
-  `~/.lilos/hermes-bin`, then known install locations), and a missing
-  engine surfaces as a plain status reason — never a silent fake.
-  Not: a fake default in release. — #85
+  only in ad-hoc dev bundles (as the stamped default) and stays available
+  for `bun run verify`/CI via `LILOS_ENGINE=fake`; `bun run app:local` /
+  `build.ts --engine=hermes` stamps real Hermes into the ad-hoc bundle
+  instead.** Provider/model come from Hermes' own config — LilOS stores no
+  defaults. Hermes is found without PATH (`HERMES_BIN`, `~/.lilos/hermes-bin`,
+  then known install locations), and a missing engine surfaces as a plain
+  status reason — never a silent fake. Bundled executables never contain
+  "hermes" in their name — managed Macs SIGKILL them by name, so the adapter
+  ships as `lilos-engine-nous` (the engine id stays `hermes`).
+  Not: a fake default in release, hand-editing installed launch-agent
+  plists to pick an engine (lost on every rebuild), or asking for an MDM
+  exception. — #85, #141
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the
@@ -167,12 +180,18 @@ PR does not exist.
   exchanged over the tailnet listener for a per-device credential (stored
   hashed; raw only in the exchange response). The phone keeps it in the
   Keychain; the Mac lists and revokes devices (revoke drops the live
-  socket).** Not: sharing the install token (D-#25) with phones, a cloud
-  relay, or DPoP. — #153
+  socket with ws close 4403 — the phone forgets the credential and lands
+  on pairing, never a reconnect loop).** Not: sharing the install token
+  (D-#25) with phones, a cloud relay, or DPoP. — #153 · #154
 - **D-#153 The pairing URL keeps the secret in the fragment:
   `lilos://pair?host=<tailscale-host>:<port>#code=<grant>` — fragments never
   leave the device in a URL copy or server log.** Not: secret in the query
   string. — #153
+- **D-#154 The phone app is Expo (dev client, iOS first) rendering
+  `packages/ui-native` over `packages/client-runtime` — the supervisor
+  (one retry owner) and the directory cache are runtime-neutral, RN glue
+  (AppState/NetInfo/Keychain) lives only in `apps/mobile`.** Not: per-app
+  reconnect loops, or RN imports inside client-runtime. — #154
 
 ## UX
 - **D-#114 The Workbench lives only in Focus mode, and opening a session

@@ -16,29 +16,53 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { engineBundlePlan } from "./engines";
+import { BUNDLE_EXECUTABLES, engineBundlePlan } from "./engines";
 
 /**
  * Build dist/LilOS.app — issue #34.
  *
- *   bun apps/desktop/scripts/build.ts [VERSION] [SIGN_IDENTITY]
+ *   bun apps/desktop/scripts/build.ts [VERSION] [SIGN_IDENTITY] [--engine=hermes|fake]
  *
  * VERSION:      CFBundleVersion + ShortVersionString (default "1").
  *               Changing it makes the app unregister→register the agents on
  *               next launch (SP1 stale-pin rule).
  * SIGN_IDENTITY: "-" (ad-hoc, default for this VM) or a full identity name
  *               like "Developer ID Application: …" (#35 owns notarization).
+ * --engine:     explicit engine override (#141). `--engine=hermes` on an
+ *               ad-hoc build stamps the real engine as the harness default
+ *               (`bun run app:local`); `--engine=fake` on a signed build is
+ *               an error. Unset keeps the #85 defaults (fake on ad-hoc,
+ *               hermes on signed).
  *
  * Layout produced:
  *   Contents/MacOS/{Electron→LilOS, lilos-svc, lilos-relay, lilos-harness,
- *                  lilos-engine-hermes (+ lilos-engine-fake on dev builds)}
+ *                  lilos-engine-nous (+ lilos-engine-fake on dev builds)}
  *   Contents/Resources/app/{main.cjs, preload.cjs, index.html, package.json}
  *   Contents/Resources/LilOS.icns
  *   Contents/Library/LaunchAgents/*.plist
  */
 
-const VERSION = process.argv[2] ?? "1";
-const IDENTITY = process.argv[3] ?? "-";
+// `--engine=…` is an option, not a positional — strip it before VERSION and
+// SIGN_IDENTITY are read so `build.ts 85 -` keeps working unchanged.
+const ENGINE_FLAG = process.argv.find((a) => a.startsWith("--engine="));
+if (
+  ENGINE_FLAG !== undefined &&
+  !/^(hermes|fake)$/.test(ENGINE_FLAG.slice(9))
+) {
+  console.error(
+    `unknown --engine value "${ENGINE_FLAG.slice(9)}" — expected hermes or fake`,
+  );
+  process.exit(1);
+}
+const ENGINE = ENGINE_FLAG?.slice(9) as "hermes" | "fake" | undefined;
+const positional = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const VERSION = positional[0] ?? "1";
+const IDENTITY = positional[1] ?? "-";
+// #85/#141: the signing identity decides the engine bundle — a signed release
+// ships only the Hermes adapter; an ad-hoc dev bundle ships both engines and
+// boots the fake one unless --engine= overrides the default (app:local).
+// Resolved up front so an invalid combination fails before any work runs.
+const engines = engineBundlePlan(IDENTITY, ENGINE);
 // One release version shared by app + relay + harness (#35): stamped into
 // each binary so a bundle's components always agree in `system.status`.
 const RELEASE_VERSION = `1.0.${VERSION}`;
@@ -126,10 +150,6 @@ if (!existsSync(harnessEntry) && !skipHarness) {
   );
   process.exit(1);
 }
-// #85: the signing identity decides the engine bundle — a signed release
-// ships only the Hermes adapter; an ad-hoc dev bundle ships both engines and
-// boots the fake one so the app can label itself.
-const engines = engineBundlePlan(IDENTITY);
 if (!skipHarness) {
   console.log(
     `==> compile lilos-harness (bun standalone, engine default: ${engines.defaultEngine})`,
@@ -267,11 +287,10 @@ for (const plist of [
   );
 }
 for (const bin of [
-  "lilos-svc",
-  "lilos-relay",
   ...(skipHarness
-    ? []
-    : ["lilos-harness", ...engines.binaries.map((b) => b.outfile)]),
+    ? BUNDLE_EXECUTABLES.filter((b) => b !== "lilos-harness")
+    : BUNDLE_EXECUTABLES),
+  ...(skipHarness ? [] : engines.binaries.map((b) => b.outfile)),
 ]) {
   copyFileSync(join(BUILD, bin), join(APP, "Contents", "MacOS", bin));
   chmodSync(join(APP, "Contents", "MacOS", bin), 0o755);

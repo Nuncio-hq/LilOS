@@ -101,8 +101,11 @@ export const MODEL_CATALOG: FakeModel[] = [
 ];
 
 /** Surfaced only by `models.list {refresh:true}` — the "new model appears
-    without a restart" fixture (#92 AC-6). Acceptable by session.setModel like
-    any catalog row. */
+    without a restart" fixture (#92 AC-6). Joins the engine's accepted set once
+    a refresh has been served — `session.setModel` refuses it before that,
+    the same gate a real adapter applies (#140 AC-2). A session may still RUN
+    on it earlier (the account-gated case: the session's own pick can be
+    absent from the catalog, #140 AC-1). */
 export const REFRESH_MODEL: FakeModel = {
   id: "fake-fresh",
   name: "Fake Fresh",

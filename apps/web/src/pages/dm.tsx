@@ -113,6 +113,7 @@ const EMPTY_FEED = atom<SessionFeedState>({
   sessionId: "",
   synced: false,
   latestSeq: 0,
+  coverageSeq: 0,
   events: [],
   openRequests: [],
 });
@@ -757,6 +758,12 @@ export function DmPage() {
           lastSent={lastSent}
           onModel={(c) => void setConversationModel(conv.id, c)}
           models={catalog.length ? catalog : undefined}
+          /* Focus is a picker surface too — the same Refresh / Edit models…
+             extras as the thread panel (#140: the not-in-list row's hint
+             runs Refresh). */
+          picker={picker}
+          defaultModel={defaultModel}
+          defaultProvider={defaultProvider}
           accept={canAttachImages ? "image/*" : undefined}
           maxFileSize={MAX_ATTACHMENT_BYTES}
           onAttachError={say}
