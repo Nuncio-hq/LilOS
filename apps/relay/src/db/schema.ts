@@ -66,8 +66,12 @@ export const conversations = sqliteTable(
     provider: text("provider"),
     effort: text("effort"),
     fast: integer("fast", { mode: "boolean" }),
-    /** Folder the session runs in (issue #113); null = harness default dir. */
+    /** Folder the session runs in (issue #113); null = harness default dir.
+        For a workstream open (#156) this is the worktree path. */
     cwd: text("cwd"),
+    /** Workstream mode stamped at open (#156): JSON WorkspaceIntent; null =
+        direct folder / just chat. */
+    workspace: text("workspace"),
     title: text("title").notNull().default(""),
     /** Who named the conversation (#137): `user` wins over every later
         engine/auto title write; `auto` is free to be upgraded. */

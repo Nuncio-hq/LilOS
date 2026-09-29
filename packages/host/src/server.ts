@@ -8,6 +8,7 @@ import {
   gitDiscoverRepos,
   gitIsRepo,
   gitStatus,
+  gitWorktrees,
 } from "./git.js";
 import { osEditors, osOpen } from "./os.js";
 import { hostUser } from "./user.js";
@@ -28,6 +29,7 @@ const HANDLERS: Record<keyof typeof HOST_METHODS, Handler> = {
   "git.branches": gitBranches,
   "git.status": gitStatus,
   "git.diff": gitDiff,
+  "git.worktrees": gitWorktrees,
   "git.discoverRepos": gitDiscoverRepos,
   "forge.pr": forgePr,
   "forge.comment": forgeComment,

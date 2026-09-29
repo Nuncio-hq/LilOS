@@ -17,10 +17,19 @@ export type Routes = {
   Connected: undefined;
   Tabs: NavigatorScreenParams<TabRoutes>;
   Mac: undefined;
-  /** An employee's DM; `{ employeeId }` selects whose (#155; the thread list
-      inside arrives with #156). */
+  /** An employee's DM; `{ employeeId }` selects whose. */
   Dm: { employeeId: string };
+  /* The DM slice's stack routes (#156). */
+  Thread: { conversationId: string };
+  FolderPicker: { employeeId: string };
+  ModelPicker: { employeeId: string };
 };
+
+/* The DM stack as the dm/thread screens see it. */
+export type DmRoutes = Pick<
+  Routes,
+  "Dm" | "Thread" | "FolderPicker" | "ModelPicker"
+>;
 
 export type TabRoutes = {
   Home: undefined;

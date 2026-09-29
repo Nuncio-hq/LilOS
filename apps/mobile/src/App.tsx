@@ -62,7 +62,9 @@ import {
   savePairedMac,
 } from "./paired-macs";
 import { nav, type Props, type Routes, type TabRoutes } from "./routes";
-import { Activity, Dm, Home, NeedsYouSlot, useHomeWire } from "./screens/home";
+import { Dm, FolderPicker, ModelPicker } from "./screens/dm";
+import { Activity, Home, NeedsYouSlot, useHomeWire } from "./screens/home";
+import { Thread } from "./screens/thread";
 
 /* apps/mobile — the real app (#154): the prototype's onboarding screens from
    @lilos/ui-native wired to the actual relay. Pairing runs the #153 grant →
@@ -430,6 +432,25 @@ const MAC_SHEET: NativeStackNavigationOptions = {
   presentation: "modal",
 };
 
+/* Native iOS form sheet: medium + large detents, grabber, content sized to
+   the stack so it can grow. */
+const SHEET: NativeStackNavigationOptions = {
+  headerShown: false,
+  presentation: "formSheet",
+  sheetAllowedDetents: [0.62, 1],
+  sheetGrabberVisible: true,
+  sheetCornerRadius: 28,
+  // No painted background: iOS 26 draws the sheet as Liquid Glass.
+  contentStyle: { backgroundColor: "transparent" },
+};
+
+/* A conversation's nav bar: transparent over a native blur material, so the
+   chat scrolls on under the title and stays readable. */
+const CHAT_HEADER: NativeStackNavigationOptions = {
+  headerTransparent: true,
+  scrollEdgeEffects: { top: "soft", bottom: "soft" },
+};
+
 function useNavTheme(): Theme {
   const dark = useColorScheme() === "dark";
   const base = dark ? DarkTheme : DefaultTheme;
@@ -534,8 +555,23 @@ export default function App() {
                 component={Tabs}
                 options={{ headerShown: false }}
               />
-              <Stack.Screen name="Dm" component={Dm} options={{ title: "" }} />
               <Stack.Screen name="Mac" component={Mac} options={MAC_SHEET} />
+              <Stack.Screen name="Dm" component={Dm} options={CHAT_HEADER} />
+              <Stack.Screen
+                name="Thread"
+                component={Thread}
+                options={CHAT_HEADER}
+              />
+              <Stack.Screen
+                name="FolderPicker"
+                component={FolderPicker}
+                options={SHEET}
+              />
+              <Stack.Screen
+                name="ModelPicker"
+                component={ModelPicker}
+                options={SHEET}
+              />
             </>
           )}
         </Stack.Navigator>

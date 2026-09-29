@@ -685,6 +685,55 @@ describe("mobile instant-connect seam (#154)", () => {
     await expect(ping).resolves.toBeUndefined();
   });
 
+  it("AC-1 a device peer never sends devices.list so the directory still populates", async () => {
+    // devices.list is pairing-admin scope; the relay refuses it for device
+    // peers. One refused frame must not void the whole resync batch — the
+    // client authenticates as a device, so it skips the call entirely.
+    const socket = new FakeSocket();
+    const client = new RelayClient({
+      url: "ws://fake",
+      device: { deviceId: "dev_1", credential: "cred" },
+      socketFactory: () => socket,
+      requestTimeoutMs: 200,
+      connectTimeoutMs: 200,
+      autoReconnect: false,
+    });
+    const pending = client.connect();
+    await Promise.resolve();
+    socket.openSocket();
+    await Promise.resolve();
+    socket.respondTo("session.hello", WELCOME);
+    await pending;
+    socket.respondTo("employees.list", {
+      employees: [
+        {
+          id: "e1",
+          name: "Ada",
+          role: "eng",
+          status: "online",
+          profile: "default",
+          model: "fake-small",
+          now: "",
+          instructions: "",
+        },
+      ],
+    });
+    socket.respondTo("channels.list", { channels: [] });
+    socket.respondTo("conversations.list", { conversations: [] });
+    socket.respondTo("conversations.summaries", { summaries: [] });
+    socket.respondTo("profile.get", { profile: {} });
+    socket.respondTo("asks.list", { asks: [] });
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
+    await flush();
+    expect(client.directoryReady.get()).toBe(true);
+    expect(client.employees.get().map((e) => e.id)).toEqual(["e1"]);
+    const methods = socket.sent.map(
+      (raw) => (JSON.parse(raw) as { method?: string }).method,
+    );
+    expect(methods).not.toContain("devices.list");
+  });
+
   it("AC-2 hydrate seeds the directory and watermarks; subscribe resumes with afterSeq", async () => {
     const { client, socket } = makeClient();
     client.hydrate({

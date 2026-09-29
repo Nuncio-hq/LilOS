@@ -217,9 +217,13 @@ export type FolderOption = {
   id: string;
   project: string;
   path: string;
-  /** [] = not a git repo: edits land in the folder directly. */
+  /** The git probe is still in flight — mode rows wait on it. */
+  probing?: boolean;
+  /** The path is gone from the Mac — picking it can't open a session. */
+  missing?: boolean;
+  /** [] = not a git repo (or probe unanswered): edits land in the folder directly. */
   branches: string[];
-  workstreams: { branch: string; path: string; from: string }[];
+  workstreams: { branch: string; path: string; from?: string }[];
 };
 
 /** new = worktree + branch off `base` · existing = continue a workstream · direct = edit `base` in place. */

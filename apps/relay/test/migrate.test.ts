@@ -53,13 +53,15 @@ describe("relay migrations", () => {
     // #118's profile row; v9 adds #138's FTS index (sqlite_master lists the
     // virtual table's shadow tables too — only assert the FTS table itself);
     // v10 adds #137's title provenance; v11 adds #153's phone pairing
-    // tables; v12 adds #134's rewind marks.
-    expect(out.version).toBe(12);
+    // tables; v12 adds #134's rewind marks; v13 adds #156's workspace
+    // intent on conversations.
+    expect(out.version).toBe(13);
     for (const col of ["provider", "effort", "fast"])
       expect(out.colsAt7).toContain(col);
     for (const col of ["provider", "effort", "fast", "rewound", "checkpoint"])
       expect(out.msgCols).toContain(col);
     expect(out.colsAt7).toContain("title_source");
+    expect(out.colsAt7).toContain("workspace");
     expect(out.tables).toContain("settings");
     expect(out.tables).toContain("profile");
     expect(out.tables).toContain("messages_fts");

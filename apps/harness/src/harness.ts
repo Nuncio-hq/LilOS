@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import type { RelayClient } from "@lilos/client-runtime";
 import type {
   AppChannel,
@@ -7,6 +9,7 @@ import type {
   Conversation,
   ConversationsRewindHostResult,
   Employee,
+  FoldersDetailResult,
   PendingTurn,
 } from "@lilos/contracts/app";
 import {
@@ -18,6 +21,7 @@ import {
   ConversationsRewindHostParams,
   ConversationUpdatedEvent,
   ENGINE_PASSTHROUGH_METHODS,
+  FoldersDetailParams,
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
 import type {
@@ -28,7 +32,14 @@ import type {
   EngineRequest,
   EventsSinceResult,
 } from "@lilos/contracts/engine";
-import { type CheckpointStore, expandPath } from "@lilos/host";
+import {
+  type CheckpointStore,
+  expandPath,
+  gitBranches,
+  gitIsRepo,
+  gitWorktrees,
+  worktreeAdd,
+} from "@lilos/host";
 import type { EngineConnection } from "./engine/client";
 import { engineErrorCode, SESSION_NOT_FOUND } from "./engine/client";
 import type { EngineHostState } from "./engine/supervisor";
@@ -1055,6 +1066,27 @@ export class Harness {
       }
     }
 
+    /* A workstream open (#156 mode "new") materializes its worktree before
+       the first `session.start`; a failure leaves the thread idle with a
+       system note rather than starting the session in the wrong folder.
+       The held message re-delivers on the next register (pending list). */
+    if (conv.workspace?.mode === "new") {
+      try {
+        await this.ensureWorktree(conv);
+      } catch (error) {
+        this.opts.log.error("worktree creation failed", {
+          conversationId: conv.id,
+          error: String(error),
+        });
+        await this.postSystem(
+          { channelId, conversationId: conv.id },
+          `Couldn't create worktree ${conv.workspace.branch} — ${error instanceof Error ? error.message : String(error)}`,
+          `sys:${conv.id}:worktree`,
+        );
+        return undefined;
+      }
+    }
+
     const employee = await this.resolveEmployee(conv);
     const agent = await this.ensureAgent(conn, employee);
     const started = await conn.request<{ sessionId: string; ref?: string }>(
@@ -1396,6 +1428,11 @@ export class Harness {
         ConversationsRewindHostParams.parse(params),
       );
     }
+    /* `folders.detail` (#156): the relay gates the path to recents and
+       forwards here — the only process that can run git on this machine. */
+    if (method === "folders.detail") {
+      return this.folderDetail(FoldersDetailParams.parse(params));
+    }
     if (!(ENGINE_PASSTHROUGH_METHODS as readonly string[]).includes(method)) {
       throw Object.assign(new Error(`harness does not answer ${method}`), {
         code: -32601,
@@ -1408,6 +1445,71 @@ export class Harness {
       });
     }
     return conn.request(method, params);
+  }
+
+  /**
+   * `folders.detail` probe (#156): branches + linked worktrees of one
+   * recents-listed folder — the picker's "New workstream from" and
+   * "Continue a workstream" rows. The repo's own checkout is filtered out
+   * of `workstreams` (it is the "direct" mode, not a workstream).
+   */
+  private async folderDetail(
+    params: FoldersDetailParams,
+  ): Promise<FoldersDetailResult> {
+    const abs = expandPath(params.path);
+    const empty = {
+      path: params.path,
+      isRepo: false,
+      branches: [] as string[],
+      workstreams: [],
+    };
+    if (!existsSync(abs)) return { ...empty, missing: true };
+    const probe = await gitIsRepo({ path: abs });
+    if (!probe.isRepo || !probe.root) return { ...empty, missing: false };
+    const [branches, worktrees] = await Promise.all([
+      gitBranches({ path: abs }),
+      gitWorktrees({ path: abs }),
+    ]);
+    const root = resolve(expandPath(probe.root));
+    return {
+      ...empty,
+      missing: false,
+      isRepo: true,
+      root: probe.root,
+      current: branches.current,
+      branches: branches.branches,
+      remote: branches.remote,
+      workstreams: worktrees.worktrees
+        .filter(
+          (w) => w.branch !== undefined && resolve(expandPath(w.path)) !== root,
+        )
+        .map((w) => ({
+          branch: w.branch ?? "",
+          path: w.path,
+          ...(w.from ? { from: w.from } : {}),
+        })),
+    };
+  }
+
+  /**
+   * A `workspace.mode === "new"` open (#156) carries `cwd` as the worktree
+   * path the picker computed (`<repo>/.lilos/wt/<slug>`): make it real with
+   * `git worktree add -b <branch> <base>` before the first `session.start`,
+   * unless a registered worktree already sits there (rebind after a
+   * restart, a redelivered turn).
+   */
+  private async ensureWorktree(conv: Conversation): Promise<void> {
+    const ws = conv.workspace;
+    if (ws?.mode !== "new" || !conv.cwd) return;
+    const dir = resolve(expandPath(conv.cwd));
+    const { worktrees } = await gitWorktrees({ path: ws.repoPath });
+    if (worktrees.some((w) => resolve(expandPath(w.path)) === dir)) return;
+    await worktreeAdd({
+      path: ws.repoPath,
+      dir,
+      branch: ws.branch,
+      base: ws.base,
+    });
   }
 
   /**
@@ -1934,14 +2036,14 @@ export class Harness {
   }
 
   private async postSystem(
-    binding: SessionBinding,
+    target: { channelId: string; conversationId: string },
     text: string,
     dedupeKey?: string,
   ) {
     this.relayWrite(`system note "${text.slice(0, 24)}"`, () =>
       this.opts.relay.request("messages.post", {
-        channelId: binding.channelId,
-        conversationId: binding.conversationId,
+        channelId: target.channelId,
+        conversationId: target.conversationId,
         authorKind: "system",
         text,
         ...(dedupeKey ? { dedupeKey } : {}),

@@ -407,6 +407,7 @@
         "settings.set",
         "folders.list",
         "folders.add",
+        "folders.detail",
         "profile.get",
         "profile.update",
         "agents.list",
@@ -1297,6 +1298,107 @@
         "folder"
       ]
     },
+    "FolderWorkstream": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "branch",
+        "path"
+      ]
+    },
+    "FoldersDetailParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "FoldersDetailResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "missing": {
+          "type": "boolean"
+        },
+        "isRepo": {
+          "type": "boolean"
+        },
+        "root": {
+          "type": "string"
+        },
+        "current": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "branches": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "remote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workstreams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "branch": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "from": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "branch",
+              "path"
+            ]
+          }
+        }
+      },
+      "required": [
+        "path",
+        "missing",
+        "isRepo",
+        "branches",
+        "workstreams"
+      ]
+    },
     "ProfileSettings": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -1454,6 +1556,61 @@
           "type": "string",
           "minLength": 1
         },
+        "workspace": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "const": "new"
+                },
+                "repoPath": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "branch": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "base": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "mode",
+                "repoPath",
+                "branch",
+                "base"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "const": "existing"
+                },
+                "repoPath": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "branch": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "mode",
+                "repoPath",
+                "branch"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
         "archived": {
           "type": "boolean"
         },
@@ -1487,6 +1644,62 @@
         "idle",
         "active",
         "closed"
+      ]
+    },
+    "WorkspaceIntent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "const": "new"
+            },
+            "repoPath": {
+              "type": "string",
+              "minLength": 1
+            },
+            "branch": {
+              "type": "string",
+              "minLength": 1
+            },
+            "base": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "mode",
+            "repoPath",
+            "branch",
+            "base"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "const": "existing"
+            },
+            "repoPath": {
+              "type": "string",
+              "minLength": 1
+            },
+            "branch": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "mode",
+            "repoPath",
+            "branch"
+          ],
+          "additionalProperties": false
+        }
       ]
     },
     "ConversationsListParams": {
@@ -1570,6 +1783,61 @@
               "cwd": {
                 "type": "string",
                 "minLength": 1
+              },
+              "workspace": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "const": "new"
+                      },
+                      "repoPath": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "branch": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "base": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "mode",
+                      "repoPath",
+                      "branch",
+                      "base"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "const": "existing"
+                      },
+                      "repoPath": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "branch": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "mode",
+                      "repoPath",
+                      "branch"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
               },
               "archived": {
                 "type": "boolean"
@@ -1664,6 +1932,61 @@
         "cwd": {
           "type": "string",
           "minLength": 1
+        },
+        "workspace": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "const": "new"
+                },
+                "repoPath": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "branch": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "base": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "mode",
+                "repoPath",
+                "branch",
+                "base"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "const": "existing"
+                },
+                "repoPath": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "branch": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "mode",
+                "repoPath",
+                "branch"
+              ],
+              "additionalProperties": false
+            }
+          ]
         }
       },
       "required": [
@@ -1736,6 +2059,61 @@
             "cwd": {
               "type": "string",
               "minLength": 1
+            },
+            "workspace": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "new"
+                    },
+                    "repoPath": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "base": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "repoPath",
+                    "branch",
+                    "base"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "existing"
+                    },
+                    "repoPath": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "repoPath",
+                    "branch"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
             },
             "archived": {
               "type": "boolean"
@@ -2036,6 +2414,61 @@
             "cwd": {
               "type": "string",
               "minLength": 1
+            },
+            "workspace": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "new"
+                    },
+                    "repoPath": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "base": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "repoPath",
+                    "branch",
+                    "base"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "existing"
+                    },
+                    "repoPath": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "repoPath",
+                    "branch"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
             },
             "archived": {
               "type": "boolean"
@@ -3116,6 +3549,61 @@
               "type": "string",
               "minLength": 1
             },
+            "workspace": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "new"
+                    },
+                    "repoPath": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "base": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "repoPath",
+                    "branch",
+                    "base"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "existing"
+                    },
+                    "repoPath": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "repoPath",
+                    "branch"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
             "archived": {
               "type": "boolean"
             },
@@ -3639,6 +4127,61 @@
                   "cwd": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "workspace": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "type": "string",
+                            "const": "new"
+                          },
+                          "repoPath": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "branch": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "base": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "mode",
+                          "repoPath",
+                          "branch",
+                          "base"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "type": "string",
+                            "const": "existing"
+                          },
+                          "repoPath": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "branch": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "mode",
+                          "repoPath",
+                          "branch"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
                   },
                   "archived": {
                     "type": "boolean"
@@ -5492,6 +6035,61 @@
             "cwd": {
               "type": "string",
               "minLength": 1
+            },
+            "workspace": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "new"
+                    },
+                    "repoPath": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "base": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "repoPath",
+                    "branch",
+                    "base"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "existing"
+                    },
+                    "repoPath": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "repoPath",
+                    "branch"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
             },
             "archived": {
               "type": "boolean"

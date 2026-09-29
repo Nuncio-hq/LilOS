@@ -43,11 +43,16 @@ lsof -ti :4577                           # empty = down; kill with | xargs kill
 lsof -nP -i :4577                        # shows LISTEN addrs + app TCP connections
 ```
 
-- `172.16.4.2` is a local interface IP on this VM — a down relay gives a FAST
-  ECONNREFUSED, not a TCP timeout.
-- The startup log prints `listening on http://127.0.0.1:4577` — cosmetic: it also
-  binds the tailscale IP. If the app won't connect, confirm the `172.16.4.2:4577
-  (LISTEN)` line in `lsof -nP -i :4577` before suspecting the app.
+- The tailscale stand-in IP lives on `lo0` and VARIES per VM — find it with
+  `ifconfig lo0 | grep 'inet 172\.'` (this VM: 172.16.5.2). A wrong IP makes
+  `pairing.offer` fail `tailscale_unavailable` (the bind fails, not the probe).
+- A down relay gives a FAST ECONNREFUSED, not a TCP timeout.
+- The startup log prints `listening on http://127.0.0.1:4577` — cosmetic: the
+  tailscale listener binds lazily on `pairing.offer` (phoneAccess.enable), so
+  check `lsof -nP -iTCP:4577 -sTCP:LISTEN` for the `172.x` row AFTER an offer.
+- Whole env in one shot: `bash scripts/live/156.sh` (relay + harness on
+  engine-fake + seeded employee/folder + printed pair link; `LILOS_ENGINE=hermes`
+  for the real engine; set `TAILSCALE_IP` to the lo0 IP).
 - A visible Terminal window running the relay in the foreground (positioned beside
   the Simulator: `osascript -e 'tell application "Terminal" to set bounds of front
   window to {8,50,360,700}'`) makes relay kill/restart moments self-evident in a
@@ -63,11 +68,57 @@ lsof -nP -i :4577                        # shows LISTEN addrs + app TCP connecti
 - Retries are owned by the supervisor on a [3,4,8,16]s backoff ladder — after a
   relay restart the app recovers on its own in ~3–20s with NO user interaction
   (up to ~25s if the ladder is on the 16s rung + 15s connect timeout worst case).
-- Re-pair: `bun /tmp/mint-offer.ts` prints `{"host","code","name"}` →
-  `simctl openurl <udid> 'lilos://pair?host=…&name=…#code=…'` → tap "Open" on the
-  system dialog. Codes expire in 5 min.
+- Re-pair: mint a grant, then `simctl openurl <udid>
+  'lilos://pair?host=…&name=…#code=…'` → tap "Allow" on the local-network
+  prompt AND "Open" on the "Open in LilOS?" sheet (they appear stacked), then
+  "Continue" on the "You're connected" screen. Codes expire in 5 min.
+- Mint WITHOUT reseeding (keeps Home unambiguous in recordings):
+
+```sh
+cat > /tmp/mint-offer.ts <<'EOF'
+import { RelayClient } from "/Users/devin/repos/LilOS/packages/client-runtime/src/index";
+import { readFileSync } from "node:fs";
+const home = process.argv[2];  // relay home holding relay-token
+const token = readFileSync(home + "/relay-token", "utf8").trim();
+const u = new RelayClient({ url: "ws://127.0.0.1:4577/ws", token, client: { name: "mint", version: "0" } });
+await u.connect();
+console.log(JSON.stringify((await u.request("pairing.offer", {})).offer));
+EOF
+bun /tmp/mint-offer.ts <relay-home>   # {"host","code","name","expiresAt"}
+```
+
 - "Forget this Mac" (Settings tab) deletes the SecureStore key AND the AsyncStorage
   cache; proof = the app drops to the onboarding Welcome screen.
+
+## Device peers vs token peers (wire scope)
+
+`session.hello` has two auth shapes: install token (trusted local tools) vs
+`deviceId` + `credential` (paired phones). Phones are refused
+PAIRING_ADMIN_METHODS (`pairing.offer`, `pairing.disable`, `devices.list`,
+`devices.revoke`) — `forbidden: paired devices can't administer pairing`.
+
+Pitfall seen live (#156 leg): `refreshDirectory` ran `devices.list` inside one
+`Promise.all` — the refusal rejected the batch and every directory atom stayed
+empty (Home: "Employees", zero rows, forever). If a phone ever shows an empty
+directory again, suspect an admin-scope call in a shared refresh path first.
+
+## Probing the relay as a paired phone
+
+Token-scope scripts cannot reproduce phone-only failures. To act as a phone:
+`POST http://<host>/pair/exchange {"code","name":"probe"}` → `{deviceId,
+credential}`, then `new RelayClient({url, device: {deviceId, credential}})`.
+
+## Capturing transient states (Working rows, ~1–2s)
+
+engine-fake `--tick 25` ends a question turn in ~1.5–2s — too fast to tap back
+and screenshot by hand, and `simctl io` takes ~0.8–1s per frame. Run a burst
+loop as a BACKGROUND exec while you drive the UI, then pick the right frame:
+
+```sh
+for i in $(seq 1 12); do xcrun simctl io $D screenshot /tmp/w-$i.png; done
+```
+
+The agent screen recording (15fps) is the primary evidence; the still is a bonus.
 
 ## Expected UI landmarks (issue #154 surface)
 
@@ -77,8 +128,11 @@ lsof -nP -i :4577                        # shows LISTEN addrs + app TCP connecti
   `<host> · on this network`, red "Forget this Mac" row → alert
   "Forget this Mac?" → red "Forget" → Welcome screen ("Welcome to LilOS",
   "Get started").
-- Tapping an employee/channel row shows a "come next" alert in this release — not
-  a bug.
+- Tapping an employee opens its real DM (#156); channels still show a "come
+  next" alert — not a bug.
+- The dev client may show "Downloading 100%" mid-test (Metro fast-refresh) —
+  pairing/directory survive; navigate back in.
+- iOS autocapitalizes the composer draft — screenshot text differs from typed.
 
 ## Desktop hygiene before recording
 

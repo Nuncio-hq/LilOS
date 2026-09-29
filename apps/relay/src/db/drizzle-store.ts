@@ -10,6 +10,7 @@ import type {
   PendingTurn,
   ProfileSettings,
   RecentFolder,
+  WorkspaceIntent,
 } from "@lilos/contracts/app";
 import { ApprovalOutcome, EngineRequest } from "@lilos/contracts/engine";
 import {
@@ -63,6 +64,11 @@ const rowToConversation = (row: ConversationRow): Conversation => ({
   effort: row.effort ?? undefined,
   fast: row.fast ?? undefined,
   cwd: row.cwd ?? undefined,
+  /* JSON workstream pick (#156); rows opened before v13 have no column
+     value — absent, not null. */
+  workspace: row.workspace
+    ? (JSON.parse(row.workspace) as WorkspaceIntent)
+    : undefined,
 });
 
 type MessageRow = typeof schema.messages.$inferSelect;
@@ -473,6 +479,9 @@ export function createDrizzleStore(db: Db): RelayStore {
           state: "idle",
           ...openTitle(input),
           ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+          ...(input.workspace !== undefined
+            ? { workspace: input.workspace }
+            : {}),
           archived: false,
           deliveredSeq: 0,
           createdAt: now(),
@@ -481,11 +490,21 @@ export function createDrizzleStore(db: Db): RelayStore {
           ...(input.effort !== undefined ? { effort: input.effort } : {}),
           ...(input.fast !== undefined ? { fast: input.fast } : {}),
         };
-        tx.insert(schema.conversations).values(conversation).run();
-        if (input.cwd !== undefined) {
+        tx.insert(schema.conversations)
+          .values({
+            ...conversation,
+            workspace: conversation.workspace
+              ? JSON.stringify(conversation.workspace)
+              : null,
+          })
+          .run();
+        /* The picker's folder bumps recents — a `.lilos/wt/*` run dir never
+           makes the list (#156). */
+        const bump = input.workspace?.repoPath ?? input.cwd;
+        if (bump !== undefined) {
           const stamp = nextFolderStamp(tx);
           tx.insert(schema.recentFolders)
-            .values({ path: input.cwd, lastUsedAt: stamp })
+            .values({ path: bump, lastUsedAt: stamp })
             .onConflictDoUpdate({
               target: schema.recentFolders.path,
               set: { lastUsedAt: stamp },

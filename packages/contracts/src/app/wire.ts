@@ -28,6 +28,7 @@ import {
   RecentFolder,
   RespondTo,
   Timestamp,
+  WorkspaceIntent,
 } from "./domain";
 import { APP_PROTOCOL_VERSION } from "./version";
 
@@ -156,6 +157,11 @@ export const AppMethod = z.enum([
   /* LilOS-owned recent folders for the session folder picker (#113) */
   "folders.list",
   "folders.add",
+  /* Live probe of one recents-listed folder: branches + workstreams, so a
+     device-scope client (the phone) can pick a workspace mode (#156). The
+     host feed that computes this stays loopback-only; the relay forwards
+     the call to the harness. */
+  "folders.detail",
   /* The signed-in human's identity — name, company, avatar colour (#118).
      `settings.*` is #92's KV namespace, so the profile uses `profile.*`. */
   "profile.get",
@@ -386,8 +392,13 @@ export const ConversationsOpenParams = z
     provider: z.string().optional(),
     effort: z.string().optional(),
     fast: z.boolean().optional(),
-    /** Folder the session works in (#113); absent = harness default workdir. */
+    /** Folder the session works in (#113); absent = harness default workdir.
+        For a workstream open (#156) this is the worktree path. */
     cwd: z.string().min(1).optional(),
+    /** Workstream mode (#156): `new` asks the harness to create `cwd` as a
+        worktree of `workspace.repoPath` before `session.start`; `existing`
+        resumes the workstream already at `cwd`. Absent = direct folder. */
+    workspace: WorkspaceIntent.optional(),
   })
   .refine(
     (p) => p.text.length > 0 || (p.attachments?.length ?? 0) > 0,
@@ -537,6 +548,49 @@ export const FoldersListResult = z.object({
 });
 export const FoldersAddParams = z.object({ path: z.string().min(1) });
 export const FoldersAddResult = z.object({ folder: RecentFolder });
+
+/**
+ * `folders.detail { path }` (#156): live branch/workstream probe of ONE
+ * recents-listed folder — the relay refuses paths `folders.list` doesn't
+ * already know, so a device peer can read workspaces of folders the Mac
+ * picked, nothing wider. Answered by the harness (the only process that
+ * can run git on the session machine): `engine_unavailable` when no host
+ * is registered, `not_found` when the path isn't in recents.
+ */
+export const FoldersDetailParams = z.strictObject({
+  /** A path verbatim from `folders.list` (the picker's stored form). */
+  path: z.string().min(1),
+});
+export type FoldersDetailParams = z.infer<typeof FoldersDetailParams>;
+
+/** A linked git worktree the picker offers as "Continue a workstream". */
+export const FolderWorkstream = z.object({
+  /** Branch checked out in the worktree. */
+  branch: z.string().min(1),
+  /** Worktree directory on the session machine (`~`-collapsed). */
+  path: z.string().min(1),
+  /** Ref the branch forked from (branch reflog, best-effort). */
+  from: z.string().optional(),
+});
+export type FolderWorkstream = z.infer<typeof FolderWorkstream>;
+
+export const FoldersDetailResult = z.object({
+  /** Echo of the probed path (as passed). */
+  path: z.string(),
+  /** The folder is gone from the session machine. */
+  missing: z.boolean(),
+  isRepo: z.boolean(),
+  /** Repo work-tree root when isRepo (`~`-collapsed). */
+  root: z.string().optional(),
+  /** Current branch; null on detached/unborn HEAD or non-repo. */
+  current: z.string().nullable().optional(),
+  /** Local branches, current first then name-sorted (empty on non-repo). */
+  branches: z.array(z.string()),
+  remote: z.string().nullable().optional(),
+  /** Linked worktrees with a branch (the repo's own checkout excluded). */
+  workstreams: z.array(FolderWorkstream),
+});
+export type FoldersDetailResult = z.infer<typeof FoldersDetailResult>;
 
 /**
  * Profile settings (#118): `profile.get` returns the stored profile — `{}`

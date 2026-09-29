@@ -9,10 +9,7 @@ import type {
 import {
   ApprovalsSheet,
   EmployeesHomeScreen,
-  LargeTitle,
   NeedsYouAccessory,
-  Screen,
-  StateBlock,
 } from "@lilos/ui-native";
 import { useStore } from "@nanostores/react";
 import { atom } from "nanostores";
@@ -28,7 +25,7 @@ import {
 import { $client, $link } from "../link";
 import { toHomeChannels } from "../mapping";
 import { $connections } from "../paired-macs";
-import { nav, type Props } from "../routes";
+import { nav } from "../routes";
 
 /* The app tabs after pairing (#155): Home (live employees + channels),
    Activity (every open ask), the Needs-you bottom accessory, and the DM
@@ -146,23 +143,5 @@ export function Activity() {
           nav.navigate("Dm", { employeeId: channel.employeeId });
       }}
     />
-  );
-}
-
-/* A DM named for its employee. The thread list inside is #156's slice —
-   until its screen lands this shows who you opened rather than dead-ending
-   the tap (still a real route with real params, just a thin body). */
-export function Dm({ route }: Props<"Dm">) {
-  const { wire } = useHomeWire();
-  const employee = wire.employees.find((e) => e.id === route.params.employeeId);
-  return (
-    <Screen topInset={false}>
-      <LargeTitle title={employee?.name ?? "Direct message"} />
-      <StateBlock
-        icon="bubble.left.and.bubble.right"
-        title="Direct messages"
-        body={`Threads with ${employee?.name ?? "this employee"} land in the next release.`}
-      />
-    </Screen>
   );
 }

@@ -40,6 +40,7 @@ export function EmployeeDmScreen({
   onSend,
   onPickFolder,
   onPickModel,
+  prefill,
 }: {
   name: string;
   tone: OrbTone;
@@ -52,6 +53,8 @@ export function EmployeeDmScreen({
   onSend: (text: string) => void;
   onPickFolder: () => void;
   onPickModel: () => void;
+  /** Composer text to put in and focus (e.g. a draft a failed send kept). */
+  prefill?: { text: string };
 }) {
   const insets = useSafeAreaInsets();
   const [composerHeight, setComposerHeight] = useState(96);
@@ -109,6 +112,7 @@ export function EmployeeDmScreen({
             onPickFolder={onPickFolder}
             onPickModel={onPickModel}
             onLayoutHeight={setComposerHeight}
+            prefill={prefill}
           />
         </View>
       </View>
