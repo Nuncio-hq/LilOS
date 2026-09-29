@@ -363,9 +363,11 @@ button:not(:disabled):active, [role="button"]:active { transform: scale(0.97); t
     body::before, .lilos-orb-blobs, .lilos-orb-ring, .lilos-rise { animation: none !important; }
     .lilos-lift:hover { transform: none; }
 }
-/* Composer hints show only while there's a draft — calm at rest. */
+/* Composer hints show while there's a draft — and always while a turn is
+   running (the "Enter steers · ■ stop" line is the mid-turn affordance).
+   Neither keys off focus, so the row never shifts under a pointer click. */
 .lilos-hint { display: none !important; }
-form:has(textarea:not(:placeholder-shown)) .lilos-hint { display: inline !important; animation: lilos-rise 0.3s ease both; }
+form:has(textarea:not(:placeholder-shown), [aria-label="Stop (Esc)"]) .lilos-hint { display: inline !important; animation: lilos-rise 0.3s ease both; }
 
 /* ---- One window (issue #223, round 3) ----
    Not three floating boxes: the whole app is ONE glass window on the colour
