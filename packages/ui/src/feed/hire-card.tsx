@@ -36,8 +36,7 @@ export function HireCardInline({
             <div>
               <div className="font-semibold">{draft.name}</div>
               <div className="text-muted-foreground text-xs">
-                {draft.role} ·{" "}
-                {models.find((m) => m.id === draft.model)?.name ?? draft.model}
+                {draft.role} · {draft.model}
               </div>
             </div>
           </div>
