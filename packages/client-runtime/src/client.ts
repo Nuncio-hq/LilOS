@@ -962,6 +962,11 @@ export class RelayClient {
         if (event.lastSeq > wm)
           this.watermarks.set(event.channelId, event.lastSeq);
         this.setChannelSynced(event.channelId, true, event.lastSeq);
+        /* conversation.updated rides this subscription only: a conversation
+           that went active between the directory refresh and the subscribe
+           (e.g. a brand-new DM's first turn) would stay stale in the atom.
+           Re-pull the channel's conversations once the replay window closes. */
+        void this.refreshChannelConversations(event.channelId).catch(() => {});
         return;
       }
       case "conversation.updated": {
@@ -1004,6 +1009,19 @@ export class RelayClient {
         return;
       }
     }
+  }
+
+  /** Re-pull one channel's conversations after a subscribe's replay window. */
+  private async refreshChannelConversations(channelId: string): Promise<void> {
+    const { conversations } = await this.request<{
+      conversations: Conversation[];
+    }>("conversations.list", { channelId, includeArchived: true });
+    const rest = this.conversations
+      .get()
+      .filter((c) => c.channelId !== channelId);
+    this.conversations.set(
+      [...rest, ...conversations].sort((a, b) => a.createdAt - b.createdAt),
+    );
   }
 
   /** Insert or replace an ask, keeping the atom's `createdAt` order. */

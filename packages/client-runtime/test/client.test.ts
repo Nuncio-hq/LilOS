@@ -799,4 +799,39 @@ describe("asks read model (#155)", () => {
     expect(client.devices.get()).toEqual([]);
     expect(client.directoryReady.get()).toBe(true);
   });
+
+  it("AC-1 channel.synced re-pulls conversations: a turn that went active before subscribe still lands", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    answerDirectory(socket);
+    await flush();
+
+    // A DM channel the app subscribes late — its conversation went active
+    // between the directory refresh and the subscribe (no replay for it).
+    client.channelMessages("ch1");
+    socket.respondTo("channel.subscribe", { channel: { id: "ch1" } });
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "channel.synced",
+      params: { channelId: "ch1", lastSeq: 0 },
+    });
+    socket.respondTo("conversations.list", {
+      conversations: [
+        {
+          id: "conv_live",
+          channelId: "ch1",
+          rootMessageId: "m1",
+          engineRef: null,
+          state: "active",
+          title: "summarize the repo layout",
+          titleSource: "auto",
+          archived: false,
+          deliveredSeq: 1,
+          createdAt: 2,
+        },
+      ],
+    });
+    await flush();
+    expect(client.conversations.get().map((c) => c.id)).toEqual(["conv_live"]);
+  });
 });
