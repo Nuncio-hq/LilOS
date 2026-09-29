@@ -25,6 +25,7 @@ export {
   EmployeesHomeScreen,
   NeedsYouAccessory,
 } from "./employees/home-screen";
+export { MacFolderBrowser } from "./employees/mac-folder-browser";
 export { type MacDetail, MacSheet } from "./employees/mac-sheet";
 export {
   effortLabel,
@@ -47,6 +48,7 @@ export type {
   ContextUsage,
   EmployeeRow,
   FolderOption,
+  MacDir,
   ModelPick,
   ModelProviderRow,
   ModelRow,

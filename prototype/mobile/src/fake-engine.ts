@@ -21,9 +21,9 @@ import {
   type SubagentSpec,
 } from "./fake-subagents";
 import {
+  $folders,
   APPROVALS,
   EMPLOYEES,
-  FOLDERS,
   IDLE_NOW,
   PROJECTS,
   THREADS,
@@ -535,7 +535,7 @@ export function startSession(
   ws: WorkspacePick,
 ) {
   const emp = EMPLOYEES.find((e) => e.id === employeeId) ?? EMPLOYEES[0];
-  const f = FOLDERS.find((x) => x.id === ws.folder);
+  const f = $folders.get().find((x) => x.id === ws.folder);
   const branch = f?.branches.length
     ? ws.mode === "existing"
       ? (ws.existing ?? ws.base)
