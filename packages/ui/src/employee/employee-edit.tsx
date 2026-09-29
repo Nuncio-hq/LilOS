@@ -194,7 +194,7 @@ export function EditEmployeeDialog({
               <dt className="text-muted-foreground">Profile</dt>
               <dd className="font-mono">{e.profile}</dd>
               <dt className="text-muted-foreground">Model</dt>
-              <dd>{e.model}</dd>
+              <dd>{models?.find((m) => m.id === e.model)?.name ?? e.model}</dd>
             </dl>
           )}
           {confirmMsg && (

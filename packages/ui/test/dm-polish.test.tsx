@@ -224,10 +224,11 @@ describe("issue #71", () => {
       b.textContent?.includes("Model"),
     );
     await act(async () => fireEvent.click(modelRow as HTMLElement));
+    // #194: headings carry the model count ("Fake1" = name + count).
     const headings = [
       ...document.body.querySelectorAll("[cmdk-group-heading]"),
     ].map((el) => el.textContent);
-    expect(headings).toEqual(["Fake", "Anthropic", "Other"]);
+    expect(headings).toEqual(["Fake1", "Anthropic1", "Other1"]);
   });
 
   test("AC-7 the turn footer shows the model's display name", () => {

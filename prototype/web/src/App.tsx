@@ -1456,7 +1456,7 @@ export default function App() {
             <RightPanel
               tab={panelTab} onTab={setPanelTab} onClose={() => setPanelOpen(false)}
               threadPanel={threadPanel}
-              employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} profiles={PROFILES} engineName={engineName ?? undefined} ownerName={me.name} onDM={() => goDM(selectedEmp)} onEdit={() => { setEditAgent(null); void engineDescribe(emp(selectedEmp)?.profile ?? "").then(setEditAgent).catch(() => {}).finally(() => setEditEmp(selectedEmp)) }} onSwitchProfile={(p) => switchProfile(selectedEmp, p)} /> : null}
+              employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} profiles={PROFILES} engineName={engineName ?? undefined} ownerName={me.name} models={MODELS} onDM={() => goDM(selectedEmp)} onEdit={() => { setEditAgent(null); void engineDescribe(emp(selectedEmp)?.profile ?? "").then(setEditAgent).catch(() => {}).finally(() => setEditEmp(selectedEmp)) }} onSwitchProfile={(p) => switchProfile(selectedEmp, p)} /> : null}
               tickets={tickets} emp={emp} dm={!!channel.dm}
             />
           )}

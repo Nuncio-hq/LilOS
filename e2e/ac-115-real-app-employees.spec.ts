@@ -296,7 +296,8 @@ test("AC-2 Use profile lists unhired engine profiles (model, skills, soul); hire
   await expect(reviewer).toContainText("6 skills");
   await reviewer.click();
   // Picked card: model, skills count and the soul preview (agents.describe).
-  await expect(dlg.getByText("fake-small")).toBeVisible();
+  // #194: the picked card shows the model's display name, not the id.
+  await expect(dlg.getByText("Fake Small")).toBeVisible();
   await expect(dlg.getByText(/Read the diff first/)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-2-use-profile.png` });
   // dispatchEvent lands a second click while the request is in flight — the

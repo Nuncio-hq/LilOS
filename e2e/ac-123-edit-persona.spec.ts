@@ -302,7 +302,8 @@ test("AC-2 saving a new persona + model writes the engine profile (agents.update
   // The still-open profile card reads the mirrored record — new soul + model.
   const card = page.getByRole("dialog", { name: /Default profile/ });
   await expect(card.getByText("You are Default v2.")).toBeVisible();
-  await expect(card.getByText("fake-small")).toBeVisible();
+  // #194: the card shows the model's display name, not the id.
+  await expect(card.getByText("Fake Small")).toBeVisible();
   await card.getByRole("button", { name: "Close" }).click();
 });
 
