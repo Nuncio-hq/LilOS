@@ -108,6 +108,7 @@ export function askApproval(
     employee: ctx.employee,
     tone: ctx.tone,
     session: ctx.session,
+    kind: r.kind,
     reason: askReason(ask),
     ...(r.kind === "approval" ? { command: r.command } : {}),
     age: timeLabel(ask.createdAt, ctx.now),

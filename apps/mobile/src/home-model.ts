@@ -70,6 +70,7 @@ export function toApproval(ask: Ask, wire: HomeWire, nowMs: number): Approval {
     employee: employee?.name ?? "Someone",
     tone: employee ? toneOf(employee.id) : "stone",
     session: sessionLabel(ask.conversationId, wire),
+    kind: request.kind,
     reason:
       request.kind === "question"
         ? request.question
