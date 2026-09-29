@@ -9,10 +9,13 @@ import type {
   Conversation,
   Employee,
 } from "@lilos/contracts/app";
+import type { Job } from "@lilos/contracts/engine";
 import type { ModelPick, PlanAction } from "@lilos/ui-native";
 import {
+  BackgroundSheet,
   modelLabel,
   PlanSheet,
+  SubagentSheet,
   ThreadHeaderTitle,
   ThreadInfoSheet,
   ThreadScreen,
@@ -73,9 +76,14 @@ const $noRewinds = atom<
 function useThread(conversationId: string) {
   const client = useStore($client);
   const welcome = useStore($welcome);
-  /* D-#19: plan rows render only when the engine declares `plan`. */
-  const planCapable =
-    welcome?.engineHost?.capabilities?.some((c) => c.id === "plan") ?? false;
+  /* D-#19: plan rows render only when the engine declares `plan` — the same
+     gate covers `subagents` (helper rows + sheet) and `background_jobs`
+     (pill, sheet, Stop, the info sheet's list) (#181 AC-5). */
+  const hasCap = (id: string) =>
+    welcome?.engineHost?.capabilities?.some((c) => c.id === id) ?? false;
+  const planCapable = hasCap("plan");
+  const subagentsCapable = hasCap("subagents");
+  const jobsCapable = hasCap("background_jobs");
   const conversations = useStore(client?.conversations ?? $noConversations);
   const employees = useStore(client?.employees ?? $noEmployees);
   const channels = useStore(client?.channels ?? $noChannels);
@@ -100,6 +108,27 @@ function useThread(conversationId: string) {
     [client, conversationId],
   );
   const feed = useStore(feedAtom ?? $noFeed);
+  /* #181 AC-3/AC-4: `jobs.list` fills the rows the event stream can't carry
+     (a job the engine started before a harness restart); job.* events then
+     overlay by jobId — the merge is toThreadDetail's. Runs only once the
+     feed synced so a replay doesn't stamp a stale overlay. */
+  const engineRef = conv?.engineRef;
+  const [listedJobs, setListedJobs] = useState<Job[]>([]);
+  useEffect(() => {
+    setListedJobs([]);
+    if (!client || !jobsCapable || !engineRef || !feed.synced) return;
+    let dead = false;
+    const sid = engineRef;
+    client
+      .request<{ jobs: Job[] }>("jobs.list", { sessionId: sid })
+      .then((r) => {
+        if (!dead) setListedJobs(r.jobs);
+      })
+      .catch(() => {});
+    return () => {
+      dead = true;
+    };
+  }, [client, jobsCapable, engineRef, feed.synced]);
   /* #134 live: a rewind while this screen is open strips the tail from
      chanState but not from the fetched history — dropRewound applies the
      same cut here (removedIds for files-only rewinds, seq for the tail). */
@@ -161,6 +190,18 @@ function useThread(conversationId: string) {
     return dropRewound(all, rewind);
   }, [history, chanState.messages, conversationId, pendingEntry, rewind]);
 
+  /* A running job ticks its uptime once a second (web's jobsTick). */
+  const [jobsTick, setJobsTick] = useState(0);
+  const hasRunningJob =
+    !!sessionModel?.jobs.some((j) => j.status === "running") ||
+    listedJobs.some((j) => j.status === "running");
+  useEffect(() => {
+    if (!hasRunningJob) return;
+    const t = setInterval(() => setJobsTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [hasRunningJob]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: jobsTick only re-keys `now` so a running job's uptime ticks once a second.
   const detail = useMemo(
     () =>
       conv
@@ -174,6 +215,10 @@ function useThread(conversationId: string) {
             now: Date.now(),
             models: catalog.models,
             planCapable,
+            employees,
+            conversations,
+            jobsCapable,
+            listedJobs,
             rewound: {
               refs: new Set(rewind?.removedIds ?? []),
               texts: new Set(
@@ -193,12 +238,29 @@ function useThread(conversationId: string) {
       pending,
       catalog,
       planCapable,
+      employees,
+      conversations,
+      jobsCapable,
+      listedJobs,
+      jobsTick,
       rewind,
       rewoundMessages,
     ],
   );
 
-  return { client, conv, channelId, employee, detail, catalog, planCapable };
+  return {
+    client,
+    conv,
+    channelId,
+    employee,
+    detail,
+    catalog,
+    planCapable,
+    subagentsCapable,
+    jobsCapable,
+    channels,
+    conversations,
+  };
 }
 
 export function Thread({
@@ -209,8 +271,17 @@ export function Thread({
   route: RouteProp<DmRoutes, "Thread">;
 }) {
   const { conversationId } = route.params;
-  const { client, conv, channelId, employee, detail, catalog, planCapable } =
-    useThread(conversationId);
+  const {
+    client,
+    conv,
+    channelId,
+    employee,
+    detail,
+    catalog,
+    planCapable,
+    subagentsCapable,
+    jobsCapable,
+  } = useThread(conversationId);
   const welcome = useStore($welcome);
   const [prefill, setPrefill] = useState<{ text: string }>();
 
@@ -328,6 +399,18 @@ export function Thread({
           conversationId,
         })
       }
+      {...(subagentsCapable
+        ? {
+            onOpenSubagent: (a) =>
+              navigation.navigate("Subagent", { conversationId, id: a.id }),
+          }
+        : {})}
+      {...(jobsCapable
+        ? {
+            onOpenBackground: () =>
+              navigation.navigate("Background", { conversationId }),
+          }
+        : {})}
       {...(planCapable
         ? {
             onPlan,
@@ -356,6 +439,64 @@ export function Plan({
     ) ?? [];
   if (!plans.length) return <View className="flex-1 bg-background" />;
   return <PlanSheet plans={plans} onDone={() => navigation.goBack()} />;
+}
+
+/** #181 — one helper of this thread: brief, steps, report; an employee
+    helper's sheet links to its own DM thread (D-#25 — a link, never a copy). */
+export function Subagent({
+  navigation,
+  route,
+}: {
+  navigation: Nav;
+  route: RouteProp<DmRoutes, "Subagent">;
+}) {
+  const { conversationId, id } = route.params;
+  const { detail, conversations, channels } = useThread(conversationId);
+  const a = detail?.entries
+    .flatMap((e) => (e.kind === "agent" ? (e.subagents ?? []) : []))
+    .find((x) => x.id === id);
+  if (!a) return <View className="flex-1 bg-background" />;
+  return (
+    <SubagentSheet
+      a={a}
+      onDone={() => navigation.goBack()}
+      onOpenThread={(threadId) => {
+        const conv = conversations.find((c) => c.id === threadId);
+        const emp = channels.find((c) => c.id === conv?.channelId)?.employeeId;
+        navigation.goBack();
+        if (emp) navigation.navigate("Dm", { employeeId: emp });
+        navigation.navigate("Thread", { conversationId: threadId });
+      }}
+    />
+  );
+}
+
+/** #181 — the session's background processes: output tails + Stop
+    (`jobs.stop` over the relay; the "Stopped by you" label is the sheet's). */
+export function Background({
+  navigation,
+  route,
+}: {
+  navigation: Nav;
+  route: RouteProp<DmRoutes, "Background">;
+}) {
+  const { conversationId } = route.params;
+  const { client, conv, detail } = useThread(conversationId);
+  if (!detail) return <View className="flex-1 bg-background" />;
+  return (
+    <BackgroundSheet
+      jobs={detail.jobs ?? []}
+      onStop={(jobId) => {
+        const c = client;
+        const sessionId = conv?.engineRef;
+        if (!c || !sessionId) return;
+        void c
+          .request<{ stopped: boolean }>("jobs.stop", { sessionId, jobId })
+          .catch((e) => Alert.alert("Couldn't stop it", describeError(e)));
+      }}
+      onDone={() => navigation.goBack()}
+    />
+  );
 }
 
 /** ⓘ — the Session sheet (AC-6): folder, branch, model, usage, session id. */
