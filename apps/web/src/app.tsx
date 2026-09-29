@@ -54,6 +54,8 @@ import {
 import { say, toast } from "./lib/toast";
 import { DmPage } from "./pages/dm";
 import { IndexPage } from "./pages/index";
+import { SettingsPane } from "./settings/pane";
+import { isSettingsShortcut } from "./settings/state";
 
 function AppShell() {
   const [theme, setTheme] = useTheme();
@@ -154,6 +156,25 @@ function AppShell() {
   const catalog = useAtom(engineModels);
   const defaultModel = useAtom(engineDefaultModel);
   const defaultProvider = useAtom(engineDefaultProvider);
+  /* #132: Settings — ⌘,/Ctrl+, anywhere, the desktop menu's matching item
+     (lilos:open-app-settings), or the sidebar gear opens the one screen. */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!isSettingsShortcut(e)) return;
+      e.preventDefault();
+      setSettingsOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    const offBridge = window.lilos?.onOpenSettings?.(() =>
+      setSettingsOpen(true),
+    );
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      offBridge?.();
+    };
+  }, []);
+
   const [hireOpen, setHireOpen] = useState(false);
   const [hireError, setHireError] = useState<string | null>(null);
   const [hirePending, setHirePending] = useState(false);
@@ -332,6 +353,7 @@ function AppShell() {
         status={comps}
         buildLabel={label}
         onOpenStatus={() => setStatusOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
         onPairPhone={openPairPhone}
       />
       <Outlet />
@@ -367,6 +389,7 @@ function AppShell() {
           onCopied={say}
         />
       )}
+      {settingsOpen && <SettingsPane onClose={() => setSettingsOpen(false)} />}
       {statusOpen && (
         <StatusDialog
           components={comps}
