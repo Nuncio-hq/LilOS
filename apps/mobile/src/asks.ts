@@ -71,6 +71,93 @@ function respondError(e: unknown): string {
   return "That didn't land — the request is still waiting on you.";
 }
 
+/* ── #182 plan asks ───────────────────────────────────────────────────────
+   A `kind:"plan"` ask gates a proposed plan version: Approve/Reject answer
+   it through the same decide() as approvals; Change instead carries the
+   user's draft text back as `answer` (asks.respond outcome "change") and
+   the engine posts the next version, which asks again. */
+
+/** Composer prefill a Change tap leaves (web: PLAN_CHANGE_PREFIX). */
+export const PLAN_CHANGE_PREFIX = "Change the plan: ";
+
+/** The conversation's open plan ask, if one is waiting. */
+export function openPlanAsk(
+  asks: readonly Ask[],
+  conversationId: string,
+): Ask | undefined {
+  return asks.find(
+    (a) =>
+      a.state === "open" &&
+      a.conversationId === conversationId &&
+      a.request.kind === "plan",
+  );
+}
+
+/** Composer intercept: a draft still carrying the change prefix while a
+    plan ask is open is that ask's answer — send it as outcome "change",
+    never as a thread message. Returns undefined for a normal send. */
+export function planChangeSend(
+  text: string,
+  asks: readonly Ask[],
+  conversationId: string,
+): { askId: string; answer: string } | undefined {
+  if (!text.startsWith(PLAN_CHANGE_PREFIX)) return undefined;
+  const ask = openPlanAsk(asks, conversationId);
+  if (!ask) return undefined;
+  return { askId: ask.id, answer: text.slice(PLAN_CHANGE_PREFIX.length) };
+}
+
+/* plan.updated lands in the feed a frame before the relay mints the ask —
+   an Approve/Reject tap races `asks.open`, so poll the store briefly (the
+   web awaitPlanAsk rule: up to ~3s at 50ms). */
+export async function awaitPlanAsk(
+  conversationId: string,
+  planId?: string,
+): Promise<Ask | undefined> {
+  for (let i = 0; i < 60; i++) {
+    const hit = $asks
+      .get()
+      .find(
+        (a) =>
+          a.state === "open" &&
+          a.conversationId === conversationId &&
+          a.request.kind === "plan" &&
+          (planId === undefined || a.request.planId === planId),
+      );
+    if (hit) return hit;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return undefined;
+}
+
+/** A Change reply: asks.respond outcome "change" carrying the draft text.
+    Same conflict-quieting as decide() — answered elsewhere is done. */
+export async function answerPlanChange(
+  client: DecideClient,
+  askId: string,
+  answer: string,
+): Promise<void> {
+  if (inFlight.has(askId)) return;
+  inFlight.add(askId);
+  try {
+    const { ask } = await client.request<{ ask: Ask }>("asks.respond", {
+      askId,
+      outcome: "change",
+      answer,
+    });
+    upsertAsk(client, ask);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  } catch (e) {
+    if (e instanceof RelayError && e.code === "conflict") {
+      await refreshAsks(client).catch(() => {});
+      return;
+    }
+    Alert.alert("Couldn't send the change", respondError(e));
+  } finally {
+    inFlight.delete(askId);
+  }
+}
+
 /**
  * Approve or deny one ask. Fires the decide haptic on the tap, sends
  * asks.respond, then folds the resolved ask into the stores. An ask already
