@@ -365,3 +365,91 @@ button:not(:disabled):active, [role="button"]:active { transform: scale(0.97); t
 /* Composer hints show only while you type — calm at rest. */
 .lilos-hint { opacity: 0; transition: opacity 0.25s ease; }
 form:focus-within .lilos-hint { opacity: 1; }
+
+/* ---- One window (issue #223, round 3) ----
+   Not three floating boxes: the whole app is ONE glass window on the colour
+   field, like a macOS app. Sidebar, content and side panels flow into each
+   other and differ only in how clear the glass is — no gaps, no divider
+   lines. Inside, cards are borderless and float on soft shadows instead of
+   being outlined. */
+@media (min-width: 1024px) {
+    .lilos-desktop {
+        margin: 14px;
+        height: calc(100dvh - 28px) !important;
+        padding: 0;
+        gap: 0;
+        border-radius: 26px;
+        overflow: hidden;
+        background: rgb(255 255 255 / 0.5);
+        backdrop-filter: blur(40px) saturate(1.8);
+        -webkit-backdrop-filter: blur(40px) saturate(1.8);
+        border: 1px solid rgb(255 255 255 / 0.75);
+        box-shadow:
+            inset 0 1px 0 rgb(255 255 255 / 0.9),
+            0 2px 6px rgb(0 0 0 / 0.05),
+            0 40px 90px -30px rgb(20 30 60 / 0.4);
+    }
+    .dark .lilos-desktop {
+        background: rgb(24 24 28 / 0.55);
+        border-color: rgb(255 255 255 / 0.1);
+        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 40px 90px -30px rgb(0 0 0 / 0.8);
+    }
+    .lilos-desktop > div { gap: 0 !important; }
+    /* Panels inside the window are just tones of the same glass. */
+    .lilos-desktop .lilos-glass {
+        background: transparent !important;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        border: 0 !important;
+        border-radius: 0;
+        box-shadow: none;
+        margin: 0 !important;
+    }
+    /* Sidebar: the clearest glass, the colour field shows through. */
+    .lilos-desktop .lilos-glass.lilos-glass-side { background: rgb(255 255 255 / 0.18) !important; }
+    .dark .lilos-desktop .lilos-glass.lilos-glass-side { background: rgb(255 255 255 / 0.03) !important; }
+    /* Content: the most opaque, where you read. */
+    .lilos-desktop main.lilos-glass { background: rgb(255 255 255 / 0.55) !important; }
+    .dark .lilos-desktop main.lilos-glass { background: rgb(28 28 32 / 0.5) !important; }
+    /* Side panels melt in from the content with a soft gradient edge, no line. */
+    .lilos-desktop aside.lilos-glass:not(.lilos-glass-side) {
+        background: linear-gradient(to right, rgb(255 255 255 / 0.2), rgb(255 255 255 / 0.4) 48px) !important;
+    }
+    .dark .lilos-desktop aside.lilos-glass:not(.lilos-glass-side) {
+        background: linear-gradient(to right, rgb(255 255 255 / 0.01), rgb(255 255 255 / 0.04) 48px) !important;
+    }
+    /* Focus: the workbench floats as one soft inset sheet inside the window. */
+    .lilos-desktop main aside.lilos-glass {
+        margin: 8px 8px 8px 0 !important;
+        border-radius: 20px;
+        box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 16px 40px -20px rgb(20 30 60 / 0.3);
+    }
+}
+/* No structural divider lines anywhere: headers, strips and panel edges. */
+.lilos-desktop :is(header, aside, .lilos-glass > div, [data-slot="tabs-list"]) { border-color: transparent !important; }
+/* Cards: borderless, floating on a soft shadow. */
+.lilos-desktop :is(.rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl).border:not([data-slot="input-group"]):not(input) {
+    border-color: transparent !important;
+    background-color: rgb(255 255 255 / 0.6);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -14px rgb(20 30 60 / 0.25);
+}
+.dark .lilos-desktop :is(.rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl).border:not([data-slot="input-group"]):not(input) {
+    background-color: rgb(255 255 255 / 0.05);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 28px -14px rgb(0 0 0 / 0.6);
+}
+/* A plan waiting on you glows teal instead of being outlined. */
+.lilos-desktop [data-planphase="waiting"] {
+    box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--primary) 45%, transparent), 0 12px 32px -12px color-mix(in srgb, var(--primary) 45%, transparent) !important;
+}
+/* Composer: part of the window, a raised pill without a hard edge. */
+.lilos-desktop [data-slot="input-group"]:has(textarea) { border-color: transparent; background: rgb(255 255 255 / 0.75); }
+.dark .lilos-desktop [data-slot="input-group"]:has(textarea) { background: rgb(255 255 255 / 0.06); }
+/* Changing view is a soft cross-fade, not a jump. */
+.lilos-desktop main { animation: lilos-rise 0.45s cubic-bezier(0.2, 0.9, 0.25, 1.1) both; }
+/* The selected sidebar item reads as lit, not boxed. */
+.lilos-desktop .lilos-glass-side .text-tint-text { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent); }
+/* Single-side borders are dividers — gone; structure comes from spacing. */
+.lilos-desktop :is(.border-b, .border-t, .border-l, .border-r):not(.border) { border-color: transparent !important; }
+/* The terminal is dark glass inside the window, not a black slab. */
+.lilos-desktop .bg-zinc-950 { background-color: rgb(22 22 28 / 0.88) !important; }
+.lilos-desktop .bg-zinc-950 .border { background-color: transparent !important; box-shadow: none !important; }
