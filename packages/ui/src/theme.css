@@ -458,6 +458,14 @@
 [data-slot="input-group"]:has(textarea) button[type="submit"] {
   border-radius: 9999px;
 }
+/* Disabled send: opacity-dimming the teal disc reads as dark-on-dark (#261).
+   A neutral disc + legible arrow keeps it visible without faking an enabled
+   state — and lifts icon-vs-disc contrast past WCAG AA in both themes. */
+[data-slot="input-group"]:has(textarea) button[type="submit"]:disabled {
+  opacity: 1;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
 /* Popovers, menus and dialogs float as frosted glass. */
 [data-slot="popover-content"],
 [data-slot="dropdown-menu-content"],

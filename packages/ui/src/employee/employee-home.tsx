@@ -517,6 +517,7 @@ export function EmployeeHome({
             archived.length === 0 &&
             hits.length === 0 ? (
             <ConversationEmptyState
+              className="flex-1"
               icon={<HermesAvatar name={e.name} className="size-12" />}
               title={
                 q

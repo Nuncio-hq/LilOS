@@ -59,10 +59,10 @@ export function WorkspacePicker({
           }
         >
           <FolderIcon className="size-3.5" />
-          <span className={cn("shrink-0", !f && "text-muted-foreground")}>
+          <span className={cn("shrink-0", !f && "text-foreground/70")}>
             {f ? folderLabel(f, folders) : "No folder"}
           </span>
-          <ChevronDownIcon className="size-3 opacity-60" />
+          <ChevronDownIcon className="size-3" />
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-72" side="top">
           <DropdownMenuGroup>

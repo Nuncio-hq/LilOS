@@ -371,7 +371,7 @@ export function ModelPicker({
           render={
             <PromptInputButton
               size="sm"
-              className="min-w-0 shrink gap-1.5 text-xs"
+              className="min-w-0 shrink gap-1.5 text-foreground/80 text-xs"
               data-slot="model-picker-trigger"
             />
           }
@@ -379,7 +379,7 @@ export function ModelPicker({
           <ModelLogo provider={cur?.provider} logo={logoOf(cur?.provider)} />
           <span className="max-w-36 truncate">{cur?.name ?? value.model}</span>
           {effort && (
-            <span className="text-muted-foreground">
+            <span className="text-foreground/60">
               · {effortLabel(effort)}
             </span>
           )}
