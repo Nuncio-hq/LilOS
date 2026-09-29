@@ -52,7 +52,7 @@ export function Section({
         <button
           onClick={onAdd}
           aria-label={`Add ${title}`}
-          className="ml-auto hover:text-foreground"
+          className="ml-auto text-foreground/70 hover:text-foreground"
         >
           <PlusIcon className="size-3.5" />
         </button>

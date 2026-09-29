@@ -31,7 +31,8 @@ export const slugOf = (s: string) =>
     .join("-");
 export const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, "");
 
-/* One-line preview of a markdown reply: drop markers, join blocks with " · ". */
+/* One-line preview of a markdown reply: drop markers, join blocks with " · ".
+   A block ending in ":" leads into the next one, so they join with a space. */
 export const preview = (md: string) =>
   md
     .split(/\n+/)
@@ -42,7 +43,10 @@ export const preview = (md: string) =>
         .trim(),
     )
     .filter(Boolean)
-    .join(" · ");
+    .reduce(
+      (acc, l) => acc + (acc.endsWith(":") ? " " : acc ? " · " : "") + l,
+      "",
+    );
 
 export const PHASE_LABEL: Record<Phase, string> = {
   submitted: "opening session",

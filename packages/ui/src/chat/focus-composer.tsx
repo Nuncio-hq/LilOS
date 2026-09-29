@@ -31,6 +31,7 @@ function FocusAttachButton() {
     <PromptInputButton
       onClick={attachments.openFileDialog}
       aria-label="Attach files"
+      className="text-foreground/70"
     >
       <PaperclipIcon />
     </PromptInputButton>
