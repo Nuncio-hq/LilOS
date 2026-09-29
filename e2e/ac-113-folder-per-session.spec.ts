@@ -297,10 +297,14 @@ test("AC-3 the picker offers direct mode only (no worktree items)", async ({
   await expect(page.getByText(/Edit .* directly/)).toHaveCount(0);
   await expect(page.getByText("New workstream from")).toHaveCount(0);
   await expect(page.getByText("Continue a workstream")).toHaveCount(0);
+  // The composer hint reveals once there's a draft — calm at rest (#246).
+  await page.locator("textarea").first().pressSequentially("x");
   await expect(
     page.getByText("edits land on the checked-out branch", { exact: false }),
   ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-3-direct-only.png` });
+  // Drafts persist per conversation — clear so later tests start clean.
+  await page.locator("textarea").first().fill("");
 });
 
 test("AC-4 + AC-7 a session picked on the repo runs there; the header shows folder + branch", async ({
@@ -392,6 +396,8 @@ test("AC-6 the employee pre-selects its last folder; a no-folder session is a pl
   await expect(page.getByText("discussion", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/read-only/i)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-6-no-folder.png` });
+  // Drafts persist per conversation — clear so later tests start clean.
+  await replyBox.fill("");
 });
 
 test("AC-5 recents persist across reload; a deleted folder shows missing and can't be picked", async ({
