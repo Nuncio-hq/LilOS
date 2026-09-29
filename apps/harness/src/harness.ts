@@ -28,7 +28,7 @@ import type {
   EngineRequest,
   EventsSinceResult,
 } from "@lilos/contracts/engine";
-import { type CheckpointStore, collapsePath, expandPath } from "@lilos/host";
+import { type CheckpointStore, expandPath } from "@lilos/host";
 import type { EngineConnection } from "./engine/client";
 import { engineErrorCode, SESSION_NOT_FOUND } from "./engine/client";
 import type { EngineHostState } from "./engine/supervisor";
