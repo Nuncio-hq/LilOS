@@ -30,6 +30,7 @@
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
     "build:prototype": "bun run --cwd prototype/web build",
+    "app:local": "bun apps/desktop/scripts/local.ts",
     "prototype:dev": "bun run --cwd prototype/web dev",
     "prototype:mobile": "bun run --cwd prototype/mobile dev",
     "prototype:mobile:ios": "bun run --cwd prototype/mobile ios",
