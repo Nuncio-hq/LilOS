@@ -378,10 +378,12 @@ test("AC-6 two sessions run in parallel; the DM list shows each live phase", asy
   await send(page, "Add a second note about parallel work");
   await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
   await page.goto(`${stackA.webUrl}/dm/${empId}`);
-  const running = page.locator("[data-session]", {
-    has: page.locator(".animate-pulse"),
+  // A live session marks its row: a pulsing dot while it works, the `!`
+  // needs-you chip while it waits on an approval (#224 badge design).
+  const live = page.locator("[data-session]", {
+    has: page.locator('.animate-pulse, [title="Needs you"]'),
   });
-  await expect(running).toHaveCount(2, { timeout: 60_000 });
+  await expect(live).toHaveCount(2, { timeout: 60_000 });
   // #71 AC-4: a turn parked on an approval reads `needs you`, a live phase.
   await expect(
     page

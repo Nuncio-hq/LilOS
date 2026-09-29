@@ -454,7 +454,10 @@ export function EmployeeHome({
           >
             {e.name}
           </div>
-          <div className="truncate text-muted-foreground text-xs">{e.role}</div>
+          <div className="truncate text-muted-foreground text-xs">
+            {e.role}
+            {e.now ? ` · now: ${e.now}` : ""}
+          </div>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {sessions.length > 0 && (
