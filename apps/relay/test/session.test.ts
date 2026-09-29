@@ -94,6 +94,24 @@ describe("relay session", () => {
     );
   });
 
+  it("AC-4 session.ping answers the live socket, refuses pre-hello (#154)", async () => {
+    const relay = newRelay();
+    const { frames, connection } = connectPeer(relay);
+    await connection.receive(req("session.ping"));
+    expect(errorOf(frames, `t${nextId - 1}`).data?.code).toBe(
+      "unauthenticated" satisfies AppErrorCode,
+    );
+    await connection.receive(
+      req("session.hello", { protocolVersion: 1, token: TOKEN }),
+    );
+    frames.length = 0;
+    await connection.receive(req("session.ping"));
+    expect(resultOf(frames, `t${nextId - 1}`).result).toEqual({
+      ok: true,
+      instanceId: relay.instanceId,
+    });
+  });
+
   it("AC-4 version mismatch returns typed error naming the side to update", async () => {
     const relay = newRelay({ protocolVersion: 5 });
     const { frames, connection } = connectPeer(relay);

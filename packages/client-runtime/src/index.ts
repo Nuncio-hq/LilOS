@@ -6,6 +6,13 @@ export {
   RelayError,
 } from "./client";
 export {
+  CachedDirectory,
+  type CachedDirectory as CachedDirectoryType,
+  DEVICE_CACHE_SCHEMA_VERSION,
+  DeviceCache,
+  type DeviceCacheKV,
+} from "./device-cache";
+export {
   EngineClient,
   type EngineClientOptions,
   type EngineConnectionState,
@@ -28,6 +35,18 @@ export {
   type StatusRow,
   toStatusComponents,
 } from "./status";
+export {
+  BACKOFF_RESET_AFTER_MS,
+  CONNECT_TIMEOUT_MS,
+  ConnectionSupervisor,
+  type ConnectionSupervisorOptions,
+  PROBE_TIMEOUT_MS,
+  REPLACE_AFTER_BACKGROUND_MS,
+  RETRY_DELAYS_MS,
+  type SupervisedConnection,
+  type SupervisorPhase,
+  type SupervisorState,
+} from "./supervisor";
 export {
   reduceSessionEvents,
   type SessionModel,

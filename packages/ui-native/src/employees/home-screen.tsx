@@ -81,7 +81,9 @@ export function EmployeesHomeScreen({
         />
       ))}
 
-      <SectionTitle title="Channels" />
+      {(company.length > 0 || projects.length > 0) && (
+        <SectionTitle title="Channels" />
+      )}
       {company.map((c) => (
         <Channel key={c.id} c={c} onPress={() => onOpenChannel(c.id)} />
       ))}

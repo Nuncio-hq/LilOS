@@ -8,7 +8,7 @@ description: How to test the packaged LilOS desktop app (LilOS.app) end-to-end o
 The packaged app (`LilOS*.app`, ad-hoc signed dev build) registers two launchd
 agents at launch: `com.nuncio.lilos.relay` (ws relay, `http://127.0.0.1:4577/healthz`)
 and `com.nuncio.lilos.harness` (engine feed, port 4581). It bundles
-`lilos-relay`/`lilos-harness`/`lilos-engine-fake`/`lilos-svc` in `Contents/MacOS`
+`lilos-relay`/`lilos-harness`/`lilos-engine-nous`/`lilos-engine-fake`/`lilos-svc` in `Contents/MacOS`
 and the web UI in `Contents/Resources/app/web`.
 
 ## Reset to a true first-run state

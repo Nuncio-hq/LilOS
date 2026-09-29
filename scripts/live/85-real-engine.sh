@@ -124,10 +124,12 @@ if [ -e "$MOUNT/LilOS.app/Contents/MacOS/lilos-engine-fake" ]; then
   echo "RESULT: FAIL (lilos-engine-fake is inside the bundle)"
   hdiutil detach "$MOUNT" >/dev/null 2>&1; exit 1
 fi
-[ -e "$MOUNT/LilOS.app/Contents/MacOS/lilos-engine-hermes" ] || {
-  echo "RESULT: FAIL (no lilos-engine-hermes in the bundle)"
+# lilos-engine-nous is the Hermes adapter (#141: executables named *hermes*
+# are SIGKILLed by the MDM kill-by-name policy on managed Macs).
+[ -e "$MOUNT/LilOS.app/Contents/MacOS/lilos-engine-nous" ] || {
+  echo "RESULT: FAIL (no lilos-engine-nous in the bundle)"
   hdiutil detach "$MOUNT" >/dev/null 2>&1; exit 1; }
-echo "bundle check: lilos-engine-hermes present, no fake engine"
+echo "bundle check: lilos-engine-nous present, no fake engine"
 
 # In stub mode the packaged harness still needs the provider envs — inject
 # them into its launch-agent plist inside the mounted bundle, then install.

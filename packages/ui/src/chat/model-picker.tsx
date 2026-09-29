@@ -12,6 +12,7 @@ import {
 import { useState } from "react";
 import { ModelSelectorLogo } from "../components/ai-elements/model-selector";
 import { PromptInputButton } from "../components/ai-elements/prompt-input";
+import { Button } from "../components/ui/button";
 import {
   Command,
   CommandEmpty,
@@ -21,6 +22,14 @@ import {
   CommandList,
   CommandSeparator,
 } from "../components/ui/command";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
 import {
   Popover,
   PopoverContent,
@@ -189,6 +198,23 @@ function findModel(models: ModelOption[], c: ModelChoice) {
   );
 }
 
+/* The picker's effective list (#140 AC-1): the engine's catalog plus the
+   session's own pick when the catalog omits it — the picker always shows the
+   model the session actually runs, marked `notInList` so its row can carry
+   the "Not in list" hint. Only the session's pick is ever added; the engine's
+   reported rows are passed through untouched (LilOS invents no models — the
+   path back to the catalog is Refresh, not a merge). */
+export function withSessionModel(
+  models: ModelOption[],
+  pick: ModelChoice,
+): ModelOption[] {
+  if (!pick.model || findModel(models, pick)) return models;
+  return [
+    ...models,
+    { id: pick.model, provider: pick.provider, notInList: true },
+  ];
+}
+
 /* Codex-style picker (issue: model picker v2): one popover holding the
    reasoning-effort slider, the fast toggle and a "Model ›" row that opens the
    searchable model list. Everything applies from the next turn. The slider has
@@ -217,6 +243,13 @@ export function ModelPicker({
   const [view, setView] = useState<"main" | "models">("main");
   const [editing, setEditing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  /* A catalog refresh that ran and still didn't offer the session's model is
+     the evidence for the switch-away warning (#140 AC-3) — without it we only
+     know the CACHE is stale, not that the engine doesn't offer the model. */
+  const [refreshed, setRefreshed] = useState(false);
+  /* Another model the user picked while the session's own was absent even
+     post-refresh — held for the warn dialog (#140 AC-3). */
+  const [pendingLeave, setPendingLeave] = useState<ModelOption | null>(null);
   /* The pick writes are async (relay round-trip). While the popover is open,
      the shown state is the user's latest edit — composing off the `value`
      prop would drop an earlier toggle that hasn't echoed back yet. The draft
@@ -227,9 +260,16 @@ export function ModelPicker({
   if (!samePick(value, prev)) {
     setPrev(value);
     if (picked) setPicked(null);
+    setRefreshed(false);
   }
   const shown0 = picked ?? value;
-  const cur = findModel(models, shown0);
+  /* `merged` adds the session's own model when the catalog omits it (#140
+     AC-1); `value` is the session's pick — never the local draft. */
+  const merged = withSessionModel(models, value);
+  const cur = findModel(merged, shown0);
+  /* The session's own model row — when the catalog omits it, switching away
+     needs the post-refresh warning (AC-3). */
+  const sessionRow = findModel(merged, value);
   const efforts = cur?.efforts ?? [];
   const effort =
     shown0.effort && efforts.includes(shown0.effort)
@@ -249,7 +289,11 @@ export function ModelPicker({
   const pName = (p: string) => providerName(p, providers);
   const logoOf = (p?: string) => providers?.find((x) => x.id === p)?.logo;
 
-  const shown = models.filter((m) => !isHidden(m, visibility) || m === cur);
+  /* The session's own (merged) row is never hidden — the picker must show
+     the model the session runs even when its provider is hidden (#140 AC-1). */
+  const shown = merged.filter(
+    (m) => m.notInList || !isHidden(m, visibility) || m === cur,
+  );
   const groups = new Map<string, ModelOption[]>();
   for (const p of providers ?? []) groups.set(p.id, []);
   for (const m of shown) {
@@ -257,7 +301,7 @@ export function ModelPicker({
     groups.set(p, [...(groups.get(p) ?? []), m]);
   }
 
-  const pickModel = (m: ModelOption) => {
+  const applyPick = (m: ModelOption) => {
     const keep = effort && m.efforts?.includes(effort);
     choose({
       model: m.id,
@@ -269,11 +313,28 @@ export function ModelPicker({
     });
     setView("main");
   };
+  const pickModel = (m: ModelOption) => {
+    /* A merged row is a display row, not a pick: the engine's catalog doesn't
+       offer it, so the only path back is Refresh — clicking it asks the
+       engine for its live catalog (#140 AC-2, decision C). */
+    if (m.notInList) {
+      void refresh();
+      return;
+    }
+    /* After a refresh that still didn't offer the session's model, switching
+       away loses it: warn first, never fail silently (#140 AC-3). */
+    if (sessionRow?.notInList && refreshed && m !== sessionRow) {
+      setPendingLeave(m);
+      return;
+    }
+    applyPick(m);
+  };
   const refresh = async () => {
     if (!onRefresh || refreshing) return;
     setRefreshing(true);
     try {
       await onRefresh();
+      setRefreshed(true);
     } finally {
       setRefreshing(false);
     }
@@ -439,8 +500,24 @@ export function ModelPicker({
                             onSelect={() => pickModel(m)}
                           >
                             <ModelLogo provider={m.provider} logo={logoOf(p)} />
-                            <span className="min-w-0 flex-1 truncate">
-                              {m.name ?? m.id}
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate">
+                                {m.name ?? m.id}
+                              </span>
+                              {/* The session's model absent from the catalog:
+                                  the row hints at Refresh — the only way the
+                                  engine can offer it again (#140 AC-2). */}
+                              {m.notInList && (
+                                <span className="block text-muted-foreground text-xs">
+                                  Not in list
+                                  {onRefresh && (
+                                    <span className="text-primary">
+                                      {" "}
+                                      · Refresh
+                                    </span>
+                                  )}
+                                </span>
+                              )}
                             </span>
                             {m.fast && (
                               <ZapIcon
@@ -505,6 +582,39 @@ export function ModelPicker({
           onVisibility={onVisibility}
         />
       )}
+      {/* Switching away from a model the refreshed catalog still doesn't
+          offer means LilOS can't switch back to it — warn once, then let the
+          user go ahead (#140 AC-3). */}
+      <Dialog
+        open={pendingLeave !== null}
+        onOpenChange={(o) => {
+          if (!o) setPendingLeave(null);
+        }}
+      >
+        <DialogContent aria-label="Model not in list">
+          <DialogHeader>
+            <DialogTitle>Switch models?</DialogTitle>
+            <DialogDescription>
+              You can't switch back to {sessionRow?.id ?? "this model"} from
+              LilOS — the engine doesn't offer it right now.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPendingLeave(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const m = pendingLeave;
+                setPendingLeave(null);
+                if (m) applyPick(m);
+              }}
+            >
+              Switch anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

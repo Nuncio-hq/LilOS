@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "LilOS",
+    "slug": "lilos",
+    "scheme": "lilos",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.nuncio.lilos.mobile",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocalNetworkUsageDescription": "LilOS talks to the relay running on your Mac over your local network when Tailscale is off."
+      }
+    },
+    "experiments": {
+      "autolinkingModuleResolution": true
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "LilOS uses the camera to scan the pairing code shown on your Mac."
+        }
+      ]
+    ]
+  }
+}

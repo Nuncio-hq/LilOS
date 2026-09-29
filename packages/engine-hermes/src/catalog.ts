@@ -332,18 +332,25 @@ export async function listModels(
   };
 }
 
+interface KnownModelIds {
+  all: Set<string>;
+  byProvider: Map<string, Set<string>>;
+}
+
 /**
  * Model ids the gateway can enumerate, keyed per provider + globally;
  * undefined when `model.options` fails (older builds) — the `config.set`
- * answer is then the only signal, like before.
+ * answer is then the only signal, like before. `refresh` asks the account's
+ * live catalog instead of the gateway's cached read (#140 AC-2).
  */
 async function knownModelIds(
   gw: GatewayLike,
-): Promise<
-  { all: Set<string>; byProvider: Map<string, Set<string>> } | undefined
-> {
+  opts: { refresh?: boolean } = {},
+): Promise<KnownModelIds | undefined> {
   try {
-    const r = (await gw.request("model.options", {})) as {
+    const r = (await gw.request("model.options", {
+      ...(opts.refresh ? { refresh: true } : {}),
+    })) as {
       providers?: ModelOptionsProvider[];
     };
     const all = new Set<string>();
@@ -369,6 +376,19 @@ async function knownModelIds(
   } catch {
     return undefined;
   }
+}
+
+/* Whether the enumerated ids contain the pick: provider-scoped when the pick
+   names one (ids are unique only per provider), else global; a pick whose
+   provider the catalog doesn't know falls back to the global set. */
+function pickIsKnown(
+  known: KnownModelIds,
+  pick: { model: string; provider?: string },
+): boolean {
+  const scoped = pick.provider
+    ? known.byProvider.get(pick.provider)
+    : known.all;
+  return scoped ? scoped.has(pick.model) : known.all.has(pick.model);
 }
 
 interface ConfigSetResult {
@@ -431,17 +451,20 @@ export async function setSessionModel(
 }> {
   // #50 AC-3 kept: validate against `model.options` first so an unknown id
   // is MODEL_NOT_FOUND here, not a lazy failure at the next prompt.
-  const known = await knownModelIds(gw);
-  if (known) {
-    const scoped = pick.provider
-      ? known.byProvider.get(pick.provider)
-      : known.all;
-    const ok = scoped ? scoped.has(pick.model) : known.all.has(pick.model);
-    if (!ok)
-      throw new RpcError(
-        RPC_ERRORS.MODEL_NOT_FOUND,
-        `no model ${pick.model} — see models.list`,
-      );
+  let known = await knownModelIds(gw);
+  if (known && !pickIsKnown(known, pick)) {
+    /* The pick may be valid on the engine's LIVE catalog while this cached
+       read still omits it — e.g. a model Refresh just offered the user
+       (account-gated rows like Astra appear only in the live list, #140
+       AC-2). Re-check once with refresh:true before failing; an id missing
+       from both reads still fails early (#50 AC-3). */
+    known = (await knownModelIds(gw, { refresh: true })) ?? known;
+  }
+  if (known && !pickIsKnown(known, pick)) {
+    throw new RpcError(
+      RPC_ERRORS.MODEL_NOT_FOUND,
+      `no model ${pick.model} — see models.list`,
+    );
   }
   // The pick is interpolated into a config.set arg string upstream — a value
   // with whitespace or a leading dash would be parsed as extra flags.

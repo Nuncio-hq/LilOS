@@ -1,0 +1,71 @@
+/* biome-ignore-all lint/suspicious/noDuplicateCustomProperties: light and dark values live in separate @variant blocks (Uniwind theming). */
+@import "tailwindcss";
+@import "uniwind";
+
+@source "../../packages/ui-native/src";
+
+/* LilOS mobile palette: Apple's system neutrals (white/black backgrounds,
+   systemGray fills and labels, opaque separators) with one brand tint —
+   teal — for primary actions, the selected tab and "needs you". Blue stays
+   "working", as systemBlue. Hex because React Native has no PlatformColor
+   in CSS; values track UIKit's light/dark system colors. Employee identity
+   colors live in the orbs, not here. */
+@layer theme {
+  :root {
+    @variant light {
+      --color-background: #ffffff;
+      --color-foreground: #000000;
+      --color-card: #f2f2f7;
+      --color-muted: #e5e5ea;
+      --color-muted-strong: #d1d1d6;
+      --color-muted-foreground: #8a8a8e;
+      --color-subtle-foreground: #3c3c43;
+      --color-border: #3c3c4330;
+      --color-fill: #7676801f;
+      --color-primary: #00857f;
+      --color-primary-foreground: #ffffff;
+      --color-accent-soft: #e0f3f1;
+      --color-accent-text: #00716c;
+      --color-secondary: #f2f2f7;
+      --color-secondary-foreground: #000000;
+      --color-reasoning: #7c3aed;
+      --color-merged: #8250df;
+      --color-work: #007aff;
+      --color-work-soft: #e5f0ff;
+      --color-destructive: #ff3b30;
+      --color-success: #248a3d;
+      --color-warning: #c93400;
+      --color-glass: #f9f9fbd9;
+    }
+
+    @variant dark {
+      --color-background: #000000;
+      --color-foreground: #ffffff;
+      --color-card: #1c1c1e;
+      --color-muted: #2c2c2e;
+      --color-muted-strong: #3a3a3c;
+      --color-muted-foreground: #8d8d93;
+      --color-subtle-foreground: #d1d1d6;
+      --color-border: #54545870;
+      --color-fill: #7676803d;
+      --color-primary: #3cc4bc;
+      --color-primary-foreground: #00201e;
+      --color-accent-soft: #0f2f2d;
+      --color-accent-text: #5fd6ce;
+      --color-secondary: #1c1c1e;
+      --color-secondary-foreground: #ffffff;
+      --color-reasoning: #a78bfa;
+      --color-merged: #a371f7;
+      --color-work: #0a84ff;
+      --color-work-soft: #0a2a4d;
+      --color-destructive: #ff453a;
+      --color-success: #30d158;
+      --color-warning: #ff9f0a;
+      --color-glass: #1c1c1ed9;
+    }
+  }
+}
+
+@theme {
+  --font-mono: "Menlo";
+}
