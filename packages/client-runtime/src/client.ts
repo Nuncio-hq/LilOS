@@ -126,6 +126,9 @@ export class RelayClient {
   readonly employees: WritableAtom<Employee[]> = atom([]);
   readonly channels: WritableAtom<AppChannel[]> = atom([]);
   readonly conversations: WritableAtom<Conversation[]> = atom([]);
+  /** True once the first directory refresh has landed — until then the list
+      atoms above are empty snapshots, not "no rows" (#193). */
+  readonly directoryReady: WritableAtom<boolean> = atom(false);
   /** Relay-owned profile (#118) — `{}` on an untouched install; the app
       layers OS-derived prefill on top (AC-4). */
   readonly profile: WritableAtom<ProfileSettings> = atom({});
@@ -631,6 +634,7 @@ export class RelayClient {
       this.conversationSummaries.set(summaries.summaries);
       this.profile.set(settings.profile);
       this.devices.set(devices.devices);
+      this.directoryReady.set(true);
     } catch {
       // Directory refresh is best-effort on reconnect; stores keep stale data.
     }

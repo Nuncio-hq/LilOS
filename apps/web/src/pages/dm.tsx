@@ -40,7 +40,12 @@ import type {
   Work,
   WsPick,
 } from "@lilos/ui/types";
-import { useNavigate, useParams, useRouterState } from "@tanstack/react-router";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useRouterState,
+} from "@tanstack/react-router";
 import { atom } from "nanostores";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -48,6 +53,7 @@ import {
   clearPending,
   hasCapability,
   interruptSession,
+  openDmChannel,
   pendingStart,
   refreshModels,
   renameConversation,
@@ -166,6 +172,7 @@ export function DmPage() {
 
   const employees = useAtom(relay.employees);
   const channels = useAtom(relay.channels);
+  const directoryReady = useAtom(relay.directoryReady);
   // #118: the human's name/avatar re-render live on a settings change.
   useAtom(profile);
   useAtom(osFullName);
@@ -268,6 +275,22 @@ export function DmPage() {
   const channel = channels.find(
     (c) => c.kind === "dm" && c.employeeId === employeeId,
   );
+
+  /* #193: an employee hired without a DM channel (relay-side
+     `employees.create`, pre-fix first-run hires) hung on the session
+     skeleton forever — `!channel` read as "still loading". Once the
+     directory confirms the channel is really absent the page opens it
+     itself (`channels.openDm` is idempotent server-side); the skeleton
+     lasts only until the channel lands, and a failed open settles into the
+     empty state instead of spinning. */
+  const dmOpenTried = useRef<Record<string, true>>({});
+  const [dmOpenFailed, setDmOpenFailed] = useState(false);
+  useEffect(() => {
+    if (!directoryReady || !employee || channel || dmOpenFailed) return;
+    if (dmOpenTried.current[employeeId]) return;
+    dmOpenTried.current[employeeId] = true;
+    openDmChannel(employeeId).catch(() => setDmOpenFailed(true));
+  }, [directoryReady, employee, channel, dmOpenFailed, employeeId]);
   const msgState = useAtom(
     channel ? relay.channelMessages(channel.id) : EMPTY_MESSAGES,
   );
@@ -505,6 +528,30 @@ export function DmPage() {
   );
 
   if (!employee || !uiEmp) {
+    /* #189: a settled directory that has no such employee is a not-found
+       state, not "Loading…" — stale links across LilOS homes land here. */
+    if (directoryReady) {
+      return (
+        <div
+          className="grid min-w-0 flex-1 place-items-center text-sm"
+          data-employee-not-found
+        >
+          <div className="space-y-2 text-center">
+            <p className="text-foreground">Employee not found</p>
+            <p className="text-muted-foreground">
+              This employee doesn’t exist on this LilOS install — the link may
+              be stale.
+            </p>
+            <Link
+              to="/"
+              className="inline-block text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              Back to company
+            </Link>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="grid min-w-0 flex-1 place-items-center text-muted-foreground text-sm">
         Loading…
@@ -909,7 +956,7 @@ export function DmPage() {
         pick={pick}
         setPick={setPick}
         onAddFolder={onAddFolder}
-        loading={!channel}
+        loading={!channel && !dmOpenFailed}
         composerNote={composerNote}
         mentionables={mentionables}
         onSearchFiles={fileSearch(pickFolderPath)}

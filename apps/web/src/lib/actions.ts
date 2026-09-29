@@ -32,7 +32,7 @@ function dmChannelFor(employeeId: string): AppChannel | undefined {
     .find((c) => c.kind === "dm" && c.employeeId === employeeId);
 }
 
-async function openDmChannel(employeeId: string): Promise<AppChannel> {
+export async function openDmChannel(employeeId: string): Promise<AppChannel> {
   const existing = dmChannelFor(employeeId);
   if (existing) return existing;
   const res = await relay.request<{ channel: AppChannel }>("channels.openDm", {
