@@ -14,7 +14,11 @@ import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@lilos/contracts/app";
-import type { AgentDescriptor, ApprovalOutcome } from "@lilos/contracts/engine";
+import type {
+  AgentDescriptor,
+  ApprovalOutcome,
+  Job,
+} from "@lilos/contracts/engine";
 import {
   AddFolderDialog,
   choiceFor,
@@ -24,11 +28,13 @@ import {
   EmployeeHome,
   FocusView,
   NO_WS,
+  type PlanAction,
   ThreadView,
   useDraft,
 } from "@lilos/ui";
 import type {
   AttachedFile,
+  BackgroundJob,
   Channel,
   FileMention,
   MessageHit,
@@ -90,8 +96,11 @@ import {
 } from "../lib/host";
 import {
   conversationReplies,
+  formatUptime,
   mergeTurns,
+  stripPlans,
   toFeed,
+  toJob,
   toUiEmployee,
 } from "../lib/mapping";
 import { currentName, humanFor, osFullName, profile } from "../lib/me";
@@ -125,6 +134,10 @@ const EMPTY_FEED = atom<SessionFeedState>({
   openRequests: [],
 });
 
+/* #180 AC-4: Change… prefills the composer with this prefix; a send that
+   keeps it answers the open plan request instead of posting a message. */
+const PLAN_CHANGE_PREFIX = "Change the plan: ";
+
 /* Resolved-ask labels carry the signed-in human's name — computed per render
    so a settings change lands without a reload (#118). */
 const outcomeLabel = (o: ApprovalOutcome, name: string): string => {
@@ -139,6 +152,13 @@ const outcomeLabel = (o: ApprovalOutcome, name: string): string => {
       return "Cancelled";
     case "answer":
       return "Answered";
+    /* #180: plan requests resolve to these; labels match the card wording. */
+    case "approve":
+      return `Approved by ${name}`;
+    case "reject":
+      return `Rejected by ${name}`;
+    case "change":
+      return `Change requested by ${name}`;
   }
 };
 
@@ -414,6 +434,42 @@ export function DmPage() {
     openConv?.engineRef ? engine.sessionFeed(openConv.engineRef) : EMPTY_FEED,
   );
 
+  /* #179: the Workbench Background tab (D-#19) — `jobs.list` fills the rows
+     the event stream can't carry (a job the engine started before a harness
+     restart); job.* events keep it live after that. Rendered + Stop only
+     when the engine declares `background_jobs`. */
+  const jobsCapable = hasCapability("background_jobs");
+  const [listedJobs, setListedJobs] = useState<Record<string, Job[]>>({});
+  const openSid = openConv?.engineRef;
+  useEffect(() => {
+    if (!jobsCapable || !openSid || !openFeed.synced) return;
+    let dead = false;
+    relay
+      .request<{ jobs: Job[] }>("jobs.list", { sessionId: openSid })
+      .then((r) => {
+        if (!dead) setListedJobs((prev) => ({ ...prev, [openSid]: r.jobs }));
+      })
+      .catch(() => {});
+    return () => {
+      dead = true;
+    };
+  }, [jobsCapable, openSid, openFeed.synced]);
+
+  /* A running job ticks its uptime every second. */
+  const [, setJobsTick] = useState(0);
+  const hasRunningJob =
+    (openConv?.engineRef ? (models[openConv.engineRef]?.jobs ?? []) : []).some(
+      (j) => j.status === "running",
+    ) ||
+    (openSid ? (listedJobs[openSid] ?? []) : []).some(
+      (j) => j.status === "running",
+    );
+  useEffect(() => {
+    if (!hasRunningJob) return;
+    const t = setInterval(() => setJobsTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [hasRunningJob]);
+
   /* Attachment blobs behind every visible ref — channel window, open
      thread, and the summary roots/previews that feed rows render (AC-3). */
   useEffect(() => {
@@ -434,6 +490,11 @@ export function DmPage() {
     const e = employees.find((x) => x.id === id);
     return e ? toUiEmployee(e, engineDown) : undefined;
   };
+  /* #179: the engine reports a helper's profile ref; LilOS links speak in
+     employee ids — a subagent for an unknown profile keeps the ref (the
+     avatar falls back gracefully). */
+  const empRefToId = (ref: string) =>
+    employees.find((x) => x.profile === ref)?.id ?? ref;
 
   const summaryOf = (conv: Conversation) =>
     summaries.find((s) => s.conversation.id === conv.id);
@@ -502,7 +563,13 @@ export function DmPage() {
       toFeed(
         root,
         conv,
-        mergeTurns(repliesOf(conv), model, employeeId, convAsks(conv)),
+        mergeTurns(
+          repliesOf(conv),
+          model,
+          employeeId,
+          convAsks(conv),
+          empRefToId,
+        ),
         wsFor(conv.cwd, cwdBranches),
       ),
     ];
@@ -708,7 +775,9 @@ export function DmPage() {
         resolved[a.id] = outcomeLabel(a.outcome, currentName());
     }
     const engineRef = conv.engineRef;
-    const replies = mergeTurns(
+    /* AC-6 (D-#19): plan surfaces only exist when the engine declares `plan`. */
+    const planCap = hasCapability("plan");
+    let replies = mergeTurns(
       conversationReplies(
         threadPool.filter((m) => m.id !== conv.rootMessageId),
         conv.id,
@@ -716,11 +785,67 @@ export function DmPage() {
       model,
       employeeId,
       asksHere,
+      empRefToId,
     );
+    if (!planCap) replies = stripPlans(replies);
     // An open question ask gets a real answer card (asks.respond).
     const openQuestion = asksHere.find(
       (a) => a.state === "open" && a.request.kind === "question",
     );
+    /* #180: a proposed plan opens a `plan` ask on the relay — Approve/Reject
+       answer it straight; Change… prefills the composer (AC-3/AC-4). */
+    const openPlanAsk = asksHere.find(
+      (a) => a.state === "open" && a.request.kind === "plan",
+    );
+    /* The card can beat `asks.open` by a frame — plan.updated lands in the
+       feed before the relay mints the ask — so a fast Approve/Reject waits
+       a short window for the ask instead of dropping the click (AC-4). */
+    const findOpenPlanAsk = (planId: string): Ask | undefined =>
+      asksAtom
+        .get()
+        .find(
+          (x) =>
+            x.conversationId === conv.id &&
+            x.state === "open" &&
+            x.request.kind === "plan" &&
+            x.request.planId === planId,
+        );
+    const awaitPlanAsk = (planId: string) =>
+      new Promise<Ask | undefined>((resolve) => {
+        let tries = 0;
+        const tick = () => {
+          const hit = findOpenPlanAsk(planId);
+          if (hit || ++tries >= 60) return resolve(hit);
+          setTimeout(tick, 50);
+        };
+        tick();
+      });
+    const onPlan = (a: PlanAction, planId: string) => {
+      if (a === "change") {
+        setThreadDraft(PLAN_CHANGE_PREFIX);
+        return;
+      }
+      void awaitPlanAsk(planId).then((ask) => {
+        if (ask) void respondToRequest(ask.id, a);
+      });
+    };
+    /* The thread composer send: a send that keeps the "Change the plan: "
+       prefix answers the open plan request instead of posting (AC-4). */
+    const sendInThread = (text: string, files?: AttachedFile[]) => {
+      const t = text.trimStart();
+      if (openPlanAsk && t.startsWith(PLAN_CHANGE_PREFIX)) {
+        const answer = t.slice(PLAN_CHANGE_PREFIX.length).trim();
+        return respondToRequest(openPlanAsk.id, "change", answer).then(() => {
+          clearDraftIfSent(draftKey.thread(conv.id), text);
+          return conv;
+        });
+      }
+      return sendDm(employeeId, text, conv.id, undefined, files).then((c) => {
+        if (!c) throw new Error("send failed");
+        clearDraftIfSent(draftKey.thread(conv.id), text);
+        return c;
+      });
+    };
     /* AC-7: the conversation's folder (+ branch for a repo) in the header;
        sessions without one show nothing extra. */
     const convWs = wsFor(conv.cwd, cwdBranches);
@@ -735,6 +860,71 @@ export function DmPage() {
         }
       : null;
 
+    /* #179: the session's background processes — `jobs.list` rows cover the
+       engine-restart window the event stream can't; job.* events then win
+       (fresher). The tab renders only when the capability is declared. */
+    const jobsNow = Date.now();
+    const jobsById = new Map<string, BackgroundJob>();
+    if (jobsCapable) {
+      for (const j of listedJobs[conv.engineRef ?? ""] ?? []) {
+        jobsById.set(j.jobId, {
+          id: j.jobId,
+          command: j.command,
+          status: j.status,
+          started: j.startedAt
+            ? new Date(j.startedAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          uptime: j.startedAt
+            ? formatUptime((jobsNow - j.startedAt) / 1000)
+            : "0s",
+          ...(j.url ? { url: j.url } : {}),
+          ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
+          log: j.tail ?? "",
+        });
+      }
+      for (const j of model?.jobs ?? [])
+        jobsById.set(j.jobId, toJob(j, jobsNow));
+    }
+    const uiJobs = [...jobsById.values()].sort(
+      (a, b) => a.started.localeCompare(b.started) || a.id.localeCompare(b.id),
+    );
+    /* AC-3: a subagent row for another employee opens their own session in
+       their DM (D-#25) — resolve the engine sessionRef to its conversation. */
+    const onOpenSession = (empRef: string, sessionRef: string) => {
+      const target = summaries.find(
+        (s) => s.conversation.engineRef === sessionRef,
+      )?.conversation;
+      if (target) {
+        const ch = channels.find((c) => c.id === target.channelId);
+        void navigate({
+          to: "/dm/$employeeId/$conversationId",
+          params: {
+            employeeId: ch?.employeeId ?? empRef,
+            conversationId: target.id,
+          },
+        });
+      } else {
+        void navigate({
+          to: "/dm/$employeeId",
+          params: { employeeId: empRef },
+        });
+      }
+    };
+    const onStopJob = (jobId: string) => {
+      if (!conv.engineRef) return;
+      void relay
+        .request<{ stopped: boolean }>("jobs.stop", {
+          sessionId: conv.engineRef,
+          jobId,
+        })
+        .catch((e) =>
+          say(`Stop failed — ${e instanceof Error ? e.message : String(e)}`),
+        );
+    };
+
     const thread: Thread = {
       session: engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
       title: conv.title || undefined,
@@ -748,6 +938,10 @@ export function DmPage() {
       effort: conv.effort ?? model?.effort,
       fast: conv.fast ?? model?.fast,
       ...(convWs ? { ws: convWs } : {}),
+      /* #179 AC-4/AC-5: the Background tab reads this list only when the
+         engine declared `background_jobs` (uiJobs is empty otherwise — and
+         the tab hides itself when it is). */
+      ...(uiJobs.length ? { jobs: uiJobs } : {}),
     };
     const running = !!modelLive || pending[conv.id] === true;
     /* ↑ recall in the open session: the user's last sent message in it — the
@@ -795,6 +989,8 @@ export function DmPage() {
             }
           }}
           work={work}
+          onOpenSession={onOpenSession}
+          onStopJob={jobsCapable ? onStopJob : undefined}
           onBack={() =>
             void navigate({
               to: "/dm/$employeeId/$conversationId",
@@ -803,13 +999,8 @@ export function DmPage() {
           }
           onNav={() => navOpen.set(true)}
           running={running}
-          onSend={(text, files) =>
-            sendDm(employeeId, text, conv.id, undefined, files).then((c) => {
-              if (!c) throw new Error("send failed");
-              clearDraftIfSent(draftKey.thread(conv.id), text);
-              return c;
-            })
-          }
+          onSend={sendInThread}
+          onPlan={planCap ? onPlan : undefined}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           lastSent={lastSent}
           onModel={(c) => void setConversationModel(conv.id, c)}
@@ -880,6 +1071,7 @@ export function DmPage() {
           }}
           running={running}
           steer={steer}
+          onOpenSession={onOpenSession}
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}
           onModel={
@@ -890,13 +1082,8 @@ export function DmPage() {
           picker={picker}
           defaultModel={defaultModel}
           defaultProvider={defaultProvider}
-          onSend={(text, files) =>
-            sendDm(employeeId, text, conv.id, undefined, files).then((c) => {
-              if (!c) throw new Error("send failed");
-              clearDraftIfSent(draftKey.thread(conv.id), text);
-              return c;
-            })
-          }
+          onSend={sendInThread}
+          onPlan={planCap ? onPlan : undefined}
           draft={threadDraft}
           onDraftChange={setThreadDraft}
           accept={canAttachImages ? "image/*" : undefined}

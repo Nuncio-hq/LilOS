@@ -5,10 +5,13 @@ import type {
   ContentBlock,
   EngineRequest,
   McpServer,
+  PlanStep,
+  PlanStepStatus,
   SessionStartParams,
 } from "@lilos/contracts/engine";
 import { acpOfferedOutcomes, acpPickOptionId } from "./acp-permissions.js";
 import type { HermesEngine } from "./engine.js";
+import { mapSubagentStatus, parseToolResultJson } from "./mapping.js";
 import type { Session } from "./session.js";
 
 /**
@@ -269,31 +272,55 @@ export class AcpDriver {
       }
       case "tool_call": {
         if (s.turn) s.turn.phase = "tools";
-        s.emit("tool.started", {
-          turnId,
-          toolCallId: String(u.toolCallId ?? ""),
-          tool:
-            (typeof u.name === "string" && u.name) ||
-            (typeof u.title === "string" && u.title) ||
-            "tool",
-          input:
-            typeof u.rawInput === "object" && u.rawInput !== null
-              ? (u.rawInput as Record<string, unknown>)
-              : {},
-        });
+        const callId = String(u.toolCallId ?? "");
+        const tool =
+          (typeof u.name === "string" && u.name) ||
+          (typeof u.title === "string" && u.title) ||
+          "tool";
+        const input =
+          typeof u.rawInput === "object" && u.rawInput !== null
+            ? (u.rawInput as Record<string, unknown>)
+            : {};
+        s.emit("tool.started", { turnId, toolCallId: callId, tool, input });
+        /* #179: ACP drops subagent.* frames — synthesize flat rows off the
+           delegate call's task list; per-task status arrives on its update. */
+        if (tool === "delegate_task") {
+          s.delegateStack.push(callId);
+          const tasks = Array.isArray(input.tasks) ? input.tasks : [];
+          tasks.forEach((t, i) => {
+            const subagentId = s.subagentId(`${callId}:${i}`);
+            s.emit("subagent.started", {
+              turnId,
+              subagentId,
+              name: `task ${i + 1}`,
+              task:
+                typeof (t as { goal?: unknown })?.goal === "string"
+                  ? ((t as { goal: string }).goal as string)
+                  : "",
+              parentToolCallId: callId,
+            });
+          });
+        }
+        if (tool === "terminal")
+          s.terminalCalls.set(
+            callId,
+            typeof input.command === "string" ? input.command : "",
+          );
         break;
       }
       case "tool_call_update": {
         const status = u.status;
         if (status !== "completed" && status !== "failed") break;
         const out = u.rawOutput;
+        const callId = String(u.toolCallId ?? "");
+        const tool =
+          (typeof u.name === "string" && u.name) ||
+          (typeof u.title === "string" && u.title) ||
+          "tool";
         s.emit("tool.completed", {
           turnId,
-          toolCallId: String(u.toolCallId ?? ""),
-          tool:
-            (typeof u.name === "string" && u.name) ||
-            (typeof u.title === "string" && u.title) ||
-            "tool",
+          toolCallId: callId,
+          tool,
           status: status === "failed" ? "failed" : "completed",
           ...(out !== undefined && out !== null
             ? {
@@ -304,6 +331,35 @@ export class AcpDriver {
               }
             : {}),
         });
+        /* #179: close the synthesized rows — per-task statuses parse off the
+           formatted "Task N: ✅/✗/⏱/⚠" lines, else the call's own status. */
+        if (s.delegateStack.includes(callId)) {
+          s.delegateStack = s.delegateStack.filter((id) => id !== callId);
+          const text = typeof out === "string" ? out : "";
+          const perTask = new Map<number, string>();
+          for (const m of text.matchAll(/[✅✗⏱⚠]\s*Task (\d+):\s*(\w+)/g))
+            perTask.set(Number(m[1]), m[2]);
+          s.subagentsForCall(callId).forEach((subagentId, i) => {
+            const word = perTask.get(i + 1);
+            s.emit("subagent.completed", {
+              subagentId,
+              status: word
+                ? mapSubagentStatus(word)
+                : status === "failed"
+                  ? "failed"
+                  : "done",
+            });
+          });
+        }
+        const command = s.terminalCalls.get(callId);
+        s.terminalCalls.delete(callId);
+        if (tool === "terminal" && status === "completed") {
+          const result = parseToolResultJson(out);
+          const procId =
+            typeof result?.session_id === "string" ? result.session_id : "";
+          const pid = typeof result?.pid === "number" ? result.pid : undefined;
+          if (procId) this.engine.startJob(s, procId, command ?? "", pid);
+        }
         break;
       }
       case "session_info_update": {
@@ -324,10 +380,47 @@ export class AcpDriver {
         s.usage = { ...prev, input: used };
         break;
       }
+      /* #180: ACP `plan` sessionUpdate carries the agent's own working list
+         (Hermes `todo`) as `entries[{content,status,priority}]` — a full
+         snapshot per update, mapped to `plan.updated` kind:"tasks" on a
+         stable per-turn planId. ACP plan entries have no cancelled status;
+         unfinished steps read cancelled via turn.completed on the client. */
+      case "plan": {
+        if (!s.turn) break;
+        const entries = u.entries as
+          | { content?: string; status?: string }[]
+          | undefined;
+        if (!entries?.length) break;
+        const plan = s.turn.plan ?? {
+          planId: `plan-${turnId}`,
+          version: 0,
+        };
+        s.turn.plan = plan;
+        plan.version += 1;
+        const steps: PlanStep[] = entries.map((e) => ({
+          text: e.content ?? "",
+          status: acpPlanStatus(e.status),
+        }));
+        s.emit("plan.updated", {
+          turnId,
+          planId: plan.planId,
+          kind: "tasks",
+          version: plan.version,
+          steps,
+        });
+        break;
+      }
       default:
         break;
     }
   }
+}
+
+/** #180: ACP plan-entry status -> contracts PlanStepStatus (ACP has none for cancelled). */
+function acpPlanStatus(status: string | undefined): PlanStepStatus {
+  if (status === "in_progress") return "in_progress";
+  if (status === "completed") return "completed";
+  return "pending";
 }
 
 function toAcpContent(b: ContentBlock): acp.ContentBlock {

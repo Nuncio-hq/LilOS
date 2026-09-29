@@ -14,6 +14,19 @@ const reply =
   process.env.STUB_REPLY ??
   "Done — I added the requested line to notes.txt (stub engine reply).";
 
+/* #180: STUB_TOOL_CALL='{"name":"todo_list","arguments":"{...}"}' makes the
+   FIRST chat-completions request answer with a scripted tool call (OpenAI
+   `tool_calls` shape, stream + non-stream); every later request returns the
+   canned text reply. Lets a stub run exercise a real tool path (todo →
+   todo.updated → plan.updated) without a live model. */
+const scriptedCall = process.env.STUB_TOOL_CALL
+  ? (JSON.parse(process.env.STUB_TOOL_CALL) as {
+      name: string;
+      arguments?: string;
+    })
+  : null;
+let scriptedCallsLeft = scriptedCall ? 1 : 0;
+
 const sse = (chunks: string[]) => chunks.join("");
 
 const server = Bun.serve({
@@ -118,6 +131,49 @@ const server = Bun.serve({
         const line = `${JSON.stringify({ model, service_tier: body.service_tier, speed: body.speed, reasoning_effort: body.reasoning_effort ?? body.reasoning?.effort, image_parts: images.length, content_blocks: parts.length, text_sample: texts.join(" ").slice(0, 300), texts })}\n`;
         const { appendFileSync } = await import("node:fs");
         appendFileSync(process.env.STUB_REQUEST_LOG, line);
+      }
+      if (scriptedCall && scriptedCallsLeft > 0) {
+        scriptedCallsLeft -= 1;
+        const tc = {
+          id: "call_stub_0",
+          type: "function",
+          function: {
+            name: scriptedCall.name,
+            arguments: scriptedCall.arguments ?? "{}",
+          },
+        };
+        if (body.stream) {
+          const frame = (delta: object, finish: string | null) =>
+            `data: ${JSON.stringify({
+              id: "chatcmpl-stub",
+              object: "chat.completion.chunk",
+              created: 0,
+              model,
+              choices: [{ index: 0, delta, finish_reason: finish }],
+            })}\n\n`;
+          return new Response(
+            sse([
+              frame({ role: "assistant", content: null }, null),
+              frame({ tool_calls: [{ index: 0, ...tc }] }, "tool_calls"),
+              "data: [DONE]\n\n",
+            ]),
+            { headers: { "content-type": "text/event-stream" } },
+          );
+        }
+        return Response.json({
+          id: "chatcmpl-stub",
+          object: "chat.completion",
+          created: 0,
+          model,
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: null, tool_calls: [tc] },
+              finish_reason: "tool_calls",
+            },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        });
       }
       if (body.stream) {
         const frame = (delta: object, finish: string | null) =>

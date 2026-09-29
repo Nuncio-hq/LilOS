@@ -4,6 +4,8 @@ import type {
   EngineEvent,
   EngineRequest,
   FileDiff,
+  JobStatus,
+  PlanStep,
   SessionState,
   Usage,
 } from "@lilos/contracts/engine";
@@ -19,13 +21,65 @@ export interface TurnStep {
   commit?: CommitInfo;
 }
 
-/** An open or answered engine request (approval / question). */
+/** An open or answered engine request (approval / question / plan). */
 export interface TurnRequest {
   requestId: string;
   turnId: string;
   request: EngineRequest;
   outcome?: ApprovalOutcome;
   answer?: string;
+}
+
+/**
+ * One snapshot of an engine plan / task list (`plan.updated`), with its
+ * decision state derived from the plan request lifecycle (#180):
+ * `kind:"tasks"` runs approved from the start (it never asks);
+ * `kind:"plan"` waits proposed until its request resolves — approve ->
+ * approved, reject -> rejected, change -> replaced (the next version is
+ * what the user decided on). A snapshot with a higher `version` supersedes
+ * the previous one, which stays in the list marked `replaced` for the
+ * Workbench's version history.
+ */
+export interface TurnPlan {
+  planId: string;
+  kind: "tasks" | "plan";
+  version: number;
+  goal?: string;
+  steps: PlanStep[];
+  risks?: string[];
+  status: "proposed" | "approved" | "replaced" | "rejected";
+}
+
+/* ── subagents + background jobs (#179) ────────────────────────────────── */
+
+/** A helper an engine spun off inside a turn (subagent.started/completed +
+   tool.* events carrying parentToolCallId). */
+export interface SubagentModel {
+  subagentId: string;
+  turnId: string;
+  parentToolCallId?: string;
+  name: string;
+  task: string;
+  status: "running" | "done" | "failed" | "stopped";
+  steps: TurnStep[];
+  result?: string;
+  durationMs?: number;
+  /** Set when the helper is another employee (D-#25). */
+  employee?: { employeeRef: string; sessionRef: string };
+}
+
+/** A background process the engine left running (job.* events / jobs.list). */
+export interface JobModel {
+  jobId: string;
+  command: string;
+  status: JobStatus;
+  startedAt?: number;
+  exitCode?: number;
+  url?: string;
+  /** Subagent name when a helper spawned it. */
+  by?: string;
+  /** Rolling output tail (job.output replaces, never appends). */
+  tail: string;
 }
 
 export type TurnPhase =
@@ -51,6 +105,10 @@ export interface TurnModel {
   steps: TurnStep[];
   steers: string[];
   requests: TurnRequest[];
+  /** Plan/task-list snapshots this turn produced, arrival order (#180). */
+  plans: TurnPlan[];
+  /** Helpers this turn delegated to (subagent.* events, #179). */
+  subagents: SubagentModel[];
   usage?: Usage;
   stopReason?: string;
   /** The user message that prompted this turn (engine `turn.started.ref`). */
@@ -65,6 +123,8 @@ export interface SessionModel {
   live?: TurnModel;
   /** Requests still awaiting request.respond. */
   openRequests: TurnRequest[];
+  /** Background processes of this session (job.* / jobs.list, #179). */
+  jobs: JobModel[];
   model?: string;
   provider?: string;
   effort?: string;
@@ -90,6 +150,10 @@ export function reduceSessionEvents(
 ): SessionModel {
   const turns = new Map<string, TurnModel>();
   const order: TurnModel[] = [];
+  /* #179: session-scoped state. `subagentId` is unique per session; steps
+     arriving before their subagent.started buffer per parent id. */
+  const jobs = new Map<string, JobModel>();
+  const orphanSteps = new Map<string, TurnStep[]>();
   let state: SessionState | "unknown" = "unknown";
   let model: string | undefined = snapshot?.model;
   let provider: string | undefined = snapshot?.provider;
@@ -107,6 +171,8 @@ export function reduceSessionEvents(
         steps: [],
         steers: [],
         requests: [],
+        plans: [],
+        subagents: [],
       };
       turns.set(turnId, t);
       order.push(t);
@@ -152,24 +218,58 @@ export function reduceSessionEvents(
       case "tool.started": {
         const t = turn(e.payload.turnId);
         t.phase = "tools";
-        t.steps.push({
+        const step = {
           id: e.payload.toolCallId,
           tool: e.payload.tool,
           input: e.payload.input,
-          status: "running",
-        });
+          status: "running" as const,
+        };
+        /* #179: a call nested under a subagent lands on the subagent's step
+           list; when the subagent.started hasn't arrived yet it buffers. */
+        const parentId = e.payload.parentToolCallId;
+        if (parentId) {
+          const sa = t.subagents.find((s) => s.subagentId === parentId);
+          if (sa) sa.steps.push(step);
+          else
+            (orphanSteps.get(parentId) ?? []).length
+              ? orphanSteps.get(parentId)?.push(step)
+              : orphanSteps.set(parentId, [step]);
+        } else {
+          t.steps.push(step);
+        }
         break;
       }
       case "tool.completed": {
         const t = turn(e.payload.turnId);
-        const step = t.steps.find((s) => s.id === e.payload.toolCallId);
+        const parentId = e.payload.parentToolCallId;
+        /* #179: nested calls update the subagent's list, never the parent's
+           "N steps" (decided default on the issue). */
+        const list = parentId
+          ? (t.subagents.find((s) => s.subagentId === parentId)?.steps ??
+            orphanSteps.get(parentId))
+          : t.steps;
+        if (!list) {
+          orphanSteps.set(parentId ?? "", [
+            {
+              id: e.payload.toolCallId,
+              tool: e.payload.tool,
+              input: {},
+              status: e.payload.status,
+              output: e.payload.output,
+              diff: e.payload.diff,
+              commit: e.payload.commit,
+            },
+          ]);
+          break;
+        }
+        const step = list.find((s) => s.id === e.payload.toolCallId);
         if (step) {
           step.status = e.payload.status;
           step.output = e.payload.output;
           step.diff = e.payload.diff;
           step.commit = e.payload.commit;
         } else {
-          t.steps.push({
+          list.push({
             id: e.payload.toolCallId,
             tool: e.payload.tool,
             input: {},
@@ -179,6 +279,82 @@ export function reduceSessionEvents(
             commit: e.payload.commit,
           });
         }
+        break;
+      }
+      /* ── subagents (#179) ── */
+      case "subagent.started": {
+        const t = turn(e.payload.turnId);
+        let sa = t.subagents.find((s) => s.subagentId === e.payload.subagentId);
+        if (!sa) {
+          sa = {
+            subagentId: e.payload.subagentId,
+            turnId: e.payload.turnId,
+            name: e.payload.name,
+            task: e.payload.task,
+            status: "running",
+            steps: [],
+          };
+          t.subagents.push(sa);
+        } else {
+          sa.name = e.payload.name;
+          sa.task = e.payload.task;
+        }
+        sa.parentToolCallId = e.payload.parentToolCallId ?? sa.parentToolCallId;
+        sa.employee = e.payload.employee ?? sa.employee;
+        /* Flush calls buffered before the started frame arrived. */
+        const buffered = orphanSteps.get(e.payload.subagentId);
+        if (buffered) {
+          sa.steps.push(...buffered);
+          orphanSteps.delete(e.payload.subagentId);
+        }
+        break;
+      }
+      case "subagent.completed": {
+        for (const t of order) {
+          const sa = t.subagents.find(
+            (s) => s.subagentId === e.payload.subagentId,
+          );
+          if (!sa) continue;
+          sa.status = e.payload.status;
+          sa.result = e.payload.result ?? sa.result;
+          sa.durationMs = e.payload.durationMs ?? sa.durationMs;
+          break;
+        }
+        break;
+      }
+      /* ── background jobs (#179): session-scoped, merge by jobId ── */
+      case "job.started": {
+        const existing = jobs.get(e.payload.jobId);
+        if (existing) {
+          existing.command = e.payload.command;
+          existing.startedAt = e.payload.startedAt ?? existing.startedAt;
+          existing.url = e.payload.url ?? existing.url;
+          existing.by = e.payload.by ?? existing.by;
+        } else {
+          jobs.set(e.payload.jobId, {
+            jobId: e.payload.jobId,
+            command: e.payload.command,
+            status: "running",
+            startedAt: e.payload.startedAt,
+            url: e.payload.url,
+            by: e.payload.by,
+            tail: "",
+          });
+        }
+        break;
+      }
+      case "job.output": {
+        const job = jobs.get(e.payload.jobId);
+        if (!job) break;
+        job.tail = e.payload.tail;
+        job.url = e.payload.url ?? job.url;
+        break;
+      }
+      case "job.exited": {
+        const job = jobs.get(e.payload.jobId);
+        if (!job) break;
+        job.status = e.payload.status;
+        job.exitCode = e.payload.exitCode ?? job.exitCode;
         break;
       }
       case "request.opened": {
@@ -201,7 +377,59 @@ export function reduceSessionEvents(
           req.outcome = outcome;
           req.answer = answer;
           if (t && t.phase === "waiting") t.phase = "reasoning";
+          /* A plan request's answer lands on the plan it decided (#180):
+             approve -> the checklist runs; reject -> nothing runs;
+             change -> this version is superseded by what comes back. */
+          if (t && req.request.kind === "plan") {
+            const plan = latestPlan(t, req.request.planId);
+            if (plan) {
+              if (outcome === "approve") plan.status = "approved";
+              else if (outcome === "reject") plan.status = "rejected";
+              else if (outcome === "change") plan.status = "replaced";
+            }
+          }
         }
+        break;
+      }
+      case "plan.updated": {
+        const t = turn(e.payload.turnId);
+        const { planId, kind, version, goal, steps, risks } = e.payload;
+        const current = latestPlan(t, planId);
+        if (!current) {
+          t.plans.push({
+            planId,
+            kind,
+            version,
+            ...(goal !== undefined ? { goal } : {}),
+            steps,
+            ...(risks !== undefined ? { risks } : {}),
+            /* Task lists never ask — they run approved from their first
+               snapshot. A proposal waits on its plan request. */
+            status: kind === "tasks" ? "approved" : "proposed",
+          });
+        } else if (kind === "tasks" || version === current.version) {
+          /* A task list's version counts ticks, not revisions — always
+             update the single entry in place. A proposal's version IS the
+             revision the user decided on, so equal versions merge and only
+             a bump supersedes. */
+          current.version = Math.max(current.version, version);
+          current.goal = goal;
+          current.steps = steps;
+          current.risks = risks;
+        } else if (version > current.version) {
+          current.status = "replaced";
+          t.plans.push({
+            planId,
+            kind,
+            version,
+            ...(goal !== undefined ? { goal } : {}),
+            steps,
+            ...(risks !== undefined ? { risks } : {}),
+            status: "proposed",
+          });
+        }
+        // kind "plan" with version < current: an out-of-order re-send —
+        // the latest wins.
         break;
       }
       case "turn.steered": {
@@ -213,14 +441,41 @@ export function reduceSessionEvents(
         t.phase = e.payload.stopReason === "cancelled" ? "stopped" : "done";
         t.stopReason = e.payload.stopReason;
         t.usage = e.payload.usage;
+        /* Stopped mid-list (#180 AC-2): engines don't re-emit a cancelled
+           snapshot on interrupt, so unfinished items derive it here — the
+           card reads "Stopped · n/m" from the steps alone. */
+        if (e.payload.stopReason === "cancelled") {
+          for (const p of t.plans) {
+            for (const s of p.steps) {
+              if (s.status === "pending" || s.status === "in_progress") {
+                s.status = "cancelled";
+              }
+            }
+          }
+        }
+        /* #179: the turn ended without a subagent.completed for a helper the
+           engine still listed running — its delegate call can't outlive the
+           turn, so the row settles "stopped". */
+        for (const sa of t.subagents) {
+          if (sa.status === "running") sa.status = "stopped";
+        }
         break;
       }
     }
   }
   if (snapshot) state = snapshot.state;
 
+  /* The newest snapshot for a planId, or undefined (#180). */
+  function latestPlan(t: TurnModel, planId: string): TurnPlan | undefined {
+    for (let i = t.plans.length - 1; i >= 0; i--) {
+      if (t.plans[i].planId === planId) return t.plans[i];
+    }
+    return undefined;
+  }
+
   const live = order.find((t) => t.phase !== "done" && t.phase !== "stopped");
   const openRequests: TurnRequest[] = [];
+  const jobList = [...jobs.values()];
   for (const t of order) {
     for (const r of t.requests) {
       if (r.outcome === undefined) openRequests.push(r);
@@ -232,6 +487,7 @@ export function reduceSessionEvents(
     turns: order,
     live,
     openRequests,
+    jobs: jobList,
     model,
     provider,
     effort,

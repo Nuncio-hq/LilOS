@@ -1569,6 +1569,324 @@ for line in sys.stdin:
 `;
 
 /**
+ * #180 — plans & task lists. The fake keys on the `plan:` prefix; the same
+ * prompts read as plain instructions for a live engine (a todo tool / a
+ * plan-mode proposal), so one string drives both.
+ */
+export const PLAN_TASKS_PROMPT =
+  "plan: tasks — keep a todo list for this job and work it in order: 1) read README.md, 2) edit README.md exactly once, 3) run a quick check. Then reply with exactly: LILOS_OK";
+export const PLAN_PROPOSE_PROMPT =
+  "plan: propose — before editing anything, propose a plan for 'add a reconnect backoff to the client' and wait for my approval; if approved run it, then reply with exactly: LILOS_OK";
+
+interface PlanUpdatedPayloadShape {
+  turnId: string;
+  planId: string;
+  kind: "tasks" | "plan";
+  version: number;
+  goal?: string;
+  steps: { text: string; files?: string[]; status: string }[];
+  risks?: string[];
+}
+
+const STEP_STATUSES = new Set([
+  "pending",
+  "in_progress",
+  "completed",
+  "cancelled",
+]);
+
+function assertPlanEvent(
+  e: EngineEvent,
+  what = "plan.updated",
+): asserts e is EngineEvent & { payload: PlanUpdatedPayloadShape } {
+  assert(e.type === "plan.updated", `${what}: expected plan.updated`);
+  const p = e.payload as PlanUpdatedPayloadShape;
+  assert(typeof p.planId === "string" && p.planId.length > 0, "planId");
+  assert(p.kind === "tasks" || p.kind === "plan", `kind: ${p.kind}`);
+  assert(typeof p.version === "number" && p.version >= 1, "version >= 1");
+  assert(Array.isArray(p.steps) && p.steps.length > 0, "steps non-empty");
+  for (const s of p.steps) {
+    assert(typeof s.text === "string" && s.text.length > 0, "step text");
+    assert(STEP_STATUSES.has(s.status), `step status: ${s.status}`);
+  }
+}
+
+/** plan.updated events for one session, oldest first. */
+const planEvents = (h: Harness, sessionId: string) =>
+  h.events.filter(
+    (e): e is EngineEvent & { payload: PlanUpdatedPayloadShape } =>
+      e.sessionId === sessionId && e.type === "plan.updated",
+  );
+
+/** Versions never go backwards inside one planId. */
+function assertMonotonicVersions(
+  events: { payload: PlanUpdatedPayloadShape }[],
+) {
+  const seen = new Map<string, number>();
+  for (const e of events) {
+    const prev = seen.get(e.payload.planId) ?? 0;
+    assert(
+      e.payload.version >= prev,
+      `plan ${e.payload.planId} version regressed: ${prev} -> ${e.payload.version}`,
+    );
+    seen.set(e.payload.planId, e.payload.version);
+  }
+}
+
+const PLAN_SCENARIOS: Scenario[] = [
+  {
+    id: "describe wires plan.updated + plan requests under the plan capability",
+    async run(h) {
+      const r = (await h.request("describe")) as {
+        capabilities: { id: string; methods?: string[] }[];
+      };
+      const cap = r.capabilities.find((c) => c.id === "plan");
+      assert(cap, "plan suite runs only against engines declaring plan");
+    },
+  },
+  {
+    id: "task list ticks live: plan.updated snapshots track each item",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, PLAN_TASKS_PROMPT),
+      ) as Promise<PromptResult>;
+      const first = await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "plan.updated"),
+      );
+      assertPlanEvent(first);
+      assert(
+        first.payload.kind === "tasks",
+        `a working list is kind tasks, got ${first.payload.kind}`,
+      );
+      const res = await result;
+      assert(res.stopReason === "end_turn", "the tasks turn completes");
+      const updates = planEvents(h, sessionId);
+      assert(
+        updates.length >= 2,
+        `a ticking list streams more than one snapshot, got ${updates.length}`,
+      );
+      for (const e of updates) assertPlanEvent(e);
+      assertMonotonicVersions(updates);
+      const last = updates[updates.length - 1].payload;
+      assert(
+        last.steps.every((s) => s.status === "completed"),
+        "the last tasks snapshot has every item completed",
+      );
+      // Snapshots are keyed to the turn that produced them.
+      for (const e of updates)
+        assert(
+          e.payload.turnId === res.turnId,
+          "plan.updated carries the producing turnId",
+        );
+      /* AC-1 replay: the whole stream is in the log — events.since after
+         the first snapshot replays the rest verbatim. */
+      const tail = (await h.request("events.since", {
+        sessionId,
+        after: first.seq - 1,
+      })) as SinceResult;
+      const replayed = tail.events.filter((e) => e.type === "plan.updated");
+      assert(
+        replayed.length === updates.length,
+        `events.since replays every plan.updated (${replayed.length}/${updates.length})`,
+      );
+    },
+  },
+  {
+    id: "plan proposal: request.opened plan -> approve -> the steps run",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, PLAN_PROPOSE_PROMPT),
+      ) as Promise<PromptResult>;
+      const opened = await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "request.opened"),
+      );
+      assert(opened.type === "request.opened", "the proposal opens an ask");
+      const { requestId, request } = opened.payload;
+      assert(
+        request.kind === "plan",
+        `the proposal opens a plan request, got ${request.kind}`,
+      );
+      const proposal = await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) => e.type === "plan.updated" && e.payload.kind === "plan",
+        ),
+      );
+      assertPlanEvent(proposal);
+      const planId = proposal.payload.planId;
+      assert(
+        request.kind === "plan" && request.planId === planId,
+        "the request references the proposed planId",
+      );
+      // Double-answering is refused — one decision per request.
+      await h.request("request.respond", {
+        sessionId,
+        requestId,
+        outcome: "approve",
+      });
+      const second = await errorCode(h, "request.respond", {
+        sessionId,
+        requestId,
+        outcome: "approve",
+      });
+      assert(
+        second === -32002,
+        `answering twice errors REQUEST_NOT_FOUND (got ${second})`,
+      );
+      const res = await result;
+      assert(res.stopReason === "end_turn", "the approved plan completes");
+      const updates = planEvents(h, sessionId);
+      assertMonotonicVersions(updates);
+      const last = updates[updates.length - 1].payload;
+      assert(
+        last.steps.every((s) => s.status === "completed"),
+        "an approved plan's steps all complete",
+      );
+      // The same planId carried every snapshot of this revision chain.
+      assert(
+        updates.every((e) => e.payload.planId === planId),
+        "one planId owns the whole revision chain",
+      );
+    },
+  },
+  {
+    id: "plan proposal: change -> v2 -> approve -> done",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, PLAN_PROPOSE_PROMPT),
+      ) as Promise<PromptResult>;
+      const opened = await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "request.opened"),
+      );
+      assert(opened.type === "request.opened", "the proposal opens an ask");
+      await h.request("request.respond", {
+        sessionId,
+        requestId: opened.payload.requestId,
+        outcome: "change",
+        answer: "skip the banner step",
+      });
+      const v2 = await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) =>
+            e.type === "plan.updated" &&
+            e.payload.kind === "plan" &&
+            e.payload.version === 2,
+        ),
+      );
+      assertPlanEvent(v2, "the revised plan arrives as v2");
+      const opened2 = await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) =>
+            e.type === "request.opened" &&
+            e.payload.requestId !== opened.payload.requestId,
+        ),
+      );
+      assert(opened2.type === "request.opened", "v2 opens its own ask");
+      await h.request("request.respond", {
+        sessionId,
+        requestId: opened2.payload.requestId,
+        outcome: "approve",
+      });
+      const res = await result;
+      assert(res.stopReason === "end_turn", "v2 approved completes the turn");
+      const resolved = h.events.filter(
+        (e) => e.sessionId === sessionId && e.type === "request.resolved",
+      );
+      assert(
+        resolved.length === 2 &&
+          resolved[0].type === "request.resolved" &&
+          resolved[0].payload.outcome === "change" &&
+          resolved[1].type === "request.resolved" &&
+          resolved[1].payload.outcome === "approve",
+        `change then approve resolve in order, got ${resolved.map((e) => (e.type === "request.resolved" ? e.payload.outcome : "?"))}`,
+      );
+    },
+  },
+  {
+    id: "plan proposal: reject — nothing runs",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, PLAN_PROPOSE_PROMPT),
+      ) as Promise<PromptResult>;
+      const opened = await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "request.opened"),
+      );
+      assert(opened.type === "request.opened", "the proposal opens an ask");
+      await h.request("request.respond", {
+        sessionId,
+        requestId: opened.payload.requestId,
+        outcome: "reject",
+      });
+      const res = await result;
+      assert(
+        res.stopReason === "end_turn",
+        `a rejected plan still ends end_turn, got ${res.stopReason}`,
+      );
+      const ran = h.events.filter(
+        (e) => e.sessionId === sessionId && e.type === "tool.started",
+      );
+      assert(ran.length === 0, "a rejected plan runs no tools");
+    },
+  },
+  {
+    id: "interrupt mid-list: tasks snapshot present, turn cancelled",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, PLAN_TASKS_PROMPT),
+      ) as Promise<PromptResult>;
+      await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "plan.updated"),
+      );
+      const ack = (await h.request("interrupt", { sessionId })) as {
+        interrupted: boolean;
+      };
+      assert(ack.interrupted === true, "interrupt reports interrupted");
+      const res = await result;
+      assert(res.stopReason === "cancelled", "the turn ends cancelled");
+      const updates = planEvents(h, sessionId);
+      assert(
+        updates.length >= 1,
+        "the interrupted list's snapshots stay in the log",
+      );
+      const last = updates[updates.length - 1].payload;
+      assert(
+        last.steps.some(
+          (s) => s.status === "pending" || s.status === "in_progress",
+        ),
+        "a stopped list still shows unfinished items",
+      );
+    },
+  },
+];
+
+/**
  * `mcp_servers` capability: a `session.start` that carries stdio MCP servers.
  * An engine whose primary transport has no mcp_servers routes the session
  * onto its secondary (e.g. ACP) transport — where #133 lived; the fake
@@ -1661,6 +1979,307 @@ const MCP_SCENARIOS: Scenario[] = [
   },
 ];
 
+/* ── #179: `subagents` + `background_jobs` suites ────────────────────────────
+   The prompts carry keys both engines honour: the fake scripts match the
+   English (`delegate`, `dev server`, `background build`), the live OpenAI
+   stub matches the LILOS_* markers (scripts/openai_stub.py). On a real model
+   the English is the instruction the model follows. */
+const DELEGATE_PROMPT =
+  "LILOS_DELEGATE — delegate three helper tasks (scan the checkout, verify the findings, draft the summary) using the delegation tool, then reply with exactly: LILOS_OK";
+const BG_PROMPT =
+  "LILOS_BG — start the dev server as a background process that keeps running (use the terminal tool's background flag), then reply with exactly: LILOS_OK";
+const BG_EXIT_PROMPT =
+  "LILOS_BG_EXIT — run a build as a background process that exits on its own (use the terminal tool's background flag), then reply with exactly: LILOS_OK";
+
+interface JobRow {
+  jobId: string;
+  command: string;
+  status: string;
+  uptimeSeconds?: number;
+  exitCode?: number;
+  url?: string;
+  by?: string;
+  tail?: string;
+}
+
+const sessionJobs = async (h: Harness, sessionId: string) =>
+  ((await h.request("jobs.list", { sessionId })) as { jobs: JobRow[] }).jobs;
+
+export const SUBAGENT_SCENARIOS: Scenario[] = [
+  {
+    id: "delegate turn: one row per subagent, nested steps, replay-identical",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, DELEGATE_PROMPT),
+      ) as Promise<PromptResult>;
+      const done = await answerAsks(h, sessionId, "once");
+      assert(
+        done.payload.stopReason === "end_turn",
+        "the delegate turn completes",
+      );
+      await result;
+      const mine = (e: EngineEvent) => e.sessionId === sessionId;
+      const started = h.events.filter(
+        (e): e is Extract<EngineEvent, { type: "subagent.started" }> =>
+          mine(e) && e.type === "subagent.started",
+      );
+      /* A top-level delegate batch can run async on real engines: the
+         tool returns the dispatch handle at turn end while children still
+         finish — their subagent.completed frames can land after
+         turn.completed. Wait for every started row to close out instead of
+         snapshotting the backlog once (live flake on #179). */
+      const completedIdsFor = () =>
+        new Set(
+          h.events
+            .filter(
+              (e): e is Extract<EngineEvent, { type: "subagent.completed" }> =>
+                e.sessionId === sessionId && e.type === "subagent.completed",
+            )
+            .map((e) => e.payload.subagentId),
+        );
+      for (;;) {
+        const closed = completedIdsFor();
+        const pending = started
+          .map((e) => e.payload.subagentId)
+          .filter((id) => !closed.has(id));
+        if (pending.length === 0) break;
+        const landed = await h
+          .waitEvent(
+            h.forSession(
+              sessionId,
+              (e) =>
+                e.type === "subagent.completed" &&
+                pending.includes(e.payload.subagentId),
+            ),
+          )
+          .then(() => true)
+          .catch(() => false);
+        if (!landed) break;
+      }
+      assert(
+        started.length >= 2,
+        `a delegate turn emits one subagent.started per helper (got ${started.length})`,
+      );
+      const ids = new Set(started.map((e) => e.payload.subagentId));
+      assert(
+        ids.size === started.length,
+        "subagent.started ids are unique within the turn",
+      );
+      for (const ev of started) {
+        assert(
+          typeof ev.payload.name === "string" && ev.payload.name.length > 0,
+          "subagent.started carries a name",
+        );
+        assert(
+          typeof ev.payload.task === "string" && ev.payload.task.length > 0,
+          "subagent.started carries the brief",
+        );
+      }
+      /* Every started helper finishes with a valid status — no orphan rows. */
+      const completed = h.events.filter(
+        (e): e is Extract<EngineEvent, { type: "subagent.completed" }> =>
+          mine(e) && e.type === "subagent.completed",
+      );
+      const completedIds = new Set(completed.map((e) => e.payload.subagentId));
+      for (const id of ids)
+        assert(
+          completedIds.has(id),
+          `subagent ${id} gets a subagent.completed`,
+        );
+      for (const ev of completed)
+        assert(
+          ["done", "failed", "stopped"].includes(ev.payload.status),
+          `subagent.completed status is done|failed|stopped (got ${ev.payload.status})`,
+        );
+      /* Nested calls: a child's tool.* carries parentToolCallId = the row id. */
+      const nested = h.events.filter(
+        (
+          e,
+        ): e is Extract<
+          EngineEvent,
+          { type: "tool.started" | "tool.completed" }
+        > =>
+          mine(e) &&
+          (e.type === "tool.started" || e.type === "tool.completed") &&
+          typeof e.payload.parentToolCallId === "string",
+      );
+      assert(
+        nested.length >= 1,
+        "at least one child tool call carries parentToolCallId",
+      );
+      for (const ev of nested)
+        assert(
+          ids.has(ev.payload.parentToolCallId ?? ""),
+          "tool.parentToolCallId resolves to a started subagent",
+        );
+      /* The delegate call itself links rows: started.parentToolCallId names
+         an emitted parent tool call when present. */
+      const callIds = new Set(
+        h.events
+          .filter(
+            (e): e is Extract<EngineEvent, { type: "tool.started" }> =>
+              mine(e) && e.type === "tool.started",
+          )
+          .map((e) => e.payload.toolCallId),
+      );
+      for (const ev of started) {
+        const pid = ev.payload.parentToolCallId;
+        if (pid !== undefined)
+          assert(
+            callIds.has(pid),
+            "subagent.started.parentToolCallId names an emitted tool call",
+          );
+      }
+      /* AC-1 replay leg: events.since re-emits the same frames — no dupes. */
+      const since = (await h.request("events.since", {
+        sessionId,
+        after: 0,
+      })) as SinceResult;
+      const replay = since.events
+        .filter((e) => e.type === "subagent.started")
+        .map((e) => `${e.seq}:${e.payload.subagentId}`);
+      assert(
+        JSON.stringify(replay) ===
+          JSON.stringify(
+            started.map((e) => `${e.seq}:${e.payload.subagentId}`),
+          ),
+        "events.since replays subagent.started identically",
+      );
+    },
+  },
+];
+
+export const BACKGROUND_JOBS_SCENARIOS: Scenario[] = [
+  {
+    id: "describe wires jobs.list + jobs.stop under background_jobs",
+    async run(h) {
+      const r = (await h.request("describe")) as DescribeResultShape;
+      const cap = r.capabilities.find((c) => c.id === "background_jobs");
+      assert(cap, "the suite runs only against engines declaring it");
+      assert(
+        cap?.methods?.includes("jobs.list") === true &&
+          cap?.methods?.includes("jobs.stop") === true,
+        "the descriptor names jobs.list and jobs.stop",
+      );
+    },
+  },
+  {
+    id: "background process lists, tails output, stops via jobs.stop",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      assert(
+        (await sessionJobs(h, sessionId)).length === 0,
+        "jobs.list starts empty",
+      );
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, BG_PROMPT),
+      ) as Promise<PromptResult>;
+      const ev = await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "job.started"),
+      );
+      assert(ev.type === "job.started", "job.started arrived");
+      const jobId = ev.payload.jobId;
+      assert(
+        typeof ev.payload.command === "string" && ev.payload.command.length > 0,
+        "job.started carries the command",
+      );
+      /* A live output frame follows — the tail is cumulative, not a delta. */
+      await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) =>
+            e.type === "job.output" &&
+            e.payload.jobId === jobId &&
+            !!e.payload.tail,
+        ),
+      );
+      await answerAsks(h, sessionId, "once");
+      await result;
+      const row = (await sessionJobs(h, sessionId)).find(
+        (j) => j.jobId === jobId,
+      );
+      assert(row, "jobs.list shows the running process");
+      assert(
+        row?.status === "running",
+        `the row reads running (got ${row?.status})`,
+      );
+      const stopped = (await h.request("jobs.stop", {
+        sessionId,
+        jobId,
+      })) as { stopped: boolean };
+      assert(stopped.stopped === true, "jobs.stop reports stopped");
+      const exited = await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) => e.type === "job.exited" && e.payload.jobId === jobId,
+        ),
+      );
+      assert(exited.type === "job.exited", "job.exited arrived");
+      assert(
+        exited.payload.status === "stopped",
+        "job.exited reads stopped after jobs.stop",
+      );
+      const again = (await h.request("jobs.stop", {
+        sessionId,
+        jobId,
+      })) as { stopped: boolean };
+      assert(again.stopped === false, "a second stop is a no-op");
+      const final = (await sessionJobs(h, sessionId)).find(
+        (j) => j.jobId === jobId,
+      );
+      assert(
+        final?.status !== "running",
+        "the stopped row no longer reads running",
+      );
+    },
+  },
+  {
+    id: "a process exiting on its own emits job.exited exited",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, BG_EXIT_PROMPT),
+      ) as Promise<PromptResult>;
+      const started = await h.waitEvent(
+        h.forSession(sessionId, (e) => e.type === "job.started"),
+      );
+      assert(started.type === "job.started", "job.started arrived");
+      const exited = await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) =>
+            e.type === "job.exited" &&
+            e.payload.jobId === started.payload.jobId,
+        ),
+      );
+      assert(exited.type === "job.exited", "job.exited arrived");
+      assert(
+        exited.payload.status === "exited",
+        `a natural exit reads exited (got ${exited.payload.status})`,
+      );
+      assert(
+        typeof exited.payload.exitCode === "number",
+        "job.exited carries the exit code",
+      );
+      await answerAsks(h, sessionId, "once");
+      await result;
+    },
+  },
+];
+
 /**
  * Suite registry: `core` always runs; each capability the engine declares on
  * `describe` adds its suite. Pending suites are registered so engines (and CI)
@@ -1690,7 +2309,14 @@ export const SUITES: {
     implemented: true,
     scenarios: SESSION_META_SCENARIOS,
   },
+  /* #179 */
+  { capability: "subagents", implemented: true, scenarios: SUBAGENT_SCENARIOS },
+  {
+    capability: "background_jobs",
+    implemented: true,
+    scenarios: BACKGROUND_JOBS_SCENARIOS,
+  },
   { capability: "usage", implemented: false, scenarios: [] },
-  { capability: "plan", implemented: false, scenarios: [] },
+  { capability: "plan", implemented: true, scenarios: PLAN_SCENARIOS },
   { capability: "rewind", implemented: false, scenarios: [] },
 ];

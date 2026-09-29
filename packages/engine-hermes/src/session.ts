@@ -3,6 +3,7 @@ import {
   type EngineEvent,
   type EngineEventType,
   type EngineRequest,
+  type JobStatus,
   type McpServer,
   RPC_ERRORS,
   type SessionState,
@@ -12,9 +13,28 @@ import { RpcError } from "./errors.js";
 
 export type DriverKind = "ws" | "acp";
 
+/** #179: an engine-owned background process row (jobs.* surface). */
+export interface HermesJob {
+  jobId: string;
+  command: string;
+  status: JobStatus;
+  /** ms epoch — the row's started clock (process.list `started_at` wins). */
+  startedAt: number;
+  pid?: number;
+  exitCode?: number;
+  tail: string;
+  url?: string;
+  /** job.started went out — later state moves land as job.output/job.exited. */
+  startedEmitted: boolean;
+  /** Tail length already sent in a job.output (dirty check for the flush). */
+  flushedLen: number;
+}
+
 export interface Turn {
   turnId: string;
   phase: "reasoning" | "tools" | "text" | "waiting";
+  /** #180: ACP `plan` updates bump this per snapshot so versions increase. */
+  plan?: { planId: string; version: number };
   resolve: (r: { turnId: string; stopReason: string; usage?: Usage }) => void;
   reject: (e: unknown) => void;
 }
@@ -57,6 +77,33 @@ export class Session {
   /** Hermes tool_call id -> LilOS toolCallId (stable per session). */
   toolIds = new Map<string, string>();
   toolCounter = 0;
+  /* #179: flat subagent rows keyed on any child id the wire offers
+     (subagent_id / child_session_id / delegation+index). */
+  subIds = new Map<string, string>();
+  subCounter = 0;
+  subToolCounter = 0;
+  /** In-flight delegate calls — a child run links to its spawning call. */
+  delegateStack: string[] = [];
+  /** In-flight `terminal {background:true}` calls -> their command. */
+  terminalCalls = new Map<string, string>();
+  /* #179: background jobs by hermes process id (`agent.terminal.output`
+     process_id; `terminal.close` reports the OS pid — bridged by jobByPid). */
+  jobs = new Map<string, HermesJob>();
+  jobByPid = new Map<number, string>();
+  /** jobId -> throttle timer for the rolling job.output tail. */
+  jobFlush = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Reconcile timer while any job runs (silent exits have no push frame). */
+  jobPoll?: ReturnType<typeof setInterval>;
+
+  /** Stable LilOS subagentId for a wire-level child key. */
+  subagentId(key: string): string {
+    let id = this.subIds.get(key);
+    if (!id) {
+      id = `sa${++this.subCounter}`;
+      this.subIds.set(key, id);
+    }
+    return id;
+  }
   constructor(
     readonly id: string,
     readonly agent: string,
@@ -148,6 +195,14 @@ export class Session {
       this.toolIds.set(hermesToolId, id);
     }
     return id;
+  }
+
+  /** Subagent ids minted under one parent call (ACP-synthesized rows). */
+  subagentsForCall(callId: string): string[] {
+    const prefix = `${callId}:`;
+    return [...this.subIds.keys()]
+      .filter((k) => k.startsWith(prefix))
+      .map((k) => this.subIds.get(k) as string);
   }
 }
 

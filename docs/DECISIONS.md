@@ -158,6 +158,22 @@ PR does not exist.
   Not: a fake default in release, hand-editing installed launch-agent
   plists to pick an engine (lost on every rebuild), or asking for an MDM
   exception. — #85, #141
+- **D-#180 Plans and task lists are engine state: the engine streams a full
+  snapshot on every change (`plan.updated` keyed by `planId`), and LilOS
+  derives the Tasks card / Plan card / Workbench Plan tab from events
+  only.** `kind:"tasks"` (Hermes `todo_list`, ACP `plan`) ticks without
+  approval; `kind:"plan"` waits on a `plan` EngineRequest answered
+  approve / reject / change{text}. Not: a LilOS-owned plan store, patch or
+  delta plan events, or rendering these without a declared `plan`
+  capability (D-#19). — #180
+- **D-#179 Subagent runs and background jobs exist only as engine events /
+  `jobs.*` answers — LilOS stores no job/subagent state** (`subagent.*`,
+  `job.*`, `jobs.list`/`jobs.stop` under `background_jobs`; a helper that is
+  another employee surfaces as `subagent.started.employee` + a session link
+  in its DM, per D-#25). Job output lives in engine memory (rolling tail);
+  after a reconnect the list comes from `jobs.list`, never a LilOS copy.
+  Not: a LilOS-side jobs/subagents table, or a copy of a helper's turns. —
+  #179
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the

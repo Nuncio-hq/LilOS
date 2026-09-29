@@ -6,10 +6,45 @@
  * prototype are UI concerns and stay out of the wire; their content is
  * carried by the tool steps and text.
  */
+/* ── subagents + background jobs (#179) ────────────────────────────────── */
+
+/** One helper the delegate step spawns: its own tool calls nest under it. */
+export interface FakeSubagent {
+  /** Stable id; default `sa-<n>` per session. */
+  id?: string;
+  name: string;
+  task: string;
+  /** Scripts run to completion inside the step — no "running" outcome. */
+  status: "done" | "failed" | "stopped";
+  steps: FakeStep[];
+  result?: string;
+  durationMs?: number;
+  /** Agent id of the employee the helper is (AC-3); the engine links the
+      subagent row to that employee's live session when one exists. */
+  employee?: string;
+}
+
+/** A process the engine leaves running past the turn (job.* events). */
+export interface FakeJob {
+  id?: string;
+  /** Defaults to the step's terminal command. */
+  command?: string;
+  /** Pumped one line per tick into job.output's rolling tail. */
+  outputLines: string[];
+  /** Emit job.exited after all lines (default: never — stays running). */
+  exitCode?: number;
+  /** Subagent name when a helper spawned it. */
+  by?: string;
+}
+
 export interface FakeStep {
   tool: string;
   input: Record<string, unknown>;
   output: string;
+  /** #179: this call is a delegation — emit subagent.* for each helper. */
+  subagents?: FakeSubagent[];
+  /** #179: this call leaves a background process running (job.* events). */
+  job?: FakeJob;
   diff?: {
     path: string;
     status: "added" | "modified" | "deleted";
@@ -177,6 +212,139 @@ export function scriptFor(
         },
       ],
       text: `Got your image${images.length > 1 ? "s" : ""} — ${list} came through as a prompt content block.${q ? ` On "${q}":` : ""} a vision model describes the pixels; this fake proves the hand-off.`,
+    };
+  }
+
+  /* #179: delegation — three helpers, the middle one fails; an @mention of
+     another employee tags that helper as an employee-helper (the engine
+     links it to their live session when one exists). `LILOS_DELEGATE` is
+     the conformance/live-stub key. */
+  if (/\bdelegate|subagents?\b/i.test(q)) {
+    const mention = /@(\w+)(?![\w./-])/.exec(prompt)?.[1];
+    const helpers: FakeSubagent[] = [
+      {
+        name: "Scan the relay package",
+        task: "List the relay package's exported surface and report it back.",
+        status: "done",
+        durationMs: 3200,
+        result:
+          "Relay exports `client` + `server`; one envelope shape over the wire.",
+        steps: [
+          {
+            tool: "search_files",
+            input: { pattern: "export", path: "apps/relay/src" },
+            output: "4 matches",
+          },
+          {
+            tool: "read_file",
+            input: { path: "apps/relay/src/session.ts" },
+            output: "392 lines",
+          },
+        ],
+      },
+      {
+        name: "Verify the findings",
+        task: "Cross-check the scan's claims against the workspace tree.",
+        status: "failed",
+        durationMs: 1400,
+        result: "workspace probe timed out",
+        steps: [
+          {
+            tool: "terminal",
+            input: { command: "git status --porcelain" },
+            output: "fatal: not a git repository",
+          },
+        ],
+      },
+      {
+        name: "Draft the summary",
+        task: "Write the one-paragraph summary of the helpers' findings.",
+        status: "done",
+        durationMs: 900,
+        result: "Summary written to notes/summary.md.",
+        steps: [
+          {
+            tool: "write_file",
+            input: { path: "notes/summary.md" },
+            output: "12 lines",
+            diff: {
+              path: "notes/summary.md",
+              status: "added",
+              add: 12,
+              del: 0,
+              patch:
+                "@@ -0,0 +1,12 @@\n+# Relay summary\n+\n+One envelope over the wire; helpers agree.",
+            },
+          },
+        ],
+      },
+    ];
+    /* AC-3: a helper that is another employee is declared by an @mention —
+       the engine resolves their live session at emit time. */
+    if (mention && mention !== agent) helpers[2].employee = mention;
+    return {
+      reasoning: `Three separable reads. Fan out helpers and fold their reports back.`,
+      steps: [
+        {
+          tool: "delegate_task",
+          input: {
+            tasks: helpers.map((h) => ({ goal: h.task })),
+          },
+          output: "",
+          subagents: helpers,
+        },
+      ],
+      text: `All three helpers reported back — one failed (workspace probe), the other two landed. Their steps and reports are on each row.`,
+    };
+  }
+
+  /* #179: background work — `LILOS_BG_EXIT` is the conformance key for a
+     bounded job that exits on its own; `LILOS_BG`/"background"/"dev server"
+     keys a long-running process (stays running until jobs.stop). */
+  if (/\bLILOS_BG_EXIT|background build\b/i.test(q)) {
+    return {
+      reasoning: `A bounded build belongs in the background — its row updates until it exits.`,
+      steps: [
+        {
+          tool: "terminal",
+          input: { command: "bun run build &" },
+          output: "Background process started",
+          job: {
+            command: "bun run build",
+            outputLines: [
+              "$ bun run build",
+              "bundling 214 modules…",
+              "✓ build finished in 1.9s",
+            ],
+            exitCode: 0,
+          },
+        },
+      ],
+      text: `The build ran in the background and exited clean — the **Background** row shows it.`,
+    };
+  }
+  if (/\bLILOS_BG\b|background|dev server/i.test(q)) {
+    return {
+      reasoning: `A dev server runs past this turn — leave it in the background so **Stop** can end it.`,
+      steps: [
+        {
+          tool: "terminal",
+          input: { command: "bun run dev &" },
+          output: "Background process started",
+          job: {
+            command: "bun run dev",
+            outputLines: [
+              "$ bun run dev",
+              "vite v7 ready in 412 ms",
+              "Local: http://localhost:4173/",
+              "watching for changes…",
+              "GET / 200 12ms",
+              "GET / 200 9ms",
+            ],
+          },
+        },
+      ],
+      text: `Dev server is up — it's listed under **Background** with its URL and output; **Stop** kills it.`,
     };
   }
 

@@ -83,6 +83,9 @@ describe("engine-fake", () => {
       "agents",
       "models",
       "session_meta",
+      "plan",
+      "subagents",
+      "background_jobs",
     ]);
     c.close();
   });

@@ -163,6 +163,141 @@ describe("EngineClient session feed (#84 ac-32 race)", () => {
     expect(feed.get().openRequests).toEqual([]);
   });
 
+  it("AC-1 a feed created before ready replays from 0, not the live watermark", async () => {
+    const { socket, client } = makeClient();
+    const pending = client.connect();
+    await Promise.resolve();
+    socket.openSocket();
+    await Promise.resolve();
+
+    /* Reload-mid-turn (#180): the feed atom exists while connect() is still
+       resolving; live events bump latestSeq before the deferred resync. */
+    const feed = client.sessionFeed("s1");
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "event",
+      params: openedEvent(5, "r1"),
+    });
+    expect(feed.get().latestSeq).toBe(5);
+
+    socket.respondTo("describe", DESCRIBE);
+    await pending;
+    await vi.waitFor(() =>
+      expect(socket.sawRequest("events.since")).toBe(true),
+    );
+    /* after must be 0 — replaying from the live watermark (5) drops every
+       earlier event: turn.started, early deltas, plan.updated. */
+    const since = socket.sent
+      .map(
+        (raw) =>
+          JSON.parse(raw) as { method?: string; params?: { after?: number } },
+      )
+      .find((f) => f.method === "events.since");
+    expect(since?.params?.after).toBe(0);
+
+    socket.respondTo("events.since", {
+      events: [openedEvent(2, "r0"), openedEvent(5, "r1")],
+      latestSeq: 5,
+      truncated: false,
+      openRequests: [
+        { requestId: "r0", turnId: "t1", request: APPROVAL, seq: 2 },
+        { requestId: "r1", turnId: "t1", request: APPROVAL, seq: 5 },
+      ],
+      snapshot: SNAPSHOT,
+    });
+    await vi.waitFor(() => expect(feed.get().synced).toBe(true));
+    expect(feed.get().events.map((e) => e.seq)).toEqual([2, 5]);
+    expect(feed.get().openRequests.map((r) => r.requestId)).toEqual([
+      "r0",
+      "r1",
+    ]);
+  });
+
+  it("#179 retries a failed events.since instead of bricking the feed", async () => {
+    vi.useFakeTimers();
+    const { socket, client } = makeClient();
+    try {
+      await connectClient(client, socket);
+
+      const feed = client.sessionFeed("s1");
+      await vi.waitFor(() =>
+        expect(socket.sawRequest("events.since")).toBe(true),
+      );
+
+      // A transient engine-link failure (the feed's ENGINE_DOWN code).
+      const req = socket.sent
+        .map((raw) => JSON.parse(raw) as { id?: string; method?: string })
+        .reverse()
+        .find((f) => f.method === "events.since" && f.id !== undefined);
+      socket.emit({
+        jsonrpc: "2.0",
+        id: req?.id,
+        error: { code: -32020, message: "engine not connected" },
+      });
+      await vi.waitFor(() => expect(feed.get().error).toBeTruthy());
+
+      // First retry fires ~2s later and succeeds — the feed heals itself.
+      await vi.advanceTimersByTimeAsync(2_100);
+      socket.respondTo("events.since", {
+        events: [
+          {
+            seq: 1,
+            sessionId: "s1",
+            type: "subagent.started",
+            payload: {
+              turnId: "t1",
+              subagentId: "sa-1",
+              name: "helper",
+              task: "scan",
+            },
+          },
+        ],
+        latestSeq: 1,
+        truncated: false,
+        openRequests: [],
+        snapshot: SNAPSHOT,
+      });
+      await vi.waitFor(() => expect(feed.get().synced).toBe(true));
+      expect(feed.get().error).toBeUndefined();
+      expect(feed.get().events.map((e) => e.type)).toEqual([
+        "subagent.started",
+      ]);
+    } finally {
+      client.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("#179 a session_not_found replay error is terminal — no retry", async () => {
+    vi.useFakeTimers();
+    const { socket, client } = makeClient();
+    try {
+      await connectClient(client, socket);
+
+      const feed = client.sessionFeed("s1");
+      await vi.waitFor(() =>
+        expect(socket.sawRequest("events.since")).toBe(true),
+      );
+      const req = socket.sent
+        .map((raw) => JSON.parse(raw) as { id?: string; method?: string })
+        .reverse()
+        .find((f) => f.method === "events.since" && f.id !== undefined);
+      socket.emit({
+        jsonrpc: "2.0",
+        id: req?.id,
+        error: { code: -32001, message: "session_not_found: no session s1" },
+      });
+      await vi.waitFor(() => expect(feed.get().error).toBeTruthy());
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(
+        socket.sent.filter((r) => r.includes("events.since")),
+      ).toHaveLength(1);
+    } finally {
+      client.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("a live event landing before the first replay does not move the replay cursor", async () => {
     /* The ac-140 CI flake: the dm page subscribes a feed while the engine
        socket is still connecting. Frames landing in that window used to move

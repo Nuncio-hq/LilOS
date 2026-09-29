@@ -1,4 +1,10 @@
-import type { SessionModel, TurnModel } from "@lilos/client-runtime";
+import type {
+  JobModel,
+  SessionModel,
+  SubagentModel,
+  TurnModel,
+  TurnPlan,
+} from "@lilos/client-runtime";
 import type {
   AppMessage,
   Ask,
@@ -6,11 +12,14 @@ import type {
   Employee,
 } from "@lilos/contracts/app";
 import type {
+  BackgroundJob,
   Msg,
   Phase,
   Reply,
   Step,
+  Subagent,
   Employee as UiEmployee,
+  Plan as UiPlan,
   Workspace,
 } from "@lilos/ui/types";
 import { toAttachedFiles } from "./attachments";
@@ -54,6 +63,32 @@ const PHASE_MAP: Record<TurnModel["phase"], Phase> = {
   stopped: "stopped",
 };
 
+/* #180: a turn's plan/task-list snapshot -> the ui Plan the PlanCard renders.
+   A tasks list under 2 items is noise (issue default) and is never mapped. */
+export function toUiPlan(p: TurnPlan): UiPlan | undefined {
+  if (p.kind === "tasks" && p.steps.length < 2) return undefined;
+  return {
+    id: p.planId,
+    kind: p.kind,
+    version: p.version,
+    ...(p.goal !== undefined ? { goal: p.goal } : {}),
+    steps: p.steps.map((s) => ({
+      text: s.text,
+      ...(s.files ? { files: s.files } : {}),
+      status: s.status,
+    })),
+    ...(p.risks ? { risks: p.risks } : {}),
+    status: p.status,
+  };
+}
+
+/** The turn's current plan: its latest snapshot entry (tasks or newest
+    proposed version). Older superseded versions ride synthetic replies. */
+function currentPlan(turn: TurnModel): UiPlan | undefined {
+  const last = turn.plans.at(-1);
+  return last ? toUiPlan(last) : undefined;
+}
+
 function toStep(s: TurnModel["steps"][number]): Step {
   return {
     tool: s.tool,
@@ -65,11 +100,75 @@ function toStep(s: TurnModel["steps"][number]): Step {
   };
 }
 
+/* ── #179: subagent + background-job model -> ui types ─────────────────── */
+
+/** A helper row inside the turn's Subagents block. */
+export function toSubagent(
+  s: SubagentModel,
+  resolveEmployee: (employeeRef: string) => string = (r) => r,
+): Subagent {
+  return {
+    id: s.subagentId,
+    name: s.name,
+    task: s.task,
+    status: s.status,
+    steps: s.steps.map(toStep),
+    ...(s.result !== undefined ? { result: s.result } : {}),
+    /* `Subagent.dur` reads seconds; the model tracks ms. */
+    ...(s.durationMs !== undefined
+      ? { dur: Math.round(s.durationMs / 10) / 100 }
+      : {}),
+    /* Another employee's helper links to its own session (D-#25): the
+       engine reports its profile ref; the ui row needs the LilOS employee
+       id (avatar + DM route), which `resolveEmployee` maps. */
+    ...(s.employee
+      ? {
+          employee: {
+            id: resolveEmployee(s.employee.employeeRef),
+            session: s.employee.sessionRef,
+          },
+        }
+      : {}),
+  };
+}
+
+/** "38s" / "14m" / "1h 5m" — the Background tab's uptime column. */
+export function formatUptime(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
+}
+
+/** A session job row for Workbench → Background. `now` lets the caller pin
+    one clock so a tick re-render doesn't jitter the uptime strings. */
+export function toJob(j: JobModel, now = Date.now()): BackgroundJob {
+  return {
+    id: j.jobId,
+    command: j.command,
+    status: j.status,
+    started: j.startedAt
+      ? new Date(j.startedAt).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "",
+    uptime: j.startedAt ? formatUptime((now - j.startedAt) / 1000) : "0s",
+    ...(j.url ? { url: j.url } : {}),
+    ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
+    log: j.tail,
+    ...(j.by ? { by: j.by } : {}),
+  };
+}
+
 /** A live engine turn rendered as the employee's in-progress reply. */
 export function liveTurnReply(
   turn: TurnModel,
   employeeId: string,
   asks: Ask[] = [],
+  resolveEmployee: (employeeRef: string) => string = (r) => r,
 ): Reply {
   // Approvals render from relay asks (the responder identity is the ask id);
   // turn.requests only mark the phase "waiting". An open ask wins; else the
@@ -108,8 +207,67 @@ export function liveTurnReply(
     fast: turn.fast,
     phase: PHASE_MAP[turn.phase],
     live: turn.phase !== "done" && turn.phase !== "stopped",
+    plan: currentPlan(turn),
     waitingOn: turn.phase === "waiting" ? open?.request.kind : undefined,
+    /* #179: helpers the turn delegated to (the Subagents block renders only
+       when this is non-empty — the UI's own check). */
+    ...(turn.subagents.length
+      ? {
+          subagents: turn.subagents.map((s) => toSubagent(s, resolveEmployee)),
+        }
+      : {}),
   };
+}
+
+/* #180: a superseded plan version folds into its own employee reply
+   ("Replaced by vN") right before the turn's card, like the prototype. */
+function supersededPlanReplies(turn: TurnModel, employeeId: string): Reply[] {
+  return turn.plans.slice(0, -1).flatMap((p) => {
+    const plan = toUiPlan(p);
+    return plan
+      ? [
+          {
+            id: `${turn.turnId}-plan-${p.version}`,
+            from: employeeId,
+            time: "",
+            text: "",
+            plan,
+          } satisfies Reply,
+        ]
+      : [];
+  });
+}
+
+/** The live reply plus any superseded plan versions folded ahead of it. */
+function liveReplies(
+  turn: TurnModel,
+  employeeId: string,
+  asks: Ask[],
+  resolveEmployee: (employeeRef: string) => string = (r) => r,
+): Reply[] {
+  return [
+    ...supersededPlanReplies(turn, employeeId),
+    liveTurnReply(turn, employeeId, asks, resolveEmployee),
+  ];
+}
+
+/* AC-6 (D-#19): plan surfaces render only when the engine declares `plan` —
+   drop plan cards and the empty synthetic rows that carried them. */
+export function stripPlans(replies: Reply[]): Reply[] {
+  return replies
+    .map((r) => (r.plan ? { ...r, plan: undefined } : r))
+    .filter(
+      (r) =>
+        !!(
+          r.text ||
+          r.reasoning ||
+          r.streaming ||
+          r.steps?.length ||
+          r.steers?.length ||
+          r.approval ||
+          r.plan
+        ),
+    );
 }
 
 /** Relay channel messages for one conversation -> ui Reply[]. */
@@ -147,10 +305,12 @@ export function mergeTurns(
   model: SessionModel | undefined,
   employeeId: string,
   asks: Ask[] = [],
+  resolveEmployee: (employeeRef: string) => string = (r) => r,
 ): Reply[] {
   if (!model) return replies;
   const used = new Set<TurnModel>();
-  const out = replies.map((r) => {
+  const flat: Reply[] = [];
+  for (const r of replies) {
     const t = model.turns.find(
       (x) =>
         !used.has(x) &&
@@ -158,11 +318,16 @@ export function mergeTurns(
         x.text.trim() &&
         x.text.trim() === r.text.trim(),
     );
-    if (!t) return r;
+    if (!t) {
+      flat.push(r);
+      continue;
+    }
     used.add(t);
     // Keep the relay message id — it's the search-hit scroll anchor (#138).
-    return { ...liveTurnReply(t, employeeId, asks), id: r.id };
-  });
+    const live = liveReplies(t, employeeId, asks, resolveEmployee);
+    live[live.length - 1] = { ...live[live.length - 1], id: r.id };
+    flat.push(...live);
+  }
   /* A finished turn with no relay message (a stop before any text) sits
      right after the user message that prompted it (`turn.started.ref`), not
      at the end — appended, it jumped below every later message and answer.
@@ -170,13 +335,14 @@ export function mergeTurns(
   for (const t of model.turns) {
     if (used.has(t) || t === model.live) continue;
     if (!t.text.trim() && t.phase !== "stopped") continue;
-    const at = t.ref ? out.findIndex((r) => r.id === t.ref) : -1;
-    if (at < 0) out.push(liveTurnReply(t, employeeId, asks));
-    else out.splice(at + 1, 0, liveTurnReply(t, employeeId, asks));
+    const at = t.ref ? flat.findIndex((r) => r.id === t.ref) : -1;
+    const rs = liveReplies(t, employeeId, asks, resolveEmployee);
+    if (at < 0) flat.push(...rs);
+    else flat.splice(at + 1, 0, ...rs);
   }
   if (model.live && !used.has(model.live))
-    out.push(liveTurnReply(model.live, employeeId, asks));
-  return out;
+    flat.push(...liveReplies(model.live, employeeId, asks, resolveEmployee));
+  return flat;
 }
 
 /**

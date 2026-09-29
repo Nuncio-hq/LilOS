@@ -48,10 +48,13 @@ export {
   type SupervisorState,
 } from "./supervisor";
 export {
+  type JobModel,
   reduceSessionEvents,
   type SessionModel,
+  type SubagentModel,
   type TurnModel,
   type TurnPhase,
+  type TurnPlan,
   type TurnRequest,
   type TurnStep,
 } from "./turn-model";

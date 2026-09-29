@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import {
   type AgentDescriptor,
   type AgentsCreateParams,
@@ -5,6 +7,7 @@ import {
   type AgentsUpdateParams,
   type ApprovalOption,
   type ApprovalOutcome,
+  BACKGROUND_JOBS_CAPABILITY,
   type Capability,
   type ContentBlock,
   ENGINE_METHODS,
@@ -12,10 +15,16 @@ import {
   type EngineEvent,
   type EngineEventType,
   type EventsSinceParams,
+  type FileDiff,
   IMAGE_PROMPT_CAPABILITY,
   type InterruptParams,
+  type JobStatus,
+  type JobsListParams,
+  type JobsStopParams,
   type KnownCapability,
   type ModelsListParams,
+  PLAN_CAPABILITY,
+  type PlanStep,
   type PromptParams,
   type RequestRespondParams,
   RPC_ERRORS,
@@ -28,6 +37,7 @@ import {
   type SessionSteerParams,
   type SessionStopParams,
   STEER_CAPABILITY,
+  SUBAGENTS_CAPABILITY,
   type Usage,
 } from "@lilos/contracts/engine";
 import {
@@ -39,7 +49,32 @@ import {
   SEED_AGENTS,
 } from "./catalog.js";
 import { type McpClient, startMcpServer } from "./mcp.js";
-import { type FakeScript, type FakeStep, scriptFor } from "./script.js";
+import {
+  type FakeScript,
+  type FakeStep,
+  type FakeSubagent,
+  scriptFor,
+} from "./script.js";
+
+/* ── subagents + background jobs (#179) ────────────────────────────────── */
+
+/** Live state of one background process the fake leaves running. */
+interface FakeJob {
+  jobId: string;
+  command: string;
+  status: JobStatus;
+  startedAt: number;
+  exitCode?: number;
+  url?: string;
+  by?: string;
+  /** Rolling ~4KB tail — job.output replaces, never appends. */
+  tail: string;
+  /** Script lines still to pump. */
+  lines: string[];
+  /** Emit job.exited with this code once lines drain; absent = runs forever. */
+  exitCodeOnDrain?: number;
+  timer?: ReturnType<typeof setInterval>;
+}
 
 /** Transport-agnostic failure; the transports translate it into a JSON-RPC error object. */
 export class RpcError extends Error {
@@ -62,6 +97,13 @@ interface PendingAsk {
   seq: number;
   resolve: (outcome: { outcome: ApprovalOutcome; answer?: string }) => void;
 }
+
+/** First localhost-ish URL in a job tail — the "URL (when printed)" the
+    Background tab shows (AC-4). */
+const firstLocalUrl = (tail: string) =>
+  /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?\/?/.exec(
+    tail,
+  )?.[0];
 
 /** Base64 length -> decoded bytes, without pulling node:buffer into packages. */
 const decodedBytes = (base64: string) => {
@@ -116,6 +158,10 @@ interface FakeSession {
   turnCount: number;
   toolCounter: number;
   requestCounter: number;
+  /** #179: background processes this session left running (jobs.* + job.*). */
+  jobs: Map<string, FakeJob>;
+  jobCounter: number;
+  subCounter: number;
 }
 
 export interface FakeEngineOptions {
@@ -266,6 +312,11 @@ export class FakeEngine {
         return this.sessionSetTitle(parsed.data as SessionSetTitleParams);
       case "session.setHidden":
         return this.sessionSetHidden(parsed.data as SessionSetHiddenParams);
+      /* ── background jobs (#179) ── */
+      case "jobs.list":
+        return this.jobsList(parsed.data as JobsListParams);
+      case "jobs.stop":
+        return this.jobsStop(parsed.data as JobsStopParams);
       default:
         throw new RpcError(
           RPC_ERRORS.METHOD_NOT_FOUND,
@@ -317,6 +368,10 @@ export class FakeEngine {
           ]
         : []),
       ...(this.capOn("session_meta") ? [SESSION_META_CAPABILITY] : []),
+      ...(this.capOn("plan") ? [PLAN_CAPABILITY] : []),
+      /* ── #179: declared only while the switch is on (AC-5). ── */
+      ...(this.capOn("subagents") ? [SUBAGENTS_CAPABILITY] : []),
+      ...(this.capOn("background_jobs") ? [BACKGROUND_JOBS_CAPABILITY] : []),
     ];
     return {
       name: "engine-fake",
@@ -365,6 +420,9 @@ export class FakeEngine {
       turnCount: 0,
       toolCounter: 0,
       requestCounter: 0,
+      jobs: new Map(),
+      jobCounter: 0,
+      subCounter: 0,
     };
     this.sessions.set(id, s);
     this.emit(s, "session.started", {
@@ -450,6 +508,33 @@ export class FakeEngine {
         "a question takes answer or cancel",
       );
     }
+    /* #180 — a plan ask takes approve / reject / change (the change text in
+       `answer`) or cancel. Double-answering is already refused by the
+       openRequests lookup above (the id is gone once resolved). */
+    if (
+      ask.request.kind === "plan" &&
+      !(
+        p.outcome === "approve" ||
+        p.outcome === "reject" ||
+        p.outcome === "change" ||
+        p.outcome === "cancel"
+      )
+    ) {
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        "a plan request takes approve, reject, change or cancel",
+      );
+    }
+    if (
+      ask.request.kind === "plan" &&
+      p.outcome === "change" &&
+      !p.answer?.trim()
+    ) {
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        "a plan change needs the change text in answer",
+      );
+    }
     if (p.outcome === "answer" && p.answer === undefined) {
       throw new RpcError(
         RPC_ERRORS.INVALID_PARAMS,
@@ -493,6 +578,19 @@ export class FakeEngine {
       ask.resolve({ outcome: "cancel" });
     for (const c of s.mcpClients.values()) c.close();
     s.mcpClients.clear();
+    /* #179: a closed session stops its pumps; running rows settle stopped. */
+    for (const job of s.jobs.values()) {
+      if (job.timer) clearInterval(job.timer);
+      if (job.status === "running") {
+        job.status = "stopped";
+        job.exitCode = 15;
+        this.emit(s, "job.exited", {
+          jobId: job.jobId,
+          status: "stopped",
+          exitCode: 15,
+        });
+      }
+    }
     s.state = "closed";
     this.emit(s, "session.state", { state: "closed" });
     return { stopped: true };
@@ -696,6 +794,156 @@ export class FakeEngine {
     return { hidden: s.hidden };
   }
 
+  /* ── subagents + background jobs (#179) ────────────────────────────────── */
+
+  /** The engine's jobs view — what `jobs.list` answers (D-#179: no LilOS
+      job table; the engine is the only source). */
+  private jobsList(p: JobsListParams) {
+    const s = this.require(p.sessionId);
+    const now = Date.now();
+    return {
+      jobs: [...s.jobs.values()].map((j) => ({
+        jobId: j.jobId,
+        command: j.command,
+        status: j.status,
+        startedAt: j.startedAt,
+        uptimeSeconds: Math.floor((now - j.startedAt) / 1000),
+        ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
+        ...(j.url ? { url: j.url } : {}),
+        ...(j.by ? { by: j.by } : {}),
+        ...(j.tail ? { tail: j.tail } : {}),
+      })),
+    };
+  }
+
+  private jobsStop(p: JobsStopParams) {
+    const s = this.require(p.sessionId);
+    const job = s.jobs.get(p.jobId);
+    if (job?.status !== "running") return { stopped: false };
+    this.stopJob(s, job, "stopped");
+    return { stopped: true };
+  }
+
+  private stopJob(
+    s: FakeSession,
+    job: FakeJob,
+    status: Extract<JobStatus, "exited" | "failed" | "stopped">,
+  ) {
+    if (job.timer) clearInterval(job.timer);
+    job.timer = undefined;
+    job.status = status;
+    if (job.exitCode === undefined)
+      job.exitCode = status === "stopped" ? 15 : 0;
+    this.emit(s, "job.exited", {
+      jobId: job.jobId,
+      status,
+      exitCode: job.exitCode,
+    });
+  }
+
+  /** AC-3: a helper declared as another employee links to their newest live
+      session — the row opens that session, never a copy of its turns
+      (D-#25). No live session -> no link, the row stays a plain helper. */
+  private employeeLink(
+    employeeRef: string,
+  ): { employeeRef: string; sessionRef: string } | undefined {
+    if (!this.agents.has(employeeRef)) return undefined;
+    const live = [...this.sessions.values()].filter(
+      (x) => x.agent === employeeRef && x.state !== "closed",
+    );
+    const newest = live.at(-1);
+    return newest ? { employeeRef, sessionRef: newest.id } : undefined;
+  }
+
+  /** Pump one job's scripted output into job.output, one line per tick, then
+      emit job.exited when the script says it ends. */
+  private startJobPump(s: FakeSession, job: FakeJob) {
+    job.timer = setInterval(() => {
+      if (s.state === "closed" || job.status !== "running") {
+        if (job.timer) clearInterval(job.timer);
+        job.timer = undefined;
+        return;
+      }
+      const line = job.lines.shift();
+      if (line !== undefined) {
+        job.tail = `${job.tail}${line}\n`.slice(-4000);
+        const url = job.url ?? firstLocalUrl(job.tail);
+        if (url && !job.url) job.url = url;
+        this.emit(s, "job.output", {
+          jobId: job.jobId,
+          tail: job.tail,
+          ...(job.url ? { url: job.url } : {}),
+        });
+      }
+      if (job.lines.length === 0 && job.exitCodeOnDrain !== undefined) {
+        const code = job.exitCodeOnDrain;
+        job.exitCode = code;
+        this.stopJob(s, job, code === 0 ? "exited" : "failed");
+      } else if (job.lines.length === 0 && job.timer) {
+        /* A server with no more scripted lines stays running — quiet but
+           listed by jobs.list until jobs.stop lands. */
+        clearInterval(job.timer);
+        job.timer = undefined;
+      }
+    }, this.tick);
+  }
+
+  /** Emit the whole subagent arc inside one delegate step: subagent.started,
+      its nested tool calls (parentToolCallId), then subagent.completed. */
+  private async runSubagents(
+    s: FakeSession,
+    turnId: string,
+    toolCallId: string,
+    subs: FakeSubagent[],
+  ) {
+    for (const sub of subs) {
+      if (s.turn?.interrupted) return;
+      const subagentId = sub.id ?? `sa-${++s.subCounter}`;
+      const employee = sub.employee
+        ? this.employeeLink(sub.employee)
+        : undefined;
+      this.emit(s, "subagent.started", {
+        turnId,
+        subagentId,
+        name: sub.name,
+        task: sub.task,
+        parentToolCallId: toolCallId,
+        ...(employee ? { employee } : {}),
+      });
+      for (const ns of sub.steps) {
+        const nestedId = `c${++s.toolCounter}`;
+        this.emit(s, "tool.started", {
+          turnId,
+          toolCallId: nestedId,
+          tool: ns.tool,
+          input: ns.input,
+          parentToolCallId: subagentId,
+        });
+        await this.sleep(s);
+        /* #179 AC-2: a helper's write lands in the same checkout — the fake
+           materializes its `diff` into s.cwd so Workbench → Changes
+           (git.diff) lists it, like a real helper's edit does. */
+        if (ns.diff && s.cwd) applyFakeDiffToCwd(s.cwd, ns.diff);
+        this.emit(s, "tool.completed", {
+          turnId,
+          toolCallId: nestedId,
+          tool: ns.tool,
+          status: "completed",
+          output: ns.output,
+          diff: ns.diff,
+          commit: ns.commit,
+          parentToolCallId: subagentId,
+        });
+      }
+      this.emit(s, "subagent.completed", {
+        subagentId,
+        status: sub.status,
+        result: sub.result,
+        durationMs: sub.durationMs,
+      });
+    }
+  }
+
   // ── the turn loop (ports the prototype's runTurn) ─────────────────────────
 
   private async runTurn(
@@ -772,6 +1020,22 @@ export class FakeEngine {
         this.pumpSteers(s);
         return { turnId, stopReason: "refusal" as const };
       }
+      /* Plans & task lists (#180): `plan:` prompts drive the plan
+         capability — `plan: tasks` plays the agent's own working list as
+         ticking `plan.updated` snapshots (kind "tasks", never asks),
+         `plan: propose` opens a `plan` request (approve → the steps tick;
+         reject → nothing runs; change → the next version asks again). */
+      const planMode = PLAN_PROMPT.exec(promptText);
+      if (planMode) {
+        const mode = planMode[1].toLowerCase();
+        return await this.runPlanTurn(
+          s,
+          turnId,
+          mode === "propose",
+          promptText,
+          mode === "slow",
+        );
+      }
       for (const w of words(script.reasoning)) {
         await this.sleep(s);
         this.emit(s, "turn.delta", { turnId, stream: "reasoning", delta: w });
@@ -822,6 +1086,24 @@ export class FakeEngine {
             continue;
           }
         }
+        /* #179: a delegate step emits the subagent arc under its own call id
+           before the call itself completes (result = per-helper summary). */
+        if (step.subagents?.length && this.capOn("subagents")) {
+          await this.runSubagents(s, turnId, toolCallId, step.subagents);
+          this.emit(s, "tool.completed", {
+            turnId,
+            toolCallId,
+            tool: step.tool,
+            status: "completed",
+            output: step.subagents
+              .map(
+                (x) =>
+                  `${x.name}: ${x.status}${x.result ? ` — ${x.result}` : ""}`,
+              )
+              .join("\n"),
+          });
+          continue;
+        }
         this.emit(s, "tool.completed", {
           turnId,
           toolCallId,
@@ -831,6 +1113,31 @@ export class FakeEngine {
           diff: step.diff,
           commit: step.commit,
         });
+        /* #179: a job the step left running starts after its call completes —
+           job.* events are session-scoped and outlive the turn. */
+        if (step.job && this.capOn("background_jobs")) {
+          const jobId = step.job.id ?? `job-${++s.jobCounter}`;
+          const job: FakeJob = {
+            jobId,
+            command:
+              step.job.command ??
+              String(step.input.command ?? "background task"),
+            status: "running",
+            startedAt: Date.now(),
+            by: step.job.by,
+            tail: "",
+            lines: [...step.job.outputLines],
+            exitCodeOnDrain: step.job.exitCode,
+          };
+          s.jobs.set(jobId, job);
+          this.emit(s, "job.started", {
+            jobId,
+            command: job.command,
+            startedAt: job.startedAt,
+            ...(job.by ? { by: job.by } : {}),
+          });
+          this.startJobPump(s, job);
+        }
       }
       this.drainSteers(s, turnId);
       s.turn.phase = "text";
@@ -850,6 +1157,252 @@ export class FakeEngine {
       this.pumpSteers(s);
       return { turnId, stopReason: "cancelled" as const };
     }
+  }
+
+  /* ------------------------- #180 plan turns --------------------------- */
+
+  /**
+   * A `plan:` turn. `tasks`: emit one snapshot per item — the i-th marks
+   * item i in_progress and i-1 completed, with a real tool step between —
+   * then a final all-completed snapshot; every snapshot is interruptible
+   * (`sleep` throws Interrupted), which is the stopped-card path.
+   * `propose`: emit the v1 proposal, open a `plan` request, and loop —
+   * change emits the next version and asks again; approve ticks the steps
+   * as the run works through them; reject finishes with nothing run.
+   */
+  private async runPlanTurn(
+    s: FakeSession,
+    turnId: string,
+    proposal: boolean,
+    promptText: string,
+    /* `plan: slow` = tasks pacing stretched per step so a UI-level stop
+       lands inside an item deterministically (#180 AC-2 e2e). */
+    slow = false,
+  ) {
+    const planId = `plan-${turnId}`;
+    const reasoning = `Working a ${proposal ? "plan for approval" : "task list"} — steps appear as I go.`;
+    for (const w of words(reasoning)) {
+      await this.sleep(s);
+      this.emit(s, "turn.delta", { turnId, stream: "reasoning", delta: w });
+    }
+    if (s.turn) s.turn.phase = "tools";
+
+    if (!proposal) {
+      const items = PLAN_TASKS;
+      let version = 0;
+      const snap = (mark: number) =>
+        items.map((it, j) => ({
+          text: it.text,
+          files: it.files,
+          status:
+            j < mark
+              ? ("completed" as const)
+              : j === mark
+                ? ("in_progress" as const)
+                : ("pending" as const),
+        }));
+      this.emit(s, "plan.updated", {
+        turnId,
+        planId,
+        kind: "tasks",
+        version: ++version,
+        steps: snap(-1),
+      });
+      for (let i = 0; i < items.length; i++) {
+        this.drainSteers(s, turnId);
+        this.emit(s, "plan.updated", {
+          turnId,
+          planId,
+          kind: "tasks",
+          version: ++version,
+          steps: snap(i),
+        });
+        const toolCallId = `c${++s.toolCounter}`;
+        this.emit(s, "tool.started", {
+          turnId,
+          toolCallId,
+          tool: items[i].tool,
+          input: items[i].input,
+        });
+        const stepTicks = slow ? 60 : 2;
+        for (let k = 0; k < stepTicks; k++) await this.sleep(s);
+        this.emit(s, "tool.completed", {
+          turnId,
+          toolCallId,
+          tool: items[i].tool,
+          status: "completed",
+          output: items[i].output,
+        });
+      }
+      this.emit(s, "plan.updated", {
+        turnId,
+        planId,
+        kind: "tasks",
+        version: ++version,
+        steps: snap(items.length),
+      });
+      const text = `Worked the list — all ${items.length} items done. Read the client, wired the backoff, and the checks pass.`;
+      for (const w of words(text)) {
+        await this.sleep(s);
+        this.emit(s, "turn.delta", { turnId, stream: "text", delta: w });
+      }
+      return this.finishTurn(
+        s,
+        turnId,
+        "end_turn",
+        { reasoning, steps: [], text },
+        promptText,
+      );
+    }
+
+    /* ── proposal: versions are revisions; the plan request gates each ── */
+    const goal = `Reconnect the relay client on its own after a drop — "${promptText.trim()}"`;
+    let steps: PlanStep[] = PLAN_PROPOSAL_STEPS.map((x) => ({ ...x }));
+    const risks = [...PLAN_PROPOSAL_RISKS];
+    let version = 0;
+    const emitProposal = () =>
+      this.emit(s, "plan.updated", {
+        turnId,
+        planId,
+        kind: "plan",
+        version: ++version,
+        goal,
+        steps,
+        risks,
+      });
+    emitProposal();
+    for (;;) {
+      const { outcome, answer } = await this.awaitPlanDecision(
+        s,
+        turnId,
+        planId,
+      );
+      if (outcome === "cancel") throw new Interrupted();
+      if (outcome === "reject") {
+        const text =
+          "Plan rejected — nothing ran. The proposal stays on the card if you change your mind.";
+        for (const w of words(text)) {
+          await this.sleep(s);
+          this.emit(s, "turn.delta", { turnId, stream: "text", delta: w });
+        }
+        return this.finishTurn(
+          s,
+          turnId,
+          "end_turn",
+          { reasoning, steps: [], text },
+          promptText,
+        );
+      }
+      if (outcome === "change") {
+        /* The answer folds in as a real revision: the tail step moves after
+           a new "your change" step, every status resets to pending. */
+        const change = (answer ?? "").trim();
+        steps = [
+          ...steps
+            .slice(0, -1)
+            .map((x) => ({ ...x, status: "pending" as const })),
+          {
+            text: `Your change: ${change}`,
+            files: ["packages/client-runtime/src/retry-log.ts"],
+            status: "pending" as const,
+          },
+          { ...steps[steps.length - 1], status: "pending" as const },
+        ];
+        emitProposal();
+        continue;
+      }
+      // approve — run the steps, ticking the snapshot in place (same version).
+      for (let i = 0; i < steps.length; i++) {
+        this.drainSteers(s, turnId);
+        steps = steps.map((x, j) => ({
+          ...x,
+          status: j === i ? ("in_progress" as const) : x.status,
+        }));
+        this.emit(s, "plan.updated", {
+          turnId,
+          planId,
+          kind: "plan",
+          version,
+          goal,
+          steps,
+          risks,
+        });
+        const toolCallId = `c${++s.toolCounter}`;
+        this.emit(s, "tool.started", {
+          turnId,
+          toolCallId,
+          tool: "patch",
+          input: {
+            path:
+              steps[i].files?.[0] ?? "packages/client-runtime/src/retry-log.ts",
+          },
+        });
+        await this.sleep(s);
+        this.emit(s, "tool.completed", {
+          turnId,
+          toolCallId,
+          tool: "patch",
+          status: "completed",
+          output: "step done",
+        });
+        steps = steps.map((x, j) => ({
+          ...x,
+          status: j <= i ? ("completed" as const) : x.status,
+        }));
+        this.emit(s, "plan.updated", {
+          turnId,
+          planId,
+          kind: "plan",
+          version,
+          goal,
+          steps,
+          risks,
+        });
+      }
+      const text = `Plan v${version} ran to the end — ${steps.length} steps done. The reconnect backoff is wired, resume replays from the last seq, and tests pass.`;
+      for (const w of words(text)) {
+        await this.sleep(s);
+        this.emit(s, "turn.delta", { turnId, stream: "text", delta: w });
+      }
+      return this.finishTurn(
+        s,
+        turnId,
+        "end_turn",
+        { reasoning, steps: [], text },
+        promptText,
+      );
+    }
+  }
+
+  /** The `plan` ask behind a proposal — same lifecycle as awaitApproval. */
+  private async awaitPlanDecision(
+    s: FakeSession,
+    turnId: string,
+    planId: string,
+  ): Promise<{ outcome: ApprovalOutcome; answer?: string }> {
+    const requestId = `r${++s.requestCounter}`;
+    const request = { kind: "plan" as const, planId };
+    const promise = new Promise<{ outcome: ApprovalOutcome; answer?: string }>(
+      (resolve) => {
+        s.openRequests.set(requestId, {
+          turnId,
+          requestId,
+          request,
+          seq: s.seq + 1,
+          resolve,
+        });
+      },
+    );
+    this.emit(s, "request.opened", { turnId, requestId, request });
+    const t = s.turn;
+    if (t) t.phase = "waiting";
+    this.setState(s, "waiting");
+    const res = await promise;
+    if (s.turn && !s.turn.interrupted) {
+      s.turn.phase = "tools";
+      this.setState(s, "running");
+    }
+    return res;
   }
 
   private finishTurn(
@@ -1037,6 +1590,25 @@ export class FakeEngine {
 
 class Interrupted extends Error {}
 
+/** #179 AC-2: write a scripted diff into the session checkout — the fake's
+    `+` lines become the file's content, so git.diff picks it up exactly like
+    a real helper's `write_file`/`patch` does. */
+function applyFakeDiffToCwd(cwd: string, diff: FileDiff) {
+  if (diff.status === "deleted") return;
+  const path = join(cwd, diff.path);
+  const body = (diff.patch ?? "")
+    .split("\n")
+    .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
+    .map((l) => l.slice(1))
+    .join("\n");
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, body.endsWith("\n") || !body ? body : `${body}\n`);
+  } catch {
+    /* An unwritable cwd must not fail the turn — the step still reports. */
+  }
+}
+
 /** Instant-title rule: first line, whitespace-collapsed, ≤48 chars. */
 const MAX_DERIVED_TITLE_CHARS = 48;
 
@@ -1060,6 +1632,71 @@ function llmTitle(promptText: string): string {
 }
 
 const words = (t: string) => t.split(/(?<=\s)/);
+
+/* ── #180 plan scripts ──────────────────────────────────────────────────
+   `plan: tasks` = the agent's own working list, ticks live and never asks.
+   `plan: propose` = a plan gated by a `plan` request —
+   approve / reject / change (the next version asks again). */
+
+const PLAN_PROMPT = /^\s*plan:\s*(propose|tasks|slow)\b/i;
+
+const PLAN_TASKS: {
+  text: string;
+  files: string[];
+  tool: string;
+  input: Record<string, unknown>;
+  output: string;
+}[] = [
+  {
+    text: "Read the relay client and its reconnect path",
+    files: ["packages/client-runtime/src/client.ts"],
+    tool: "read_file",
+    input: { path: "packages/client-runtime/src/client.ts" },
+    output: "96 lines",
+  },
+  {
+    text: "Add the reconnect backoff and wire the socket",
+    files: ["packages/client-runtime/src/socket.ts"],
+    tool: "patch",
+    input: { path: "packages/client-runtime/src/socket.ts" },
+    output: "reconnect loop uses backoff()",
+  },
+  {
+    text: "Resume from the last seq and run the checks",
+    files: ["packages/client-runtime/src/sync.ts"],
+    tool: "terminal",
+    input: { command: "bun test packages/client-runtime" },
+    output: "3 pass · 0 fail",
+  },
+];
+
+const PLAN_PROPOSAL_STEPS = [
+  {
+    text: "Add a backoff helper (250ms → 30s, with jitter)",
+    files: ["packages/client-runtime/src/backoff.ts"],
+    status: "pending" as const,
+  },
+  {
+    text: "Use it in the socket's reconnect loop",
+    files: ["packages/client-runtime/src/socket.ts"],
+    status: "pending" as const,
+  },
+  {
+    text: "Resume from the last seq after reconnect",
+    files: ["packages/client-runtime/src/sync.ts"],
+    status: "pending" as const,
+  },
+  {
+    text: "Tests: drop → retry → resume",
+    files: ["packages/client-runtime/test/reconnect.test.ts"],
+    status: "pending" as const,
+  },
+];
+
+const PLAN_PROPOSAL_RISKS = [
+  "Reconnect storms if many clients drop at once — jitter added to the backoff.",
+  "Touches the client used by web and mobile — both need a reload test.",
+];
 
 /** Runtime-neutral randomness (no process APIs — packages stay portable). */
 const randomNamespace = () => crypto.randomUUID().slice(0, 8);

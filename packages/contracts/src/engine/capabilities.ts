@@ -36,6 +36,8 @@ export const KNOWN_CAPABILITIES = [
   "plan",
   "rewind",
   "session_meta",
+  "subagents",
+  "background_jobs",
 ] as const;
 export type KnownCapability = (typeof KNOWN_CAPABILITIES)[number];
 
@@ -84,4 +86,50 @@ export const SESSION_META_CAPABILITY: Capability = {
       `title` in the `events.since` snapshot. Apps mirror those; engines
       without the flag leave the placeholder title alone. */
   detail: { autoTitle: true },
+};
+
+/**
+ * The canonical `plan` descriptor (issue #180): the engine streams
+ * `plan.updated` snapshots — `kind:"tasks"` for its own working list (ticks
+ * live, never asks) and `kind:"plan"` for a proposal gated by a `plan`
+ * EngineRequest (`request.respond` outcomes `approve` / `reject` / `change`,
+ * the change text in `answer`). `detail.proposals` is true only when the
+ * engine can open a `plan` request; engines with a task-list surface only
+ * declare it false. Clients render nothing without the capability (D-#19).
+ */
+export const PLAN_CAPABILITY: Capability = {
+  id: "plan",
+  name: "Plans & task lists",
+  description:
+    "Streams plan.updated snapshots; a plan request asks the client to approve, reject or change a proposed plan.",
+  methods: ["request.respond"],
+  detail: { proposals: true },
+};
+
+/**
+ * The canonical `subagents` descriptor (#179): the engine surfaces helper
+ * runs as `subagent.started` / `subagent.completed` events (plus nested
+ * `tool.*` calls carrying `parentToolCallId`). Pure protocol surface — no
+ * methods; the rows are data-driven off the events.
+ */
+export const SUBAGENTS_CAPABILITY: Capability = {
+  id: "subagents",
+  name: "Subagents",
+  description:
+    "Helper runs an employee delegates surface as subagent.* events with nested tool calls.",
+};
+
+/**
+ * The canonical `background_jobs` descriptor (#179): the engine reports
+ * long-running processes it owns as `job.*` events and answers `jobs.list`
+ * (the truth list — clients re-read it after a reconnect) / `jobs.stop`
+ * (a jobId from job.started or jobs.list). Engines not declaring it emit no
+ * job.* events and must not be asked for either method (D-#19).
+ */
+export const BACKGROUND_JOBS_CAPABILITY: Capability = {
+  id: "background_jobs",
+  name: "Background jobs",
+  description:
+    "Processes the engine leaves running list under jobs.list and stop via jobs.stop; job.* events stream state.",
+  methods: ["jobs.list", "jobs.stop"],
 };
