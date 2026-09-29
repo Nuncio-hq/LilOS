@@ -1,15 +1,26 @@
 import type { LanguageModelUsage } from "ai";
+import { useEffect, useState } from "react";
 import {
   Context,
   ContextContent,
-  ContextContentBody,
-  ContextContentFooter,
-  ContextContentHeader,
   ContextTrigger,
 } from "../components/ai-elements/context";
+import { cn } from "../lib/utils";
 import type { ModelOption, Usage } from "../types";
 
-/* Token/context meter for one Hermes session (AI Elements Context). */
+/* Token/context meter for one session (AI Elements Context), laid out like
+   Claude Code's context panel: one segmented bar of the whole window — what
+   each kind of token takes, then what's free — with a legend of size and
+   share. The bar grows in when the card opens. */
+
+const n = (x: number) =>
+  new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(Math.round(x));
+const pct = (x: number, of: number) =>
+  `${of ? ((x / of) * 100).toFixed(x / of < 0.1 ? 1 : 0) : 0}%`;
+
 export function SessionUsage({
   usage,
   model,
@@ -37,39 +48,87 @@ export function SessionUsage({
       reasoningTokens: usage.reasoning,
     },
   };
-  const n = (x: number) =>
-    new Intl.NumberFormat("en-US", { notation: "compact" }).format(
-      Math.round(x),
-    );
+  // What fills the window, in the order it was read: cached context first.
+  const parts = [
+    { label: "Cached context", value: usage.cache, color: "bg-[#00a19a]" },
+    {
+      label: "New input",
+      value: Math.max(0, usage.input - usage.cache),
+      color: "bg-[#007aff]",
+    },
+    { label: "Reasoning", value: usage.reasoning, color: "bg-[#af52de]" },
+    {
+      label: "Replies",
+      value: Math.max(0, usage.output - usage.reasoning),
+      color: "bg-[#ff9500]",
+    },
+  ];
+  const free = Math.max(0, max - used);
+  const name = models?.find((m) => m.id === model)?.name ?? model;
+  const [open, setOpen] = useState(false);
+  // Segments start at 0 and grow once the card is on screen.
+  const [grown, setGrown] = useState(false);
+  useEffect(() => {
+    if (!open) return setGrown(false);
+    const id = requestAnimationFrame(() => setGrown(true));
+    return () => cancelAnimationFrame(id);
+  }, [open]);
+
   return (
-    <Context usedTokens={used} maxTokens={max} usage={u}>
+    <Context usedTokens={used} maxTokens={max} usage={u} onOpenChange={setOpen}>
       <ContextTrigger size="sm" className="h-7 px-1.5 text-xs" />
-      <ContextContent>
-        <ContextContentHeader />
-        <ContextContentBody className="space-y-1 text-xs">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Input</span>
-            <span>{n(usage.input)}</span>
+      <ContextContent className="w-80 divide-y-0 rounded-2xl p-0">
+        <div className="space-y-3 p-4" data-context-panel>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="font-semibold text-[13px]">Context window</span>
+            <span className="font-medium text-[12px] text-muted-foreground tabular-nums">
+              {n(used)} / {n(max)}
+              <span className="ml-1.5 text-foreground">{pct(used, max)}</span>
+            </span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Output</span>
-            <span>{n(usage.output)}</span>
+          <div className="flex h-2 gap-px overflow-hidden rounded-full bg-foreground/10">
+            {parts.map((p, i) => (
+              <span
+                key={p.label}
+                className={cn(
+                  "h-full transition-[width] duration-700 ease-[cubic-bezier(0.2,0.9,0.25,1)]",
+                  p.color,
+                )}
+                style={{
+                  width: grown ? `${(p.value / max) * 100}%` : "0%",
+                  transitionDelay: `${i * 70}ms`,
+                }}
+              />
+            ))}
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Reasoning</span>
-            <span>{n(usage.reasoning)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Cache read</span>
-            <span>{n(usage.cache)}</span>
-          </div>
-        </ContextContentBody>
-        <ContextContentFooter>
+          <ul className="space-y-1.5">
+            {parts.map((p) => (
+              <li
+                key={p.label}
+                className="grid grid-cols-[10px_1fr_auto_3.2rem] items-center gap-2.5 text-[13px]"
+              >
+                <span className={cn("size-2.5 rounded-[3px]", p.color)} />
+                <span>{p.label}</span>
+                <span className="text-muted-foreground tabular-nums">
+                  {n(p.value)}
+                </span>
+                <span className="text-right tabular-nums">
+                  {pct(p.value, max)}
+                </span>
+              </li>
+            ))}
+            <li className="grid grid-cols-[10px_1fr_auto_3.2rem] items-center gap-2.5 text-[13px] text-muted-foreground">
+              <span className="size-2.5 rounded-[3px] bg-foreground/10" />
+              <span>Free space</span>
+              <span className="tabular-nums">{n(free)}</span>
+              <span className="text-right tabular-nums">{pct(free, max)}</span>
+            </li>
+          </ul>
+        </div>
+        <div className="flex items-center justify-between gap-3 bg-muted/50 px-4 py-2.5 text-[12px]">
           <span className="text-muted-foreground">Model</span>
-          <span className="truncate">
-            {models?.find((m) => m.id === model)?.name ?? model}
-          </span>
-        </ContextContentFooter>
+          <span className="truncate font-medium">{name}</span>
+        </div>
       </ContextContent>
     </Context>
   );
