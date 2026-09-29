@@ -110,7 +110,7 @@ done
 # chmod-600 temp file; the same file feeds altool below.
 XCAUTH=()
 if [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ] && [ -n "${ASC_KEY_P8:-}" ]; then
-  KEYFILE="$(mktemp -t lilos-asc)"
+  KEYFILE="$(mktemp "${TMPDIR:-/tmp}/lilos-asc.XXXXXX")"
   printf '%s' "$ASC_KEY_P8" | sed 's/\\n/\n/g' > "$KEYFILE"
   chmod 600 "$KEYFILE"
   XCAUTH=( -authenticationKeyPath "$KEYFILE"
@@ -135,7 +135,7 @@ ARCHIVE_XCARGS=( -workspace "apps/mobile/ios/$SCHEME.xcworkspace"
 if [ -n "${LILOS_EXPORT_OPTIONS:-}" ]; then
   EXPORT_PLIST="$LILOS_EXPORT_OPTIONS"
 else
-  GEN_PLIST="$(mktemp -t lilos-export)"
+  GEN_PLIST="$(mktemp "${TMPDIR:-/tmp}/lilos-export.XXXXXX")"
   cat > "$GEN_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
