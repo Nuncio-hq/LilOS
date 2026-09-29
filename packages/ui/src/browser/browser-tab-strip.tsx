@@ -100,7 +100,7 @@ export function BrowserTabStrip({
           <span className="size-3 rounded-full bg-[#28c840]" />
         </div>
       )}
-      <div className="flex min-w-0 flex-1 items-end gap-0.5 overflow-x-auto">
+      <div className="no-scrollbar flex min-w-0 flex-1 items-end gap-0.5 overflow-x-auto [mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)]">
         {own.map(tab)}
         <Button
           variant="ghost"
@@ -215,13 +215,16 @@ function TabChip({
       onAuxClick={(ev) => ev.button === 1 && onCloseTab(t.id)}
       title={e ? `${e.name} · ${t.title}` : t.title}
       className={cn(
-        "group flex h-8 max-w-52 min-w-24 flex-1 cursor-default items-center gap-1.5 rounded-t-lg px-2.5 text-[12.5px]",
+        "group relative flex h-8 max-w-52 min-w-24 flex-1 cursor-default items-center gap-1.5 rounded-t-lg px-2.5 text-[12.5px]",
         active
           ? "bg-background shadow-[0_-1px_0_0_var(--border)]"
           : "text-muted-foreground hover:bg-background/50",
-        t.agent && "border-violet-400 border-t-2",
+        t.agent && !active && "bg-violet-500/8",
       )}
     >
+      {t.agent && (
+        <span className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-violet-400" />
+      )}
       {e ? (
         <span className="relative shrink-0">
           <HermesAvatar name={e.name} className="size-4" />
