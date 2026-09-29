@@ -3,6 +3,16 @@
    these with its mock data + fake engine. Vendored shadcn/AI Elements live under
    @lilos/ui/components/ui/* and @lilos/ui/components/ai-elements/* (subpath exports). */
 
+// browser (issue #214)
+export {
+  BrowserOmnibox,
+  displayUrl,
+  hostOf,
+  resolveInput,
+} from "./browser/browser-omnibox";
+export { BrowserPanel, type BrowserPanelProps } from "./browser/browser-panel";
+export * from "./browser/browser-types";
+export { LoginSuggestions } from "./browser/login-suggestions";
 // shared agent-chat pieces (steer rows, not-sent tray, composer running state)
 export * from "./chat/agent-chat";
 export { Composer } from "./chat/composer";
