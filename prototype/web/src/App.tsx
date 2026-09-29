@@ -1430,7 +1430,7 @@ export default function App() {
   ) : null
 
   return (
-    <div className={cn("lilos-desktop grid h-dvh grid-cols-1 overflow-hidden text-sm", !(focus && openThread?.thread) && "lg:grid-cols-[264px_minmax(0,1fr)]")}>
+    <div className={cn("lilos-desktop lilos-float grid h-dvh grid-cols-1 overflow-hidden text-sm", !(focus && openThread?.thread) && "lg:grid-cols-[264px_minmax(0,1fr)]")}>
       {navOpen && <div className="fixed inset-0 z-30 bg-black/30 lg:hidden" onClick={() => setNavOpen(false)} />}
       {navOpen && focus && <div className="fixed inset-0 z-30 hidden bg-black/30 lg:block" onClick={() => setNavOpen(false)} />}
       <Sidebar

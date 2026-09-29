@@ -19,16 +19,18 @@ export type Routes = {
   Mac: undefined;
   /** An employee's DM; `{ employeeId }` selects whose. */
   Dm: { employeeId: string };
-  /* The DM slice's stack routes (#156). */
+  /* The DM slice's stack routes (#156); #157 adds ThreadInfo + the
+     thread-scoped model pick (conversationId present = thread scope). */
   Thread: { conversationId: string };
+  ThreadInfo: { conversationId: string };
   FolderPicker: { employeeId: string };
-  ModelPicker: { employeeId: string };
+  ModelPicker: { employeeId: string; conversationId?: string };
 };
 
 /* The DM stack as the dm/thread screens see it. */
 export type DmRoutes = Pick<
   Routes,
-  "Dm" | "Thread" | "FolderPicker" | "ModelPicker"
+  "Dm" | "Thread" | "ThreadInfo" | "FolderPicker" | "ModelPicker"
 >;
 
 export type TabRoutes = {

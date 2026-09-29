@@ -24,6 +24,7 @@ import {
   EmployeesUpdateParams,
   ENGINE_PASSTHROUGH_METHODS,
   ENGINE_PASSTHROUGH_PARAMS,
+  EngineEventParams,
   type EngineHostState,
   type EnginePassthroughMethod,
   FoldersAddParams,
@@ -41,6 +42,7 @@ import {
   MessagesSearchParams,
   MessagesSetCheckpointParams,
   ProfileUpdateParams,
+  SessionEventsParams,
   SessionPingParams,
   SettingsGetParams,
   SettingsSetParams,
@@ -293,11 +295,16 @@ export function createRelay(options: RelayOptions): Relay {
   let hostCallSeq = 0;
   const hostCallTimeoutMs = options.hostCallTimeoutMs ?? 15_000;
 
-  const emit = (channelId: string, method: string, params: unknown) => {
+  const emit = (
+    channelId: string,
+    method: string,
+    params: unknown,
+    except?: RelayWsPeer,
+  ) => {
     const peers = subscribers.get(channelId);
     if (!peers) return;
     const frame = JSON.stringify({ jsonrpc: "2.0", method, params });
-    for (const peer of peers) peer.send(frame);
+    for (const peer of peers) if (peer !== except) peer.send(frame);
   };
 
   /** To every helloed peer — used for `channel.created`. */
@@ -1419,6 +1426,58 @@ export function createRelay(options: RelayOptions): Relay {
               ? { fast: parsed.data.fast }
               : {}),
           });
+          respond(peer, id, { ok: true });
+          return;
+        }
+        case "session.events": {
+          /* Engine-event replay scoped to one conversation (#157): the phone
+             (device scope) replays the turn stream through the relay — the
+             conversation's `engineRef` maps the call onto the host's
+             `events.since`. No engine session bound yet = nothing to
+             replay; the client treats `not_found` as an empty feed. */
+          const parsed = SessionEventsParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const conversation = await store.getConversation(
+            parsed.data.conversationId,
+          );
+          if (!conversation?.engineRef) {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "no engine session bound to this conversation",
+            );
+          }
+          forwardToHost(peer, id, "events.since", {
+            sessionId: conversation.engineRef,
+            after: parsed.data.after,
+          });
+          return;
+        }
+        case "engine.event": {
+          /* Host-only (#157): every engine event of a conversation-bound
+             session is re-published here so channel subscribers — the
+             phone — see the live turn. Unknown conversations drop silently:
+             a push can land before its `conversation.updated` bind did. */
+          requireHost(peer);
+          const parsed = EngineEventParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const conversation = await store.getConversation(
+            parsed.data.conversationId,
+          );
+          if (conversation) {
+            emit(
+              conversation.channelId,
+              "engine.event",
+              {
+                channelId: conversation.channelId,
+                conversationId: conversation.id,
+                sessionId: parsed.data.sessionId,
+                event: parsed.data.event,
+              },
+              // The host pushed it — no need to send its own stream back.
+              host?.peer,
+            );
+          }
           respond(peer, id, { ok: true });
           return;
         }

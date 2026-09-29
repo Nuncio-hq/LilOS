@@ -60,6 +60,13 @@ PR does not exist.
 - **D-#3 `prototype/` is the UI source of truth** (= future `packages/ui` +
   mock data); a UI/UX change lands in a prototype PR first, Oscar accepts,
   then it is implemented. Not: hand-copied UI in the web app. — #3 · PR #14
+- **D-#246 The theme lives once in `packages/ui/src/theme.css`** — tokens,
+  glass, motion and the one-window rules; `apps/web` and `prototype/web` both
+  import it so they cannot drift (drift was the #230 regression class). The
+  app root always carries `.lilos-desktop` (merged window); `.lilos-float`
+  (browser tabs only, off `window.lilos.isDesktop`) adds the floating margin
+  + colour field — Electron's OS window is the frame. Not: a second copy of
+  the palette in an app entry, or wallpaper inside the desktop window. — #246
 
 ## Desktop
 - **D-#3 Desktop: Electron (later slice).** Chromium parity with web;
@@ -240,6 +247,12 @@ PR does not exist.
   (one retry owner) and the directory cache are runtime-neutral, RN glue
   (AppState/NetInfo/Keychain) lives only in `apps/mobile`.** Not: per-app
   reconnect loops, or RN imports inside client-runtime. — #154
+- **D-#157 Engine events reach the phone through the host: the harness
+  re-publishes each event of a conversation-bound session as `engine.event`,
+  the relay re-emits it on the conversation's channel, and replay goes
+  through `session.events {conversationId}` gated on `conv.engineRef`.**
+  Not: an engine socket on the phone, a verbatim `events.since`, or device
+  access to raw host methods (same scoping as `folders.detail`, #156). — #157
 
 ## UX
 - **D-#114 The Workbench lives only in Focus mode, and opening a session

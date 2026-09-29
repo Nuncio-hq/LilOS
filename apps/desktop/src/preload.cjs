@@ -26,6 +26,9 @@ ipcRenderer.on("lilos:fullscreen", (_e, fs) => {
 });
 
 contextBridge.exposeInMainWorld("lilos", {
+  // #246: the renderer floats its window only in a plain browser tab; inside
+  // Electron the OS window is the frame.
+  isDesktop: true,
   config: {
     relayWs: arg("relay"),
     relayToken: arg("token"),

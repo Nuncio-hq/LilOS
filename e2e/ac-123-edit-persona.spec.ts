@@ -318,8 +318,12 @@ test("AC-4 a running session keeps its model; the next new session uses the upda
   ).toBeVisible({ timeout: 30_000 });
 
   // Edit the default model mid-conversation (Profile lives on the DM home —
-  // hop out, edit, then come back to the open session).
+  // hop out, edit, then come back to the open session). Focus has no sidebar
+  // (#246) — leave it first when the URL is a /focus one.
   const convUrl = page.url();
+  if (convUrl.endsWith("/focus")) {
+    await page.getByTitle("Back to DM").click();
+  }
   await page
     .locator("aside")
     .getByRole("button", { name: /Default/ })
@@ -356,6 +360,10 @@ test("AC-4 a running session keeps its model; the next new session uses the upda
   ).toHaveCount(0);
 
   // Back to the employee home → a new top-level message = a NEW session.
+  // Focus has no sidebar (#246) — leave it first when the URL is a /focus one.
+  if (page.url().endsWith("/focus")) {
+    await page.getByTitle("Back to DM").click();
+  }
   await page
     .locator("aside")
     .getByRole("button", { name: /Default/ })

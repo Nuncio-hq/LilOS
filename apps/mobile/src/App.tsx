@@ -64,7 +64,7 @@ import {
 import { nav, type Props, type Routes, type TabRoutes } from "./routes";
 import { Dm, FolderPicker, ModelPicker } from "./screens/dm";
 import { Activity, Home, NeedsYouSlot, useHomeWire } from "./screens/home";
-import { Thread } from "./screens/thread";
+import { Thread, ThreadInfo } from "./screens/thread";
 
 /* apps/mobile — the real app (#154): the prototype's onboarding screens from
    @lilos/ui-native wired to the actual relay. Pairing runs the #153 grant →
@@ -561,6 +561,11 @@ export default function App() {
                 name="Thread"
                 component={Thread}
                 options={CHAT_HEADER}
+              />
+              <Stack.Screen
+                name="ThreadInfo"
+                component={ThreadInfo}
+                options={SHEET}
               />
               <Stack.Screen
                 name="FolderPicker"
