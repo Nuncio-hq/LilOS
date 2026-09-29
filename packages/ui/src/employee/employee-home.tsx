@@ -5,7 +5,6 @@ import {
   CircleDotIcon,
   EllipsisIcon,
   FolderIcon,
-  LockIcon,
   MenuIcon,
   MessageSquareIcon,
   MoonIcon,
@@ -457,7 +456,19 @@ export function EmployeeHome({
           </div>
           <div className="truncate text-muted-foreground text-xs">{e.role}</div>
         </div>
-        <div className="ml-auto flex shrink-0 gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {sessions.length > 0 && (
+            <div className="relative mr-1 w-36 sm:w-44">
+              <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={filter}
+                onChange={(ev) => setFilter(ev.target.value)}
+                placeholder="Filter sessions"
+                title={`Private to you. Each message opens its own session; ${e.name} replies in its thread.`}
+                className="h-7 rounded-full border-transparent bg-foreground/[0.06] pl-7 text-xs shadow-none dark:bg-white/[0.08]"
+              />
+            </div>
+          )}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -474,24 +485,6 @@ export function EmployeeHome({
           )}
         </div>
       </header>
-      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 sm:px-5">
-        <LockIcon
-          className="size-3 shrink-0 text-muted-foreground"
-          aria-label={`Private to you. Each message opens its own session; ${e.name} replies in its thread.`}
-        />
-        <span className="flex-1" />
-        {sessions.length > 0 && (
-          <div className="relative w-44 shrink-0 sm:w-56">
-            <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={filter}
-              onChange={(ev) => setFilter(ev.target.value)}
-              placeholder="Filter sessions"
-              className="h-7 pl-7 text-xs"
-            />
-          </div>
-        )}
-      </div>
       <Conversation className="min-h-0">
         <ConversationContent className="min-h-full justify-end gap-0 p-0 py-3">
           {loading ? (
