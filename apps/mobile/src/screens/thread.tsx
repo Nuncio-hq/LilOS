@@ -37,6 +37,7 @@ import { defaultModelPick } from "../dm-model";
 import { $asks, $catalog, $pendingOpens, watchDm } from "../dm-store";
 import { $client, $welcome } from "../link";
 import { describeError } from "../mapping";
+import { $prs, refreshConversationPrs } from "../prs";
 import type { DmRoutes } from "../routes";
 import { dropRewound, toThreadDetail } from "../thread-model";
 
@@ -90,6 +91,14 @@ function useThread(conversationId: string) {
   const asks = useStore($asks);
   const pending = useStore($pendingOpens);
   const catalog = useStore($catalog);
+  const prsMap = useStore($prs);
+
+  /* #159 AC-5: opening the thread refetches its PRs; `turn.completed`
+     refetches through watchPrs (registered by watchDm below). */
+  useEffect(() => {
+    if (!client) return;
+    void refreshConversationPrs(client, conversationId);
+  }, [client, conversationId]);
 
   const pendingEntry = pending.get(conversationId);
   const conv =
@@ -222,6 +231,7 @@ function useThread(conversationId: string) {
             conversations,
             jobsCapable,
             listedJobs,
+            prs: prsMap[conversationId],
             rewound: {
               refs: new Set(rewind?.removedIds ?? []),
               texts: new Set(
@@ -246,6 +256,8 @@ function useThread(conversationId: string) {
       jobsCapable,
       listedJobs,
       jobsTick,
+      prsMap,
+      conversationId,
       rewind,
       rewoundMessages,
     ],
@@ -373,6 +385,7 @@ export function Thread({
         <ThreadHeaderTitle
           title={detail?.title || "Thread"}
           state={detail?.state ?? "working"}
+          {...(detail?.prs?.length ? { prs: detail.prs } : {})}
           onPress={() =>
             conv &&
             navigation.navigate("ThreadInfo", { conversationId: conv.id })

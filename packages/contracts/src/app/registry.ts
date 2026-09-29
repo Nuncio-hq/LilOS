@@ -9,6 +9,7 @@ import {
   AgentsListResult,
 } from "../engine/agents";
 import { ModelsListParams, ModelsListResult } from "../engine/models";
+import { ForgePrListItem } from "../host/forge";
 import { ChannelMessage } from "../index";
 import {
   AppChannel,
@@ -65,6 +66,8 @@ import {
   ConversationsListResult,
   ConversationsOpenParams,
   ConversationsOpenResult,
+  ConversationsPrsParams,
+  ConversationsPrsResult,
   ConversationsSetModelParams,
   ConversationsUpdateParams,
   ConversationUpdatedEvent,
@@ -204,6 +207,9 @@ export const appProtocolSchemas = {
   ConversationsSetModelParams,
   ConversationsUpdateParams,
   ConversationResult,
+  ConversationsPrsParams,
+  ConversationsPrsResult,
+  ForgePrListItem,
   ChannelMessage,
   AppMessage,
   AuthorKind,

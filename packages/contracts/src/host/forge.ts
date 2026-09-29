@@ -101,6 +101,53 @@ export const ForgePrResult = z.object({
 });
 export type ForgePrResult = z.infer<typeof ForgePrResult>;
 
+// ── forge.prs (#159) ────────────────────────────────────────────────────────
+/**
+ * One pull request as a thread's row/sheet needs it (#159): lighter than
+ * `ForgePullRequest` — no body/comments/mergeable, just the badge facts and
+ * a CI rollup. `state` covers open/merged/closed; a draft is `state: "open"`
+ * + `draft: true` (GitHub has no draft state of its own).
+ */
+export const ForgePrListItem = z.object({
+  number: z.int().min(1),
+  /** Full PR URL (`https://<host>/<owner>/<repo>/pull/<n>`). */
+  url: z.string().min(1),
+  /** `owner/repo`, parsed from the PR URL (GHES-safe). */
+  repo: z.string().min(1),
+  title: z.string(),
+  state: ForgePrState,
+  /** GitHub draft flag — open + draft renders gray, not green. */
+  draft: z.boolean(),
+  head: z.string().min(1),
+  base: z.string().min(1),
+  /** ISO 8601 (`createdAt`). */
+  openedAt: z.string(),
+  /** Head-commit CI rollup: `none` when the PR carries no checks. */
+  checks: z.enum(["none", "pending", "passing", "failing"]),
+});
+export type ForgePrListItem = z.infer<typeof ForgePrListItem>;
+
+/**
+ * `forge.prs { path, branches? }` (#159): every PR for the checkout's
+ * branch(es) — `gh pr list --head <branch> --state all` per branch, merged
+ * by number, open → draft → merged → closed then newest first. `branches`
+ * adds heads beyond the checkout's current one (e.g. the workstream branch
+ * a session forked from); the current branch is always included.
+ */
+export const ForgePrsParams = z.strictObject({
+  path: Path,
+  branches: z.array(z.string().min(1)).optional(),
+});
+export type ForgePrsParams = z.infer<typeof ForgePrsParams>;
+
+export const ForgePrsResult = z.object({
+  root: z.string(),
+  /** Every head that was listed (params ∪ current branch, deduped). */
+  branches: z.array(z.string()),
+  prs: z.array(ForgePrListItem),
+});
+export type ForgePrsResult = z.infer<typeof ForgePrsResult>;
+
 // ── forge.comment ───────────────────────────────────────────────────────────
 export const ForgeCommentParams = z.strictObject({
   path: Path,

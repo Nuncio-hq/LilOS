@@ -39,6 +39,7 @@ import {
 } from "@lilos/contracts/engine";
 import {
   type CheckpointStore,
+  callHost,
   collapsePath,
   expandPath,
   fsList,
@@ -1522,6 +1523,12 @@ export class Harness {
     }
     if (method === "folders.discover") {
       return this.folderDiscover();
+    }
+    /* `forge.prs` (#159): a thread's PRs — the relay resolves the
+       conversation's folder + branch(es) and forwards here, the only
+       `gh`-capable process. The host API validates params + result. */
+    if (method === "forge.prs") {
+      return callHost("forge.prs", params);
     }
     /* `events.since` (#157): the relay's `session.events` maps a
        conversationId onto its bound engine session and forwards here —

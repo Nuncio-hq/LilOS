@@ -16,6 +16,7 @@ import type {
   ModelProviderRow,
   ModelRow,
   OrbTone,
+  PullRequestRef,
   SessionState,
   SessionTurn,
   WorkspacePick,
@@ -129,6 +130,8 @@ export type DmCtx = {
     string,
     { conversation: Conversation; root: AppMessage }
   >;
+  /** Each conversation's PRs (#159) — absent key = nothing to show (AC-4). */
+  prs?: Readonly<Record<string, PullRequestRef[]>>;
   now: number;
 };
 
@@ -154,6 +157,7 @@ function toSessionTurn(s: ConversationSummary, ctx: DmCtx): SessionTurn {
     when: timeLabel(s.last.createdAt, ctx.now),
     ...(convFolderLabel(conv) ? { folder: convFolderLabel(conv) } : {}),
     ...(conv.workspace?.branch ? { branch: conv.workspace.branch } : {}),
+    ...(ctx.prs?.[conv.id]?.length ? { prs: ctx.prs[conv.id] } : {}),
     ...(s.messageCount > 1 ? { replies: s.messageCount - 1 } : {}),
     ...(preview ? { preview } : {}),
     ...(state === "working" && !preview ? { live: "Working…" } : {}),

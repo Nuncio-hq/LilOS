@@ -16,6 +16,7 @@ import type {
   AgentEntry,
   Approval,
   ModelRow,
+  PullRequestRef,
   SubagentRow,
   ThreadDetail,
   ThreadEntry,
@@ -399,6 +400,8 @@ export function toThreadDetail(opts: {
   /** `jobs.list` rows for this session — they cover jobs the event stream
      can't (started before a harness restart); job.* events overlay them. */
   listedJobs?: readonly Job[];
+  /** The thread's PRs (#159) — header headline + Session sheet group. */
+  prs?: readonly PullRequestRef[];
 }): ThreadDetail {
   const { conversation: conv } = opts;
   const employee = opts.employee;
@@ -520,6 +523,7 @@ export function toThreadDetail(opts: {
     usage:
       usage && (usage.input || usage.output) ? usageLabel(usage) : undefined,
     jobs,
+    ...(opts.prs?.length ? { prs: [...opts.prs] } : {}),
     entries,
   };
 }

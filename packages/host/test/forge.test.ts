@@ -301,4 +301,115 @@ describe("forge host api (fake gh)", () => {
     })) as PrResult;
     expect(r.pr?.number).toBe(7);
   });
+
+  /* #159 forge.prs — every PR for the checkout's branch(es). */
+  const listFile = (branch: string) =>
+    join(ghDir, `list-${branch.replaceAll("/", "__")}.json`);
+  const writeList = (branch: string, prs: unknown[]) =>
+    writeFileSync(listFile(branch), JSON.stringify(prs));
+  const ghPr = (n: number, over: Record<string, unknown> = {}) => ({
+    number: n,
+    title: `PR ${n}`,
+    url: `https://github.com/acme/widgets/pull/${n}`,
+    state: "OPEN",
+    isDraft: false,
+    headRefName: "feat/forge",
+    baseRefName: "main",
+    createdAt: "2026-09-24T08:00:00Z",
+    statusCheckRollup: [],
+    ...over,
+  });
+  type PrsResult = {
+    root: string;
+    branches: string[];
+    prs: {
+      number: number;
+      state: "open" | "merged" | "closed";
+      draft: boolean;
+      checks: "none" | "pending" | "passing" | "failing";
+    }[];
+  };
+
+  it("#159 AC-2 forge.prs lists several PRs — open first, then draft, merged, closed; newest first", async () => {
+    writeList("feat/forge", [
+      ghPr(91, { state: "MERGED", headRefName: "feat/forge" }),
+      ghPr(93, {
+        state: "CLOSED",
+        statusCheckRollup: [
+          { __typename: "StatusContext", context: "ci", state: "FAILURE" },
+        ],
+      }),
+      ghPr(96, {
+        isDraft: true,
+        statusCheckRollup: [
+          { __typename: "CheckRun", name: "ci", status: "IN_PROGRESS" },
+        ],
+      }),
+      ghPr(95, {
+        statusCheckRollup: [
+          {
+            __typename: "CheckRun",
+            name: "ci",
+            status: "COMPLETED",
+            conclusion: "SUCCESS",
+          },
+        ],
+      }),
+    ]);
+    const r = (await callHost("forge.prs", { path: repo })) as PrsResult;
+    expect(r.branches).toEqual(["feat/forge"]);
+    expect(r.prs.map((p) => p.number)).toEqual([95, 96, 91, 93]);
+    expect(r.prs.map((p) => p.state)).toEqual([
+      "open",
+      "open",
+      "merged",
+      "closed",
+    ]);
+    expect(r.prs[1]?.draft).toBe(true);
+    expect(r.prs.map((p) => p.checks)).toEqual([
+      "passing",
+      "pending",
+      "none",
+      "failing",
+    ]);
+    expect(readLog()).toContain("pr list");
+    expect(readLog()).toContain("--state all");
+    expect(readLog()).toContain("--head feat/forge");
+  });
+
+  it("#159 AC-2 forge.prs probes every given branch and dedupes by number", async () => {
+    writeList("feat/forge", [ghPr(95)]);
+    writeList("ws/extra", [
+      ghPr(97, { headRefName: "ws/extra" }),
+      ghPr(95, { headRefName: "feat/forge" }), // same PR surfaced twice
+    ]);
+    const r = (await callHost("forge.prs", {
+      path: repo,
+      branches: ["ws/extra"],
+    })) as PrsResult;
+    expect(r.branches).toEqual(["feat/forge", "ws/extra"]);
+    expect(r.prs.map((p) => p.number)).toEqual([97, 95]);
+    expect(readLog()).toContain("--head ws/extra");
+  });
+
+  it("#159 AC-4 forge.prs on a branch with no PRs answers an empty list", async () => {
+    // No list-*.json fixture: the fake gh prints [] — real gh does the same.
+    const r = (await callHost("forge.prs", { path: repo })) as PrsResult;
+    expect(r.branches).toEqual(["feat/forge"]);
+    expect(r.prs).toEqual([]);
+  });
+
+  it("#159 AC-4 forge.prs on a non-repo throws NOT_A_REPO; signed-out gh surfaces GH_FAILED", async () => {
+    const plain = mkdtempSync(join(tmpdir(), "lilos-norepo-"));
+    await expect(callHost("forge.prs", { path: plain })).rejects.toMatchObject({
+      code: HOST_ERRORS.NOT_A_REPO,
+    });
+    rmSync(plain, { recursive: true, force: true });
+
+    writeFileSync(join(ghDir, "fail"), "auth\n");
+    await expect(callHost("forge.prs", { path: repo })).rejects.toMatchObject({
+      code: HOST_ERRORS.GH_FAILED,
+      data: { reason: "unauthenticated" },
+    });
+  });
 });
