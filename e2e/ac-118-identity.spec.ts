@@ -135,7 +135,7 @@ test("AC-2 first run folds name+company into the card, prefilled; AC-1 the choic
   test.setTimeout(120_000);
   const stack = await bootStack(
     "ac118a",
-    { relay: wport(4670), feed: wport(4671), web: wport(5270) },
+    { relay: wport(4670), feed: wport(4671), web: wport(5336) },
     { LILOS_USER_NAME: "Test User" },
   );
   try {
@@ -193,7 +193,7 @@ test("AC-4 an existing install without stored values shows the prefilled identit
 }) => {
   const stack = await bootStack(
     "ac118b",
-    { relay: wport(4674), feed: wport(4675), web: wport(5274) },
+    { relay: wport(4674), feed: wport(4675), web: wport(5337) },
     { LILOS_USER_NAME: "Test User" },
   );
   try {

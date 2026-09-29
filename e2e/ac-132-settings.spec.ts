@@ -149,7 +149,7 @@ test("AC-1+AC-5 Settings opens via ⌘, and the sidebar gear; Approvals stays hi
   const stack = await bootStack("ac132a", {
     relay: wport(4690),
     feed: wport(4691),
-    web: wport(5290),
+    web: wport(5372),
   });
   try {
     await page.addInitScript(() =>
@@ -186,7 +186,7 @@ test("AC-2 every section renders real data", async ({ page }) => {
   const stack = await bootStack("ac132b", {
     relay: wport(4692),
     feed: wport(4693),
-    web: wport(5292),
+    web: wport(5348),
   });
   try {
     await page.addInitScript(() =>
@@ -248,7 +248,7 @@ test("AC-3 edits in one window land live in another", async ({
   const stack = await bootStack("ac132c", {
     relay: wport(4694),
     feed: wport(4695),
-    web: wport(5294),
+    web: wport(5349),
   });
   try {
     await context.addInitScript(() =>
@@ -303,7 +303,7 @@ test("screenshots: the AC matrix (light + dark, 1288 / 900 / 1440)", async ({
   const stack = await bootStack("ac132shots", {
     relay: wport(4700),
     feed: wport(4701),
-    web: wport(5300),
+    web: wport(5359),
   });
   try {
     await page.setViewportSize({ width: 1288, height: 700 });
@@ -342,7 +342,7 @@ test("AC-4 on plain web the update control does not render", async ({
   const stack = await bootStack("ac132d", {
     relay: wport(4696),
     feed: wport(4697),
-    web: wport(5296),
+    web: wport(5350),
   });
   try {
     await page.addInitScript(() =>
@@ -366,8 +366,8 @@ test("AC-1 the desktop menu opens Settings on ⌘, and Service Status stays", as
   test.setTimeout(180_000);
   const stack = await bootStack("ac132e", {
     relay: wport(4698),
-    feed: wport(4699),
-    web: wport(5298),
+    feed: wport(4817),
+    web: wport(5352),
   });
   let app: Awaited<ReturnType<typeof _electron.launch>> | undefined;
   try {

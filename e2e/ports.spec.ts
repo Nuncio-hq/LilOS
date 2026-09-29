@@ -1,26 +1,65 @@
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import { BAD_PORTS, safePort } from "./ports";
 
-/* #164: a worker's port block must never land on a port that browsers and
-   `fetch` refuse, or a healthy stack looks dead (worker 20 → 6668 was the
-   flake). Covers every base/step the specs use, up to worker index 200. */
+const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
+
+/* Every `wport(<n>)` base literal across the suite. A spec's ports are
+   `base + TEST_WORKER_INDEX * 100`, so two DISTINCT bases sharing a
+   residue mod 100 hand the same port to specs on different workers —
+   worker 0's `4743` IS worker 1's `4643`, which let ac-27's stack ride
+   ac-134's until teardown killed the ports mid-file (#256). Identical
+   bases are fine: two spec files never share one live worker index. */
 const BASES = [
-  4643, 4647, 4653, 4654, 4656, 4657, 4660, 4661, 4663, 4664, 4665, 4667, 4668,
-  4669, 4670, 4671, 4674, 4675, 4676, 4680, 4681, 4688, 4692, 4700, 4705, 4710,
-  4714, 4720, 4721, 4723, 4724, 4740, 4741, 4743, 4747, 4753, 4754, 4760, 4761,
-  4780, 4781, 5241, 5245, 5255, 5258, 5262, 5264, 5266, 5270, 5273, 5274, 5277,
-  5280, 5281, 5290, 5292, 5300, 5301, 5340, 5341, 5345, 5360, 5380,
+  ...new Set(
+    readdirSync(here)
+      .filter((f) => f.endsWith(".ts") || f.endsWith(".tsx"))
+      .flatMap((f) =>
+        [
+          ...readFileSync(path.join(here, f), "utf8").matchAll(
+            /\bwport\(\s*(\d+)/g,
+          ),
+        ].map((m) => Number(m[1])),
+      ),
+  ),
 ];
 
-test("no worker port is on the fetch bad-port list", () => {
+test("every wport call uses the default worker stride", () => {
+  const custom: string[] = [];
+  for (const f of readdirSync(here))
+    if (f.endsWith(".ts") || f.endsWith(".tsx"))
+      for (const m of readFileSync(path.join(here, f), "utf8").matchAll(
+        /\bwport\(\s*\d+\s*,/g,
+      ))
+        custom.push(`${f}: ${m[0]}`);
+  expect(custom).toEqual([]);
+});
+
+test("distinct wport bases never share a residue mod 100", () => {
+  const byResidue = new Map<number, number[]>();
+  for (const b of BASES)
+    byResidue.set(b % 100, [...(byResidue.get(b % 100) ?? []), b]);
+  const shared = [...byResidue.entries()].filter(([, v]) => v.length > 1);
+  expect(shared).toEqual([]);
+});
+
+/* #164: a worker's port block must never land on a port that browsers and
+   `fetch` refuse, or a healthy stack looks dead (worker 20 → 6668 was the
+   flake). 5199 is the shared prototype webServer — a base ≡99 lands on it
+   (worker 5 → 4699+500). Covers every base the specs use, up to worker
+   index 200. */
+const RESERVED = new Set([5199]);
+
+test("no worker port is on the fetch bad-port list or a reserved port", () => {
   const bad: string[] = [];
-  for (const step of [10, 100])
-    for (let w = 0; w <= 200; w++)
-      for (const base of BASES) {
-        const p = safePort(base + w * step);
-        if (BAD_PORTS.has(p) || p > 65_535)
-          bad.push(`${base}+${w}*${step}→${p}`);
-      }
+  for (let w = 0; w <= 200; w++)
+    for (const base of BASES) {
+      const p = safePort(base + w * 100);
+      if (BAD_PORTS.has(p) || RESERVED.has(p) || p > 65_535)
+        bad.push(`${base}+${w}*100→${p}`);
+    }
   expect(bad).toEqual([]);
 });
 

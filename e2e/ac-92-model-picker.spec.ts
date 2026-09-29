@@ -117,9 +117,9 @@ let stackA: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   stackA = await bootStack("picker", {
-    relay: wport(4743),
-    feed: wport(4747),
-    web: wport(5341),
+    relay: wport(4786),
+    feed: wport(4787),
+    web: wport(5389),
   });
 });
 test.afterAll(async () => {
@@ -345,7 +345,7 @@ test("AC-6 + AC-7 Refresh surfaces a new model without restart; Edit models' ONE
   // stack restart on the same LILOS_HOME.
   const stackB = await bootStack(
     "picker-restart",
-    { relay: wport(4753), feed: wport(4754), web: wport(5345) },
+    { relay: wport(4802), feed: wport(4803), web: wport(5304) },
     stackA.home,
   );
   try {

@@ -182,7 +182,7 @@ test.beforeAll(async () => {
   stack = await bootStack("ac232", {
     relay: wport(4680),
     feed: wport(4684),
-    web: wport(5280),
+    web: wport(5338),
   });
 });
 test.afterAll(async () => {

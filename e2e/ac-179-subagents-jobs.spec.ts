@@ -155,7 +155,7 @@ test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack(
     "ac179",
-    { relay: wport(4760), feed: wport(4761), web: wport(5320) },
+    { relay: wport(4812), feed: wport(4813), web: wport(5316) },
     { ENGINE_FAKE_TICK: "180" },
   );
 });
@@ -454,7 +454,7 @@ test("AC-5 no `background_jobs` capability → no Background tab and no Stop (D-
   test.setTimeout(180_000);
   const stackB = await bootStack(
     "ac179nocaps",
-    { relay: wport(4765), feed: wport(4766), web: wport(5325) },
+    { relay: wport(4815), feed: wport(4766), web: wport(5325) },
     { LILOS_HIDE_CAPS: "background_jobs" },
   );
   try {

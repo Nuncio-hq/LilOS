@@ -408,7 +408,7 @@ test("AC-7 real-app build: every visible control has a working handler", async (
       c === 0 ? resolve() : reject(new Error(`vite build exit ${c}`)),
     );
   });
-  const port = 5246;
+  const port = wport(5246);
   const preview = spawn(
     path.join(webDir, "node_modules", ".bin", "vite"),
     ["preview", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],

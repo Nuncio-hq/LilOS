@@ -73,9 +73,9 @@ async function boot(tag: string): Promise<Procs> {
   const base = mkdtempSync(path.join(tmpdir(), `lilos-e2e-138-${tag}-`));
   const leakTag = engineTag(tag);
   const ports = {
-    relay: wport(4710, 10),
-    feed: wport(4714, 10),
-    web: wport(5340, 10),
+    relay: wport(4710),
+    feed: wport(4714),
+    web: wport(5328),
   };
   const procs: Procs["procs"] = {
     relay: undefined,

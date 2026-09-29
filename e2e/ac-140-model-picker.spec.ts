@@ -27,9 +27,9 @@ import { wport } from "./ports";
 const ROOT = path.dirname(fileURLToPath(import.meta.url)).replace(/\/e2e$/, "");
 const WEB = path.join(ROOT, "apps", "web");
 const SHOTS = path.join(ROOT, "test-results", "ac-140");
-const RELAY = wport(4757);
-const FEED = wport(4758);
-const WEBP = wport(5347);
+const RELAY = wport(4805);
+const FEED = wport(4806);
+const WEBP = wport(5307);
 
 type Stack = {
   proc: ChildProcess;

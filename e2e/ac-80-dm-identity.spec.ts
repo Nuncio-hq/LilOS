@@ -239,7 +239,7 @@ test("AC-2 markdown renders while the reply streams, then settles unchanged", as
   test.setTimeout(150_000);
   const stack = await bootStack(
     "ac80b",
-    { relay: wport(4664), feed: wport(4665), web: wport(5264) },
+    { relay: wport(4664), feed: wport(4665), web: wport(5334) },
     // ~6s text phase → observable mid-stream; pin the human's name (#118).
     { ENGINE_FAKE_TICK: "150", LILOS_USER_NAME: "Oscar" },
   );
@@ -277,7 +277,7 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
   test.setTimeout(240_000);
   const stack = await bootStack(
     "ac80c",
-    { relay: wport(4667), feed: wport(4669), web: wport(5266) },
+    { relay: wport(4667), feed: wport(4669), web: wport(5335) },
     { ENGINE_FAKE_TICK: "150", LILOS_USER_NAME: "Oscar" },
   );
   try {

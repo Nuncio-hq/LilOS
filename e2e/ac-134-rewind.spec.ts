@@ -173,7 +173,7 @@ test.beforeAll(async () => {
   );
   stackB = await bootStack(
     "rw-b",
-    { relay: wport(4743), feed: wport(4747), web: wport(5341) },
+    { relay: wport(4782), feed: wport(4783), web: wport(5385) },
     { LILOS_USER_NAME: "Oscar", LILOS_HIDE_CAPS: "rewind" },
   );
 });
@@ -482,15 +482,16 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new sess
   const convD = page.url().split("/dm/")[1].split("/")[1];
   expect(convD).not.toBe(convC);
   /* The fresh session's root carries the surviving transcript as quoted
-     context, then the rewound text. */
+     context, then the rewound text. Scope to the user turn: the engine
+     reply's reasoning echoes the seeded prompt verbatim, and while its
+     collapsible is open a bare getByText strict-matches both (#266). */
+  const seeded = page.locator("[data-thread] [data-userturn]");
   await expect(
-    page
-      .locator("[data-thread]")
-      .getByText(/Picking up mid-session after a rewind/),
+    seeded.getByText(/Picking up mid-session after a rewind/),
   ).toBeVisible({ timeout: 60_000 });
-  await expect(
-    page.locator("[data-thread]").getByText(/alpha in the no-rewind session/),
-  ).toBeVisible();
+  await expect(seeded.getByText(/alpha in the no-rewind session/)).toBeVisible({
+    timeout: 60_000,
+  });
   await page.screenshot({ path: `${SHOTS}/ac-3-new-session.png` });
 });
 
