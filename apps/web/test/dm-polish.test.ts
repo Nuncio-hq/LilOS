@@ -160,3 +160,111 @@ describe("mergeTurns ordering", () => {
     expect(out.map((r) => r.id)).toEqual(["u1", "live-t1"]);
   });
 });
+
+/* Issue #180: plan.updated snapshots land on the turn's reply as a ui Plan;
+   superseded versions fold into synthetic "Replaced by vN" replies ahead of
+   it; a <2-item tasks list never renders. */
+describe("issue #180 plans", () => {
+  const session = (turns: TurnModel[], live?: TurnModel) => ({
+    sessionId: "s1",
+    state: "idle" as const,
+    turns,
+    live,
+    openRequests: [],
+    jobs: [],
+  });
+  const steps = (n: number, status: "pending" | "completed" = "pending") =>
+    Array.from({ length: n }, (_, i) => ({ text: `step ${i}`, status }));
+
+  test("AC-1 a tasks snapshot maps onto the turn reply; <2 items never renders", () => {
+    const tasks = {
+      planId: "p1",
+      kind: "tasks" as const,
+      version: 1,
+      steps: steps(3),
+      status: "approved" as const,
+    };
+    const reply = liveTurnReply(turn({ plans: [tasks] }), "emp");
+    expect(reply.plan?.kind).toBe("tasks");
+    expect(reply.plan?.steps).toHaveLength(3);
+
+    const small = liveTurnReply(
+      turn({ plans: [{ ...tasks, steps: steps(1) }] }),
+      "emp",
+    );
+    expect(small.plan).toBeUndefined();
+  });
+
+  test("AC-3 a proposed plan maps waiting + carries goal/steps/risks", () => {
+    const plan = {
+      planId: "p1",
+      kind: "plan" as const,
+      version: 1,
+      goal: "Add reconnect backoff",
+      steps: steps(3),
+      risks: ["may drop in-flight sends"],
+      status: "proposed" as const,
+    };
+    const reply = liveTurnReply(
+      turn({
+        phase: "waiting",
+        plans: [plan],
+        requests: [
+          {
+            requestId: "r1",
+            turnId: "t1",
+            request: { kind: "plan", planId: "p1" },
+          },
+        ],
+      }),
+      "emp",
+    );
+    expect(reply.waitingOn).toBe("plan");
+    expect(reply.plan?.status).toBe("proposed");
+    expect(reply.plan?.goal).toBe("Add reconnect backoff");
+    expect(reply.plan?.risks).toEqual(["may drop in-flight sends"]);
+  });
+
+  test("AC-4 a superseded v1 folds into its own reply ahead of v2", () => {
+    const t = turn({
+      turnId: "t1",
+      phase: "done",
+      text: "Done",
+      plans: [
+        {
+          planId: "p1",
+          kind: "plan" as const,
+          version: 1,
+          steps: steps(2),
+          status: "replaced" as const,
+        },
+        {
+          planId: "p1",
+          kind: "plan" as const,
+          version: 2,
+          steps: steps(2, "completed" as const),
+          status: "approved" as const,
+        },
+      ],
+    });
+    const replies = conversationReplies(
+      [
+        msg({ id: "u1", authorKind: "user", authorId: "me", text: "plan it" }),
+        msg({
+          id: "a1",
+          seq: 2,
+          authorKind: "employee",
+          authorId: "emp",
+          text: "Done",
+        }),
+      ],
+      "c1",
+    );
+    const out = mergeTurns(replies, session([t]), "emp");
+    expect(out.map((r) => r.id)).toEqual(["u1", "t1-plan-1", "a1"]);
+    expect(out[1].plan?.status).toBe("replaced");
+    expect(out[1].plan?.version).toBe(1);
+    expect(out[2].plan?.version).toBe(2);
+    expect(out[2].plan?.status).toBe("approved");
+  });
+});
