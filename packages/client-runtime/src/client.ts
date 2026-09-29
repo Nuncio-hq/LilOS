@@ -697,7 +697,11 @@ export class RelayClient {
             { includeArchived: true },
           ),
           this.request<{ profile: ProfileSettings }>("profile.get", {}),
-          this.request<{ devices: PairedDevice[] }>("devices.list", {}),
+          // devices.list is pairing-admin scope and refused for device
+          // peers — skip it so one refusal can't void the whole batch.
+          this.options.device
+            ? Promise.resolve({ devices: [] as PairedDevice[] })
+            : this.request<{ devices: PairedDevice[] }>("devices.list", {}),
         ]);
       this.employees.set(employees.employees);
       this.channels.set(channels.channels);
