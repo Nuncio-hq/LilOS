@@ -205,6 +205,8 @@ export const JobExitedPayload = z.strictObject({
   jobId: z.string().min(1),
   status: z.enum(["exited", "failed", "stopped"]),
   exitCode: z.int().optional(),
+  /** Engine-side exit time (ms epoch) — freezes the uptime a client shows. */
+  endedAt: z.int().min(0).optional(),
 });
 
 export const RequestOpenedPayload = z.strictObject({

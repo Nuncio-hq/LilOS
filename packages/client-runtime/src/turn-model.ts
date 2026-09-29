@@ -74,6 +74,8 @@ export interface JobModel {
   command: string;
   status: JobStatus;
   startedAt?: number;
+  /** Ms epoch the job exited — the row's uptime freezes at it. */
+  endedAt?: number;
   exitCode?: number;
   url?: string;
   /** Subagent name when a helper spawned it. */
@@ -355,6 +357,7 @@ export function reduceSessionEvents(
         if (!job) break;
         job.status = e.payload.status;
         job.exitCode = e.payload.exitCode ?? job.exitCode;
+        job.endedAt = e.payload.endedAt ?? job.endedAt;
         break;
       }
       case "request.opened": {

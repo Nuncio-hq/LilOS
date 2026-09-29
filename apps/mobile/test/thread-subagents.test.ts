@@ -355,6 +355,68 @@ describe("thread subagents & background jobs — #181", () => {
     expect(card.subagents).toHaveLength(1);
   });
 
+  it("AC-4 identical canned replies across turns stay separate cards (no dup turn ids)", () => {
+    /* A rebound engine re-issues t1/t2 with byte-identical canned text. The
+       byText map stamped the SAME turn on every matching message — each turn
+       may claim at most one message, in order (web's `used` set). */
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small", ref: "m1" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "same reply" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+      ev("turn.started", { turnId: "t2", model: "fake-small", ref: "m3" }),
+      ev("turn.delta", { turnId: "t2", stream: "text", delta: "same reply" }),
+      ev("turn.completed", { turnId: "t2", stopReason: "end_turn" }),
+    ]);
+    const messages = [
+      msg({ id: "m1", seq: 1, text: "first" }),
+      msg({ id: "m2", seq: 2, authorKind: "employee", text: "same reply" }),
+      msg({ id: "m3", seq: 3, text: "second" }),
+      msg({ id: "m4", seq: 4, authorKind: "employee", text: "same reply" }),
+    ];
+    const detail = toThreadDetail({ ...BASE, messages, model });
+    const cardIds = detail.entries
+      .filter((e) => e.kind === "agent")
+      .map((e) => e.id);
+    expect(cardIds).toEqual(["turn-t1", "turn-t2"]);
+    expect(new Set(cardIds).size).toBe(cardIds.length);
+  });
+
+  it("AC-4 a finished job's uptime freezes at endedAt (no inflation past exit)", () => {
+    const exited = reduceSessionEvents("sess-1", [
+      ev("job.started", {
+        jobId: "j1",
+        command: "bun run dev",
+        startedAt: T0 - 30_000,
+      }),
+      ev("job.exited", {
+        jobId: "j1",
+        status: "stopped",
+        endedAt: T0 - 25_000,
+      }),
+    ]);
+    const detail = toThreadDetail({
+      ...BASE,
+      model: exited,
+      jobsCapable: true,
+    });
+    expect(detail.jobs?.[0]?.uptime).toBe("5s");
+    /* A jobs.list row carries endedAt through too. */
+    const listed = toThreadDetail({
+      ...BASE,
+      jobsCapable: true,
+      listedJobs: [
+        {
+          jobId: "j2",
+          command: "bun run dev",
+          status: "stopped",
+          startedAt: T0 - 30_000,
+          endedAt: T0 - 10_000,
+        },
+      ],
+    });
+    expect(listed.jobs?.[0]?.uptime).toBe("20s");
+  });
+
   it("AC-5 background surfaces stay empty when the engine did not declare the capability", () => {
     const model = reduceSessionEvents("sess-1", [
       ev("job.started", {

@@ -98,6 +98,7 @@ export function listedJobModel(j: Job): JobModel {
     command: j.command,
     status: j.status,
     ...(j.startedAt !== undefined ? { startedAt: j.startedAt } : {}),
+    ...(j.endedAt !== undefined ? { endedAt: j.endedAt } : {}),
     ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
     ...(j.url !== undefined ? { url: j.url } : {}),
     ...(j.by !== undefined ? { by: j.by } : {}),
@@ -121,7 +122,9 @@ export function toJobRow(j: JobModel, now = Date.now()): BackgroundJobRow {
     command: j.command,
     status: j.status,
     started: j.startedAt ? clock(j.startedAt) : "",
-    uptime: j.startedAt ? formatUptime((now - j.startedAt) / 1000) : "0s",
+    uptime: j.startedAt
+      ? formatUptime(((j.endedAt ?? now) - j.startedAt) / 1000)
+      : "0s",
     ...(j.url ? { url: j.url } : {}),
     ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
     log: j.tail,

@@ -134,13 +134,16 @@ function useThread(conversationId: string) {
      same cut here (removedIds for files-only rewinds, seq for the tail). */
   const rewinds = useStore(client?.rewinds ?? $noRewinds);
   const rewind = rewinds[conversationId];
-  const sessionModel = useMemo(
-    () =>
-      feed.sessionId
-        ? reduceSessionEvents(feed.sessionId, feed.events, feed.snapshot)
-        : undefined,
-    [feed.sessionId, feed.events, feed.snapshot],
-  );
+  /* AC-4: key the model on the conversation's live binding (engineRef), not
+     feed.sessionId — the feed's id lags a rebind, and reducing the old
+     session keeps its jobs "running" (phantoms) while filtering out the new
+     session's real events. Web does the same: models[conv.engineRef]. */
+  const sessionModel = useMemo(() => {
+    const sid = engineRef ?? feed.sessionId;
+    return sid
+      ? reduceSessionEvents(sid, feed.events, feed.snapshot)
+      : undefined;
+  }, [engineRef, feed.sessionId, feed.events, feed.snapshot]);
 
   const employee = conv
     ? employees.find(

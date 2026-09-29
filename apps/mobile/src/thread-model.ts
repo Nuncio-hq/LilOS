@@ -228,18 +228,18 @@ export function mergeThreadEntries(
   if (!model) return entries;
 
   /* A finished turn lands where its reply message sits: match on the exact
-     text the engine posted (stripMessages on web; relays keep full text). */
-  const byText = new Map<string, TurnModel>();
-  for (const t of model.turns) {
-    const text = t.text.trim();
-    if (text && !byText.has(text)) byText.set(text, t);
-  }
-  const swapped = new Set<string>();
+     text the engine posted (stripMessages on web; relays keep full text).
+     Each turn claims ONE message in turn order — an engine that answers two
+     turns with the same text (canned replies repeat across sessions, #181)
+     must not stamp the same rich card on both rows. */
+  const used = new Set<TurnModel>();
   for (const m of messages) {
     if (m.authorKind !== "employee") continue;
-    const turn = byText.get(m.text.trim());
+    const turn = model.turns.find(
+      (x) => !used.has(x) && x.text.trim() && x.text.trim() === m.text.trim(),
+    );
     if (!turn) continue;
-    swapped.add(turn.turnId);
+    used.add(turn);
     const idx = entries.findIndex((e) => e.id === m.id);
     /* dur = prompt -> reply latency, the only honest wall-clock available. */
     const prompt = turn.ref
@@ -270,7 +270,7 @@ export function mergeThreadEntries(
      wins; a turn with no ref falls back to matching the dropped answer's
      body, so a legit turn quoting a rewound answer survives. */
   const leftover = model.turns.filter((t) => {
-    if (swapped.has(t.turnId)) return false;
+    if (used.has(t)) return false;
     const text = t.text.trim();
     /* A finished turn with no content renders a bare card — drop it unless
        it was stopped mid-flight (the "You stopped this turn" row is the
