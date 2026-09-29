@@ -471,3 +471,27 @@ form:focus-within .lilos-hint { display: inline !important; animation: lilos-ris
     background: rgb(36 36 40 / 0.94) !important;
     border-color: rgb(255 255 255 / 0.1) !important;
 }
+
+/* Panels that float over the content (the sidebar opened from Focus, the
+   side panel or workbench on narrow windows) are sheets, not tints: near-
+   opaque frosted glass with a shadow, so nothing behind reads through. */
+.lilos-desktop .lilos-glass.fixed,
+.lilos-desktop .lilos-glass.lilos-glass-side.fixed {
+    background: rgb(246 247 250 / 0.92) !important;
+    backdrop-filter: blur(30px) saturate(1.8) !important;
+    -webkit-backdrop-filter: blur(30px) saturate(1.8) !important;
+    box-shadow: 0 30px 80px -20px rgb(20 30 60 / 0.45), 1px 0 0 rgb(255 255 255 / 0.6) !important;
+}
+.dark .lilos-desktop .lilos-glass.fixed,
+.dark .lilos-desktop .lilos-glass.lilos-glass-side.fixed {
+    background: rgb(30 30 34 / 0.92) !important;
+    box-shadow: 0 30px 80px -20px rgb(0 0 0 / 0.8), 1px 0 0 rgb(255 255 255 / 0.06) !important;
+}
+@media (max-width: 1279px) {
+    .lilos-desktop .lilos-glass[class*="max-xl:fixed"] { background: rgb(246 247 250 / 0.92) !important; backdrop-filter: blur(30px) saturate(1.8) !important; }
+    .dark .lilos-desktop .lilos-glass[class*="max-xl:fixed"] { background: rgb(30 30 34 / 0.92) !important; }
+}
+@media (max-width: 1023px) {
+    .lilos-desktop .lilos-glass[class*="max-lg:fixed"] { background: rgb(246 247 250 / 0.92) !important; backdrop-filter: blur(30px) saturate(1.8) !important; }
+    .dark .lilos-desktop .lilos-glass[class*="max-lg:fixed"] { background: rgb(30 30 34 / 0.92) !important; }
+}
