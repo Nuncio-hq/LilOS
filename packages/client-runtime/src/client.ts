@@ -714,7 +714,15 @@ export class RelayClient {
           { includeArchived: true },
         ),
         this.request<{ profile: ProfileSettings }>("profile.get", {}),
-        this.request<{ devices: PairedDevice[] }>("devices.list", {}),
+        // Pairing admin (#153): paired devices are refused `devices.list`,
+        // so it can't sit in the all-or-nothing refresh — an empty list is
+        // the honest read on a phone; token peers still get every device.
+        this.request<{ devices: PairedDevice[] }>("devices.list", {}).catch(
+          (error: unknown) =>
+            error instanceof RelayError && error.code === "forbidden"
+              ? { devices: [] }
+              : Promise.reject(error),
+        ),
         this.request<{ asks: Ask[] }>("asks.list", {}),
       ]);
       this.employees.set(employees.employees);

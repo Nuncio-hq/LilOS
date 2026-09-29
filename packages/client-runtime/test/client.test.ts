@@ -707,7 +707,11 @@ describe("asks read model (#155)", () => {
   });
 
   /** Answer every directory read so the refresh fully lands. */
-  const answerDirectory = (socket: FakeSocket, asks: unknown[] = []) => {
+  const answerDirectory = (
+    socket: FakeSocket,
+    asks: unknown[] = [],
+    devices: "ok" | "forbidden" = "ok",
+  ) => {
     socket.respondTo("employees.list", { employees: [] });
     socket.respondTo("channels.list", {
       channels: [
@@ -717,7 +721,16 @@ describe("asks read model (#155)", () => {
     socket.respondTo("conversations.list", { conversations: [] });
     socket.respondTo("conversations.summaries", { summaries: [] });
     socket.respondTo("profile.get", { profile: {} });
-    socket.respondTo("devices.list", { devices: [] });
+    if (devices === "forbidden") {
+      // Pairing admin (#153): the relay refuses devices.list to device peers.
+      socket.failTo("devices.list", {
+        code: -32003,
+        message: "paired devices can't administer pairing",
+        data: { code: "forbidden" },
+      });
+    } else {
+      socket.respondTo("devices.list", { devices: [] });
+    }
     socket.respondTo("asks.list", { asks });
   };
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -774,5 +787,16 @@ describe("asks read model (#155)", () => {
       params: { channelId: "ch1" },
     });
     expect(client.asks.get().map((a) => a.id)).toEqual(["ask_9"]);
+  });
+
+  it("a forbidden devices.list leaves devices empty without sinking the refresh", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    answerDirectory(socket, [askFixture()], "forbidden");
+    await flush();
+    // asks.list landed => every earlier directory read resolved too.
+    expect(client.asks.get().map((a) => a.id)).toEqual(["ask_1"]);
+    expect(client.devices.get()).toEqual([]);
+    expect(client.directoryReady.get()).toBe(true);
   });
 });
