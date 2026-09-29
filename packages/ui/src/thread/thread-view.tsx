@@ -211,6 +211,8 @@ export function ThreadView({
             {channelLabel} · {leadEmp && !isDM && `${leadEmp.name} · `}Hermes{" "}
             <code className="rounded bg-muted px-1">{thread.session}</code>
           </div>
+          {/* A folder-less DM session is a plain chat — no folder label
+              at all (#196). */}
           {thread.ws ? (
             <WsBadge
               ws={thread.ws}
@@ -223,11 +225,7 @@ export function ThreadView({
                   : undefined
               }
             />
-          ) : isDM && !work && !repo ? (
-            /* A folder-less DM session is a plain chat — no folder label
-               at all (#196). */
-            <></>
-          ) : (
+          ) : isDM && !work && !repo ? null : (
             <WorkspaceBadge work={work} repo={repo} />
           )}
         </div>
