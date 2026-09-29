@@ -287,30 +287,33 @@ test.describe("AC-1-4 (#53) plain-language status + blocked legs", () => {
       relay.proc.child.kill("SIGKILL");
       // Prove the page actually observed the outage — otherwise the heal
       // assertion below passes on the stale "All systems normal" label.
-      // Poll across the whole restart window: "reconnecting" while the
-      // relay is down, "issue"/"harness down" once the new relay is up but
-      // the harness has not re-registered yet.
-      const sawOutage = expect
-        .poll(async () => {
-          // allInnerTexts never waits — the status chrome can unmount
-          // briefly while the page's own socket is down.
-          const banner = await page
-            .locator("[data-status-banner]")
-            .allInnerTexts()
-            .catch(() => [] as string[]);
-          const btn = await page
-            .getByRole("button", { name: "System status" })
-            .allInnerTexts()
-            .catch(() => [] as string[]);
-          return [...banner, ...btn].join(" ");
-        })
-        .toMatch(/reconnecting|issue|harness down/i, { timeout: 30_000 });
+      // Wait for it BEFORE respawning: a restart that completes inside one
+      // status-poll tick heals through the client's stale snapshot, so the
+      // DOM may show the outage for well under a second and a concurrent
+      // poll can miss it entirely (#190).
+      await expect
+        .poll(
+          async () => {
+            // allInnerTexts never waits — the status chrome can unmount
+            // briefly while the page's own socket is down.
+            const banner = await page
+              .locator("[data-status-banner]")
+              .allInnerTexts()
+              .catch(() => [] as string[]);
+            const btn = await page
+              .getByRole("button", { name: "System status" })
+              .allInnerTexts()
+              .catch(() => [] as string[]);
+            return [...banner, ...btn].join(" ");
+          },
+          { timeout: 30_000 },
+        )
+        .toMatch(/reconnecting|issue|harness down/i);
       relay2 = spawnLogged([BUN, join(REPO, "apps/relay/src/index.ts")], {
         LILOS_RELAY_HOME: relay.home,
         LILOS_RELAY_PORT: relay.port,
       });
       await waitFor(relay2, "listening on http://");
-      await sawOutage;
 
       // The harness re-registers on reconnect → host is set → status heals.
       await expect(

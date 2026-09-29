@@ -1197,3 +1197,37 @@ describe("engine-hermes #179: subagents + background jobs", () => {
     ).toEqual(["jobs.list", "jobs.stop"]);
   });
 });
+
+describe("engine-hermes #140 AC-2: setModel re-checks the live catalog once", () => {
+  test("a pick the cached list omits but refresh offers validates — an id missing from both fails early", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+
+    /* The account-gated case: the cached `model.options` read omits
+       gpt-6-astra; the LIVE read offers it (what Refresh shows the user).
+       `refreshProviders` models join modelProviders on the first
+       {refresh:true} call, like the gateway's updated disk cache. */
+    gw.refreshProviders = [
+      { slug: "codex", name: "Codex", models: ["gpt-6-astra"] },
+    ];
+    const ack = (await h.request("session.setModel", {
+      sessionId,
+      model: "gpt-6-astra",
+      provider: "codex",
+    })) as { model: string; provider?: string };
+    expect(ack.model).toBe("gpt-6-astra");
+    expect(ack.provider).toBe("codex");
+    // Validation read once unrefreshed, then once with refresh:true.
+    expect(gw.modelOptionsCalls.map((c) => c.refresh === true)).toEqual([
+      false,
+      true,
+    ]);
+    expect(gw.configSetCalls.map((c) => c.key)).toEqual(["model"]);
+
+    // An id missing from BOTH reads still fails early (#50 AC-3 kept).
+    await expect(
+      h.request("session.setModel", { sessionId, model: "no-such-model" }),
+    ).rejects.toMatchObject({ code: -32005 });
+    expect(gw.configSetCalls.filter((c) => c.key === "model")).toHaveLength(1);
+  });
+});

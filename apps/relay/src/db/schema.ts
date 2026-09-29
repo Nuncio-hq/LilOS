@@ -182,3 +182,30 @@ export const profile = sqliteTable("profile", {
   companyName: text("company_name"),
   avatarColor: text("avatar_color"),
 });
+
+/**
+ * One-time pairing grants (#153): the code shown in the Pair phone QR is
+ * stored only as `code_hash` (SHA-256) — the raw value lives in the QR and
+ * the exchange request, never on disk. A set `consumed_at` means spent;
+ * `expires_at` is the 5-minute TTL.
+ */
+export const pairingGrants = sqliteTable("pairing_grants", {
+  codeHash: text("code_hash").primaryKey(),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+  consumedAt: integer("consumed_at"),
+});
+
+/**
+ * Devices paired to this install (#153): phones that exchanged a grant for
+ * their own credential. The credential is stored only as `credential_hash`;
+ * a set `revoked_at` closes live sockets and blocks future hellos.
+ */
+export const pairedDevices = sqliteTable("paired_devices", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  credentialHash: text("credential_hash").notNull().unique(),
+  pairedAt: integer("paired_at").notNull(),
+  lastSeenAt: integer("last_seen_at").notNull(),
+  revokedAt: integer("revoked_at"),
+});

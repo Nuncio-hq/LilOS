@@ -16,6 +16,7 @@ import {
   JsonRpcRequest,
   MessageCreatedEvent,
   ProtocolVersionMismatch,
+  SessionPingResult,
   WelcomeResult,
 } from "../src/app";
 import { appProtocol } from "../src/app/registry";
@@ -96,6 +97,17 @@ describe("AC-1 app protocol contracts", () => {
     expect(
       AppMessage.parse({ ...message, tools: [], reasoning: "..." }),
     ).toEqual(message);
+  });
+
+  it("declares the session.ping keep-alive probe (#154)", () => {
+    expect(AppMethod.safeParse("session.ping").success).toBe(true);
+    expect(SessionPingResult.parse({ ok: true, instanceId: "i1" })).toEqual({
+      ok: true,
+      instanceId: "i1",
+    });
+    expect(
+      SessionPingResult.safeParse({ ok: false, instanceId: "i1" }).success,
+    ).toBe(false);
   });
 
   it("accepts the subscribe cursor contract (afterSeq optional, >=0)", () => {

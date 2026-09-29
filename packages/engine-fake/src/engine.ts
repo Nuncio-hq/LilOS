@@ -41,6 +41,7 @@ import {
 import {
   DEFAULT_MODEL,
   type FakeAgent,
+  type FakeModel,
   MODEL_CATALOG,
   REFRESH_MODEL,
   SEED_AGENTS,
@@ -217,9 +218,23 @@ export class FakeEngine {
   }
 
   private readonly caps: Partial<Record<KnownCapability, boolean>>;
+  /** `models.list {refresh:true}` was served at least once — the refresh-only
+      model has joined the catalog for every later read + validation (#140). */
+  private servedRefresh = false;
+
   /** A capability is on unless the options explicitly set it false. */
   private capOn(cap: string): boolean {
     return this.caps[cap as KnownCapability] !== false;
+  }
+
+  /** The catalog the engine currently offers: the seed rows, plus
+      REFRESH_MODEL once a refresh surfaced it (a live fetch updates the
+      gateway's cache the same way — a model the account just offered stays
+      offerable, #140 AC-2). */
+  private catalog(): FakeModel[] {
+    return this.servedRefresh
+      ? [...MODEL_CATALOG, REFRESH_MODEL]
+      : MODEL_CATALOG;
   }
 
   /** Subscribe to every session's event stream (notifications out). */
@@ -377,7 +392,7 @@ export class FakeEngine {
         `no agent ${p.agent} — hire it via agents.create first`,
       );
     const id = `s-${this.sessionNamespace}-${++this.sessionCounter}`;
-    const picked = MODEL_CATALOG.find((m) => m.id === (p.model ?? spec.model));
+    const picked = this.catalog().find((m) => m.id === (p.model ?? spec.model));
     const s: FakeSession = {
       ref: id,
       id,
@@ -590,7 +605,7 @@ export class FakeEngine {
         RPC_ERRORS.INVALID_STATE,
         `agent ${p.name} already exists`,
       );
-    if (p.model !== undefined && !MODEL_CATALOG.some((m) => m.id === p.model))
+    if (p.model !== undefined && !this.catalog().some((m) => m.id === p.model))
       throw new RpcError(RPC_ERRORS.MODEL_NOT_FOUND, `no model ${p.model}`);
     const agent: FakeAgent = {
       id: p.name,
@@ -612,10 +627,7 @@ export class FakeEngine {
   private agentsUpdate(p: AgentsUpdateParams) {
     const a = this.agents.get(p.id);
     if (!a) throw new RpcError(RPC_ERRORS.AGENT_NOT_FOUND, `no agent ${p.id}`);
-    if (
-      p.model !== undefined &&
-      ![...MODEL_CATALOG, REFRESH_MODEL].some((m) => m.id === p.model)
-    )
+    if (p.model !== undefined && !this.catalog().some((m) => m.id === p.model))
       throw new RpcError(
         RPC_ERRORS.MODEL_NOT_FOUND,
         `no model ${p.model} — see models.list`,
@@ -630,12 +642,11 @@ export class FakeEngine {
   private modelsList(p: ModelsListParams) {
     /* refresh:true re-probes the catalog — the fake gains REFRESH_MODEL
        deterministically so "a new model appears without restart" is
-       testable (#92 AC-6). */
-    const catalog = p.refresh
-      ? [...MODEL_CATALOG, REFRESH_MODEL]
-      : MODEL_CATALOG;
+       testable (#92 AC-6); once served it stays in the catalog, like the
+       gateway's updated cache (#140 AC-2). */
+    if (p.refresh) this.servedRefresh = true;
     return {
-      models: catalog.map((m) => ({ ...m })),
+      models: this.catalog().map((m) => ({ ...m })),
       default: DEFAULT_MODEL,
       defaultProvider: "fake",
       providers: [{ id: "fake", name: "Fake" }],
@@ -647,8 +658,11 @@ export class FakeEngine {
     if (s.state === "closed")
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
     /* Model ids are opaque — `p.model` is matched verbatim, never split on
-       "/" (issue #92 AC-8); `provider` is a separate field end to end. */
-    const m = [...MODEL_CATALOG, REFRESH_MODEL].find((x) => x.id === p.model);
+       "/" (issue #92 AC-8); `provider` is a separate field end to end. The
+       pick validates against the catalog the engine currently offers — a
+       refresh-only model is accepted only once a refresh served it (#140
+       AC-2 — the gate a real adapter applies). */
+    const m = this.catalog().find((x) => x.id === p.model);
     if (!m)
       throw new RpcError(
         RPC_ERRORS.MODEL_NOT_FOUND,
@@ -703,7 +717,7 @@ export class FakeEngine {
       fast?: boolean;
     },
   ) {
-    const m = [...MODEL_CATALOG, REFRESH_MODEL].find((x) => x.id === p.model);
+    const m = this.catalog().find((x) => x.id === p.model);
     if (!m)
       throw new RpcError(
         RPC_ERRORS.MODEL_NOT_FOUND,
