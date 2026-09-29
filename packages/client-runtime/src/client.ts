@@ -9,6 +9,7 @@ import {
   type Conversation,
   type ConversationSummary,
   ConversationUpdatedEvent,
+  DevicesChangedEvent,
   type Employee,
   type EmployeePatch,
   type EmployeesCreateParamsInput,
@@ -16,12 +17,15 @@ import {
   JsonRpcNotification,
   JsonRpcResponse,
   MessageCreatedEvent,
+  type PairedDevice,
+  type PairingOffer,
   type ProfileSettings,
   ProfileUpdatedEvent,
   type RequestId,
   type RpcError,
   SystemStatusResult,
   type WelcomeResult,
+  WS_CLOSE_DEVICE_REVOKED,
 } from "@lilos/contracts/app";
 import type {
   AgentDescriptor,
@@ -31,6 +35,10 @@ import type {
   ModelsListResult,
 } from "@lilos/contracts/engine";
 import { atom, type WritableAtom } from "nanostores";
+import {
+  type CachedDirectory,
+  DEVICE_CACHE_SCHEMA_VERSION,
+} from "./device-cache";
 import {
   defaultSocketFactory,
   type RelaySocket,
@@ -70,8 +78,17 @@ export interface ChannelMessagesState {
 export interface RelayClientOptions {
   /** ws:// or wss:// relay endpoint (path included, e.g. ws://127.0.0.1:4577/ws). */
   url: string;
-  /** Per-install token (relay writes it to <home>/relay-token on first run). */
-  token: string;
+  /**
+   * Per-install token (relay writes it to <home>/relay-token on first run).
+   * Required unless `device` authenticates the session instead.
+   */
+  token?: string;
+  /**
+   * Paired-device auth (#153): what `POST /pair/exchange` minted — the
+   * phone's own credential, revocable per device without rotating the
+   * install token. Wins over `token` when both are set.
+   */
+  device?: { deviceId: string; credential: string };
   socketFactory?: SocketFactory;
   protocolVersion?: number;
   client?: { name?: string; version?: string };
@@ -140,6 +157,14 @@ export class RelayClient {
   });
   /** Fatal handshake failure (version mismatch, bad token) once raised. */
   readonly fatal: WritableAtom<RelayError | undefined> = atom(undefined);
+  /** Phones paired to this install (#153) — live via `devices.changed`. */
+  readonly devices: WritableAtom<PairedDevice[]> = atom([]);
+  /**
+   * Why the socket last dropped. Close-code aware: `devices.revoke` ends the
+   * socket 4403 → `code: "device_revoked"` — a dead credential the app must
+   * re-pair for, not a transient transport loss (#154).
+   */
+  lastSocketError: RelayError | undefined;
 
   private readonly options: Required<
     Pick<
@@ -406,9 +431,55 @@ export class RelayClient {
     return await this.request<ModelsListResult>("models.list", params ?? {});
   }
 
+  /* --------------------- phone pairing (#153) ----------------------- */
+
+  /**
+   * "Turn on phone access": binds the Tailscale listener and mints a fresh
+   * one-time grant for the Pair phone dialog to render. Rejects with
+   * `tailscale_unavailable` when the tailnet is down — the dialog shows its
+   * no-remote state then.
+   */
+  async pairingOffer(): Promise<PairingOffer> {
+    const { offer } = await this.request<{ offer: PairingOffer }>(
+      "pairing.offer",
+      {},
+    );
+    return offer;
+  }
+
+  /** Turn phone access back off: unbinds the Tailscale listener. */
+  async pairingDisable(): Promise<void> {
+    await this.request("pairing.disable", {});
+  }
+
+  async listDevices(): Promise<PairedDevice[]> {
+    const { devices } = await this.request<{ devices: PairedDevice[] }>(
+      "devices.list",
+      {},
+    );
+    this.devices.set(devices);
+    return devices;
+  }
+
+  /** Revoke a paired device — the relay closes its live socket too. */
+  async revokeDevice(deviceId: string): Promise<void> {
+    await this.request("devices.revoke", { deviceId });
+  }
+
+  /**
+   * Keep-vs-replace probe (#154): the connection supervisor pings the live
+   * socket on foreground — a timeout or error means the transport is dead
+   * and the socket gets replaced, an answer means keep it.
+   */
+  async ping(timeoutMs = 3_000): Promise<void> {
+    await this.request("session.ping", {}, timeoutMs);
+  }
+
   async request<T>(
     method: string,
     params?: Record<string, unknown>,
+    /** Per-call timeout override — the foreground probe uses ~3s (#154). */
+    timeoutMs = this.options.requestTimeoutMs,
   ): Promise<T> {
     if (!this.socket || this.socket.readyState !== SOCKET_OPEN) {
       throw new RelayError("relay not connected", "not_connected");
@@ -418,7 +489,7 @@ export class RelayClient {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new RelayError(`request ${method} timed out`, "timeout"));
-      }, this.options.requestTimeoutMs);
+      }, timeoutMs);
       this.pending.set(id, {
         resolve: resolve as (v: unknown) => void,
         reject,
@@ -428,6 +499,39 @@ export class RelayClient {
         JSON.stringify({ jsonrpc: "2.0", id, method, params: params ?? {} }),
       );
     });
+  }
+
+  /* ----------------- device cache hydrate/snapshot (#154) ----------------- */
+
+  /**
+   * Cold-start hydrate: seed the directory atoms and seq watermarks from the
+   * on-device cache so Home renders before the socket opens, then reconnect
+   * replays only what changed (`afterSeq` on the seeded watermarks).
+   */
+  hydrate(snapshot: CachedDirectory): void {
+    this.employees.set(snapshot.employees);
+    this.channels.set(snapshot.channels);
+    this.conversations.set(snapshot.conversations);
+    this.conversationSummaries.set(snapshot.conversationSummaries);
+    this.profile.set(snapshot.profile);
+    this.watermarks.clear();
+    for (const [channelId, seq] of Object.entries(snapshot.watermarks)) {
+      this.watermarks.set(channelId, seq);
+    }
+  }
+
+  /** Current directory state + watermarks — what the device cache persists. */
+  snapshot(): CachedDirectory {
+    return {
+      schemaVersion: DEVICE_CACHE_SCHEMA_VERSION,
+      savedAt: Date.now(),
+      employees: this.employees.get(),
+      channels: this.channels.get(),
+      conversations: this.conversations.get(),
+      conversationSummaries: this.conversationSummaries.get(),
+      profile: this.profile.get(),
+      watermarks: Object.fromEntries(this.watermarks),
+    };
   }
 
   /** Subscribe a channel and get its live message store. */
@@ -465,6 +569,7 @@ export class RelayClient {
 
   private async openAndHello(): Promise<WelcomeResult> {
     this.state.set(this.everConnected ? "reconnecting" : "connecting");
+    this.lastSocketError = undefined;
     const socket = (this.options.socketFactory ?? defaultSocketFactory)(
       this.options.url,
     );
@@ -472,9 +577,15 @@ export class RelayClient {
     this.attachSocketListeners(socket);
     await this.waitForOpen(socket);
     try {
+      const auth = this.options.device
+        ? {
+            deviceId: this.options.device.deviceId,
+            credential: this.options.device.credential,
+          }
+        : { token: this.options.token ?? "" };
       const welcome = await this.request<WelcomeResult>("session.hello", {
         protocolVersion: this.options.protocolVersion,
-        token: this.options.token,
+        ...auth,
         client: this.options.client,
       });
       if (
@@ -552,9 +663,9 @@ export class RelayClient {
       const text = typeof event.data === "string" ? event.data : undefined;
       if (text !== undefined) this.handleFrame(text);
     });
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event) => {
       if (this.socket !== socket) return;
-      this.handleSocketClose();
+      this.handleSocketClose(event);
     });
     socket.addEventListener("error", () => {
       // 'close' follows; nothing to do here.
@@ -569,7 +680,7 @@ export class RelayClient {
 
   private async refreshDirectory(): Promise<void> {
     try {
-      const [employees, channels, conversations, summaries, settings] =
+      const [employees, channels, conversations, summaries, settings, devices] =
         await Promise.all([
           this.request<{ employees: Employee[] }>("employees.list", {}),
           this.request<{ channels: AppChannel[] }>("channels.list", {}),
@@ -583,12 +694,14 @@ export class RelayClient {
             { includeArchived: true },
           ),
           this.request<{ profile: ProfileSettings }>("profile.get", {}),
+          this.request<{ devices: PairedDevice[] }>("devices.list", {}),
         ]);
       this.employees.set(employees.employees);
       this.channels.set(channels.channels);
       this.conversations.set(conversations.conversations);
       this.conversationSummaries.set(summaries.summaries);
       this.profile.set(settings.profile);
+      this.devices.set(devices.devices);
     } catch {
       // Directory refresh is best-effort on reconnect; stores keep stale data.
     }
@@ -752,6 +865,10 @@ export class RelayClient {
       }
       case "profile.updated": {
         this.profile.set(ProfileUpdatedEvent.parse(params).profile);
+        return;
+      }
+      case "devices.changed": {
+        this.devices.set(DevicesChangedEvent.parse(params).devices);
         return;
       }
       case "employee.upserted": {
@@ -942,11 +1059,21 @@ export class RelayClient {
     });
   }
 
-  private handleSocketClose(): void {
+  private handleSocketClose(event?: { code: number; reason: string }): void {
     // A close during the initial handshake already rejects connect() via
     // waitForOpen — don't start a reconnect loop on top of that rejection.
     const stillHandshaking = this.state.get() === "connecting";
-    this.dropSocket(new RelayError("relay socket closed", "socket_closed"));
+    const revoked = event?.code === WS_CLOSE_DEVICE_REVOKED;
+    this.dropSocket(
+      revoked
+        ? new RelayError(event.reason || "device revoked", "device_revoked", {
+            closeCode: event.code,
+          })
+        : new RelayError("relay socket closed", "socket_closed", {
+            closeCode: event?.code,
+            closeReason: event?.reason,
+          }),
+    );
     if (stillHandshaking) {
       this.state.set("closed");
       return;
@@ -999,6 +1126,7 @@ export class RelayClient {
   }
 
   private dropSocket(error: RelayError): void {
+    this.lastSocketError = error;
     const socket = this.socket;
     this.socket = undefined;
     for (const [, entry] of this.pending) {

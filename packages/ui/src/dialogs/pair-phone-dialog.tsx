@@ -4,6 +4,7 @@ import {
   NetworkIcon,
   RefreshCwIcon,
   SmartphoneIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
@@ -17,14 +18,27 @@ import { cn } from "../lib/utils";
    - `no-remote`: the Mac isn't reachable from the phone (Tailscale off), so
      no code is offered; says what to turn on.
    - `paired`: a phone just used the code.
-   The pairing grant itself is backend work; this is props in, callbacks out. */
+   Props in, callbacks out: the offer/code are the relay's real one-time
+   grants (#153), minted by `pairing.offer`; the device list comes from
+   `devices.changed`/`devices.list`. */
 
 export type PairPhoneOffer = {
   host: string;
+  /** Raw one-time grant (12 chars) — shown chunked as 4-4-4. */
   code: string;
   name: string;
   /** epoch ms */
   expiresAt: number;
+};
+
+/** A phone already paired to this Mac (#153) — shown with its Remove. */
+export type PairPhoneDevice = {
+  id: string;
+  name: string;
+  /** epoch ms */
+  pairedAt: number;
+  /** epoch ms */
+  lastSeenAt: number;
 };
 
 export type PairPhoneState =
@@ -33,8 +47,15 @@ export type PairPhoneState =
   | { kind: "paired"; device: string; macName: string };
 
 export function pairingUrl(o: PairPhoneOffer): string {
-  const q = new URLSearchParams({ host: o.host, code: o.code, name: o.name });
-  return `lilos://pair?${q.toString()}`;
+  const q = new URLSearchParams({ host: o.host, name: o.name });
+  // The grant is the secret — it rides the URL fragment, never the query
+  // (#153: `lilos://pair?host=…#code=…`).
+  return `lilos://pair?${q.toString()}#code=${o.code}`;
+}
+
+/** "7K4MQR2X9TBP" → "7K4M-QR2X-9TBP". */
+export function formatGrantCode(code: string): string {
+  return code.match(/.{1,4}/g)?.join("-") ?? code;
 }
 
 export function PairPhoneDialog({
@@ -42,11 +63,19 @@ export function PairPhoneDialog({
   onNewCode,
   onClose,
   onCopied,
+  devices,
+  onRevokeDevice,
+  onTurnOff,
 }: {
   state: PairPhoneState;
   onNewCode: () => void;
   onClose: () => void;
   onCopied?: (what: string) => void;
+  /** Paired phones (#153); rendered with a Remove button under the offer. */
+  devices?: PairPhoneDevice[];
+  onRevokeDevice?: (id: string) => void;
+  /** "Turn off phone access" — the way out of the opt-in Tailscale bind. */
+  onTurnOff?: () => void;
 }) {
   return (
     <div
@@ -76,6 +105,7 @@ export function PairPhoneDialog({
             offer={state.offer}
             onNewCode={onNewCode}
             onCopied={onCopied}
+            onTurnOff={onTurnOff}
           />
         )}
         {state.kind === "no-remote" && <NoRemote />}
@@ -94,23 +124,80 @@ export function PairPhoneDialog({
             </Button>
           </div>
         )}
+        {devices !== undefined && devices.length > 0 && (
+          <DeviceList devices={devices} onRevoke={onRevokeDevice} />
+        )}
       </div>
     </div>
   );
+}
+
+/** Paired phones — name, paired/last-seen, and the Revoke (AC-4). */
+function DeviceList({
+  devices,
+  onRevoke,
+}: {
+  devices: PairPhoneDevice[];
+  onRevoke?: (id: string) => void;
+}) {
+  return (
+    <div className="border-t px-5 py-4" data-pairphone-devices>
+      <div className="pb-2 text-muted-foreground text-xs">Paired phones</div>
+      <ul className="space-y-2">
+        {devices.map((d) => (
+          <li
+            key={d.id}
+            className="flex items-center gap-3 text-[13px]"
+            data-pairphone-device={d.id}
+          >
+            <SmartphoneIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium">{d.name}</div>
+              <div className="text-muted-foreground text-xs">
+                Paired {fmtWhen(d.pairedAt)} · last seen {fmtWhen(d.lastSeenAt)}
+              </div>
+            </div>
+            {onRevoke && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => onRevoke(d.id)}
+                aria-label={`Remove ${d.name}`}
+                data-pairphone-revoke={d.id}
+              >
+                <Trash2Icon />
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function fmtWhen(ts: number): string {
+  return new Date(ts).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function Ready({
   offer,
   onNewCode,
   onCopied,
+  onTurnOff,
 }: {
   offer: PairPhoneOffer;
   onNewCode: () => void;
   onCopied?: (what: string) => void;
+  onTurnOff?: () => void;
 }) {
   const left = useSecondsLeft(offer.expiresAt);
   const expired = left <= 0;
-  const code = `${offer.code.slice(0, 3)}-${offer.code.slice(3)}`;
+  const code = formatGrantCode(offer.code);
   const copy = (text: string, what: string) => {
     void navigator.clipboard?.writeText(text);
     onCopied?.(what);
@@ -169,6 +256,16 @@ function Ready({
           long as Tailscale is on there with the same account.
         </span>
       </div>
+      {onTurnOff && (
+        <button
+          type="button"
+          className="text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
+          onClick={onTurnOff}
+          data-pairphone-disable
+        >
+          Turn off phone access
+        </button>
+      )}
     </div>
   );
 }

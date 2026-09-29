@@ -56,6 +56,14 @@ export interface SessionFeedState {
   /** True after the first events.since replay completed. */
   synced: boolean;
   latestSeq: number;
+  /**
+   * Contiguous coverage watermark: every event with seq <= coverageSeq is
+   * in `events`. `latestSeq` can outrun it — live notifications land as they
+   * arrive, so a feed created before the socket opens sees mid-turn events
+   * and jumps `latestSeq` past a prefix it never fetched. `events.since`
+   * replays must start at this watermark or that prefix is lost for good.
+   */
+  coverageSeq: number;
   events: EngineEvent[];
   openRequests: OpenRequest[];
   snapshot?: SessionSnapshot;
@@ -200,6 +208,7 @@ export class EngineClient {
         sessionId,
         synced: false,
         latestSeq: 0,
+        coverageSeq: 0,
         events: [],
         openRequests: [],
       });
@@ -324,6 +333,10 @@ export class EngineClient {
     const next: SessionFeedState = {
       ...state,
       latestSeq: event.seq,
+      // In-order arrival extends contiguous coverage; a skipped seq stalls
+      // the watermark (the next resync refetches the gap) instead of lying.
+      coverageSeq:
+        event.seq === state.coverageSeq + 1 ? event.seq : state.coverageSeq,
       events: [...state.events, event],
     };
     if (event.type === "request.opened") {
@@ -359,13 +372,13 @@ export class EngineClient {
   ): Promise<void> {
     const state = feed.get();
     try {
-      /* A feed that never synced replays from 0, not from its watermark:
-         live notifications land on the atom before the deferred first
-         resync (reload mid-turn), and `after: latestSeq` would then drop
-         the whole history — turn text, plans, requests (#180 AC-1). */
+      /* A feed that never synced replays from 0, not from the live
+         watermark: coverageSeq only advances in order, so mid-turn events
+         landing before the first resync can't skip the prefix — turn text,
+         plans, requests (#180 AC-1). */
       const res = await this.request<EventsSinceResult>("events.since", {
         sessionId: state.sessionId,
-        after: state.synced ? state.latestSeq : 0,
+        after: state.coverageSeq,
       });
       // Re-read: live events can land while the replay is in flight. The
       // replay is authoritative only through `res.latestSeq` — merging onto
@@ -400,6 +413,7 @@ export class EngineClient {
         sessionId: cur.sessionId,
         synced: true,
         latestSeq: Math.max(res.latestSeq, cur.latestSeq),
+        coverageSeq: Math.max(res.latestSeq, cur.coverageSeq),
         events: merged,
         openRequests,
         snapshot: res.snapshot,

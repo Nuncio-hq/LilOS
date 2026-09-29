@@ -18,6 +18,8 @@ describe("AC-5 relay stores no engine transcript", () => {
       "conversations",
       "employees",
       "messages",
+      "pairedDevices",
+      "pairingGrants",
       "profile",
       "recentFolders",
       "settings",

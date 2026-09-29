@@ -423,6 +423,10 @@ export type ModelOption = {
   efforts?: string[];
   defaultEffort?: string;
   fast?: boolean;
+  /* Set only by the picker's session-model merge (#140): the session runs a
+     model the engine's catalog doesn't list, so the row is synthesized and
+     carries the "Not in list" hint — never engine-reported data. */
+  notInList?: boolean;
 };
 
 /* A provider's display row (multi-provider engines only). `logo` is a

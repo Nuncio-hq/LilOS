@@ -127,16 +127,16 @@ describe("AC-4 (#85) the fake engine stays behind an explicit setting", () => {
 });
 
 describe("AC-1/AC-2 (#85) the hermes adapter ships in the bundle", () => {
-  it("the serve command prefers a bundled lilos-engine-hermes binary", () => {
+  it("the serve command prefers a bundled lilos-engine-nous binary", () => {
     const argv = hermesServeCommand({
       repoRoot: "/repo",
-      serveBin: "/app/Contents/MacOS/lilos-engine-hermes",
+      serveBin: "/app/Contents/MacOS/lilos-engine-nous",
       hermesBin: "/home/o/.local/bin/hermes",
     });
-    expect(argv[0]).toBe("/app/Contents/MacOS/lilos-engine-hermes");
+    expect(argv[0]).toBe("/app/Contents/MacOS/lilos-engine-nous");
   });
 
-  it("a bundle without lilos-engine-hermes errors plainly", () => {
+  it("a bundle without lilos-engine-nous errors plainly", () => {
     expect(() =>
       hermesServeCommand({
         repoRoot: "/nonexistent-repo",

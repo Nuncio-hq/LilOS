@@ -5,6 +5,7 @@ import os, { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  exchangePairingGrant,
   RelayClient,
   type RelaySocket,
   type SocketFactory,
@@ -124,22 +125,102 @@ async function startRelay(env: Record<string, string> = {}): Promise<{
   };
 }
 
+/**
+ * Connect, retrying refusal until the deadline. A refused socket is the
+ * observable answer to "nothing bound yet" — the relay's tailnet bind lands
+ * just after its "listening" line, so callers race startup. Each attempt
+ * gives up at the deadline too: on a host with a firewall that drops rather
+ * than refuses (or a connect aimed at a tunnel interface), an attempt that
+ * neither connects nor errors must not hang the test.
+ */
 async function tcpConnect(host: string, port: number, timeoutMs = 1500) {
-  return new Promise<void>((resolve, reject) => {
-    const socket = net.connect({ host, port });
-    const timer = setTimeout(() => {
-      socket.destroy();
-      reject(new Error("connect timeout"));
-    }, timeoutMs);
-    socket.on("connect", () => {
-      clearTimeout(timer);
-      socket.destroy();
-      resolve();
+  const deadline = Date.now() + timeoutMs;
+  let lastError: unknown = new Error("connect timeout");
+  for (;;) {
+    const attempt = await new Promise<void>((resolve, reject) => {
+      const socket = net.connect({ host, port });
+      const timer = setTimeout(
+        () => {
+          socket.destroy();
+          reject(new Error("connect timeout"));
+        },
+        Math.max(1, deadline - Date.now()),
+      );
+      socket.on("connect", () => {
+        clearTimeout(timer);
+        socket.destroy();
+        resolve();
+      });
+      socket.on("error", (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    }).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    if (attempt === null) return;
+    lastError = attempt;
+    if (Date.now() >= deadline) throw lastError;
+    await new Promise((r) => setTimeout(r, 40));
+  }
+}
+
+/** A free loopback port for tests that bind two listeners on one port. */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const port = (probe.address() as net.AddressInfo).port;
+      probe.close(() => resolve(port));
     });
-    socket.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
+  });
+}
+
+interface HelloFrame {
+  result?: { protocolVersion?: number };
+  error?: { message: string; data?: { code?: string } };
+}
+
+/** Raw ws device hello — the phone leg the RelayClient can't speak (#153). */
+async function deviceHelloRaw(
+  url: string,
+  deviceId: string,
+  credential: string,
+): Promise<{ ws: WebSocket; frame: HelloFrame }> {
+  const ws = new WebSocket(url);
+  await new Promise<void>((resolve, reject) => {
+    ws.once("open", () => resolve());
+    ws.once("error", reject);
+  });
+  const frame = await new Promise<HelloFrame>((resolve, reject) => {
+    ws.once("message", (data: WebSocket.RawData) => {
+      resolve(JSON.parse(data.toString()) as HelloFrame);
     });
+    ws.once("error", reject);
+    ws.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: "hello-1",
+        method: "session.hello",
+        params: { protocolVersion: 1, deviceId, credential },
+      }),
+    );
+  });
+  return { ws, frame };
+}
+
+/** Device hello that asserts the welcome, returning the live socket. */
+async function deviceHello(url: string, deviceId: string, credential: string) {
+  const { ws, frame } = await deviceHelloRaw(url, deviceId, credential);
+  if (frame.error) throw new Error(`hello failed: ${frame.error.message}`);
+  return { ws, welcome: frame.result ?? {} };
+}
+
+function waitForWsClose(ws: WebSocket): Promise<{ code: number }> {
+  return new Promise((resolve) => {
+    ws.once("close", (code: number) => resolve({ code }));
   });
 }
 
@@ -160,14 +241,21 @@ function waitFor<T>(atom: Listenable<T>, pred: (value: T) => boolean) {
   });
 }
 
+/**
+ * A non-loopback IPv4 the relay can bind. macOS also lists tunnel/virtual
+ * interfaces (utun, awdl, llw, bridge, ipsec) — binding or connecting to
+ * those can hang or fail outright, so physical `en*` interfaces win.
+ */
 function lanAddress(): string | undefined {
-  for (const addresses of Object.values(os.networkInterfaces())) {
+  const physical: string[] = [];
+  const other: string[] = [];
+  for (const [name, addresses] of Object.entries(os.networkInterfaces())) {
     for (const address of addresses ?? []) {
-      if (address.family === "IPv4" && !address.internal)
-        return address.address;
+      if (address.family !== "IPv4" || address.internal) continue;
+      (name.startsWith("en") ? physical : other).push(address.address);
     }
   }
-  return undefined;
+  return physical[0] ?? other[0];
 }
 
 describe("relay e2e (real Bun process + bun:sqlite)", () => {
@@ -373,6 +461,122 @@ describe("relay e2e (real Bun process + bun:sqlite)", () => {
     );
     expect(restored).toEqual(hidden);
     back.close();
+  }, 30_000);
+
+  it("AC-1+3+4 phone pairing over the Tailscale listener (env-seamed)", async () => {
+    // LILOS_RELAY_TAILSCALE_* pin a fake tailnet identity on this machine's
+    // LAN address: a real non-loopback bind + real probe result — no
+    // tailscaled needed. A fixed port keeps the listener's address stable
+    // across the restart leg below (port 0 → different ephemeral ports).
+    const lan = lanAddress();
+    if (!lan) {
+      console.warn("no LAN address — skipping the tailnet-bind e2e");
+      return;
+    }
+    const port = await freePort();
+    const relay = await startRelay({
+      LILOS_RELAY_PORT: String(port),
+      LILOS_RELAY_TAILSCALE_IP: lan,
+      LILOS_RELAY_TAILSCALE_NAME: "mac.tailnet.test",
+    });
+    const mac = new RelayClient({
+      url: relay.url,
+      token: relay.token,
+      socketFactory: wsFactory().factory,
+      autoReconnect: false,
+      client: { name: "e2e-mac" },
+    });
+    await mac.connect();
+
+    // Off by default: nothing answers on the tailnet address.
+    await expect(tcpConnect(lan, relay.port)).rejects.toThrow();
+
+    // Pair phone = turn on access + mint a grant; the offer advertises the
+    // MagicDNS name (never loopback) on the tailnet listener's own port.
+    const { offer } = await mac.request<{
+      offer: { host: string; code: string; expiresAt: number };
+    }>("pairing.offer", {});
+    expect(offer.host).toBe(`mac.tailnet.test:${port}`);
+    expect(offer.code).toHaveLength(12);
+    const tsPort = port;
+    await tcpConnect(lan, tsPort);
+
+    // The phone exchanges the grant over the tailnet listener's HTTP side…
+    const exchanged = await exchangePairingGrant(`http://${lan}:${tsPort}`, {
+      code: offer.code,
+      name: "Test iPhone",
+    });
+    expect(exchanged.deviceId).toMatch(/^dev_/);
+    expect(exchanged.credential).toMatch(/^devcred_/);
+
+    // …then hellos on the tailnet ws with its device credential.
+    const phone = await deviceHello(
+      `ws://${lan}:${tsPort}/ws`,
+      exchanged.deviceId,
+      exchanged.credential,
+    );
+    expect(phone.welcome.protocolVersion).toBe(1);
+    const phoneClosed = waitForWsClose(phone.ws);
+
+    // AC-2: the spent grant can't be replayed.
+    await expect(
+      exchangePairingGrant(`http://${lan}:${tsPort}`, { code: offer.code }),
+    ).rejects.toMatchObject({ name: "PairingExchangeFailed", reason: "used" });
+
+    // AC-4: the Mac sees the phone and revoking it drops its socket.
+    const { devices } = await mac.request<{
+      devices: {
+        id: string;
+        name: string;
+        pairedAt: number;
+        lastSeenAt: number;
+      }[];
+    }>("devices.list", {});
+    expect(devices).toEqual([
+      expect.objectContaining({
+        id: exchanged.deviceId,
+        name: "Test iPhone",
+      }),
+    ]);
+    await mac.request("devices.revoke", { deviceId: exchanged.deviceId });
+    expect((await phoneClosed).code).toBe(4403);
+    const zombie = await deviceHelloRaw(
+      `ws://${lan}:${tsPort}/ws`,
+      exchanged.deviceId,
+      exchanged.credential,
+    );
+    expect(zombie.frame.error?.data?.code).toBe("unauthenticated");
+
+    // The choice survives a restart: a fresh process on the same home
+    // rebinds the tailnet address at startup — before any pairing.offer.
+    spawned[spawned.length - 1]?.kill("SIGKILL");
+    await startRelay({
+      LILOS_RELAY_HOME: relay.home,
+      LILOS_RELAY_PORT: String(port),
+      LILOS_RELAY_TAILSCALE_IP: lan,
+      LILOS_RELAY_TAILSCALE_NAME: "mac.tailnet.test",
+    });
+    await tcpConnect(lan, port, 5_000);
+    mac.close();
+  }, 60_000);
+
+  it("AC-1 Tailscale down → pairing.offer answers tailscale_unavailable", async () => {
+    // A missing binary is the honest "not installed" probe failure.
+    const relay = await startRelay({
+      LILOS_TAILSCALE_BIN: "/nonexistent-tailscale-bin",
+    });
+    const mac = new RelayClient({
+      url: relay.url,
+      token: relay.token,
+      socketFactory: wsFactory().factory,
+      autoReconnect: false,
+      client: { name: "e2e-mac-down" },
+    });
+    await mac.connect();
+    await expect(mac.request("pairing.offer", {})).rejects.toMatchObject({
+      code: "tailscale_unavailable",
+    });
+    mac.close();
   }, 30_000);
 
   it("AC-4 live: a newer client is told to update the server", async () => {
