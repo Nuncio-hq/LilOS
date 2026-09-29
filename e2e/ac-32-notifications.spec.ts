@@ -318,11 +318,15 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
   expect(askPost?.title).toContain("approval");
   expect(askPost?.body).toBeTruthy();
 
-  // AC-2: a notification click opens that exact conversation.
+  // AC-2 + #195 AC-3: a notification click opens that exact conversation in
+  // the peek panel (the conversation URL, not /focus).
   await clickNotification(page, convB.conversationId);
   await expect(page).toHaveURL(
-    new RegExp(`/dm/${convA.employeeId}/${convB.conversationId}`),
+    new RegExp(`/dm/${convA.employeeId}/${convB.conversationId}$`),
   );
+  await expect(page.locator("[data-thread-panel]")).toBeVisible({
+    timeout: 30_000,
+  });
   // Deterministic wait: the card carries data-ask-state once the relay ask
   // is in the store — this used to race channel.subscribe vs ask.opened
   // and could lose the ask permanently (issue #148).
@@ -355,11 +359,15 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
   );
   expect(failPost?.body).toContain("engine-fake");
 
-  // Clicking the failed notification opens conv D with its error visible.
+  // Clicking the failed notification opens conv D's panel with its error
+  // visible.
   await clickNotification(page, convD.conversationId);
   await expect(page).toHaveURL(
-    new RegExp(`/dm/${convA.employeeId}/${convD.conversationId}`),
+    new RegExp(`/dm/${convA.employeeId}/${convD.conversationId}$`),
   );
+  await expect(page.locator("[data-thread-panel]")).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(page.getByText(/Error: engine-fake/)).toBeVisible({
     timeout: 30_000,
   });
@@ -394,6 +402,6 @@ test("AC-32 live: done notification + click-through under real hermes", async ({
   await waitForPost(page, convB.conversationId, "done", 240_000);
   await clickNotification(page, convB.conversationId);
   await expect(page).toHaveURL(
-    new RegExp(`/dm/${convA.employeeId}/${convB.conversationId}`),
+    new RegExp(`/dm/${convA.employeeId}/${convB.conversationId}$`),
   );
 });

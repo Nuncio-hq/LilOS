@@ -15,11 +15,12 @@ import { wport } from "./ports";
 
 /**
  * Issue #114 — Focus mode + Workbench in the real app (apps/web), on the real
- * stack (relay + harness + vite dev, engine-fake): a session opens full-window
- * Focus at /dm/$employeeId/$conversationId/focus; the Workbench's Changes
- * (git.diff), Files (fs.tree/fs.read) and PR (forge.pr/comment/merge) tabs read
- * the session's real folder — here a tmp git repo served by the stateful fake
- * `gh` (packages/host/test/fake-gh) on the stack's PATH.
+ * stack (relay + harness + vite dev, engine-fake): a session opens in the
+ * 420px thread panel beside the feed (#195), and the panel's ↗ continues into
+ * full-window Focus at /dm/$employeeId/$conversationId/focus; the Workbench's
+ * Changes (git.diff), Files (fs.tree/fs.read) and PR (forge.pr/comment/merge)
+ * tabs read the session's real folder — here a tmp git repo served by the
+ * stateful fake `gh` (packages/host/test/fake-gh) on the stack's PATH.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -300,6 +301,18 @@ const sendTurn = async (page: Page, text: string) => {
 /** The open session's chip row on the DM home. */
 const sessionRow = (page: Page) => page.locator("[data-session] button").last();
 
+/* #195: a feed row opens the peek panel (not Focus); the panel's ↗ carries
+   on into Focus — every session-open in these tests goes through both. */
+const openFocus = async (page: Page) => {
+  await sessionRow(page).click();
+  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
+  await page
+    .locator("[data-thread-panel]")
+    .getByTitle("Focus", { exact: true })
+    .click();
+  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+};
+
 async function allowAll(page: Page) {
   for (let i = 0; i < 6; i++) {
     const b = page.getByRole("button", { name: "Allow once" });
@@ -316,6 +329,9 @@ async function allowAll(page: Page) {
 }
 
 const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
+/* The peek panel sits at the conversation URL — end-anchored so it never
+   matches /focus. */
+const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
 const DM_URL = /\/dm\/[^/]+$/;
 // exact: title substring-match would also hit "Hide workbench" when open.
 const workbenchToggle = (page: Page) =>
@@ -323,14 +339,15 @@ const workbenchToggle = (page: Page) =>
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
 
-test("AC-1 a session opens straight into Focus; the URL carries it; Esc/Back return", async ({
+test("AC-1 a session opens in the panel; ↗ reaches Focus; Esc/Back return through the panel", async ({
   page,
 }) => {
   test.setTimeout(120_000);
   await dmDefault(page);
   await pickFolder(page, repoDir);
   await send(page, "check in");
-  // The session opens full-window in Focus, at its own URL.
+  // A send still lands in Focus, at its own URL (#195 routes it through the
+  // panel URL so every way back out lands on the same open peek).
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
   await expect(page.locator("main").getByText("check in").first()).toBeVisible({
     timeout: 30_000,
@@ -346,18 +363,38 @@ test("AC-1 a session opens straight into Focus; the URL carries it; Esc/Back ret
     timeout: 30_000,
   });
 
-  // Esc returns to the DM home with no panel open.
+  /* #195 AC-2: Esc returns to the DM feed with the panel open on the same
+     session — the feed stays visible beside it. */
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(PANEL_URL);
+  const panel = page.locator("[data-thread-panel]");
+  await expect(panel).toBeVisible({ timeout: 30_000 });
+  await expect(panel.getByText("check in").first()).toBeVisible();
+  await expect(page.locator("main [data-session]").first()).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ac-1-panel.png` });
+
+  // The panel URL reloads too (the URL carries it).
+  await page.reload();
+  await expect(page).toHaveURL(PANEL_URL);
+  await expect(page.locator("[data-thread-panel]")).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // #195 AC-1: Esc again closes the panel back to the plain feed.
   await page.keyboard.press("Escape");
   await expect(page).toHaveURL(DM_URL);
-  await expect(workbenchToggle(page)).toHaveCount(0);
+  await expect(page.locator("[data-thread-panel]")).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-1-esc-dm.png` });
 
-  // Clicking the session's row re-opens Focus.
+  /* Clicking the session's row re-opens the panel (not Focus); the panel's
+     ↗ is the way into Focus; the Focus back arrow returns to the panel. */
   await sessionRow(page).click();
+  await expect(page).toHaveURL(PANEL_URL);
+  await panel.getByTitle("Focus", { exact: true }).click();
   await expect(page).toHaveURL(FOCUS_URL);
-  // The back arrow does the same as Esc.
   await page.getByTitle("Back to DM").click();
-  await expect(page).toHaveURL(DM_URL);
+  await expect(page).toHaveURL(PANEL_URL);
+  await page.screenshot({ path: `${SHOTS}/ac-1-back-panel.png` });
 });
 
 test("AC-2 Focus is the same live conversation: streaming, steps, approvals, model picker, steer + stop", async ({
@@ -365,8 +402,7 @@ test("AC-2 Focus is the same live conversation: streaming, steps, approvals, mod
 }) => {
   test.setTimeout(180_000);
   await dmDefault(page);
-  await sessionRow(page).click();
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await openFocus(page);
 
   // A reply turn streams in — reasoning + tool steps render live. `.last()`:
   // AC-1's "check in" turn sits above it and carries no tool steps.
@@ -426,8 +462,7 @@ test("AC-3 Changes lists uncommitted files with +/− and refreshes while the ag
 }) => {
   test.setTimeout(180_000);
   await dmDefault(page);
-  await sessionRow(page).click();
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await openFocus(page);
 
   const changes = tab(page, /Changes/);
   await expect(changes).toBeVisible({ timeout: 30_000 });
@@ -470,8 +505,7 @@ test("AC-4 Files shows the folder tree (fs.tree) and file contents (fs.read)", a
 }) => {
   test.setTimeout(120_000);
   await dmDefault(page);
-  await sessionRow(page).click();
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await openFocus(page);
 
   const files = tab(page, "Files");
   await expect(files).toBeVisible({ timeout: 30_000 });
@@ -492,8 +526,7 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
 }) => {
   test.setTimeout(180_000);
   await dmDefault(page);
-  await sessionRow(page).click();
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await openFocus(page);
 
   const prTab = tab(page, /PR/);
   await expect(prTab).toBeVisible({ timeout: 30_000 });
@@ -623,9 +656,15 @@ test("AC-7 Focus + Workbench compose like the prototype (evidence screenshots)",
   test.setTimeout(120_000);
   await dmDefault(page);
   // AC-1's repo session — AC-6 added newer plain/no-folder rows on top.
+  // #195: the row opens the panel; ↗ carries on into Focus.
   await page
     .locator("[data-session]", { hasText: "check in" })
     .getByRole("button", { name: /repl(y|ies)/ })
+    .click();
+  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
+  await page
+    .locator("[data-thread-panel]")
+    .getByTitle("Focus", { exact: true })
     .click();
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
   await expect(tab(page, /Changes/)).toBeVisible({ timeout: 30_000 });
