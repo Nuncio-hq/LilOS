@@ -5,7 +5,6 @@ import {
   BackgroundSheet,
   buildPairingUrl,
   Choice,
-  CompanyChip,
   ConnectedScreen,
   ConnectingScreen,
   type ConnectingState,
@@ -410,9 +409,9 @@ function Activity() {
    shared glass capsule; the tab bar and its accessory are native too. */
 function Tabs() {
   const approvals = useStore($approvals);
-  const link = useStore($link);
+  const _link = useStore($link);
   const tint = useThemeColor("primary");
-  const destructive = useThemeColor("destructive");
+  const _destructive = useThemeColor("destructive");
   return (
     <Tab.Navigator
       screenOptions={{
@@ -438,31 +437,13 @@ function Tabs() {
         name="Home"
         component={Home}
         options={{
-          title: "",
-          // The company mark sits on the same row as the Mac / compose buttons.
-          headerLeft: () => <CompanyChip name="Oscar Co" />,
+          // No header: Home starts at the top; the Mac lives in Settings.
+          headerShown: false,
           tabBarLabel: "Home",
           tabBarIcon: ({ focused }) => ({
             type: "sfSymbol",
             name: focused ? "house.fill" : "house",
           }),
-          unstable_headerRightItems: () => [
-            {
-              type: "button",
-              label: "Mac",
-              icon: { type: "sfSymbol", name: "laptopcomputer" },
-              tintColor: link === "offline" ? destructive : undefined,
-              accessibilityLabel:
-                link === "offline" ? "Mac, can't reach it" : "Mac",
-              onPress: () => nav.navigate("Mac"),
-            },
-            {
-              type: "button",
-              label: "New session",
-              icon: { type: "sfSymbol", name: "square.and.pencil" },
-              onPress: () => nav.navigate("Dm", { employeeId: "builder" }),
-            },
-          ],
         }}
       />
       <Tab.Screen
@@ -846,6 +827,7 @@ function Approvals({ navigation }: Props<"Approvals">) {
 function Settings() {
   const mac = useStore($connections)[0];
   const preview = useStore($preview);
+  const link = useStore($link);
 
   return (
     <SettingsScreen
@@ -855,9 +837,11 @@ function Settings() {
           name: mac.name,
           host: mac.host,
           routeLabel: ROUTE_LABEL[mac.route],
+          link,
         }
       }
       onForget={confirmForget}
+      onOpenMac={() => nav.navigate("Mac")}
     >
       {/* Prototype switcher — the mobile twin of the web Preview menu. */}
       <Section title="Prototype · pairing">
