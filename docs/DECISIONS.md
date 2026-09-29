@@ -188,10 +188,11 @@ PR does not exist.
 
 ## UX
 - **D-#114 The Workbench lives only in Focus mode, and opening a session
-  goes straight into Focus** (`/dm/$employeeId/$conversationId/focus`; the
-  420px thread panel stays the quick peek). Changes = uncommitted files vs
-  `HEAD` (`git.diff` with no `base`; untracked included). Not: Workbench in
-  the thread panel, or a review step between DM and Focus. — #114 · PR #149
+  goes to the thread panel first — the panel's ↗ is the way into Focus**
+  (`/dm/$employeeId/$conversationId`, then `…/focus`; the 420px peek stays
+  beside the feed). Changes = uncommitted files vs `HEAD` (`git.diff` with
+  no `base`; untracked included). Not: straight to Focus (was #114);
+  Workbench in the thread panel. — #114 · PR #149, #195
 - **D-#19 A control renders only when its handler is passed; the app shows
   only working surfaces (no placeholder buttons).** Conversation UI = shared
   pieces (`AgentTurn`, `UserTurn`, cards, composers) + thin frames

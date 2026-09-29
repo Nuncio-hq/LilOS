@@ -25,7 +25,7 @@ import {
   QueuedTray,
   runningComposer,
 } from "../chat/agent-chat";
-import { overlayOpen } from "../chat/composer-keys";
+import { useEscapeKey } from "../chat/composer-keys";
 import { FocusComposer } from "../chat/focus-composer";
 import { sessionChoice } from "../chat/model-picker";
 import {
@@ -325,21 +325,10 @@ export function FocusView({
   const wbAvailable = host != null;
 
   /* Esc leaves Focus — but only when nothing else owns the key: the composer
-     takes it to stop a running turn, an open popup/menu takes it to close
-     (overlayOpen), and Esc pressed inside a field stays there (#114 AC-1,
-     same rules as issue #104). Capture phase: the check runs before the
-     overlay's own keydown handler dismisses it. */
-  useEffect(() => {
-    if (!onBack) return;
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented || overlayOpen()) return;
-      const t = e.target as HTMLElement | null;
-      if (t?.closest?.("input, textarea, select, [contenteditable]")) return;
-      onBack();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onBack]);
+     takes it to stop a running turn, an open popup/menu takes it to close,
+     and Esc pressed inside a field stays there (#114 AC-1, same rules as
+     issue #104). */
+  useEscapeKey(onBack);
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col">

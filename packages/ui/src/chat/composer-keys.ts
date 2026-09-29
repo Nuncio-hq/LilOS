@@ -1,4 +1,5 @@
 import type { KeyboardEventHandler } from "react";
+import { useEffect } from "react";
 
 /* Esc / ArrowUp on top of plain typing, shared by Composer and FocusComposer
    so every surface does the same thing (issue #104):
@@ -30,6 +31,25 @@ const OPEN_OVERLAY = [
 /** True while a popup/menu/dialog owns Esc — exported so surfaces that add
     their own Esc handling (Focus exits, issue #114) yield to it too. */
 export const overlayOpen = () => !!document.querySelector(OPEN_OVERLAY);
+
+/* Capture-phase Escape for a surface-level "close" (Focus back, thread
+   panel close): ignored while an overlay owns the press and while typing
+   in a field — a field's own Esc means stop the turn / close its picker,
+   never close the surface. Runs on the window so no focused control is
+   required. */
+export function useEscapeKey(onEscape: (() => void) | undefined) {
+  useEffect(() => {
+    if (!onEscape) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || overlayOpen()) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.("input, textarea, select, [contenteditable]")) return;
+      onEscape();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onEscape]);
+}
 
 export function composerKeyDown({
   running,

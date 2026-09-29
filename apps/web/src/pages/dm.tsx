@@ -519,13 +519,13 @@ export function DmPage() {
     employees: [employeeId],
   };
 
-  /* Clicking a session opens it straight in Focus, like Claude Code /
-     Codex — the thread panel stays the quick peek (#114 AC-1). */
+  /* Clicking a session opens the thread panel beside the feed — the quick
+     peek (#195 AC-1); the panel's ↗ is the way into Focus. */
   const openThread = (id: string) => {
     const conv = convs.find((c) => c.rootMessageId === id);
     if (conv)
       void navigate({
-        to: "/dm/$employeeId/$conversationId/focus",
+        to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: conv.id },
       });
   };
@@ -605,11 +605,18 @@ export function DmPage() {
       if (!conv) throw new Error("send failed");
       clearDraftIfSent(draftKey.dm(employeeId), text);
       setDraftPick(({ [employeeId]: _drop, ...rest }) => rest);
-      // A fresh session opens in Focus too (#114).
+      /* A fresh session still lands in Focus (#195 keeps send-as-today),
+         but through the panel URL first — every way back out of Focus
+         (Back/Esc/browser back) then lands on the same open peek. */
       return navigate({
-        to: "/dm/$employeeId/$conversationId/focus",
+        to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: conv.id },
-      });
+      }).then(() =>
+        navigate({
+          to: "/dm/$employeeId/$conversationId/focus",
+          params: { employeeId, conversationId: conv.id },
+        }),
+      );
     });
   };
 
@@ -721,7 +728,8 @@ export function DmPage() {
       /* Focus: the same live conversation the thread panel shows (shared
          AgentTurn/composer/draft/asks — issue #114 AC-2), plus the
          Workbench against the session's real folder (AC-3…5). Esc / the
-         back button return to the DM with the panel closed (AC-1). */
+         back button return to the DM with the panel open on this session
+         (#195 AC-2). */
       return (
         <FocusView
           root={rootMsg}
@@ -740,8 +748,8 @@ export function DmPage() {
           work={work}
           onBack={() =>
             void navigate({
-              to: "/dm/$employeeId",
-              params: { employeeId },
+              to: "/dm/$employeeId/$conversationId",
+              params: { employeeId, conversationId: conv.id },
             })
           }
           onNav={() => navOpen.set(true)}
@@ -797,7 +805,10 @@ export function DmPage() {
     }
 
     threadEl = (
-      <div className="flex min-h-0 w-[420px] shrink-0 flex-col border-l xl:w-[460px]">
+      <div
+        data-thread-panel
+        className="flex min-h-0 w-[420px] shrink-0 flex-col border-l xl:w-[460px]"
+      >
         <ThreadView
           root={rootMsg}
           thread={thread}
@@ -839,11 +850,18 @@ export function DmPage() {
           onAttachError={say}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           lastSent={lastSent}
-          /* The peek panel's Focus button jumps to the full view (#114). */
+          /* The peek panel's Focus button jumps to the full view (#114),
+             and Esc closes the panel back to the plain DM feed (#195). */
           onFocus={() =>
             void navigate({
               to: "/dm/$employeeId/$conversationId/focus",
               params: { employeeId, conversationId: conv.id },
+            })
+          }
+          onClose={() =>
+            void navigate({
+              to: "/dm/$employeeId",
+              params: { employeeId },
             })
           }
           mentionables={mentionables}
