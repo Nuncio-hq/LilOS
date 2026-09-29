@@ -8,7 +8,12 @@ import type { ForgePrListItem } from "@lilos/contracts/host";
 import type { PullRequestRef } from "@lilos/ui-native";
 import { describe, expect, it } from "vitest";
 import { toSessionTurns } from "../src/dm-model";
-import { $prs, refreshConversationPrs, toPullRequestRef } from "../src/prs";
+import {
+  $prs,
+  refreshConversationPrs,
+  toPullRequestRef,
+  watchPrs,
+} from "../src/prs";
 import { toThreadDetail } from "../src/thread-model";
 
 /* #159: the gh list row -> PullRequestRef mapping, the per-conversation
@@ -181,5 +186,55 @@ describe("#159 AC-1 refreshConversationPrs — one conversations.prs call fills 
     expect($prs.get()["conv-ok"]).toHaveLength(1); // unchanged
     await refreshConversationPrs(failing as never, "conv-nope");
     expect($prs.get()["conv-nope"]).toBeUndefined();
+  });
+});
+
+describe("#159 AC-5 watchPrs — a finished turn re-lists that thread's PRs", () => {
+  const fakeClient = (answer: { prs: ForgePrListItem[] }) => {
+    const calls: { method: string; params: unknown }[] = [];
+    let handler: (method: string, params: unknown) => void = () => {};
+    const client = {
+      request: async (method: string, params: unknown) => {
+        calls.push({ method, params });
+        return answer;
+      },
+      onEvent: (fn: (method: string, params: unknown) => void) => {
+        handler = fn;
+        return () => {};
+      },
+      emit: (method: string, params: unknown) => handler(method, params),
+    };
+    return { client, calls };
+  };
+
+  it("turn.completed on a conversation triggers conversations.prs for it", async () => {
+    const { client, calls } = fakeClient({ prs: [item({ number: 99 })] });
+    watchPrs(client as never);
+    client.emit("engine.event", {
+      conversationId: "conv-1",
+      event: { type: "turn.completed" },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toEqual([
+      { method: "conversations.prs", params: { conversationId: "conv-1" } },
+    ]);
+    expect($prs.get()["conv-1"]?.[0]?.number).toBe(99);
+  });
+
+  it("other engine events and methods do not refresh; watchPrs subscribes once", async () => {
+    const { client, calls } = fakeClient({ prs: [item()] });
+    watchPrs(client as never);
+    watchPrs(client as never); // WeakSet: second call is a no-op
+    client.emit("engine.event", {
+      conversationId: "conv-1",
+      event: { type: "turn.started" },
+    });
+    client.emit("messages.posted", { conversationId: "conv-1" });
+    client.emit("engine.event", {
+      conversationId: "conv-1",
+      event: { type: "turn.completed" },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toHaveLength(1); // only the turn.completed fired, once
   });
 });
