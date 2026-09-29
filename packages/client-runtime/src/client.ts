@@ -2,6 +2,9 @@ import {
   APP_PROTOCOL_VERSION,
   type AppChannel,
   type AppMessage,
+  type Ask,
+  AskOpenedEvent,
+  AskResolvedEvent,
   ChannelCreatedEvent,
   ChannelRemovedEvent,
   ChannelSnapshotEvent,
@@ -162,6 +165,14 @@ export class RelayClient {
   readonly fatal: WritableAtom<RelayError | undefined> = atom(undefined);
   /** Phones paired to this install (#153) — live via `devices.changed`. */
   readonly devices: WritableAtom<PairedDevice[]> = atom([]);
+  /**
+   * Everything the relay reports via `asks.list` (open and resolved, sorted
+   * `createdAt` asc — the same order the store serves). Live deltas arrive
+   * as `ask.opened`/`ask.resolved` notifications on the channel's
+   * subscription and upsert by id (#155). Volatile, so never cached on
+   * device — a stale "1 needs you" is worse than a beat of none.
+   */
+  readonly asks: WritableAtom<Ask[]> = atom([]);
   /**
    * Why the socket last dropped. Close-code aware: `devices.revoke` ends the
    * socket 4403 → `code: "device_revoked"` — a dead credential the app must
@@ -683,28 +694,36 @@ export class RelayClient {
 
   private async refreshDirectory(): Promise<void> {
     try {
-      const [employees, channels, conversations, summaries, settings, devices] =
-        await Promise.all([
-          this.request<{ employees: Employee[] }>("employees.list", {}),
-          this.request<{ channels: AppChannel[] }>("channels.list", {}),
-          // Archived included: the DM list renders its own Archived section.
-          this.request<{ conversations: Conversation[] }>(
-            "conversations.list",
-            { includeArchived: true },
-          ),
-          this.request<{ summaries: ConversationSummary[] }>(
-            "conversations.summaries",
-            { includeArchived: true },
-          ),
-          this.request<{ profile: ProfileSettings }>("profile.get", {}),
-          this.request<{ devices: PairedDevice[] }>("devices.list", {}),
-        ]);
+      const [
+        employees,
+        channels,
+        conversations,
+        summaries,
+        settings,
+        devices,
+        asks,
+      ] = await Promise.all([
+        this.request<{ employees: Employee[] }>("employees.list", {}),
+        this.request<{ channels: AppChannel[] }>("channels.list", {}),
+        // Archived included: the DM list renders its own Archived section.
+        this.request<{ conversations: Conversation[] }>("conversations.list", {
+          includeArchived: true,
+        }),
+        this.request<{ summaries: ConversationSummary[] }>(
+          "conversations.summaries",
+          { includeArchived: true },
+        ),
+        this.request<{ profile: ProfileSettings }>("profile.get", {}),
+        this.request<{ devices: PairedDevice[] }>("devices.list", {}),
+        this.request<{ asks: Ask[] }>("asks.list", {}),
+      ]);
       this.employees.set(employees.employees);
       this.channels.set(channels.channels);
       this.conversations.set(conversations.conversations);
       this.conversationSummaries.set(summaries.summaries);
       this.profile.set(settings.profile);
       this.devices.set(devices.devices);
+      this.asks.set(asks.asks);
       this.directoryReady.set(true);
     } catch {
       // Directory refresh is best-effort on reconnect; stores keep stale data.
@@ -968,7 +987,24 @@ export class RelayClient {
         }
         return;
       }
+      case "ask.opened": {
+        this.upsertAsk(AskOpenedEvent.parse(params).ask);
+        return;
+      }
+      case "ask.resolved": {
+        this.upsertAsk(AskResolvedEvent.parse(params).ask);
+        return;
+      }
     }
+  }
+
+  /** Insert or replace an ask, keeping the atom's `createdAt` order. */
+  private upsertAsk(ask: Ask): void {
+    const list = this.asks.get().filter((a) => a.id !== ask.id);
+    const idx = list.findIndex((a) => a.createdAt > ask.createdAt);
+    if (idx === -1) list.push(ask);
+    else list.splice(idx, 0, ask);
+    this.asks.set(list);
   }
 
   /** Keep one summary row current as its conversation accrues messages. */
@@ -1011,6 +1047,7 @@ export class RelayClient {
   /** Drop a deleted channel: atom, per-channel message state, replay state. */
   private dropChannel(channelId: string): void {
     this.channels.set(this.channels.get().filter((c) => c.id !== channelId));
+    this.asks.set(this.asks.get().filter((a) => a.channelId !== channelId));
     this.conversations.set(
       this.conversations.get().filter((c) => c.channelId !== channelId),
     );

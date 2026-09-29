@@ -17,8 +17,10 @@ export function ApprovalsSheet({
   onClose,
 }: {
   approvals: Approval[];
-  onApprove: (id: string) => void;
-  onDeny: (id: string) => void;
+  /** Approve/Deny pills render only when their handler is passed (D-#19) —
+      absent while approving lands in a later slice (#158). */
+  onApprove?: (id: string) => void;
+  onDeny?: (id: string) => void;
   onOpen: (id: string) => void;
   /** Omit when shown as a tab under a native large title (no own header). */
   onClose?: () => void;
@@ -117,8 +119,16 @@ export function ApprovalsSheet({
               </View>
             )}
             <View className="mt-3 flex-row items-center gap-2">
-              <Pill label="Approve" onPress={() => onApprove(a.id)} />
-              <Pill label="Deny" variant="soft" onPress={() => onDeny(a.id)} />
+              {onApprove && (
+                <Pill label="Approve" onPress={() => onApprove(a.id)} />
+              )}
+              {onDeny && (
+                <Pill
+                  label="Deny"
+                  variant="soft"
+                  onPress={() => onDeny(a.id)}
+                />
+              )}
               <View className="flex-1" />
               <Pill label="Open" variant="ghost" onPress={() => onOpen(a.id)} />
             </View>
