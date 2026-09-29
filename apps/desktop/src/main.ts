@@ -12,12 +12,14 @@ import { RelayClient } from "@lilos/client-runtime";
 import {
   DESKTOP_NOTIFY_CHANNEL,
   DESKTOP_OPEN_CONVERSATION_CHANNEL,
+  DESKTOP_THEME_CHANNEL,
 } from "@lilos/contracts/app";
 import {
   app,
   BrowserWindow,
   ipcMain,
   Menu,
+  nativeTheme,
   Notification,
   shell,
 } from "electron";
@@ -484,6 +486,14 @@ ipcMain.handle("lilos:open-settings", openLoginItemsSettings);
 ipcMain.handle("lilos:open-status", createStatusWindow);
 ipcMain.handle("lilos:open-app", createAppWindow);
 ipcMain.handle("lilos:check-update", () => checkAndApply());
+
+// #232: the app's theme drives the window's appearance — vibrancy material,
+// traffic lights and prefers-color-scheme — so the sidebar stays readable in
+// either direction (dark app on light OS and vice versa).
+ipcMain.on(DESKTOP_THEME_CHANNEL, (_e, raw: unknown) => {
+  if (raw === "light" || raw === "dark" || raw === "system")
+    nativeTheme.themeSource = raw;
+});
 
 app.whenReady().then(async () => {
   // #35: settle a pending swap before anything else opens. On the freshly

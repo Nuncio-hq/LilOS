@@ -17,6 +17,13 @@ export const DESKTOP_OPEN_CONVERSATION_CHANNEL =
 /** IPC channel: main → renderer, carries the window's full-screen state
  * (native macOS chrome, issue #232). */
 export const DESKTOP_FULLSCREEN_CHANNEL = "lilos:fullscreen" as const;
+/** IPC channel: renderer → main, carries the app's theme so the window's
+ * vibrancy/appearance follows it (issue #232). */
+export const DESKTOP_THEME_CHANNEL = "lilos:theme-source" as const;
+
+/** The app's stored theme — the window's appearance must match it or the
+ * sidebar vibrancy material turns unreadable (dark text on dark vibrancy). */
+export type ThemeSource = "light" | "dark" | "system";
 
 /** A notification the OS should post; `kind` drives nothing in main — it's
  * for the renderer's bookkeeping and any future styling. */
@@ -56,6 +63,9 @@ export interface DesktopBridge {
     /** Subscribe to changes; returns an unsubscribe function. */
     onChange(cb: (fullScreen: boolean) => void): () => void;
   };
+  /** Point the window's appearance (vibrancy material, prefers-color-scheme)
+   * at the app's theme (desktop only, #232). */
+  setThemeSource?: (theme: ThemeSource) => void;
   /** Open the status/first-run window (desktop only). */
   openStatus?: () => Promise<void>;
   notifications?: {

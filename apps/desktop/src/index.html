@@ -65,7 +65,12 @@
       if (window.lilos?.isDesktop) {
         document.documentElement.dataset.desktop = "";
         document.body.style.margin = "0 28px 28px";
-        document.body.style.paddingTop = "56px";
+        const pad = (fs) => {
+          document.documentElement.toggleAttribute("data-fullscreen", fs);
+          document.body.style.paddingTop = fs ? "16px" : "56px";
+        };
+        pad(window.lilos.fullscreen?.current() ?? false);
+        window.lilos.fullscreen?.onChange?.(pad);
       }
     </script>
     <h1>LilOS</h1>

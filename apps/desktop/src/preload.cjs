@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld("lilos", {
       return () => fsListeners.delete(cb);
     },
   },
+  // The app theme also drives the window's appearance (#232).
+  setThemeSource: (t) => ipcRenderer.send("lilos:theme-source", t),
   status: () => ipcRenderer.invoke("lilos:status"),
   ensure: () => ipcRenderer.invoke("lilos:ensure"),
   openSettings: () => ipcRenderer.invoke("lilos:open-settings"),

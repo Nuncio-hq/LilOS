@@ -56,6 +56,11 @@ import { IndexPage } from "./pages/index";
 
 function AppShell() {
   const [theme, setTheme] = useTheme();
+  // #232: the window's vibrancy/appearance must track the app theme or the
+  // sidebar material turns unreadable in the mismatched combination.
+  useEffect(() => {
+    window.lilos?.setThemeSource?.(theme);
+  }, [theme]);
   const employees = useAtom(relay.employees);
   const relayState = useAtom(relay.state);
   const [statusOpen, setStatusOpen] = useState(false);
