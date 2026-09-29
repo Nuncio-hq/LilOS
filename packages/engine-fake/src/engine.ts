@@ -1027,11 +1027,13 @@ export class FakeEngine {
          reject → nothing runs; change → the next version asks again). */
       const planMode = PLAN_PROMPT.exec(promptText);
       if (planMode) {
+        const mode = planMode[1].toLowerCase();
         return await this.runPlanTurn(
           s,
           turnId,
-          planMode[1].toLowerCase() === "propose",
+          mode === "propose",
           promptText,
+          mode === "slow",
         );
       }
       for (const w of words(script.reasoning)) {
@@ -1173,6 +1175,9 @@ export class FakeEngine {
     turnId: string,
     proposal: boolean,
     promptText: string,
+    /* `plan: slow` = tasks pacing stretched per step so a UI-level stop
+       lands inside an item deterministically (#180 AC-2 e2e). */
+    slow = false,
   ) {
     const planId = `plan-${turnId}`;
     const reasoning = `Working a ${proposal ? "plan for approval" : "task list"} — steps appear as I go.`;
@@ -1219,8 +1224,8 @@ export class FakeEngine {
           tool: items[i].tool,
           input: items[i].input,
         });
-        await this.sleep(s);
-        await this.sleep(s);
+        const stepTicks = slow ? 60 : 2;
+        for (let k = 0; k < stepTicks; k++) await this.sleep(s);
         this.emit(s, "tool.completed", {
           turnId,
           toolCallId,
@@ -1633,7 +1638,7 @@ const words = (t: string) => t.split(/(?<=\s)/);
    `plan: propose` = a plan gated by a `plan` request —
    approve / reject / change (the next version asks again). */
 
-const PLAN_PROMPT = /^\s*plan:\s*(propose|tasks)\b/i;
+const PLAN_PROMPT = /^\s*plan:\s*(propose|tasks|slow)\b/i;
 
 const PLAN_TASKS: {
   text: string;
