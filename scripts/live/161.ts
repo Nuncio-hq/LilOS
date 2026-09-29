@@ -321,8 +321,17 @@ const approveAll = async (convId: string): Promise<void> => {
   }
 };
 
-const reregisterStub = () =>
-  stubPhone.request("push.register", { token: STUB_TOKEN, prefs: ALL_ON });
+/* Real forward mode: each send gets a DeviceNotRegistered receipt for the
+   stub token and the relay drops the row (AC-7, live). Legs therefore
+   re-register before the next push — after a beat so the previous send's
+   receipt has landed and can't drop the fresh registration. */
+const reregisterStub = async () => {
+  await sleep(750);
+  await stubPhone.request("push.register", {
+    token: STUB_TOKEN,
+    prefs: ALL_ON,
+  });
+};
 
 /* Each step drives its own conversation so a queued prompt in one thread
    can't bleed into the next step's assertion window. */
@@ -365,6 +374,7 @@ const convA = await openConversation("fix the readme", "Fix the readme");
   );
 
   note("completed: approving the asks ends the turn → push");
+  await reregisterStub();
   const start = pushes.length;
   const waiter = awaitPush(
     (p) => p.to === STUB_TOKEN && /Fix the readme|Turn complete/.test(p.body),

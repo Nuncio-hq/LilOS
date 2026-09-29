@@ -65,11 +65,15 @@ const persistPrefs = async (prefs: PushPrefs) => {
 
 /** AC-1: token + prefs upsert. No token (no entitlement, Expo unreachable)
     → nothing registered — registration is what arms pushes on this device.
-    Tried everywhere: iOS 16+ simulators can register too. */
+    Tried everywhere: iOS 16+ simulators can register too. The OS permission
+    is only worth asking once paired and online, so the undetermined ask
+    rides this path rather than cold boot; the Settings row is the manual
+    trigger before that. */
 const register = async (): Promise<void> => {
   const client = $client.get();
   if (!client || $link.get() !== "online") return;
   await refreshPermission();
+  await requestPushPermission();
   try {
     const projectId =
       Constants.expoConfig?.extra?.eas?.projectId ??
@@ -151,9 +155,9 @@ export function initPush(): void {
       }
     }
     await refreshPermission();
-    // Permission is only worth asking once the app is paired and online —
-    // registration retries on every foreground anyway.
-    await requestPushPermission();
+    // No permission ask here: before pairing there's nothing to notify
+    // about, so the undetermined Settings row stays reachable until the
+    // register() path asks once the link is up.
     await register();
   })();
 

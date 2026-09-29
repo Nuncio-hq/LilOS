@@ -16,7 +16,9 @@
 #   3. a stub device pairs (pairing.offer → /pair/exchange), registers a
 #      fake token with push.register, then drives every transition: an
 #      approval ask (needs-you), approving it (done), a refusal (failed),
-#      and push.visibility suppression of a thread it reports open
+#      and push.visibility suppression of a thread it reports open. In
+#      forward mode the fake token earns real DeviceNotRegistered receipts
+#      — AC-7's drop live — and each leg re-registers before the next push.
 #   4. prints a second pairing offer — the lilos:// deep link for the
 #      physical phone — and stays up until Ctrl-C
 #
