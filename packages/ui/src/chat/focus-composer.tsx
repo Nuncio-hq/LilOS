@@ -20,6 +20,7 @@ import type {
   ModelOption,
   ModelPickerExtras,
 } from "../types";
+import { FileSeeder } from "./composer";
 import { composerKeyDown } from "./composer-keys";
 import { choiceFor, ModelPicker } from "./model-picker";
 
@@ -53,6 +54,8 @@ export function FocusComposer({
   onAttachError,
   draft: draftProp,
   onDraftChange,
+  seedFiles,
+  onSeededFiles,
 }: {
   running: boolean;
   status: ChatStatus;
@@ -80,6 +83,9 @@ export function FocusComposer({
   maxFileSize?: number;
   /* Rejected attachments surface through this; without it the error is silent. */
   onAttachError?: (message: string) => void;
+  /* AC-4 (#134): a rewound message's images re-entering the composer. */
+  seedFiles?: AttachedFile[];
+  onSeededFiles?: () => void;
 }) {
   const [draft, setDraft] = useControllableState({
     prop: draftProp,
@@ -135,6 +141,9 @@ export function FocusComposer({
           clearIfUnchanged();
         }}
       >
+        {accept && seedFiles?.length && onSeededFiles ? (
+          <FileSeeder seed={seedFiles} onSeeded={onSeededFiles} />
+        ) : null}
         {accept && (
           <PromptInputAttachments className="px-3 pt-3 pb-0">
             {(file) => <PromptInputAttachment data={file} />}

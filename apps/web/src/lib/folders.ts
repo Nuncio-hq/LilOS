@@ -84,6 +84,25 @@ export function probeCwd(path: string): void {
   })();
 }
 
+/**
+ * Two session folders are the same when their stored cwds resolve equal:
+ * `~/x` vs the absolute home path, and a stray trailing slash (#134 AC-5 —
+ * the shared-folder rewind warning must not miss either spelling).
+ */
+export function sameFolder(
+  a: string | undefined,
+  b: string | undefined,
+  home: string | null,
+): boolean {
+  if (!a || !b) return false;
+  const norm = (p: string) => {
+    let q = p;
+    if (home && (q === "~" || q.startsWith("~/"))) q = home + q.slice(1);
+    return q.replace(/\/+$/, "") || "/";
+  };
+  return norm(a) === norm(b);
+}
+
 /** Header badge workspace for a stored conversation cwd (AC-7). */
 export function wsFor(
   cwd: string | undefined,

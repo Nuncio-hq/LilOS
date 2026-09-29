@@ -43,6 +43,7 @@ const message = {
   text: "hello",
   seq: 3,
   createdAt: 1_759_000_000_001,
+  rewound: false,
 };
 
 describe("AC-1 app protocol contracts", () => {

@@ -1174,11 +1174,15 @@
               "string",
               "null"
             ]
+          },
+          "home": {
+            "type": "string"
           }
         },
         "required": [
           "username",
-          "fullName"
+          "fullName",
+          "home"
         ],
         "additionalProperties": false
       }

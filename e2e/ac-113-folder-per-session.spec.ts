@@ -124,9 +124,13 @@ const ROOT = mkdtempSync(path.join(tmpdir(), "lilos-113-"));
 const repoDir = path.join(ROOT, "lilos-repo-a");
 const plainDir = path.join(ROOT, "lilos-plain-b");
 const goneDir = path.join(ROOT, "lilos-gone-c");
+/* Never added to recents before the #208 AC-3 test — the dialog must say
+   "Not a git repo" for a dir it hasn't seen. */
+const freshDir = path.join(ROOT, "lilos-fresh-d");
 mkdirSync(repoDir);
 mkdirSync(plainDir);
 mkdirSync(goneDir);
+mkdirSync(freshDir);
 execSync(
   "git init -b trunk && git -c user.email=t@t -c user.name=t commit --allow-empty -m init",
   { cwd: repoDir },
@@ -190,9 +194,25 @@ async function openPicker(page: Page) {
     .last();
 }
 
-test("AC-2 the composer shows the folder picker; Add folder browses real dirs on web", async ({
+test("AC-2 + #208 AC-1 the composer shows the folder picker; Add folder opens the in-app dialog even on the desktop bridge", async ({
   page,
 }) => {
+  /* #208 AC-1/AC-5: a live `window.lilos.pickFolder` must never fire — Add a
+     folder is LilOS's own dialog on every surface. The spy returns a real
+     dir so the removed code path would add it straight to the chip (red
+     before the fix), never opening the dialog. */
+  await page.addInitScript((bait) => {
+    const w = window as Window & {
+      lilos?: { pickFolder?: () => Promise<string | null> };
+      __pickFolderCalls?: number;
+    };
+    w.lilos = {
+      pickFolder: () => {
+        w.__pickFolderCalls = (w.__pickFolderCalls ?? 0) + 1;
+        return Promise.resolve(bait);
+      },
+    };
+  }, plainDir);
   await dmDefault(page);
   await expect(pickerButton(page)).toBeVisible();
   const menu = await openPicker(page);
@@ -202,7 +222,7 @@ test("AC-2 the composer shows the folder picker; Add folder browses real dirs on
   await page.screenshot({ path: `${SHOTS}/ac-2-picker-empty.png` });
   await menu.getByText("Add a folder").click();
 
-  // The web browser dialog (fs.list / git.discoverRepos): repoDir is a
+  // The in-app dialog (fs.list / git.discoverRepos): repoDir is a
   // discovered chip; pick it, see the repo card, add it.
   const dialog = page.locator("[data-addfolder]");
   await expect(dialog).toBeVisible();
@@ -217,6 +237,14 @@ test("AC-2 the composer shows the folder picker; Add folder browses real dirs on
   await dialog.locator("[data-addbtn]").click();
   await expect(dialog).toHaveCount(0);
   await expect(pickerButton(page)).toContainText("lilos-repo-a");
+  // The OS-panel bridge was never consulted (#208 AC-5).
+  expect(
+    await page.evaluate(
+      () =>
+        (window as Window & { __pickFolderCalls?: number }).__pickFolderCalls ??
+        0,
+    ),
+  ).toBe(0);
 });
 
 test("DM open never scans the disk — git.discoverRepos runs only on Add folder", async ({
@@ -388,4 +416,37 @@ test("AC-5 recents persist across reload; a deleted folder shows missing and can
   await expect(gone).toContainText("missing");
   await expect(gone).toHaveAttribute("aria-disabled", "true");
   await page.screenshot({ path: `${SHOTS}/ac-5-recents-missing.png` });
+});
+
+test("AC-3 (#208) a typed non-git folder says 'Not a git repo', adds, and the session runs there", async ({
+  page,
+}) => {
+  await dmDefault(page);
+  await (await openPicker(page)).getByText("Add a folder").click();
+  const dialog = page.locator("[data-addfolder]");
+  await expect(dialog).toBeVisible();
+  await dialog.locator("[data-pathinput]").fill(freshDir);
+  await expect(dialog.locator("[data-folderinfo]")).toContainText(
+    "Not a git repo",
+    { timeout: 15_000 },
+  );
+  await page.screenshot({ path: `${SHOTS}/ac-208-3-notgit.png` });
+  await dialog.locator("[data-addbtn]").click();
+  await expect(dialog).toHaveCount(0);
+  await expect(pickerButton(page)).toContainText("lilos-fresh-d");
+  await send(page, "hello — plain folder turn", "first");
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
+  // Let turn 1 settle so the follow-up is a fresh turn that echoes the cwd.
+  await expect(
+    page.getByText("If you want me to change code", { exact: false }).last(),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("[data-agentturn] [data-streaming]")).toHaveCount(
+    0,
+    { timeout: 30_000 },
+  );
+  await send(page, "where are you working?", "last");
+  await expect(page.locator("code").filter({ hasText: freshDir })).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.screenshot({ path: `${SHOTS}/ac-208-3-pwd.png` });
 });

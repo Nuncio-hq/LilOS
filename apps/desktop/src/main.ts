@@ -16,7 +16,6 @@ import {
 import {
   app,
   BrowserWindow,
-  dialog,
   ipcMain,
   Menu,
   Notification,
@@ -480,21 +479,6 @@ ipcMain.handle("lilos:open-settings", openLoginItemsSettings);
 ipcMain.handle("lilos:open-status", createStatusWindow);
 ipcMain.handle("lilos:open-app", createAppWindow);
 ipcMain.handle("lilos:check-update", () => checkAndApply());
-// #113 AC-2: the picker's Add folder opens the native macOS folder dialog.
-// Returns the picked path or null when cancelled.
-ipcMain.handle("lilos:pick-folder", async () => {
-  const opts = {
-    title: "Pick a folder for the session",
-    properties: ["openDirectory", "createDirectory"] as (
-      | "openDirectory"
-      | "createDirectory"
-    )[],
-  };
-  const r = mainWindow
-    ? await dialog.showOpenDialog(mainWindow, opts)
-    : await dialog.showOpenDialog(opts);
-  return r.canceled ? null : (r.filePaths[0] ?? null);
-});
 
 app.whenReady().then(async () => {
   // #35: settle a pending swap before anything else opens. On the freshly
