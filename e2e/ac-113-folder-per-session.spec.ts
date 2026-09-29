@@ -310,7 +310,7 @@ test("AC-4 + AC-7 a session picked on the repo runs there; the header shows fold
   await page.screenshot({ path: `${SHOTS}/ac-4-7-header.png` });
 });
 
-test("AC-6 the employee pre-selects its last folder; no folder keeps the default and says so", async ({
+test("AC-6 the employee pre-selects its last folder; a no-folder session is a plain chat (#196)", async ({
   page,
 }) => {
   await dmDefault(page);
@@ -323,10 +323,27 @@ test("AC-6 the employee pre-selects its last folder; no folder keeps the default
   await menu.getByText("No folder · just chat").click();
   await send(page, "no folder please", "first");
   await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
+  // The turn settles (an employee turn renders) and nothing announces the
+  // missing folder: no system note, no header chip, a neutral hint (#196 —
+  // supersedes the #113 AC-6 notice).
+  await expect(page.locator("[data-agentturn]").first()).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(
     page.getByText("No folder: working in", { exact: false }),
-  ).toBeVisible({ timeout: 30_000 });
+  ).toHaveCount(0);
+  await expect(page.locator("[data-wsbadge]")).toHaveCount(0);
+  await expect(page.getByText(/read-only/i)).toHaveCount(0);
+  await expect(page.getByText(/Reply to .*…/).first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-6-no-folder.png` });
+  // Focus is the same: no chip, neutral hint.
+  await page.goto(`${stack.webUrl}${new URL(page.url()).pathname}/focus`);
+  await expect(page.getByText(/Reply to .*…/).first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.locator("[data-wsbadge]")).toHaveCount(0);
+  await expect(page.getByText(/read-only/i)).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/ac-6-no-folder-focus.png` });
 });
 
 test("AC-5 recents persist across reload; a deleted folder shows missing and can't be picked", async ({
