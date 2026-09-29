@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import type { RelayClient } from "@lilos/client-runtime";
 import type {
   AppChannel,
@@ -9,7 +10,9 @@ import type {
   Conversation,
   ConversationsRewindHostResult,
   Employee,
+  FoldersBrowseResult,
   FoldersDetailResult,
+  FoldersDiscoverResult,
   PendingTurn,
 } from "@lilos/contracts/app";
 import {
@@ -21,6 +24,7 @@ import {
   ConversationsRewindHostParams,
   ConversationUpdatedEvent,
   ENGINE_PASSTHROUGH_METHODS,
+  FoldersBrowseParams,
   FoldersDetailParams,
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
@@ -35,10 +39,16 @@ import {
 } from "@lilos/contracts/engine";
 import {
   type CheckpointStore,
+  collapsePath,
   expandPath,
+  fsList,
   gitBranches,
+  gitDiscoverRepos,
   gitIsRepo,
   gitWorktrees,
+  HOST_ERRORS,
+  HostError,
+  resolveUnderHome,
   worktreeAdd,
 } from "@lilos/host";
 import type { EngineConnection } from "./engine/client";
@@ -142,6 +152,12 @@ export interface HarnessOptions {
    * unit fixtures can skip it — the real harness always has one.
    */
   checkpoints?: CheckpointStore;
+  /**
+   * The home-folder boundary `folders.browse`/`folders.discover` enforce
+   * for device peers (#238). Defaults to the OS home dir (injectable for
+   * tests).
+   */
+  homeDir?: string;
 }
 
 const INVALID_STATE = -32003;
@@ -198,7 +214,13 @@ export class Harness {
     return this.conversationBySession.size;
   }
 
-  constructor(private readonly opts: HarnessOptions) {}
+  /* The Mac user's home this harness serves — `~` on the wire means this
+     directory (device-scope folder reads stay under it). */
+  private readonly home: string;
+
+  constructor(private readonly opts: HarnessOptions) {
+    this.home = opts.homeDir ?? homedir();
+  }
 
   /* ------------------------------- startup ------------------------------ */
 
@@ -959,7 +981,10 @@ export class Harness {
     }
     /* Stored cwd may be `~/x` (host fs echoes collapsed): expand before
        any spawn/fs use — literal `~` is not a valid cwd for execFile. */
-    const cwd = expandPath(params.cwd ?? binding?.cwd ?? this.opts.workdir);
+    const cwd = expandPath(
+      params.cwd ?? binding?.cwd ?? this.opts.workdir,
+      this.home,
+    );
     /* Engine first: a refusal (INVALID_STATE — a turn is running) must leave
        everything untouched, before any file or queue mutation. */
     let engineRewound = false;
@@ -1049,7 +1074,7 @@ export class Harness {
           channelId,
           sessionId: conv.engineRef,
           ref: conv.engineRef,
-          cwd: expandPath(conv.cwd ?? this.opts.workdir),
+          cwd: expandPath(conv.cwd ?? this.opts.workdir, this.home),
           lastSeq: 0,
           queue: [],
           textByTurn: new Map(),
@@ -1099,7 +1124,7 @@ export class Harness {
       channelId,
       sessionId: started.sessionId,
       ref: started.ref ?? started.sessionId,
-      cwd: expandPath(conv.cwd ?? this.opts.workdir),
+      cwd: expandPath(conv.cwd ?? this.opts.workdir, this.home),
       lastSeq: 0,
       queue: [],
       textByTurn: new Map(),
@@ -1447,6 +1472,15 @@ export class Harness {
     if (method === "folders.detail") {
       return this.folderDetail(FoldersDetailParams.parse(params));
     }
+    /* `folders.browse`/`folders.discover` (#238): the phone's folder
+       browser — the home-folder boundary is enforced here, server-side,
+       because the caller is a remote device. */
+    if (method === "folders.browse") {
+      return this.folderBrowse(FoldersBrowseParams.parse(params));
+    }
+    if (method === "folders.discover") {
+      return this.folderDiscover();
+    }
     /* `events.since` (#157): the relay's `session.events` maps a
        conversationId onto its bound engine session and forwards here —
        verbatim engine replay, so a device-scope client never sees a
@@ -1478,7 +1512,7 @@ export class Harness {
   private async folderDetail(
     params: FoldersDetailParams,
   ): Promise<FoldersDetailResult> {
-    const abs = expandPath(params.path);
+    const abs = expandPath(params.path, this.home);
     const empty = {
       path: params.path,
       isRepo: false,
@@ -1492,7 +1526,7 @@ export class Harness {
       gitBranches({ path: abs }),
       gitWorktrees({ path: abs }),
     ]);
-    const root = resolve(expandPath(probe.root));
+    const root = resolve(expandPath(probe.root, this.home));
     return {
       ...empty,
       missing: false,
@@ -1503,13 +1537,79 @@ export class Harness {
       remote: branches.remote,
       workstreams: worktrees.worktrees
         .filter(
-          (w) => w.branch !== undefined && resolve(expandPath(w.path)) !== root,
+          (w) =>
+            w.branch !== undefined &&
+            resolve(expandPath(w.path, this.home)) !== root,
         )
         .map((w) => ({
           branch: w.branch ?? "",
           path: w.path,
           ...(w.from ? { from: w.from } : {}),
         })),
+    };
+  }
+
+  /**
+   * `folders.browse` (#238): one folder level under the Mac's home — dirs
+   * only, dot-dirs skipped, repo children carrying their branch (the same
+   * marks the web AddFolderDialog paints on `fs.list`). The listed dir's
+   * own `branch` is its containing repo's current branch (the web's
+   * `hostIsRepo`+`hostBranches` probe). Anything that resolves outside
+   * home — `..`, absolute paths, symlink hops, dot-dir segments — is
+   * refused before any listing happens.
+   */
+  private async folderBrowse(
+    params: FoldersBrowseParams,
+  ): Promise<FoldersBrowseResult> {
+    const home = this.home;
+    const abs = resolveUnderHome(params.path, home);
+    if (!abs) {
+      throw new HostError(
+        HOST_ERRORS.OUTSIDE_ROOT,
+        `path is outside the Mac's home folder: ${params.path}`,
+      );
+    }
+    const [list, self] = await Promise.all([
+      fsList({ path: abs }),
+      gitBranches({ path: abs }).catch(() => null),
+    ]);
+    return {
+      path: collapsePath(abs, home),
+      ...(self?.current ? { branch: self.current } : {}),
+      folders: list.entries
+        .filter((e) => e.kind === "dir" && !e.name.startsWith("."))
+        .map((e) => ({
+          name: e.name,
+          path: collapsePath(join(abs, e.name), home),
+          ...(e.repo?.head ? { branch: e.repo.head } : {}),
+        })),
+    };
+  }
+
+  /**
+   * `folders.discover` (#238): repos under the web's "Found on this Mac"
+   * roots, each re-checked against the home boundary so a symlinked scan
+   * root can't leak outside paths.
+   */
+  private async folderDiscover(): Promise<FoldersDiscoverResult> {
+    const home = this.home;
+    /* Same roots as the web picker (apps/web/src/lib/host.ts hostRoots). */
+    const roots = ["~/Desktop", "~/Developer", "~/Documents", "~/repos"].map(
+      (r) => expandPath(r, home),
+    );
+    const { repos } = await gitDiscoverRepos({ roots });
+    return {
+      repos: repos.flatMap((r) => {
+        const abs = resolveUnderHome(r.path, home);
+        return abs
+          ? [
+              {
+                path: collapsePath(abs, home),
+                ...(r.head ? { branch: r.head } : {}),
+              },
+            ]
+          : [];
+      }),
     };
   }
 
@@ -1523,9 +1623,10 @@ export class Harness {
   private async ensureWorktree(conv: Conversation): Promise<void> {
     const ws = conv.workspace;
     if (ws?.mode !== "new" || !conv.cwd) return;
-    const dir = resolve(expandPath(conv.cwd));
+    const dir = resolve(expandPath(conv.cwd, this.home));
     const { worktrees } = await gitWorktrees({ path: ws.repoPath });
-    if (worktrees.some((w) => resolve(expandPath(w.path)) === dir)) return;
+    if (worktrees.some((w) => resolve(expandPath(w.path, this.home)) === dir))
+      return;
     await worktreeAdd({
       path: ws.repoPath,
       dir,
@@ -1971,7 +2072,7 @@ export class Harness {
     const fast = conv?.fast ?? base.fast;
     // The session's folder is owned by the conversation (#113); absent → the
     // harness default workdir, as before.
-    const cwd = expandPath(conv?.cwd ?? this.opts.workdir);
+    const cwd = expandPath(conv?.cwd ?? this.opts.workdir, this.home);
     return {
       ...base,
       ...(model ? { model } : {}),

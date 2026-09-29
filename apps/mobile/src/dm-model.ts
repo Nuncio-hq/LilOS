@@ -11,6 +11,7 @@ import type { ModelsListResult } from "@lilos/contracts/engine";
 import type {
   Approval,
   FolderOption,
+  MacDir,
   ModelPick,
   ModelProviderRow,
   ModelRow,
@@ -280,6 +281,19 @@ export function uniqueWorkSlug(folder: FolderOption, base: string): string {
   for (let n = 1; taken.has(slug) || taken.has(`ws/${slug}`); n++)
     slug = `${base}-${n}`;
   return slug;
+}
+
+/**
+ * The composer's pick once a browsed Mac folder gets used (#238): a folder
+ * inside a git repo starts a new workstream off its checked-out branch;
+ * anything else runs in it directly (prototype BrowseMac's onUse rule).
+ */
+export function browseWorkspacePick(path: string, dir: MacDir): WorkspacePick {
+  return {
+    folder: path,
+    base: dir.branch ?? "",
+    mode: dir.branch ? "new" : "direct",
+  };
 }
 
 export function toModelCatalog(

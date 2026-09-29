@@ -24,13 +24,15 @@ export type Routes = {
   Thread: { conversationId: string };
   ThreadInfo: { conversationId: string };
   FolderPicker: { employeeId: string };
+  /* "Other folder on the Mac…" browser (#238), pushed over FolderPicker. */
+  BrowseMac: { employeeId: string };
   ModelPicker: { employeeId: string; conversationId?: string };
 };
 
 /* The DM stack as the dm/thread screens see it. */
 export type DmRoutes = Pick<
   Routes,
-  "Dm" | "Thread" | "ThreadInfo" | "FolderPicker" | "ModelPicker"
+  "Dm" | "Thread" | "ThreadInfo" | "FolderPicker" | "BrowseMac" | "ModelPicker"
 >;
 
 export type TabRoutes = {
