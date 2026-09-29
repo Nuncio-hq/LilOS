@@ -249,14 +249,14 @@ describe("AC-3: send opens a new conversation with the picked folder + model", (
 describe("AC-4: folder picker lists real folders.list entries", () => {
   it("AC-4 maps recents to picker options, newest order preserved", () => {
     const recents: RecentFolder[] = [
-      { path: "~/Desktop/Oscar/LilOS", lastUsedAt: 20 },
+      { path: "~/Desktop/Work/LilOS", lastUsedAt: 20 },
       { path: "~/Documents/Notes", lastUsedAt: 10 },
     ];
     expect(toFolderOptions(recents)).toEqual([
       {
-        id: "~/Desktop/Oscar/LilOS",
+        id: "~/Desktop/Work/LilOS",
         project: "LilOS",
-        path: "~/Desktop/Oscar/LilOS",
+        path: "~/Desktop/Work/LilOS",
         branches: [],
         workstreams: [],
       },
