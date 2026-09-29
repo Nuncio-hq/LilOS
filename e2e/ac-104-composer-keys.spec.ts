@@ -131,7 +131,7 @@ test.beforeAll(async () => {
   stackA = await bootStack("keys", {
     relay: wport(4680),
     feed: wport(4681),
-    web: wport(5281),
+    web: wport(5339),
   });
 });
 test.afterAll(async () => {

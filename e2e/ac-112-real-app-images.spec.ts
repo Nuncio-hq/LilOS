@@ -239,10 +239,10 @@ async function rpc(
 
 const RELAY = wport(4720);
 const FEED = wport(4721);
-const PORT = wport(5290);
+const PORT = wport(5342);
 const RELAY2 = wport(4723);
 const FEED2 = wport(4724);
-const PORT2 = wport(5292);
+const PORT2 = wport(5344);
 
 test.describe.configure({ mode: "serial" });
 test.setTimeout(120_000);

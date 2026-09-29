@@ -149,9 +149,9 @@ let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack("ac105", {
-    relay: wport(4780),
-    feed: wport(4781),
-    web: wport(5380),
+    relay: wport(4818),
+    feed: wport(4819),
+    web: wport(5322),
   });
 });
 test.afterAll(async () => {

@@ -191,8 +191,8 @@ test.beforeAll(async () => {
   writeView(PR_VIEW);
   stack = await bootStack("ac114", {
     relay: wport(4740),
-    feed: wport(4741),
-    web: wport(5300),
+    feed: wport(4826),
+    web: wport(5327),
   });
 });
 test.afterAll(async () => {

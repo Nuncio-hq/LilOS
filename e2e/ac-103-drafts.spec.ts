@@ -20,8 +20,7 @@ import { wport } from "./ports";
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 // Per-worker port offsets so parallel spec files never race one port (#84).
-const wportN = (p: number) => wport(p, 10);
-const PORTS = { relay: wportN(4700), feed: wportN(4705), web: wportN(5290) };
+const PORTS = { relay: wport(4830), feed: wport(4831), web: wport(5332) };
 
 const webDir = path.join(repo, "apps", "web");
 const SHOTS = path.join(repo, "test-results", "ac-103");

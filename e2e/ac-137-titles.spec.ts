@@ -19,7 +19,7 @@ const repo = path.resolve(here, "..");
 const webDir = path.join(repo, "apps", "web");
 const SHOTS = path.join(repo, "test-results", "ac-137");
 
-const PORTS = { relay: wport(4760), feed: wport(4761), web: wport(5360) };
+const PORTS = { relay: wport(4808), feed: wport(4809), web: wport(5311) };
 
 async function waitForHttp(url: string, ms = 30_000): Promise<void> {
   const start = Date.now();
