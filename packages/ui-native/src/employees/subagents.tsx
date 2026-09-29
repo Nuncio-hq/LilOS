@@ -6,6 +6,7 @@ import { Card, Pill } from "../components/bits";
 import { Icon, type IconTone } from "../components/icon";
 import { Orb } from "../components/orb";
 import { Prose, Pulse } from "../components/prose";
+import { Rise } from "../components/rise";
 import { Group, SheetHeader } from "./folder-picker";
 import { StepRow } from "./step-row";
 import type { SubagentRow } from "./types";
@@ -88,47 +89,48 @@ export function SubagentsCard({
           tone="muted-foreground"
         />
       </View>
-      {agents.map((a) => (
-        <Pressable
-          key={a.id}
-          accessibilityRole="button"
-          accessibilityLabel={`${a.employee ? `${a.employee.name}, ` : ""}${a.name}, ${STATUS[a.status].label}`}
-          disabled={!onOpen}
-          onPress={() => onOpen?.(a)}
-          className="flex-row items-center gap-2.5 px-3.5 py-2.5 active:bg-fill"
-        >
-          <View className="absolute top-0 right-0 left-[42px] h-[0.5px] bg-border" />
-          <View className="w-4 items-center">
-            <Mark a={a} size={16} />
-          </View>
-          <View className="flex-1 gap-0.5">
-            <Text numberOfLines={1} className="text-[14px] text-foreground">
-              {a.employee ? (
-                <Text className="font-semibold">{`${a.employee.name} · `}</Text>
-              ) : null}
-              {a.name}
-            </Text>
-            <Text
-              numberOfLines={1}
-              className={`text-[12.5px] ${a.status === "failed" ? "text-destructive" : "text-subtle-foreground"} ${a.status === "running" && !a.employee ? "font-mono" : ""}`}
-            >
-              {nowLine(a)}
-            </Text>
-          </View>
-          {a.dur !== undefined && (
-            <AppText size="xs" tone="muted" className="font-mono">
-              {`${a.dur}s`}
-            </AppText>
-          )}
-          {onOpen && (
-            <Icon
-              name="chevron.right"
-              size={11}
-              weight="semibold"
-              tone="muted-foreground"
-            />
-          )}
-        </Pressable>
+      {agents.map((a, i) => (
+        <Rise key={a.id} delay={i * 60}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${a.employee ? `${a.employee.name}, ` : ""}${a.name}, ${STATUS[a.status].label}`}
+            disabled={!onOpen}
+            onPress={() => onOpen?.(a)}
+            className="flex-row items-center gap-2.5 px-3.5 py-2.5 active:bg-fill"
+          >
+            <View className="absolute top-0 right-0 left-[42px] h-[0.5px] bg-border" />
+            <View className="w-4 items-center">
+              <Mark a={a} size={16} />
+            </View>
+            <View className="flex-1 gap-0.5">
+              <Text numberOfLines={1} className="text-[14px] text-foreground">
+                {a.employee ? (
+                  <Text className="font-semibold">{`${a.employee.name} · `}</Text>
+                ) : null}
+                {a.name}
+              </Text>
+              <Text
+                numberOfLines={1}
+                className={`text-[12.5px] ${a.status === "failed" ? "text-destructive" : "text-subtle-foreground"} ${a.status === "running" && !a.employee ? "font-mono" : ""}`}
+              >
+                {nowLine(a)}
+              </Text>
+            </View>
+            {a.dur !== undefined && (
+              <AppText size="xs" tone="muted" className="font-mono">
+                {`${a.dur}s`}
+              </AppText>
+            )}
+            {onOpen && (
+              <Icon
+                name="chevron.right"
+                size={11}
+                weight="semibold"
+                tone="muted-foreground"
+              />
+            )}
+          </Pressable>
+        </Rise>
       ))}
     </View>
   );

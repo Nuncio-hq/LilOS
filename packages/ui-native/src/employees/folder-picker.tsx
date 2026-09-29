@@ -15,11 +15,14 @@ export function FolderPickerSheet({
   pick,
   onPick,
   onDone,
+  onBrowse,
 }: {
   folders: FolderOption[];
   pick: WorkspacePick;
   onPick: (p: WorkspacePick) => void;
   onDone: () => void;
+  /** "Other folder on the Mac…" — browse the Mac's folders. Absent = no row. */
+  onBrowse?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const f = folders.find((x) => x.id === pick.folder);
@@ -62,6 +65,21 @@ export function FolderPickerSheet({
           on={!pick.folder}
           onPress={() => onPick({ folder: null, base: "", mode: "direct" })}
         />
+        {onBrowse && (
+          <Option
+            icon="macbook"
+            title="Other folder on the Mac…"
+            onPress={onBrowse}
+            trailing={
+              <Icon
+                name="chevron.right"
+                size={11}
+                weight="semibold"
+                tone="muted-foreground"
+              />
+            }
+          />
+        )}
       </Group>
 
       {f?.missing && (

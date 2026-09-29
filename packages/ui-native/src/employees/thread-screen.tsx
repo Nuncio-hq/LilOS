@@ -8,12 +8,15 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "../components/app-text";
 import { StateChip } from "../components/bits";
+import { Rise } from "../components/rise";
 import { AgentTurn, UserBubble } from "./agent-turn";
 import { BackgroundPill } from "./background-sheet";
 import { Composer } from "./composer";
+import { ContextRing } from "./context-meter";
 import type { PlanAction } from "./plan-card";
 import { PrBadge, prHeadline } from "./pr-badges";
 import type {
+  ContextUsage,
   PullRequestRef,
   SessionState,
   SubagentRow,
@@ -100,27 +103,27 @@ export function ThreadScreen({
             gap: 24,
           }}
         >
-          {t.entries.map((e) =>
-            e.kind === "user" ? (
-              <UserBubble
-                key={e.id}
-                text={e.text}
-                time={e.queued ? "Queued · runs next" : e.time}
-              />
-            ) : (
-              <AgentTurn
-                key={e.id}
-                e={e}
-                name={t.employee.name}
-                tone={t.employee.tone}
-                onApprove={onApprove}
-                onDeny={onDeny}
-                onOpenSubagent={onOpenSubagent}
-                onPlan={onPlan}
-                onOpenPlan={onOpenPlan}
-              />
-            ),
-          )}
+          {t.entries.map((e) => (
+            <Rise key={e.id}>
+              {e.kind === "user" ? (
+                <UserBubble
+                  text={e.text}
+                  time={e.queued ? "Queued · runs next" : e.time}
+                />
+              ) : (
+                <AgentTurn
+                  e={e}
+                  name={t.employee.name}
+                  tone={t.employee.tone}
+                  onApprove={onApprove}
+                  onDeny={onDeny}
+                  onOpenSubagent={onOpenSubagent}
+                  onPlan={onPlan}
+                  onOpenPlan={onOpenPlan}
+                />
+              )}
+            </Rise>
+          ))}
         </ScrollView>
 
         <View className="absolute inset-x-0 bottom-0 gap-2">
@@ -154,11 +157,14 @@ export function ThreadHeaderTitle({
   title,
   state,
   prs,
+  context,
   onPress,
 }: {
   title: string;
   state: SessionState;
   prs?: PullRequestRef[];
+  /** Adds the context gauge beside the state. */
+  context?: ContextUsage;
   onPress: () => void;
 }) {
   const one = prs?.length === 1 ? prs[0] : undefined;
@@ -178,6 +184,7 @@ export function ThreadHeaderTitle({
       </AppText>
       <View className="flex-row items-center gap-1.5">
         <StateChip state={state} />
+        {context && <ContextRing c={context} />}
         {!!prs?.length && (
           <>
             <AppText tone="muted" className="text-[13px]">

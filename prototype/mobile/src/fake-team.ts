@@ -195,6 +195,9 @@ export const PROVIDERS: ModelProviderRow[] = [
 ];
 
 /** The next DM session's pick: starts at the employee default (web rule). */
+/** Folders sessions can run in; "Other folder on the Mac…" adds to it. */
+export const $folders = atom<FolderOption[]>(FOLDERS);
+
 export const $wsPick = atom<WorkspacePick>({
   folder: "lilos",
   base: "main",

@@ -29,13 +29,7 @@ import {
 } from "../components/ai-elements/reasoning";
 import { Shimmer } from "../components/ai-elements/shimmer";
 import { Task, TaskContent, TaskTrigger } from "../components/ai-elements/task";
-import {
-  Tool,
-  ToolContent,
-  ToolHeader,
-  ToolInput,
-  ToolOutput,
-} from "../components/ai-elements/tool";
+import { Tool, ToolContent, ToolHeader } from "../components/ai-elements/tool";
 import { plural } from "../lib/helpers";
 import { withFileMentionChips } from "../lib/mentions";
 import { cn } from "../lib/utils";
@@ -53,6 +47,7 @@ import type {
 import { VIEWER_ID } from "../types";
 import { turnSteps } from "../workbench/artifacts";
 import { type PlanAction, PlanCard } from "./plan-card";
+import { StepDetail } from "./step-detail";
 import { TurnSubagents } from "./subagents";
 
 /* The conversation's turns — ONE implementation used by both frames (issue #19):
@@ -173,12 +168,8 @@ export function TurnSteps({
                   : "output-available"
               }
             />
-            <ToolContent>
-              <ToolInput input={s.input} />
-              <ToolOutput
-                output={s.output || undefined}
-                errorText={undefined}
-              />
+            <ToolContent className="space-y-0 px-3 pt-0 pb-3">
+              <StepDetail s={s} />
             </ToolContent>
           </Tool>
         ))}

@@ -174,7 +174,7 @@ export function ReplyCards({
             >
               <ConfirmationTitle className="flex flex-wrap items-center gap-1.5 pr-2 font-medium text-foreground">
                 <ConfirmationRequest>
-                  <ShieldAlertIcon className="size-3.5 text-amber-600" />
+                  <ShieldAlertIcon className="size-3.5 text-primary" />
                   Approval needed · only {viewer} can answer
                 </ConfirmationRequest>
                 <ConfirmationAccepted>

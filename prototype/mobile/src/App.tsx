@@ -12,6 +12,7 @@ import {
   EmployeeDmScreen,
   EmployeesHomeScreen,
   FolderPickerSheet,
+  MacFolderBrowser,
   type MacLink,
   MacSheet,
   ManualCodeScreen,
@@ -98,12 +99,13 @@ import {
   SCAN_OVERRIDES,
   type ScanOverride,
 } from "./fake-mac";
+import { FOUND_REPOS, readMacDir } from "./fake-mac-fs";
 import {
+  $folders,
   $modelPick,
   $threadModel,
   $wsPick,
   COMPANY,
-  FOLDERS,
   MODELS,
   PROVIDERS,
 } from "./fake-team";
@@ -143,6 +145,8 @@ type Routes = {
   Approvals: undefined;
   Mac: undefined;
   FolderPicker: undefined;
+  /** Browse the Mac for another folder. */
+  BrowseMac: undefined;
   /** No thread = the next DM session's model. */
   ModelPicker: { thread?: string };
 };
@@ -376,7 +380,7 @@ function Home() {
   if (!mac) return null;
   return (
     <EmployeesHomeScreen
-      workspace="LilOS"
+      workspace="Oscar Co"
       macName={mac.name}
       link={link}
       employees={employees}
@@ -405,9 +409,9 @@ function Activity() {
    shared glass capsule; the tab bar and its accessory are native too. */
 function Tabs() {
   const approvals = useStore($approvals);
-  const link = useStore($link);
+  const _link = useStore($link);
   const tint = useThemeColor("primary");
-  const destructive = useThemeColor("destructive");
+  const _destructive = useThemeColor("destructive");
   return (
     <Tab.Navigator
       screenOptions={{
@@ -433,29 +437,13 @@ function Tabs() {
         name="Home"
         component={Home}
         options={{
-          title: "LilOS",
+          // No header: Home starts at the top; the Mac lives in Settings.
+          headerShown: false,
           tabBarLabel: "Home",
           tabBarIcon: ({ focused }) => ({
             type: "sfSymbol",
             name: focused ? "house.fill" : "house",
           }),
-          unstable_headerRightItems: () => [
-            {
-              type: "button",
-              label: "Mac",
-              icon: { type: "sfSymbol", name: "laptopcomputer" },
-              tintColor: link === "offline" ? destructive : undefined,
-              accessibilityLabel:
-                link === "offline" ? "Mac, can't reach it" : "Mac",
-              onPress: () => nav.navigate("Mac"),
-            },
-            {
-              type: "button",
-              label: "New session",
-              icon: { type: "sfSymbol", name: "square.and.pencil" },
-              onPress: () => nav.navigate("Dm", { employeeId: "builder" }),
-            },
-          ],
         }}
       />
       <Tab.Screen
@@ -508,6 +496,7 @@ function Dm({ navigation, route }: Props<"Dm">) {
   );
   const threads = useStore($threads);
   const ws = useStore($wsPick);
+  const folders = useStore($folders);
   const pick = useStore($modelPick);
   const turns = employee ? turnsOf(threads, employee.id) : [];
   const status = statusOf(turns);
@@ -540,7 +529,7 @@ function Dm({ navigation, route }: Props<"Dm">) {
       name={employee.name}
       tone={employee.tone}
       turns={turns}
-      folder={pickLabel(FOLDERS, ws)}
+      folder={pickLabel(folders, ws)}
       model={model}
       modelLogo={logoOf(pick.model)}
       onOpenSession={(id) => navigation.navigate("Thread", { id })}
@@ -577,6 +566,7 @@ function Thread({ navigation, route }: Props<"Thread">) {
   const title = t?.title;
   const state = t?.state;
   const prs = t?.prs;
+  const context = t?.context;
   // Plan "Change…" puts this in the composer (a new object each tap).
   const [prefill, setPrefill] = useState<{ text: string }>();
   useEffect(() => playOnOpen(route.params.id), [route.params.id]);
@@ -590,6 +580,7 @@ function Thread({ navigation, route }: Props<"Thread">) {
           title={title}
           state={state}
           prs={prs}
+          context={context}
           onPress={info}
         />
       ),
@@ -602,7 +593,7 @@ function Thread({ navigation, route }: Props<"Thread">) {
         },
       ],
     });
-  }, [navigation, route.params.id, title, state, prs]);
+  }, [navigation, route.params.id, title, state, prs, context]);
   if (!t) return null;
   const pick = picks[t.id] ?? fallback;
   return (
@@ -688,13 +679,52 @@ function Background({ navigation, route }: Props<"Background">) {
 
 function FolderPicker({ navigation }: Props<"FolderPicker">) {
   const pick = useStore($wsPick);
+  const folders = useStore($folders);
   return (
     <FolderPickerSheet
-      folders={FOLDERS}
+      folders={folders}
+      onBrowse={() => navigation.navigate("BrowseMac")}
       pick={pick}
       onPick={(p) => {
         void Haptics.selectionAsync();
         $wsPick.set(p);
+      }}
+      onDone={() => navigation.goBack()}
+    />
+  );
+}
+
+/* Any folder on the Mac: picking one adds it to the list and selects it,
+   then closes both sheets back to the DM. */
+function BrowseMac({ navigation }: Props<"BrowseMac">) {
+  const mac = useStore($connections)[0];
+  return (
+    <MacFolderBrowser
+      macName={mac?.name ?? "Mac"}
+      found={FOUND_REPOS}
+      readDir={readMacDir}
+      onUse={(path, dir) => {
+        void Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        );
+        const id = path;
+        if (!$folders.get().some((f) => f.id === id))
+          $folders.set([
+            {
+              id,
+              project: path.split("/").pop() ?? path,
+              path,
+              branches: dir.branch ? [dir.branch] : [],
+              workstreams: [],
+            },
+            ...$folders.get(),
+          ]);
+        $wsPick.set({
+          folder: id,
+          base: dir.branch ?? "",
+          mode: dir.branch ? "new" : "direct",
+        });
+        navigation.pop(2);
       }}
       onDone={() => navigation.goBack()}
     />
@@ -797,6 +827,7 @@ function Approvals({ navigation }: Props<"Approvals">) {
 function Settings() {
   const mac = useStore($connections)[0];
   const preview = useStore($preview);
+  const link = useStore($link);
 
   return (
     <SettingsScreen
@@ -806,9 +837,11 @@ function Settings() {
           name: mac.name,
           host: mac.host,
           routeLabel: ROUTE_LABEL[mac.route],
+          link,
         }
       }
       onForget={confirmForget}
+      onOpenMac={() => nav.navigate("Mac")}
     >
       {/* Prototype switcher — the mobile twin of the web Preview menu. */}
       <Section title="Prototype · pairing">
@@ -1038,6 +1071,11 @@ export default function App() {
               <Stack.Screen
                 name="FolderPicker"
                 component={FolderPicker}
+                options={SHEET}
+              />
+              <Stack.Screen
+                name="BrowseMac"
+                component={BrowseMac}
                 options={SHEET}
               />
               <Stack.Screen

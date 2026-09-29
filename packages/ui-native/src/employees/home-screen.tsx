@@ -10,7 +10,8 @@ import {
 } from "react-native";
 import type { MacLink } from "../app/mac-status-card";
 import { AppText } from "../components/app-text";
-import { LargeTitle, SectionTitle } from "../components/bits";
+import { SectionTitle } from "../components/bits";
+
 import { Icon } from "../components/icon";
 import { Orb } from "../components/orb";
 import type { Approval, ChannelRow, EmployeeRow, ProjectGroup } from "./types";
@@ -44,11 +45,11 @@ export function EmployeesHomeScreen({
 
   return (
     <ScrollView
+      accessibilityLabel={workspace}
       className="flex-1 bg-background"
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={{ paddingBottom: 24 }}
     >
-      <LargeTitle title={workspace} />
       {link === "offline" && (
         <Pressable
           accessibilityRole="button"

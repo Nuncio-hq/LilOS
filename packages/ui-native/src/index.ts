@@ -7,6 +7,7 @@ export { SettingsScreen } from "./app/settings-screen";
 export { AppText } from "./components/app-text";
 export { LargeTitle, Pill, SectionTitle, StateChip } from "./components/bits";
 export { Button } from "./components/button";
+export { CompanyChip } from "./components/company-chip";
 export { Glass } from "./components/glass";
 export { Choice, Row, Section } from "./components/grouped-list";
 export { Icon, type IconTone, useThemeColor } from "./components/icon";
@@ -25,6 +26,7 @@ export {
   EmployeesHomeScreen,
   NeedsYouAccessory,
 } from "./employees/home-screen";
+export { MacFolderBrowser } from "./employees/mac-folder-browser";
 export { type MacDetail, MacSheet } from "./employees/mac-sheet";
 export {
   effortLabel,
@@ -44,8 +46,10 @@ export type {
   Approval,
   BackgroundJobRow,
   ChannelRow,
+  ContextUsage,
   EmployeeRow,
   FolderOption,
+  MacDir,
   ModelPick,
   ModelProviderRow,
   ModelRow,

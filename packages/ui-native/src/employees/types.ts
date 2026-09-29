@@ -123,6 +123,16 @@ export type PlanRow = {
   status: "proposed" | "approved" | "replaced" | "rejected";
 };
 
+/** Tokens in a session's context window. */
+export type ContextUsage = {
+  input: number;
+  output: number;
+  reasoning: number;
+  cache: number;
+  /** The model's window size. */
+  max: number;
+};
+
 /** A process left running for the session (web: BackgroundJob). */
 export type BackgroundJobRow = {
   id: string;
@@ -148,6 +158,8 @@ export type ToolStep = {
   running?: boolean;
   add?: number;
   del?: number;
+  /** Unified diff of an edit (web: Diff.patch) — shown when the step opens. */
+  patch?: string;
 };
 
 export type AgentEntry = {
@@ -206,6 +218,8 @@ export type ThreadDetail = {
   usage?: string;
   /** PRs this session opened, oldest first. */
   prs?: PullRequestRef[];
+  /** Token breakdown of the context window (web: Usage + window size). */
+  context?: ContextUsage;
   /** Background processes of this session, newest last. */
   jobs?: BackgroundJobRow[];
   entries: ThreadEntry[];
@@ -247,3 +261,10 @@ export type ModelPick = { model: string; effort?: string; fast?: boolean };
 
 /** An engine's model provider; `logo` = models.dev slug (web: ModelProvider). */
 export type ModelProviderRow = { id: string; name: string; logo?: string };
+
+/** One folder level on the paired Mac, as the relay lists it (web: FsDir). */
+export type MacDir = {
+  /** Current branch when this folder is a git repo. */
+  branch?: string;
+  folders: { name: string; path: string; branch?: string }[];
+};
