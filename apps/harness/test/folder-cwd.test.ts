@@ -270,6 +270,15 @@ describe("AC-1 no folder keeps the harness default and stays silent", () => {
         text: `No folder: working in ${WORKDIR}`,
         dedupeKey: `sys:${conversation.id}:no-folder`,
       });
+      // Wait for the employee answer so the counts below are deterministic.
+      await waitFor(async () => {
+        const { messages } = await conversationMessages(
+          w.user,
+          channel.id,
+          conversation.id,
+        );
+        return messages.find((m) => m.authorKind === "employee");
+      }, "employee answer");
       const { messages } = await conversationMessages(
         w.user,
         channel.id,
@@ -290,7 +299,8 @@ describe("AC-1 no folder keeps the harness default and stays silent", () => {
         false,
       );
       expect(s?.last.text.startsWith("No folder:") ?? false).toBe(false);
-      expect(s?.messageCount).toBe(1); // root only — the note doesn't count
+      // root + the employee answer — the hidden note doesn't count.
+      expect(s?.messageCount).toBe(2);
     } finally {
       await w.cleanup();
     }
