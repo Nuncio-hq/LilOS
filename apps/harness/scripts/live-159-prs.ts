@@ -30,8 +30,7 @@ import {
 } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { RelayClient } from "@lilos/client-runtime";
 import type { ForgePrsResult } from "@lilos/contracts/host";
 
@@ -153,13 +152,17 @@ const launch = (name: string, cmd: string[], env: Record<string, string>) => {
     String(d)
       .trimEnd()
       .split("\n")
-      .forEach((l) => console.log(`  [${name}] ${l}`)),
+      .forEach((l) => {
+        console.log(`  [${name}] ${l}`);
+      }),
   );
   child.stderr?.on("data", (d) =>
     String(d)
       .trimEnd()
       .split("\n")
-      .forEach((l) => console.error(`  [${name}!] ${l}`)),
+      .forEach((l) => {
+        console.error(`  [${name}!] ${l}`);
+      }),
   );
   return child;
 };
