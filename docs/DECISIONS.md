@@ -60,6 +60,13 @@ PR does not exist.
 - **D-#3 `prototype/` is the UI source of truth** (= future `packages/ui` +
   mock data); a UI/UX change lands in a prototype PR first, Oscar accepts,
   then it is implemented. Not: hand-copied UI in the web app. — #3 · PR #14
+- **D-#246 The theme lives once in `packages/ui/src/theme.css`** — tokens,
+  glass, motion and the one-window rules; `apps/web` and `prototype/web` both
+  import it so they cannot drift (drift was the #230 regression class). The
+  app root always carries `.lilos-desktop` (merged window); `.lilos-float`
+  (browser tabs only, off `window.lilos.isDesktop`) adds the floating margin
+  + colour field — Electron's OS window is the frame. Not: a second copy of
+  the palette in an app entry, or wallpaper inside the desktop window. — #246
 
 ## Desktop
 - **D-#3 Desktop: Electron (later slice).** Chromium parity with web;

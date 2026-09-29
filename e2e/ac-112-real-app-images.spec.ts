@@ -411,6 +411,9 @@ test("AC-3 thumbnails render from stored refs, survive reload + reopen", async (
 
   // Reload: thumbnails resolve from the relay store, not from the blob URL.
   await page.reload();
+  // Focus has no sidebar by design (#246) — Back to DM lands on the panel,
+  // which has one.
+  await page.getByTitle("Back to DM").click();
   await expect(
     page.locator("aside").getByRole("button", { name: /default/i }),
   ).toBeVisible({ timeout: 30_000 });

@@ -18,6 +18,9 @@ const arg = (key) =>
 // in packages/contracts/src/app/desktop.ts — sandboxed preload requires only
 // expose electron's own modules, so the literals live here.
 contextBridge.exposeInMainWorld("lilos", {
+  // #246: the renderer floats its window only in a plain browser tab; inside
+  // Electron the OS window is the frame.
+  isDesktop: true,
   config: {
     relayWs: arg("relay"),
     relayToken: arg("token"),

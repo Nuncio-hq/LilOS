@@ -1559,7 +1559,7 @@ function QuestionCard({
         {(options.length === 0 || q.freeText) && (
           <button
             type="button"
-            className="rounded-md bg-foreground px-2 py-1 text-background"
+            className="rounded-md bg-primary px-2 py-1 text-primary-foreground"
             onClick={() => answer.trim() && onAnswer(answer.trim())}
           >
             Answer
@@ -1626,7 +1626,7 @@ function EmployeeProfileCard({
         <div className="mt-4 flex gap-2">
           <button
             type="button"
-            className="flex-1 rounded-md bg-foreground px-2 py-1.5 text-background text-sm"
+            className="flex-1 rounded-md bg-primary px-2 py-1.5 text-primary-foreground text-sm"
             onClick={onEdit}
           >
             Edit
