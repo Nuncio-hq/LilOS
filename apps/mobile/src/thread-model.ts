@@ -53,6 +53,7 @@ function turnApproval(
         employee: meta.employee,
         tone: toneOf(meta.employeeId),
         session: meta.session,
+        kind: open.request.kind,
         reason: askReason(open),
         command:
           open.request.kind === "approval" ? open.request.command : undefined,

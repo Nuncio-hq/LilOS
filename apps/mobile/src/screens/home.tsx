@@ -15,6 +15,7 @@ import { useStore } from "@nanostores/react";
 import { atom } from "nanostores";
 import { useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
+import { decide } from "../asks";
 import {
   ensureChannelSubscriptions,
   type HomeWire,
@@ -111,7 +112,7 @@ export function NeedsYouSlot({
 }: {
   placement: "regular" | "inline";
 }) {
-  const { wire } = useHomeWire();
+  const { client, wire } = useHomeWire();
   const nowMs = useNowMs();
   const approvals = useMemo(
     () => openAsks(wire.asks).map((a) => toApproval(a, wire, nowMs)),
@@ -121,13 +122,16 @@ export function NeedsYouSlot({
     <NeedsYouAccessory
       approvals={approvals}
       placement={placement}
+      onApprove={(id) => {
+        if (client) void decide(client, id, true);
+      }}
       onOpen={() => nav.navigate("Tabs", { screen: "Activity" })}
     />
   );
 }
 
 export function Activity() {
-  const { wire } = useHomeWire();
+  const { client, wire } = useHomeWire();
   const nowMs = useNowMs();
   const approvals = useMemo(
     () => openAsks(wire.asks).map((a) => toApproval(a, wire, nowMs)),
@@ -136,6 +140,12 @@ export function Activity() {
   return (
     <ApprovalsSheet
       approvals={approvals}
+      onApprove={(id) => {
+        if (client) void decide(client, id, true);
+      }}
+      onDeny={(id) => {
+        if (client) void decide(client, id, false);
+      }}
       onOpen={(askId) => {
         const ask = wire.asks.find((a) => a.id === askId);
         const channel = wire.channels.find((c) => c.id === ask?.channelId);
