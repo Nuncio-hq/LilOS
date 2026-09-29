@@ -224,7 +224,7 @@ describe("home-model (#155)", () => {
       employee: "Emp e1",
       session: "Patch README",
       command: "patch older",
-      reason: "patch wants to run: patch older",
+      reason: "patch older",
       age: "2m",
     });
     expect(approvals[1]).toMatchObject({ employee: "Emp e2", age: "1m" });

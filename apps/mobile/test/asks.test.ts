@@ -142,7 +142,7 @@ describe("asks — #158 approve/deny from the phone", () => {
     if (card.kind !== "agent") throw new Error("expected agent entry");
     expect(card.decided).toEqual({
       approved: true,
-      what: "build the app",
+      what: "bun run build",
     });
     expect(card.approval).toBeUndefined();
   });

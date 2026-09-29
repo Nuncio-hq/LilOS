@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { LayoutAnimation, Pressable, Text, View } from "react-native";
 import { AppText } from "../components/app-text";
-import { Card, CommandLine, Pill } from "../components/bits";
+import { Card, CommandLine, nonBreaking, Pill } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb, type OrbTone } from "../components/orb";
 import { Prose, Pulse } from "../components/prose";
+import { approvalSentence } from "./approval-copy";
 import { type PlanAction, PlanCard } from "./plan-card";
 import { StepRow, tool } from "./step-row";
 import { SubagentsCard } from "./subagents";
@@ -291,8 +292,9 @@ export function ApprovalCard({
             </AppText>
           </View>
         )}
+        {/* #264: one sentence + the command box — never the command twice. */}
         <AppText size="sm" className="leading-5">
-          {a.reason}
+          {approvalSentence(a)}
         </AppText>
         {a.command && (
           <View className="mt-2.5">
@@ -349,24 +351,22 @@ function Footer({ f }: { f: NonNullable<AgentEntry["footer"]> }) {
   );
 }
 
-/* After you choose, the ask shrinks to one line so the thread keeps a
-   record of what you allowed. */
+/* After you choose, the ask folds to a receipt so the thread keeps a
+   record of what you allowed — "You approved:" + the command in mono,
+   wrapped whole rather than truncated (#264). */
 function Receipt({ d }: { d: NonNullable<AgentEntry["decided"]> }) {
   return (
-    <View className="flex-row items-center gap-2 self-start rounded-full bg-fill py-1.5 pr-3 pl-2.5">
+    <View className="flex-row items-center gap-2 self-start rounded-2xl bg-fill py-1.5 pr-3 pl-2.5">
       <Icon
         name={d.approved ? "checkmark.circle.fill" : "xmark.circle.fill"}
         size={13}
         tone={d.approved ? "primary" : "muted-foreground"}
       />
-      <Text
-        numberOfLines={1}
-        className="shrink text-[13px] text-subtle-foreground"
-      >
+      <Text className="shrink text-[13px] text-subtle-foreground">
         <Text className="font-medium text-foreground">
-          {d.approved ? "You approved " : "You denied "}
+          {d.approved ? "You approved: " : "You denied: "}
         </Text>
-        <Text className="font-mono text-[12px]">{d.what}</Text>
+        <Text className="font-mono text-[12px]">{nonBreaking(d.what)}</Text>
       </Text>
     </View>
   );
