@@ -57,7 +57,7 @@ const MODELS: ModelOption[] = [
   { id: "orphan-1" },
 ];
 
-/* #194: a catalog shaped like Oscar's live `model.options` — several
+/* #194: a catalog shaped like a real Hermes `model.options` — several
    providers × many models with real Hermes id shapes (date pins, `[1m]`
    routes, `-fast` variants, `-900k` context ids, `devin/…` slashes). Names
    are what `listModels` derives; `custom-raw-id` is the id-only fallback. */
