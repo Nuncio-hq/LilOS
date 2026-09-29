@@ -2,10 +2,11 @@ import { z } from "zod";
 
 /**
  * Engine -> client asks. Per the parent feature (#5) the only request kinds
- * that cross the protocol are `approval` and `question`; secrets/sudo/vault
- * never leave an engine adapter. A request arrives inside a `request.opened`
- * event and is answered with the `request.respond` method, so it survives a
- * transport reconnect (replayed via `events.since` -> `openRequests`).
+ * that cross the protocol are `approval`, `question` and `plan`;
+ * secrets/sudo/vault never leave an engine adapter. A request arrives inside
+ * a `request.opened` event and is answered with the `request.respond` method,
+ * so it survives a transport reconnect (replayed via `events.since` ->
+ * `openRequests`).
  */
 
 export const ApprovalOption = z.enum(["once", "always", "deny"]);
@@ -38,16 +39,32 @@ export const QuestionRequest = z.strictObject({
 });
 export type QuestionRequest = z.infer<typeof QuestionRequest>;
 
+/**
+ * Issue #180 — the engine asks the client to decide on a proposed plan. The
+ * plan itself rides `plan.updated` events; this request only references the
+ * planId/version under decision, so the answer can still be routed after a
+ * reconnect replay.
+ */
+export const PlanRequest = z.strictObject({
+  kind: z.literal("plan"),
+  /** planId of the proposed plan snapshot under decision. */
+  planId: z.string().min(1),
+});
+export type PlanRequest = z.infer<typeof PlanRequest>;
+
 export const EngineRequest = z.discriminatedUnion("kind", [
   ApprovalRequest,
   QuestionRequest,
+  PlanRequest,
 ]);
 export type EngineRequest = z.infer<typeof EngineRequest>;
 
 /**
  * `request.respond` outcome. Approval -> `"once" | "always" | "deny" | "cancel"`;
- * question -> `"answer"` with `answer` set, or `"cancel"`. The engine validates
- * the outcome against the open request's kind.
+ * question -> `"answer"` with `answer` set, or `"cancel"`; plan ->
+ * `"approve" | "reject" | "change"` (change carries the requested edit in
+ * `answer`), or `"cancel"`. The engine validates the outcome against the
+ * open request's kind.
  */
 export const ApprovalOutcome = z.enum([
   "once",
@@ -55,6 +72,9 @@ export const ApprovalOutcome = z.enum([
   "deny",
   "cancel",
   "answer",
+  "approve",
+  "reject",
+  "change",
 ]);
 export type ApprovalOutcome = z.infer<typeof ApprovalOutcome>;
 

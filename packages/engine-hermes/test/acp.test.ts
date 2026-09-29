@@ -49,6 +49,14 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
     ) => Promise<acp.RequestPermissionResponse>;
   }
 
+  /* #180: the EngineRequest union gained `plan`; these tests only ever ask
+     approval requests, so narrow once instead of asserting at each site. */
+  const approvalRequest = (request: EngineRequest) => {
+    if (request.kind !== "approval")
+      throw new Error(`expected approval, got ${request.kind}`);
+    return request;
+  };
+
   const rig = (): Rig => {
     let openRequest: EngineRequest | undefined;
     let settle: (v: { outcome: ApprovalOutcome }) => void = () => {};
@@ -116,7 +124,11 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
   test("AC-1 always -> allow_always, once -> allow_once (never the session-scope option)", async () => {
     const r = rig();
     const pending = r.permission(HERMES_FULL);
-    expect(r.ask().request.options).toEqual(["once", "always", "deny"]);
+    expect(approvalRequest(r.ask().request).options).toEqual([
+      "once",
+      "always",
+      "deny",
+    ]);
     r.respond("always");
     expect(selected(await pending)).toBe("allow_always");
 
@@ -136,7 +148,7 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
   test("AC-2 'always' is not offered when Hermes withholds allow_always (no silent downgrade)", async () => {
     const r = rig();
     const pending = r.permission(HERMES_NO_PERMANENT);
-    const { request } = r.ask();
+    const request = approvalRequest(r.ask().request);
     expect(request.options).toEqual(["once", "deny"]);
     // A client that answers "always" anyway is rejected, not downgraded.
     expect(
@@ -152,7 +164,7 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
   test("AC-2 once-only lists (smart_denied) offer exactly once + deny", async () => {
     const r = rig();
     const pending = r.permission(HERMES_ONCE_ONLY);
-    expect(r.ask().request.options).toEqual(["once", "deny"]);
+    expect(approvalRequest(r.ask().request).options).toEqual(["once", "deny"]);
     r.respond("once");
     expect(selected(await pending)).toBe("allow_once");
   });
@@ -164,7 +176,11 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
       opt("permit_forever", "allow_always", "Permit forever"),
       opt("nope", "reject_once", "Nope"),
     ]);
-    expect(r.ask().request.options).toEqual(["once", "always", "deny"]);
+    expect(approvalRequest(r.ask().request).options).toEqual([
+      "once",
+      "always",
+      "deny",
+    ]);
     r.respond("always");
     expect(selected(await pending)).toBe("permit_forever");
   });
@@ -178,7 +194,7 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
       opt("allow_session", "allow_always", "Allow for session"),
       opt("deny", "reject_once", "Deny"),
     ]);
-    expect(r.ask().request.options).toEqual(["once", "deny"]);
+    expect(approvalRequest(r.ask().request).options).toEqual(["once", "deny"]);
     r.respond("always"); // invalid for the offered set; the pick must not land on it
     // (a real client can't send this — resolveOutcomeValid rejects it — but
     // the pick must still fail closed if it somehow did).
