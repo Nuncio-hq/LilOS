@@ -5,6 +5,8 @@ import type {
   ContentBlock,
   EngineRequest,
   McpServer,
+  PlanStep,
+  PlanStepStatus,
   SessionStartParams,
 } from "@lilos/contracts/engine";
 import { acpOfferedOutcomes, acpPickOptionId } from "./acp-permissions.js";
@@ -378,10 +380,47 @@ export class AcpDriver {
         s.usage = { ...prev, input: used };
         break;
       }
+      /* #180: ACP `plan` sessionUpdate carries the agent's own working list
+         (Hermes `todo`) as `entries[{content,status,priority}]` — a full
+         snapshot per update, mapped to `plan.updated` kind:"tasks" on a
+         stable per-turn planId. ACP plan entries have no cancelled status;
+         unfinished steps read cancelled via turn.completed on the client. */
+      case "plan": {
+        if (!s.turn) break;
+        const entries = u.entries as
+          | { content?: string; status?: string }[]
+          | undefined;
+        if (!entries?.length) break;
+        const plan = s.turn.plan ?? {
+          planId: `plan-${turnId}`,
+          version: 0,
+        };
+        s.turn.plan = plan;
+        plan.version += 1;
+        const steps: PlanStep[] = entries.map((e) => ({
+          text: e.content ?? "",
+          status: acpPlanStatus(e.status),
+        }));
+        s.emit("plan.updated", {
+          turnId,
+          planId: plan.planId,
+          kind: "tasks",
+          version: plan.version,
+          steps,
+        });
+        break;
+      }
       default:
         break;
     }
   }
+}
+
+/** #180: ACP plan-entry status -> contracts PlanStepStatus (ACP has none for cancelled). */
+function acpPlanStatus(status: string | undefined): PlanStepStatus {
+  if (status === "in_progress") return "in_progress";
+  if (status === "completed") return "completed";
+  return "pending";
 }
 
 function toAcpContent(b: ContentBlock): acp.ContentBlock {

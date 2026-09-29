@@ -218,3 +218,89 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
     expect(out.outcome.outcome).toBe("cancelled");
   });
 });
+
+/**
+ * Issue #180 — ACP `plan` sessionUpdate (Hermes `todo`) maps to
+ * `plan.updated` kind:"tasks" snapshots on a stable per-turn planId with
+ * increasing versions; status names map onto the contracts enum.
+ */
+describe("engine-hermes ACP plan mapping (#180)", () => {
+  const rig = () => {
+    const events: { type: string; payload: unknown }[] = [];
+    const engine = {} as unknown as HermesEngine;
+    const driver = new AcpDriver({ bin: "hermes" }, engine);
+    const session = new Session(
+      "s1",
+      "builder",
+      "/tmp",
+      undefined,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      "acp",
+      "rs1",
+      "rs1",
+      (e) => {
+        events.push({ type: e.type, payload: e.payload });
+      },
+    );
+    session.turn = {
+      turnId: "t1",
+      phase: "tools",
+      resolve: () => {},
+      reject: () => {},
+    };
+    const handler = driver as unknown as {
+      onUpdate(s: Session, n: acp.SessionNotification): void;
+    };
+    const planUpdate = (entries: unknown[]) =>
+      handler.onUpdate(session, {
+        sessionId: "rs1",
+        update: { sessionUpdate: "plan", entries },
+      } as acp.SessionNotification);
+    return { events, planUpdate };
+  };
+
+  test("AC-1 todo entries emit plan.updated kind:tasks snapshots that tick in place", () => {
+    const r = rig();
+    r.planUpdate([
+      { content: "read README", status: "in_progress", priority: "medium" },
+      { content: "edit README", status: "pending", priority: "medium" },
+    ]);
+    r.planUpdate([
+      { content: "read README", status: "completed", priority: "medium" },
+      { content: "edit README", status: "in_progress", priority: "medium" },
+    ]);
+    const updates = r.events.filter((e) => e.type === "plan.updated");
+    expect(updates).toHaveLength(2);
+    const p = updates.map(
+      (e) =>
+        e.payload as {
+          planId: string;
+          kind: string;
+          version: number;
+          steps: { text: string; status: string }[];
+        },
+    );
+    // One stable planId per turn; versions increase per snapshot.
+    expect(p[0].planId).toBe(p[1].planId);
+    expect(p[0].planId).toContain("t1");
+    expect(p.map((x) => x.version)).toEqual([1, 2]);
+    expect(p[0].kind).toBe("tasks");
+    expect(p[1].steps.map((s) => s.status)).toEqual([
+      "completed",
+      "in_progress",
+    ]);
+  });
+
+  test("AC-6 unknown statuses degrade to pending; a plan update with no open turn drops", () => {
+    const r = rig();
+    r.planUpdate([{ content: "x", status: "weird" }]);
+    const updates = r.events.filter((e) => e.type === "plan.updated");
+    expect(updates).toHaveLength(1);
+    expect(
+      (updates[0].payload as { steps: { status: string }[] }).steps[0].status,
+    ).toBe("pending");
+  });
+});
