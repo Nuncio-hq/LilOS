@@ -54,7 +54,7 @@ export type BrowserPanelProps = {
   tabs: BrowserTab[];
   activeId: string;
   emp: EmpFn;
-  /** Threads Oscar can hand one of his tabs to (their agent then owns it).
+  /** Threads the user can hand one of his tabs to (their agent then owns it).
       Also names the tab groups. Omit to hide "Hand this tab to…". */
   threads?: BrowserThread[];
   history: BrowserHistoryItem[];
@@ -97,7 +97,7 @@ const stepZoom = (z: number, dir: 1 | -1) => {
   return ZOOMS[Math.min(Math.max((i < 0 ? 5 : i) + dir, 0), ZOOMS.length - 1)]!;
 };
 
-/* The LilOS Browser (issue #214): Oscar's everyday browser, shared with
+/* The LilOS Browser (issue #214): the user's everyday browser, shared with
    agents. Opens beside the chat (panel) or as its own window. Props in,
    callbacks out; the app owns pages, history and downloads. An agent's tab
    shows who drives it and what it's doing, with Take control one click away. */

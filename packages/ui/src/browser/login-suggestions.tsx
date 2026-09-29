@@ -3,7 +3,7 @@ import type { SavedLogin } from "./browser-types";
 
 /* The saved-login dropdown the browser shows under a focused sign-in field
    (issue #214 AC-7). It lists usernames only: the password is filled by the
-   browser on Oscar's pick and never appears in the page's view model, so no
+   browser on the user's pick and never appears in the page's view model, so no
    agent tool can read it (#218). */
 export function LoginSuggestions({
   site,

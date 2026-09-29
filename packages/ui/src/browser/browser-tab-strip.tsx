@@ -30,7 +30,7 @@ export function Favicon({ tab }: { tab: BrowserTab }) {
   );
 }
 
-/* Tabs across the top. Oscar's own tabs come first; every thread's tabs
+/* Tabs across the top. the user's own tabs come first; every thread's tabs
    follow as a group chip (employee avatar + thread title + count, a live dot
    while its agent drives) that folds open on click, like Chrome tab groups.
    In thread mode (a thread's Workbench) all tabs belong to that one thread,
