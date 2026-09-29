@@ -139,9 +139,9 @@ export function EmployeesHomeScreen({
 }
 
 /* The oldest request waiting on you, as the tab bar's bottom accessory (the
-   Music mini-player slot): one tap approves it, tapping the rest opens
-   Activity. `inline` = the tab bar is minimized, so only a short summary
-   fits beside it. */
+   Music mini-player slot): tapping it opens Activity — and when a handler is
+   passed (D-#19), one tap approves it. `inline` = the tab bar is minimized,
+   so only a short summary fits beside it. */
 export function NeedsYouAccessory({
   approvals,
   placement,
@@ -150,7 +150,8 @@ export function NeedsYouAccessory({
 }: {
   approvals: Approval[];
   placement: "regular" | "inline";
-  onApprove: (id: string) => void;
+  /** Approve pill — absent while approval lands in a later slice (#158). */
+  onApprove?: (id: string) => void;
   onOpen: () => void;
 }) {
   const top = approvals[0];
@@ -209,22 +210,24 @@ export function NeedsYouAccessory({
           {what}
         </AppText>
       </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Approve ${top.employee}`}
-        onPress={() => onApprove(top.id)}
-        hitSlop={6}
-        className="h-8 items-center justify-center rounded-full bg-primary px-3.5 active:opacity-70"
-      >
-        <AppText
-          size="sm"
-          weight="semibold"
-          tone="inverse"
-          className="text-[14px]"
+      {onApprove && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Approve ${top.employee}`}
+          onPress={() => onApprove(top.id)}
+          hitSlop={6}
+          className="h-8 items-center justify-center rounded-full bg-primary px-3.5 active:opacity-70"
         >
-          Approve
-        </AppText>
-      </Pressable>
+          <AppText
+            size="sm"
+            weight="semibold"
+            tone="inverse"
+            className="text-[14px]"
+          >
+            Approve
+          </AppText>
+        </Pressable>
+      )}
     </Pressable>
   );
 }
