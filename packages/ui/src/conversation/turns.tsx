@@ -146,7 +146,7 @@ export function TurnSteps({
       <TaskTrigger title={plural(steps.length, "step")}>
         <div className="flex w-fit cursor-pointer items-center gap-1.5 text-muted-foreground text-xs transition-colors hover:text-foreground">
           {running ? (
-            <CircleDotIcon className="size-3.5 animate-pulse text-amber-500" />
+            <CircleDotIcon className="size-3.5 animate-pulse text-work" />
           ) : (
             <CheckIcon className="size-3.5 text-emerald-600" />
           )}

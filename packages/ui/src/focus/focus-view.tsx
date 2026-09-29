@@ -439,7 +439,7 @@ export function FocusView({
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {running && (
             <span className="hidden items-center gap-1 text-muted-foreground text-xs sm:flex">
-              <CircleDotIcon className="size-3 animate-pulse text-amber-500" />
+              <CircleDotIcon className="size-3 animate-pulse text-work" />
               {live?.phase ? PHASE_LABEL[live.phase] : "working"}
             </span>
           )}
@@ -479,7 +479,7 @@ export function FocusView({
               {pr.status === "merged" ? (
                 <GitMergeIcon className="text-violet-600" />
               ) : prPending ? (
-                <CircleDashedIcon className="animate-spin text-amber-500 [animation-duration:3s]" />
+                <CircleDashedIcon className="animate-spin text-work [animation-duration:3s]" />
               ) : (
                 <GitPullRequestIcon className="text-emerald-600" />
               )}
@@ -670,7 +670,7 @@ export function FocusView({
                           <QueueItem key={t.content} className="py-0.5">
                             <div className="flex items-center gap-2">
                               {t.status === "in_progress" ? (
-                                <CircleDotIcon className="size-2.5 shrink-0 animate-pulse text-amber-500" />
+                                <CircleDotIcon className="size-2.5 shrink-0 animate-pulse text-work" />
                               ) : off ? (
                                 <CheckIcon className="size-2.5 shrink-0 text-emerald-600" />
                               ) : (

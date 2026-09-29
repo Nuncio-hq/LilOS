@@ -115,7 +115,7 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "min-h-0 flex-col border-r bg-sidebar text-sidebar-foreground",
+        "min-h-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground backdrop-blur-2xl backdrop-saturate-150",
         navOpen
           ? "fixed inset-y-0 left-0 z-40 flex w-[264px] shadow-2xl"
           : hiddenWhenClosed
@@ -125,8 +125,8 @@ export function Sidebar({
               "hidden w-[264px] shrink-0 lg:flex",
       )}
     >
-      <div className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-        <div className="grid size-7 place-items-center rounded-md bg-foreground font-bold text-background text-xs">
+      <div className="flex h-14 shrink-0 items-center gap-2 px-4">
+        <div className="grid size-7 place-items-center rounded-[9px] bg-gradient-to-b from-teal-500 to-teal-700 font-semibold text-[11px] text-white shadow-sm">
           {companyInitials(company)}
         </div>
         <div className="min-w-0 truncate font-semibold">{company}</div>
@@ -186,7 +186,7 @@ export function Sidebar({
             <div className="space-y-1 px-2">
               {projects.map((p) => (
                 <Collapsible key={p.id} defaultOpen={isProjectDefaultOpen(p)}>
-                  <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 font-medium hover:bg-sidebar-accent">
+                  <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 font-medium text-[13.5px] hover:bg-sidebar-accent">
                     <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform group-data-[panel-open]:rotate-90" />
                     <FolderGit2Icon className="size-4 text-muted-foreground" />
                     {p.name}
@@ -194,7 +194,7 @@ export function Sidebar({
                       {p.key}
                     </span>
                   </CollapsibleTrigger>
-                  <CollapsibleContent className="ml-4 border-l pl-2">
+                  <CollapsibleContent className="ml-4 pl-2">
                     {folders
                       .filter((f) => f.project === p.name)
                       .map((f) => (
@@ -234,10 +234,10 @@ export function Sidebar({
                 key={e.id}
                 onClick={() => onGoDM(e.id)}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 hover:bg-sidebar-accent",
+                  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[13.5px] hover:bg-sidebar-accent",
                   view.kind === "dm" &&
                     view.id === e.id &&
-                    "bg-sidebar-accent font-medium",
+                    "bg-primary/12 font-medium text-tint-text hover:bg-primary/15",
                 )}
               >
                 <HermesAvatar
@@ -251,7 +251,7 @@ export function Sidebar({
                     <span
                       data-badge-approvals
                       title={`${b.approvals} waiting on your approval`}
-                      className="shrink-0 rounded-full bg-amber-500 px-1.5 text-[11px] text-white"
+                      className="shrink-0 rounded-full bg-primary px-1.5 font-semibold text-[11px] text-primary-foreground"
                     >
                       {b.approvals === 1
                         ? "needs you"
@@ -262,7 +262,7 @@ export function Sidebar({
                     <span
                       data-badge-running
                       title={`${b.running} running`}
-                      className="shrink-0 rounded-full bg-blue-600 px-1.5 text-[11px] text-white"
+                      className="shrink-0 rounded-full bg-[#007aff]/12 px-1.5 font-semibold text-[#007aff] text-[11px] dark:bg-[#0a84ff]/20 dark:text-[#64aaff]"
                     >
                       {b.running}
                     </span>
@@ -277,7 +277,7 @@ export function Sidebar({
           {onHire && (
             <button
               onClick={onHire}
-              className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+              className="mt-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[13.5px] text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
             >
               <UserPlusIcon className="size-4" /> Hire employee
             </button>
@@ -289,7 +289,7 @@ export function Sidebar({
           type="button"
           onClick={onPairPhone}
           data-pairphone-open
-          className="flex w-full items-center gap-2 border-t px-4 py-2 text-left text-xs hover:bg-sidebar-accent"
+          className="flex w-full items-center gap-2 border-sidebar-border border-t px-4 py-2 text-left text-xs hover:bg-sidebar-accent"
         >
           <SmartphoneIcon className="size-3.5 text-muted-foreground" />
           Pair phone
@@ -298,7 +298,7 @@ export function Sidebar({
       {status && onOpenStatus && (
         <StatusRow components={status} onOpen={onOpenStatus} />
       )}
-      <div className="flex shrink-0 items-center gap-2 border-t px-3 py-2.5">
+      <div className="flex shrink-0 items-center gap-2 border-sidebar-border border-t px-3 py-2.5">
         <HumanAvatar human={me} size="sm" className="rounded-full" />
         <span className="min-w-0 truncate font-medium text-sm">{me.name}</span>
         {preview}

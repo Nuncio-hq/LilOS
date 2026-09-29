@@ -410,7 +410,7 @@ export function EmployeeHome({
             className="mt-1 flex w-fit max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border bg-background px-2 py-1.5 text-left text-xs hover:border-foreground/30 [&>*]:shrink-0 [&>*]:whitespace-nowrap"
           >
             <HermesAvatar name={e.name} className="size-5" />
-            <span className="font-medium text-blue-600">
+            <span className="font-medium text-tint-text">
               {t.replies.length} {t.replies.length === 1 ? "reply" : "replies"}
             </span>
             <code className="rounded bg-muted px-1 text-muted-foreground">
@@ -439,7 +439,7 @@ export function EmployeeHome({
                     : "text-muted-foreground",
                 )}
               >
-                <CircleDotIcon className="size-3 animate-pulse text-amber-500" />
+                <CircleDotIcon className="size-3 animate-pulse text-work" />
                 {last?.phase ? PHASE_LABEL[last.phase] : "working"}
               </span>
             ) : (

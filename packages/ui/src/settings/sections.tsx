@@ -69,6 +69,7 @@ export type AboutProps = {
 
 /* Avatar swatches — Tailwind bg-* classes (same space as Human.color). */
 const AVATAR_COLORS: { color: string; label: string }[] = [
+  { color: "bg-teal-600", label: "Teal" },
   { color: "bg-blue-600", label: "Blue" },
   { color: "bg-cyan-600", label: "Cyan" },
   { color: "bg-emerald-600", label: "Emerald" },

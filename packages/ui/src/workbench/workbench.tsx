@@ -397,7 +397,7 @@ export function Workbench({
               <SquareTerminalIcon />
               Terminal
               {a.termRunning && (
-                <CircleDotIcon className="size-3 animate-pulse text-amber-500" />
+                <CircleDotIcon className="size-3 animate-pulse text-work" />
               )}
             </TabsTrigger>
           )}
@@ -412,7 +412,7 @@ export function Workbench({
               <ListChecksIcon />
               Plan
               {plan.status === "proposed" ? (
-                <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+                <span className="size-1.5 animate-pulse rounded-full bg-work" />
               ) : (
                 plan.status === "approved" && (
                   <span className="font-mono text-[11px] text-muted-foreground">

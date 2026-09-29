@@ -67,7 +67,7 @@ export function Row({
     <div
       className={cn(
         "group relative grid grid-cols-[36px_minmax(0,1fr)] gap-3 px-3 py-2 hover:bg-muted/40 sm:px-5",
-        active && "bg-blue-50/70 hover:bg-blue-50/70",
+        active && "bg-primary/7 hover:bg-primary/7",
       )}
     >
       {emp(from) ? (

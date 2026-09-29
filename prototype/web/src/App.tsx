@@ -128,7 +128,7 @@ const FS: Record<string, FsDir> = {
 const DISCOVERED = ["~/Desktop/Oscar/crew", "~/Desktop/Oscar/SamProjects/qrit-landing", "~/Developer/hermes-agent"]
 
 const HUMANS: Record<string, Human> = {
-  oscar: { name: "Oscar", color: "bg-blue-600" },
+  oscar: { name: "Oscar", color: "bg-teal-600" },
   minh: { name: "Minh", color: "bg-cyan-600", guest: true },
 }
 

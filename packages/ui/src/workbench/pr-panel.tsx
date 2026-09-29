@@ -34,7 +34,7 @@ import { DiffStat, DiffView } from "./diff-view";
 type PrTab = "changes" | "description" | "discussion" | "commits" | "checks";
 const CHECK_ICON: Record<CheckRun["status"], React.ReactNode> = {
   pending: (
-    <CircleDashedIcon className="size-4 animate-spin text-amber-500 [animation-duration:3s]" />
+    <CircleDashedIcon className="size-4 animate-spin text-work [animation-duration:3s]" />
   ),
   passed: <CircleCheckIcon className="size-4 text-emerald-600" />,
   failed: <CircleXIcon className="size-4 text-red-600" />,
@@ -217,7 +217,7 @@ export function PrPanel({
             ) : failed ? (
               <CircleXIcon className="size-4 text-red-600" />
             ) : pending ? (
-              <CircleDashedIcon className="size-4 animate-spin text-amber-500 [animation-duration:3s]" />
+              <CircleDashedIcon className="size-4 animate-spin text-work [animation-duration:3s]" />
             ) : (
               <CircleCheckIcon className="size-4 text-emerald-600" />
             )}
