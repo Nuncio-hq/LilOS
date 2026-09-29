@@ -385,6 +385,10 @@ export class EngineClient {
   ): Promise<void> {
     const state = feed.get();
     try {
+      /* A feed that never synced replays from 0, not from the live
+         watermark: coverageSeq only advances in order, so mid-turn events
+         landing before the first resync can't skip the prefix — turn text,
+         plans, requests (#180 AC-1). */
       const res = await this.request<EventsSinceResult>("events.since", {
         sessionId: state.sessionId,
         after: state.coverageSeq,

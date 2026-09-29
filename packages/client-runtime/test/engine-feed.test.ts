@@ -163,6 +163,56 @@ describe("EngineClient session feed (#84 ac-32 race)", () => {
     expect(feed.get().openRequests).toEqual([]);
   });
 
+  it("AC-1 a feed created before ready replays from 0, not the live watermark", async () => {
+    const { socket, client } = makeClient();
+    const pending = client.connect();
+    await Promise.resolve();
+    socket.openSocket();
+    await Promise.resolve();
+
+    /* Reload-mid-turn (#180): the feed atom exists while connect() is still
+       resolving; live events bump latestSeq before the deferred resync. */
+    const feed = client.sessionFeed("s1");
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "event",
+      params: openedEvent(5, "r1"),
+    });
+    expect(feed.get().latestSeq).toBe(5);
+
+    socket.respondTo("describe", DESCRIBE);
+    await pending;
+    await vi.waitFor(() =>
+      expect(socket.sawRequest("events.since")).toBe(true),
+    );
+    /* after must be 0 — replaying from the live watermark (5) drops every
+       earlier event: turn.started, early deltas, plan.updated. */
+    const since = socket.sent
+      .map(
+        (raw) =>
+          JSON.parse(raw) as { method?: string; params?: { after?: number } },
+      )
+      .find((f) => f.method === "events.since");
+    expect(since?.params?.after).toBe(0);
+
+    socket.respondTo("events.since", {
+      events: [openedEvent(2, "r0"), openedEvent(5, "r1")],
+      latestSeq: 5,
+      truncated: false,
+      openRequests: [
+        { requestId: "r0", turnId: "t1", request: APPROVAL, seq: 2 },
+        { requestId: "r1", turnId: "t1", request: APPROVAL, seq: 5 },
+      ],
+      snapshot: SNAPSHOT,
+    });
+    await vi.waitFor(() => expect(feed.get().synced).toBe(true));
+    expect(feed.get().events.map((e) => e.seq)).toEqual([2, 5]);
+    expect(feed.get().openRequests.map((r) => r.requestId)).toEqual([
+      "r0",
+      "r1",
+    ]);
+  });
+
   it("#179 retries a failed events.since instead of bricking the feed", async () => {
     vi.useFakeTimers();
     const { socket, client } = makeClient();
