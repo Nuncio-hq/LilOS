@@ -33,6 +33,7 @@ import type {
   FileMention,
   MessageHit,
   ModelChoice,
+  ModelOption,
   ModelPickerExtras,
   Msg,
   Reply,
@@ -963,6 +964,7 @@ export function DmPage() {
           name={uiEmp.name}
           profile={uiEmp.profile}
           model={uiEmp.model}
+          models={catalog.length ? catalog : undefined}
           instructions={uiEmp.instructions}
           onEdit={() => {
             setEditError(null);
@@ -1087,6 +1089,7 @@ function EmployeeProfileCard({
   name,
   profile,
   model,
+  models,
   instructions,
   onEdit,
   onClose,
@@ -1094,6 +1097,7 @@ function EmployeeProfileCard({
   name: string;
   profile: string;
   model: string;
+  models?: ModelOption[];
   instructions: string;
   onEdit: () => void;
   onClose: () => void;
@@ -1117,7 +1121,10 @@ function EmployeeProfileCard({
           </div>
           <div className="flex gap-2">
             <dt className="w-20 text-muted-foreground">Model</dt>
-            <dd className="font-mono">{model || "engine default"}</dd>
+            <dd className="font-mono">
+              {models?.find((m) => m.id === model)?.name ??
+                (model || "engine default")}
+            </dd>
           </div>
           <div className="flex gap-2">
             <dt className="w-20 text-muted-foreground">Soul</dt>
