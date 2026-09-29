@@ -1,6 +1,6 @@
 ---
 name: testing-mobile-simulator
-description: How to test the LilOS iOS app (apps/mobile) end-to-end in Simulator on this macOS VM — picking the right booted device, simctl app control, the relay, pairing state, cache/offline behavior, and evidence capture quirks.
+description: How to test the LilOS iOS app (apps/mobile) end-to-end in Simulator on this macOS VM — picking the right booted device, simctl app control, the relay, pairing state, cache/offline behavior, evidence capture quirks, and plan/task-list leg timings.
 ---
 
 # Testing the LilOS iOS app in Simulator on the macOS VM
@@ -12,7 +12,8 @@ JS bundle; the relay provides data.
 ## Pick the right booted device
 
 Several simulators of the SAME model name (e.g. two "iPhone 17") can be booted;
-window titles don't disambiguate them. Find the one that has the app installed:
+window titles don't disambiguate them — but the subtitle iOS version can
+(e.g. "iPhone 17 iOS 27.0" vs "iOS 26.5"). Find the one that has the app installed:
 
 ```sh
 xcrun simctl list devices | grep Booted
@@ -20,14 +21,19 @@ xcrun simctl listapps <udid> | grep -i lilos   # the device that lists the app o
 xcrun simctl get_app_container <udid> com.nuncio.lilos.mobile app
 ```
 
+A click on a back Simulator window's title bar brings THAT device forward and
+steals subsequent taps — re-check the frontmost title bar after any click near
+a window edge, and re-foreground the right window before continuing.
+
 ## App control (from the shell — drives the visible Simulator window)
 
 ```sh
 D=<udid>
 xcrun simctl terminate $D com.nuncio.lilos.mobile   # true cold start on next launch
-xcrun simctl launch   $D com.nuncio.lilos.mobile    # prints new pid
-xcrun simctl io $D screenshot /tmp/shot.png          # full-res device still
+xcrun simctl launch   $D com.nuncio.lilos.mobile    # prints new pid; foregrounds a suspended app
+xcrun simctl io $D screenshot /tmp/shot.png          # full-res device still (~0.8–1s latency)
 xcrun simctl openurl  $D 'lilos://pair?host=<h:port>&name=<n>#code=<c>'
+xcrun simctl ui       $D appearance dark|light       # theme legs; no reboot needed
 ```
 
 **`xcrun simctl io $D recordVideo` produces 0-byte files on this VM** — do not use
@@ -108,17 +114,53 @@ Token-scope scripts cannot reproduce phone-only failures. To act as a phone:
 `POST http://<host>/pair/exchange {"code","name":"probe"}` → `{deviceId,
 credential}`, then `new RelayClient({url, device: {deviceId, credential}})`.
 
-## Capturing transient states (Working rows, ~1–2s)
+## Capturing transient states (~1–2s)
 
-engine-fake `--tick 25` ends a question turn in ~1.5–2s — too fast to tap back
-and screenshot by hand, and `simctl io` takes ~0.8–1s per frame. Run a burst
-loop as a BACKGROUND exec while you drive the UI, then pick the right frame:
+engine-fake `--tick 25` ends a question turn in ~1.5–2s and `plan: tasks` in
+~1s — too fast to catch mid-tick with `simctl io` (~0.8–1s per frame). Two
+reliable options:
+
+- `plan: slow` — same Tasks card paced ~1.5s/item (~6s total at tick 25):
+  plenty of window for a mid-tick still AND a Stop tap.
+- Burst loop as a BACKGROUND exec while you drive the UI, pick the right frame:
 
 ```sh
 for i in $(seq 1 12); do xcrun simctl io $D screenshot /tmp/w-$i.png; done
 ```
 
-The agent screen recording (15fps) is the primary evidence; the still is a bonus.
+**Verify each still actually shows the intended state** — a simctl screenshot
+landed AFTER the turn ended silently captures the done state instead of the
+mid-tick one (compare md5s or open the file). The agent screen recording (15fps)
+is the primary evidence; the still is a bonus.
+
+## Composer typing & the Stop button (#157/#182 legs)
+
+- Tap coordinates land unreliably a few px off the TextInput — after tapping the
+  composer, screenshot to confirm a caret before typing (DM composer input
+  ≈ devY 1420; thread composer ≈ devY 1400; retry adjacent px).
+- With a hardware keyboard connected (the default), typed text lands with no
+  software keyboard; iOS still autocapitalizes the first letter (harmless —
+  `plan:` prompt regex is case-insensitive).
+- The composer's Stop button replaces Send ONLY while the draft is EMPTY and a
+  turn is running. For `plan: slow` (~6s), tap Stop ~2.5s after send — a tap
+  at ~4s races the turn end and silently "fails" as a clean completion.
+- iOS keyboard Return does NOT send — tap the send arrow.
+- iOS autocorrect may rewrite prompts on send — check the sent bubble if the
+  text matters.
+
+## RN errors invisible to screenshots
+
+Dev-client console.error toasts truncate ("Encountered two children with the
+same ke…"). Pull the full message + key/stack from the device log:
+
+```sh
+xcrun simctl spawn $D log show --last 15m --style compact \
+  --predicate 'process == "LilOS" AND subsystem == "com.facebook.react.log"'
+```
+
+React duplicate-key warnings refire on every offending render — reopening the
+component reproduces them (seen live: PlanSheet 'Earlier versions' keyed on
+`planId`, identical across versions → 'plan-t1' logged on each sheet open).
 
 ## Expected UI landmarks (issue #154 surface)
 
@@ -142,10 +184,6 @@ The agent screen recording (15fps) is the primary evidence; the still is a bonus
   step: patch/write_file/git): approving an ask resumes the turn until the
   next ask opens. `plan: propose` raises a kind:"plan" ask; engine-fake never
   emits kind:"question" asks — that UI path is unreachable live.
-- iOS keyboard Return does NOT send the chat composer — tap the send arrow.
-- iOS autocorrect may rewrite prompts on send ("readme" → "resume") —
-  harmless for the mutating-prompt regex but check the sent bubble if the
-  text matters.
 - To answer an open ask as a second device (two-device ACs), from the repo
   root with the relay home at <home>:
 
@@ -155,6 +193,26 @@ bun -e 'import {RelayClient} from "./packages/client-runtime/src/index";import{r
 
   The phone's ask card folds to its receipt on its own within ~1 update.
 - `bun` may not be on PATH in agent shells — it's at `~/.bun/bin/bun`.
+
+## Plan & task-list landmarks (issue #182 surface)
+
+- Composer scripts: `plan: tasks` = 3-item working list, ticks then folds
+  "Tasks done · 3/3 done" (never asks); `plan: slow` = same paced ~1.5s/item
+  for Stop legs; `plan: propose` = 4-step proposal gated on a `plan` ask
+  (Approve/Change…/Reject pills; goal + Risks on the waiting card).
+- "Change…" prefills the composer `Change the plan: ` + focuses; sending that
+  draft answers the ask (outcome change — NO new bubble) and v2 lands with the
+  answer folded in as a "Your change: <text>" step (5 steps); v1 folds to
+  "Replaced by v2" as its own card ABOVE the turn.
+- Waiting plan asks group the thread under "Needs you" on the DM list; it
+  moves to "Done" on resolve. Tapping any plan/tasks card opens the Plan
+  sheet — newest plan as headline, all earlier versions under "Earlier
+  versions", per-step files, Risks.
+- `turns.interrupt` mid-run leaves pending/in-progress steps struck-through
+  cancelled: "Stopped · n/3" + "You stopped this turn" receipt + "⚠ Stopped."
+- AC-5 restore: `⇧⌘H` (Device → Home) then `simctl launch $D com.nuncio.lilos.mobile`
+  re-foregrounds the suspended app onto the same thread — plan rows rebuild
+  via session.events replay.
 
 ## Desktop hygiene before recording
 
