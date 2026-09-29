@@ -9,10 +9,11 @@ import { Screen } from "../components/screen";
 import type { MacLink } from "./mac-status-card";
 
 /* The paired Mac + Forget it. `children` = extra sections (the prototype's
-   state switcher). */
+   state switcher). `app` adds an About section — which build is on the phone. */
 export function SettingsScreen({
   title,
   mac,
+  app,
   onForget,
   onOpenMac,
   children,
@@ -25,6 +26,11 @@ export function SettingsScreen({
     routeLabel: string;
     /** With a link state the row shows connection status. */
     link?: MacLink;
+  };
+  /** About row: app name + label like "0.1.0 (build 6)" from the bundle. */
+  app?: {
+    name: string;
+    versionLabel: string;
   };
   onForget: () => void;
   /** Opens the Mac sheet (status, versions, Forget). Replaces the Forget row. */
@@ -82,6 +88,14 @@ export function SettingsScreen({
                 </AppText>
               </Row>
             )}
+          </Section>
+        )}
+        {app && (
+          <Section title="About">
+            <Row>
+              <AppText className="flex-1">{app.name}</AppText>
+              <AppText tone="muted">{app.versionLabel}</AppText>
+            </Row>
           </Section>
         )}
         {children}

@@ -129,19 +129,23 @@ export function Sidebar({
               "hidden w-[264px] shrink-0 lg:flex",
       )}
     >
-      <div className="flex h-14 shrink-0 items-center gap-2 px-4">
-        <div className="grid size-7 place-items-center rounded-[9px] bg-gradient-to-b from-teal-500 to-teal-700 font-semibold text-[11px] text-white shadow-sm">
+      <div className="lilos-drag flex h-14 shrink-0 items-center gap-2 px-4">
+        <div className="grid size-7 shrink-0 place-items-center rounded-[9px] bg-gradient-to-b from-teal-500 to-teal-700 font-semibold text-[11px] text-white shadow-sm">
           {companyInitials(company)}
         </div>
-        <div className="min-w-0 truncate font-semibold">{company}</div>
-        {buildLabel && (
-          <span
-            data-build-label
-            className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-[10px] text-amber-700 dark:text-amber-400"
-          >
-            {buildLabel}
-          </span>
-        )}
+        {/* The dev badge sits under the name — beside it it ate most of the
+            name's width once the desktop chrome reserves the lights strip. */}
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-semibold">{company}</div>
+          {buildLabel && (
+            <span
+              data-build-label
+              className="rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-[10px] text-amber-700 dark:text-amber-400"
+            >
+              {buildLabel}
+            </span>
+          )}
+        </div>
         {!realApp && (
           <Button variant="ghost" size="icon-sm" className="ml-auto">
             <BellIcon />

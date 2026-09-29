@@ -832,6 +832,7 @@ function Settings() {
   return (
     <SettingsScreen
       title="Settings"
+      app={{ name: "LilOS", versionLabel: "0.1.0 (build 1)" }}
       mac={
         mac && {
           name: mac.name,

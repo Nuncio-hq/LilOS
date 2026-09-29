@@ -13,6 +13,7 @@ import {
   DESKTOP_NOTIFY_CHANNEL,
   DESKTOP_OPEN_CONVERSATION_CHANNEL,
   DESKTOP_OPEN_SETTINGS_CHANNEL,
+  DESKTOP_THEME_CHANNEL,
   type DesktopUpdateOutcome,
 } from "@lilos/contracts/app";
 import {
@@ -21,6 +22,7 @@ import {
   ipcMain,
   Menu,
   Notification,
+  nativeTheme,
   shell,
 } from "electron";
 import { diskVersionStore, helperServiceControl } from "./control";
@@ -28,6 +30,7 @@ import { appMenuTemplate } from "./menu";
 import { postDesktopNotification } from "./notify";
 import { checkForUpdate } from "./update";
 import { settlePendingUpdate } from "./update/state";
+import { nativeWindowChrome, watchWindowChrome } from "./window-chrome";
 
 /**
  * LilOS shell: registers the relay + harness launch agents (AC-1/#34),
@@ -414,6 +417,7 @@ function createAppWindow(): void {
     width: 1280,
     height: 840,
     title: "LilOS",
+    ...nativeWindowChrome("app"),
     webPreferences: {
       preload: join(UI_DIR, "preload.cjs"),
       contextIsolation: true,
@@ -426,6 +430,7 @@ function createAppWindow(): void {
       ],
     },
   });
+  watchWindowChrome(win);
   mainWindow = win;
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = undefined;
@@ -451,8 +456,10 @@ function createStatusWindow(): void {
     width: 760,
     height: 560,
     title: "LilOS Status",
+    ...nativeWindowChrome("status"),
     webPreferences: { preload: join(UI_DIR, "preload.cjs") },
   });
+  watchWindowChrome(statusWin);
   statusWin.on("closed", () => {
     statusWin = undefined;
   });
@@ -514,6 +521,14 @@ ipcMain.handle("lilos:about", () => ({
   version: app.getVersion(),
   build: currentBuild(),
 }));
+
+// #232: the app's theme drives the window's appearance — vibrancy material,
+// traffic lights and prefers-color-scheme — so the sidebar stays readable in
+// either direction (dark app on light OS and vice versa).
+ipcMain.on(DESKTOP_THEME_CHANNEL, (_e, raw: unknown) => {
+  if (raw === "light" || raw === "dark" || raw === "system")
+    nativeTheme.themeSource = raw;
+});
 
 app.whenReady().then(async () => {
   // #35: settle a pending swap before anything else opens. On the freshly

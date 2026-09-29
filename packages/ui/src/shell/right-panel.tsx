@@ -39,7 +39,7 @@ export function RightPanel({
         onValueChange={(v) => onTab(v as "thread" | "employee" | "tickets")}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
-        <div className="flex h-14 shrink-0 items-center border-b px-3">
+        <div className="lilos-drag flex h-14 shrink-0 items-center border-b px-3">
           <TabsList>
             <TabsTrigger value="thread">Thread</TabsTrigger>
             <TabsTrigger value="employee">Employee</TabsTrigger>

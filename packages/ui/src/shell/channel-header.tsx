@@ -28,7 +28,7 @@ export function ChannelHeader({
 }) {
   return (
     <>
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3 sm:gap-3 sm:px-5">
+      <header className="lilos-drag flex h-14 shrink-0 items-center gap-2 border-b px-3 sm:gap-3 sm:px-5">
         <Button
           variant="ghost"
           size="icon-sm"

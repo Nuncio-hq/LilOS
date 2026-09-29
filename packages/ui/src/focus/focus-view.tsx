@@ -340,7 +340,7 @@ export function FocusView({
 
   return (
     <main className="lilos-glass flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-2 sm:px-3">
+      <header className="lilos-drag flex h-14 shrink-0 items-center gap-2 border-b px-2 sm:px-3">
         {onNav && (
           <Button
             variant="ghost"
