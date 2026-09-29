@@ -44,6 +44,7 @@ export type {
   Approval,
   BackgroundJobRow,
   ChannelRow,
+  ContextUsage,
   EmployeeRow,
   FolderOption,
   ModelPick,

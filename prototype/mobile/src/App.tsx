@@ -577,6 +577,7 @@ function Thread({ navigation, route }: Props<"Thread">) {
   const title = t?.title;
   const state = t?.state;
   const prs = t?.prs;
+  const context = t?.context;
   // Plan "Change…" puts this in the composer (a new object each tap).
   const [prefill, setPrefill] = useState<{ text: string }>();
   useEffect(() => playOnOpen(route.params.id), [route.params.id]);
@@ -590,6 +591,7 @@ function Thread({ navigation, route }: Props<"Thread">) {
           title={title}
           state={state}
           prs={prs}
+          context={context}
           onPress={info}
         />
       ),
@@ -602,7 +604,7 @@ function Thread({ navigation, route }: Props<"Thread">) {
         },
       ],
     });
-  }, [navigation, route.params.id, title, state, prs]);
+  }, [navigation, route.params.id, title, state, prs, context]);
   if (!t) return null;
   const pick = picks[t.id] ?? fallback;
   return (

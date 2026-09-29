@@ -4,6 +4,7 @@ import { AppText } from "../components/app-text";
 import { Pill } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Pulse } from "../components/prose";
+import { PressCard } from "../components/rise";
 import { Group, SheetHeader } from "./folder-picker";
 import type { PlanRow } from "./types";
 
@@ -156,7 +157,7 @@ export function PlanCard({
     : `Plan${plan.version > 1 ? ` v${plan.version}` : ""}`;
   const pct = (done(plan) / plan.steps.length) * 100;
   return (
-    <Pressable
+    <PressCard
       accessibilityRole="button"
       accessibilityLabel={`${name}, ${plan.steps.length} ${tasks ? "tasks" : "steps"}`}
       disabled={!onOpen}
@@ -245,7 +246,7 @@ export function PlanCard({
           )}
         </>
       )}
-    </Pressable>
+    </PressCard>
   );
 }
 

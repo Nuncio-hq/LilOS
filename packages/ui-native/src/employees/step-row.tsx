@@ -38,7 +38,7 @@ export const tool = (t: string) =>
 export function StepRow({ s }: { s: ToolStep }) {
   const [open, setOpen] = useState(false);
   const t = tool(s.tool);
-  const canOpen = !!s.output && !s.running;
+  const canOpen = (!!s.output || !!s.patch) && !s.running;
   return (
     <Pressable
       accessibilityRole="button"
@@ -84,13 +84,59 @@ export function StepRow({ s }: { s: ToolStep }) {
           </Pulse>
         )}
       </View>
-      {open && s.output && (
-        <View className="ml-[26px] rounded-xl bg-background px-3 py-2">
-          <Text className="font-mono text-[12px] leading-[17px] text-subtle-foreground">
+      {open && <StepDetail s={s} />}
+    </Pressable>
+  );
+}
+
+/* What an opened step shows — the thing itself (web: StepDetail): an edit's
+   coloured diff, a command's dark terminal, else what came back. */
+function StepDetail({ s }: { s: ToolStep }) {
+  if (s.patch)
+    return (
+      <View className="ml-[26px] overflow-hidden rounded-xl bg-background py-1.5">
+        {s.patch.split("\n").map((line, i) => {
+          const tone = line.startsWith("@@")
+            ? "bg-work-soft text-work"
+            : line.startsWith("+")
+              ? "bg-success/12 text-success"
+              : line.startsWith("-")
+                ? "bg-destructive/10 text-destructive"
+                : "text-subtle-foreground";
+          return (
+            <Text
+              // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are positional
+              key={i}
+              numberOfLines={1}
+              className={`px-3 font-mono text-[11.5px] leading-[18px] ${tone}`}
+            >
+              {line || " "}
+            </Text>
+          );
+        })}
+      </View>
+    );
+  if (s.tool === "terminal")
+    return (
+      <View
+        className="ml-[26px] gap-1 rounded-xl bg-[#1c1c20] px-3 py-2.5"
+        style={{ borderCurve: "continuous" }}
+      >
+        <Text className="font-mono text-[12px] leading-[17px] text-[#5fd6ce]">
+          {`$ ${s.arg ?? ""}`}
+        </Text>
+        {!!s.output && (
+          <Text className="font-mono text-[12px] leading-[17px] text-[#e5e5ea]">
             {s.output}
           </Text>
-        </View>
-      )}
-    </Pressable>
+        )}
+      </View>
+    );
+  return (
+    <View className="ml-[26px] rounded-xl bg-background px-3 py-2">
+      <Text className="text-[13px] leading-[18px] text-subtle-foreground">
+        {s.output}
+      </Text>
+    </View>
   );
 }

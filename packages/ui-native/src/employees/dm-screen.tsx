@@ -176,7 +176,7 @@ function ThreadRow({
           </Text>
         )}
         <View className="mt-0.5 flex-row items-center gap-2">
-          {t.folder ? (
+          {t.folder && (
             <View className="min-w-0 shrink flex-row items-center gap-1">
               <Icon
                 name="arrow.triangle.branch"
@@ -187,13 +187,9 @@ function ThreadRow({
                 numberOfLines={1}
                 className="shrink text-[13px] text-muted-foreground"
               >
-                {t.branch ? `${t.folder} · ${t.branch}` : t.folder}
+                {t.branch ?? t.folder}
               </Text>
             </View>
-          ) : (
-            <AppText tone="muted" className="text-[13px]">
-              Just chat
-            </AppText>
           )}
           {t.added !== undefined && (
             <Text
@@ -206,9 +202,12 @@ function ThreadRow({
           )}
           <View className="flex-1" />
           {!!t.replies && (
-            <AppText tone="muted" className="text-[13px]">
-              {`${t.replies} ${t.replies === 1 ? "reply" : "replies"}`}
-            </AppText>
+            <View className="flex-row items-center gap-1">
+              <Icon name="bubble.left" size={11} tone="muted-foreground" />
+              <AppText tone="muted" className="text-[13px]">
+                {t.replies}
+              </AppText>
+            </View>
           )}
         </View>
         {!!t.prs?.length && <PrLine prs={t.prs} />}
@@ -222,7 +221,12 @@ function ThreadRow({
 
 function StateMark({ state }: { state: SessionState }) {
   if (state === "needs-you")
-    return <View className="size-2.5 rounded-full bg-primary" />;
+    return (
+      <View className="-mt-1 -ml-1 size-[18px] items-center justify-center rounded-full bg-primary">
+        <View className="h-[7px] w-[2px] rounded-full bg-primary-foreground" />
+        <View className="mt-[1.5px] size-[2px] rounded-full bg-primary-foreground" />
+      </View>
+    );
   if (state === "working")
     return (
       <Pulse>

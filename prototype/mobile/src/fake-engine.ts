@@ -39,7 +39,29 @@ import {
 
 // ── Store ───────────────────────────────────────────────────────────────────
 
-const SEED = [...THREADS, ...SUBAGENT_THREADS, ...PLAN_THREADS];
+/* The context breakdown behind each thread's "44.9k in · 3.3k out · 31k
+   cached" line: reasoning is a share of the output; Opus has a 200k window. */
+const n = (x?: string) => (x ? Number.parseFloat(x) * 1000 : 0);
+const withContext = (t: ThreadDetail): ThreadDetail => {
+  const m = /([\d.]+)k in · ([\d.]+)k out · ([\d.]+)k cached/.exec(
+    t.usage ?? "",
+  );
+  if (!m) return t;
+  const output = n(m[2]);
+  return {
+    ...t,
+    context: {
+      input: n(m[1]),
+      output,
+      reasoning: Math.round(output * 0.4),
+      cache: n(m[3]),
+      max: t.model.startsWith("Qwen") ? 262_000 : 200_000,
+    },
+  };
+};
+const SEED = [...THREADS, ...SUBAGENT_THREADS, ...PLAN_THREADS].map(
+  withContext,
+);
 export const $threads = atom<ThreadDetail[]>(SEED);
 
 /** Order approvals were asked in (oldest first → the dock shows the oldest). */
