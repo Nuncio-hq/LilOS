@@ -1479,7 +1479,9 @@ export default function App() {
           models={canModels ? MODEL_OPTS : undefined} picker={pickerExtras} repoFiles={REPO_FILES} host={hostAccessors}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
           onOpenSession={openSession} onStopJob={(id) => stopJobIn(openThread, id)} onPlan={(a, id) => planAction(openThread, a, id)}
-          browser={threadBrowser(openThread.id)}
+          // A real harness attach (?surfaces=…) keeps its live Preview tab; the
+          // LilOS Browser (#214) replaces it only in the mock prototype.
+          browser={realSurfaces ? undefined : threadBrowser(openThread.id)}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />
       ) : (
