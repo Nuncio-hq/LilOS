@@ -153,10 +153,12 @@ export function createPushFanout(options: {
       body: truncateBody(body),
       data: { conversationId: conversation.id },
     }));
-    if (kind === "failed") failureSentAt.set(conversation.id, now());
     let receipts: ExpoSendResult[];
     try {
       receipts = await options.send(messages);
+      /* Mark only a settled send: a throwing send path shouldn't suppress
+         the pair leg — zero pushes is worse than a rare double. */
+      if (kind === "failed") failureSentAt.set(conversation.id, now());
     } catch (error) {
       /* AC-7: a broken send path (DNS, socket, a misbehaving sender) logs
          and moves on — push must never propagate a failure into the
@@ -217,7 +219,8 @@ export function createPushFanout(options: {
         if (event.payload.state !== "error") return;
         alert = {
           kind: "failed",
-          body: conversation.title || "Session failed",
+          body:
+            event.payload.reason ?? (conversation.title || "Session failed"),
         };
       }
       if (!alert) return;

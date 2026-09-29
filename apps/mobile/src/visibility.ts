@@ -10,11 +10,12 @@ import { nav, type Routes } from "./routes";
  *
  * Route-level, not screen-level: the top route's `conversationId` is the
  * report, so `thread.tsx` never had to opt in (the fleet note). Thread and
- * the thread-scoped sheets — ThreadInfo/Plan/Subagent/Background — count
- * as "in the thread"; Dm, the pickers and Mac mean the user has left the
- * thread's context. A backgrounded phone reports `null`, and a dead socket
- * clears the report relay-side, so a stale "open" can't mute pushes after
- * the app is gone.
+ * the thread-scoped sheets — ThreadInfo/Plan/Subagent/Background, plus a
+ * ModelPicker opened for the thread — count as "in the thread"; Dm, the
+ * Mac list and a ModelPicker without a conversationId mean the user has
+ * left the thread's context. A backgrounded phone reports `null`, and a
+ * dead socket clears the report relay-side, so a stale "open" can't mute
+ * pushes after the app is gone.
  *
  * If a future screen needs finer control it can call `reportVisibleThread`
  * directly — e.g. thread.tsx could report only once the thread's content
@@ -28,6 +29,9 @@ const THREAD_ROUTES = new Set<keyof Routes>([
   "Plan",
   "Subagent",
   "Background",
+  /* Thread-scoped when opened with a conversationId — the param check in
+     visibleConversationId yields null for the DM-scoped form. */
+  "ModelPicker",
 ]);
 
 /** The conversation on screen right now, or null. */
@@ -62,8 +66,11 @@ const report = (conversationId: string | null) => {
   });
 };
 
+let started = false;
 /** Idempotent wiring: nav state + AppState + reconnect each re-report. */
 export function startVisibilityReporting(): void {
+  if (started) return;
+  started = true;
   const recompute = () => report(visibleConversationId());
   nav.addListener("state", recompute);
   AppState.addEventListener("change", (_next: AppStateStatus) => {

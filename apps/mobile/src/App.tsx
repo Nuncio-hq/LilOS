@@ -432,8 +432,13 @@ function confirmForget() {
         style: "destructive",
         onPress: () => {
           /* #161: best-effort push.unregister on the live socket before it
-             dies; the relay's revoke path is the backstop either way. */
-          void unregisterPush().finally(() => {
+             dies; the relay's revoke path is the backstop either way. A
+             half-dead socket would stall the request's 15s timeout — race
+             it so Forget never appears to hang. */
+          void Promise.race([
+            unregisterPush(),
+            new Promise((resolve) => setTimeout(resolve, 1500)),
+          ]).finally(() => {
             stopLink();
             void forgetMacs(() => directoryCache.clear());
           });

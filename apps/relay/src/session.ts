@@ -1777,8 +1777,13 @@ export function createRelay(options: RelayOptions): Relay {
           const deviceId = devicePeers.get(peer);
           devicePeers.delete(peer);
           /* A dead/backgrounded phone's suppression dies with the socket —
-             pushes resume rather than staying muted by a stale report. */
-          if (deviceId) options.push?.deviceGone(deviceId);
+             pushes resume rather than staying muted by a stale report. But
+             only when this was the device's LAST socket: a reconnect's new
+             hello + fresh visibility report must not be wiped by the old
+             socket's late close. */
+          if (deviceId && ![...devicePeers.values()].includes(deviceId)) {
+            options.push?.deviceGone(deviceId);
+          }
           if (host?.peer === peer) {
             log(`harness ${host.hostId} disconnected`);
             host = null;

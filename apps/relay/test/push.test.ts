@@ -396,6 +396,25 @@ describe("push fan-out — transition → push decision (#161)", () => {
     expect(sent).toHaveLength(1);
   });
 
+  it("a session.state error carries its reason as the push body", async () => {
+    const { relay, pairing, sent } = newWorld();
+    const host = await registeredHost(relay);
+    const { conversation } = await setupConversation(host, {
+      title: "Fix the readme",
+    });
+    const phone = await helloedDevice(pairing, relay);
+    await registerPush(phone);
+
+    await engineEvent(host, conversation, {
+      seq: 1,
+      sessionId: "fake:sess-1",
+      type: "session.state",
+      payload: { state: "error", reason: "engine crashed mid-turn" },
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.body).toBe("engine crashed mid-turn");
+  });
+
   it("a replayed engine.event (seq at/under the watermark) never re-pushes", async () => {
     const { relay, pairing, sent } = newWorld();
     const host = await registeredHost(relay);
@@ -466,9 +485,12 @@ describe("push fan-out — transition → push decision (#161)", () => {
     const host = await registeredHost(relay);
     const { channel, conversation } = await setupConversation(host);
     const phone = await helloedDevice(pairing, relay);
+    const otherPhone = await helloedDevice(pairing, relay);
     await registerPush(phone);
+    const otherToken = await registerPush(otherPhone);
 
-    // Phone reports the thread open → the push is suppressed.
+    // Phone reports the thread open → the push is suppressed for it, while
+    // a second device still gets the push.
     await phone.connection.receive(
       req("push.visibility", { conversationId: conversation.id }),
     );
@@ -477,12 +499,60 @@ describe("push fan-out — transition → push decision (#161)", () => {
       kind: "question",
       question: "which one?",
     });
-    expect(sent).toHaveLength(0);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toBe(otherToken);
+    sent.length = 0;
 
     // Navigating away (null report) lifts the suppression.
     await phone.connection.receive(
       req("push.visibility", { conversationId: null }),
     );
+    await openAsk(
+      host,
+      channel,
+      conversation,
+      { kind: "question", question: "which one?" },
+      "req-2",
+    );
+    expect(sent).toHaveLength(2);
+  });
+
+  it("AC-5 an old socket's late close doesn't wipe a fresh socket's report", async () => {
+    const { relay, pairing, sent } = newWorld();
+    const host = await registeredHost(relay);
+    const { channel, conversation } = await setupConversation(host);
+    // Same device on two sockets — the reconnect pattern: the new socket
+    // helloes, reports the thread open, then the half-dead old socket's
+    // close lands.
+    const grant = await pairing.mintGrant();
+    const ex = await pairing.exchangeGrant({ code: grant.code });
+    if (!("device" in ex)) throw new Error("exchange failed");
+    const hello = {
+      protocolVersion: APP_PROTOCOL_VERSION,
+      deviceId: ex.device.id,
+      credential: ex.credential,
+    };
+    const oldSock = connectPeer(relay);
+    await oldSock.connection.receive(req("session.hello", hello));
+    const newSock = connectPeer(relay);
+    await newSock.connection.receive(req("session.hello", hello));
+    newSock.frames.length = 0;
+
+    const phone = { ...newSock, device: ex.device };
+    await registerPush(phone);
+    await newSock.connection.receive(
+      req("push.visibility", { conversationId: conversation.id }),
+    );
+    // The old socket dies late — the fresh report must survive.
+    oldSock.connection.closed();
+    await openAsk(host, channel, conversation, {
+      kind: "question",
+      question: "which one?",
+    });
+    expect(sent).toHaveLength(0);
+
+    // And when the last socket for the device dies, suppression lifts.
+    newSock.connection.closed();
     await openAsk(
       host,
       channel,
