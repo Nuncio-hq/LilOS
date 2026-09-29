@@ -1333,9 +1333,7 @@ describe("interrupt ordering (#274)", () => {
       releaseSnapshot();
       const methods = await waitFor(() => {
         const m = w.engineCalls.map((c) => c.method);
-        return m.includes("prompt") && m.includes("interrupt")
-          ? m
-          : undefined;
+        return m.includes("prompt") && m.includes("interrupt") ? m : undefined;
       }, "prompt and interrupt on the engine conn");
       expect(methods.indexOf("prompt")).toBeLessThan(
         methods.indexOf("interrupt"),
@@ -1413,7 +1411,10 @@ describe("interrupt ordering (#274)", () => {
       // Nothing to interrupt: the engine still sees the request (ack
       // interrupted:false) and no stopped note appears.
       await waitFor(
-        () => w.engineCalls.slice(callsBefore).find((c) => c.method === "interrupt"),
+        () =>
+          w.engineCalls
+            .slice(callsBefore)
+            .find((c) => c.method === "interrupt"),
         "interrupt reaches the engine",
       );
       await new Promise((r) => setTimeout(r, 250));
@@ -1424,4 +1425,3 @@ describe("interrupt ordering (#274)", () => {
     }
   });
 });
-
