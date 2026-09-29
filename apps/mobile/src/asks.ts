@@ -1,4 +1,4 @@
-import { RelayError, type RelayClient } from "@lilos/client-runtime";
+import { type RelayClient, RelayError } from "@lilos/client-runtime";
 import type { Ask } from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
 import * as Haptics from "expo-haptics";
