@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# testflight.sh — one command ships a TestFlight build (#250):
+# testflight.sh — one command ships a TestFlight build (#250, hardened #268):
 #
 #   bun run mobile:release            # the whole thing
 #   scripts/release/testflight.sh --dry-run   # plan + preflight, nothing builds
@@ -28,9 +28,12 @@
 #   LILOS_XCARGS                           extra args appended to both xcodebuilds
 #   LILOS_EXPORT_OPTIONS                   path to a custom ExportOptions.plist
 #
-# Signing: automatic (`-allowProvisioningUpdates` + team R8GJL3N9WX) — Xcode
-# resolves the dist cert/profile using the Apple ID signed into Xcode. For a
-# manual-signing run pass the pieces through LILOS_XCARGS, e.g.
+# Signing: automatic (`-allowProvisioningUpdates` + team R8GJL3N9WX). The ASC
+# API key is also passed to xcodebuild as -authenticationKeyPath/-authenticationKeyID/
+# -authenticationKeyIssuerID, so provisioning works on a VM with NO Apple ID
+# signed into Xcode (an Apple ID signed in works too — the API key just takes
+# over auth). The .p8 is written to a chmod-600 temp file and trap-cleaned.
+# For a manual-signing run pass the pieces through LILOS_XCARGS, e.g.
 #   LILOS_XCARGS="CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='iPhone Distribution: X' PROVISIONING_PROFILE_SPECIFIER=uuid"
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -49,43 +52,131 @@ for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --skip-upload) LILOS_SKIP_UPLOAD=1 ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
     *) echo "unknown arg: $arg" >&2; exit 2 ;;
   esac
 done
 
 banner() { echo; echo "=== $*"; }
 die() { echo "FAIL: $*" >&2; exit 1; }
+# miss <problem> <remedy>: WARN in --dry-run (keep reporting the rest of the
+# checklist), FAIL with the exact fix in a real run.
+miss() {
+  if [ "$DRY_RUN" = 1 ]; then
+    echo "  WARN: $1 — fix: $2"
+  else
+    die "$1 — fix: $2"
+  fi
+}
+
+KEYFILE=""
+GEN_PLIST=""
+cleanup() {
+  [ -z "$KEYFILE" ] || rm -f "$KEYFILE"
+  [ -z "$GEN_PLIST" ] || rm -f "$GEN_PLIST"
+}
+trap cleanup EXIT
 
 # --- preflight ---------------------------------------------------------------
+# Dry-run reports every gap at once; a real run stops at the first.
 banner "preflight"
-command -v bun >/dev/null || die "bun not on PATH (see README)"
-command -v xcodebuild >/dev/null || die "xcodebuild missing — install Xcode"
-command -v pod >/dev/null || {
-  echo "WARN: pod (CocoaPods) not on PATH — expo prebuild needs it."
-  echo "      brew install cocoapods, then re-run."
-  [ "$DRY_RUN" = 1 ] || die "pod missing"
-}
+command -v bun >/dev/null ||
+  miss "bun not on PATH" "npm i -g bun  (or: curl -fsSL https://bun.sh/install | bash)"
+[ -f apps/mobile/package.json ] ||
+  miss "apps/mobile missing — run from a full clone" "git clone https://github.com/Nuncio-hq/LilOS.git"
+[ -d node_modules ] ||
+  miss "dependencies not installed" "bun install"
+command -v xcodebuild >/dev/null ||
+  miss "xcodebuild missing" "install Xcode from the App Store, then: sudo xcodebuild -license accept"
+if ! command -v pod >/dev/null; then
+  if [ "$DRY_RUN" != 1 ] && command -v brew >/dev/null; then
+    # brew's cocoapods (1.17.x) ships its own Ruby — no unicode_normalize patch.
+    echo "  pod missing — auto-installing: brew install cocoapods"
+    brew install cocoapods || die "brew install cocoapods failed"
+    command -v pod >/dev/null || die "pod still not on PATH after 'brew install cocoapods'"
+  else
+    miss "pod (CocoaPods) not on PATH" "brew install cocoapods"
+  fi
+fi
 for v in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do
   if [ -n "${!v:-}" ]; then echo "  $v: set"; else
-    [ "$DRY_RUN" = 1 ] && echo "  $v: MISSING (would fail)" || die "$v is required"
+    miss "$v is required" "export $v=<App Store Connect API key>"
   fi
 done
+
+# --- xcodebuild auth ---------------------------------------------------------
+# The ASC API key doubles as xcodebuild signing auth, so a VM with no Apple ID
+# signed into Xcode still provisions automatically (#268). The .p8 lands in a
+# chmod-600 temp file; the same file feeds altool below.
+XCAUTH=()
+if [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ] && [ -n "${ASC_KEY_P8:-}" ]; then
+  KEYFILE="$(mktemp -t lilos-asc)"
+  printf '%s' "$ASC_KEY_P8" | sed 's/\\n/\n/g' > "$KEYFILE"
+  chmod 600 "$KEYFILE"
+  XCAUTH=( -authenticationKeyPath "$KEYFILE"
+    -authenticationKeyID "$ASC_KEY_ID"
+    -authenticationKeyIssuerID "$ASC_ISSUER_ID" )
+  echo "  signing auth: ASC API key $ASC_KEY_ID (no Xcode Apple ID needed)"
+else
+  echo "  signing auth: Xcode Apple ID only (ASC key unset)"
+fi
+
+# Shared by BOTH xcodebuilds — archive and -exportArchive (export used to get
+# none of these, #268). LILOS_XCARGS is intentionally word-split.
+XCARGS=( -allowProvisioningUpdates ${XCAUTH[@]+"${XCAUTH[@]}"} )
+# shellcheck disable=SC2206 # intentional word splitting for LILOS_XCARGS
+XCARGS+=( ${LILOS_XCARGS:-} )
+
+ARCHIVE_XCARGS=( -workspace "apps/mobile/ios/$SCHEME.xcworkspace"
+  -scheme "$SCHEME" -configuration Release
+  -destination "generic/platform=iOS" DEVELOPMENT_TEAM="$TEAM_ID"
+  "${XCARGS[@]}" -archivePath "$DIST/LilOS.xcarchive" archive )
+
+if [ -n "${LILOS_EXPORT_OPTIONS:-}" ]; then
+  EXPORT_PLIST="$LILOS_EXPORT_OPTIONS"
+else
+  GEN_PLIST="$(mktemp -t lilos-export)"
+  cat > "$GEN_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>method</key><string>app-store-connect</string>
+  <key>teamID</key><string>${TEAM_ID}</string>
+  <key>signingStyle</key><string>automatic</string>
+  <key>uploadSymbols</key><true/>
+  <key>manageAppVersionAndBuildNumber</key><false/>
+</dict></plist>
+PLIST
+  EXPORT_PLIST="$GEN_PLIST"
+fi
+
+EXPORT_XCARGS=( -exportArchive -archivePath "$DIST/LilOS.xcarchive"
+  -exportPath "$DIST" -exportOptionsPlist "$EXPORT_PLIST" "${XCARGS[@]}" )
 
 # --- build number ------------------------------------------------------------
 banner "build number"
 if [ -n "${LILOS_BUILD_NUMBER:-}" ]; then
   BUILD="$LILOS_BUILD_NUMBER"
   echo "  override: $BUILD"
+elif ! BUILD="$(bun scripts/release/asc-build-number.ts --next 2>/dev/null)"; then
+  if [ "$DRY_RUN" = 1 ]; then
+    BUILD="?"; echo "  ASC lookup failed — dry-run continues without it"
+  else
+    die "ASC lookup failed"
+  fi
 else
-  BUILD="$(bun scripts/release/asc-build-number.ts --next)" || die "ASC lookup failed"
   LATEST="$(bun scripts/release/asc-build-number.ts --latest 2>/dev/null || echo '?')"
   echo "  ASC latest: ${LATEST}  ->  building: $BUILD"
 fi
-VERSION="$(bun -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).expo.version)' "$APP_JSON")"
+VERSION="$(bun -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).expo.version)' "$APP_JSON" 2>/dev/null || echo '?')"
 echo "  $SCHEME $VERSION (build $BUILD)"
 
-[ "$DRY_RUN" = 1 ] && { banner "dry-run complete — no build performed"; exit 0; }
+[ "$DRY_RUN" = 1 ] && {
+  banner "plan"
+  printf '  xcodebuild'; printf ' %q' "${ARCHIVE_XCARGS[@]}"; echo
+  printf '  xcodebuild'; printf ' %q' "${EXPORT_XCARGS[@]}"; echo
+  banner "dry-run complete — no build performed"; exit 0
+}
 
 # Stamp app.json (expo.ios.buildNumber) — sed keeps the file's formatting.
 if grep -q '"buildNumber"' "$APP_JSON"; then
@@ -101,45 +192,15 @@ echo "  $SCHEME $VERSION (build $BUILD)"
 banner "expo prebuild (ios)"
 (cd apps/mobile && bunx expo prebuild --platform ios)
 
-XCARGS=( -workspace "apps/mobile/ios/$SCHEME.xcworkspace"
-  -scheme "$SCHEME" -configuration Release
-  -destination "generic/platform=iOS"
-  DEVELOPMENT_TEAM="$TEAM_ID" -allowProvisioningUpdates )
-# shellcheck disable=SC2206 # intentional word splitting for LILOS_XCARGS
-XCARGS+=( ${LILOS_XCARGS:-} )
-
 banner "xcodebuild archive"
-xcodebuild "${XCARGS[@]}" -archivePath "$DIST/LilOS.xcarchive" archive
+xcodebuild "${ARCHIVE_XCARGS[@]}"
 
 banner "xcodebuild -exportArchive"
-if [ -n "${LILOS_EXPORT_OPTIONS:-}" ]; then
-  EXPORT_PLIST="$LILOS_EXPORT_OPTIONS"
-else
-  EXPORT_PLIST="$(mktemp -t lilos-export).plist"
-  cat > "$EXPORT_PLIST" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>method</key><string>app-store-connect</string>
-  <key>teamID</key><string>${TEAM_ID}</string>
-  <key>signingStyle</key><string>automatic</string>
-  <key>uploadSymbols</key><true/>
-  <key>manageAppVersionAndBuildNumber</key><false/>
-</dict></plist>
-PLIST
-fi
-xcodebuild -exportArchive -archivePath "$DIST/LilOS.xcarchive" \
-  -exportPath "$DIST" -exportOptionsPlist "$EXPORT_PLIST" \
-  -allowProvisioningUpdates
+xcodebuild "${EXPORT_XCARGS[@]}"
 IPA="$DIST/$SCHEME.ipa"
 [ -f "$IPA" ] || die "export finished but $IPA is missing"
 
 # --- upload ------------------------------------------------------------------
-KEYFILE="$(mktemp -t asc-key).p8"
-trap 'rm -f "$KEYFILE"' EXIT
-printf '%s' "$ASC_KEY_P8" | sed 's/\\n/\n/g' > "$KEYFILE"
-chmod 600 "$KEYFILE"
-
 if [ "${LILOS_SKIP_UPLOAD:-0}" = 1 ]; then
   banner "LILOS_SKIP_UPLOAD — .ipa at $IPA (not uploaded)"
 else
