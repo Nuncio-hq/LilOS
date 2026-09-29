@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LilOS</title>
+    <script>
+      (() => { const t = localStorage.getItem("lilos-theme") ?? "system"
+        if (t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches)) document.documentElement.classList.add("dark") })()
+    </script>
   </head>
   <body class="overscroll-none">
     <div id="root"></div>

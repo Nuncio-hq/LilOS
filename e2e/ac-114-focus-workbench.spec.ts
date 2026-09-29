@@ -630,7 +630,10 @@ test("AC-6 tabs render only when their host method answers; a session without a 
   await expect(tab(page, /Preview/)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-6-plain-folder.png` });
 
-  // A session without a folder: no Workbench at all.
+  // A session without a folder: no Workbench at all. Focus has no sidebar
+  // by design (#246) — Esc back to the panel, then use it.
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(PANEL_URL);
   await page
     .locator("aside")
     .getByRole("button", { name: /default/i })
