@@ -84,6 +84,8 @@ export function conversationState(
 export function askReason(ask: Ask): string {
   const r = ask.request;
   if (r.kind === "approval") return r.description ?? r.command;
+  // Plans (#180) have no mobile surface yet; the row still says why it waits.
+  if (r.kind === "plan") return "Plan waiting for your review";
   return r.question;
 }
 
