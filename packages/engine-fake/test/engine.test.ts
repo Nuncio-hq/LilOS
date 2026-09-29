@@ -420,3 +420,43 @@ describe("engine-fake", () => {
     expect(e.data).toEqual({ sessionId: "x" });
   });
 });
+
+describe("engine-fake #140 AC-2: a refresh-only model validates only once a refresh was served", () => {
+  /* Mirrors the real adapter's gate (account-gated model absent from the cached
+     read, offered by the live one): `session.setModel` for fake-fresh fails
+     before any models.list {refresh:true}, and passes after it. */
+  test("fake-fresh: MODEL_NOT_FOUND before a refresh; the pick works after", async () => {
+    const c = conn();
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+    })) as { sessionId: string };
+
+    await expect(
+      c.request("session.setModel", { sessionId, model: "fake-fresh" }),
+    ).rejects.toMatchObject({ code: -32005 });
+
+    const listed = (await c.request("models.list", {
+      refresh: true,
+    })) as { models: { id: string }[] };
+    expect(listed.models.map((m) => m.id)).toContain("fake-fresh");
+    // Once served, the model stays in the catalog (the gateway's cache
+    // updates the same way).
+    const cached = (await c.request("models.list", {})) as {
+      models: { id: string }[];
+    };
+    expect(cached.models.map((m) => m.id)).toContain("fake-fresh");
+
+    const ack = (await c.request("session.setModel", {
+      sessionId,
+      model: "fake-fresh",
+    })) as { model: string };
+    expect(ack.model).toBe("fake-fresh");
+
+    // …and a never-listed id still fails early.
+    await expect(
+      c.request("session.setModel", { sessionId, model: "no-such" }),
+    ).rejects.toMatchObject({ code: -32005 });
+    c.close();
+  });
+});

@@ -118,6 +118,13 @@ PR does not exist.
   hide list in localStorage or engine state, LilOS-owned profile CRUD, a
   persona read-only wire (was #8), or a delete method "for cleanup".
   — #8, #92, #123 · PR #46, #129, #146
+- **D-#140 The picker always shows the model the session runs — the catalog
+  plus the session's own pick when the catalog omits it, marked "Not in
+  list"; the path back is the existing Refresh (`models.list
+  {refresh:true}`), the engine's live catalog.** Not: merging configured or
+  preset models into `models.list` — that re-advertises exactly what the
+  engine hides on purpose (Hermes' account-gated models), so picks would
+  fail — or engine-specific picker branches. — #140 · PR #177
 - **D-#26 The harness supervises the engine and is the only thing that talks
   to it.** It owns launch (`hermes serve` on 127.0.0.1 with a generated
   token, via `packages/engine-hermes`), crash restart with bounded backoff,
