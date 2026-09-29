@@ -415,15 +415,16 @@ export function EmployeeHome({
               {t.replies.length} {t.replies.length === 1 ? "reply" : "replies"}
             </span>
             {t.ws && <FolderIcon className="size-3 text-muted-foreground" />}
-            {running ? (
+            {running && last?.phase === "waiting" ? (
               <span
-                className={cn(
-                  "flex items-center gap-1",
-                  last?.phase === "waiting"
-                    ? "font-medium text-tint-text"
-                    : "text-muted-foreground",
-                )}
+                title="Needs you"
+                className="grid size-4 place-items-center rounded-full bg-primary font-bold text-[10px] text-primary-foreground"
               >
+                <span aria-hidden>!</span>
+                <span className="sr-only">{PHASE_LABEL.waiting}</span>
+              </span>
+            ) : running ? (
+              <span className="flex items-center gap-1 text-muted-foreground">
                 <CircleDotIcon className="size-3 animate-pulse text-work" />
                 {last?.phase ? PHASE_LABEL[last.phase] : "working"}
               </span>
@@ -492,7 +493,7 @@ export function EmployeeHome({
         )}
       </div>
       <Conversation className="min-h-0">
-        <ConversationContent className="min-h-full justify-end gap-0 p-0 py-3">
+        <ConversationContent className="min-h-full gap-0 p-0 py-3">
           {loading ? (
             <div data-loading-sessions>
               {[0, 1, 2].map((i) => (

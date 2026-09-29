@@ -363,8 +363,8 @@ button:not(:disabled):active, [role="button"]:active { transform: scale(0.97); t
     .lilos-lift:hover { transform: none; }
 }
 /* Composer hints show only while you type — calm at rest. */
-.lilos-hint { opacity: 0; transition: opacity 0.25s ease; }
-form:focus-within .lilos-hint { opacity: 1; }
+.lilos-hint { display: none !important; }
+form:focus-within .lilos-hint { display: inline !important; animation: lilos-rise 0.3s ease both; }
 
 /* ---- One window (issue #223, round 3) ----
    Not three floating boxes: the whole app is ONE glass window on the colour
@@ -428,12 +428,12 @@ form:focus-within .lilos-hint { opacity: 1; }
 /* No structural divider lines anywhere: headers, strips and panel edges. */
 .lilos-desktop :is(header, aside, .lilos-glass > div, [data-slot="tabs-list"]) { border-color: transparent !important; }
 /* Cards: borderless, floating on a soft shadow. */
-.lilos-desktop :is(.rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl).border:not([data-slot="input-group"]):not(input) {
+.lilos-desktop :is(main, aside) :is(.rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl).border:not([data-slot="input-group"]):not(input):not(textarea):not(.fixed *) {
     border-color: transparent !important;
     background-color: rgb(255 255 255 / 0.6);
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -14px rgb(20 30 60 / 0.25);
 }
-.dark .lilos-desktop :is(.rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl).border:not([data-slot="input-group"]):not(input) {
+.dark .lilos-desktop :is(main, aside) :is(.rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl).border:not([data-slot="input-group"]):not(input):not(textarea):not(.fixed *) {
     background-color: rgb(255 255 255 / 0.05);
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 28px -14px rgb(0 0 0 / 0.6);
 }
@@ -453,3 +453,21 @@ form:focus-within .lilos-hint { opacity: 1; }
 /* The terminal is dark glass inside the window, not a black slab. */
 .lilos-desktop .bg-zinc-950 { background-color: rgb(22 22 28 / 0.88) !important; }
 .lilos-desktop .bg-zinc-950 .border { background-color: transparent !important; box-shadow: none !important; }
+
+/* Modals: the scrim blurs what's behind, the sheet is near-opaque glass so
+   text behind never shows through. */
+.lilos-desktop .fixed.inset-0 { backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.lilos-desktop .fixed.inset-0 > :is(.border, [role="dialog"]),
+[data-slot="dialog-content"], [role="alertdialog"] {
+    background: rgb(255 255 255 / 0.94) !important;
+    backdrop-filter: blur(30px) saturate(1.8);
+    -webkit-backdrop-filter: blur(30px) saturate(1.8);
+    border-color: rgb(255 255 255 / 0.8) !important;
+    border-radius: 22px;
+    box-shadow: 0 30px 80px -20px rgb(20 30 60 / 0.45), 0 2px 6px rgb(0 0 0 / 0.06);
+}
+.dark .lilos-desktop .fixed.inset-0 > :is(.border, [role="dialog"]),
+.dark [data-slot="dialog-content"], .dark [role="alertdialog"] {
+    background: rgb(36 36 40 / 0.94) !important;
+    border-color: rgb(255 255 255 / 0.1) !important;
+}

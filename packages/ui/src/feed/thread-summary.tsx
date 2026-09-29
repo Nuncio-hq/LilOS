@@ -1,4 +1,4 @@
-import { ChevronRightIcon, CircleDotIcon, ShieldAlertIcon } from "lucide-react";
+import { ChevronRightIcon, CircleDotIcon } from "lucide-react";
 import { PHASE_LABEL } from "../lib/helpers";
 import { HermesAvatar } from "../shell/avatars";
 import type { EmpFn, Thread, Work } from "../types";
@@ -41,9 +41,12 @@ export function ThreadSummary({
         {thread.replies.length} replies
       </span>
       {thread.replies.some((r) => r.approval) && (
-        <span className="flex items-center gap-1 font-medium text-tint-text">
-          <ShieldAlertIcon className="size-3" />
-          needs you
+        <span
+          title="Needs you"
+          className="grid size-4 place-items-center rounded-full bg-primary font-bold text-[10px] text-primary-foreground"
+        >
+          <span aria-hidden>!</span>
+          <span className="sr-only">needs you</span>
         </span>
       )}
       {last.streaming || last.live ? (
