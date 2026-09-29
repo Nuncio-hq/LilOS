@@ -89,6 +89,13 @@ PR does not exist.
   previous bundle and skips the release permanently.** Not: per-component
   versions, in-place binary patches, or auto-retrying a failed release. —
   #35 · PR #81
+- **D-#206 The signed register path boots out launchd jobs SMAppService
+  doesn't own (ad-hoc `bootstrap` leftovers, other-bundle programs) and
+  treats an "lacks required entitlement" `unregister()` error as
+  not-ours, not a failure.** `SMAppService.status` is blind to
+  bootstrapped jobs — registering over one keeps the old binary and pins
+  the version store. Not: trusting `status` alone, or failing the
+  register on that error (rolls back working installs). — #206
 
 ## Testing
 - **D-#3 CI (GitHub Actions, setup-bun) runs with `engine-fake`; never a

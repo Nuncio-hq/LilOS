@@ -17,10 +17,17 @@ export interface ServiceControl {
   unregister(plistName: string): Promise<void>;
   /**
    * `lilos-svc spawned <plist>` → launchd job state ("running",
-   * "spawn failed", "absent"). Optional: only set where the helper provides
-   * it; used to repair a stale-launch-constraint registration after swap.
+   * "spawn failed", "foreign", "absent"). Optional: only set where the helper
+   * provides it; used to repair a stale-launch-constraint registration after
+   * swap and to spot jobs SMAppService doesn't own (#206).
    */
   spawned?(plistName: string): Promise<string>;
+  /**
+   * `lilos-svc bootout <plist>` — remove whatever holds the label in
+   * launchd plus its `~/Library/LaunchAgents` plist, regardless of who
+   * registered it. Optional: only set where the helper provides it.
+   */
+  bootout?(plistName: string): Promise<void>;
 }
 
 /**
@@ -50,11 +57,49 @@ async function pollSpawnState(
     } catch {
       last = "unknown";
     }
-    if (last === "running" || last === "spawn failed") return last;
+    if (last === "running" || last === "spawn failed" || last === "foreign")
+      return last;
     // Nothing is launching this label — don't burn the window on absent.
     if ((last === "absent" || last === "unknown") && i >= 1) return last;
   }
   return last;
+}
+
+/** launchd's view of the label via `spawned` — one shot, "unknown" when the
+ * helper can't say (older lilos-svc or a launchd hiccup). */
+async function launchdState(
+  control: ServiceControl,
+  plist: string,
+): Promise<string> {
+  if (!control.spawned) return "unknown";
+  try {
+    return (await control.spawned(plist)) || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+const jobLoaded = (state: string) => state !== "absent" && state !== "unknown";
+
+/** SMAppService's "this record/job isn't yours" — a launchd job it doesn't
+ * own holds the label (#206). Bootout is the repair, not a failure. */
+const isNotOursError = (e: unknown) =>
+  e instanceof Error && /entitle/i.test(e.message);
+
+/** Remove whatever still holds the label — foreign bootstrap jobs or
+ * leftovers of a failed unregister. Throws when the helper can't clean. */
+async function bootoutLeftovers(
+  control: ServiceControl,
+  plist: string,
+): Promise<void> {
+  const still = await launchdState(control, plist);
+  if (!jobLoaded(still)) return;
+  if (!control.bootout) {
+    throw new Error(
+      `${plist}: launchd job held by another owner (${still}), lilos-svc has no bootout`,
+    );
+  }
+  await control.bootout(plist);
 }
 
 export interface AgentReport {
@@ -79,14 +124,40 @@ export async function ensureLaunchAgents(opts: {
       const before = await opts.control.status(plist);
       const versionChanged =
         (await opts.versions.read(agent.label)) !== opts.bundleVersion;
+      const smaOwned = before !== "notFound" && before !== "notRegistered";
+      // launchd can hold a job SMAppService doesn't own — an ad-hoc build's
+      // `launchctl bootstrap` leftover, or a stale program from another
+      // bundle ("foreign"). Registering over it keeps the OLD binary running
+      // and pins the version store so nothing ever repairs it (#206).
+      const stateBefore = await launchdState(opts.control, plist);
+      const foreign =
+        stateBefore === "foreign" || (!smaOwned && jobLoaded(stateBefore));
+
       let action: AgentAction = "registered";
-      if (
-        versionChanged &&
-        before !== "notFound" &&
-        before !== "notRegistered"
-      ) {
-        await opts.control.unregister(plist);
-        action = "replaced";
+      if ((versionChanged && smaOwned) || foreign) {
+        let unregistered = false;
+        if (smaOwned) {
+          try {
+            await opts.control.unregister(plist);
+            unregistered = true;
+          } catch (e) {
+            // "Requestor lacks required entitlement": the record exists but
+            // the live job isn't ours — clean it via bootout below (#206).
+            // Also recoverable when nothing owns the label afterwards or the
+            // survivor is a foreign job. A genuinely owned job that fails to
+            // unregister still fails — rollback is not weakened.
+            const still = await launchdState(opts.control, plist);
+            if (
+              !isNotOursError(e) &&
+              still !== "foreign" &&
+              still !== "absent"
+            ) {
+              throw e;
+            }
+          }
+        }
+        await bootoutLeftovers(opts.control, plist);
+        action = unregistered ? "replaced" : "registered";
       } else if (before === "enabled" || before === "requiresApproval") {
         action = "already";
       }
@@ -97,19 +168,32 @@ export async function ensureLaunchAgents(opts: {
       // constraint (OS_REASON_CODESIGNING); the repair is another
       // unregister→register once BTM has dropped the old record. Applies to
       // any fresh register: post-swap `status` reads notFound, so the action
-      // is "registered", not "replaced". "absent"/"unknown" are not failures —
+      // is "registered", not "replaced". A still-foreign job gets the same
+      // treatment plus bootout. "absent"/"unknown" are not failures —
       // keepalive spawns lazily and needs no repair.
       if (action !== "already" && opts.control.spawned) {
+        let last = "absent";
         for (let attempt = 0; attempt < 3; attempt++) {
-          const state = await pollSpawnState(opts.control.spawned, plist);
-          if (state === "spawn failed") {
+          last = await pollSpawnState(opts.control.spawned, plist);
+          if (last === "spawn failed" || last === "foreign") {
             if (attempt < 2) {
-              await opts.control.unregister(plist);
+              // The record may already be gone (entitlement) — unregister is
+              // best-effort here; bootout is what frees a foreign label.
+              await opts.control.unregister(plist).catch(() => {});
+              await bootoutLeftovers(opts.control, plist);
               await opts.control.register(plist);
             }
             continue;
           }
           break;
+        }
+        // A job still failing or foreign after every repair is a real
+        // failure: report it and never pin the version — pinning here is
+        // what let the old binary keep serving unnoticed (#206).
+        if (last === "spawn failed" || last === "foreign") {
+          throw new Error(
+            `${plist}: launchd job still ${last} after register repairs`,
+          );
         }
       }
       const status = await opts.control.status(plist);

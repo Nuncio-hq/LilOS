@@ -12,11 +12,12 @@ import {
 
 function fakeControl(
   initial: Record<string, string> = {},
-): ServiceControl & { calls: string[] } {
+): ServiceControl & { calls: string[]; statuses: Record<string, string> } {
   const statuses = { ...initial };
   const calls: string[] = [];
   return {
     calls,
+    statuses,
     async status(plist) {
       calls.push(`status ${plist}`);
       return statuses[plist] ?? "notFound";
@@ -163,6 +164,236 @@ describe("launch agents (AC-1)", () => {
     );
     expect(versions.all["com.nuncio.lilos.relay"]).toBe("1");
     expect(versions.all["com.nuncio.lilos.harness"]).toBeUndefined();
+  });
+
+  it("AC-3 signed path: SMAppService notFound but a live launchd job → bootout then register (#206)", async () => {
+    // An ad-hoc install leaves `launchctl bootstrap` jobs SMAppService has no
+    // record of: status reads notFound while `spawned` sees the job running.
+    // Registering over it keeps the OLD binary alive, so the foreign job must
+    // be booted out first.
+    const loaded = new Map<string, string>([
+      ["com.nuncio.lilos.relay.plist", "foreign"],
+      ["com.nuncio.lilos.harness.plist", "foreign"],
+    ]);
+    const control = fakeControl();
+    control.spawned = async (plist) => {
+      control.calls.push(`spawned ${plist}`);
+      const kind = loaded.get(plist);
+      return kind === "ours"
+        ? "running"
+        : kind === "foreign"
+          ? "foreign"
+          : "absent";
+    };
+    control.bootout = async (plist) => {
+      control.calls.push(`bootout ${plist}`);
+      loaded.delete(plist);
+    };
+    control.register = async (plist) => {
+      control.calls.push(`register ${plist}`);
+      loaded.set(plist, "ours");
+      control.statuses[plist] = "enabled";
+    };
+    const versions = memStore();
+    const reports = await ensureLaunchAgents({
+      control,
+      agents: LILOS_AGENTS,
+      bundleVersion: "2",
+      versions,
+    });
+    expect(reports.map((r) => r.action)).toEqual(["registered", "registered"]);
+    expect(reports.every((r) => r.status === "enabled")).toBe(true);
+    expect(
+      control.calls.filter((c) => c.startsWith("unregister")),
+    ).toHaveLength(0);
+    for (const label of [
+      "com.nuncio.lilos.relay",
+      "com.nuncio.lilos.harness",
+    ]) {
+      const calls = control.calls.filter((c) => c.endsWith(`${label}.plist`));
+      expect(calls.indexOf(`bootout ${label}.plist`)).toBeGreaterThanOrEqual(0);
+      expect(calls.indexOf(`bootout ${label}.plist`)).toBeLessThan(
+        calls.lastIndexOf(`register ${label}.plist`),
+      );
+    }
+    expect(versions.all["com.nuncio.lilos.relay"]).toBe("2");
+  });
+
+  it("AC-3 spawn-failed foreign job (old bundle trashed) is also booted out", async () => {
+    // Same leak, different symptom: the old bundle is gone, so the leftover
+    // job spawn-fails. Still not ours — bootout then register.
+    const loaded = new Map<string, string>([
+      ["com.nuncio.lilos.relay.plist", "foreign"],
+      ["com.nuncio.lilos.harness.plist", "foreign"],
+    ]);
+    const control = fakeControl();
+    control.spawned = async (plist) =>
+      loaded.has(plist)
+        ? loaded.get(plist) === "ours"
+          ? "running"
+          : "spawn failed"
+        : "absent";
+    control.bootout = async (plist) => {
+      control.calls.push(`bootout ${plist}`);
+      loaded.delete(plist);
+    };
+    control.register = async (plist) => {
+      control.calls.push(`register ${plist}`);
+      loaded.set(plist, "ours");
+    };
+    const reports = await ensureLaunchAgents({
+      control,
+      agents: LILOS_AGENTS,
+      bundleVersion: "2",
+      versions: memStore(),
+    });
+    expect(reports.map((r) => r.action)).toEqual(["registered", "registered"]);
+    expect(control.calls.filter((c) => c.startsWith("bootout"))).toHaveLength(
+      2,
+    );
+  });
+
+  it("AC-4 unregister throwing 'lacks required entitlement' means not-ours → bootout + register, not failed (#206)", async () => {
+    // Auto-update leg: the version pin changed and SMAppService has a record
+    // (enabled), but the running job is the ad-hoc bootstrap — unregister()
+    // then fails with "Requestor lacks required entitlement". That is a
+    // foreign job, not a failure: bootout + register must still succeed or
+    // the updater's boot-ok never lands and the build rolls back.
+    const loaded = new Map<string, string>([
+      ["com.nuncio.lilos.relay.plist", "foreign"],
+      ["com.nuncio.lilos.harness.plist", "foreign"],
+    ]);
+    const control = fakeControl({
+      "com.nuncio.lilos.relay.plist": "enabled",
+      "com.nuncio.lilos.harness.plist": "enabled",
+    });
+    control.spawned = async (plist) =>
+      loaded.has(plist)
+        ? loaded.get(plist) === "ours"
+          ? "running"
+          : "foreign"
+        : "absent";
+    control.unregister = async (plist) => {
+      control.calls.push(`unregister ${plist}`);
+      throw new Error(
+        `lilos-svc unregister ${plist}: unregister failed: Requestor lacks required entitlement`,
+      );
+    };
+    control.bootout = async (plist) => {
+      control.calls.push(`bootout ${plist}`);
+      loaded.delete(plist);
+    };
+    control.register = async (plist) => {
+      control.calls.push(`register ${plist}`);
+      loaded.set(plist, "ours");
+    };
+    const versions = memStore({
+      "com.nuncio.lilos.relay": "1",
+      "com.nuncio.lilos.harness": "1",
+    });
+    const reports = await ensureLaunchAgents({
+      control,
+      agents: LILOS_AGENTS,
+      bundleVersion: "2",
+      versions,
+    });
+    expect(reports.map((r) => r.action)).toEqual(["registered", "registered"]);
+    expect(reports.every((r) => r.status === "enabled")).toBe(true);
+    for (const label of [
+      "com.nuncio.lilos.relay",
+      "com.nuncio.lilos.harness",
+    ]) {
+      const calls = control.calls.filter((c) => c.endsWith(`${label}.plist`));
+      expect(calls).toContain(`bootout ${label}.plist`);
+      expect(calls).toContain(`register ${label}.plist`);
+    }
+    expect(versions.all).toEqual({
+      "com.nuncio.lilos.relay": "2",
+      "com.nuncio.lilos.harness": "2",
+    });
+  });
+
+  it("AC-4 a job that survives every register repair fails and never pins the version", async () => {
+    // Rollback must not be weakened either: a foreign job bootout can't
+    // free (or a spawn that never succeeds) is a real failure — report
+    // failed, pin nothing. Silently registering over it is the bug shape
+    // of #206 (old binary keeps serving while the store says current).
+    const stuck: Record<string, string> = {
+      "com.nuncio.lilos.relay.plist": "foreign",
+      "com.nuncio.lilos.harness.plist": "spawn failed",
+    };
+    const control = fakeControl();
+    control.spawned = async (plist) => stuck[plist] ?? "absent";
+    control.bootout = async (plist) => {
+      control.calls.push(`bootout ${plist}`);
+      // The label stays held — bootout could not free it.
+    };
+    const versions = memStore();
+    const reports = await ensureLaunchAgents({
+      control,
+      agents: LILOS_AGENTS,
+      bundleVersion: "2",
+      versions,
+    });
+    expect(reports.map((r) => r.action)).toEqual(["failed", "failed"]);
+    expect(reports[0].error).toContain("still foreign");
+    expect(reports[1].error).toContain("still spawn failed");
+    expect(versions.all["com.nuncio.lilos.relay"]).toBeUndefined();
+    expect(versions.all["com.nuncio.lilos.harness"]).toBeUndefined();
+    // Retried, not given up after one attempt: initial register + 2 repairs.
+    expect(
+      control.calls.filter((c) =>
+        c.startsWith("register com.nuncio.lilos.relay"),
+      ),
+    ).toHaveLength(3);
+  });
+
+  it("AC-4 a non-entitlement unregister failure while a job holds the label still fails", async () => {
+    // Rollback must not be weakened: a real unregister failure leaving a
+    // live, non-foreign job is still reported failed and pins no version.
+    const control = fakeControl({
+      "com.nuncio.lilos.relay.plist": "enabled",
+      "com.nuncio.lilos.harness.plist": "enabled",
+    });
+    control.spawned = async () => "running";
+    control.unregister = async () => {
+      throw new Error("SMAppService: connection interrupted");
+    };
+    control.bootout = async () => {
+      throw new Error("bootout should not run");
+    };
+    const reports = await ensureLaunchAgents({
+      control,
+      agents: LILOS_AGENTS,
+      bundleVersion: "2",
+      versions: memStore({ "com.nuncio.lilos.relay": "1" }),
+    });
+    expect(reports.map((r) => r.action)).toEqual(["failed", "failed"]);
+  });
+
+  it("AC-4 an unregister error that leaves the label free still recovers", async () => {
+    // The goal of unregister is a free label: if the error came after the
+    // job was already gone, registering fresh is correct — not a failure.
+    const control = fakeControl({
+      "com.nuncio.lilos.relay.plist": "enabled",
+      "com.nuncio.lilos.harness.plist": "enabled",
+    });
+    const loaded = new Set<string>();
+    control.spawned = async (plist) =>
+      loaded.has(plist) ? "running" : "absent";
+    control.unregister = async () => {
+      throw new Error("SMAppService: connection interrupted");
+    };
+    control.register = async (plist) => {
+      loaded.add(plist);
+    };
+    const reports = await ensureLaunchAgents({
+      control,
+      agents: LILOS_AGENTS,
+      bundleVersion: "2",
+      versions: memStore({ "com.nuncio.lilos.relay": "1" }),
+    });
+    expect(reports.map((r) => r.action)).toEqual(["registered", "registered"]);
   });
 
   it("AC-1 a helper failure is reported, not thrown, and the version is not pinned", async () => {
