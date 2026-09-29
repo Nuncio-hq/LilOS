@@ -116,8 +116,21 @@ async function dmDefault(page: Page, webUrl: string) {
 const mainPane = (page: Page) => page.locator("main").first();
 
 /* The pane must reach the window's inner edge. In a browser tab the app is a
-   floating window with a 14px margin (#246), so measure against the frame,
-   not the viewport. */
+   floating window with a 14px margin and a 1px frame border (#246), so
+   measure against the frame, not the viewport; the 0.5s rise animation
+   scales the pane in from 0.985 (~7px inset mid-flight), so settle first.
+   Tolerance is 3 (subpixel + radius rounding); the regression this guards is
+   a ~300px reserved column. */
+async function rightGapSettled(page: Page): Promise<number> {
+  let gap = Infinity;
+  await expect
+    .poll(async () => {
+      gap = await rightGap(page);
+      return gap;
+    })
+    .toBeLessThanOrEqual(3);
+  return gap;
+}
 async function rightGap(page: Page): Promise<number> {
   const box = await mainPane(page).boundingBox();
   const edge = await page.evaluate(() => {
@@ -143,9 +156,7 @@ test("DM page: with no session open the feed fills the window (no empty right co
   try {
     await dmDefault(page, stack.webUrl);
     await expect(mainPane(page)).toBeVisible();
-    expect(await rightGap(page), "empty page, no session").toBeLessThanOrEqual(
-      1,
-    );
+    expect(await rightGapSettled(page)).toBeLessThanOrEqual(3);
 
     // With a session open, Focus takes over and fills the window (#114) —
     // still no reserved-but-empty column. (This session has no folder, so
@@ -156,9 +167,7 @@ test("DM page: with no session open the feed fills the window (no empty right co
     await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/, {
       timeout: 30_000,
     });
-    expect(await rightGap(page), "focus fills the window").toBeLessThanOrEqual(
-      1,
-    );
+    expect(await rightGapSettled(page)).toBeLessThanOrEqual(3);
 
     // The plain thread URL still gives the quick-peek panel (right column).
     await page.goto(page.url().replace(/\/focus$/, ""));
@@ -184,7 +193,7 @@ test("DM page: with no session open the feed fills the window (no empty right co
       .getByRole("button", { name: /default/i })
       .click();
     await expect(page).toHaveURL(/\/dm\/[^/]+$/);
-    expect(await rightGap(page), "session closed").toBeLessThanOrEqual(1);
+    expect(await rightGapSettled(page)).toBeLessThanOrEqual(3);
   } finally {
     await stack.stop();
   }
