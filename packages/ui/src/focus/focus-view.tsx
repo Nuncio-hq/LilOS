@@ -384,7 +384,9 @@ export function FocusView({
               {thread.session}
             </code>
             {/* The session's folder + branch — same badge the thread panel
-                shows (#113); Focus is the session's main view (#114). */}
+                shows (#113); Focus is the session's main view (#114).
+                A folder-less DM session is a plain chat — no repo exists to
+                be read-only on, so no label at all (#196). */}
             {thread.ws ? (
               /* Same WsBadge the thread header shows (#113) — with the
                  open-in-editor / Reveal-in-Finder menu when the host has
@@ -421,7 +423,7 @@ export function FocusView({
                 <FolderIcon className="size-3" />
                 no git repo
               </span>
-            ) : (
+            ) : isDM ? null : (
               <span className="hidden shrink-0 items-center gap-1 rounded bg-muted px-1 md:flex">
                 <EyeIcon className="size-3" />
                 read-only
@@ -735,7 +737,9 @@ export function FocusView({
                       ? `Edits go to ⎇ ${work.branch}`
                       : work
                         ? "Edits land in this folder"
-                        : "Read-only on main"
+                        : isDM
+                          ? `Reply to ${lead?.name ?? "the employee"}…`
+                          : "Read-only on main"
               }
               onSend={(t, files) => onSend(t, files)}
               draft={draft}

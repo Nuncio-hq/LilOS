@@ -51,7 +51,11 @@ import {
 import { createLogTail, type LogTail } from "./logtail";
 import type { PairingService } from "./pairing";
 import { buildSystemStatus, type RejectedHandshake } from "./status";
-import type { ConversationPatch, RelayStore } from "./store";
+import {
+  type ConversationPatch,
+  noFolderDedupeKey,
+  type RelayStore,
+} from "./store";
 
 /** Minimal ws peer surface — Bun's ServerWebSocket and test doubles fit this. */
 export interface RelayWsPeer {
@@ -799,7 +803,9 @@ export function createRelay(options: RelayOptions): Relay {
             // A dedupe hit is a no-op retry: answer with the stored message,
             // don't re-emit `message.created` to subscribers (the blobs
             // stored above for this retry are unreferenced — drop them).
-            if (created) emitMessage(message.channelId, message);
+            // The retired no-folder note is hidden from subscribers too.
+            if (created && !noFolderDedupeKey(parsed.data.dedupeKey))
+              emitMessage(message.channelId, message);
             else dropAttachments(attachments);
             respond(peer, id, { message });
           } catch (error) {

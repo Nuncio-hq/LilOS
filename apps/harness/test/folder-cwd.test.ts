@@ -11,8 +11,10 @@ import { createMemoryLogger } from "../src/log";
 import { createFakeSleepGuard } from "../src/sleep";
 
 /**
- * Issue #113: the picked folder becomes the engine session's `cwd`, and a
- * folder-less session announces the default workdir in the thread.
+ * Issue #113: the picked folder becomes the engine session's `cwd`.
+ * Issue #196: a folder-less session is a plain chat — no system note
+ * announces the default workdir anymore (#113 AC-6 superseded), and a note
+ * stored under the old `sys:<conv>:no-folder` dedupe key never renders.
  * Same in-process world as harness.test.ts (borrowed, kept separate so
  * sibling PRs editing that file don't conflict).
  */
@@ -76,7 +78,8 @@ const waitFor = async <T>(
 };
 
 async function setupWorld() {
-  const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
+  const store = createMemoryStore();
+  const relay = createRelay({ store, token: TOKEN });
   const engine = new FakeEngine({ tick: 1 });
   const engineConn = connectFake(engine) as unknown as EngineConnection;
   const engineCalls: { method: string; params: unknown }[] = [];
@@ -111,6 +114,7 @@ async function setupWorld() {
   await user.connect();
   return {
     relay,
+    store,
     engineCalls,
     harness,
     user,
@@ -206,8 +210,8 @@ describe("AC-4 the picked folder becomes session.start cwd", () => {
   });
 });
 
-describe("AC-6 no folder keeps the harness default and says so", () => {
-  it("open without cwd uses the configured workdir and posts the note", async () => {
+describe("AC-1 no folder keeps the harness default and stays silent", () => {
+  it("open without cwd uses the configured workdir and posts no note", async () => {
     const w = await setupWorld();
     try {
       const channel = await openDm(w.user);
@@ -224,19 +228,79 @@ describe("AC-6 no folder keeps the harness default and says so", () => {
       }, "session.start for default folder");
       expect(lastSessionStart(w)?.cwd).toBe(WORKDIR);
 
-      const note = await waitFor(async () => {
+      // Give the turn a beat to settle, then read the whole thread: no
+      // "No folder: working in …" note — the session is a plain chat (#196).
+      await waitFor(async () => {
         const { messages } = await conversationMessages(
           w.user,
           channel.id,
           conversation.id,
         );
-        return messages.find(
+        return messages.find((m) => m.authorKind === "employee");
+      }, "employee answer");
+      const { messages } = await conversationMessages(
+        w.user,
+        channel.id,
+        conversation.id,
+      );
+      expect(
+        messages.some(
           (m) => m.authorKind === "system" && m.text.startsWith("No folder:"),
+        ),
+      ).toBe(false);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("a stored no-folder note never comes back on read", async () => {
+    const w = await setupWorld();
+    try {
+      const channel = await openDm(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", { channelId: channel.id, text: "hi" });
+      // Seed the retired note the way pre-#196 harnesses stored it — same
+      // dedupe key — then read back through the wire: it must not render.
+      await w.store.appendMessage({
+        channelId: channel.id,
+        conversationId: conversation.id,
+        authorId: "",
+        authorKind: "system",
+        text: `No folder: working in ${WORKDIR}`,
+        dedupeKey: `sys:${conversation.id}:no-folder`,
+      });
+      // Wait for the employee answer so the counts below are deterministic.
+      await waitFor(async () => {
+        const { messages } = await conversationMessages(
+          w.user,
+          channel.id,
+          conversation.id,
         );
-      }, "no-folder note");
-      // The note names the actual workdir (collapsed under home when it is).
-      expect(note.text).toMatch(/^No folder: working in /);
-      expect(note.text).toContain(WORKDIR);
+        return messages.find((m) => m.authorKind === "employee");
+      }, "employee answer");
+      const { messages } = await conversationMessages(
+        w.user,
+        channel.id,
+        conversation.id,
+      );
+      expect(messages.some((m) => m.text.startsWith("No folder:"))).toBe(false);
+      // The DM feed's summary (answer preview, latest, count) drops it too.
+      const { summaries } = await w.user.request<{
+        summaries: {
+          conversation: { id: string };
+          firstAnswer?: { text: string };
+          last: { text: string };
+          messageCount: number;
+        }[];
+      }>("conversations.summaries", { channelId: channel.id });
+      const s = summaries.find((x) => x.conversation.id === conversation.id);
+      expect(s?.firstAnswer?.text.startsWith("No folder:") ?? false).toBe(
+        false,
+      );
+      expect(s?.last.text.startsWith("No folder:") ?? false).toBe(false);
+      // root + the employee answer — the hidden note doesn't count.
+      expect(s?.messageCount).toBe(2);
     } finally {
       await w.cleanup();
     }
