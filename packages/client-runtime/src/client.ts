@@ -18,6 +18,7 @@ import {
   type EmployeePatch,
   type EmployeesCreateParamsInput,
   EmployeeUpsertedEvent,
+  EngineEventEvent,
   JsonRpcNotification,
   JsonRpcResponse,
   MessageCreatedEvent,
@@ -36,7 +37,11 @@ import type {
   AgentsCreateParams,
   AgentsUpdateParams,
   AgentsUpdateResult,
+  EngineEvent,
+  EventsSinceResult,
   ModelsListResult,
+  OpenRequest,
+  SessionSnapshot,
 } from "@lilos/contracts/engine";
 import { atom, type WritableAtom } from "nanostores";
 import {
@@ -77,6 +82,34 @@ export interface ChannelMessagesState {
   lastSeq: number;
   /** Seq-ordered visible messages. */
   messages: AppMessage[];
+}
+
+/**
+ * One conversation's engine-event feed (#157) — the phone-facing mirror of
+ * `EngineClient.sessionFeed`: live `engine.event` channel frames + replay
+ * via `session.events`, merged on `sessionId|seq`, resynced on reconnect.
+ * Keyed by conversationId (the id a device-scope client has); the engine
+ * sessionId lands once the first frame or replay answers.
+ */
+export interface RelaySessionFeedState {
+  conversationId: string;
+  /** Engine session the conversation is bound to, once known. */
+  sessionId?: string;
+  /** True once the first `session.events` replay answered. */
+  synced: boolean;
+  /** Engine's reported seq horizon at last sync. */
+  latestSeq: number;
+  /** Watermark the caller replays from — highest seq applied. Seq restarts
+     at 1 per engine session, so this always tracks the *current* sessionId's
+     seq space and rebases when the bound session changes. */
+  coverageSeq: number;
+  /** Every event applied so far, arrival order (seq order per session). */
+  events: EngineEvent[];
+  /** Asks awaiting `request.respond`. */
+  openRequests: OpenRequest[];
+  /** The engine's session snapshot (state/model/turn), when synced. */
+  snapshot?: SessionSnapshot;
+  error?: string;
 }
 
 export interface RelayClientOptions {
@@ -228,6 +261,10 @@ export class RelayClient {
     WritableAtom<ChannelMessagesState>
   >();
   private readonly subscribedChannels = new Set<string>();
+  private readonly sessionFeeds = new Map<
+    string,
+    WritableAtom<RelaySessionFeedState>
+  >();
   private serverInstanceId: string | undefined;
   private everConnected = false;
   private manualClose = false;
@@ -590,6 +627,31 @@ export class RelayClient {
     }
   }
 
+  /**
+   * A conversation's engine-event feed (#157): live `engine.event` frames on
+   * the channel subscription + `session.events` replay merged on
+   * `sessionId|seq`. Creating a feed kicks off a replay; live frames and
+   * reconnects merge onto it (no second round trip needed to see history).
+   */
+  sessionFeed(conversationId: string): WritableAtom<RelaySessionFeedState> {
+    let store = this.sessionFeeds.get(conversationId);
+    if (!store) {
+      store = atom<RelaySessionFeedState>({
+        conversationId,
+        synced: false,
+        latestSeq: 0,
+        coverageSeq: 0,
+        events: [],
+        openRequests: [],
+      });
+      this.sessionFeeds.set(conversationId, store);
+      if (this.state.get() === "ready") {
+        void this.syncSessionFeed(conversationId).catch(() => {});
+      }
+    }
+    return store;
+  }
+
   /* ------------------------------ internals ----------------------------- */
 
   private async openAndHello(): Promise<WelcomeResult> {
@@ -700,7 +762,89 @@ export class RelayClient {
   private async resync(): Promise<void> {
     // Directory refresh runs every (re)connect: employees/channels/
     // conversations are read-model lists, not seq-replayed.
-    await Promise.all([this.refreshDirectory(), this.resubscribeAll()]);
+    await Promise.all([
+      this.refreshDirectory(),
+      this.resubscribeAll(),
+      this.resyncSessionFeeds(),
+    ]);
+  }
+
+  /**
+   * Re-replay every open feed from its watermark after (re)connect — live
+   * `engine.event` frames can land mid-replay, so the merge dedupes by
+   * `sessionId|seq` rather than assuming disjoint sets.
+   */
+  private async resyncSessionFeeds(): Promise<void> {
+    await Promise.all(
+      [...this.sessionFeeds.keys()].map((conversationId) =>
+        this.syncSessionFeed(conversationId).catch(() => {}),
+      ),
+    );
+  }
+
+  private async syncSessionFeed(conversationId: string): Promise<void> {
+    const store = this.sessionFeeds.get(conversationId);
+    if (!store) return;
+    const f = store.get();
+    let res: EventsSinceResult;
+    try {
+      res = await this.request<EventsSinceResult>("session.events", {
+        conversationId,
+        after: f.coverageSeq,
+      });
+      /* coverageSeq is f.sessionId's seq space; if the host rebound the
+         conversation to a different session while we were away, that `after`
+         silently skipped the new log's head. Re-pull from zero once — the
+         merge dedupes, so this is one extra round trip only on rebind. */
+      if (f.sessionId && f.sessionId !== res.snapshot.sessionId) {
+        res = await this.request<EventsSinceResult>("session.events", {
+          conversationId,
+          after: 0,
+        });
+      }
+    } catch (error) {
+      // `not_found` = no engine session bound yet — an honestly empty feed,
+      // not a sync failure: mark synced so the screen stops waiting.
+      if (error instanceof RelayError && error.code === "not_found") {
+        store.set({ ...f, synced: true });
+        return;
+      }
+      store.set({
+        ...f,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+    const cur = store.get();
+    /* A session (re)bind restarts seq at 1 — key the dedupe on sessionId too
+       so a fresh session's log can't be dropped against the old one's.
+       Live frames can land before the replay answers in either direction
+       (a frame newer than the window, or one already inside it), so merge
+       by key and re-order by seq — the reducer only reads same-session
+       runs, where seq order is the truth. */
+    const seen = new Set<string>();
+    const merged: EngineEvent[] = [];
+    for (const e of [...cur.events, ...res.events]) {
+      const key = `${e.sessionId}#${e.seq}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(e);
+    }
+    merged.sort((a, b) => a.seq - b.seq);
+    store.set({
+      ...cur,
+      sessionId: res.snapshot.sessionId,
+      synced: true,
+      latestSeq: res.latestSeq,
+      coverageSeq:
+        res.snapshot.sessionId === cur.sessionId
+          ? Math.max(res.latestSeq, cur.coverageSeq)
+          : res.latestSeq,
+      events: merged,
+      openRequests: res.openRequests,
+      snapshot: res.snapshot,
+      error: undefined,
+    });
   }
 
   private async refreshDirectory(): Promise<void> {
@@ -1020,8 +1164,54 @@ export class RelayClient {
         void this.refreshSummaries();
         return;
       }
+      case "engine.event": {
+        /* A host re-published one engine event of a bound session (#157):
+           append it to that conversation's feed. Dedupes against replayed
+           events by `sessionId|seq`; a new sessionId means a (re)bound
+           session whose log restarts — the old tail is kept (the reducer
+           picks only the live session anyway). */
+        const event = EngineEventEvent.parse(params);
+        const store = this.sessionFeeds.get(event.conversationId);
+        if (!store) return;
+        const f = store.get();
+        const sid = event.event.sessionId;
+        /* Live frames arrive ordered per session, so only a seq at/under the
+           watermark can be a duplicate worth the O(n) scan — the common
+           append path just checks the watermark. A rebound session restarts
+           seq at 1: coverage tracks the current session's space, not a
+           global max that would skip the new log's head on the next replay. */
+        const dup =
+          sid === f.sessionId && event.event.seq > f.coverageSeq
+            ? false
+            : f.events.some(
+                (e) => e.sessionId === sid && e.seq === event.event.seq,
+              );
+        if (dup) return;
+        store.set({
+          ...f,
+          sessionId: event.sessionId,
+          coverageSeq:
+            event.sessionId === f.sessionId
+              ? Math.max(f.coverageSeq, event.event.seq)
+              : event.event.seq,
+          events: [...f.events, event.event],
+        });
+        return;
+      }
       case "conversation.updated": {
         const event = ConversationUpdatedEvent.parse(params);
+        /* A conversation gained an engine session (engineRef bound): an
+           empty/unsynced feed resyncs now so history shows without a
+           reopen. */
+        const feed = this.sessionFeeds.get(event.conversation.id);
+        if (
+          event.conversation.engineRef &&
+          feed &&
+          (!feed.get().synced || feed.get().events.length === 0) &&
+          this.state.get() === "ready"
+        ) {
+          void this.syncSessionFeed(event.conversation.id).catch(() => {});
+        }
         const list = this.conversations.get();
         const idx = list.findIndex((c) => c.id === event.conversation.id);
         const next =
@@ -1133,6 +1323,18 @@ export class RelayClient {
         .get()
         .filter((s) => s.conversation.channelId !== channelId),
     );
+    /* Per-conversation state on this channel goes too — otherwise feeds
+       and rewind records for deleted conversations live forever. */
+    const convIds = new Set(
+      this.conversations
+        .get()
+        .filter((c) => c.channelId === channelId)
+        .map((c) => c.id),
+    );
+    for (const id of convIds) this.sessionFeeds.delete(id);
+    const rewinds = { ...this.rewinds.get() };
+    for (const id of convIds) delete rewinds[id];
+    this.rewinds.set(rewinds);
     this.subscribedChannels.delete(channelId);
     this.catchingUp.delete(channelId);
     this.watermarks.delete(channelId);

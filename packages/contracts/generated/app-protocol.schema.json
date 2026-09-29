@@ -401,6 +401,8 @@
         "asks.list",
         "turns.interrupt",
         "conversations.setModel",
+        "session.events",
+        "engine.event",
         "system.status",
         "employees.remove",
         "settings.get",
@@ -444,7 +446,8 @@
         "settings.changed",
         "conversation.rewound",
         "devices.changed",
-        "host.changed"
+        "host.changed",
+        "engine.event"
       ]
     },
     "HelloParams": {

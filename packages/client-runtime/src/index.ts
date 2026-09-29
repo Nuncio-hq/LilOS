@@ -4,6 +4,7 @@ export {
   type RelayClientOptions,
   type RelayConnectionState,
   RelayError,
+  type RelaySessionFeedState,
 } from "./client";
 export {
   CachedDirectory,

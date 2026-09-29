@@ -136,7 +136,13 @@ function Reasoning({
     <View className="gap-2">
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={thinking ? "Thinking" : `Thought for ${seconds}s`}
+        accessibilityLabel={
+          thinking
+            ? "Thinking"
+            : seconds
+              ? `Thought for ${seconds}s`
+              : "Thought"
+        }
         disabled={thinking}
         onPress={() => {
           ease();
@@ -153,7 +159,7 @@ function Reasoning({
           </Pulse>
         ) : (
           <AppText size="sm" tone="muted" weight="medium">
-            {`Thought for ${seconds || 1}s`}
+            {seconds ? `Thought for ${seconds}s` : "Thought"}
           </AppText>
         )}
         {!thinking && (

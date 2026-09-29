@@ -234,6 +234,12 @@ PR does not exist.
   (one retry owner) and the directory cache are runtime-neutral, RN glue
   (AppState/NetInfo/Keychain) lives only in `apps/mobile`.** Not: per-app
   reconnect loops, or RN imports inside client-runtime. — #154
+- **D-#157 Engine events reach the phone through the host: the harness
+  re-publishes each event of a conversation-bound session as `engine.event`,
+  the relay re-emits it on the conversation's channel, and replay goes
+  through `session.events {conversationId}` gated on `conv.engineRef`.**
+  Not: an engine socket on the phone, a verbatim `events.since`, or device
+  access to raw host methods (same scoping as `folders.detail`, #156). — #157
 
 ## UX
 - **D-#114 The Workbench lives only in Focus mode, and opening a session
