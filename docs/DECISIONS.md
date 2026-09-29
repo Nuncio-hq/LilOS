@@ -208,9 +208,10 @@ PR does not exist.
 - **D-#110 Opening files on the session machine is host API `os.*`:**
   `os.open {root, path, app, line?}` (argv exec, never a shell, target must
   stay inside the session folder) and `os.editors` (VS Code/Cursor/Zed/Xcode
-  detected by bundle id in /Applications + ~/Applications; first in that
-  order is the default until #132). Not: `open -a` guessed by name, or a
-  persisted editor choice. — #110 · PR #143
+  detected by bundle id in /Applications + ~/Applications). The default
+  editor is the Settings pick in relay `settings.defaultEditor` (was: first
+  in catalog order until #132); it leads every detected list. Not:
+  `open -a` guessed by name. — #110 · PR #143
 
 ## Mobile
 - **D-#153 The relay binds the Tailscale address only when Oscar turns on

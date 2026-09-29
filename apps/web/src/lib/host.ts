@@ -12,6 +12,7 @@ import type {
   PrError,
   PullRequest,
 } from "@lilos/ui/types";
+import { defaultEditor, orderEditors } from "../settings/state";
 
 let endpoint = "";
 let token = "";
@@ -195,7 +196,11 @@ export const hostAccessors: HostAccessors = {
   /* os.editors / os.open (issue #110): the Focus header's OpenPathButton and
      the Workbench rows render only when these answer (D-#19). */
   osEditors: () =>
-    host<{ editors: OsEditor[] }>("os.editors", {}).then((r) => r.editors),
+    host<{ editors: OsEditor[] }>("os.editors", {}).then((r) =>
+      // #132: the Settings-picked default leads (D-#110's "first is the
+      // default" — now the relay's stored pick).
+      orderEditors(r.editors, defaultEditor.get()),
+    ),
   osOpen: (cwd, path, app, line) =>
     host<Record<string, never>>("os.open", { root: cwd, path, app, line }).then(
       () => undefined,
@@ -205,6 +210,8 @@ export const hostAccessors: HostAccessors = {
 export type OsEditor = {
   id: "vscode" | "cursor" | "zed" | "xcode";
   name: string;
+  /** The bundle path the host detected (Settings → Editors shows it). */
+  app?: string;
 };
 export type OsApp = OsEditor["id"] | "finder";
 
@@ -217,13 +224,14 @@ const hostMethods = () =>
     .then((r) => new Set(r.methods))
     .catch(() => new Set<string>()));
 
-/** Editors the host detected (os.editors); null when os.open isn't there. */
+/** Editors the host detected (os.editors), default first; null when
+ *  os.open isn't there. */
 export async function hostEditors(): Promise<OsEditor[] | null> {
   const m = await hostMethods();
   if (!m.has("os.open")) return null;
   if (!m.has("os.editors")) return [];
   return host<{ editors: OsEditor[] }>("os.editors", {})
-    .then((r) => r.editors)
+    .then((r) => orderEditors(r.editors, defaultEditor.get()))
     .catch(() => [] as OsEditor[]);
 }
 

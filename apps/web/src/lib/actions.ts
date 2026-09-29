@@ -8,6 +8,7 @@ import type { ApprovalOutcome } from "@lilos/contracts/engine";
 import type { ModelChoice, ModelVisibility } from "@lilos/ui";
 import type { AttachedFile } from "@lilos/ui/types";
 import { atom } from "nanostores";
+import { defaultEditor } from "../settings/state";
 import { toAttachmentInputs } from "./attachments";
 import { USER_ID } from "./me";
 import {
@@ -201,6 +202,13 @@ export async function refreshModels(): Promise<void> {
 export async function setModelVisibility(v: ModelVisibility): Promise<void> {
   modelVisibility.set(v);
   await relay.request("settings.set", { key: "modelVisibility", value: v });
+}
+
+/** Write the Settings default editor (#132) — relay settings KV, same as
+ *  modelVisibility; `settings.changed` brings other windows along. */
+export async function setDefaultEditor(id: string): Promise<void> {
+  defaultEditor.set(id);
+  await relay.request("settings.set", { key: "defaultEditor", value: id });
 }
 
 /** Shared recent folders (relay-owned, #113). */
