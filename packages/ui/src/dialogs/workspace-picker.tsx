@@ -117,7 +117,7 @@ export function WorkspacePicker({
 
       {f && !f.branches.length && (
         <span
-          className="flex h-7 items-center gap-1.5 px-2 text-muted-foreground text-xs"
+          className="flex h-7 items-center gap-1.5 px-2 text-foreground/60 text-xs"
           data-ws="nogit"
           title="Not a git repo: no branches or worktrees, edits land in the folder"
         >
@@ -127,7 +127,7 @@ export function WorkspacePicker({
       )}
       {f && f.branches.length > 0 && !onWorktree && (
         <span
-          className="flex h-7 items-center gap-1.5 px-2 text-muted-foreground text-xs"
+          className="flex h-7 items-center gap-1.5 px-2 text-foreground/60 text-xs"
           data-ws="branch"
           title="Direct mode: edits land on the checked-out branch"
         >
@@ -153,10 +153,10 @@ export function WorkspacePicker({
             <span className="shrink-0 font-mono">
               {pick.mode === "existing" ? pick.existing : pick.base}
             </span>
-            <span className="hidden shrink-0 text-muted-foreground lg:inline">
+            <span className="hidden shrink-0 text-foreground/60 lg:inline">
               · {modeLabel}
             </span>
-            <ChevronDownIcon className="size-3 opacity-60" />
+            <ChevronDownIcon className="size-3" />
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-80" side="top">
             <DropdownMenuGroup>

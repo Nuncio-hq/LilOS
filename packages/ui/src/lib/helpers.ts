@@ -43,7 +43,10 @@ export const preview = (md: string) =>
         .trim(),
     )
     .filter(Boolean)
-    .reduce((acc, l) => acc + (acc.endsWith(":") ? " " : acc ? " · " : "") + l, "");
+    .reduce(
+      (acc, l) => acc + (acc.endsWith(":") ? " " : acc ? " · " : "") + l,
+      "",
+    );
 
 export const PHASE_LABEL: Record<Phase, string> = {
   submitted: "opening session",
