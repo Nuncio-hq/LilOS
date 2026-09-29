@@ -91,6 +91,13 @@ interface SessionBinding {
   >;
   /** User messages queued while a turn runs (delivered in order). */
   queue: AppMessage[];
+  /** Resolved once each in-flight `sendPrompt` has put its `prompt` frame on
+     the wire (or bailed early). `interrupt` and `conversations.rewind` wait
+     on these so a request landing in the pre-prompt window (attachment
+     fetch, folder checkpoint) can't overtake its prompt on the in-order
+     engine conn — an early interrupt would be acked `interrupted:false` on
+     a turn that exists a moment later, silently losing the Stop (#274). */
+  promptGates: Set<Promise<void>>;
   /** Relay message ids the engine consumed (replayed `turn.started.ref`). */
   consumed: Set<string>;
   /** turnId -> relay message id that prompted it — the answer's dedupe key. */
@@ -619,6 +626,7 @@ export class Harness {
          starts on it via `sessionParams`; nothing left to apply. */
       heldPick: undefined,
       heldPickPrev: undefined,
+      promptGates: new Set(),
     };
     this.bindings.set(binding.conversationId, rebound);
     this.conversationBySession.set(started.sessionId, binding.conversationId);
@@ -832,6 +840,28 @@ export class Harness {
   }
 
   private async sendPrompt(binding: SessionBinding, message: AppMessage) {
+    /* #274: interrupts (and rewinds) gate on every in-flight send for this
+       binding until its `prompt` frame is on the wire — a Stop fired while
+       this send is still in its pre-prompt awaits (attachment fetch, folder
+       checkpoint) then lands BEHIND the prompt on the in-order conn and
+       interrupts the turn it meant to stop, instead of being acked
+       `interrupted:false` and lost. Released on dispatch or any bail. */
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseGate = resolve));
+    binding.promptGates.add(gate);
+    try {
+      await this.dispatchPrompt(binding, message, releaseGate);
+    } finally {
+      releaseGate();
+      binding.promptGates.delete(gate);
+    }
+  }
+
+  private async dispatchPrompt(
+    binding: SessionBinding,
+    message: AppMessage,
+    promptOnWire: () => void,
+  ) {
     const conn = this.engine;
     if (!conn) {
       binding.consumed.delete(message.id);
@@ -885,7 +915,7 @@ export class Harness {
       // before the prompt call resolves — they alone own runningTurnId.
       // No RPC timeout: a turn can run for minutes; completion is an event,
       // and a socket drop still rejects this call.
-      await conn.request<{ turnId: string }>(
+      const turn = conn.request<{ turnId: string }>(
         "prompt",
         {
           sessionId: binding.sessionId,
@@ -897,6 +927,9 @@ export class Harness {
         },
         0,
       );
+      // The prompt frame is on the wire — a gated interrupt/rewind may go.
+      promptOnWire();
+      await turn;
       this.markDelivered(binding, message);
     } catch (error) {
       // Going back on the queue releases the in-flight claim — a rebind
@@ -973,7 +1006,14 @@ export class Harness {
     params: ConversationsRewindHostParams,
   ): Promise<ConversationsRewindHostResult> {
     const binding = this.bindings.get(params.conversationId);
-    if (binding?.runningTurnId) {
+    /* #274 same overtaking class as interrupt: a rewind landing inside a
+       send's pre-dispatch window would restore the folder and then the
+       pending prompt still runs. Wait for in-flight sends to dispatch —
+       then either a turn exists and the conflict below refuses, or the
+       send bailed and the rewind proceeds. */
+    if (binding?.promptGates.size) await Promise.all(binding.promptGates);
+    // A rebind may have swapped the binding while the gates were held.
+    if (this.bindings.get(params.conversationId)?.runningTurnId) {
       throw Object.assign(
         new Error("a turn is still running — stop it before rewinding"),
         { code: -32009 },
@@ -1077,6 +1117,7 @@ export class Harness {
           cwd: expandPath(conv.cwd ?? this.opts.workdir, this.home),
           lastSeq: 0,
           queue: [],
+          promptGates: new Set(),
           textByTurn: new Map(),
           pickByTurn: new Map(),
           consumed: new Set(),
@@ -1127,6 +1168,7 @@ export class Harness {
       cwd: expandPath(conv.cwd ?? this.opts.workdir, this.home),
       lastSeq: 0,
       queue: [],
+      promptGates: new Set(),
       textByTurn: new Map(),
       pickByTurn: new Map(),
       consumed: new Set(),
@@ -1714,11 +1756,20 @@ export class Harness {
 
   private async onInterruptRequested(conversationId: string) {
     const binding = this.bindings.get(conversationId);
-    const conn = this.engine;
-    if (!binding || !conn) return;
+    if (!binding) return;
     this.opts.log.info("interrupt requested", { conversationId });
+    /* #274: a sendPrompt still in its pre-dispatch awaits hasn't put
+       `prompt` on the wire — an interrupt sent now overtakes it and the
+       engine acks interrupted:false (no live turn), silently swallowing
+       the Stop. Wait for in-flight sends to dispatch; the in-order conn
+       then lands prompt → interrupt, so the engine has a turn to stop. */
+    await Promise.all(binding.promptGates);
+    const conn = this.engine;
+    // A rebind may have swapped the binding while the gates were held.
+    const live = this.bindings.get(conversationId);
+    if (!conn || !live) return;
     try {
-      await conn.request("interrupt", { sessionId: binding.sessionId });
+      await conn.request("interrupt", { sessionId: live.sessionId });
     } catch (error) {
       this.opts.log.warn("interrupt failed", { error: String(error) });
     }

@@ -2,6 +2,7 @@ import type { RelaySocket, SocketFactory } from "@lilos/client-runtime";
 import { RelayClient } from "@lilos/client-runtime";
 import type { AppMessage, Ask, WelcomeResult } from "@lilos/contracts/app";
 import { connectFake, FakeEngine } from "@lilos/engine-fake";
+import type { CheckpointStore } from "@lilos/host";
 import { describe, expect, it } from "vitest";
 import { createRelay } from "../../relay/src/session";
 import { createMemoryStore } from "../../relay/src/store";
@@ -98,6 +99,7 @@ async function setupWorld(
   tick = 1,
   attachEngine = true,
   engineOpts?: ConstructorParameters<typeof FakeEngine>[0],
+  checkpoints?: CheckpointStore,
 ): Promise<World> {
   const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
   const engine = new FakeEngine({ tick, ...engineOpts });
@@ -132,6 +134,7 @@ async function setupWorld(
     sleep,
     workdir: "/tmp/lilos-test",
     log,
+    ...(checkpoints ? { checkpoints } : {}),
   });
   if (attachEngine) harness.attachEngine(engineConn);
   await harness.start();
@@ -1278,6 +1281,145 @@ describe("auto titles (#137)", () => {
         title: "Tell me about the layout of…",
         titleSource: "auto",
       });
+    } finally {
+      await w.cleanup();
+    }
+  });
+});
+
+/* #274: an interrupt fired while `sendPrompt` is still in its pre-prompt
+   awaits (here: the folder checkpoint) overtakes the prompt on the engine
+   conn — the engine acks interrupted:false on a session that has no turn
+   YET and the Stop is lost; the prompt then runs unimpeded (ac-104 AC-4,
+   ac-27 AC-5). */
+describe("interrupt ordering (#274)", () => {
+  it("#274 AC-1 a Stop fired inside the checkpoint window lands behind its prompt", async () => {
+    // Hold the checkpoint snapshot: sendPrompt parks inside stampCheckpoint
+    // exactly where a real snapshot costs tens-hundreds of ms.
+    let releaseSnapshot!: () => void;
+    let snapshotEntered = false;
+    const held = new Promise<void>((r) => (releaseSnapshot = r));
+    const checkpoints: CheckpointStore = {
+      snapshot: async () => {
+        snapshotEntered = true;
+        await held;
+        return "ck-1";
+      },
+      restore: async () => ({ removed: [], restoredTo: "" }),
+      list: async () => [],
+      prune: async () => {},
+    };
+    const w = await setupWorld(1, true, undefined, checkpoints);
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+      });
+      await waitFor(
+        () => (snapshotEntered ? true : undefined),
+        "checkpoint window",
+      );
+      await w.user.request("turns.interrupt", {
+        conversationId: conversation.id,
+      });
+      // The harness took the request; only then let the prompt go out.
+      await waitFor(
+        () => w.log.lines.find((l) => l.includes("interrupt requested")),
+        "interrupt requested",
+      );
+      releaseSnapshot();
+      const methods = await waitFor(() => {
+        const m = w.engineCalls.map((c) => c.method);
+        return m.includes("prompt") && m.includes("interrupt") ? m : undefined;
+      }, "prompt and interrupt on the engine conn");
+      expect(methods.indexOf("prompt")).toBeLessThan(
+        methods.indexOf("interrupt"),
+      );
+      // The turn ends interrupted — not parked on its scripted approval.
+      const stopped = await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.text === "Stopped.");
+      }, "Stopped. note");
+      expect(stopped).toBeTruthy();
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("#274 AC-2 a Stop against a live turn still interrupts it and cancels its open asks", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+      });
+      // A live turn parked on its scripted approval is the steady-state case
+      // the fix must not change: the interrupt still lands, the ask cancels.
+      const ask = await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks.find((a) => a.request.kind === "approval");
+      }, "open approval ask");
+      await w.user.request("turns.interrupt", {
+        conversationId: conversation.id,
+      });
+      const stopped = await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.text === "Stopped.");
+      }, "Stopped. note");
+      expect(stopped).toBeTruthy();
+      const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+        conversationId: conversation.id,
+        state: "open",
+      });
+      expect(asks.find((a) => a.id === ask.id)).toBeUndefined();
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("#274 AC-3 a Stop on an idle session still reaches the engine and acks through", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Summarize the repo layout",
+      });
+      // Let the turn finish so the session is idle when the Stop lands.
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+      }, "turn completes");
+      const callsBefore = w.engineCalls.length;
+      await w.user.request("turns.interrupt", {
+        conversationId: conversation.id,
+      });
+      // Nothing to interrupt: the engine still sees the request (ack
+      // interrupted:false) and no stopped note appears.
+      await waitFor(
+        () =>
+          w.engineCalls
+            .slice(callsBefore)
+            .find((c) => c.method === "interrupt"),
+        "interrupt reaches the engine",
+      );
+      await new Promise((r) => setTimeout(r, 250));
+      const { messages } = await listConvMessages(w.user, channel.id);
+      expect(messages.find((m) => m.text === "Stopped.")).toBeUndefined();
     } finally {
       await w.cleanup();
     }
