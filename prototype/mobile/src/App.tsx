@@ -5,6 +5,7 @@ import {
   BackgroundSheet,
   buildPairingUrl,
   Choice,
+  CompanyChip,
   ConnectedScreen,
   ConnectingScreen,
   type ConnectingState,
@@ -437,7 +438,9 @@ function Tabs() {
         name="Home"
         component={Home}
         options={{
-          title: "LilOS",
+          title: "",
+          // The company mark sits on the same row as the Mac / compose buttons.
+          headerLeft: () => <CompanyChip name="Oscar Co" />,
           tabBarLabel: "Home",
           tabBarIcon: ({ focused }) => ({
             type: "sfSymbol",
