@@ -1,11 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -110,7 +103,8 @@ describe("AC-4 home-folder boundary — resolveUnderHome (#238)", () => {
     // The resolved path folds back to `~/x` for the wire even when `home`
     // itself is a symlink (the resolved form is literal-home-prefixed).
     expect(abs).toBe(join(home, "x"));
-    expect(collapsePath(abs!, home)).toBe("~/x");
+    if (!abs) throw new Error("~/x refused under a symlinked home");
+    expect(collapsePath(abs, home)).toBe("~/x");
   });
 });
 

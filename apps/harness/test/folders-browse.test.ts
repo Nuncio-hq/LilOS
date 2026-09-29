@@ -16,7 +16,6 @@ import type {
   FoldersBrowseResult,
   FoldersDiscoverResult,
 } from "@lilos/contracts/app";
-import { APP_PROTOCOL_VERSION } from "@lilos/contracts/app";
 import { connectFake, FakeEngine } from "@lilos/engine-fake";
 import { afterEach, describe, expect, it } from "vitest";
 import { createPairingService } from "../../relay/src/pairing";
@@ -339,13 +338,10 @@ describe("AC-3 Use → folders.add → recents on both surfaces → session cwd 
         "channels.openDm",
         { employeeId: employee.id },
       );
-      const { conversation } = await w.phone.request<{
-        conversation: Conversation;
-      }>("conversations.open", {
-        channelId: channel.id,
-        text: "ship it",
-        cwd: "~/repos/notes",
-      });
+      await w.phone.request<{ conversation: Conversation }>(
+        "conversations.open",
+        { channelId: channel.id, text: "ship it", cwd: "~/repos/notes" },
+      );
       await waitFor(async () => {
         const start = w.engineCalls
           .filter((c) => c.method === "session.start")
