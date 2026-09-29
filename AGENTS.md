@@ -60,7 +60,8 @@ prototype/web prototype/mobile   packages/ui(-native) + mock data
   vendored shadcn/AI Elements in `packages/ui` (typecheck + build still
   cover them).
 - CI never calls a real LLM; `engine-fake` is the deterministic engine.
-- CI retries a failed E2E test once; a test it flags flaky gets an issue.
+- CI retries a failed E2E test once; open an issue for any test the
+  Playwright summary lists as flaky.
 
 ## Learn from these projects
 
@@ -98,8 +99,8 @@ Repo: `Nuncio-hq/LilOS`. Use the `gh` CLI.
   (`label:agent-ready -linked:pr`). No priority order; finish slices inside
   a feature before starting a new one.
 - **Now**: when you take a slice, remove `agent-ready`, assign it, and open
-  a **draft** PR with `Closes #N` early; mark it ready for review once
-  `bun run verify` passes locally (CI runs E2E only on ready PRs).
+  a **draft** PR with `Closes #N` early; mark it ready once your tier's
+  checks pass (Normal: `bun run verify`); CI runs E2E only on ready PRs.
   One slice at a time. Stuck → `needs-human`.
   Keep **one** comment titled `Status` on the issue and edit it in place
   (Now / Next / Blocked); no log-comment series.

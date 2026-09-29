@@ -29,15 +29,16 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           DRAFT: ${{ github.event.pull_request.draft }}
-          # Unit tests read these files, so the fast checks still run; E2E does not.
-          DOCS_ONLY: '(\.md$|^\.agents/|^site/|^\.github/ISSUE_TEMPLATE/)'
         run: |
           e2e=true
           if [ "$EVENT" = pull_request ]; then
+            # Assigned first so a git failure fails the step instead of
+            # silently skipping E2E; --no-renames keeps a moved file's old path.
+            files=$(git diff --name-only --no-renames HEAD^1 HEAD)
             if [ "$DRAFT" = true ]; then
               e2e=false
               echo "::notice title=E2E skipped::Draft PR: E2E runs once the PR is marked ready for review."
-            elif ! git diff --name-only HEAD^1 HEAD | grep -qvE "$DOCS_ONLY"; then
+            elif printf '%s\n' "$files" | sh scripts/ci/docs-only.sh; then
               e2e=false
               echo "::notice title=E2E skipped::Only docs, skills or site files changed."
             fi
