@@ -223,6 +223,10 @@ export function ThreadView({
                   : undefined
               }
             />
+          ) : isDM && !work && !repo ? (
+            /* A folder-less DM session is a plain chat — no folder label
+               at all (#196). */
+            <></>
           ) : (
             <WorkspaceBadge work={work} repo={repo} />
           )}
@@ -411,7 +415,9 @@ export function ThreadView({
                 ? "Ticket only. No repo on this channel."
                 : repo
                   ? "Read-only on main. Start work to edit code."
-                  : `session ${thread.session}`
+                  : isDM
+                    ? `Reply to ${leadEmp?.name ?? "the session"}…`
+                    : `session ${thread.session}`
         }
         onSend={onSend}
         draft={draft}

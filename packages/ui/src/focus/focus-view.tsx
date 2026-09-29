@@ -432,6 +432,10 @@ export function FocusView({
                 <FolderIcon className="size-3" />
                 no git repo
               </span>
+            ) : isDM ? (
+              /* A folder-less DM session is a plain chat — no repo exists
+                 to be read-only on, so no label at all (#196). */
+              <></>
             ) : (
               <span className="hidden shrink-0 items-center gap-1 rounded bg-muted px-1 md:flex">
                 <EyeIcon className="size-3" />
@@ -746,7 +750,9 @@ export function FocusView({
                       ? `Edits go to ⎇ ${work.branch}`
                       : work
                         ? "Edits land in this folder"
-                        : "Read-only on main"
+                        : isDM
+                          ? `Reply to ${lead?.name ?? "the employee"}…`
+                          : "Read-only on main"
               }
               onSend={(t, files) => onSend(t, files)}
               draft={draft}
