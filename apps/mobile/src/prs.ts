@@ -33,7 +33,10 @@ export async function refreshConversationPrs(
   conversationId: string,
 ): Promise<void> {
   let flights = inFlight.get(client);
-  if (!flights) inFlight.set(client, (flights = new Set()));
+  if (!flights) {
+    flights = new Set();
+    inFlight.set(client, flights);
+  }
   if (flights.has(conversationId)) return; // one fetch per conversation at a time
   flights.add(conversationId);
   try {

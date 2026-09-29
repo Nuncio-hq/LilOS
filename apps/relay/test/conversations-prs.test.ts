@@ -92,7 +92,10 @@ async function registeredHost(relay: ReturnType<typeof createRelay>) {
 /** A DM with a conversation on it — the store needs the channel row. */
 async function seedConversation(
   store: ReturnType<typeof createMemoryStore>,
-  over: { cwd?: string; workspace?: { mode: "existing"; repoPath: string; branch: string } } = {},
+  over: {
+    cwd?: string;
+    workspace?: { mode: "existing"; repoPath: string; branch: string };
+  } = {},
 ) {
   const employee = await store.createEmployee({
     name: "Ada",

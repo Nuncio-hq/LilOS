@@ -149,10 +149,7 @@ describe("#159 AC-1 refreshConversationPrs — one conversations.prs call fills 
       },
       onEvent: () => () => {},
     };
-    await refreshConversationPrs(
-      client as never,
-      "conv-1",
-    );
+    await refreshConversationPrs(client as never, "conv-1");
     expect(calls).toEqual([
       { method: "conversations.prs", params: { conversationId: "conv-1" } },
     ]);

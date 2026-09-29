@@ -285,7 +285,11 @@ export function mapPrList(entries: GhPrListEntry[]): ForgePrListItem[] {
       repo: v.url.match(/\/([^/]+\/[^/]+)\/pull\/\d+/)?.[1] ?? "",
       title: v.title,
       state:
-        v.state === "MERGED" ? "merged" : v.state === "CLOSED" ? "closed" : "open",
+        v.state === "MERGED"
+          ? "merged"
+          : v.state === "CLOSED"
+            ? "closed"
+            : "open",
       draft: v.isDraft === true,
       head: v.headRefName,
       base: v.baseRefName,
@@ -322,7 +326,9 @@ async function listPrs(root: string, branch: string): Promise<GhPrListEntry[]> {
  * (a workstream's `workspace.branch`). The same branch listed twice is
  * asked once; branches with no PR contribute nothing.
  */
-export async function forgePrs(params: ForgePrsParams): Promise<ForgePrsResult> {
+export async function forgePrs(
+  params: ForgePrsParams,
+): Promise<ForgePrsResult> {
   const root = await repoOrThrow(params.path);
   const current = await run("git", ["symbolic-ref", "--short", "HEAD"], {
     cwd: root,
