@@ -13,6 +13,7 @@ import type {
   MessageAttachment,
   MessageSearchHit,
   MessagesSearchParams,
+  PairedDevice,
   PendingTurn,
   ProfileSettings,
   RecentFolder,
@@ -295,7 +296,78 @@ export interface RelayStore {
    */
   getSetting(key: string): Promise<unknown | null>;
   setSetting(key: string, value: unknown): Promise<void>;
+
+  /* ---------------------- phone pairing (#153) ------------------------ */
+  /**
+   * A pairing grant is stored only as a hash — the raw code exists in the QR
+   * and the exchange request, never in the DB. `consumedAt` set = spent.
+   */
+  insertPairingGrant(grant: {
+    codeHash: string;
+    createdAt: number;
+    expiresAt: number;
+  }): Promise<void>;
+  /**
+   * Spend a grant atomically: marks it consumed when it is known, unexpired
+   * (`expiresAt > at`) and unused; the failure string classifies the refusal
+   * so the exchange endpoint can answer `unknown` | `expired` | `used`.
+   */
+  consumePairingGrant(
+    codeHash: string,
+    at: number,
+  ): Promise<"ok" | "unknown" | "expired" | "used">;
+  /**
+   * Spend a grant AND record the new device in one transaction — a
+   * device-insert failure rolls the spend back so the phone can retry the
+   * same code instead of losing it to an opaque 500.
+   */
+  exchangePairingGrant(input: {
+    codeHash: string;
+    device: NewPairedDevice;
+    at: number;
+  }): Promise<
+    { device: PairedDevice } | { error: "unknown" | "expired" | "used" }
+  >;
+  /** Drop spent/expired grant rows; called on every mint so the table stays small. */
+  prunePairingGrants(at: number): Promise<void>;
+  insertPairedDevice(device: NewPairedDevice): Promise<PairedDevice>;
+  /**
+   * Device-credential hello: a hash match on an unrevoked device bumps
+   * `lastSeenAt` and returns the record; anything else returns null.
+   */
+  authenticateDevice(input: {
+    deviceId: string;
+    credentialHash: string;
+    seenAt: number;
+  }): Promise<PairedDevice | null>;
+  listPairedDevices(): Promise<PairedDevice[]>;
+  /** Mark revoked; returns the public record, null when unknown/already off. */
+  revokePairedDevice(
+    id: string,
+    revokedAt: number,
+  ): Promise<PairedDevice | null>;
 }
+
+/** A new paired device as written (credential arrives pre-hashed). */
+export interface NewPairedDevice {
+  id: string;
+  name: string;
+  credentialHash: string;
+  pairedAt: number;
+  lastSeenAt: number;
+}
+
+/** Row shape the store keeps internally (credential hash never leaves it). */
+interface PairedDeviceRow extends NewPairedDevice {
+  revokedAt?: number;
+}
+
+const rowToDevice = (row: PairedDeviceRow): PairedDevice => ({
+  id: row.id,
+  name: row.name,
+  pairedAt: row.pairedAt,
+  lastSeenAt: row.lastSeenAt,
+});
 
 export function newId(prefix: string): string {
   return `${prefix}_${randomUUID()}`;
@@ -370,6 +442,16 @@ export function createMemoryStore(): RelayStore {
   const folders = new Map<string, RecentFolder>();
   const settings = new Map<string, unknown>();
   let profile: ProfileSettings = {};
+  const grants = new Map<
+    string,
+    {
+      codeHash: string;
+      createdAt: number;
+      expiresAt: number;
+      consumedAt?: number;
+    }
+  >();
+  const devices = new Map<string, PairedDeviceRow>();
 
   /** Strictly increasing recents tick — survives same-ms calls in tests. */
   const folderTick = () =>
@@ -745,6 +827,58 @@ export function createMemoryStore(): RelayStore {
     },
     async setSetting(key, value) {
       settings.set(key, value);
+    },
+    async insertPairingGrant(grant) {
+      grants.set(grant.codeHash, { ...grant });
+    },
+    async consumePairingGrant(codeHash, at) {
+      const grant = grants.get(codeHash);
+      if (!grant) return "unknown";
+      if (grant.consumedAt !== undefined) return "used";
+      if (grant.expiresAt <= at) return "expired";
+      grant.consumedAt = at;
+      return "ok";
+    },
+    async exchangePairingGrant({ codeHash, device, at }) {
+      /* Single-threaded map ops are already atomic — same verdicts as the
+         drizzle transaction. */
+      const grant = grants.get(codeHash);
+      if (!grant) return { error: "unknown" as const };
+      if (grant.consumedAt !== undefined) return { error: "used" as const };
+      if (grant.expiresAt <= at) return { error: "expired" as const };
+      grant.consumedAt = at;
+      devices.set(device.id, { ...device });
+      return { device: rowToDevice(device) };
+    },
+    async prunePairingGrants(at) {
+      for (const [codeHash, grant] of grants) {
+        if (grant.consumedAt !== undefined || grant.expiresAt <= at) {
+          grants.delete(codeHash);
+        }
+      }
+    },
+    async insertPairedDevice(device) {
+      devices.set(device.id, { ...device });
+      return rowToDevice(device);
+    },
+    async authenticateDevice({ deviceId, credentialHash, seenAt }) {
+      const device = devices.get(deviceId);
+      if (!device || device.revokedAt !== undefined) return null;
+      if (device.credentialHash !== credentialHash) return null;
+      device.lastSeenAt = seenAt;
+      return rowToDevice(device);
+    },
+    async listPairedDevices() {
+      return [...devices.values()]
+        .filter((d) => d.revokedAt === undefined)
+        .map(rowToDevice)
+        .sort((a, b) => a.pairedAt - b.pairedAt);
+    },
+    async revokePairedDevice(id, revokedAt) {
+      const device = devices.get(id);
+      if (!device || device.revokedAt !== undefined) return null;
+      device.revokedAt = revokedAt;
+      return rowToDevice(device);
     },
   };
 }

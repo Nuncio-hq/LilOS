@@ -316,6 +316,7 @@
         "engine_unavailable",
         "engine_error",
         "attachment_too_large",
+        "tailscale_unavailable",
         "internal"
       ]
     },
@@ -412,7 +413,12 @@
         "agents.describe",
         "agents.create",
         "agents.update",
-        "models.list"
+        "models.list",
+        "pairing.offer",
+        "pairing.disable",
+        "devices.list",
+        "devices.revoke",
+        "session.ping"
       ]
     },
     "AppEventMethod": {
@@ -434,37 +440,78 @@
         "profile.updated",
         "settings.changed",
         "conversation.rewound",
+        "devices.changed",
         "host.changed"
       ]
     },
     "HelloParams": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "protocolVersion": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        "token": {
-          "type": "string",
-          "minLength": 1
-        },
-        "client": {
+      "anyOf": [
+        {
           "type": "object",
           "properties": {
-            "name": {
-              "type": "string"
+            "protocolVersion": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
             },
-            "version": {
-              "type": "string"
+            "token": {
+              "type": "string",
+              "minLength": 1
+            },
+            "client": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                }
+              }
             }
-          }
+          },
+          "required": [
+            "protocolVersion",
+            "token"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "protocolVersion": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "deviceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "credential": {
+              "type": "string",
+              "minLength": 1
+            },
+            "client": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "deviceId",
+            "credential"
+          ],
+          "additionalProperties": false
         }
-      },
-      "required": [
-        "protocolVersion",
-        "token"
       ]
     },
     "WelcomeResult": {
@@ -6032,6 +6079,281 @@
       "required": [
         "key",
         "value"
+      ]
+    },
+    "PairedDevice": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pairedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "lastSeenAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "pairedAt",
+        "lastSeenAt"
+      ]
+    },
+    "PairingOffer": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expiresAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "host",
+        "code",
+        "name",
+        "expiresAt"
+      ]
+    },
+    "PairingOfferResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "offer": {
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string",
+              "minLength": 1
+            },
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expiresAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "host",
+            "code",
+            "name",
+            "expiresAt"
+          ]
+        }
+      },
+      "required": [
+        "offer"
+      ]
+    },
+    "DevicesListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "devices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "pairedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "lastSeenAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "pairedAt",
+              "lastSeenAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "devices"
+      ]
+    },
+    "DevicesRevokeParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "deviceId"
+      ],
+      "additionalProperties": false
+    },
+    "DevicesChangedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "devices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "pairedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "lastSeenAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "pairedAt",
+              "lastSeenAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "devices"
+      ]
+    },
+    "PairingExchangeParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "PairingExchangeResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "credential": {
+          "type": "string",
+          "minLength": 1
+        },
+        "device": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pairedAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "lastSeenAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "pairedAt",
+            "lastSeenAt"
+          ]
+        }
+      },
+      "required": [
+        "deviceId",
+        "credential",
+        "device"
+      ]
+    },
+    "PairingExchangeError": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "expired",
+            "used"
+          ]
+        }
+      },
+      "required": [
+        "error"
       ]
     },
     "UpdateRelease": {

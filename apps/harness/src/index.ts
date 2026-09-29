@@ -58,7 +58,9 @@ const bundledEngine = (name: string) => {
 const supervisor = new EngineSupervisor({
   launcher: launcherFor(config, repoRoot, log, {
     fake: bundledEngine("lilos-engine-fake"),
-    hermes: bundledEngine("lilos-engine-hermes"),
+    // "nous" not "hermes" in the file name: managed Macs kill *hermes*
+    // executables by name (#141); the engine id stays "hermes".
+    hermes: bundledEngine("lilos-engine-nous"),
   }),
   connect: (url) => connectEngineWs(url),
   onConnection: (conn) => harness.attachEngine(conn),

@@ -195,9 +195,30 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     ],
   },
   {
+    // #153: phone pairing — one-time grants (hash only) and paired devices
+    // (credential hash only; revoked_at closes sockets + blocks hello).
+    version: 11,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS pairing_grants (
+        code_hash TEXT PRIMARY KEY,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        consumed_at INTEGER
+      )`,
+      `CREATE TABLE IF NOT EXISTS paired_devices (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        credential_hash TEXT NOT NULL UNIQUE,
+        paired_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      )`,
+    ],
+  },
+  {
     /* #134: `conversations.rewind` marks dropped messages (hidden, kept for
        audit) and the harness stamps each user message's pre-turn checkpoint. */
-    version: 11,
+    version: 12,
     statements: [
       `ALTER TABLE messages ADD COLUMN rewound INTEGER NOT NULL DEFAULT 0`,
       `ALTER TABLE messages ADD COLUMN checkpoint TEXT`,

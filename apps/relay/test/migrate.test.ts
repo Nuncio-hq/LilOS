@@ -52,8 +52,9 @@ describe("relay migrations", () => {
     // v7 adds #92's pick columns + the LilOS-owned settings KV; v8 adds
     // #118's profile row; v9 adds #138's FTS index (sqlite_master lists the
     // virtual table's shadow tables too — only assert the FTS table itself);
-    // v10 adds #137's title provenance; v11 adds #134's rewind marks.
-    expect(out.version).toBe(11);
+    // v10 adds #137's title provenance; v11 adds #153's phone pairing
+    // tables; v12 adds #134's rewind marks.
+    expect(out.version).toBe(12);
     for (const col of ["provider", "effort", "fast"])
       expect(out.colsAt7).toContain(col);
     for (const col of ["provider", "effort", "fast", "rewound", "checkpoint"])
@@ -62,6 +63,8 @@ describe("relay migrations", () => {
     expect(out.tables).toContain("settings");
     expect(out.tables).toContain("profile");
     expect(out.tables).toContain("messages_fts");
+    expect(out.tables).toContain("pairing_grants");
+    expect(out.tables).toContain("paired_devices");
     // …and keeps everything v6 shipped.
     expect(out.colsAt7).toContain("cwd");
     expect(out.tables).toContain("recent_folders");

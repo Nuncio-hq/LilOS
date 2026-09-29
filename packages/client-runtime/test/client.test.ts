@@ -40,9 +40,9 @@ class FakeSocket implements RelaySocket {
   emit(frame: unknown): void {
     this.fire("message", { data: JSON.stringify(frame) } as never);
   }
-  emitClose(): void {
+  emitClose(code = 1006, reason = ""): void {
     this.readyState = 3;
-    this.fire("close", { code: 1006, reason: "" } as never);
+    this.fire("close", { code, reason } as never);
   }
   private fire(type: string, event?: never): void {
     for (const listener of this.listeners.get(type) ?? []) listener(event);
@@ -645,5 +645,127 @@ describe("relay -> app requests + employee lifecycle (#29)", () => {
     expect(client.rewinds.get()).toEqual({
       conv1: { fromSeq: 1, removedIds: ["m2", "m3", "m1"] },
     });
+  });
+});
+
+describe("mobile instant-connect seam (#154)", () => {
+  it("AC-1 sends the device credential variant of session.hello", async () => {
+    const socket = new FakeSocket();
+    const client = new RelayClient({
+      url: "ws://fake",
+      device: { deviceId: "dev_1", credential: "cred" },
+      socketFactory: () => socket,
+      autoReconnect: false,
+    });
+    const pending = client.connect();
+    await Promise.resolve();
+    socket.openSocket();
+    await Promise.resolve();
+    const hello = socket.sent
+      .map((raw) => JSON.parse(raw) as { method?: string; params?: unknown })
+      .find((f) => f.method === "session.hello");
+    expect(hello?.params).toMatchObject({
+      deviceId: "dev_1",
+      credential: "cred",
+    });
+    expect(hello?.params).not.toHaveProperty("token");
+    socket.respondTo("session.hello", WELCOME);
+    await pending;
+  });
+
+  it("AC-4 session.ping answers on the live socket", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    const ping = client.ping();
+    const frame = socket.sent
+      .map((raw) => JSON.parse(raw) as { method?: string })
+      .find((f) => f.method === "session.ping");
+    expect(frame).toBeDefined();
+    socket.respondTo("session.ping", { ok: true, instanceId: "inst-1" });
+    await expect(ping).resolves.toBeUndefined();
+  });
+
+  it("AC-2 hydrate seeds the directory and watermarks; subscribe resumes with afterSeq", async () => {
+    const { client, socket } = makeClient();
+    client.hydrate({
+      schemaVersion: 1,
+      savedAt: 1,
+      employees: [
+        {
+          id: "e1",
+          name: "Ada",
+          role: "eng",
+          status: "online",
+          profile: "p",
+          model: "m",
+          now: "n",
+          instructions: "",
+          respondTo: "anyone",
+          createdAt: 1,
+        },
+      ],
+      channels: [
+        { id: "ch1", kind: "dm", employeeId: "e1", lastSeq: 5, createdAt: 1 },
+      ],
+      conversations: [],
+      conversationSummaries: [],
+      profile: { userName: "Oscar" },
+      watermarks: { ch1: 5 },
+    });
+    // Cache-first: atoms render before the socket even exists.
+    expect(client.employees.get().map((e) => e.name)).toEqual(["Ada"]);
+    expect(client.profile.get().userName).toBe("Oscar");
+
+    client.channelMessages("ch1"); // subscribed intent survives the reconnect
+    await connectClient(client, () => socket);
+    await Promise.resolve();
+    await Promise.resolve();
+    const subscribe = socket.sent
+      .map(
+        (raw) =>
+          JSON.parse(raw) as {
+            method?: string;
+            params?: { afterSeq?: number };
+          },
+      )
+      .find((f) => f.method === "channel.subscribe");
+    expect(subscribe?.params?.afterSeq).toBe(5);
+  });
+
+  it("a revoked socket close (4403) surfaces device_revoked, not socket_closed", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+
+    socket.emitClose(4403, "device revoked");
+    expect(client.state.get()).toBe("closed");
+    expect(client.lastSocketError).toMatchObject({
+      code: "device_revoked",
+      message: "device revoked",
+      data: { closeCode: 4403 },
+    });
+  });
+
+  it("a plain transport close stays socket_closed and keeps the close code", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+
+    socket.emitClose(1006, "abnormal");
+    expect(client.lastSocketError).toMatchObject({
+      code: "socket_closed",
+      data: { closeCode: 1006, closeReason: "abnormal" },
+    });
+  });
+
+  it("AC-2 snapshot() exports exactly what hydrate() needs", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    const snap = client.snapshot();
+    expect(snap.schemaVersion).toBe(1);
+    expect(snap.employees).toEqual([]);
+    expect(typeof snap.savedAt).toBe("number");
+
+    const { client: cold } = makeClient();
+    cold.hydrate(snap);
+    expect(cold.snapshot()).toEqual({ ...snap, savedAt: expect.any(Number) });
   });
 });

@@ -259,7 +259,7 @@ export function fakeEngineLauncher(options: {
 }
 
 /**
- * The Hermes adapter's argv (#85): a bundled `lilos-engine-hermes` binary or
+ * The Hermes adapter's argv (#85): a bundled `lilos-engine-nous` binary or
  * the repo's serve script, always handed the discovered `hermes` binary via
  * `--hermes-bin` (launchd's PATH does not reach `~/.local/bin`). Provider and
  * model ride only when the operator set them — the engine owns its defaults
@@ -285,7 +285,7 @@ export function hermesServeCommand(options: {
       ? [options.bun ?? "bun", script]
       : (() => {
           throw new Error(
-            "The Hermes engine adapter (lilos-engine-hermes) is not part of this build — it should ship in every bundle.",
+            "The Hermes engine adapter (lilos-engine-nous) is not part of this build — it should ship in every bundle.",
           );
         })();
   const command = [...serve, "--port", "0", "--hermes-bin", options.hermesBin];

@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@lilos/contracts": "workspace:*",
-    "nanostores": "1.5.3"
+    "nanostores": "1.5.3",
+    "zod": "^4.1.11"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
