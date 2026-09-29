@@ -19,8 +19,8 @@ import {
   BrowserWindow,
   ipcMain,
   Menu,
-  nativeTheme,
   Notification,
+  nativeTheme,
   shell,
 } from "electron";
 import { diskVersionStore, helperServiceControl } from "./control";
