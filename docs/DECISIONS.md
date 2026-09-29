@@ -23,6 +23,9 @@ PR does not exist.
   same Drizzle schema.** Not: raw SQL, or Postgres now. — #3 · PR #14
 - **D-#3 Bun-only APIs (`bun:sqlite`, `Bun.serve`) only at app entry points;
   `packages/*` stay runtime-neutral.** Not: Bun APIs everywhere. — #3 · PR #14
+- **D-#201 CI runs E2E only on `main` and ready (non-draft) PRs; a failed
+  E2E test retries once on CI and a pass-on-retry is flagged flaky.**
+  Not: full E2E on every push, or re-running the whole job for a flake. — #201
 - **D-#25 The relay is its own process, local first** (binds 127.0.0.1,
   per-install token); remote = change the address, not the code.
   Not: embedded in apps/web, or remote-first. — #25 · PR #41
