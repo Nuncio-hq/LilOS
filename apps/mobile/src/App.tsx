@@ -31,6 +31,7 @@ import {
   type NativeStackNavigationOptions,
 } from "@react-navigation/native-stack";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
@@ -65,6 +66,7 @@ import { nav, type Props, type Routes, type TabRoutes } from "./routes";
 import { Dm, FolderPicker, ModelPicker } from "./screens/dm";
 import { Activity, Home, NeedsYouSlot, useHomeWire } from "./screens/home";
 import { Thread, ThreadInfo } from "./screens/thread";
+import { formatVersionLabel } from "./version-label";
 
 /* apps/mobile — the real app (#154): the prototype's onboarding screens from
    @lilos/ui-native wired to the actual relay. Pairing runs the #153 grant →
@@ -258,6 +260,17 @@ function Settings() {
   return (
     <SettingsScreen
       title="Settings"
+      app={{
+        name: "LilOS",
+        // Native bundle values so the shipped TestFlight build number shows.
+        versionLabel: formatVersionLabel(
+          Constants.nativeAppVersion ??
+            Constants.expoConfig?.version ??
+            "0.1.0",
+          Constants.nativeBuildVersion ??
+            Constants.expoConfig?.ios?.buildNumber,
+        ),
+      }}
       mac={
         mac && {
           name: mac.name,
