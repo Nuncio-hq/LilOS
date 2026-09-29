@@ -682,6 +682,15 @@ export class RelayClient {
   }
 
   private async refreshDirectory(): Promise<void> {
+    /* `devices.list` is pairing admin: the relay refuses it for a paired
+       phone (device scope). It must not sink the rest of the directory —
+       one rejected read inside the Promise.all below used to leave a phone
+       with an empty Home. Only token-scope clients (the Mac) ask for it. */
+    const devicesRead = this.options.device
+      ? Promise.resolve(undefined)
+      : this.request<{ devices: PairedDevice[] }>("devices.list", {}).catch(
+          () => undefined,
+        );
     try {
       const [employees, channels, conversations, summaries, settings, devices] =
         await Promise.all([
@@ -697,14 +706,14 @@ export class RelayClient {
             { includeArchived: true },
           ),
           this.request<{ profile: ProfileSettings }>("profile.get", {}),
-          this.request<{ devices: PairedDevice[] }>("devices.list", {}),
+          devicesRead,
         ]);
       this.employees.set(employees.employees);
       this.channels.set(channels.channels);
       this.conversations.set(conversations.conversations);
       this.conversationSummaries.set(summaries.summaries);
       this.profile.set(settings.profile);
-      this.devices.set(devices.devices);
+      if (devices) this.devices.set(devices.devices);
       this.directoryReady.set(true);
     } catch {
       // Directory refresh is best-effort on reconnect; stores keep stale data.
