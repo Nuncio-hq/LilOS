@@ -233,7 +233,7 @@ export function EmployeeHome({
     t: string,
     pick?: WsPick,
     files?: AttachedFile[],
-  ) => undefined | Promise<unknown>;
+  ) => void | Promise<unknown>;
   /* Host-held composer draft for this DM channel (issue #103); omitted, the
      composer keeps its own state. */
   draft?: string;
