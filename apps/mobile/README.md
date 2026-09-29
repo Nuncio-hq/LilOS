@@ -21,9 +21,13 @@ prebuilds the iOS project, archives, exports an `.ipa` and uploads it.
 
 What it needs on your Mac:
 
-- **Xcode** on team `R8GJL3N9WX` — no Apple ID sign-in needed: the script
-  passes the ASC API key to xcodebuild (`-authenticationKeyPath`/`ID`/
-  `IssuerID` + `-allowProvisioningUpdates`). An Apple ID signed in works too.
+- **Xcode 26.x** on team `R8GJL3N9WX` — preflight refuses iOS 27+ SDKs: those
+  archives crash on launch until UIScene lifecycle adoption lands (#275). On a
+  multi-Xcode Mac, point the script at 26.x with
+  `DEVELOPER_DIR=/Applications/Xcode-26.x.app/Contents/Developer` (or
+  `sudo xcode-select -s`). No Apple ID sign-in needed: the script passes the
+  ASC API key to xcodebuild (`-authenticationKeyPath`/`ID`/`IssuerID` +
+  `-allowProvisioningUpdates`). An Apple ID signed in works too.
 - **CocoaPods** for `expo prebuild` — auto-installed via
   `brew install cocoapods` when `pod` is missing (needs brew).
 - The **ASC API key** in env: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`

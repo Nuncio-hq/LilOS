@@ -113,11 +113,17 @@ describe("AC-4 the mobile README documents shipping a TestFlight build", () => {
 const SCRIPT = join(ROOT, "scripts/release/testflight.sh");
 const BUN_BIN = process.env.BUN ?? process.execPath;
 
-const runRelease = (args: string[], env: Record<string, string> = {}) =>
-  spawnSync("bash", [SCRIPT, ...args], {
+const runRelease = (args: string[], env: Record<string, string> = {}) => {
+  // A node-run vitest worker leaks NODE/npm_node_execpath=<node> into the
+  // child env; `bun x` then honors the `#!/usr/bin/env node` shebang on expo
+  // instead of substituting bun — unresolvable on the stub PATH. Drop them so
+  // a node-run vitest doesn't poison the stubbed toolchain.
+  const { NODE: _n, npm_node_execpath: _e, ...rest } = process.env;
+  return spawnSync("bash", [SCRIPT, ...args], {
     encoding: "utf8",
-    env: { ...process.env, ...env },
+    env: { ...rest, ...env },
   });
+};
 
 // The two xcodebuild invocations --dry-run prints under "=== plan".
 const planLines = (out: string) =>
@@ -144,6 +150,14 @@ const ASC_ENV = {
   ASC_KEY_P8: "-----BEGIN PRIVATE KEY-----\\nFAKE\\n-----END PRIVATE KEY-----",
 };
 const NO_ASC = { ASC_KEY_ID: "", ASC_ISSUER_ID: "", ASC_KEY_P8: "" };
+
+// A healthy active Xcode: -showsdks advertises an iphoneos SDK (the platform
+// component is downloaded), and xcrun reports <version> for it.
+const XCODEBUILD_OK = `if [ "$1" = "-showsdks" ]; then echo "iOS 26.5 -sdk iphoneos26.5"; fi\nexit 0`;
+const toolchain = (version: string) => ({
+  xcodebuild: XCODEBUILD_OK,
+  xcrun: `if [ "$1" = "--sdk" ]; then echo "${version}"; fi\nexit 0`,
+});
 
 describe("#268 a bare VM ships with zero manual steps", () => {
   it("builds -authenticationKey* flags from the ASC secrets on BOTH xcodebuilds", () => {
@@ -211,7 +225,7 @@ describe("#268 a bare VM ships with zero manual steps", () => {
   });
 
   it("FAILs naming 'brew install cocoapods' when pod and brew are missing", () => {
-    const stub = stubBin({ ...BUN_STUB, xcodebuild: "exit 0" });
+    const stub = stubBin({ ...BUN_STUB, xcodebuild: XCODEBUILD_OK });
     try {
       const r = runRelease([], {
         PATH: MIN_PATH(stub),
@@ -225,7 +239,7 @@ describe("#268 a bare VM ships with zero manual steps", () => {
   });
 
   it("WARNs on a missing pod in --dry-run without installing", () => {
-    const stub = stubBin({ ...BUN_STUB, xcodebuild: "exit 0" });
+    const stub = stubBin({ ...BUN_STUB, xcodebuild: XCODEBUILD_OK });
     try {
       const r = runRelease(["--dry-run"], {
         PATH: MIN_PATH(stub),
@@ -251,7 +265,11 @@ describe("#268 a bare VM ships with zero manual steps", () => {
         brew: 'if [ "$1" = "install" ] && [ "$2" = "cocoapods" ]; then\n  printf "#!/bin/sh\\nexit 0\\n" > "$(dirname "$0")/pod"\n  chmod +x "$(dirname "$0")/pod"\nfi\nexit 0',
         bunx: "exit 0",
         xcrun: "exit 0",
-        xcodebuild: `echo "xcodebuild $*" >> "$LILOS_STUB_LOG"
+        // Preflight probes (-showsdks/-downloadPlatform) are not build legs —
+        // don't log them; -showsdks must advertise a present iphoneos SDK.
+        xcodebuild: `[ "$1" = "-showsdks" ] && { echo "iOS 26.5 -sdk iphoneos26.5"; exit 0; }
+[ "$1" = "-downloadPlatform" ] && exit 0
+echo "xcodebuild $*" >> "$LILOS_STUB_LOG"
 prev=""; out=""
 for a in "$@"; do [ "$prev" = "-exportPath" ] && out="$a"; prev="$a"; done
 case " $* " in *" -exportArchive "*) mkdir -p "$out"; touch "$out/LilOS.ipa";; esac
@@ -287,4 +305,114 @@ exit 0`,
       }
     },
   );
+});
+
+/**
+ * Issue #276: an archive built against the iOS 27 SDK is killed at launch
+ * until UIScene lifecycle adoption lands (#275), so preflight must refuse to
+ * build on it — FAIL in a real run, WARN under --dry-run (the miss()
+ * convention). Tests stub `xcrun --sdk iphoneos --show-sdk-version`.
+ */
+
+describe("#276 preflight refuses an iOS-27-SDK build", () => {
+  it("FAILs naming the UIScene issue when the active iOS SDK is 27", () => {
+    const stub = stubBin({
+      ...BUN_STUB,
+      ...toolchain("27.0"),
+    });
+    try {
+      const r = runRelease([], { PATH: MIN_PATH(stub), ...NO_ASC });
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain("UIScene");
+      expect(r.stderr).toContain("#275");
+      expect(r.stderr).toContain("Xcode 26");
+    } finally {
+      rmSync(stub, { recursive: true, force: true });
+    }
+  });
+
+  it("WARNs (not FAILs) on iOS SDK 27 in --dry-run and still prints the plan", () => {
+    const stub = stubBin({
+      ...BUN_STUB,
+      ...toolchain("27.1"),
+    });
+    try {
+      const r = runRelease(["--dry-run"], {
+        PATH: MIN_PATH(stub),
+        LILOS_BUILD_NUMBER: "42",
+        ...NO_ASC,
+      });
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("WARN: iOS SDK 27.1");
+      expect(r.stdout).toContain("UIScene");
+      expect(planLines(r.stdout)).toHaveLength(2);
+    } finally {
+      rmSync(stub, { recursive: true, force: true });
+    }
+  });
+
+  it("passes preflight when the active iOS SDK is 26", () => {
+    const stub = stubBin({
+      ...BUN_STUB,
+      ...toolchain("26.6"),
+    });
+    try {
+      const r = runRelease(["--dry-run"], {
+        PATH: MIN_PATH(stub),
+        LILOS_BUILD_NUMBER: "42",
+        ...NO_ASC,
+      });
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("iphoneos SDK: 26.6");
+      expect(planLines(r.stdout)).toHaveLength(2);
+    } finally {
+      rmSync(stub, { recursive: true, force: true });
+    }
+  });
+
+  it("downloads a missing iOS platform component in a real run", () => {
+    // -showsdks advertises iphoneos only after -downloadPlatform ran (marker).
+    const stub = stubBin({
+      ...BUN_STUB,
+      xcodebuild: `if [ "$1" = "-showsdks" ]; then
+  [ -f "$(dirname "$0")/ios-platform" ] && echo "iOS 26.5 -sdk iphoneos26.5"
+elif [ "$1" = "-downloadPlatform" ]; then
+  touch "$(dirname "$0")/ios-platform"
+fi
+exit 0`,
+      xcrun: 'if [ "$1" = "--sdk" ]; then echo "26.6"; fi\nexit 0',
+      pod: "exit 0",
+    });
+    try {
+      const r = runRelease([], { PATH: MIN_PATH(stub), ...NO_ASC });
+      expect(r.stdout).toContain("xcodebuild -downloadPlatform iOS");
+      expect(existsSync(join(stub, "ios-platform"))).toBe(true);
+      expect(r.stdout).toContain("iphoneos SDK: 26.6");
+      // Dies later on the missing ASC secrets — past both iOS checks.
+      expect(r.stderr).toContain("ASC_KEY_ID is required");
+    } finally {
+      rmSync(stub, { recursive: true, force: true });
+    }
+  });
+
+  it("WARNs with the download command in --dry-run without downloading", () => {
+    const stub = stubBin({
+      ...BUN_STUB,
+      xcodebuild: `if [ "$1" = "-downloadPlatform" ]; then touch "$(dirname "$0")/downloaded"; fi\nexit 0`,
+      xcrun: 'if [ "$1" = "--sdk" ]; then echo "26.6"; fi\nexit 0',
+    });
+    try {
+      const r = runRelease(["--dry-run"], {
+        PATH: MIN_PATH(stub),
+        LILOS_BUILD_NUMBER: "42",
+        ...NO_ASC,
+      });
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("WARN:");
+      expect(r.stdout).toContain("xcodebuild -downloadPlatform iOS");
+      expect(existsSync(join(stub, "downloaded"))).toBe(false);
+    } finally {
+      rmSync(stub, { recursive: true, force: true });
+    }
+  });
 });
