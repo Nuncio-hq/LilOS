@@ -40,8 +40,9 @@ PR does not exist.
   Not: delete profile on remove. — #29
 - **D-#113 A DM conversation owns its folder: `conversations.open` carries
   `cwd`, the relay stores it (nullable), and the engine sees it only as
-  `cwd` on `session.start`.** Not: a per-employee fixed workdir, or folder
-  moves inside a session (#10). — #113
+  `cwd` on `session.start`. Add a folder always opens LilOS's in-app
+  dialog, desktop included.** Not: a per-employee fixed workdir, folder
+  moves inside a session (#10), or the macOS open panel (#208). — #113
 - **D-#138 Message search indexes only the relay's stored messages via a
   SQLite FTS5 external-content table + triggers (migration v9).** Engine
   transcripts, tool output and attachments are never indexed (D-#25).
