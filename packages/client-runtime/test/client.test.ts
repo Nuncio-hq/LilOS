@@ -688,3 +688,91 @@ describe("mobile instant-connect seam (#154)", () => {
     expect(cold.snapshot()).toEqual({ ...snap, savedAt: expect.any(Number) });
   });
 });
+
+describe("asks read model (#155)", () => {
+  const askFixture = (over: Record<string, unknown> = {}) => ({
+    id: "ask_1",
+    channelId: "ch1",
+    conversationId: "conv1",
+    turnId: "t1",
+    requestId: "r1",
+    request: {
+      kind: "approval" as const,
+      command: "patch README.md",
+      options: ["once", "always", "deny"],
+    },
+    state: "open" as const,
+    createdAt: 1,
+    ...over,
+  });
+
+  /** Answer every directory read so the refresh fully lands. */
+  const answerDirectory = (socket: FakeSocket, asks: unknown[] = []) => {
+    socket.respondTo("employees.list", { employees: [] });
+    socket.respondTo("channels.list", {
+      channels: [
+        { id: "ch1", kind: "dm", employeeId: "e1", lastSeq: 0, createdAt: 1 },
+      ],
+    });
+    socket.respondTo("conversations.list", { conversations: [] });
+    socket.respondTo("conversations.summaries", { summaries: [] });
+    socket.respondTo("profile.get", { profile: {} });
+    socket.respondTo("devices.list", { devices: [] });
+    socket.respondTo("asks.list", { asks });
+  };
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("AC-3 asks.list seeds the asks atom; ask.opened/ask.resolved upsert live", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    answerDirectory(socket, [askFixture()]);
+    await flush();
+    expect(client.asks.get().map((a) => a.id)).toEqual(["ask_1"]);
+
+    const second = askFixture({ id: "ask_2", createdAt: 2 });
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "ask.opened",
+      params: { channelId: "ch1", ask: second },
+    });
+    expect(client.asks.get().map((a) => a.id)).toEqual(["ask_1", "ask_2"]);
+
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "ask.resolved",
+      params: {
+        channelId: "ch1",
+        ask: { ...second, state: "resolved", outcome: "once", resolvedAt: 3 },
+      },
+    });
+    expect(client.asks.get().find((a) => a.id === "ask_2")?.state).toBe(
+      "resolved",
+    );
+
+    // channel.subscribe replays the channel's ask set — dedupe by id.
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "ask.opened",
+      params: { channelId: "ch1", ask: askFixture() },
+    });
+    expect(client.asks.get()).toHaveLength(2);
+  });
+
+  it("channel.removed drops the channel's asks", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    answerDirectory(socket, [
+      askFixture(),
+      askFixture({ id: "ask_9", channelId: "ch2", createdAt: 2 }),
+    ]);
+    await flush();
+    expect(client.asks.get()).toHaveLength(2);
+
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "channel.removed",
+      params: { channelId: "ch1" },
+    });
+    expect(client.asks.get().map((a) => a.id)).toEqual(["ask_9"]);
+  });
+});
