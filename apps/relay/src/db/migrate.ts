@@ -224,6 +224,13 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `ALTER TABLE messages ADD COLUMN checkpoint TEXT`,
     ],
   },
+  {
+    /* #156: workstream opens stamp the pick (`mode` + repoPath + branch/base)
+       as JSON — `cwd` then holds the worktree path, `repoPath` the recents
+       folder. */
+    version: 13,
+    statements: [`ALTER TABLE conversations ADD COLUMN workspace TEXT`],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

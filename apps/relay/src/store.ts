@@ -18,6 +18,7 @@ import type {
   ProfileSettings,
   RecentFolder,
   RespondTo,
+  WorkspaceIntent,
 } from "@lilos/contracts/app";
 import type { ApprovalOutcome, EngineRequest } from "@lilos/contracts/engine";
 
@@ -80,8 +81,13 @@ export interface OpenConversationInput {
   provider?: string;
   effort?: string;
   fast?: boolean;
-  /** Folder the session works in (#113); also bumps the recents list. */
+  /** Folder the session works in (#113); also bumps the recents list. For a
+      workstream open (#156) this is the worktree path and `workspace.repoPath`
+      bumps recents instead. */
   cwd?: string;
+  /** Workstream pick stamped at open (#156): new/existing worktree of
+      `repoPath`; absent = `cwd` is the folder itself. */
+  workspace?: WorkspaceIntent;
 }
 
 export interface AppendMessageInput {
@@ -668,6 +674,9 @@ export function createMemoryStore(): RelayStore {
         engineRef: null,
         state: "idle",
         ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+        ...(input.workspace !== undefined
+          ? { workspace: input.workspace }
+          : {}),
         ...openTitle(input),
         archived: false,
         deliveredSeq: 0,
@@ -678,7 +687,10 @@ export function createMemoryStore(): RelayStore {
         ...(input.fast !== undefined ? { fast: input.fast } : {}),
       };
       conversations.set(conversation.id, conversation);
-      if (input.cwd !== undefined) touchFolder(input.cwd);
+      /* The picker's folder bumps recents — a `.lilos/wt/*` run dir never
+         makes the list (#156). */
+      const bump = input.workspace?.repoPath ?? input.cwd;
+      if (bump !== undefined) touchFolder(bump);
       const { message: rootMessage } = appendMessage({
         channelId: input.channelId,
         conversationId: conversation.id,

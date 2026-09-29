@@ -9,6 +9,8 @@ import type {
   GitDiscoverResult,
   GitIsRepoResult,
   GitStatusResult,
+  GitWorktree,
+  GitWorktreesResult,
 } from "@lilos/contracts/host";
 import { HOST_ERRORS, HostError } from "./errors.js";
 import { collapsePath, expandPath } from "./paths.js";
@@ -241,6 +243,80 @@ export async function gitDiff(params: {
   }
   files.sort((a, b) => a.path.localeCompare(b.path));
   return { root: collapsePath(root), base: hasHead ? base : null, files };
+}
+
+/** Reflog "branch: Created from <ref>" — the fork point, best-effort. */
+async function forkRef(root: string, branch: string): Promise<string | null> {
+  const out = await gitOr(root, ["reflog", "show", "--format=%gs", branch]);
+  const last = out?.trim().split("\n").at(-1);
+  return last ? (/Created from (.+)$/.exec(last)?.[1] ?? null) : null;
+}
+
+export async function gitWorktrees(params: {
+  path: string;
+}): Promise<GitWorktreesResult> {
+  const root = await rootOrThrow(params.path);
+  const raw = await git(root, ["worktree", "list", "--porcelain"]);
+  /* Blocks separated by blank lines:
+       worktree /abs/path
+       HEAD <sha>
+       branch refs/heads/<name>   (or `detached`, and `bare` on bare repos) */
+  const worktrees: GitWorktree[] = [];
+  for (const block of raw.split(/\n\n+/)) {
+    const lines = block.split("\n");
+    const path = lines
+      .find((l) => l.startsWith("worktree "))
+      ?.slice("worktree ".length)
+      .trim();
+    if (!path) continue;
+    const wt: GitWorktree = { path: collapsePath(path) };
+    const head = lines
+      .find((l) => l.startsWith("HEAD "))
+      ?.slice(5)
+      .trim();
+    if (head) wt.head = head;
+    const branchRef = lines.find((l) => l.startsWith("branch "));
+    if (lines.includes("bare")) wt.bare = true;
+    if (lines.includes("detached")) wt.detached = true;
+    if (branchRef) {
+      wt.branch = branchRef.slice(7).replace(/^refs\/heads\//, "");
+      const from = await forkRef(root, wt.branch);
+      if (from) wt.from = from;
+    }
+    worktrees.push(wt);
+  }
+  return { root: collapsePath(root), worktrees };
+}
+
+/**
+ * `git worktree add <dir> -b <branch> <base>` — LilOS's one mutating git op
+ * (#156's "new workstream" mode): it only ever ADDS a worktree+branch, never
+ * removes/checks out. Called by the harness in-process; deliberately not on
+ * the loopback HTTP surface, which stays read-only (D-#11). When `dir` sits
+ * inside the repo's `.lilos/` we write `.lilos/.gitignore = *` first — the
+ * dir then renders no untracked entries in the parent checkout's `git
+ * status`, without touching `.git/info/exclude` or the user's .gitignore.
+ */
+export async function worktreeAdd(params: {
+  /** Repo the worktree belongs to (any dir inside its work tree). */
+  path: string;
+  /** New worktree directory (absolute or `~/`). */
+  dir: string;
+  /** Branch to create at the worktree (`ws/<slug>` convention is the caller's). */
+  branch: string;
+  /** Start point: branch, ref or commit. */
+  base: string;
+}): Promise<{ dir: string; branch: string }> {
+  const root = await rootOrThrow(params.path);
+  const dir = resolve(expandPath(params.dir));
+  const lilos = join(root, ".lilos");
+  if (dir.startsWith(`${lilos}/`)) {
+    await fsp.mkdir(lilos, { recursive: true });
+    const gi = join(lilos, ".gitignore");
+    if (!existsSync(gi)) await fsp.writeFile(gi, "*\n");
+  }
+  await git(root, ["worktree", "add", "-b", params.branch, dir, params.base]);
+  return { dir: collapsePath(dir), branch: params.branch };
 }
 
 export async function gitDiscoverRepos(params: {

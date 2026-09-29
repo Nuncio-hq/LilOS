@@ -27,6 +27,7 @@ import {
   type EngineHostState,
   type EnginePassthroughMethod,
   FoldersAddParams,
+  FoldersDetailParams,
   FoldersListParams,
   HarnessRegisterParams,
   HarnessReportParams,
@@ -144,6 +145,14 @@ const PAIRING_ADMIN_METHODS = new Set([
   "pairing.disable",
   "devices.list",
   "devices.revoke",
+]);
+
+/* `folders.add` is also refused for device peers (#156): `folders.detail`
+   gates on the recents list, so a device that could write recents could
+   widen its own git-probe scope — recents stay Mac-written for them. */
+const DEVICE_FORBIDDEN_METHODS = new Set([
+  ...PAIRING_ADMIN_METHODS,
+  "folders.add",
 ]);
 
 /** The peer that has `harness.register`ed — the single engine host. */
@@ -527,7 +536,7 @@ export function createRelay(options: RelayOptions): Relay {
        its own revoke) or drop other devices. devicePeers is set inside
        session.hello before the credential check resolves, so it is also
        the marker that separates device peers from token-authed ones. */
-    if (devicePeers.has(peer) && PAIRING_ADMIN_METHODS.has(method)) {
+    if (devicePeers.has(peer) && DEVICE_FORBIDDEN_METHODS.has(method)) {
       respondError(
         peer,
         id,
@@ -719,6 +728,24 @@ export function createRelay(options: RelayOptions): Relay {
           respond(peer, id, {
             folder: await store.addRecentFolder(parsed.data.path),
           });
+          return;
+        }
+        case "folders.detail": {
+          /* Branch/workstream probe of a recents-listed folder (#156): the
+             phone (device scope) can read workspaces of folders the Mac
+             already lists — nothing wider. The probe itself runs on the
+             session machine, so the call forwards to the harness. */
+          const parsed = FoldersDetailParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const recents = await store.listRecentFolders();
+          if (!recents.some((f) => f.path === parsed.data.path)) {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "folder is not in the recents list",
+            );
+          }
+          forwardToHost(peer, id, "folders.detail", parsed.data);
           return;
         }
         case "profile.get": {

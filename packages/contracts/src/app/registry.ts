@@ -29,6 +29,7 @@ import {
   ProfileSettings,
   RecentFolder,
   RespondTo,
+  WorkspaceIntent,
 } from "./domain";
 import { UpdateFeed, UpdateRelease } from "./update";
 import { APP_PROTOCOL_VERSION } from "./version";
@@ -81,8 +82,11 @@ import {
   EmployeeUpsertedEvent,
   FoldersAddParams,
   FoldersAddResult,
+  FoldersDetailParams,
+  FoldersDetailResult,
   FoldersListParams,
   FoldersListResult,
+  FolderWorkstream,
   HarnessRegisterParams,
   HarnessRegisterResult,
   HarnessReportParams,
@@ -170,6 +174,9 @@ export const appProtocolSchemas = {
   FoldersListResult,
   FoldersAddParams,
   FoldersAddResult,
+  FolderWorkstream,
+  FoldersDetailParams,
+  FoldersDetailResult,
   ProfileSettings,
   ProfileGetParams,
   ProfileGetResult,
@@ -177,6 +184,7 @@ export const appProtocolSchemas = {
   ProfileUpdateResult,
   Conversation,
   ConversationState,
+  WorkspaceIntent,
   ConversationsListParams,
   ConversationsListResult,
   ConversationsOpenParams,

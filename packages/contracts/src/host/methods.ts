@@ -30,6 +30,8 @@ import {
   GitIsRepoResult,
   GitStatusParams,
   GitStatusResult,
+  GitWorktreesParams,
+  GitWorktreesResult,
 } from "./git";
 import {
   OsEditorsParams,
@@ -106,6 +108,11 @@ export const HOST_METHODS = {
     params: GitDiffParams,
     result: GitDiffResult,
     doc: "Per-file working diff vs a base ref: stat + hunks-only patch (untracked files included).",
+  },
+  "git.worktrees": {
+    params: GitWorktreesParams,
+    result: GitWorktreesResult,
+    doc: "`git worktree list`: every worktree of the repo (own checkout first) with branch + fork ref.",
   },
   "git.discoverRepos": {
     params: GitDiscoverParams,

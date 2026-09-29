@@ -99,6 +99,39 @@ export const GitDiffResult = z.object({
 });
 export type GitDiffResult = z.infer<typeof GitDiffResult>;
 
+// ── git.worktrees ───────────────────────────────────────────────────────────
+export const GitWorktreesParams = z.strictObject({ path: Path });
+export type GitWorktreesParams = z.infer<typeof GitWorktreesParams>;
+
+/**
+ * One `git worktree` of a repo. The repo's own checkout is included (it is
+ * the first entry of `git worktree list`); callers that want only linked
+ * workstreams filter it out by `path !== root`.
+ */
+export const GitWorktree = z.object({
+  /** Worktree directory (`~`-collapsed). */
+  path: z.string(),
+  /** HEAD commit sha at the worktree. */
+  head: z.string().optional(),
+  /** Checked-out branch; absent on a detached or bare entry. */
+  branch: z.string().optional(),
+  detached: z.boolean().optional(),
+  bare: z.boolean().optional(),
+  /**
+   * Ref the branch was created from, best-effort read of the branch
+   * reflog's "Created from <ref>" subject. Absent when the reflog doesn't
+   * say (foreign branches, reflogs off) — display falls back to nothing.
+   */
+  from: z.string().optional(),
+});
+export type GitWorktree = z.infer<typeof GitWorktree>;
+
+export const GitWorktreesResult = z.object({
+  root: z.string(),
+  worktrees: z.array(GitWorktree),
+});
+export type GitWorktreesResult = z.infer<typeof GitWorktreesResult>;
+
 // ── git.discoverRepos ───────────────────────────────────────────────────────
 export const GitDiscoverParams = z.strictObject({
   /** Roots to scan (e.g. `~/Desktop`, `~/repos`). Missing roots are skipped. */

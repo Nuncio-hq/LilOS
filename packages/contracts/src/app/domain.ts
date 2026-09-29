@@ -63,6 +63,35 @@ export type AppChannel = z.infer<typeof AppChannel>;
 export const ConversationState = z.enum(["idle", "active", "closed"]);
 export type ConversationState = z.infer<typeof ConversationState>;
 
+/**
+ * How a conversation's `cwd` came to be (#156 workstream modes, prototype
+ * semantics): `new` = the harness materialized `cwd` as a fresh git
+ * worktree of `repoPath` (`git worktree add <cwd> -b <branch> <base>`)
+ * before `session.start`; `existing` = `cwd` already was the workstream's
+ * worktree. Absent = `cwd` is the picked folder itself (direct) or the
+ * default workdir (just chat). `repoPath` is the picker's folder — it is
+ * what bumps the recents list, never the `.lilos/wt/*` path in `cwd`.
+ */
+export const WorkspaceIntent = z.discriminatedUnion("mode", [
+  z.strictObject({
+    mode: z.literal("new"),
+    /** The folder the worktree belongs to (and recents bump). */
+    repoPath: z.string().min(1),
+    /** The workstream's branch — created at the worktree. */
+    branch: z.string().min(1),
+    /** Ref the branch forks from (`git worktree add` start point). */
+    base: z.string().min(1),
+  }),
+  z.strictObject({
+    mode: z.literal("existing"),
+    /** The folder whose worktree list carried this workstream. */
+    repoPath: z.string().min(1),
+    /** The workstream's branch — already checked out at `cwd`. */
+    branch: z.string().min(1),
+  }),
+]);
+export type WorkspaceIntent = z.infer<typeof WorkspaceIntent>;
+
 export const Conversation = z.object({
   id: z.string().min(1),
   channelId: z.string().min(1),
@@ -91,9 +120,12 @@ export const Conversation = z.object({
   /**
    * The folder the session works in (issue #113), picked at open time. The
    * engine only ever sees it as `session.start { cwd }`; absent = the
-   * harness's default workdir.
+   * harness's default workdir. For a workstream open (#156) this is the
+   * worktree path; `workspace.repoPath` is the picked folder.
    */
   cwd: z.string().min(1).optional(),
+  /** Workstream mode stamped at open (#156); absent = direct/just chat. */
+  workspace: WorkspaceIntent.optional(),
   archived: z.boolean(),
   /**
    * Host-owned watermark: highest user-message seq the harness has handed to

@@ -573,6 +573,67 @@
         "additionalProperties": false
       }
     },
+    "git.worktrees": {
+      "doc": "`git worktree list`: every worktree of the repo (own checkout first) with branch + fork ref.",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "root": {
+            "type": "string"
+          },
+          "worktrees": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "head": {
+                  "type": "string"
+                },
+                "branch": {
+                  "type": "string"
+                },
+                "detached": {
+                  "type": "boolean"
+                },
+                "bare": {
+                  "type": "boolean"
+                },
+                "from": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "root",
+          "worktrees"
+        ],
+        "additionalProperties": false
+      }
+    },
     "git.discoverRepos": {
       "doc": "Scan roots for `.git` dirs; returns repo paths with head + remote.",
       "params": {
