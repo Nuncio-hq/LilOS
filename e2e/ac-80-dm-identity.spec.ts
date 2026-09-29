@@ -150,10 +150,12 @@ const footerAvatar = (page: Page) =>
   page.locator("aside > div:last-child [data-slot='avatar-fallback']");
 
 /* The grid row the user's message renders in (avatar + Who + text) — Row's
-   root is `group relative grid`, distinct from the agent-turn's group wrap. */
+   root is `group relative grid`, distinct from the agent-turn's group wrap.
+   Scoped to the feed's session rows: the open peek panel (#195) renders the
+   same message in its thread, which is not the row with the "N replies" chip. */
 const userRow = (page: Page, text: string) =>
   page
-    .locator("div.group.grid")
+    .locator("[data-session] div.group.grid")
     .filter({ has: page.locator('[data-slot="avatar-fallback"]') })
     .filter({ hasText: text })
     .last();
