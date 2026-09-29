@@ -80,17 +80,70 @@ func jobPath(_ plistName: String) -> String {
   "gui/\(uid)/\(label(for: plistName))"
 }
 
-/// launchctl print job state, or nil when the job is absent.
-func jobState(_ plistName: String) -> String? {
+/// launchctl print job fields, or nil when the job is absent.
+func jobInfo(_ plistName: String)
+  -> (state: String, program: String?, bundleProgram: Bool, plistPath: String?)?
+{
   let (code, out) = run("/bin/launchctl", "print", jobPath(plistName))
   guard code == 0 else { return nil }
+  var state: String?
   var fallback: String?
+  var program: String?
+  var bundleProgram = false
+  var plistPath: String?
   for line in out.split(separator: "\n") {
     let t = line.trimmingCharacters(in: .whitespaces)
-    if t.hasPrefix("job state = ") { return String(t.dropFirst(12)) }
+    if t.hasPrefix("job state = ") { state = String(t.dropFirst(12)) }
     if t.hasPrefix("state = ") { fallback = String(t.dropFirst(8)) }
+    if t.hasPrefix("program = ") { program = String(t.dropFirst(10)) }
+    // SMAppService jobs: "program identifier = Contents/MacOS/x (mode: 2)"
+    if t.hasPrefix("program identifier = ") { bundleProgram = true }
+    if t.hasPrefix("path = ") { plistPath = String(t.dropFirst(7)) }
   }
-  return fallback
+  guard let s = state ?? fallback else { return nil }
+  return (s, program, bundleProgram, plistPath)
+}
+
+func jobState(_ plistName: String) -> String? {
+  jobInfo(plistName)?.state
+}
+
+/// A loaded job that does not belong to this bundle: its program lives
+/// outside it (a `launchctl bootstrap` leftover from an ad-hoc install, or
+/// a different LilOS.app), or the program path is already gone (trashed
+/// bundle — the "LilOS could not start" case). launchd never replaces a
+/// running job on re-register, so this job must be booted out (#206).
+func foreignJob(_ plistName: String) -> Bool {
+  guard let info = jobInfo(plistName) else { return false }
+  if let program = info.program, !program.isEmpty {
+    if !program.hasPrefix("\(bundle)/") { return true }
+    return !FileManager.default.fileExists(atPath: program)
+  }
+  // An SMAppService BundleProgram job belongs to a BTM record — ownership is
+  // decided by `status`/`unregister` entitlement, not by what we can see
+  // here; `path = (submitted by smd.N)` is not a filesystem path.
+  if info.bundleProgram { return false }
+  if let path = info.plistPath, path.hasPrefix("/") {
+    // Ours is sourced from Contents/Library/LaunchAgents inside the bundle;
+    // a bootstrap job's plist lives in ~/Library/LaunchAgents.
+    return !path.hasPrefix("\(bundle)/")
+  }
+  // Neither field readable: on a signed build every legit agent resolves a
+  // BundleProgram inside the bundle, so an opaque job is foreign; an ad-hoc
+  // bundle's bootstrap jobs keep their plain Program — assume ours.
+  return !isAdHoc()
+}
+
+/// launchd state SMAppService doesn't own, before a signed register: a live
+/// job, or just the leftover `~/Library/LaunchAgents` plist that would
+/// re-bootstrap the foreign agent at the next login.
+func foreignStatePresent(_ plistName: String, smaOwned: Bool) -> Bool {
+  if foreignJob(plistName) { return true }
+  if smaOwned { return false }
+  if jobState(plistName) != nil { return true }
+  let dest = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent("Library/LaunchAgents/\(plistName)")
+  return FileManager.default.fileExists(atPath: dest.path)
 }
 
 /// Wait until launchd no longer reports the job (teardown is asynchronous;
@@ -168,6 +221,21 @@ case "register":
     bootstrap(args[2])
     exit(0)
   }
+  // #206: remove launchd state SMAppService doesn't own first — a
+  // `launchctl bootstrap` job an ad-hoc install left behind keeps its old
+  // binary running when we register over it, and its user plist would
+  // re-bootstrap it at the next login.
+  let owned = service.status == .enabled || service.status == .requiresApproval
+  if foreignStatePresent(args[2], smaOwned: owned) {
+    if owned {
+      // Drop the stale BTM record too; unregister can error on a foreign
+      // job (lacks entitlement) — bootout below frees the label regardless.
+      let sema = DispatchSemaphore(value: 0)
+      service.unregister { _ in sema.signal() }
+      _ = sema.wait(timeout: .now() + 15)
+    }
+    bootout(args[2])
+  }
   do {
     try service.register()
     print("ok \(args[2]) status=\(statusName(service.status))")
@@ -201,8 +269,17 @@ case "status":
     exit(0)
   }
   print("\(args[2]) status=\(statusName(service.status))")
+case "bootout":
+  // Remove whatever holds the label — a job SMAppService doesn't own plus
+  // its user LaunchAgents plist — regardless of who registered it (#206).
+  bootout(args[2])
+  print("ok \(args[2])")
 case "spawned":
-  print("\(args[2]) \(jobState(args[2]) ?? "absent")")
+  if let info = jobInfo(args[2]) {
+    print("\(args[2]) \(foreignJob(args[2]) ? "foreign" : info.state)")
+  } else {
+    print("\(args[2]) absent")
+  }
 default:
   fputs("unknown command: \(args[1])\n", stderr)
   exit(64)
