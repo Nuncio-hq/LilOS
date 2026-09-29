@@ -3,6 +3,7 @@ import type {
   AppMessage,
   Ask,
   Conversation,
+  FoldersDetailResult,
   RecentFolder,
 } from "@lilos/contracts/app";
 import type {
@@ -21,6 +22,8 @@ import { toModelCatalog } from "./dm-model";
 
 export const $asks = atom<Ask[]>([]);
 export const $folders = atom<RecentFolder[]>([]);
+/** Branch/workstream probe per recents path; absent = still probing (#156). */
+export const $folderDetails = atom<Record<string, FoldersDetailResult>>({});
 export const $catalog = atom<{
   models: ModelRow[];
   providers: ModelProviderRow[];
@@ -47,7 +50,10 @@ export function watchDm(client: RelayClient): void {
       .catch(() => {});
     void client
       .request<{ folders: RecentFolder[] }>("folders.list", {})
-      .then((res) => $folders.set(res.folders))
+      .then((res) => {
+        $folders.set(res.folders);
+        void refreshFolderDetails(client);
+      })
       .catch(() => {});
     void client
       .listModels({ refresh: false })
@@ -78,6 +84,29 @@ export function watchDm(client: RelayClient): void {
         : [...list, ask],
     );
   });
+}
+
+/**
+ * `folders.detail` for every recents entry (#156): the picker's
+ * branches/workstreams. A refused or failed probe resolves to an empty
+ * result — the sheet then offers direct/just-chat for that folder.
+ */
+async function refreshFolderDetails(client: RelayClient): Promise<void> {
+  const empty = (path: string): FoldersDetailResult => ({
+    path,
+    missing: false,
+    isRepo: false,
+    branches: [],
+    workstreams: [],
+  });
+  await Promise.all(
+    $folders.get().map(async (f) => {
+      const res = await client
+        .request<FoldersDetailResult>("folders.detail", { path: f.path })
+        .catch(() => empty(f.path));
+      $folderDetails.set({ ...$folderDetails.get(), [f.path]: res });
+    }),
+  );
 }
 
 /** Mark a just-opened conversation until its summary/engine bind lands. */

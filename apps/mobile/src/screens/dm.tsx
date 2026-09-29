@@ -35,6 +35,7 @@ import {
 import {
   $asks,
   $catalog,
+  $folderDetails,
   $folders,
   $modelPicks,
   $pendingOpens,
@@ -98,6 +99,7 @@ export function Dm({
   const clientState = useStore(client?.state ?? $linkIdle);
   const asks = useStore($asks);
   const recents = useStore($folders);
+  const details = useStore($folderDetails);
   const catalog = useStore($catalog);
   const wsPicks = useStore($wsPicks);
   const modelPicks = useStore($modelPicks);
@@ -108,7 +110,10 @@ export function Dm({
   const channel = channels.find(
     (c) => c.kind === "dm" && c.employeeId === employeeId,
   );
-  const folderOptions = useMemo(() => toFolderOptions(recents), [recents]);
+  const folderOptions = useMemo(
+    () => toFolderOptions(recents, details),
+    [recents, details],
+  );
   const [prefill, setPrefill] = useState<{ text: string } | undefined>();
   const opening = useRef(false);
 
@@ -281,6 +286,7 @@ export function Dm({
             folders: folderOptions,
             model: modelPick,
             models: catalog.models,
+            text,
           }),
         });
         markPending(res.conversation, res.rootMessage);
@@ -322,7 +328,11 @@ export function FolderPicker({
 }) {
   const { employeeId } = route.params;
   const recents = useStore($folders);
-  const folders = useMemo(() => toFolderOptions(recents), [recents]);
+  const details = useStore($folderDetails);
+  const folders = useMemo(
+    () => toFolderOptions(recents, details),
+    [recents, details],
+  );
   const picks = useStore($wsPicks);
   const pick = picks[employeeId] ?? {
     folder: null,

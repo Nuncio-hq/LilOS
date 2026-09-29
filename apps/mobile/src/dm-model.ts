@@ -3,7 +3,9 @@ import type {
   Ask,
   Conversation,
   ConversationSummary,
+  FoldersDetailResult,
   RecentFolder,
+  WorkspaceIntent,
 } from "@lilos/contracts/app";
 import type { ModelsListResult } from "@lilos/contracts/engine";
 import type {
@@ -148,7 +150,8 @@ function toSessionTurn(s: ConversationSummary, ctx: DmCtx): SessionTurn {
     title: conv.title || s.root.text,
     state,
     when: timeLabel(s.last.createdAt, ctx.now),
-    ...(conv.cwd ? { folder: folderLeaf(conv.cwd) } : {}),
+    ...(convFolderLabel(conv) ? { folder: convFolderLabel(conv) } : {}),
+    ...(conv.workspace?.branch ? { branch: conv.workspace.branch } : {}),
     ...(s.messageCount > 1 ? { replies: s.messageCount - 1 } : {}),
     ...(preview ? { preview } : {}),
     ...(state === "working" && !preview ? { live: "Working…" } : {}),
@@ -193,8 +196,11 @@ export function toSessionTurns(
         state: "working",
         when: timeLabel(p.conversation.createdAt, ctx.now),
         live: "Working…",
-        ...(p.conversation.cwd
-          ? { folder: folderLeaf(p.conversation.cwd) }
+        ...(convFolderLabel(p.conversation)
+          ? { folder: convFolderLabel(p.conversation) }
+          : {}),
+        ...(p.conversation.workspace?.branch
+          ? { branch: p.conversation.workspace.branch }
           : {}),
       },
     });
@@ -216,23 +222,64 @@ export function headerStatus(turns: { state: string }[]): string {
 
 /* ------------------------------- pickers -------------------------------- */
 
+/** A workstream-opened row labels its repo (cwd is the `.lilos/wt` dir). */
+function convFolderLabel(conv: Conversation): string | undefined {
+  const path = conv.workspace?.repoPath ?? conv.cwd;
+  return path ? folderLeaf(path) : undefined;
+}
+
 /**
- * `folders.list` recents -> picker rows. The wire carries only {path,
- * lastUsedAt}; the host git probe that supplies branches/workstreams is
- * loopback-only (not reachable from a phone), so branch/workstream rows stay
- * empty — the sheet then offers its direct/just-chat modes (the same cwd a
- * direct pick produces on web).
+ * `folders.list` recents + per-folder `folders.detail` probes -> picker
+ * rows (#156). A folder whose detail hasn't landed yet is `probing` — the
+ * sheet shows "Checking git…" instead of misreading it as a non-repo.
  */
 export function toFolderOptions(
   folders: readonly RecentFolder[],
+  details?: Readonly<Record<string, FoldersDetailResult>>,
 ): FolderOption[] {
-  return folders.map((f) => ({
-    id: f.path,
-    project: folderLeaf(f.path),
-    path: f.path,
-    branches: [],
-    workstreams: [],
-  }));
+  return folders.map((f) => {
+    const d = details?.[f.path];
+    return {
+      id: f.path,
+      project: folderLeaf(f.path),
+      path: f.path,
+      ...(d === undefined ? { probing: true } : {}),
+      ...(d?.missing ? { missing: true } : {}),
+      branches: d?.branches ?? [],
+      workstreams: (d?.workstreams ?? []).map((w) => ({
+        branch: w.branch,
+        path: w.path,
+        ...(w.from ? { from: w.from } : {}),
+      })),
+    };
+  });
+}
+
+/** The "ws/<slug>"-style branch + `.lilos/wt/<slug>` dir name from a prompt. */
+export function slugOf(text: string): string {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(
+      (w) =>
+        w &&
+        !["a", "an", "the", "with", "on", "for", "of", "to", "and"].includes(w),
+    )
+    .slice(0, 2)
+    .join("-");
+}
+
+/** Deduped worktree slug: free as both dir name and `ws/<slug>` branch. */
+export function uniqueWorkSlug(folder: FolderOption, base: string): string {
+  const taken = new Set([
+    ...folder.branches,
+    ...folder.workstreams.map((w) => w.branch),
+    ...folder.workstreams.map((w) => folderLeaf(w.path)),
+  ]);
+  let slug = base;
+  for (let n = 1; taken.has(slug) || taken.has(`ws/${slug}`); n++)
+    slug = `${base}-${n}`;
+  return slug;
 }
 
 export function toModelCatalog(
@@ -296,46 +343,94 @@ export function defaultModelPick(opts: {
  * The folder the composer starts on: the employee's most recent session
  * folder when it's still a recents entry, else "just chat" (web #113 AC-6 —
  * never stomp a pick the user already made, so callers apply this only to
- * fill an absent pick).
+ * fill an absent pick). Defaults to a new workstream like the sheet does —
+ * resolved non-repos degrade to direct on send.
  */
 export function defaultWorkspacePick(
   folders: readonly FolderOption[],
   lastCwd?: string,
 ): WorkspacePick {
   const hit = lastCwd && folders.find((f) => f.path === lastCwd);
-  return hit
-    ? { folder: hit.id, base: hit.branches[0] ?? "", mode: "direct" }
-    : { folder: null, base: "", mode: "direct" };
+  if (!hit) return { folder: null, base: "", mode: "direct" };
+  return {
+    folder: hit.id,
+    base: hit.branches[0] ?? "",
+    mode: hit.probing || hit.branches.length ? "new" : "direct",
+  };
 }
 
 /**
  * Workspace + model picks -> `conversations.open` params (same fields the
  * web's sendDm stamps — the pick rides the open call so session.start sees
  * it). Unknown/absent folders send no cwd (just chat).
+ *
+ * "new" mode computes the `ws/<slug>` branch + `.lilos/wt/<slug>` dir from
+ * the first message (prototype resolveWs); the harness materializes the
+ * worktree before the session binds.
  */
 export function openConversationParams(opts: {
   workspace: WorkspacePick;
   folders: readonly FolderOption[];
   model?: ModelPick;
   models?: readonly ModelRow[];
+  /** The first message — a "new workstream" pick names its branch/dir from it. */
+  text?: string;
 }): {
   cwd?: string;
+  workspace?: WorkspaceIntent;
   model?: string;
   provider?: string;
   effort?: string;
   fast?: boolean;
 } {
-  const folder = opts.workspace.folder
-    ? opts.folders.find((f) => f.id === opts.workspace.folder)
+  const pick = opts.workspace;
+  const folder = pick.folder
+    ? opts.folders.find((f) => f.id === pick.folder)
     : undefined;
+  const ws = workspaceOpen(pick, folder, opts.text);
   const row = opts.model
     ? opts.models?.find((m) => m.id === opts.model?.model)
     : undefined;
   return {
-    ...(folder ? { cwd: folder.path } : {}),
+    ...ws,
     ...(opts.model?.model ? { model: opts.model.model } : {}),
     ...(row?.provider ? { provider: row.provider } : {}),
     ...(opts.model?.effort !== undefined ? { effort: opts.model.effort } : {}),
     ...(opts.model?.fast !== undefined ? { fast: opts.model.fast } : {}),
   };
+}
+
+function workspaceOpen(
+  pick: WorkspacePick,
+  folder: FolderOption | undefined,
+  text: string | undefined,
+): { cwd?: string; workspace?: WorkspaceIntent } {
+  if (!folder || folder.missing) return {};
+  if (pick.mode === "new" && folder.branches.length) {
+    const slug = uniqueWorkSlug(folder, slugOf(text ?? "") || "session");
+    return {
+      cwd: `${folder.path}/.lilos/wt/${slug}`,
+      workspace: {
+        mode: "new",
+        repoPath: folder.path,
+        branch: `ws/${slug}`,
+        base: pick.base || folder.branches[0] || "",
+      },
+    };
+  }
+  if (pick.mode === "existing") {
+    const w = folder.workstreams.find((x) => x.branch === pick.existing);
+    if (w) {
+      return {
+        cwd: w.path,
+        workspace: {
+          mode: "existing",
+          repoPath: folder.path,
+          branch: w.branch,
+        },
+      };
+    }
+    /* The workstream is gone since the probe — fall through to direct. */
+  }
+  return { cwd: folder.path };
 }

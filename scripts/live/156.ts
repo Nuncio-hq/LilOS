@@ -13,7 +13,13 @@
  * probe advertises the Mac's tailnet name.
  */
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RelayClient } from "../../packages/client-runtime/src/index";
@@ -35,6 +41,19 @@ execFileSync("git", ["-C", picked, "config", "user.name", "lilos live"]);
 writeFileSync(join(picked, "README.md"), "# live-156 scratch repo\n");
 execFileSync("git", ["-C", picked, "add", "README.md"]);
 execFileSync("git", ["-C", picked, "commit", "-qm", "init"]);
+// An existing workstream so the sheet's "Continue" row has data (AC-4).
+mkdirSync(join(picked, ".lilos"));
+writeFileSync(join(picked, ".lilos", ".gitignore"), "*\n");
+execFileSync("git", [
+  "-C",
+  picked,
+  "worktree",
+  "add",
+  "-b",
+  "ws/qr-7",
+  join(picked, ".lilos", "wt", "qr-7"),
+  "main",
+]);
 
 const procs: ChildProcess[] = [];
 const launch = (name: string, cmd: string[], env: Record<string, string>) => {
@@ -153,13 +172,19 @@ console.log(`    xcrun simctl openurl booted '${link.replace(/'/g, "'\\''")}'`);
 console.log("");
 console.log("  Then on the phone:");
 console.log(
-  `    Home -> ${employeeName} -> DM (empty state) -> send a message`,
+  `    Home -> ${employeeName} -> DM (empty state) -> + -> sheet offers`,
 );
 console.log(
-  "    -> the new thread opens (AC-3) and the row lands under Working,",
+  "    New branch (ws/<slug> under .lilos/wt) / Continue (ws/qr-7) / Direct",
 );
-console.log("    then Done when the turn completes (AC-1). A prompt like");
-console.log('    "add a note to the readme" lands under Needs you (edit-ask).');
+console.log(
+  "    / Just chat — pick one, send, and the new thread opens (AC-3/AC-4)",
+);
+console.log(
+  "    -> the row lands under Working, then Done when the turn completes",
+);
+console.log('    (AC-1). A prompt like "add a note to the readme" lands under');
+console.log("    Needs you (edit-ask).");
 console.log("");
 out("running until Ctrl-C");
 await new Promise(() => {});

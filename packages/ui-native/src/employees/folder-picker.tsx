@@ -51,7 +51,7 @@ export function FolderPickerSheet({
               onPick({
                 folder: x.id,
                 base: x.branches[0] ?? "",
-                mode: x.branches.length ? "new" : "direct",
+                mode: x.probing || x.branches.length ? "new" : "direct",
               })
             }
           />
@@ -64,7 +64,19 @@ export function FolderPickerSheet({
         />
       </Group>
 
-      {f && f.branches.length === 0 && (
+      {f?.missing && (
+        <AppText size="xs" tone="muted" className="px-2">
+          That folder is no longer on this Mac — pick another.
+        </AppText>
+      )}
+
+      {f && !f.missing && f.probing && (
+        <AppText size="xs" tone="muted" className="px-2">
+          Checking git…
+        </AppText>
+      )}
+
+      {f && !f.missing && !f.probing && f.branches.length === 0 && (
         <AppText size="xs" tone="muted" className="px-2">
           Not a git repo: no branches or worktrees, edits land in the folder
           directly.
@@ -101,7 +113,7 @@ export function FolderPickerSheet({
                   first={i === 0}
                   icon="arrow.triangle.pull"
                   title={w.branch}
-                  detail={`${w.path} · from ${w.from}`}
+                  detail={`${w.path}${w.from ? ` · from ${w.from}` : ""}`}
                   mono
                   on={pick.mode === "existing" && pick.existing === w.branch}
                   onPress={() =>
@@ -109,7 +121,7 @@ export function FolderPickerSheet({
                       ...pick,
                       mode: "existing",
                       existing: w.branch,
-                      base: w.from,
+                      base: w.from ?? "",
                     })
                   }
                 />
@@ -148,8 +160,10 @@ export function FolderPickerSheet({
 export function pickLabel(folders: FolderOption[], p: WorkspacePick) {
   const f = folders.find((x) => x.id === p.folder);
   if (!f) return "Just chat";
+  if (f.probing) return `${f.project} · …`;
   if (!f.branches.length) return f.project;
-  return `${f.project} · ${p.mode === "existing" ? p.existing : p.base}`;
+  const b = p.mode === "existing" ? p.existing : p.base || f.branches[0];
+  return `${f.project} · ${b}`;
 }
 
 const hint = (f: FolderOption | undefined, p: WorkspacePick) =>

@@ -247,17 +247,42 @@ describe("AC-3: send opens a new conversation with the picked folder + model", (
   });
 });
 
-describe("AC-4: folder picker lists real folders.list entries", () => {
-  it("AC-4 maps recents to picker options, newest order preserved", () => {
-    const recents: RecentFolder[] = [
-      { path: "~/Desktop/Work/LilOS", lastUsedAt: 20 },
-      { path: "~/Documents/Notes", lastUsedAt: 10 },
-    ];
+describe("AC-4: folder picker lists real folders + the three workspace modes", () => {
+  const recents: RecentFolder[] = [
+    { path: "~/Desktop/Work/LilOS", lastUsedAt: 20 },
+    { path: "~/Documents/Notes", lastUsedAt: 10 },
+  ];
+  const repoDetail = {
+    path: "~/Desktop/Work/LilOS",
+    missing: false,
+    isRepo: true,
+    root: "~/Desktop/Work/LilOS",
+    current: "main",
+    branches: ["main", "feat/x", "ws/feat-x"],
+    workstreams: [
+      {
+        branch: "ws/qr-7",
+        path: "~/Desktop/Work/LilOS/.lilos/wt/qr-7",
+        from: "main",
+      },
+    ],
+  };
+  const nonRepoDetail = {
+    path: "~/Documents/Notes",
+    missing: false,
+    isRepo: false,
+    branches: [],
+    workstreams: [],
+  };
+
+  it("AC-4 marks recents probing until folders.detail lands, then fills branches + workstreams", () => {
+    // No detail yet: rows render the "Checking git…" state, nothing offered.
     expect(toFolderOptions(recents)).toEqual([
       {
         id: "~/Desktop/Work/LilOS",
         project: "LilOS",
         path: "~/Desktop/Work/LilOS",
+        probing: true,
         branches: [],
         workstreams: [],
       },
@@ -265,21 +290,45 @@ describe("AC-4: folder picker lists real folders.list entries", () => {
         id: "~/Documents/Notes",
         project: "Notes",
         path: "~/Documents/Notes",
+        probing: true,
         branches: [],
         workstreams: [],
       },
     ]);
+    const folders = toFolderOptions(recents, {
+      "~/Desktop/Work/LilOS": repoDetail,
+      "~/Documents/Notes": nonRepoDetail,
+    });
+    expect(folders[0]?.probing).toBeUndefined();
+    expect(folders[0]?.branches).toEqual(["main", "feat/x", "ws/feat-x"]);
+    expect(folders[0]?.workstreams).toEqual([
+      {
+        branch: "ws/qr-7",
+        path: "~/Desktop/Work/LilOS/.lilos/wt/qr-7",
+        from: "main",
+      },
+    ]);
+    // A resolved non-repo just offers direct mode (empty lists, no probing).
+    expect(folders[1]?.probing).toBeUndefined();
+    expect(folders[1]?.branches).toEqual([]);
   });
 
   it("AC-4 pre-selects the last session's folder once known", () => {
-    const folders = toFolderOptions([
-      { path: "/a", lastUsedAt: 2 },
-      { path: "/b", lastUsedAt: 1 },
-    ]);
+    const folders = toFolderOptions(
+      [
+        { path: "/a", lastUsedAt: 2 },
+        { path: "/b", lastUsedAt: 1 },
+      ],
+      {
+        "/a": { ...nonRepoDetail, path: "/a" },
+        "/b": { ...repoDetail, path: "/b" },
+      },
+    );
+    // A repo defaults to a new workstream off its first branch (prototype).
     expect(defaultWorkspacePick(folders, "/b")).toEqual({
       folder: "/b",
-      base: "",
-      mode: "direct",
+      base: "main",
+      mode: "new",
     });
     expect(defaultWorkspacePick(folders, "/not-a-recent")).toEqual({
       folder: null,
@@ -291,6 +340,161 @@ describe("AC-4: folder picker lists real folders.list entries", () => {
       base: "",
       mode: "direct",
     });
+  });
+
+  it("AC-4 mode new stamps a ws/<slug> branch + .lilos/wt dir from the first message", () => {
+    const folders = toFolderOptions(recents, {
+      "~/Desktop/Work/LilOS": repoDetail,
+    });
+    expect(
+      openConversationParams({
+        workspace: {
+          folder: "~/Desktop/Work/LilOS",
+          base: "main",
+          mode: "new",
+        },
+        folders,
+        text: "Fix the login redirect",
+      }),
+    ).toEqual({
+      cwd: "~/Desktop/Work/LilOS/.lilos/wt/fix-login",
+      workspace: {
+        mode: "new",
+        repoPath: "~/Desktop/Work/LilOS",
+        branch: "ws/fix-login",
+        base: "main",
+      },
+    });
+  });
+
+  it("AC-4 mode new dedupes the slug against live workstreams and branches", () => {
+    const folders = toFolderOptions(recents, {
+      "~/Desktop/Work/LilOS": repoDetail,
+    });
+    // "qr 7" → slug qr-7: the .lilos/wt/qr-7 dir AND the ws/qr-7 branch exist.
+    expect(
+      openConversationParams({
+        workspace: {
+          folder: "~/Desktop/Work/LilOS",
+          base: "main",
+          mode: "new",
+        },
+        folders,
+        text: "qr 7 please",
+      }),
+    ).toMatchObject({
+      cwd: "~/Desktop/Work/LilOS/.lilos/wt/qr-7-1",
+      workspace: { mode: "new", branch: "ws/qr-7-1" },
+    });
+    // A name colliding only with an existing ws/* branch dedupes too.
+    expect(
+      openConversationParams({
+        workspace: {
+          folder: "~/Desktop/Work/LilOS",
+          base: "main",
+          mode: "new",
+        },
+        folders,
+        text: "feat x more",
+      }).cwd,
+    ).toBe("~/Desktop/Work/LilOS/.lilos/wt/feat-x-1");
+  });
+
+  it("AC-4 mode existing starts the thread in the picked worktree", () => {
+    const folders = toFolderOptions(recents, {
+      "~/Desktop/Work/LilOS": repoDetail,
+    });
+    expect(
+      openConversationParams({
+        workspace: {
+          folder: "~/Desktop/Work/LilOS",
+          base: "main",
+          mode: "existing",
+          existing: "ws/qr-7",
+        },
+        folders,
+        text: "keep going",
+      }),
+    ).toEqual({
+      cwd: "~/Desktop/Work/LilOS/.lilos/wt/qr-7",
+      workspace: {
+        mode: "existing",
+        repoPath: "~/Desktop/Work/LilOS",
+        branch: "ws/qr-7",
+      },
+    });
+  });
+
+  it("AC-4 mode direct lands cwd on the checkout; a stale pick degrades honestly", () => {
+    const folders = toFolderOptions(recents, {
+      "~/Desktop/Work/LilOS": repoDetail,
+    });
+    expect(
+      openConversationParams({
+        workspace: {
+          folder: "~/Desktop/Work/LilOS",
+          base: "feat/x",
+          mode: "direct",
+        },
+        folders,
+      }),
+    ).toEqual({ cwd: "~/Desktop/Work/LilOS" });
+    // "new" picked while git was still probing (no branches yet) → direct.
+    expect(
+      openConversationParams({
+        workspace: {
+          folder: "~/Desktop/Work/LilOS",
+          base: "",
+          mode: "new",
+        },
+        folders: toFolderOptions(recents),
+        text: "hi",
+      }),
+    ).toEqual({ cwd: "~/Desktop/Work/LilOS" });
+    // "existing" on a workstream that vanished → direct, not a dead path.
+    expect(
+      openConversationParams({
+        workspace: {
+          folder: "~/Desktop/Work/LilOS",
+          base: "main",
+          mode: "existing",
+          existing: "ws/gone",
+        },
+        folders,
+      }),
+    ).toEqual({ cwd: "~/Desktop/Work/LilOS" });
+    // A missing folder can't carry a cwd at all → just chat.
+    expect(
+      openConversationParams({
+        workspace: {
+          folder: "~/Documents/Notes",
+          base: "",
+          mode: "direct",
+        },
+        folders: toFolderOptions(recents, {
+          "~/Documents/Notes": { ...nonRepoDetail, missing: true },
+        }),
+      }),
+    ).toEqual({});
+  });
+
+  it("AC-4 a workstream thread row labels the repo + its ws/ branch", () => {
+    const turns = toSessionTurns(
+      [
+        summary("c-ws", {
+          cwd: "~/Desktop/Work/LilOS/.lilos/wt/fix-login",
+          workspace: {
+            mode: "new",
+            repoPath: "~/Desktop/Work/LilOS",
+            branch: "ws/fix-login",
+            base: "main",
+          },
+        }),
+      ],
+      CTX,
+    );
+    expect(turns[0]?.folder).toBe("LilOS");
+    expect(turns[0]?.branch).toBe("ws/fix-login");
   });
 });
 
