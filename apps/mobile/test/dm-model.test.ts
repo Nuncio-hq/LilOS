@@ -35,6 +35,7 @@ const msg = (id: string, over: Partial<AppMessage> = {}): AppMessage => ({
   text: "",
   seq: 1,
   createdAt: T0,
+  rewound: false,
   ...over,
 });
 
