@@ -171,6 +171,13 @@ export const AppMethod = z.enum([
      host feed that computes this stays loopback-only; the relay forwards
      the call to the harness. */
   "folders.detail",
+  /* The phone's "Other folder on the Mac…" sheet (#238): `folders.browse`
+     lists one folder level and `folders.discover` returns the "Found on
+     this Mac" repos. Device-scope allowed like `folders.detail` — the
+     relay forwards both to the harness, which enforces the home-folder
+     boundary server-side; the raw host fs feed stays loopback-only. */
+  "folders.browse",
+  "folders.discover",
   /* The signed-in human's identity — name, company, avatar colour (#118).
      `settings.*` is #92's KV namespace, so the profile uses `profile.*`. */
   "profile.get",
@@ -600,6 +607,63 @@ export const FoldersDetailResult = z.object({
   workstreams: z.array(FolderWorkstream),
 });
 export type FoldersDetailResult = z.infer<typeof FoldersDetailResult>;
+
+/**
+ * `folders.browse { path }` (#238): one folder level on the session
+ * machine, for the phone's folder browser. Sub-folders only — files and
+ * dot-dirs are never listed — each repo root carrying its checked-out
+ * branch. The harness refuses paths that don't resolve under the Mac
+ * user's home (`..` escapes, absolute paths outside home, symlink hops
+ * out, dot-dir segments).
+ */
+export const FoldersBrowseParams = z.strictObject({
+  /** `~`, `~/x`, or an absolute path under the Mac's home. */
+  path: z.string().min(1),
+});
+export type FoldersBrowseParams = z.infer<typeof FoldersBrowseParams>;
+
+/** A folder on the Mac, as the phone's browser lists it (#238). */
+export const MacFolderEntry = z.object({
+  /** Display name — the last path segment. */
+  name: z.string().min(1),
+  /** `~`-collapsed absolute path — verbatim input to `folders.browse`/`folders.add`. */
+  path: z.string().min(1),
+  /** Checked-out branch when the folder is a git repo root. */
+  branch: z.string().min(1).optional(),
+});
+export type MacFolderEntry = z.infer<typeof MacFolderEntry>;
+
+export const FoldersBrowseResult = z.object({
+  /** The listed folder, `~`-collapsed. */
+  path: z.string().min(1),
+  /** Current branch when the listed folder sits inside a git repo. */
+  branch: z.string().min(1).optional(),
+  /** Non-hidden sub-folders only. */
+  folders: z.array(MacFolderEntry),
+});
+export type FoldersBrowseResult = z.infer<typeof FoldersBrowseResult>;
+
+/**
+ * `folders.discover` (#238): repos the Mac found under the same roots the
+ * web's "Found on this Mac" scans (`~/Desktop`, `~/Developer`,
+ * `~/Documents`, `~/repos`) — the phone browser's home-screen group.
+ */
+export const FoldersDiscoverParams = z.object({}).strict();
+export type FoldersDiscoverParams = z.infer<typeof FoldersDiscoverParams>;
+
+/** A repo the Mac found — the phone browser's "Found on this Mac" row. */
+export const MacFoundRepo = z.object({
+  /** Repo root, `~`-collapsed. */
+  path: z.string().min(1),
+  /** Checked-out branch; absent on a detached/unborn HEAD. */
+  branch: z.string().min(1).optional(),
+});
+export type MacFoundRepo = z.infer<typeof MacFoundRepo>;
+
+export const FoldersDiscoverResult = z.object({
+  repos: z.array(MacFoundRepo),
+});
+export type FoldersDiscoverResult = z.infer<typeof FoldersDiscoverResult>;
 
 /**
  * Profile settings (#118): `profile.get` returns the stored profile — `{}`

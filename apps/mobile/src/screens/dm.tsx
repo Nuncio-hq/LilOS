@@ -332,6 +332,7 @@ export function FolderPicker({
     <FolderPickerSheet
       folders={folders}
       pick={pick}
+      onBrowse={() => navigation.navigate("BrowseMac", { employeeId })}
       onPick={(p: WorkspacePick) => {
         void Haptics.selectionAsync();
         $wsPicks.set({ ...$wsPicks.get(), [employeeId]: p });

@@ -253,6 +253,12 @@ PR does not exist.
   through `session.events {conversationId}` gated on `conv.engineRef`.**
   Not: an engine socket on the phone, a verbatim `events.since`, or device
   access to raw host methods (same scoping as `folders.detail`, #156). — #157
+- **D-#238 A device-scope client may list folders only under the Mac user's
+  home — `folders.browse`/`folders.discover` relay-forward to the harness,
+  which enforces the boundary server-side (realpath under home, dot-dir
+  segments refused), and `folders.add` accepts only home paths from devices
+  (relay-gated; recents still store `~/x`).** Not: exposing host `fs.*` to
+  the phone directly. — #238
 
 ## UX
 - **D-#114 The Workbench lives only in Focus mode, and opening a session

@@ -91,7 +91,7 @@ export function watchDm(client: RelayClient): void {
  * branches/workstreams. A refused or failed probe resolves to an empty
  * result — the sheet then offers direct/just-chat for that folder.
  */
-async function refreshFolderDetails(client: RelayClient): Promise<void> {
+export async function refreshFolderDetails(client: RelayClient): Promise<void> {
   const empty = (path: string): FoldersDetailResult => ({
     path,
     missing: false,
@@ -107,6 +107,25 @@ async function refreshFolderDetails(client: RelayClient): Promise<void> {
       $folderDetails.set({ ...$folderDetails.get(), [f.path]: res });
     }),
   );
+}
+
+/**
+ * `folders.add` then resync recents + their git probes (#238 AC-3): the
+ * phone's "Use" writes the picked folder into the shared recents (web sees
+ * it too), and the probes land before the composer's workspace rows need
+ * them.
+ */
+export async function addRecentFolder(
+  client: RelayClient,
+  path: string,
+): Promise<void> {
+  await client.request("folders.add", { path });
+  const res = await client.request<{ folders: RecentFolder[] }>(
+    "folders.list",
+    {},
+  );
+  $folders.set(res.folders);
+  await refreshFolderDetails(client);
 }
 
 /** Mark a just-opened conversation until its summary/engine bind lands. */

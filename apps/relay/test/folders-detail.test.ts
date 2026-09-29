@@ -7,7 +7,8 @@ import { createMemoryStore } from "../src/store";
 /* `folders.detail` (#156): the phone's branch/workstream probe. The relay
    gates the path to the recents the Mac already lists, then forwards the
    call to the registered harness (the only process running git). Device
-   peers get the same read — but no `folders.add` to widen their own gate. */
+   peers get the same read; #238 lets them `folders.add` — but only paths
+   under the Mac's home, so the gate can't be widened past home. */
 
 const TOKEN = "test-token";
 
@@ -169,18 +170,18 @@ describe("AC-4 folders.detail — device-scope git probe (#156)", () => {
     expect(requestsTo(host.frames)).toHaveLength(0);
   });
 
-  it("a device can't widen the gate itself: folders.add is forbidden", async () => {
+  it("a device can't widen the gate past home: outside adds are refused", async () => {
     const { store, pairing, relay } = newWorld();
     await store.addRecentFolder("~/repo");
     const phone = await helloedDevice(pairing, relay);
 
-    await phone.connection.receive(req("folders.add", { path: "~/secrets" }));
-    expect(errorData(phone.frames, lastId())).toBe("forbidden");
+    for (const path of ["/etc", "/System", "~/../../var"]) {
+      await phone.connection.receive(req("folders.add", { path }));
+      expect(errorData(phone.frames, lastId()), path).toBe("forbidden");
+    }
     expect(await store.listRecentFolders()).toHaveLength(1);
-    // And the gated probe still refuses the path it couldn't plant.
-    await phone.connection.receive(
-      req("folders.detail", { path: "~/secrets" }),
-    );
+    // And the gated probe still refuses what the device couldn't plant.
+    await phone.connection.receive(req("folders.detail", { path: "/etc" }));
     expect(errorData(phone.frames, lastId())).toBe("not_found");
   });
 
