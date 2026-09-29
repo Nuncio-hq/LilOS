@@ -54,8 +54,8 @@ export const PHASE_LABEL: Record<Phase, string> = {
   stopped: "stopped",
 };
 export const STATUS_DOT: Record<Status, string> = {
-  online: "bg-emerald-500",
-  busy: "bg-amber-500 animate-pulse",
+  online: "bg-[#34c759]",
+  busy: "bg-[#007aff] animate-pulse",
   offline: "bg-zinc-400",
 };
 export const RESPOND: Record<RespondTo, string> = {

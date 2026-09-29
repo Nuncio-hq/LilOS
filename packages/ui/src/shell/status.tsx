@@ -80,7 +80,7 @@ export function StatusRow({
       type="button"
       onClick={onOpen}
       aria-label="System status"
-      className="flex w-full items-center gap-2 border-t px-4 py-2 text-left text-xs hover:bg-sidebar-accent"
+      className="flex w-full items-center gap-2 border-sidebar-border border-t px-4 py-2 text-left text-xs hover:bg-sidebar-accent"
     >
       <span
         className={cn("size-2 shrink-0 rounded-full", STATE_STYLE[state].dot)}

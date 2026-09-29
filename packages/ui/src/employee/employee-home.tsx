@@ -5,7 +5,6 @@ import {
   CircleDotIcon,
   EllipsisIcon,
   FolderIcon,
-  GitBranchIcon,
   LockIcon,
   MenuIcon,
   MessageSquareIcon,
@@ -26,7 +25,6 @@ import {
   ConversationEmptyState,
   ConversationScrollButton,
 } from "../components/ai-elements/conversation";
-import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import {
   DropdownMenu,
@@ -407,46 +405,29 @@ export function EmployeeHome({
           )}
           <button
             onClick={() => onOpen(m.id)}
-            className="mt-1 flex w-fit max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border bg-background px-2 py-1.5 text-left text-xs hover:border-foreground/30 [&>*]:shrink-0 [&>*]:whitespace-nowrap"
+            title={[t.session, t.ws?.project, t.ws?.branch]
+              .filter(Boolean)
+              .join(" · ")}
+            className="lilos-lift mt-1 flex w-fit max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-full bg-accent px-2.5 py-1 text-left text-xs hover:bg-foreground/10 [&>*]:shrink-0 [&>*]:whitespace-nowrap"
           >
             <HermesAvatar name={e.name} className="size-5" />
-            <span className="font-medium text-blue-600">
+            <span className="font-medium text-tint-text">
               {t.replies.length} {t.replies.length === 1 ? "reply" : "replies"}
             </span>
-            <code className="rounded bg-muted px-1 text-muted-foreground">
-              {t.session}
-            </code>
-            {t.ws && (
-              <span className="flex items-center gap-1 text-muted-foreground">
-                <FolderIcon className="size-3" />
-                {t.ws.project}
-                {t.ws.branch && (
-                  <>
-                    <GitBranchIcon className="size-3" />
-                    <span className="font-mono text-emerald-700">
-                      {t.ws.branch}
-                    </span>
-                  </>
-                )}
-              </span>
-            )}
+            {t.ws && <FolderIcon className="size-3 text-muted-foreground" />}
             {running ? (
               <span
                 className={cn(
                   "flex items-center gap-1",
                   last?.phase === "waiting"
-                    ? "font-medium text-amber-600"
+                    ? "font-medium text-tint-text"
                     : "text-muted-foreground",
                 )}
               >
-                <CircleDotIcon className="size-3 animate-pulse text-amber-500" />
+                <CircleDotIcon className="size-3 animate-pulse text-work" />
                 {last?.phase ? PHASE_LABEL[last.phase] : "working"}
               </span>
-            ) : (
-              last && (
-                <span className="text-muted-foreground">last {last.time}</span>
-              )
-            )}
+            ) : null}
             <ChevronRightIcon className="size-3.5 text-muted-foreground" />
           </button>
         </Row>
@@ -455,7 +436,7 @@ export function EmployeeHome({
   };
 
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <main className="lilos-glass flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3 sm:gap-3 sm:px-5">
         <Button
           variant="ghost"
@@ -467,24 +448,23 @@ export function EmployeeHome({
         </Button>
         <HermesAvatar name={e.name} status={e.status} className="size-8" />
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5 font-semibold text-base">
-            <span className="truncate">{e.name}</span>
-            <Badge
-              variant="secondary"
-              className="h-4 shrink-0 px-1.5 text-[10px]"
-            >
-              EMPLOYEE
-            </Badge>
+          <div
+            className="truncate font-semibold text-[17px] tracking-tight"
+            title={e.now ? `Now: ${e.now}` : undefined}
+          >
+            {e.name}
           </div>
-          <div className="truncate text-muted-foreground text-xs">
-            {e.role}
-            {e.now ? ` · now: ${e.now}` : ""}
-          </div>
+          <div className="truncate text-muted-foreground text-xs">{e.role}</div>
         </div>
         <div className="ml-auto flex shrink-0 gap-1">
-          <Button variant="outline" size="sm" onClick={onProfile}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onProfile}
+            title="Profile"
+            aria-label="Profile"
+          >
             <UserIcon />
-            <span className="hidden sm:inline">Profile</span>
           </Button>
           {!panelOpen && (
             <Button variant="ghost" size="icon-sm" onClick={onPanel}>
@@ -493,12 +473,12 @@ export function EmployeeHome({
           )}
         </div>
       </header>
-      <div className="flex shrink-0 items-center gap-2 border-b bg-muted/30 px-3 py-1.5 sm:px-5">
-        <LockIcon className="size-3 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-muted-foreground text-xs">
-          Private to you. Each message you send here opens its own engine
-          session; {e.name} replies in its thread.
-        </span>
+      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 sm:px-5">
+        <LockIcon
+          className="size-3 shrink-0 text-muted-foreground"
+          aria-label={`Private to you. Each message opens its own session; ${e.name} replies in its thread.`}
+        />
+        <span className="flex-1" />
         {sessions.length > 0 && (
           <div className="relative w-44 shrink-0 sm:w-56">
             <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />

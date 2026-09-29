@@ -34,7 +34,7 @@ export function StepMark({ s, n }: { s: PlanStep; n: number }) {
     );
   if (s.status === "in_progress")
     return (
-      <span className="grid size-5 shrink-0 place-items-center rounded-full bg-amber-500/15 text-amber-600">
+      <span className="grid size-5 shrink-0 place-items-center rounded-full bg-work/15 text-work">
         <CircleDotIcon className="size-3 animate-pulse" />
       </span>
     );
@@ -113,14 +113,14 @@ function Status({ plan }: { plan: Plan }) {
   switch (planPhase(plan)) {
     case "waiting":
       return (
-        <span className="flex items-center gap-1.5 rounded-full bg-amber-500/12 px-2 py-0.5 font-medium text-[11.5px] text-amber-700 dark:text-amber-400">
-          <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+        <span className="flex items-center gap-1.5 rounded-full bg-primary/12 px-2 py-0.5 font-semibold text-[11.5px] text-tint-text">
+          <span className="size-1.5 animate-pulse rounded-full bg-primary" />
           Waiting for you
         </span>
       );
     case "working":
       return (
-        <span className="font-medium font-mono text-[12px] text-amber-600">
+        <span className="font-medium font-mono text-[12px] text-work">
           {done}/{total}
         </span>
       );
@@ -176,7 +176,8 @@ export function PlanCard({
       data-planphase={phase}
       className={cn(
         "w-full max-w-xl overflow-hidden rounded-xl border bg-background",
-        phase === "waiting" && "border-amber-500/40",
+        phase === "waiting" &&
+          "border-primary/40 shadow-[0_0_0_4px] shadow-primary/8",
         finished && "border-emerald-500/30 bg-emerald-500/[0.04]",
         muted && "bg-muted/30",
       )}

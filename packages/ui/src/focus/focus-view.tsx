@@ -339,7 +339,7 @@ export function FocusView({
   useEscapeKey(onBack);
 
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <main className="lilos-glass flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b px-2 sm:px-3">
         {onNav && (
           <Button
@@ -382,15 +382,10 @@ export function FocusView({
           >
             {thread.title || plain(root.text)}
           </div>
-          <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
-            <span className="truncate">
-              {where} / {chLabel}
-            </span>
-            <span>·</span>
-            <span className="shrink-0">{lead?.name}</span>
-            <code className="hidden shrink-0 rounded bg-muted px-1 sm:inline">
-              {thread.session}
-            </code>
+          <div
+            className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs"
+            title={`${where} / ${chLabel} · ${lead?.name ?? ""} · ${thread.session}`}
+          >
             {/* The session's folder + branch — same badge the thread panel
                 shows (#113); Focus is the session's main view (#114).
                 A folder-less DM session is a plain chat — no repo exists to
@@ -442,7 +437,7 @@ export function FocusView({
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {running && (
             <span className="hidden items-center gap-1 text-muted-foreground text-xs sm:flex">
-              <CircleDotIcon className="size-3 animate-pulse text-amber-500" />
+              <CircleDotIcon className="size-3 animate-pulse text-work" />
               {live?.phase ? PHASE_LABEL[live.phase] : "working"}
             </span>
           )}
@@ -482,7 +477,7 @@ export function FocusView({
               {pr.status === "merged" ? (
                 <GitMergeIcon className="text-violet-600" />
               ) : prPending ? (
-                <CircleDashedIcon className="animate-spin text-amber-500 [animation-duration:3s]" />
+                <CircleDashedIcon className="animate-spin text-work [animation-duration:3s]" />
               ) : (
                 <GitPullRequestIcon className="text-emerald-600" />
               )}
@@ -673,7 +668,7 @@ export function FocusView({
                           <QueueItem key={t.content} className="py-0.5">
                             <div className="flex items-center gap-2">
                               {t.status === "in_progress" ? (
-                                <CircleDotIcon className="size-2.5 shrink-0 animate-pulse text-amber-500" />
+                                <CircleDotIcon className="size-2.5 shrink-0 animate-pulse text-work" />
                               ) : off ? (
                                 <CheckIcon className="size-2.5 shrink-0 text-emerald-600" />
                               ) : (
@@ -774,7 +769,7 @@ export function FocusView({
               className="fixed inset-0 z-20 bg-black/20 lg:hidden"
               onClick={() => setWbOpen(false)}
             />
-            <aside className="flex min-h-0 flex-col border-l bg-background max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:w-[min(560px,100vw)] max-lg:shadow-2xl">
+            <aside className="lilos-glass flex min-h-0 flex-col border-l bg-background lg:my-2 lg:mr-2 max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:w-[min(560px,100vw)] max-lg:shadow-2xl">
               <Workbench
                 thread={thread}
                 work={work}

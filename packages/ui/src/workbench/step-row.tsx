@@ -29,7 +29,7 @@ export function StepRow({ s }: { s: Step }) {
       <span
         className={cn(
           "absolute top-[11px] left-[2px] size-[7px] rounded-full",
-          s.running ? "animate-pulse bg-amber-500" : "bg-emerald-500",
+          s.running ? "animate-pulse bg-work" : "bg-emerald-500",
         )}
       />
       <button

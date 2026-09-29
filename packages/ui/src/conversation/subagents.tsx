@@ -30,7 +30,7 @@ import { StepRow } from "../workbench/step-row";
    rendered only when passed — D-#19). */
 
 const STATUS_ICON: Record<Subagent["status"], React.ReactNode> = {
-  running: <CircleDotIcon className="size-3.5 animate-pulse text-amber-500" />,
+  running: <CircleDotIcon className="size-3.5 animate-pulse text-work" />,
   done: <CheckIcon className="size-3.5 text-emerald-600" />,
   failed: <XIcon className="size-3.5 text-red-600" />,
   stopped: <BanIcon className="size-3.5 text-muted-foreground" />,
@@ -193,7 +193,7 @@ export function TurnSubagents({
           <NetworkIcon
             className={cn(
               "size-3.5",
-              running ? "animate-pulse text-amber-500" : "text-emerald-600",
+              running ? "animate-pulse text-work" : "text-emerald-600",
             )}
           />
           <span>{title}</span>

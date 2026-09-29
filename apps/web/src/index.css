@@ -8,6 +8,11 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* Semantic tints shared with the prototype (issue #223). */
+  --color-work: var(--work);
+  --color-tint-soft: var(--tint-soft);
+  --color-tint-text: var(--tint-text);
+  --color-glass: var(--glass);
   --font-heading: var(--font-sans);
   --font-sans: "Geist Variable", sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
@@ -51,6 +56,10 @@
 }
 
 :root {
+  --work: #007aff;
+  --tint-soft: oklch(0.97 0 0);
+  --tint-text: oklch(0.205 0 0);
+  --glass: oklch(1 0 0);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -86,6 +95,10 @@
 }
 
 .dark {
+  --work: #0a84ff;
+  --tint-soft: oklch(0.269 0 0);
+  --tint-text: oklch(0.985 0 0);
+  --glass: oklch(0.205 0 0);
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);

@@ -277,7 +277,7 @@ export function ThreadView({
       : "streaming"
     : "ready";
   return (
-    <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col bg-background">
+    <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 font-semibold">
@@ -292,9 +292,12 @@ export function ThreadView({
               </span>
             )}
           </div>
-          <div className="truncate text-muted-foreground text-xs">
-            {channelLabel} · {leadEmp && !isDM && `${leadEmp.name} · `}Hermes{" "}
-            <code className="rounded bg-muted px-1">{thread.session}</code>
+          <div
+            className="truncate text-muted-foreground text-xs"
+            title={`Hermes session ${thread.session}`}
+          >
+            {channelLabel}
+            {leadEmp && !isDM && ` · ${leadEmp.name}`}
           </div>
           {/* A folder-less DM session is a plain chat — no folder label
               at all (#196). */}

@@ -105,7 +105,7 @@ export function UserTurn({
   attachments?: AttachedFile[];
 }) {
   return (
-    <Message from="user" className="max-w-[80%] gap-1" data-userturn>
+    <Message from="user" className="lilos-rise max-w-[80%] gap-1" data-userturn>
       <MessageContent className="rounded-2xl px-4 py-2.5 text-[15px] leading-[1.6]">
         <MessageResponse className="lilos-prose break-words">
           {withFileMentionChips(text)}
@@ -146,7 +146,7 @@ export function TurnSteps({
       <TaskTrigger title={plural(steps.length, "step")}>
         <div className="flex w-fit cursor-pointer items-center gap-1.5 text-muted-foreground text-xs transition-colors hover:text-foreground">
           {running ? (
-            <CircleDotIcon className="size-3.5 animate-pulse text-amber-500" />
+            <CircleDotIcon className="size-3.5 animate-pulse text-work" />
           ) : (
             <CheckIcon className="size-3.5 text-emerald-600" />
           )}
@@ -228,7 +228,11 @@ export function AgentTurn({
       .map((s) => s.diff!.path),
   ).size;
   return (
-    <Message from="assistant" className="max-w-full gap-2.5" data-agentturn>
+    <Message
+      from="assistant"
+      className="lilos-rise max-w-full gap-2.5"
+      data-agentturn
+    >
       <div className="flex items-center gap-2 text-[13px]">
         <HermesAvatar name={e?.name} className="size-5" />
         <span className="font-semibold">{e?.name}</span>
@@ -324,7 +328,7 @@ export function AgentTurn({
            the stable "turn is over" anchor for specs (text lands earlier). */
           <div
             data-turnsettled
-            className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-muted-foreground"
+            className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-muted-foreground opacity-0 transition-opacity duration-300 group-hover:opacity-100"
           >
             {r.dur !== undefined && <span>Worked for {r.dur}s</span>}
             {r.model && (
@@ -390,7 +394,7 @@ export function PrCard({
       type="button"
       onClick={onOpen}
       data-prcard
-      className="flex w-full max-w-lg items-center gap-3 rounded-xl border bg-background px-3.5 py-3 text-left transition-colors hover:border-foreground/25"
+      className="lilos-lift flex w-full max-w-lg items-center gap-3 rounded-2xl border bg-background/70 px-3.5 py-3 text-left hover:border-foreground/25"
     >
       <span
         className={cn(

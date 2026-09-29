@@ -18,15 +18,17 @@ export function NavItem({
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 hover:bg-sidebar-accent [&_svg]:size-4 [&_svg]:text-muted-foreground"
+      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[13.5px] hover:bg-sidebar-accent [&_svg]:size-4 [&_svg]:text-primary"
     >
       {icon}
       {label}
       {count != null && (
         <span
           className={cn(
-            "ml-auto rounded-full px-1.5 text-[11px] text-white",
-            tone === "amber" ? "bg-amber-500" : "bg-blue-600",
+            "ml-auto min-w-5 rounded-full px-1.5 text-center font-semibold text-[11px]",
+            tone === "amber"
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted-foreground/15 text-muted-foreground",
           )}
         >
           {count}
@@ -44,7 +46,7 @@ export function Section({
   onAdd?: () => void;
 }) {
   return (
-    <div className="flex items-center px-4 pt-4 pb-1 font-medium text-[11px] text-muted-foreground uppercase tracking-wider">
+    <div className="flex items-center px-4 pt-5 pb-1 font-semibold text-[11px] text-muted-foreground/80">
       {title}
       {onAdd && (
         <button
@@ -72,12 +74,18 @@ export function ChannelItem({
     <button
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left hover:bg-sidebar-accent",
-        active && "bg-sidebar-accent font-medium",
+        "flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-[13.5px] hover:bg-sidebar-accent",
+        active &&
+          "bg-primary/12 font-medium text-tint-text hover:bg-primary/15",
         c.unread && !active && "font-semibold",
       )}
     >
-      <HashIcon className="size-3.5 text-muted-foreground" />
+      <HashIcon
+        className={cn(
+          "size-3.5",
+          active ? "text-tint-text" : "text-muted-foreground",
+        )}
+      />
       {c.name}
       {c.repo && (
         <FolderGit2Icon className="ml-auto size-3 text-muted-foreground" />
@@ -85,7 +93,7 @@ export function ChannelItem({
       {c.unread && !active ? (
         <span
           className={cn(
-            "rounded-full bg-blue-600 px-1.5 text-[11px] text-white",
+            "min-w-5 rounded-full bg-muted-foreground/15 px-1.5 text-center font-semibold text-[11px] text-muted-foreground",
             !c.repo && "ml-auto",
           )}
         >

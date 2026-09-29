@@ -1,10 +1,4 @@
-import {
-  ChevronRightIcon,
-  CircleDotIcon,
-  EyeIcon,
-  GitBranchIcon,
-  ShieldAlertIcon,
-} from "lucide-react";
+import { ChevronRightIcon, CircleDotIcon, ShieldAlertIcon } from "lucide-react";
 import { PHASE_LABEL } from "../lib/helpers";
 import { HermesAvatar } from "../shell/avatars";
 import type { EmpFn, Thread, Work } from "../types";
@@ -29,49 +23,35 @@ export function ThreadSummary({
   return (
     <button
       onClick={onOpen}
-      className="mt-1 flex w-fit max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border bg-background px-2 py-1.5 text-left text-xs hover:border-foreground/30 [&>*]:shrink-0 [&>*]:whitespace-nowrap"
+      title={
+        [work?.ticket, work?.branch].filter(Boolean).join(" · ") || undefined
+      }
+      className="mt-1 flex w-fit max-w-full flex-wrap items-center gap-x-2 gap-y-1 lilos-lift rounded-full bg-accent px-2.5 py-1 text-left text-xs hover:bg-foreground/10 [&>*]:shrink-0 [&>*]:whitespace-nowrap"
     >
       <span className="flex -space-x-1.5">
         {workers.map((w) => (
           <HermesAvatar
             key={w}
             name={emp(w)?.name}
-            className="size-5 rounded-[28%] ring-2 ring-background"
+            className="size-5 rounded-full ring-2 ring-background"
           />
         ))}
       </span>
-      <span className="font-medium text-blue-600">
+      <span className="font-medium text-tint-text">
         {thread.replies.length} replies
       </span>
-      {work?.ticket ? (
-        <span className="rounded bg-muted px-1 font-mono">{work.ticket}</span>
-      ) : work ? null : (
-        <span className="flex items-center gap-1 text-muted-foreground">
-          <EyeIcon className="size-3" />
-          discussion
-        </span>
-      )}
-      {work?.branch && (
-        <span className="flex items-center gap-1 font-mono text-emerald-700">
-          <GitBranchIcon className="size-3" />
-          {work.branch}
-        </span>
-      )}
       {thread.replies.some((r) => r.approval) && (
-        <span className="flex items-center gap-1 text-amber-700">
+        <span className="flex items-center gap-1 font-medium text-tint-text">
           <ShieldAlertIcon className="size-3" />
-          approval
+          needs you
         </span>
       )}
       {last.streaming || last.live ? (
         <span className="flex items-center gap-1 text-muted-foreground">
-          <CircleDotIcon className="size-3 animate-pulse text-amber-500" />
-          {emp(last.from)?.name}{" "}
+          <CircleDotIcon className="size-3 animate-pulse text-work" />
           {last.phase ? PHASE_LABEL[last.phase] : "working"}
         </span>
-      ) : (
-        <span className="text-muted-foreground">last {last.time}</span>
-      )}
+      ) : null}
       <ChevronRightIcon className="size-3.5 text-muted-foreground" />
     </button>
   );
