@@ -20,8 +20,12 @@ afterEach(() => {
     rmSync(d, { recursive: true, force: true });
 });
 
-/** Fake `lilos-svc` CLI: keeps a status word per plist. */
-function fakeHelper(initial: Record<string, string> = {}) {
+/** Fake `lilos-svc` CLI: keeps a status word per plist, plus a launchd job
+ * model — `loaded` holds "foreign" (bootstrap leftover) or "ours". */
+function fakeHelper(
+  initial: Record<string, string> = {},
+  loaded: Map<string, string> = new Map(),
+) {
   const statuses = new Map(Object.entries(initial));
   const calls: string[][] = [];
   const exec: HelperExec = async (_bin, args) => {
@@ -31,12 +35,24 @@ function fakeHelper(initial: Record<string, string> = {}) {
       const s = statuses.get(plist) ?? "notRegistered";
       return { stdout: `${plist} status=${s}`, stderr: "", code: 0 };
     }
+    if (verb === "spawned") {
+      const kind = loaded.get(plist);
+      const word =
+        kind === "ours" ? "running" : kind === "foreign" ? "foreign" : "absent";
+      return { stdout: `${plist} ${word}`, stderr: "", code: 0 };
+    }
+    if (verb === "bootout") {
+      loaded.delete(plist);
+      return { stdout: `ok ${plist}`, stderr: "", code: 0 };
+    }
     if (verb === "register") {
       statuses.set(plist, "enabled");
+      loaded.set(plist, "ours");
       return { stdout: `ok ${plist} status=enabled`, stderr: "", code: 0 };
     }
     if (verb === "unregister") {
       statuses.set(plist, "notRegistered");
+      loaded.delete(plist);
       return {
         stdout: `ok ${plist} status=notRegistered`,
         stderr: "",
@@ -45,7 +61,7 @@ function fakeHelper(initial: Record<string, string> = {}) {
     }
     return { stdout: "", stderr: "unknown verb", code: 64 };
   };
-  return { exec, statuses, calls };
+  return { exec, statuses, calls, loaded };
 }
 
 function tmpFile(): string {
@@ -103,6 +119,72 @@ describe("AC-1 service registration via lilos-svc", () => {
           .at(-1)?.i ?? -1;
       expect(un).toBeGreaterThan(-1);
       expect(re).toBeGreaterThan(un);
+    }
+  });
+
+  it("AC-3 foreign bootstrap jobs get booted out before register (#206)", async () => {
+    // Signed path over an ad-hoc install: SMAppService has no record
+    // (notFound) but launchd holds bootstrapped jobs (spawned = foreign).
+    const loaded = new Map(
+      LILOS_AGENTS.map((a) => [plistFileName(a), "foreign"]),
+    );
+    const { exec, calls } = fakeHelper({}, loaded);
+    const reports = await ensureLaunchAgents({
+      control: helperServiceControl("/bundled/lilos-svc", exec),
+      agents: LILOS_AGENTS,
+      bundleVersion: "1",
+      versions: diskVersionStore(tmpFile()),
+    });
+    expect(reports.map((r) => r.action)).toEqual(["registered", "registered"]);
+    for (const agent of LILOS_AGENTS) {
+      const plist = plistFileName(agent);
+      const verbs = calls.filter(([, p]) => p === plist).map(([v]) => v);
+      expect(verbs.indexOf("bootout")).toBeGreaterThanOrEqual(0);
+      expect(verbs.indexOf("bootout")).toBeLessThan(
+        verbs.lastIndexOf("register"),
+      );
+    }
+    expect([...loaded.values()]).not.toContain("foreign");
+  });
+
+  it("AC-4 an entitlement failure from unregister still ends registered", async () => {
+    // `unregister` on a foreign job fails — the helper surfaces the raw
+    // SMAppService error and ensureLaunchAgents must recover via bootout.
+    const loaded = new Map(
+      LILOS_AGENTS.map((a) => [plistFileName(a), "foreign"]),
+    );
+    const { exec, calls } = fakeHelper(
+      Object.fromEntries(
+        LILOS_AGENTS.map((a) => [plistFileName(a), "enabled"]),
+      ),
+      loaded,
+    );
+    const entitled: HelperExec = async (bin, args) => {
+      if (args[0] === "unregister") {
+        calls.push(args);
+        return {
+          stdout: "",
+          stderr: `unregister failed for ${args[1]}: Requestor lacks required entitlement`,
+          code: 1,
+        };
+      }
+      return exec(bin, args);
+    };
+    const store = diskVersionStore(tmpFile());
+    for (const agent of LILOS_AGENTS) await store.write(agent.label, "1");
+    const reports = await ensureLaunchAgents({
+      control: helperServiceControl("/bundled/lilos-svc", entitled),
+      agents: LILOS_AGENTS,
+      bundleVersion: "2",
+      versions: store,
+    });
+    expect(reports.map((r) => r.action)).toEqual(["registered", "registered"]);
+    expect(reports.every((r) => r.status === "enabled")).toBe(true);
+    for (const agent of LILOS_AGENTS) {
+      const plist = plistFileName(agent);
+      const verbs = calls.filter(([, p]) => p === plist).map(([v]) => v);
+      expect(verbs).toContain("bootout");
+      expect(verbs).toContain("register");
     }
   });
 
