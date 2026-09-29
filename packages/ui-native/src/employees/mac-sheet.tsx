@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { MacLink } from "../app/mac-status-card";
 import { AppText } from "../components/app-text";
 import { Pill } from "../components/bits";
+import { MacArt, PhoneArt } from "../components/device-art";
 import { Icon, type IconTone } from "../components/icon";
 import { Rise } from "../components/rise";
 import { Group, SheetHeader } from "./folder-picker";
@@ -147,29 +148,45 @@ export function MacSheet({
   );
 }
 
-/* Phone · · · · Mac — the connection you're looking at, drawn. */
+/* Phone · · · · Mac — the connection, drawn. While connected a pulse
+   travels phone → Mac → phone and back again, easing at each end; red dots
+   and a ✕ when the phone can't reach it. */
 function LinkHero({ link }: { link: MacLink }) {
   const online = link === "online";
   const offline = link === "offline";
   const t = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (!online) return;
+    const ease = Easing.inOut(Easing.cubic);
     const loop = Animated.loop(
-      Animated.timing(t, {
-        toValue: 1,
-        duration: 1600,
-        easing: Easing.inOut(Easing.cubic),
-        useNativeDriver: true,
-      }),
+      Animated.sequence([
+        Animated.timing(t, {
+          toValue: 1,
+          duration: 1300,
+          easing: ease,
+          useNativeDriver: true,
+        }),
+        Animated.delay(180),
+        Animated.timing(t, {
+          toValue: 0,
+          duration: 1300,
+          easing: ease,
+          useNativeDriver: true,
+        }),
+        Animated.delay(180),
+      ]),
     );
     loop.start();
     return () => loop.stop();
   }, [online, t]);
   const W = 96;
   return (
-    <View className="flex-row items-center gap-3">
-      <Badge icon="iphone" />
-      <View style={{ width: W, height: 14 }} className="justify-center">
+    <View className="flex-row items-end gap-4">
+      <PhoneArt scale={1.05} />
+      <View
+        style={{ width: W, height: 14, marginBottom: 22 }}
+        className="justify-center"
+      >
         <View className="flex-row justify-between">
           {Array.from({ length: 9 }, (_, i) => (
             <View
@@ -205,28 +222,7 @@ function LinkHero({ link }: { link: MacLink }) {
           </View>
         )}
       </View>
-      <Badge icon="laptopcomputer" big />
-    </View>
-  );
-}
-
-function Badge({ icon, big }: { icon: SFSymbol; big?: boolean }) {
-  const s = big ? 76 : 56;
-  return (
-    <View
-      className="items-center justify-center bg-card"
-      style={{
-        width: s,
-        height: s,
-        borderRadius: s * 0.3,
-        borderCurve: "continuous",
-        shadowColor: "#000",
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
-      }}
-    >
-      <Icon name={icon} size={big ? 36 : 26} tone="foreground" />
+      <MacArt scale={1.05} />
     </View>
   );
 }
