@@ -61,9 +61,7 @@ describe("desktop chrome attributes", () => {
       false,
     );
     emit(true);
-    expect(document.documentElement.hasAttribute("data-fullscreen")).toBe(
-      true,
-    );
+    expect(document.documentElement.hasAttribute("data-fullscreen")).toBe(true);
     emit(false);
     expect(document.documentElement.hasAttribute("data-fullscreen")).toBe(
       false,
@@ -72,9 +70,7 @@ describe("desktop chrome attributes", () => {
     // A reload while the window is already full-screen starts in sync.
     window.lilos = fakeBridge(true).bridge;
     stop = watchDesktopChrome();
-    expect(document.documentElement.hasAttribute("data-fullscreen")).toBe(
-      true,
-    );
+    expect(document.documentElement.hasAttribute("data-fullscreen")).toBe(true);
   });
 });
 
@@ -91,7 +87,8 @@ describe("desktop chrome stylesheet", () => {
     expect(css).toMatch(/-webkit-app-region:\s*drag/);
     expect(css).toMatch(/-webkit-app-region:\s*no-drag/);
     // Every drag/no-drag rule stays scoped to the desktop window.
-    const dragRules = css.match(/[^{}]+\{[^{}]*-webkit-app-region[^{}]*\}/g) ?? [];
+    const dragRules =
+      css.match(/[^{}]+\{[^{}]*-webkit-app-region[^{}]*\}/g) ?? [];
     for (const rule of dragRules) expect(rule).toMatch(/data-desktop/);
   });
 

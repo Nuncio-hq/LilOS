@@ -6,15 +6,16 @@
  * renderer owns the drag regions (`-webkit-app-region`), so these options
  * are identical for the app and the status window.
  */
-import type { BrowserWindow, BrowserWindowConstructorOptions } from "electron";
+
 import { DESKTOP_FULLSCREEN_CHANNEL } from "@lilos/contracts/app";
+import type { BrowserWindow, BrowserWindowConstructorOptions } from "electron";
 
 /** Sidebar header height (`h-14` in packages/ui); the lights centre on it. */
 export const SIDEBAR_HEADER_HEIGHT = 56;
 
 /** BrowserWindow options shared by the app and status windows. */
 export function nativeWindowChrome(
-  _kind: "app" | "status",
+  _kind: "app" | "status" = "app",
 ): BrowserWindowConstructorOptions {
   return {
     titleBarStyle: "hiddenInset",

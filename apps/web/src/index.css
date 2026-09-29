@@ -439,7 +439,9 @@ html[data-desktop] main.lilos-glass {
 /* The lights end ~x=72 (inset x 16 + the ~56px cluster): the sidebar header
    reserves their strip — and drops it in full screen, where the OS hides
    them and an empty gap would remain (AC-1, AC-4). */
-html[data-desktop]:not([data-fullscreen]) aside.lilos-glass-side > div:first-child {
+html[data-desktop]:not([data-fullscreen])
+  aside.lilos-glass-side
+  > div:first-child {
   padding-left: 78px;
 }
 
@@ -448,17 +450,19 @@ html[data-desktop]:not([data-fullscreen]) aside.lilos-glass-side > div:first-chi
 html[data-desktop] .lilos-drag {
   -webkit-app-region: drag;
 }
-html[data-desktop] .lilos-drag :is(
-  a,
-  button,
-  input,
-  select,
-  textarea,
-  [role="button"],
-  [role="tab"],
-  [role="switch"],
-  [contenteditable],
-  [data-radix-collection-item]
-) {
+html[data-desktop]
+  .lilos-drag
+  :is(
+    a,
+    button,
+    input,
+    select,
+    textarea,
+    [role="button"],
+    [role="tab"],
+    [role="switch"],
+    [contenteditable],
+    [data-radix-collection-item]
+  ) {
   -webkit-app-region: no-drag;
 }

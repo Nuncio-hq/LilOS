@@ -23,9 +23,9 @@ import {
 } from "electron";
 import { diskVersionStore, helperServiceControl } from "./control";
 import { postDesktopNotification } from "./notify";
-import { nativeWindowChrome, watchWindowChrome } from "./window-chrome";
 import { checkForUpdate } from "./update";
 import { settlePendingUpdate } from "./update/state";
+import { nativeWindowChrome, watchWindowChrome } from "./window-chrome";
 
 /**
  * LilOS shell: registers the relay + harness launch agents (AC-1/#34),

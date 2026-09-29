@@ -152,7 +152,9 @@ const appRegion = (page: Page, selector: string) =>
   page
     .locator(selector)
     .first()
-    .evaluate((el) => getComputedStyle(el).getPropertyValue("-webkit-app-region"));
+    .evaluate((el) =>
+      getComputedStyle(el).getPropertyValue("-webkit-app-region"),
+    );
 
 const sidebarHeader = (page: Page) =>
   page.locator("aside.lilos-glass-side > div").first();
@@ -183,14 +185,19 @@ test("AC-1 no title bar strip; traffic lights inset into the sidebar header", as
     ).toBeVisible({ timeout: 60_000 });
     await expect
       .poll(() =>
-        win.evaluate(() => document.documentElement.hasAttribute("data-desktop")),
+        win.evaluate(() =>
+          document.documentElement.hasAttribute("data-desktop"),
+        ),
       )
       .toBe(true);
 
     // A hidden title bar means the content reaches the window's top edge.
     const { winH, contentH } = await app.evaluate(({ BrowserWindow }) => {
       const w = BrowserWindow.getAllWindows()[0];
-      return { winH: w.getBounds().height, contentH: w.getContentBounds().height };
+      return {
+        winH: w.getBounds().height,
+        contentH: w.getContentBounds().height,
+      };
     });
     expect(contentH).toBe(winH);
 
@@ -200,9 +207,7 @@ test("AC-1 no title bar strip; traffic lights inset into the sidebar header", as
       .poll(() => appRegion(win, "aside.lilos-glass-side > div"))
       .toBe("drag");
     const head = sidebarHeader(win);
-    const pad = await head.evaluate(
-      (el) => getComputedStyle(el).paddingLeft,
-    );
+    const pad = await head.evaluate((el) => getComputedStyle(el).paddingLeft);
     expect(Number.parseFloat(pad)).toBeGreaterThanOrEqual(70);
     const logoX = await head
       .locator("div")
@@ -226,9 +231,7 @@ test("AC-3 header strips drag the window, buttons inside still work", async () =
     await dm.click();
 
     // Every panel header row is a drag region…
-    await expect
-      .poll(() => appRegion(win, "main header"))
-      .toBe("drag");
+    await expect.poll(() => appRegion(win, "main header")).toBe("drag");
     await expect
       .poll(() => appRegion(win, "aside.lilos-glass-side > div"))
       .toBe("drag");
@@ -250,10 +253,13 @@ test("AC-3 header strips drag the window, buttons inside still work", async () =
     await expect.poll(isMax, { timeout: 5_000 }).toBe(false);
 
     // A control inside the drag strip still clicks (profile button).
-    await win.getByRole("button", { name: /profile/i }).first().click();
-    await expect(
-      win.getByText(/personal|profile|about/i).first(),
-    ).toBeVisible({ timeout: 10_000 });
+    await win
+      .getByRole("button", { name: /profile/i })
+      .first()
+      .click();
+    await expect(win.getByText(/personal|profile|about/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
     await win.screenshot({ path: `${SHOTS}/ac-3-drag.png` });
   } finally {
     await app.close();
@@ -270,8 +276,8 @@ test("AC-4 full screen hides the lights and drops the sidebar inset", async () =
       win.locator("aside").getByRole("button", { name: /default/i }),
     ).toBeVisible({ timeout: 60_000 });
     const padLeft = () =>
-      sidebarHeader(win).evaluate(
-        (el) => Number.parseFloat(getComputedStyle(el).paddingLeft),
+      sidebarHeader(win).evaluate((el) =>
+        Number.parseFloat(getComputedStyle(el).paddingLeft),
       );
     const inset = await padLeft();
     expect(inset).toBeGreaterThanOrEqual(70);
@@ -316,12 +322,12 @@ test("AC-5 the status window gets the same chrome", async () => {
       win.locator("aside").getByRole("button", { name: /default/i }),
     ).toBeVisible({ timeout: 60_000 });
     await win.evaluate(() =>
-      (window as unknown as { lilos?: { openStatus?: () => void } }).lilos?.openStatus?.(),
+      (
+        window as unknown as { lilos?: { openStatus?: () => void } }
+      ).lilos?.openStatus?.(),
     );
     await expect.poll(() => app.windows().length).toBe(2);
-    const statusWin = app
-      .windows()
-      .find((w) => w.url().startsWith("file://"));
+    const statusWin = app.windows().find((w) => w.url().startsWith("file://"));
     if (!statusWin) throw new Error("status window did not open");
     const { winH, contentH } = await app.evaluate(({ BrowserWindow }) => {
       const w = BrowserWindow.getAllWindows().find((x) =>
@@ -353,8 +359,8 @@ test("AC-5 a plain browser tab is unchanged", async ({ page }) => {
     ),
   ).toBe(false);
   // No traffic-light inset in a browser tab.
-  const pad = await sidebarHeader(page).evaluate(
-    (el) => Number.parseFloat(getComputedStyle(el).paddingLeft),
+  const pad = await sidebarHeader(page).evaluate((el) =>
+    Number.parseFloat(getComputedStyle(el).paddingLeft),
   );
   expect(pad).toBeLessThan(30);
   await page.screenshot({ path: `${SHOTS}/ac-5-browser.png` });
