@@ -261,3 +261,10 @@ export type ModelPick = { model: string; effort?: string; fast?: boolean };
 
 /** An engine's model provider; `logo` = models.dev slug (web: ModelProvider). */
 export type ModelProviderRow = { id: string; name: string; logo?: string };
+
+/** One folder level on the paired Mac, as the relay lists it (web: FsDir). */
+export type MacDir = {
+  /** Current branch when this folder is a git repo. */
+  branch?: string;
+  folders: { name: string; path: string; branch?: string }[];
+};

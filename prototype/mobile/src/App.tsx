@@ -12,6 +12,7 @@ import {
   EmployeeDmScreen,
   EmployeesHomeScreen,
   FolderPickerSheet,
+  MacFolderBrowser,
   type MacLink,
   MacSheet,
   ManualCodeScreen,
@@ -98,12 +99,13 @@ import {
   SCAN_OVERRIDES,
   type ScanOverride,
 } from "./fake-mac";
+import { FOUND_REPOS, readMacDir } from "./fake-mac-fs";
 import {
+  $folders,
   $modelPick,
   $threadModel,
   $wsPick,
   COMPANY,
-  FOLDERS,
   MODELS,
   PROVIDERS,
 } from "./fake-team";
@@ -143,6 +145,8 @@ type Routes = {
   Approvals: undefined;
   Mac: undefined;
   FolderPicker: undefined;
+  /** Browse the Mac for another folder. */
+  BrowseMac: undefined;
   /** No thread = the next DM session's model. */
   ModelPicker: { thread?: string };
 };
@@ -508,6 +512,7 @@ function Dm({ navigation, route }: Props<"Dm">) {
   );
   const threads = useStore($threads);
   const ws = useStore($wsPick);
+  const folders = useStore($folders);
   const pick = useStore($modelPick);
   const turns = employee ? turnsOf(threads, employee.id) : [];
   const status = statusOf(turns);
@@ -540,7 +545,7 @@ function Dm({ navigation, route }: Props<"Dm">) {
       name={employee.name}
       tone={employee.tone}
       turns={turns}
-      folder={pickLabel(FOLDERS, ws)}
+      folder={pickLabel(folders, ws)}
       model={model}
       modelLogo={logoOf(pick.model)}
       onOpenSession={(id) => navigation.navigate("Thread", { id })}
@@ -690,13 +695,52 @@ function Background({ navigation, route }: Props<"Background">) {
 
 function FolderPicker({ navigation }: Props<"FolderPicker">) {
   const pick = useStore($wsPick);
+  const folders = useStore($folders);
   return (
     <FolderPickerSheet
-      folders={FOLDERS}
+      folders={folders}
+      onBrowse={() => navigation.navigate("BrowseMac")}
       pick={pick}
       onPick={(p) => {
         void Haptics.selectionAsync();
         $wsPick.set(p);
+      }}
+      onDone={() => navigation.goBack()}
+    />
+  );
+}
+
+/* Any folder on the Mac: picking one adds it to the list and selects it,
+   then closes both sheets back to the DM. */
+function BrowseMac({ navigation }: Props<"BrowseMac">) {
+  const mac = useStore($connections)[0];
+  return (
+    <MacFolderBrowser
+      macName={mac?.name ?? "Mac"}
+      found={FOUND_REPOS}
+      readDir={readMacDir}
+      onUse={(path, dir) => {
+        void Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        );
+        const id = path;
+        if (!$folders.get().some((f) => f.id === id))
+          $folders.set([
+            {
+              id,
+              project: path.split("/").pop() ?? path,
+              path,
+              branches: dir.branch ? [dir.branch] : [],
+              workstreams: [],
+            },
+            ...$folders.get(),
+          ]);
+        $wsPick.set({
+          folder: id,
+          base: dir.branch ?? "",
+          mode: dir.branch ? "new" : "direct",
+        });
+        navigation.pop(2);
       }}
       onDone={() => navigation.goBack()}
     />
@@ -1040,6 +1084,11 @@ export default function App() {
               <Stack.Screen
                 name="FolderPicker"
                 component={FolderPicker}
+                options={SHEET}
+              />
+              <Stack.Screen
+                name="BrowseMac"
+                component={BrowseMac}
                 options={SHEET}
               />
               <Stack.Screen
