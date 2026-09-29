@@ -172,9 +172,10 @@ export async function ensureLaunchAgents(opts: {
       // treatment plus bootout. "absent"/"unknown" are not failures —
       // keepalive spawns lazily and needs no repair.
       if (action !== "already" && opts.control.spawned) {
+        let last = "absent";
         for (let attempt = 0; attempt < 3; attempt++) {
-          const state = await pollSpawnState(opts.control.spawned, plist);
-          if (state === "spawn failed" || state === "foreign") {
+          last = await pollSpawnState(opts.control.spawned, plist);
+          if (last === "spawn failed" || last === "foreign") {
             if (attempt < 2) {
               // The record may already be gone (entitlement) — unregister is
               // best-effort here; bootout is what frees a foreign label.
@@ -185,6 +186,14 @@ export async function ensureLaunchAgents(opts: {
             continue;
           }
           break;
+        }
+        // A job still failing or foreign after every repair is a real
+        // failure: report it and never pin the version — pinning here is
+        // what let the old binary keep serving unnoticed (#206).
+        if (last === "spawn failed" || last === "foreign") {
+          throw new Error(
+            `${plist}: launchd job still ${last} after register repairs`,
+          );
         }
       }
       const status = await opts.control.status(plist);

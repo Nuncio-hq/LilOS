@@ -313,6 +313,41 @@ describe("launch agents (AC-1)", () => {
     });
   });
 
+  it("AC-4 a job that survives every register repair fails and never pins the version", async () => {
+    // Rollback must not be weakened either: a foreign job bootout can't
+    // free (or a spawn that never succeeds) is a real failure — report
+    // failed, pin nothing. Silently registering over it is the bug shape
+    // of #206 (old binary keeps serving while the store says current).
+    const stuck: Record<string, string> = {
+      "com.nuncio.lilos.relay.plist": "foreign",
+      "com.nuncio.lilos.harness.plist": "spawn failed",
+    };
+    const control = fakeControl();
+    control.spawned = async (plist) => stuck[plist] ?? "absent";
+    control.bootout = async (plist) => {
+      control.calls.push(`bootout ${plist}`);
+      // The label stays held — bootout could not free it.
+    };
+    const versions = memStore();
+    const reports = await ensureLaunchAgents({
+      control,
+      agents: LILOS_AGENTS,
+      bundleVersion: "2",
+      versions,
+    });
+    expect(reports.map((r) => r.action)).toEqual(["failed", "failed"]);
+    expect(reports[0].error).toContain("still foreign");
+    expect(reports[1].error).toContain("still spawn failed");
+    expect(versions.all["com.nuncio.lilos.relay"]).toBeUndefined();
+    expect(versions.all["com.nuncio.lilos.harness"]).toBeUndefined();
+    // Retried, not given up after one attempt: initial register + 2 repairs.
+    expect(
+      control.calls.filter((c) =>
+        c.startsWith("register com.nuncio.lilos.relay"),
+      ),
+    ).toHaveLength(3);
+  });
+
   it("AC-4 a non-entitlement unregister failure while a job holds the label still fails", async () => {
     // Rollback must not be weakened: a real unregister failure leaving a
     // live, non-foreign job is still reported failed and pins no version.

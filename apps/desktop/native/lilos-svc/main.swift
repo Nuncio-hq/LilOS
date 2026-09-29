@@ -148,8 +148,10 @@ func foreignStatePresent(_ plistName: String, smaOwned: Bool) -> Bool {
 
 /// Wait until launchd no longer reports the job (teardown is asynchronous;
 /// re-registering in that window pins a stale launch constraint).
-func waitJobGone(_ plistName: String) {
+@discardableResult
+func waitJobGone(_ plistName: String) -> Bool {
   for _ in 0 ..< 200 where jobState(plistName) != nil { usleep(100_000) }
+  return jobState(plistName) == nil
 }
 
 // ------------------------- bootstrap (ad-hoc) backend ----------------------
@@ -182,13 +184,15 @@ func bootstrap(_ plistName: String) {
   print("ok \(plistName) status=enabled")
 }
 
-func bootout(_ plistName: String) {
+@discardableResult
+func bootout(_ plistName: String) -> Bool {
   let spec = jobPath(plistName)
   _ = run("/bin/launchctl", "bootout", spec)
-  waitJobGone(plistName)
+  let gone = waitJobGone(plistName)
   let home = FileManager.default.homeDirectoryForCurrentUser
   let dest = home.appendingPathComponent("Library/LaunchAgents/\(plistName)")
   try? FileManager.default.removeItem(at: dest)
+  return gone
 }
 
 // ------------------------------- entrypoint --------------------------------
@@ -234,7 +238,12 @@ case "register":
       service.unregister { _ in sema.signal() }
       _ = sema.wait(timeout: .now() + 15)
     }
-    bootout(args[2])
+    if !bootout(args[2]) {
+      // Registering over a job that survives bootout keeps the old binary
+      // running while reporting success — fail instead (#206).
+      fputs("register failed for \(args[2]): foreign job survived bootout\n", stderr)
+      exit(1)
+    }
   }
   do {
     try service.register()
@@ -244,7 +253,10 @@ case "register":
     exit(1)
   }
 case "unregister":
-  if adhoc { bootout(args[2]) }
+  if adhoc, !bootout(args[2]) {
+    fputs("unregister failed for \(args[2]): job still loaded after bootout\n", stderr)
+    exit(1)
+  }
   let sema = DispatchSemaphore(value: 0)
   var unregisterError: Error?
   service.unregister { error in
@@ -272,8 +284,12 @@ case "status":
 case "bootout":
   // Remove whatever holds the label — a job SMAppService doesn't own plus
   // its user LaunchAgents plist — regardless of who registered it (#206).
-  bootout(args[2])
-  print("ok \(args[2])")
+  if bootout(args[2]) {
+    print("ok \(args[2])")
+  } else {
+    fputs("bootout failed for \(args[2]): job still loaded\n", stderr)
+    exit(1)
+  }
 case "spawned":
   if let info = jobInfo(args[2]) {
     print("\(args[2]) \(foreignJob(args[2]) ? "foreign" : info.state)")
