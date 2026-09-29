@@ -416,3 +416,49 @@
 .dark .lilos-prose a {
   color: oklch(0.75 0.13 250);
 }
+
+/* ── Native macOS window chrome (#232) ─────────────────────────────────────
+   Every Electron window uses the hiddenInset title bar: the traffic lights
+   sit inside the sidebar's 56px header, the sidebar lets the window's
+   "sidebar" vibrancy show through, and header rows drag the window. All of
+   it is scoped to html[data-desktop] — a plain browser tab is unchanged
+   (AC-5). */
+
+/* Vibrancy paints through wherever the page is transparent: the document,
+   the app shell, and the sidebar column (AC-2). `main` keeps its opaque
+   paint so content stays readable. */
+html[data-desktop] body,
+html[data-desktop] #root > div,
+html[data-desktop] aside.lilos-glass-side {
+  background: transparent;
+}
+html[data-desktop] main.lilos-glass {
+  background: var(--background);
+}
+
+/* The lights end ~x=72 (inset x 16 + the ~56px cluster): the sidebar header
+   reserves their strip — and drops it in full screen, where the OS hides
+   them and an empty gap would remain (AC-1, AC-4). */
+html[data-desktop]:not([data-fullscreen]) aside.lilos-glass-side > div:first-child {
+  padding-left: 78px;
+}
+
+/* Header rows drag the window like a title bar (AC-3); every interactive
+   child stays clickable. */
+html[data-desktop] .lilos-drag {
+  -webkit-app-region: drag;
+}
+html[data-desktop] .lilos-drag :is(
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  [role="button"],
+  [role="tab"],
+  [role="switch"],
+  [contenteditable],
+  [data-radix-collection-item]
+) {
+  -webkit-app-region: no-drag;
+}

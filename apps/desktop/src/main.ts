@@ -23,6 +23,7 @@ import {
 } from "electron";
 import { diskVersionStore, helperServiceControl } from "./control";
 import { postDesktopNotification } from "./notify";
+import { nativeWindowChrome, watchWindowChrome } from "./window-chrome";
 import { checkForUpdate } from "./update";
 import { settlePendingUpdate } from "./update/state";
 
@@ -385,6 +386,7 @@ function createAppWindow(): void {
     width: 1280,
     height: 840,
     title: "LilOS",
+    ...nativeWindowChrome("app"),
     webPreferences: {
       preload: join(UI_DIR, "preload.cjs"),
       contextIsolation: true,
@@ -397,6 +399,7 @@ function createAppWindow(): void {
       ],
     },
   });
+  watchWindowChrome(win);
   mainWindow = win;
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = undefined;
@@ -422,8 +425,10 @@ function createStatusWindow(): void {
     width: 760,
     height: 560,
     title: "LilOS Status",
+    ...nativeWindowChrome("status"),
     webPreferences: { preload: join(UI_DIR, "preload.cjs") },
   });
+  watchWindowChrome(statusWin);
   statusWin.on("closed", () => {
     statusWin = undefined;
   });

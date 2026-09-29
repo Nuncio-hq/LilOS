@@ -14,6 +14,9 @@ export const DESKTOP_NOTIFY_CHANNEL = "lilos:notify" as const;
 /** IPC channel: main → renderer, carries the conversation id to open. */
 export const DESKTOP_OPEN_CONVERSATION_CHANNEL =
   "lilos:open-conversation" as const;
+/** IPC channel: main → renderer, carries the window's full-screen state
+ * (native macOS chrome, issue #232). */
+export const DESKTOP_FULLSCREEN_CHANNEL = "lilos:fullscreen" as const;
 
 /** A notification the OS should post; `kind` drives nothing in main — it's
  * for the renderer's bookkeeping and any future styling. */
@@ -42,6 +45,19 @@ export interface DesktopBridgeConfig {
 export interface DesktopBridge {
   config?: DesktopBridgeConfig;
   platform?: string;
+  /** True in the Electron shell (any window with the preload); absent in a
+   * plain browser tab — the app scopes all window-chrome CSS to it (#232). */
+  isDesktop?: boolean;
+  /** Native full-screen state (#232 AC-4): the lights hide and the sidebar
+   * header drops the inset it kept for them. */
+  fullscreen?: {
+    /** Latest pushed state — main sends it on load and on every change. */
+    current(): boolean;
+    /** Subscribe to changes; returns an unsubscribe function. */
+    onChange(cb: (fullScreen: boolean) => void): () => void;
+  };
+  /** Open the status/first-run window (desktop only). */
+  openStatus?: () => Promise<void>;
   notifications?: {
     post(notification: DesktopNotification): void;
   };

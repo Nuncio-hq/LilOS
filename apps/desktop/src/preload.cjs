@@ -15,8 +15,16 @@ const arg = (key) =>
     .join("=") ?? "";
 
 // Channel names mirror DESKTOP_NOTIFY_CHANNEL / DESKTOP_OPEN_CONVERSATION_CHANNEL
-// in packages/contracts/src/app/desktop.ts — sandboxed preload requires only
-// expose electron's own modules, so the literals live here.
+// / DESKTOP_FULLSCREEN_CHANNEL in packages/contracts/src/app/desktop.ts —
+// sandboxed preload requires only expose electron's own modules, so the
+// literals live here.
+let fullScreen = false;
+const fsListeners = new Set();
+ipcRenderer.on("lilos:fullscreen", (_e, fs) => {
+  fullScreen = fs === true;
+  for (const cb of fsListeners) cb(fullScreen);
+});
+
 contextBridge.exposeInMainWorld("lilos", {
   config: {
     relayWs: arg("relay"),
@@ -24,6 +32,17 @@ contextBridge.exposeInMainWorld("lilos", {
     engineWs: arg("engine"),
   },
   platform: process.platform,
+  // #232 window chrome: `isDesktop` flips `data-desktop` on <html> (traffic-
+  // light inset, drag regions, sidebar vibrancy); main pushes full-screen
+  // changes over lilos:fullscreen.
+  isDesktop: true,
+  fullscreen: {
+    current: () => fullScreen,
+    onChange: (cb) => {
+      fsListeners.add(cb);
+      return () => fsListeners.delete(cb);
+    },
+  },
   status: () => ipcRenderer.invoke("lilos:status"),
   ensure: () => ipcRenderer.invoke("lilos:ensure"),
   openSettings: () => ipcRenderer.invoke("lilos:open-settings"),

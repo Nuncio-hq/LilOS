@@ -129,7 +129,7 @@ export function Sidebar({
               "hidden w-[264px] shrink-0 lg:flex",
       )}
     >
-      <div className="flex h-14 shrink-0 items-center gap-2 px-4">
+      <div className="lilos-drag flex h-14 shrink-0 items-center gap-2 px-4">
         <div className="grid size-7 place-items-center rounded-[9px] bg-gradient-to-b from-teal-500 to-teal-700 font-semibold text-[11px] text-white shadow-sm">
           {companyInitials(company)}
         </div>

@@ -47,9 +47,27 @@
       .step .t { font-size: 14px; }
       .step.now .t { font-weight: 600; }
       .step.done .t { color: #777; }
+      /* #232: the window has no title bar — this strip under the inset
+         traffic lights is the drag region. Content sits below it. */
+      #drag-strip {
+        position: fixed; top: 0; left: 0; right: 0; height: 56px;
+        -webkit-app-region: drag;
+      }
+      html[data-desktop] body { background: transparent; }
+      button, a { -webkit-app-region: no-drag; }
     </style>
   </head>
   <body>
+    <div id="drag-strip"></div>
+    <script>
+      // The preload only exists in the packaged window — in a browser tab
+      // (dev) the page keeps its own background and margin.
+      if (window.lilos?.isDesktop) {
+        document.documentElement.dataset.desktop = "";
+        document.body.style.margin = "0 28px 28px";
+        document.body.style.paddingTop = "56px";
+      }
+    </script>
     <h1>LilOS</h1>
     <p class="sub">v<span id="version">?</span> — your employees keep working even when you quit this app.</p>
 
