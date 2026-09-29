@@ -13,6 +13,16 @@
       "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {
+            "ts.net": {
+              "NSIncludesSubdomains": true,
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        },
         "NSLocalNetworkUsageDescription": "LilOS talks to the relay running on your Mac over your local network when Tailscale is off."
       }
     },

@@ -693,6 +693,15 @@ export class RelayClient {
   }
 
   private async refreshDirectory(): Promise<void> {
+    /* `devices.list` is pairing admin: the relay refuses it for a paired
+       phone (device scope). It must not sink the rest of the directory —
+       one rejected read inside the Promise.all below used to leave a phone
+       with an empty Home. Only token-scope clients (the Mac) ask for it. */
+    const devicesRead = this.options.device
+      ? Promise.resolve(undefined)
+      : this.request<{ devices: PairedDevice[] }>("devices.list", {}).catch(
+          () => undefined,
+        );
     try {
       const [
         employees,
@@ -714,15 +723,7 @@ export class RelayClient {
           { includeArchived: true },
         ),
         this.request<{ profile: ProfileSettings }>("profile.get", {}),
-        // Pairing admin (#153): paired devices are refused `devices.list`,
-        // so it can't sit in the all-or-nothing refresh — an empty list is
-        // the honest read on a phone; token peers still get every device.
-        this.request<{ devices: PairedDevice[] }>("devices.list", {}).catch(
-          (error: unknown) =>
-            error instanceof RelayError && error.code === "forbidden"
-              ? { devices: [] }
-              : Promise.reject(error),
-        ),
+        devicesRead,
         this.request<{ asks: Ask[] }>("asks.list", {}),
       ]);
       this.employees.set(employees.employees);
@@ -730,7 +731,7 @@ export class RelayClient {
       this.conversations.set(conversations.conversations);
       this.conversationSummaries.set(summaries.summaries);
       this.profile.set(settings.profile);
-      this.devices.set(devices.devices);
+      if (devices) this.devices.set(devices.devices);
       this.asks.set(asks.asks);
       this.directoryReady.set(true);
     } catch {

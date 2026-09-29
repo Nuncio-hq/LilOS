@@ -14,7 +14,11 @@ import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@lilos/contracts/app";
-import type { AgentDescriptor, ApprovalOutcome } from "@lilos/contracts/engine";
+import type {
+  AgentDescriptor,
+  ApprovalOutcome,
+  Job,
+} from "@lilos/contracts/engine";
 import {
   AddFolderDialog,
   choiceFor,
@@ -29,6 +33,7 @@ import {
 } from "@lilos/ui";
 import type {
   AttachedFile,
+  BackgroundJob,
   Channel,
   FileMention,
   MessageHit,
@@ -90,8 +95,10 @@ import {
 } from "../lib/host";
 import {
   conversationReplies,
+  formatUptime,
   mergeTurns,
   toFeed,
+  toJob,
   toUiEmployee,
 } from "../lib/mapping";
 import { currentName, humanFor, osFullName, profile } from "../lib/me";
@@ -414,6 +421,42 @@ export function DmPage() {
     openConv?.engineRef ? engine.sessionFeed(openConv.engineRef) : EMPTY_FEED,
   );
 
+  /* #179: the Workbench Background tab (D-#19) — `jobs.list` fills the rows
+     the event stream can't carry (a job the engine started before a harness
+     restart); job.* events keep it live after that. Rendered + Stop only
+     when the engine declares `background_jobs`. */
+  const jobsCapable = hasCapability("background_jobs");
+  const [listedJobs, setListedJobs] = useState<Record<string, Job[]>>({});
+  const openSid = openConv?.engineRef;
+  useEffect(() => {
+    if (!jobsCapable || !openSid || !openFeed.synced) return;
+    let dead = false;
+    relay
+      .request<{ jobs: Job[] }>("jobs.list", { sessionId: openSid })
+      .then((r) => {
+        if (!dead) setListedJobs((prev) => ({ ...prev, [openSid]: r.jobs }));
+      })
+      .catch(() => {});
+    return () => {
+      dead = true;
+    };
+  }, [jobsCapable, openSid, openFeed.synced]);
+
+  /* A running job ticks its uptime every second. */
+  const [, setJobsTick] = useState(0);
+  const hasRunningJob =
+    (openConv?.engineRef ? (models[openConv.engineRef]?.jobs ?? []) : []).some(
+      (j) => j.status === "running",
+    ) ||
+    (openSid ? (listedJobs[openSid] ?? []) : []).some(
+      (j) => j.status === "running",
+    );
+  useEffect(() => {
+    if (!hasRunningJob) return;
+    const t = setInterval(() => setJobsTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [hasRunningJob]);
+
   /* Attachment blobs behind every visible ref — channel window, open
      thread, and the summary roots/previews that feed rows render (AC-3). */
   useEffect(() => {
@@ -434,6 +477,11 @@ export function DmPage() {
     const e = employees.find((x) => x.id === id);
     return e ? toUiEmployee(e, engineDown) : undefined;
   };
+  /* #179: the engine reports a helper's profile ref; LilOS links speak in
+     employee ids — a subagent for an unknown profile keeps the ref (the
+     avatar falls back gracefully). */
+  const empRefToId = (ref: string) =>
+    employees.find((x) => x.profile === ref)?.id ?? ref;
 
   const summaryOf = (conv: Conversation) =>
     summaries.find((s) => s.conversation.id === conv.id);
@@ -502,7 +550,13 @@ export function DmPage() {
       toFeed(
         root,
         conv,
-        mergeTurns(repliesOf(conv), model, employeeId, convAsks(conv)),
+        mergeTurns(
+          repliesOf(conv),
+          model,
+          employeeId,
+          convAsks(conv),
+          empRefToId,
+        ),
         wsFor(conv.cwd, cwdBranches),
       ),
     ];
@@ -716,6 +770,7 @@ export function DmPage() {
       model,
       employeeId,
       asksHere,
+      empRefToId,
     );
     // An open question ask gets a real answer card (asks.respond).
     const openQuestion = asksHere.find(
@@ -735,6 +790,71 @@ export function DmPage() {
         }
       : null;
 
+    /* #179: the session's background processes — `jobs.list` rows cover the
+       engine-restart window the event stream can't; job.* events then win
+       (fresher). The tab renders only when the capability is declared. */
+    const jobsNow = Date.now();
+    const jobsById = new Map<string, BackgroundJob>();
+    if (jobsCapable) {
+      for (const j of listedJobs[conv.engineRef ?? ""] ?? []) {
+        jobsById.set(j.jobId, {
+          id: j.jobId,
+          command: j.command,
+          status: j.status,
+          started: j.startedAt
+            ? new Date(j.startedAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+          uptime: j.startedAt
+            ? formatUptime((jobsNow - j.startedAt) / 1000)
+            : "0s",
+          ...(j.url ? { url: j.url } : {}),
+          ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
+          log: j.tail ?? "",
+        });
+      }
+      for (const j of model?.jobs ?? [])
+        jobsById.set(j.jobId, toJob(j, jobsNow));
+    }
+    const uiJobs = [...jobsById.values()].sort(
+      (a, b) => a.started.localeCompare(b.started) || a.id.localeCompare(b.id),
+    );
+    /* AC-3: a subagent row for another employee opens their own session in
+       their DM (D-#25) — resolve the engine sessionRef to its conversation. */
+    const onOpenSession = (empRef: string, sessionRef: string) => {
+      const target = summaries.find(
+        (s) => s.conversation.engineRef === sessionRef,
+      )?.conversation;
+      if (target) {
+        const ch = channels.find((c) => c.id === target.channelId);
+        void navigate({
+          to: "/dm/$employeeId/$conversationId",
+          params: {
+            employeeId: ch?.employeeId ?? empRef,
+            conversationId: target.id,
+          },
+        });
+      } else {
+        void navigate({
+          to: "/dm/$employeeId",
+          params: { employeeId: empRef },
+        });
+      }
+    };
+    const onStopJob = (jobId: string) => {
+      if (!conv.engineRef) return;
+      void relay
+        .request<{ stopped: boolean }>("jobs.stop", {
+          sessionId: conv.engineRef,
+          jobId,
+        })
+        .catch((e) =>
+          say(`Stop failed — ${e instanceof Error ? e.message : String(e)}`),
+        );
+    };
+
     const thread: Thread = {
       session: engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
       title: conv.title || undefined,
@@ -748,6 +868,10 @@ export function DmPage() {
       effort: conv.effort ?? model?.effort,
       fast: conv.fast ?? model?.fast,
       ...(convWs ? { ws: convWs } : {}),
+      /* #179 AC-4/AC-5: the Background tab reads this list only when the
+         engine declared `background_jobs` (uiJobs is empty otherwise — and
+         the tab hides itself when it is). */
+      ...(uiJobs.length ? { jobs: uiJobs } : {}),
     };
     const running = !!modelLive || pending[conv.id] === true;
     /* ↑ recall in the open session: the user's last sent message in it — the
@@ -795,6 +919,8 @@ export function DmPage() {
             }
           }}
           work={work}
+          onOpenSession={onOpenSession}
+          onStopJob={jobsCapable ? onStopJob : undefined}
           onBack={() =>
             void navigate({
               to: "/dm/$employeeId/$conversationId",
@@ -880,6 +1006,7 @@ export function DmPage() {
           }}
           running={running}
           steer={steer}
+          onOpenSession={onOpenSession}
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}
           onModel={

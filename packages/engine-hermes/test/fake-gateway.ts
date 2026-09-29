@@ -149,6 +149,18 @@ export class FakeGateway implements GatewayLike {
     { model: string; provider: string; reasoning: string }
   >();
   slashCommands: string[] = [];
+  /** #179: process-registry rows — {id = registry session id, pid = OS pid}. */
+  processes: {
+    id: string;
+    command: string;
+    pid: number;
+    owner: string;
+    startedAt: number;
+    exited: boolean;
+    exitCode?: number;
+    reason?: string;
+    tail: string;
+  }[] = [];
   /** Extra provider rows appended on the NEXT model.options refresh:true
       (the "new model appeared" fixture). */
   refreshProviders: FakeGateway["modelProviders"] = [];
@@ -290,6 +302,54 @@ export class FakeGateway implements GatewayLike {
       case "session.close":
         this.closedSessions.push(String(p.session_id));
         return Promise.resolve({ closed: true });
+      /* #179: the process registry behind background terminal calls —
+         `tests` script rows via `pushProcess`, `killProcess` flips them to
+         exited like registry.kill_process does. */
+      case "process.list": {
+        return Promise.resolve({
+          processes: this.processes
+            .filter((pr) => pr.owner === String(p.session_id))
+            .map((pr) => ({
+              session_id: pr.id,
+              command: pr.command,
+              pid: pr.pid,
+              owner_task_id: "task-1",
+              started_at: new Date(pr.startedAt).toISOString().slice(0, 19),
+              uptime_seconds: Math.round((Date.now() - pr.startedAt) / 1000),
+              status: pr.exited ? "exited" : "running",
+              output_preview: pr.tail.slice(-200),
+              output_tail: pr.tail,
+              ...(pr.exited
+                ? { exit_code: pr.exitCode, completion_reason: pr.reason }
+                : {}),
+            })),
+        });
+      }
+      case "process.kill": {
+        const proc = this.processes.find(
+          (pr) => pr.id === String(p.process_id),
+        );
+        if (!proc)
+          return Promise.reject(
+            new RpcError(4044, `no such process: ${String(p.process_id)}`),
+          );
+        if (proc.exited)
+          return Promise.resolve({
+            status: "already_exited",
+            session_id: proc.id,
+            exit_code: proc.exitCode,
+            completion_reason: proc.reason,
+          });
+        proc.exited = true;
+        proc.exitCode = -15;
+        proc.reason = "killed";
+        return Promise.resolve({
+          status: "killed",
+          session_id: proc.id,
+          exit_code: -15,
+          completion_reason: "killed",
+        });
+      }
       case "session.title":
         /* The gateway echoes the just-set title back (tui_gateway/methods
            _session_title returns the stored row); tests need the echo to be
@@ -582,5 +642,23 @@ export class FakeGateway implements GatewayLike {
   rotateRef(sid: string, newRef: string) {
     this.refs.set(sid, newRef);
     this.lastRef = newRef;
+  }
+
+  /** #179: register a process-registry row owned by a runtime sid. */
+  pushProcess(
+    sid: string,
+    over: Partial<FakeGateway["processes"][number]> & { command: string },
+  ): FakeGateway["processes"][number] {
+    const row = {
+      id: `proc-${this.processes.length + 1}`,
+      pid: 4200 + this.processes.length,
+      owner: sid,
+      startedAt: Date.now(),
+      exited: false,
+      tail: "",
+      ...over,
+    };
+    this.processes.push(row);
+    return row;
   }
 }

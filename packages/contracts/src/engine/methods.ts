@@ -11,7 +11,13 @@ import {
 } from "./agents.js";
 import { Capability } from "./capabilities.js";
 import { ContentBlock } from "./content.js";
-import { EngineEvent, SessionState, StopReason, Usage } from "./events.js";
+import {
+  EngineEvent,
+  JobStatus,
+  SessionState,
+  StopReason,
+  Usage,
+} from "./events.js";
 import { McpServer } from "./mcp.js";
 import {
   ModelsListParams,
@@ -201,6 +207,39 @@ export type SessionSetHiddenParams = z.infer<typeof SessionSetHiddenParams>;
 export const SessionSetHiddenResult = z.object({ hidden: z.boolean() });
 export type SessionSetHiddenResult = z.infer<typeof SessionSetHiddenResult>;
 
+// ── jobs.list / jobs.stop (capability: background_jobs, #179) ───────────────
+/** One row of `jobs.list` — the engine-owned truth a client re-reads after
+    a reconnect (job.* events are the live stream, this is the snapshot). */
+export const Job = z.object({
+  jobId: z.string().min(1),
+  command: z.string().min(1),
+  status: JobStatus,
+  startedAt: z.int().min(0).optional(),
+  uptimeSeconds: z.number().min(0).optional(),
+  exitCode: z.int().optional(),
+  url: z.string().min(1).optional(),
+  by: z.string().min(1).optional(),
+  /** Rolling output tail (same contract as job.output). */
+  tail: z.string().optional(),
+});
+export type Job = z.infer<typeof Job>;
+
+export const JobsListParams = z.strictObject({ sessionId: SessionId });
+export type JobsListParams = z.infer<typeof JobsListParams>;
+export const JobsListResult = z.object({ jobs: z.array(Job) });
+export type JobsListResult = z.infer<typeof JobsListResult>;
+
+export const JobsStopParams = z.strictObject({
+  sessionId: SessionId,
+  jobId: z.string().min(1),
+});
+export type JobsStopParams = z.infer<typeof JobsStopParams>;
+export const JobsStopResult = z.object({
+  /** True when a running process was signalled; false = already gone. */
+  stopped: z.boolean(),
+});
+export type JobsStopResult = z.infer<typeof JobsStopResult>;
+
 // ── the table ────────────────────────────────────────────────────────────────
 export interface EngineMethodContract {
   params: z.ZodType;
@@ -299,6 +338,18 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
     result: SessionSetHiddenResult,
     doc: "Move the engine session out of / back into its default list — the engine-side counterpart of archive/unarchive.",
     capability: "session_meta",
+  },
+  "jobs.list": {
+    params: JobsListParams,
+    result: JobsListResult,
+    doc: "List the engine-owned background processes of a session — the truth list a client re-reads after reconnect (job.* events are the live stream).",
+    capability: "background_jobs",
+  },
+  "jobs.stop": {
+    params: JobsStopParams,
+    result: JobsStopResult,
+    doc: "Stop a background process by the jobId from job.started / jobs.list. The stop lands as a job.exited event with status stopped.",
+    capability: "background_jobs",
   },
 };
 export type EngineMethodName = keyof typeof ENGINE_METHODS;
