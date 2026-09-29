@@ -1,0 +1,40 @@
+name: mobile-release
+
+# Issue #250 AC-2 (optional): `git tag mobile-v*` ships a TestFlight build
+# through EAS instead of `bun run mobile:release` on Oscar's Mac.
+# needs-human before this works (documented in apps/mobile/README.md):
+#   1) `bunx eas-cli login` + `bunx eas-cli init` in apps/mobile (one-time,
+#      mints the EAS project id)
+#   2) repo secret EXPO_TOKEN (an Expo access token from
+#      https://expo.dev/settings/access-tokens)
+
+on:
+  push:
+    tags: ["mobile-v*"]
+  workflow_dispatch:
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+
+      - name: Stage ASC key for eas submit
+        run: |
+          printf '%s' "$ASC_KEY_P8" | sed 's/\\n/\n/g' > "$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          chmod 600 "$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          echo "ASC_KEY_FILE=$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8" >> "$GITHUB_ENV"
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+
+      - name: eas build + auto-submit (production profile)
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_ASC_API_KEY_PATH: ${{ env.ASC_KEY_FILE }}
+          EXPO_ASC_API_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          EXPO_ASC_API_KEY_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: bunx eas-cli build -p ios --profile production --non-interactive --auto-submit
