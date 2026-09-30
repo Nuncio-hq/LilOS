@@ -82,6 +82,9 @@ export interface JobModel {
   by?: string;
   /** Rolling output tail (job.output replaces, never appends). */
   tail: string;
+  /** Synthesized subagent row (#309 `subagentJobs`) — jobs.stop can't kill
+      it, so surfaces hide the Stop affordance. */
+  subagent?: boolean;
 }
 
 export type TurnPhase =
@@ -127,6 +130,10 @@ export interface SessionModel {
   openRequests: TurnRequest[];
   /** Background processes of this session (job.* / jobs.list, #179). */
   jobs: JobModel[];
+  /** Helpers the session delegated to, as job-like rows (`sa:` jobIds) so
+      the Background tab lists a subagent still working past its turn
+      (#309). */
+  subagentJobs: JobModel[];
   model?: string;
   provider?: string;
   effort?: string;
@@ -219,7 +226,10 @@ export function reduceSessionEvents(
       }
       case "tool.started": {
         const t = turn(e.payload.turnId);
-        t.phase = "tools";
+        /* #309: an async subagent's calls land after its parent's
+           turn.completed, stamped with that turn's id — they nest under
+           the helper's row and must not reopen the settled turn. */
+        if (t.phase !== "done" && t.phase !== "stopped") t.phase = "tools";
         const step = {
           id: e.payload.toolCallId,
           tool: e.payload.tool,
@@ -456,11 +466,15 @@ export function reduceSessionEvents(
             }
           }
         }
-        /* #179: the turn ended without a subagent.completed for a helper the
-           engine still listed running — its delegate call can't outlive the
-           turn, so the row settles "stopped". */
-        for (const sa of t.subagents) {
-          if (sa.status === "running") sa.status = "stopped";
+        /* #309: an async delegate call closes with its dispatch receipt —
+           the turn ending does not settle helpers it spawned; they run
+           past turn end until the engine's real subagent.completed lands.
+           A cancelled turn kills the work tree instead: no close arrives,
+           so running rows settle "stopped" here. */
+        if (e.payload.stopReason === "cancelled") {
+          for (const sa of t.subagents) {
+            if (sa.status === "running") sa.status = "stopped";
+          }
         }
         break;
       }
@@ -479,6 +493,26 @@ export function reduceSessionEvents(
   const live = order.find((t) => t.phase !== "done" && t.phase !== "stopped");
   const openRequests: TurnRequest[] = [];
   const jobList = [...jobs.values()];
+  /* #309: helpers as job-like rows — a subagent left running past its
+     turn lands on the Background tab (web) and the thread's job rows
+     (mobile) through the same feed, next to real jobs (which can also
+     carry by: <subagent name>). */
+  const SUBAGENT_JOB_STATUS: Record<SubagentModel["status"], JobStatus> = {
+    running: "running",
+    done: "exited",
+    failed: "failed",
+    stopped: "stopped",
+  };
+  const subagentJobs: JobModel[] = order.flatMap((t) =>
+    t.subagents.map((sa) => ({
+      jobId: `sa:${sa.subagentId}`,
+      command: sa.task || sa.name,
+      status: SUBAGENT_JOB_STATUS[sa.status],
+      by: sa.name,
+      tail: sa.result ?? "",
+      subagent: true,
+    })),
+  );
   for (const t of order) {
     for (const r of t.requests) {
       if (r.outcome === undefined) openRequests.push(r);
@@ -491,6 +525,7 @@ export function reduceSessionEvents(
     live,
     openRequests,
     jobs: jobList,
+    subagentJobs,
     model,
     provider,
     effort,

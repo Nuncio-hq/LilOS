@@ -163,6 +163,7 @@ export function toJob(j: JobModel, now = Date.now()): BackgroundJob {
     ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
     log: j.tail,
     ...(j.by ? { by: j.by } : {}),
+    ...(j.subagent ? { subagent: true } : {}),
   };
 }
 

@@ -1,0 +1,146 @@
+import type { EngineEvent } from "@lilos/contracts/engine";
+import { describe, expect, it } from "vitest";
+import { reduceSessionEvents } from "../src/turn-model";
+
+/* #309 — a background `delegate_task` outlives its parent's turn by design:
+   `tool.completed` on the delegate call is only the DISPATCH receipt
+   ({status:"dispatched"}), the real `subagent.completed` lands later — after
+   `turn.completed`. These tests pin the lifecycle the live Hermes capture
+   shows (scripts/live/309.ts):
+     seq 8  tool.completed c1 output={"status":"dispatched","mode":"background"}
+     seq 12 turn.completed t1
+     seq 20 subagent.completed sa1 status=done            (18s later)
+   The reducer used to force every still-running subagent to "stopped" at
+   turn end; a genuinely-finished one still settles the moment the engine
+   says so. */
+
+let seq = 0;
+const ev = (
+  type: string,
+  payload: Record<string, unknown>,
+  sessionId = "sess-1",
+): EngineEvent => ({ seq: ++seq, sessionId, type, payload }) as EngineEvent;
+
+const delegateFrames = () => [
+  ev("turn.started", { turnId: "t1", ref: "m1" }),
+  ev("tool.started", {
+    turnId: "t1",
+    toolCallId: "c1",
+    tool: "delegate_task",
+    input: { tasks: [{ goal: "scan the relay" }] },
+  }),
+  ev("subagent.started", {
+    turnId: "t1",
+    subagentId: "sa1",
+    name: "task 1",
+    task: "scan the relay",
+    parentToolCallId: "c1",
+  }),
+  ev("tool.completed", {
+    turnId: "t1",
+    toolCallId: "c1",
+    tool: "delegate_task",
+    status: "completed",
+    output: '{"status":"dispatched","mode":"background","count":1}',
+  }),
+  ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+];
+
+describe("background subagents past turn end — #309", () => {
+  it("AC-1 a dispatched subagent stays running past turn.completed until the engine settles it", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ...delegateFrames(),
+      ev("subagent.completed", {
+        subagentId: "sa1",
+        status: "done",
+        result: "child report",
+        durationMs: 18_200,
+      }),
+    ]);
+    const sa = model.turns[0].subagents.find((s) => s.subagentId === "sa1");
+    expect(sa?.status).toBe("done");
+    expect(sa?.result).toBe("child report");
+    expect(sa?.durationMs).toBe(18_200);
+  });
+
+  it("AC-1 between turn.completed and subagent.completed the row reads running, not stopped", () => {
+    const model = reduceSessionEvents("sess-1", delegateFrames());
+    const sa = model.turns[0].subagents.find((s) => s.subagentId === "sa1");
+    expect(sa?.status).toBe("running");
+    /* The parent turn itself is settled — only the helper row stays live. */
+    expect(model.turns[0].phase).toBe("done");
+    expect(model.live).toBeUndefined();
+  });
+
+  it("a subagent's own tool calls landing after turn.completed nest under it without reopening the turn", () => {
+    /* An async child keeps working between the parent's turns: the engine
+       stamps its tool.* frames with the id of the turn that spawned it.
+       They must extend the helper's step list — not flip the settled
+       parent turn back to "tools" (that used to reopen it as model.live
+       and park it at the thread's tail). */
+    const model = reduceSessionEvents("sess-1", [
+      ...delegateFrames(),
+      ev("tool.started", {
+        turnId: "t1",
+        toolCallId: "c9",
+        tool: "read_file",
+        input: { path: "a.ts" },
+        parentToolCallId: "sa1",
+      }),
+      ev("tool.completed", {
+        turnId: "t1",
+        toolCallId: "c9",
+        tool: "read_file",
+        status: "completed",
+        output: "12 lines",
+        parentToolCallId: "sa1",
+      }),
+    ]);
+    const t = model.turns[0];
+    expect(t.phase).toBe("done");
+    expect(model.live).toBeUndefined();
+    const sa = t.subagents.find((s) => s.subagentId === "sa1");
+    expect(sa?.steps).toHaveLength(1);
+    expect(sa?.steps[0]).toMatchObject({
+      tool: "read_file",
+      status: "completed",
+    });
+  });
+
+  it("a cancelled turn still settles its running subagents as stopped", () => {
+    /* User Stop kills the work tree: the engine emits no child completion
+       for a cancelled turn, so the row settles here. */
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", ref: "m1" }),
+      ev("tool.started", {
+        turnId: "t1",
+        toolCallId: "c1",
+        tool: "delegate_task",
+        input: {},
+      }),
+      ev("subagent.started", {
+        turnId: "t1",
+        subagentId: "sa1",
+        name: "task 1",
+        task: "scan",
+        parentToolCallId: "c1",
+      }),
+      ev("turn.completed", { turnId: "t1", stopReason: "cancelled" }),
+    ]);
+    expect(model.turns[0].subagents[0].status).toBe("stopped");
+  });
+
+  it("session subagent rows feed the Background tab as job-like rows", () => {
+    /* Workbench → Background lists jobs.list ∪ model.jobs; session-scoped
+       subagents surface there too as `sa:<id>` rows so a helper left
+       running past its turn is visible (and still running) in the tab. */
+    const model = reduceSessionEvents("sess-1", delegateFrames());
+    const rows = model.subagentJobs;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      jobId: "sa:sa1",
+      command: "scan the relay",
+      status: "running",
+    });
+  });
+});

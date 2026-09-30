@@ -131,7 +131,7 @@ export const SUBAGENTS_CAPABILITY: Capability = {
   id: "subagents",
   name: "Subagents",
   description:
-    "Helper runs an employee delegates surface as subagent.* events with nested tool calls.",
+    "Helper runs an employee delegates surface as subagent.* events with nested tool calls; async delegates may close past their parent's turn end (#309 — key the close session-wide, not per-turn).",
 };
 
 /**

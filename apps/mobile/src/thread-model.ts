@@ -506,6 +506,9 @@ export function toThreadDetail(opts: {
       jobsById.set(j.jobId, listedJobModel(j));
     for (const j of sessionModel?.jobs ?? []) jobsById.set(j.jobId, j);
   }
+  /* #309: delegated helpers row up here too — `subagents`, not
+     `background_jobs`, so they merge outside the capability gate. */
+  for (const j of sessionModel?.subagentJobs ?? []) jobsById.set(j.jobId, j);
   const jobs = jobsById.size
     ? [...jobsById.values()].map((j) => toJobRow(j, opts.now))
     : undefined;

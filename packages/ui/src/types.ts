@@ -163,6 +163,8 @@ export type BackgroundJob = {
   log: string;
   /** Who started it: a subagent's name when not the employee itself. */
   by?: string;
+  /** The row IS a subagent (#309) — no Stop: jobs.stop can't kill one. */
+  subagent?: boolean;
 };
 export type Usage = {
   input: number;

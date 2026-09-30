@@ -169,6 +169,13 @@ interface FakeSession {
   jobs: Map<string, FakeJob>;
   jobCounter: number;
   subCounter: number;
+  /** #309: async helpers whose subagent.completed waits past turn end. */
+  pendingSubagentClose: {
+    subagentId: string;
+    status: FakeSubagent["status"];
+    result?: string;
+    durationMs?: number;
+  }[];
 }
 
 export interface FakeEngineOptions {
@@ -443,6 +450,7 @@ export class FakeEngine {
       requestCounter: 0,
       jobs: new Map(),
       jobCounter: 0,
+      pendingSubagentClose: [],
       subCounter: 0,
     };
     this.sessions.set(id, s);
@@ -995,6 +1003,17 @@ export class FakeEngine {
           parentToolCallId: subagentId,
         });
       }
+      /* #309: an async helper's close lands after the parent's
+         turn.completed — finishTurn drains the queue. */
+      if (sub.outlivesTurn) {
+        s.pendingSubagentClose.push({
+          subagentId,
+          status: sub.status,
+          result: sub.result,
+          durationMs: sub.durationMs,
+        });
+        continue;
+      }
       this.emit(s, "subagent.completed", {
         subagentId,
         status: sub.status,
@@ -1494,6 +1513,9 @@ export class FakeEngine {
     this.autoTitle(s, "llm", promptText);
     // A steer that never hit a boundary becomes the next turn's input — never lost.
     this.pumpSteers(s);
+    /* #309: async helpers close a tick after the turn — their frames stamp
+       no turnId, so a client must key them session-wide, not per-turn. */
+    if (s.pendingSubagentClose.length) void this.drainSubagentCloses(s);
     return { turnId, stopReason, usage: s.usage };
   }
 
@@ -1521,6 +1543,22 @@ export class FakeEngine {
       const next = s.steers.shift();
       if (next !== undefined)
         void this.runTurn(s, next.text, undefined, next.ref);
+    }
+  }
+
+  /** #309: async helpers' closes, one tick after their parent's turn ended
+     — the frames land while the session idles, carrying no turnId (the
+     live-capture shape: turn.completed … subagent.completed ~18s later). */
+  private async drainSubagentCloses(s: FakeSession) {
+    await this.sleep(s);
+    for (const c of s.pendingSubagentClose.splice(0)) {
+      if (s.state === "closed") return;
+      this.emit(s, "subagent.completed", {
+        subagentId: c.subagentId,
+        status: c.status,
+        result: c.result,
+        durationMs: c.durationMs,
+      });
     }
   }
 
