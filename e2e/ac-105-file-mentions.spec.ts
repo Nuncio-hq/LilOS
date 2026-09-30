@@ -29,6 +29,9 @@ const webDir = path.join(repo, "apps", "web");
 interface Stack {
   home: string;
   webUrl: string;
+  /* Whether this stack's recents already hold the fixture repo — lives on
+     the stack so it stays true however beforeAll/repeats are scheduled. */
+  repoAdded: boolean;
   stop: () => Promise<void>;
 }
 
@@ -104,6 +107,7 @@ async function bootStack(
     return {
       home,
       webUrl,
+      repoAdded: false,
       stop: async () => {
         await killProc(proc);
         await expectNoEngineLeak(leakTag);
@@ -199,30 +203,81 @@ async function arrowDownTo(
   await expect(row).toHaveAttribute("aria-selected", "true");
 }
 
+/** File hits land asynchronously per keystroke and each applied result
+    resets the menu's active row — Enter must wait for the response to the
+    FINAL query's `fs.search`, not just for a row to be visible (a stale
+    earlier query's hits can satisfy a visible/count check, then the final
+    response resets the selection before Enter, picking row 0 → "@Default").
+    Arm before typing; the predicate filters by wire params. Resolves once
+    the response is in AND the hits have been painted (React applies them
+    within a frame), so the selection is settled when it returns. */
+function waitForFileSearch(page: Page, query: string) {
+  return page
+    .waitForResponse((r) => {
+      if (!r.url().endsWith("/host")) return false;
+      try {
+        const m = JSON.parse(r.request().postData() ?? "{}") as {
+          method?: string;
+          params?: { query?: string };
+        };
+        return m.method === "fs.search" && m.params?.query === query;
+      } catch {
+        return false; // OPTIONS preflight carries no JSON body
+      }
+    })
+    .then(() =>
+      page.evaluate(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
+      ),
+    );
+}
+
 /** Pick the fixture repo for this DM: the pick survives between the serial
     tests (shared LILOS_HOME), so an earlier test may have added it already —
-    then the folder menu lists it (data-wsfolder = path = id). */
+    then the folder menu lists it (data-wsfolder = path = id).
+    The menu's folder rows render off the page's async recents refresh, so a
+    raw count() can run before the row lands (#304): only "the repo was never
+    added" may branch to the Add dialog; "was added" waits for the row. */
 async function addAndPickRepo(page: Page) {
   const wsBtn = page.locator('[data-ws="folder"]');
   if ((await wsBtn.innerText()).includes("lilos-105-repo")) return;
   await wsBtn.click();
   const pickerMenu = page.locator('[role="menu"]').last();
   const existing = pickerMenu.locator(`[data-wsfolder="${repoDir}"]`);
-  // Wait for the menu to render before counting (count() doesn't wait).
+  // Wait for the menu to render before choosing a branch.
   await pickerMenu.getByText("Add a folder").waitFor({ state: "visible" });
-  if ((await existing.count()) > 0) {
+  if (stack.repoAdded || (await existing.count()) > 0) {
+    // Already in recents: the row lands when the refresh resolves.
+    await expect(existing).toBeVisible({ timeout: 15_000 });
     await existing.click();
+    stack.repoAdded = true;
   } else {
     await pickerMenu.getByText("Add a folder").click();
     const dialog = page.locator("[data-addfolder]");
     await expect(dialog).toBeVisible();
     await dialog.locator("[data-pathinput]").fill(repoDir);
-    await expect(dialog.locator("[data-folderinfo]")).toContainText(
-      "Git repo",
-      { timeout: 15_000 },
-    );
-    await dialog.locator("[data-addbtn]").click();
+    // folderinfo renders once the fs probe lands; the Add button's own
+    // enabled state is the deterministic signal — disabled means the app
+    // considers the folder attached ("Already added."), which a recents
+    // refresh landing after the menu opened can still cause (#304).
+    await expect(dialog.locator("[data-folderinfo]")).toBeVisible({
+      timeout: 15_000,
+    });
+    if (await dialog.locator("[data-addbtn]").isEnabled()) {
+      await dialog.locator("[data-addbtn]").click();
+    } else {
+      // Recover by picking the recents row instead of adding again.
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await expect(dialog).toHaveCount(0);
+      await wsBtn.click();
+      await expect(existing).toBeVisible({ timeout: 15_000 });
+      await existing.click();
+    }
     await expect(dialog).toHaveCount(0);
+    stack.repoAdded = true;
   }
   await expect(wsBtn).toContainText("lilos-105-repo");
 }
@@ -264,7 +319,9 @@ test("AC-1 @ opens one menu: Employees then Files, fuzzy match, cap 20, arrows +
   await page.screenshot({ path: `${SHOTS}/ac-1-menu-sections.png` });
 
   // Fuzzy match narrows it; dirs are marked with a trailing slash.
+  const appHits = waitForFileSearch(page, "app");
   await box.pressSequentially("app");
+  await appHits;
   const appRow = page.locator('[data-mention-file="src/app.tsx"]');
   await expect(appRow).toBeVisible({ timeout: 15_000 });
   await expect(fileRows(page)).toHaveCount(1);
@@ -317,9 +374,12 @@ test("AC-3 + AC-4 picking a file inserts a chip; Backspace removes it; it surviv
 
   // Pick via the menu (keyboard path — focus stays in the textarea).
   await box.click();
+  const hits = waitForFileSearch(page, "app");
   await box.pressSequentially("read @app");
+  await hits;
   const row = page.locator('[data-mention-file="src/app.tsx"]');
   await expect(row).toBeVisible({ timeout: 15_000 });
+  await expect(fileRows(page)).toHaveCount(1);
   await arrowDownTo(box, row);
   await box.press("Enter");
   await expect(box).toHaveValue("read @src/app.tsx ");
@@ -329,8 +389,11 @@ test("AC-3 + AC-4 picking a file inserts a chip; Backspace removes it; it surviv
   await expect(box).toHaveValue("read ");
 
   // Re-insert, verify the draft survives a reload (draft store #103).
+  const hits2 = waitForFileSearch(page, "app");
   await box.pressSequentially("@app");
+  await hits2;
   await expect(row).toBeVisible({ timeout: 15_000 });
+  await expect(fileRows(page)).toHaveCount(1);
   await arrowDownTo(box, row);
   await box.press("Enter");
   await expect(box).toHaveValue("read @src/app.tsx ");
