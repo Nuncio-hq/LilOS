@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import { App } from "./app";
 import { loadConfig } from "./lib/config";
-import { watchDesktopChrome } from "./lib/desktop";
+import { watchDesktopChrome, watchDragRegions } from "./lib/desktop";
 import { watchDraftPruning } from "./lib/drafts";
 import {
   bootError,
@@ -18,6 +18,9 @@ async function main() {
   // #232: under Electron, flip data-desktop/data-fullscreen before first
   // paint so the chrome CSS (inset, drag regions, vibrancy) applies cleanly.
   watchDesktopChrome();
+  // #301: keep the OS drag-region map fresh as .lilos-drag strips and their
+  // controls mount/move, so a freshly swapped header stays clickable.
+  watchDragRegions();
   const root = createRoot(el);
   try {
     const cfg = await loadConfig();
