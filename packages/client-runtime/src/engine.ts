@@ -429,7 +429,14 @@ export class EngineClient {
         coverageSeq: Math.max(res.latestSeq, cur.coverageSeq),
         events: merged,
         openRequests,
-        snapshot: res.snapshot,
+        /* #327: stamp the point the snapshot was captured at — live
+           frames keep landing on `events` without refreshing it, so the
+           fold (turn-model) reads `atSeq` to tell a current snapshot
+           from a stale one. */
+        snapshot: {
+          ...res.snapshot,
+          atSeq: res.latestSeq,
+        } as SessionSnapshot,
         error: undefined,
       });
       const pending = this.resyncRetries.get(feed);

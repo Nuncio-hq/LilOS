@@ -346,7 +346,7 @@ describe("engine-hermes ACP delegate dispatch receipt (#309)", () => {
         sessionId: "rs1",
         update,
       } as acp.SessionNotification);
-    return { events, notify };
+    return { events, notify, session };
   };
 
   test("a dispatched delegate call emits no synthesized subagent.completed", () => {
@@ -396,6 +396,42 @@ describe("engine-hermes ACP delegate dispatch receipt (#309)", () => {
     expect(
       r.events.filter((e) => e.type === "subagent.completed"),
     ).toHaveLength(0);
+  });
+
+  test("#327 a dispatched row settles stopped when the session leaves running", () => {
+    /* The row can never receive a real close over ACP — instead of
+       spinning forever it settles the moment the session's own state
+       says no turn can be feeding it any more. The settle is a logged
+       subagent.completed, so a replay reduces the same stopped row. */
+    const r = rig();
+    r.notify({
+      sessionUpdate: "tool_call",
+      toolCallId: "call-1",
+      name: "delegate_task",
+      rawInput: { tasks: [{ goal: "scan the relay" }] },
+    });
+    r.notify({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call-1",
+      name: "delegate_task",
+      status: "completed",
+      rawOutput:
+        '{"status":"dispatched","mode":"background","count":1,"delegation_id":"deleg_9f1"}',
+    });
+    r.session.setState("running");
+    expect(
+      r.events.filter((e) => e.type === "subagent.completed"),
+    ).toHaveLength(0);
+    r.session.setState("idle");
+    const closed = r.events.filter((e) => e.type === "subagent.completed");
+    expect(closed).toHaveLength(1);
+    expect((closed[0].payload as { status: string }).status).toBe("stopped");
+    /* Once — a later leave-running transition can't double-settle it. */
+    r.session.setState("running");
+    r.session.setState("idle");
+    expect(
+      r.events.filter((e) => e.type === "subagent.completed"),
+    ).toHaveLength(1);
   });
 
   test("a synchronous delegate call still closes its synthesized rows", () => {

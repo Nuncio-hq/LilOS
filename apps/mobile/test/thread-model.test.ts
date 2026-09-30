@@ -1183,3 +1183,136 @@ describe("thread-model — #308 reply ordering", () => {
     ).toHaveLength(2);
   });
 });
+
+describe("#327 finished turns settle — no stuck Thinking…", () => {
+  it("a turn past reasoning (tools/text) is not thinking; `thought` carries the seconds", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small" }),
+      ev("turn.delta", {
+        turnId: "t1",
+        stream: "reasoning",
+        delta: "plan it first",
+      }),
+      ev("tool.started", {
+        turnId: "t1",
+        toolCallId: "c1",
+        tool: "read_file",
+        input: { path: "a.ts" },
+      }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "working" }),
+    ]);
+    const entries = mergeThreadEntries([], model, {
+      ...OPTS,
+      conversationState: "active",
+      thoughts: new Map([["t1", 12]]),
+    });
+    const card = entries[0];
+    if (card.kind !== "agent") throw new Error("expected agent entry");
+    /* The Reasoning row renders "Thought for 12s" collapsed, chevron
+       tappable — driven by these two fields, no 'Thinking…' state. */
+    expect(card.thinking).toBe(false);
+    expect(card.thought).toBe(12);
+    expect(card.reasoning).toBe("plan it first");
+    expect(card.live).toBe(true);
+  });
+
+  it("a turn still in its reasoning phase keeps thinking while live", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small" }),
+      ev("turn.delta", {
+        turnId: "t1",
+        stream: "reasoning",
+        delta: "hmm",
+      }),
+    ]);
+    const entries = mergeThreadEntries([], model, {
+      ...OPTS,
+      conversationState: "active",
+    });
+    const card = entries[0];
+    if (card.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.thinking).toBe(true);
+    expect(card.thought).toBeUndefined();
+  });
+
+  it("a done turn with a measured thought renders the 'Thought for Ns' data, not live", () => {
+    const user = msg({ id: "m1", seq: 1, text: "go" });
+    const reply = msg({
+      id: "m2",
+      seq: 2,
+      authorKind: "employee",
+      authorId: ada.id,
+      text: "shipped",
+      createdAt: T0 + 8000,
+    });
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", ref: "m1" }),
+      ev("turn.delta", {
+        turnId: "t1",
+        stream: "reasoning",
+        delta: "long chain of thought",
+      }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "shipped" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    ]);
+    const entries = mergeThreadEntries([user, reply], model, {
+      ...OPTS,
+      thoughts: new Map([["t1", 7]]),
+    });
+    const card = entries[1];
+    if (card.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.live).toBe(false);
+    expect(card.thinking).toBe(false);
+    expect(card.thought).toBe(7);
+  });
+
+  it("AC-3 replay: idle conversation + no turn.completed → not live, no thinking", () => {
+    /* Cold-open: the relay feed replays the turn's head and the snapshot
+       proves the session idle — the missing turn.completed isn't coming
+       (client-runtime settles the phase itself), and the conversation's
+       own state clamps `live` even if a degraded feed skipped the settle. */
+    const model = reduceSessionEvents(
+      "sess-1",
+      [
+        ev("turn.started", { turnId: "t1", ref: "m1" }),
+        ev("turn.delta", {
+          turnId: "t1",
+          stream: "reasoning",
+          delta: "thought chain",
+        }),
+      ],
+      { state: "idle" },
+    );
+    const entries = mergeThreadEntries([msg({ id: "m1", seq: 1 })], model, {
+      ...OPTS,
+      conversationState: "idle",
+    });
+    const card = entries.find((e) => e.id === "turn-t1");
+    if (card?.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.live).toBe(false);
+    expect(card.thinking).toBeFalsy();
+    expect(card.reasoning).toBe("thought chain");
+  });
+
+  it("a degraded feed (no settle) still can't keep a card live on an idle conversation", () => {
+    /* Reduce-level defence: even a turn the reducer didn't settle (a feed
+       that skipped its session.state events) loses `live` the moment the
+       conversation isn't "active" — the relay's own word wins. */
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1" }),
+      ev("turn.delta", {
+        turnId: "t1",
+        stream: "reasoning",
+        delta: "chain",
+      }),
+    ]);
+    const entries = mergeThreadEntries([], model, {
+      ...OPTS,
+      conversationState: "closed",
+    });
+    const card = entries[0];
+    if (card.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.live).toBe(false);
+    expect(card.thinking).toBeFalsy();
+  });
+});

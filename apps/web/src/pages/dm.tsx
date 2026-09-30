@@ -755,6 +755,7 @@ export function DmPage() {
           rewoundInfo.get(conv.id),
           empRefToId,
           conv.rootMessageId,
+          conv.state,
         ),
         wsFor(conv.cwd, cwdBranches),
       ),
@@ -968,6 +969,7 @@ export function DmPage() {
       rewoundInfo.get(conv.id),
       empRefToId,
       conv.rootMessageId,
+      conv.state,
     );
     if (!planCap) replies = stripPlans(replies);
     // An open question ask gets a real answer card (asks.respond).

@@ -173,12 +173,10 @@ PR does not exist.
   { mcpServers }`); the Workbench Terminal/Preview tabs watch the same
   surfaces live and take input. Not: engine-specific UI toolsets (Hermes
   `desktop_ui` / `drive_preview` / `read_terminal`). — #36 · PR #54
-- **D-#308 Every leg is a turn.** A queued steer drain or a delivery leg
-  arriving without `turn.started` gets a minted turn id — `ref` echoes the
-  steer message's, or `initiatedBy: "agent"` marks engine-opened work.
-  Not: stamping post-turn frames on the settled turn id (merges the leg
-  into the previous answer), or the mapping layer guessing leg ownership.
-  — #308
+- **D-#308 Every leg is a turn.** A post-turn leg mints its own turn id —
+  `ref` echoes the prompting message, `initiatedBy:"agent"` marks
+  engine-opened work. Not: stamping legs on the settled turn id, or the
+  mapping layer guessing ownership. — #308
 - **D-#56 The terminal has one holder: a Workbench keystroke hands it to
   the user; `terminal_run`/`terminal_write` then fail `user_control` (HTTP
   409), in-flight runs too.** Hand-back is explicit (`term.release`) or
@@ -225,6 +223,13 @@ PR does not exist.
   after a reconnect the list comes from `jobs.list`, never a LilOS copy.
   Not: a LilOS-side jobs/subagents table, or a copy of a helper's turns. —
   #179
+- **D-#327 A turn settles when its session can no longer run it**
+  (`session.state` idle → done, closed/error → stopped, or superseded by a
+  later turn) inside `reduceSessionEvents` — replay-safe for every client.
+  Helper rows settle on closed/error only client-side (async delegates
+  outlive idle, #309); an ACP-dispatched row the wire can never close is
+  settled stopped by engine-hermes `Session.setState` once the session
+  leaves running. Not: settling helpers on idle, or per-UI guesses. — #327
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the

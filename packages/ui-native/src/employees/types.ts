@@ -178,6 +178,12 @@ export type AgentEntry = {
   reasoning?: string;
   /** Seconds spent thinking. */
   thought?: number;
+  /** Reasoning is streaming right now — live + the turn is in its
+     thinking phase (web: `live && phase === "thinking"`). Drives the
+     expanded "Thinking…" row; distinct from `live` so a turn already
+     past reasoning collapses to "Thought for Ns" while it keeps
+     working. */
+  thinking?: boolean;
   steps?: ToolStep[];
   text?: string;
   /** Still running: reasoning shimmers, the last step is live. */

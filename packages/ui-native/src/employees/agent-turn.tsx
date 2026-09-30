@@ -67,12 +67,13 @@ export function AgentTurn({
 }) {
   const steps = e.steps ?? [];
   /* #264: an open ask blocks the turn — nothing is still thinking or
-     running. `stillThinking` keeps its own condition so the reasoning row
-     can swap "Thinking…" for "Waiting for you" instead of vanishing. */
+     running, so the reasoning row swaps "Thinking…" for "Waiting for
+     you" instead of shimmering on. #327: thinking itself comes from the
+     entry (`live && phase === "reasoning"`, set by thread-model) — a
+     turn that finished or moved past reasoning collapses to "Thought
+     for Ns" with a working chevron instead of staying expanded. */
   const waiting = e.waiting !== undefined;
-  const stillThinking =
-    !!e.live && e.reasoning !== undefined && e.thought === undefined;
-  const thinking = stillThinking && !waiting;
+  const thinking = !!e.thinking && !waiting;
   const writing = !!e.live && !waiting && !!e.writing && !e.text?.trim();
   return (
     <View className="gap-2.5">
@@ -90,7 +91,7 @@ export function AgentTurn({
           text={e.reasoning}
           seconds={e.thought}
           thinking={!!thinking}
-          waiting={stillThinking && waiting}
+          waiting={waiting}
         />
       )}
       {steps.length > 0 && (

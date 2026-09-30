@@ -111,10 +111,21 @@ export function toAgentEntry(
     /** The conversation's PRs (#159) — a finished turn that ran
        `gh pr create` gets the PR card under its reply (web: PrCard). */
     prs?: readonly PullRequestRef[];
+    /** Measured seconds the turn spent reasoning (#327) — feeds the
+       "Thought for Ns" label; absent on replayed turns (no wire
+       timestamps), which fall back to "Thought". */
+    thought?: number;
+    /** Relay conversation state said a turn can run (#327): when the
+       conversation is not active no turn renders live — the engine's
+       view settled before its events reached the client. */
+    sessionRunning?: boolean;
     now: number;
   },
 ): AgentEntry {
-  const live = turn.phase !== "done" && turn.phase !== "stopped";
+  const live =
+    turn.phase !== "done" &&
+    turn.phase !== "stopped" &&
+    opts.sessionRunning !== false;
   /* The PR card under the reply (web: PrCard): the turn must have run
      `gh pr create`; the card is the PR the step's output URL names
      ("…/pull/N") — the conversation's top PR when it didn't (same rule as
@@ -155,6 +166,12 @@ export function toAgentEntry(
     id: `turn-${turn.turnId}`,
     time: opts.time,
     reasoning: turn.reasoning || undefined,
+    ...(opts.thought !== undefined ? { thought: opts.thought } : {}),
+    /* #327: thinking mirrors web's `live && phase === "thinking"` — a
+       turn past its reasoning phase (tools/text/waiting) collapses to
+       "Thought for Ns" even while it keeps running, and a settled turn
+       never reads "Thinking…". */
+    thinking: live && turn.phase === "reasoning",
     steps: turn.steps.map((s) => toToolStep(s, turn)),
     text: turn.text,
     live,
@@ -235,6 +252,12 @@ export function mergeThreadEntries(
     prs?: readonly PullRequestRef[];
     rewoundRefs?: ReadonlySet<string>;
     rewoundTexts?: ReadonlySet<string>;
+    /** The relay conversation's state (#327): anything but "active" means
+       no turn can still be running — a stale engine feed can't keep a
+       card live behind the relay's own word. */
+    conversationState?: Conversation["state"];
+    /** Per-turn measured reasoning seconds (#327) — see toAgentEntry. */
+    thoughts?: ReadonlyMap<string, number>;
     now: number;
   },
 ): ThreadEntry[] {
@@ -263,6 +286,14 @@ export function mergeThreadEntries(
   );
 
   if (!model) return entries;
+
+  /* #327: the relay conversation's own word on whether a turn can run —
+     a non-"active" state clamps model.live (and every entry's `live`
+     flag through toAgentEntry) the same way the engine-state settle
+     inside reduceSessionEvents does for the feed side. */
+  const sessionRunning =
+    opts.conversationState === undefined || opts.conversationState === "active";
+  const liveTurn = sessionRunning ? model.live : undefined;
 
   /* A finished turn lands where its reply message sits: match on the exact
      text the engine posted (stripMessages on web; relays keep full text).
@@ -302,6 +333,8 @@ export function mergeThreadEntries(
       planCapable: opts.planCapable,
       resolveEmployee: opts.resolveEmployee,
       prs: opts.prs,
+      thought: opts.thoughts?.get(t.turnId),
+      sessionRunning,
       now: opts.now,
     });
   };
@@ -379,7 +412,7 @@ export function mergeThreadEntries(
       !t.reasoning &&
       !t.subagents.length &&
       !t.plans.length;
-    if (empty && t.phase !== "stopped" && t !== model.live) return false;
+    if (empty && t.phase !== "stopped" && t !== liveTurn) return false;
     const wasRewound = t.ref
       ? (opts.rewoundRefs?.has(t.ref) ?? false)
       : text.length > 0 && (opts.rewoundTexts?.has(text) ?? false);
@@ -396,6 +429,8 @@ export function mergeThreadEntries(
       planCapable: opts.planCapable,
       resolveEmployee: opts.resolveEmployee,
       prs: opts.prs,
+      thought: opts.thoughts?.get(t.turnId),
+      sessionRunning,
       now: opts.now,
     });
   /* #308: a claimed turn anchored by `ref` re-anchors under the message
@@ -440,7 +475,7 @@ export function mergeThreadEntries(
      they keep turn order instead of stacking in reverse. */
   const insertAfter = new Map<string, number>();
   for (const t of leftover) {
-    if (t === model.live) continue;
+    if (t === liveTurn) continue;
     const refIdx = t.ref
       ? (insertAfter.get(t.ref) ?? byRef.get(t.ref))
       : undefined;
@@ -456,13 +491,13 @@ export function mergeThreadEntries(
   /* The live turn anchors under its prompting message like a posted one
      (#308) — a newer question must not push it below itself at the tail.
      byRef is stale past the leftover splices, so look the row up fresh. */
-  if (model.live) {
+  if (liveTurn) {
     const rows = [
-      ...supersededPlanEntries(model.live, opts.planCapable),
-      entryFor(model.live),
+      ...supersededPlanEntries(liveTurn, opts.planCapable),
+      entryFor(liveTurn),
     ];
-    const refAt = model.live.ref
-      ? entries.findIndex((e) => e.id === model.live?.ref)
+    const refAt = liveTurn.ref
+      ? entries.findIndex((e) => e.id === liveTurn?.ref)
       : -1;
     if (refAt < 0) entries.push(...rows);
     else entries.splice(skipTurnRun(refAt + 1), 0, ...rows);
@@ -553,6 +588,9 @@ export function toThreadDetail(opts: {
   listedJobs?: readonly Job[];
   /** The thread's PRs (#159) — header headline + Session sheet group. */
   prs?: readonly PullRequestRef[];
+  /** Per-turn measured reasoning seconds (#327) — live-measured by the
+     screen; replayed turns have none and fall back to "Thought". */
+  thoughts?: ReadonlyMap<string, number>;
 }): ThreadDetail {
   const { conversation: conv } = opts;
   const employee = opts.employee;
@@ -608,6 +646,8 @@ export function toThreadDetail(opts: {
       prs: opts.prs,
       rewoundRefs,
       rewoundTexts,
+      conversationState: conv.state,
+      thoughts: opts.thoughts,
       now: opts.now,
     },
   );

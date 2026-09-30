@@ -337,8 +337,10 @@ export class AcpDriver {
            #309: an async delegate's tool call closes with a dispatch
            receipt ({status:"dispatched"}) — the children keep running;
            closing their rows here would lie. ACP relays no native
-           subagent.completed, so a dispatched row stays running on screen
-           (a real close lands only over the WS event path). */
+           subagent.completed, so a dispatched row could never close —
+           #327 marks it untracked instead, and Session.setState settles
+           it stopped once the session leaves "running" (a real close
+           lands only over the WS event path). */
         const dispatched = (() => {
           /* The receipt arrives as a JSON string or an already-parsed
              object — either way `status:"dispatched"` means the children
@@ -376,6 +378,10 @@ export class AcpDriver {
                     : "done",
               });
             });
+          else
+            for (const id of s.subagentsForCall(callId)) {
+              s.untrackedSubagents.add(id);
+            }
         }
         const command = s.terminalCalls.get(callId);
         s.terminalCalls.delete(callId);

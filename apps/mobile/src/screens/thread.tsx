@@ -25,7 +25,7 @@ import { useStore } from "@nanostores/react";
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { atom } from "nanostores";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, View } from "react-native";
 import {
   answerPlanChange,
@@ -155,6 +155,36 @@ function useThread(conversationId: string) {
       : undefined;
   }, [engineRef, feed.sessionId, feed.events, feed.snapshot]);
 
+  /* #327: the wire carries no timestamps between turn.started and
+     turn.completed, so the reasoning -> first-step/text duration is
+     measured where the frames are actually watched — a turn entering
+     its reasoning phase gets stamped, and the stamp freezes into
+     seconds the moment the phase moves on (same job web's Reasoning
+     element does inside the component). A turn replayed already past
+     reasoning keeps no clock and the card falls back to "Thought". */
+  const thoughtClock = useRef(
+    new Map<string, { at?: number; seconds?: number }>(),
+  );
+  const thoughts = useMemo(() => {
+    const map = new Map<string, number>();
+    const clock = thoughtClock.current;
+    for (const t of sessionModel?.turns ?? []) {
+      if (!t.reasoning) continue;
+      let c = clock.get(t.turnId);
+      if (!c) {
+        c = {};
+        clock.set(t.turnId, c);
+      }
+      if (t.phase === "reasoning") {
+        c.at ??= Date.now();
+      } else if (c.at !== undefined && c.seconds === undefined) {
+        c.seconds = Math.max(1, Math.round((Date.now() - c.at) / 1000));
+      }
+      if (c.seconds !== undefined) map.set(t.turnId, c.seconds);
+    }
+    return map;
+  }, [sessionModel]);
+
   const employee = conv
     ? employees.find(
         (e) =>
@@ -233,6 +263,7 @@ function useThread(conversationId: string) {
             jobsCapable,
             listedJobs,
             prs: prsMap[conversationId],
+            thoughts,
             rewound: {
               refs: new Set(rewind?.removedIds ?? []),
               texts: new Set(
@@ -258,6 +289,7 @@ function useThread(conversationId: string) {
       listedJobs,
       jobsTick,
       prsMap,
+      thoughts,
       conversationId,
       rewind,
       rewoundMessages,
