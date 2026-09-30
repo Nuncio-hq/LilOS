@@ -81,6 +81,16 @@ export const conversations = sqliteTable(
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),
     /** Host watermark: highest user-message seq handed to the engine (#28). */
     deliveredSeq: integer("delivered_seq").notNull().default(0),
+    /** The newest turn.completed's usage (#300): JSON engine `Usage`
+        (input/output/reasoning/cache + optional contextWindow) — the context
+        meter's numbers, kept on the row so a dead engine session can't take
+        the meter with it. */
+    usage: text("usage"),
+    /** Freshness fence for `usage` writes (#300): the session + seq of the
+        turn.completed that stored it. A replayed older turn from the same
+        session can't regress the row; a rebound session writes freely. */
+    usageSessionId: text("usage_session_id"),
+    usageSeq: integer("usage_seq").notNull().default(0),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [index("conversations_channel").on(t.channelId)],

@@ -246,6 +246,51 @@ describe("client feed (read-only engine surface)", () => {
       await w.cleanup();
     }
   });
+
+  it("a dead engine session replays empty, not an error (#300)", async () => {
+    /* Pre-registry conversations carry bare ids (`s1`) the engine has no
+       row for: replay must degrade to an empty transcript — relay messages
+       and the persisted meter still render — instead of surfacing
+       SESSION_NOT_FOUND to the client. */
+    const w = await setupWorld();
+    try {
+      const result = (await w.harness.eventsSince("s1", 0)) as {
+        events: unknown[];
+        latestSeq: number;
+        truncated: boolean;
+        snapshot: { sessionId: string; state: string };
+      };
+      expect(result.events).toEqual([]);
+      expect(result.latestSeq).toBe(0);
+      expect(result.truncated).toBe(false);
+      expect(result.snapshot).toMatchObject({
+        sessionId: "s1",
+        state: "closed",
+      });
+
+      const feed = createFeedHandler(w.harness);
+      const a = feedCollector();
+      feed.attach(a.send);
+      await feed.handleFrame(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "events.since",
+          params: { sessionId: "s1", after: 0 },
+        }),
+        a.send,
+      );
+      const frame = a.frames.at(-1) as {
+        result?: { events?: unknown[] };
+        error?: unknown;
+      };
+      expect(frame.error).toBeUndefined();
+      expect(frame.result?.events).toEqual([]);
+      feed.close();
+    } finally {
+      await w.cleanup();
+    }
+  });
 });
 
 describe("steer capability gating", () => {

@@ -250,6 +250,17 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       )`,
     ],
   },
+  {
+    /* #300: last turn.completed usage (+ contextWindow) on the conversation
+       — JSON `Usage` — so the context meter survives replay failure. The
+       session/seq pair fences stale replays off the stored numbers. */
+    version: 15,
+    statements: [
+      `ALTER TABLE conversations ADD COLUMN usage TEXT`,
+      `ALTER TABLE conversations ADD COLUMN usage_session_id TEXT`,
+      `ALTER TABLE conversations ADD COLUMN usage_seq INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

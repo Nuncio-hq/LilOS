@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Capability } from "../engine/capabilities";
+import { Usage } from "../engine/events";
 import { ModelOption, ModelProvider } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
 import { ChannelMessage } from "../index";
@@ -134,6 +135,14 @@ export const Conversation = z.object({
    * previous turn's answer in seq order.
    */
   deliveredSeq: z.int().min(0).default(0),
+  /**
+   * The newest turn.completed's usage the relay saw (#300) — the context
+   * meter's input/output/cache counts + the engine-reported contextWindow.
+   * Relay-persisted so the meter survives replay failure entirely: a dead
+   * engine session (legacy bare engineRefs, forgotten sessions) yields an
+   * empty `events.since` but this row still carries the last numbers.
+   */
+  usage: Usage.optional(),
   createdAt: Timestamp,
 });
 export type Conversation = z.infer<typeof Conversation>;

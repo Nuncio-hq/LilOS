@@ -524,8 +524,10 @@ export function toThreadDetail(opts: {
   /* #247: the ring + Session-info meter read the newest turn's cumulative
      usage — the same pick the web thread panel makes (#294). Its window
      resolves through the shared rules: the engine's report first, the
-     catalog row, then the ~-labelled estimate. */
-  const ctxUsage = sessionModel?.turns.at(-1)?.usage;
+     catalog row, then the ~-labelled estimate. #300: a dead engine session
+     (legacy engineRef, degraded empty replay) keeps the meter off the
+     conversation's persisted last turn.completed. */
+  const ctxUsage = sessionModel?.turns.at(-1)?.usage ?? conv.usage;
   const ctxWindow = contextWindowOf(
     ctxUsage,
     conv.model ?? sessionModel?.model,
@@ -569,7 +571,11 @@ export function toThreadDetail(opts: {
     model: pick?.name ?? conv.model ?? sessionModel?.model ?? "",
     session: conv.engineRef ?? "",
     usage:
-      usage && (usage.input || usage.output) ? usageLabel(usage) : undefined,
+      usage && (usage.input || usage.output)
+        ? usageLabel(usage)
+        : conv.usage
+          ? usageLabel(conv.usage)
+          : undefined,
     ...(ctxUsage
       ? {
           context: {

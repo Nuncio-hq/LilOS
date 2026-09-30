@@ -289,4 +289,97 @@ describe("session.events / engine.event — device-scope live feed (#157)", () =
     await phone.connection.receive(req("pairing.offer", {}));
     expect(errorData(phone.frames, lastId())).toBe("forbidden");
   });
+
+  /* #300: the context meter's usage must survive replay failure entirely —
+     the relay persists each turn.completed's usage on the conversation row. */
+  it("turn.completed's usage persists on the conversation row (#300)", async () => {
+    const { relay, store } = newWorld();
+    const host = await registeredHost(relay);
+    const { conversation } = await setupConversation(host);
+    const usage = {
+      input: 12000,
+      output: 3400,
+      reasoning: 200,
+      cache: 5000,
+      contextWindow: 200000,
+    };
+    await host.connection.receive(
+      req("engine.event", {
+        conversationId: conversation.id,
+        sessionId: "fake:sess-1",
+        event: {
+          seq: 12,
+          sessionId: "fake:sess-1",
+          type: "turn.completed",
+          payload: { turnId: "t1", stopReason: "end_turn", usage },
+        },
+      }),
+    );
+    expect(resultOf(host.frames, lastId()).result).toEqual({ ok: true });
+    const conv = await store.getConversation(conversation.id);
+    expect(conv?.usage).toEqual(usage);
+  });
+
+  it("a stale turn.completed can't regress the persisted usage (#300)", async () => {
+    const { relay, store } = newWorld();
+    const host = await registeredHost(relay);
+    const { conversation } = await setupConversation(host);
+    const push = (seq: number, sessionId: string, usage?: unknown) =>
+      host.connection.receive(
+        req("engine.event", {
+          conversationId: conversation.id,
+          sessionId,
+          event: {
+            seq,
+            sessionId,
+            type: "turn.completed",
+            payload: { turnId: `t${seq}`, stopReason: "end_turn", usage },
+          },
+        }),
+      );
+    await push(12, "fake:sess-1", {
+      input: 9000,
+      output: 1000,
+      reasoning: 0,
+      cache: 0,
+    });
+    /* A replayed older turn from the same session (a resync streaming both
+       live and replayed events) must not rewind the meter. */
+    await push(9, "fake:sess-1", {
+      input: 100,
+      output: 10,
+      reasoning: 0,
+      cache: 0,
+    });
+    expect((await store.getConversation(conversation.id))?.usage?.input).toBe(
+      9000,
+    );
+    /* A rebound session starts a fresh fence: its first turn replaces the
+       dead session's numbers (seq is per-session — it restarts at 1). */
+    await push(4, "fake:sess-2", {
+      input: 2000,
+      output: 300,
+      reasoning: 0,
+      cache: 0,
+    });
+    expect((await store.getConversation(conversation.id))?.usage?.input).toBe(
+      2000,
+    );
+    /* A turn.completed without usage (a cancelled turn) never clobbers. */
+    await host.connection.receive(
+      req("engine.event", {
+        conversationId: conversation.id,
+        sessionId: "fake:sess-2",
+        event: {
+          seq: 7,
+          sessionId: "fake:sess-2",
+          type: "turn.completed",
+          payload: { turnId: "t7", stopReason: "cancelled" },
+        },
+      }),
+    );
+    expect((await store.getConversation(conversation.id))?.usage?.input).toBe(
+      2000,
+    );
+  });
 });

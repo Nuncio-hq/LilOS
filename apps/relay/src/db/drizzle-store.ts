@@ -13,7 +13,11 @@ import type {
   RecentFolder,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
-import { ApprovalOutcome, EngineRequest } from "@lilos/contracts/engine";
+import {
+  ApprovalOutcome,
+  EngineRequest,
+  type Usage,
+} from "@lilos/contracts/engine";
 import {
   and,
   asc,
@@ -59,20 +63,25 @@ type Db = BunSQLiteDatabase<typeof schema>;
 
 type ConversationRow = typeof schema.conversations.$inferSelect;
 /* SQLite columns are NULL when unset; the contract field is optional, not
-   nullable — fold null to absent at the boundary. */
-const rowToConversation = (row: ConversationRow): Conversation => ({
-  ...row,
-  model: row.model ?? undefined,
-  provider: row.provider ?? undefined,
-  effort: row.effort ?? undefined,
-  fast: row.fast ?? undefined,
-  cwd: row.cwd ?? undefined,
-  /* JSON workstream pick (#156); rows opened before v13 have no column
-     value — absent, not null. */
-  workspace: row.workspace
-    ? (JSON.parse(row.workspace) as WorkspaceIntent)
-    : undefined,
-});
+   nullable — fold null to absent at the boundary. The (sessionId, seq)
+   usage fence columns are store-internal (#300) — never on the wire. */
+const rowToConversation = (row: ConversationRow): Conversation => {
+  const { usageSessionId: _sid, usageSeq: _seq, ...rest } = row;
+  return {
+    ...rest,
+    model: row.model ?? undefined,
+    provider: row.provider ?? undefined,
+    effort: row.effort ?? undefined,
+    fast: row.fast ?? undefined,
+    cwd: row.cwd ?? undefined,
+    /* JSON workstream pick (#156); rows opened before v13 have no column
+       value — absent, not null. */
+    workspace: row.workspace
+      ? (JSON.parse(row.workspace) as WorkspaceIntent)
+      : undefined,
+    usage: row.usage ? (JSON.parse(row.usage) as Usage) : undefined,
+  };
+};
 
 type MessageRow = typeof schema.messages.$inferSelect;
 /** Rows carry attachment refs as JSON text; the domain object unpacks them. */
@@ -499,6 +508,9 @@ export function createDrizzleStore(db: Db): RelayStore {
             workspace: conversation.workspace
               ? JSON.stringify(conversation.workspace)
               : null,
+            usage: conversation.usage
+              ? JSON.stringify(conversation.usage)
+              : null,
           })
           .run();
         /* The picker's folder bumps recents — a `.lilos/wt/*` run dir never
@@ -554,6 +566,28 @@ export function createDrizzleStore(db: Db): RelayStore {
         .returning()
         .get();
       return updated ? rowToConversation(updated) : null;
+    },
+    async recordTurnUsage({ conversationId, sessionId, seq, usage }) {
+      /* One conditional UPDATE = the freshness fence + the write: a replayed
+         turn from the same session only wins past the stored seq; a rebound
+         session always writes. */
+      db.update(schema.conversations)
+        .set({
+          usage: JSON.stringify(usage),
+          usageSessionId: sessionId,
+          usageSeq: seq,
+        })
+        .where(
+          and(
+            eq(schema.conversations.id, conversationId),
+            or(
+              isNull(schema.conversations.usageSessionId),
+              ne(schema.conversations.usageSessionId, sessionId),
+              lt(schema.conversations.usageSeq, seq),
+            ),
+          ),
+        )
+        .run();
     },
     async listMessages(
       channelId: string,
