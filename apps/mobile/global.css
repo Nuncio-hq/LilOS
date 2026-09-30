@@ -36,6 +36,15 @@
       --color-success: #248a3d;
       --color-warning: #c93400;
       --color-glass: #f9f9fbd9;
+      --color-code-keyword: #cf222e;
+      --color-code-string: #0a3069;
+      --color-code-comment: #6e7781;
+      --color-code-number: #0550ae;
+      --color-code-title: #8250df;
+      --color-code-attr: #116329;
+      --color-code-builtin: #953800;
+      --color-code-addition: #116329;
+      --color-code-deletion: #82071e;
     }
 
     @variant dark {
@@ -62,6 +71,15 @@
       --color-success: #30d158;
       --color-warning: #ff9f0a;
       --color-glass: #1c1c1ed9;
+      --color-code-keyword: #ff7b72;
+      --color-code-string: #a5d6ff;
+      --color-code-comment: #8b949e;
+      --color-code-number: #79c0ff;
+      --color-code-title: #d2a8ff;
+      --color-code-attr: #7ee787;
+      --color-code-builtin: #ffa657;
+      --color-code-addition: #3fb950;
+      --color-code-deletion: #f85149;
     }
   }
 }
