@@ -363,13 +363,24 @@ export function mergeThreadEntries(
      that prompted it — its answer's row can arrive after a newer prompt
      and must not park there. The card's plan-superseded rows travel with
      it. Claimed-but-anchorless turns keep the claimed slot (the claim is
-     its own correlation, #288). */
+     its own correlation, #288). Landing under a prompt never leapfrogs
+     turn cards already there — they hold the slot by the same rule. */
+  const skipTurnRun = (i: number) => {
+    let at = i;
+    while (at < entries.length && entries[at].id.startsWith("turn-")) at++;
+    return at;
+  };
   for (const t of model.turns) {
     if (!used.has(t) || !t.ref) continue;
     const cardId = `turn-${t.turnId}`;
     const cardAt = entries.findIndex((e) => e.id === cardId);
     const refAt = entries.findIndex((e) => e.id === t.ref);
     if (cardAt < 0 || refAt < 0 || refAt + 1 === cardAt) continue;
+    /* Already inside the anchored run right after its prompt — the run
+       holds same-ref turns in order, so leave it. */
+    let inRun = refAt + 1;
+    while (inRun < cardAt && entries[inRun].id.startsWith("turn-")) inRun++;
+    if (inRun === cardAt) continue;
     let runStart = cardAt;
     while (
       runStart > 0 &&
@@ -377,7 +388,11 @@ export function mergeThreadEntries(
     )
       runStart--;
     const run = entries.splice(runStart, cardAt - runStart + 1);
-    entries.splice(entries.findIndex((e) => e.id === t.ref) + 1, 0, ...run);
+    entries.splice(
+      skipTurnRun(entries.findIndex((e) => e.id === t.ref) + 1),
+      0,
+      ...run,
+    );
   }
 
   const byRef = new Map<string, number>();
@@ -394,8 +409,9 @@ export function mergeThreadEntries(
     if (refIdx === undefined) {
       entries.push(...superseded, entryFor(t));
     } else {
-      entries.splice(refIdx + 1, 0, ...superseded, entryFor(t));
-      if (t.ref) insertAfter.set(t.ref, refIdx + superseded.length + 1);
+      const dest = skipTurnRun(refIdx + 1);
+      entries.splice(dest, 0, ...superseded, entryFor(t));
+      if (t.ref) insertAfter.set(t.ref, dest + superseded.length);
     }
   }
   /* The live turn anchors under its prompting message like a posted one
@@ -410,7 +426,7 @@ export function mergeThreadEntries(
       ? entries.findIndex((e) => e.id === model.live?.ref)
       : -1;
     if (refAt < 0) entries.push(...rows);
-    else entries.splice(refAt + 1, 0, ...rows);
+    else entries.splice(skipTurnRun(refAt + 1), 0, ...rows);
   }
   return entries;
 }

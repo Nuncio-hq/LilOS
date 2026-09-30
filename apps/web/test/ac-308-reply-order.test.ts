@@ -114,6 +114,30 @@ describe("issue #308 — replies anchor to their own turn's question", () => {
     expect(out[2].agentInitiated).toBe(true);
   });
 
+  test("AC-1 an anchored turn never leapfrogs a claimed card whose own ref is invisible", () => {
+    /* The queued-message e2e (ac-27 AC-5b): turn1's prompt is the thread
+       root, which dm.tsx filters out of `replies` — its anchor can't
+       resolve, so its claimed card keeps the slot its relay row earned.
+       Turn2 anchors under the queued message that prompted it; landing
+       there must not hop above turn1's card. */
+    const replies = conversationReplies(
+      [
+        u("q2", 2, "also mention bananas"),
+        a("a1", 3, "Done on work: release note"),
+        a("a2", 4, "Noted. Plan now: 2. Also mention bananas"),
+      ],
+      "c1",
+    );
+    const t1 = turn({ turnId: "t1", ref: "q1-root", text: "Done on work: release note" });
+    const t2 = turn({
+      turnId: "t2",
+      ref: "q2",
+      text: "Noted. Plan now: 2. Also mention bananas",
+    });
+    const out = mergeTurns(replies, session([t1, t2]), "emp");
+    expect(out.map((r) => r.id)).toEqual(["q2", "a1", "a2"]);
+  });
+
   test("AC-1 a ref'd turn is never text-claimed into a different message's slot", () => {
     /* Two identical answer texts: the ref'd turn anchors to its own
        prompt; the other employee message keeps its plain row. */

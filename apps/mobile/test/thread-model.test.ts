@@ -1001,4 +1001,29 @@ describe("thread-model — #308 reply ordering", () => {
     const leg = entries.at(-1);
     expect(leg?.kind === "agent" && leg.agentInitiated).toBe(true);
   });
+
+  it("AC-1 an anchored turn never leapfrogs a claimed card whose own ref is invisible", () => {
+    /* The queued-message case: t1's prompt renders nowhere in this list
+       (e.g. a filtered message kind), so its claimed card keeps the slot
+       its relay row earned — t2 landing under its own prompt must queue
+       after it, not hop above it. */
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", ref: "m0-gone" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "answer A" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+      ev("turn.started", { turnId: "t2", ref: "m2" }),
+      ev("turn.delta", { turnId: "t2", stream: "text", delta: "answer B" }),
+      ev("turn.completed", { turnId: "t2", stopReason: "end_turn" }),
+    ]);
+    const entries = mergeThreadEntries(
+      [
+        u("m2", 2, "also mention bananas"),
+        a("m3", 3, "answer A"),
+        a("m4", 4, "answer B"),
+      ],
+      model,
+      OPTS,
+    );
+    expect(entries.map((e) => e.id)).toEqual(["m2", "turn-t1", "turn-t2"]);
+  });
 });

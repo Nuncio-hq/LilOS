@@ -343,6 +343,7 @@ export function mergeTurns(
   /* Each reply run is one block — superseded-plan rows travel with their
      card when a ref'd turn re-anchors. */
   const blocks: Reply[][] = [];
+  const owned = new Set<Reply[]>();
   const turnBlock = new Map<TurnModel, Reply[]>();
   /* Position-bound like mobile (#181 AC-4): a ref'd turn claims only a
      message that renders after its prompt — a rebound session's turn
@@ -372,6 +373,7 @@ export function mergeTurns(
     const live = liveReplies(t, employeeId, asks, resolveEmployee);
     live[live.length - 1] = { ...live[live.length - 1], id: r.id };
     blocks.push(live);
+    owned.add(live);
     turnBlock.set(t, live);
   }
   /* Anchor pass (#308): a `ref`'d turn sits right after the message that
@@ -380,6 +382,15 @@ export function mergeTurns(
      prompt in turn order. */
   const refIndex = (ref: string) =>
     blocks.findIndex((b) => b.some((r) => r.id === ref));
+  /* Landing under a prompt never leapfrogs turn cards already holding that
+     slot — a claimed card whose own `ref` renders nowhere (the thread's
+     root question is filtered out of `replies`) keeps the slot its relay
+     row earned, so a newer anchored card queues after it instead. */
+  const beyond = (i: number) => {
+    let at = i;
+    while (at < blocks.length && owned.has(blocks[at])) at++;
+    return at;
+  };
   const refOffset = new Map<string, number>();
   const anchorAt = (t: TurnModel) => {
     if (!t.ref) return -1;
@@ -399,8 +410,14 @@ export function mergeTurns(
          its relay row landed (#288's drop only covers unposted turns). */
       if (at < 0) continue;
       const from = blocks.indexOf(block);
+      /* Already inside the anchored run under its prompt — the run holds
+         same-ref turns in order, so leave it. */
+      if (from >= at && from < beyond(at)) {
+        bump(t);
+        continue;
+      }
       blocks.splice(from, 1);
-      blocks.splice(at - (from < at ? 1 : 0), 0, block);
+      blocks.splice(beyond(at - (from < at ? 1 : 0)), 0, block);
       bump(t);
       continue;
     }
@@ -417,10 +434,12 @@ export function mergeTurns(
          tail fallback too: engines that never echo `ref` can't be
          positioned any other way. */
       if (t.ref && t.phase !== "stopped" && t !== model.live) continue;
+      owned.add(rs);
       blocks.push(rs);
       continue;
     }
-    blocks.splice(at, 0, rs);
+    owned.add(rs);
+    blocks.splice(beyond(at), 0, rs);
     bump(t);
   }
   return blocks.flat();
