@@ -86,7 +86,7 @@ function JobRow({
             <ExternalLinkIcon className="size-3" />
           </a>
         )}
-        {running && onStop && (
+        {running && onStop && !j.subagent && (
           <Button
             size="sm"
             variant="outline"

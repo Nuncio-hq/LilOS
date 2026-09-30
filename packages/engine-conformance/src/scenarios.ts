@@ -2106,6 +2106,8 @@ const MCP_SCENARIOS: Scenario[] = [
    the English is the instruction the model follows. */
 const DELEGATE_PROMPT =
   "LILOS_DELEGATE — delegate three helper tasks (scan the checkout, verify the findings, draft the summary) using the delegation tool, then reply with exactly: LILOS_OK";
+const DELEGATE_ASYNC_PROMPT =
+  "LILOS_DELEGATE_ASYNC — delegate three helper tasks (scan the checkout, verify the findings, draft the summary) using the delegation tool; let the first keep running in the background past the turn, then reply with exactly: LILOS_OK";
 const BG_PROMPT =
   "LILOS_BG — start the dev server as a background process that keeps running (use the terminal tool's background flag), then reply with exactly: LILOS_OK";
 const BG_EXIT_PROMPT =
@@ -2270,6 +2272,97 @@ export const SUBAGENT_SCENARIOS: Scenario[] = [
           ),
         "events.since replays subagent.started identically",
       );
+    },
+  },
+  {
+    /* #309: an async delegate — a helper keeps running after its parent's
+       turn ends; its subagent.completed lands later, carrying no turnId
+       (the live-captured real-engine shape). Clients must key it
+       session-wide. */
+    id: "async delegate: a helper can outlive its turn",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const result = h.request(
+        "prompt",
+        textPrompt(sessionId, DELEGATE_ASYNC_PROMPT),
+      ) as Promise<PromptResult>;
+      const done = await answerAsks(h, sessionId, "once");
+      assert(
+        done.payload.stopReason === "end_turn",
+        "the async delegate turn completes",
+      );
+      await result;
+      const mine = (e: EngineEvent) => e.sessionId === sessionId;
+      const started = h.events.filter(
+        (e): e is Extract<EngineEvent, { type: "subagent.started" }> =>
+          mine(e) && e.type === "subagent.started",
+      );
+      /* The turn already completed — at least one started helper is still
+         open at this point (the async row); the sync ones may be closed. */
+      const turnEnd = h.events
+        .slice()
+        .reverse()
+        .find((e) => mine(e) && e.type === "turn.completed");
+      assert(turnEnd, "turn.completed landed");
+      const closedAtTurnEnd = new Set(
+        h.events
+          .filter(
+            (e): e is Extract<EngineEvent, { type: "subagent.completed" }> =>
+              mine(e) &&
+              e.type === "subagent.completed" &&
+              e.seq <= turnEnd.seq,
+          )
+          .map((e) => e.payload.subagentId),
+      );
+      const stillRunning = started
+        .map((e) => e.payload.subagentId)
+        .filter((id) => !closedAtTurnEnd.has(id));
+      assert(
+        stillRunning.length >= 1,
+        "one helper outlives turn.completed (subagent.* stays open)",
+      );
+      /* Its close lands after turn.completed — session-scoped, unordered
+         relative to later turns' frames. */
+      const late = await h
+        .waitEvent(
+          h.forSession(
+            sessionId,
+            (e) =>
+              e.type === "subagent.completed" &&
+              stillRunning.includes(e.payload.subagentId),
+          ),
+        )
+        .catch(() => undefined);
+      assert(
+        late && late.seq > turnEnd.seq,
+        "the outliving helper's subagent.completed lands after turn.completed",
+      );
+      /* Every started helper eventually closes — no orphan rows. */
+      const allClosed = () => {
+        const closed = new Set(
+          h.events
+            .filter(
+              (e): e is Extract<EngineEvent, { type: "subagent.completed" }> =>
+                mine(e) && e.type === "subagent.completed",
+            )
+            .map((e) => e.payload.subagentId),
+        );
+        return started.every((e) => closed.has(e.payload.subagentId));
+      };
+      for (;;) {
+        if (allClosed()) break;
+        const landed = await h
+          .waitEvent(
+            h.forSession(sessionId, (e) => e.type === "subagent.completed"),
+          )
+          .then(() => true)
+          .catch(() => false);
+        if (!landed) break;
+      }
+      assert(allClosed(), "every started helper eventually closes");
     },
   },
 ];

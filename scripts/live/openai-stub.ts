@@ -18,14 +18,37 @@ const reply =
    FIRST chat-completions request answer with a scripted tool call (OpenAI
    `tool_calls` shape, stream + non-stream); every later request returns the
    canned text reply. Lets a stub run exercise a real tool path (todo →
-   todo.updated → plan.updated) without a live model. */
-const scriptedCall = process.env.STUB_TOOL_CALL
-  ? (JSON.parse(process.env.STUB_TOOL_CALL) as {
-      name: string;
-      arguments?: string;
-    })
-  : null;
-let scriptedCallsLeft = scriptedCall ? 1 : 0;
+   todo.updated → plan.updated) without a live model.
+
+   #309/#308: STUB_SCRIPT='[{match,name,arguments,times,delayMs}]' generalizes
+   it to a FIFO script. Each entry fires on a request whose LAST user-role
+   message contains `match` (case-insensitive; omitted = any request), is
+   consumed `times` times (default 1), then the head drops. The user-role
+   restriction keeps a tool-result echo of the same text (e.g. a
+   delegate_task receipt quoting the child's goal) from stealing the
+   child's scripted call. `delayMs` holds the answer that long first — an
+   async subagent's model call can outlive the parent's turn without
+   needing a real (approval-gated) tool. An entry with no `name` answers
+   the canned text reply after the delay instead of a tool call. */
+interface ScriptedCall {
+  match?: string;
+  name?: string;
+  arguments?: string;
+  times?: number;
+  delayMs?: number;
+  /** Override the canned text answer for this entry. */
+  reply?: string;
+}
+const script: ScriptedCall[] = process.env.STUB_SCRIPT
+  ? (JSON.parse(process.env.STUB_SCRIPT) as ScriptedCall[])
+  : process.env.STUB_TOOL_CALL
+    ? [
+        {
+          ...(JSON.parse(process.env.STUB_TOOL_CALL) as ScriptedCall),
+          times: 1,
+        },
+      ]
+    : [];
 
 const sse = (chunks: string[]) => chunks.join("");
 
@@ -132,14 +155,32 @@ const server = Bun.serve({
         const { appendFileSync } = await import("node:fs");
         appendFileSync(process.env.STUB_REQUEST_LOG, line);
       }
-      if (scriptedCall && scriptedCallsLeft > 0) {
-        scriptedCallsLeft -= 1;
+      const lastUserText = [...(body.messages ?? [])]
+        .reverse()
+        .find((m) => m.role === "user");
+      const head = script[0];
+      const fired =
+        head &&
+        (head.match === undefined ||
+          flatText(lastUserText?.content)
+            .toLowerCase()
+            .includes(head.match.toLowerCase()))
+          ? head
+          : undefined;
+      if (fired?.delayMs) {
+        await new Promise((r) => setTimeout(r, fired.delayMs));
+      }
+      if (fired) {
+        fired.times = (fired.times ?? 1) - 1;
+        if (fired.times <= 0) script.shift();
+      }
+      if (fired?.name) {
         const tc = {
           id: "call_stub_0",
           type: "function",
           function: {
-            name: scriptedCall.name,
-            arguments: scriptedCall.arguments ?? "{}",
+            name: fired.name,
+            arguments: fired.arguments ?? "{}",
           },
         };
         if (body.stream) {
@@ -187,7 +228,7 @@ const server = Bun.serve({
         return new Response(
           sse([
             frame({ role: "assistant", content: "" }, null),
-            frame({ content: reply }, null),
+            frame({ content: fired?.reply ?? reply }, null),
             frame({}, "stop"),
             "data: [DONE]\n\n",
           ]),
@@ -202,7 +243,7 @@ const server = Bun.serve({
         choices: [
           {
             index: 0,
-            message: { role: "assistant", content: reply },
+            message: { role: "assistant", content: fired?.reply ?? reply },
             finish_reason: "stop",
           },
         ],

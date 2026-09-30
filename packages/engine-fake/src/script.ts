@@ -21,6 +21,9 @@ export interface FakeSubagent {
   task: string;
   /** Scripts run to completion inside the step — no "running" outcome. */
   status: "done" | "failed" | "stopped";
+  /** #309: an async delegate — the helper's subagent.completed lands after
+      the parent's turn.completed, not inside the delegate step. */
+  outlivesTurn?: boolean;
   steps: FakeStep[];
   result?: string;
   durationMs?: number;
@@ -400,6 +403,11 @@ ${tail}`,
     /* AC-3: a helper that is another employee is declared by an @mention —
        the engine resolves their live session at emit time. */
     if (mention && mention !== agent) helpers[2].employee = mention;
+    /* #309: LILOS_DELEGATE_ASYNC marks the first helper async — its
+       subagent.completed lands after turn.completed (dispatch-receipt
+       delegation). */
+    if (/\bLILOS_DELEGATE_ASYNC\b/i.test(prompt))
+      helpers[0].outlivesTurn = true;
     return {
       reasoning: `Three separable reads. Fan out helpers and fold their reports back.`,
       steps: [

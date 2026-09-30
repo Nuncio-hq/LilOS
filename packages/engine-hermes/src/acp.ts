@@ -298,6 +298,7 @@ export class AcpDriver {
                   ? ((t as { goal: string }).goal as string)
                   : "",
               parentToolCallId: callId,
+              startedAt: Date.now(),
             });
           });
         }
@@ -332,24 +333,49 @@ export class AcpDriver {
             : {}),
         });
         /* #179: close the synthesized rows — per-task statuses parse off the
-           formatted "Task N: ✅/✗/⏱/⚠" lines, else the call's own status. */
+           formatted "Task N: ✅/✗/⏱/⚠" lines, else the call's own status.
+           #309: an async delegate's tool call closes with a dispatch
+           receipt ({status:"dispatched"}) — the children keep running;
+           closing their rows here would lie. ACP relays no native
+           subagent.completed, so a dispatched row stays running on screen
+           (a real close lands only over the WS event path). */
+        const dispatched = (() => {
+          /* The receipt arrives as a JSON string or an already-parsed
+             object — either way `status:"dispatched"` means the children
+             keep running. */
+          const status = (() => {
+            if (typeof out === "string") {
+              try {
+                return (JSON.parse(out) as { status?: unknown }).status;
+              } catch {
+                return undefined;
+              }
+            }
+            if (out !== null && typeof out === "object") {
+              return (out as { status?: unknown }).status;
+            }
+            return undefined;
+          })();
+          return status === "dispatched";
+        })();
         if (s.delegateStack.includes(callId)) {
           s.delegateStack = s.delegateStack.filter((id) => id !== callId);
           const text = typeof out === "string" ? out : "";
           const perTask = new Map<number, string>();
           for (const m of text.matchAll(/[✅✗⏱⚠]\s*Task (\d+):\s*(\w+)/g))
             perTask.set(Number(m[1]), m[2]);
-          s.subagentsForCall(callId).forEach((subagentId, i) => {
-            const word = perTask.get(i + 1);
-            s.emit("subagent.completed", {
-              subagentId,
-              status: word
-                ? mapSubagentStatus(word)
-                : status === "failed"
-                  ? "failed"
-                  : "done",
+          if (!dispatched)
+            s.subagentsForCall(callId).forEach((subagentId, i) => {
+              const word = perTask.get(i + 1);
+              s.emit("subagent.completed", {
+                subagentId,
+                status: word
+                  ? mapSubagentStatus(word)
+                  : status === "failed"
+                    ? "failed"
+                    : "done",
+              });
             });
-          });
         }
         const command = s.terminalCalls.get(callId);
         s.terminalCalls.delete(callId);

@@ -152,6 +152,8 @@ export type BackgroundJobRow = {
   /** Output tail. */
   log: string;
   by?: string;
+  /** The row IS a subagent (#309) — no Stop: jobs.stop can't kill one. */
+  subagent?: boolean;
 };
 
 /** One tool call inside an agent turn (web: Step). */

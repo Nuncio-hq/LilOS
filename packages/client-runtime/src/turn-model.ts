@@ -64,6 +64,8 @@ export interface SubagentModel {
   steps: TurnStep[];
   result?: string;
   durationMs?: number;
+  /** Ms epoch the helper was dispatched (drives its job row's uptime). */
+  startedAt?: number;
   /** Set when the helper is another employee (D-#25). */
   employee?: { employeeRef: string; sessionRef: string };
 }
@@ -82,6 +84,9 @@ export interface JobModel {
   by?: string;
   /** Rolling output tail (job.output replaces, never appends). */
   tail: string;
+  /** Synthesized subagent row (#309 `subagentJobs`) — jobs.stop can't kill
+      it, so surfaces hide the Stop affordance. */
+  subagent?: boolean;
 }
 
 export type TurnPhase =
@@ -127,6 +132,10 @@ export interface SessionModel {
   openRequests: TurnRequest[];
   /** Background processes of this session (job.* / jobs.list, #179). */
   jobs: JobModel[];
+  /** Helpers the session delegated to, as job-like rows (`sa:` jobIds) so
+      the Background tab lists a subagent still working past its turn
+      (#309). */
+  subagentJobs: JobModel[];
   model?: string;
   provider?: string;
   effort?: string;
@@ -219,7 +228,12 @@ export function reduceSessionEvents(
       }
       case "tool.started": {
         const t = turn(e.payload.turnId);
-        t.phase = "tools";
+        /* #309: an async subagent's calls land after its parent's
+           turn.completed — they nest under the helper's row and must not
+           reopen the settled turn. The engine stamps them with whichever
+           turn is CURRENT (not the spawning one), so the lookup crosses
+           turns just like subagent.completed does. */
+        if (t.phase !== "done" && t.phase !== "stopped") t.phase = "tools";
         const step = {
           id: e.payload.toolCallId,
           tool: e.payload.tool,
@@ -230,7 +244,7 @@ export function reduceSessionEvents(
            list; when the subagent.started hasn't arrived yet it buffers. */
         const parentId = e.payload.parentToolCallId;
         if (parentId) {
-          const sa = t.subagents.find((s) => s.subagentId === parentId);
+          const sa = findSubagent(parentId);
           if (sa) sa.steps.push(step);
           else
             (orphanSteps.get(parentId) ?? []).length
@@ -245,10 +259,10 @@ export function reduceSessionEvents(
         const t = turn(e.payload.turnId);
         const parentId = e.payload.parentToolCallId;
         /* #179: nested calls update the subagent's list, never the parent's
-           "N steps" (decided default on the issue). */
+           "N steps" (decided default on the issue). The helper may sit on
+           a different turn than the stamped one (#309 cross-turn steps). */
         const list = parentId
-          ? (t.subagents.find((s) => s.subagentId === parentId)?.steps ??
-            orphanSteps.get(parentId))
+          ? (findSubagent(parentId)?.steps ?? orphanSteps.get(parentId))
           : t.steps;
         if (!list) {
           orphanSteps.set(parentId ?? "", [
@@ -286,7 +300,7 @@ export function reduceSessionEvents(
       /* ── subagents (#179) ── */
       case "subagent.started": {
         const t = turn(e.payload.turnId);
-        let sa = t.subagents.find((s) => s.subagentId === e.payload.subagentId);
+        let sa = findSubagent(e.payload.subagentId);
         if (!sa) {
           sa = {
             subagentId: e.payload.subagentId,
@@ -295,11 +309,13 @@ export function reduceSessionEvents(
             task: e.payload.task,
             status: "running",
             steps: [],
+            startedAt: e.payload.startedAt,
           };
           t.subagents.push(sa);
         } else {
           sa.name = e.payload.name;
           sa.task = e.payload.task;
+          sa.startedAt = e.payload.startedAt ?? sa.startedAt;
         }
         sa.parentToolCallId = e.payload.parentToolCallId ?? sa.parentToolCallId;
         sa.employee = e.payload.employee ?? sa.employee;
@@ -312,15 +328,11 @@ export function reduceSessionEvents(
         break;
       }
       case "subagent.completed": {
-        for (const t of order) {
-          const sa = t.subagents.find(
-            (s) => s.subagentId === e.payload.subagentId,
-          );
-          if (!sa) continue;
+        const sa = findSubagent(e.payload.subagentId);
+        if (sa) {
           sa.status = e.payload.status;
           sa.result = e.payload.result ?? sa.result;
           sa.durationMs = e.payload.durationMs ?? sa.durationMs;
-          break;
         }
         break;
       }
@@ -362,7 +374,9 @@ export function reduceSessionEvents(
       }
       case "request.opened": {
         const t = turn(e.payload.turnId);
-        t.phase = "waiting";
+        /* #309: a request stamped on a settled turn records but never
+           reopens it — same post-turn guard tool.started takes. */
+        if (t.phase !== "done" && t.phase !== "stopped") t.phase = "waiting";
         t.requests.push({
           requestId: e.payload.requestId,
           turnId: e.payload.turnId,
@@ -456,17 +470,31 @@ export function reduceSessionEvents(
             }
           }
         }
-        /* #179: the turn ended without a subagent.completed for a helper the
-           engine still listed running — its delegate call can't outlive the
-           turn, so the row settles "stopped". */
-        for (const sa of t.subagents) {
-          if (sa.status === "running") sa.status = "stopped";
+        /* #309: an async delegate call closes with its dispatch receipt —
+           the turn ending does not settle helpers it spawned; they run
+           past turn end until the engine's real subagent.completed lands.
+           A cancelled turn kills the work tree instead: no close arrives,
+           so running rows settle "stopped" here. */
+        if (e.payload.stopReason === "cancelled") {
+          for (const sa of t.subagents) {
+            if (sa.status === "running") sa.status = "stopped";
+          }
         }
         break;
       }
     }
   }
   if (snapshot) state = snapshot.state;
+
+  /* A helper by id across every turn — subagent.* frames are stamped
+     with whichever turn is open, not the one that spawned it (#309). */
+  function findSubagent(id: string): SubagentModel | undefined {
+    for (const t of order) {
+      const sa = t.subagents.find((s) => s.subagentId === id);
+      if (sa) return sa;
+    }
+    return undefined;
+  }
 
   /* The newest snapshot for a planId, or undefined (#180). */
   function latestPlan(t: TurnModel, planId: string): TurnPlan | undefined {
@@ -479,6 +507,32 @@ export function reduceSessionEvents(
   const live = order.find((t) => t.phase !== "done" && t.phase !== "stopped");
   const openRequests: TurnRequest[] = [];
   const jobList = [...jobs.values()];
+  /* #309: helpers as job-like rows — a subagent left running past its
+     turn lands on the Background tab (web) and the thread's job rows
+     (mobile) through the same feed, next to real jobs (which can also
+     carry by: <subagent name>). */
+  const SUBAGENT_JOB_STATUS: Record<SubagentModel["status"], JobStatus> = {
+    running: "running",
+    done: "exited",
+    failed: "failed",
+    stopped: "stopped",
+  };
+  const subagentJobs: JobModel[] = order.flatMap((t) =>
+    t.subagents.map((sa) => ({
+      jobId: `sa:${sa.subagentId}`,
+      command: sa.task || sa.name,
+      status: SUBAGENT_JOB_STATUS[sa.status],
+      /* Real times, not "up 0s": dispatch epoch while it runs; the
+         engine's reported duration freezes the finished row. */
+      ...(sa.startedAt !== undefined ? { startedAt: sa.startedAt } : {}),
+      ...(sa.status !== "running" && sa.startedAt !== undefined
+        ? { endedAt: sa.startedAt + (sa.durationMs ?? 0) }
+        : {}),
+      by: sa.name,
+      tail: sa.result ?? "",
+      subagent: true,
+    })),
+  );
   for (const t of order) {
     for (const r of t.requests) {
       if (r.outcome === undefined) openRequests.push(r);
@@ -491,6 +545,7 @@ export function reduceSessionEvents(
     live,
     openRequests,
     jobs: jobList,
+    subagentJobs,
     model,
     provider,
     effort,

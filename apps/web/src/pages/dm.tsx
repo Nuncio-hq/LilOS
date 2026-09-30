@@ -1068,6 +1068,11 @@ export function DmPage() {
       for (const j of model?.jobs ?? [])
         jobsById.set(j.jobId, toJob(j, jobsNow));
     }
+    /* #309: helpers the session delegated to list on the Background tab
+       too — under `subagents`, not `background_jobs`, so they merge
+       outside the capability gate. */
+    for (const j of model?.subagentJobs ?? [])
+      jobsById.set(j.jobId, toJob(j, jobsNow));
     const uiJobs = [...jobsById.values()].sort(
       (a, b) => a.started.localeCompare(b.started) || a.id.localeCompare(b.id),
     );

@@ -4,6 +4,7 @@
 import type {
   JobModel,
   SubagentModel,
+  TurnModel,
   TurnPlan,
   TurnStep,
 } from "@lilos/client-runtime";
@@ -27,13 +28,22 @@ const argOf = (input: Record<string, unknown>): string | undefined => {
   return typeof first === "string" ? first : undefined;
 };
 
-export function toToolStep(s: TurnStep): ToolStep {
+export function toToolStep(s: TurnStep, turn?: TurnModel): ToolStep {
+  /* #309: a delegate_task step that closed with a dispatch receipt still
+     reads as in-flight while the helper it spawned runs — "Dispatching"
+     flips to "Dispatched" when it settles, never a premature "Done". */
+  const dispatched =
+    s.status !== "running" &&
+    s.tool === "delegate_task" &&
+    !!turn?.subagents.some(
+      (sa) => sa.parentToolCallId === s.id && sa.status === "running",
+    );
   return {
     id: s.id,
     tool: s.tool,
     arg: argOf(s.input),
     output: s.output,
-    running: s.status === "running",
+    running: s.status === "running" || dispatched,
     add: s.diff?.add,
     del: s.diff?.del,
     patch: s.diff?.patch,
@@ -68,13 +78,14 @@ export function toSubagentRow(
     employeeRef: string;
     sessionRef: string;
   }) => SubagentRow["employee"],
+  turn?: TurnModel,
 ): SubagentRow {
   return {
     id: s.subagentId,
     name: s.name,
     task: s.task,
     status: s.status,
-    steps: s.steps.map(toToolStep),
+    steps: s.steps.map((x) => toToolStep(x, turn)),
     ...(s.result !== undefined ? { result: s.result } : {}),
     ...(s.durationMs !== undefined
       ? { dur: Math.round(s.durationMs / 10) / 100 }
@@ -130,6 +141,7 @@ export function toJobRow(j: JobModel, now = Date.now()): BackgroundJobRow {
     ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
     log: j.tail,
     ...(j.by ? { by: j.by } : {}),
+    ...(j.subagent ? { subagent: true } : {}),
   };
 }
 

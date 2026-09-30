@@ -48,6 +48,10 @@ export type Step = {
   input: Record<string, unknown>;
   output: string;
   running?: boolean;
+  /** A delegate_task that closed on its dispatch receipt while the helper
+     it spawned still runs (#309) — the step reads "Dispatched", not
+     "Completed". */
+  dispatched?: boolean;
   diff?: Diff;
   commit?: GitCommit;
 };
@@ -163,6 +167,8 @@ export type BackgroundJob = {
   log: string;
   /** Who started it: a subagent's name when not the employee itself. */
   by?: string;
+  /** The row IS a subagent (#309) — no Stop: jobs.stop can't kill one. */
+  subagent?: boolean;
 };
 export type Usage = {
   input: number;

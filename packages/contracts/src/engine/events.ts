@@ -159,6 +159,11 @@ export const SubagentStartedPayload = z.strictObject({
   task: z.string(),
   /** The tool call that spawned it (the delegate call's `toolCallId`). */
   parentToolCallId: z.string().min(1).optional(),
+  /** Dispatch epoch (ms) at emit time — feeds the row's uptime. The
+      reducer must never stamp a wall clock itself: the fold re-runs over
+      the event list on every new event, so a reduce-time stamp drifts
+      (#309). */
+  startedAt: z.int().min(0).optional(),
   /**
    * Set when the helper is another employee the engine can name — the app
    * renders their avatar and links "Open session" to `sessionRef`'s DM

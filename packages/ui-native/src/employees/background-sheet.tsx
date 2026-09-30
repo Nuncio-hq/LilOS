@@ -136,7 +136,9 @@ function JobRow({
           </View>
           {running && (
             <View className="flex-row gap-2">
-              {onStop && (
+              {/* A `sa:` row is a subagent, not a process — jobs.stop
+                  can't kill it (web hides the pill the same way). */}
+              {onStop && !j.subagent && (
                 <Pill
                   label="Stop"
                   size="sm"

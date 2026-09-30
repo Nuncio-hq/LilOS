@@ -304,3 +304,117 @@ describe("engine-hermes ACP plan mapping (#180)", () => {
     ).toBe("pending");
   });
 });
+
+/**
+ * Issue #309 — an async `delegate_task` keeps working after its turn ends;
+   the tool call closes with a dispatch receipt (`{"status":"dispatched"}`),
+   not per-task results. Synthesizing `subagent.completed` off that receipt
+   falsely settles the rows — they must stay running until a real close.
+ */
+describe("engine-hermes ACP delegate dispatch receipt (#309)", () => {
+  const rig = () => {
+    const events: { type: string; payload: unknown }[] = [];
+    const engine = {} as unknown as HermesEngine;
+    const driver = new AcpDriver({ bin: "hermes" }, engine);
+    const session = new Session(
+      "s1",
+      "builder",
+      "/tmp",
+      undefined,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      "acp",
+      "rs1",
+      "rs1",
+      (e) => {
+        events.push({ type: e.type, payload: e.payload });
+      },
+    );
+    session.turn = {
+      turnId: "t1",
+      phase: "tools",
+      resolve: () => {},
+      reject: () => {},
+    };
+    const handler = driver as unknown as {
+      onUpdate(s: Session, n: acp.SessionNotification): void;
+    };
+    const notify = (update: Record<string, unknown>) =>
+      handler.onUpdate(session, {
+        sessionId: "rs1",
+        update,
+      } as acp.SessionNotification);
+    return { events, notify };
+  };
+
+  test("a dispatched delegate call emits no synthesized subagent.completed", () => {
+    const r = rig();
+    r.notify({
+      sessionUpdate: "tool_call",
+      toolCallId: "call-1",
+      name: "delegate_task",
+      rawInput: { tasks: [{ goal: "scan the relay" }] },
+    });
+    expect(r.events.filter((e) => e.type === "subagent.started")).toHaveLength(
+      1,
+    );
+    r.notify({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call-1",
+      name: "delegate_task",
+      status: "completed",
+      rawOutput:
+        '{"status":"dispatched","mode":"background","count":1,"delegation_id":"deleg_9f1"}',
+    });
+    expect(
+      r.events.filter((e) => e.type === "subagent.completed"),
+    ).toHaveLength(0);
+  });
+
+  test("a dispatch receipt arriving as a parsed object also emits no close", () => {
+    const r = rig();
+    r.notify({
+      sessionUpdate: "tool_call",
+      toolCallId: "call-1",
+      name: "delegate_task",
+      rawInput: { tasks: [{ goal: "scan the relay" }] },
+    });
+    r.notify({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call-1",
+      name: "delegate_task",
+      status: "completed",
+      rawOutput: {
+        status: "dispatched",
+        mode: "background",
+        count: 1,
+        delegation_id: "deleg_9f1",
+      },
+    });
+    expect(
+      r.events.filter((e) => e.type === "subagent.completed"),
+    ).toHaveLength(0);
+  });
+
+  test("a synchronous delegate call still closes its synthesized rows", () => {
+    const r = rig();
+    r.notify({
+      sessionUpdate: "tool_call",
+      toolCallId: "call-1",
+      name: "delegate_task",
+      rawInput: { tasks: [{ goal: "scan the relay" }] },
+    });
+    r.notify({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call-1",
+      name: "delegate_task",
+      status: "completed",
+      rawOutput: "Task 1 complete\n✅ Task 1: done",
+    });
+    const closed = r.events.filter((e) => e.type === "subagent.completed");
+    expect(closed).toHaveLength(1);
+    expect((closed[0].payload as { status: string }).status).toBe("done");
+  });
+});
