@@ -610,8 +610,8 @@ export default function App() {
   // the turn loop applies it at the next tool boundary; without it the buffer IS the queue — it
   // auto-runs as the next prompt when the turn ends. Either way a mid-turn send is never lost.
   const steerBuf = useRef<Record<string, string[]>>({})
-  // Mirror of steerBuf in React state so a pending steer renders immediately inside the running turn
-  // (as a "Steer pending" chip where the "Oscar steered" row will appear). steerBuf stays the async
+  // Mirror of steerBuf in React state so a waiting message shows at once in the tray above the composer
+  // (it moves into the turn as an "Oscar steered" row only when it lands). steerBuf stays the async
   // source of truth for the turn loop; every mutation goes through setSteerBuf to keep the two in sync.
   const [pendingSteers, setPendingSteers] = useState<Record<string, string[]>>({})
   const setSteerBuf = (rootId: string, list: string[]) => {
