@@ -24,7 +24,9 @@ export function Composer({
   placeholder: string;
   /** Omit in a thread: the session already runs somewhere. */
   folder?: string;
-  model: string;
+  /** Omit when the engine has no model surface — the chip hides (web's
+      `models?.length` gate; #160 AC-1). */
+  model?: string;
   /** models.dev slug of the model's provider: its logo leads the chip. */
   modelLogo?: string;
   insetBottom: number;
@@ -32,7 +34,7 @@ export function Composer({
   /** Set while the employee is mid-turn: an empty composer shows ■ Stop. */
   onStop?: () => void;
   onPickFolder?: () => void;
-  onPickModel: () => void;
+  onPickModel?: () => void;
   /** Floating callers pad their scroll content by this. */
   onLayoutHeight?: (h: number) => void;
   /** Put this text in the box and focus it — a new object each time (plan "Change…"). */
@@ -76,12 +78,14 @@ export function Composer({
           {folder !== undefined && onPickFolder && (
             <Chip icon="folder" label={folder} onPress={onPickFolder} />
           )}
-          <Chip
-            icon="sparkle"
-            lead={modelLogo && <ProviderLogo slug={modelLogo} size={14} />}
-            label={model}
-            onPress={onPickModel}
-          />
+          {model !== undefined && onPickModel && (
+            <Chip
+              icon="sparkle"
+              lead={modelLogo && <ProviderLogo slug={modelLogo} size={14} />}
+              label={model}
+              onPress={onPickModel}
+            />
+          )}
           <View className="flex-1" />
           {onStop && !ready ? (
             <Pressable

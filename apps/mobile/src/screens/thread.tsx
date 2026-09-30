@@ -13,6 +13,7 @@ import type { Job } from "@lilos/contracts/engine";
 import type { ModelPick, PlanAction } from "@lilos/ui-native";
 import {
   BackgroundSheet,
+  findModel,
   modelLabel,
   PlanSheet,
   SubagentSheet,
@@ -307,6 +308,7 @@ export function Thread({
     if (model) {
       return {
         model,
+        ...(conv?.provider ? { provider: conv.provider } : {}),
         ...(conv?.effort ? { effort: conv.effort } : {}),
         ...(conv?.fast !== undefined ? { fast: conv.fast } : {}),
       };
@@ -319,13 +321,18 @@ export function Thread({
       defaultProvider: catalog.defaultProvider ?? engineHost?.defaultProvider,
     });
   }, [conv, employee, catalog, welcome]);
+  /* Provider-aware row — the same model id can live under two providers,
+     and the picked provider's logo leads the chip. */
   const modelRow = threadPick
-    ? catalog.models.find((m) => m.id === threadPick.model)
+    ? findModel(catalog.models, threadPick)
     : undefined;
   const provider = catalog.providers.find((p) => p.id === modelRow?.provider);
-  const modelChip = threadPick
-    ? modelLabel(catalog.models, threadPick)
-    : (conv?.model ?? employee?.model ?? "");
+  /* No engine model surface -> no chip (the web's models?.length gate). */
+  const modelChip = !catalog.models.length
+    ? undefined
+    : threadPick
+      ? modelLabel(catalog.models, threadPick)
+      : (conv?.model ?? employee?.model ?? "");
 
   const send = (text: string) => {
     const c = client;
@@ -409,12 +416,15 @@ export function Thread({
       }}
       onSend={send}
       onStop={stop}
-      onPickModel={() =>
-        navigation.navigate("ModelPicker", {
-          employeeId: detail.employee.id,
-          conversationId,
-        })
-      }
+      {...(catalog.models.length
+        ? {
+            onPickModel: () =>
+              navigation.navigate("ModelPicker", {
+                employeeId: detail.employee.id,
+                conversationId,
+              }),
+          }
+        : {})}
       {...(subagentsCapable
         ? {
             onOpenSubagent: (a) =>

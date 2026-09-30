@@ -609,15 +609,21 @@ describe("dm-model helpers", () => {
 
   it("defaultModelPick prefers the employee's model, then the engine default", () => {
     const models = [
-      { id: "a", name: "A", provider: "p", defaultEffort: "low" },
+      {
+        id: "a",
+        name: "A",
+        provider: "p",
+        efforts: ["low", "high"],
+        defaultEffort: "low",
+      },
       { id: "b", name: "B", provider: "p" },
     ];
     expect(
       defaultModelPick({ employeeModel: "b", models, defaultModel: "a" }),
-    ).toEqual({ model: "b", effort: undefined });
+    ).toEqual({ model: "b", provider: "p" });
     expect(
       defaultModelPick({ employeeModel: "", models, defaultModel: "a" }),
-    ).toEqual({ model: "a", effort: "low" });
+    ).toEqual({ model: "a", provider: "p", effort: "low" });
     // employee model not in the catalog still sends (engine resolves it)
     expect(defaultModelPick({ employeeModel: "elsewhere", models })).toEqual({
       model: "elsewhere",

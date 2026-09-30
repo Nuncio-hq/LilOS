@@ -6,13 +6,28 @@ import { Icon, useThemeColor } from "../components/icon";
 import { ProviderLogo } from "../components/provider-logo";
 import { EffortSlider } from "./effort-slider";
 import { Group, Option, SheetHeader } from "./folder-picker";
-import type { ModelPick, ModelProviderRow, ModelRow } from "./types";
+import {
+  effortIndex,
+  effortOf,
+  findModel,
+  modelKeyOf,
+  nextModelPick,
+  pickableModels,
+} from "./model-rules";
+import type {
+  ModelPick,
+  ModelProviderRow,
+  ModelRow,
+  ModelVisibility,
+} from "./types";
 
 /* Model + reasoning for the next turn (web: ModelPicker, Codex-style).
    Top: the neural-network effort slider of THIS model — exactly the steps
    the engine reported, none if it has no control — and Fast when the model
    has it. Below: every model with its provider's logo, searchable, grouped
-   by provider. */
+   by provider — minus the shared hide list the Mac's "Edit models" writes
+   (the session's own pick always stays, merged in even when the catalog
+   omits it). The rules live in ./model-rules; this is the renderer. */
 
 const EFFORT: Record<string, string> = {
   none: "None",
@@ -29,7 +44,7 @@ export const effortLabel = (e: string) =>
 
 /** Composer chip: "Opus 5.5 · High". */
 export function modelLabel(models: ModelRow[], p: ModelPick) {
-  const m = models.find((x) => x.id === p.model);
+  const m = findModel(models, p);
   const name = (m?.name ?? p.model).replace(/^Claude /, "");
   return p.effort ? `${name} · ${effortLabel(p.effort)}` : name;
 }
@@ -38,41 +53,47 @@ export function ModelPickerSheet({
   models,
   providers,
   value,
+  visibility,
   onPick,
   onDone,
 }: {
   models: ModelRow[];
   providers: ModelProviderRow[];
   value: ModelPick;
+  /** The shared "Edit models" hide list — same rows the Mac shows (#160). */
+  visibility?: ModelVisibility;
   onPick: (p: ModelPick) => void;
   onDone: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const muted = useThemeColor("muted-foreground");
   const [q, setQ] = useState("");
-  const cur = models.find((m) => m.id === value.model);
+  /* The picker's effective list: engine rows minus hidden ones, plus the
+     session's own pick merged in when the catalog omits it (#160 AC-1). */
+  const shown = pickableModels(models, visibility, value);
+  const cur = findModel(shown, value);
   const provider = (id?: string) => providers.find((p) => p.id === id);
   const efforts = cur?.efforts ?? [];
-  const effort =
-    value.effort && efforts.includes(value.effort)
-      ? value.effort
-      : cur?.defaultEffort;
+  const effort = effortOf(value, cur);
 
   const query = q.trim().toLowerCase();
+  /* Provider groups in the engine's own order (an unknown provider sorts
+     after the declared ones); empty groups don't render. */
   const groups = new Map<string, ModelRow[]>();
-  for (const m of models) {
+  for (const p of providers) groups.set(p.id, []);
+  for (const m of shown) {
     const hay =
       `${m.name} ${m.id} ${provider(m.provider)?.name ?? ""}`.toLowerCase();
     if (query && !hay.includes(query)) continue;
     groups.set(m.provider, [...(groups.get(m.provider) ?? []), m]);
   }
 
-  const pickModel = (m: ModelRow) =>
-    onPick({
-      model: m.id,
-      effort: effort && m.efforts?.includes(effort) ? effort : m.defaultEffort,
-      fast: m.fast ? value.fast : undefined,
-    });
+  const pickModel = (m: ModelRow) => {
+    /* A merged notInList row is a marker, not a pick — the engine's catalog
+       doesn't offer it (web: only Refresh brings it back). */
+    if (m.notInList) return;
+    onPick(nextModelPick({ effort, fast: value.fast }, m));
+  };
 
   return (
     // formSheet: the ScrollView is the screen's root so the native sheet can
@@ -100,12 +121,16 @@ export function ModelPickerSheet({
           tone="none"
           className={`mt-0.5 mb-3 text-center font-semibold text-[22px] leading-7 ${effort ? "text-reasoning" : "text-muted-foreground"}`}
         >
-          {effort ? effortLabel(effort) : "Not adjustable"}
+          {effort
+            ? effortLabel(effort)
+            : efforts.length
+              ? "Engine default"
+              : "Not adjustable"}
         </AppText>
         {efforts.length > 1 ? (
           <EffortSlider
             efforts={efforts}
-            index={effort ? efforts.indexOf(effort) : -1}
+            index={effortIndex(effort, efforts)}
             label={effortLabel}
             onPick={(e) => onPick({ ...value, effort: e })}
           />
@@ -164,30 +189,34 @@ export function ModelPickerSheet({
         />
       </View>
 
-      {[...groups.entries()].map(([p, items]) => (
-        <Group key={p} title={provider(p)?.name ?? p}>
-          {items.map((m, i) => (
-            <Option
-              key={m.id}
-              first={i === 0}
-              lead={<ProviderLogo slug={provider(p)?.logo} />}
-              title={m.name}
-              detail={
-                m.efforts?.length
-                  ? `${m.efforts.length} reasoning levels`
-                  : "No reasoning control"
-              }
-              on={m.id === value.model}
-              trailing={
-                m.fast ? (
-                  <Icon name="bolt" size={12} tone="muted-foreground" />
-                ) : undefined
-              }
-              onPress={() => pickModel(m)}
-            />
-          ))}
-        </Group>
-      ))}
+      {[...groups.entries()]
+        .filter(([, items]) => items.length > 0)
+        .map(([p, items]) => (
+          <Group key={p || "other"} title={(provider(p)?.name ?? p) || "Other"}>
+            {items.map((m, i) => (
+              <Option
+                key={modelKeyOf(m)}
+                first={i === 0}
+                lead={<ProviderLogo slug={provider(p)?.logo} />}
+                title={m.name}
+                detail={
+                  m.notInList
+                    ? "Not in list"
+                    : m.efforts?.length
+                      ? `${m.efforts.length} reasoning levels`
+                      : "No reasoning control"
+                }
+                on={m === cur}
+                trailing={
+                  m.fast ? (
+                    <Icon name="bolt" size={12} tone="muted-foreground" />
+                  ) : undefined
+                }
+                onPress={() => pickModel(m)}
+              />
+            ))}
+          </Group>
+        ))}
       {groups.size === 0 && (
         <AppText size="sm" tone="muted" className="text-center">
           No model found.

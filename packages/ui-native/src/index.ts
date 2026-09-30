@@ -13,6 +13,11 @@ export { Choice, Row, Section } from "./components/grouped-list";
 export { Icon, type IconTone, useThemeColor } from "./components/icon";
 export { Orb, type OrbState, type OrbTone } from "./components/orb";
 export { ProviderLogo } from "./components/provider-logo";
+export {
+  hasProviderLogo,
+  PROVIDER_LOGOS,
+  type ProviderLogoMark,
+} from "./components/provider-logos";
 export { Screen } from "./components/screen";
 export { Mono, StateBlock } from "./components/state-block";
 export { ApprovalsSheet } from "./employees/approvals-sheet";
@@ -34,6 +39,15 @@ export {
   modelLabel,
 } from "./employees/model-picker";
 export {
+  effortIndex,
+  effortOf,
+  findModel,
+  isModelHidden,
+  modelKeyOf,
+  nextModelPick,
+  pickableModels,
+} from "./employees/model-rules";
+export {
   type PlanAction,
   PlanCard,
   PlanSheet,
@@ -54,6 +68,7 @@ export type {
   ModelPick,
   ModelProviderRow,
   ModelRow,
+  ModelVisibility,
   PlanRow,
   ProjectGroup,
   PullRequestRef,
