@@ -243,6 +243,278 @@
   -webkit-box-decoration-break: clone;
   overflow-wrap: anywhere;
 }
+/* Fenced code blocks (issue #307): streamdown's stock chrome is a card inside a
+   card — an outer bordered card, a second bordered body, a bordered actions
+   pill, ~90px of header chrome. Restyled to ONE tinted panel: a single 30px
+   header row (friendly language name + copy), code on the same surface, and a
+   thin overlay scrollbar for long lines. */
+.lilos-prose [data-streamdown="code-block"] {
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f6f8fa;
+}
+.dark .lilos-prose [data-streamdown="code-block"] {
+  border-color: #54545866;
+  background: #24292e;
+}
+.lilos-prose [data-streamdown="code-block-header"] {
+  height: 30px;
+  align-items: center;
+  padding: 0 4px 0 12px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+/* The label shows a friendly name, not the raw fence tag: the tag span is
+   hidden and ::before supplies the display name from data-language. */
+.lilos-prose [data-streamdown="code-block-header"] > span {
+  display: none;
+}
+.lilos-prose [data-streamdown="code-block-header"]::before {
+  content: attr(data-language);
+}
+.lilos-prose [data-streamdown="code-block-header"][data-language=""]::before {
+  content: "Code";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="text"]::before,
+.lilos-prose [data-streamdown="code-block-header"][data-language="txt"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="plaintext"]::before {
+  content: "Text";
+}
+.lilos-prose [data-streamdown="code-block-header"][data-language="ts"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="typescript"]::before,
+.lilos-prose [data-streamdown="code-block-header"][data-language="mts"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="cts"]::before {
+  content: "TypeScript";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="tsx"]::before {
+  content: "TSX";
+}
+.lilos-prose [data-streamdown="code-block-header"][data-language="js"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="javascript"]::before,
+.lilos-prose [data-streamdown="code-block-header"][data-language="mjs"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="cjs"]::before {
+  content: "JavaScript";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="jsx"]::before {
+  content: "JSX";
+}
+.lilos-prose [data-streamdown="code-block-header"][data-language="py"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="python"]::before {
+  content: "Python";
+}
+.lilos-prose [data-streamdown="code-block-header"][data-language="sh"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="bash"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="shell"]::before {
+  content: "Bash";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="zsh"]::before {
+  content: "Zsh";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="json"]::before {
+  content: "JSON";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="jsonc"]::before {
+  content: "JSONC";
+}
+.lilos-prose [data-streamdown="code-block-header"][data-language="md"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="markdown"]::before {
+  content: "Markdown";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="diff"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="patch"]::before {
+  content: "Diff";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="yaml"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="yml"]::before {
+  content: "YAML";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="html"]::before {
+  content: "HTML";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="xml"]::before {
+  content: "XML";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="css"]::before {
+  content: "CSS";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="scss"]::before {
+  content: "SCSS";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="sql"]::before {
+  content: "SQL";
+}
+.lilos-prose [data-streamdown="code-block-header"][data-language="rs"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="rust"]::before {
+  content: "Rust";
+}
+.lilos-prose [data-streamdown="code-block-header"][data-language="go"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="golang"]::before {
+  content: "Go";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="java"]::before {
+  content: "Java";
+}
+.lilos-prose [data-streamdown="code-block-header"][data-language="c"]::before {
+  content: "C";
+}
+.lilos-prose [data-streamdown="code-block-header"][data-language="cpp"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="c++"]::before {
+  content: "C++";
+}
+.lilos-prose [data-streamdown="code-block-header"][data-language="cs"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="csharp"]::before {
+  content: "C#";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="swift"]::before {
+  content: "Swift";
+}
+.lilos-prose [data-streamdown="code-block-header"][data-language="kt"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="kotlin"]::before {
+  content: "Kotlin";
+}
+.lilos-prose [data-streamdown="code-block-header"][data-language="rb"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="ruby"]::before {
+  content: "Ruby";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="php"]::before {
+  content: "PHP";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="toml"]::before {
+  content: "TOML";
+}
+.lilos-prose [data-streamdown="code-block-header"][data-language="ini"]::before,
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="env"]::before {
+  content: "INI";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="dockerfile"]::before {
+  content: "Dockerfile";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="graphql"]::before {
+  content: "GraphQL";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="vue"]::before {
+  content: "Vue";
+}
+.lilos-prose
+  [data-streamdown="code-block-header"][data-language="svelte"]::before {
+  content: "Svelte";
+}
+/* Copy rides on the header row — the bordered pill is gone. The sticky wrapper
+   (-mt-10 in stock streamdown) is pinned to exactly the header's slot. These
+   rules must not lean on streamdown's own classes: Tailwind never scans
+   node_modules, so its `sticky`, `pointer-events-auto`, `z-10`, `-mt-10` etc.
+   are dead utilities and must be re-declared here unlayered. */
+.lilos-prose
+  [data-streamdown="code-block"]
+  > div:has(> [data-streamdown="code-block-actions"]) {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  height: 30px;
+  margin-top: -30px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 6px;
+  pointer-events: none;
+}
+.lilos-prose [data-streamdown="code-block-actions"] {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  pointer-events: auto;
+}
+.lilos-prose [data-streamdown="code-block-actions"] button {
+  height: 26px;
+  width: 26px;
+  color: var(--muted-foreground);
+}
+.lilos-prose [data-streamdown="code-block-actions"] button:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+/* Body: same surface as the panel — no second border, no padded tray. Long
+   lines scroll inside the block on a thin overlay bar; the column never does. */
+.lilos-prose [data-streamdown="code-block-body"] {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+  line-height: 1.55;
+  scrollbar-width: thin;
+}
+.lilos-prose [data-streamdown="code-block-body"]::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.lilos-prose [data-streamdown="code-block-body"]::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--muted-foreground) 45%, transparent);
+}
+.lilos-prose [data-streamdown="code-block-body"]::-webkit-scrollbar-track,
+.lilos-prose [data-streamdown="code-block-body"]::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.lilos-prose [data-streamdown="code-block-body"] pre {
+  margin: 0;
+  padding: 10px 14px;
+  background: transparent;
+}
+.dark .lilos-prose [data-streamdown="code-block-body"] pre {
+  background: transparent;
+}
 .lilos-prose a {
   color: #00716c;
   text-decoration: none;
