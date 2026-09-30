@@ -15,7 +15,7 @@ import {
   RefreshCcwIcon,
   SquareTerminalIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Commit,
   CommitActions,
@@ -89,6 +89,21 @@ import { PlanPanel, threadPlans } from "./plan-panel";
 import { PrFailure } from "./pr-failure";
 import { PrPanel } from "./pr-panel";
 import { SubagentsPanel, sessionSubagents } from "./subagents-panel";
+
+/* When the tab strip runs out of room, labels fold to icons least-used first —
+   the situational tabs (Background, Subagents, Plan, PR) before the working set
+   (Files, Preview, Terminal, Changes). The active tab always keeps its label;
+   only when even icons overflow does the strip scroll (issue #326). */
+const COMPACT_ORDER: WbTab[] = [
+  "background",
+  "subagents",
+  "plan",
+  "pr",
+  "preview",
+  "files",
+  "terminal",
+  "changes",
+];
 
 /* Right-hand workbench of Focus, derived from the session's steps, or — when the session
    runs in a real folder on this machine (work.path) and host accessors are wired — from the
@@ -360,6 +375,114 @@ export function Workbench({
           }
         }
       : onPrMerge;
+
+  /* Tab strip fit (issue #326): when the strip can't show every label, tabs
+     fold to icon + count — least-used first, the active tab never. When even
+     all-icons overflows, the strip scrolls left-anchored with a right-edge
+     fade and the active tab scrolls into view. Fold/scroll apply imperatively
+     inside this layout pass (`.wb-fold` class + a11y attrs, mask on the list),
+     so no intermediate committed frame can carry a clipped tab. */
+  const listRef = useRef<HTMLDivElement | null>(null);
+  /* Each tab's label width + its flex gap, cached while expanded — folding a
+     tab saves exactly its own measured label. */
+  const labelsRef = useRef(new Map<WbTab, number>());
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    const parent = el?.parentElement;
+    if (!el || !parent) return;
+    /* Fade whichever edge hides overflowed tabs; solid where content fits. */
+    const updateMask = () => {
+      if (!el.classList.contains("wb-scroll")) {
+        el.style.maskImage = "";
+        return;
+      }
+      const l = el.scrollLeft > 2;
+      const r = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
+      const stops: string[] = l ? ["transparent", "#000 24px"] : ["#000 24px"];
+      stops.push(`#000 calc(100% - ${r ? 24 : 0}px)`);
+      if (r) stops.push("transparent");
+      el.style.maskImage = `linear-gradient(to right, ${stops.join(", ")})`;
+    };
+    const step = () => {
+      const trigs = new Map<WbTab, HTMLElement>();
+      for (const t of el.querySelectorAll<HTMLElement>("[data-wb-tab]"))
+        if (t.dataset.wbTab) trigs.set(t.dataset.wbTab as WbTab, t);
+      const labels = labelsRef.current;
+      for (const [t, trg] of trigs) {
+        const sp = trg.querySelector<HTMLElement>("[data-wb-label]");
+        if (sp && sp.offsetWidth > 0) labels.set(t, sp.offsetWidth + 6);
+      }
+      const widthOf = (t: WbTab, folded: boolean) => {
+        const trg = trigs.get(t)!;
+        const lw = labels.get(t) ?? 60;
+        const full = trg.classList.contains("wb-fold")
+          ? trg.offsetWidth + lw
+          : trg.offsetWidth;
+        return folded ? full - lw : full;
+      };
+      const ps = getComputedStyle(parent);
+      /* Free room the strip may still grow into: the parent's content box
+         minus siblings (the close button), gaps, and the list's own chrome. */
+      const avail =
+        parent.clientWidth -
+        parseFloat(ps.paddingLeft) -
+        parseFloat(ps.paddingRight) -
+        parseFloat(ps.columnGap || "0") * (parent.children.length - 1) -
+        [...parent.children].reduce(
+          (w, c) => (c === el ? w : w + (c as HTMLElement).offsetWidth),
+          0,
+        ) -
+        (el.offsetWidth - el.clientWidth);
+      let total =
+        [...trigs.keys()].reduce((w, t) => w + widthOf(t, false), 0) +
+        parseFloat(getComputedStyle(el).columnGap || "0") *
+          Math.max(trigs.size - 1, 0);
+      const next = new Set<WbTab>();
+      for (const t of COMPACT_ORDER) {
+        if (total <= avail + 1) break;
+        if (t === shownTab || !trigs.has(t)) continue;
+        next.add(t);
+        total -= widthOf(t, false) - widthOf(t, true);
+      }
+      const fits = total <= avail + 1;
+      el.classList.toggle("wb-scroll", !fits);
+      updateMask();
+      for (const [t, trg] of trigs) {
+        const fold = next.has(t);
+        trg.classList.toggle("wb-fold", fold);
+        const name = trg.dataset.wbName ?? "";
+        if (fold) {
+          trg.setAttribute("aria-label", name);
+          trg.title = name;
+        } else {
+          trg.removeAttribute("aria-label");
+          trg.removeAttribute("title");
+        }
+      }
+      /* Scroll mode → the active tab stays in view. */
+      if (!fits && shownTab)
+        trigs
+          .get(shownTab)
+          ?.scrollIntoView({ inline: "nearest", block: "nearest" });
+    };
+    step();
+    const ro = new ResizeObserver(step);
+    ro.observe(parent);
+    ro.observe(el);
+    el.addEventListener("scroll", updateMask);
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("scroll", updateMask);
+    };
+  });
+  const wbTab = (t: WbTab, label: string) =>
+    ({ "data-wb-tab": t, "data-wb-name": label }) as const;
+  const wbLabel = (label: string) => (
+    <span data-wb-label className="in-[.wb-fold]:hidden">
+      {label}
+    </span>
+  );
+
   /* First probe still in flight → hold the aside; a landed probe with no
      answered method gets one plain line instead of an empty tab strip. */
   if (liveMode && probe === null) {
@@ -397,25 +520,29 @@ export function Workbench({
     >
       <div className="flex h-11 shrink-0 items-center gap-1 border-b px-2">
         <TabsList
+          ref={listRef}
           variant="line"
-          className="no-scrollbar h-full min-w-0 overflow-x-auto"
+          /* justify-start, not the variant's center: centered overflow clips
+             the leftmost tab off the strip's edge (issue #326). */
+          className="no-scrollbar h-full min-w-0 justify-start overflow-x-auto"
         >
           {changesOn && (
-            <TabsTrigger value="changes">
+            <TabsTrigger value="changes" {...wbTab("changes", "Changes")}>
               <FileDiffIcon />
-              Changes{count(diffs.length)}
+              {wbLabel("Changes")}
+              {count(diffs.length)}
             </TabsTrigger>
           )}
           {filesOn && (
-            <TabsTrigger value="files">
+            <TabsTrigger value="files" {...wbTab("files", "Files")}>
               <FolderGit2Icon />
-              Files
+              {wbLabel("Files")}
             </TabsTrigger>
           )}
           {surfacesOn && (
-            <TabsTrigger value="terminal">
+            <TabsTrigger value="terminal" {...wbTab("terminal", "Terminal")}>
               <SquareTerminalIcon />
-              Terminal
+              {wbLabel("Terminal")}
               {a.termRunning && (
                 <CircleDotIcon className="size-3 animate-pulse text-work" />
               )}
@@ -425,15 +552,16 @@ export function Workbench({
             <TabsTrigger
               value="preview"
               data-wb-browser={!!browser || undefined}
+              {...wbTab("preview", browser ? "Browser" : "Preview")}
             >
               <GlobeIcon />
-              {browser ? "Browser" : "Preview"}
+              {wbLabel(browser ? "Browser" : "Preview")}
             </TabsTrigger>
           )}
           {plan && (
-            <TabsTrigger value="plan">
+            <TabsTrigger value="plan" {...wbTab("plan", "Plan")}>
               <ListChecksIcon />
-              Plan
+              {wbLabel("Plan")}
               {plan.status === "proposed" ? (
                 <span className="size-1.5 animate-pulse rounded-full bg-work" />
               ) : (
@@ -447,11 +575,17 @@ export function Workbench({
             </TabsTrigger>
           )}
           {bgOn && (
-            <TabsTrigger value="background">
+            <TabsTrigger
+              value="background"
+              {...wbTab("background", "Background")}
+            >
               <CpuIcon />
-              Background
+              {wbLabel("Background")}
               {jobsRunning > 0 && (
-                <span className="flex items-center gap-1 font-mono text-[11px] text-emerald-600">
+                <span
+                  className="flex items-center gap-1 font-mono text-[11px] text-emerald-600"
+                  data-bg-running={jobsRunning}
+                >
                   <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
                   {jobsRunning}
                 </span>
@@ -459,9 +593,9 @@ export function Workbench({
             </TabsTrigger>
           )}
           {subOn && (
-            <TabsTrigger value="subagents">
+            <TabsTrigger value="subagents" {...wbTab("subagents", "Subagents")}>
               <NetworkIcon />
-              Subagents
+              {wbLabel("Subagents")}
               {helpersRunning > 0 && (
                 <span
                   className="flex items-center gap-1 font-mono text-[11px] text-work"
@@ -474,7 +608,10 @@ export function Workbench({
             </TabsTrigger>
           )}
           {prOn && (
-            <TabsTrigger value="pr">
+            <TabsTrigger
+              value="pr"
+              {...wbTab("pr", prShown ? `PR #${prShown.number}` : "PR")}
+            >
               <GitPullRequestIcon
                 className={
                   prShown?.status === "merged"
@@ -484,14 +621,14 @@ export function Workbench({
                       : "text-emerald-600"
                 }
               />
-              {prShown ? `PR #${prShown.number}` : "PR"}
+              {wbLabel(prShown ? `PR #${prShown.number}` : "PR")}
             </TabsTrigger>
           )}
         </TabsList>
         <Button
           variant="ghost"
           size="icon-sm"
-          className="ml-auto"
+          className="ml-auto shrink-0"
           onClick={onClose}
           title="Hide workbench"
         >
