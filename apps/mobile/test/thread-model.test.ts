@@ -1315,4 +1315,53 @@ describe("#327 finished turns settle — no stuck Thinking…", () => {
     expect(card.live).toBe(false);
     expect(card.thinking).toBeFalsy();
   });
+
+  it("#258 AC-1 a taken row drops its caption while the watermark still sits behind it", () => {
+    /* m3 posts behind running t1 → queued. t1 finishes, t2 takes m3 and
+       names it `ref` — but deliveredSeq only advances at turn END (it's
+       the crash-durability watermark, not a "turn started" marker), so
+       `m.seq > deliveredSeq` alone would keep the caption the whole
+       running turn. The turn's own `ref` is the precise "taken" signal. */
+    const m1 = msg({ id: "m1", seq: 1, text: "first" });
+    const a1 = msg({
+      id: "m2",
+      seq: 2,
+      authorKind: "employee",
+      authorId: ada.id,
+      text: "one",
+    });
+    const m3 = msg({ id: "m3", seq: 3, text: "then this" });
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", ref: "m1" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "one" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+      ev("turn.started", { turnId: "t2", ref: "m3" }),
+    ]);
+    const entries = mergeThreadEntries([m1, a1, m3], model, {
+      ...OPTS,
+      deliveredSeq: 1,
+      conversationState: "active",
+    });
+    const bubble = entries.find((e) => e.id === "m3");
+    if (bubble?.kind !== "user") throw new Error("expected user entry");
+    expect(bubble.queued).toBeUndefined();
+    expect(entries.at(-1)).toMatchObject({ id: "turn-t2", live: true });
+  });
+
+  it("#258 a row still genuinely queued keeps its caption behind the running turn", () => {
+    const m1 = msg({ id: "m1", seq: 1, text: "first" });
+    const m2 = msg({ id: "m2", seq: 2, text: "behind it" });
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", ref: "m1" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "working" }),
+    ]);
+    const entries = mergeThreadEntries([m1, m2], model, {
+      ...OPTS,
+      deliveredSeq: 1,
+      conversationState: "active",
+    });
+    const bubble = entries.find((e) => e.id === "m2");
+    if (bubble?.kind !== "user") throw new Error("expected user entry");
+    expect(bubble.queued).toBe(true);
+  });
 });

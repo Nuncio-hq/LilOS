@@ -266,6 +266,15 @@ export function mergeThreadEntries(
   const blocked = opts.asks.some(
     (a) => a.state === "open" && a.conversationId === opts.conversationId,
   );
+  /* #258: `deliveredSeq` is a durability watermark — the harness advances
+     it once the turn's outcome is secured (turn end), not when the engine
+     starts the turn. "Past the watermark" therefore means queued OR
+     in-flight; the precise "its turn started" signal is `turn.started`'s
+     `ref` naming this message — check it before stamping the caption so
+     a running turn's prompt never reads "Queued · runs next". */
+  const startedRefs = new Set(
+    model?.turns.flatMap((t) => (t.ref ? [t.ref] : [])) ?? [],
+  );
   const entries: ThreadEntry[] = messages.map((m) =>
     m.authorKind === "user"
       ? {
@@ -273,7 +282,9 @@ export function mergeThreadEntries(
           id: m.id,
           time: clock(m.createdAt),
           text: m.text,
-          ...(opts.deliveredSeq !== undefined && m.seq > opts.deliveredSeq
+          ...(opts.deliveredSeq !== undefined &&
+          m.seq > opts.deliveredSeq &&
+          !startedRefs.has(m.id)
             ? { queued: true, ...(blocked ? { waiting: true } : {}) }
             : {}),
         }
