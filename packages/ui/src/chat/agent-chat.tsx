@@ -278,10 +278,17 @@ export function QueuedTray({
 
 /* Running-state composer copy, one source for both surfaces: whether Enter steers the running turn
    or queues for after it depends on the engine's declared steer capability (issue #9). Idle hints
-   stay surface-specific at the call sites. */
-export const runningComposer = (name: string, steer: boolean) => ({
-  placeholder: steer
-    ? `${name} is working. Enter steers this turn…`
-    : `${name} is working. Enter queues it for when the turn ends…`,
-  hint: steer ? "Enter steers · ■ stop" : "Enter queues · ■ stop",
+   stay surface-specific at the call sites. `agentWork` (#308): while an engine-initiated leg runs
+   there's no user turn to steer — Enter queues, and the placeholder names whose work it is. */
+export const runningComposer = (
+  name: string,
+  steer: boolean,
+  agentWork = false,
+) => ({
+  placeholder: agentWork
+    ? `${name} is working on its own. Enter queues it for when the turn ends…`
+    : steer
+      ? `${name} is working. Enter steers this turn…`
+      : `${name} is working. Enter queues it for when the turn ends…`,
+  hint: steer && !agentWork ? "Enter steers · ■ stop" : "Enter queues · ■ stop",
 });

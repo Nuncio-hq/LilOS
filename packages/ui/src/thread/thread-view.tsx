@@ -135,6 +135,7 @@ export function ThreadView({
   maxFiles,
   onAttachError,
   steer = false,
+  agentWorking = false,
   onRemovePending,
   models,
   onModel,
@@ -207,6 +208,10 @@ export function ThreadView({
   maxFiles?: number;
   onAttachError?: (message: string) => void;
   steer?: boolean;
+  /* #308: the running turn is engine-initiated (a leg) — Enter queues,
+     and the composer names whose work it is instead of offering to
+     steer. */
+  agentWorking?: boolean;
   onRemovePending?: (i: number) => void;
   /* Why the working transcript can't be shown (harness down, engine restarted) —
      rendered as a muted note where the transcript would be (issue #28). */
@@ -522,14 +527,16 @@ export function ThreadView({
       <Composer
         placeholder={
           running
-            ? runningComposer(leadEmp?.name ?? "Employee", steer).placeholder
+            ? runningComposer(leadEmp?.name ?? "Employee", steer, agentWorking)
+                .placeholder
             : `Reply to ${leadEmp?.name ?? "the thread"} in this session…`
         }
         employees={mentionables ?? []}
         onSearchFiles={onSearchFiles}
         hint={
           running
-            ? runningComposer(leadEmp?.name ?? "Employee", steer).hint
+            ? runningComposer(leadEmp?.name ?? "Employee", steer, agentWorking)
+                .hint
             : work?.branch
               ? `Edits go to ⎇ ${work.branch}`
               : work

@@ -1517,7 +1517,66 @@ export class FakeEngine {
     /* #309: async helpers close a tick after the turn — their frames stamp
        no turnId, so a client must key them session-wide, not per-turn. */
     if (s.pendingSubagentClose.length) void this.drainSubagentCloses(s);
+    /* #308: a `leg:` script arms an engine-initiated follow-up — minted
+       after the settle so observers see it open past turn end. */
+    if (script.leg) void this.runLeg(s, script.leg);
     return { turnId, stopReason, usage: s.usage };
+  }
+
+  /* #308: an agent-initiated leg — the engine's own follow-up turn opened
+     past turn end (queued-steer drain / result delivery): its own minted
+     id, initiatedBy:"agent", no ref. A steer mid-leg queues (never lands
+     inside it) and drains as the next user turn. */
+  private async runLeg(s: FakeSession, text: string) {
+    await this.sleep(s);
+    if (s.turn || !this.isOpen(s)) return;
+    const turnId = `t${++this.turnCounter}`;
+    s.turn = { turnId, phase: "reasoning", interrupted: false };
+    s.turnCount += 1;
+    this.emit(s, "turn.started", {
+      turnId,
+      model: s.model,
+      provider: s.provider,
+      effort: s.effort,
+      fast: s.fast,
+      initiatedBy: "agent",
+    });
+    this.setState(s, "running");
+    for (const w of words(
+      "Wrapping the background run and packaging the result for delivery. ",
+    )) {
+      await this.sleep(s);
+      if (!s.turn || s.turn.interrupted) return this.legStopped(s, turnId);
+      this.emit(s, "turn.delta", {
+        turnId,
+        stream: "reasoning",
+        delta: w,
+      });
+    }
+    /* A couple of open ticks: a mid-leg steer has a window to queue. */
+    await this.sleep(s);
+    if (!s.turn || s.turn.interrupted) return this.legStopped(s, turnId);
+    await this.sleep(s);
+    if (!s.turn || s.turn.interrupted) return this.legStopped(s, turnId);
+    s.turn.phase = "text";
+    this.emit(s, "turn.delta", { turnId, stream: "text", delta: text });
+    s.turn = undefined;
+    this.emit(s, "turn.completed", { turnId, stopReason: "end_turn" });
+    if (this.isOpen(s)) this.setState(s, "idle");
+    this.pumpSteers(s);
+  }
+
+  private legStopped(s: FakeSession, turnId: string) {
+    s.turn = undefined;
+    this.emit(s, "turn.completed", { turnId, stopReason: "cancelled" });
+    if (this.isOpen(s)) this.setState(s, "idle");
+    this.pumpSteers(s);
+  }
+
+  /* Read through a method so the check stays honest after a leg's own
+     `state === "closed"` guard narrows `s.state` for the typechecker. */
+  private isOpen(s: FakeSession) {
+    return s.state !== "closed";
   }
 
   /* #137 AC-5: two-stage titling — a derived title (verbatim first line,

@@ -173,6 +173,12 @@ PR does not exist.
   { mcpServers }`); the Workbench Terminal/Preview tabs watch the same
   surfaces live and take input. Not: engine-specific UI toolsets (Hermes
   `desktop_ui` / `drive_preview` / `read_terminal`). — #36 · PR #54
+- **D-#308 Every leg is a turn.** A queued steer drain or a delivery leg
+  arriving without `turn.started` gets a minted turn id — `ref` echoes the
+  steer message's, or `initiatedBy: "agent"` marks engine-opened work.
+  Not: stamping post-turn frames on the settled turn id (merges the leg
+  into the previous answer), or the mapping layer guessing leg ownership.
+  — #308
 - **D-#56 The terminal has one holder: a Workbench keystroke hands it to
   the user; `terminal_run`/`terminal_write` then fail `user_control` (HTTP
   409), in-flight runs too.** Hand-back is explicit (`term.release`) or

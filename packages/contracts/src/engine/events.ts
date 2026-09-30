@@ -87,6 +87,11 @@ export const TurnStartedPayload = z.strictObject({
   fast: z.boolean().optional(),
   /** Echo of `prompt.ref` when the client tagged the prompt. */
   ref: z.string().optional(),
+  /** "agent": the engine opened this leg itself (queued-steer drain or a
+      post-turn delivery leg), not in answer to a client prompt — the
+      thread marks the entry agent-initiated instead of anchoring it to a
+      user message (#308). */
+  initiatedBy: z.enum(["user", "agent"]).optional(),
 });
 
 export const TurnDeltaPayload = z.strictObject({

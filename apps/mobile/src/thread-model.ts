@@ -160,6 +160,7 @@ export function toAgentEntry(
     live,
     waiting,
     stopped,
+    ...(turn.agentInitiated ? { agentInitiated: true } : {}),
     writing: turn.phase === "text",
     approval,
     decided,
@@ -283,27 +284,15 @@ export function mergeThreadEntries(
     if (i >= 0) promptIdx.set(t, i);
   }
   const used = new Set<TurnModel>();
-  for (const [mi, m] of messages.entries()) {
-    if (m.authorKind !== "employee") continue;
-    const turn = model.turns.find(
-      (x) =>
-        !used.has(x) &&
-        (x.phase === "done" || x.phase === "stopped") &&
-        x.text.trim() &&
-        x.text.trim() === m.text.trim() &&
-        (promptIdx.get(x) ?? -1) < mi,
-    );
-    if (!turn) continue;
-    used.add(turn);
-    const idx = entries.findIndex((e) => e.id === m.id);
-    /* dur = prompt -> reply latency, the only honest wall-clock available. */
-    const prompt = turn.ref
-      ? messages.find((x) => x.id === turn.ref)
-      : undefined;
+  /* Newest row a leg claimed (#308) — the pass-2 cursor below. */
+  let legClaimed = -1;
+  /* dur = prompt -> reply latency, the only honest wall-clock available. */
+  const claimedEntry = (t: TurnModel, m: AppMessage) => {
+    const prompt = t.ref ? messages.find((x) => x.id === t.ref) : undefined;
     const dur = prompt
       ? Math.max(0, Math.round((m.createdAt - prompt.createdAt) / 1000))
       : undefined;
-    const entry = toAgentEntry(turn, {
+    return toAgentEntry(t, {
       time: clock(m.createdAt),
       dur,
       asks: opts.asks,
@@ -315,7 +304,59 @@ export function mergeThreadEntries(
       prs: opts.prs,
       now: opts.now,
     });
+  };
+  for (const [mi, m] of messages.entries()) {
+    if (m.authorKind !== "employee") continue;
+    const turn = model.turns.find(
+      (x) =>
+        !used.has(x) &&
+        !x.agentInitiated &&
+        (x.phase === "done" || x.phase === "stopped") &&
+        x.text.trim() &&
+        x.text.trim() === m.text.trim() &&
+        (promptIdx.get(x) ?? -1) < mi,
+    );
+    if (!turn) continue;
+    used.add(turn);
+    const idx = entries.findIndex((e) => e.id === m.id);
+    const entry = claimedEntry(turn, m);
     const superseded = supersededPlanEntries(turn, opts.planCapable);
+    if (idx >= 0) entries.splice(idx, 1, ...superseded, entry);
+    else entries.push(...superseded, entry);
+  }
+  /* #308: a finished agent leg's text also posts to the relay as a plain
+     employee row (harness finishTurn, no ref correlation) — claim it into
+     the leg's card or the same answer renders twice. Claimed rows were
+     already spliced into their turn's entry, so `entries.some` alone
+     keeps a leg from stealing a claimed answer; the legClaimed cursor
+     pairs same-text legs with their posts in order. */
+  for (const t of model.turns) {
+    if (
+      !t.agentInitiated ||
+      used.has(t) ||
+      (t.phase !== "done" && t.phase !== "stopped") ||
+      !t.text.trim()
+    )
+      continue;
+    let mi = -1;
+    for (let i = legClaimed + 1; i < messages.length; i++) {
+      const m = messages[i];
+      if (
+        m.authorKind === "employee" &&
+        m.text.trim() === t.text.trim() &&
+        entries.some((e) => e.id === m.id)
+      ) {
+        mi = i;
+        break;
+      }
+    }
+    if (mi < 0) continue;
+    used.add(t);
+    legClaimed = mi;
+    const m = messages[mi];
+    const idx = entries.findIndex((e) => e.id === m.id);
+    const entry = claimedEntry(t, m);
+    const superseded = supersededPlanEntries(t, opts.planCapable);
     if (idx >= 0) entries.splice(idx, 1, ...superseded, entry);
     else entries.push(...superseded, entry);
   }
@@ -357,6 +398,42 @@ export function mergeThreadEntries(
       prs: opts.prs,
       now: opts.now,
     });
+  /* #308: a claimed turn anchored by `ref` re-anchors under the message
+     that prompted it — its answer's row can arrive after a newer prompt
+     and must not park there. The card's plan-superseded rows travel with
+     it. Claimed-but-anchorless turns keep the claimed slot (the claim is
+     its own correlation, #288). Landing under a prompt never leapfrogs
+     turn cards already there — they hold the slot by the same rule. */
+  const skipTurnRun = (i: number) => {
+    let at = i;
+    while (at < entries.length && entries[at].id.startsWith("turn-")) at++;
+    return at;
+  };
+  for (const t of model.turns) {
+    if (!used.has(t) || !t.ref) continue;
+    const cardId = `turn-${t.turnId}`;
+    const cardAt = entries.findIndex((e) => e.id === cardId);
+    const refAt = entries.findIndex((e) => e.id === t.ref);
+    if (cardAt < 0 || refAt < 0 || refAt + 1 === cardAt) continue;
+    /* Already inside the anchored run right after its prompt — the run
+       holds same-ref turns in order, so leave it. */
+    let inRun = refAt + 1;
+    while (inRun < cardAt && entries[inRun].id.startsWith("turn-")) inRun++;
+    if (inRun === cardAt) continue;
+    let runStart = cardAt;
+    while (
+      runStart > 0 &&
+      entries[runStart - 1].id.startsWith(`${cardId}-plan-`)
+    )
+      runStart--;
+    const run = entries.splice(runStart, cardAt - runStart + 1);
+    entries.splice(
+      skipTurnRun(entries.findIndex((e) => e.id === t.ref) + 1),
+      0,
+      ...run,
+    );
+  }
+
   const byRef = new Map<string, number>();
   for (const [i, e] of entries.entries()) byRef.set(e.id, i);
   /* Two leftover turns can share one ref; each lands after the previous so
@@ -371,15 +448,52 @@ export function mergeThreadEntries(
     if (refIdx === undefined) {
       entries.push(...superseded, entryFor(t));
     } else {
-      entries.splice(refIdx + 1, 0, ...superseded, entryFor(t));
-      if (t.ref) insertAfter.set(t.ref, refIdx + superseded.length + 1);
+      const dest = skipTurnRun(refIdx + 1);
+      entries.splice(dest, 0, ...superseded, entryFor(t));
+      if (t.ref) insertAfter.set(t.ref, dest + superseded.length);
     }
   }
-  if (model.live)
-    entries.push(
+  /* The live turn anchors under its prompting message like a posted one
+     (#308) — a newer question must not push it below itself at the tail.
+     byRef is stale past the leftover splices, so look the row up fresh. */
+  if (model.live) {
+    const rows = [
       ...supersededPlanEntries(model.live, opts.planCapable),
       entryFor(model.live),
-    );
+    ];
+    const refAt = model.live.ref
+      ? entries.findIndex((e) => e.id === model.live?.ref)
+      : -1;
+    if (refAt < 0) entries.push(...rows);
+    else entries.splice(skipTurnRun(refAt + 1), 0, ...rows);
+  }
+  /* #308 AC-3: an agent-initiated leg sits right after the previous
+     turn's card — a user message that landed while it worked never
+     renders above it (same slot rule as web's mergeTurns). Applies to
+     claimed legs (their relay row lands at the tail), unposted leftovers
+     and the live leg alike; ref'd steer legs keep their prompt anchor. */
+  let prevEnd = 0;
+  for (const t of model.turns) {
+    const cardId = `turn-${t.turnId}`;
+    const at = entries.findIndex((e) => e.id === cardId);
+    if (at < 0) continue;
+    let runStart = at;
+    while (
+      runStart > 0 &&
+      entries[runStart - 1].id.startsWith(`${cardId}-plan-`)
+    )
+      runStart--;
+    const runLen = at - runStart + 1;
+    if (t.agentInitiated && !t.ref) {
+      let dest = Math.min(prevEnd, entries.length);
+      if (runStart < dest) dest -= runLen;
+      if (dest !== runStart) {
+        const run = entries.splice(runStart, runLen);
+        entries.splice(dest, 0, ...run);
+      }
+      prevEnd = dest + runLen;
+    } else prevEnd = at + 1;
+  }
   return entries;
 }
 
@@ -543,6 +657,7 @@ export function toThreadDetail(opts: {
       openAsks: [...opts.asks],
       pending: opts.pending,
     }),
+    ...(sessionModel?.live?.agentInitiated ? { agentWorking: true } : {}),
     employee: { id: empId, name: employeeName, tone: toneOf(empId) },
     when: last ? timeLabel(last.createdAt, opts.now) : "now",
     started: conv.createdAt

@@ -119,6 +119,7 @@ export function FocusView({
   surfaces,
   pending,
   steer = false,
+  agentWorking = false,
   onRemovePending,
   editors: editorsProp,
   onOpenPath,
@@ -201,6 +202,9 @@ export function FocusView({
   maxFileSize?: number;
   onAttachError?: (message: string) => void;
   steer?: boolean;
+  /* #308: the running turn is engine-initiated (a leg) — same composer
+     contract as ThreadView. */
+  agentWorking?: boolean;
   onRemovePending?: (i: number) => void;
   /* Why the working transcript can't be shown — same note ThreadView renders
      where the transcript would be (issue #28). */
@@ -760,13 +764,20 @@ export function FocusView({
                 surfaces?.termControl === "user"
                   ? `${lead?.name ?? "The agent"} is paused while you use the terminal`
                   : running
-                    ? runningComposer(lead?.name ?? "Employee", steer)
-                        .placeholder
+                    ? runningComposer(
+                        lead?.name ?? "Employee",
+                        steer,
+                        agentWorking,
+                      ).placeholder
                     : `Continue session ${thread.session} with ${lead?.name ?? "the employee"}…`
               }
               hint={
                 running
-                  ? runningComposer(lead?.name ?? "Employee", steer).hint
+                  ? runningComposer(
+                      lead?.name ?? "Employee",
+                      steer,
+                      agentWorking,
+                    ).hint
                   : pr?.status === "merged"
                     ? `#${pr.number} merged, ⎇ ${pr.head} deleted · next edit starts a new branch from main`
                     : work?.branch

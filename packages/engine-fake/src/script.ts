@@ -71,6 +71,10 @@ export interface FakeScript {
   reasoning: string;
   steps: FakeStep[];
   text: string;
+  /** #308: text the engine delivers in its OWN follow-up leg after this
+     turn ends (agent-initiated — a queued-steer drain / result delivery,
+     not a user turn). `leg:` scripts arm one. */
+  leg?: string;
 }
 
 const EDIT_ASK =
@@ -167,6 +171,19 @@ export function scriptFor(
     .trim()
     .replace(/[?.!]+$/, "");
   const tail = `I'm in \`${cwd}\` on ⎇ \`${branch}\`. Tell me what to change and I'll edit there.`;
+
+  /* `leg:` — the engine opens its own follow-up leg after the answer
+     (#308: agent-initiated, no ref) and delivers this text there. */
+  const legProbe = /^leg:\s*(.*)$/is.exec(q);
+  if (legProbe) {
+    return {
+      reasoning:
+        "Kicking off the background run — results land when they're ready.",
+      steps: [],
+      text: "On it — I'll report back as soon as it lands.",
+      leg: legProbe[1].trim() || "ZEBRA report delivered",
+    };
+  }
 
   /* `md: blocks` / `md: table` — Oscar's markdown sample replies verbatim
      (#259/#306 legs: what the mobile Prose does with them is the point). */

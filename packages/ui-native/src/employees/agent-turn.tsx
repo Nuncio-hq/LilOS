@@ -127,6 +127,14 @@ export function AgentTurn({
           </AppText>
         </View>
       )}
+      {e.agentInitiated && (
+        <View className="flex-row items-center gap-1.5">
+          <View className="size-2.5 rounded-[2px] bg-muted-foreground" />
+          <AppText size="xs" tone="muted" weight="medium">
+            Agent-initiated
+          </AppText>
+        </View>
+      )}
       {e.approval && (
         <ApprovalCard a={e.approval} onApprove={onApprove} onDeny={onDeny} />
       )}

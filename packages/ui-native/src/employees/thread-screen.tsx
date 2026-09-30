@@ -151,7 +151,10 @@ export function ThreadScreen({
           <Composer
             placeholder={
               running
-                ? `Steer ${t.employee.name}`
+                ? /* #308: a leg is engine work — sends queue behind it. */
+                  t.agentWorking
+                  ? `Queue for ${t.employee.name}`
+                  : `Steer ${t.employee.name}`
                 : `Reply to ${t.employee.name}`
             }
             {...(model !== undefined ? { model } : {})}

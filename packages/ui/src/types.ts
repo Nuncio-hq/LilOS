@@ -97,6 +97,9 @@ export type Reply = {
   thought?: number;
   phase?: Phase;
   live?: boolean;
+  /** #308: the engine opened this leg itself — marked "Agent-initiated"
+      instead of reading as an answer to a user message. */
+  agentInitiated?: boolean;
   /** Engine request kind the turn waits on (phase === "waiting"), e.g. approval. */
   waitingOn?: "approval" | "question" | "plan";
   id?: string;

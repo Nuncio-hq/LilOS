@@ -188,6 +188,9 @@ export type AgentEntry = {
   waiting?: "approval" | "plan" | "question";
   /** You pressed Stop mid-turn. */
   stopped?: boolean;
+  /** #308: the engine opened this leg itself — "Agent-initiated" chip
+      instead of reading as an answer to a user message. */
+  agentInitiated?: boolean;
   /** The reply is streaming (steps are over for now). */
   writing?: boolean;
   /** What you decided on this turn's approval — kept as a receipt. */
@@ -222,6 +225,9 @@ export type ThreadDetail = {
   id: string;
   title: string;
   state: SessionState;
+  /** #308: the running turn is engine-initiated (a leg) — the composer
+      offers "Queue" instead of "Steer" (web: runningComposer agentWork). */
+  agentWorking?: boolean;
   employee: { id: string; name: string; tone: OrbTone };
   /** DM list time: "Mon", "Yesterday", "4m", "now". */
   when: string;

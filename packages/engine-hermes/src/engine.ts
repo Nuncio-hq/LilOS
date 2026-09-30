@@ -496,7 +496,12 @@ export class HermesEngine {
     const s = this.require(p.sessionId);
     if (s.state === "closed")
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
-    if (s.turn)
+    /* #308: a live leg counts too — a mid-work user message goes through
+       `session.steer` (it queues as the next leg), so `prompt` while a leg
+       runs is the same misuse as prompting mid-turn. Without this the leg's
+       frames would stamp on the prompt turn and its completion would
+       leave the leg open forever. */
+    if (s.turn || s.legTurnId)
       throw new RpcError(
         RPC_ERRORS.INVALID_STATE,
         `session ${s.id} already has a running turn`,
@@ -578,7 +583,12 @@ export class HermesEngine {
     const s = this.require(p.sessionId);
     if (s.state === "closed")
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
-    if (!s.turn) return { interrupted: false };
+    /* #308: a leg is a live Hermes turn — Stop must reach it too, not
+       dead-return while one runs. */
+    if (!s.turn && !s.legTurnId) return { interrupted: false };
+    /* The interrupt kills the queued drain with the turn — drop pending
+       steer refs or they'd anchor an unrelated later leg (#308). */
+    s.steeredQueue = [];
     if (s.driver === "acp") {
       await this.acpDrivers.get(s.id)?.interrupt(s);
       return { interrupted: true };
@@ -779,11 +789,18 @@ export class HermesEngine {
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
     if (s.driver === "acp") {
       const d = this.acpDrivers.get(s.id);
-      if (!s.turn || !d) return { status: "not_running" as const };
-      const turnId = s.turn.turnId;
+      const turnId = s.turn?.turnId ?? s.legTurnId;
+      if (!turnId || !d) return { status: "not_running" as const };
       const status = await d.steer(s, p.text, () => `t${++this.turnCounter}`);
-      if (status === "steered")
+      if (status === "steered") {
+        /* ACP steers always queue as the next leg — its turn.started
+           (beginTurn) echoes this ref (#308). */
+        s.steeredQueue.push({
+          text: p.text,
+          ...(p.ref ? { ref: p.ref } : {}),
+        });
         s.emit("turn.steered", { turnId, text: p.text });
+      }
       return { status };
     }
     let r: { status?: unknown };
@@ -800,10 +817,12 @@ export class HermesEngine {
       throw e;
     }
     if (r.status === "queued" || r.status === "redirected") {
+      if (r.status === "queued")
+        s.steeredQueue.push({ text: p.text, ...(p.ref ? { ref: p.ref } : {}) });
       s.userTurns += 1;
       this.persistSession(s);
       s.emit("turn.steered", {
-        turnId: s.turn?.turnId ?? s.lastTurnId,
+        turnId: s.turn?.turnId ?? s.legTurnId ?? s.lastTurnId,
         text: p.text,
       });
       return { status: "steered" as const };
@@ -1089,12 +1108,14 @@ export class HermesEngine {
       resolve: () => {},
       reject: () => {},
     };
+    const queued = s.steeredQueue.shift();
     s.emit("turn.started", {
       turnId,
       ...(s.model ? { model: s.model } : {}),
       ...(s.provider ? { provider: s.provider } : {}),
       ...(s.effort ? { effort: s.effort } : {}),
       ...(s.fast !== undefined ? { fast: s.fast } : {}),
+      ...(queued?.ref ? { ref: queued.ref } : {}),
     });
     if (s.state !== "closed") s.setState("running");
   }
@@ -1236,11 +1257,35 @@ export class HermesEngine {
 
   /** Shared by the WS and ACP event paths (acp.ts maps updates into these). */
   applyEvent(s: Session, type: string, p: Record<string, unknown>) {
-    const turnId = s.turn?.turnId ?? s.lastTurnId;
+    const turnId = s.turn?.turnId ?? s.legTurnId ?? s.lastTurnId;
     switch (type) {
-      case "message.start":
+      case "message.start": {
+        /* #308: a leg the engine opened past turn end (queued-steer drain,
+           subagent-result delivery) arrives with NO turn.started — stamp
+           frames on a minted leg id instead of resurrecting the settled
+           turn (`s.turn?.turnId ?? s.lastTurnId` used to merge it in). A
+           queued steer anchors to its relay message's ref; anything else
+           is engine-initiated work. */
+        if (!s.turn && !s.legTurnId) {
+          /* Positional binding: the wire carries no steer-vs-delivery
+             discriminator, so the oldest queued steer is taken to drive
+             this leg — the documented residual is a delivery leg
+             interposing before the drain and keeping the ref. */
+          const queued = s.steeredQueue.shift();
+          s.legTurnId = `t${++this.turnCounter}`;
+          s.emit("turn.started", {
+            turnId: s.legTurnId,
+            ...(s.model ? { model: s.model } : {}),
+            ...(s.provider ? { provider: s.provider } : {}),
+            ...(s.effort ? { effort: s.effort } : {}),
+            ...(s.fast !== undefined ? { fast: s.fast } : {}),
+            ...(queued?.ref ? { ref: queued.ref } : {}),
+            ...(queued ? {} : { initiatedBy: "agent" as const }),
+          });
+        }
         s.setState("running");
         break;
+      }
       case "reasoning.delta":
       case "reasoning.available": {
         if (typeof p.text === "string" && p.text)
@@ -1506,7 +1551,15 @@ export class HermesEngine {
    */
   private async completeTurn(s: Session, p: Record<string, unknown>) {
     const turn = s.turn;
-    if (turn) s.lastTurnId = turn.turnId;
+    /* #308: a completion with no open turn or leg is stray — a doubled
+       message.complete must not stamp `lastTurnId` or emit a bogus
+       turn.completed on a settled turn (it used to). */
+    if (!turn && !s.legTurnId) return;
+    /* A post-turn leg closes under its own minted id — the leg's
+       turn.completed must not stamp the settled prompt turn's id (a
+       second `turn.completed` on t1 used to reopen/merge it). */
+    const completedId = turn?.turnId ?? s.legTurnId ?? s.lastTurnId;
+    s.lastTurnId = completedId;
     if (s.driver === "ws") {
       try {
         const r = (await this.opts.gateway.request("session.title", {
@@ -1524,12 +1577,13 @@ export class HermesEngine {
     if (usage) s.usage = usage;
     const errText = typeof p.error === "string" ? p.error : undefined;
     s.emit("turn.completed", {
-      turnId: turn?.turnId ?? s.lastTurnId,
+      turnId: completedId,
       stopReason,
       ...(usage ? { usage } : {}),
       ...(errText ? { error: errText } : {}),
     });
     s.turn = undefined;
+    s.legTurnId = undefined;
     if (s.state !== "closed") {
       cancelAllAsks(s);
       s.setState(s.openRequests.size ? "waiting" : "idle");
@@ -1643,7 +1697,7 @@ export class HermesEngine {
     group?: PendingAsk["group"],
     requestId = wireId,
   ): Promise<{ outcome: ApprovalOutcome; answer?: string }> {
-    const turnId = s.turn?.turnId ?? s.lastTurnId ?? "t0";
+    const turnId = s.turn?.turnId ?? s.legTurnId ?? s.lastTurnId ?? "t0";
     let settle: PendingAsk["settle"] = () => {};
     const answered = new Promise<{ outcome: ApprovalOutcome; answer?: string }>(
       (r) => {

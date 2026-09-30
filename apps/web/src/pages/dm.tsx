@@ -754,6 +754,7 @@ export function DmPage() {
           convAsks(conv),
           rewoundInfo.get(conv.id),
           empRefToId,
+          conv.rootMessageId,
         ),
         wsFor(conv.cwd, cwdBranches),
       ),
@@ -966,6 +967,7 @@ export function DmPage() {
       asksHere,
       rewoundInfo.get(conv.id),
       empRefToId,
+      conv.rootMessageId,
     );
     if (!planCap) replies = stripPlans(replies);
     // An open question ask gets a real answer card (asks.respond).
@@ -1230,6 +1232,7 @@ export function DmPage() {
           scrollTo={scrollTo ?? undefined}
           onScrolled={() => setScrollTo(null)}
           steer={steer}
+          agentWorking={!!modelLive?.agentInitiated}
           draft={threadDraft}
           onDraftChange={setThreadDraft}
           /* Same capability probe as the thread panel (#110): null pins the
@@ -1311,6 +1314,7 @@ export function DmPage() {
           }}
           running={running}
           steer={steer}
+          agentWorking={!!modelLive?.agentInitiated}
           onOpenSession={onOpenSession}
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}
