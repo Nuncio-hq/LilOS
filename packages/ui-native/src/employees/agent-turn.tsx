@@ -91,7 +91,10 @@ export function AgentTurn({
           text={e.reasoning}
           seconds={e.thought}
           thinking={!!thinking}
-          waiting={waiting}
+          /* A turn that already measured its reasoning keeps the
+             tappable "Thought for Ns" even while an ask blocks it —
+             "Waiting for you" only stands in for unmeasured thinking. */
+          waiting={waiting && e.thought === undefined}
         />
       )}
       {steps.length > 0 && (

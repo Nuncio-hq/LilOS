@@ -164,8 +164,13 @@ export class Session {
     /* #327: a dispatched-and-untracked helper row may still run
        server-side, but this session provably can't hear about it any
        more once it isn't running — settle it stopped now. The close is
-       a real logged event, so a replay reduces the same settled row. */
-    if (state !== "running" && this.untrackedSubagents.size) {
+       a real logged event, so a replay reduces the same settled row.
+       `waiting` is NOT a leave: the session is alive mid-turn (blocked
+       on an open ask) and hears frames again once the ask resolves. */
+    if (
+      (state === "idle" || state === "closed" || state === "error") &&
+      this.untrackedSubagents.size
+    ) {
       for (const subagentId of this.untrackedSubagents) {
         this.emit("subagent.completed", { subagentId, status: "stopped" });
       }

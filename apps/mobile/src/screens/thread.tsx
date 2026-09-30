@@ -158,13 +158,13 @@ function useThread(conversationId: string) {
   /* #327: the wire carries no timestamps between turn.started and
      turn.completed, so the reasoning -> first-step/text duration is
      measured where the frames are actually watched — a turn entering
-     its reasoning phase gets stamped, and the stamp freezes into
-     seconds the moment the phase moves on (same job web's Reasoning
-     element does inside the component). A turn replayed already past
-     reasoning keeps no clock and the card falls back to "Thought". */
-  const thoughtClock = useRef(
-    new Map<string, { at?: number; seconds?: number }>(),
-  );
+     its reasoning phase gets stamped, and the stamp accrues into
+     seconds each time the phase moves on (same job web's Reasoning
+     element does inside the component). Segments accumulate so a turn
+     that reasons again after an open ask still counts both stretches.
+     A turn replayed already past reasoning keeps no clock and the
+     card falls back to "Thought". */
+  const thoughtClock = useRef(new Map<string, { at?: number; acc?: number }>());
   const thoughts = useMemo(() => {
     const map = new Map<string, number>();
     const clock = thoughtClock.current;
@@ -177,10 +177,13 @@ function useThread(conversationId: string) {
       }
       if (t.phase === "reasoning") {
         c.at ??= Date.now();
-      } else if (c.at !== undefined && c.seconds === undefined) {
-        c.seconds = Math.max(1, Math.round((Date.now() - c.at) / 1000));
+      } else if (c.at !== undefined) {
+        c.acc = (c.acc ?? 0) + (Date.now() - c.at);
+        c.at = undefined;
       }
-      if (c.seconds !== undefined) map.set(t.turnId, c.seconds);
+      if (c.acc !== undefined) {
+        map.set(t.turnId, Math.max(1, Math.round(c.acc / 1000)));
+      }
     }
     return map;
   }, [sessionModel]);
