@@ -443,7 +443,9 @@ test("AC-4 a background process lists in Background with command/status/uptime/U
   await expect(bg).toBeVisible({ timeout: 30_000 });
   await bg.click();
 
-  const row = page.locator("[data-job]").first();
+  /* #309: delegated subagents list here too (`sa:` ids) — scope to the
+     dev-server job row, not just the first. */
+  const row = page.locator("[data-job]", { hasText: "bun run dev" }).first();
   await expect(row).toBeVisible({ timeout: 30_000 });
   await expect(row).toContainText("bun run dev");
   await expect(row).toContainText(/running/);
