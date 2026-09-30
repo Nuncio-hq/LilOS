@@ -191,6 +191,43 @@ guessing), `increment`/`decrement` (adjustable elements), `scroll`, `scroll_to`.
 - Element names come from `accessibilityLabel` (e.g. composer chips
   "Fake Reasoning · High", "Just chat", thread rows "<title>, <state>. <body>").
 
+## Pointing the dev client at a DIFFERENT project's bundle
+
+`com.nuncio.lilos.mobile` is shared by apps/mobile AND prototype/mobile —
+and the dev client always reloads the bundle URL it last used:
+the `expo-development-client/?url=` deep link, the dev menu's "Configure
+Bundler" form, and cold restarts did NOT switch it (#259 leg). The
+reliable trick: **run the other project's `expo start --dev-client` on
+the SAME port (8081)** — the client fetches whatever that port serves:
+
+```sh
+kill $(lsof -ti :8081)                              # stop the running project's Metro
+cd prototype/mobile && bunx expo start --dev-client --port 8081
+xcrun simctl terminate $D com.nuncio.lilos.mobile
+xcrun simctl launch    $D com.nuncio.lilos.mobile   # boots the OTHER project's bundle
+```
+
+Restore by restarting the original project's Metro on 8081. Killing Metro
+does NOT uninstall the app — only JS serving stops.
+
+## Code-block / table evidence techniques (#259/#306 legs)
+
+- **In-progress `…` header**: engine-fake streams word-by-word at tick 25 —
+  a ~700-word reply takes ~7s and each fenced block sits `closed:false`
+  ~0.3–0.6s while its code streams. The in-progress block is the LAST
+  rendered element, just above the composer — burst `simctl io screenshot`
+  right after send (~1s/frame over the window) catches it.
+- **Inner horizontal ScrollView** (code lines, wide tables): the a11y
+  `scroll` op degrades to a coordinate swipe that often moves nothing
+  ("container is at its end"). A coordinate `left_click_drag` leftward ON
+  the text rows works — multi-row grids take it first try; single-line
+  blocks may need 2–3 tries with slight vertical drift. Proof of scroll:
+  the tail token appears while surrounding prose stays fixed.
+- **Clipboard proof**: host `pbpaste` reads the simulator pasteboard —
+  after a "Copy code" tap it returns the block text byte-for-byte, stronger
+  than the ~1.5s "Copied" label a `simctl io` still usually misses (the
+  a11y tree does catch the flip if queried immediately).
+
 ## Model picker / formSheet landmarks (#160 surface)
 
 - Composer model chip opens the ModelPicker `formSheet` (detents [0.62, 1],
@@ -231,6 +268,13 @@ guessing), `increment`/`decrement` (adjustable elements), `scroll`, `scroll_to`.
   engine-fake turn ends — two same-md5 stills means the "mid-turn" frame is
   really the done frame. Don't claim a still shows a transient state without
   opening it.
+- The dev client "!, Open debugger to view warnings." pill can cover
+  bottom-screen controls (a11y `press` refuses as "covered") and doesn't
+  always auto-dismiss — tap its X at the right edge, or tap the control by
+  coordinates.
+- A sent bubble can keep a stale "Queued · runs next" caption while the
+  reply below is already streaming — cosmetic label lag, not a send
+  failure; don't mistake it for a stuck turn.
 
 ## RN errors invisible to screenshots
 
