@@ -128,7 +128,11 @@ describe("issue #308 — replies anchor to their own turn's question", () => {
       ],
       "c1",
     );
-    const t1 = turn({ turnId: "t1", ref: "q1-root", text: "Done on work: release note" });
+    const t1 = turn({
+      turnId: "t1",
+      ref: "q1-root",
+      text: "Done on work: release note",
+    });
     const t2 = turn({
       turnId: "t2",
       ref: "q2",
