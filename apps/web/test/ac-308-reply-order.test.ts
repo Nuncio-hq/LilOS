@@ -114,12 +114,11 @@ describe("issue #308 — replies anchor to their own turn's question", () => {
     expect(out[2].agentInitiated).toBe(true);
   });
 
-  test("AC-1 an anchored turn never leapfrogs a claimed card whose own ref is invisible", () => {
+  test("AC-1 a turn answering the root anchors at the top — newer messages never render above it", () => {
     /* The queued-message e2e (ac-27 AC-5b): turn1's prompt is the thread
-       root, which dm.tsx filters out of `replies` — its anchor can't
-       resolve, so its claimed card keeps the slot its relay row earned.
-       Turn2 anchors under the queued message that prompted it; landing
-       there must not hop above turn1's card. */
+       root, which dm.tsx filters out of `replies` — it renders as the
+       thread header, so its answer anchors directly under the header at
+       the TOP of the list; the queued prompt and its own answer follow. */
     const replies = conversationReplies(
       [
         u("q2", 2, "also mention bananas"),
@@ -131,6 +130,40 @@ describe("issue #308 — replies anchor to their own turn's question", () => {
     const t1 = turn({
       turnId: "t1",
       ref: "q1-root",
+      text: "Done on work: release note",
+    });
+    const t2 = turn({
+      turnId: "t2",
+      ref: "q2",
+      text: "Noted. Plan now: 2. Also mention bananas",
+    });
+    const out = mergeTurns(
+      replies,
+      session([t1, t2]),
+      "emp",
+      [],
+      undefined,
+      undefined,
+      "q1-root",
+    );
+    expect(out.map((r) => r.id)).toEqual(["a1", "q2", "a2"]);
+  });
+
+  test("AC-1 an anchored turn never leapfrogs a claimed card whose own ref is invisible", () => {
+    /* Same layout but t1's ref is neither visible nor the thread root —
+       its claimed card keeps the slot its relay row earned and turn2's
+       anchored landing queues after it instead of hopping above. */
+    const replies = conversationReplies(
+      [
+        u("q2", 2, "also mention bananas"),
+        a("a1", 3, "Done on work: release note"),
+        a("a2", 4, "Noted. Plan now: 2. Also mention bananas"),
+      ],
+      "c1",
+    );
+    const t1 = turn({
+      turnId: "t1",
+      ref: "q1-gone",
       text: "Done on work: release note",
     });
     const t2 = turn({

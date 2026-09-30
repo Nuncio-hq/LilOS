@@ -329,6 +329,10 @@ export function conversationReplies(
  * relay row arrived (a reply can post after a newer user message and still
  * belongs under its own question). Engine-initiated legs never claim a
  * posted answer; they render as their own agent entry.
+ *
+ * `rootMessageId` is the thread's root question — callers strip it out of
+ * `replies` (it renders as the thread header instead), so a turn it
+ * prompted anchors at the TOP of the reply list, directly under the header.
  */
 export function mergeTurns(
   replies: Reply[],
@@ -337,6 +341,7 @@ export function mergeTurns(
   asks: Ask[] = [],
   rewound?: { refs?: ReadonlySet<string>; texts?: ReadonlySet<string> },
   resolveEmployee: (employeeRef: string) => string = (r) => r,
+  rootMessageId?: string,
 ): Reply[] {
   if (!model) return replies;
   const used = new Set<TurnModel>();
@@ -395,7 +400,12 @@ export function mergeTurns(
   const anchorAt = (t: TurnModel) => {
     if (!t.ref) return -1;
     const at = refIndex(t.ref);
-    if (at < 0) return -1;
+    if (at < 0)
+      /* The root question is filtered out of `replies` (it is the thread
+         header) — a turn it prompted anchors at the top, directly under
+         the header. A newer user message never renders above the root
+         question's own answer (AC-1). */
+      return t.ref === rootMessageId ? (refOffset.get(t.ref) ?? 0) : -1;
     return at + 1 + (refOffset.get(t.ref) ?? 0);
   };
   const bump = (t: TurnModel) => {
@@ -425,15 +435,22 @@ export function mergeTurns(
       continue;
     if (!t.text.trim() && t.phase !== "stopped" && t !== model.live) continue;
     const rs = liveReplies(t, employeeId, asks, resolveEmployee);
+    /* #288: a finished turn anchored to a message that renders nowhere is
+       an orphan — e.g. a rebound engine session re-answering a question
+       that no reply row carries (the root renders as the thread header,
+       not a reply row, so it counts as invisible here too). Stopped
+       turns keep the tail/live anchor: their marker is the only surface
+       of a stop on an invisible prompt. Ref-less turns keep the tail
+       fallback too: engines that never echo `ref` can't be positioned
+       any other way. */
+    if (
+      t.ref &&
+      refIndex(t.ref) < 0 &&
+      t.phase !== "stopped" &&
+      t !== model.live
+    )
+      continue;
     if (at < 0) {
-      /* #288: a finished turn anchored to a message that renders nowhere is
-         an orphan — e.g. a rebound engine session re-answering the root
-         (the open thread renders the root as its header, not a reply row).
-         Stopped turns keep the tail append: their marker is the only
-         surface of a stop on a root-anchored turn. Ref-less turns keep the
-         tail fallback too: engines that never echo `ref` can't be
-         positioned any other way. */
-      if (t.ref && t.phase !== "stopped" && t !== model.live) continue;
       owned.add(rs);
       blocks.push(rs);
       continue;
