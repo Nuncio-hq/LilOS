@@ -160,6 +160,11 @@ export function reduceSessionEvents(
     effort?: string;
     fast?: boolean;
     turn?: { turnId: string };
+    /** The seq the snapshot was captured at (the feed's replay
+        watermark). Live frames keep appending past it without touching
+        the snapshot — when set, an event beyond it marks the snapshot
+        stale so its `state`/`turn` can't outrank the live stream. */
+    atSeq?: number;
   },
 ): SessionModel {
   const turns = new Map<string, TurnModel>();
@@ -488,7 +493,74 @@ export function reduceSessionEvents(
       }
     }
   }
-  if (snapshot) state = snapshot.state;
+  /* #327: `snapshot.state` is true only at the watermark it was
+     captured at. A live feed merges replay + `engine.event` frames into
+     the same log while the snapshot stays frozen — an "idle" snapshot
+     from the last sync must not settle a running turn the stream has
+     already announced. Any event past `atSeq` makes it stale (callers
+     that replay a closed log pass no `atSeq`, so it always applies). */
+  const atSeq = snapshot?.atSeq;
+  const snapshotStale =
+    atSeq !== undefined &&
+    events.some((e) => e.sessionId === sessionId && e.seq > atSeq);
+  if (snapshot && !snapshotStale) state = snapshot.state;
+
+  /* Unfinished plan steps read cancelled on a stopped turn — engines
+     don't re-emit a cancelled snapshot (#180 AC-2). Shared by the
+     user-stop path above and the session-settle sweep below (#327). */
+  const cancelPlanSteps = (t: TurnModel) => {
+    for (const p of t.plans) {
+      for (const s of p.steps) {
+        if (s.status === "pending" || s.status === "in_progress") {
+          s.status = "cancelled";
+        }
+      }
+    }
+  };
+
+  /* #327: a turn can't stay live once its session is no longer running —
+     engines emit `session.state` idle at every turn end and closed on
+     close, so a still-open phase under either means its turn.completed
+     was lost to a truncated or degraded replay (#300). A later turn in
+     the log proves the same with no state event at all (engines run one
+     turn at a time), and so does a snapshot naming another turn current.
+     Requests orphaned on the settled turn cancel out like the engine's
+     own turn-end cancelAllAsks; a still-"running" step cancels the same
+     way (the tool.completed was lost with it). Helper rows settle only
+     under closed/error — an async subagent legitimately runs through
+     the idle gap between turns (#309), and an ACP-mode row the wire can
+     never close is settled by the adapter where dead is provable
+     (engine-hermes acp.ts), not guessed here. */
+  const settle =
+    state === "closed" || state === "error"
+      ? ("stopped" as const)
+      : state === "idle"
+        ? ("done" as const)
+        : undefined;
+  const snapshotTurn = snapshotStale ? undefined : snapshot?.turn?.turnId;
+  for (const [i, t] of order.entries()) {
+    if (t.phase === "done" || t.phase === "stopped") continue;
+    const superseded =
+      i < order.length - 1 ||
+      (snapshotTurn !== undefined && snapshotTurn !== t.turnId);
+    const phase = settle ?? (superseded ? ("done" as const) : undefined);
+    if (!phase) continue;
+    t.phase = phase;
+    for (const r of t.requests) {
+      if (r.outcome === undefined) r.outcome = "cancel";
+    }
+    for (const s of t.steps) {
+      if (s.status === "running") s.status = "cancelled";
+    }
+    if (phase === "stopped") cancelPlanSteps(t);
+  }
+  if (settle === "stopped") {
+    for (const t of order) {
+      for (const sa of t.subagents) {
+        if (sa.status === "running") sa.status = "stopped";
+      }
+    }
+  }
 
   /* A helper by id across every turn — subagent.* frames are stamped
      with whichever turn is open, not the one that spawned it (#309). */

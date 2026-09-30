@@ -842,7 +842,11 @@ export class RelayClient {
           : res.latestSeq,
       events: merged,
       openRequests: res.openRequests,
-      snapshot: res.snapshot,
+      /* #327: stamp the point the snapshot was captured at — live
+         `engine.event` frames keep landing on `events` without
+         refreshing it, so the fold (turn-model) reads `atSeq` to tell
+         a current snapshot from a stale one. */
+      snapshot: { ...res.snapshot, atSeq: res.latestSeq } as SessionSnapshot,
       error: undefined,
     });
   }

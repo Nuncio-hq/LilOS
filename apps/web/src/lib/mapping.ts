@@ -184,6 +184,7 @@ export function liveTurnReply(
   employeeId: string,
   asks: Ask[] = [],
   resolveEmployee: (employeeRef: string) => string = (r) => r,
+  liveNow = true,
 ): Reply {
   // Approvals render from relay asks (the responder identity is the ask id);
   // turn.requests only mark the phase "waiting". An open ask wins; else the
@@ -221,7 +222,10 @@ export function liveTurnReply(
     effort: turn.effort,
     fast: turn.fast,
     phase: PHASE_MAP[turn.phase],
-    live: turn.phase !== "done" && turn.phase !== "stopped",
+    /* #327: `liveNow` is mergeTurns' conversation-state clamp — a settled
+       phase alone can't mark a turn dead when the feed degraded before
+       the reducer's settle could see it. */
+    live: liveNow && turn.phase !== "done" && turn.phase !== "stopped",
     ...(turn.agentInitiated ? { agentInitiated: true } : {}),
     plan: currentPlan(turn),
     waitingOn: turn.phase === "waiting" ? open?.request.kind : undefined,
@@ -262,10 +266,11 @@ function liveReplies(
   employeeId: string,
   asks: Ask[],
   resolveEmployee: (employeeRef: string) => string = (r) => r,
+  liveNow = true,
 ): Reply[] {
   return [
     ...supersededPlanReplies(turn, employeeId),
-    liveTurnReply(turn, employeeId, asks, resolveEmployee),
+    liveTurnReply(turn, employeeId, asks, resolveEmployee, liveNow),
   ];
 }
 
@@ -346,8 +351,16 @@ export function mergeTurns(
   rewound?: { refs?: ReadonlySet<string>; texts?: ReadonlySet<string> },
   resolveEmployee: (employeeRef: string) => string = (r) => r,
   rootMessageId?: string,
+  conversationState?: Conversation["state"],
 ): Reply[] {
   if (!model) return replies;
+  /* #327: the relay conversation's own word on whether a turn can run —
+     a degraded feed that skipped its session.state events can't keep a
+     card live behind the relay's idle/closed (mobile's liveTurn parity). */
+  const liveTurn =
+    conversationState === undefined || conversationState === "active"
+      ? model.live
+      : undefined;
   const used = new Set<TurnModel>();
   /* Each reply run is one block — superseded-plan rows travel with their
      card when a ref'd turn re-anchors. */
@@ -379,7 +392,13 @@ export function mergeTurns(
     }
     used.add(t);
     // Keep the relay message id — it's the search-hit scroll anchor (#138).
-    const live = liveReplies(t, employeeId, asks, resolveEmployee);
+    const live = liveReplies(
+      t,
+      employeeId,
+      asks,
+      resolveEmployee,
+      t === liveTurn,
+    );
     live[live.length - 1] = { ...live[live.length - 1], id: r.id };
     blocks.push(live);
     owned.add(live);
@@ -417,7 +436,13 @@ export function mergeTurns(
     if (ri < 0) continue;
     used.add(t);
     legClaimed = ri;
-    const live = liveReplies(t, employeeId, asks, resolveEmployee);
+    const live = liveReplies(
+      t,
+      employeeId,
+      asks,
+      resolveEmployee,
+      t === liveTurn,
+    );
     live[live.length - 1] = { ...live[live.length - 1], id: replies[ri].id };
     blocks[ri] = live;
     owned.add(live);
@@ -496,8 +521,14 @@ export function mergeTurns(
     }
     if (t.ref ? rewound?.refs?.has(t.ref) : rewound?.texts?.has(t.text.trim()))
       continue;
-    if (!t.text.trim() && t.phase !== "stopped" && t !== model.live) continue;
-    const rs = liveReplies(t, employeeId, asks, resolveEmployee);
+    if (!t.text.trim() && t.phase !== "stopped" && t !== liveTurn) continue;
+    const rs = liveReplies(
+      t,
+      employeeId,
+      asks,
+      resolveEmployee,
+      t === liveTurn,
+    );
     /* #288: a finished turn anchored to a message that renders nowhere is
        an orphan — e.g. a rebound engine session re-answering a question
        that no reply row carries (the root renders as the thread header,
@@ -506,12 +537,7 @@ export function mergeTurns(
        of a stop on an invisible prompt. Ref-less turns keep the tail
        fallback too: engines that never echo `ref` can't be positioned
        any other way. */
-    if (
-      t.ref &&
-      refIndex(t.ref) < 0 &&
-      t.phase !== "stopped" &&
-      t !== model.live
-    )
+    if (t.ref && refIndex(t.ref) < 0 && t.phase !== "stopped" && t !== liveTurn)
       continue;
     if (at < 0) {
       owned.add(rs);

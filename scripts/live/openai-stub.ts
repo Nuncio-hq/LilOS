@@ -38,6 +38,8 @@ interface ScriptedCall {
   delayMs?: number;
   /** Override the canned text answer for this entry. */
   reply?: string;
+  /** Emit OpenAI-style `reasoning_content` ahead of the text (#327 legs). */
+  thought?: string;
 }
 const script: ScriptedCall[] = process.env.STUB_SCRIPT
   ? (JSON.parse(process.env.STUB_SCRIPT) as ScriptedCall[])
@@ -228,6 +230,9 @@ const server = Bun.serve({
         return new Response(
           sse([
             frame({ role: "assistant", content: "" }, null),
+            ...(fired?.thought
+              ? [frame({ reasoning_content: fired.thought }, null)]
+              : []),
             frame({ content: fired?.reply ?? reply }, null),
             frame({}, "stop"),
             "data: [DONE]\n\n",
@@ -243,7 +248,11 @@ const server = Bun.serve({
         choices: [
           {
             index: 0,
-            message: { role: "assistant", content: fired?.reply ?? reply },
+            message: {
+              role: "assistant",
+              content: fired?.reply ?? reply,
+              ...(fired?.thought ? { reasoning_content: fired.thought } : {}),
+            },
             finish_reason: "stop",
           },
         ],

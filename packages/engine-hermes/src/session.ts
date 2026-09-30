@@ -99,6 +99,13 @@ export class Session {
   subToolCounter = 0;
   /** In-flight delegate calls — a child run links to its spawning call. */
   delegateStack: string[] = [];
+  /** #327: ACP-synthesized helper rows whose delegate call closed with a
+      dispatch receipt ({status:"dispatched"}) — the children run on but
+      ACP drops every later subagent.* frame, so no real
+      `subagent.completed` can ever close them (`setState` settles them
+      stopped once the session leaves "running" instead of letting the
+      rows spin forever). */
+  untrackedSubagents = new Set<string>();
   /** In-flight `terminal {background:true}` calls -> their command. */
   terminalCalls = new Map<string, string>();
   /* #179: background jobs by hermes process id (`agent.terminal.output`
@@ -150,9 +157,20 @@ export class Session {
   }
 
   setState(state: SessionState, reason?: string) {
-    if (this.state === state) return;
-    this.state = state;
-    this.emit("session.state", reason ? { state, reason } : { state });
+    if (this.state !== state) {
+      this.state = state;
+      this.emit("session.state", reason ? { state, reason } : { state });
+    }
+    /* #327: a dispatched-and-untracked helper row may still run
+       server-side, but this session provably can't hear about it any
+       more once it isn't running — settle it stopped now. The close is
+       a real logged event, so a replay reduces the same settled row. */
+    if (state !== "running" && this.untrackedSubagents.size) {
+      for (const subagentId of this.untrackedSubagents) {
+        this.emit("subagent.completed", { subagentId, status: "stopped" });
+      }
+      this.untrackedSubagents.clear();
+    }
   }
 
   /** Engine-written title, tracked so the snapshot can carry it (#137). */
