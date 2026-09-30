@@ -228,6 +228,56 @@ does NOT uninstall the app — only JS serving stops.
   than the ~1.5s "Copied" label a `simctl io` still usually misses (the
   a11y tree does catch the flip if queried immediately).
 
+## Pixel-verifying layout claims (e.g. aligned column dividers)
+
+When a fix is about pixel-level layout, don't just eyeball the still —
+scan it with PIL. Sim screenshots are full device res (1206×2622). Recipe:
+
+1. Find row bands by locating horizontal separator rows: y's where >90%
+   of x in the table area are one near-uniform panel gray.
+2. Per band, an x is a "separator column" when ≥half its pixels are the
+   border tone (light ≈ `232,232,237` on panel `242,242,247`;
+   dark ≈ `38,38,39`/`45,45,45` on bg `28,28,30`).
+3. Compare peak x lists across bands — identical = aligned.
+
+Traps: (a) a muted header band IS separator-gray everywhere, so probe
+candidate x's with a vertical profile instead of a band-wide scan;
+(b) verify text styling the same way — `**bold**` stems measure ~4–5px vs
+~3px regular, mono vs proportional shows in single glyph bboxes, and
+COLOR needs its own check: a `text-accent-text` span can render black
+while the font applies.
+
+When a fix "doesn't take" in the render, first rule out a stale bundle:
+`tail -f` the Metro log through a `simctl terminate`+`launch` — a new
+`iOS Bundled …ms (N modules)` line is the app fetching; then fetch the
+bundle yourself (`curl "http://localhost:8081/apps/mobile/index.bundle?
+platform=ios&dev=true&minify=false"` — paths resolve from the REPO root
+in this monorepo, not the app dir) and grep for the fix signature. If the
+served code is right but pixels are wrong, the bug is real, not env.
+
+## Stale engine-fake: fixture changes need a HARNESS restart, not an app reload
+
+The live env's `engine-fake` runs as a subprocess the harness spawns at
+startup — it snapshots the fixture source at spawn time. A commit that
+changes the fixture (e.g. adding `**`/`` ` `` markers to a markdown
+sample) does NOT reach replies until the harness is restarted —
+`simctl terminate`+`launch` of the app only refetches the JS bundle.
+Symptom that cost two legs: cells rendered plain because the stored
+reply text had no markers at all — the renderer was never at fault.
+
+Diagnosis path: (1) a temp `console.warn` probe in the component logs the
+text it actually receives (` WARN <msg>` in the Metro log); (2) read the
+STORED message — get `$LILOS_RELAY_HOME` via `ps eww <relay-pid>`, then
+`sqlite3 relay.sqlite "SELECT text FROM messages WHERE ..."` — if storage
+lacks the markers, the fault is upstream of the app; (3) diff the stored
+text against `git log -p` on the fixture to spot the stale revision.
+
+Restart: `ps eww <harness-pid> | tr ' ' '\n' | grep LILOS` captures its
+env, `kill <harness-pid>` (relay keeps running — pairing/messages survive
+in its sqlite), relaunch `bun apps/harness/src/index.ts` with the same
+vars (bun needs an explicit PATH entry under `env`). The app reconnects
+by itself; resend the `md:` command for a reply on the fresh fixture.
+
 ## Model picker / formSheet landmarks (#160 surface)
 
 - Composer model chip opens the ModelPicker `formSheet` (detents [0.62, 1],
