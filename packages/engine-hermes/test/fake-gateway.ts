@@ -185,7 +185,12 @@ export class FakeGateway implements GatewayLike {
    */
   slashAlwaysOk = false;
 
+  /** #288: session.resume calls in order — {session_id, profile, lazy, ...}. */
+  resumeCalls: Record<string, unknown>[] = [];
+
   private refs = new Map<string, string>();
+  /** stored_session_id -> the durable row session.resume reattaches to. */
+  private storedByRef = new Map<string, { message_count: number }>();
   private sreqId = 0;
   private sreqPending = new Map<
     string,
@@ -240,6 +245,7 @@ export class FakeGateway implements GatewayLike {
         const sid = `sid-${this.refs.size + 1}`;
         const ref = `ref-${this.refs.size + 1}`;
         this.refs.set(sid, ref);
+        this.storedByRef.set(ref, { message_count: 0 });
         this.lastSid = sid;
         this.lastRef = ref;
         return Promise.resolve({
@@ -251,9 +257,38 @@ export class FakeGateway implements GatewayLike {
           info: { version: "v0.21.5+test", release_date: "2026.9.24" },
         });
       }
+      case "session.resume": {
+        this.resumeCalls.push({ ...p });
+        /* The real gateway resolves a stored_session_id (or exact title) in
+           the profile's state.db and mints a NEW runtime sid on the same
+           stored row (tui_gateway methods_session._resume_response). */
+        const key = String(p.session_id);
+        const ref = this.storedByRef.has(key) ? key : this.refs.get(key);
+        const stored = ref ? this.storedByRef.get(ref) : undefined;
+        if (!ref || !stored)
+          return Promise.reject(
+            new RpcError(4040, `session not found: ${key}`),
+          );
+        const sid = `sid-${this.refs.size + 1}`;
+        this.refs.set(sid, ref);
+        this.lastSid = sid;
+        return Promise.resolve({
+          session_id: sid,
+          stored_session_id: ref,
+          message_count: stored.message_count,
+          messages: [],
+          messages_omitted: true,
+          info: { version: "v0.21.5+test", release_date: "2026.9.24" },
+        });
+      }
       case "prompt.submit": {
         this.lastPrompt = p;
         const sid = String(p.session_id);
+        const promptRef = this.refs.get(sid);
+        const promptStored = promptRef
+          ? this.storedByRef.get(promptRef)
+          : undefined;
+        if (promptStored) promptStored.message_count += 2; // user + assistant
         /* prompt_turn.py applies `pending_model_switch` at turn start —
            before the prompt runs. On failure the gateway emits `error` and
            the turn still runs on the previous model (#92 review). */

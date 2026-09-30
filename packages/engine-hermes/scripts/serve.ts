@@ -4,7 +4,7 @@
  *
  *   bun packages/engine-hermes/scripts/serve.ts \
  *     [--port N] [--hermes-bin PATH] [--hermes-args "..."]
- *     [--provider NAME] [--model NAME]
+ *     [--provider NAME] [--model NAME] [--sessions-file PATH]
  *     [--acp-args "..."] [--acp-env K=V,K=V]
  *
  * Spawns `hermes serve` (generated token on 127.0.0.1), connects the engine,
@@ -73,6 +73,7 @@ const engine = new HermesEngine({
   gateway,
   ...(arg("provider") ? { provider: arg("provider") } : {}),
   ...(arg("model") ? { model: arg("model") } : {}),
+  ...(arg("sessions-file") ? { sessionsFile: arg("sessions-file") } : {}),
   acp: {
     bin: arg("hermes-bin", process.env.HERMES_BIN ?? "hermes"),
     ...(acpArgs ? { args: acpArgs.split(" ").filter(Boolean) } : {}),

@@ -59,6 +59,7 @@ import {
   parseToolResultJson,
   subagentKey,
 } from "./mapping.js";
+import { SessionRegistry } from "./registry.js";
 import {
   cancelAllAsks,
   cancelAsk,
@@ -110,6 +111,9 @@ export interface HermesEngineOptions {
   model?: string;
   /** How to spawn `hermes acp` for sessions carrying mcpServers (#23 verdict). */
   acp?: AcpOptions;
+  /** #288: persisted session registry — a restarted adapter `session.resume`s
+     each stored session under its engine id instead of minting a new one. */
+  sessionsFile?: string;
   version?: string;
 }
 
@@ -126,12 +130,23 @@ export class HermesEngine {
   private sessionCounter = 0;
   private turnCounter = 0;
   private acpDrivers = new Map<string, AcpDriver>();
+  /* #61 parity with engine-fake: session ids are namespaced per adapter run
+     so a fresh counter can't mint an id a persisted registry row (or a live
+     session of the previous process) already owns (#288). */
+  private readonly sessionNamespace = Math.random().toString(36).slice(2, 8);
+  private readonly sessionRegistry: SessionRegistry | undefined;
+  /* A resync and a client replay can ask for the same stored id at once —
+     one `session.resume` per engine id; the second waits for the first. */
+  private resumeInflight = new Map<string, Promise<Session | undefined>>();
   /** #50 AC-1 — `session.create` fields this gateway already refused. */
   private droppedCreateFields = new Set<string>();
   /** Build the gateway advertised in `session.create`'s `info` (#50 AC-4). */
   private gatewayInfo: { version?: string; releaseDate?: string } = {};
 
   constructor(private opts: HermesEngineOptions) {
+    this.sessionRegistry = opts.sessionsFile
+      ? new SessionRegistry(opts.sessionsFile)
+      : undefined;
     opts.gateway.onEvent((e) => this.onGatewayEvent(e));
     opts.gateway.onRequest((r) => this.onServerRequest(r));
     opts.gateway.onCancel((c) => this.onServerCancel(c));
@@ -335,7 +350,7 @@ export class HermesEngine {
   }
 
   private async sessionStart(p: SessionStartParams) {
-    const id = `s${++this.sessionCounter}`;
+    const id = `s-${this.sessionNamespace}-${++this.sessionCounter}`;
     const mcp = p.mcpServers ?? [];
     // The LilOS `agent` is a Hermes profile name: refuse unknown ones up front
     // (AGENT_NOT_FOUND) and run the session under that profile.
@@ -383,6 +398,7 @@ export class HermesEngine {
       );
       this.sessions.set(id, s);
       this.byRuntimeSid.set(s.runtimeSid, s);
+      this.persistSession(s);
       s.emit("session.started", {
         agent: p.agent,
         cwd: p.cwd,
@@ -534,6 +550,7 @@ export class HermesEngine {
           text,
         });
         s.userTurns += 1;
+        this.persistSession(s);
       } else {
         const driver = this.acpDrivers.get(s.id);
         if (!driver)
@@ -599,11 +616,126 @@ export class HermesEngine {
     return { accepted: true as const };
   }
 
-  private eventsSince(p: EventsSinceParams) {
-    return this.require(p.sessionId).eventsSince(p.after);
+  private async eventsSince(p: EventsSinceParams) {
+    /* #288: a restarted adapter sees ids only through the persisted registry
+       — resume the stored Hermes session under the same engine id so the
+       rebind keeps the existing session (same state.db row, memory intact)
+       instead of the caller falling back to session.start. */
+    const s =
+      this.sessions.get(p.sessionId) ??
+      (await this.resumeStored(p.sessionId)) ??
+      this.require(p.sessionId);
+    return s.eventsSince(p.after);
   }
 
-  private async sessionStop(p: SessionStopParams) {
+  /**
+   * Resume the session a previous adapter process persisted (#288). A lazy
+   * resume is cheap — the gateway defers the agent build to the next turn
+   * and `omit_messages` keeps transcript rows off the wire — and the resumed
+   * Session registers under the ORIGINAL engine id so `conv.engineRef` never
+   * has to move. Undefined = nothing persisted or the gateway can't resume;
+   * callers then take the session.start fallback.
+   */
+  private resumeStored(sessionId: string): Promise<Session | undefined> {
+    const inflight = this.resumeInflight.get(sessionId);
+    if (inflight) return inflight;
+    const p = this.resumeStoredOnce(sessionId);
+    this.resumeInflight.set(sessionId, p);
+    p.finally(() => this.resumeInflight.delete(sessionId));
+    return p;
+  }
+
+  private async resumeStoredOnce(
+    sessionId: string,
+  ): Promise<Session | undefined> {
+    const rec = this.sessionRegistry?.get(sessionId);
+    if (!rec) return undefined;
+    try {
+      const r = (await this.opts.gateway.request("session.resume", {
+        session_id: rec.ref,
+        profile: rec.agent,
+        source: "lilos",
+        /* Eager: a resume only happens when something wants the session
+           (replay or a prompt), and a lazy session prompts before its agent
+           exists — Hermes answers with a "No LLM provider configured"
+           refusal. Build it now. */
+        eager_build: true,
+        omit_messages: true,
+        close_on_disconnect: true,
+      })) as { session_id?: unknown; stored_session_id?: unknown };
+      if (typeof r.session_id !== "string" || !r.session_id)
+        throw new Error("session.resume returned no session_id");
+      const ref =
+        typeof r.stored_session_id === "string" && r.stored_session_id
+          ? r.stored_session_id
+          : rec.ref;
+      const s = new Session(
+        sessionId,
+        rec.agent,
+        rec.cwd,
+        rec.model,
+        [],
+        rec.provider,
+        rec.effort,
+        rec.fast,
+        "ws",
+        r.session_id,
+        ref,
+        (e) => this.emitAll(e),
+      );
+      s.userTurns = rec.userTurns;
+      this.sessions.set(sessionId, s);
+      this.byRuntimeSid.set(s.runtimeSid, s);
+      if (ref !== rec.ref) this.persistSession(s);
+      /* Model/provider live on the runtime session, not the stored row — a
+         rebuilt agent comes back on profile defaults and refuses to answer.
+         Re-apply the pick the original session was running. */
+      if (rec.model) {
+        const ack = await setSessionModel(this.opts.gateway, s.runtimeSid, {
+          model: rec.model,
+          provider: rec.provider,
+          effort: rec.effort,
+          fast: rec.fast,
+        });
+        s.model = ack.model;
+        if (ack.provider !== undefined) s.provider = ack.provider;
+        if (ack.effort !== undefined) s.effort = ack.effort;
+        if (ack.fast !== undefined) s.fast = ack.fast;
+      }
+      s.emit("session.started", {
+        agent: rec.agent,
+        cwd: rec.cwd,
+        ...(s.model ? { model: s.model } : {}),
+        ...(s.provider ? { provider: s.provider } : {}),
+        ...(s.effort ? { effort: s.effort } : {}),
+        ...(s.fast !== undefined ? { fast: s.fast } : {}),
+      });
+      s.setState("idle");
+      return s;
+    } catch {
+      /* The stored row may name a session Hermes no longer has, or this
+         gateway may predate session.resume — keep the row (a later adapter
+         can still reach it) and let the caller fall back to session.start. */
+      return undefined;
+    }
+  }
+
+  /** Write the row a restarted adapter needs to resume this session (#288). */
+  private persistSession(s: Session) {
+    if (s.driver !== "ws" || !s.ref) return; // ACP exposes no resume surface
+    this.sessionRegistry?.put(s.id, {
+      ref: s.ref,
+      agent: s.agent,
+      cwd: s.cwd,
+      model: s.model,
+      provider: s.provider,
+      effort: s.effort,
+      fast: s.fast,
+      userTurns: s.userTurns,
+    });
+  }
+
+  private async sessionStop(p: SessionStopParams, forget = true) {
     const s = this.require(p.sessionId);
     if (s.state === "closed") return { stopped: false };
     cancelAllAsks(s);
@@ -634,6 +766,10 @@ export class HermesEngine {
       s.emit("turn.completed", { turnId: t.turnId, stopReason: "cancelled" });
       t.resolve({ turnId: t.turnId, stopReason: "cancelled" });
     }
+    /* An explicit session.stop ends the LilOS conversation — the stored row
+       goes (resume would resurrect a dead session); close()/shutdown keeps
+       it so the next adapter can resume. */
+    if (forget) this.sessionRegistry?.delete(s.id);
     return { stopped: true };
   }
 
@@ -665,6 +801,7 @@ export class HermesEngine {
     }
     if (r.status === "queued" || r.status === "redirected") {
       s.userTurns += 1;
+      this.persistSession(s);
       s.emit("turn.steered", {
         turnId: s.turn?.turnId ?? s.lastTurnId,
         text: p.text,
@@ -720,6 +857,7 @@ export class HermesEngine {
       throw e;
     }
     s.userTurns = Math.min(p.toTurn, s.userTurns);
+    this.persistSession(s);
     return { removed: drop };
   }
 
@@ -1083,6 +1221,7 @@ export class HermesEngine {
     const prev = s.ref;
     s.ref = ref;
     s.emit("session.ref.changed", { ref, previousRef: prev });
+    this.persistSession(s);
   }
 
   private onGatewayEvent(e: {
@@ -1271,11 +1410,7 @@ export class HermesEngine {
       }
       case "session.info": {
         const stored = p.stored_session_id;
-        if (typeof stored === "string" && stored && stored !== s.ref) {
-          const prev = s.ref;
-          s.ref = stored;
-          s.emit("session.ref.changed", { ref: stored, previousRef: prev });
-        }
+        if (typeof stored === "string") this.bumpRef(s, stored);
         /* Engine truth for the footer + picker (#92 AC-4): config.set acks,
            a deferred pick's commit, and turn boundaries re-emit session.info
            with what the session ACTUALLY runs — mirror it so `turn.started`
@@ -1355,14 +1490,8 @@ export class HermesEngine {
         const r = (await this.opts.gateway.request("session.title", {
           session_id: s.runtimeSid,
         })) as { session_key?: unknown };
-        if (
-          typeof r.session_key === "string" &&
-          r.session_key &&
-          r.session_key !== s.ref
-        ) {
-          const prev = s.ref;
-          s.ref = r.session_key;
-          s.emit("session.ref.changed", { ref: s.ref, previousRef: prev });
+        if (typeof r.session_key === "string") {
+          this.bumpRef(s, r.session_key);
         }
       } catch {
         /* best effort: session.info events still catch most rotations */
@@ -1554,7 +1683,9 @@ export class HermesEngine {
   async close() {
     for (const s of [...this.sessions.values()]) {
       try {
-        await this.sessionStop({ sessionId: s.id });
+        // forget=false: shutdown is not session.stop — the rows persist so a
+        // restarted adapter resumes these sessions (#288).
+        await this.sessionStop({ sessionId: s.id }, false);
       } catch {
         /* best effort */
       }
