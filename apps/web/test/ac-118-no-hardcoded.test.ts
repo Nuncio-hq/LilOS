@@ -22,6 +22,9 @@ const SKIP_DIRS = new Set([
   "build",
   ".git",
   ".vite",
+  // Expo prebuild output (apps/mobile/ios|android/Pods): generated, and its
+  // dangling header symlinks crash readdirSync.
+  "Pods",
 ]);
 const SCAN = /\.(ts|tsx|js|jsx|mjs|cjs|html|css)$/;
 
