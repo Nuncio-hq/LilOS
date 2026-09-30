@@ -7,8 +7,7 @@
     "production": {
       "autoIncrement": true,
       "ios": {
-        "image": "latest",
-        "appleTeamId": "R8GJL3N9WX"
+        "image": "latest"
       }
     }
   },
