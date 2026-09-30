@@ -12,6 +12,13 @@
  * `modelVisibility` hide list (the same KV the Mac's Edit models writes),
  * mints a real pairing grant, and prints the deep link + walkthrough.
  *
+ * The seeded repo sits on branch feat/forge and — on the fake engine only —
+ * `gh` resolves to the deterministic fixture in
+ * packages/host/test/fake-gh serving $GH_FAKE_DIR/list-<branch>.json, so a
+ * folder thread's "open a PR" turn renders the real PR card under its
+ * reply (#159 surface, reused for this PR's evidence). On hermes the
+ * harness keeps the real `gh`.
+ *
  * On this VM set TAILSCALE_IP=172.16.4.2; on a Mac leave it unset.
  */
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
@@ -36,6 +43,37 @@ execFileSync("git", ["-C", picked, "config", "user.name", "lilos live"]);
 writeFileSync(join(picked, "README.md"), "# live-160 scratch repo\n");
 execFileSync("git", ["-C", picked, "add", "README.md"]);
 execFileSync("git", ["-C", picked, "commit", "-qm", "init"]);
+/* feat/forge so `forge.prs` reads a branch name the fake-gh listing serves. */
+execFileSync("git", ["-C", picked, "checkout", "-qb", "feat/forge"]);
+
+/* The #159 PR card needs `gh pr list` on the session branch; on the fake
+   engine the harness PATH leads with packages/host/test/fake-gh, which
+   serves these rows (the scripted "open a PR" turn reports /pull/12). */
+const ghDir = mkdtempSync(join(tmpdir(), "lilos160-gh-"));
+const ghLog = join(ghDir, "gh.log");
+writeFileSync(
+  join(ghDir, "list-feat__forge.json"),
+  JSON.stringify([
+    {
+      number: 12,
+      title: "LIL-3: scaffold pnpm monorepo",
+      url: "https://github.com/acme/widgets/pull/12",
+      state: "OPEN",
+      isDraft: false,
+      headRefName: "feat/forge",
+      baseRefName: "main",
+      createdAt: "2026-09-24T08:00:00Z",
+      statusCheckRollup: [
+        {
+          __typename: "CheckRun",
+          name: "ci",
+          status: "COMPLETED",
+          conclusion: "SUCCESS",
+        },
+      ],
+    },
+  ]),
+);
 
 const procs: ChildProcess[] = [];
 const launch = (name: string, cmd: string[], env: Record<string, string>) => {
@@ -110,6 +148,7 @@ out(`relay ws ${relayUrl} (home ${relayHome})`);
 }
 
 const workdir = join(harnessHome, "work");
+const fakeGhDir = join(repoRoot, "packages/host/test/fake-gh");
 launch("harness", ["bun", "apps/harness/src/index.ts"], {
   LILOS_RELAY_URL: relayUrl,
   LILOS_RELAY_TOKEN: relayToken,
@@ -117,7 +156,12 @@ launch("harness", ["bun", "apps/harness/src/index.ts"], {
   LILOS_WORKDIR: workdir,
   LILOS_ENGINE: engineKind,
   ...(engineKind === "command" && !process.env.LILOS_ENGINE_COMMAND
-    ? { LILOS_ENGINE_COMMAND: "bun scripts/live/160-engine.ts" }
+    ? {
+        LILOS_ENGINE_COMMAND: "bun scripts/live/160-engine.ts",
+        PATH: `${fakeGhDir}:${process.env.PATH ?? ""}`,
+        GH_FAKE_DIR: ghDir,
+        GH_FAKE_LOG: ghLog,
+      }
     : {}),
 });
 out(`harness launched (engine=${engineKind})`);
@@ -146,9 +190,9 @@ out(`seeded recents: ${picked}`);
 if (engineKind === "command") {
   await user.request("settings.set", {
     key: "modelVisibility",
-    value: { providers: [], models: ["xai::fake-small"] },
+    value: { providers: [], models: ["google::fake/opus-2"] },
   });
-  out("hid xai::fake-small via settings.set (AC-1)");
+  out("hid google::fake/opus-2 via settings.set (AC-1)");
 }
 
 const { offer } = await user.request<{
@@ -166,10 +210,11 @@ console.log("");
 console.log(`  Then on the phone:`);
 console.log(`    Home -> ${employeeName} -> DM -> tap the model chip:`);
 console.log("    the sheet lists the engine's models grouped by provider with");
-console.log("    real logos (Anthropic/OpenAI/Google/xAI/Z.AI); Fake Small is");
+console.log("    real logos (Anthropic/OpenAI) and Acme's generic chip; Google's");
 console.log(
-  "    hidden by the shared list (AC-1). The reasoning slider carries",
+  "    Fake Opus 2 is hidden by the shared list (AC-1/AC-3). The reasoning",
 );
+console.log("    slider carries");
 console.log(
   "    exactly the picked model's levels and Fast only when it has one",
 );
@@ -177,9 +222,15 @@ console.log(
   "    (AC-2/AC-3). Pick a model, send, and the chip shows the new pick;",
 );
 console.log(
-  "    inside the thread the same pick is per-thread (AC-4). To un-hide",
+  "    inside the thread the same pick is per-thread (AC-4). For the PR",
 );
-console.log("    live, run in another terminal:");
+console.log(
+  '    card: Home -> the folder row -> open -> send "open a PR" — the',
+);
+console.log(
+  "    reply carries the PR card (fake-gh fixture, fake engine only). To",
+);
+console.log("    un-hide live, run in another terminal:");
 console.log(
   `      bun -e 'import{RelayClient}from"./packages/client-runtime/src/index.ts";const c=new RelayClient({url:"${relayUrl}",token:"${relayToken}"});await c.connect();await c.request("settings.set",{key:"modelVisibility",value:{providers:[],models:[]}})'`,
 );

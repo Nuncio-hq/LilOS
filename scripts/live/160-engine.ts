@@ -28,13 +28,15 @@ const flag = (name: string) => process.argv.includes(`--${name}`);
 
 /* Model id -> the provider slug the demo catalog reports. Chosen so every
    ladder shape lands on a different real logo: a fast+ladder model, a
-   long-ladder model, a no-ladder model, and a "/" id. */
+   long-ladder model, a "/" id, and an unknown provider (generic chip). */
 const PROVIDER_OF: Record<string, string> = {
   "fake-large": "anthropic",
   "fake-reasoning": "openai",
   "fake/opus-2": "google",
   "fake-fresh": "zai",
-  "fake-small": "xai",
+  /* Unknown-to-models.dev slug: the picker's generic chip + no logo (AC-3
+     negative), and Fake Small has no ladder/fast for the AC-2 negatives. */
+  "fake-small": "acme",
 };
 const PROVIDERS = [
   { id: "anthropic", name: "Anthropic" },
@@ -42,6 +44,7 @@ const PROVIDERS = [
   { id: "openai", name: "OpenAI" },
   { id: "xai", name: "xAI" },
   { id: "zai", name: "Z.AI" },
+  { id: "acme", name: "Acme" },
 ];
 
 const engine = new FakeEngine({ tick: arg("tick", 25) });
