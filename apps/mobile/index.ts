@@ -7,9 +7,8 @@ import App from "./src/App";
    down, so dev builds suppress just that toast. Error toasts (e.g. "Fast
    Refresh disconnected") and the native bundle-download bar still show. */
 if (__DEV__) {
-  const DevLoadingView = require(
-    "react-native/Libraries/Utilities/DevLoadingView",
-  ).default;
+  const DevLoadingView =
+    require("react-native/Libraries/Utilities/DevLoadingView").default;
   const showMessage = DevLoadingView.showMessage;
   DevLoadingView.showMessage = (
     message: string,
