@@ -471,9 +471,9 @@ describe("engine-fake #294: reports the session's context window", () => {
     const listed = (await c.request("models.list", {})) as {
       models: { id: string; contextWindow?: number }[];
     };
-    expect(listed.models.find((m) => m.id === "fake-large")?.contextWindow).toBe(
-      262_000,
-    );
+    expect(
+      listed.models.find((m) => m.id === "fake-large")?.contextWindow,
+    ).toBe(262_000);
     expect(
       listed.models.find((m) => m.id === "fake-reasoning")?.contextWindow,
     ).toBe(200_000);
@@ -498,8 +498,12 @@ describe("engine-fake #294: reports the session's context window", () => {
     })) as { sessionId: string };
     await promptText(c, sessionId, "Explain the relay package");
     const lastUsage = () => {
-      const done = events.findLast((e) => e.type === "turn.completed");
-      return (done?.payload as { usage?: { contextWindow?: number } }).usage;
+      for (let i = events.length - 1; i >= 0; i--) {
+        if (events[i].type !== "turn.completed") continue;
+        return (events[i].payload as { usage?: { contextWindow?: number } })
+          .usage;
+      }
+      return undefined;
     };
     expect(lastUsage()?.contextWindow).toBe(262_000);
 

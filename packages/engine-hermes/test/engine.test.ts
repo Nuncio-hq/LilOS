@@ -1307,7 +1307,8 @@ describe("engine-hermes #294: the resolved context window reaches clients", () =
     gw.complete(gw.lastSid);
     await p;
     const done = h.events.find((e) => e.type === "turn.completed");
-    const usage = (done?.payload as { usage?: { contextWindow?: number } })
+    if (!done) throw new Error("turn.completed missing");
+    const usage = (done.payload as { usage?: { contextWindow?: number } })
       .usage;
     expect(usage?.contextWindow).toBe(262_000);
   });
@@ -1338,11 +1339,7 @@ describe("engine-hermes #294: the resolved context window reaches clients", () =
       {
         slug: "anthropic-cliproxy",
         name: "Anthropic – CLIProxyAPI",
-        models: [
-          "claude-sonnet-5[1m]",
-          "qwen3.8[262k]",
-          "claude-opus-4.8",
-        ],
+        models: ["claude-sonnet-5[1m]", "qwen3.8[262k]", "claude-opus-4.8"],
       },
     ];
     const r = (await h.request("models.list")) as {
@@ -1351,9 +1348,9 @@ describe("engine-hermes #294: the resolved context window reaches clients", () =
     expect(
       r.models.find((m) => m.id === "claude-sonnet-5[1m]")?.contextWindow,
     ).toBe(1_000_000);
-    expect(
-      r.models.find((m) => m.id === "qwen3.8[262k]")?.contextWindow,
-    ).toBe(262_000);
+    expect(r.models.find((m) => m.id === "qwen3.8[262k]")?.contextWindow).toBe(
+      262_000,
+    );
     // No suffix → nothing claimed: the client's labelled estimate handles it.
     expect(
       r.models.find((m) => m.id === "claude-opus-4.8")?.contextWindow,

@@ -16,8 +16,8 @@ import type {
   Channel,
   EmpFn,
   HumanFn,
-  Msg,
   ModelOption,
+  Msg,
   Reply,
   Thread,
 } from "../src/types";
@@ -34,9 +34,9 @@ if (typeof Element.prototype.scrollTo === "undefined") {
 }
 afterEach(cleanup);
 
-/* Oscar's repro: the employee's own model isn't the session's — 94,800 used
-   is 47.4% of a 200k window (the employee's) vs 36.2% of the session's real
-   262k one. */
+/* The reported repro: the employee's own model isn't the session's — 94,800
+   used is 47.4% of a 200k window (the employee's) vs 36.2% of the session's
+   real 262k one. */
 const BUILDER = {
   id: "builder",
   name: "Builder",
@@ -75,12 +75,16 @@ const dmChannel: Channel = {
    agree. */
 const catalog: ModelOption[] = [
   { id: "fake-small", name: "Fake Small", contextWindow: 200_000 },
-  { id: "qwen3.8-flash-next", name: "Qwen3.8 Flash Next", contextWindow: 262_000 },
+  {
+    id: "qwen3.8-flash-next",
+    name: "Qwen3.8 Flash Next",
+    contextWindow: 262_000,
+  },
 ];
 const usage = { input: 94_800, output: 0, reasoning: 0, cache: 0 };
 
 const sessionThread: Thread = {
-  session: "s_oscar",
+  session: "s_repro",
   model: "qwen3.8-flash-next",
   replies: [agentTurn],
   queue: [],
@@ -106,9 +110,7 @@ const props = {
 describe("issue #294 — one session reads the same window everywhere", () => {
   test("sessionModelId prefers the session pin, then the employee, then the engine default", () => {
     const t = { model: "qwen3.8-flash-next" };
-    expect(sessionModelId(t, "fake-small", catalog)).toBe(
-      "qwen3.8-flash-next",
-    );
+    expect(sessionModelId(t, "fake-small", catalog)).toBe("qwen3.8-flash-next");
     expect(sessionModelId({}, "fake-small", catalog)).toBe("fake-small");
     expect(sessionModelId({}, "", catalog, "qwen3.8-flash-next")).toBe(
       "qwen3.8-flash-next",
@@ -119,12 +121,17 @@ describe("issue #294 — one session reads the same window everywhere", () => {
   test("contextWindowOf: the session's reported window beats the catalog, the catalog beats the estimate", () => {
     // Engine-reported on the usage — the resolved window wins outright.
     expect(
-      contextWindowOf({ ...usage, contextWindow: 128_000 }, "fake-small", catalog),
+      contextWindowOf(
+        { ...usage, contextWindow: 128_000 },
+        "fake-small",
+        catalog,
+      ),
     ).toEqual({ tokens: 128_000, estimated: false });
     // No report on the usage → the session model's catalog row.
-    expect(
-      contextWindowOf(usage, "qwen3.8-flash-next", catalog),
-    ).toEqual({ tokens: 262_000, estimated: false });
+    expect(contextWindowOf(usage, "qwen3.8-flash-next", catalog)).toEqual({
+      tokens: 262_000,
+      estimated: false,
+    });
     // Nothing reported anywhere → the labelled estimate; qwen keeps its
     // pre-#294 hint, everything else the plain fallback.
     expect(contextWindowOf(usage, "qwen3.8-flash-next")).toEqual({

@@ -87,7 +87,11 @@ export function SessionUsage({
             <span className="font-semibold text-[13px]">Context window</span>
             <span
               className="font-medium text-[12px] text-muted-foreground tabular-nums"
-              title={estimated ? "Estimated — the engine reports no window" : undefined}
+              title={
+                estimated
+                  ? "Estimated — the engine reports no window"
+                  : undefined
+              }
             >
               {n(used)} / {estimated ? `~${n(max)}` : n(max)}
               <span className="ml-1.5 text-foreground">{pct(used, max)}</span>

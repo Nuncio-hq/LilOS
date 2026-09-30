@@ -25,8 +25,13 @@ export function sessionModelId(
   defaultProvider?: string,
 ): string | undefined {
   return (
-    sessionChoice(thread, leadModel, models ?? [], defaultModel, defaultProvider)
-      .model || undefined
+    sessionChoice(
+      thread,
+      leadModel,
+      models ?? [],
+      defaultModel,
+      defaultProvider,
+    ).model || undefined
   );
 }
 

@@ -9,10 +9,7 @@ import {
 } from "@lilos/contracts/engine";
 import { RpcError } from "./errors.js";
 import type { GatewayLike } from "./gateway.js";
-import {
-  contextWindowFromId,
-  displayModelName,
-} from "./model-label.js";
+import { contextWindowFromId, displayModelName } from "./model-label.js";
 
 /**
  * `agents` + `models` capabilities over `hermes serve` (#8).

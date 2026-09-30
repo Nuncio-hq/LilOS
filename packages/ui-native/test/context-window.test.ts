@@ -13,7 +13,12 @@ describe("contextWindowOf — the window the meter divides by (#294)", () => {
   it("prefers the session's engine-reported window over the catalog row", () => {
     expect(
       contextWindowOf({ contextWindow: 128_000 }, "fake-large", [
-        { id: "fake-large", name: "Fake Large", provider: "fake", contextWindow: 262_000 },
+        {
+          id: "fake-large",
+          name: "Fake Large",
+          provider: "fake",
+          contextWindow: 262_000,
+        },
       ]),
     ).toEqual({ tokens: 128_000, estimated: false });
   });
@@ -21,7 +26,12 @@ describe("contextWindowOf — the window the meter divides by (#294)", () => {
   it("falls back to the session model's catalog row", () => {
     expect(
       contextWindowOf(undefined, "fake-large", [
-        { id: "fake-large", name: "Fake Large", provider: "fake", contextWindow: 262_000 },
+        {
+          id: "fake-large",
+          name: "Fake Large",
+          provider: "fake",
+          contextWindow: 262_000,
+        },
       ]),
     ).toEqual({ tokens: 262_000, estimated: false });
   });
