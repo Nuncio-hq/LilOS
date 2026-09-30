@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import type { DesktopBridge } from "@lilos/contracts/app";
 import { afterEach, describe, expect, test } from "vitest";
 import { watchDesktopChrome } from "../src/lib/desktop";
+import { appFrameClass } from "../src/lib/frame";
 
 const css = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "..", "src", "index.css"),
@@ -81,6 +82,29 @@ describe("desktop chrome stylesheet", () => {
     );
     // The inset drops in full screen (the OS hides the lights).
     expect(css).toMatch(/data-fullscreen/);
+  });
+
+  test("#295 the surface header takes the same reserve when the sidebar is hidden", () => {
+    // One shared reserve — no second magic number.
+    expect(css).toMatch(/--lilos-traffic-inset:\s*88px/);
+    // In Focus the sidebar is always hidden: the frame carries lilos-focus
+    // and the surface header reserves the strip at any width…
+    expect(appFrameClass({ desktop: true, focus: true })).toContain(
+      "lilos-focus",
+    );
+    expect(css).toMatch(
+      /\.lilos-focus\s+main\s*>\s*header\s*\{[^}]*padding-left:\s*var\(--lilos-traffic-inset\)/,
+    );
+    // …and below the lg breakpoint every view's sidebar collapses to an
+    // overlay, so a media rule covers any other leftmost surface header.
+    const narrow = css.match(/@media \(max-width: 1023px\)\s*\{([\s\S]*?)\n\}/);
+    expect(narrow?.[1]).toMatch(
+      /data-desktop[\s\S]*main\s*>\s*header[\s\S]*var\(--lilos-traffic-inset\)/,
+    );
+    // Same scoping as the sidebar reserve: desktop only, off in full screen.
+    expect(css).toMatch(
+      /html\[data-desktop\]:not\(\[data-fullscreen\]\)\s*\.lilos-focus\s+main/,
+    );
   });
 
   test("AC-3 header rows are drag regions with interactive children exempt", () => {

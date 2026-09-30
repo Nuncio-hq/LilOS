@@ -25,13 +25,31 @@ html[data-desktop] body {
 
 /* The lights end ~x=78 worst case (inset x 16 + a cluster that measures
    ~52-62px across macOS versions/displays — TRAFFIC_LIGHTS_END in
-   apps/desktop/src/window-chrome.ts): the sidebar header reserves their
+   apps/desktop/src/window-chrome.ts): the leftmost header reserves their
    strip plus the ~10px macOS leaves before content — and drops it in full
-   screen, where the OS hides them and an empty gap would remain (AC-1, AC-4). */
+   screen, where the OS hides them and an empty gap would remain (AC-1, AC-4).
+   One var so every edge case shares the same reserve (#295). */
+html[data-desktop]:not([data-fullscreen]) {
+  --lilos-traffic-inset: 88px;
+}
 html[data-desktop]:not([data-fullscreen])
   aside.lilos-glass-side
   > div:first-child {
-  padding-left: 88px;
+  padding-left: var(--lilos-traffic-inset);
+}
+
+/* The sidebar hides in Focus (it is overlay-only there) and below the lg
+   breakpoint in every view — then the surface's own header is the leftmost
+   edge and takes over the same strip (#295). The header already carries
+   lilos-drag, so the reserved strip drags the window while its buttons
+   stay no-drag. */
+html[data-desktop]:not([data-fullscreen]) .lilos-focus main > header {
+  padding-left: var(--lilos-traffic-inset);
+}
+@media (max-width: 1023px) {
+  html[data-desktop]:not([data-fullscreen]) .lilos-desktop main > header {
+    padding-left: var(--lilos-traffic-inset);
+  }
 }
 
 /* The overlay sidebar opened from the hamburger on narrow windows floats
