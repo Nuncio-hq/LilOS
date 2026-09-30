@@ -210,7 +210,9 @@ console.log("");
 console.log(`  Then on the phone:`);
 console.log(`    Home -> ${employeeName} -> DM -> tap the model chip:`);
 console.log("    the sheet lists the engine's models grouped by provider with");
-console.log("    real logos (Anthropic/OpenAI) and Acme's generic chip; Google's");
+console.log(
+  "    real logos (Anthropic/OpenAI) and Acme's generic chip; Google's",
+);
 console.log(
   "    Fake Opus 2 is hidden by the shared list (AC-1/AC-3). The reasoning",
 );
