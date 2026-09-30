@@ -42,6 +42,7 @@ import type {
   OsApp,
   OsEditor,
   Thread,
+  WbTab,
   Work,
 } from "../types";
 import { WorkspaceBadge, WsBadge } from "../workbench/ws-badges";
@@ -116,6 +117,7 @@ export function ThreadView({
   resolved,
   setResolved,
   onFocus,
+  onOpenTab,
   onClose,
   work,
   repo,
@@ -163,6 +165,9 @@ export function ThreadView({
   resolved: Record<string, string>;
   setResolved?: (r: Record<string, string>) => void;
   onFocus?: () => void;
+  /* Opens Focus on a Workbench tab — makes the turn's "N subagents · Open" / "N files changed"
+     links live in the panel (#317). Absent = those stay in-place / plain text. */
+  onOpenTab?: (t: WbTab) => void;
   /* Esc → close the panel (issue #195 AC-1); absent → Esc does nothing (D-#19). */
   onClose?: () => void;
   work: Work | null;
@@ -192,8 +197,8 @@ export function ThreadView({
   onRetry?: (empId: string) => void;
   onUnqueue?: (i: number) => void;
   onSendQueued?: (i: number) => void;
-  /* Messages sent while the turn runs. `steer` (engine declared session.steer) renders them as
-     pending-steer chips inside the turn; without it they show in the queued tray instead (issue #9). */
+  /* Messages sent while the turn runs that the agent hasn't read yet. They wait in the tray above the
+     composer; `steer` (engine declared session.steer) only changes when they get read (issue #9). */
   pending?: string[];
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
   accept?: string;
@@ -428,7 +433,7 @@ export function ThreadView({
                     models={models}
                     onOpenSession={onOpenSession}
                     onPlan={onPlan}
-                    pending={steer ? pending : []}
+                    onOpen={onOpenTab}
                     cards={
                       <ReplyCards
                         r={r}
@@ -565,10 +570,20 @@ export function ThreadView({
         }
         queued={
           <>
-            {/* Without steer, mid-turn sends queue here and auto-run at turn end (issue #9). */}
+            {/* Every mid-turn send waits here until the agent reads it — steer or not (issue #9). */}
             <QueuedTray
-              items={steer ? [] : pending}
+              items={pending}
+              steer={steer}
+              name={leadEmp?.name}
               onRemove={onRemovePending}
+              onEdit={
+                onRemovePending && onDraftChange
+                  ? (i) => {
+                      onDraftChange(pending[i] ?? "");
+                      onRemovePending(i);
+                    }
+                  : undefined
+              }
             />
             <NotSentTray
               items={thread.queue ?? []}

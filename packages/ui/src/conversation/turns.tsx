@@ -48,7 +48,7 @@ import { VIEWER_ID } from "../types";
 import { turnSteps } from "../workbench/artifacts";
 import { type PlanAction, PlanCard } from "./plan-card";
 import { StepDetail } from "./step-detail";
-import { TurnSubagents } from "./subagents";
+import { SubagentsLink, TurnSubagents } from "./subagents";
 
 /* The conversation's turns — ONE implementation used by both frames (issue #19):
    ThreadView renders it for channel threads and DM sessions, FocusView for Focus.
@@ -186,7 +186,6 @@ export function AgentTurn({
   onRetry,
   onOpen,
   cards,
-  pending = [],
   models,
   onOpenSession,
   onPlan,
@@ -205,7 +204,6 @@ export function AgentTurn({
   onOpen?: (t: WbTab) => void;
   /** Frame-attached pieces under the turn (approval card, start-work card, PR card). */
   cards?: React.ReactNode;
-  pending?: string[];
   /** Opens another employee's session a subagent row links to (issue #170). */
   onOpenSession?: (employeeId: string, session: string) => void;
   /** Approve / Change / Reject on the plan this turn proposed (issue #175). */
@@ -258,13 +256,20 @@ export function AgentTurn({
           waitingApproval={r.waitingOn === "approval"}
         />
       )}
-      {!!r.subagents?.length && (
-        <TurnSubagents
-          agents={r.subagents}
-          emp={emp}
-          onOpenSession={onOpenSession}
-        />
-      )}
+      {/* With a Workbench the helpers live on its Subagents tab (#317); the turn only points there. */}
+      {!!r.subagents?.length &&
+        (onOpen ? (
+          <SubagentsLink
+            agents={r.subagents}
+            onOpen={() => onOpen("subagents")}
+          />
+        ) : (
+          <TurnSubagents
+            agents={r.subagents}
+            emp={emp}
+            onOpenSession={onOpenSession}
+          />
+        ))}
       {r.live && r.phase === "tools" && !steps.some((s) => s.running) && (
         <Shimmer as="span" duration={1} className="pl-4 text-[13px]">
           Working…
@@ -293,12 +298,7 @@ export function AgentTurn({
           </MessageResponse>
         </MessageContent>
       ) : null}
-      <SteerRows
-        steers={r.steers}
-        pending={pending}
-        live={r.live}
-        by={human?.(VIEWER_ID)?.name ?? "You"}
-      />
+      <SteerRows steers={r.steers} by={human?.(VIEWER_ID)?.name ?? "You"} />
       {r.phase === "stopped" && (
         <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
           Stopped · session.interrupt

@@ -132,6 +132,7 @@ export function FocusView({
   onStopJob,
   onPlan,
   browser,
+  initialTab,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -185,7 +186,7 @@ export function FocusView({
   onPrMerge?: (method: MergeMethod) => void | Promise<void>;
   /** Live harness surfaces for Workbench Terminal/Preview tabs (issue #36). */
   surfaces?: LiveSurfaces;
-  /* Mid-turn sends: pending-steer chips when `steer` is declared, the queued tray without it. */
+  /* Mid-turn sends the agent hasn't read yet — the waiting tray above the composer (issue #9). */
   pending?: string[];
   /* os.editors + a bound os.open (issue #110, same pair ThreadView takes):
      the caller probes `host.describe` — onOpenPath={null} means os.open was
@@ -218,12 +219,17 @@ export function FocusView({
   onPlan?: (a: PlanAction, planId: string) => void;
   /* This thread's own tabs of the LilOS Browser → Workbench Browser (#214). */
   browser?: ReactNode;
+  /* Opens on this Workbench tab (e.g. a thread panel's "N subagents · Open" link, #317) —
+     counts as the user's pick, so follow-the-agent doesn't switch away from it. */
+  initialTab?: WbTab;
 }) {
   const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024);
-  const [tab, setTab] = useState<WbTab>(() =>
-    sessionArtifacts(thread).diffs.length ? "changes" : "terminal",
+  const [tab, setTab] = useState<WbTab>(
+    () =>
+      initialTab ??
+      (sessionArtifacts(thread).diffs.length ? "changes" : "terminal"),
   );
-  const [follow, setFollow] = useState(true);
+  const [follow, setFollow] = useState(!initialTab);
   /* #138 AC-3: a search hit opens the session in Focus (#114) scrolled to
      that message with a short flash — mirrors ThreadView's jump-to-hit.
      Waits for the row to render (history may still be loading). */
@@ -308,6 +314,11 @@ export function FocusView({
     if (lastStep.diff) setTab("changes");
     else if (lastStep.tool === "terminal") setTab("terminal");
   }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* The running turn spins off a new helper → Subagents comes forward (#317). */
+  const liveHelpers = live?.subagents?.map((x) => x.id).join(",") ?? "";
+  useEffect(() => {
+    if (follow && liveHelpers) setTab("subagents");
+  }, [liveHelpers]); // eslint-disable-line react-hooks/exhaustive-deps
   const pickTab = (t: WbTab) => {
     setTab(t);
     setFollow(false);
@@ -583,7 +594,6 @@ export function FocusView({
                       onOpen={pickTab}
                       onOpenSession={onOpenSession}
                       onPlan={onPlan}
-                      pending={steer ? pendingSteers : []}
                       cards={
                         <>
                           <ReplyCards
@@ -702,12 +712,22 @@ export function FocusView({
                 </QueueSection>
               </Queue>
             )}
-            {/* Queued mid-turn sends (engine without steer, issue #9) and the not-sent tray —
+            {/* Mid-turn sends still waiting to be read (issue #9) and the not-sent tray —
                 same markup as the thread panel, above the composer there too. queue holds ONLY
                 messages ■ stopped before they landed. */}
             <QueuedTray
-              items={steer ? [] : pendingSteers}
+              items={pendingSteers}
+              steer={steer}
+              name={lead?.name}
               onRemove={onRemovePending}
+              onEdit={
+                onRemovePending && onDraftChange
+                  ? (i) => {
+                      onDraftChange(pendingSteers[i] ?? "");
+                      onRemovePending(i);
+                    }
+                  : undefined
+              }
             />
             <NotSentTray
               items={queue}
@@ -798,6 +818,8 @@ export function FocusView({
                 onPrMerge={onPrMerge}
                 live={surfaces}
                 onStopJob={onStopJob}
+                emp={emp}
+                onOpenSession={onOpenSession}
                 running={running}
                 editors={editorsProp}
                 onOpenPath={onOpenPath}

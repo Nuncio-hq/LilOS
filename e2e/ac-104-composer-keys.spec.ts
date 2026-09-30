@@ -346,9 +346,9 @@ test("AC-7 prototype: Esc stops the turn; ↑ recalls; Esc closes the @ menu", a
   // recall it (parity with the real app, where the steer IS a user message).
   await steer.fill("also the flaky e2e retry counts");
   await steer.press("Enter");
-  await expect(page.locator('[data-steerstate="pending"]').first()).toBeVisible(
-    { timeout: 10_000 },
-  );
+  await expect(page.locator("[data-queued]").first()).toBeVisible({
+    timeout: 10_000,
+  });
   await steer.click();
   await page.keyboard.press("ArrowUp");
   await expect(steer).toHaveValue("also the flaky e2e retry counts");
