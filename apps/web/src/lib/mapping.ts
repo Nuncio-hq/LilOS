@@ -344,14 +344,24 @@ export function mergeTurns(
      card when a ref'd turn re-anchors. */
   const blocks: Reply[][] = [];
   const turnBlock = new Map<TurnModel, Reply[]>();
-  for (const r of replies) {
+  /* Position-bound like mobile (#181 AC-4): a ref'd turn claims only a
+     message that renders after its prompt — a rebound session's turn
+     otherwise steals an older identical reply and vacates its slot. */
+  const refPos = new Map<TurnModel, number>();
+  for (const t of model.turns) {
+    if (!t.ref) continue;
+    const i = replies.findIndex((x) => x.id === t.ref);
+    if (i >= 0) refPos.set(t, i);
+  }
+  for (const [ri, r] of replies.entries()) {
     const t = model.turns.find(
       (x) =>
         !used.has(x) &&
         !x.agentInitiated &&
         r.from === employeeId &&
         x.text.trim() &&
-        x.text.trim() === r.text.trim(),
+        x.text.trim() === r.text.trim() &&
+        (refPos.get(x) ?? -1) < ri,
     );
     if (!t) {
       blocks.push([r]);
