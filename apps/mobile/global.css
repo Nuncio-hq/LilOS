@@ -45,6 +45,7 @@
       --color-code-builtin: #953800;
       --color-code-addition: #116329;
       --color-code-deletion: #82071e;
+      --color-code-hunk: #0550ae;
     }
 
     @variant dark {
@@ -80,6 +81,7 @@
       --color-code-builtin: #ffa657;
       --color-code-addition: #3fb950;
       --color-code-deletion: #f85149;
+      --color-code-hunk: #a5d6ff;
     }
   }
 }

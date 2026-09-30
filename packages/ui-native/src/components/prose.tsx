@@ -92,6 +92,7 @@ function CodeBlock({
     "code-builtin": useThemeColor("code-builtin"),
     "code-addition": useThemeColor("code-addition"),
     "code-deletion": useThemeColor("code-deletion"),
+    "code-hunk": useThemeColor("code-hunk"),
   };
   const lines = codeLines(highlight(block.code, block.lang));
   return (
@@ -180,9 +181,11 @@ const HLJS_TONES: [RegExp, string][] = [
   [/number|literal/, "code-number"],
   [/title|section|name|selector-id|selector-class|selector-attr/, "code-title"],
   [/attr|attribute|variable|template-variable|params/, "code-attr"],
-  [/built_in|type|meta|link/, "code-builtin"],
+  [/built_in|type|link/, "code-builtin"],
   [/addition/, "code-addition"],
   [/deletion/, "code-deletion"],
+  // hljs meta in a diff block is the @@ hunk header (#312's muted blue).
+  [/meta|hunk/, "code-hunk"],
 ];
 
 /** Flattened highlight spans → per-line span lists (RN <Text> can't be

@@ -276,12 +276,9 @@ PR does not exist.
   pairing, tied to the device id.** Not: a LilOS cloud relay; direct APNs
   with an Apple key on the Mac; silent/background pre-sync pushes. A
   sleeping Mac sends nothing (accepted). — #161 · PR #283
-- **D-#259 Mobile agent markdown stays a bespoke `Prose` block parser —
-  fenced code + GFM tables are added block types, not a markdown
-  component.** Fences highlight via `lowlight` (registered grammars only,
-  unknown → plain). Not: react-native-markdown-display / react-native-marked
-  (no GFM tables, no highlighting, and no streaming states — `closeOpen`
-  owns those), or a wasm highlighter on RN. — #259 · PR #316
+- **D-#259 Mobile markdown stays bespoke — fences and GFM tables are
+  `Prose` block types; fences highlight via `lowlight`.** Not: RN
+  markdown libs (no tables, highlighting, or streaming states). — #259 · PR #316
 
 ## UX
 - **D-#114 The Workbench lives only in Focus mode, and opening a session
