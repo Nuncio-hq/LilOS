@@ -53,26 +53,29 @@ export function Prose({
 
 function Inline({ text, className }: { text: string; className: string }) {
   const accent = useThemeColor("accent-text");
+  const foreground = useThemeColor("foreground");
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+  // Each segment is a sibling Text with its own color — a color class
+  // or style on the parent competes with nested spans and wins.
   return (
-    <Text className={`text-foreground ${className}`}>
+    <Text className={className}>
       {parts.map((p, i) =>
         p.startsWith("**") ? (
-          <Text key={i} className="font-semibold">
+          <Text key={i} className="font-semibold" style={{ color: foreground }}>
             {p.slice(2, -2)}
           </Text>
         ) : p.startsWith("`") ? (
-          // style beats the parent's className on nested Text — a
-          // text-accent-text class loses to text-foreground in cells.
           <Text
             key={i}
-            className="font-mono text-[14px]"
+            className="font-mono text-[14px] text-accent-text"
             style={{ color: accent }}
           >
             {p.slice(1, -1)}
           </Text>
         ) : (
-          p
+          <Text key={i} style={{ color: foreground }}>
+            {p}
+          </Text>
         ),
       )}
     </Text>
