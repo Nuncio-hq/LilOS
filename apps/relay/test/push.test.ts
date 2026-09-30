@@ -205,6 +205,18 @@ const turnCompleted = (seq: number, payload: Record<string, unknown>) => ({
   payload: { turnId: `turn-${seq}`, ...payload },
 });
 
+const turnDelta = (
+  seq: number,
+  turnId: string,
+  delta: string,
+  stream: "text" | "reasoning" = "text",
+) => ({
+  seq,
+  sessionId: "fake:sess-1",
+  type: "turn.delta",
+  payload: { turnId, stream, delta },
+});
+
 describe("push registration (#161)", () => {
   it("AC-1 a paired device registers its Expo token + prefs", async () => {
     const { relay, pairing, store } = newWorld();
@@ -284,6 +296,7 @@ describe("push fan-out — transition → push decision (#161)", () => {
     expect(sent[0]).toEqual({
       to: "ExponentPushToken[phone]",
       title: "Ada",
+      subtitle: "Fix the readme",
       body: "rm -rf node_modules",
       data: { conversationId: conversation.id },
     });
@@ -333,6 +346,115 @@ describe("push fan-out — transition → push decision (#161)", () => {
     expect(sent).toHaveLength(1);
   });
 
+  it("#289 completed body is the reply excerpt; the thread title rides as the iOS subtitle", async () => {
+    const { relay, pairing, sent } = newWorld();
+    const host = await registeredHost(relay);
+    const { conversation } = await setupConversation(host, {
+      title: "Fix the readme",
+    });
+    const phone = await helloedDevice(pairing, relay);
+    await registerPush(phone);
+
+    const reply =
+      "Done on `main`:\n\n- `README.md` +3, new `docs/decisions/0002-notes.md`\n" +
+      "- Tests: 7 passed, 1 skipped\n- Commit `abc123`\n\nReview it in **Changes**.";
+    // The same text the harness accumulates from turn.delta ("text" stream)
+    // and posts as the answer message — two chunks, like a real stream.
+    await engineEvent(
+      host,
+      conversation,
+      turnDelta(1, "turn-3", reply.slice(0, 60)),
+    );
+    await engineEvent(
+      host,
+      conversation,
+      turnDelta(2, "turn-3", reply.slice(60)),
+    );
+    await engineEvent(
+      host,
+      conversation,
+      turnCompleted(3, { stopReason: "end_turn" }),
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      title: "Ada",
+      subtitle: "Fix the readme",
+      body: "Done on main: README.md +3, new docs/decisions/0002-notes.md Tests: 7 passed, 1 skipped Commit abc123 Review it in…",
+      data: { conversationId: conversation.id },
+    });
+  });
+
+  it("#289 the excerpt strips markdown and drops fenced code blocks", async () => {
+    const { relay, pairing, sent } = newWorld();
+    const host = await registeredHost(relay);
+    const { conversation } = await setupConversation(host, {
+      title: "Fix the readme",
+    });
+    const phone = await helloedDevice(pairing, relay);
+    await registerPush(phone);
+
+    const reply =
+      'Here\'s the fix:\n\n```ts\nconst secret = "do-not-show";\n```\n\n' +
+      "See [`push.ts`](/apps/relay/src/push.ts) — **bold**, *italic*, ~~gone~~, `mono`.\n" +
+      "> quoted\n1. first\n2. second";
+    await engineEvent(host, conversation, turnDelta(1, "turn-2", reply));
+    await engineEvent(
+      host,
+      conversation,
+      turnCompleted(2, { turnId: "turn-2", stopReason: "end_turn" }),
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.body).toBe(
+      "Here's the fix: See push.ts — bold, italic, gone, mono. quoted first second",
+    );
+    expect(sent[0]?.body).not.toContain("do-not-show");
+  });
+
+  it("#289 completed falls back to the thread title when the turn streamed no text", async () => {
+    const { relay, pairing, sent } = newWorld();
+    const host = await registeredHost(relay);
+    const { conversation } = await setupConversation(host, {
+      title: "Fix the readme",
+    });
+    const phone = await helloedDevice(pairing, relay);
+    await registerPush(phone);
+
+    // Reasoning deltas never feed the excerpt — with no text stream the
+    // body is the title, like before.
+    await engineEvent(
+      host,
+      conversation,
+      turnDelta(1, "turn-2", "thinking hard", "reasoning"),
+    );
+    await engineEvent(
+      host,
+      conversation,
+      turnCompleted(2, { turnId: "turn-2", stopReason: "end_turn" }),
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.body).toBe("Fix the readme");
+    expect(sent[0]?.subtitle).toBe("Fix the readme");
+  });
+
+  it("#289 subtitle is the thread title under the same truncation budget", async () => {
+    const { relay, pairing, sent } = newWorld();
+    const host = await registeredHost(relay);
+    const { conversation } = await setupConversation(host, {
+      title: `Fix ${"very ".repeat(60)}readme`,
+    });
+    const phone = await helloedDevice(pairing, relay);
+    await registerPush(phone);
+
+    await engineEvent(
+      host,
+      conversation,
+      turnCompleted(1, { stopReason: "end_turn" }),
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.subtitle?.length).toBeLessThanOrEqual(120);
+    expect(sent[0]?.subtitle?.endsWith("…")).toBe(true);
+  });
+
   it("turn.completed pushes completed; error pushes failed; cancelled stays silent", async () => {
     const { relay, pairing, sent } = newWorld();
     const host = await registeredHost(relay);
@@ -350,6 +472,7 @@ describe("push fan-out — transition → push decision (#161)", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
       title: "Ada",
+      subtitle: "Fix the readme",
       body: "Fix the readme",
       data: { conversationId: conversation.id },
     });

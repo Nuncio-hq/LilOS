@@ -31,7 +31,9 @@ export interface ExpoPushMessage {
   to: string;
   /** Employee name (AC-3). */
   title: string;
-  /** What it needs / thread title, truncated (AC-3). */
+  /** iOS subtitle — the thread title, truncated (#289). */
+  subtitle?: string;
+  /** What it needs / the reply excerpt, truncated (AC-3). */
   body: string;
   /** Tap opens the thread — nothing else rides the payload. */
   data: { conversationId: string };
@@ -90,6 +92,29 @@ const truncateBody = (text: string, max = 120): string => {
   return `${boundary > 0 ? cut.slice(0, boundary) : cut}…`;
 };
 
+/**
+ * The reply as one line of plain text (#289): fenced code blocks dropped
+ * outright (never excerpt code), the rest of the markdown flattened —
+ * inline code keeps its text, links their label, emphasis its words.
+ * Whitespace collapse is `truncateBody`'s job at send time.
+ */
+const replyExcerpt = (text: string): string =>
+  text
+    .replace(/```[\s\S]*?(```|$)/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s{0,3}>\s?/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/^\s*([-*_]\s*){3,}$/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/\b_([^_]+)_\b/g, "$1")
+    .replace(/~~([^~]+)~~/g, "$1");
+
 const prefFor = (prefs: PushPrefs, kind: PushKind): boolean => {
   switch (kind) {
     case "needs_approval":
@@ -121,6 +146,11 @@ export function createPushFanout(options: {
   const visibleThread = new Map<string, string>();
   /** Last failure push per conversation — the collapse window. */
   const failureSentAt = new Map<string, number>();
+  /* #289: reply text per in-flight turn — `turn.delta` "text" chunks summed
+     like the harness's `textByTurn`, read once on `turn.completed` for the
+     excerpt. Cleared with the turn; a relay restart loses it like any live
+     stream and the body falls back to the title. */
+  const textByTurn = new Map<string, string>();
 
   const employeeFor = async (
     channelId: string,
@@ -147,9 +177,11 @@ export function createPushFanout(options: {
     if (targets.length === 0) return;
     const employee = await employeeFor(conversation.channelId);
     const title = employee?.name ?? "LilOS";
+    const subtitle = truncateBody(conversation.title);
     const messages = targets.map((target) => ({
       to: target.token,
       title,
+      ...(subtitle ? { subtitle } : {}),
       body: truncateBody(body),
       data: { conversationId: conversation.id },
     }));
@@ -199,9 +231,21 @@ export function createPushFanout(options: {
         at: now(),
       });
       if (!fresh) return;
+      if (event.type === "turn.delta") {
+        if (event.payload.stream === "text") {
+          const key = `${sessionId}:${event.payload.turnId}`;
+          textByTurn.set(
+            key,
+            (textByTurn.get(key) ?? "") + event.payload.delta,
+          );
+        }
+        return;
+      }
       let alert: { kind: PushKind; body: string } | undefined;
       if (event.type === "turn.completed") {
-        const { stopReason, error } = event.payload;
+        const { turnId, stopReason, error } = event.payload;
+        const reply = textByTurn.get(`${sessionId}:${turnId}`);
+        textByTurn.delete(`${sessionId}:${turnId}`);
         if (stopReason === "cancelled") return;
         if (error || stopReason === "refusal") {
           alert = {
@@ -214,9 +258,13 @@ export function createPushFanout(options: {
               (conversation.title || "Turn failed"),
           };
         } else {
+          /* #289: the banner says what the employee said — the reply
+             excerpt, stripped to plain text — and only falls back to the
+             thread title when the turn streamed no text at all. */
+          const excerpt = reply ? replyExcerpt(reply).trim() : "";
           alert = {
             kind: "completed",
-            body: conversation.title || "Turn complete",
+            body: excerpt || conversation.title || "Turn complete",
           };
         }
       } else if (event.type === "session.state") {
