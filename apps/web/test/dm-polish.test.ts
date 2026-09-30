@@ -160,6 +160,80 @@ describe("mergeTurns ordering", () => {
     const out = mergeTurns(replies, session([live], live), "emp");
     expect(out.map((r) => r.id)).toEqual(["u1", "live-t1"]);
   });
+  /* #288: a rebound engine session re-answered the root, and the orphan turn
+     appended at the tail — under the LATEST question. The open thread renders
+     the root as its header, not a reply row, so `ref` resolves to nothing and
+     the turn must drop instead of anchoring nowhere. */
+  test("#288 an engine turn whose ref renders nowhere drops instead of appending under the latest question", () => {
+    const replies = conversationReplies(
+      [
+        msg({
+          id: "a1",
+          seq: 2,
+          authorKind: "employee",
+          authorId: "emp",
+          text: "on fake-large",
+        }),
+        msg({
+          id: "u2",
+          seq: 3,
+          authorKind: "user",
+          authorId: "me",
+          text: "and now?",
+        }),
+        msg({
+          id: "a2",
+          seq: 4,
+          authorKind: "employee",
+          authorId: "emp",
+          text: "answer two",
+        }),
+      ],
+      "c1",
+    );
+    // ref "u1" = the root message — rendered as the thread header, absent
+    // from `replies`.
+    const orphan = turn({
+      turnId: "t-orphan",
+      phase: "done",
+      text: "on fake-large, again",
+      ref: "u1",
+    });
+    const answered = turn({
+      turnId: "t2",
+      phase: "done",
+      text: "answer two",
+      ref: "u2",
+    });
+    const out = mergeTurns(replies, session([orphan, answered]), "emp");
+    expect(out.map((r) => r.id)).toEqual(["a1", "u2", "a2"]);
+  });
+  test("#288 a stopped turn anchored to the root still renders its marker", () => {
+    const replies = conversationReplies(
+      [msg({ id: "u1", authorKind: "user", authorId: "me", text: "go" })],
+      "c1",
+    );
+    // Stop before any text: phase stopped, no body, ref = the root message —
+    // the marker is the only surface of the interrupt and must still render.
+    const stopped = turn({
+      turnId: "t-stopped",
+      phase: "stopped",
+      text: "",
+      ref: "u1",
+    });
+    const out = mergeTurns(replies, session([stopped]), "emp");
+    expect(out.map((r) => r.id)).toEqual(["u1", "live-t-stopped"]);
+  });
+
+  test("#288 ref-less settled turns still tail-append (engines that never echo ref)", () => {
+    const replies = conversationReplies(
+      [msg({ id: "u1", authorKind: "user", authorId: "me", text: "go" })],
+      "c1",
+    );
+    const done = turn({ turnId: "t1", phase: "done", text: "finished" });
+    const out = mergeTurns(replies, session([done]), "emp");
+    expect(out.map((r) => r.id)).toEqual(["u1", "live-t1"]);
+  });
 });
 
 /* Issue #180: plan.updated snapshots land on the turn's reply as a ui Plan;

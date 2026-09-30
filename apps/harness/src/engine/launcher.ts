@@ -274,6 +274,8 @@ export function hermesServeCommand(options: {
   bun?: string;
   provider?: string;
   model?: string;
+  /** #288: persisted session registry — restart resumes, not rebinds. */
+  sessionsFile?: string;
 }): string[] {
   const script = join(
     options.repoRoot,
@@ -291,6 +293,8 @@ export function hermesServeCommand(options: {
   const command = [...serve, "--port", "0", "--hermes-bin", options.hermesBin];
   if (options.provider) command.push("--provider", options.provider);
   if (options.model) command.push("--model", options.model);
+  if (options.sessionsFile)
+    command.push("--sessions-file", options.sessionsFile);
   return command;
 }
 
@@ -310,6 +314,8 @@ export function hermesEngineLauncher(options: {
   hermesBin?: string;
   provider?: string;
   model?: string;
+  /** #288: where the adapter persists its resumable session rows. */
+  sessionsFile?: string;
   log: Logger;
 }): EngineLauncher {
   return {

@@ -6,7 +6,11 @@ import type { CheckpointStore } from "@lilos/host";
 import { describe, expect, it } from "vitest";
 import { createRelay } from "../../relay/src/session";
 import { createMemoryStore } from "../../relay/src/store";
-import { connectEngineWs, type EngineConnection } from "../src/engine/client";
+import {
+  connectEngineWs,
+  type EngineConnection,
+  EngineRpcError,
+} from "../src/engine/client";
 import { fakeEngineLauncher } from "../src/engine/launcher";
 import {
   type EngineHostState,
@@ -621,6 +625,108 @@ describe("workspace harness", () => {
       expect(await answersIn(convB.id)).toBe(beforeB);
     } finally {
       await supervisor.stop();
+      await w.cleanup();
+    }
+  });
+
+  it("#288 AC-1 a harness restart never re-prompts delivered messages or starts a fresh session", {
+    timeout: 15_000,
+  }, async () => {
+    /* The restart loop from the issue: the channel replay re-delivers every user message
+       while the new engine is still down, then the flush prompted the whole
+       batch on a NEW session (the seq-1 re-answer + setTitle collision). The
+       deliveredSeq watermark must apply before any binding work so nothing
+       owed binds at all. */
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "hi, what is your model",
+      });
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.authorKind === "employee");
+      }, "root answer");
+      // deliveredSeq covered the root turn before the restart.
+      {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; deliveredSeq: number }[];
+        }>("conversations.list", {});
+        expect(
+          conversations.find((c) => c.id === conversation.id)?.deliveredSeq,
+        ).toBe(1);
+      }
+
+      await w.harness.stop();
+
+      /* A fresh engine process + a fresh harness on the same relay — the
+         adapter lost every session across the restart (AC-5b), so any
+         session.start below is a brand-new engine session. */
+      const engine2 = new FakeEngine({ tick: 1 });
+      const conn2 = connectFake(engine2) as unknown as EngineConnection;
+      const engine2Calls: { method: string; params: unknown }[] = [];
+      const orig2 = conn2.request.bind(conn2);
+      conn2.request = <T = unknown>(
+        method: string,
+        params?: unknown,
+      ): Promise<T> => {
+        engine2Calls.push({ method, params });
+        return orig2<T>(method, params).then(
+          (v) => v,
+          (e) => {
+            /* In-proc transports surface engine RpcErrors as plain Errors;
+               the ws transport rebuilds them as EngineRpcError — translate
+               so SESSION_NOT_FOUND binds the way it does on the wire. */
+            const code = (e as { code?: unknown })?.code;
+            if (e instanceof Error && typeof code === "number") {
+              throw new EngineRpcError(code, e.message);
+            }
+            throw e;
+          },
+        );
+      };
+      const log2 = createMemoryLogger();
+      const harness2 = new Harness({
+        relay: new RelayClient({
+          url: "mem://harness2",
+          token: TOKEN,
+          socketFactory: socketFor(w.relay),
+          reconnectMinDelayMs: 20,
+        }),
+        sleep: createFakeSleepGuard(),
+        workdir: "/tmp/lilos-test",
+        log: log2,
+      });
+      await harness2.start();
+      try {
+        // Production's ordering: the channel replay reaches deliver() while
+        // the engine is still unattached — the messages sit in the early
+        // queue and flush on attach.
+        await waitFor(
+          async () =>
+            log2.lines.some(
+              (l) => l.includes("user message") && l.includes(conversation.id),
+            )
+              ? true
+              : undefined,
+          "replayed root message delivered",
+          8_000,
+        );
+        harness2.attachEngine(conn2);
+        await new Promise((r) => setTimeout(r, 150));
+        expect(engine2Calls.filter((c) => c.method === "prompt")).toHaveLength(
+          0,
+        );
+        expect(
+          engine2Calls.filter((c) => c.method === "session.start"),
+        ).toHaveLength(0);
+      } finally {
+        await harness2.stop();
+      }
+    } finally {
       await w.cleanup();
     }
   });
