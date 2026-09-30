@@ -189,8 +189,8 @@ test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack("ac301", {
     relay: wport(4700),
-    feed: wport(4704),
-    web: wport(5341),
+    feed: wport(4778),
+    web: wport(5379),
   });
 });
 test.afterAll(async () => {
