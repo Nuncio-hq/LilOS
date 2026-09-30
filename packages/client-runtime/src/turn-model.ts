@@ -309,12 +309,13 @@ export function reduceSessionEvents(
             task: e.payload.task,
             status: "running",
             steps: [],
-            startedAt: Date.now(),
+            startedAt: e.payload.startedAt,
           };
           t.subagents.push(sa);
         } else {
           sa.name = e.payload.name;
           sa.task = e.payload.task;
+          sa.startedAt = e.payload.startedAt ?? sa.startedAt;
         }
         sa.parentToolCallId = e.payload.parentToolCallId ?? sa.parentToolCallId;
         sa.employee = e.payload.employee ?? sa.employee;

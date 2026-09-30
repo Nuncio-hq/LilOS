@@ -1330,6 +1330,7 @@ export class HermesEngine {
               : typeof p.text === "string"
                 ? p.text
                 : "",
+          startedAt: Date.now(),
           ...(s.delegateStack.length
             ? { parentToolCallId: s.delegateStack.at(-1) }
             : {}),

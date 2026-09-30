@@ -35,6 +35,7 @@ const delegateFrames = () => [
     name: "task 1",
     task: "scan the relay",
     parentToolCallId: "c1",
+    startedAt: 1_700_000_000_000,
   }),
   ev("tool.completed", {
     turnId: "t1",
@@ -189,9 +190,14 @@ describe("background subagents past turn end — #309", () => {
       status: "running",
       subagent: true,
     });
-    /* Real times, not "up 0s · since (blank)": dispatch stamps startedAt;
-       a finished row freezes endedAt at start + reported duration. */
-    expect(rows[0].startedAt).toBeTypeOf("number");
+    /* Real times, not "up 0s · since (blank)": the emit-time startedAt
+       rides the event — a re-reduce over the same frames must reproduce
+       it exactly, never re-stamp a wall clock. */
+    expect(rows[0].startedAt).toBe(1_700_000_000_000);
+    expect(
+      reduceSessionEvents("sess-1", delegateFrames()).subagentJobs[0]
+        ?.startedAt,
+    ).toBe(1_700_000_000_000);
     const done = reduceSessionEvents("sess-1", [
       ...delegateFrames(),
       ev("subagent.completed", {

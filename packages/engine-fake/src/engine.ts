@@ -976,6 +976,7 @@ export class FakeEngine {
         name: sub.name,
         task: sub.task,
         parentToolCallId: toolCallId,
+        startedAt: Date.now(),
         ...(employee ? { employee } : {}),
       });
       for (const ns of sub.steps) {

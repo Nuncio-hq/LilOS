@@ -298,6 +298,7 @@ export class AcpDriver {
                   ? ((t as { goal: string }).goal as string)
                   : "",
               parentToolCallId: callId,
+              startedAt: Date.now(),
             });
           });
         }
