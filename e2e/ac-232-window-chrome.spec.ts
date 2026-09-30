@@ -399,6 +399,98 @@ test("AC-5 the status window gets the same chrome", async () => {
   }
 });
 
+test("#295 Focus header reserves the lights strip while the sidebar is hidden", async () => {
+  test.skip(!isMac, "native window chrome is a macOS leg");
+  test.setTimeout(180_000);
+  const app = await launchDesktop(stack);
+  try {
+    const win = await app.firstWindow();
+    await expect(
+      win.locator("aside").getByRole("button", { name: /default/i }),
+    ).toBeVisible({ timeout: 60_000 });
+    await dismissFirstRun(win);
+    // Oscar's repro: a 1288 window, Focus view, back button under the lights.
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].setContentSize(1288, 860),
+    );
+    await win
+      .locator("aside")
+      .getByRole("button", { name: /default/i })
+      .click();
+    await expect(win).toHaveURL(/\/dm\//, { timeout: 30_000 });
+    // A send lands straight in Focus (#149); the sidebar leaves the grid and
+    // the surface header becomes the window's leftmost edge.
+    const box = win.locator("textarea").last();
+    await box.fill("check in");
+    await box.press("Enter");
+    await expect(win).toHaveURL(/\/focus$/, { timeout: 30_000 });
+
+    const header = win.locator("main > header").first();
+    await expect(header).toBeVisible({ timeout: 30_000 });
+    const padLeft = () =>
+      header.evaluate((el) =>
+        Number.parseFloat(getComputedStyle(el).paddingLeft),
+      );
+
+    // The strip still drags the window…
+    await expect.poll(() => appRegion(win, "main > header")).toBe("drag");
+    // …and the header reserves the same inset the sidebar header uses, so
+    // its first control clears the lights plus the ~10px macOS gap.
+    await expect
+      .poll(padLeft)
+      .toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
+    const controlBox = await header
+      .getByRole("button")
+      .first()
+      .boundingBox();
+    if (!controlBox) throw new Error("header control has no box");
+    expect(controlBox.x - TRAFFIC_LIGHTS_END).toBeGreaterThanOrEqual(10);
+    await win.screenshot({ path: `${SHOTS}/295-focus-light.png` });
+
+    // Dark AC shot: the sidebar opens as an overlay in Focus — the header
+    // hamburger is itself one of the controls the strip now clears.
+    await header.getByTitle("Workspace", { exact: true }).click();
+    await win.locator('[data-theme-opt="dark"]').click();
+    await win
+      .getByRole("button", { name: "Close sidebar" })
+      .last()
+      .click();
+    await win.screenshot({ path: `${SHOTS}/295-focus-dark.png` });
+
+    // Full screen hides the lights — no leftover gap; leaving restores it.
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].setFullScreen(true),
+    );
+    await expect
+      .poll(() =>
+        win.evaluate(() =>
+          document.documentElement.hasAttribute("data-fullscreen"),
+        ),
+      )
+      .toBe(true);
+    await expect.poll(padLeft).toBeLessThan(30);
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].setFullScreen(false),
+    );
+    await expect
+      .poll(() =>
+        win.evaluate(() =>
+          document.documentElement.hasAttribute("data-fullscreen"),
+        ),
+      )
+      .toBe(false);
+    await expect
+      .poll(padLeft)
+      .toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
+
+    // Back is a live control, not dead space under the lights: it navigates.
+    await header.getByRole("button", { name: /back to/i }).click();
+    await expect(win).toHaveURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 30_000 });
+  } finally {
+    await app.close();
+  }
+});
+
 test("AC-5 a plain browser tab is unchanged", async ({ page }) => {
   await page.goto(`${stack.webUrl}/`);
   await expect(
