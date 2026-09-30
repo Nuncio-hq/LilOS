@@ -436,13 +436,8 @@ test("#295 Focus header reserves the lights strip while the sidebar is hidden", 
     await expect.poll(() => appRegion(win, "main > header")).toBe("drag");
     // …and the header reserves the same inset the sidebar header uses, so
     // its first control clears the lights plus the ~10px macOS gap.
-    await expect
-      .poll(padLeft)
-      .toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
-    const controlBox = await header
-      .getByRole("button")
-      .first()
-      .boundingBox();
+    await expect.poll(padLeft).toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
+    const controlBox = await header.getByRole("button").first().boundingBox();
     if (!controlBox) throw new Error("header control has no box");
     expect(controlBox.x - TRAFFIC_LIGHTS_END).toBeGreaterThanOrEqual(10);
     await win.screenshot({ path: `${SHOTS}/295-focus-light.png` });
@@ -451,10 +446,7 @@ test("#295 Focus header reserves the lights strip while the sidebar is hidden", 
     // hamburger is itself one of the controls the strip now clears.
     await header.getByTitle("Workspace", { exact: true }).click();
     await win.locator('[data-theme-opt="dark"]').click();
-    await win
-      .getByRole("button", { name: "Close sidebar" })
-      .last()
-      .click();
+    await win.getByRole("button", { name: "Close sidebar" }).last().click();
     await win.screenshot({ path: `${SHOTS}/295-focus-dark.png` });
 
     // Full screen hides the lights — no leftover gap; leaving restores it.
@@ -479,9 +471,7 @@ test("#295 Focus header reserves the lights strip while the sidebar is hidden", 
         ),
       )
       .toBe(false);
-    await expect
-      .poll(padLeft)
-      .toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
+    await expect.poll(padLeft).toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
 
     // Back is a live control, not dead space under the lights: it navigates.
     await header.getByRole("button", { name: /back to/i }).click();

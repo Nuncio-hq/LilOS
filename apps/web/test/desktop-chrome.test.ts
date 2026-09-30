@@ -97,9 +97,7 @@ describe("desktop chrome stylesheet", () => {
     );
     // …and below the lg breakpoint every view's sidebar collapses to an
     // overlay, so a media rule covers any other leftmost surface header.
-    const narrow = css.match(
-      /@media \(max-width: 1023px\)\s*\{([\s\S]*?)\n\}/,
-    );
+    const narrow = css.match(/@media \(max-width: 1023px\)\s*\{([\s\S]*?)\n\}/);
     expect(narrow?.[1]).toMatch(
       /data-desktop[\s\S]*main\s*>\s*header[\s\S]*var\(--lilos-traffic-inset\)/,
     );
