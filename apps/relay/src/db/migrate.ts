@@ -231,6 +231,25 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     version: 13,
     statements: [`ALTER TABLE conversations ADD COLUMN workspace TEXT`],
   },
+  {
+    /* #161: Expo push registrations (token + per-kind prefs per paired
+       device) and the per-session engine-event seq watermark that fences
+       replayed `engine.event` publishes off the push fan-out. */
+    version: 14,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS device_push (
+        device_id TEXT PRIMARY KEY REFERENCES paired_devices(id),
+        expo_token TEXT NOT NULL,
+        prefs TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS engine_event_marks (
+        session_id TEXT PRIMARY KEY,
+        last_seq INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`,
+    ],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

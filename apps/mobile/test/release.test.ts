@@ -61,7 +61,9 @@ describe("AC-1 bun run mobile:release ships a build with an auto build number", 
 
   it("eas.json keeps the store production profile (team + ASC app id)", () => {
     const eas = JSON.parse(read("apps/mobile/eas.json"));
-    expect(eas.build.production.ios.appleTeamId).toBe("R8GJL3N9WX");
+    // appleTeamId is a submit-only key; eas-cli rejects it under build.
+    expect(eas.build.production.ios.appleTeamId).toBeUndefined();
+    expect(eas.submit.production.ios.appleTeamId).toBe("R8GJL3N9WX");
     expect(eas.submit.production.ios.ascAppId).toBe("6816892244");
   });
 });

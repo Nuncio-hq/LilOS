@@ -9,6 +9,7 @@ import type {
   PairedDevice,
   PendingTurn,
   ProfileSettings,
+  PushPrefs,
   RecentFolder,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
@@ -22,6 +23,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  lt,
   lte,
   max,
   ne,
@@ -33,6 +35,7 @@ import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import type {
   AppendMessageInput,
   ConversationPatch,
+  DevicePush,
   ListAsksQuery,
   ListConversationsQuery,
   ListMessagesPage,
@@ -884,7 +887,81 @@ export function createDrizzleStore(db: Db): RelayStore {
         )
         .returning()
         .get();
+      // #161: a revoked phone also loses its push registration.
+      db.delete(schema.devicePush)
+        .where(eq(schema.devicePush.deviceId, id))
+        .run();
       return row ? rowToDevice(row) : null;
+    },
+    async setDevicePush(input: {
+      deviceId: string;
+      token: string;
+      prefs: PushPrefs;
+      at: number;
+    }) {
+      db.insert(schema.devicePush)
+        .values({
+          deviceId: input.deviceId,
+          expoToken: input.token,
+          prefs: JSON.stringify(input.prefs),
+          updatedAt: input.at,
+        })
+        .onConflictDoUpdate({
+          target: schema.devicePush.deviceId,
+          set: {
+            expoToken: input.token,
+            prefs: JSON.stringify(input.prefs),
+            updatedAt: input.at,
+          },
+        })
+        .run();
+    },
+    async listDevicePush(): Promise<DevicePush[]> {
+      const rows = db.select().from(schema.devicePush).all();
+      return rows.map((row) => ({
+        deviceId: row.deviceId,
+        token: row.expoToken,
+        prefs: JSON.parse(row.prefs) as PushPrefs,
+        updatedAt: row.updatedAt,
+      }));
+    },
+    async dropDevicePush(deviceId: string) {
+      db.delete(schema.devicePush)
+        .where(eq(schema.devicePush.deviceId, deviceId))
+        .run();
+    },
+    async advanceEngineEventSeq(input: {
+      sessionId: string;
+      seq: number;
+      at: number;
+    }) {
+      /* Freshness = strictly-advancing seq (#161): the insert wins only for
+         a session's first event; afterwards only a seq above the stored
+         watermark counts as new, so a replayed `engine.event` never
+         re-notifies. Both statements are no-ops on conflict/older seq. */
+      const inserted = db
+        .insert(schema.engineEventMarks)
+        .values({
+          sessionId: input.sessionId,
+          lastSeq: input.seq,
+          updatedAt: input.at,
+        })
+        .onConflictDoNothing()
+        .returning({ sessionId: schema.engineEventMarks.sessionId })
+        .get();
+      if (inserted) return true;
+      const advanced = db
+        .update(schema.engineEventMarks)
+        .set({ lastSeq: input.seq, updatedAt: input.at })
+        .where(
+          and(
+            eq(schema.engineEventMarks.sessionId, input.sessionId),
+            lt(schema.engineEventMarks.lastSeq, input.seq),
+          ),
+        )
+        .returning({ sessionId: schema.engineEventMarks.sessionId })
+        .get();
+      return advanced !== undefined;
     },
     async getSetting(key: string) {
       const row = db

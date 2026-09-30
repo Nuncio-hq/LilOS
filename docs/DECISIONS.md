@@ -259,6 +259,11 @@ PR does not exist.
   segments refused), and `folders.add` accepts only home paths from devices
   (relay-gated; recents still store `~/x`).** Not: exposing host `fs.*` to
   the phone directly. — #238
+- **D-#161 Push goes Mac relay → Expo push service → APNs. The phone
+  registers its Expo push token (+ per-kind prefs) with the relay after
+  pairing, tied to the device id.** Not: a LilOS cloud relay; direct APNs
+  with an Apple key on the Mac; silent/background pre-sync pushes. A
+  sleeping Mac sends nothing (accepted). — #161 · PR #283
 
 ## UX
 - **D-#114 The Workbench lives only in Focus mode, and opening a session

@@ -49,9 +49,11 @@ lsof -ti :4577                           # empty = down; kill with | xargs kill
 lsof -nP -i :4577                        # shows LISTEN addrs + app TCP connections
 ```
 
-- The tailscale stand-in IP lives on `lo0` and VARIES per VM — find it with
-  `ifconfig lo0 | grep 'inet 172\.'` (this VM: 172.16.5.2). A wrong IP makes
-  `pairing.offer` fail `tailscale_unavailable` (the bind fails, not the probe).
+- The tailscale stand-in IP VARIES per VM AND per interface (seen on both
+  `lo0` and `en0`) — find it with `ifconfig | grep 'inet 172\.'` (this VM:
+  en0 172.16.4.2). A wrong IP makes `pairing.offer` fail
+  `tailscale_unavailable` (the bind fails, not the probe); 127.0.0.1 does
+  NOT work (EADDRINUSE against the primary bind).
 - A down relay gives a FAST ECONNREFUSED, not a TCP timeout.
 - The startup log prints `listening on http://127.0.0.1:4577` — cosmetic: the
   tailscale listener binds lazily on `pairing.offer` (phoneAccess.enable), so
@@ -95,6 +97,33 @@ bun /tmp/mint-offer.ts <relay-home>   # {"host","code","name","expiresAt"}
 
 - "Forget this Mac" (Settings tab) deletes the SecureStore key AND the AsyncStorage
   cache; proof = the app drops to the onboarding Welcome screen.
+- `simctl uninstall` + reinstall resets notification authorization to
+  undetermined but the SecureStore pairing SURVIVES (no re-pair needed);
+  AsyncStorage prefs (e.g. push kind toggles) do NOT survive.
+
+## Notification-permission states (#161)
+
+`xcrun simctl privacy` has NO notifications service — drive the states via
+the UI instead:
+
+- **undetermined**: a fresh install has it until the app first registers
+  (paired + online foreground — `push.ts` asks there, not at cold boot).
+  The Settings "Allow notifications · Ask" row shows only while
+  undetermined and fires the real OS prompt; capture it before the app
+  reaches the paired/online register path, or `simctl uninstall` +
+  reinstall the DerivedData `.app` and stay on the onboarding stack.
+- **denied**: answer "Don't Allow" on the OS prompt (or Settings → Apps →
+  LilOS → Notifications off) → the Settings row turns red "Notifications
+  are off" + guidance + Fix. `Linking.openSettings()` lands on the iOS
+  Settings ROOT (with a back-to-app link) on iOS 26.5 — then Apps → LilOS
+  → Notifications to flip it manually.
+- **granted**: after allowing, the section shows only the four kind
+  toggles. A toggle persists via AsyncStorage — cold restart proves it;
+  `simctl uninstall` wipes it back to all-ON.
+- The sim canNOT fetch an Expo push token without an `eas.projectId`
+  (`getExpoPushTokenAsync` throws → `register()` no-ops silently) — relay
+  side is proven via `scripts/live/161.sh`'s stub phone, real-device
+  delivery is a physical-iPhone leg.
 
 ## Device peers vs token peers (wire scope)
 
@@ -286,7 +315,15 @@ the Simulator window is never covered.
   not installed", fetch the platform once: `xcodebuild -downloadPlatform iOS`
   (~8.5 GB). Then:
   `cd apps/mobile && LANG=en_US.UTF-8 PATH="$HOME/.bun/bin:$PATH" bunx expo run:ios --device <udid>`
-  (prebuild + pods + xcodebuild ≈ 15 min).
+  (prebuild + pods + xcodebuild ≈ 15 min). The `LANG` is load-bearing:
+  agent shells run `LANG=""` and brew's Ruby 4 crashes `pod install` with
+  `Unicode Normalization not appropriate for ASCII-8BIT` — looks like a
+  CocoaPods bug, is purely the missing UTF-8 locale.
+- `expo run:ios` keeps the Metro dev server alive inside the same process
+  after install+launch — leave that background shell running or the dev
+  client shows "Cannot connect to Metro". Reinstalling the same `.app`
+  (`simctl install` + `launch`) still serves the freshest JS from that
+  Metro — handy for temp-patch captures without a rebuild.
 - The resulting `.app` lands at
   `~/Library/Developer/Xcode/DerivedData/LilOS-*/Build/Products/Debug-iphonesimulator/LilOS.app`
   and can be installed on other booted sims with `xcrun simctl install <udid> <path>`.

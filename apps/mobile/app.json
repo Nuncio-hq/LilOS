@@ -36,7 +36,19 @@
         {
           "cameraPermission": "LilOS uses the camera to scan the pairing code shown on your Mac."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "sounds": []
+        }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d2640224-7e87-48b3-8fee-aa4a8ca95759"
+      }
+    },
+    "owner": "lehuunghia.oscar"
   }
 }

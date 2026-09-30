@@ -217,3 +217,31 @@ export const pairedDevices = sqliteTable("paired_devices", {
   lastSeenAt: integer("last_seen_at").notNull(),
   revokedAt: integer("revoked_at"),
 });
+
+/**
+ * Expo push registrations (#161): one row per paired phone — its Expo push
+ * token and the four per-kind toggles it last registered. Tied to
+ * `paired_devices.id`; a revoke deletes the row so a dead phone stops
+ * receiving pushes.
+ */
+export const devicePush = sqliteTable("device_push", {
+  deviceId: text("device_id")
+    .primaryKey()
+    .references(() => pairedDevices.id),
+  expoToken: text("expo_token").notNull(),
+  /** Per-kind toggles as JSON (`PushPrefs`). */
+  prefs: text("prefs").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+/**
+ * Engine-event freshness watermark (#161): the highest `engine.event` seq
+ * the relay has seen per engine session. A host replay after a restart
+ * re-sends old events at/under this mark → no re-push. Persisted — an
+ * in-memory mark would let a relay restart re-notify.
+ */
+export const engineEventMarks = sqliteTable("engine_event_marks", {
+  sessionId: text("session_id").primaryKey(),
+  lastSeq: integer("last_seq").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});

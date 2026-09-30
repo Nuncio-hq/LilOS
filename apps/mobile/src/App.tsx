@@ -62,6 +62,8 @@ import {
   routeFor,
   savePairedMac,
 } from "./paired-macs";
+import { initPush, unregisterPush } from "./push";
+import { PushSettingsSection } from "./push-settings";
 import { nav, type Props, type Routes, type TabRoutes } from "./routes";
 import { BrowseMac } from "./screens/browse-mac";
 import { Dm, FolderPicker, ModelPicker } from "./screens/dm";
@@ -74,6 +76,7 @@ import {
   ThreadInfo,
 } from "./screens/thread";
 import { formatVersionLabel } from "./version-label";
+import { startVisibilityReporting } from "./visibility";
 
 /* apps/mobile — the real app (#154): the prototype's onboarding screens from
    @lilos/ui-native wired to the actual relay. Pairing runs the #153 grant →
@@ -286,7 +289,10 @@ function Settings() {
         }
       }
       onForget={confirmForget}
-    />
+    >
+      {/* #161: the four push kinds + iOS-permission state (AC-6). */}
+      <PushSettingsSection />
+    </SettingsScreen>
   );
 }
 
@@ -425,8 +431,17 @@ function confirmForget() {
         text: "Forget",
         style: "destructive",
         onPress: () => {
-          stopLink();
-          void forgetMacs(() => directoryCache.clear());
+          /* #161: best-effort push.unregister on the live socket before it
+             dies; the relay's revoke path is the backstop either way. A
+             half-dead socket would stall the request's 15s timeout — race
+             it so Forget never appears to hang. */
+          void Promise.race([
+            unregisterPush(),
+            new Promise((resolve) => setTimeout(resolve, 1500)),
+          ]).finally(() => {
+            stopLink();
+            void forgetMacs(() => directoryCache.clear());
+          });
         },
       },
     ],
@@ -501,6 +516,10 @@ export default function App() {
      THEN phase "app" unblocks Home — its first paint already shows the
      cached directory. */
   useEffect(() => {
+    /* #161: push + thread-visibility wiring is inert until a link exists —
+       they only act when $link goes online. */
+    initPush();
+    startVisibilityReporting();
     void (async () => {
       await hydrateConnections();
       const mac = $connections.get()[0];

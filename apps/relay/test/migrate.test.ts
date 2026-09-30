@@ -54,8 +54,8 @@ describe("relay migrations", () => {
     // virtual table's shadow tables too — only assert the FTS table itself);
     // v10 adds #137's title provenance; v11 adds #153's phone pairing
     // tables; v12 adds #134's rewind marks; v13 adds #156's workspace
-    // intent on conversations.
-    expect(out.version).toBe(13);
+    // intent on conversations; v14 adds #161's push tables.
+    expect(out.version).toBe(14);
     for (const col of ["provider", "effort", "fast"])
       expect(out.colsAt7).toContain(col);
     for (const col of ["provider", "effort", "fast", "rewound", "checkpoint"])
@@ -67,6 +67,8 @@ describe("relay migrations", () => {
     expect(out.tables).toContain("messages_fts");
     expect(out.tables).toContain("pairing_grants");
     expect(out.tables).toContain("paired_devices");
+    expect(out.tables).toContain("device_push");
+    expect(out.tables).toContain("engine_event_marks");
     // …and keeps everything v6 shipped.
     expect(out.colsAt7).toContain("cwd");
     expect(out.tables).toContain("recent_folders");

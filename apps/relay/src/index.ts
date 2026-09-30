@@ -16,7 +16,10 @@ import { resolveRelayConfig } from "./config";
 import { createDrizzleStore } from "./db/drizzle-store";
 import { applyMigrations } from "./db/migrate";
 import * as schema from "./db/schema";
+import { createExpoPushSender } from "./expo";
+import { createLogTail } from "./logtail";
 import { createPairingService } from "./pairing";
+import { createPushFanout } from "./push";
 import { createRelay, type PhoneAccess } from "./session";
 import { resolveTailscaleProbe } from "./tailscale";
 
@@ -195,6 +198,19 @@ const phoneAccess: PhoneAccess = {
     }),
 };
 
+/* Push fan-out (#161): ask/turn transitions → Expo push for every
+   registered phone. `LILOS_EXPO_ENDPOINT` overrides the send target so the
+   live leg can point it at a fake collector instead of exp.host. Send
+   failures go to the same log tail `system.status` surfaces. */
+const logTail = createLogTail();
+const push = createPushFanout({
+  store,
+  send: createExpoPushSender({
+    endpoint: process.env.LILOS_EXPO_ENDPOINT,
+  }),
+  log: (message) => logTail.log(message),
+});
+
 const relay = createRelay({
   store,
   token,
@@ -203,6 +219,8 @@ const relay = createRelay({
   pairing,
   macName: hostname(),
   phoneAccess,
+  logTail,
+  push,
 });
 const app = createApp({
   instanceId: relay.instanceId,

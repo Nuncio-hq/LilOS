@@ -16,6 +16,7 @@ import type {
   PairedDevice,
   PendingTurn,
   ProfileSettings,
+  PushPrefs,
   RecentFolder,
   RespondTo,
   WorkspaceIntent,
@@ -357,11 +358,47 @@ export interface RelayStore {
     seenAt: number;
   }): Promise<PairedDevice | null>;
   listPairedDevices(): Promise<PairedDevice[]>;
-  /** Mark revoked; returns the public record, null when unknown/already off. */
+  /** Mark revoked; returns the public record, null when unknown/already off.
+      Also drops the device's push registration (#161 AC-1). */
   revokePairedDevice(
     id: string,
     revokedAt: number,
   ): Promise<PairedDevice | null>;
+
+  /* ------------------------- push registration (#161) ----------------------- */
+
+  /** Upsert a device's Expo push token + per-kind toggles (idempotent). */
+  setDevicePush(input: {
+    deviceId: string;
+    token: string;
+    prefs: PushPrefs;
+    at: number;
+  }): Promise<void>;
+  /** Every phone still registered for pushes — the fan-out targets. */
+  listDevicePush(): Promise<DevicePush[]>;
+  /** Drop a registration (push.unregister, dead token, revoke). */
+  dropDevicePush(deviceId: string): Promise<void>;
+  /**
+   * Engine-event freshness watermark (#161): records `seq` as the highest
+   * engine-event seq the relay has seen for `sessionId` and answers whether
+   * this call advanced it. A replayed `engine.event` (`seq` at/under the
+   * stored mark) answers false so a relay or harness restart can't
+   * re-notify an old transition. Persisted — an in-memory mark would let a
+   * relay restart re-push.
+   */
+  advanceEngineEventSeq(input: {
+    sessionId: string;
+    seq: number;
+    at: number;
+  }): Promise<boolean>;
+}
+
+/** A phone's Expo push registration (#161), tied to its paired device id. */
+export interface DevicePush {
+  deviceId: string;
+  token: string;
+  prefs: PushPrefs;
+  updatedAt: number;
 }
 
 /** A new paired device as written (credential arrives pre-hashed). */
@@ -468,6 +505,10 @@ export function createMemoryStore(): RelayStore {
     }
   >();
   const devices = new Map<string, PairedDeviceRow>();
+  /** Expo push registrations by device id (#161). */
+  const devicePush = new Map<string, DevicePush>();
+  /** Highest engine-event seq seen per session — the replay fence (#161). */
+  const engineEventSeqs = new Map<string, number>();
 
   /** Strictly increasing recents tick — survives same-ms calls in tests. */
   const folderTick = () =>
@@ -909,7 +950,28 @@ export function createMemoryStore(): RelayStore {
       const device = devices.get(id);
       if (!device || device.revokedAt !== undefined) return null;
       device.revokedAt = revokedAt;
+      devicePush.delete(id);
       return rowToDevice(device);
+    },
+    async setDevicePush(input) {
+      devicePush.set(input.deviceId, {
+        deviceId: input.deviceId,
+        token: input.token,
+        prefs: input.prefs,
+        updatedAt: input.at,
+      });
+    },
+    async listDevicePush() {
+      return [...devicePush.values()].map((d) => ({ ...d }));
+    },
+    async dropDevicePush(deviceId) {
+      devicePush.delete(deviceId);
+    },
+    async advanceEngineEventSeq({ sessionId, seq }) {
+      const last = engineEventSeqs.get(sessionId) ?? 0;
+      if (seq <= last) return false;
+      engineEventSeqs.set(sessionId, seq);
+      return true;
     },
   };
 }
