@@ -148,6 +148,61 @@ is the primary evidence; the still is a bonus.
 - iOS autocorrect may rewrite prompts on send — check the sent bubble if the
   text matters.
 
+## Driving the app via the computer `ios` target (preferred over coordinates)
+
+The `computer` tool's `target:"ios"` exposes the running app's React Native
+accessibility tree — far more reliable than coordinate taps (which land a few
+px off the composer). `inspect`/`query` return `@ref` handles; `act` supports
+`press`, `set_text` (fills the composer TextInput directly — no caret
+guessing), `increment`/`decrement` (adjustable elements), `scroll`, `scroll_to`.
+
+- It observes the frontmost app of the FIRST booted simulator — boot only the
+  device under test or keep it first in `simctl list devices booted`.
+- Refs expire on structure changes; re-`query` after each navigation/sheet.
+- Element names come from `accessibilityLabel` (e.g. composer chips
+  "Fake Reasoning · High", "Just chat", thread rows "<title>, <state>. <body>").
+
+## Model picker / formSheet landmarks (#160 surface)
+
+- Composer model chip opens the ModelPicker `formSheet` (detents [0.62, 1],
+  grabber visible). A **"Sheet Grabber" a11y button** toggles the detent —
+  `press` it once: value flips "Half screen" → "Expanded". This beats the
+  drag workaround for expanding sheets.
+- SheetHeader: title "Model" + "Done" button (top-right).
+- The **EffortSlider is an adjustable element** ("Reasoning effort") — `act
+  increment`/`decrement` steps one rung of THAT model's ladder and the value
+  reads back ("Medium" → "High"). The header label above it echoes the same
+  rung; with no valid rung it says "Engine default", with no ladder "Not
+  adjustable" + "This model has no reasoning control."
+- Row details to assert: "<N> reasoning levels" / "No reasoning control" /
+  "Not in list", trailing ⚡ = fast, ✓ = current pick. Footer: "Applies from
+  the next turn."
+- The Fast-mode `Switch` is a plain `checkbox` in the tree (checked=true/false).
+- **The turn receipt is the strongest pick-reached-the-engine proof**: the
+  reply footer reads "Worked for Ns · <model-id> · <effort>".
+
+## Folder-thread PR card recipe (#159 surface on engine-fake)
+
+- `forge.prs` does `git symbolic-ref HEAD` on the conversation cwd + the
+  workspace branch, then `gh pr list --head <branch>` — the fake-gh fixture
+  only serves `list-<branch>__….json` files that exist. A "New workstream"
+  pick yields `ws/<slug>` → `[]` → NO card. Pick the folder row, then under
+  **"No worktree" choose "Edit <seeded-branch> directly"** so HEAD stays on
+  the fixture branch (e.g. feat/forge).
+- The engine-fake "open a PR" turn raises TWO sequential approval asks
+  (`git push`, then `gh pr create`) — approve each through the UI; the reply
+  + `PR 12, <title>, Open · checks passed` card follows the second approval.
+
+## Known quirks seen live
+
+- The thread composer model chip has once reported a11y role "slider" with
+  increment/decrement instead of "button" (DM + other threads show "button") —
+  cosmetic; `press` still opens the picker.
+- `simctl io screenshot` (~0.8–1s latency) routinely lands AFTER a ~2s
+  engine-fake turn ends — two same-md5 stills means the "mid-turn" frame is
+  really the done frame. Don't claim a still shows a transient state without
+  opening it.
+
 ## RN errors invisible to screenshots
 
 Dev-client console.error toasts truncate ("Encountered two children with the
