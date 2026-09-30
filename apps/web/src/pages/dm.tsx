@@ -1232,6 +1232,7 @@ export function DmPage() {
           scrollTo={scrollTo ?? undefined}
           onScrolled={() => setScrollTo(null)}
           steer={steer}
+          agentWorking={!!modelLive?.agentInitiated}
           draft={threadDraft}
           onDraftChange={setThreadDraft}
           /* Same capability probe as the thread panel (#110): null pins the
@@ -1313,6 +1314,7 @@ export function DmPage() {
           }}
           running={running}
           steer={steer}
+          agentWorking={!!modelLive?.agentInitiated}
           onOpenSession={onOpenSession}
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}

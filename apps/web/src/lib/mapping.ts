@@ -327,8 +327,12 @@ export function conversationReplies(
  * #308: `ref` is a position, not just an orphan filter — a turn anchored to
  * a visible prompt renders right under it regardless of when its answer's
  * relay row arrived (a reply can post after a newer user message and still
- * belongs under its own question). Engine-initiated legs never claim a
- * posted answer; they render as their own agent entry.
+ * belongs under its own question). Engine-initiated legs are their own
+ * agent entry anchored right after the turn that ran before them (never
+ * tail-appended below user messages that landed while they worked — AC-3);
+ * a finished leg whose text the harness already posted as a plain employee
+ * row CLAIMS that row like a prompt turn would, but only past every
+ * already-claimed row — it can never steal an earlier answer's slot.
  *
  * `rootMessageId` is the thread's root question — callers strip it out of
  * `replies` (it renders as the thread header instead), so a turn it
@@ -359,6 +363,10 @@ export function mergeTurns(
     const i = replies.findIndex((x) => x.id === t.ref);
     if (i >= 0) refPos.set(t, i);
   }
+  /* Newest claimed row — a leg's own post sits after it; scanning back
+     from the tail keeps legs from claiming an EARLIER identical reply
+     that a still-unclaimed turn owns (#308). */
+  let claimedMax = -1;
   for (const [ri, r] of replies.entries()) {
     const t = model.turns.find(
       (x) =>
@@ -374,10 +382,39 @@ export function mergeTurns(
       continue;
     }
     used.add(t);
+    claimedMax = ri;
     // Keep the relay message id — it's the search-hit scroll anchor (#138).
     const live = liveReplies(t, employeeId, asks, resolveEmployee);
     live[live.length - 1] = { ...live[live.length - 1], id: r.id };
     blocks.push(live);
+    owned.add(live);
+    turnBlock.set(t, live);
+  }
+  /* #308: a finished agent leg's text also posts to the relay as a plain
+     employee row (harness finishTurn, no ref correlation). Claim that row
+     into the leg's card — without this the card renders AND the bare row
+     stays, one answer twice. */
+  for (const t of model.turns) {
+    if (!t.agentInitiated || used.has(t) || !t.text.trim()) continue;
+    let ri = -1;
+    for (let i = replies.length - 1; i > claimedMax; i--) {
+      const r = replies[i];
+      if (
+        r.from === employeeId &&
+        r.text.trim() === t.text.trim() &&
+        blocks[i].length === 1 &&
+        blocks[i][0] === r
+      ) {
+        ri = i;
+        break;
+      }
+    }
+    if (ri < 0) continue;
+    used.add(t);
+    claimedMax = ri;
+    const live = liveReplies(t, employeeId, asks, resolveEmployee);
+    live[live.length - 1] = { ...live[live.length - 1], id: replies[ri].id };
+    blocks[ri] = live;
     owned.add(live);
     turnBlock.set(t, live);
   }
@@ -411,24 +448,45 @@ export function mergeTurns(
   const bump = (t: TurnModel) => {
     if (t.ref) refOffset.set(t.ref, (refOffset.get(t.ref) ?? 0) + 1);
   };
+  /* #308 AC-3: block index right after the previous turn's card — an
+     agent-initiated leg sits there (above user messages that landed while
+     it worked), claimed or live. */
+  let prevEnd = 0;
+  const legSlot = (from: number) =>
+    prevEnd - (from >= 0 && from < prevEnd ? 1 : 0);
   for (const t of model.turns) {
     const block = turnBlock.get(t);
     const at = anchorAt(t);
     if (block) {
       /* A claimed card re-anchors to its prompting message; if that message
          renders nowhere the claim's own correlation keeps the card where
-         its relay row landed (#288's drop only covers unposted turns). */
-      if (at < 0) continue;
+         its relay row landed (#288's drop only covers unposted turns). A
+         claimed LEG re-anchors to the previous turn's end instead (AC-3). */
+      if (at < 0) {
+        if (t.agentInitiated) {
+          const from = blocks.indexOf(block);
+          const dest = legSlot(from);
+          if (dest !== from) {
+            blocks.splice(from, 1);
+            blocks.splice(dest, 0, block);
+          }
+          prevEnd = blocks.indexOf(block) + 1;
+        } else prevEnd = blocks.indexOf(block) + 1;
+        continue;
+      }
       const from = blocks.indexOf(block);
       /* Already inside the anchored run under its prompt — the run holds
          same-ref turns in order, so leave it. */
       if (from >= at && from < beyond(at)) {
         bump(t);
+        prevEnd = from + 1;
         continue;
       }
       blocks.splice(from, 1);
-      blocks.splice(beyond(at - (from < at ? 1 : 0)), 0, block);
+      const dest = beyond(at - (from < at ? 1 : 0));
+      blocks.splice(dest, 0, block);
       bump(t);
+      prevEnd = dest + 1;
       continue;
     }
     if (t.ref ? rewound?.refs?.has(t.ref) : rewound?.texts?.has(t.text.trim()))
@@ -452,12 +510,24 @@ export function mergeTurns(
       continue;
     if (at < 0) {
       owned.add(rs);
-      blocks.push(rs);
+      if (t.agentInitiated) {
+        /* AC-3: the leg sits right after the previous turn's card — a
+           user message that landed while it worked never renders above
+           running work. */
+        const dest = Math.min(prevEnd, blocks.length);
+        blocks.splice(dest, 0, rs);
+        prevEnd = dest + 1;
+      } else {
+        blocks.push(rs);
+        prevEnd = blocks.length;
+      }
       continue;
     }
     owned.add(rs);
-    blocks.splice(beyond(at), 0, rs);
+    const dest = beyond(at);
+    blocks.splice(dest, 0, rs);
     bump(t);
+    prevEnd = dest + 1;
   }
   return blocks.flat();
 }

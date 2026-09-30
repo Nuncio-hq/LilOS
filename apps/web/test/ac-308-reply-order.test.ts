@@ -95,23 +95,93 @@ describe("issue #308 — replies anchor to their own turn's question", () => {
     expect(out.map((r) => r.id)).toEqual(["qA", "aA", "qB", "live-t2", "qC"]);
   });
 
-  test("AC-2 an engine-initiated leg is its own agent entry and never claims a posted answer", () => {
-    /* The delivery leg's text happens to equal the earlier posted answer:
-       an agent-initiated turn must not merge into that message's card. */
+  test("AC-2 an engine-initiated leg claims its own posted answer into one card", () => {
+    /* A delivery leg finishes and the harness posts its text as a plain
+       employee row — the leg claims that row so the answer renders ONCE
+       (as the agent-initiated card, keeping the relay row's id). */
     const replies = conversationReplies(
-      [u("qA", 1, "first"), a("aA", 2, "ZEBRA report")],
+      [
+        u("qA", 1, "first"),
+        a("aA", 2, "answer A"),
+        a("aLeg", 3, "ZEBRA report"),
+      ],
       "c1",
     );
+    const t1 = turn({ turnId: "t1", ref: "qA", text: "answer A" });
     const leg = turn({
       turnId: "t2",
       agentInitiated: true,
       text: "ZEBRA report",
     });
-    const out = mergeTurns(replies, session([leg]), "emp");
-    /* The posted message keeps its plain row; the leg appends as its own
-       entry marked agent-initiated. */
-    expect(out.map((r) => r.id)).toEqual(["qA", "aA", "live-t2"]);
+    const out = mergeTurns(replies, session([t1, leg]), "emp");
+    expect(out.map((r) => r.id)).toEqual(["qA", "aA", "aLeg"]);
     expect(out[2].agentInitiated).toBe(true);
+    expect(out[2].phase).toBe("done");
+  });
+
+  test("AC-2 a leg never steals an already-claimed answer row", () => {
+    /* Leg text identical to turn1's claimed answer — the leg's own post
+       arrives as the newer row and only it may be claimed. */
+    const replies = conversationReplies(
+      [
+        u("qA", 1, "first"),
+        a("aA", 2, "same words"),
+        a("aLeg", 3, "same words"),
+      ],
+      "c1",
+    );
+    const t1 = turn({ turnId: "t1", ref: "qA", text: "same words" });
+    const leg = turn({
+      turnId: "t2",
+      agentInitiated: true,
+      text: "same words",
+    });
+    const out = mergeTurns(replies, session([t1, leg]), "emp");
+    expect(out.map((r) => r.id)).toEqual(["qA", "aA", "aLeg"]);
+    expect(out[1].agentInitiated).toBeFalsy();
+    expect(out[2].agentInitiated).toBe(true);
+  });
+
+  test("AC-3 a live agent leg renders right after the previous turn — a newer user message never sits above it", () => {
+    /* The delivery leg is still running when the user posts again; the
+       leg card anchors after the previous turn's block, not tail-appended
+       below the newer message. */
+    const replies = conversationReplies(
+      [u("qA", 1, "first"), a("aA", 2, "answer A"), u("qB", 3, "meanwhile")],
+      "c1",
+    );
+    const t1 = turn({ turnId: "t1", ref: "qA", text: "answer A" });
+    const leg = turn({
+      turnId: "t2",
+      agentInitiated: true,
+      phase: "text",
+      text: "working…",
+    });
+    const out = mergeTurns(replies, session([t1, leg], leg), "emp");
+    expect(out.map((r) => r.id)).toEqual(["qA", "aA", "live-t2", "qB"]);
+  });
+
+  test("AC-3 a finished leg's claimed card re-anchors above the user message that landed while it worked", () => {
+    /* qB posted during the leg; the leg's answer row landed at the tail.
+       The claimed card moves up to right after the previous turn — the
+       user message renders below the work, in time order. */
+    const replies = conversationReplies(
+      [
+        u("qA", 1, "first"),
+        a("aA", 2, "answer A"),
+        u("qB", 3, "meanwhile"),
+        a("aLeg", 4, "ZEBRA report"),
+      ],
+      "c1",
+    );
+    const t1 = turn({ turnId: "t1", ref: "qA", text: "answer A" });
+    const leg = turn({
+      turnId: "t2",
+      agentInitiated: true,
+      text: "ZEBRA report",
+    });
+    const out = mergeTurns(replies, session([t1, leg]), "emp");
+    expect(out.map((r) => r.id)).toEqual(["qA", "aA", "aLeg", "qB"]);
   });
 
   test("AC-1 a turn answering the root anchors at the top — newer messages never render above it", () => {

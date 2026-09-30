@@ -78,8 +78,9 @@ export class Session {
   lastTurnId = "";
   /** #308: a post-turn leg the engine opened itself (queued-steer drain,
      delivery leg) mints its own turn id here — NOT `turn`, which is
-     reserved for prompt() turns (a user prompt mid-leg must still land;
-     INVALID_STATE belongs to real turns only). */
+     reserved for prompt() turns. A leg still counts as running work:
+     prompt() and interrupt() treat it like a live turn (mid-work input
+     goes through session.steer, queued as the next leg). */
   legTurnId?: string;
   /** Accepted steers the engine queued for the next leg, FIFO — the leg's
      turn.started echoes each entry's `ref` so the relay message the steer

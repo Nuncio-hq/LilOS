@@ -181,7 +181,7 @@ export class AcpDriver {
     text: string,
     mintTurnId: () => string,
   ): Promise<"steered" | "not_running"> {
-    if (!s.turn || !this.conn) return "not_running";
+    if ((!s.turn && !s.legTurnId) || !this.conn) return "not_running";
     await this.submit(s, mintTurnId(), [{ type: "text", text }], true);
     return "steered";
   }

@@ -284,6 +284,27 @@ export function mergeThreadEntries(
     if (i >= 0) promptIdx.set(t, i);
   }
   const used = new Set<TurnModel>();
+  /* Newest claimed row — a leg's own post sits after it (#308). */
+  let claimedMax = -1;
+  /* dur = prompt -> reply latency, the only honest wall-clock available. */
+  const claimedEntry = (t: TurnModel, m: AppMessage) => {
+    const prompt = t.ref ? messages.find((x) => x.id === t.ref) : undefined;
+    const dur = prompt
+      ? Math.max(0, Math.round((m.createdAt - prompt.createdAt) / 1000))
+      : undefined;
+    return toAgentEntry(t, {
+      time: clock(m.createdAt),
+      dur,
+      asks: opts.asks,
+      employeeId: opts.employeeId,
+      employeeName: opts.employeeName,
+      sessionId: opts.sessionId ?? model.sessionId,
+      planCapable: opts.planCapable,
+      resolveEmployee: opts.resolveEmployee,
+      prs: opts.prs,
+      now: opts.now,
+    });
+  };
   for (const [mi, m] of messages.entries()) {
     if (m.authorKind !== "employee") continue;
     const turn = model.turns.find(
@@ -297,27 +318,45 @@ export function mergeThreadEntries(
     );
     if (!turn) continue;
     used.add(turn);
+    claimedMax = mi;
     const idx = entries.findIndex((e) => e.id === m.id);
-    /* dur = prompt -> reply latency, the only honest wall-clock available. */
-    const prompt = turn.ref
-      ? messages.find((x) => x.id === turn.ref)
-      : undefined;
-    const dur = prompt
-      ? Math.max(0, Math.round((m.createdAt - prompt.createdAt) / 1000))
-      : undefined;
-    const entry = toAgentEntry(turn, {
-      time: clock(m.createdAt),
-      dur,
-      asks: opts.asks,
-      employeeId: opts.employeeId,
-      employeeName: opts.employeeName,
-      sessionId: opts.sessionId ?? model.sessionId,
-      planCapable: opts.planCapable,
-      resolveEmployee: opts.resolveEmployee,
-      prs: opts.prs,
-      now: opts.now,
-    });
+    const entry = claimedEntry(turn, m);
     const superseded = supersededPlanEntries(turn, opts.planCapable);
+    if (idx >= 0) entries.splice(idx, 1, ...superseded, entry);
+    else entries.push(...superseded, entry);
+  }
+  /* #308: a finished agent leg's text also posts to the relay as a plain
+     employee row (harness finishTurn, no ref correlation) — claim it into
+     the leg's card or the same answer renders twice. Position-bound like
+     the prompt claims: scanning back past `claimedMax` keeps a leg from
+     stealing an EARLIER identical reply another turn owns. */
+  for (const t of model.turns) {
+    if (
+      !t.agentInitiated ||
+      used.has(t) ||
+      (t.phase !== "done" && t.phase !== "stopped") ||
+      !t.text.trim()
+    )
+      continue;
+    let mi = -1;
+    for (let i = messages.length - 1; i > claimedMax; i--) {
+      const m = messages[i];
+      if (
+        m.authorKind === "employee" &&
+        m.text.trim() === t.text.trim() &&
+        entries.some((e) => e.id === m.id)
+      ) {
+        mi = i;
+        break;
+      }
+    }
+    if (mi < 0) continue;
+    used.add(t);
+    claimedMax = mi;
+    const m = messages[mi];
+    const idx = entries.findIndex((e) => e.id === m.id);
+    const entry = claimedEntry(t, m);
+    const superseded = supersededPlanEntries(t, opts.planCapable);
     if (idx >= 0) entries.splice(idx, 1, ...superseded, entry);
     else entries.push(...superseded, entry);
   }
@@ -427,6 +466,33 @@ export function mergeThreadEntries(
       : -1;
     if (refAt < 0) entries.push(...rows);
     else entries.splice(skipTurnRun(refAt + 1), 0, ...rows);
+  }
+  /* #308 AC-3: an agent-initiated leg sits right after the previous
+     turn's card — a user message that landed while it worked never
+     renders above it (same slot rule as web's mergeTurns). Applies to
+     claimed legs (their relay row lands at the tail), unposted leftovers
+     and the live leg alike; ref'd steer legs keep their prompt anchor. */
+  let prevEnd = 0;
+  for (const t of model.turns) {
+    const cardId = `turn-${t.turnId}`;
+    const at = entries.findIndex((e) => e.id === cardId);
+    if (at < 0) continue;
+    let runStart = at;
+    while (
+      runStart > 0 &&
+      entries[runStart - 1].id.startsWith(`${cardId}-plan-`)
+    )
+      runStart--;
+    const runLen = at - runStart + 1;
+    if (t.agentInitiated && !t.ref) {
+      let dest = Math.min(prevEnd, entries.length);
+      if (runStart < dest) dest -= runLen;
+      if (dest !== runStart) {
+        const run = entries.splice(runStart, runLen);
+        entries.splice(dest, 0, ...run);
+      }
+      prevEnd = dest + runLen;
+    } else prevEnd = at + 1;
   }
   return entries;
 }
@@ -591,6 +657,7 @@ export function toThreadDetail(opts: {
       openAsks: [...opts.asks],
       pending: opts.pending,
     }),
+    ...(sessionModel?.live?.agentInitiated ? { agentWorking: true } : {}),
     employee: { id: empId, name: employeeName, tone: toneOf(empId) },
     when: last ? timeLabel(last.createdAt, opts.now) : "now",
     started: conv.createdAt
