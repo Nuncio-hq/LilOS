@@ -90,12 +90,22 @@ function currentPlan(turn: TurnModel): UiPlan | undefined {
   return last ? toUiPlan(last) : undefined;
 }
 
-function toStep(s: TurnModel["steps"][number]): Step {
+function toStep(s: TurnModel["steps"][number], turn?: TurnModel): Step {
+  /* #309 AC-2: a delegate_task that closed on its dispatch receipt is not
+     finished work — while the helper it spawned still runs the step reads
+     "Dispatched", flipping to "Completed" when the engine settles it. */
+  const dispatched =
+    s.status !== "running" &&
+    s.tool === "delegate_task" &&
+    !!turn?.subagents.some(
+      (sa) => sa.parentToolCallId === s.id && sa.status === "running",
+    );
   return {
     tool: s.tool,
     input: s.input,
     output: s.output ?? "",
     running: s.status === "running",
+    ...(dispatched ? { dispatched: true } : {}),
     diff: s.diff as Step["diff"],
     commit: s.commit as Step["commit"],
   };
@@ -107,13 +117,14 @@ function toStep(s: TurnModel["steps"][number]): Step {
 export function toSubagent(
   s: SubagentModel,
   resolveEmployee: (employeeRef: string) => string = (r) => r,
+  turn?: TurnModel,
 ): Subagent {
   return {
     id: s.subagentId,
     name: s.name,
     task: s.task,
     status: s.status,
-    steps: s.steps.map(toStep),
+    steps: s.steps.map((x) => toStep(x, turn)),
     ...(s.result !== undefined ? { result: s.result } : {}),
     /* `Subagent.dur` reads seconds; the model tracks ms. */
     ...(s.durationMs !== undefined
@@ -202,7 +213,7 @@ export function liveTurnReply(
     time: "",
     text: turn.text,
     reasoning: turn.reasoning || undefined,
-    steps: turn.steps.map(toStep),
+    steps: turn.steps.map((s) => toStep(s, turn)),
     steers: turn.steers,
     streaming: turn.phase === "text" ? turn.text : undefined,
     approval,
@@ -217,7 +228,9 @@ export function liveTurnReply(
        when this is non-empty — the UI's own check). */
     ...(turn.subagents.length
       ? {
-          subagents: turn.subagents.map((s) => toSubagent(s, resolveEmployee)),
+          subagents: turn.subagents.map((s) =>
+            toSubagent(s, resolveEmployee, turn),
+          ),
         }
       : {}),
   };

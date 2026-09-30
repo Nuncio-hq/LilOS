@@ -30,6 +30,7 @@ import {
 import { Shimmer } from "../components/ai-elements/shimmer";
 import { Task, TaskContent, TaskTrigger } from "../components/ai-elements/task";
 import { Tool, ToolContent, ToolHeader } from "../components/ai-elements/tool";
+import { Badge } from "../components/ui/badge";
 import { plural } from "../lib/helpers";
 import { withFileMentionChips } from "../lib/mentions";
 import { cn } from "../lib/utils";
@@ -166,6 +167,17 @@ export function TurnSteps({
                     ? "approval-requested"
                     : "input-available"
                   : "output-available"
+              }
+              badge={
+                s.dispatched ? (
+                  <Badge
+                    className="gap-1.5 rounded-full text-xs"
+                    variant="secondary"
+                  >
+                    <CircleDotIcon className="size-4 animate-pulse text-work" />
+                    Dispatched
+                  </Badge>
+                ) : undefined
               }
             />
             <ToolContent className="space-y-0 px-3 pt-0 pb-3">

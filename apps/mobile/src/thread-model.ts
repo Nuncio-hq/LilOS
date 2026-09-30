@@ -155,7 +155,7 @@ export function toAgentEntry(
     id: `turn-${turn.turnId}`,
     time: opts.time,
     reasoning: turn.reasoning || undefined,
-    steps: turn.steps.map(toToolStep),
+    steps: turn.steps.map((s) => toToolStep(s, turn)),
     text: turn.text,
     live,
     waiting,
@@ -167,7 +167,7 @@ export function toAgentEntry(
     ...(turn.subagents.length
       ? {
           subagents: turn.subagents.map((s) =>
-            toSubagentRow(s, opts.resolveEmployee),
+            toSubagentRow(s, opts.resolveEmployee, turn),
           ),
         }
       : {}),

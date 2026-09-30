@@ -373,6 +373,31 @@ describe("engine-hermes ACP delegate dispatch receipt (#309)", () => {
     ).toHaveLength(0);
   });
 
+  test("a dispatch receipt arriving as a parsed object also emits no close", () => {
+    const r = rig();
+    r.notify({
+      sessionUpdate: "tool_call",
+      toolCallId: "call-1",
+      name: "delegate_task",
+      rawInput: { tasks: [{ goal: "scan the relay" }] },
+    });
+    r.notify({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call-1",
+      name: "delegate_task",
+      status: "completed",
+      rawOutput: {
+        status: "dispatched",
+        mode: "background",
+        count: 1,
+        delegation_id: "deleg_9f1",
+      },
+    });
+    expect(
+      r.events.filter((e) => e.type === "subagent.completed"),
+    ).toHaveLength(0);
+  });
+
   test("a synchronous delegate call still closes its synthesized rows", () => {
     const r = rig();
     r.notify({

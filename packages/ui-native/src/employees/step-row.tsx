@@ -27,6 +27,11 @@ const TOOL: Record<string, { verb: string; now: string; icon: SFSymbol }> = {
     icon: "globe",
   },
   view_image: { verb: "Looked at", now: "Looking at", icon: "photo" },
+  delegate_task: {
+    verb: "Dispatched",
+    now: "Dispatching",
+    icon: "person.2",
+  },
 };
 export const tool = (t: string) =>
   TOOL[t] ?? {

@@ -73,11 +73,10 @@ describe("background subagents past turn end — #309", () => {
   });
 
   it("a subagent's own tool calls landing after turn.completed nest under it without reopening the turn", () => {
-    /* An async child keeps working between the parent's turns: the engine
-       stamps its tool.* frames with the id of the turn that spawned it.
-       They must extend the helper's step list — not flip the settled
-       parent turn back to "tools" (that used to reopen it as model.live
-       and park it at the thread's tail). */
+    /* An async child keeps working between the parent's turns. The engine
+       stamps these tool.* frames with whatever turnId is current — here
+       the settled t1 — and they must extend the helper's step list without
+       flipping the settled turn back to "tools". */
     const model = reduceSessionEvents("sess-1", [
       ...delegateFrames(),
       ev("tool.started", {
@@ -105,6 +104,53 @@ describe("background subagents past turn end — #309", () => {
       tool: "read_file",
       status: "completed",
     });
+  });
+
+  it("steps stamped on a LATER turn still land on the helper that spawned them", () => {
+    /* Review probe: helper sa1 runs past t1; while t2 is open the engine
+       stamps its tool.* frames with t2's id. The reducer must resolve the
+       parent across turns like subagent.completed does — not drop them
+       into orphanSteps where they never render. */
+    const model = reduceSessionEvents("sess-1", [
+      ...delegateFrames(),
+      ev("turn.started", { turnId: "t2", ref: "m2" }),
+      ev("tool.started", {
+        turnId: "t2",
+        toolCallId: "c9",
+        tool: "read_file",
+        input: { path: "a.ts" },
+        parentToolCallId: "sa1",
+      }),
+      ev("tool.completed", {
+        turnId: "t2",
+        toolCallId: "c9",
+        tool: "read_file",
+        status: "completed",
+        output: "12 lines",
+        parentToolCallId: "sa1",
+      }),
+    ]);
+    const sa = model.turns[0].subagents.find((s) => s.subagentId === "sa1");
+    expect(sa?.steps).toHaveLength(1);
+    expect(sa?.steps[0]).toMatchObject({
+      tool: "read_file",
+      status: "completed",
+    });
+    expect(model.turns[1].subagents).toHaveLength(0);
+  });
+
+  it("a request stamped on a settled turn records but never reopens it", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", ref: "m1" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+      ev("request.opened", {
+        turnId: "t1",
+        requestId: "r1",
+        request: { kind: "question", question: "which file?" },
+      }),
+    ]);
+    expect(model.turns[0].phase).toBe("done");
+    expect(model.openRequests.map((r) => r.requestId)).toEqual(["r1"]);
   });
 
   it("a cancelled turn still settles its running subagents as stopped", () => {
@@ -141,6 +187,20 @@ describe("background subagents past turn end — #309", () => {
       jobId: "sa:sa1",
       command: "scan the relay",
       status: "running",
+      subagent: true,
     });
+    /* Real times, not "up 0s · since (blank)": dispatch stamps startedAt;
+       a finished row freezes endedAt at start + reported duration. */
+    expect(rows[0].startedAt).toBeTypeOf("number");
+    const done = reduceSessionEvents("sess-1", [
+      ...delegateFrames(),
+      ev("subagent.completed", {
+        subagentId: "sa1",
+        status: "done",
+        result: "child report",
+        durationMs: 18_200,
+      }),
+    ]).subagentJobs[0];
+    expect(done.endedAt).toBe(done.startedAt! + 18_200);
   });
 });

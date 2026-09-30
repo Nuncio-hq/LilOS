@@ -339,14 +339,23 @@ export class AcpDriver {
            subagent.completed, so a dispatched row stays running on screen
            (a real close lands only over the WS event path). */
         const dispatched = (() => {
-          if (typeof out !== "string") return false;
-          try {
-            return (
-              (JSON.parse(out) as { status?: unknown }).status === "dispatched"
-            );
-          } catch {
-            return false;
-          }
+          /* The receipt arrives as a JSON string or an already-parsed
+             object — either way `status:"dispatched"` means the children
+             keep running. */
+          const status = (() => {
+            if (typeof out === "string") {
+              try {
+                return (JSON.parse(out) as { status?: unknown }).status;
+              } catch {
+                return undefined;
+              }
+            }
+            if (out !== null && typeof out === "object") {
+              return (out as { status?: unknown }).status;
+            }
+            return undefined;
+          })();
+          return status === "dispatched";
         })();
         if (s.delegateStack.includes(callId)) {
           s.delegateStack = s.delegateStack.filter((id) => id !== callId);

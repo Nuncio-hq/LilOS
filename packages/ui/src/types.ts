@@ -48,6 +48,10 @@ export type Step = {
   input: Record<string, unknown>;
   output: string;
   running?: boolean;
+  /** A delegate_task that closed on its dispatch receipt while the helper
+     it spawned still runs (#309) — the step reads "Dispatched", not
+     "Completed". */
+  dispatched?: boolean;
   diff?: Diff;
   commit?: GitCommit;
 };
