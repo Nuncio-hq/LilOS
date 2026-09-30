@@ -2277,7 +2277,8 @@ export const SUBAGENT_SCENARIOS: Scenario[] = [
   {
     /* #309: an async delegate — a helper keeps running after its parent's
        turn ends; its subagent.completed lands later, carrying no turnId
-       (the live-captured Hermes shape). Clients must key it session-wide. */
+       (the live-captured real-engine shape). Clients must key it
+       session-wide. */
     id: "async delegate: a helper can outlive its turn",
     async run(h) {
       const { sessionId } = (await h.request("session.start", {
