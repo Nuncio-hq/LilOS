@@ -281,7 +281,7 @@ PR does not exist.
   component.** Fences highlight via `lowlight` (registered grammars only,
   unknown → plain). Not: react-native-markdown-display / react-native-marked
   (no GFM tables, no highlighting, and no streaming states — `closeOpen`
-  owns those), or a wasm highlighter on RN. — #259 · PR #TBD
+  owns those), or a wasm highlighter on RN. — #259 · PR #316
 
 ## UX
 - **D-#114 The Workbench lives only in Focus mode, and opening a session
