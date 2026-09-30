@@ -186,7 +186,6 @@ export function AgentTurn({
   onRetry,
   onOpen,
   cards,
-  pending = [],
   models,
   onOpenSession,
   onPlan,
@@ -205,7 +204,6 @@ export function AgentTurn({
   onOpen?: (t: WbTab) => void;
   /** Frame-attached pieces under the turn (approval card, start-work card, PR card). */
   cards?: React.ReactNode;
-  pending?: string[];
   /** Opens another employee's session a subagent row links to (issue #170). */
   onOpenSession?: (employeeId: string, session: string) => void;
   /** Approve / Change / Reject on the plan this turn proposed (issue #175). */
@@ -293,12 +291,7 @@ export function AgentTurn({
           </MessageResponse>
         </MessageContent>
       ) : null}
-      <SteerRows
-        steers={r.steers}
-        pending={pending}
-        live={r.live}
-        by={human?.(VIEWER_ID)?.name ?? "You"}
-      />
+      <SteerRows steers={r.steers} by={human?.(VIEWER_ID)?.name ?? "You"} />
       {r.phase === "stopped" && (
         <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
           Stopped · session.interrupt

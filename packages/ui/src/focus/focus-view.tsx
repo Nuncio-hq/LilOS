@@ -185,7 +185,7 @@ export function FocusView({
   onPrMerge?: (method: MergeMethod) => void | Promise<void>;
   /** Live harness surfaces for Workbench Terminal/Preview tabs (issue #36). */
   surfaces?: LiveSurfaces;
-  /* Mid-turn sends: pending-steer chips when `steer` is declared, the queued tray without it. */
+  /* Mid-turn sends the agent hasn't read yet — the waiting tray above the composer (issue #9). */
   pending?: string[];
   /* os.editors + a bound os.open (issue #110, same pair ThreadView takes):
      the caller probes `host.describe` — onOpenPath={null} means os.open was
@@ -583,7 +583,6 @@ export function FocusView({
                       onOpen={pickTab}
                       onOpenSession={onOpenSession}
                       onPlan={onPlan}
-                      pending={steer ? pendingSteers : []}
                       cards={
                         <>
                           <ReplyCards
@@ -702,12 +701,22 @@ export function FocusView({
                 </QueueSection>
               </Queue>
             )}
-            {/* Queued mid-turn sends (engine without steer, issue #9) and the not-sent tray —
+            {/* Mid-turn sends still waiting to be read (issue #9) and the not-sent tray —
                 same markup as the thread panel, above the composer there too. queue holds ONLY
                 messages ■ stopped before they landed. */}
             <QueuedTray
-              items={steer ? [] : pendingSteers}
+              items={pendingSteers}
+              steer={steer}
+              name={lead?.name}
               onRemove={onRemovePending}
+              onEdit={
+                onRemovePending && onDraftChange
+                  ? (i) => {
+                      onDraftChange(pendingSteers[i] ?? "");
+                      onRemovePending(i);
+                    }
+                  : undefined
+              }
             />
             <NotSentTray
               items={queue}

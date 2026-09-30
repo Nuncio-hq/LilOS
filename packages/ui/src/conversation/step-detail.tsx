@@ -55,9 +55,11 @@ export function StepDetail({ s }: { s: Step }) {
         </div>
       ))}
       {s.output && (
-        <p className="whitespace-pre-wrap text-muted-foreground">
-          {stripAnsi(s.output)}
-        </p>
+        <div className="max-h-64 overflow-y-auto">
+          <p className="wrap-anywhere whitespace-pre-wrap text-muted-foreground">
+            {stripAnsi(s.output)}
+          </p>
+        </div>
       )}
     </div>
   );
