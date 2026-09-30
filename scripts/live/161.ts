@@ -59,6 +59,8 @@ execFileSync("git", ["-C", picked, "commit", "-qm", "init"]);
 interface PushLine {
   to: string;
   title: string;
+  /** iOS subtitle — the thread title (#289). */
+  subtitle?: string;
   body: string;
   data?: { conversationId?: string };
 }
@@ -84,7 +86,7 @@ const expoStub: Server = createServer((req, res) => {
     for (const m of messages) {
       pushes.push(m);
       out(
-        `PUSH -> ${m.to.slice(0, 40)} | "${m.title}": ${m.body} ` +
+        `PUSH -> ${m.to.slice(0, 40)} | "${m.title}" / "${m.subtitle ?? "-"}": ${m.body} ` +
           `(conv ${m.data?.conversationId ?? "-"})`,
       );
       for (const w of waiters.splice(0)) w(m);
@@ -362,7 +364,8 @@ const awaitPush = async (
 };
 
 /* Step 1 — an approval ask pushes needs-you (body = what it needs); the
-   approve then finishes the turn → a 'done' push (body = thread title). */
+   approve then finishes the turn → a 'done' push (subtitle = thread title,
+   body = the reply excerpt, #289). */
 note("needs-you: a mutating prompt → approval ask → push");
 const convA = await openConversation("fix the readme", "Fix the readme");
 {
@@ -377,7 +380,7 @@ const convA = await openConversation("fix the readme", "Fix the readme");
   await reregisterStub();
   const start = pushes.length;
   const waiter = awaitPush(
-    (p) => p.to === STUB_TOKEN && /Fix the readme|Turn complete/.test(p.body),
+    (p) => p.to === STUB_TOKEN && p.subtitle === "Fix the readme",
     start,
     30_000,
   );
@@ -385,7 +388,7 @@ const convA = await openConversation("fix the readme", "Fix the readme");
   const completion = await waiter;
   out(
     completion
-      ? `  PASS done push: "${completion.title}": ${completion.body}`
+      ? `  PASS done push: "${completion.title}" / "${completion.subtitle}": ${completion.body}`
       : "  FAIL no push on turn completion",
   );
 }
@@ -428,15 +431,15 @@ await stubPhone.request("push.visibility", { conversationId: null });
 const failStart = pushes.length;
 await openConversation("fail this task", "Failure demo");
 // convB's turn completion can land right as suppression lifts — match the
-// refusal's own thread title, not just the first push to arrive.
+// refusal's own thread title (now the subtitle), not just the first push.
 const failPush = await awaitPush(
-  (p) => p.to === STUB_TOKEN && p.body === "Failure demo",
+  (p) => p.to === STUB_TOKEN && p.subtitle === "Failure demo",
   failStart,
   20_000,
 );
 out(
   failPush
-    ? `  PASS failure push: "${failPush.title}": ${failPush.body}`
+    ? `  PASS failure push: "${failPush.title}" / "${failPush.subtitle}": ${failPush.body}`
     : "  FAIL no push on refusal",
 );
 
