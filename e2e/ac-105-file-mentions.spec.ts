@@ -203,6 +203,38 @@ async function arrowDownTo(
   await expect(row).toHaveAttribute("aria-selected", "true");
 }
 
+/** File hits land asynchronously per keystroke and each applied result
+    resets the menu's active row — Enter must wait for the response to the
+    FINAL query's `fs.search`, not just for a row to be visible (a stale
+    earlier query's hits can satisfy a visible/count check, then the final
+    response resets the selection before Enter, picking row 0 → "@Default").
+    Arm before typing; the predicate filters by wire params. Resolves once
+    the response is in AND the hits have been painted (React applies them
+    within a frame), so the selection is settled when it returns. */
+function waitForFileSearch(page: Page, query: string) {
+  return page
+    .waitForResponse((r) => {
+      if (!r.url().endsWith("/host")) return false;
+      try {
+        const m = JSON.parse(r.request().postData() ?? "{}") as {
+          method?: string;
+          params?: { query?: string };
+        };
+        return m.method === "fs.search" && m.params?.query === query;
+      } catch {
+        return false; // OPTIONS preflight carries no JSON body
+      }
+    })
+    .then(() =>
+      page.evaluate(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
+      ),
+    );
+}
+
 /** Pick the fixture repo for this DM: the pick survives between the serial
     tests (shared LILOS_HOME), so an earlier test may have added it already —
     then the folder menu lists it (data-wsfolder = path = id).
@@ -287,7 +319,9 @@ test("AC-1 @ opens one menu: Employees then Files, fuzzy match, cap 20, arrows +
   await page.screenshot({ path: `${SHOTS}/ac-1-menu-sections.png` });
 
   // Fuzzy match narrows it; dirs are marked with a trailing slash.
+  const appHits = waitForFileSearch(page, "app");
   await box.pressSequentially("app");
+  await appHits;
   const appRow = page.locator('[data-mention-file="src/app.tsx"]');
   await expect(appRow).toBeVisible({ timeout: 15_000 });
   await expect(fileRows(page)).toHaveCount(1);
@@ -340,9 +374,12 @@ test("AC-3 + AC-4 picking a file inserts a chip; Backspace removes it; it surviv
 
   // Pick via the menu (keyboard path — focus stays in the textarea).
   await box.click();
+  const hits = waitForFileSearch(page, "app");
   await box.pressSequentially("read @app");
+  await hits;
   const row = page.locator('[data-mention-file="src/app.tsx"]');
   await expect(row).toBeVisible({ timeout: 15_000 });
+  await expect(fileRows(page)).toHaveCount(1);
   await arrowDownTo(box, row);
   await box.press("Enter");
   await expect(box).toHaveValue("read @src/app.tsx ");
@@ -352,8 +389,11 @@ test("AC-3 + AC-4 picking a file inserts a chip; Backspace removes it; it surviv
   await expect(box).toHaveValue("read ");
 
   // Re-insert, verify the draft survives a reload (draft store #103).
+  const hits2 = waitForFileSearch(page, "app");
   await box.pressSequentially("@app");
+  await hits2;
   await expect(row).toBeVisible({ timeout: 15_000 });
+  await expect(fileRows(page)).toHaveCount(1);
   await arrowDownTo(box, row);
   await box.press("Enter");
   await expect(box).toHaveValue("read @src/app.tsx ");
