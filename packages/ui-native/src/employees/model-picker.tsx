@@ -8,12 +8,16 @@ import { EffortSlider } from "./effort-slider";
 import { Group, Option, SheetHeader } from "./folder-picker";
 import {
   effortIndex,
+  effortLabel,
   effortOf,
   findModel,
   modelKeyOf,
   nextModelPick,
   pickableModels,
 } from "./model-rules";
+
+export { effortLabel, modelLabel } from "./model-rules";
+
 import type {
   ModelPick,
   ModelProviderRow,
@@ -28,26 +32,6 @@ import type {
    by provider — minus the shared hide list the Mac's "Edit models" writes
    (the session's own pick always stays, merged in even when the catalog
    omits it). The rules live in ./model-rules; this is the renderer. */
-
-const EFFORT: Record<string, string> = {
-  none: "None",
-  minimal: "Minimal",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra high",
-  max: "Max",
-  ultra: "Ultra",
-};
-export const effortLabel = (e: string) =>
-  EFFORT[e] ?? e.charAt(0).toUpperCase() + e.slice(1);
-
-/** Composer chip: "Opus 5.5 · High". */
-export function modelLabel(models: ModelRow[], p: ModelPick) {
-  const m = findModel(models, p);
-  const name = (m?.name ?? p.model).replace(/^Claude /, "");
-  return p.effort ? `${name} · ${effortLabel(p.effort)}` : name;
-}
 
 export function ModelPickerSheet({
   models,
@@ -132,7 +116,9 @@ export function ModelPickerSheet({
             efforts={efforts}
             index={effortIndex(effort, efforts)}
             label={effortLabel}
-            onPick={(e) => onPick({ ...value, effort: e })}
+            onPick={(e) =>
+              cur && onPick(nextModelPick({ ...value, effort: e }, cur))
+            }
           />
         ) : (
           <AppText size="xs" tone="muted" className="text-center">
@@ -167,7 +153,9 @@ export function ModelPickerSheet({
             </View>
             <Switch
               value={!!value.fast}
-              onValueChange={(v) => onPick({ ...value, effort, fast: v })}
+              onValueChange={(v) =>
+                cur && onPick(nextModelPick({ ...value, effort, fast: v }, cur))
+              }
             />
           </View>
         )}
@@ -217,7 +205,7 @@ export function ModelPickerSheet({
             ))}
           </Group>
         ))}
-      {groups.size === 0 && (
+      {![...groups.values()].some((items) => items.length > 0) && (
         <AppText size="sm" tone="muted" className="text-center">
           No model found.
         </AppText>

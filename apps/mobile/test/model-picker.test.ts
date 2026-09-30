@@ -5,6 +5,7 @@ import {
   isModelHidden,
   type ModelRow,
   modelKeyOf,
+  modelLabel,
   nextModelPick,
   pickableModels,
 } from "@lilos/ui-native/model-rules";
@@ -179,6 +180,25 @@ describe("AC-2: effort ladder = the model's efforts; Fast only when it has it", 
     expect(effortIndex("high", opus.efforts!)).toBe(2);
     // A rung the ladder doesn't have falls back to the model's own default.
     expect(effortOf({ effort: "ultra" }, opus)).toBe("medium");
+  });
+
+  it("AC-2 the chip labels the effort in effect, never a stale rung", () => {
+    // A rung the model's ladder doesn't have resolves to its declared
+    // default (the same rule the web chip's defaultEffort applies).
+    expect(modelLabel(MODELS, { model: "opus", effort: "ultra" })).toBe(
+      "Opus 4.5 · Medium",
+    );
+    expect(modelLabel(MODELS, { model: "opus", effort: "high" })).toBe(
+      "Opus 4.5 · High",
+    );
+    // A ladderless model drops the rung entirely; an off-catalog pick
+    // keeps its raw effort — there's no ladder to check it against.
+    expect(modelLabel(MODELS, { model: "local-8b", effort: "high" })).toBe(
+      "Local 8B",
+    );
+    expect(modelLabel(MODELS, { model: "opus-5.5", effort: "max" })).toBe(
+      "opus-5.5 · Max",
+    );
   });
 });
 

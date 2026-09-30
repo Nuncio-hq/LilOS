@@ -2,6 +2,19 @@ import type { ModelPick, ModelRow, ModelVisibility } from "./types";
 
 export type { ModelPick, ModelRow, ModelVisibility } from "./types";
 
+const EFFORT: Record<string, string> = {
+  none: "None",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+  ultra: "Ultra",
+};
+export const effortLabel = (e: string) =>
+  EFFORT[e] ?? e.charAt(0).toUpperCase() + e.slice(1);
+
 /* The mobile model picker's rules — the twins of the web's
    (packages/ui/src/chat/model-picker.tsx + model-visibility-dialog.tsx),
    held pure (no react-native) so apps can unit-test them and the sheet
@@ -115,4 +128,15 @@ export function nextModelPick(
     ...(effort !== undefined ? { effort } : {}),
     fast: !!(row.fast && cur.fast),
   };
+}
+
+/** Composer chip: "Opus 5.5 · High". The rung shown is the effort in effect
+   (validated against the row's ladder, declared default included) — not a
+   stale rung the pick may carry; an off-catalog pick keeps its raw effort
+   since there's no ladder to check it against. */
+export function modelLabel(models: readonly ModelRow[], p: ModelPick) {
+  const m = findModel(models, p);
+  const name = (m?.name ?? p.model).replace(/^Claude /, "");
+  const effort = m ? effortOf(p, m) : p.effort;
+  return effort ? `${name} · ${effortLabel(effort)}` : name;
 }
