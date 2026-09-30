@@ -60,7 +60,9 @@ describe("#247 AC-5 — DM rows keep the needs-you badge + trimmed meta", () => 
      ui-native refactor can't quietly regress it. */
   it("StateMark draws needs-you and the meta line is branch-or-folder", () => {
     const dm = read("packages/ui-native/src/employees/dm-screen.tsx");
-    expect(dm).toContain('state === "needs-you"');
+    const mark = dm.slice(dm.indexOf("function StateMark"));
+    expect(mark).toContain('state === "needs-you"');
+    expect(mark).toContain("bg-primary-foreground"); // the drawn "!" strokes
     expect(dm).toContain("t.branch ?? t.folder");
   });
 });
