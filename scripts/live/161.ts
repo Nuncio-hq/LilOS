@@ -380,7 +380,10 @@ const convA = await openConversation("fix the readme", "Fix the readme");
   await reregisterStub();
   const start = pushes.length;
   const waiter = awaitPush(
-    (p) => p.to === STUB_TOKEN && p.subtitle === "Fix the readme",
+    (p) =>
+      p.to === STUB_TOKEN &&
+      p.subtitle === "Fix the readme" &&
+      p.body.startsWith("Done on"),
     start,
     30_000,
   );
@@ -416,7 +419,7 @@ await approveAll(convB);
 await sleep(1_500);
 const forStub = pushes
   .slice(suppressedStart)
-  .filter((p) => p.to === STUB_TOKEN);
+  .filter((p) => p.to === STUB_TOKEN && p.data?.conversationId === convB);
 out(
   forStub.length === 0
     ? "  PASS no push to the phone that has the thread open"
