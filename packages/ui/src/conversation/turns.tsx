@@ -314,7 +314,12 @@ export function AgentTurn({
       {cards}
       {!r.live &&
         !r.streaming &&
-        (r.text || steps.length > 0 || !!r.subagents?.length) && (
+        (r.text ||
+          steps.length > 0 ||
+          !!r.subagents?.length ||
+          /* A turn stopped before it produced anything still needs the
+             end-anchor — otherwise there is no wire signal the turn ended. */
+          r.phase === "stopped") && (
           /* data-turnsettled: the footer only renders once the turn has ended —
            the stable "turn is over" anchor for specs (text lands earlier). */
           <div
