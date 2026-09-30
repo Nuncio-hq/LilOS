@@ -4,7 +4,12 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Animated, Pressable, ScrollView, Text, View } from "react-native";
 import { type CodeSpan, highlight } from "./code-highlight";
 import { Icon, useThemeColor } from "./icon";
-import { langName, type ProseBlock, parseProse } from "./prose-blocks";
+import {
+  columnWidths,
+  langName,
+  type ProseBlock,
+  parseProse,
+} from "./prose-blocks";
 
 /* Agent text: paragraphs, "- " bullets, **bold**, `code` and fenced code
    blocks — the slice of markdown the engine actually sends in short
@@ -27,6 +32,8 @@ export function Prose({
       {parseProse(text).map((b, i) => {
         if (b.kind === "code")
           return <CodeBlock key={i} block={b} small={size === "sm"} />;
+        if (b.kind === "table")
+          return <TableBlock key={i} block={b} small={size === "sm"} />;
         if (b.kind === "bullets")
           return (
             <View key={i} className="gap-1.5">
@@ -45,20 +52,30 @@ export function Prose({
 }
 
 function Inline({ text, className }: { text: string; className: string }) {
+  const accent = useThemeColor("accent-text");
+  const foreground = useThemeColor("foreground");
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+  // Each segment is a sibling Text with its own color — a color class
+  // or style on the parent competes with nested spans and wins.
   return (
-    <Text className={`text-foreground ${className}`}>
+    <Text className={className}>
       {parts.map((p, i) =>
         p.startsWith("**") ? (
-          <Text key={i} className="font-semibold">
+          <Text key={i} className="font-semibold" style={{ color: foreground }}>
             {p.slice(2, -2)}
           </Text>
         ) : p.startsWith("`") ? (
-          <Text key={i} className="font-mono text-[14px] text-accent-text">
+          <Text
+            key={i}
+            className="font-mono text-[14px] text-accent-text"
+            style={{ color: accent }}
+          >
             {p.slice(1, -1)}
           </Text>
         ) : (
-          p
+          <Text key={i} style={{ color: foreground }}>
+            {p}
+          </Text>
         ),
       )}
     </Text>
@@ -153,6 +170,96 @@ function CodeBlock({
   );
 }
 
+/* A GFM table: header row on a muted band, thin separators, columns
+   aligned per the `---:`/`:-:` markers. One horizontal scroller wraps
+   the WHOLE grid and column widths come from columnWidths() — one
+   value per column shared by the header and every row, so dividers
+   line up and scroll as a unit. Beyond the ~14em cap a cell wraps.
+   Text scales with Dynamic Type (RN default). */
+function TableBlock({
+  block,
+  small,
+}: {
+  block: Extract<ProseBlock, { kind: "table" }>;
+  small: boolean;
+}) {
+  const cls = small
+    ? "text-[12.5px] leading-[17px]"
+    : "text-[14px] leading-[20px]";
+  const aligns = block.header.map((_, j) => block.align[j] ?? "left");
+  const widths = columnWidths(block.header, block.rows);
+  return (
+    <ScrollView horizontal bounces={false}>
+      <View
+        className="overflow-hidden rounded-[14px] bg-card"
+        style={{ borderCurve: "continuous" }}
+      >
+        <View className="flex-row bg-muted/50">
+          {block.header.map((cell, j) => (
+            <TableCell
+              key={j}
+              text={cell}
+              align={aligns[j]}
+              cls={cls}
+              width={widths[j]}
+              first={j === 0}
+              head
+            />
+          ))}
+        </View>
+        {block.rows.map((row, i) => (
+          <View key={i} className="flex-row border-t border-muted-strong/30">
+            {row.map((cell, j) => (
+              <TableCell
+                key={j}
+                text={cell}
+                align={aligns[j]}
+                cls={cls}
+                width={widths[j]}
+                first={j === 0}
+              />
+            ))}
+          </View>
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
+function TableCell({
+  text,
+  align,
+  cls,
+  width,
+  first,
+  head,
+}: {
+  text: string;
+  align: "left" | "center" | "right";
+  cls: string;
+  width: number;
+  first: boolean;
+  head?: boolean;
+}) {
+  return (
+    <View
+      className={`px-3 py-2 ${first ? "" : "border-l border-muted-strong/30"}`}
+      style={{ width }}
+    >
+      <Inline
+        text={closeOpen(text)}
+        className={`${cls} ${
+          align === "center"
+            ? "text-center"
+            : align === "right"
+              ? "text-right"
+              : "text-left"
+        } ${head ? "font-semibold" : ""}`}
+      />
+    </View>
+  );
+}
+
 type CodePalette = Record<string, string | undefined>;
 
 function spanStyle(span: CodeSpan, palette: CodePalette) {
@@ -226,6 +333,7 @@ export function plain(text: string) {
     .map((b) => {
       if (b.kind === "code") return b.code;
       if (b.kind === "bullets") return b.items.join(" ");
+      if (b.kind === "table") return [...b.header, ...b.rows.flat()].join(" ");
       return b.text;
     })
     .join(" ")
