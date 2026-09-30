@@ -108,8 +108,13 @@ PR does not exist.
   "sidebar"`; the renderer owns the drag regions** (`lilos-drag` on header
   strips, interactive children `no-drag`) and pushes its theme to
   `nativeTheme.themeSource` so the vibrancy material matches app tokens.
-  Not: a default framed window, or a frameless window with custom-drawn
-  traffic lights (misses native drag/zoom/full-screen for free). — #232
+  The renderer must also re-push the region map when a strip or its
+  contents change — `watchDragRegions()` flips each `.lilos-drag` through a
+  two-frame style diff, since the OS map goes stale for headers mounted
+  under a stationary cursor until a pointer event lands. Not: a default
+  framed window, or a frameless window with custom-drawn
+  traffic lights (misses native drag/zoom/full-screen for free). — #232,
+  #301
 
 ## Testing
 - **D-#3 CI (GitHub Actions, setup-bun) runs with `engine-fake`; never a
