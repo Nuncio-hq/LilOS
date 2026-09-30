@@ -40,6 +40,7 @@ import {
   type HumanFn,
   type MessageHit,
   type Msg,
+  type WbTab,
   type OsEditor,
   type Project,
   type Reply,
@@ -596,6 +597,8 @@ export default function App() {
   // #138 AC-3: search hit opened → thread scrolls to this message id, flashes it.
   const [scrollTo, setScrollTo] = useState<string | null>(null)
   const [focus, setFocus] = useState(false)
+  // Workbench tab Focus opens on when a thread-panel link asked for one (#317).
+  const [focusTab, setFocusTab] = useState<WbTab | undefined>()
   const [panelTab, setPanelTab] = useState<"thread" | "employee" | "tickets">("thread")
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 1280)
   const [navOpen, setNavOpen] = useState(false)
@@ -1436,7 +1439,8 @@ export default function App() {
       thread={{ ...openThread.thread, replies: openThread.thread.replies.map((r, i) => ({ ...r, id: r.id ?? `p-${i}` })) }}
       channel={channel}
       emp={emp} human={human} resolved={resolved} setResolved={setResolved}
-      onFocus={() => setFocus(!focus)}
+      onFocus={() => { setFocusTab(undefined); setFocus(!focus) }}
+      onOpenTab={(t) => { setFocusTab(t); setFocus(true) }}
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
       running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
       draft={threadDraft} onDraftChange={setThreadDraft}
@@ -1507,6 +1511,7 @@ export default function App() {
           // A real harness attach (?surfaces=…) keeps its live Preview tab; the
           // LilOS Browser (#214) replaces it only in the mock prototype.
           browser={realSurfaces ? undefined : threadBrowser(openThread.id)}
+          initialTab={focusTab}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />
       ) : (

@@ -42,6 +42,7 @@ import type {
   OsApp,
   OsEditor,
   Thread,
+  WbTab,
   Work,
 } from "../types";
 import { WorkspaceBadge, WsBadge } from "../workbench/ws-badges";
@@ -116,6 +117,7 @@ export function ThreadView({
   resolved,
   setResolved,
   onFocus,
+  onOpenTab,
   onClose,
   work,
   repo,
@@ -163,6 +165,9 @@ export function ThreadView({
   resolved: Record<string, string>;
   setResolved?: (r: Record<string, string>) => void;
   onFocus?: () => void;
+  /* Opens Focus on a Workbench tab — makes the turn's "N subagents · Open" / "N files changed"
+     links live in the panel (#317). Absent = those stay in-place / plain text. */
+  onOpenTab?: (t: WbTab) => void;
   /* Esc → close the panel (issue #195 AC-1); absent → Esc does nothing (D-#19). */
   onClose?: () => void;
   work: Work | null;
@@ -428,6 +433,7 @@ export function ThreadView({
                     models={models}
                     onOpenSession={onOpenSession}
                     onPlan={onPlan}
+                    onOpen={onOpenTab}
                     cards={
                       <ReplyCards
                         r={r}
