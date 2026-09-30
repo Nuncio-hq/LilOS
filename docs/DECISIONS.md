@@ -230,6 +230,12 @@ PR does not exist.
   outlive idle, #309); an ACP-dispatched row the wire can never close is
   settled stopped by engine-hermes `Session.setState` once the session
   leaves running. Not: settling helpers on idle, or per-UI guesses. — #327
+- **D-#258 `deliveredSeq` is a crash-durability watermark, not "turn
+  started"** — it must stay behind until the turn's outcome is secured
+  (turn end) or a restarting harness can't rebind its orphan session.
+  "Queued" means past the watermark AND no `turn.started` ref — the
+  client reads the ref, the wire stays as-is. Not: advancing the mark at
+  turn.started. — #258
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the
