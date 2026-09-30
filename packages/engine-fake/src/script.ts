@@ -6,6 +6,11 @@
  * prototype are UI concerns and stay out of the wire; their content is
  * carried by the tool steps and text.
  */
+import {
+  MARKDOWN_BLOCKS_SAMPLE,
+  MARKDOWN_TABLE_SAMPLE,
+} from "./markdown-samples.js";
+
 /* ── subagents + background jobs (#179) ────────────────────────────────── */
 
 /** One helper the delegate step spawns: its own tool calls nest under it. */
@@ -159,6 +164,20 @@ export function scriptFor(
     .trim()
     .replace(/[?.!]+$/, "");
   const tail = `I'm in \`${cwd}\` on ⎇ \`${branch}\`. Tell me what to change and I'll edit there.`;
+
+  /* `md: blocks` / `md: table` — Oscar's markdown sample replies verbatim
+     (#259/#306 legs: what the mobile Prose does with them is the point). */
+  const md = /^md(?:arkdown)?:\s*(blocks|table)/i.exec(q);
+  if (md) {
+    return {
+      reasoning: `The ${md[1].toLowerCase()} markdown sample, verbatim — its rendering is what gets judged.`,
+      steps: [],
+      text:
+        md[1].toLowerCase() === "table"
+          ? MARKDOWN_TABLE_SAMPLE
+          : MARKDOWN_BLOCKS_SAMPLE,
+    };
+  }
 
   /* `codeblocks` — Oscar's 7-block markdown sample (#307): ts, python, bash,
      a long unbroken JSON line, markdown-looking text inside a fence, an
