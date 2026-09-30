@@ -793,6 +793,45 @@ Finally the diff for the change itself:
 Each block keeps its own shape — mono, panel, copy — the thread prose around them stays normal.`,
         footer: { dur: 9, model: "Sonnet 5", effort: "Medium" },
       },
+      {
+        kind: "user",
+        id: "u2",
+        time: "10:09",
+        text: "Now the table sample — the open-items breakdown, the wide one, and the aligned one.",
+      },
+      {
+        kind: "agent",
+        id: "g2",
+        time: "10:10",
+        thought: 4,
+        reasoning:
+          "The three-table sample verbatim — a two-column breakdown with long Vietnamese cell text, a six-column status table that needs horizontal scroll, and a right/center/left aligned one.",
+        text: `Two open items — here's the breakdown:
+
+| Issue | What it needs |
+| --- | --- |
+| Apple review reply | Cần trả lời reviewer trong 24h — họ hỏi về quyền camera, cần giải thích pairing flow chứ không phải quét ảnh. |
+| Sam's invoice | Hóa đơn tháng 9 chưa chốt — cần xác nhận số giờ trước khi gửi lại cho kế toán cuối tuần này. |
+
+And a wider one for scroll:
+
+| Slice | AC | Tier | Status | Owner | Notes |
+| --- | --- | --- | --- | --- | --- |
+| #259 code blocks | 5 | Normal | In PR | Devin | fences + highlight + copy |
+| #306 tables | 6 | Normal | Building | Devin | GFM tables, scroll inside the message |
+| #307 desktop chrome | 7 | Normal | agent-ready | unassigned | Shiki plugin + one-row header |
+
+Alignment matters too — right, center, left:
+
+| Rank | Name | Score |
+| ---: | :---: | :--- |
+| 1 | Relay | 98.2 |
+| 12 | Harness | 87.04 |
+| 123 | Desktop | 76.345 |
+
+Everything outside the tables renders as normal prose.`,
+        footer: { dur: 11, model: "Sonnet 5", effort: "Medium" },
+      },
     ],
   },
 ];

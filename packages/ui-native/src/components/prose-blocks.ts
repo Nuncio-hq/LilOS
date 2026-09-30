@@ -14,11 +14,19 @@ export type ProseBlock =
       code: string;
       /** False while the closing ``` hasn't streamed in yet (#259 AC-4). */
       closed: boolean;
+    }
+  | {
+      kind: "table";
+      align: ("left" | "center" | "right")[];
+      header: string[];
+      rows: string[][];
     };
 
 const FENCE_OPEN = /^\s*```/;
 const FENCE_CLOSE = /^\s*```\s*$/;
 const BULLET = /^\s*[-*] /;
+const TABLE_ROW = /^\s*\|.*\|\s*$/;
+const ALIGN_CELL = /^:?-{3,}:?$/;
 
 /** Fenced code blocks first, then blank-line paragraphs — fences win over
     every other construct, their content is always literal. */
@@ -71,12 +79,68 @@ export function parseProse(raw: string): ProseBlock[] {
         code: code.join("\n"),
         closed,
       });
+    } else if (isTableStart(lines, i)) {
+      flushText();
+      const header = splitRow(lines[i]);
+      const align = splitRow(lines[i + 1]).map(alignOf);
+      const rows: string[][] = [];
+      i += 2;
+      while (i < lines.length && TABLE_ROW.test(lines[i])) {
+        rows.push(splitRow(lines[i]));
+        i++;
+      }
+      i--;
+      // Columns are the header's; short rows pad, extra cells drop (GFM).
+      out.push({
+        kind: "table",
+        align: header.map((_, j) => align[j] ?? "left"),
+        header,
+        rows: rows.map((r) => header.map((_, j) => r[j] ?? "")),
+      });
     } else {
       text.push(lines[i]);
     }
   }
   flushText();
   return out;
+}
+
+/* A table only starts once its `| --- |` row lands — until then a `|`
+   line is plain prose. Body rows need a trailing pipe, so a row still
+   streaming mid-line never joins the table; it falls out as text (#306). */
+function isTableStart(lines: string[], i: number): boolean {
+  if (!/^\s*\|/.test(lines[i]) || i + 1 >= lines.length) return false;
+  if (!/^\s*\|/.test(lines[i + 1])) return false;
+  const cells = splitRow(lines[i + 1]);
+  return cells.length > 0 && cells.every((c) => ALIGN_CELL.test(c));
+}
+
+/** `| a | b |` → [a, b]; `\|` stays inside its cell. */
+function splitRow(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
+  const cells: string[] = [];
+  let cur = "";
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "\\" && s[i + 1] === "|") {
+      cur += "|";
+      i++;
+    } else if (s[i] === "|") {
+      cells.push(cur);
+      cur = "";
+    } else {
+      cur += s[i];
+    }
+  }
+  cells.push(cur);
+  return cells.map((c) => c.trim());
+}
+
+function alignOf(cell: string): "left" | "center" | "right" {
+  const l = cell.startsWith(":");
+  const r = cell.endsWith(":");
+  return l && r ? "center" : r ? "right" : "left";
 }
 
 /** Fence tags → the label on the block's header row (matches the desktop
