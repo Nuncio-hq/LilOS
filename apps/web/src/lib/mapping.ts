@@ -349,6 +349,14 @@ export function mergeTurns(
       continue;
     if (!t.text.trim() && t.phase !== "stopped") continue;
     const at = t.ref ? flat.findIndex((r) => r.id === t.ref) : -1;
+    /* #288: a finished turn anchored to a message that renders nowhere is an
+       orphan — e.g. a rebound engine session re-answering the root (the open
+       thread renders the root as its header, not a reply row). Appending it
+       would park the re-answer under the LATEST question. Stopped turns keep
+       the tail append: their marker is the only surface of a stop on a
+       root-anchored turn. Ref-less turns keep the tail fallback too: engines
+       that never echo `ref` can't be positioned any other way. */
+    if (t.ref && at < 0 && t.phase !== "stopped") continue;
     const rs = liveReplies(t, employeeId, asks, resolveEmployee);
     if (at < 0) flat.push(...rs);
     else flat.splice(at + 1, 0, ...rs);
