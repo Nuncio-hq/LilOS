@@ -242,6 +242,11 @@ test("AC-2/AC-3 an engine leg keeps its own card above newer rows; its post is c
   expect(settled.indexOf("meanwhile zebra note")).toBeLessThan(
     settled.indexOf("Meanwhile zebra note"),
   );
+  /* Post-drain, the leg's post is still claimed exactly once — the bare
+     duplicate must not reappear once a newer claimed row exists. */
+  await expect(
+    page.getByText("ZEBRA report delivered", { exact: true }),
+  ).toHaveCount(1);
 });
 
 test("AC-1/AC-5 queued replies anchor under their own prompt — even after reload", async ({

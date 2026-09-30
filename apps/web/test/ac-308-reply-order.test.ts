@@ -259,4 +259,66 @@ describe("issue #308 — replies anchor to their own turn's question", () => {
        anchored under its own prompt, not parked where the text matched. */
     expect(out[1].phase).toBe("done");
   });
+
+  test("AC-2 a leg still claims its own post when a later-queued answer posts after it", () => {
+    /* Drain order: the leg completes and posts first; the queued prompt's
+       turn then drains and its answer posts LAST — the leg's own row is
+       older than the newest claimed row. Bound only by previously
+       leg-claimed rows, the claim still finds it — a fence at the
+       newest-claimed row leaves the bare duplicate in place. */
+    const replies = conversationReplies(
+      [
+        u("qA", 1, "first"),
+        a("aA", 2, "answer A"),
+        u("qB", 3, "meanwhile"),
+        a("aLeg", 4, "leg result"),
+        a("aB", 5, "answer B"),
+      ],
+      "c1",
+    );
+    const t1 = turn({ turnId: "t1", ref: "qA", text: "answer A" });
+    const leg = turn({
+      turnId: "t2",
+      agentInitiated: true,
+      text: "leg result",
+    });
+    const t3 = turn({ turnId: "t3", ref: "qB", text: "answer B" });
+    const out = mergeTurns(replies, session([t1, leg, t3]), "emp");
+    expect(out.map((r) => r.id)).toEqual(["qA", "aA", "aLeg", "qB", "aB"]);
+    expect(out[2].agentInitiated).toBe(true);
+    /* the leg's text renders once — no bare duplicate row */
+    expect(out.filter((r) => r.text === "leg result")).toHaveLength(1);
+  });
+
+  test("AC-2 two same-text legs claim their posts in order", () => {
+    /* Same delivery text twice — each leg claims the first unclaimed
+       matching row after the previous leg's claim, so posts pair with
+       legs in order instead of the last leg grabbing the last post and
+       stranding the earlier leg's row. */
+    const replies = conversationReplies(
+      [
+        u("qA", 1, "first"),
+        a("aA", 2, "answer A"),
+        a("legP1", 3, "same report"),
+        a("legP2", 4, "same report"),
+      ],
+      "c1",
+    );
+    const t1 = turn({ turnId: "t1", ref: "qA", text: "answer A" });
+    const leg1 = turn({
+      turnId: "t2",
+      agentInitiated: true,
+      text: "same report",
+    });
+    const leg2 = turn({
+      turnId: "t3",
+      agentInitiated: true,
+      text: "same report",
+    });
+    const out = mergeTurns(replies, session([t1, leg1, leg2]), "emp");
+    expect(out.map((r) => r.id)).toEqual(["qA", "aA", "legP1", "legP2"]);
+    expect(out[2].agentInitiated).toBe(true);
+    expect(out[3].agentInitiated).toBe(true);
+    expect(out.filter((r) => r.text === "same report")).toHaveLength(2);
+  });
 });

@@ -284,8 +284,8 @@ export function mergeThreadEntries(
     if (i >= 0) promptIdx.set(t, i);
   }
   const used = new Set<TurnModel>();
-  /* Newest claimed row — a leg's own post sits after it (#308). */
-  let claimedMax = -1;
+  /* Newest row a leg claimed (#308) — the pass-2 cursor below. */
+  let legClaimed = -1;
   /* dur = prompt -> reply latency, the only honest wall-clock available. */
   const claimedEntry = (t: TurnModel, m: AppMessage) => {
     const prompt = t.ref ? messages.find((x) => x.id === t.ref) : undefined;
@@ -318,7 +318,6 @@ export function mergeThreadEntries(
     );
     if (!turn) continue;
     used.add(turn);
-    claimedMax = mi;
     const idx = entries.findIndex((e) => e.id === m.id);
     const entry = claimedEntry(turn, m);
     const superseded = supersededPlanEntries(turn, opts.planCapable);
@@ -327,9 +326,10 @@ export function mergeThreadEntries(
   }
   /* #308: a finished agent leg's text also posts to the relay as a plain
      employee row (harness finishTurn, no ref correlation) — claim it into
-     the leg's card or the same answer renders twice. Position-bound like
-     the prompt claims: scanning back past `claimedMax` keeps a leg from
-     stealing an EARLIER identical reply another turn owns. */
+     the leg's card or the same answer renders twice. Claimed rows were
+     already spliced into their turn's entry, so `entries.some` alone
+     keeps a leg from stealing a claimed answer; the legClaimed cursor
+     pairs same-text legs with their posts in order. */
   for (const t of model.turns) {
     if (
       !t.agentInitiated ||
@@ -339,7 +339,7 @@ export function mergeThreadEntries(
     )
       continue;
     let mi = -1;
-    for (let i = messages.length - 1; i > claimedMax; i--) {
+    for (let i = legClaimed + 1; i < messages.length; i++) {
       const m = messages[i];
       if (
         m.authorKind === "employee" &&
@@ -352,7 +352,7 @@ export function mergeThreadEntries(
     }
     if (mi < 0) continue;
     used.add(t);
-    claimedMax = mi;
+    legClaimed = mi;
     const m = messages[mi];
     const idx = entries.findIndex((e) => e.id === m.id);
     const entry = claimedEntry(t, m);

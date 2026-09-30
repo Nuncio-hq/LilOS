@@ -1095,4 +1095,76 @@ describe("thread-model — #308 reply ordering", () => {
     );
     expect(entries.map((e) => e.id)).toEqual(["m2", "turn-t1", "turn-t2"]);
   });
+
+  it("AC-2 a leg still claims its own post when a later-queued answer posts after it", () => {
+    /* Drain order: leg completes and posts first, then the queued prompt
+       drains and its answer posts last — the leg's row sits BEFORE the
+       newest claimed row, so only a leg-claimed cursor may bound the
+       scan or the bare duplicate survives. */
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", ref: "m1" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "answer A" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+      ev("turn.started", { turnId: "t2", initiatedBy: "agent" }),
+      ev("turn.delta", { turnId: "t2", stream: "text", delta: "leg result" }),
+      ev("turn.completed", { turnId: "t2", stopReason: "end_turn" }),
+      ev("turn.started", { turnId: "t3", ref: "m3" }),
+      ev("turn.delta", { turnId: "t3", stream: "text", delta: "answer B" }),
+      ev("turn.completed", { turnId: "t3", stopReason: "end_turn" }),
+    ]);
+    const entries = mergeThreadEntries(
+      [
+        u("m1", 1, "first"),
+        a("m2", 2, "answer A"),
+        u("m3", 3, "meanwhile"),
+        a("m4", 4, "leg result"),
+        a("m5", 5, "answer B"),
+      ],
+      model,
+      OPTS,
+    );
+    expect(entries.map((e) => e.id)).toEqual([
+      "m1",
+      "turn-t1",
+      "turn-t2",
+      "m3",
+      "turn-t3",
+    ]);
+    expect(entries.filter((e) => e.kind === "text")).toHaveLength(0);
+  });
+
+  it("AC-2 two same-text legs claim their posts in order", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", ref: "m1" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "answer A" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+      ev("turn.started", { turnId: "t2", initiatedBy: "agent" }),
+      ev("turn.delta", { turnId: "t2", stream: "text", delta: "same report" }),
+      ev("turn.completed", { turnId: "t2", stopReason: "end_turn" }),
+      ev("turn.started", { turnId: "t3", initiatedBy: "agent" }),
+      ev("turn.delta", { turnId: "t3", stream: "text", delta: "same report" }),
+      ev("turn.completed", { turnId: "t3", stopReason: "end_turn" }),
+    ]);
+    const entries = mergeThreadEntries(
+      [
+        u("m1", 1, "first"),
+        a("m2", 2, "answer A"),
+        a("m3", 3, "same report"),
+        a("m4", 4, "same report"),
+      ],
+      model,
+      OPTS,
+    );
+    expect(entries.map((e) => e.id)).toEqual([
+      "m1",
+      "turn-t1",
+      "turn-t2",
+      "turn-t3",
+    ]);
+    /* each leg claimed a post — both cards carry the flagged marker */
+    expect(entries.filter((e) => e.kind === "text")).toHaveLength(0);
+    expect(
+      entries.filter((e) => e.kind === "agent" && e.agentInitiated),
+    ).toHaveLength(2);
+  });
 });

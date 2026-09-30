@@ -363,10 +363,6 @@ export function mergeTurns(
     const i = replies.findIndex((x) => x.id === t.ref);
     if (i >= 0) refPos.set(t, i);
   }
-  /* Newest claimed row — a leg's own post sits after it; scanning back
-     from the tail keeps legs from claiming an EARLIER identical reply
-     that a still-unclaimed turn owns (#308). */
-  let claimedMax = -1;
   for (const [ri, r] of replies.entries()) {
     const t = model.turns.find(
       (x) =>
@@ -382,7 +378,6 @@ export function mergeTurns(
       continue;
     }
     used.add(t);
-    claimedMax = ri;
     // Keep the relay message id — it's the search-hit scroll anchor (#138).
     const live = liveReplies(t, employeeId, asks, resolveEmployee);
     live[live.length - 1] = { ...live[live.length - 1], id: r.id };
@@ -393,11 +388,21 @@ export function mergeTurns(
   /* #308: a finished agent leg's text also posts to the relay as a plain
      employee row (harness finishTurn, no ref correlation). Claim that row
      into the leg's card — without this the card renders AND the bare row
-     stays, one answer twice. */
+     stays, one answer twice. Claimed rows already sit inside a turn card
+     (their block is longer than the row), so the singleton check below
+     alone keeps a leg from stealing a claimed answer; the legClaimed
+     cursor pairs same-text legs with their posts in order. */
+  let legClaimed = -1;
   for (const t of model.turns) {
-    if (!t.agentInitiated || used.has(t) || !t.text.trim()) continue;
+    if (
+      !t.agentInitiated ||
+      used.has(t) ||
+      !t.text.trim() ||
+      (t.phase !== "done" && t.phase !== "stopped")
+    )
+      continue;
     let ri = -1;
-    for (let i = replies.length - 1; i > claimedMax; i--) {
+    for (let i = legClaimed + 1; i < replies.length; i++) {
       const r = replies[i];
       if (
         r.from === employeeId &&
@@ -411,7 +416,7 @@ export function mergeTurns(
     }
     if (ri < 0) continue;
     used.add(t);
-    claimedMax = ri;
+    legClaimed = ri;
     const live = liveReplies(t, employeeId, asks, resolveEmployee);
     live[live.length - 1] = { ...live[live.length - 1], id: replies[ri].id };
     blocks[ri] = live;
