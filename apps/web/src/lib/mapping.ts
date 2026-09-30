@@ -18,6 +18,7 @@ import type {
   Reply,
   Step,
   Subagent,
+  Thread,
   Employee as UiEmployee,
   Plan as UiPlan,
   Workspace,
@@ -364,6 +365,20 @@ export function mergeTurns(
   if (model.live && !used.has(model.live))
     flat.push(...liveReplies(model.live, employeeId, asks, resolveEmployee));
   return flat;
+}
+
+/**
+ * The context meter's usage pick (#300): the live session model's newest
+ * turn wins; a dead engine session (legacy `s<N>` engineRefs the replay
+ * degrades for) still carries the last persisted turn.completed on the
+ * conversation row — the meter + ring render off `conv.usage` instead of
+ * vanishing.
+ */
+export function threadUsage(
+  model: SessionModel | undefined,
+  conv: Conversation,
+): Thread["usage"] {
+  return model?.turns.at(-1)?.usage ?? conv.usage;
 }
 
 /**

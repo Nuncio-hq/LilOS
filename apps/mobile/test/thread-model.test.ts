@@ -871,4 +871,62 @@ describe("#247 mobile polish — prototype thread details on real data", () => {
     });
     expect(detail.context).toBeUndefined();
   });
+
+  it("#300 a dead engine session keeps the meter off the persisted conv.usage", () => {
+    /* Legacy engineRefs degrade to an empty replay — no turns, no model —
+       but the relay's persisted last turn.completed still fills the meter
+       + ring exactly as a live usage would. */
+    const detail = toThreadDetail({
+      conversation: conv({
+        engineRef: "s1",
+        usage: {
+          input: 12000,
+          output: 3400,
+          reasoning: 200,
+          cache: 5000,
+          contextWindow: 200000,
+        },
+      }),
+      employee: ada,
+      messages: [],
+      asks: [],
+      pending: new Set(),
+      now: T0 + 60_000,
+    });
+    expect(detail.context).toEqual({
+      input: 12000,
+      output: 3400,
+      reasoning: 200,
+      cache: 5000,
+      max: 200000,
+      estimated: false,
+    });
+    expect(detail.usage).toBe("12k in · 3.6k out · 5k cached");
+    /* A live turn's usage still wins over the persisted row. */
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small" }),
+      ev("turn.completed", {
+        turnId: "t1",
+        stopReason: "end_turn",
+        usage: { input: 99000, output: 100, reasoning: 0, cache: 0 },
+      }),
+    ]);
+    const live = toThreadDetail({
+      conversation: conv({
+        usage: {
+          input: 12000,
+          output: 3400,
+          reasoning: 0,
+          cache: 0,
+        },
+      }),
+      employee: ada,
+      messages: [],
+      model,
+      asks: [],
+      pending: new Set(),
+      now: T0 + 60_000,
+    });
+    expect(live.context?.input).toBe(99000);
+  });
 });

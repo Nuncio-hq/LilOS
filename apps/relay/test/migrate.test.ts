@@ -54,14 +54,16 @@ describe("relay migrations", () => {
     // virtual table's shadow tables too — only assert the FTS table itself);
     // v10 adds #137's title provenance; v11 adds #153's phone pairing
     // tables; v12 adds #134's rewind marks; v13 adds #156's workspace
-    // intent on conversations; v14 adds #161's push tables.
-    expect(out.version).toBe(14);
+    // intent on conversations; v14 adds #161's push tables; v15 adds
+    // #300's persisted turn usage on conversations.
+    expect(out.version).toBe(15);
     for (const col of ["provider", "effort", "fast"])
       expect(out.colsAt7).toContain(col);
     for (const col of ["provider", "effort", "fast", "rewound", "checkpoint"])
       expect(out.msgCols).toContain(col);
     expect(out.colsAt7).toContain("title_source");
     expect(out.colsAt7).toContain("workspace");
+    expect(out.colsAt7).toContain("usage");
     expect(out.tables).toContain("settings");
     expect(out.tables).toContain("profile");
     expect(out.tables).toContain("messages_fts");

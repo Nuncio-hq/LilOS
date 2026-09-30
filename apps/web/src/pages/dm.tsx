@@ -103,6 +103,7 @@ import {
   formatUptime,
   mergeTurns,
   stripPlans,
+  threadUsage,
   toFeed,
   toJob,
   toUiEmployee,
@@ -1109,7 +1110,9 @@ export function DmPage() {
       title: conv.title || undefined,
       archived: conv.archived,
       replies,
-      usage: model?.turns.at(-1)?.usage as Thread["usage"],
+      /* #300: live turn usage first, the persisted conv.usage for sessions
+         the engine forgot (legacy engineRefs degrade to an empty replay). */
+      usage: threadUsage(model, conv),
       // The session's pick: the pinned conversation fields win; the session
       // snapshot fills what a bare `model` pin (pre-#92 rows) never set.
       model: conv.model ?? model?.model,

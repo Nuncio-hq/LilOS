@@ -1580,6 +1580,24 @@ export function createRelay(options: RelayOptions): Relay {
               // The host pushed it — no need to send its own stream back.
               host?.peer,
             );
+            /* #300: the context meter's usage lives on the row, not the
+               stream — persist each turn.completed's usage so it survives
+               replay failure entirely. Best-effort like the push fan-out:
+               a persist hiccup must not drop the event's ack. */
+            const usage =
+              parsed.data.event.type === "turn.completed"
+                ? parsed.data.event.payload.usage
+                : undefined;
+            if (usage) {
+              store
+                .recordTurnUsage({
+                  conversationId: conversation.id,
+                  sessionId: parsed.data.sessionId,
+                  seq: parsed.data.event.seq,
+                  usage,
+                })
+                .catch((error) => log(`usage persist failed: ${error}`));
+            }
             /* #161: turn.completed / session.state-error transitions push;
                the fan-out's seq watermark drops replays. */
             options.push

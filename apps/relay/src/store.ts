@@ -21,7 +21,11 @@ import type {
   RespondTo,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
-import type { ApprovalOutcome, EngineRequest } from "@lilos/contracts/engine";
+import type {
+  ApprovalOutcome,
+  EngineRequest,
+  Usage,
+} from "@lilos/contracts/engine";
 
 /**
  * Retired system notes dropped on read (#196): the "No folder: working in
@@ -256,6 +260,22 @@ export interface RelayStore {
     id: string,
     patch: ConversationPatch,
   ): Promise<Conversation | null>;
+  /**
+   * Persist a turn.completed's usage on the conversation row (#300) — the
+   * context meter's numbers, kept off the event stream so a dead engine
+   * session can't take the meter with it. `sessionId`+`seq` are the
+   * freshness fence: a replayed turn from the SAME session only writes
+   * past the stored seq; a different session always writes (seq restarts
+   * per session, so a rebind's first turn replaces the dead session's
+   * numbers — dead sessions emit nothing, so a late same-id write can't
+   * arrive post-rebind). Unknown conversations are dropped silently.
+   */
+  recordTurnUsage(input: {
+    conversationId: string;
+    sessionId: string;
+    seq: number;
+    usage: Usage;
+  }): Promise<void>;
 
   listMessages(
     channelId: string,
@@ -509,6 +529,9 @@ export function createMemoryStore(): RelayStore {
   const devicePush = new Map<string, DevicePush>();
   /** Highest engine-event seq seen per session — the replay fence (#161). */
   const engineEventSeqs = new Map<string, number>();
+  /** (sessionId, seq) of the turn.completed that wrote each conversation's
+      `usage` — the write fence (#300). */
+  const turnUsageMarks = new Map<string, { sessionId: string; seq: number }>();
 
   /** Strictly increasing recents tick — survives same-ms calls in tests. */
   const folderTick = () =>
@@ -765,6 +788,14 @@ export function createMemoryStore(): RelayStore {
       }
       Object.assign(conversation, patch);
       return conversation;
+    },
+    async recordTurnUsage({ conversationId, sessionId, seq, usage }) {
+      const conversation = conversations.get(conversationId);
+      if (!conversation) return;
+      const mark = turnUsageMarks.get(conversationId);
+      if (mark && mark.sessionId === sessionId && seq <= mark.seq) return;
+      turnUsageMarks.set(conversationId, { sessionId, seq });
+      conversation.usage = usage;
     },
     async listMessages(
       channelId,

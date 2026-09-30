@@ -39,8 +39,15 @@ export class EngineRpcError extends Error {
   }
 }
 
-export const engineErrorCode = (error: unknown): number | undefined =>
-  error instanceof EngineRpcError ? error.code : undefined;
+export const engineErrorCode = (error: unknown): number | undefined => {
+  /* A thrown engine call is either a wire-frame EngineRpcError or an
+     in-proc transport's own RpcError (engine-fake) — both carry the
+     JSON-RPC `code`. Only errors out of `conn.request` reach this, so any
+     numeric `code` is an engine error code. */
+  if (error instanceof EngineRpcError) return error.code;
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "number" ? code : undefined;
+};
 
 /** Session does not exist on the engine (contract RPC_ERRORS.SESSION_NOT_FOUND). */
 export const SESSION_NOT_FOUND = -32001;

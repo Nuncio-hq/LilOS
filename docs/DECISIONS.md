@@ -47,6 +47,13 @@ PR does not exist.
   SQLite FTS5 external-content table + triggers (migration v9).** Engine
   transcripts, tool output and attachments are never indexed (D-#25).
   Not: a separate search service, or indexing transcripts. — #138
+- **D-#300 The context meter's usage + contextWindow persist on the
+  conversation row** (the relay writes `turn.completed.usage`, fenced by
+  `usage_session_id`/`usage_seq`); an `events.since` on a dead session id
+  degrades to an empty `closed` transcript at the harness passthrough, and
+  rebind stays a send-path `session.start` only. Not: meter from replayed
+  events only (the #300 bug), or rebind on thread open (mints sessions on
+  view). — #300
 - **D-#118 The signed-in human's identity (name, company, avatar colour) is
   relay-owned profile data: `profile.get`/`profile.update` on a singleton
   `profile` row (`settings.*` is #92's KV namespace); every surface reads it, nothing is hardcoded.** Prefill

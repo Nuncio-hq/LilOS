@@ -366,10 +366,26 @@ export class Harness {
   ): Promise<EventsSinceResult> {
     const conn = this.engine;
     if (!conn) throw new Error("engine not connected");
-    return conn.request<EventsSinceResult>("events.since", {
-      sessionId,
-      after,
-    });
+    try {
+      return await conn.request<EventsSinceResult>("events.since", {
+        sessionId,
+        after,
+      });
+    } catch (error) {
+      /* #300: a session the engine forgot — legacy bare ids (`s1`) with no
+         registry row, or any SESSION_NOT_FOUND — must not surface as a
+         replay error. The client degrades to "no live transcript": relay
+         messages + the persisted context meter still render, and the write
+         path rebinds on `session.start` the same way a gateway 404 does. */
+      if (engineErrorCode(error) !== SESSION_NOT_FOUND) throw error;
+      return {
+        events: [],
+        latestSeq: after,
+        truncated: false,
+        openRequests: [],
+        snapshot: { sessionId, state: "closed" },
+      };
+    }
   }
 
   /** Subscribe to every engine event the harness sees (feed fan-out). */
