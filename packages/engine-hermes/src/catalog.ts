@@ -9,7 +9,7 @@ import {
 } from "@lilos/contracts/engine";
 import { RpcError } from "./errors.js";
 import type { GatewayLike } from "./gateway.js";
-import { displayModelName } from "./model-label.js";
+import { contextWindowFromId, displayModelName } from "./model-label.js";
 
 /**
  * `agents` + `models` capabilities over `hermes serve` (#8).
@@ -312,6 +312,10 @@ export async function listModels(
             ? HERMES_EFFORT_LADDER.filter((e) => e !== "none")
             : [...HERMES_EFFORT_LADDER]
           : undefined;
+      /* The only window Hermes exposes per catalog row is the `[1m]`/`[Nk]`
+         route suffix inside the id itself (model.options carries no
+         context length) — an id-declared claim, not a guess (#294). */
+      const contextWindow = contextWindowFromId(id);
       models.push({
         id,
         /* Hermes reports ids only — the display name is derived with the
@@ -320,6 +324,7 @@ export async function listModels(
         provider: slug,
         ...(efforts ? { efforts } : {}),
         ...(cap?.fast === true ? { fast: true } : {}),
+        ...(contextWindow ? { contextWindow } : {}),
       });
     }
   }

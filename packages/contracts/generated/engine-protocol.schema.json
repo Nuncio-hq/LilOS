@@ -394,6 +394,11 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "contextWindow": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
               }
             },
             "required": [
@@ -1464,6 +1469,11 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 9007199254740991
+                            },
+                            "contextWindow": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
@@ -1982,6 +1992,11 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 9007199254740991
+                  },
+                  "contextWindow": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
                   }
                 },
                 "required": [
@@ -2453,6 +2468,11 @@
                 },
                 "fast": {
                   "type": "boolean"
+                },
+                "contextWindow": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
                 },
                 "detail": {
                   "type": "object",
@@ -3738,6 +3758,11 @@
                       "cache": {
                         "type": "integer",
                         "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "contextWindow": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
                         "maximum": 9007199254740991
                       }
                     },

@@ -140,3 +140,31 @@ export function modelLabel(models: readonly ModelRow[], p: ModelPick) {
   const effort = m ? effortOf(p, m) : p.effort;
   return effort ? `${name} · ${effortLabel(effort)}` : name;
 }
+
+/** The window shown when the engine reports nothing and the id gives no hint
+    (web `FALLBACK_CONTEXT_WINDOW`). */
+export const FALLBACK_CONTEXT_WINDOW = 200_000;
+
+/**
+ * The window a session's meter divides by — the twin of the web's
+ * `contextWindowOf` (packages/ui/src/lib/context-window.ts, #294): the
+ * engine's report on the session's usage first (the resolved window — a
+ * config pin can differ from the catalog row), then the session model's
+ * catalog row, then the pre-#294 prefix heuristic, flagged `estimated` so
+ * the meter labels it `~` rather than showing a guess as engine truth.
+ */
+export function contextWindowOf(
+  usage: { contextWindow?: number } | undefined,
+  model: string | undefined,
+  models?: readonly ModelRow[],
+): { tokens: number; estimated: boolean } {
+  if (usage?.contextWindow)
+    return { tokens: usage.contextWindow, estimated: false };
+  const row = models?.find((m) => m.id === model);
+  if (row?.contextWindow)
+    return { tokens: row.contextWindow, estimated: false };
+  return {
+    tokens: model?.startsWith("qwen") ? 262_000 : FALLBACK_CONTEXT_WINDOW,
+    estimated: true,
+  };
+}

@@ -1298,6 +1298,66 @@ describe("engine-hermes #140 AC-2: setModel re-checks the live catalog once", ()
   });
 });
 
+describe("engine-hermes #294: the resolved context window reaches clients", () => {
+  test("usage.context_max maps to Usage.contextWindow on turn.completed", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    // The gateway's `_get_usage` merge — the fake emits context_max 262k.
+    gw.complete(gw.lastSid);
+    await p;
+    const done = h.events.find((e) => e.type === "turn.completed");
+    if (!done) throw new Error("turn.completed missing");
+    const usage = (done.payload as { usage?: { contextWindow?: number } })
+      .usage;
+    expect(usage?.contextWindow).toBe(262_000);
+  });
+
+  test("session.info's usage.context_max refreshes the window between turns", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    gw.complete(gw.lastSid);
+    await p;
+    /* A mid-session config change (a deferred model switch re-resolving the
+       window) reports through session.info's usage field — the snapshot's
+       usage follows it before the next turn ends. */
+    gw.emit(gw.lastSid, "session.info", {
+      model: "stub-model-b",
+      usage: { context_max: 128_000 },
+    });
+    const snap = (await h.request("events.since", {
+      sessionId,
+      after: 0,
+    })) as { snapshot: { usage?: { contextWindow?: number } } };
+    expect(snap.snapshot.usage?.contextWindow).toBe(128_000);
+  });
+
+  test("models.list derives contextWindow only from an explicit [Nm]/[Nk] id suffix", async () => {
+    const { gw, h } = setup();
+    gw.modelProviders = [
+      {
+        slug: "anthropic-cliproxy",
+        name: "Anthropic – CLIProxyAPI",
+        models: ["claude-sonnet-5[1m]", "qwen3.8[262k]", "claude-opus-4.8"],
+      },
+    ];
+    const r = (await h.request("models.list")) as {
+      models: { id: string; contextWindow?: number }[];
+    };
+    expect(
+      r.models.find((m) => m.id === "claude-sonnet-5[1m]")?.contextWindow,
+    ).toBe(1_000_000);
+    expect(r.models.find((m) => m.id === "qwen3.8[262k]")?.contextWindow).toBe(
+      262_000,
+    );
+    // No suffix → nothing claimed: the client's labelled estimate handles it.
+    expect(
+      r.models.find((m) => m.id === "claude-opus-4.8")?.contextWindow,
+    ).toBeUndefined();
+  });
+});
+
 /* #288: a harness restart kills `hermes serve` and this adapter with it —
    the new process binds each conversation through `events.since(engineRef)`.
    With the persisted registry the adapter resumes the SAME stored Hermes

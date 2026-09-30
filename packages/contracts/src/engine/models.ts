@@ -22,6 +22,10 @@ export const ModelOption = z.object({
   defaultEffort: z.string().optional(),
   /** The model has a fast/priority tier the engine can switch on. */
   fast: z.boolean().optional(),
+  /** The model's context window in tokens, when the engine reports it
+      (issue #294) — static per-model knowledge; a session's own resolved
+      window rides `Usage.contextWindow`. */
+  contextWindow: z.int().positive().optional(),
   /** Engine-owned extras (context size, capabilities, pricing, ...). */
   detail: z.record(z.string(), z.unknown()).optional(),
 });

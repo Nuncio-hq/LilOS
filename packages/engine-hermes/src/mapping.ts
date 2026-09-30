@@ -20,11 +20,16 @@ export function mapUsage(u: unknown): Usage | undefined {
   if (typeof u !== "object" || u === null) return undefined;
   const r = u as Record<string, unknown>;
   const n = (v: unknown) => (typeof v === "number" && v >= 0 ? v : 0);
+  /* `context_max` is the window Hermes resolved for THIS session (the
+     compressor's context_length — config pins and provider probing already
+     folded in), reported only once the compressor is live (#294). */
+  const contextWindow = n(r.context_max);
   return {
     input: n(r.input) || n(r.prompt),
     output: n(r.output) || n(r.completion),
     reasoning: n(r.reasoning),
     cache: n(r.cache_read) + n(r.cache_write),
+    ...(contextWindow > 0 ? { contextWindow } : {}),
   };
 }
 

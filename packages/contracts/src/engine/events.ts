@@ -27,6 +27,10 @@ export const Usage = z.object({
   output: z.int().min(0),
   reasoning: z.int().min(0),
   cache: z.int().min(0),
+  /** The context window in tokens the engine resolved for this session —
+      the denominator the used counts fill (issue #294). Absent when the
+      engine doesn't report one; clients fall back to a labelled estimate. */
+  contextWindow: z.int().positive().optional(),
 });
 export type Usage = z.infer<typeof Usage>;
 

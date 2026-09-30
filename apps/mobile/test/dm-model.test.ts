@@ -586,6 +586,7 @@ describe("dm-model helpers", () => {
           efforts: ["low", "high"],
           defaultEffort: "low",
           fast: true,
+          contextWindow: 262_000,
         },
         { id: "bare" },
       ],
@@ -599,6 +600,8 @@ describe("dm-model helpers", () => {
         efforts: ["low", "high"],
         defaultEffort: "low",
         fast: true,
+        // #294: the engine-reported window reaches the phone's meter too.
+        contextWindow: 262_000,
       },
       { id: "bare", name: "bare", provider: "" },
     ]);

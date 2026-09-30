@@ -138,7 +138,7 @@ export function ContextMeter({ c, model }: { c: ContextUsage; model: string }) {
             className="text-[13px]"
             style={{ fontVariant: ["tabular-nums"] }}
           >
-            {`${k(used(c))} / ${k(c.max)}`}
+            {`${k(used(c))} / ${c.estimated ? "~" : ""}${k(c.max)}`}
           </AppText>
         </View>
         <View className="h-2 flex-row gap-px overflow-hidden rounded-full bg-fill">

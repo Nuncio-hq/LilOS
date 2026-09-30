@@ -625,6 +625,11 @@
                   "fast": {
                     "type": "boolean"
                   },
+                  "contextWindow": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
                   "detail": {
                     "type": "object",
                     "propertyNames": {
@@ -4284,6 +4289,11 @@
               "fast": {
                 "type": "boolean"
               },
+              "contextWindow": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
               "detail": {
                 "type": "object",
                 "propertyNames": {
@@ -4884,6 +4894,11 @@
                   "fast": {
                     "type": "boolean"
                   },
+                  "contextWindow": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
                   "detail": {
                     "type": "object",
                     "propertyNames": {
@@ -5034,6 +5049,11 @@
               },
               "fast": {
                 "type": "boolean"
+              },
+              "contextWindow": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
               },
               "detail": {
                 "type": "object",
@@ -5363,6 +5383,11 @@
                   },
                   "fast": {
                     "type": "boolean"
+                  },
+                  "contextWindow": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "detail": {
                     "type": "object",
@@ -7733,6 +7758,11 @@
               },
               "fast": {
                 "type": "boolean"
+              },
+              "contextWindow": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
               },
               "detail": {
                 "type": "object",

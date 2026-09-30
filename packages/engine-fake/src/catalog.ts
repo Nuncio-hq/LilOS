@@ -57,6 +57,9 @@ export interface FakeModel {
   defaultEffort?: string;
   /** The model has a fast/priority tier. */
   fast?: boolean;
+  /** The context window the engine reports for this model (#294); absent
+      on rows the engine can't size — clients show the labelled estimate. */
+  contextWindow?: number;
 }
 
 /** The full ladder an engine reports when a model reasons but has no
@@ -80,6 +83,7 @@ export const MODEL_CATALOG: FakeModel[] = [
     efforts: ["low", "medium", "high"],
     defaultEffort: "medium",
     fast: true,
+    contextWindow: 262_000,
   },
   {
     id: "fake-reasoning",
@@ -88,9 +92,11 @@ export const MODEL_CATALOG: FakeModel[] = [
     efforts: [...FAKE_EFFORT_LADDER],
     defaultEffort: "medium",
     fast: true,
+    contextWindow: 200_000,
   },
   /* A "/" inside the id is legal — a model is {provider?, id}, never a
-     joined "provider/model" string (#92 AC-8). */
+     joined "provider/model" string (#92 AC-8). Deliberately reports no
+     contextWindow (#294): the meter's labelled estimate stays testable. */
   {
     id: "fake/opus-2",
     name: "Fake Opus 2",

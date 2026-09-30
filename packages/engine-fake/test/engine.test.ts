@@ -464,3 +464,56 @@ describe("engine-fake #140 AC-2: a refresh-only model validates only once a refr
     c.close();
   });
 });
+
+describe("engine-fake #294: reports the session's context window", () => {
+  test("models.list rows carry the engine's window only where the engine reports one", async () => {
+    const c = conn();
+    const listed = (await c.request("models.list", {})) as {
+      models: { id: string; contextWindow?: number }[];
+    };
+    expect(
+      listed.models.find((m) => m.id === "fake-large")?.contextWindow,
+    ).toBe(262_000);
+    expect(
+      listed.models.find((m) => m.id === "fake-reasoning")?.contextWindow,
+    ).toBe(200_000);
+    /* fake/opus-2 deliberately reports none — it keeps the client's "~"
+       estimate path testable (#294). */
+    expect(
+      listed.models.find((m) => m.id === "fake/opus-2")?.contextWindow,
+    ).toBeUndefined();
+    c.close();
+  });
+
+  test("turn.completed usage carries the session model's window, following a switch", async () => {
+    const c = conn();
+    const events: { type: string; payload: Record<string, unknown> }[] = [];
+    c.onEvent((e) =>
+      events.push(e as { type: string; payload: Record<string, unknown> }),
+    );
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+      model: "fake-large",
+    })) as { sessionId: string };
+    await promptText(c, sessionId, "Explain the relay package");
+    const lastUsage = () => {
+      for (let i = events.length - 1; i >= 0; i--) {
+        if (events[i].type !== "turn.completed") continue;
+        return (events[i].payload as { usage?: { contextWindow?: number } })
+          .usage;
+      }
+      return undefined;
+    };
+    expect(lastUsage()?.contextWindow).toBe(262_000);
+
+    // Switching to a model with no reported window clears it — no stale row.
+    await c.request("session.setModel", {
+      sessionId,
+      model: "fake/opus-2",
+    });
+    await promptText(c, sessionId, "one more");
+    expect(lastUsage()?.contextWindow).toBeUndefined();
+    c.close();
+  });
+});

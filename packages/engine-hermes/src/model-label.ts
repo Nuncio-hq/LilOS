@@ -176,3 +176,16 @@ export function displayModelName(model: string): string {
   const { name, tag } = modelDisplayParts(model);
   return tag ? `${name} ${tag}` : name;
 }
+
+/** The context window an Anthropic-style `[1m]`/`[Nk]` route suffix in the
+    model id selects — the same suffix `modelDisplayParts` renders as a tag
+    (hermes-agent treats `sonnet-5[1m]` as the 1M-context variant). Ids
+    without the suffix report nothing: Hermes `model.options` carries no
+    per-model window, so the field is never guessed here — a session's own
+    resolved window arrives on `usage.context_max` instead (#294). */
+export function contextWindowFromId(model: string): number | undefined {
+  const suffix = modelBaseId(model).match(/\[(\d+)([mk])\]$/i);
+  if (!suffix) return undefined;
+  const n = Number(suffix[1]);
+  return suffix[2].toLowerCase() === "m" ? n * 1_000_000 : n * 1_000;
+}
