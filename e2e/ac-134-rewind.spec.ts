@@ -482,14 +482,20 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new sess
   const convD = page.url().split("/dm/")[1].split("/")[1];
   expect(convD).not.toBe(convC);
   /* The fresh session's root carries the surviving transcript as quoted
-     context, then the rewound text. Scope to the user turn: the engine
-     reply's reasoning echoes the seeded prompt verbatim, and while its
-     collapsible is open a bare getByText strict-matches both (#266). */
-  const seeded = page.locator("[data-thread] [data-userturn]");
-  await expect(
-    seeded.getByText(/Picking up mid-session after a rewind/),
-  ).toBeVisible({ timeout: 60_000 });
-  await expect(seeded.getByText(/alpha in the no-rewind session/)).toBeVisible({
+     context, then the rewound text. Pin exactly one row — the committed root
+     user message: the engine reply's reasoning echoes the seeded prompt
+     verbatim, and while its collapsible is open a bare getByText
+     strict-matches both (#266). That echo is inside the agent's thinking
+     collapsible, not a second user-visible row — test-side, not a product
+     bug (#260). */
+  const seeded = page
+    .locator("[data-thread] [data-userturn]")
+    .filter({ hasText: /Picking up mid-session after a rewind/ })
+    .first();
+  await expect(seeded).toContainText(/Picking up mid-session after a rewind/, {
+    timeout: 60_000,
+  });
+  await expect(seeded).toContainText(/alpha in the no-rewind session/, {
     timeout: 60_000,
   });
   await page.screenshot({ path: `${SHOTS}/ac-3-new-session.png` });
