@@ -52,6 +52,7 @@ export function Prose({
 }
 
 function Inline({ text, className }: { text: string; className: string }) {
+  const accent = useThemeColor("accent-text");
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
   return (
     <Text className={`text-foreground ${className}`}>
@@ -61,7 +62,13 @@ function Inline({ text, className }: { text: string; className: string }) {
             {p.slice(2, -2)}
           </Text>
         ) : p.startsWith("`") ? (
-          <Text key={i} className="font-mono text-[14px] text-accent-text">
+          // style beats the parent's className on nested Text — a
+          // text-accent-text class loses to text-foreground in cells.
+          <Text
+            key={i}
+            className="font-mono text-[14px]"
+            style={{ color: accent }}
+          >
             {p.slice(1, -1)}
           </Text>
         ) : (
