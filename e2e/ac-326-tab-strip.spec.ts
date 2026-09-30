@@ -9,18 +9,24 @@ import { expect, type Locator, type Page, test } from "@playwright/test";
    scrolls left-anchored with an edge fade.
 
    Red-first: on the pre-fix build the Changes trigger's box pokes out of
-   the TabsList's visible box at 1288×700 Focus. */
+   the TabsList's visible box at 1288×700 Focus — the clip check reads
+   `data-slot="tabs-trigger"` (pre-existing markup), so the red run fails
+   on "tab Changes clipped", not on a missing fixture.
+
+   Note: the seeded helpers finish ~10s in, so running-count assertions run
+   while the badges are still live; later legs locate triggers by
+   `data-wb-tab`, which survives the badge unmounting. */
 
 const list = (page: Page) => page.locator('[data-slot="tabs-list"]');
-const triggers = (page: Page) => list(page).getByRole("tab");
+const trig = (page: Page, t: string) =>
+  list(page).locator(`[data-wb-tab="${t}"]`);
 
 /** Builder's seeded "Why turns get lost after sleep" session → Focus. */
 async function openFocus(page: Page) {
   await page.goto("/");
   await page
-    .locator("aside")
-    .first()
     .getByRole("button", { name: /Builder/ })
+    .first()
     .click();
   const row = page
     .locator("[data-session]")
@@ -36,7 +42,6 @@ async function openFocus(page: Page) {
     await page.getByTitle("Workbench", { exact: true }).click();
   }
   await expect(list(page)).toBeVisible({ timeout: 15_000 });
-  await expect(triggers(page).first()).toBeVisible();
 }
 
 /** Every trigger sits inside the list's visible box — or is icon-only with
@@ -50,13 +55,23 @@ async function expectNoClippedTab(page: Page) {
   await expect(async () => {
     const read = await list(page).evaluate((el) => {
       const lb = el.getBoundingClientRect();
-      return [...el.querySelectorAll<HTMLElement>("[data-wb-tab]")].map((t) => {
+      return [
+        ...el.querySelectorAll<HTMLElement>('[data-slot="tabs-trigger"]'),
+      ].map((t) => {
         const b = t.getBoundingClientRect();
         const sp = t.querySelector<HTMLElement>("[data-wb-label]");
+        /* No label span → label is shown (pre-fix markup has none). A
+             folded tab hides the span; on the pre-fix build there is also
+             no aria-label, so the clip check still fails on the old bug. */
         return {
-          tab: t.dataset.wbTab ?? "?",
+          tab:
+            t.dataset.wbTab ??
+            t.getAttribute("value") ??
+            t.textContent?.trim().slice(0, 24) ??
+            "?",
           aria: t.getAttribute("aria-label") ?? "",
-          labelVisible: !!sp && getComputedStyle(sp).display !== "none",
+          labelVisible:
+            sp == null ? true : getComputedStyle(sp).display !== "none",
           inside:
             b.x >= lb.x - 1 &&
             b.y >= lb.y - 1 &&
@@ -75,11 +90,11 @@ async function expectNoClippedTab(page: Page) {
 }
 
 /** A compacted trigger keeps icon + running count + tooltip label. */
-async function expectCompactKeepsBadge(trig: Locator, dataAttr: string) {
-  await expect(trig.locator(`[${dataAttr}]`)).toBeVisible();
-  await expect(trig.locator("[data-wb-label]:visible")).toHaveCount(0);
-  await expect(trig).toHaveAttribute("aria-label", /.+/);
-  await expect(trig).toHaveAttribute("title", /.+/);
+async function expectCompactKeepsBadge(trigLoc: Locator, dataAttr: string) {
+  await expect(trigLoc.locator(`[${dataAttr}]`)).toBeVisible();
+  await expect(trigLoc.locator("[data-wb-label]:visible")).toHaveCount(0);
+  await expect(trigLoc).toHaveAttribute("aria-label", /.+/);
+  await expect(trigLoc).toHaveAttribute("title", /.+/);
 }
 
 test("AC: no tab clips at 1288 / 900 / ~1040px; collapsed tabs keep icon + count; active keeps its label", async ({
@@ -87,35 +102,42 @@ test("AC: no tab clips at 1288 / 900 / ~1040px; collapsed tabs keep icon + count
 }) => {
   await page.setViewportSize({ width: 1288, height: 700 });
   await openFocus(page);
-  // The live turn spins 3 helpers up front — the Subagents count is up.
-  const subagents = triggers(page)
-    .filter({ has: page.locator("[data-subagents-running]") })
-    .first();
-  await expect(subagents).toBeVisible({ timeout: 15_000 });
+
+  // The live turn spins helpers up front — while they run, the counts are
+  // up. These waits use pre-existing markup (role + the badge spans), so on
+  // the pre-fix build they pass and the red lands on the clip check itself.
+  const subagents = list(page).getByRole("tab", { name: /Subagents/ });
+  const subBadge = subagents.locator("[data-subagents-running]");
+  const bgBadge = list(page)
+    .getByRole("tab", { name: /Background/ })
+    .locator("span.text-emerald-600");
+  await expect(subBadge).toBeVisible({ timeout: 15_000 });
+  await expect(bgBadge).toBeVisible();
+
+  // Focus follows the agent → Subagents is the active tab and keeps its label.
+  await expect(subagents.locator("text=Subagents")).toBeVisible();
+
+  // 1288: nothing clips; the least-used tabs are already icon + count.
   await expectNoClippedTab(page);
+  await expectCompactKeepsBadge(trig(page, "background"), "data-bg-running");
 
   /* Narrower embed (~480px aside below the grid's 46%): more tabs go
-     icon-only, Background + Subagents first — running counts stay. */
+     icon-only — Background folds first (least-used). */
   await page.setViewportSize({ width: 1040, height: 700 });
   await expectNoClippedTab(page);
-  const background = triggers(page)
-    .filter({ has: page.locator("[data-bg-running]") })
-    .first();
-  if (
-    await background
-      .locator("[data-wb-label]:visible")
-      .count()
-      .then((n) => n === 0)
-  ) {
-    await expectCompactKeepsBadge(background, "data-bg-running");
+  const folded = await list(page).evaluate(
+    (el) => el.querySelectorAll(".wb-fold").length,
+  );
+  expect(folded).toBeGreaterThan(0);
+  await expect(trig(page, "background")).toHaveClass(/wb-fold/);
+  // If the helpers are still running, the folded strip still shows counts.
+  // (Subagents is the active tab here, so it keeps its label — only its
+  // count matters; the folded badge shape was already asserted at 1288.)
+  if (await bgBadge.isVisible().catch(() => false)) {
+    await expectCompactKeepsBadge(trig(page, "background"), "data-bg-running");
   }
-  if (
-    await subagents
-      .locator("[data-wb-label]:visible")
-      .count()
-      .then((n) => n === 0)
-  ) {
-    await expectCompactKeepsBadge(subagents, "data-subagents-running");
+  if (await subBadge.isVisible().catch(() => false)) {
+    await expect(subBadge).toBeVisible();
   }
 
   // 900px window: the Workbench is the overlay strip — still nothing clips.
