@@ -309,6 +309,24 @@ const TICKETS: TicketRow[] = [
   { id: "LIL-2", title: "Relay event log schema", status: "Review", who: "reviewer", ch: "engineering", branch: "lil-2-event-log" },
 ]
 
+/* #305: a step output that is one very long unbroken token (compact JSON like
+   execute_code returns) — it and the other long-text surfaces beside it
+   (long input value, long path, long terminal line) must stay inside the
+   Tool card instead of running the chat column out sideways. */
+const LONG_JSON = JSON.stringify({
+  ok: true,
+  reused: false,
+  execution_count: 1,
+  state_reset: false,
+  stdout_truncated: false,
+  checks: Array.from({ length: 40 }, (_, i) => ({
+    name: `probe.${i}`,
+    ms: i * 3,
+    ok: true,
+    detail: `relay.socket.${"x".repeat(30)}.${i}`,
+  })),
+})
+
 /* DM = private 1:1 with an employee. Every top-level message starts a NEW Hermes session;
    the employee answers in that message's thread, and every follow-up in the thread goes to the same session. */
 const DM_FEEDS: Record<string, Msg[]> = {
@@ -324,6 +342,13 @@ const DM_FEEDS: Record<string, Msg[]> = {
             steps: [
               { tool: "search_files", input: { pattern: "WebSocketServer", path: "apps/relay" }, output: "0 matches" },
               { tool: "read_file", input: { path: "packages/contracts/src/envelope.ts" }, output: "58 lines · seq, kind, body" },
+              {
+                tool: "execute_code",
+                input: { code: "relay.probe(deep=true)", trace: `t-${"deadbeef".repeat(300)}` },
+                output: LONG_JSON,
+              },
+              { tool: "read_file", input: { path: `apps/relay/${"deep/".repeat(45)}socket.ts` }, output: "12 lines" },
+              { tool: "terminal", input: { command: "openssl dgst -sha256 relay.tar" }, output: `SHA2-256(relay.tar)= ${"9f4a2c7e1b8d35f0".repeat(150)}` },
             ],
             text: "Three things block it:\n\n1. **Relay has no socket yet.** `apps/relay` is an empty package.\n2. **No auth handshake.** The envelope has `seq` but no member token.\n3. **No harness package.** Nothing dials out yet.\n\n(1) and (2) are one ticket. (3) is its own.",
           },
