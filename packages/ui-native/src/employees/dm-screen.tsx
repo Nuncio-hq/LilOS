@@ -46,13 +46,14 @@ export function EmployeeDmScreen({
   tone: OrbTone;
   turns: SessionTurn[];
   folder: string;
-  model: string;
+  /** Omit when the engine reports no models — the composer's chip hides. */
+  model?: string;
   /** models.dev slug for the composer's model chip. */
   modelLogo?: string;
   onOpenSession: (id: string) => void;
   onSend: (text: string) => void;
   onPickFolder: () => void;
-  onPickModel: () => void;
+  onPickModel?: () => void;
   /** Composer text to put in and focus (e.g. a draft a failed send kept). */
   prefill?: { text: string };
 }) {
@@ -105,12 +106,12 @@ export function EmployeeDmScreen({
           <Composer
             placeholder={`New thread with ${name}`}
             folder={folder}
-            model={model}
+            {...(model !== undefined ? { model } : {})}
             modelLogo={modelLogo}
             insetBottom={insets.bottom}
             onSend={onSend}
             onPickFolder={onPickFolder}
-            onPickModel={onPickModel}
+            {...(onPickModel ? { onPickModel } : {})}
             onLayoutHeight={setComposerHeight}
             prefill={prefill}
           />

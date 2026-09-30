@@ -260,9 +260,24 @@ export type ModelRow = {
   efforts?: string[];
   defaultEffort?: string;
   fast?: boolean;
+  /** The session runs a model the catalog omits (web `notInList`): the row
+      carries the hint instead of offering a pick the engine can't honour. */
+  notInList?: boolean;
 };
 
-export type ModelPick = { model: string; effort?: string; fast?: boolean };
+export type ModelPick = {
+  model: string;
+  /** Model ids are unique only per provider on multi-provider engines —
+      the pick pins the provider when it knows one (web ModelChoice). */
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
+};
+
+/** The shared "Edit models" hide list (web `ModelVisibility`): provider
+    ids plus `${provider}::${id}` model keys — relay-persisted, one list
+    for the whole company. */
+export type ModelVisibility = { providers: string[]; models: string[] };
 
 /** An engine's model provider; `logo` = models.dev slug (web: ModelProvider). */
 export type ModelProviderRow = { id: string; name: string; logo?: string };

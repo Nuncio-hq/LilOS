@@ -10,6 +10,7 @@ import type {
   ModelPick,
   ModelProviderRow,
   ModelRow,
+  ModelVisibility,
   WorkspacePick,
 } from "@lilos/ui-native";
 import { atom } from "nanostores";
@@ -31,6 +32,12 @@ export const $catalog = atom<{
   defaultModel?: string;
   defaultProvider?: string;
 }>({ models: [], providers: [] });
+/** The shared "Edit models" hide list (#160 AC-1) — relay-persisted, the
+    same KV the Mac's picker reads (`modelVisibility`). */
+export const $modelVisibility = atom<ModelVisibility>({
+  providers: [],
+  models: [],
+});
 export const $wsPicks = atom<Record<string, WorkspacePick>>({});
 export const $modelPicks = atom<Record<string, ModelPick>>({});
 export const $pendingOpens = atom<
@@ -71,6 +78,12 @@ export function watchDm(client: RelayClient): void {
         });
       })
       .catch(() => {});
+    void client
+      .request<{ value: unknown }>("settings.get", { key: "modelVisibility" })
+      .then((res) => {
+        if (res.value) $modelVisibility.set(res.value as ModelVisibility);
+      })
+      .catch(() => {});
   };
   if (client.state.get() === "ready") seed();
   client.state.listen((s) => {
@@ -78,6 +91,17 @@ export function watchDm(client: RelayClient): void {
   });
 
   client.onEvent((method, params) => {
+    /* A hide-list write by any peer (the Mac's Edit models) lands on every
+       surface at once (#92 AC-7). */
+    if (method === "settings.changed") {
+      const { key, value } = params as { key?: string; value?: unknown };
+      if (key === "modelVisibility") {
+        $modelVisibility.set(
+          (value as ModelVisibility) ?? { providers: [], models: [] },
+        );
+      }
+      return;
+    }
     if (method !== "ask.opened" && method !== "ask.resolved") return;
     const ask = (params as { ask?: Ask }).ask;
     if (!ask) return;

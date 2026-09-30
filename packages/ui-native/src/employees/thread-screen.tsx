@@ -46,14 +46,15 @@ export function ThreadScreen({
   prefill,
 }: {
   t: ThreadDetail;
-  model: string;
+  /** Omit when the engine reports no models — the composer's chip hides. */
+  model?: string;
   /** models.dev slug for the composer's model chip. */
   modelLogo?: string;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
   onSend: (text: string) => void;
   onStop: () => void;
-  onPickModel: () => void;
+  onPickModel?: () => void;
   /** A subagent row → its sheet (issue #170). */
   onOpenSubagent?: (a: SubagentRow) => void;
   /** The "N running in background" pill → the background sheet. */
@@ -147,12 +148,12 @@ export function ThreadScreen({
                 ? `Steer ${t.employee.name}`
                 : `Reply to ${t.employee.name}`
             }
-            model={model}
+            {...(model !== undefined ? { model } : {})}
             modelLogo={modelLogo}
             insetBottom={insets.bottom}
             onSend={onSend}
             onStop={running ? onStop : undefined}
-            onPickModel={onPickModel}
+            {...(onPickModel ? { onPickModel } : {})}
             onLayoutHeight={setComposerHeight}
             prefill={prefill}
           />
