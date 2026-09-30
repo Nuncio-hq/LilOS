@@ -9,6 +9,7 @@ import {
   GitPullRequestIcon,
   GlobeIcon,
   ListChecksIcon,
+  NetworkIcon,
   PanelRightCloseIcon,
   PlayIcon,
   RefreshCcwIcon,
@@ -64,6 +65,7 @@ import {
 import { plural } from "../lib/helpers";
 import type {
   Diff,
+  EmpFn,
   Employee,
   HostAccessors,
   HumanFn,
@@ -86,6 +88,7 @@ import { OpenPathButton } from "./open-path";
 import { PlanPanel, threadPlans } from "./plan-panel";
 import { PrFailure } from "./pr-failure";
 import { PrPanel } from "./pr-panel";
+import { SubagentsPanel, sessionSubagents } from "./subagents-panel";
 
 /* Right-hand workbench of Focus, derived from the session's steps, or — when the session
    runs in a real folder on this machine (work.path) and host accessors are wired — from the
@@ -114,6 +117,8 @@ export function Workbench({
   onOpenPath,
   onStopJob,
   browser,
+  emp,
+  onOpenSession,
 }: {
   thread: Thread;
   work: Work | null;
@@ -149,10 +154,16 @@ export function Workbench({
   /** This thread's own browser tabs (the LilOS Browser in thread mode,
       issue #214). When passed, the Preview tab becomes **Browser** and shows it. */
   browser?: React.ReactNode;
+  /** Resolves employee helpers on the Subagents tab (#317); absent = no Subagents tab. */
+  emp?: EmpFn;
+  /** Opens an employee helper's own session from its Subagents row (issue #170). */
+  onOpenSession?: (employeeId: string, session: string) => void;
 }) {
   const a = sessionArtifacts(thread);
   const jobs = thread.jobs ?? [];
   const jobsRunning = jobs.filter((j) => j.status === "running").length;
+  const helpers = sessionSubagents(thread);
+  const helpersRunning = helpers.filter((h) => h.a.status === "running").length;
   const plans = threadPlans(thread);
   const plan = plans[plans.length - 1];
   const [sel, setSel] = useState<string | null>(null);
@@ -287,12 +298,16 @@ export function Workbench({
   /* Background (issue #170): no host method yet — shows in the prototype, or
      when the session carries jobs. */
   const bgOn = !liveMode || jobs.length > 0;
+  /* Subagents (#317): read off the session's own turns, no host method — shows once any turn
+     spun off a helper. */
+  const subOn = !!emp && helpers.length > 0;
   const allowed: Record<WbTab, boolean> = {
     changes: changesOn,
     files: filesOn,
     terminal: surfacesOn,
     preview: surfacesOn || !!browser,
     background: bgOn,
+    subagents: subOn,
     plan: plans.length > 0,
     pr: prOn,
   };
@@ -361,6 +376,7 @@ export function Workbench({
     !surfacesOn &&
     !prOn &&
     !bgOn &&
+    !subOn &&
     !plan
   ) {
     return (
@@ -438,6 +454,21 @@ export function Workbench({
                 <span className="flex items-center gap-1 font-mono text-[11px] text-emerald-600">
                   <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
                   {jobsRunning}
+                </span>
+              )}
+            </TabsTrigger>
+          )}
+          {subOn && (
+            <TabsTrigger value="subagents">
+              <NetworkIcon />
+              Subagents
+              {helpersRunning > 0 && (
+                <span
+                  className="flex items-center gap-1 font-mono text-[11px] text-work"
+                  data-subagents-running={helpersRunning}
+                >
+                  <span className="size-1.5 animate-pulse rounded-full bg-work" />
+                  {helpersRunning}
                 </span>
               )}
             </TabsTrigger>
@@ -809,6 +840,16 @@ export function Workbench({
       {bgOn && (
         <TabsContent value="background" className="min-h-0 flex-1">
           <BackgroundPanel jobs={jobs} onStop={onStopJob} />
+        </TabsContent>
+      )}
+
+      {subOn && emp && (
+        <TabsContent value="subagents" className="min-h-0 flex-1">
+          <SubagentsPanel
+            thread={thread}
+            emp={emp}
+            onOpenSession={onOpenSession}
+          />
         </TabsContent>
       )}
 
