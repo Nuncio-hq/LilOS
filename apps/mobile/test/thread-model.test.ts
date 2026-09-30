@@ -1130,7 +1130,15 @@ describe("thread-model — #308 reply ordering", () => {
       "m3",
       "turn-t3",
     ]);
-    expect(entries.filter((e) => e.kind === "text")).toHaveLength(0);
+    /* no bare employee row survives — the leg claimed its own post */
+    expect(
+      entries.filter(
+        (e) =>
+          e.kind === "agent" &&
+          !e.id.startsWith("turn-") &&
+          e.text === "leg result",
+      ),
+    ).toHaveLength(0);
   });
 
   it("AC-2 two same-text legs claim their posts in order", () => {
@@ -1161,8 +1169,15 @@ describe("thread-model — #308 reply ordering", () => {
       "turn-t2",
       "turn-t3",
     ]);
-    /* each leg claimed a post — both cards carry the flagged marker */
-    expect(entries.filter((e) => e.kind === "text")).toHaveLength(0);
+    /* each leg claimed a post — no bare employee row survives */
+    expect(
+      entries.filter(
+        (e) =>
+          e.kind === "agent" &&
+          !e.id.startsWith("turn-") &&
+          e.text === "same report",
+      ),
+    ).toHaveLength(0);
     expect(
       entries.filter((e) => e.kind === "agent" && e.agentInitiated),
     ).toHaveLength(2);
