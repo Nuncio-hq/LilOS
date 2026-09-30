@@ -135,6 +135,9 @@ export function launcherFor(
         ...(serveBins.hermes ? { serveBin: serveBins.hermes } : {}),
         ...(config.engine.provider ? { provider: config.engine.provider } : {}),
         ...(config.engine.model ? { model: config.engine.model } : {}),
+        // #288: the adapter's session registry lives beside the harness's own
+        // state so a restart resumes each conversation's stored session.
+        sessionsFile: join(config.homeDir, "engine-sessions.json"),
         log,
       });
     case "command":

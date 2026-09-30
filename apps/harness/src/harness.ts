@@ -722,6 +722,14 @@ export class Harness {
       return;
     }
     this.delivered.add(message.id);
+    /* #288: the watermark applies before ANY binding work — a restart's
+       channel replay re-delivers every already-delivered user message while
+       the engine is down; binding for one would start a fresh session (or
+       reattach) only to drop the message, and the held batch would re-prompt
+       on that new session when the engine attaches. Nothing owed → no bind,
+       no session.start, no prompt. */
+    const cur = this.conversationFromAtom(conv.id) ?? conv;
+    if (message.seq <= cur.deliveredSeq) return;
     const binding = await this.bindingFor(conv, message.channelId);
     if (!binding) {
       // Engine still starting/restarting: hold the message; attachEngine
@@ -756,7 +764,16 @@ export class Harness {
     const binding = await this.bindingFor(conv, waiting[0]?.channelId ?? "");
     if (!binding) return; // engine went away again; next attach retries
     this.early.delete(convId);
-    for (const message of waiting) this.enqueueOrPrompt(binding, message);
+    const fresh = this.conversationFromAtom(conv.id) ?? conv;
+    for (const message of waiting) {
+      /* #288: deliver()'s watermark guard, replayed for the held batch — a
+         held message can sit at/below deliveredSeq (delivered on a previous
+         engine attachment or via the register-time pending list while this
+         one was queued). Never prompt it a second time. */
+      if (message.seq <= fresh.deliveredSeq || binding.consumed.has(message.id))
+        continue;
+      this.enqueueOrPrompt(binding, message);
+    }
   }
 
   private enqueueOrPrompt(binding: SessionBinding, message: AppMessage) {

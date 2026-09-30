@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { EngineEvent } from "@lilos/contracts/engine";
 import { Harness } from "@lilos/engine-conformance";
 import { describe, expect, test } from "vitest";
@@ -1292,5 +1295,134 @@ describe("engine-hermes #140 AC-2: setModel re-checks the live catalog once", ()
       h.request("session.setModel", { sessionId, model: "no-such-model" }),
     ).rejects.toMatchObject({ code: -32005 });
     expect(gw.configSetCalls.filter((c) => c.key === "model")).toHaveLength(1);
+  });
+});
+
+/* #288: a harness restart kills `hermes serve` and this adapter with it —
+   the new process binds each conversation through `events.since(engineRef)`.
+   With the persisted registry the adapter resumes the SAME stored Hermes
+   session under the same engine id (no session.create, no fresh transcript,
+   no `setTitle` collision); without a row the rebind falls back like before. */
+describe("engine-hermes #288: restart resumes the stored session", () => {
+  const file = () =>
+    join(
+      mkdtempSync(join(tmpdir(), "lilos-hermes-sessions-")),
+      "engine-sessions.json",
+    );
+
+  test("events.since on a dead id resumes the stored session under the same engine id", async () => {
+    const sessionsFile = file();
+    const gw = new FakeGateway();
+    const engine1 = new HermesEngine({ gateway: gw, sessionsFile });
+    const h1 = new Harness(connectInMemory(engine1));
+    const { sessionId } = await start(h1, {
+      model: "stub-model-b",
+      provider: "stub",
+    });
+    const p1 = promptAsync(h1, sessionId, "first");
+    gw.complete(gw.lastSid);
+    await p1;
+    // Adapter dies with the harness (sessions map emptied, rows persisted).
+    await engine1.close();
+
+    const engine2 = new HermesEngine({ gateway: gw, sessionsFile });
+    const h2 = new Harness(connectInMemory(engine2));
+    const replay = (await h2.request("events.since", {
+      sessionId,
+      after: 0,
+    })) as {
+      events: { sessionId: string }[];
+      snapshot: { state: string };
+    };
+    // Resolved (not SESSION_NOT_FOUND): the resumed session registered under
+    // the SAME engine id — the conversation's engineRef never moves.
+    expect(replay.events[0]?.sessionId).toBe(sessionId);
+    expect(replay.snapshot.state).toBe("idle");
+
+    // Eager resume on the STORED id under the session's profile — no
+    // session.create, so no second stored session and no title collision.
+    expect(gw.resumeCalls).toHaveLength(1);
+    expect(gw.resumeCalls[0].session_id).toBe("ref-1");
+    expect(gw.resumeCalls[0].profile).toBe("builder");
+    expect(gw.resumeCalls[0].eager_build).toBe(true);
+    expect(gw.resumeCalls[0].omit_messages).toBe(true);
+    expect(gw.resumeCalls[0].close_on_disconnect).toBe(true);
+    expect(gw.createCalls).toHaveLength(1);
+    // The session's pick rides config.set onto the rebuilt agent — the
+    // stored row doesn't carry model/provider, and a bare resume prompts
+    // against profile defaults ("No LLM provider configured" refusals).
+    const resumedRuntime = gw.lastSid;
+    expect(
+      gw.configSetCalls.some(
+        (c) =>
+          c.session_id === resumedRuntime &&
+          c.key === "model" &&
+          String(c.value).includes("--provider stub"),
+      ),
+    ).toBe(true);
+
+    // The next prompt lands on the resumed runtime session — the same
+    // stored Hermes session continues, memory intact.
+    const resumedSid = gw.lastSid;
+    const p2 = promptAsync(h2, sessionId, "second");
+    gw.complete(resumedSid);
+    const res = await p2;
+    expect(res.stopReason).toBe("end_turn");
+    expect(gw.lastPrompt?.session_id).toBe(resumedSid);
+    expect(gw.createCalls).toHaveLength(1);
+    // userTurns survived the restart (session.rewind's toTurn baseline).
+    const s = engine2.sessionFor(sessionId);
+    expect(s?.userTurns).toBe(2);
+  });
+
+  test("events.since on an id the registry never held still answers SESSION_NOT_FOUND", async () => {
+    const sessionsFile = file();
+    const engine = new HermesEngine({
+      gateway: new FakeGateway(),
+      sessionsFile,
+    });
+    const h = new Harness(connectInMemory(engine));
+    await expect(
+      h.request("events.since", { sessionId: "s-zzz-1", after: 0 }),
+    ).rejects.toMatchObject({ code: -32001 }); // SESSION_NOT_FOUND
+  });
+
+  test("a resume the gateway can't serve falls back (registry row survives)", async () => {
+    const sessionsFile = file();
+    const gw1 = new FakeGateway();
+    const h1 = new Harness(
+      connectInMemory(new HermesEngine({ gateway: gw1, sessionsFile })),
+    );
+    const { sessionId } = await start(h1);
+    // A DIFFERENT gateway (fresh hermes serve, empty store) — resume 404s,
+    // the caller must still get SESSION_NOT_FOUND to fall back on.
+    const gw2 = new FakeGateway();
+    const engine2 = new HermesEngine({ gateway: gw2, sessionsFile });
+    const h2 = new Harness(connectInMemory(engine2));
+    await expect(
+      h2.request("events.since", { sessionId, after: 0 }),
+    ).rejects.toMatchObject({ code: -32001 });
+    expect(gw2.resumeCalls).toHaveLength(1);
+  });
+
+  test("session ids are namespaced across adapter restarts (#61 parity)", async () => {
+    const sessionsFile = file();
+    const h1 = new Harness(
+      connectInMemory(
+        new HermesEngine({ gateway: new FakeGateway(), sessionsFile }),
+      ),
+    );
+    const a = await start(h1);
+    const h2 = new Harness(
+      connectInMemory(
+        new HermesEngine({ gateway: new FakeGateway(), sessionsFile }),
+      ),
+    );
+    const b = await start(h2);
+    /* A fresh counter must never re-mint an id a persisted row owns —
+       otherwise the second process's s1 row clobbers the first's, and a
+       later rebind resumes the wrong stored session. */
+    expect(a.sessionId).not.toBe(b.sessionId);
+    expect(a.sessionId).toMatch(/^s-\w+-\d+$/);
   });
 });
