@@ -634,7 +634,16 @@ export class FakeGateway implements GatewayLike {
       text: opts.text ?? "done",
       status: opts.status ?? "complete",
       ...(opts.error ? { error: opts.error } : {}),
-      usage: { input: 10, output: 5, reasoning: 1, cache_read: 2 },
+      /* Hermes' context_usage_fields — the window the session resolved
+         (issue #294). */
+      usage: {
+        input: 10,
+        output: 5,
+        reasoning: 1,
+        cache_read: 2,
+        context_used: 18,
+        context_max: 262_000,
+      },
     });
   }
 

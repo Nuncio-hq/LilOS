@@ -317,6 +317,9 @@ export function toModelCatalog(
       ...(m.efforts ? { efforts: m.efforts } : {}),
       ...(m.defaultEffort ? { defaultEffort: m.defaultEffort } : {}),
       ...(m.fast !== undefined ? { fast: m.fast } : {}),
+      /* The engine-reported window rides the catalog row — the meter's
+         `contextWindowOf` reads it here like the web's (#294). */
+      ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
     })),
     providers: (result.providers ?? []).map((p) => ({
       id: p.id,

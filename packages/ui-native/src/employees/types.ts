@@ -132,8 +132,12 @@ export type ContextUsage = {
   output: number;
   reasoning: number;
   cache: number;
-  /** The model's window size. */
+  /** The window the meter divides by — engine-reported when it carries one,
+      else the labelled estimate `contextWindowOf` returns (#294). */
   max: number;
+  /** True when `max` is an estimate (the engine reported no window) — the
+      meter labels it `~` like the web (#294). */
+  estimated?: boolean;
 };
 
 /** A process left running for the session (web: BackgroundJob). */
@@ -260,6 +264,9 @@ export type ModelRow = {
   efforts?: string[];
   defaultEffort?: string;
   fast?: boolean;
+  /** The model's context window, when the engine reports one (web
+      `ModelOption.contextWindow`, #294). */
+  contextWindow?: number;
   /** The session runs a model the catalog omits (web `notInList`): the row
       carries the hint instead of offering a pick the engine can't honour. */
   notInList?: boolean;

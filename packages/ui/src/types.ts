@@ -169,6 +169,9 @@ export type Usage = {
   output: number;
   reasoning: number;
   cache: number;
+  /* The context window the engine resolved for this session, reported with
+     the turn's usage (issue #294); absent = the meter's labelled estimate. */
+  contextWindow?: number;
 };
 export type CheckRun = {
   name: string;
@@ -423,6 +426,8 @@ export type ModelOption = {
   efforts?: string[];
   defaultEffort?: string;
   fast?: boolean;
+  /* The model's context window, when the engine reports one (issue #294). */
+  contextWindow?: number;
   /* Set only by the picker's session-model merge (#140): the session runs a
      model the engine's catalog doesn't list, so the row is synthesized and
      carries the "Not in list" hint — never engine-reported data. */

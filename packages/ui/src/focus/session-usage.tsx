@@ -5,6 +5,7 @@ import {
   ContextContent,
   ContextTrigger,
 } from "../components/ai-elements/context";
+import { contextWindowOf } from "../lib/context-window";
 import { cn } from "../lib/utils";
 import type { ModelOption, Usage } from "../types";
 
@@ -27,13 +28,16 @@ export function SessionUsage({
   models,
 }: {
   usage: Usage;
-  /** The session's model id — drives the context window heuristic. */
-  model: string;
-  /** Catalog to resolve the display name from; falls back to the id (#194). */
+  /** The session's model id — resolved by `sessionModelId` at the call site
+      so every surface reads the same model for the same session (#294). */
+  model?: string;
+  /** Catalog to resolve the display name + a reported context window. */
   models?: ModelOption[];
 }) {
   const used = usage.input + usage.output;
-  const max = model.startsWith("qwen") ? 262_000 : 200_000;
+  /* The window is engine-reported (usage, then the catalog row); the
+     estimate label `~` marks a window the engine never reported (#294). */
+  const { tokens: max, estimated } = contextWindowOf(usage, model, models);
   const u: LanguageModelUsage = {
     inputTokens: usage.input,
     outputTokens: usage.output,
@@ -81,8 +85,11 @@ export function SessionUsage({
         <div className="space-y-3 p-4" data-context-panel>
           <div className="flex items-baseline justify-between gap-3">
             <span className="font-semibold text-[13px]">Context window</span>
-            <span className="font-medium text-[12px] text-muted-foreground tabular-nums">
-              {n(used)} / {n(max)}
+            <span
+              className="font-medium text-[12px] text-muted-foreground tabular-nums"
+              title={estimated ? "Estimated — the engine reports no window" : undefined}
+            >
+              {n(used)} / {estimated ? `~${n(max)}` : n(max)}
               <span className="ml-1.5 text-foreground">{pct(used, max)}</span>
             </span>
           </div>
@@ -127,7 +134,7 @@ export function SessionUsage({
         </div>
         <div className="flex items-center justify-between gap-3 bg-muted/50 px-4 py-2.5 text-[12px]">
           <span className="text-muted-foreground">Model</span>
-          <span className="truncate font-medium">{name}</span>
+          <span className="truncate font-medium">{name ?? "—"}</span>
         </div>
       </ContextContent>
     </Context>

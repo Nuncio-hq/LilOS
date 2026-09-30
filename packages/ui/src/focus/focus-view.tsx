@@ -47,6 +47,7 @@ import { Button } from "../components/ui/button";
 import { openStartRequest, ReplyCards } from "../conversation/cards";
 import type { PlanAction } from "../conversation/plan-card";
 import { AgentTurn, PrCard, UserTurn } from "../conversation/turns";
+import { sessionModelId } from "../lib/context-window";
 import { PHASE_LABEL } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
@@ -255,7 +256,15 @@ export function FocusView({
       id && flash === id && "bg-amber-100 dark:bg-amber-900/40",
     );
   const isDM = !!channel.dm;
-  const model = thread.model ?? lead?.model ?? defaultModel ?? models?.[0]?.id;
+  /* The session's model via the one shared resolver (#294) — the DM panel
+     resolves the same way, so one session can't show two windows. */
+  const model = sessionModelId(
+    thread,
+    lead?.model,
+    models,
+    defaultModel,
+    defaultProvider,
+  );
   const live = thread.replies.find((r) => r.live);
   const lastStep = live?.steps?.[live.steps.length - 1];
   const status: ChatStatus = running
@@ -441,7 +450,7 @@ export function FocusView({
               {live?.phase ? PHASE_LABEL[live.phase] : "working"}
             </span>
           )}
-          {thread.usage && model && (
+          {thread.usage && (
             <SessionUsage usage={thread.usage} model={model} models={models} />
           )}
           {!work && !isDM && onStart && (

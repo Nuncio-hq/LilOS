@@ -425,7 +425,17 @@ export class FakeEngine {
       title: "",
       hidden: false,
       titleUserSet: false,
-      usage: { input: 0, output: 0, reasoning: 0, cache: 0 },
+      usage: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: 0,
+        /* The window the session runs in, resolved at start like a real
+           engine's (picked row reports none -> field stays absent). */
+        ...(picked?.contextWindow
+          ? { contextWindow: picked.contextWindow }
+          : {}),
+      },
       steers: [],
       userTurns: [],
       turnCount: 0,
@@ -807,6 +817,11 @@ export class FakeEngine {
       );
     const prevModel = s.model;
     s.model = p.model;
+    /* The resolved window follows the model — a pick onto a row that
+       reports none drops the field, so the meter can't reuse a stale
+       number the new model never claimed (#294). */
+    if (m.contextWindow) s.usage.contextWindow = m.contextWindow;
+    else delete s.usage.contextWindow;
     s.provider = p.provider ?? m.provider;
     s.effort = p.effort ?? m.defaultEffort;
     s.fast =
@@ -1466,6 +1481,10 @@ export class FakeEngine {
       output: s.usage.output + Math.floor(script.text.length / 4),
       reasoning: s.usage.reasoning + Math.floor(script.reasoning.length / 4),
       cache: s.usage.cache + 6000,
+      /* The resolved window rides the session across turns (#294). */
+      ...(s.usage.contextWindow
+        ? { contextWindow: s.usage.contextWindow }
+        : {}),
     };
     // Clear the turn BEFORE turn.completed — observers reacting to the
     // event (e.g. draining a queued prompt) must see the session free.

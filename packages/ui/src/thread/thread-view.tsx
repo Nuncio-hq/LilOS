@@ -26,6 +26,7 @@ import type { PlanAction } from "../conversation/plan-card";
 import { AgentTurn, AttachmentChips } from "../conversation/turns";
 import { Body, Row, Who } from "../feed/row";
 import { SessionUsage } from "../focus/session-usage";
+import { sessionModelId } from "../lib/context-window";
 import { cn } from "../lib/utils";
 import type {
   AttachedFile,
@@ -319,9 +320,18 @@ export function ThreadView({
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {thread.usage && leadEmp && (
+            /* The SESSION's model — never the employee's (#294): the panel
+               and Focus resolve through the same helper and the window comes
+               engine-reported on the usage/catalog, not an employee row. */
             <SessionUsage
               usage={thread.usage}
-              model={leadEmp.model}
+              model={sessionModelId(
+                thread,
+                leadEmp.model,
+                models,
+                defaultModel,
+                defaultProvider,
+              )}
               models={models}
             />
           )}

@@ -1289,9 +1289,19 @@ export class HermesEngine {
         if (typeof p.reasoning_effort === "string")
           s.effort = p.reasoning_effort || undefined;
         if (typeof p.fast === "boolean") s.fast = p.fast;
+        /* #294: `usage.context_max` rides session.info too — a deferred
+           model switch re-resolves the window before the next
+           turn.completed, so the meter follows it without waiting. */
+        this.mirrorContextWindow(s, p.usage);
         /* #137: `session.info` also carries the session's current title —
            deduped in applyTitle so only the first sighting / changes emit. */
         if (typeof p.title === "string") s.applyTitle(p.title);
+        break;
+      }
+      /* `session.usage` ticks carry the same `_get_usage` shape mid-turn —
+         the window moves on config changes that emit no session.info. */
+      case "session.usage": {
+        this.mirrorContextWindow(s, p.usage);
         break;
       }
       /* #137 AC-1: `session.title` events are Hermes' persisted auto-title
@@ -1341,6 +1351,17 @@ export class HermesEngine {
       default:
         break; // status.update, sessions.changed, ...
     }
+  }
+
+  /** Hermes reports the session's resolved window as `usage.context_max`
+     (session.info, mid-turn session.usage ticks): refresh the window on the
+     session's last usage between turn ends — only merges, never fabricates
+     a usage the engine didn't report (#294). */
+  private mirrorContextWindow(s: Session, usage: unknown) {
+    if (!s.usage || typeof usage !== "object" || usage === null) return;
+    const max = (usage as Record<string, unknown>).context_max;
+    if (typeof max === "number" && max > 0)
+      s.usage = { ...s.usage, contextWindow: max };
   }
 
   /**
