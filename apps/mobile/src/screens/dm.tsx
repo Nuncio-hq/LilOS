@@ -9,6 +9,7 @@ import {
   DmHeaderTitle,
   EmployeeDmScreen,
   FolderPickerSheet,
+  findModel,
   type ModelPick,
   ModelPickerSheet,
   modelLabel,
@@ -37,6 +38,7 @@ import {
   $folderDetails,
   $folders,
   $modelPicks,
+  $modelVisibility,
   $pendingOpens,
   $wsPicks,
   clearPending,
@@ -267,13 +269,17 @@ export function Dm({
     mode: "direct" as const,
   };
   const modelPick = modelPicks[employeeId];
-  const modelRow = modelPick
-    ? catalog.models.find((m) => m.id === modelPick.model)
-    : undefined;
+  /* Provider-aware row (an id can exist under two providers) — its
+     provider row carries the models.dev logo slug for the chip. */
+  const modelRow = modelPick ? findModel(catalog.models, modelPick) : undefined;
   const provider = catalog.providers.find((p) => p.id === modelRow?.provider);
-  const modelChip = modelPick
-    ? modelLabel(catalog.models, modelPick)
-    : employee.model || catalog.defaultModel || "Default";
+  /* No model surface at all (engine reported none) -> no chip — the
+     picker's gate is the same models?.length check the web uses. */
+  const modelChip = !catalog.models.length
+    ? undefined
+    : modelPick
+      ? modelLabel(catalog.models, modelPick)
+      : employee.model || catalog.defaultModel || "Default";
 
   const send = (text: string) => {
     const c = client;
@@ -325,7 +331,12 @@ export function Dm({
       }
       onSend={send}
       onPickFolder={() => navigation.navigate("FolderPicker", { employeeId })}
-      onPickModel={() => navigation.navigate("ModelPicker", { employeeId })}
+      {...(catalog.models.length
+        ? {
+            onPickModel: () =>
+              navigation.navigate("ModelPicker", { employeeId }),
+          }
+        : {})}
       prefill={prefill}
     />
   );
@@ -381,6 +392,7 @@ export function ModelPicker({
      conversations.setModel; the employee-scope pick stays the DM default. */
   const conv = conversations.find((c) => c.id === conversationId);
   const catalog = useStore($catalog);
+  const visibility = useStore($modelVisibility);
   const welcome = useStore($welcome);
   const picks = useStore($modelPicks);
   const [picked, setPicked] = useState<ModelPick>();
@@ -389,6 +401,7 @@ export function ModelPicker({
       (conv?.model
         ? {
             model: conv.model,
+            ...(conv.provider ? { provider: conv.provider } : {}),
             ...(conv.effort ? { effort: conv.effort } : {}),
             ...(conv.fast !== undefined ? { fast: conv.fast } : {}),
           }
@@ -406,6 +419,7 @@ export function ModelPicker({
       models={catalog.models}
       providers={catalog.providers}
       value={value}
+      visibility={visibility}
       onPick={(p: ModelPick) => {
         void Haptics.selectionAsync();
         /* Thread scope asked for but the conversation isn't in the client
@@ -414,12 +428,15 @@ export function ModelPicker({
         if (conversationId !== undefined) {
           if (conv && client) {
             setPicked(p);
-            const row = catalog.models.find((m) => m.id === p.model);
+            /* The pick's own provider pins the row (a shared id under two
+               providers sets the picked one, not the first match). */
+            const row = findModel(catalog.models, p);
+            const provider = p.provider ?? row?.provider;
             void client
               .request("conversations.setModel", {
                 conversationId: conv.id,
                 model: p.model,
-                ...(row?.provider ? { provider: row.provider } : {}),
+                ...(provider ? { provider } : {}),
                 ...(p.effort ? { effort: p.effort } : {}),
                 ...(p.fast !== undefined ? { fast: p.fast } : {}),
               })

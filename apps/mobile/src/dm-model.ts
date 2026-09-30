@@ -21,6 +21,7 @@ import type {
   SessionTurn,
   WorkspacePick,
 } from "@lilos/ui-native";
+import { hasProviderLogo } from "@lilos/ui-native/provider-logos";
 
 /* Wire data -> ui-native DM view models (#156). Pure: no stores, no imports
    beyond contracts + ui-native types — every rule is unit-tested in
@@ -319,20 +320,57 @@ export function toModelCatalog(
     })),
     providers: (result.providers ?? []).map((p) => ({
       id: p.id,
-      name: p.name ?? p.id,
-      // The wire has no logo field; known ids get their models.dev slug.
-      logo: PROVIDER_LOGO[p.id],
+      name: p.name ?? providerTitle(p.id),
+      // The wire has no logo field: known provider aliases map onto their
+      // models.dev slug, and an id that already IS a known slug gets it
+      // directly — anything else renders the generic chip (#160 AC-3).
+      logo: PROVIDER_LOGO[p.id] ?? (hasProviderLogo(p.id) ? p.id : undefined),
     })),
   };
 }
 
-/** Provider slug -> models.dev logo slug (the prototype's PROVIDERS map). */
+/** Provider slug -> models.dev logo slug for engine ids that differ from
+    their models.dev mark (the prototype's PROVIDERS map). */
 const PROVIDER_LOGO: Record<string, string | undefined> = {
   hpc: "alibaba",
   "anthropic-cliproxy": "anthropic",
   "openai-codex": "openai",
   "xai-oauth": "xai",
 };
+
+/* Provider slug -> display name when the engine didn't name it (web
+   PROVIDER_NAMES + a title-cased fallback). */
+const PROVIDER_NAMES: Record<string, string> = {
+  alibaba: "Alibaba",
+  amazon: "Amazon",
+  anthropic: "Anthropic",
+  azure: "Azure",
+  cerebras: "Cerebras",
+  cognition: "Cognition",
+  cohere: "Cohere",
+  deepseek: "DeepSeek",
+  fireworks: "Fireworks AI",
+  "github-copilot": "GitHub Copilot",
+  google: "Google",
+  groq: "Groq",
+  meta: "Meta",
+  mistral: "Mistral AI",
+  moonshotai: "Moonshot AI",
+  nvidia: "NVIDIA",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  togetherai: "Together AI",
+  vercel: "Vercel",
+  xai: "xAI",
+  zai: "Z.ai",
+};
+
+function providerTitle(slug: string): string {
+  return (
+    PROVIDER_NAMES[slug] ??
+    slug.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
 
 /** The pick the composer starts with: employee model > engine default. */
 export function defaultModelPick(opts: {
@@ -342,7 +380,15 @@ export function defaultModelPick(opts: {
   defaultProvider?: string;
 }): ModelPick | undefined {
   const want = opts.employeeModel || opts.defaultModel;
-  if (!want) return opts.models[0] ? { model: opts.models[0].id } : undefined;
+  if (!want)
+    return opts.models[0]
+      ? {
+          model: opts.models[0].id,
+          ...(opts.models[0].provider
+            ? { provider: opts.models[0].provider }
+            : {}),
+        }
+      : undefined;
   /* The employee's own model needs no provider disambiguation (its pick is
      authoritative); the engine default does — the same model id can exist
      under two providers, and the default's provider is the intended one. */
@@ -357,7 +403,12 @@ export function defaultModelPick(opts: {
   return row
     ? {
         model: row.id,
-        ...(row.defaultEffort ? { effort: row.defaultEffort } : {}),
+        ...(row.provider ? { provider: row.provider } : {}),
+        /* The declared default seeds the pick only when the ladder has it
+           (web defaultEffort) — otherwise the engine's own default runs. */
+        ...(row.defaultEffort && row.efforts?.includes(row.defaultEffort)
+          ? { effort: row.defaultEffort }
+          : {}),
       }
     : { model: want };
 }
@@ -411,13 +462,21 @@ export function openConversationParams(opts: {
     ? opts.folders.find((f) => f.id === pick.folder)
     : undefined;
   const ws = workspaceOpen(pick, folder, opts.text);
+  /* The pick's own provider wins (a shared id under two providers pins the
+     picked one); a bare id resolves the first matching row (#160 AC-4). */
   const row = opts.model
-    ? opts.models?.find((m) => m.id === opts.model?.model)
+    ? opts.models?.find(
+        (m) =>
+          m.id === opts.model?.model &&
+          (opts.model?.provider === undefined ||
+            m.provider === opts.model.provider),
+      )
     : undefined;
+  const provider = opts.model?.provider ?? row?.provider;
   return {
     ...ws,
     ...(opts.model?.model ? { model: opts.model.model } : {}),
-    ...(row?.provider ? { provider: row.provider } : {}),
+    ...(provider ? { provider } : {}),
     ...(opts.model?.effort !== undefined ? { effort: opts.model.effort } : {}),
     ...(opts.model?.fast !== undefined ? { fast: opts.model.fast } : {}),
   };
