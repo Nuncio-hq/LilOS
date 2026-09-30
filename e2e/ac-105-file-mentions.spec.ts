@@ -29,6 +29,9 @@ const webDir = path.join(repo, "apps", "web");
 interface Stack {
   home: string;
   webUrl: string;
+  /* Whether this stack's recents already hold the fixture repo — lives on
+     the stack so it stays true however beforeAll/repeats are scheduled. */
+  repoAdded: boolean;
   stop: () => Promise<void>;
 }
 
@@ -104,6 +107,7 @@ async function bootStack(
     return {
       home,
       webUrl,
+      repoAdded: false,
       stop: async () => {
         await killProc(proc);
         await expectNoEngineLeak(leakTag);
@@ -201,28 +205,47 @@ async function arrowDownTo(
 
 /** Pick the fixture repo for this DM: the pick survives between the serial
     tests (shared LILOS_HOME), so an earlier test may have added it already —
-    then the folder menu lists it (data-wsfolder = path = id). */
+    then the folder menu lists it (data-wsfolder = path = id).
+    The menu's folder rows render off the page's async recents refresh, so a
+    raw count() can run before the row lands (#304): only "the repo was never
+    added" may branch to the Add dialog; "was added" waits for the row. */
 async function addAndPickRepo(page: Page) {
   const wsBtn = page.locator('[data-ws="folder"]');
   if ((await wsBtn.innerText()).includes("lilos-105-repo")) return;
   await wsBtn.click();
   const pickerMenu = page.locator('[role="menu"]').last();
   const existing = pickerMenu.locator(`[data-wsfolder="${repoDir}"]`);
-  // Wait for the menu to render before counting (count() doesn't wait).
+  // Wait for the menu to render before choosing a branch.
   await pickerMenu.getByText("Add a folder").waitFor({ state: "visible" });
-  if ((await existing.count()) > 0) {
+  if (stack.repoAdded || (await existing.count()) > 0) {
+    // Already in recents: the row lands when the refresh resolves.
+    await expect(existing).toBeVisible({ timeout: 15_000 });
     await existing.click();
+    stack.repoAdded = true;
   } else {
     await pickerMenu.getByText("Add a folder").click();
     const dialog = page.locator("[data-addfolder]");
     await expect(dialog).toBeVisible();
     await dialog.locator("[data-pathinput]").fill(repoDir);
-    await expect(dialog.locator("[data-folderinfo]")).toContainText(
-      "Git repo",
-      { timeout: 15_000 },
-    );
-    await dialog.locator("[data-addbtn]").click();
+    // folderinfo renders once the fs probe lands; the Add button's own
+    // enabled state is the deterministic signal — disabled means the app
+    // considers the folder attached ("Already added."), which a recents
+    // refresh landing after the menu opened can still cause (#304).
+    await expect(dialog.locator("[data-folderinfo]")).toBeVisible({
+      timeout: 15_000,
+    });
+    if (await dialog.locator("[data-addbtn]").isEnabled()) {
+      await dialog.locator("[data-addbtn]").click();
+    } else {
+      // Recover by picking the recents row instead of adding again.
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await expect(dialog).toHaveCount(0);
+      await wsBtn.click();
+      await expect(existing).toBeVisible({ timeout: 15_000 });
+      await existing.click();
+    }
     await expect(dialog).toHaveCount(0);
+    stack.repoAdded = true;
   }
   await expect(wsBtn).toContainText("lilos-105-repo");
 }
