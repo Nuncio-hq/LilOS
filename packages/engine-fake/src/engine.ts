@@ -1526,7 +1526,7 @@ export class FakeEngine {
   /* #308: an agent-initiated leg — the engine's own follow-up turn opened
      past turn end (queued-steer drain / result delivery): its own minted
      id, initiatedBy:"agent", no ref. A steer mid-leg queues (never lands
-     inside it) and drains as the next user turn, like Hermes. */
+     inside it) and drains as the next user turn. */
   private async runLeg(s: FakeSession, text: string) {
     await this.sleep(s);
     if (s.turn || !this.isOpen(s)) return;
