@@ -753,6 +753,13 @@
                         },
                         "ref": {
                           "type": "string"
+                        },
+                        "initiatedBy": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "agent"
+                          ]
                         }
                       },
                       "required": [
@@ -3048,6 +3055,13 @@
                   },
                   "ref": {
                     "type": "string"
+                  },
+                  "initiatedBy": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "agent"
+                    ]
                   }
                 },
                 "required": [

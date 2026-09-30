@@ -188,6 +188,9 @@ export type AgentEntry = {
   waiting?: "approval" | "plan" | "question";
   /** You pressed Stop mid-turn. */
   stopped?: boolean;
+  /** #308: the engine opened this leg itself — "Agent-initiated" chip
+      instead of reading as an answer to a user message. */
+  agentInitiated?: boolean;
   /** The reply is streaming (steps are over for now). */
   writing?: boolean;
   /** What you decided on this turn's approval — kept as a receipt. */

@@ -316,6 +316,11 @@ export function AgentTurn({
           Stopped · session.interrupt
         </div>
       )}
+      {r.agentInitiated && (
+        <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
+          Agent-initiated
+        </div>
+      )}
       {r.plan && (
         <PlanCard
           plan={r.plan}

@@ -1486,3 +1486,100 @@ describe("engine-hermes #288: restart resumes the stored session", () => {
     expect(a.sessionId).toMatch(/^s-\w+-\d+$/);
   });
 });
+
+describe("engine-hermes #308: post-turn legs mint their own turn", () => {
+  /* Live capture (scripts/live/309.ts): a queued steer drains post-turn as
+     `session.state running` + `message.start` + deltas stamped on the
+     SETTLED turn id + a second `turn.completed` — no `turn.started`. The
+     engine must mint the leg a real turn so its frames don't merge into
+     the finished one. */
+  test("a queued steer drains as its own turn carrying the steer message's ref", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId, "first");
+    gw.emit(gw.lastSid, "message.delta", { text: "answer A" });
+    gw.complete(gw.lastSid);
+    await p;
+    const [t1] = h.events
+      .filter((e) => e.type === "turn.started")
+      .map((e) => (e.payload as { turnId: string }).turnId);
+
+    const steer = (await h.request("session.steer", {
+      sessionId,
+      text: "quick one",
+      ref: "msg_B",
+    })) as { status: string };
+    expect(steer.status).toBe("steered");
+
+    // The queued steer drains post-turn as its own leg.
+    gw.emit(gw.lastSid, "message.start", {});
+    gw.emit(gw.lastSid, "message.delta", { text: "the quick answer" });
+    gw.complete(gw.lastSid);
+    await new Promise((r) => setTimeout(r, 0));
+
+    const started = h.events.filter((e) => e.type === "turn.started");
+    expect(started).toHaveLength(2);
+    const leg = started[1].payload as {
+      turnId: string;
+      ref?: string;
+      initiatedBy?: string;
+    };
+    expect(leg.turnId).not.toBe(t1);
+    expect(leg.ref).toBe("msg_B");
+    /* The leg's deltas and its completion stamp the leg's own id — they
+       must not land on the settled t1. */
+    const idsOf = (type: string) =>
+      h.events
+        .filter((e) => e.type === type)
+        .map((e) => (e.payload as { turnId: string }).turnId);
+    expect(idsOf("turn.delta").at(-1)).toBe(leg.turnId);
+    expect(idsOf("turn.completed").at(-1)).toBe(leg.turnId);
+  });
+
+  test("an engine-initiated leg mints an agent-initiated turn with no ref", async () => {
+    /* Subagent-result delivery / auto-continue: the engine opens a leg
+       itself — own agent entry, agent-initiated, never anchored to a user
+       message. */
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId, "first");
+    gw.emit(gw.lastSid, "message.delta", { text: "answer A" });
+    gw.complete(gw.lastSid);
+    await p;
+
+    gw.emit(gw.lastSid, "message.start", {});
+    gw.emit(gw.lastSid, "message.delta", { text: "ZEBRA report" });
+    gw.complete(gw.lastSid);
+    await new Promise((r) => setTimeout(r, 0));
+
+    const started = h.events.filter((e) => e.type === "turn.started");
+    expect(started).toHaveLength(2);
+    const leg = started[1].payload as {
+      turnId: string;
+      ref?: string;
+      initiatedBy?: string;
+    };
+    expect(leg.initiatedBy).toBe("agent");
+    expect(leg.ref).toBeUndefined();
+  });
+
+  test("a prompt sent mid-leg still lands (legs aren't prompt turns)", async () => {
+    /* Minting must not reuse s.turn — prompt() throws INVALID_STATE on a
+       running turn, and a delivery leg is no place to start rejecting
+       user input. */
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId, "first");
+    gw.emit(gw.lastSid, "message.delta", { text: "answer A" });
+    gw.complete(gw.lastSid);
+    await p;
+
+    gw.emit(gw.lastSid, "message.start", {});
+    const p2 = promptAsync(h, sessionId, "during the leg");
+    gw.emit(gw.lastSid, "message.delta", { text: "leg text" });
+    gw.complete(gw.lastSid);
+    gw.emit(gw.lastSid, "message.delta", { text: "answer B" });
+    gw.complete(gw.lastSid);
+    await expect(p2).resolves.toMatchObject({ stopReason: "end_turn" });
+  });
+});

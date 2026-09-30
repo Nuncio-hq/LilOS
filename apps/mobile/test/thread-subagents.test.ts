@@ -453,8 +453,8 @@ describe("thread subagents & background jobs — #181", () => {
     const ids = whileLive.entries.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
     /* The message stays a plain row until the turn settles; the live card
-       keeps the tail slot. */
-    expect(ids).toEqual(["m1", "m2", "turn-t1"]);
+       anchors under the message that prompted it (#308). */
+    expect(ids).toEqual(["m1", "turn-t1", "m2"]);
     const done = reduceSessionEvents("sess-1", [
       ev("turn.started", { turnId: "t1", model: "fake-small", ref: "m1" }),
       ev("turn.delta", { turnId: "t1", stream: "text", delta: "same reply" }),

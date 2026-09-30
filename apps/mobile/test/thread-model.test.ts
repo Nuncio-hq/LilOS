@@ -930,3 +930,75 @@ describe("#247 mobile polish — prototype thread details on real data", () => {
     expect(live.context?.input).toBe(99000);
   });
 });
+
+describe("thread-model — #308 reply ordering", () => {
+  const u = (id: string, seq: number, text: string) => msg({ id, seq, text });
+  const a = (id: string, seq: number, text: string) =>
+    msg({ id, seq, text, authorKind: "employee", authorId: ada.id });
+
+  it("AC-1 an answer posted after a newer message still lands under its own prompt", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", ref: "m1" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "answer A" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    ]);
+    const entries = mergeThreadEntries(
+      [
+        u("m1", 1, "first question"),
+        u("m2", 2, "second"),
+        a("m3", 3, "answer A"),
+      ],
+      model,
+      OPTS,
+    );
+    expect(entries.map((e) => e.id)).toEqual(["m1", "turn-t1", "m2"]);
+  });
+
+  it("AC-1 the live turn anchors under its prompting message while a newer one exists", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", ref: "m1" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "done A" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+      ev("turn.started", { turnId: "t2", ref: "m3" }),
+      ev("turn.delta", { turnId: "t2", stream: "text", delta: "typing…" }),
+    ]);
+    const entries = mergeThreadEntries(
+      [
+        u("m1", 1, "first"),
+        a("m2", 2, "done A"),
+        u("m3", 3, "second"),
+        u("m4", 4, "third"),
+      ],
+      model,
+      OPTS,
+    );
+    expect(entries.map((e) => e.id)).toEqual([
+      "m1",
+      "turn-t1",
+      "m3",
+      "turn-t2",
+      "m4",
+    ]);
+  });
+
+  it("AC-2 an engine-initiated leg is its own agent entry, never claimed", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", ref: "m1" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "ZEBRA report" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+      ev("turn.started", { turnId: "t2", initiatedBy: "agent" }),
+      ev("turn.delta", { turnId: "t2", stream: "text", delta: "ZEBRA report" }),
+      ev("turn.completed", { turnId: "t2", stopReason: "end_turn" }),
+    ]);
+    const entries = mergeThreadEntries(
+      [u("m1", 1, "first"), a("m2", 2, "ZEBRA report")],
+      model,
+      OPTS,
+    );
+    /* m2 is t1's claimed card (the same text); the agent-initiated leg
+       can't claim a second row — it appends as its own flagged entry. */
+    expect(entries.map((e) => e.id)).toEqual(["m1", "turn-t1", "turn-t2"]);
+    const leg = entries.at(-1);
+    expect(leg?.kind === "agent" && leg.agentInitiated).toBe(true);
+  });
+});

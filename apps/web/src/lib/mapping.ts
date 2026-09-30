@@ -222,6 +222,7 @@ export function liveTurnReply(
     fast: turn.fast,
     phase: PHASE_MAP[turn.phase],
     live: turn.phase !== "done" && turn.phase !== "stopped",
+    ...(turn.agentInitiated ? { agentInitiated: true } : {}),
     plan: currentPlan(turn),
     waitingOn: turn.phase === "waiting" ? open?.request.kind : undefined,
     /* #179: helpers the turn delegated to (the Subagents block renders only
@@ -322,6 +323,12 @@ export function conversationReplies(
  * though the relay thread dropped the tail. Turns the engine never tagged
  * (a steer pumped into a fresh turn on an engine that doesn't echo `ref`)
  * fall back to `texts` — the rewound employee answers' bodies.
+ *
+ * #308: `ref` is a position, not just an orphan filter — a turn anchored to
+ * a visible prompt renders right under it regardless of when its answer's
+ * relay row arrived (a reply can post after a newer user message and still
+ * belongs under its own question). Engine-initiated legs never claim a
+ * posted answer; they render as their own agent entry.
  */
 export function mergeTurns(
   replies: Reply[],
@@ -333,52 +340,80 @@ export function mergeTurns(
 ): Reply[] {
   if (!model) return replies;
   const used = new Set<TurnModel>();
-  const flat: Reply[] = [];
+  /* Each reply run is one block — superseded-plan rows travel with their
+     card when a ref'd turn re-anchors. */
+  const blocks: Reply[][] = [];
+  const turnBlock = new Map<TurnModel, Reply[]>();
   for (const r of replies) {
     const t = model.turns.find(
       (x) =>
         !used.has(x) &&
+        !x.agentInitiated &&
         r.from === employeeId &&
         x.text.trim() &&
         x.text.trim() === r.text.trim(),
     );
     if (!t) {
-      flat.push(r);
+      blocks.push([r]);
       continue;
     }
     used.add(t);
     // Keep the relay message id — it's the search-hit scroll anchor (#138).
     const live = liveReplies(t, employeeId, asks, resolveEmployee);
     live[live.length - 1] = { ...live[live.length - 1], id: r.id };
-    flat.push(...live);
+    blocks.push(live);
+    turnBlock.set(t, live);
   }
-  /* A finished turn with no relay message (a stop before any text) sits
-     right after the user message that prompted it (`turn.started.ref`), not
-     at the end — appended, it jumped below every later message and answer.
-     The live turn is always the newest, so it still goes last. */
+  /* Anchor pass (#308): a `ref`'d turn sits right after the message that
+     prompted it — claimed cards move there from wherever the text matched;
+     unposted turns insert. `refOffset` stacks several turns under one
+     prompt in turn order. */
+  const refIndex = (ref: string) =>
+    blocks.findIndex((b) => b.some((r) => r.id === ref));
+  const refOffset = new Map<string, number>();
+  const anchorAt = (t: TurnModel) => {
+    if (!t.ref) return -1;
+    const at = refIndex(t.ref);
+    if (at < 0) return -1;
+    return at + 1 + (refOffset.get(t.ref) ?? 0);
+  };
+  const bump = (t: TurnModel) => {
+    if (t.ref) refOffset.set(t.ref, (refOffset.get(t.ref) ?? 0) + 1);
+  };
   for (const t of model.turns) {
-    if (used.has(t) || t === model.live) continue;
-    /* `ref` is authoritative when the engine tagged the turn; steer-pumped
-       turns without one match by their posted answer text instead. */
+    const block = turnBlock.get(t);
+    const at = anchorAt(t);
+    if (block) {
+      /* A claimed card re-anchors to its prompting message; if that message
+         renders nowhere the claim's own correlation keeps the card where
+         its relay row landed (#288's drop only covers unposted turns). */
+      if (at < 0) continue;
+      const from = blocks.indexOf(block);
+      blocks.splice(from, 1);
+      blocks.splice(at - (from < at ? 1 : 0), 0, block);
+      bump(t);
+      continue;
+    }
     if (t.ref ? rewound?.refs?.has(t.ref) : rewound?.texts?.has(t.text.trim()))
       continue;
-    if (!t.text.trim() && t.phase !== "stopped") continue;
-    const at = t.ref ? flat.findIndex((r) => r.id === t.ref) : -1;
-    /* #288: a finished turn anchored to a message that renders nowhere is an
-       orphan — e.g. a rebound engine session re-answering the root (the open
-       thread renders the root as its header, not a reply row). Appending it
-       would park the re-answer under the LATEST question. Stopped turns keep
-       the tail append: their marker is the only surface of a stop on a
-       root-anchored turn. Ref-less turns keep the tail fallback too: engines
-       that never echo `ref` can't be positioned any other way. */
-    if (t.ref && at < 0 && t.phase !== "stopped") continue;
+    if (!t.text.trim() && t.phase !== "stopped" && t !== model.live) continue;
     const rs = liveReplies(t, employeeId, asks, resolveEmployee);
-    if (at < 0) flat.push(...rs);
-    else flat.splice(at + 1, 0, ...rs);
+    if (at < 0) {
+      /* #288: a finished turn anchored to a message that renders nowhere is
+         an orphan — e.g. a rebound engine session re-answering the root
+         (the open thread renders the root as its header, not a reply row).
+         Stopped turns keep the tail append: their marker is the only
+         surface of a stop on a root-anchored turn. Ref-less turns keep the
+         tail fallback too: engines that never echo `ref` can't be
+         positioned any other way. */
+      if (t.ref && t.phase !== "stopped" && t !== model.live) continue;
+      blocks.push(rs);
+      continue;
+    }
+    blocks.splice(at, 0, rs);
+    bump(t);
   }
-  if (model.live && !used.has(model.live))
-    flat.push(...liveReplies(model.live, employeeId, asks, resolveEmployee));
-  return flat;
+  return blocks.flat();
 }
 
 /**

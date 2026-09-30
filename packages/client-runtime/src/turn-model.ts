@@ -120,6 +120,9 @@ export interface TurnModel {
   stopReason?: string;
   /** The user message that prompted this turn (engine `turn.started.ref`). */
   ref?: string;
+  /** #308: the engine opened this leg itself (delivery/auto-continue) —
+      renders as its own agent entry, never claimed by a posted answer. */
+  agentInitiated?: boolean;
 }
 
 export interface SessionModel {
@@ -213,6 +216,7 @@ export function reduceSessionEvents(
         t.effort = e.payload.effort ?? t.effort;
         t.fast = e.payload.fast ?? t.fast;
         t.ref = e.payload.ref ?? t.ref;
+        if (e.payload.initiatedBy === "agent") t.agentInitiated = true;
         break;
       }
       case "turn.delta": {

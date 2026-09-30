@@ -160,6 +160,7 @@ export function toAgentEntry(
     live,
     waiting,
     stopped,
+    ...(turn.agentInitiated ? { agentInitiated: true } : {}),
     writing: turn.phase === "text",
     approval,
     decided,
@@ -288,6 +289,7 @@ export function mergeThreadEntries(
     const turn = model.turns.find(
       (x) =>
         !used.has(x) &&
+        !x.agentInitiated &&
         (x.phase === "done" || x.phase === "stopped") &&
         x.text.trim() &&
         x.text.trim() === m.text.trim() &&
@@ -357,6 +359,27 @@ export function mergeThreadEntries(
       prs: opts.prs,
       now: opts.now,
     });
+  /* #308: a claimed turn anchored by `ref` re-anchors under the message
+     that prompted it — its answer's row can arrive after a newer prompt
+     and must not park there. The card's plan-superseded rows travel with
+     it. Claimed-but-anchorless turns keep the claimed slot (the claim is
+     its own correlation, #288). */
+  for (const t of model.turns) {
+    if (!used.has(t) || !t.ref) continue;
+    const cardId = `turn-${t.turnId}`;
+    const cardAt = entries.findIndex((e) => e.id === cardId);
+    const refAt = entries.findIndex((e) => e.id === t.ref);
+    if (cardAt < 0 || refAt < 0 || refAt + 1 === cardAt) continue;
+    let runStart = cardAt;
+    while (
+      runStart > 0 &&
+      entries[runStart - 1].id.startsWith(`${cardId}-plan-`)
+    )
+      runStart--;
+    const run = entries.splice(runStart, cardAt - runStart + 1);
+    entries.splice(entries.findIndex((e) => e.id === t.ref) + 1, 0, ...run);
+  }
+
   const byRef = new Map<string, number>();
   for (const [i, e] of entries.entries()) byRef.set(e.id, i);
   /* Two leftover turns can share one ref; each lands after the previous so
@@ -375,11 +398,20 @@ export function mergeThreadEntries(
       if (t.ref) insertAfter.set(t.ref, refIdx + superseded.length + 1);
     }
   }
-  if (model.live)
-    entries.push(
+  /* The live turn anchors under its prompting message like a posted one
+     (#308) — a newer question must not push it below itself at the tail.
+     byRef is stale past the leftover splices, so look the row up fresh. */
+  if (model.live) {
+    const rows = [
       ...supersededPlanEntries(model.live, opts.planCapable),
       entryFor(model.live),
-    );
+    ];
+    const refAt = model.live.ref
+      ? entries.findIndex((e) => e.id === model.live?.ref)
+      : -1;
+    if (refAt < 0) entries.push(...rows);
+    else entries.splice(refAt + 1, 0, ...rows);
+  }
   return entries;
 }
 

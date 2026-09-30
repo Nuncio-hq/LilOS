@@ -76,6 +76,15 @@ export class Session {
   openRequests = new Map<string, PendingAsk>();
   turn?: Turn;
   lastTurnId = "";
+  /** #308: a post-turn leg the engine opened itself (queued-steer drain,
+     delivery leg) mints its own turn id here — NOT `turn`, which is
+     reserved for prompt() turns (a user prompt mid-leg must still land;
+     INVALID_STATE belongs to real turns only). */
+  legTurnId?: string;
+  /** Accepted steers the engine queued for the next leg, FIFO — the leg's
+     turn.started echoes each entry's `ref` so the relay message the steer
+     came from stays the turn's anchor (#308). */
+  steeredQueue: { text: string; ref?: string }[] = [];
   /** #134: user inputs delivered (prompts + accepted steers) —
       `session.rewind` truncates Hermes history to this count's `toTurn`. */
   userTurns = 0;
