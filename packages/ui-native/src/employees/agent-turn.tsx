@@ -35,7 +35,9 @@ export function UserBubble({ text, time }: { text: string; time?: string }) {
       </View>
       {time && (
         <AppText size="xs" tone="muted" className="pr-1">
-          {time.startsWith("Queued") ? time : `You · ${time}`}
+          {time.startsWith("Queued") || time.startsWith("Waiting")
+            ? time
+            : `You · ${time}`}
         </AppText>
       )}
     </View>
@@ -64,10 +66,14 @@ export function AgentTurn({
   onOpenPlan?: () => void;
 }) {
   const steps = e.steps ?? [];
-  // Thinking = reasoning is still streaming (no "Thought for" yet).
-  const thinking =
+  /* #264: an open ask blocks the turn — nothing is still thinking or
+     running. `stillThinking` keeps its own condition so the reasoning row
+     can swap "Thinking…" for "Waiting for you" instead of vanishing. */
+  const waiting = e.waiting !== undefined;
+  const stillThinking =
     !!e.live && e.reasoning !== undefined && e.thought === undefined;
-  const writing = !!e.live && !!e.writing && !e.text?.trim();
+  const thinking = stillThinking && !waiting;
+  const writing = !!e.live && !waiting && !!e.writing && !e.text?.trim();
   return (
     <View className="gap-2.5">
       <View className="flex-row items-center gap-2">
@@ -84,10 +90,15 @@ export function AgentTurn({
           text={e.reasoning}
           seconds={e.thought}
           thinking={!!thinking}
+          waiting={stillThinking && waiting}
         />
       )}
       {steps.length > 0 && (
-        <Steps steps={steps} live={!!e.live && !e.writing} />
+        <Steps
+          steps={steps}
+          live={!!e.live && !e.writing}
+          waiting={e.waiting}
+        />
       )}
       {!!e.subagents?.length && (
         <SubagentsCard agents={e.subagents} onOpen={onOpenSubagent} />
@@ -128,10 +139,13 @@ function Reasoning({
   text,
   seconds,
   thinking,
+  waiting,
 }: {
   text: string;
   seconds?: number;
   thinking: boolean;
+  /** The turn is blocked on an open ask mid-reasoning (#264). */
+  waiting?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const shown = open || thinking;
@@ -142,11 +156,13 @@ function Reasoning({
         accessibilityLabel={
           thinking
             ? "Thinking"
-            : seconds
-              ? `Thought for ${seconds}s`
-              : "Thought"
+            : waiting
+              ? "Waiting for you"
+              : seconds
+                ? `Thought for ${seconds}s`
+                : "Thought"
         }
-        disabled={thinking}
+        disabled={thinking || waiting}
         onPress={() => {
           ease();
           setOpen(!open);
@@ -160,6 +176,10 @@ function Reasoning({
               Thinking…
             </AppText>
           </Pulse>
+        ) : waiting ? (
+          <AppText size="sm" tone="muted" weight="medium">
+            Waiting for you
+          </AppText>
         ) : (
           <AppText size="sm" tone="muted" weight="medium">
             {seconds ? `Thought for ${seconds}s` : "Thought"}
@@ -191,7 +211,16 @@ function Reasoning({
 
 /* All of a turn's tool calls behind one "N steps" row (web: Task block).
    Live turns keep it open so you watch the work land. */
-function Steps({ steps, live }: { steps: ToolStep[]; live: boolean }) {
+function Steps({
+  steps,
+  live,
+  waiting,
+}: {
+  steps: ToolStep[];
+  live: boolean;
+  /** Kind of ask the live turn is blocked on (#264). */
+  waiting?: "approval" | "plan" | "question";
+}) {
   const [open, setOpen] = useState(false);
   const shown = open || live;
   const running = steps.find((s) => s.running);
@@ -213,7 +242,9 @@ function Steps({ steps, live }: { steps: ToolStep[]; live: boolean }) {
         }}
         className="h-11 flex-row items-center gap-2 px-3.5 active:bg-fill"
       >
-        {live ? (
+        {waiting ? (
+          <View className="size-2 rounded-full bg-primary" />
+        ) : live ? (
           <Pulse>
             <View className="size-2 rounded-full bg-work" />
           </Pulse>
@@ -221,11 +252,13 @@ function Steps({ steps, live }: { steps: ToolStep[]; live: boolean }) {
           <Icon name="checkmark" size={11} weight="bold" tone="success" />
         )}
         <AppText size="sm" weight="medium" className="flex-1">
-          {running
-            ? `Step ${steps.indexOf(running) + 1} · ${tool(running.tool).now}…`
-            : live
-              ? `${steps.length} ${steps.length === 1 ? "step" : "steps"} · Working…`
-              : `${steps.length} ${steps.length === 1 ? "step" : "steps"}`}
+          {waiting
+            ? "Waiting for you"
+            : running
+              ? `Step ${steps.indexOf(running) + 1} · ${tool(running.tool).now}…`
+              : live
+                ? `${steps.length} ${steps.length === 1 ? "step" : "steps"} · Working…`
+                : `${steps.length} ${steps.length === 1 ? "step" : "steps"}`}
           {!live && files > 0 && (
             <AppText size="sm" tone="muted">
               {` · ${files} ${files === 1 ? "file" : "files"}`}
@@ -245,7 +278,7 @@ function Steps({ steps, live }: { steps: ToolStep[]; live: boolean }) {
       {shown && (
         <View>
           {steps.map((s) => (
-            <StepRow key={s.id} s={s} />
+            <StepRow key={s.id} s={s} waiting={waiting} />
           ))}
         </View>
       )}

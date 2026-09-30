@@ -180,6 +180,10 @@ export type AgentEntry = {
   text?: string;
   /** Still running: reasoning shimmers, the last step is live. */
   live?: boolean;
+  /** The turn is blocked on an open ask — its kind ("approval" needs a
+     decision on a command, "plan" a plan review, "question" an answer).
+     Surfaces read "Waiting…", never Running/Thinking (#264). */
+  waiting?: "approval" | "plan" | "question";
   /** You pressed Stop mid-turn. */
   stopped?: boolean;
   /** The reply is streaming (steps are over for now). */
@@ -205,6 +209,9 @@ export type ThreadEntry =
       text: string;
       /** Sent while the employee was mid-turn; runs when it finishes. */
       queued?: boolean;
+      /** Queued behind a conversation that is blocked on an open ask — the
+         caption reads "Waiting for you", not "Queued · runs next" (#264). */
+      waiting?: boolean;
     }
   | AgentEntry;
 

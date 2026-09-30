@@ -132,6 +132,23 @@ export function toAgentEntry(
   const files = new Set(
     turn.steps.flatMap((s) => (s.diff ? [s.diff.path] : [])),
   ).size;
+  const { approval, decided } = turnApproval(
+    turn,
+    opts.asks,
+    {
+      employeeId: opts.employeeId,
+      employee: opts.employeeName,
+      session: opts.sessionId,
+    },
+    opts.now,
+  );
+  const plan = lastPlan ? toPlanRow(lastPlan) : undefined;
+  /* #264: a live turn with an open ask is blocked on the user, not running —
+     every turn surface reads from this one flag instead of showing a live
+     dot / "Running" / "Thinking…" while the ask waits. */
+  const waiting = live
+    ? (approval?.kind ?? (plan?.status === "proposed" ? "plan" : undefined))
+    : undefined;
   return {
     kind: "agent",
     id: `turn-${turn.turnId}`,
@@ -140,19 +157,12 @@ export function toAgentEntry(
     steps: turn.steps.map(toToolStep),
     text: turn.text,
     live,
+    waiting,
     stopped,
     writing: turn.phase === "text",
-    ...turnApproval(
-      turn,
-      opts.asks,
-      {
-        employeeId: opts.employeeId,
-        employee: opts.employeeName,
-        session: opts.sessionId,
-      },
-      opts.now,
-    ),
-    plan: lastPlan ? toPlanRow(lastPlan) : undefined,
+    approval,
+    decided,
+    plan,
     ...(turn.subagents.length
       ? {
           subagents: turn.subagents.map((s) =>
@@ -226,6 +236,11 @@ export function mergeThreadEntries(
     now: number;
   },
 ): ThreadEntry[] {
+  /* #264: an open ask anywhere in the conversation blocks every queued
+     message — "Queued · runs next" is stale while the turn waits on you. */
+  const blocked = opts.asks.some(
+    (a) => a.state === "open" && a.conversationId === opts.conversationId,
+  );
   const entries: ThreadEntry[] = messages.map((m) =>
     m.authorKind === "user"
       ? {
@@ -234,7 +249,7 @@ export function mergeThreadEntries(
           time: clock(m.createdAt),
           text: m.text,
           ...(opts.deliveredSeq !== undefined && m.seq > opts.deliveredSeq
-            ? { queued: true }
+            ? { queued: true, ...(blocked ? { waiting: true } : {}) }
             : {}),
         }
       : {

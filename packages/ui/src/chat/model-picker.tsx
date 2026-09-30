@@ -384,7 +384,7 @@ export function ModelPicker({
           {fast && (
             <ZapIcon
               aria-label="Fast"
-              className="size-3 fill-amber-400 text-amber-500"
+              className="size-3 fill-primary text-primary"
             />
           )}
           <ChevronDownIcon className="size-3" />
@@ -407,7 +407,7 @@ export function ModelPicker({
                     onClick={() => choose({ ...shown0, effort, fast: !fast })}
                     className={cn(
                       "grid size-7 place-items-center rounded-md hover:bg-muted",
-                      fast ? "text-amber-500" : "text-muted-foreground",
+                      fast ? "text-primary" : "text-muted-foreground",
                     )}
                   >
                     <ZapIcon className={cn("size-4", fast && "fill-current")} />
