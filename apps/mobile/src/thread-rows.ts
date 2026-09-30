@@ -36,6 +36,7 @@ export function toToolStep(s: TurnStep): ToolStep {
     running: s.status === "running",
     add: s.diff?.add,
     del: s.diff?.del,
+    patch: s.diff?.patch,
   };
 }
 

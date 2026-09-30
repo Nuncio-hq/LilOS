@@ -267,6 +267,7 @@ function Connected() {
 
 function Settings() {
   const mac = useStore($connections)[0];
+  const link = useStore($link);
   return (
     <SettingsScreen
       title="Settings"
@@ -286,8 +287,12 @@ function Settings() {
           name: mac.name,
           host: mac.host,
           routeLabel: ROUTE_LABEL[mac.route],
+          link,
         }
       }
+      /* The row's status dot follows the live link; a tap opens the Mac
+         sheet where Forget now lives (#247). */
+      onOpenMac={() => nav.navigate("Mac")}
       onForget={confirmForget}
     >
       {/* #161: the four push kinds + iOS-permission state (AC-6). */}
@@ -297,9 +302,7 @@ function Settings() {
 }
 
 function Tabs() {
-  const link = useStore($link);
   const tint = useThemeColor("primary");
-  const destructive = useThemeColor("destructive");
   const { wire } = useHomeWire();
   const waiting = openAsks(wire.asks).length;
   return (
@@ -321,23 +324,15 @@ function Tabs() {
         name="Home"
         component={Home}
         options={{
-          title: "LilOS",
+          /* #247: no header — Home starts at the top under the status bar;
+             the Mac lives in Settings and the offline banner opens its
+             sheet. */
+          headerShown: false,
           tabBarLabel: "Home",
           tabBarIcon: ({ focused }) => ({
             type: "sfSymbol",
             name: focused ? "house.fill" : "house",
           }),
-          unstable_headerRightItems: () => [
-            {
-              type: "button",
-              label: "Mac",
-              icon: { type: "sfSymbol", name: "laptopcomputer" },
-              tintColor: link === "offline" ? destructive : undefined,
-              accessibilityLabel:
-                link === "offline" ? "Mac, can't reach it" : "Mac",
-              onPress: () => nav.navigate("Mac"),
-            },
-          ],
         }}
       />
       <Tab.Screen

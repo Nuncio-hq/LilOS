@@ -703,3 +703,172 @@ describe("#264 blocked-on-ask — one waiting state across turn surfaces", () =>
     expect(bubble.waiting).toBeUndefined();
   });
 });
+
+describe("#247 mobile polish — prototype thread details on real data", () => {
+  /* The wire is already right: engine-fake emits diff.patch on
+     tool.completed and cumulative usage on turn.completed. The mobile
+     projection had to carry both through to ui-native. */
+  const patch =
+    "@@ -46,3 +46,6 @@ fn main\n   boot();\n-  old();\n+  next();\n+  next2();\n";
+
+  it("AC-3 an edit step carries the patch — it opens to the coloured diff", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small" }),
+      ev("tool.started", {
+        turnId: "t1",
+        toolCallId: "c1",
+        tool: "patch",
+        input: { path: "a.ts" },
+      }),
+      ev("tool.completed", {
+        turnId: "t1",
+        toolCallId: "c1",
+        tool: "patch",
+        status: "completed",
+        diff: { path: "a.ts", status: "modified", add: 4, del: 1, patch },
+      }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    ]);
+    const entries = mergeThreadEntries([], model, OPTS);
+    const card = entries.at(-1);
+    if (card?.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.steps).toMatchObject([
+      { tool: "patch", arg: "a.ts", add: 4, del: 1, patch, running: false },
+    ]);
+  });
+
+  it("AC-3 a terminal step opens to its output — no patch key on it", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small" }),
+      ev("tool.started", {
+        turnId: "t1",
+        toolCallId: "c2",
+        tool: "terminal",
+        input: { command: "bun test" },
+      }),
+      ev("tool.completed", {
+        turnId: "t1",
+        toolCallId: "c2",
+        tool: "terminal",
+        status: "completed",
+        output: "3 pass, 0 fail",
+      }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    ]);
+    const entries = mergeThreadEntries([], model, OPTS);
+    const card = entries.at(-1);
+    if (card?.kind !== "agent") throw new Error("expected agent entry");
+    const step = card.steps?.find((s) => s.tool === "terminal");
+    expect(step?.output).toBe("3 pass, 0 fail");
+    expect(step?.patch).toBeUndefined();
+  });
+
+  it("AC-4 context fills from the newest turn's usage + the engine window", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("session.started", {
+        agent: "ada",
+        cwd: "~/code/lilos",
+        model: "fake-small",
+      }),
+      ev("turn.started", { turnId: "t1", model: "fake-small" }),
+      ev("turn.completed", {
+        turnId: "t1",
+        stopReason: "end_turn",
+        usage: {
+          input: 40_000,
+          output: 2_000,
+          reasoning: 800,
+          cache: 12_000,
+          contextWindow: 256_000,
+        },
+      }),
+    ]);
+    const detail = toThreadDetail({
+      conversation: conv(),
+      employee: ada,
+      messages: [],
+      model,
+      asks: [],
+      pending: new Set(),
+      now: T0 + 60_000,
+    });
+    expect(detail.context).toEqual({
+      input: 40_000,
+      output: 2_000,
+      reasoning: 800,
+      cache: 12_000,
+      max: 256_000,
+      estimated: false,
+    });
+  });
+
+  it("AC-4 the window falls back to the model's catalog row, else ~", () => {
+    const turn = (t: string, model: string) => [
+      /* The session model the window looks up lives on session.started —
+         the shape the real wire (and engine-fake) always emits. */
+      ev("session.started", { agent: "ada", cwd: "~/code", model }),
+      ev("turn.started", { turnId: t, model }),
+      ev("turn.completed", {
+        turnId: t,
+        stopReason: "end_turn",
+        usage: { input: 10_000, output: 500, reasoning: 0, cache: 0 },
+      }),
+    ];
+    const mk = (
+      events: EngineEvent[],
+      models: {
+        id: string;
+        name: string;
+        provider: string;
+        contextWindow?: number;
+      }[],
+    ) =>
+      toThreadDetail({
+        conversation: conv(),
+        employee: ada,
+        messages: [],
+        model: reduceSessionEvents("sess-1", events),
+        asks: [],
+        pending: new Set(),
+        now: T0 + 60_000,
+        models,
+      });
+    /* Catalog row wins over the guess when the engine reports no window. */
+    expect(
+      mk(turn("t1", "fake-small"), [
+        {
+          id: "fake-small",
+          name: "Fake Small",
+          provider: "fake",
+          contextWindow: 32_768,
+        },
+      ]).context,
+    ).toMatchObject({ max: 32_768, estimated: false });
+    /* Nothing reports it: the ~-labelled estimate (qwen = 262k, else 200k). */
+    expect(mk(turn("t2", "qwen3-coder"), []).context).toMatchObject({
+      max: 262_000,
+      estimated: true,
+    });
+    expect(mk(turn("t3", "claude-x"), []).context).toMatchObject({
+      max: 200_000,
+      estimated: true,
+    });
+  });
+
+  it("AC-4 no usage yet keeps the meter away (no invented numbers)", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "working" }),
+    ]);
+    const detail = toThreadDetail({
+      conversation: conv(),
+      employee: ada,
+      messages: [],
+      model,
+      asks: [],
+      pending: new Set(),
+      now: T0 + 60_000,
+    });
+    expect(detail.context).toBeUndefined();
+  });
+});

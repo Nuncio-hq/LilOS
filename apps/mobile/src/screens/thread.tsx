@@ -393,6 +393,7 @@ export function Thread({
           title={detail?.title || "Thread"}
           state={detail?.state ?? "working"}
           {...(detail?.prs?.length ? { prs: detail.prs } : {})}
+          {...(detail?.context ? { context: detail.context } : {})}
           onPress={() =>
             conv &&
             navigation.navigate("ThreadInfo", { conversationId: conv.id })

@@ -21,6 +21,7 @@ import type {
   ThreadDetail,
   ThreadEntry,
 } from "@lilos/ui-native";
+import { contextWindowOf } from "@lilos/ui-native/model-rules";
 import {
   askReason,
   conversationState,
@@ -520,6 +521,16 @@ export function toThreadDetail(opts: {
         : acc,
     { input: 0, output: 0, reasoning: 0, cache: 0 },
   );
+  /* #247: the ring + Session-info meter read the newest turn's cumulative
+     usage — the same pick the web thread panel makes (#294). Its window
+     resolves through the shared rules: the engine's report first, the
+     catalog row, then the ~-labelled estimate. */
+  const ctxUsage = sessionModel?.turns.at(-1)?.usage;
+  const ctxWindow = contextWindowOf(
+    ctxUsage,
+    conv.model ?? sessionModel?.model,
+    opts.models,
+  );
   return {
     id: conv.id,
     title: conv.title || opts.messages[0]?.text || "",
@@ -559,6 +570,18 @@ export function toThreadDetail(opts: {
     session: conv.engineRef ?? "",
     usage:
       usage && (usage.input || usage.output) ? usageLabel(usage) : undefined,
+    ...(ctxUsage
+      ? {
+          context: {
+            input: ctxUsage.input,
+            output: ctxUsage.output,
+            reasoning: ctxUsage.reasoning ?? 0,
+            cache: ctxUsage.cache ?? 0,
+            max: ctxWindow.tokens,
+            estimated: ctxWindow.estimated,
+          },
+        }
+      : {}),
     jobs,
     ...(opts.prs?.length ? { prs: [...opts.prs] } : {}),
     entries,
