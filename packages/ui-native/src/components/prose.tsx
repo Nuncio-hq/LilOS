@@ -1,10 +1,21 @@
 /* biome-ignore-all lint/suspicious/noArrayIndexKey: static text split into pieces; the order never changes. */
-import { type ReactNode, useEffect, useRef } from "react";
-import { Animated, Text, View } from "react-native";
+import * as Clipboard from "expo-clipboard";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { Animated, Pressable, ScrollView, Text, View } from "react-native";
+import { type CodeSpan, highlight } from "./code-highlight";
+import { Icon, useThemeColor } from "./icon";
+import {
+  columnWidths,
+  langName,
+  type ProseBlock,
+  parseProse,
+} from "./prose-blocks";
 
-/* Agent text: paragraphs, "- " bullets, **bold** and `code` — the small
-   slice of markdown the engine actually sends in short replies. The web
-   renders full markdown (streamdown); this is enough for the prototype. */
+/* Agent text: paragraphs, "- " bullets, **bold**, `code` and fenced code
+   blocks — the slice of markdown the engine actually sends in short
+   replies. The web renders full markdown (streamdown); mobile keeps a
+   bespoke renderer (D-#259) so streaming states stay ours: an unclosed
+   fence is a code block in progress, never raw backticks. */
 export function Prose({
   text,
   size = "base",
@@ -12,58 +23,297 @@ export function Prose({
   text: string;
   size?: "base" | "sm";
 }) {
-  const blocks = closeOpen(text).split(/\n{2,}/);
   const cls =
     size === "sm"
       ? "text-[14.5px] leading-[21px]"
       : "text-[16px] leading-[24px]";
   return (
     <View className="gap-2.5">
-      {blocks.map((b, i) => {
-        const lines = b.split("\n");
-        if (lines.every((l) => /^\s*[-*] /.test(l)))
+      {parseProse(text).map((b, i) => {
+        if (b.kind === "code")
+          return <CodeBlock key={i} block={b} small={size === "sm"} />;
+        if (b.kind === "table")
+          return <TableBlock key={i} block={b} small={size === "sm"} />;
+        if (b.kind === "bullets")
           return (
             <View key={i} className="gap-1.5">
-              {lines.map((l, j) => (
+              {b.items.map((item, j) => (
                 <View key={j} className="flex-row gap-2.5 pr-2">
                   <Text className={`${cls} text-muted-foreground`}>•</Text>
-                  <Inline
-                    text={l.replace(/^\s*[-*] /, "")}
-                    className={`${cls} flex-1`}
-                  />
+                  <Inline text={closeOpen(item)} className={`${cls} flex-1`} />
                 </View>
               ))}
             </View>
           );
-        return <Inline key={i} text={b} className={cls} />;
+        return <Inline key={i} text={closeOpen(b.text)} className={cls} />;
       })}
     </View>
   );
 }
 
 function Inline({ text, className }: { text: string; className: string }) {
+  const accent = useThemeColor("accent-text");
+  const foreground = useThemeColor("foreground");
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+  // Each segment is a sibling Text with its own color — a color class
+  // or style on the parent competes with nested spans and wins.
   return (
-    <Text className={`text-foreground ${className}`}>
+    <Text className={className}>
       {parts.map((p, i) =>
         p.startsWith("**") ? (
-          <Text key={i} className="font-semibold">
+          <Text key={i} className="font-semibold" style={{ color: foreground }}>
             {p.slice(2, -2)}
           </Text>
         ) : p.startsWith("`") ? (
-          <Text key={i} className="font-mono text-[14px] text-accent-text">
+          <Text
+            key={i}
+            className="font-mono text-[14px] text-accent-text"
+            style={{ color: accent }}
+          >
             {p.slice(1, -1)}
           </Text>
         ) : (
-          p
+          <Text key={i} style={{ color: foreground }}>
+            {p}
+          </Text>
         ),
       )}
     </Text>
   );
 }
 
+/* A fenced block: one tinted panel, a single header row (friendly language
+   name left, Copy right — flips to Copied), code in Menlo inside its own
+   horizontal scroller so long lines never push the thread sideways.
+   Long-press anywhere on the code copies it too. */
+function CodeBlock({
+  block,
+  small,
+}: {
+  block: Extract<ProseBlock, { kind: "code" }>;
+  small: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    void Clipboard.setStringAsync(block.code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  const palette = {
+    "code-keyword": useThemeColor("code-keyword"),
+    "code-string": useThemeColor("code-string"),
+    "code-comment": useThemeColor("code-comment"),
+    "code-number": useThemeColor("code-number"),
+    "code-title": useThemeColor("code-title"),
+    "code-attr": useThemeColor("code-attr"),
+    "code-builtin": useThemeColor("code-builtin"),
+    "code-addition": useThemeColor("code-addition"),
+    "code-deletion": useThemeColor("code-deletion"),
+    "code-hunk": useThemeColor("code-hunk"),
+  };
+  const lines = codeLines(highlight(block.code, block.lang));
+  return (
+    <View
+      className="overflow-hidden rounded-[14px] bg-card"
+      style={{ borderCurve: "continuous" }}
+    >
+      <View className="h-8 flex-row items-center justify-between pl-3 pr-2">
+        <Text className="font-mono text-[11px] text-muted-foreground">
+          {langName(block.lang)}
+          {!block.closed && " …"}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={copied ? "Copied" : "Copy code"}
+          onPress={copy}
+          hitSlop={6}
+          className="flex-row items-center gap-1 active:opacity-60"
+        >
+          <Icon
+            name={copied ? "checkmark" : "doc.on.doc"}
+            size={11}
+            tone="muted-foreground"
+          />
+          <Text className="text-[11px] text-muted-foreground">
+            {copied ? "Copied" : "Copy"}
+          </Text>
+        </Pressable>
+      </View>
+      <View className="h-px bg-muted-strong/40" />
+      <ScrollView horizontal bounces={false}>
+        <Pressable onLongPress={copy} accessibilityLabel="Copy code">
+          <View className="px-3 py-2">
+            {lines.map((spans, i) => (
+              <Text
+                key={i}
+                className={`font-mono text-foreground ${
+                  small
+                    ? "text-[12px] leading-[17px]"
+                    : "text-[13px] leading-[19px]"
+                }`}
+              >
+                {spans.length ? (
+                  spans.map((span, j) => (
+                    <Text key={j} style={spanStyle(span, palette)}>
+                      {span.text}
+                    </Text>
+                  ))
+                ) : (
+                  <Text> </Text>
+                )}
+              </Text>
+            ))}
+          </View>
+        </Pressable>
+      </ScrollView>
+    </View>
+  );
+}
+
+/* A GFM table: header row on a muted band, thin separators, columns
+   aligned per the `---:`/`:-:` markers. One horizontal scroller wraps
+   the WHOLE grid and column widths come from columnWidths() — one
+   value per column shared by the header and every row, so dividers
+   line up and scroll as a unit. Beyond the ~14em cap a cell wraps.
+   Text scales with Dynamic Type (RN default). */
+function TableBlock({
+  block,
+  small,
+}: {
+  block: Extract<ProseBlock, { kind: "table" }>;
+  small: boolean;
+}) {
+  const cls = small
+    ? "text-[12.5px] leading-[17px]"
+    : "text-[14px] leading-[20px]";
+  const aligns = block.header.map((_, j) => block.align[j] ?? "left");
+  const widths = columnWidths(block.header, block.rows);
+  return (
+    <ScrollView horizontal bounces={false}>
+      <View
+        className="overflow-hidden rounded-[14px] bg-card"
+        style={{ borderCurve: "continuous" }}
+      >
+        <View className="flex-row bg-muted/50">
+          {block.header.map((cell, j) => (
+            <TableCell
+              key={j}
+              text={cell}
+              align={aligns[j]}
+              cls={cls}
+              width={widths[j]}
+              first={j === 0}
+              head
+            />
+          ))}
+        </View>
+        {block.rows.map((row, i) => (
+          <View key={i} className="flex-row border-t border-muted-strong/30">
+            {row.map((cell, j) => (
+              <TableCell
+                key={j}
+                text={cell}
+                align={aligns[j]}
+                cls={cls}
+                width={widths[j]}
+                first={j === 0}
+              />
+            ))}
+          </View>
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
+function TableCell({
+  text,
+  align,
+  cls,
+  width,
+  first,
+  head,
+}: {
+  text: string;
+  align: "left" | "center" | "right";
+  cls: string;
+  width: number;
+  first: boolean;
+  head?: boolean;
+}) {
+  return (
+    <View
+      className={`px-3 py-2 ${first ? "" : "border-l border-muted-strong/30"}`}
+      style={{ width }}
+    >
+      <Inline
+        text={closeOpen(text)}
+        className={`${cls} ${
+          align === "center"
+            ? "text-center"
+            : align === "right"
+              ? "text-right"
+              : "text-left"
+        } ${head ? "font-semibold" : ""}`}
+      />
+    </View>
+  );
+}
+
+type CodePalette = Record<string, string | undefined>;
+
+function spanStyle(span: CodeSpan, palette: CodePalette) {
+  const style: {
+    color?: string;
+    fontWeight?: "semibold";
+    fontStyle?: "italic";
+  } = {};
+  for (const cls of span.classes) {
+    for (const [match, token] of HLJS_TONES) {
+      if (match.test(cls)) {
+        const color = palette[token];
+        if (color) style.color = color;
+      }
+    }
+    if (cls === "hljs-strong") style.fontWeight = "semibold";
+    if (cls === "hljs-emphasis") style.fontStyle = "italic";
+  }
+  return style;
+}
+
+const HLJS_TONES: [RegExp, string][] = [
+  [/keyword|selector-tag|template-tag|doctag/, "code-keyword"],
+  [/string|regexp|char|symbol|template-string/, "code-string"],
+  [/comment|quote/, "code-comment"],
+  [/number|literal/, "code-number"],
+  [/title|section|name|selector-id|selector-class|selector-attr/, "code-title"],
+  [/attr|attribute|variable|template-variable|params/, "code-attr"],
+  [/built_in|type|link/, "code-builtin"],
+  [/addition/, "code-addition"],
+  [/deletion/, "code-deletion"],
+  // hljs meta in a diff block is the @@ hunk header (#312's muted blue).
+  [/meta|hunk/, "code-hunk"],
+];
+
+/** Flattened highlight spans → per-line span lists (RN <Text> can't be
+    asked to not wrap, so each visual line is its own Text row). */
+function codeLines(spans: CodeSpan[]): CodeSpan[][] {
+  const lines: CodeSpan[][] = [[]];
+  for (const span of spans) {
+    const pieces = span.text.split("\n");
+    pieces.forEach((piece, i) => {
+      if (i > 0) lines.push([]);
+      if (piece) lines[lines.length - 1].push({ ...span, text: piece });
+    });
+  }
+  // A trailing newline would draw one phantom empty row.
+  if (lines.length > 1 && lines[lines.length - 1].length === 0) lines.pop();
+  return lines;
+}
+
 /* Mid-stream the text can end inside **bold** or `code`; drop the dangling
-   opener so the reader never sees raw markers. */
+   opener so the reader never sees raw markers. Fences never reach here —
+   parseProse already owns their content. */
 function closeOpen(text: string) {
   let t = text;
   if ((t.match(/\*\*/g) ?? []).length % 2) {
@@ -79,11 +329,18 @@ function closeOpen(text: string) {
 
 /** Markdown → one plain line, for previews. */
 export function plain(text: string) {
-  return text
+  return parseProse(text)
+    .map((b) => {
+      if (b.kind === "code") return b.code;
+      if (b.kind === "bullets") return b.items.join(" ");
+      if (b.kind === "table") return [...b.header, ...b.rows.flat()].join(" ");
+      return b.text;
+    })
+    .join(" ")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/`([^`]+)`/g, "$1")
-    .replace(/^\s*[-*] /gm, "")
-    .replace(/\s*\n+\s*/g, " ");
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** Soft breathing opacity for live things (Thinking…, a running step). */

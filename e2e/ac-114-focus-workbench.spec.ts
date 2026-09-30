@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { allowAllWhile, expectSettled } from "./helpers/approvals";
 import { wport } from "./ports";
 
 /**
@@ -280,9 +281,7 @@ const sendTurn = async (page: Page, text: string) => {
     timeout: 60_000,
   });
   if ((await turns(page).count()) > 0) {
-    await expect(turns(page).last().locator("[data-turnsettled]")).toBeVisible({
-      timeout: 60_000,
-    });
+    await expectSettled(turns(page).last(), 60_000);
   }
   await send(page, text);
   const mine = page
@@ -312,21 +311,6 @@ const openFocus = async (page: Page) => {
     .click();
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
 };
-
-async function allowAll(page: Page) {
-  for (let i = 0; i < 6; i++) {
-    const b = page.getByRole("button", { name: "Allow once" });
-    if (
-      !(await b
-        .first()
-        .isVisible()
-        .catch(() => false))
-    )
-      return;
-    await b.first().click();
-    await page.waitForTimeout(400);
-  }
-}
 
 const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
 /* The peek panel sits at the conversation URL — end-anchored so it never
@@ -422,37 +406,39 @@ test("AC-2 Focus is the same live conversation: streaming, steps, approvals, mod
   // An edit-ask prompt parks on an approval card; answering it continues the
   // turn. sendTurn waits for the turn above to settle first — its text lands
   // before it ends, and a send into a running turn steers it instead.
-  await sendTurn(page, "Add a release note to the readme");
+  const edit = await sendTurn(page, "Add a release note to the readme");
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
   await page.screenshot({ path: `${SHOTS}/ac-2-approval.png` });
-  await allowAll(page);
+  // Keep answering while the turn finishes — a parked approval can't stall
+  // the footer assert (#298).
+  await allowAllWhile(page, expectSettled(edit));
   await expect(
     page.getByText(/Allowed once|Always allowed/).first(),
   ).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.locator("[data-agentturn]").last()).toContainText(
-    /Done on|Review it|done/i,
-    { timeout: 60_000 },
-  );
+  await expect(edit).toContainText(/Done on|Review it|done/i, {
+    timeout: 60_000,
+  });
   await expect(page.locator("[data-agentturn] [data-streaming]")).toHaveCount(
     0,
     { timeout: 60_000 },
   );
 
   // Esc inside the composer is still the turn's Stop — Focus stays open.
-  await sendTurn(page, "Add another note to the readme");
+  const stopped = await sendTurn(page, "Add another note to the readme");
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
   const box = page.locator("main textarea");
   await box.click();
   await page.keyboard.press("Escape");
-  await expect(page.getByText("Stopped · session.interrupt")).toBeVisible({
-    timeout: 30_000,
-  });
+  // Wait the turn-ended wire condition before asserting the footer chip
+  // (turn.completed -> data-turnsettled), not a wall-clock guess (#257).
+  await expectSettled(stopped);
+  await expect(stopped.getByText("Stopped · session.interrupt")).toBeVisible();
   await expect(page).toHaveURL(FOCUS_URL);
   await page.screenshot({ path: `${SHOTS}/ac-2-stopped.png` });
 });
@@ -493,7 +479,7 @@ test("AC-3 Changes lists uncommitted files with +/− and refreshes while the ag
   await page.screenshot({ path: `${SHOTS}/ac-3-changes.png` });
 
   // Turn ends (allow through); the edits stay listed.
-  await allowAll(page);
+  await allowAllWhile(page, expectSettled(edit));
   await expect(edit).toContainText(/Done on|Review it|done/i, {
     timeout: 60_000,
   });

@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { electronScreenshot, ensureDesktopPayload } from "./helpers/electron";
 import { wport } from "./ports";
 
 /**
@@ -321,16 +322,7 @@ test("AC-7 model display names — picker groups and the turn footer", async ({
 
 test("AC-5 the Electron app menu is named LilOS", async () => {
   test.setTimeout(180_000);
-  const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
-    cwd: desktopDir,
-    env: { ...process.env },
-    stdio: "inherit",
-  });
-  await new Promise<void>((resolve, reject) => {
-    build.once("exit", (c) =>
-      c === 0 ? resolve() : reject(new Error(`desktop build exit ${c}`)),
-    );
-  });
+  await ensureDesktopPayload(desktopDir);
   const portOf = (ws: string) => new URL(ws).port;
   const app = await _electron.launch({
     args:
@@ -351,7 +343,9 @@ test("AC-5 the Electron app menu is named LilOS", async () => {
     await expect(
       win.locator("aside").getByRole("button", { name: /default/i }),
     ).toBeVisible({ timeout: 60_000 });
-    await win.screenshot({ path: `${SHOTS}/ac-5-electron.png` });
+    // captureScreenshot fails if the window hasn't painted yet — wait for
+    // visible+painted and retry.
+    await electronScreenshot(app, win, `${SHOTS}/ac-5-electron.png`);
   } finally {
     await app.close();
   }

@@ -155,17 +155,72 @@ export async function interruptSession(conversationId: string): Promise<void> {
   await relay.request("turns.interrupt", { conversationId });
 }
 
+/* Relay failures worth waiting out — the socket is mid-reconnect, so the
+   answer is held and re-sent instead of dropped on the floor (#298). */
+const TRANSIENT_CODES = new Set([
+  "not_connected",
+  "socket_closed",
+  "timeout",
+  "closed",
+]);
+const ASK_RESPOND_BUDGET_MS = 15_000;
+
+const isTransientRelayError = (e: unknown) =>
+  e instanceof RelayError &&
+  e.code !== undefined &&
+  TRANSIENT_CODES.has(e.code);
+
+/** Resolve once the relay socket reports `ready` again; throw past `deadline`. */
+function waitForRelayReady(deadline: number): Promise<void> {
+  if (relay.state.get() === "ready") return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => {
+        unsub();
+        reject(
+          new RelayError("relay did not reconnect in time", "not_connected"),
+        );
+      },
+      Math.max(0, deadline - Date.now()),
+    );
+    const unsub = relay.state.listen((s) => {
+      if (s !== "ready") return;
+      clearTimeout(timer);
+      unsub();
+      resolve();
+    });
+  });
+}
+
 /** Answer an engine ask (approval or question) surfaced on the relay. */
 export async function respondToRequest(
   askId: string,
   outcome: ApprovalOutcome,
   answer?: string,
 ): Promise<void> {
-  await relay.request("asks.respond", {
-    askId,
-    outcome,
-    ...(answer !== undefined ? { answer } : {}),
-  });
+  const deadline = Date.now() + ASK_RESPOND_BUDGET_MS;
+  for (;;) {
+    try {
+      return await relay.request("asks.respond", {
+        askId,
+        outcome,
+        ...(answer !== undefined ? { answer } : {}),
+      });
+    } catch (e) {
+      // Already resolved (a retry, or another client answered) or gone —
+      // the answer's end state is reached either way.
+      if (
+        e instanceof RelayError &&
+        (e.code === "conflict" || e.code === "not_found")
+      )
+        return;
+      if (!isTransientRelayError(e) || Date.now() >= deadline) {
+        say("Couldn't send that answer — try again.");
+        throw e;
+      }
+      await waitForRelayReady(deadline);
+    }
+  }
 }
 
 export async function renameConversation(

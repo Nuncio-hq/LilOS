@@ -1381,6 +1381,19 @@ export class Harness {
         sessionId: binding.sessionId,
         requestId,
       });
+      /* The relay dedupes a replayed open, and it can come back already
+         resolved: the click landed while our socket was down, so the
+         ask.resolved event never reached us (fire-and-forget). Forward it
+         or the engine waits forever on an answer that already happened
+         (#298). */
+      if (result.ask.state === "resolved") {
+        void this.onAskResolved(result.ask).catch((error) =>
+          this.opts.log.warn("resolved ask forward failed", {
+            askId: result.ask.id,
+            error: String(error),
+          }),
+        );
+      }
     };
     try {
       await open();
@@ -1458,7 +1471,14 @@ export class Harness {
       }
       case "ask.resolved": {
         const parsed = AskResolvedEvent.safeParse(params);
-        if (parsed.success) void this.onAskResolved(parsed.data.ask);
+        if (parsed.success) {
+          void this.onAskResolved(parsed.data.ask).catch((error) =>
+            this.opts.log.warn("ask respond forward failed", {
+              askId: parsed.data.ask.id,
+              error: String(error),
+            }),
+          );
+        }
         break;
       }
       case "conversation.updated": {
@@ -1778,7 +1798,13 @@ export class Harness {
     this.requestByAsk.delete(ask.id);
     this.askByRequest.delete(`${rec.sessionId}:${rec.requestId}`);
     const conn = this.engine;
-    if (!conn) return;
+    if (!conn) {
+      // Engine detached mid-forward: keep the mapping so the next
+      // reconcileAsks can retry — dropping it parks the turn forever.
+      this.requestByAsk.set(ask.id, rec);
+      this.askByRequest.set(`${rec.sessionId}:${rec.requestId}`, ask.id);
+      return;
+    }
     try {
       await conn.request("request.respond", {
         sessionId: rec.sessionId,
@@ -1787,7 +1813,12 @@ export class Harness {
         ...(ask.answer ? { answer: ask.answer } : {}),
       });
     } catch (error) {
-      if (engineErrorCode(error) !== REQUEST_NOT_FOUND) throw error;
+      if (engineErrorCode(error) !== REQUEST_NOT_FOUND) {
+        // Same: a failed forward stays mapped so reconcileAsks retries it.
+        this.requestByAsk.set(ask.id, rec);
+        this.askByRequest.set(`${rec.sessionId}:${rec.requestId}`, ask.id);
+        throw error;
+      }
       this.opts.log.warn("engine request already gone", {
         requestId: rec.requestId,
       });

@@ -5,6 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { allowAll, allowAllWhile, expectSettled } from "./helpers/approvals";
+import { electronScreenshot, ensureDesktopPayload } from "./helpers/electron";
 import { wport } from "./ports";
 
 /**
@@ -189,22 +191,6 @@ const send = async (page: Page, text: string) => {
 const employeeIdFromUrl = (page: Page) =>
   decodeURIComponent(page.url().split("/dm/")[1].split("/")[0]);
 
-/** Answer every approval card on screen ("Allow once"), up to 6 rounds. */
-async function allowAll(page: Page) {
-  for (let i = 0; i < 6; i++) {
-    const b = page.getByRole("button", { name: "Allow once" });
-    if (
-      !(await b
-        .first()
-        .isVisible()
-        .catch(() => false))
-    )
-      return;
-    await b.first().click();
-    await page.waitForTimeout(400);
-  }
-}
-
 test("AC-1 first run auto-hires the `default` engine profile", async ({
   page,
 }) => {
@@ -241,6 +227,10 @@ test("AC-3 DM message opens a session; reply streams with reasoning + tool steps
   test.setTimeout(120_000);
   await dmDefault(stackA, page);
   await send(page, "Say hello then list files");
+  // sendDm resolves messages.post then navigates to the conversation — the
+  // URL change is the wire signal that the session exists, so a relay that's
+  // slow under load can't race the first turn assert.
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
   // The new session's live turn streams into the thread as one AgentTurn,
   // with a reasoning block and collapsed tool steps.
   const turn = page.locator("[data-agentturn]").first();
@@ -301,16 +291,15 @@ test("AC-5 typing mid-turn steers (capability `steer`); stop interrupts", async 
     timeout: 30_000,
   });
   await send(page, "also mention bananas");
-  await allowAll(page);
+  // Keep answering while the steered turn finishes — an approval the wait
+  // would out-sleep can't park it (#298).
+  const steered = page.locator("[data-agentturn]").last();
+  await allowAllWhile(page, expectSettled(steered));
   // The steer lands inside the turn it interrupted (turn.steered chip).
-  await expect(page.locator("[data-agentturn]").last()).toContainText(
-    /bananas/i,
-    { timeout: 90_000 },
-  );
-  await expect(page.locator("[data-agentturn]").last()).toContainText(
-    /Done on|Review it/,
-    { timeout: 90_000 },
-  );
+  await expect(steered).toContainText(/bananas/i, { timeout: 30_000 });
+  await expect(steered).toContainText(/Done on|Review it/, {
+    timeout: 30_000,
+  });
   await page.screenshot({ path: `${SHOTS}/ac-5-steer.png` });
 
   // Stop: new conversation, then ■ while the turn runs.
@@ -320,9 +309,11 @@ test("AC-5 typing mid-turn steers (capability `steer`); stop interrupts", async 
     timeout: 30_000,
   });
   await page.getByRole("button", { name: "Stop" }).click();
-  await expect(page.getByText(/Stopped · session.interrupt/)).toBeVisible({
-    timeout: 30_000,
-  });
+  // Wait the turn-ended wire condition before asserting the footer chip
+  // (turn.completed -> data-turnsettled), not a wall-clock guess (#257).
+  const stopped = page.locator("[data-agentturn]").last();
+  await expectSettled(stopped);
+  await expect(stopped.getByText(/Stopped · session.interrupt/)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-5-stopped.png` });
 });
 
@@ -346,15 +337,13 @@ test("AC-5b without the `steer` capability, mid-turn typing queues", async ({
     await expect(page.getByText("Approval needed").first()).toBeVisible({
       timeout: 60_000,
     });
-    await allowAll(page);
+    // The queued turn can ask again — keep answering until IT settles
+    // (#298 AC-1).
+    const queued = page.locator("[data-agentturn]").nth(1);
+    await allowAllWhile(page, expectSettled(queued));
     // The queued message still runs — as the next turn in the same thread.
-    await expect(page.locator("[data-agentturn]")).toHaveCount(2, {
-      timeout: 120_000,
-    });
-    await expect(page.locator("[data-agentturn]").last()).toContainText(
-      /bananas/i,
-      { timeout: 90_000 },
-    );
+    await expect(page.locator("[data-agentturn]")).toHaveCount(2);
+    await expect(queued).toContainText(/bananas/i, { timeout: 30_000 });
     await page.screenshot({ path: `${SHOTS}/ac-5b-queue.png` });
   } finally {
     await stackB.stop();
@@ -397,8 +386,12 @@ test("AC-7 real-app build: every visible control has a working handler", async (
   page,
 }) => {
   test.setTimeout(300_000);
-  // vite build + preview — the shipped bundle, not the dev server.
-  const build = spawn("bun", ["run", "build"], {
+  // vite build + preview — the shipped bundle, not the dev server. Build
+  // into a per-run tmpdir: parallel workers sharing apps/web/dist race each
+  // other's emptyDir (ENOTEMPTY under --repeat-each/--workers).
+  const outDir = mkdtempSync(path.join(tmpdir(), "lilos-e2e-dist-"));
+  const vite = path.join(webDir, "node_modules", ".bin", "vite");
+  const build = spawn(vite, ["build", "--outDir", outDir], {
     cwd: webDir,
     env: { ...process.env },
     stdio: "inherit",
@@ -410,8 +403,17 @@ test("AC-7 real-app build: every visible control has a working handler", async (
   });
   const port = wport(5246);
   const preview = spawn(
-    path.join(webDir, "node_modules", ".bin", "vite"),
-    ["preview", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
+    vite,
+    [
+      "preview",
+      "--outDir",
+      outDir,
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(port),
+      "--strictPort",
+    ],
     {
       cwd: webDir,
       env: {
@@ -487,16 +489,7 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
   test.setTimeout(180_000);
   // Build the Electron payload (main + preload + status page), then launch
   // against stackA — the shell points its app window at the dev server.
-  const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
-    cwd: desktopDir,
-    env: { ...process.env },
-    stdio: "inherit",
-  });
-  await new Promise<void>((resolve, reject) => {
-    build.once("exit", (c) =>
-      c === 0 ? resolve() : reject(new Error(`desktop build exit ${c}`)),
-    );
-  });
+  await ensureDesktopPayload(desktopDir);
   const portOf = (ws: string) => new URL(ws).port;
   const app = await _electron.launch({
     // Linux CI has no suid chrome-sandbox helper; disable it there only.
@@ -517,21 +510,10 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
     await expect(
       win.locator("aside").getByRole("button", { name: /default/i }),
     ).toBeVisible({ timeout: 60_000 });
-    // Page.captureScreenshot intermittently fails on Electron under Xvfb load
-    // (CI: "Unable to capture screenshot") — retry the artifact write a few
-    // times. The assertion above already proved the AC; this is the evidence.
-    let shotErr: unknown;
-    for (let i = 0; i < 4; i++) {
-      try {
-        await win.screenshot({ path: `${SHOTS}/ac-8-electron.png` });
-        shotErr = undefined;
-        break;
-      } catch (e) {
-        shotErr = e;
-        await win.waitForTimeout(500);
-      }
-    }
-    if (shotErr) throw shotErr;
+    // Page.captureScreenshot intermittently fails on Electron under load
+    // (CI: "Unable to capture screenshot") — wait for visible+painted and
+    // retry. The assertion above already proved the AC; this is the evidence.
+    await electronScreenshot(app, win, `${SHOTS}/ac-8-electron.png`);
   } finally {
     await app.close();
   }
