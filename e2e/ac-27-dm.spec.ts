@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { allowAll, allowAllWhile, expectSettled } from "./helpers/approvals";
 import { wport } from "./ports";
 
 /**
@@ -189,22 +190,6 @@ const send = async (page: Page, text: string) => {
 const employeeIdFromUrl = (page: Page) =>
   decodeURIComponent(page.url().split("/dm/")[1].split("/")[0]);
 
-/** Answer every approval card on screen ("Allow once"), up to 6 rounds. */
-async function allowAll(page: Page) {
-  for (let i = 0; i < 6; i++) {
-    const b = page.getByRole("button", { name: "Allow once" });
-    if (
-      !(await b
-        .first()
-        .isVisible()
-        .catch(() => false))
-    )
-      return;
-    await b.first().click();
-    await page.waitForTimeout(400);
-  }
-}
-
 test("AC-1 first run auto-hires the `default` engine profile", async ({
   page,
 }) => {
@@ -301,16 +286,15 @@ test("AC-5 typing mid-turn steers (capability `steer`); stop interrupts", async 
     timeout: 30_000,
   });
   await send(page, "also mention bananas");
-  await allowAll(page);
+  // Keep answering while the steered turn finishes — an approval the wait
+  // would out-sleep can't park it (#298).
+  const steered = page.locator("[data-agentturn]").last();
+  await allowAllWhile(page, expectSettled(steered));
   // The steer lands inside the turn it interrupted (turn.steered chip).
-  await expect(page.locator("[data-agentturn]").last()).toContainText(
-    /bananas/i,
-    { timeout: 90_000 },
-  );
-  await expect(page.locator("[data-agentturn]").last()).toContainText(
-    /Done on|Review it/,
-    { timeout: 90_000 },
-  );
+  await expect(steered).toContainText(/bananas/i, { timeout: 30_000 });
+  await expect(steered).toContainText(/Done on|Review it/, {
+    timeout: 30_000,
+  });
   await page.screenshot({ path: `${SHOTS}/ac-5-steer.png` });
 
   // Stop: new conversation, then ■ while the turn runs.
@@ -320,9 +304,11 @@ test("AC-5 typing mid-turn steers (capability `steer`); stop interrupts", async 
     timeout: 30_000,
   });
   await page.getByRole("button", { name: "Stop" }).click();
-  await expect(page.getByText(/Stopped · session.interrupt/)).toBeVisible({
-    timeout: 30_000,
-  });
+  // Wait the turn-ended wire condition before asserting the footer chip
+  // (turn.completed -> data-turnsettled), not a wall-clock guess (#257).
+  const stopped = page.locator("[data-agentturn]").last();
+  await expectSettled(stopped);
+  await expect(stopped.getByText(/Stopped · session.interrupt/)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-5-stopped.png` });
 });
 
@@ -346,15 +332,13 @@ test("AC-5b without the `steer` capability, mid-turn typing queues", async ({
     await expect(page.getByText("Approval needed").first()).toBeVisible({
       timeout: 60_000,
     });
-    await allowAll(page);
+    // The queued turn can ask again — keep answering until IT settles
+    // (#298 AC-1).
+    const queued = page.locator("[data-agentturn]").nth(1);
+    await allowAllWhile(page, expectSettled(queued));
     // The queued message still runs — as the next turn in the same thread.
-    await expect(page.locator("[data-agentturn]")).toHaveCount(2, {
-      timeout: 120_000,
-    });
-    await expect(page.locator("[data-agentturn]").last()).toContainText(
-      /bananas/i,
-      { timeout: 90_000 },
-    );
+    await expect(page.locator("[data-agentturn]")).toHaveCount(2);
+    await expect(queued).toContainText(/bananas/i, { timeout: 30_000 });
     await page.screenshot({ path: `${SHOTS}/ac-5b-queue.png` });
   } finally {
     await stackB.stop();
