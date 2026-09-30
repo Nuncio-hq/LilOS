@@ -1,8 +1,14 @@
 /* Shared agent-chat building blocks — THE chat with an agent. Both the thread panel (ThreadView, also used
-   for DM sessions) and the Focus workbench (AgentTurn / FocusComposer) render steers, the stopped-queue tray,
-   and the running-state composer hints from here, so the two surfaces can never drift. Chat is the important
+   for DM sessions) and the Focus workbench (AgentTurn / FocusComposer) render steers, the waiting and
+   not-sent trays, and the running-state composer hints from here, so the two surfaces can never drift. Chat is the important
    part; everything else inherits it. */
-import { CheckIcon, CircleStopIcon, ClockIcon, Trash2Icon } from "lucide-react";
+import {
+  CheckIcon,
+  CircleStopIcon,
+  ClockIcon,
+  PencilIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { useEffect } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 import {
@@ -14,10 +20,12 @@ import {
 import { cn } from "../lib/utils";
 
 /* Steer is a declared engine capability (Engine protocol: session.steer), not a constant: the host
-   reads describe().capabilities once and passes `steer` to ThreadView/FocusView. When the engine
-   declares it, a mid-turn send lands in the running turn at the next tool boundary (pending chip →
-   landed row); without it, mid-turn sends queue in the QueuedTray and run as the next prompt — no
-   steer affordance renders (issue #9). Not: a capability toggle in the composer. */
+   reads describe().capabilities once and passes `steer` to ThreadView/FocusView. A message sent while
+   the turn runs waits in the QueuedTray above the composer either way — the conversation only ever
+   shows what the agent has actually read. With `steer` it joins the running turn at the next tool
+   boundary (and becomes a landed "{by} steered" row inside that turn); without it, or if the turn
+   ends first, it runs as the next prompt (issue #9). Not: a capability toggle in the composer; not:
+   pending chips inside the live turn (they read as if the agent were already answering them). */
 
 /* Strip markdown markers for chips/trays (single copy shared by the app and these components). */
 export const plain = (s: string) =>
@@ -26,74 +34,48 @@ export const plain = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-/* One steer the user sent into a running turn, in one of its two states — same shape in both, so the chip
-   that waits is recognisably the same object as the row that landed:
-   · pending: waiting at the bottom of the live turn (dashed border, clock) — session.steer accepted, not
-     yet delivered.
-   · landed: applied at a tool boundary inside the turn (solid border, check).
-   Right-aligned and labelled with the user's name so it reads as their message inside the agent's turn,
-   not agent output. Solid amber-100 + amber-950 text keeps the chip AA-readable (the old /40 bg with
-   70% text was not). */
+/* One steer that LANDED inside a running turn: applied at a tool boundary, so it sits in the turn at
+   that point. Right-aligned and labelled with the user's name so it reads as their message inside the
+   agent's turn, not agent output. Solid amber-100 + amber-950 text keeps the chip AA-readable. While a
+   steer still waits it lives in the QueuedTray, never here. */
 export function SteerRow({
   text,
-  state,
   by,
 }: {
   text: string;
-  state: "pending" | "landed";
   /** The human who steered — the label reads "{by} steered" (#118). */
   by: string;
 }) {
-  const waiting = state === "pending";
   return (
     <div
-      data-steerpending={waiting || undefined}
-      data-steerstate={state}
+      data-steerstate="landed"
       className={cn(
         // mt-2 keeps the chip clearly separated from the agent's text above it — it must never read
-        // as part of the agent's output (issue #15). Applies to pending chips and landed rows alike.
-        "ml-auto mt-2 flex w-fit max-w-full items-start gap-1.5 rounded-md border bg-amber-100 px-2 py-1 text-amber-950 text-xs",
-        waiting
-          ? "border-dashed border-amber-300"
-          : "border-solid border-amber-300",
+        // as part of the agent's output (issue #15).
+        "ml-auto mt-2 flex w-fit max-w-full items-start gap-1.5 rounded-md border border-amber-300 border-solid bg-amber-100 px-2 py-1 text-amber-950 text-xs",
       )}
     >
-      {waiting ? (
-        <ClockIcon className="mt-0.5 size-3 shrink-0 animate-pulse text-amber-700" />
-      ) : (
-        <CheckIcon className="mt-0.5 size-3 shrink-0 text-emerald-700" />
-      )}
-      <span className="shrink-0 font-semibold">
-        {waiting ? `${by} steers` : `${by} steered`}
-      </span>
+      <CheckIcon className="mt-0.5 size-3 shrink-0 text-emerald-700" />
+      <span className="shrink-0 font-semibold">{`${by} steered`}</span>
       <span className="min-w-0">{plain(text)}</span>
     </div>
   );
 }
 
-/* Steers of one agent turn: landed rows, then (only while the turn is live) the chips waiting to land.
-   Used by the thread panel and Focus identically. */
+/* Landed steers of one agent turn. Used by the thread panel and Focus identically. */
 export function SteerRows({
   steers,
-  pending,
-  live,
   by,
 }: {
   steers?: string[];
-  pending: string[];
-  live?: boolean;
   /** The human who steered — shown on each row (#118). */
   by: string;
 }) {
   return (
     <>
       {(steers ?? []).map((s, k) => (
-        <SteerRow key={k} text={s} state="landed" by={by} />
+        <SteerRow key={k} text={s} by={by} />
       ))}
-      {live &&
-        pending.map((s, k) => (
-          <SteerRow key={`p${k}`} text={s} state="pending" by={by} />
-        ))}
     </>
   );
 }
@@ -193,33 +175,51 @@ export function NotSentTray({
   );
 }
 
-/* Messages typed while the employee works on an engine WITHOUT the steer capability (issue #9):
-   they cannot land mid-turn, so they queue and auto-send as the next prompt when the turn ends —
-   the same "typing mid-turn queues" behavior the wire-level not_running path needs. Unlike the
-   not-sent tray there is no Send action (sending now is impossible mid-turn); Remove is the only
-   per-item control. Amber, like the pending steer chips: same "waiting on the turn" family. */
+/* Messages sent while the employee works that it has NOT read yet — one tray above the composer for
+   every engine, so a waiting message never shows up in the conversation as if it were being answered.
+   · steer declared: each joins the running turn at the next step (then shows as a landed steer row
+     inside that turn); if the turn ends first it runs next instead — a message is never lost.
+   · no steer: they run in order, one prompt each, when the turn ends (issue #9).
+   Edit pulls an item back into the composer (it leaves the queue); Remove drops it. Neither is a Send:
+   sending now is impossible mid-turn — ■ stops the turn, and anything still here moves to the not-sent
+   tray. Amber: the "waiting on the turn" family (the landed steer rows share it). */
 export function QueuedTray({
   items,
+  steer = false,
+  name = "The employee",
   onRemove,
+  onEdit,
 }: {
   items: string[];
-  /* Renders only with its handler, like NotSentTray. */
+  /** Engine declared session.steer — changes when each item gets read. */
+  steer?: boolean;
+  /** Employee name for the header ("Builder hasn't read these yet"). */
+  name?: string;
+  /* Each action renders only with its handler, like NotSentTray. */
   onRemove?: (i: number) => void;
+  onEdit?: (i: number) => void;
 }) {
   if (!items.length) return null;
+  const one = items.length === 1;
   return (
     <div
       className="mb-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs"
       data-queued
+      data-queued-mode={steer ? "steer" : "next"}
     >
-      <div className="mb-1 flex items-center gap-1.5 font-medium text-amber-900">
-        <ClockIcon className="size-3.5 shrink-0" />
-        {items.length} queued · {items.length === 1 ? "sends" : "send"} when
-        this turn ends
+      <div className="flex items-center gap-1.5 font-medium text-amber-900">
+        <ClockIcon className="size-3.5 shrink-0 animate-pulse" />
+        {items.length} waiting · {name} hasn&apos;t read {one ? "it" : "them"}{" "}
+        yet
+      </div>
+      <div className="mb-1 pl-5 text-[11px] text-amber-800" data-queued-when>
+        {steer
+          ? `${one ? "Lands" : "Each lands"} at the next step of this turn, or runs next`
+          : `${one ? "Runs" : "Run in order"} when this turn ends`}
       </div>
       <ul>
         {items.map((q, i) => (
-          <li key={i} className="flex items-center gap-2 py-0.5">
+          <li key={i} className="group/q flex items-center gap-2 py-0.5">
             <span className="shrink-0 font-mono text-[10px] text-amber-700">
               {i + 1}
             </span>
@@ -229,8 +229,28 @@ export function QueuedTray({
             >
               {plain(q)}
             </span>
-            {onRemove && (
-              <TooltipProvider>
+            <TooltipProvider>
+              {onEdit && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        onClick={() => onEdit(i)}
+                        aria-label="Edit"
+                        data-queued-edit={i}
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-900"
+                      />
+                    }
+                  >
+                    <PencilIcon className="size-3.5" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Edit · moves it back to the box
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {onRemove && (
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -247,8 +267,8 @@ export function QueuedTray({
                   </TooltipTrigger>
                   <TooltipContent>Remove</TooltipContent>
                 </Tooltip>
-              </TooltipProvider>
-            )}
+              )}
+            </TooltipProvider>
           </li>
         ))}
       </ul>

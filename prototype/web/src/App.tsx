@@ -40,6 +40,7 @@ import {
   type HumanFn,
   type MessageHit,
   type Msg,
+  type WbTab,
   type OsEditor,
   type Project,
   type Reply,
@@ -309,6 +310,24 @@ const TICKETS: TicketRow[] = [
   { id: "LIL-2", title: "Relay event log schema", status: "Review", who: "reviewer", ch: "engineering", branch: "lil-2-event-log" },
 ]
 
+/* #305: a step output that is one very long unbroken token (compact JSON like
+   execute_code returns) — it and the other long-text surfaces beside it
+   (long input value, long path, long terminal line) must stay inside the
+   Tool card instead of running the chat column out sideways. */
+const LONG_JSON = JSON.stringify({
+  ok: true,
+  reused: false,
+  execution_count: 1,
+  state_reset: false,
+  stdout_truncated: false,
+  checks: Array.from({ length: 40 }, (_, i) => ({
+    name: `probe.${i}`,
+    ms: i * 3,
+    ok: true,
+    detail: `relay.socket.${"x".repeat(30)}.${i}`,
+  })),
+})
+
 /* DM = private 1:1 with an employee. Every top-level message starts a NEW Hermes session;
    the employee answers in that message's thread, and every follow-up in the thread goes to the same session. */
 const DM_FEEDS: Record<string, Msg[]> = {
@@ -324,6 +343,13 @@ const DM_FEEDS: Record<string, Msg[]> = {
             steps: [
               { tool: "search_files", input: { pattern: "WebSocketServer", path: "apps/relay" }, output: "0 matches" },
               { tool: "read_file", input: { path: "packages/contracts/src/envelope.ts" }, output: "58 lines · seq, kind, body" },
+              {
+                tool: "execute_code",
+                input: { code: "relay.probe(deep=true)", trace: `t-${"deadbeef".repeat(300)}` },
+                output: LONG_JSON,
+              },
+              { tool: "read_file", input: { path: `apps/relay/${"deep/".repeat(45)}socket.ts` }, output: "12 lines" },
+              { tool: "terminal", input: { command: "openssl dgst -sha256 relay.tar" }, output: `SHA2-256(relay.tar)= ${"9f4a2c7e1b8d35f0".repeat(150)}` },
             ],
             text: "Three things block it:\n\n1. **Relay has no socket yet.** `apps/relay` is an empty package.\n2. **No auth handshake.** The envelope has `seq` but no member token.\n3. **No harness package.** Nothing dials out yet.\n\n(1) and (2) are one ticket. (3) is its own.",
           },
@@ -451,9 +477,81 @@ const imageBytes = (f: AttachedFile) => {
   else if (b64.endsWith("=")) n -= 1
   return n
 }
+/** Oscar's 7-block code sample (#307). Kept identical to the copy in
+    `packages/engine-fake/src/script.ts` — update both together. */
+const CODEBLOCKS_SAMPLE = `Here is the code-block fixture — seven shapes in one reply.
+
+A typed fence first, with a dimmed comment:
+
+\`\`\`ts
+// encode/decode helpers for the relay envelope
+import { z } from "zod";
+
+const Frame = z.object({ seq: z.number().int(), body: z.string() });
+type Frame = z.infer<typeof Frame>;
+
+export const encodeFrame = (f: Frame): string => JSON.stringify(f); // one frame per line
+\`\`\`
+
+Python, the ops-script twin:
+
+\`\`\`python
+# same envelope, for the ops scripts
+import json
+
+def encode_frame(seq: int, body: str) -> str:
+    """One frame per line, compact separators."""
+    return json.dumps({"seq": seq, "body": body}, separators=(",", ":"))
+\`\`\`
+
+Bash:
+
+\`\`\`bash
+bun run relay --port 4577 && curl -s localhost:4577/health
+\`\`\`
+
+The payload the relay logs is a single unbroken line — it must scroll inside the block, never the column:
+
+\`\`\`json
+{"seq":1042,"kind":"msg","channel":"dm-builder","from":"builder","to":"ada","text":"envelope contract looks good","attachments":[],"meta":{"engine":"fake","tier":"normal","trace":"9f3ac2e1"},"at":1759128000000,"checksum":"sha256:aa91f0e3c9b2d4a5f6e7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9"}
+\`\`\`
+
+This fence is full of markdown-looking text — it has to stay literal:
+
+\`\`\`markdown
+## Not a real heading
+- **not bold** and \`not code\`
+| tables | don't | render |
+\`\`\`
+
+    this is just an indented block with no fence at all
+    four spaces in, three lines, monospace, unstyled
+
+And the patch shape — red and green line backgrounds:
+
+\`\`\`diff
+@@ -8,7 +8,9 @@ export const encodeFrame = (f: Frame): string =>
+   const frame = JSON.stringify(f);
+-  return frame.replace(/\\n/g, " ");
++  // frames must stay one-per-line
++  if (frame.includes("\\n")) throw new Error("newline in frame");
++  return frame;
+\`\`\`
+`
+
 function scriptFor(empId: string, prompt: string, followUp = false, branch?: string, repo = "Nuncio-hq/LilOS", cwd?: string, images?: AttachedFile[]): Script {
   const q = prompt.replace(/\*\*/g, "").replace(/@\w+\s*/g, "").trim().replace(/[?.!]+$/, "")
   const tail = cwd && branch ? `I'm in \`${cwd}\` on ⎇ \`${branch}\`. Tell me what to change and I'll edit there.` : "Still read-only on `main`; nothing edited yet."
+  /* `codeblocks` — the desktop code-block fixture (#307); identical copy in
+     packages/engine-fake/src/script.ts. Checked before EDIT_ASK so phrasing
+     like "create the codeblocks sample" still routes here. */
+  if (/\bcode ?blocks?\b/i.test(q)) {
+    return {
+      reasoning: `Code-block rendering check — answer with the 7-block sample: a typed fence, python, bash, a long unbroken JSON line, markdown-looking text in a fence, an unlabelled indented block and a diff.`,
+      steps: [],
+      text: CODEBLOCKS_SAMPLE,
+    }
+  }
   // Issue #31: a prompt carrying images answers about them first — the reply names the
   // attachment (name, type, bytes) so Oscar can see the image reached the engine.
   if (images?.length) {
@@ -571,6 +669,8 @@ export default function App() {
   // #138 AC-3: search hit opened → thread scrolls to this message id, flashes it.
   const [scrollTo, setScrollTo] = useState<string | null>(null)
   const [focus, setFocus] = useState(false)
+  // Workbench tab Focus opens on when a thread-panel link asked for one (#317).
+  const [focusTab, setFocusTab] = useState<WbTab | undefined>()
   const [panelTab, setPanelTab] = useState<"thread" | "employee" | "tickets">("thread")
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 1280)
   const [navOpen, setNavOpen] = useState(false)
@@ -610,8 +710,8 @@ export default function App() {
   // the turn loop applies it at the next tool boundary; without it the buffer IS the queue — it
   // auto-runs as the next prompt when the turn ends. Either way a mid-turn send is never lost.
   const steerBuf = useRef<Record<string, string[]>>({})
-  // Mirror of steerBuf in React state so a pending steer renders immediately inside the running turn
-  // (as a "Steer pending" chip where the "Oscar steered" row will appear). steerBuf stays the async
+  // Mirror of steerBuf in React state so a waiting message shows at once in the tray above the composer
+  // (it moves into the turn as an "Oscar steered" row only when it lands). steerBuf stays the async
   // source of truth for the turn loop; every mutation goes through setSteerBuf to keep the two in sync.
   const [pendingSteers, setPendingSteers] = useState<Record<string, string[]>>({})
   const setSteerBuf = (rootId: string, list: string[]) => {
@@ -1411,7 +1511,8 @@ export default function App() {
       thread={{ ...openThread.thread, replies: openThread.thread.replies.map((r, i) => ({ ...r, id: r.id ?? `p-${i}` })) }}
       channel={channel}
       emp={emp} human={human} resolved={resolved} setResolved={setResolved}
-      onFocus={() => setFocus(!focus)}
+      onFocus={() => { setFocusTab(undefined); setFocus(!focus) }}
+      onOpenTab={(t) => { setFocusTab(t); setFocus(true) }}
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
       running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
       draft={threadDraft} onDraftChange={setThreadDraft}
@@ -1482,6 +1583,7 @@ export default function App() {
           // A real harness attach (?surfaces=…) keeps its live Preview tab; the
           // LilOS Browser (#214) replaces it only in the mock prototype.
           browser={realSurfaces ? undefined : threadBrowser(openThread.id)}
+          initialTab={focusTab}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
         />
       ) : (

@@ -59,7 +59,7 @@ test("Channel: @mention opens a thread and the employee replies", async ({
   expect(errors).toEqual([]);
 });
 
-test("Steer mid-turn: 'Oscar steers' chip lands as 'Oscar steered'", async ({
+test("Steer mid-turn: waits in the tray, then lands in the turn as 'Oscar steered'", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -71,11 +71,14 @@ test("Steer mid-turn: 'Oscar steers' chip lands as 'Oscar steered'", async ({
   await expect(steer).toBeVisible({ timeout: 15_000 });
   await steer.fill("also check the replay window");
   await steer.press("Enter");
-  await expect(page.locator('[data-steerstate="pending"]')).toBeVisible();
-  // Delivered at the next tool boundary inside the same turn.
+  // Not read yet: it waits above the composer, never inside the turn.
+  const tray = page.locator('[data-queued][data-queued-mode="steer"]');
+  await expect(tray).toContainText("also check the replay window");
+  // Delivered at the next tool boundary inside the same turn; the tray empties.
   await expect(page.locator('[data-steerstate="landed"]')).toBeVisible({
     timeout: 30_000,
   });
+  await expect(tray).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -90,7 +93,7 @@ test("Stop mid-turn: undelivered steer waits in the not-sent tray", async ({
   await expect(steer).toBeVisible({ timeout: 15_000 });
   await steer.fill("hold on, do not open a PR yet");
   await steer.press("Enter");
-  await expect(page.locator('[data-steerstate="pending"]')).toBeVisible();
+  await expect(page.locator("[data-queued]")).toBeVisible();
   // ■ before the steer hits a tool boundary → it must NOT be lost: it goes to the tray.
   await page.getByRole("button", { name: "Stop" }).click();
   await expect(page.locator("[data-notsent]")).toBeVisible({ timeout: 10_000 });
@@ -132,9 +135,7 @@ async function stopWithTrayInPanel(page: Page) {
   await expect(steer).toBeVisible({ timeout: 15_000 });
   await steer.fill("keep it short");
   await steer.press("Enter");
-  await expect(
-    panel.locator('[data-steerstate="pending"]').first(),
-  ).toBeVisible();
+  await expect(panel.locator("[data-queued]").first()).toBeVisible();
   await panel.getByRole("button", { name: "Stop" }).click();
   await expect(panel.locator("[data-notsent]")).toBeVisible({
     timeout: 10_000,

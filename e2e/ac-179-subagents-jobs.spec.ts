@@ -277,15 +277,23 @@ test("AC-1 a delegate turn shows one live row per helper; opening a row shows br
   await send(page, "delegate the relay scan to subagents");
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
 
-  const block = page.locator("[data-subagents]").last();
-  await expect(block).toBeVisible({ timeout: 60_000 });
+  /* #317: in Focus the turn shows one "N subagents · Open" link; the rows live
+     on Workbench → Subagents, which comes forward while the turn spins them off. */
+  await expect(page.locator("[data-subagents-link]").last()).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.locator("[data-subagents-panel]")).toBeVisible({
+    timeout: 60_000,
+  });
   // First live row streams in — reload mid-turn right now.
   await expect(
     page.locator("[data-subagent][data-status='running']").first(),
   ).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-1-live.png` });
   await page.reload();
-  const replayed = page.locator("[data-subagents]").last();
+  // After a reload the turn's link opens the tab.
+  await page.locator("[data-subagents-link]").last().click({ timeout: 60_000 });
+  const replayed = page.locator("[data-subagents-panel]");
   await expect(replayed).toBeVisible({
     timeout: 60_000,
   });
@@ -300,18 +308,19 @@ test("AC-1 a delegate turn shows one live row per helper; opening a row shows br
   await expect(
     replayed.locator("[data-subagent][data-status='failed']"),
   ).toHaveCount(1);
-  await expect(
-    page
-      .locator("[data-subagents] .text-red-600")
-      .filter({ hasText: /failed/ }),
-  ).toBeVisible();
+  await expect(page.locator("[data-subagents-link]").last()).toContainText(
+    "1 failed",
+  );
   // Durations render on finished rows.
   await expect(replayed.locator("[data-subagent]").first()).toContainText(
     /\d+s/,
   );
 
   // Opening a row shows its brief, its own steps and its report.
-  const first = page.locator("[data-subagents] [data-subagent]").first();
+  // Finished rows list newest first — pick the relay scan by what it reported.
+  const first = replayed
+    .locator("[data-subagent]")
+    .filter({ hasText: /Relay exports/ });
   await first.click();
   await expect(first).toContainText("Brief ·");
   await expect(first).toContainText(/Searched|search_files/);
@@ -334,7 +343,13 @@ test("AC-2 a helper's file write counts in Workbench → Changes (same checkout)
   await changes.click();
   /* The "Draft the summary" helper wrote notes/summary.md into the session
      checkout during AC-1 — untracked rows list under Changes. */
-  await expect(page.getByText("notes/summary.md").first()).toBeVisible({
+  /* Assert inside the Changes panel: the diff row splits name and folder, and
+     the helper's report elsewhere on the page also mentions the path. */
+  await expect(
+    page.getByRole("button", {
+      name: "Open notes/summary.md in an editor or Finder",
+    }),
+  ).toBeVisible({
     timeout: 30_000,
   });
   await page.screenshot({ path: `${SHOTS}/ac-2-changes.png` });
@@ -385,18 +400,22 @@ test("AC-3 an employee-helper row shows their avatar + Open session into their D
      fake keys the employee-helper branch on `@<profile>`. (Leading the draft
      with it would leave the mention menu open on Enter.) */
   await send(page, "delegate the summary work to subagents; @reviewer helps");
-  const block = page.locator("[data-subagents]").last();
+  /* The Subagents tab lists the whole session (AC-1's helpers too) — assert on
+     this turn through its link, and on the employee helper's own row. */
+  await page.locator("[data-subagents-link]").last().click({ timeout: 60_000 });
+  const block = page.locator("[data-subagents-panel]");
   await expect(block).toBeVisible({ timeout: 60_000 });
   const helper = block
     .locator("[data-subagent]")
     .filter({ hasText: /Reviewer · Draft the summary/ });
   await expect(helper).toHaveCount(1, { timeout: 60_000 });
-  await expect(
-    block.locator("[data-subagent][data-status='done']"),
-  ).toHaveCount(2, { timeout: 60_000 });
-  await expect(
-    block.locator("[data-subagent][data-status='failed']"),
-  ).toHaveCount(1);
+  await expect(page.locator("[data-subagents-link]").last()).not.toContainText(
+    "running",
+    { timeout: 60_000 },
+  );
+  await expect(page.locator("[data-subagents-link]").last()).toContainText(
+    /3 subagents\s*· 1 failed/,
+  );
   await page.screenshot({ path: `${SHOTS}/ac-3-employee-helper.png` });
 
   const open = helper.getByRole("button", { name: "Open session" });

@@ -79,6 +79,68 @@ export interface FakeImage {
   sizeBytes: number;
 }
 
+/** Oscar's 7-block code sample (#307). Kept identical to the copy in
+    `prototype/web/src/App.tsx` — update both together. */
+const CODEBLOCKS_SAMPLE = `Here is the code-block fixture — seven shapes in one reply.
+
+A typed fence first, with a dimmed comment:
+
+\`\`\`ts
+// encode/decode helpers for the relay envelope
+import { z } from "zod";
+
+const Frame = z.object({ seq: z.number().int(), body: z.string() });
+type Frame = z.infer<typeof Frame>;
+
+export const encodeFrame = (f: Frame): string => JSON.stringify(f); // one frame per line
+\`\`\`
+
+Python, the ops-script twin:
+
+\`\`\`python
+# same envelope, for the ops scripts
+import json
+
+def encode_frame(seq: int, body: str) -> str:
+    """One frame per line, compact separators."""
+    return json.dumps({"seq": seq, "body": body}, separators=(",", ":"))
+\`\`\`
+
+Bash:
+
+\`\`\`bash
+bun run relay --port 4577 && curl -s localhost:4577/health
+\`\`\`
+
+The payload the relay logs is a single unbroken line — it must scroll inside the block, never the column:
+
+\`\`\`json
+{"seq":1042,"kind":"msg","channel":"dm-builder","from":"builder","to":"ada","text":"envelope contract looks good","attachments":[],"meta":{"engine":"fake","tier":"normal","trace":"9f3ac2e1"},"at":1759128000000,"checksum":"sha256:aa91f0e3c9b2d4a5f6e7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9"}
+\`\`\`
+
+This fence is full of markdown-looking text — it has to stay literal:
+
+\`\`\`markdown
+## Not a real heading
+- **not bold** and \`not code\`
+| tables | don't | render |
+\`\`\`
+
+    this is just an indented block with no fence at all
+    four spaces in, three lines, monospace, unstyled
+
+And the patch shape — red and green line backgrounds:
+
+\`\`\`diff
+@@ -8,7 +8,9 @@ export const encodeFrame = (f: Frame): string =>
+   const frame = JSON.stringify(f);
+-  return frame.replace(/\\n/g, " ");
++  // frames must stay one-per-line
++  if (frame.includes("\\n")) throw new Error("newline in frame");
++  return frame;
+\`\`\`
+`;
+
 export function scriptFor(
   agent: string,
   prompt: string,
@@ -114,6 +176,18 @@ export function scriptFor(
         md[1].toLowerCase() === "table"
           ? MARKDOWN_TABLE_SAMPLE
           : MARKDOWN_BLOCKS_SAMPLE,
+    };
+  }
+
+  /* `codeblocks` — Oscar's 7-block markdown sample (#307): ts, python, bash,
+     a long unbroken JSON line, markdown-looking text inside a fence, an
+     unlabelled indented block and a diff. The desktop code-block fixture;
+     identical to the prototype's copy in `prototype/web/src/App.tsx`. */
+  if (/\bcode ?blocks?\b/i.test(q)) {
+    return {
+      reasoning: `Code-block rendering check — answer with the 7-block sample: a typed fence, python, bash, a long unbroken JSON line, markdown-looking text in a fence, an unlabelled indented block and a diff.`,
+      steps: [],
+      text: CODEBLOCKS_SAMPLE,
     };
   }
 

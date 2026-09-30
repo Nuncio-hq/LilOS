@@ -23,7 +23,10 @@ import { HermesAvatar } from "../shell/avatars";
 import type { EmpFn, Subagent } from "../types";
 import { StepRow } from "../workbench/step-row";
 
-/* The helpers a turn spun off (issue #170) — one collapsible block under the turn, the same
+/* The helpers a turn spun off (issue #170). Where a Workbench exists the turn shows only
+   SubagentsLink and the rows live in the Workbench → Subagents tab (#317), so a running helper
+   never turns one message into the place to watch it. Without a Workbench: one collapsible block
+   under the turn, the same
    Task shell as TurnSteps. Each row reads as: who, what it's doing now (the live step, or its
    result line once finished), how long. A subagent opens in place to its own steps + report;
    an employee helper worked in their own session, so its row only links there (onOpenSession,
@@ -51,7 +54,7 @@ function nowLine(a: Subagent): string {
   return first.replace(/[*`_#>]/g, "").trim() || a.status;
 }
 
-function SubagentRow({
+export function SubagentRow({
   a,
   emp,
   onOpenSession,
@@ -214,5 +217,39 @@ export function TurnSubagents({
         ))}
       </TaskContent>
     </Task>
+  );
+}
+
+/* The turn's one-line pointer to Workbench → Subagents (#317): "3 subagents · 2 running · Open". */
+export function SubagentsLink({
+  agents,
+  onOpen,
+}: {
+  agents: Subagent[];
+  onOpen: () => void;
+}) {
+  const running = agents.filter((a) => a.status === "running").length;
+  const failed = agents.filter((a) => a.status === "failed").length;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      data-subagents-link
+      className="mb-1 flex w-fit items-center gap-1.5 rounded-md text-muted-foreground text-xs transition-colors hover:text-foreground"
+    >
+      <NetworkIcon
+        className={cn(
+          "size-3.5",
+          running ? "animate-pulse text-work" : "text-emerald-600",
+        )}
+      />
+      <span>{plural(agents.length, "subagent")}</span>
+      {running > 0 && <span className="text-work">· {running} running</span>}
+      {failed > 0 && <span className="text-red-600">· {failed} failed</span>}
+      <span className="flex items-center gap-0.5 font-medium">
+        · Open
+        <ChevronRightIcon className="size-3.5" />
+      </span>
+    </button>
   );
 }

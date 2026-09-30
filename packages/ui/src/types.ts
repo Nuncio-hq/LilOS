@@ -468,6 +468,7 @@ export type WbTab =
   | "terminal"
   | "preview"
   | "background"
+  | "subagents"
   | "plan"
   | "pr";
 
