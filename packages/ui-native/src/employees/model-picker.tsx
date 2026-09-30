@@ -142,7 +142,12 @@ export function ModelPickerSheet({
         )}
         {cur?.fast && (
           <View className="mt-3.5 flex-row items-center gap-2.5 border-border border-t pt-3">
-            <Icon name="bolt.fill" size={14} tone="warning" />
+            <Icon
+              name="bolt.fill"
+              size={14}
+              /* #264: LilOS accent is teal — amber/orange never means "on". */
+              tone={value.fast ? "primary" : "muted-foreground"}
+            />
             <View className="flex-1">
               <AppText size="sm" weight="medium">
                 Fast mode

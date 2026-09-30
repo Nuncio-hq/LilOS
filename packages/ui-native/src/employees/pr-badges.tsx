@@ -24,7 +24,9 @@ const LOOK: Record<
     label: "Open",
   },
   draft: {
-    icon: "arrow.triangle.pull",
+    // GitHub's draft glyph is the pull-request shape drawn as loose dots;
+    // the closest SF Symbol keeps the connected-points look but dotted.
+    icon: "point.3.connected.trianglepath.dotted",
     tone: "muted-foreground",
     text: "text-muted-foreground",
     label: "Draft",
@@ -59,6 +61,34 @@ export function prStatusLabel(pr: PullRequestRef) {
   if (pr.checks === "failing") return `${base} · checks failing`;
   if (pr.checks === "passing") return `${base} · checks passed`;
   return base;
+}
+
+/* The status words under a PR: identical to prStatusLabel, but a failing
+   check run reads red so it stands out from the quiet rows (#264). */
+export function PrStatusText({ pr }: { pr: PullRequestRef }) {
+  const base = LOOK[pr.status].label;
+  const check =
+    (pr.status === "open" || pr.status === "draft") &&
+    (pr.checks === "pending"
+      ? "checks running"
+      : pr.checks === "failing"
+        ? "checks failing"
+        : pr.checks === "passing"
+          ? "checks passed"
+          : undefined);
+  return (
+    <AppText tone="muted" numberOfLines={1} className="text-[13px]">
+      {check ? `${base} · ` : base}
+      {check && (
+        <AppText
+          tone={pr.checks === "failing" ? "destructive" : "muted"}
+          className="text-[13px]"
+        >
+          {check}
+        </AppText>
+      )}
+    </AppText>
+  );
 }
 
 export function PrIcon({
@@ -142,7 +172,9 @@ export function PrCard({ pr }: { pr: PullRequestRef }) {
       className="flex-row items-center gap-3 self-start rounded-[18px] bg-card px-3.5 py-3"
       style={{ borderCurve: "continuous" }}
     >
-      <View className="grid size-8 shrink-0 place-items-center rounded-xl bg-fill">
+      {/* #264: `place-items-center` is not a native layout — flex centers
+          the glyph or it sits off-center in the tile. */}
+      <View className="size-8 shrink-0 items-center justify-center rounded-xl bg-fill">
         <Icon name={l.icon} size={15} tone={l.tone} weight="semibold" />
       </View>
       <View className="min-w-0">
@@ -159,9 +191,7 @@ export function PrCard({ pr }: { pr: PullRequestRef }) {
           <AppText tone="muted" className="text-[13px]">
             ·
           </AppText>
-          <AppText tone="muted" className="text-[13px]">
-            {prStatusLabel(pr)}
-          </AppText>
+          <PrStatusText pr={pr} />
         </View>
       </View>
     </View>
@@ -176,9 +206,9 @@ export function PrLine({ prs }: { prs: PullRequestRef[] }) {
     return (
       <View className="mt-0.5 flex-row items-center gap-1.5">
         <PrBadge pr={pr} />
-        <AppText tone="muted" numberOfLines={1} className="shrink text-[13px]">
-          {prStatusLabel(pr)}
-        </AppText>
+        <View className="shrink">
+          <PrStatusText pr={pr} />
+        </View>
       </View>
     );
   }

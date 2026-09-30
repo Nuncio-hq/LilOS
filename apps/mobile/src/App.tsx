@@ -480,10 +480,12 @@ const SHEET: NativeStackNavigationOptions = {
 };
 
 /* A conversation's nav bar: transparent over a native blur material, so the
-   chat scrolls on under the title and stays readable. */
+   chat scrolls on under the title and stays readable. The top edge uses the
+   hard iOS-26 effect — soft left scrolled bubbles/steps bleeding through
+   the title (#264). */
 const CHAT_HEADER: NativeStackNavigationOptions = {
   headerTransparent: true,
-  scrollEdgeEffects: { top: "soft", bottom: "soft" },
+  scrollEdgeEffects: { top: "hard", bottom: "soft" },
 };
 
 function useNavTheme(): Theme {

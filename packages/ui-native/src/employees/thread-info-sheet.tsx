@@ -6,7 +6,7 @@ import { Icon } from "../components/icon";
 import { Orb } from "../components/orb";
 import { ContextMeter } from "./context-meter";
 import { Group, SheetHeader } from "./folder-picker";
-import { PrIcon, prHeadline, prStatusLabel, sortPrs } from "./pr-badges";
+import { PrIcon, PrStatusText, prHeadline, sortPrs } from "./pr-badges";
 import type { ThreadDetail } from "./types";
 
 /* A session's facts (web: the thread header's ws badge + session code +
@@ -84,9 +84,7 @@ export function ThreadInfoSheet({
                   </AppText>
                   {pr.title}
                 </AppText>
-                <AppText tone="muted" className="text-[13px]">
-                  {prStatusLabel(pr)}
-                </AppText>
+                <PrStatusText pr={pr} />
               </View>
             </View>
           ))}

@@ -35,14 +35,30 @@ export const tool = (t: string) =>
     icon: "wrench.and.screwdriver" as SFSymbol,
   };
 
-export function StepRow({ s }: { s: ToolStep }) {
+export function StepRow({
+  s,
+  waiting,
+}: {
+  s: ToolStep;
+  /** Kind of ask the turn is blocked on (#264): a step still marked running
+     is actually gated, so it reads as awaiting you, never "Running". */
+  waiting?: "approval" | "plan" | "question";
+}) {
   const [open, setOpen] = useState(false);
   const t = tool(s.tool);
+  const blocked = !!s.running && waiting !== undefined;
+  const verb = blocked
+    ? waiting === "approval"
+      ? "Waiting for approval"
+      : "Waiting for you"
+    : s.running
+      ? t.now
+      : t.verb;
   const canOpen = (!!s.output || !!s.patch) && !s.running;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${t.verb} ${s.arg ?? ""}`}
+      accessibilityLabel={`${verb} ${s.arg ?? ""}`}
       disabled={!canOpen}
       onPress={() => {
         ease();
@@ -57,14 +73,14 @@ export function StepRow({ s }: { s: ToolStep }) {
           <Icon
             name={t.icon}
             size={13}
-            tone={s.running ? "work" : "muted-foreground"}
+            tone={blocked ? "primary" : s.running ? "work" : "muted-foreground"}
           />
         </View>
         <Text numberOfLines={1} className="flex-1 text-[14px]">
-          <Text className="text-subtle-foreground">{`${s.running ? t.now : t.verb} `}</Text>
+          <Text className="text-subtle-foreground">{`${verb} `}</Text>
           {s.arg && (
             <Text
-              className={`font-mono text-[12.5px] ${s.running ? "text-foreground" : "text-subtle-foreground"}`}
+              className={`font-mono text-[12.5px] ${s.running && !blocked ? "text-foreground" : "text-subtle-foreground"}`}
             >
               {s.tool === "terminal" ? `$ ${s.arg}` : s.arg}
             </Text>
@@ -78,11 +94,14 @@ export function StepRow({ s }: { s: ToolStep }) {
             )}
           </Text>
         )}
-        {s.running && (
-          <Pulse>
-            <View className="size-1.5 rounded-full bg-work" />
-          </Pulse>
-        )}
+        {s.running &&
+          (blocked ? (
+            <View className="size-1.5 rounded-full bg-primary" />
+          ) : (
+            <Pulse>
+              <View className="size-1.5 rounded-full bg-work" />
+            </Pulse>
+          ))}
       </View>
       {open && <StepDetail s={s} />}
     </Pressable>

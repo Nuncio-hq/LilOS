@@ -118,7 +118,13 @@ export function ThreadScreen({
               {e.kind === "user" ? (
                 <UserBubble
                   text={e.text}
-                  time={e.queued ? "Queued · runs next" : e.time}
+                  time={
+                    e.queued
+                      ? e.waiting
+                        ? "Waiting for you"
+                        : "Queued · runs next"
+                      : e.time
+                  }
                 />
               ) : (
                 <AgentTurn

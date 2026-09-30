@@ -555,3 +555,151 @@ describe("thread-model — #157 AC mapping", () => {
     ]);
   });
 });
+
+describe("#264 blocked-on-ask — one waiting state across turn surfaces", () => {
+  const approvalAsk = (over: Partial<Ask> = {}): Ask => ({
+    id: "ask-1",
+    channelId: "ch-dm",
+    conversationId: "conv-1",
+    turnId: "t1",
+    requestId: "r1",
+    request: {
+      kind: "approval",
+      command: "gh pr create --title ship",
+      description: "open the PR",
+      options: ["once", "always", "deny"],
+    },
+    state: "open",
+    createdAt: T0,
+    ...over,
+  });
+
+  const gatedTurn = () =>
+    reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small" }),
+      ev("tool.started", {
+        turnId: "t1",
+        toolCallId: "c1",
+        tool: "terminal",
+        input: { command: "gh pr create --title ship" },
+      }),
+    ]);
+
+  it("a live turn gated by an approval ask reports waiting='approval'", () => {
+    const entries = mergeThreadEntries([], gatedTurn(), {
+      ...OPTS,
+      asks: [approvalAsk()],
+    });
+    const card = entries.at(-1);
+    if (card?.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.waiting).toBe("approval");
+  });
+
+  it("a live turn gated by a question ask reports waiting='question'", () => {
+    const entries = mergeThreadEntries([], gatedTurn(), {
+      ...OPTS,
+      asks: [
+        approvalAsk({
+          request: { kind: "question", question: "which branch?" },
+        }),
+      ],
+    });
+    const card = entries.at(-1);
+    if (card?.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.waiting).toBe("question");
+  });
+
+  it("a live turn gated by a proposed plan reports waiting='plan'", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small" }),
+      ev("plan.updated", {
+        turnId: "t1",
+        planId: "plan-t1",
+        kind: "plan",
+        version: 1,
+        goal: "ship it",
+        steps: [
+          { text: "do a", status: "pending" },
+          { text: "do b", status: "pending" },
+        ],
+      }),
+      ev("request.opened", {
+        turnId: "t1",
+        requestId: "r1",
+        request: { kind: "plan", planId: "plan-t1" },
+      }),
+    ]);
+    const entries = mergeThreadEntries([], model, {
+      ...OPTS,
+      asks: [approvalAsk({ request: { kind: "plan", planId: "plan-t1" } })],
+    });
+    const card = entries.at(-1);
+    if (card?.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.waiting).toBe("plan");
+  });
+
+  it("a running turn with no open ask is not waiting", () => {
+    const entries = mergeThreadEntries([], gatedTurn(), OPTS);
+    const card = entries.at(-1);
+    if (card?.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.live).toBe(true);
+    expect(card.waiting).toBeUndefined();
+  });
+
+  it("a resolved ask clears waiting on the still-live turn", () => {
+    const entries = mergeThreadEntries([], gatedTurn(), {
+      ...OPTS,
+      asks: [
+        approvalAsk({ state: "resolved", outcome: "once", resolvedAt: T0 + 1 }),
+      ],
+    });
+    const card = entries.at(-1);
+    if (card?.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.waiting).toBeUndefined();
+  });
+
+  it("a queued user line is waiting while the conversation has an open ask", () => {
+    const queued = msg({ id: "m9", seq: 9, text: "also do this" });
+    const entries = mergeThreadEntries([queued], gatedTurn(), {
+      ...OPTS,
+      asks: [approvalAsk()],
+    });
+    const bubble = entries.find((e) => e.id === "m9");
+    if (bubble?.kind !== "user") throw new Error("expected user entry");
+    expect(bubble.queued).toBe(true);
+    expect(bubble.waiting).toBe(true);
+  });
+
+  it("a queued user line is not waiting when nothing asks", () => {
+    const queued = msg({ id: "m9", seq: 9, text: "also do this" });
+    const entries = mergeThreadEntries([queued], gatedTurn(), OPTS);
+    const bubble = entries.find((e) => e.id === "m9");
+    if (bubble?.kind !== "user") throw new Error("expected user entry");
+    expect(bubble.queued).toBe(true);
+    expect(bubble.waiting).toBeUndefined();
+  });
+
+  it("an open ask on another conversation does not mark the bubble waiting", () => {
+    const queued = msg({ id: "m9", seq: 9, text: "also do this" });
+    const entries = mergeThreadEntries([queued], gatedTurn(), {
+      ...OPTS,
+      asks: [approvalAsk({ conversationId: "conv-other" })],
+    });
+    const bubble = entries.find((e) => e.id === "m9");
+    if (bubble?.kind !== "user") throw new Error("expected user entry");
+    expect(bubble.queued).toBe(true);
+    expect(bubble.waiting).toBeUndefined();
+  });
+
+  it("a delivered user line never carries queued/waiting", () => {
+    const sent = msg({ id: "m1", seq: 1, text: "go" });
+    const entries = mergeThreadEntries([sent], gatedTurn(), {
+      ...OPTS,
+      asks: [approvalAsk()],
+    });
+    const bubble = entries.find((e) => e.id === "m1");
+    if (bubble?.kind !== "user") throw new Error("expected user entry");
+    expect(bubble.queued).toBeUndefined();
+    expect(bubble.waiting).toBeUndefined();
+  });
+});
