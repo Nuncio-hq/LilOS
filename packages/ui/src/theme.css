@@ -445,23 +445,35 @@
   content: "Svelte";
 }
 /* Copy rides on the header row — the bordered pill is gone. The sticky wrapper
-   (-mt-10 in stock streamdown) is pinned to exactly the header's slot. */
+   (-mt-10 in stock streamdown) is pinned to exactly the header's slot. These
+   rules must not lean on streamdown's own classes: Tailwind never scans
+   node_modules, so its `sticky`, `pointer-events-auto`, `z-10`, `-mt-10` etc.
+   are dead utilities and must be re-declared here unlayered. */
 .lilos-prose
   [data-streamdown="code-block"]
   > div:has(> [data-streamdown="code-block-actions"]) {
+  position: sticky;
   top: 0;
+  z-index: 10;
+  display: flex;
   height: 30px;
   margin-top: -30px;
   align-items: center;
+  justify-content: flex-end;
   padding-right: 6px;
+  pointer-events: none;
 }
 .lilos-prose [data-streamdown="code-block-actions"] {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
   gap: 2px;
   padding: 0;
   border: 0;
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  pointer-events: auto;
 }
 .lilos-prose [data-streamdown="code-block-actions"] button {
   height: 26px;
