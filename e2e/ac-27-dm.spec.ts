@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { _electron, expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
 import { allowAll, allowAllWhile, expectSettled } from "./helpers/approvals";
+import { electronScreenshot, ensureDesktopPayload } from "./helpers/electron";
 import { wport } from "./ports";
 
 /**
@@ -226,6 +227,10 @@ test("AC-3 DM message opens a session; reply streams with reasoning + tool steps
   test.setTimeout(120_000);
   await dmDefault(stackA, page);
   await send(page, "Say hello then list files");
+  // sendDm resolves messages.post then navigates to the conversation — the
+  // URL change is the wire signal that the session exists, so a relay that's
+  // slow under load can't race the first turn assert.
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
   // The new session's live turn streams into the thread as one AgentTurn,
   // with a reasoning block and collapsed tool steps.
   const turn = page.locator("[data-agentturn]").first();
@@ -381,8 +386,12 @@ test("AC-7 real-app build: every visible control has a working handler", async (
   page,
 }) => {
   test.setTimeout(300_000);
-  // vite build + preview — the shipped bundle, not the dev server.
-  const build = spawn("bun", ["run", "build"], {
+  // vite build + preview — the shipped bundle, not the dev server. Build
+  // into a per-run tmpdir: parallel workers sharing apps/web/dist race each
+  // other's emptyDir (ENOTEMPTY under --repeat-each/--workers).
+  const outDir = mkdtempSync(path.join(tmpdir(), "lilos-e2e-dist-"));
+  const vite = path.join(webDir, "node_modules", ".bin", "vite");
+  const build = spawn(vite, ["build", "--outDir", outDir], {
     cwd: webDir,
     env: { ...process.env },
     stdio: "inherit",
@@ -394,8 +403,17 @@ test("AC-7 real-app build: every visible control has a working handler", async (
   });
   const port = wport(5246);
   const preview = spawn(
-    path.join(webDir, "node_modules", ".bin", "vite"),
-    ["preview", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
+    vite,
+    [
+      "preview",
+      "--outDir",
+      outDir,
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(port),
+      "--strictPort",
+    ],
     {
       cwd: webDir,
       env: {
@@ -471,16 +489,7 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
   test.setTimeout(180_000);
   // Build the Electron payload (main + preload + status page), then launch
   // against stackA — the shell points its app window at the dev server.
-  const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
-    cwd: desktopDir,
-    env: { ...process.env },
-    stdio: "inherit",
-  });
-  await new Promise<void>((resolve, reject) => {
-    build.once("exit", (c) =>
-      c === 0 ? resolve() : reject(new Error(`desktop build exit ${c}`)),
-    );
-  });
+  await ensureDesktopPayload(desktopDir);
   const portOf = (ws: string) => new URL(ws).port;
   const app = await _electron.launch({
     // Linux CI has no suid chrome-sandbox helper; disable it there only.
@@ -501,21 +510,10 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
     await expect(
       win.locator("aside").getByRole("button", { name: /default/i }),
     ).toBeVisible({ timeout: 60_000 });
-    // Page.captureScreenshot intermittently fails on Electron under Xvfb load
-    // (CI: "Unable to capture screenshot") — retry the artifact write a few
-    // times. The assertion above already proved the AC; this is the evidence.
-    let shotErr: unknown;
-    for (let i = 0; i < 4; i++) {
-      try {
-        await win.screenshot({ path: `${SHOTS}/ac-8-electron.png` });
-        shotErr = undefined;
-        break;
-      } catch (e) {
-        shotErr = e;
-        await win.waitForTimeout(500);
-      }
-    }
-    if (shotErr) throw shotErr;
+    // Page.captureScreenshot intermittently fails on Electron under load
+    // (CI: "Unable to capture screenshot") — wait for visible+painted and
+    // retry. The assertion above already proved the AC; this is the evidence.
+    await electronScreenshot(app, win, `${SHOTS}/ac-8-electron.png`);
   } finally {
     await app.close();
   }
