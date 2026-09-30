@@ -118,7 +118,10 @@ test.beforeAll(async () => {
   test.setTimeout(180_000);
   stack = await bootStack(
     "order",
-    { relay: wport(4648), feed: wport(4649), web: wport(5242) },
+    /* Bases identical to ac-132's — every residue 0–98 is already claimed,
+       and the ports.spec rule allows identical bases (two spec files never
+       share a live worker index). */
+    { relay: wport(5348), feed: wport(5349), web: wport(5342) },
     {
       LILOS_USER_NAME: "Oscar",
       /* No steer → mid-run sends queue and drain as ref'd turns (AC-1's
