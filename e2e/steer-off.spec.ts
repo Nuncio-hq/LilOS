@@ -42,7 +42,8 @@ test("AC-2 steer absent: mid-turn typing queues, no steer affordance", async ({
   // The send went to the queued tray, not into the turn.
   const tray = page.locator("[data-queued]");
   await expect(tray).toBeVisible();
-  await expect(tray).toContainText("queued · sends when this turn ends");
+  await expect(tray).toHaveAttribute("data-queued-mode", "next");
+  await expect(tray).toContainText("Runs when this turn ends");
   await expect(tray).toContainText("also check the replay window");
   await expect(page.locator("[data-steerstate]")).toHaveCount(0);
   // When the turn ends the queued message sends itself: the tray empties and the
