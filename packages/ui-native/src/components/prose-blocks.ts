@@ -143,6 +143,24 @@ function alignOf(cell: string): "left" | "center" | "right" {
   return l && r ? "center" : r ? "right" : "left";
 }
 
+export const TABLE_COL_MIN = 104;
+export const TABLE_COL_MAX = 220;
+
+/* One width per column, shared by header and every row — measured on
+   the widest cell so each row's boundaries land on the same x. ~7.5px
+   per glyph at the 14px cell size + 24px padding, clamped to
+   [104, 220]: beyond the cap the cell wraps. */
+export function columnWidths(header: string[], rows: string[][]): number[] {
+  return header.map((_, j) => {
+    let longest = header[j]?.length ?? 0;
+    for (const row of rows) {
+      const len = row[j]?.length ?? 0;
+      if (len > longest) longest = len;
+    }
+    return Math.min(TABLE_COL_MAX, Math.max(TABLE_COL_MIN, longest * 7.5 + 24));
+  });
+}
+
 /** Fence tags → the label on the block's header row (matches the desktop
     code-block names, #307). Unknown tags show as typed; bare fences "Code". */
 export function langName(lang: string | null): string {

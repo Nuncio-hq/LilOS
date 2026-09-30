@@ -818,8 +818,8 @@ And a wider one for scroll:
 | Slice | AC | Tier | Status | Owner | Notes |
 | --- | --- | --- | --- | --- | --- |
 | #259 code blocks | 5 | Normal | In PR | Devin | fences + highlight + copy |
-| #306 tables | 6 | Normal | Building | Devin | GFM tables, scroll inside the message |
-| #307 desktop chrome | 7 | Normal | agent-ready | unassigned | Shiki plugin + one-row header |
+| #306 tables | 6 | Normal | **Building** | Devin | GFM tables, scroll inside the message |
+| #307 desktop chrome | 7 | Normal | \`agent-ready\` | unassigned | Shiki plugin + one-row header |
 
 Alignment matters too — right, center, left:
 

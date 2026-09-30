@@ -4,7 +4,12 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Animated, Pressable, ScrollView, Text, View } from "react-native";
 import { type CodeSpan, highlight } from "./code-highlight";
 import { Icon, useThemeColor } from "./icon";
-import { langName, type ProseBlock, parseProse } from "./prose-blocks";
+import {
+  columnWidths,
+  langName,
+  type ProseBlock,
+  parseProse,
+} from "./prose-blocks";
 
 /* Agent text: paragraphs, "- " bullets, **bold**, `code` and fenced code
    blocks — the slice of markdown the engine actually sends in short
@@ -156,10 +161,11 @@ function CodeBlock({
 }
 
 /* A GFM table: header row on a muted band, thin separators, columns
-   aligned per the `---:`/`:-:` markers. The whole grid sits in its own
-   horizontal scroller — a wide table scrolls inside the message while
-   prose keeps wrapping; cells cap at ~14em so long text wraps. Text
-   scales with Dynamic Type (RN default). */
+   aligned per the `---:`/`:-:` markers. One horizontal scroller wraps
+   the WHOLE grid and column widths come from columnWidths() — one
+   value per column shared by the header and every row, so dividers
+   line up and scroll as a unit. Beyond the ~14em cap a cell wraps.
+   Text scales with Dynamic Type (RN default). */
 function TableBlock({
   block,
   small,
@@ -171,6 +177,7 @@ function TableBlock({
     ? "text-[12.5px] leading-[17px]"
     : "text-[14px] leading-[20px]";
   const aligns = block.header.map((_, j) => block.align[j] ?? "left");
+  const widths = columnWidths(block.header, block.rows);
   return (
     <ScrollView horizontal bounces={false}>
       <View
@@ -184,6 +191,7 @@ function TableBlock({
               text={cell}
               align={aligns[j]}
               cls={cls}
+              width={widths[j]}
               first={j === 0}
               head
             />
@@ -197,6 +205,7 @@ function TableBlock({
                 text={cell}
                 align={aligns[j]}
                 cls={cls}
+                width={widths[j]}
                 first={j === 0}
               />
             ))}
@@ -211,20 +220,21 @@ function TableCell({
   text,
   align,
   cls,
+  width,
   first,
   head,
 }: {
   text: string;
   align: "left" | "center" | "right";
   cls: string;
+  width: number;
   first: boolean;
   head?: boolean;
 }) {
   return (
     <View
-      className={`min-w-[104px] max-w-[220px] px-3 py-2 ${
-        first ? "" : "border-l border-muted-strong/30"
-      }`}
+      className={`px-3 py-2 ${first ? "" : "border-l border-muted-strong/30"}`}
+      style={{ width }}
     >
       <Inline
         text={closeOpen(text)}

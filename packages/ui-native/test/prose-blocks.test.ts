@@ -3,7 +3,13 @@ import {
   MARKDOWN_BLOCKS_SAMPLE,
   MARKDOWN_TABLE_SAMPLE,
 } from "../../engine-fake/src/markdown-samples";
-import { langName, parseProse } from "../src/components/prose-blocks";
+import {
+  columnWidths,
+  langName,
+  parseProse,
+  TABLE_COL_MAX,
+  TABLE_COL_MIN,
+} from "../src/components/prose-blocks";
 
 /* #259: fenced code blocks are real blocks — mono panel, lang tag, copy —
    and mid-stream an unclosed fence is a block in progress, never raw
@@ -188,6 +194,43 @@ describe("parseProse — GFM tables", () => {
     // long Vietnamese cell text lands intact in one cell
     const cell = tables[0].kind === "table" ? tables[0].rows[0][1] : "";
     expect(cell).toContain("Cần trả lời");
+  });
+
+  it("the fixture carries a **bold** cell and a `code` cell (AC-1 visual)", () => {
+    const tables = parseProse(MARKDOWN_TABLE_SAMPLE).filter(
+      (b) => b.kind === "table",
+    );
+    const cells = tables[1].kind === "table" ? tables[1].rows.flat() : [];
+    expect(cells).toContain("**Building**");
+    expect(cells).toContain("`agent-ready`");
+  });
+});
+
+describe("columnWidths — one grid, shared x-offsets", () => {
+  it("each column gets the widest cell's width, shared by every row", () => {
+    const header = ["a", "b"];
+    const rows = [
+      ["tiny", "this is a much much much longer cell that wants the cap"],
+      ["x", "y"],
+    ];
+    const w = columnWidths(header, rows);
+    expect(w.length).toBe(2);
+    // col 0: longest is 4 → min clamp; col 1: longest → at/over the cap
+    expect(w[0]).toBe(TABLE_COL_MIN);
+    expect(w[1]).toBe(TABLE_COL_MAX);
+    // the same array feeds header + all rows, so boundaries share x-offsets:
+    // cumulative offsets are identical per row by construction
+    const offsets = w.reduce<number[]>((acc, _width, i) => {
+      acc.push(i === 0 ? 0 : acc[i - 1] + w[i - 1]);
+      return acc;
+    }, []);
+    expect(offsets).toEqual([0, TABLE_COL_MIN]);
+  });
+
+  it("mid-size content lands between the clamps", () => {
+    const w = columnWidths(["head"], [["12345678901234567890"]]);
+    expect(w[0]).toBeGreaterThan(TABLE_COL_MIN);
+    expect(w[0]).toBeLessThan(TABLE_COL_MAX);
   });
 });
 
