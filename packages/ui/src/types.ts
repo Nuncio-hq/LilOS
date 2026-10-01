@@ -234,6 +234,9 @@ export type Thread = {
   /* Archived sessions hide from the DM list until the Archived disclosure is opened. */
   archived?: boolean;
   alert?: SessionAlert;
+  /* Set on a session a scheduled task started (#136): the DM marks it and
+     the chip opens the task. */
+  scheduled?: { task: string; name: string };
   replies: Reply[];
   usage?: Usage;
   todos?: Todo[];
@@ -531,6 +534,46 @@ export type SettingsSectionId =
 export type ApprovalPolicy = "smart" | "manual" | "off";
 /* What a brand-new conversation may touch without asking (#106). */
 export type ConversationAccess = "ask" | "full";
+/* Scheduled tasks (issue #136, prototype #366): a prompt that runs as a new
+   session with one employee on a schedule. `time` is "HH:MM" (hourly reads
+   only the minutes); `day` 0–6 = Sun–Sat for weekly; `date` "YYYY-MM-DD" for
+   once; `cron` five fields for custom. */
+export type ScheduleKind =
+  | "hourly"
+  | "daily"
+  | "weekdays"
+  | "weekly"
+  | "once"
+  | "cron";
+export type Schedule = {
+  kind: ScheduleKind;
+  time: string;
+  day?: number;
+  date?: string;
+  cron?: string;
+};
+/* The latest run of a task. `rootId` is the run's session in the DM. */
+export type ScheduledRun = {
+  at: string;
+  result: "running" | "finished" | "failed";
+  rootId?: string;
+};
+export type ScheduledTask = {
+  id: string;
+  employee: string;
+  name: string;
+  prompt: string;
+  /** Folder id the run's session opens in; unset = no folder. */
+  folder?: string;
+  schedule: Schedule;
+  /** Access for unattended runs (#106): Ask stops on risky commands. */
+  access: ConversationAccess;
+  paused?: boolean;
+  lastRun?: ScheduledRun;
+  /** When a run was skipped because the previous one was still going
+      (#136 AC-4); cleared by the next run that starts. */
+  skipped?: string;
+};
 /* An editor found on this Mac (#110) — `path` is the .app bundle. */
 export type DetectedEditor = { id: string; name: string; path?: string };
 /* A `forge.pr` failure already classified by the host (#114 AC-5) — mirrors
