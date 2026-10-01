@@ -1,12 +1,14 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import type { McpServerStdio } from "@lilos/contracts/engine";
+import type { McpServerHttp, McpServerStdio } from "@lilos/contracts/engine";
 
 /**
- * The smallest real MCP stdio client — JSON-RPC 2.0 over newline-delimited
- * stdin/stdout, the same handshake engines perform when they accept
- * `session.start { mcpServers }` (ACP `session/new`). engine-fake uses it to
- * actually spawn and call each attached server, so the conformance tests
- * exercise the real wire path — not a mocked "we stored the config".
+ * The smallest real MCP clients — JSON-RPC 2.0 over newline-delimited
+ * stdin/stdout (`startMcpServer`) and over streamable HTTP (`startMcpHttp`,
+ * JSON responses, no SSE — the shape engines perform when they accept
+ * `session.start { mcpServers }` (ACP `session/new`). engine-fake uses them
+ * to actually spawn/connect and call each attached server, so the
+ * conformance tests exercise the real wire path — not a mocked "we stored
+ * the config".
  *
  * No MCP SDK here on purpose: engine packages depend only on contracts, and
  * the protocol surface we need is initialize / tools/list / tools/call.
@@ -110,4 +112,84 @@ export function startMcpServer(spec: McpServerStdio): Promise<McpClient> {
       },
     } satisfies McpClient;
   })();
+}
+
+/**
+ * The same client against an MCP streamable-HTTP endpoint (issue #337):
+ * one JSON-RPC request per POST, `application/json` responses (the gateway
+ * answers JSON, not SSE). Spec-declared headers (e.g. the session bearer)
+ * ride on every call.
+ */
+export async function startMcpHttp(spec: McpServerHttp): Promise<McpClient> {
+  let nextId = 1;
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    accept: "application/json, text/event-stream",
+  };
+  for (const h of spec.headers) headers[h.name] = h.value;
+  const post = async (method: string, params?: unknown, id?: number) => {
+    const res = await fetch(spec.url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        ...(id === undefined ? {} : { id }),
+        method,
+        params: params ?? {},
+      }),
+    });
+    if (!res.ok && res.status !== 202) {
+      throw new Error(
+        `mcp http ${method} failed (${res.status}): ${(await res.text()).slice(0, 200)}`,
+      );
+    }
+    const text = await res.text();
+    if (!text) return undefined;
+    const contentType = res.headers.get("content-type") ?? "";
+    const payload = contentType.includes("text/event-stream")
+      ? text
+          .split("\n")
+          .filter((l) => l.startsWith("data:"))
+          .map((l) => l.slice(5).trim())
+          .join("")
+      : text;
+    const msg = JSON.parse(payload) as {
+      result?: unknown;
+      error?: { message: string };
+    };
+    if (msg.error) throw new Error(msg.error.message);
+    return msg.result;
+  };
+  const request = (method: string, params?: unknown) =>
+    post(method, params, nextId++);
+
+  await request("initialize", {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "engine-fake", version: "0.0.0" },
+  });
+  await post("notifications/initialized");
+  const list = (await request("tools/list")) as {
+    tools?: { name: string }[];
+  };
+  return {
+    name: spec.name,
+    tools: (list.tools ?? []).map((t) => t.name),
+    async callTool(name, args) {
+      const res = (await request("tools/call", {
+        name,
+        arguments: args,
+      })) as {
+        content?: { type: string; text?: string }[];
+        isError?: boolean;
+      };
+      const text = (res.content ?? [])
+        .filter((c) => c.type === "text")
+        .map((c) => c.text ?? "")
+        .join("\n");
+      if (res.isError) throw new Error(text || `tool ${name} failed`);
+      return text;
+    },
+    close() {},
+  } satisfies McpClient;
 }

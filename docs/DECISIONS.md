@@ -168,11 +168,18 @@ PR does not exist.
   token, via `packages/engine-hermes`), crash restart with bounded backoff,
   conversation↔session binding, final-answer posts, and ask relaying.
   Not: the app or relay calling an engine directly. — #26 · PR #48
-- **D-#36 Agents use app surfaces through the LilOS MCP server + `lilos` CLI
-  owned by the harness** (attached per session via `session.start
-  { mcpServers }`); the Workbench Terminal/Preview tabs watch the same
-  surfaces live and take input. Not: engine-specific UI toolsets (Hermes
-  `desktop_ui` / `drive_preview` / `read_terminal`). — #36 · PR #54
+- **D-#36 The agent gateway is the one agent surface.** Every engine
+  session gets a gateway scope bound to its employee/thread; its tool
+  calls reach LilOS through one endpoint and the scope resolves the
+  binding — never agent-passed ids (the engine's own session id is an
+  alias). The tool catalog is declared once in `packages/contracts` with
+  canonical `<area>_<action>` names (`thread_*`, `terminal_*`,
+  `browser_*`, `workbench_*`); MCP `tools/list` (stdio + streamable
+  HTTP), the `lilos` CLI, and the versioned host policy all render from
+  it. Per-engine adapters only attach the catalog — they never grow
+  their own tool list. Not: attaching MCP only through ACP, or
+  engine-specific UI toolsets (Hermes `desktop_ui` / `drive_preview` /
+  `read_terminal`, was #36). — #36, #337 · PR #54
 - **D-#308 Every leg is a turn.** A post-turn leg mints its own turn id —
   `ref` echoes the prompting message, `initiatedBy:"agent"` marks
   engine-opened work. Not: stamping legs on the settled turn id, or the

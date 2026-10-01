@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { attachViewer, SessionSurfaces, toolBackend } from "../src/index.js";
-import { FakeBrowser, FakePtySpawner, serveToolApi } from "./fakes.js";
+import { FakeBrowser, FakePtySpawner, serveGateway } from "./fakes.js";
 
 function setup(shellMode = true) {
   const spawner = new FakePtySpawner(shellMode);
@@ -122,10 +122,8 @@ describe("AC-1 typing into the Terminal tab takes the terminal from the agent", 
 
   it("over the tool HTTP API a held terminal answers 409 user_control", async () => {
     const { scope } = setup();
-    const { server, baseUrl } = await serveToolApi({
-      session: "s1",
-      token: "t",
-      scope,
+    const { server, baseUrl } = await serveGateway({
+      sessions: [{ scope, token: "t" }],
     });
     try {
       const client = toolBackend({ baseUrl, token: "t", session: "s1" });

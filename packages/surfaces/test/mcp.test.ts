@@ -7,7 +7,7 @@ import {
   FakeBrowser,
   FakePtySpawner,
   fakeAppOps,
-  serveToolApi,
+  serveGateway,
 } from "./fakes.js";
 
 const CLI = resolve(__dirname, "../../../apps/lilos/src/cli.ts");
@@ -69,7 +69,7 @@ async function startMcp(env: NodeJS.ProcessEnv) {
 }
 
 describe("AC-2 MCP server: tools/list + tools/call over real stdio", () => {
-  it("serves all 12 tools and routes calls to the scoped backend", async () => {
+  it("serves the session's tools and routes calls to the scoped backend", async () => {
     const spawner = new FakePtySpawner();
     const browser = new FakeBrowser();
     const appOps = fakeAppOps();
@@ -80,10 +80,8 @@ describe("AC-2 MCP server: tools/list + tools/call over real stdio", () => {
       createBrowser: async () => browser,
       appOps,
     });
-    const api = await serveToolApi({
-      session: "sess-mcp",
-      token: "tok",
-      scope,
+    const api = await serveGateway({
+      sessions: [{ scope, token: "tok" }],
     });
     const { child, request } = await startMcp({
       LILOS_SURFACES_URL: api.baseUrl,
@@ -109,10 +107,47 @@ describe("AC-2 MCP server: tools/list + tools/call over real stdio", () => {
       });
 
       const msg = (await request("tools/call", {
-        name: "app_post_message",
+        name: "thread_post",
         arguments: { text: "via mcp" },
       })) as { content: { text: string }[] };
       expect(JSON.parse(msg.content[0].text).message.text).toBe("via mcp");
+    } finally {
+      child.kill();
+      api.server.close();
+    }
+  }, 30_000);
+
+  it("lists only the areas the session really has (no browser -> no browser_*)", async () => {
+    // AC-2: a session with no browser attached never sees browser_* — the
+    // stdio server asks the gateway for this session's catalog (GET /tools)
+    // and registers only those.
+    const spawner = new FakePtySpawner();
+    const scope = new SessionSurfaces({
+      session: "sess-tiny",
+      cwd: "/tmp",
+      spawnPty: spawner.spawn,
+      // no createBrowser, no appOps: terminal + workbench areas only
+    });
+    const api = await serveGateway({
+      sessions: [{ scope, token: "tok" }],
+    });
+    const { child, request } = await startMcp({
+      LILOS_SURFACES_URL: api.baseUrl,
+      LILOS_TOKEN: "tok",
+      LILOS_SESSION: "sess-tiny",
+    });
+    try {
+      const list = (await request("tools/list")) as {
+        tools: { name: string }[];
+      };
+      expect(list.tools.map((t) => t.name).sort()).toEqual(
+        [
+          "terminal_read",
+          "terminal_run",
+          "terminal_write",
+          "workbench_previews",
+        ].sort(),
+      );
     } finally {
       child.kill();
       api.server.close();
@@ -147,10 +182,8 @@ describe("lilos CLI (AC-2)", () => {
       spawnPty: spawner.spawn,
       createBrowser: async () => new FakeBrowser(),
     });
-    const api = await serveToolApi({
-      session: "sess-cli",
-      token: "tok",
-      scope,
+    const api = await serveGateway({
+      sessions: [{ scope, token: "tok" }],
     });
     const env = {
       ...process.env,
