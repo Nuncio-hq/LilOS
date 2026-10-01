@@ -5,10 +5,11 @@ import { useThemeColor } from "../components/icon";
 import type { SessionLife } from "./types";
 
 /* #344: whether a thread's engine session holds the Mac, without words (web:
-   the `.lilos-life` ring on the "N replies" pill). A thin capsule ring around
-   the replies count: a faint still ring while the session is open, a bright
-   arc travelling round it while it runs (a turn or any subagent), nothing
-   once it's closed. Reduced motion: running is a brighter still ring. */
+   the `.lilos-life` ring on the "N replies" pill). A thin capsule ring in the
+   working colours (violet → blue → teal) around the replies count: still
+   while the session is open and idle, a bright stretch of it travelling round
+   while it runs (a turn or any subagent), nothing once it's closed. Reduced
+   motion: running is the full-strength ring, still. */
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 const STROKE = 1.5;
@@ -78,8 +79,8 @@ export function LifePill({
             height={h}
             rx={h / 2}
             fill="none"
-            stroke={work}
-            strokeOpacity={life === "running" && still ? 0.75 : 0.25}
+            stroke="url(#life-arc)"
+            strokeOpacity={life === "running" ? (still ? 1 : 0.55) : 0.7}
             strokeWidth={STROKE}
           />
           {run && (
