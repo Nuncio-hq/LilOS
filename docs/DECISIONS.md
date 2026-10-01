@@ -117,6 +117,12 @@ PR does not exist.
   bootstrapped jobs — registering over one keeps the old binary and pins
   the version store. Not: trusting `status` alone, or failing the
   register on that error (rolls back working installs). — #206
+- **D-#388 `lilos-harness --compile` marks `chromium-bidi` external.**
+  playwright-core requires it lazily on the BiDi transport only — the browser
+  surface drives Chromium over CDP and never loads it, so the missing package
+  is excluded at bundle time, not vendored or imported dynamically.
+  Not: installing chromium-bidi for the bundler, or marking playwright
+  external (the browser surface must stay bundled). — #388 · PR #391
 - **D-#232 Native chrome: `titleBarStyle: "hiddenInset"` + `vibrancy:
   "sidebar"`; the renderer owns the drag regions** (`lilos-drag` on header
   strips, interactive children `no-drag`) and pushes its theme to
