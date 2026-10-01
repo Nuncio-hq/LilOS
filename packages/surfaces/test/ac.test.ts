@@ -162,7 +162,11 @@ describe("AC-2 one op set: dispatch, HTTP tool API, client", () => {
     try {
       // terminal_run crosses the wire and reaches the session's real PTY.
       const run = client.terminalRun({ command: "echo ok" });
-      await new Promise((r) => setTimeout(r, 20));
+      // The emitted output must echo this run's write — wait for the HTTP
+      // request to land it in the PTY, not for a wall-clock sleep (#380).
+      await vi.waitFor(() => {
+        expect(spawner.last.written.join("")).toContain("__LILOS_DONE_1__");
+      });
       spawner.last.emit(
         `${spawner.last.written.join("")}ok\n__LILOS_DONE_1__0\n`,
       );

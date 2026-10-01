@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { attachViewer, SessionSurfaces, toolBackend } from "../src/index.js";
 import { FakeBrowser, FakePtySpawner, serveGateway } from "./fakes.js";
 
@@ -158,13 +158,16 @@ describe("AC-4 the preview viewport follows the pane", () => {
     v.receive(
       JSON.stringify({ type: "browser.resize", width: 640, height: 480 }),
     );
-    await new Promise((r) => setTimeout(r, 10));
-    expect(browser.viewport).toEqual({ width: 640, height: 480 });
-    expect(scope.snapshot().page).toEqual({ width: 640, height: 480 });
-    expect(sent.at(-1)).toEqual({
-      type: "page",
-      page: { width: 640, height: 480 },
+    // The resize converges through the async serializer before the page
+    // event lands — wait for it (#380).
+    await vi.waitFor(() => {
+      expect(browser.viewport).toEqual({ width: 640, height: 480 });
+      expect(sent.at(-1)).toEqual({
+        type: "page",
+        page: { width: 640, height: 480 },
+      });
     });
+    expect(scope.snapshot().page).toEqual({ width: 640, height: 480 });
     v.detach();
   });
 
@@ -174,10 +177,12 @@ describe("AC-4 the preview viewport follows the pane", () => {
     v.receive(
       JSON.stringify({ type: "browser.resize", width: 500, height: 300 }),
     );
-    await new Promise((r) => setTimeout(r, 10));
     await scope.browserOpen({ url: "http://localhost:1" });
-    await new Promise((r) => setTimeout(r, 10));
-    expect(browser.viewport).toEqual({ width: 500, height: 300 });
+    // The queued pane size is applied by the async converge after launch —
+    // wait for it (#380).
+    await vi.waitFor(() => {
+      expect(browser.viewport).toEqual({ width: 500, height: 300 });
+    });
     expect(scope.snapshot().page).toEqual({ width: 500, height: 300 });
     v.detach();
   });
