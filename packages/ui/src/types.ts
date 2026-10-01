@@ -348,6 +348,30 @@ export type EngineProfile = {
   soul: string;
   skills: number;
 };
+
+/* Per-profile LilOS connection state (issue #338, agent gateway #336):
+   "connected" = the profile's LilOS plugin is enabled; "not-connected" = the
+   one-time approval was never given or was declined; "updating" = a connect
+   or plugin update is in flight; "failed" = the last attempt failed and
+   `reason` carries the plain why. LilOS only enables/disables the plugin —
+   it never deletes a profile. */
+export type ConnectionState =
+  | "connected"
+  | "not-connected"
+  | "updating"
+  | "failed";
+
+/* One profile's connection row — the Connect step and Settings → Engine both
+   speak this. */
+export type ProfileConnection = {
+  /** Engine profile id (`agents.*` handle). */
+  profile: string;
+  /** Display name of the employee hired on this profile, when there is one. */
+  employee?: string;
+  state: ConnectionState;
+  /** Plain reason shown when state is "failed". */
+  reason?: string;
+};
 export type Msg =
   | {
       kind: "msg";
@@ -495,6 +519,7 @@ export type SettingsSectionId =
   | "approvals"
   | "editors"
   | "models"
+  | "engine"
   | "status"
   | "about";
 /* Engine approval policy: Smart = routine steps run, risky ones ask;

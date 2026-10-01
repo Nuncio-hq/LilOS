@@ -51,8 +51,11 @@ test("AC-1 first run: relay connects, `default` is the first employee, DM opens 
     sidebar(page).getByRole("button", { name: /Default/ }),
   ).toBeVisible();
 
-  // Step 1 (and only click inside the flow): open the DM.
-  await page.getByRole("button", { name: /Open DM with Default/ }).click();
+  // Page 1's Continue lands on the "Connect Hermes to LilOS" step (#338);
+  // Later skips it into the DM — still ≤3 clicks total.
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText("Connect Hermes to LilOS")).toBeVisible();
+  await page.getByRole("button", { name: "Later" }).click();
   await expect(page.getByPlaceholder(/New session with Default/)).toBeVisible();
   await expect(page.getByText(/Start a session with Default/)).toBeVisible();
   expect(errors).toEqual([]);

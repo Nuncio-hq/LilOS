@@ -29,6 +29,10 @@ export {
   isHidden,
   ModelVisibilityDialog,
 } from "./chat/model-visibility-dialog";
+// connect to LilOS (issue #338): first-run step, DM notice, shared state badge
+export { ConnectBadge } from "./connect/connect-badge";
+export { ConnectStep } from "./connect/connect-step";
+export { NotConnectedNotice } from "./connect/not-connected-notice";
 // conversation (shared by the thread panel and Focus — issue #19)
 export { ReplyCards } from "./conversation/cards";
 export { type PlanAction, PlanCard } from "./conversation/plan-card";
