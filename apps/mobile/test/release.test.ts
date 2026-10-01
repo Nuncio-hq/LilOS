@@ -258,6 +258,9 @@ describe("#268 a bare VM ships with zero manual steps", () => {
   // The full happy path on a stubbed bare VM: brew installs pod, both
   // xcodebuilds run with the ASC auth flags + LILOS_XCARGS, the .ipa lands.
   // Darwin-only: the app.json stamp uses BSD `sed -i ''`.
+  // The timed region is one synchronous run of a ~20-process shell pipeline
+  // (~1.2s warm); the 5s default cannot absorb suite-load spawn contention —
+  // scoped timeout like checkpoints.test.ts's 50k-tree test, not a wider one.
   it.runIf(process.platform === "darwin")(
     "auto-installs pod and reaches done on a stubbed bare VM",
     () => {
@@ -306,6 +309,7 @@ exit 0`,
         });
       }
     },
+    15_000,
   );
 });
 
