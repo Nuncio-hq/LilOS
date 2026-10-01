@@ -916,7 +916,6 @@ export function Workbench({
                      that one is highlighted and scrolled into view. */
                   <pre className="max-h-[60vh] overflow-auto rounded-lg border bg-muted/30 p-3 font-mono text-[11px] leading-5">
                     {viewFile.content.split("\n").map((ln, i) => (
-                      // biome-ignore lint/suspicious/noArrayIndexKey: file lines are positional
                       <div
                         key={i}
                         ref={

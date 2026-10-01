@@ -368,8 +368,9 @@ export type PushPrefs = z.infer<typeof PushPrefs>;
 
 /**
  * What `workbench_open` shows in a DM's Workbench — the tab plus the focus
- * inside it. `{file, line?}` opens the Files tab on that file (scrolled to the
- * line); `{diff, path?}` opens Changes, filtered to `path` when given; `{pr}`
+ * inside it. `{file, line?}` opens that file — on Changes when it is a
+ * changed file, otherwise on the Files tab — scrolled to `line` when given;
+ * `{diff, path?}` opens Changes, filtered to `path` when given; `{pr}`
  * opens the PR tab; `{url}` opens Preview (the session browser navigates to
  * it too). It never opens an editor on the Mac.
  */
