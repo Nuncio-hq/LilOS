@@ -518,6 +518,8 @@ const msg = (
     authorKind: seq % 2 ? "user" : "employee",
     text,
     rewound: false,
+    dropped: false,
+    removed: false,
     createdAt: at,
   }) as const;
 
