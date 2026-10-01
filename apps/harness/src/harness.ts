@@ -2315,7 +2315,7 @@ export class Harness {
      landed (`turn.steered`) nor pumped as the next turn's `ref` was
      consumed but will never run — the user sees it "waiting" forever.
      After a short grace for late events, park it in the not-sent tray
-     (`messages.drop`) so Oscar can Send it again. */
+     (`messages.drop`) so the user can Send it again. */
   private scheduleSteerReconcile(binding: SessionBinding) {
     if (binding.steerReconcileTimer) clearTimeout(binding.steerReconcileTimer);
     binding.steerReconcileTimer = setTimeout(() => {
