@@ -488,17 +488,17 @@ export function Thread({
          the URL itself. */
       onOpenWorkbench={(e) => {
         const t = e.target;
-        if ("url" in t) {
+        if (t.url !== undefined) {
           void Linking.openURL(t.url);
           return;
         }
-        if ("pr" in t) {
+        if (t.pr === true) {
           navigation.navigate("ThreadInfo", { conversationId });
           return;
         }
         navigation.navigate("WbDiff", {
           conversationId,
-          ...("file" in t
+          ...(t.file !== undefined
             ? { path: t.file }
             : t.path !== undefined
               ? { path: t.path }

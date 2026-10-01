@@ -385,17 +385,69 @@ export type PushPrefs = z.infer<typeof PushPrefs>;
  * `{diff, path?}` opens Changes, filtered to `path` when given; `{pr}`
  * opens the PR tab; `{url}` opens Preview (the session browser navigates to
  * it too). It never opens an editor on the Mac.
+ *
+ * A flat object, not a union: `z.toJSONSchema` on a union emits a bare
+ * `anyOf` (no `type:"object"`/`properties`), so function-calling clients
+ * advertised the tool with NO arguments and models had to guess them
+ * (found in the real-provider live leg of #340). Exactly one of
+ * `file`/`diff`/`pr`/`url` must be given; `line` only with `file`, `path`
+ * only with `diff`.
  */
-export const WorkbenchOpenTarget = z.union([
-  z.strictObject({
-    file: z.string().min(1),
-    line: z.int().min(1).optional(),
-  }),
-  z.strictObject({
-    diff: z.literal(true),
-    path: z.string().min(1).optional(),
-  }),
-  z.strictObject({ pr: z.literal(true) }),
-  z.strictObject({ url: z.string().min(1) }),
-]);
+export const WorkbenchOpenTarget = z
+  .strictObject({
+    /** The session-folder file to open (on Changes when it is a changed
+       file, otherwise on the Files tab). */
+    file: z.string().min(1).optional().describe("Session-folder file to show"),
+    /** 1-based line inside `file` to scroll to and highlight. */
+    line: z
+      .int()
+      .min(1)
+      .optional()
+      .describe("1-based line inside `file` to highlight"),
+    /** Open the Changes tab (the session's live git diff). */
+    diff: z
+      .literal(true)
+      .optional()
+      .describe("Open the Changes tab — the session's live git diff"),
+    /** Filter the Changes tab to one file; only together with `diff`. */
+    path: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Filter Changes to one file (with `diff`)"),
+    /** Open the PR tab (the thread's pull requests). */
+    pr: z
+      .literal(true)
+      .optional()
+      .describe("Open the PR tab for the thread's pull requests"),
+    /** A preview URL to open on the Preview tab. */
+    url: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Preview URL to open on the Preview tab"),
+  })
+  .check((ctx) => {
+    const v = ctx.value;
+    if (
+      [v.file, v.diff, v.pr, v.url].filter((x) => x !== undefined).length !== 1
+    )
+      ctx.issues.push({
+        code: "custom",
+        message: "exactly one of `file`, `diff`, `pr`, `url` must be set",
+        input: v,
+      });
+    if (v.line !== undefined && v.file === undefined)
+      ctx.issues.push({
+        code: "custom",
+        message: "`line` only applies together with `file`",
+        input: v,
+      });
+    if (v.path !== undefined && v.diff === undefined)
+      ctx.issues.push({
+        code: "custom",
+        message: "`path` only applies together with `diff`",
+        input: v,
+      });
+  });
 export type WorkbenchOpenTarget = z.infer<typeof WorkbenchOpenTarget>;

@@ -69,10 +69,9 @@ describe("AC-2 tool surface contracts", () => {
         properties?: Record<string, unknown>;
       };
       expect(schema.type, `${name}: JSON schema type`).toBe("object");
-      expect(
-        typeof schema.properties,
-        `${name}: JSON schema properties`,
-      ).toBe("object");
+      expect(typeof schema.properties, `${name}: JSON schema properties`).toBe(
+        "object",
+      );
       // The stdio MCP derives inputSchema from `params.shape` — it must
       // exist, and every field it names must appear in the JSON schema.
       const shape = (t.params as { shape?: Record<string, unknown> }).shape;

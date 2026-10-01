@@ -309,69 +309,41 @@
     },
     "WorkbenchOpenTarget": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "anyOf": [
-        {
-          "type": "object",
-          "properties": {
-            "file": {
-              "type": "string",
-              "minLength": 1
-            },
-            "line": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          "required": [
-            "file"
-          ],
-          "additionalProperties": false
+      "type": "object",
+      "properties": {
+        "file": {
+          "description": "Session-folder file to show",
+          "type": "string",
+          "minLength": 1
         },
-        {
-          "type": "object",
-          "properties": {
-            "diff": {
-              "type": "boolean",
-              "const": true
-            },
-            "path": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "diff"
-          ],
-          "additionalProperties": false
+        "line": {
+          "description": "1-based line inside `file` to highlight",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
         },
-        {
-          "type": "object",
-          "properties": {
-            "pr": {
-              "type": "boolean",
-              "const": true
-            }
-          },
-          "required": [
-            "pr"
-          ],
-          "additionalProperties": false
+        "diff": {
+          "description": "Open the Changes tab — the session's live git diff",
+          "type": "boolean",
+          "const": true
         },
-        {
-          "type": "object",
-          "properties": {
-            "url": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "url"
-          ],
-          "additionalProperties": false
+        "path": {
+          "description": "Filter Changes to one file (with `diff`)",
+          "type": "string",
+          "minLength": 1
+        },
+        "pr": {
+          "description": "Open the PR tab for the thread's pull requests",
+          "type": "boolean",
+          "const": true
+        },
+        "url": {
+          "description": "Preview URL to open on the Preview tab",
+          "type": "string",
+          "minLength": 1
         }
-      ]
+      },
+      "additionalProperties": false
     },
     "WorkbenchOpenResult": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

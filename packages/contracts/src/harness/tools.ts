@@ -149,9 +149,12 @@ export const WorkbenchPreviewsResult = z.object({
 });
 export type WorkbenchPreviewsResult = z.infer<typeof WorkbenchPreviewsResult>;
 
-/* `workbench_open`'s params ARE the app-domain `WorkbenchOpenTarget` union —
-   the gateway forwards it verbatim into `workbench.open` / `workbench.opened`
-   (declared there, not duplicated here). */
+/* `workbench_open`'s params ARE the app-domain `WorkbenchOpenTarget` — the
+   gateway forwards it verbatim into `workbench.open` / `workbench.opened`
+   (declared there, not duplicated here). Keep every tool's params a
+   TOP-LEVEL OBJECT schema: `z.toJSONSchema` on unions/anyOf emits no
+   `type:"object"`/`properties`, so function-calling clients would advertise
+   the tool with no arguments (#340 live-leg regression test pins this). */
 export const WorkbenchOpenResult = z.object({
   opened: z.literal(true),
 });

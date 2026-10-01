@@ -880,6 +880,34 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
       // Workbench Preview shows the page, not a blank pane.
       await new Promise((r) => setTimeout(r, 10));
       expect(browser?.url).toBe("http://localhost:5173");
+
+      /* #340 live-leg: the model guessed `{"diff": "<a diff string>"}` and
+         got a bare HTTP 400 — invalid_params must surface the zod issues so
+         it can correct itself. */
+      const bad = await dmCall(api.baseUrl, "t-wb", "workbench_open", {
+        diff: "<a unified diff string>",
+        path: "thread-title",
+      });
+      expect(bad.result?.isError).toBe(true);
+      const badText = bad.result?.content[0]?.text ?? "";
+      expect(badText).toContain("diff");
+      expect(badText).toContain("expected true");
+      const rest = await fetch(`${api.baseUrl}/tools/workbench_open`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer t-wb",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ diff: true, file: "x.ts" }),
+      });
+      expect(rest.status).toBe(400);
+      const body = (await rest.json()) as {
+        error?: { code?: string; message?: string };
+      };
+      expect(body.error?.code).toBe("invalid_params");
+      expect(body.error?.message).toContain(
+        "exactly one of `file`, `diff`, `pr`, `url`",
+      );
     } finally {
       api.server.close();
     }

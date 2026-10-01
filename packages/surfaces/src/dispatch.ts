@@ -15,6 +15,7 @@ import {
   type ThreadSearchParams,
   type ThreadSetTitleParams,
 } from "@lilos/contracts/harness";
+import { z } from "zod";
 import { type SurfaceBackend, SurfaceError } from "./backend.js";
 
 /**
@@ -35,9 +36,13 @@ export async function callTool(
   if (!contract) throw new SurfaceError("not_found", `unknown tool: ${name}`);
   const parsed = contract.params.safeParse(args ?? {});
   if (!parsed.success)
+    /* prettifyError lists each issue as a line the calling model can act
+       on (zod's raw error.message is a JSON blob) — surfaced through the
+       gateway's {error:{code,message}} body so the model can correct and
+       retry (#340 live-leg: bare HTTP 400s taught it nothing). */
     throw new SurfaceError(
       "invalid_params",
-      `invalid params for ${name}: ${parsed.error.message}`,
+      `invalid params for ${name}:\n${z.prettifyError(parsed.error)}`,
     );
   const p = parsed.data;
   let result: unknown;

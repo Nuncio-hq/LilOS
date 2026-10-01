@@ -267,25 +267,26 @@ export function Workbench({
   useEffect(() => {
     if (!spot) return;
     const t = spot.target;
-    if ("file" in t) {
-      if (changed.has(t.file)) {
-        setSel(t.file);
+    if (t.file !== undefined) {
+      const file = t.file;
+      if (changed.has(file)) {
+        setSel(file);
         setTab("changes");
         return;
       }
       setTab("files");
       if (host && liveCwd)
         void host
-          .read(liveCwd, t.file)
-          .then((r) => r && setViewFile({ path: t.file, ...r, line: t.line }));
+          .read(liveCwd, file)
+          .then((r) => r && setViewFile({ path: file, ...r, line: t.line }));
       return;
     }
-    if ("diff" in t) {
+    if (t.diff === true) {
       setSel(t.path ?? null);
       setTab("changes");
       return;
     }
-    setTab("pr" in t ? "pr" : "preview");
+    setTab(t.pr === true ? "pr" : "preview");
   }, [spotAt]); // eslint-disable-line react-hooks/exhaustive-deps
   const tree = buildTree([
     ...new Set([...(probe?.files ?? repoFiles ?? []), ...changed.keys()]),

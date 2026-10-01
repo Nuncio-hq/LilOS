@@ -155,6 +155,26 @@ function toolsCalled(rpc: StdioRpc, from: number): string[] {
 // a tool result arrives the stub answers `ANSWER:<result snippet>` so the
 // script can check the model saw the real relay data (like a typed answer).
 
+/* Property names the model is told `lilos_workbench_open` takes — read from
+   a tool_describe result (`{"tools": {"lilos_workbench_open": {parameters}}}`).
+   Returns [] when the tool was described but its schema has no properties
+   (the union-schema bug), null when it wasn't described at all. */
+function wbPropsFromDescribe(txt: string): string[] | null {
+  try {
+    const parsed = JSON.parse(txt) as {
+      tools?: Record<
+        string,
+        { parameters?: { properties?: Record<string, unknown> } }
+      >;
+    };
+    const entry = parsed.tools?.lilos_workbench_open;
+    if (!entry) return null;
+    return Object.keys(entry.parameters?.properties ?? {});
+  } catch {
+    return null;
+  }
+}
+
 const QUESTIONS: [RegExp, string, Record<string, unknown>][] = [
   [/who are you|where are you/i, "context", {}],
   [/who.?s on the team|the team/i, "team_list", {}],
@@ -170,6 +190,13 @@ const QUESTIONS: [RegExp, string, Record<string, unknown>][] = [
 
 function startStub() {
   const seen: { tools: string[]; lastText: string }[] = [];
+  /* The schema hermes actually advertised to the model for
+     lilos_workbench_open (read from the request's `tools`, never
+     hard-coded). A union params schema serializes to a bare anyOf — no
+     `properties` — and the live leg showed a model CANNOT guess args from
+     that: the stub derives its call args from this schema so a schema
+     regression can no longer hide behind a hard-coded `{diff:true}`. */
+  const advertised: { wbProps: string[] | null } = { wbProps: null };
   const srv = Bun.serve({
     port: 0,
     async fetch(req) {
@@ -237,33 +264,89 @@ function startStub() {
             ? /^call_dm_3/.test(callIdOf(m as { tool_call_id?: string }))
             : false,
         );
+        const described = toolMsgs.some((m) =>
+          /^call_dm_4/.test(callIdOf(m as { tool_call_id?: string })),
+        );
         const searchTool = tools.find((n) => /^tool_search$/i.test(n));
+        const describeTool = tools.find((n) => /^tool_describe$/i.test(n));
         const callTool = tools.find((n) => /^tool_call$/i.test(n));
+
+        /* workbench_open: read the schema the MODEL actually sees — a real
+           model calls tool_describe before tool_call, so the stub does the
+           same, then builds `{diff:true}` only if the schema lists `diff`.
+           A bare anyOf/{} (the union-schema bug) → no args → the call fails
+           AND the advertised-props check at the end fails the run. */
+        let intentArgs = intent?.[2];
+        if (intent?.[1] === "workbench_open") {
+          if (described && advertised.wbProps === null) {
+            const txt = toolMsgs
+              .filter((m) => /^call_dm_4/.test(callIdOf(m)))
+              .map(toolText)
+              .join("\n");
+            advertised.wbProps = wbPropsFromDescribe(txt);
+            if (!(advertised.wbProps ?? []).includes("diff"))
+              console.log(
+                `[stub] lilos_workbench_open schema via tool_describe: ${txt.slice(0, 600)}`,
+              );
+          }
+          /* A directly-advertised def (some hermes configs skip the
+             search/describe indirection) is the same contract surface. */
+          if (advertised.wbProps === null) {
+            const def = (body.tools ?? []).find((t) =>
+              /lilos_workbench_open$/.test(t.function?.name ?? ""),
+            );
+            if (def?.function)
+              advertised.wbProps = Object.keys(
+                (
+                  def.function as {
+                    parameters?: { properties?: Record<string, unknown> };
+                  }
+                ).parameters?.properties ?? {},
+              );
+          }
+          intentArgs = (advertised.wbProps ?? []).includes("diff")
+            ? { diff: true }
+            : undefined;
+        }
+
         const wantCall =
           ranLilos || !intent
             ? null
             : wanted
-              ? { id: "call_dm_1", name: wanted, arguments: intent[2] }
-              : searched && callTool
+              ? {
+                  id: "call_dm_1",
+                  name: wanted,
+                  arguments: intentArgs ?? {},
+                }
+              : intent[1] === "workbench_open" &&
+                  searched &&
+                  !described &&
+                  describeTool
                 ? {
-                    id: "call_dm_2",
-                    name: callTool,
-                    arguments: {
-                      calls: [
-                        {
-                          name: `lilos_${intent[1]}`,
-                          arguments: intent[2],
-                        },
-                      ],
-                    },
+                    id: "call_dm_4",
+                    name: describeTool,
+                    arguments: { names: ["lilos_workbench_open"] },
                   }
-                : searchTool && toolMsgs.length < 8
+                : searched && callTool
                   ? {
-                      id: "call_dm_3",
-                      name: searchTool,
-                      arguments: { queries: [intent[1]] },
+                      id: "call_dm_2",
+                      name: callTool,
+                      arguments: {
+                        calls: [
+                          {
+                            name: `lilos_${intent[1]}`,
+                            arguments: intentArgs ?? {},
+                          },
+                        ],
+                      },
                     }
-                  : null;
+                  : searchTool && toolMsgs.length < 8
+                    ? {
+                        id: "call_dm_3",
+                        name: searchTool,
+                        arguments: { queries: [intent[1]] },
+                      }
+                    : null;
 
         /* Answer only from REAL lilos results (call_dm_1/2), not the
            tool_search listing that came first — the reply is what the
@@ -370,6 +453,7 @@ function startStub() {
   return {
     url: `http://127.0.0.1:${srv.port}`,
     seen,
+    advertised,
     stop: () => srv.stop(true),
   };
 }
@@ -859,6 +943,17 @@ async function main() {
         opened?.params?.conversationId === conv.id,
       "workbench.opened reached the app's relay socket",
       JSON.stringify(opened?.params ?? "none").slice(0, 160),
+    );
+    /* Schema regression guard (#340 live leg): the model can only call
+       workbench_open with sane args if its advertised inputSchema lists
+       the target fields — a bare anyOf/{} advertises nothing. */
+    check(
+      stub?.advertised.wbProps?.includes("diff") === true,
+      "workbench_open's advertised schema lists its target fields",
+      JSON.stringify(stub?.advertised.wbProps ?? "not advertised").slice(
+        0,
+        160,
+      ),
     );
   } catch (e) {
     check(false, "acp leg", String(e));

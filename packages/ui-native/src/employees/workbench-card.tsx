@@ -15,19 +15,19 @@ const LABEL: {
 } = {
   icon: "rectangle.righthalf.filled",
   title: (t) =>
-    "file" in t
+    t.file !== undefined
       ? `Open ${t.file.split("/").at(-1)}`
-      : "diff" in t
+      : t.diff === true
         ? "See the changes"
-        : "pr" in t
+        : t.pr === true
           ? "See the pull request"
           : "Open this page",
   detail: (t) =>
-    "file" in t
+    t.file !== undefined
       ? t.file + (t.line !== undefined ? `:${t.line}` : "")
-      : "diff" in t
+      : t.diff === true
         ? t.path
-        : "url" in t
+        : t.url !== undefined
           ? t.url
           : undefined,
 };

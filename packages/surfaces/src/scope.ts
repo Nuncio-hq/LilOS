@@ -627,11 +627,11 @@ export class SessionSurfaces implements ViewerScope {
 
   workbenchOpen(p: WorkbenchOpenTarget) {
     const summary =
-      "file" in p
+      p.file !== undefined
         ? `file ${p.file}`
-        : "diff" in p
+        : p.diff === true
           ? `diff${p.path ? ` ${p.path}` : ""}`
-          : "pr" in p
+          : p.pr === true
             ? "pr"
             : `url ${p.url}`;
     return this.tracked("workbench_open", summary, async () => {
@@ -639,7 +639,7 @@ export class SessionSurfaces implements ViewerScope {
       /* `{url}` also points the session's own browser at the page so the
          Workbench Preview shows it (the app event opens the tab; the browser
          is what renders there). */
-      if ("url" in p) this.browserNavigate(p.url);
+      if (p.url !== undefined) this.browserNavigate(p.url);
       await ops.openWorkbench(p);
       return { opened: true as const };
     });

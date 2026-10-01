@@ -214,12 +214,16 @@ export type AgentEntry = {
 
 /** What a `workbench_open` call asks the app to show (#340) — the desktop
     opens its Workbench on the matching tab; the phone gets this tappable
-    card in the thread instead (structural mirror of the wire target). */
-export type WbCardTarget =
-  | { file: string; line?: number }
-  | { diff: true; path?: string }
-  | { pr: true }
-  | { url: string };
+    card in the thread instead (structural mirror of the wire target: a
+    flat object with exactly one of file/diff/pr/url set). */
+export type WbCardTarget = {
+  file?: string;
+  line?: number;
+  diff?: true;
+  path?: string;
+  pr?: true;
+  url?: string;
+};
 
 /** A `workbench.opened` event as a thread row: the agent's "look at this"
     lands as a card that opens the same thing the desktop's Workbench
