@@ -440,8 +440,16 @@ test("AC-4 a background process lists in Background with command/status/uptime/U
   await send(page, "leave the dev server running in the background");
   const bg = tab(page, /Background/);
   // The tab appears as soon as the engine reports the job (within seconds).
+  // The badge flips "Background" → "Background 1" at the same moment and can
+  // remount the trigger mid-click, so click until the tab actually selects
+  // instead of trusting one dispatch (#354).
   await expect(bg).toBeVisible({ timeout: 30_000 });
-  await bg.click();
+  await expect(async () => {
+    await bg.click();
+    await expect(bg).toHaveAttribute("aria-selected", "true", {
+      timeout: 2_000,
+    });
+  }).toPass({ timeout: 30_000 });
 
   /* #309: delegated subagents list here too (`sa:` ids) — scope to the
      dev-server job row, not just the first. */
