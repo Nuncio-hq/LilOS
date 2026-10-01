@@ -15,6 +15,7 @@
  * engine never outlives its launcher (#84). `--tag` is a plain argv marker so
  * e2e teardown can pgrep for engines a specific boot leaked.
  */
+import { execFileSync } from "node:child_process";
 import { FakeEngine } from "../src/engine.js";
 import { eventFrame, handleJsonRpc } from "../src/transport.js";
 
@@ -56,6 +57,33 @@ if (flag("watch-stdin")) {
   process.stdin.once("close", () => process.exit(0));
   process.stdin.once("error", () => process.exit(0));
 }
+
+/* Orphan watchdog (#347), unconditional: a fake engine exists only inside a
+   test/dev tree, so once the spawner is gone this process is by definition a
+   leak — the ~3.5-day-old `serve.ts --tick 25` orphans Oscar swept. Exit
+   when we are reparented (our parent died) or when our parent gets
+   reparented (the owner past a `bun run` shim died). Same check as
+   @lilos/background's watchOrphaned, inlined — engines depend only on
+   contracts. Belt under --watch-stdin for launchers that cannot hold our
+   stdin (detached groups, `stdio: ["ignore"]`). launchd-installed runs are
+   safe: their ppid is 1 from the start and never changes. */
+const ppid0 = process.ppid;
+const parentPpid = (pid: number): number | null => {
+  try {
+    const out = execFileSync("ps", ["-o", "ppid=", "-p", String(pid)], {
+      encoding: "utf8",
+    }).trim();
+    const n = Number.parseInt(out, 10);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+};
+const gpid0 = ppid0 <= 1 ? null : parentPpid(ppid0);
+setInterval(() => {
+  if (process.ppid !== ppid0) process.exit(0);
+  if (gpid0 !== null && parentPpid(ppid0) !== gpid0) process.exit(0);
+}, 1_000).unref();
 
 const server = Bun.serve({
   port: arg("port", 0),

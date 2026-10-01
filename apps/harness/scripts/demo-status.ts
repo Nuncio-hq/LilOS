@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { systemClock, watchOrphaned } from "@lilos/background";
 import { RelayClient } from "@lilos/client-runtime";
 import { APP_PROTOCOL_VERSION } from "@lilos/contracts/app";
 import packageJson from "../package.json";
@@ -184,4 +185,15 @@ const shutdown = async () => {
 };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
+// Orphan watchdog (#347): die with the tree that spawned us; a killed runner
+// otherwise leaves this demo harnessing an engine forever.
+watchOrphaned({
+  clock: systemClock,
+  intervalMs: 1_000,
+  onOrphaned: (reason) => {
+    log.info("orphaned, shutting down", { reason });
+    void shutdown();
+  },
+});
 log.info("status demo running", { engineKind, model, demoSessions });

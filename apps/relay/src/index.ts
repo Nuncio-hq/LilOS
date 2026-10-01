@@ -7,6 +7,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
+import { systemClock, watchOrphaned } from "@lilos/background";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import packageJson from "../package.json";
 import { createApp } from "./app";
@@ -245,3 +246,15 @@ if (phoneAccessOn === true) {
     relay.log("phone access on but Tailscale unavailable — staying loopback");
   }
 }
+
+// Orphan watchdog (#347): die with the tree that spawned us — a killed test
+// worker or `bun run dev` umbrella otherwise leaves the relay holding its
+// port for days. Safe under launchd: a daemon's ppid is 1 and never moves.
+watchOrphaned({
+  clock: systemClock,
+  intervalMs: 1_000,
+  onOrphaned: (reason) => {
+    relay.log(`orphaned (${reason}) — exiting`);
+    process.exit(0);
+  },
+});

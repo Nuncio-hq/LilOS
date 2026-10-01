@@ -14,6 +14,7 @@
  * HERMES_PROVIDER / HERMES_MODEL / HERMES_BIN for the live leg.
  */
 
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -61,10 +62,27 @@ process.on("SIGTERM", () => void shutdown(0));
 // `bun run <script>` spawns this file as a child process and does NOT
 // forward signals, so a SIGTERM/SIGKILL aimed at the `bun run dev` shim
 // orphans us — and our relay/harness/vite children keep their ports bound,
-// poisoning the next stack's boot (#84). Die when we get reparented.
+// poisoning the next stack's boot (#84). Die when we get reparented — or
+// when the shim itself gets reparented: a killed test worker leaves the
+// shim alive with stdin ignored, and without this hop nothing reaches us
+// (#347). Same check as @lilos/background's watchOrphaned, inlined — apps/web
+// keeps dev scripts dependency-free.
+const parentPidOf = (pid: number): number | null => {
+  try {
+    const out = execFileSync("ps", ["-o", "ppid=", "-p", String(pid)], {
+      encoding: "utf8",
+    }).trim();
+    const n = Number.parseInt(out, 10);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+};
 const ppid0 = process.ppid;
+const gpid0 = ppid0 <= 1 ? null : parentPidOf(ppid0);
 setInterval(() => {
   if (process.ppid !== ppid0) void shutdown(0);
+  if (gpid0 !== null && parentPidOf(ppid0) !== gpid0) void shutdown(0);
 }, 300).unref();
 
 const webDir = path.resolve(here, "..");
