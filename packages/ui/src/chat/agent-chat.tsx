@@ -36,7 +36,9 @@ export const plain = (s: string) =>
 
 /* One steer that LANDED inside a running turn: applied at a tool boundary, so it sits in the turn at
    that point. Right-aligned and labelled with the user's name so it reads as their message inside the
-   agent's turn, not agent output. Solid amber-100 + amber-950 text keeps the chip AA-readable. While a
+   agent's turn, not agent output. Solid amber-100 + amber-950 text keeps the chip AA-readable in
+   light; dark melts it into the same amber tint family as the flash rows (amber-900/40) with the
+   remapped light text. While a
    steer still waits it lives in the QueuedTray, never here. */
 export function SteerRow({
   text,
@@ -52,7 +54,7 @@ export function SteerRow({
       className={cn(
         // mt-2 keeps the chip clearly separated from the agent's text above it — it must never read
         // as part of the agent's output (issue #15).
-        "ml-auto mt-2 flex w-fit max-w-full items-start gap-1.5 rounded-md border border-amber-300 border-solid bg-amber-100 px-2 py-1 text-amber-950 text-xs",
+        "ml-auto mt-2 flex w-fit max-w-full items-start gap-1.5 rounded-md border border-amber-300 border-solid bg-amber-100 px-2 py-1 text-amber-950 text-xs dark:bg-amber-900/40",
       )}
     >
       <CheckIcon className="mt-0.5 size-3 shrink-0 text-emerald-700" />
@@ -163,7 +165,7 @@ export function NotSentTray({
                         onClick={() => onRemove(i)}
                         aria-label="Remove"
                         data-notsent-remove={i}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:text-blue-300 dark:hover:text-red-900"
                       />
                     }
                   >
@@ -257,7 +259,7 @@ export function QueuedTray({
                         onClick={() => onEdit(i)}
                         aria-label="Edit"
                         data-queued-edit={i}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-900"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-900"
                       />
                     }
                   >
@@ -277,7 +279,7 @@ export function QueuedTray({
                         onClick={() => onRemove(i)}
                         aria-label="Remove"
                         data-queued-remove={i}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:text-amber-300 dark:hover:text-red-900"
                       />
                     }
                   >
