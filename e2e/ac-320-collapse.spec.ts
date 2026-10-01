@@ -191,3 +191,70 @@ test("AC-1/2/3 collapsing a running turn's steps stays collapsed; approval stays
     await stack.stop();
   }
 });
+
+/* Evidence grid: collapsed-while-running (approval visible) at the three
+   PR-bar widths, light + dark. The theme lives in localStorage — flipping it
+   needs a reload, which also drops the component's collapse state, so each
+   theme leg re-collapses after it re-navigates. */
+test("screens: collapsed running block, light + dark, three widths", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const stack = await bootStack("collapse-shots", {
+    relay: wport(4665),
+    feed: wport(4666),
+    web: wport(5248),
+  });
+  try {
+    await dmDefault(stack, page);
+    await send(page, "Add a release note to the readme");
+
+    const collapseTurn = async () => {
+      const turn = page.locator("[data-agentturn]").last();
+      await expect(turn.locator("[data-tasksteps]")).toBeVisible({
+        timeout: 60_000,
+      });
+      await expect(page.getByText("Approval needed").first()).toBeVisible({
+        timeout: 60_000,
+      });
+      await turn.locator(TRIGGER).first().click();
+      await expect(turn.locator(PANEL)).toHaveCount(0);
+      return turn;
+    };
+
+    const turn = await collapseTurn();
+    for (const w of [1288, 900, 1440]) {
+      await page.setViewportSize({ width: w, height: 700 });
+      await expect(turn.locator(PANEL)).toHaveCount(0);
+      await page.screenshot({
+        path: `${SHOTS}/collapsed-${w}x700-light.png`,
+      });
+    }
+
+    await page.evaluate(() => localStorage.setItem("lilos-theme", "dark"));
+    await page.reload();
+    const darkTurn = await collapseTurn();
+    for (const w of [1288, 900, 1440]) {
+      await page.setViewportSize({ width: w, height: 700 });
+      await expect(darkTurn.locator(PANEL)).toHaveCount(0);
+      await page.screenshot({
+        path: `${SHOTS}/collapsed-${w}x700-dark.png`,
+      });
+    }
+
+    // Settled-collapsed at the PR-bar size: flip back to light, reload (drops
+    // userSet), re-collapse, then let the parked approval run out.
+    await page.evaluate(() => localStorage.setItem("lilos-theme", "light"));
+    await page.reload();
+    await page.setViewportSize({ width: 1288, height: 700 });
+    const lightTurn = await collapseTurn();
+    await allowAllWhile(page, expectSettled(lightTurn));
+    await expect(lightTurn.locator("[data-tasksteps]")).toContainText(
+      /\d+ steps?/,
+    );
+    await expect(lightTurn.locator(PANEL)).toHaveCount(0);
+    await page.screenshot({ path: `${SHOTS}/settled-1288x700-light.png` });
+  } finally {
+    await stack.stop();
+  }
+});
