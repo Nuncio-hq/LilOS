@@ -631,8 +631,8 @@ test("AC-319 a `?tab=subagents` deep link on a zero-helper session lands on the 
     "true",
     { timeout: 30_000 },
   );
-  await expect(
-    page.getByText("No subagents in this session yet."),
-  ).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("No subagents in this session yet.")).toBeVisible(
+    { timeout: 30_000 },
+  );
   await page.screenshot({ path: `${SHOTS}/ac-319-3-empty.png` });
 });
