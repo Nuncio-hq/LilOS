@@ -74,18 +74,21 @@ interface Rec {
   seq?: number;
 }
 const tape: Rec[] = [];
-const rec = (
-  side: Rec["side"],
-  type: string,
-  detail: string,
-  seq?: number,
-) => tape.push({ ms: Date.now() - t0, side, type, detail, ...(seq ? { seq } : {}) });
+const rec = (side: Rec["side"], type: string, detail: string, seq?: number) =>
+  tape.push({
+    ms: Date.now() - t0,
+    side,
+    type,
+    detail,
+    ...(seq ? { seq } : {}),
+  });
 
 const pick = (p: Record<string, unknown>, keys: string[]) => {
   const bits: string[] = [];
   for (const k of keys) {
     const v = p[k];
-    if (typeof v === "string" && v) bits.push(`${k}=${JSON.stringify(v.slice(0, 160))}`);
+    if (typeof v === "string" && v)
+      bits.push(`${k}=${JSON.stringify(v.slice(0, 160))}`);
     else if (v !== undefined && typeof v !== "object")
       bits.push(`${k}=${JSON.stringify(v)}`);
   }
@@ -97,7 +100,11 @@ const gateway = await HermesGateway.connect(
 );
 gateway.onEvent((e: GatewayEvent) => {
   if (e.type === "gateway.ready") return;
-  rec("wire", e.type, `sid=${e.sessionId} ${pick(e.payload, ["text", "delta", "name", "status", "state", "model", "reasoning_effort"])}`);
+  rec(
+    "wire",
+    e.type,
+    `sid=${e.sessionId} ${pick(e.payload, ["text", "delta", "name", "status", "state", "model", "reasoning_effort"])}`,
+  );
 });
 out("gateway connected — recording raw wire frames");
 
@@ -206,9 +213,7 @@ check(
   `wire emitted reasoning.available x${avail.length} (the summary frame exists)`,
 );
 check(
-  session.turns.every(
-    (t, i) => t.reasoning === (expectedReasoning[i] ?? ""),
-  ),
+  session.turns.every((t, i) => t.reasoning === (expectedReasoning[i] ?? "")),
   `folded reasoning === the wire's reasoning.delta stream only (${JSON.stringify(expectedReasoning)})`,
 );
 check(
@@ -219,5 +224,7 @@ check(
 await conn.request("session.close", { sessionId }).catch(() => {});
 gateway.close();
 await cleanup();
-out(`RESULT: ${ok ? "PASS" : "FAIL (answer text reached the reasoning stream)"}`);
+out(
+  `RESULT: ${ok ? "PASS" : "FAIL (answer text reached the reasoning stream)"}`,
+);
 process.exit(ok ? 0 : 1);
