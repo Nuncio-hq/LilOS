@@ -241,6 +241,9 @@ export function SubagentsSheet({
   const ended = agents.filter((a) => a.status !== "running").reverse();
   return (
     <ScrollView
+      /* The sheet container paints Liquid Glass (SHEET contentStyle) — the
+         rows must sit on an opaque background to stay legible. */
+      className="flex-1 bg-background"
       contentContainerStyle={{
         paddingHorizontal: 16,
         paddingBottom: Math.max(insets.bottom, 16) + 12,
@@ -262,17 +265,20 @@ export function SubagentsSheet({
         (g) =>
           g.rows.length > 0 && (
             <Group key={g.title} title={g.title}>
-              {g.rows.map((a) => (
-                <Row
-                  key={a.id}
-                  a={a}
-                  onPress={
-                    a.employee?.threadId && onOpenThread
-                      ? () => onOpenThread(a.employee!.threadId!)
-                      : onOpen
-                  }
-                />
-              ))}
+              {g.rows.map((a) => {
+                const threadId = a.employee?.threadId;
+                return (
+                  <Row
+                    key={a.id}
+                    a={a}
+                    onPress={
+                      threadId && onOpenThread
+                        ? () => onOpenThread(threadId)
+                        : onOpen
+                    }
+                  />
+                );
+              })}
             </Group>
           ),
       )}
@@ -296,6 +302,7 @@ export function SubagentSheet({
   const thread = helper?.threadId;
   return (
     <ScrollView
+      className="flex-1 bg-background"
       contentContainerStyle={{
         paddingHorizontal: 16,
         paddingBottom: Math.max(insets.bottom, 16) + 12,
