@@ -63,6 +63,24 @@ prototype/web prototype/mobile   packages/ui(-native) + mock data
 - CI retries a failed E2E test once; open an issue for any test the
   Playwright summary lists as flaky.
 
+## Agent Gateway: every feature ships its agent tools
+
+Employees must be able to use whatever Oscar can, so a feature is done only
+when agents can use it too (#336; map in `docs/ARCHITECTURE.md`).
+
+- Tools are declared once in `packages/contracts/src/harness/tools.ts`;
+  MCP, the `lilos` CLI, the Hermes plugin and the host policy render from
+  it. Names: `<area>_<action>` (`thread`, `team`, `browser`, `terminal`,
+  `workbench`; root `context`, `guide`), shown as `lilos_thread_read`.
+- A PR adding or changing an `AppMethod` or a user-visible action adds its
+  tool in the same PR, or lists it in `NOT_AGENT_FACING` with a reason (a
+  coverage test enforces this once #337 lands).
+- Changing the company is an `approval` tool (opens an ask). Scope comes
+  from the session, never from an id the agent passes. In LilOS, agents
+  use LilOS surfaces, not the engine's browser.
+- Feature issues have an **Agent tools** section; PRs show one real agent
+  call per new tool.
+
 ## Learn from these projects
 
 Before you design a seam, read how these solve it and cite the files in the
@@ -72,7 +90,7 @@ frameworks (T3/Synara use Effect-TS).
 | Project | Borrow | Start at |
 |---|---|---|
 | T3 Code `pingdotgg/t3code` | client/server split, seq sync (snapshot + replay), provider adapter + capabilities, `contracts`/`client-runtime` split | `docs/internals/`, `packages/contracts/src/providerRuntime.ts`, `apps/server/src/provider/Services/ProviderAdapter.ts` |
-| Synara `Emanuele-web04/synara` | ACP adapter, adapter conformance tests, mock agents | `apps/server/src/provider/acp/`, `apps/server/src/provider/providerAdapterConformance.ts`, `apps/server/scripts/acp-mock-agent.ts` |
+| Synara `Emanuele-web04/synara` | ACP adapter, adapter conformance tests, mock agents, agent gateway (per-engine MCP injection, versioned host policy) | `apps/server/src/provider/acp/`, `apps/server/src/provider/providerAdapterConformance.ts`, `apps/server/src/agentGateway/` |
 | Hermes Desktop `NousResearch/hermes-agent` | renderer over a headless engine, JSON-RPC client with reconnect replay, wire contract declared once and generated for TS | `apps/shared/src/json-rpc-gateway.ts`, `tui_gateway/contracts/`, `scripts/gen_gateway_contracts.py` |
 
 ## Who you work for
@@ -130,7 +148,8 @@ seam (Hermes RPC, sessions, worktrees) is always Normal.
 2. **Plan**: write the plan in the issue's `Status` comment; split slices that
    are too big for one PR into more sub-issues.
 3. **Implement**: tests with the code; show a failing test turning green.
-4. **Verify**: run `bun run verify`; one screenshot per acceptance criterion.
+4. **Verify**: run `bun run verify`; one screenshot per acceptance criterion,
+   plus one real agent call for each new or changed gateway tool.
 5. **Review**: a second agent with fresh context reviews against the criteria
    (product behavior first, then code). Fix what it finds.
 6. **Document**: fix docs the change makes stale; add/update the
