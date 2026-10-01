@@ -68,6 +68,7 @@ import type {
   OsEditor,
   Project,
   Thread,
+  WbSpot,
   WbTab,
   Work,
 } from "../types";
@@ -134,6 +135,7 @@ export function FocusView({
   onPlan,
   browser,
   initialTab,
+  wbSpot,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -226,6 +228,9 @@ export function FocusView({
   /* Opens on this Workbench tab (e.g. a thread panel's "N subagents · Open" link, #317) —
      counts as the user's pick, so follow-the-agent doesn't switch away from it. */
   initialTab?: WbTab;
+  /* The session's `workbench_open` request (issue #340): the panel opens and
+     applies the target's tab — an explicit pick, so follow stops here. */
+  wbSpot?: WbSpot;
 }) {
   const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024);
   const [tab, setTab] = useState<WbTab>(
@@ -328,6 +333,15 @@ export function FocusView({
     setFollow(false);
     setWbOpen(true);
   };
+  /* #340 AC-2b: `workbench_open` brings the panel forward on the target's
+     tab — the Workbench applies `target`; here the panel opens and follow
+     stops (it is the agent's explicit "look at this"). */
+  const wbSpotAt = wbSpot?.at;
+  useEffect(() => {
+    if (!wbSpot) return;
+    setWbOpen(true);
+    setFollow(false);
+  }, [wbSpotAt]); // eslint-disable-line react-hooks/exhaustive-deps
   const doneTodos = todos.filter((t) => t.status === "completed").length;
   // Plan tray opens while the agent works and folds away when the turn ends (user can still toggle).
   const [planOpen, setPlanOpen] = useState(running);
@@ -835,6 +849,7 @@ export function FocusView({
                 editors={editorsProp}
                 onOpenPath={onOpenPath}
                 browser={browser}
+                spot={wbSpot}
               />
             </aside>
           </>

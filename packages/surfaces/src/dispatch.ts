@@ -1,15 +1,19 @@
+import type { WorkbenchOpenTarget } from "@lilos/contracts/app";
 import {
   type BrowserClickParams,
   type BrowserEvalParams,
   type BrowserOpenParams,
   type BrowserScrollParams,
   type BrowserTypeParams,
+  type GuideParams,
   LILOS_TOOLS,
   type TerminalReadParams,
   type TerminalRunParams,
   type TerminalWriteParams,
   type ThreadPostParams,
   type ThreadReadParams,
+  type ThreadSearchParams,
+  type ThreadSetTitleParams,
 } from "@lilos/contracts/harness";
 import { type SurfaceBackend, SurfaceError } from "./backend.js";
 
@@ -68,11 +72,35 @@ export async function callTool(
     case "workbench_previews":
       result = await backend.workbenchPreviews();
       break;
+    case "workbench_open":
+      result = await backend.workbenchOpen(p as WorkbenchOpenTarget);
+      break;
+    case "context":
+      result = await backend.context();
+      break;
+    case "guide":
+      result = await backend.guide(p as GuideParams);
+      break;
+    case "team_list":
+      result = await backend.teamList();
+      break;
     case "thread_post":
       result = await backend.threadPost(p as ThreadPostParams);
       break;
     case "thread_read":
       result = await backend.threadRead(p as ThreadReadParams);
+      break;
+    case "thread_list":
+      result = await backend.threadList();
+      break;
+    case "thread_search":
+      result = await backend.threadSearch(p as ThreadSearchParams);
+      break;
+    case "thread_set_title":
+      result = await backend.threadSetTitle(p as ThreadSetTitleParams);
+      break;
+    case "thread_prs":
+      result = await backend.threadPrs();
       break;
     default:
       throw new SurfaceError("not_found", `unhandled tool: ${name}`);

@@ -212,6 +212,25 @@ export type AgentEntry = {
   footer?: { dur?: number; model?: string; effort?: string; files?: number };
 };
 
+/** What a `workbench_open` call asks the app to show (#340) — the desktop
+    opens its Workbench on the matching tab; the phone gets this tappable
+    card in the thread instead (structural mirror of the wire target). */
+export type WbCardTarget =
+  | { file: string; line?: number }
+  | { diff: true; path?: string }
+  | { pr: true }
+  | { url: string };
+
+/** A `workbench.opened` event as a thread row: the agent's "look at this"
+    lands as a card that opens the same thing the desktop's Workbench
+    would show (#340 AC-2b). */
+export type WbCardEntry = {
+  kind: "workbench";
+  id: string;
+  time: string;
+  target: WbCardTarget;
+};
+
 export type ThreadEntry =
   | {
       kind: "user";
@@ -224,7 +243,8 @@ export type ThreadEntry =
          caption reads "Waiting for you", not "Queued · runs next" (#264). */
       waiting?: boolean;
     }
-  | AgentEntry;
+  | AgentEntry
+  | WbCardEntry;
 
 /** A session opened as a thread (web: ThreadView). */
 export type ThreadDetail = {

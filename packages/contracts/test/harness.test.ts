@@ -12,7 +12,7 @@ import {
 } from "../src/harness/index.js";
 
 describe("AC-2 tool surface contracts", () => {
-  it("exposes browser + terminal + workbench + thread ops", () => {
+  it("exposes browser + terminal + workbench + thread + team + root ops", () => {
     expect(Object.keys(LILOS_TOOLS).sort()).toEqual([
       "browser_click",
       "browser_eval",
@@ -20,11 +20,19 @@ describe("AC-2 tool surface contracts", () => {
       "browser_read",
       "browser_scroll",
       "browser_type",
+      "context",
+      "guide",
+      "team_list",
       "terminal_read",
       "terminal_run",
       "terminal_write",
+      "thread_list",
       "thread_post",
+      "thread_prs",
       "thread_read",
+      "thread_search",
+      "thread_set_title",
+      "workbench_open",
       "workbench_previews",
     ]);
   });

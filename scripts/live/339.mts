@@ -353,6 +353,24 @@ async function main() {
     : "STUB provider lilos-stub (deterministic; no real LLM completing turns)";
   console.log(`# issue #339 live check — mode: ${mode}`);
 
+  // Preflight: the ACP extra is a one-time install on each host — a host
+  // without it fails every `hermes acp` spawn below with opaque import
+  // errors, so check once and say exactly what to run (orchestrator note
+  // from the real-provider run on Oscar's Mac).
+  const acp = spawnSync(HERMES_BIN, ["acp", "--check"], {
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  if (acp.status !== 0) {
+    console.log(
+      `FAIL  hermes acp --check — the ACP extra is not installed on this host.\n` +
+        `      Install it once: ${HERMES_BIN} pm install --extra acp\n` +
+        `      (${`${acp.stdout}${acp.stderr}`.trim().split("\n").pop()})`,
+    );
+    process.exit(1);
+  }
+  check(true, "preflight: hermes acp --check");
+
   const surfaces = await serveSurfaces(0);
   let stub: ReturnType<typeof startStub> | null = null;
   const acps: ReturnType<typeof spawn>[] = [];
@@ -376,6 +394,9 @@ async function main() {
 
     // 2. HERMES_HOME: scratch+stub provider, or the real one (only the
     //    dedicated profile is created there — Oscar's profiles untouched).
+    //    Real mode must keep the REAL home: `hermes profile create` is
+    //    HOME-anchored while `-p` resolves under HERMES_HOME — a scratch
+    //    home there breaks real-mode profile setup (orchestrator note).
     let hermesHome = process.env.HERMES_HOME;
     if (!REAL_PROVIDER) {
       stub = startStub();

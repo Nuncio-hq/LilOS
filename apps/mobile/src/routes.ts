@@ -29,6 +29,9 @@ export type Routes = {
      jobs sheet (pill above the composer opens it). */
   Subagent: { conversationId: string; id: string };
   Background: { conversationId: string };
+  /* #340: a `workbench_open` card's diffs view (the phone's Changes tab);
+     `path` narrows the rows to the file the card named. */
+  WbDiff: { conversationId: string; path?: string };
   FolderPicker: { employeeId: string };
   /* "Other folder on the Mac…" browser (#238), pushed over FolderPicker. */
   BrowseMac: { employeeId: string };
@@ -44,6 +47,7 @@ export type DmRoutes = Pick<
   | "Plan"
   | "Subagent"
   | "Background"
+  | "WbDiff"
   | "FolderPicker"
   | "BrowseMac"
   | "ModelPicker"

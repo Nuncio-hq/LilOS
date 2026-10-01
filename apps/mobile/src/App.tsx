@@ -74,6 +74,7 @@ import {
   Subagent,
   Thread,
   ThreadInfo,
+  WbDiff,
 } from "./screens/thread";
 import { formatVersionLabel } from "./version-label";
 import { startVisibilityReporting } from "./visibility";
@@ -614,6 +615,7 @@ export default function App() {
                 component={Background}
                 options={SHEET}
               />
+              <Stack.Screen name="WbDiff" component={WbDiff} options={SHEET} />
               <Stack.Screen
                 name="FolderPicker"
                 component={FolderPicker}

@@ -1,3 +1,4 @@
+import type { WorkbenchOpenTarget } from "@lilos/contracts/app";
 import type {
   BrowserClickResult,
   BrowserEvalResult,
@@ -5,15 +6,27 @@ import type {
   BrowserReadResult,
   BrowserScrollResult,
   BrowserTypeResult,
+  ContextResult,
+  GuideParams,
+  GuideResult,
   PreviewTarget,
   SessionBinding,
+  TeamListResult,
   TerminalReadResult,
   TerminalRunResult,
   TerminalWriteResult,
+  ThreadListResult,
   ThreadPostResult,
+  ThreadPrsResult,
+  ThreadReadParams,
   ThreadReadResult,
+  ThreadSearchParams,
+  ThreadSearchResult,
+  ThreadSetTitleParams,
+  ThreadSetTitleResult,
   ToolArea,
   ViewerBrowserInputEvent,
+  WorkbenchOpenResult,
   WorkbenchPreviewsResult,
 } from "@lilos/contracts/harness";
 
@@ -44,8 +57,16 @@ export interface SurfaceBackend {
   terminalWrite(p: { data: string }): Promise<TerminalWriteResult>;
   terminalRead(p: { tailBytes?: number }): Promise<TerminalReadResult>;
   workbenchPreviews(): Promise<WorkbenchPreviewsResult>;
+  workbenchOpen(p: WorkbenchOpenTarget): Promise<WorkbenchOpenResult>;
+  context(): Promise<ContextResult>;
+  guide(p: GuideParams): Promise<GuideResult>;
+  teamList(): Promise<TeamListResult>;
   threadPost(p: { text: string }): Promise<ThreadPostResult>;
-  threadRead(p: { afterSeq?: number }): Promise<ThreadReadResult>;
+  threadRead(p: ThreadReadParams): Promise<ThreadReadResult>;
+  threadList(): Promise<ThreadListResult>;
+  threadSearch(p: ThreadSearchParams): Promise<ThreadSearchResult>;
+  threadSetTitle(p: ThreadSetTitleParams): Promise<ThreadSetTitleResult>;
+  threadPrs(): Promise<ThreadPrsResult>;
 }
 
 /**

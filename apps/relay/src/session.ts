@@ -56,6 +56,7 @@ import {
   SystemStatusParams,
   TurnsInterruptParams,
   type WelcomeResult,
+  WorkbenchOpenParams,
   WS_CLOSE_DEVICE_REVOKED,
 } from "@lilos/contracts/app";
 import type { ForgePrsResult } from "@lilos/contracts/host";
@@ -1608,6 +1609,38 @@ export function createRelay(options: RelayOptions): Relay {
               )
               .catch((error) => log(`push fan-out failed: ${error}`));
           }
+          respond(peer, id, { ok: true });
+          return;
+        }
+        /* ---------------- workbench open (#340) ---------------- */
+        case "workbench.open": {
+          /* The agent's `workbench_open` tool: show the user a file/diff/PR/
+             url inside the app's Workbench. Host-only (the agent's voice),
+             fan-out as a channel event — never a synthesized EngineEvent,
+             whose seq would poison `events.since` replay + push watermarks. */
+          requireHost(peer);
+          const parsed = WorkbenchOpenParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const conversation = await store.getConversation(
+            parsed.data.conversationId,
+          );
+          if (!conversation) {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "conversation not found",
+            );
+          }
+          emit(
+            conversation.channelId,
+            "workbench.opened",
+            {
+              channelId: conversation.channelId,
+              conversationId: conversation.id,
+              target: parsed.data.target,
+            },
+            host?.peer,
+          );
           respond(peer, id, { ok: true });
           return;
         }

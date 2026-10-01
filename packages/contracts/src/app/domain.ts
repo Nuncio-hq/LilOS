@@ -363,3 +363,26 @@ export const PushPrefs = z.object({
   failed: z.boolean(),
 });
 export type PushPrefs = z.infer<typeof PushPrefs>;
+
+/* ----------------------- workbench targets (#340) ----------------------- */
+
+/**
+ * What `workbench_open` shows in a DM's Workbench — the tab plus the focus
+ * inside it. `{file, line?}` opens the Files tab on that file (scrolled to the
+ * line); `{diff, path?}` opens Changes, filtered to `path` when given; `{pr}`
+ * opens the PR tab; `{url}` opens Preview (the session browser navigates to
+ * it too). It never opens an editor on the Mac.
+ */
+export const WorkbenchOpenTarget = z.union([
+  z.strictObject({
+    file: z.string().min(1),
+    line: z.int().min(1).optional(),
+  }),
+  z.strictObject({
+    diff: z.literal(true),
+    path: z.string().min(1).optional(),
+  }),
+  z.strictObject({ pr: z.literal(true) }),
+  z.strictObject({ url: z.string().min(1) }),
+]);
+export type WorkbenchOpenTarget = z.infer<typeof WorkbenchOpenTarget>;

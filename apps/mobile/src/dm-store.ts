@@ -11,6 +11,7 @@ import type {
   ModelProviderRow,
   ModelRow,
   ModelVisibility,
+  WbCardTarget,
   WorkspacePick,
 } from "@lilos/ui-native";
 import { atom } from "nanostores";
@@ -43,6 +44,11 @@ export const $modelPicks = atom<Record<string, ModelPick>>({});
 export const $pendingOpens = atom<
   Map<string, { conversation: Conversation; root: AppMessage }>
 >(new Map());
+/** `workbench.opened` events per conversation (#340 AC-2b) — the tappable
+    "look at this" cards appended to the thread, newest last. */
+export const $wbCards = atom<
+  Record<string, { at: number; target: WbCardTarget }[]>
+>({});
 
 const watched = new WeakSet<RelayClient>();
 
@@ -91,6 +97,24 @@ export function watchDm(client: RelayClient): void {
   });
 
   client.onEvent((method, params) => {
+    /* #340 AC-2b: the agent's `workbench_open` — a card per call, appended
+       in order like a message; the phone can't open a desktop panel. */
+    if (method === "workbench.opened") {
+      const { conversationId, target } = params as {
+        conversationId?: string;
+        target?: WbCardTarget;
+      };
+      if (!conversationId || !target) return;
+      const cur = $wbCards.get();
+      $wbCards.set({
+        ...cur,
+        [conversationId]: [
+          ...(cur[conversationId] ?? []),
+          { at: Date.now(), target },
+        ],
+      });
+      return;
+    }
     /* A hide-list write by any peer (the Mac's Edit models) lands on every
        surface at once (#92 AC-7). */
     if (method === "settings.changed") {

@@ -1,3 +1,4 @@
+import type { Conversation } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import {
   SESSION_HEADER,
@@ -19,17 +20,19 @@ import {
 function makeScope(
   session: string,
   opts: {
-    browser?: boolean;
+    browser?: boolean | FakeBrowser;
     appOps?: ReturnType<typeof fakeAppOps>;
     spawner?: FakePtySpawner;
   } = {},
 ) {
   const spawner = opts.spawner ?? new FakePtySpawner(true);
+  const browser: FakeBrowser | undefined =
+    opts.browser === true ? new FakeBrowser() : opts.browser || undefined;
   const scope = new SessionSurfaces({
     session,
     cwd: "/tmp",
     spawnPty: spawner.spawn,
-    ...(opts.browser ? { createBrowser: async () => new FakeBrowser() } : {}),
+    ...(browser ? { createBrowser: async () => browser } : {}),
     ...(opts.appOps ? { appOps: opts.appOps } : {}),
     binding: {
       employeeId: `emp-${session}`,
@@ -37,7 +40,7 @@ function makeScope(
       conversationId: `conv-${session}`,
     },
   });
-  return { scope, spawner };
+  return { scope, spawner, browser };
 }
 
 const mcpCall = (url: string, token: string, msg: unknown, headers = {}) =>
@@ -74,7 +77,7 @@ describe("AC-2 MCP over streamable HTTP", () => {
       expect(msg.result.protocolVersion).toBe("2025-06-18");
       expect(msg.result.capabilities.tools).toBeDefined();
       // The host policy rides in `instructions` — and knows this session's areas.
-      expect(msg.result.instructions).toContain("[LilOS host policy v1]");
+      expect(msg.result.instructions).toContain("[LilOS host policy v2]");
       expect(msg.result.instructions).toContain("browser_*");
       expect(msg.result.instructions).toContain("thread_*");
     } finally {
@@ -211,8 +214,8 @@ describe("AC-2 MCP over streamable HTTP", () => {
 
 describe("AC-3 session binding — scope from the session, never agent-passed", () => {
   it("two parallel sessions each see only their own thread", async () => {
-    const opsA = fakeAppOps();
-    const opsB = fakeAppOps();
+    const opsA = fakeAppOps([], { conversationId: "conv-sess-A" });
+    const opsB = fakeAppOps([], { conversationId: "conv-sess-B" });
     const { scope: scopeA } = makeScope("sess-A", { appOps: opsA });
     const { scope: scopeB } = makeScope("sess-B", { appOps: opsB });
     const api = await serveGateway({
@@ -448,5 +451,478 @@ describe("AC-3 aliases + catalog hardening (review)", () => {
     // engineSessionId equal to an existing session id would shadow it.
     registry.add(scope2, { engineSessionId: "s-real2" });
     expect(registry.resolve("s-real2")?.session).toBe("s-real2");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Issue #340 AC-1 — the DM tools over the real gateway (engine-fake     */
+/* session): every tool's happy path plus the scope limit.               */
+/* ------------------------------------------------------------------ */
+
+type ToolMsg = {
+  result?: {
+    content: { text: string }[];
+    isError?: boolean;
+    structuredContent?: Record<string, unknown>;
+  };
+  error?: { code: number; message: string };
+};
+
+async function dmCall(
+  url: string,
+  token: string,
+  name: string,
+  args: unknown,
+  id = 1,
+): Promise<ToolMsg> {
+  return (await (
+    await mcpCall(`${url}/mcp`, token, {
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { name, arguments: args },
+    })
+  ).json()) as ToolMsg;
+}
+const dmPayload = (m: ToolMsg) =>
+  JSON.parse(m.result!.content[0].text) as Record<string, unknown>;
+
+/** A second thread in the same DM for read/list/search coverage. */
+const otherConv = (channelId: string): Conversation => ({
+  id: "conv-other",
+  channelId,
+  rootMessageId: "r-other",
+  engineRef: null,
+  state: "idle",
+  title: "Planning notes",
+  titleSource: "auto",
+  archived: false,
+  deliveredSeq: 0,
+  createdAt: 2,
+});
+
+const msg = (
+  id: string,
+  channelId: string,
+  conversationId: string,
+  seq: number,
+  text: string,
+  at: number,
+) =>
+  ({
+    id,
+    channelId,
+    conversationId,
+    seq,
+    authorId: seq % 2 ? "user" : "agent",
+    authorKind: seq % 2 ? "user" : "employee",
+    text,
+    rewound: false,
+    createdAt: at,
+  }) as const;
+
+describe("AC-1 DM tools over the gateway (issue #340)", () => {
+  it("lilos_context answers who and where the session is", async () => {
+    const ops = fakeAppOps([], {
+      conversationId: "conv-s-ctx",
+      employees: [
+        {
+          id: "emp-s-ctx",
+          name: "Ada",
+          role: "Engineer",
+          status: "online",
+          profile: "default",
+          model: "fake-1",
+          now: "DM tools",
+          instructions: "",
+          respondTo: "me",
+          createdAt: 1,
+        },
+      ],
+    });
+    const { scope } = makeScope("s-ctx", { appOps: ops });
+    const api = await serveGateway({
+      sessions: [{ scope, token: "t-ctx" }],
+    });
+    try {
+      const r = dmPayload(await dmCall(api.baseUrl, "t-ctx", "context", {}));
+      expect(r.employee).toMatchObject({
+        name: "Ada",
+        role: "Engineer",
+        model: "fake-1",
+      });
+      expect(r.channel).toMatchObject({ id: "chan-s-ctx", kind: "dm" });
+      expect(r.thread).toMatchObject({
+        id: "conv-s-ctx",
+        title: "Thread conv-s-ctx",
+      });
+      expect(r.user).toMatchObject({ name: "Oscar" });
+      expect(r.mac).toMatchObject({ state: "ok" });
+      expect(
+        (r.mac as { components: unknown[] }).components.length,
+      ).toBeGreaterThan(0);
+      expect(r.hostPolicyVersion).toBe(2);
+      expect(r.areas).toEqual(
+        expect.arrayContaining(["root", "thread", "team", "workbench"]),
+      );
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("lilos_guide serves the index and each shipped page", async () => {
+    const { scope } = makeScope("s-guide");
+    const api = await serveGateway({
+      sessions: [{ scope, token: "t-guide" }],
+    });
+    try {
+      // No topic = the index — guide works even unbound (root is always-on).
+      const idx = dmPayload(await dmCall(api.baseUrl, "t-guide", "guide", {}));
+      expect(idx.topic).toBe("index");
+      for (const topic of [
+        "overview",
+        "dm-and-threads",
+        "employees",
+        "approvals",
+        "workbench",
+        "mobile",
+        "gateway",
+      ]) {
+        expect(idx.body).toContain(topic);
+        const page = dmPayload(
+          await dmCall(api.baseUrl, "t-guide", "guide", { topic }),
+        );
+        expect(page.topic).toBe(topic);
+        expect((page.body as string).length).toBeGreaterThan(40);
+      }
+      // An unknown topic is a params error, not a result.
+      const bad = await dmCall(api.baseUrl, "t-guide", "guide", {
+        topic: "nope",
+      });
+      expect(bad.result?.isError).toBe(true);
+      expect(bad.result?.content[0].text).toContain("invalid params");
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("team_list returns the roster", async () => {
+    const ops = fakeAppOps([], { conversationId: "conv-s-team" });
+    const { scope } = makeScope("s-team", { appOps: ops });
+    const api = await serveGateway({
+      sessions: [{ scope, token: "t-team" }],
+    });
+    try {
+      const r = dmPayload(await dmCall(api.baseUrl, "t-team", "team_list", {}));
+      expect(r.employees).toEqual([
+        expect.objectContaining({
+          name: "Ada",
+          role: "Engineer",
+          status: "online",
+          model: "fake-1",
+        }),
+      ]);
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("thread_list marks the bound thread and carries its PRs", async () => {
+    const pr = {
+      number: 42,
+      url: "https://github.com/o/r/pull/42",
+      repo: "o/r",
+      title: "Ship it",
+      state: "open" as const,
+      draft: false,
+      head: "devin/x",
+      base: "main",
+      openedAt: "2026-10-01T00:00:00Z",
+      checks: "passing" as const,
+    };
+    const ops = fakeAppOps([], {
+      conversationId: "conv-s-list",
+      conversations: [otherConv("chan-s-list")],
+      prs: { "conv-s-list": [pr] },
+    });
+    const { scope } = makeScope("s-list", { appOps: ops });
+    const api = await serveGateway({
+      sessions: [{ scope, token: "t-list" }],
+    });
+    try {
+      const r = dmPayload(
+        await dmCall(api.baseUrl, "t-list", "thread_list", {}),
+      );
+      const threads = r.threads as {
+        id: string;
+        title: string;
+        current: boolean;
+        prs: unknown[];
+      }[];
+      expect(threads).toHaveLength(2);
+      const mine = threads.find((t) => t.id === "conv-s-list")!;
+      expect(mine.current).toBe(true);
+      expect(mine.prs).toHaveLength(1);
+      expect(threads.find((t) => t.id === "conv-other")!.current).toBe(false);
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("thread_read windows the bound DM and never another", async () => {
+    const ops = fakeAppOps(
+      [
+        msg("m1", "chan-s-rd", "conv-s-rd", 1, "plan the launch", 10),
+        msg("m2", "chan-s-rd", "conv-s-rd", 2, "on it — drafting", 20),
+        msg("m3", "chan-s-rd", "conv-other", 3, "note to self", 30),
+        msg("m4", "chan-s-rd", "conv-s-rd", 4, "done — see the diff", 40),
+      ],
+      {
+        conversationId: "conv-s-rd",
+        conversations: [otherConv("chan-s-rd")],
+      },
+    );
+    const { scope } = makeScope("s-rd", { appOps: ops });
+    const api = await serveGateway({
+      sessions: [{ scope, token: "t-rd" }],
+    });
+    try {
+      // Default = the session's own thread.
+      const own = dmPayload(
+        await dmCall(api.baseUrl, "t-rd", "thread_read", {}),
+      );
+      expect((own.thread as { id: string }).id).toBe("conv-s-rd");
+      expect((own.messages as { seq: number }[]).map((m) => m.seq)).toEqual([
+        1, 2, 4,
+      ]);
+
+      // Another thread of the same DM — by id or by exact title.
+      const byId = dmPayload(
+        await dmCall(api.baseUrl, "t-rd", "thread_read", {
+          thread: "conv-other",
+        }),
+      );
+      expect((byId.thread as { title: string }).title).toBe("Planning notes");
+      expect((byId.messages as { seq: number }[]).map((m) => m.seq)).toEqual([
+        3,
+      ]);
+      const byTitle = dmPayload(
+        await dmCall(api.baseUrl, "t-rd", "thread_read", {
+          thread: "Planning notes",
+        }),
+      );
+      expect((byTitle.thread as { id: string }).id).toBe("conv-other");
+
+      // limit / before / afterSeq window the same thread.
+      const limited = dmPayload(
+        await dmCall(api.baseUrl, "t-rd", "thread_read", { limit: 1 }),
+      );
+      expect((limited.messages as { seq: number }[]).map((m) => m.seq)).toEqual(
+        [4],
+      );
+      const before = dmPayload(
+        await dmCall(api.baseUrl, "t-rd", "thread_read", { before: 4 }),
+      );
+      expect((before.messages as { seq: number }[]).map((m) => m.seq)).toEqual([
+        1, 2,
+      ]);
+      const after = dmPayload(
+        await dmCall(api.baseUrl, "t-rd", "thread_read", { afterSeq: 1 }),
+      );
+      expect((after.messages as { seq: number }[]).map((m) => m.seq)).toEqual([
+        2, 4,
+      ]);
+
+      // A thread outside this DM is not_found — never silently readable.
+      const theft = await dmCall(api.baseUrl, "t-rd", "thread_read", {
+        thread: "conv-elsewhere",
+      });
+      expect(theft.result?.isError).toBe(true);
+      expect(theft.result?.content[0].text).toContain("in this DM");
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("thread_search stays inside the DM", async () => {
+    const ops = fakeAppOps(
+      [
+        msg("m1", "chan-s-se", "conv-s-se", 1, "ship the launch page", 10),
+        msg("m2", "chan-s-se", "conv-s-se", 2, "launch checklist done", 20),
+        msg("m3", "chan-s-se", "conv-other", 3, "unrelated", 30),
+      ],
+      {
+        conversationId: "conv-s-se",
+        conversations: [otherConv("chan-s-se")],
+      },
+    );
+    const { scope } = makeScope("s-se", { appOps: ops });
+    const api = await serveGateway({
+      sessions: [{ scope, token: "t-se" }],
+    });
+    try {
+      const r = dmPayload(
+        await dmCall(api.baseUrl, "t-se", "thread_search", {
+          query: "launch",
+        }),
+      );
+      const hits = r.hits as { messageId: string; snippet: string }[];
+      expect(hits.map((h) => h.messageId).sort()).toEqual(["m1", "m2"]);
+      const none = dmPayload(
+        await dmCall(api.baseUrl, "t-se", "thread_search", { query: "zebra" }),
+      );
+      expect(none.hits).toEqual([]);
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("thread_set_title renames only while the title is auto", async () => {
+    const opsAuto = fakeAppOps([], { conversationId: "conv-s-ta" });
+    const opsUser = fakeAppOps([], {
+      conversationId: "conv-s-tu",
+      titleSource: "user",
+    });
+    const { scope: sA } = makeScope("s-ta", { appOps: opsAuto });
+    const { scope: sU } = makeScope("s-tu", { appOps: opsUser });
+    const api = await serveGateway({
+      sessions: [
+        { scope: sA, token: "t-ta" },
+        { scope: sU, token: "t-tu" },
+      ],
+    });
+    try {
+      const set = dmPayload(
+        await dmCall(api.baseUrl, "t-ta", "thread_set_title", {
+          title: "Launch work",
+        }),
+      );
+      expect(set).toMatchObject({ outcome: "set", title: "Launch work" });
+      expect(opsAuto.titled).toEqual(["Launch work"]);
+
+      // #137: a user-typed title wins — the tool reports it, no overwrite.
+      const kept = dmPayload(
+        await dmCall(api.baseUrl, "t-tu", "thread_set_title", {
+          title: "Sneaky rename",
+        }),
+      );
+      expect(kept).toMatchObject({
+        outcome: "user_title",
+        title: "Thread conv-s-tu",
+      });
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("thread_prs lists the bound thread's PRs", async () => {
+    const pr = {
+      number: 7,
+      url: "https://github.com/o/r/pull/7",
+      repo: "o/r",
+      title: "Fix it",
+      state: "merged" as const,
+      draft: false,
+      head: "devin/fix",
+      base: "main",
+      openedAt: "2026-09-01T00:00:00Z",
+      checks: "passing" as const,
+    };
+    const ops = fakeAppOps([], {
+      conversationId: "conv-s-pr",
+      prs: { "conv-s-pr": [pr] },
+    });
+    const { scope } = makeScope("s-pr", { appOps: ops });
+    const api = await serveGateway({
+      sessions: [{ scope, token: "t-pr" }],
+    });
+    try {
+      const r = dmPayload(await dmCall(api.baseUrl, "t-pr", "thread_prs", {}));
+      expect(r.prs).toEqual([
+        expect.objectContaining({ number: 7, title: "Fix it" }),
+      ]);
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("workbench_open forwards each target to the app", async () => {
+    const ops = fakeAppOps([], { conversationId: "conv-s-wb" });
+    const { scope, browser } = makeScope("s-wb", {
+      appOps: ops,
+      browser: true,
+    });
+    const api = await serveGateway({
+      sessions: [{ scope, token: "t-wb" }],
+    });
+    try {
+      for (const target of [
+        { file: "src/app.ts", line: 7 },
+        { diff: true, path: "src/app.ts" },
+        { pr: true },
+        { url: "http://localhost:5173" },
+      ]) {
+        const r = dmPayload(
+          await dmCall(api.baseUrl, "t-wb", "workbench_open", target),
+        );
+        expect(r).toEqual({ opened: true });
+      }
+      expect(ops.opened).toEqual([
+        { file: "src/app.ts", line: 7 },
+        { diff: true, path: "src/app.ts" },
+        { pr: true },
+        { url: "http://localhost:5173" },
+      ]);
+
+      // The {url} target also navigates the session's browser — the app's
+      // Workbench Preview shows the page, not a blank pane.
+      await new Promise((r) => setTimeout(r, 10));
+      expect(browser?.url).toBe("http://localhost:5173");
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("thread/team tools are refused outside the session's areas", async () => {
+    // Lean scope: terminal + workbench + root — no DM binding, no thread/team.
+    const { scope } = makeScope("s-dmlean");
+    const api = await serveGateway({
+      sessions: [{ scope, token: "t-lean" }],
+    });
+    try {
+      for (const name of [
+        "team_list",
+        "thread_list",
+        "thread_read",
+        "thread_search",
+        "thread_post",
+        "thread_set_title",
+        "thread_prs",
+      ]) {
+        const r = await dmCall(api.baseUrl, "t-lean", name, {});
+        expect(r.error?.code).toBe(-32602);
+        expect(r.error?.message).toContain(name);
+        const rest = await fetch(`${api.baseUrl}/tools/${name}`, {
+          method: "POST",
+          headers: {
+            authorization: "Bearer t-lean",
+            "content-type": "application/json",
+          },
+          body: "{}",
+        });
+        expect(rest.status).toBe(404);
+      }
+      // workbench_open stays advertised but reports cleanly when no DM bound.
+      const wb = await dmCall(api.baseUrl, "t-lean", "workbench_open", {
+        diff: true,
+      });
+      expect(wb.result?.isError).toBe(true);
+      // Same for context — an unbound session gets `unavailable`, not a crash.
+      const ctx = await dmCall(api.baseUrl, "t-lean", "context", {});
+      expect(ctx.result?.isError).toBe(true);
+      expect(ctx.result?.content[0].text).toContain("no conversation");
+    } finally {
+      api.server.close();
+    }
   });
 });
