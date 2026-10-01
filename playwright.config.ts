@@ -19,6 +19,11 @@ const fakeOs = join(repo, "e2e/os-fake");
 export default defineConfig({
   testDir: "./e2e",
   outputDir: "./test-results",
+  /* Runner teardown (#347): sweep tagged stacks whose owning worker died —
+     the backstop under each process's own orphan watchdog and each spec's
+     afterAll. Only dead-owner tags are killed; a sibling run is never
+     touched. */
+  globalTeardown: "./e2e/leak-teardown.ts",
   /* CI retries a failed test once instead of re-running the whole 20-minute
      job (#201); the github reporter annotates a pass-on-retry as flaky, so it
      never goes silently green. */

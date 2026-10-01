@@ -9,6 +9,7 @@
  * Prints `PARENT_READY <demo-pid>` once the demo's Chromium is up.
  */
 import { spawn } from "node:child_process";
+import { watchOrphanExit } from "./engine-leak";
 
 const tag = process.argv[process.argv.indexOf("--tag") + 1];
 if (!tag) throw new Error("demo-parent needs --tag <tag>");
@@ -42,4 +43,7 @@ demo.stdout?.on("data", (d) => {
 });
 
 // Stay alive holding the stdin pipe — the spec's kill supplies the EOF.
+// Orphan watchdog (#347): if the spec runner itself dies before this
+// stand-in does, exit rather than keep the demo tree alive.
+watchOrphanExit();
 await new Promise(() => {});
