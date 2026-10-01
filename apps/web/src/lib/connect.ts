@@ -1,9 +1,9 @@
-import { atom } from "nanostores";
 import type { ProfileConnection } from "@lilos/contracts/app";
+import { atom } from "nanostores";
 import { relay } from "./runtime";
 
 /**
- * Connect (#339): Oscar's one-time approval that installs the LilOS plugin
+ * Connect (#339): the one-time approval that installs the LilOS plugin
  * on every Hermes profile so employees see the app from inside their
  * sessions. The flag lives in the relay's settings KV (`connect.hermes`);
  * the harness reconciles plugin state from it and reports per-profile rows
@@ -13,7 +13,7 @@ import { relay } from "./runtime";
 /** The relay `settings.*` key the Connect step writes once. */
 export const CONNECT_KEY = "connect.hermes";
 
-/** `settings.changed` already ran: true once Oscar approved Connect.
+/** `settings.changed` already ran: true once Connect was approved.
     undefined until the first `settings.get` lands. */
 export const connectApproved = atom<boolean | undefined>(undefined);
 

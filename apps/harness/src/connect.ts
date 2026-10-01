@@ -5,7 +5,7 @@ import type { ProfileConnection } from "@lilos/contracts/app";
 import type { Logger } from "./log";
 
 /**
- * Connect (#339): once Oscar approves Connect (relay setting
+ * Connect (#339): once the user approves Connect (relay setting
  * `connect.hermes.approved`), install the bundled `lilos` plugin into every
  * employee's Hermes profile and enable it (`hermes -p <p> plugins enable`).
  * Thereafter the reconciler keeps it that way: a plugin version drift
@@ -42,7 +42,10 @@ export interface ConnectDeps {
   env?: Record<string, string>;
   log: Logger;
   /** Injectable subprocess runner for tests. */
-  run?: (argv: string[], env: Record<string, string>) => {
+  run?: (
+    argv: string[],
+    env: Record<string, string>,
+  ) => {
     status: number;
     out: string;
   };
@@ -195,13 +198,7 @@ export class HermesConnect {
 
   /** `plugins disable` — never delete the profile or the plugin dir. */
   private disable(profile: string): void {
-    const result = this.hermes([
-      "-p",
-      profile,
-      "plugins",
-      "disable",
-      "lilos",
-    ]);
+    const result = this.hermes(["-p", profile, "plugins", "disable", "lilos"]);
     if (result !== undefined && result.status !== 0) {
       this.deps.log.warn("plugins disable failed", {
         profile,

@@ -810,7 +810,7 @@ export const SystemStatusResult = z.object({
     .optional(),
   mismatch: StatusMismatch.optional(),
   /** Per-profile LilOS connection rows (#339) — absent when the host never
-     reported them (non-Hermes engine, older harness). */
+     reported them (engine without connect support, older harness). */
   connect: z.array(ProfileConnection).optional(),
   logs: z
     .object({

@@ -1,12 +1,6 @@
 #!/usr/bin/env bun
 import { spawn, spawnSync } from "node:child_process";
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  writeFileSync,
-} from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 /**
@@ -49,7 +43,9 @@ const HOME = process.env.HOME ?? "/tmp";
 const results: [boolean, string, string][] = [];
 const check = (ok: boolean, name: string, detail = "") => {
   results.push([ok, name, detail]);
-  console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
+  console.log(
+    `${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`,
+  );
 };
 
 // ── MCP streamable-HTTP client (reads back the session PTY) ─────────────────
@@ -115,7 +111,7 @@ class StdioRpc {
           continue;
         }
         if (typeof msg.id === "number" && this.waiters.has(msg.id)) {
-          this.waiters.get(msg.id)!(msg);
+          this.waiters.get(msg.id)?.(msg);
           this.waiters.delete(msg.id);
         }
       }
@@ -212,34 +208,35 @@ function startStub() {
         const searchedOut = toolMsgs.length >= 8;
         const searchTool = tools.find((n) => /^tool_search$/i.test(n));
         const callTool = tools.find((n) => /^tool_call$/i.test(n));
-        const wantCall = ranLilos || refused || searchedOut
-          ? null
-          : termTool
-            ? {
-                id: "call_lilos_1",
-                name: termTool,
-                arguments: { command: `echo ${MARKER}-FROM-MODEL` },
-              }
-            : searched && callTool
+        const wantCall =
+          ranLilos || refused || searchedOut
+            ? null
+            : termTool
               ? {
-                  id: "call_lilos_2",
-                  name: callTool,
-                  arguments: {
-                    calls: [
-                      {
-                        name: "lilos_terminal_run",
-                        arguments: { command: `echo ${MARKER}-FROM-MODEL` },
-                      },
-                    ],
-                  },
+                  id: "call_lilos_1",
+                  name: termTool,
+                  arguments: { command: `echo ${MARKER}-FROM-MODEL` },
                 }
-              : searchTool
+              : searched && callTool
                 ? {
-                    id: `call_search_${toolMsgs.length}`,
-                    name: searchTool,
-                    arguments: { queries: ["terminal_run"] },
+                    id: "call_lilos_2",
+                    name: callTool,
+                    arguments: {
+                      calls: [
+                        {
+                          name: "lilos_terminal_run",
+                          arguments: { command: `echo ${MARKER}-FROM-MODEL` },
+                        },
+                      ],
+                    },
                   }
-                : null;
+                : searchTool
+                  ? {
+                      id: `call_search_${toolMsgs.length}`,
+                      name: searchTool,
+                      arguments: { queries: ["terminal_run"] },
+                    }
+                  : null;
         const toolCallDelta = (call: {
           id: string;
           name: string;
@@ -279,13 +276,12 @@ function startStub() {
           ],
         });
         const sse = (chunks: Record<string, unknown>[]) => {
-          const payload =
-            chunks
-              .map(
-                (c) =>
-                  `data: ${JSON.stringify({ id: "chatcmpl-stub", object: "chat.completion.chunk", created: 0, model: "stub-model-a", choices: [{ index: 0, ...c }] })}\n\n`,
-              )
-              .join("") + "data: [DONE]\n\n";
+          const payload = `${chunks
+            .map(
+              (c) =>
+                `data: ${JSON.stringify({ id: "chatcmpl-stub", object: "chat.completion.chunk", created: 0, model: "stub-model-a", choices: [{ index: 0, ...c }] })}\n\n`,
+            )
+            .join("")}data: [DONE]\n\n`;
           return new Response(payload, {
             headers: { "content-type": "text/event-stream" },
           });
@@ -416,10 +412,7 @@ async function main() {
     const pluginsDir = join(hermesHome ?? "", "profiles", PROFILE, "plugins");
     mkdirSync(pluginsDir, { recursive: true });
     cpSync(PLUGIN_SRC, join(pluginsDir, "lilos"), { recursive: true });
-    const enabled = hermes(
-      ["-p", PROFILE, "plugins", "enable", "lilos"],
-      hEnv,
-    );
+    const enabled = hermes(["-p", PROFILE, "plugins", "enable", "lilos"], hEnv);
     check(
       enabled.status === 0,
       `hermes -p ${PROFILE} plugins enable lilos (AC-1)`,
@@ -429,7 +422,10 @@ async function main() {
     check(
       /lilos/.test(`${plist.stdout}${plist.stderr}`),
       "plugins list shows lilos enabled on the profile",
-      `${plist.stdout}${plist.stderr}`.split("\n").find((l) => /lilos/i.test(l))?.trim() ?? "",
+      `${plist.stdout}${plist.stderr}`
+        .split("\n")
+        .find((l) => /lilos/i.test(l))
+        ?.trim() ?? "",
     );
 
     // The gateway env the harness sets on `hermes serve` (and that an acp

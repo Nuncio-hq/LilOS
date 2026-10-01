@@ -155,9 +155,7 @@ export function resolveCaller(
   const named = request.headers.get(SESSION_HEADER);
   if (named) {
     const entry = registry.resolve(named);
-    return entry && entry.token === token
-      ? { entry, engine: false }
-      : null;
+    return entry && entry.token === token ? { entry, engine: false } : null;
   }
   const entry = registry.resolveToken(token);
   return entry ? { entry, engine: false } : null;

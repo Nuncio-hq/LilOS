@@ -227,7 +227,7 @@ def _pre_tool_call(tool_name, args=None, session_id="", task_id="", **_kw):
             "Inside LilOS your own browser tools are off. Use the lilos_"
             "browser_* tools (open/click/type/read/scroll/screenshot) — they "
             "drive the session's LilOS browser so the work is visible in "
-            "Oscar's Workbench. web_search and web_extract remain fine for "
+            "the LilOS Workbench. web_search and web_extract remain fine for "
             "reading pages; never use them to act on a page."
         ),
     }

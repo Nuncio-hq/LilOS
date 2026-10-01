@@ -66,7 +66,9 @@ function fixture(version = "0.1.0") {
     mkProfile,
     approve: () => settings.set(CONNECT_APPROVAL_KEY, { approved: true }),
     installedYaml: (p: string) =>
-      existsSync(join(hermesHome, "profiles", p, "plugins", "lilos", "plugin.yaml"))
+      existsSync(
+        join(hermesHome, "profiles", p, "plugins", "lilos", "plugin.yaml"),
+      )
         ? readFileSync(
             join(hermesHome, "profiles", p, "plugins", "lilos", "plugin.yaml"),
             "utf8",
@@ -117,10 +119,8 @@ describe("AC-1 (#339) approval installs + enables the plugin per profile", () =>
     const failing = new HermesConnect({
       relay: {
         request: async (method) => {
-          if (method === "settings.get")
-            return { value: { approved: true } };
-          if (method === "employees.list")
-            return { employees: f.employees };
+          if (method === "settings.get") return { value: { approved: true } };
+          if (method === "employees.list") return { employees: f.employees };
           throw new Error("unexpected");
         },
       },
@@ -199,9 +199,7 @@ describe("AC-1 (#339) removal disables the plugin, never deletes the profile", (
     expect(f.disableCalls("ada")).toBe(1);
     expect(f.connect.report()).toEqual([]);
     // The profile itself is untouched — only the plugin was disabled.
-    expect(
-      existsSync(join(f.hermesHome, "profiles", "ada")),
-    ).toBe(true);
+    expect(existsSync(join(f.hermesHome, "profiles", "ada"))).toBe(true);
   });
 
   it("a reconcile after the roster shrinks disables the dropped profile", async () => {

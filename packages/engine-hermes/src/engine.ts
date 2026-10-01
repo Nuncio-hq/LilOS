@@ -410,7 +410,9 @@ export class HermesEngine {
       s.setState("idle");
       /* #339: the stored session key is what the engine's own plugin
          presents — the harness aliases it to the gateway session. */
-      return s.ref ? { sessionId: id, engineSessionId: s.ref } : { sessionId: id };
+      return s.ref
+        ? { sessionId: id, engineSessionId: s.ref }
+        : { sessionId: id };
     }
 
     if (!this.opts.acp)
@@ -446,7 +448,9 @@ export class HermesEngine {
       ...(s.fast !== undefined ? { fast: s.fast } : {}),
     });
     s.setState("idle");
-    return s.ref ? { sessionId: id, engineSessionId: s.ref } : { sessionId: id };
+    return s.ref
+      ? { sessionId: id, engineSessionId: s.ref }
+      : { sessionId: id };
   }
 
   /**

@@ -1441,9 +1441,7 @@ export function DmPage() {
           employeeRow
             ? {
                 state: employeeRow.state,
-                ...(employeeRow.reason
-                  ? { reason: employeeRow.reason }
-                  : {}),
+                ...(employeeRow.reason ? { reason: employeeRow.reason } : {}),
                 onConnect: () => void requestConnect(),
               }
             : undefined

@@ -32,9 +32,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { serveSurfaces } from "../src/surfaces/server";
 import { HermesGateway } from "../../../packages/engine-hermes/src/gateway";
 import { startHermesServe } from "../../../packages/engine-hermes/src/serve";
+import { serveSurfaces } from "../src/surfaces/server";
 
 interface Check {
   name: string;
@@ -74,7 +74,8 @@ function dumpDiag() {
   }
   console.log("── hermes serve output (last 60 lines) ──");
   console.log(diag.hermesOut.slice(-60).join(""));
-  if (diag.stubReqs) console.log(`stub model requests seen: ${diag.stubReqs()}`);
+  if (diag.stubReqs)
+    console.log(`stub model requests seen: ${diag.stubReqs()}`);
   if (diag.hermesHome) {
     for (const log of readdirSync(join(diag.hermesHome, "logs"), {
       withFileTypes: true,
@@ -237,13 +238,19 @@ function startStub() {
           toolResults,
         );
         const foundProbe = toolResults.includes("browser_probe");
-        let wantCall:
-          | { id: string; name: string; arguments: Record<string, unknown> }
-          | null = null;
+        let wantCall: {
+          id: string;
+          name: string;
+          arguments: Record<string, unknown>;
+        } | null = null;
         const call = (
           name: string,
           arguments_: Record<string, unknown>,
-        ): { id: string; name: string; arguments: Record<string, unknown> } => ({
+        ): {
+          id: string;
+          name: string;
+          arguments: Record<string, unknown>;
+        } => ({
           id: `call_${name}_${innerCalls.length + directCalls.length}`,
           name,
           arguments: arguments_,
@@ -300,20 +307,26 @@ function startStub() {
         if (body.stream) {
           const chunks = wantCall
             ? [
-                { delta: { role: "assistant", tool_calls: wantCall ? toolCallMsg(wantCall).tool_calls : [] } },
+                {
+                  delta: {
+                    role: "assistant",
+                    tool_calls: wantCall
+                      ? toolCallMsg(wantCall).tool_calls
+                      : [],
+                  },
+                },
                 { delta: {}, finish_reason: "tool_calls" },
               ]
             : [
                 { delta: { role: "assistant", content: `stub:${MARKER}` } },
                 { delta: {}, finish_reason: "stop" },
               ];
-          const payload =
-            chunks
-              .map(
-                (c) =>
-                  `data: ${JSON.stringify({ id: "chatcmpl-stub", object: "chat.completion.chunk", created: 0, model: "stub-model-a", choices: [{ index: 0, ...c }] })}\n\n`,
-              )
-              .join("") + "data: [DONE]\n\n";
+          const payload = `${chunks
+            .map(
+              (c) =>
+                `data: ${JSON.stringify({ id: "chatcmpl-stub", object: "chat.completion.chunk", created: 0, model: "stub-model-a", choices: [{ index: 0, ...c }] })}\n\n`,
+            )
+            .join("")}data: [DONE]\n\n`;
           return new Response(payload, {
             headers: { "content-type": "text/event-stream" },
           });
@@ -323,9 +336,7 @@ function startStub() {
           object: "chat.completion",
           created: 0,
           model: "stub-model-a",
-          choices: [
-            { index: 0, message: assistantMsg, finish_reason: finish },
-          ],
+          choices: [{ index: 0, message: assistantMsg, finish_reason: finish }],
         });
       }
       return new Response("not found", { status: 404 });
@@ -382,17 +393,17 @@ async function main() {
 
   try {
     // ── scratch HERMES_HOME: root config + two profile homes ────────────────
-    writeFileSync(
-      join(hermesHome, "config.yaml"),
-      profileConfig(stub.url, []),
-    );
+    writeFileSync(join(hermesHome, "config.yaml"), profileConfig(stub.url, []));
     for (const [profile, enabled] of [
       [PROFILE_A, ["lilos", "browserprobe"]],
       [PROFILE_B, ["browserprobe"]],
     ] as const) {
       const home = join(hermesHome, "profiles", profile);
       mkdirSync(join(home, "plugins"), { recursive: true });
-      writeFileSync(join(home, "config.yaml"), profileConfig(stub.url, [...enabled]));
+      writeFileSync(
+        join(home, "config.yaml"),
+        profileConfig(stub.url, [...enabled]),
+      );
       // Install = copy the shipped bundle (what Connect does), always the
       // same files; `plugins.enabled` alone decides loading.
       cpSync(PLUGIN_SRC, join(home, "plugins", "lilos"), { recursive: true });
@@ -433,7 +444,7 @@ async function main() {
     check(true, "hermes serve up with plugin env on two profiles");
 
     const createSession = async (profile: string, source?: string) => {
-      const r = (await gateway!.request("session.create", {
+      const r = (await gateway?.request("session.create", {
         profile,
         title: "e2e-339",
         cwd: process.env.HOME,
@@ -449,7 +460,7 @@ async function main() {
       };
     };
     const prompt = async (runtimeSid: string, text: string) => {
-      await gateway!.request("prompt.submit", {
+      await gateway?.request("prompt.submit", {
         session_id: runtimeSid,
         text,
       });
@@ -510,8 +521,9 @@ async function main() {
     check(
       sawPolicy,
       "AC-4: versioned host policy in the lilos session system prompt",
-      (stub.seen.find((s) => /\[LilOS host policy/.test(s.sys))?.sys ?? "")
-        .match(/\[LilOS host policy[^\]]*\]/)?.[0] ?? "",
+      (
+        stub.seen.find((s) => /\[LilOS host policy/.test(s.sys))?.sys ?? ""
+      ).match(/\[LilOS host policy[^\]]*\]/)?.[0] ?? "",
     );
 
     // AC-5: the stub calls browser_probe through tool_call — vetoed by the
@@ -526,16 +538,16 @@ async function main() {
     check(
       sawBlock,
       "AC-5: browser_* vetoed inside the lilos session with the LilOS alternative",
-      (stub.seen.find((s) => /Inside LilOS|lilos_browser/i.test(s.toolResults))
-        ?.toolResults ?? "")
-        .slice(0, 160),
+      (
+        stub.seen.find((s) => /Inside LilOS|lilos_browser/i.test(s.toolResults))
+          ?.toolResults ?? ""
+      ).slice(0, 160),
     );
 
     // AC-3: after the block the model calls lilos_terminal_run → the gateway
     // runs it on the session PTY and the captured output carries the marker.
     const sawLilosCall = await waitFor(
-      () =>
-        stub.seen.some((s) => s.toolResults.includes(`${MARKER}-PLUGIN`)),
+      () => stub.seen.some((s) => s.toolResults.includes(`${MARKER}-PLUGIN`)),
       120_000,
     );
     check(
@@ -580,16 +592,18 @@ async function main() {
     check(
       refusedLilos,
       "AC-2: lilos_* call refused in the plain session — inert outside LilOS",
-      (stub.seen.find((s) =>
-        /only runs inside a LilOS session|inert here/.test(s.toolResults),
-      )?.toolResults ?? "")
-        .slice(0, 160),
+      (
+        stub.seen.find((s) =>
+          /only runs inside a LilOS session|inert here/.test(s.toolResults),
+        )?.toolResults ?? ""
+      ).slice(0, 160),
     );
     check(
       probeRan,
       "AC-2/AC-5: browser_probe RUNS unblocked in the plain session",
-      (stub.seen.find((s) => /PROBE-RAN-OK/.test(s.toolResults))?.toolResults ??
-        ""
+      (
+        stub.seen.find((s) => /PROBE-RAN-OK/.test(s.toolResults))
+          ?.toolResults ?? ""
       ).slice(0, 120),
     );
 
@@ -607,10 +621,11 @@ async function main() {
       stub.seen.some(lilosListed)
         ? `LEAK: ${stub.seen
             .filter(lilosListed)
-            .map((s) =>
-              `${s.searchDesc}\n${s.toolResults}`.match(
-                /[^\n]{0,80}lilos_(terminal_run|browser_open|thread_post|workbench_previews)[^\n]{0,80}/,
-              )?.[0],
+            .map(
+              (s) =>
+                `${s.searchDesc}\n${s.toolResults}`.match(
+                  /[^\n]{0,80}lilos_(terminal_run|browser_open|thread_post|workbench_previews)[^\n]{0,80}/,
+                )?.[0],
             )
             .join(" | ")}`
         : "",
@@ -640,15 +655,15 @@ async function main() {
       engineSessionId: sb2.stored,
     });
     await prompt(sb2.runtimeSid, "list what you can do.");
-    const sawLilosB2 = await waitFor(
-      () => stub.seen.some(lilosListed),
-      90_000,
-    );
+    const sawLilosB2 = await waitFor(() => stub.seen.some(lilosListed), 90_000);
     const offeredB2 = [...new Set(stub.seen.flatMap((s) => s.tools))];
     check(
       sawLilosB2,
       "AC-8: new session on profile B gets lilos_* with NO hermes restart",
-      offeredB2.filter((n) => n.startsWith("lilos")).slice(0, 8).join(","),
+      offeredB2
+        .filter((n) => n.startsWith("lilos"))
+        .slice(0, 8)
+        .join(","),
     );
 
     // And the plugin works on B end-to-end (not just listed): tool result

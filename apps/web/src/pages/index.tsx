@@ -1,10 +1,7 @@
 import { FirstRun } from "@lilos/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
-import {
-  connectApproved,
-  requestConnect,
-} from "../lib/connect";
+import { connectApproved, requestConnect } from "../lib/connect";
 import { useAtom } from "../lib/hooks";
 import { toUiEmployee } from "../lib/mapping";
 import {
@@ -35,7 +32,7 @@ export function IndexPage() {
   const navigate = useNavigate();
   const first = employees[0];
   /* #339: the harness reports `connect` only on Hermes — when it does and
-     Oscar hasn't approved yet, the setup card's Continue lands on the
+     Connect wasn't approved yet, the setup card's Continue lands on the
      Connect step; Later skips it without approving. */
   const rows = statusPoll.result?.connect;
   const connect =

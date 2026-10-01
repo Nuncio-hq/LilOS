@@ -30,7 +30,6 @@ import {
   FoldersDetailParams,
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
-import { CONNECT_APPROVAL_KEY } from "./connect";
 import {
   type AgentDescriptor,
   type ContentBlock,
@@ -56,6 +55,7 @@ import {
   resolveUnderHome,
   worktreeAdd,
 } from "@lilos/host";
+import { CONNECT_APPROVAL_KEY } from "./connect";
 import type { EngineConnection } from "./engine/client";
 import { engineErrorCode, SESSION_NOT_FOUND } from "./engine/client";
 import type { EngineHostState } from "./engine/supervisor";
@@ -2202,9 +2202,7 @@ export class Harness {
     if (binding.gatewaySession) {
       const gw = binding.gatewaySession;
       binding.gatewaySession = undefined;
-      void this.opts.surfaces
-        ?.destroy(gw)
-        .catch(() => {});
+      void this.opts.surfaces?.destroy(gw).catch(() => {});
     }
     this.conversationBySession.delete(binding.sessionId);
     this.bindings.delete(binding.conversationId);
