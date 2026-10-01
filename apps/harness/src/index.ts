@@ -6,7 +6,7 @@
  */
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { systemClock, watchWake } from "@lilos/background";
+import { systemClock, watchOrphaned, watchWake } from "@lilos/background";
 import { RelayClient } from "@lilos/client-runtime";
 import { createCheckpointStore } from "@lilos/host";
 import packageJson from "../package.json";
@@ -143,6 +143,19 @@ const shutdown = async () => {
 };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
+// Orphan watchdog (#347): die with the tree that spawned us — a killed test
+// worker or `bun run dev` umbrella otherwise leaves the harness holding the
+// feed port and the engine it launched. Safe under launchd: a daemon's ppid
+// is 1 from the start and never moves.
+watchOrphaned({
+  clock: systemClock,
+  intervalMs: 1_000,
+  onOrphaned: (reason) => {
+    log.info("orphaned, shutting down", { reason });
+    void shutdown();
+  },
+});
 log.info("harness up", {
   relay: config.relayUrl,
   engine: config.engine.kind,

@@ -113,6 +113,7 @@
       "name": "@lilos/relay",
       "version": "0.0.0",
       "dependencies": {
+        "@lilos/background": "workspace:*",
         "@lilos/client-runtime": "workspace:*",
         "@lilos/contracts": "workspace:*",
         "@lilos/host": "workspace:*",

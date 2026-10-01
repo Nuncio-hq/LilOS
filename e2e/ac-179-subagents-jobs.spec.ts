@@ -439,14 +439,18 @@ test("AC-4 a background process lists in Background with command/status/uptime/U
 
   await send(page, "leave the dev server running in the background");
   const bg = tab(page, /Background/);
-  // The tab appears as soon as the engine reports the job (within seconds).
-  await expect(bg).toBeVisible({ timeout: 30_000 });
-  await bg.click();
-
   /* #309: delegated subagents list here too (`sa:` ids) — scope to the
      dev-server job row, not just the first. */
   const row = page.locator("[data-job]", { hasText: "bun run dev" }).first();
-  await expect(row).toBeVisible({ timeout: 30_000 });
+  // The tab appears as soon as the engine reports the job (within seconds).
+  // While the turn still runs, the workbench's follow-the-agent effects can
+  // steal the selection back to Changes in the same commit as the click, so
+  // re-click whenever the tab deselects until the row shows (#354).
+  await expect(bg).toBeVisible({ timeout: 30_000 });
+  await expect(async () => {
+    if ((await bg.getAttribute("aria-selected")) !== "true") await bg.click();
+    await expect(row).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
   await expect(row).toContainText("bun run dev");
   await expect(row).toContainText(/running/);
   await expect(row).toContainText(/up \d+[smh]/);

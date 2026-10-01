@@ -8,6 +8,7 @@
  * teardown watchdog (e2e/engine-leak.ts) can prove nothing outlived the
  * spawning test — the ~1.9 GB of orphans from issue #96.
  */
+import { systemClock, watchOrphaned } from "@lilos/background";
 import { ChromiumBrowser } from "../src/surfaces/browser";
 import { serveSurfaces } from "../src/surfaces/server";
 
@@ -48,11 +49,15 @@ process.stdin.once("error", () => shutdown("stdin error"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-// Belt for the stdin path: once reparented to launchd the spawner is gone
-// whether or not its pipe EOF arrived.
-setInterval(() => {
-  if (process.ppid === 1) shutdown("orphaned");
-}, 1_000);
+// Belt under the stdin path (#347): once reparented the spawner is gone
+// whether or not its pipe EOF arrived — and the parent's-own-reparent hop
+// also catches a dead owner past a surviving `bun run` shim (the stdin
+// watch can't: a shim holds the write end open forever).
+watchOrphaned({
+  clock: systemClock,
+  intervalMs: 1_000,
+  onOrphaned: (reason) => shutdown(`orphaned: ${reason}`),
+});
 
 const res = await fetch(`${server.url}/surfaces/sessions`, {
   method: "POST",
