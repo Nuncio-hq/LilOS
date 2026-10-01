@@ -120,23 +120,47 @@ export class SessionRegistry {
 }
 
 /**
+ * Who a request resolved to: a session entry, or the engine subsystem
+ * itself (#339 — an in-process plugin presenting the engine-scoped token).
+ * `engine` callers name their session via `x-lilos-session` before they get
+ * an entry; without one they may only read the full catalog (`GET /tools`).
+ */
+export interface ResolvedCaller {
+  readonly entry: GatewayEntry | null;
+  readonly engine: boolean;
+}
+
+/**
  * Caller authentication: the per-session bearer IS the identity. When the
  * caller also names a session (`x-lilos-session`, a gateway id or an engine
- * alias), the two must agree — A's token can never reach B's scope.
+ * alias), the two must agree — A's token can never reach B's scope. The
+ * engine-scoped token (set on the engine process, never on the wire for a
+ * session) resolves only through the named session's alias — it mints no
+ * scope of its own.
  */
 export function resolveCaller(
   registry: SessionRegistry,
   request: Request,
-): GatewayEntry | null {
+  engineToken?: string,
+): ResolvedCaller | null {
   const auth = request.headers.get("authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
   if (!token) return null;
+  if (engineToken && token === engineToken) {
+    const named = request.headers.get(SESSION_HEADER);
+    if (!named) return { entry: null, engine: true };
+    const entry = registry.resolve(named);
+    return entry ? { entry, engine: true } : null;
+  }
   const named = request.headers.get(SESSION_HEADER);
   if (named) {
     const entry = registry.resolve(named);
-    return entry && entry.token === token ? entry : null;
+    return entry && entry.token === token
+      ? { entry, engine: false }
+      : null;
   }
-  return registry.resolveToken(token);
+  const entry = registry.resolveToken(token);
+  return entry ? { entry, engine: false } : null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -163,7 +187,12 @@ function surfaceErrorStatus(code: SurfaceError["code"]): number {
 /** The rendered catalog rows one session sees — shared by `GET /tools` and
     the MCP `tools/list`. Everything renders FROM `LILOS_TOOLS`. */
 function toolListFor(scope: ViewerScope) {
-  return toolsForAreas(scope.areas).map((name) => {
+  return catalogRows(toolsForAreas(scope.areas));
+}
+
+/** Catalog rows for a name list — the one renderer for scoped and full. */
+function catalogRows(names: readonly string[]) {
+  return names.map((name) => {
     const contract = LILOS_TOOLS[name];
     return {
       name,
@@ -177,6 +206,11 @@ function toolListFor(scope: ViewerScope) {
       },
     };
   });
+}
+
+/** The whole catalog — what an engine caller without a session gets. */
+function toolListAll() {
+  return catalogRows(Object.keys(LILOS_TOOLS));
 }
 
 const MCP_MAX_BATCH_MESSAGES = 50;
@@ -258,6 +292,7 @@ async function handleMcpRequest(
  */
 export function gatewayHandler(
   registry: SessionRegistry,
+  opts?: { engineToken?: string },
 ): (request: Request) => Promise<Response | null> {
   return async (request) => {
     const url = new URL(request.url);
@@ -268,12 +303,26 @@ export function gatewayHandler(
     if (!(isToolsList && request.method === "GET") && !isToolCall && !isMcp) {
       return null;
     }
-    const caller = resolveCaller(registry, request);
+    const caller = resolveCaller(registry, request, opts?.engineToken);
     if (!caller) {
       return jsonError(401, "unauthenticated", "missing or invalid token");
     }
     if (isToolsList) {
-      return Response.json({ tools: toolListFor(caller.scope) });
+      /* The engine token without a session header reads the FULL catalog —
+         that's how an in-process plugin learns `lilos_*` names without
+         pretending to be a session (AC-3). A named session keeps the
+         area-filtered view. */
+      return Response.json({
+        tools: caller.entry ? toolListFor(caller.entry.scope) : toolListAll(),
+      });
+    }
+    const entry = caller.entry;
+    if (!entry) {
+      return jsonError(
+        401,
+        "unauthenticated",
+        "engine callers must name a session via x-lilos-session",
+      );
     }
     if (isMcp) {
       let body: unknown;
@@ -308,7 +357,7 @@ export function gatewayHandler(
             const parsed = parseMcpMessage(raw);
             switch (parsed.kind) {
               case "request":
-                return handleMcpRequest(caller, parsed.request);
+                return handleMcpRequest(entry, parsed.request);
               case "invalid":
                 return jsonRpcError(
                   parsed.id,
@@ -330,7 +379,7 @@ export function gatewayHandler(
     const name = url.pathname.slice(TOOL_PATH_PREFIX.length);
     if (
       !Object.hasOwn(LILOS_TOOLS, name) ||
-      !toolsForAreas(caller.scope.areas).includes(name)
+      !toolsForAreas(entry.scope.areas).includes(name)
     ) {
       return jsonError(404, "not_found", `unknown tool: ${name}`);
     }
@@ -341,7 +390,7 @@ export function gatewayHandler(
       return jsonError(400, "invalid_params", "body must be JSON");
     }
     try {
-      const result = await callTool(caller.scope, name, args);
+      const result = await callTool(entry.scope, name, args);
       return Response.json({ result });
     } catch (e) {
       if (e instanceof SurfaceError) {

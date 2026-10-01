@@ -8,6 +8,8 @@ import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { systemClock, watchOrphaned, watchWake } from "@lilos/background";
 import { RelayClient } from "@lilos/client-runtime";
+import type { AppMessage } from "@lilos/contracts/app";
+import { SURFACES_ENV } from "@lilos/surfaces";
 import { createCheckpointStore } from "@lilos/host";
 import packageJson from "../package.json";
 import { launcherFor, resolveHarnessConfig } from "./config";
@@ -19,6 +21,7 @@ import { createHostHandler } from "./host";
 import { createFileLogger } from "./log";
 import { createSleepGuard } from "./sleep";
 import { StatusReporter, teeLogger } from "./status";
+import { serveSurfaces } from "./surfaces/server";
 
 const config = resolveHarnessConfig();
 mkdirSync(config.workdir, { recursive: true });
@@ -35,6 +38,44 @@ const relay = new RelayClient({
   token: config.relayToken,
   client: { name: "lilos-harness", version: releaseVersion },
 });
+/* The agent-gateway surfaces server (#337/#339): every engine session gets
+   a Workbench scope (terminal/browser/thread tools). Hermes sessions reach
+   it through the in-process lilos plugin — its process env carries the
+   engine token, minted here; other engines attach the stdio `lilos mcp`
+   spec the session mints. */
+const surfaces = await serveSurfaces(0, {
+  appOps: (_session, binding) => {
+    if (!binding) return undefined;
+    return {
+      postMessage: async (text) => {
+        const { message } = await relay.request<{ message: AppMessage }>(
+          "messages.post",
+          {
+            channelId: binding.channelId,
+            conversationId: binding.conversationId,
+            authorKind: "employee",
+            authorId: binding.employeeId,
+            text,
+          },
+        );
+        return message;
+      },
+      readConversation: async (afterSeq) => {
+        const page = await relay.request<{ messages: AppMessage[] }>(
+          "messages.list",
+          {
+            channelId: binding.channelId,
+            conversationId: binding.conversationId,
+            ...(afterSeq !== undefined ? { afterSeq } : {}),
+          },
+        );
+        return page.messages;
+      },
+    };
+  },
+  log,
+});
+
 const harness = new Harness({
   relay,
   sleep: createSleepGuard(process.platform, log),
@@ -43,6 +84,10 @@ const harness = new Harness({
   hideCaps: config.hideCaps,
   /* #134: per-folder shadow-git checkpoints, snapshotted before each turn. */
   checkpoints: createCheckpointStore(config.checkpointsDir),
+  surfaces,
+  /* Hermes attaches via its plugin; ACP-shaped engines carry `lilos mcp`
+     on `session.start`. */
+  surfacesAttach: config.engine.kind === "hermes" ? "plugin" : "mcp",
   onNeedEngine: () => supervisor.ensureRunning(),
   version: releaseVersion,
 });
@@ -56,12 +101,21 @@ const bundledEngine = (name: string) => {
   return existsSync(p) ? p : undefined;
 };
 const supervisor = new EngineSupervisor({
-  launcher: launcherFor(config, repoRoot, log, {
-    fake: bundledEngine("lilos-engine-fake"),
-    // "nous" not "hermes" in the file name: managed Macs kill *hermes*
-    // executables by name (#141); the engine id stays "hermes".
-    hermes: bundledEngine("lilos-engine-nous"),
-  }),
+  launcher: launcherFor(
+    config,
+    repoRoot,
+    log,
+    {
+      fake: bundledEngine("lilos-engine-fake"),
+      // "nous" not "hermes" in the file name: managed Macs kill *hermes*
+      // executables by name (#141); the engine id stays "hermes".
+      hermes: bundledEngine("lilos-engine-nous"),
+    },
+    {
+      [SURFACES_ENV.baseUrl]: surfaces.url,
+      [SURFACES_ENV.engineToken]: surfaces.engineToken,
+    },
+  ),
   connect: (url) => connectEngineWs(url),
   onConnection: (conn) => harness.attachEngine(conn),
   onState: (state, detail) => harness.onEngineStateChange(state, detail),
@@ -139,6 +193,7 @@ const shutdown = async () => {
   feed.close();
   await supervisor.stop();
   await harness.stop();
+  await surfaces.close();
   process.exit(0);
 };
 process.on("SIGINT", shutdown);
