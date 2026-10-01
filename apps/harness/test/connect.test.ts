@@ -111,6 +111,24 @@ describe("AC-1 (#339) approval installs + enables the plugin per profile", () =>
     ]);
   });
 
+  it("the built-in default profile installs at the home root", async () => {
+    const f = fixture();
+    f.employees.push({ id: "e1", name: "Default", profile: "default" });
+    f.approve();
+    await f.connect.reconcile();
+
+    // Hermes' `default` home is HERMES_HOME itself (plugins under
+    // `<home>/plugins/`); `profiles/default` is never created.
+    expect(
+      existsSync(join(f.hermesHome, "plugins", "lilos", "plugin.yaml")),
+    ).toBe(true);
+    expect(existsSync(join(f.hermesHome, "profiles", "default"))).toBe(false);
+    expect(f.enableCalls("default")).toBe(1);
+    expect(f.connect.report()).toEqual([
+      { profile: "default", employee: "Default", state: "connected" },
+    ]);
+  });
+
   it("a failed enable marks the row failed with the reason", async () => {
     const f = fixture();
     f.employees.push({ id: "e1", name: "Ada", profile: "ada" });

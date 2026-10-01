@@ -154,9 +154,18 @@ export class HermesConnect {
     return row;
   }
 
+  /** Hermes' profile home layout: the built-in `default` profile's home is
+      HERMES_HOME itself (plugins under `<home>/plugins/`); every named
+      profile lives under `<HERMES_HOME>/profiles/<name>/`. */
+  private profileHome(profile: string): string {
+    return profile === "default"
+      ? this.deps.hermesHome
+      : join(this.deps.hermesHome, "profiles", profile);
+  }
+
   /** Install + enable the plugin on one profile (version-aware, AC-6). */
   private connect(profile: string, row: Row): void {
-    const home = join(this.deps.hermesHome, "profiles", profile);
+    const home = this.profileHome(profile);
     if (!existsSync(home)) {
       // Profile not materialized on disk yet — Hermes creates the home on
       // first use; retry on the next reconcile instead of failing.

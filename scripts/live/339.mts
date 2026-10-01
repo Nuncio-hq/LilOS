@@ -8,7 +8,8 @@ import { join } from "node:path";
  *
  *   - Install the bundled `lilos` plugin onto a Hermes profile exactly like
  *     the harness's HermesConnect does (copy into
- *     <HERMES_HOME>/profiles/<p>/plugins/lilos + `hermes -p <p> plugins
+ *     <profile home>/plugins/lilos (named profiles: <HERMES_HOME>/profiles/
+ *     <p>; `default` is HERMES_HOME itself) + `hermes -p <p> plugins
  *     enable lilos`) and prove the CLI reports it enabled (AC-1 mechanism).
  *   - `hermes acp` on that profile WITH the LilOS gateway env +
  *     HERMES_SESSION_SOURCE=lilos: the plugin registers the gateway catalog
