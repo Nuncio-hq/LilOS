@@ -59,6 +59,12 @@ PR does not exist.
   `profile` row (`settings.*` is #92's KV namespace); every surface reads it, nothing is hardcoded.** Prefill
   comes from `host.user` (the OS account's full name). Not: a `ME` constant
   in the web app, or identity fields on the employee record. — #118
+- **D-#315 Wait-state lives on the message row, not the client: `dropped` /
+  `removed` flags (`messages.drop`/`remove`/`send`, `message.changed`) drive
+  the waiting and not-sent trays; `client-runtime`'s `waitingMessages` plus
+  `deliveredSeq` classify.** The harness owns the semantics — a stranded
+  accepted steer reconciles to `dropped`. Not: tray state kept in
+  component memory (a reload must show the same tray). — #315 · PR #358
 
 ## Web
 - **D-#3 Web: React 19 + Vite + Tailwind v4 + shadcn (base-nova) + AI

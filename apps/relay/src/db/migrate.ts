@@ -261,6 +261,17 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `ALTER TABLE conversations ADD COLUMN usage_seq INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    /* #315: `dropped` parks a still-waiting user message in the not-sent
+       tray on ■ Stop; `removed` is the tray's Remove — both hidden like
+       `rewound`, both excluded from `listPendingTurns` so a restart never
+       delivers them to the engine. */
+    version: 16,
+    statements: [
+      `ALTER TABLE messages ADD COLUMN dropped INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE messages ADD COLUMN removed INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

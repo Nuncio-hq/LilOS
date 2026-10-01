@@ -498,6 +498,14 @@
               "default": false,
               "type": "boolean"
             },
+            "dropped": {
+              "default": false,
+              "type": "boolean"
+            },
+            "removed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -657,6 +665,14 @@
                 "type": "boolean"
               },
               "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "dropped": {
+                "default": false,
+                "type": "boolean"
+              },
+              "removed": {
                 "default": false,
                 "type": "boolean"
               },

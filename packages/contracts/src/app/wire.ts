@@ -140,6 +140,12 @@ export const AppMethod = z.enum([
   "messages.post",
   /* Host-only: stamp the pre-turn folder checkpoint onto a user message. */
   "messages.setCheckpoint",
+  /* #315 waiting tray: remove a still-waiting user message (the engine
+     never gets it), park a queued one in the not-sent tray (host-only —
+     the harness's Stop drain calls it), and un-park it to send. */
+  "messages.remove",
+  "messages.drop",
+  "messages.send",
   "messages.search",
   "attachments.get",
   "channel.subscribe",
@@ -483,6 +489,9 @@ export const MessagesListParams = z.object({
   limit: z.int().min(1).optional(),
   /** #134: include the hidden rewound tail (audit reads); default hides it. */
   includeRewound: z.boolean().optional(),
+  /** #315: include Stop-parked `dropped` rows (the not-sent tray reads them);
+      default hides them alongside `removed` rows, which never surface. */
+  includeDropped: z.boolean().optional(),
 });
 export type MessagesListParams = z.infer<typeof MessagesListParams>;
 export const MessagesListResult = z.object({
@@ -512,6 +521,36 @@ export const MessagesPostParams = z.object({
 });
 export type MessagesPostParams = z.infer<typeof MessagesPostParams>;
 export const MessageResult = z.object({ message: AppMessage });
+
+/**
+ * #315: the waiting tray's Remove (and a not-sent item's Remove): marks the
+ * message `removed` — hidden everywhere and never delivered to the engine.
+ * The relay refuses when the engine already consumed it (deliveredSeq covers
+ * it and it isn't parked) — the action isn't offered client-side then either.
+ */
+export const MessagesRemoveParams = z.strictObject({
+  messageId: z.string().min(1),
+});
+export type MessagesRemoveParams = z.infer<typeof MessagesRemoveParams>;
+
+/**
+ * #315: host-only — the harness parks a still-waiting message in the
+ * not-sent tray on ■ Stop (`dropped` — hidden, `listPendingTurns` skips it,
+ * `messages.send` un-parks). Idempotent.
+ */
+export const MessagesDropParams = z.strictObject({
+  messageId: z.string().min(1),
+});
+export type MessagesDropParams = z.infer<typeof MessagesDropParams>;
+
+/**
+ * #315: the not-sent tray's Send — clears `dropped`; the harness re-delivers
+ * it like a fresh message. Only valid on a parked row.
+ */
+export const MessagesSendParams = z.strictObject({
+  messageId: z.string().min(1),
+});
+export type MessagesSendParams = z.infer<typeof MessagesSendParams>;
 
 /**
  * Full-text search over the relay's stored messages (issue #138). Search
@@ -1115,6 +1154,9 @@ export type ConversationsPrsResult = z.infer<typeof ConversationsPrsResult>;
 
 export const AppEventMethod = z.enum([
   "message.created",
+  /* #315: a message's dropped/removed flags changed — subscribers replace
+     their copy (it does not re-fire `message.created`, seq is unchanged). */
+  "message.changed",
   "channel.snapshot",
   "channel.synced",
   "conversation.updated",
@@ -1141,6 +1183,13 @@ export const MessageCreatedEvent = z.object({
   message: AppMessage,
 });
 export type MessageCreatedEvent = z.infer<typeof MessageCreatedEvent>;
+
+/** #315: `dropped`/`removed` flipped on an existing row — replace it. */
+export const MessageChangedEvent = z.object({
+  channelId: z.string().min(1),
+  message: AppMessage,
+});
+export type MessageChangedEvent = z.infer<typeof MessageChangedEvent>;
 
 export const ChannelSnapshotEvent = z.object({
   channelId: z.string().min(1),

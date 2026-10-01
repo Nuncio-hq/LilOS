@@ -125,6 +125,10 @@ export const messages = sqliteTable(
     dedupeKey: text("dedupe_key"),
     /** Rewound by `conversations.rewind` (#134): hidden, kept for audit. */
     rewound: integer("rewound", { mode: "boolean" }).notNull().default(false),
+    /** ■ Stop parked it in the not-sent tray (#315): hidden, never delivered. */
+    dropped: integer("dropped", { mode: "boolean" }).notNull().default(false),
+    /** User removed it while still waiting (#315): hidden, never delivered. */
+    removed: integer("removed", { mode: "boolean" }).notNull().default(false),
     /** Pre-turn folder checkpoint id stamped by the harness (#134). */
     checkpoint: text("checkpoint"),
     createdAt: integer("created_at").notNull(),

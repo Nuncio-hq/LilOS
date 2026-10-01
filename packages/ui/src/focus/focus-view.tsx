@@ -22,6 +22,8 @@ import {
   NotSentTray,
   plain,
   QueuedTray,
+  type QueuedTrayItem,
+  queuedItemText,
   runningComposer,
 } from "../chat/agent-chat";
 import { useEscapeKey } from "../chat/composer-keys";
@@ -190,7 +192,7 @@ export function FocusView({
   /** Live harness surfaces for Workbench Terminal/Preview tabs (issue #36). */
   surfaces?: LiveSurfaces;
   /* Mid-turn sends the agent hasn't read yet — the waiting tray above the composer (issue #9). */
-  pending?: string[];
+  pending?: QueuedTrayItem[];
   /* os.editors + a bound os.open (issue #110, same pair ThreadView takes):
      the caller probes `host.describe` — onOpenPath={null} means os.open was
      absent, so the badge stays a plain label even when the accessors object
@@ -741,7 +743,11 @@ export function FocusView({
               onEdit={
                 onRemovePending && onDraftChange
                   ? (i) => {
-                      onDraftChange(pendingSteers[i] ?? "");
+                      onDraftChange(
+                        pendingSteers[i]
+                          ? queuedItemText(pendingSteers[i])
+                          : "",
+                      );
                       onRemovePending(i);
                     }
                   : undefined

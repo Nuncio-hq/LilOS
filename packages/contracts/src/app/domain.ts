@@ -228,6 +228,18 @@ export const AppMessage = z.object({
    */
   rewound: z.boolean().default(false),
   /**
+   * User message ■ Stop parked in the not-sent tray (#315): the harness was
+   * told to drop it instead of letting it reach the engine. Hidden from
+   * default `messages.list` reads and from `listPendingTurns`; `messages.send`
+   * un-parks it (re-delivers), `messages.remove` deletes it for good.
+   */
+  dropped: z.boolean().default(false),
+  /**
+   * User removed a still-waiting or parked message (#315): the engine must
+   * never get it. Hidden from every read and pending list, kept for audit.
+   */
+  removed: z.boolean().default(false),
+  /**
    * Pre-turn folder checkpoint id stamped by the harness (#134): the point
    * `conversations.rewind` restores the session folder to. Only user
    * messages that ran a turn carry one.

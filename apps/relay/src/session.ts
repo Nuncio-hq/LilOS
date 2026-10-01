@@ -41,9 +41,12 @@ import {
   type JsonRpcRequest,
   MAX_ATTACHMENT_BYTES,
   type MessageAttachment,
+  MessagesDropParams,
   MessagesListParams,
   MessagesPostParams,
+  MessagesRemoveParams,
   MessagesSearchParams,
+  MessagesSendParams,
   MessagesSetCheckpointParams,
   ProfileUpdateParams,
   PushRegisterParams,
@@ -370,6 +373,9 @@ export function createRelay(options: RelayOptions): Relay {
 
   const emitMessage = (channelId: string, message: unknown) =>
     emit(channelId, "message.created", { channelId, message });
+
+  const emitMessageChanged = (channelId: string, message: unknown) =>
+    emit(channelId, "message.changed", { channelId, message });
 
   const emitConversation = (channelId: string, conversation: unknown) =>
     emit(channelId, "conversation.updated", { channelId, conversation });
@@ -1081,6 +1087,7 @@ export function createRelay(options: RelayOptions): Relay {
               afterSeq: parsed.data.afterSeq,
               limit: parsed.data.limit,
               includeRewound: parsed.data.includeRewound,
+              includeDropped: parsed.data.includeDropped,
             });
             respond(peer, id, page);
           } catch {
@@ -1126,6 +1133,87 @@ export function createRelay(options: RelayOptions): Relay {
               "channel or conversation not found",
             );
           }
+          return;
+        }
+        /* #315 waiting-tray actions. All three broadcast `message.changed`
+           so every subscribed surface (and the host's own queue) sees the
+           flag flip — no `message.created`, the seq is unchanged. */
+        case "messages.remove": {
+          const parsed = MessagesRemoveParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const message = await store.getMessage(parsed.data.messageId);
+          if (message?.authorKind !== "user") {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "message not found",
+            );
+          }
+          if (message.removed) {
+            respond(peer, id, { message });
+            return;
+          }
+          const conversation = message.conversationId
+            ? await store.getConversation(message.conversationId)
+            : null;
+          const deliveredSeq = conversation?.deliveredSeq ?? 0;
+          /* Only a message the engine can't already have is removable: still
+             past the delivered watermark, or parked in the not-sent tray. */
+          if (!message.dropped && message.seq <= deliveredSeq) {
+            throw new RpcError(
+              JsonRpcCode.conflict,
+              "conflict",
+              "already delivered to the engine",
+            );
+          }
+          const removed = await store.setMessageFlags(message.id, {
+            removed: true,
+            dropped: false,
+          });
+          emitMessageChanged(message.channelId, removed ?? message);
+          respond(peer, id, { message: removed ?? message });
+          return;
+        }
+        case "messages.drop": {
+          const parsed = MessagesDropParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          /* The harness parks queued messages on Stop; a device never drops. */
+          requireHost(peer);
+          const message = await store.getMessage(parsed.data.messageId);
+          if (message?.authorKind !== "user" || message.removed) {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "message not found",
+            );
+          }
+          if (message.dropped) {
+            respond(peer, id, { message });
+            return;
+          }
+          const dropped = await store.setMessageFlags(message.id, {
+            dropped: true,
+          });
+          emitMessageChanged(message.channelId, dropped ?? message);
+          respond(peer, id, { message: dropped ?? message });
+          return;
+        }
+        case "messages.send": {
+          const parsed = MessagesSendParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          const message = await store.getMessage(parsed.data.messageId);
+          if (!message?.dropped || message.removed) {
+            throw new RpcError(
+              JsonRpcCode.conflict,
+              "conflict",
+              "message is not parked",
+            );
+          }
+          const sent = await store.setMessageFlags(message.id, {
+            dropped: false,
+          });
+          emitMessageChanged(message.channelId, sent ?? message);
+          respond(peer, id, { message: sent ?? message });
           return;
         }
         case "messages.search": {

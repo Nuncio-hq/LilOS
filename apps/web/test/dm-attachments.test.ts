@@ -22,6 +22,8 @@ const msg = (over: Partial<AppMessage>): AppMessage => ({
   seq: 1,
   createdAt: 0,
   rewound: false,
+  dropped: false,
+  removed: false,
   ...over,
 });
 
