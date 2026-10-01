@@ -9,7 +9,7 @@ import {
   PencilIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useEffect, useLayoutEffect } from "react";
+import { useLayoutEffect } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 import {
   Tooltip,

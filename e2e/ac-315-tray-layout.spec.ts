@@ -171,9 +171,7 @@ test("tray reserves its height: the approval card stays answerable with a waitin
             page
               .locator(`[data-ask-id="${askId}"]`)
               .evaluateAll((els) =>
-                els.some(
-                  (el) => el.getAttribute("data-ask-state") === "open",
-                ),
+                els.some((el) => el.getAttribute("data-ask-state") === "open"),
               ),
           { timeout: 15_000 },
         )
