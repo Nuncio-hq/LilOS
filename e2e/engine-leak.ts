@@ -156,6 +156,9 @@ export function watchOrphanExit(intervalMs = 1_000): void {
   const gpid0 = ppid0 <= 1 ? null : parentPpid(ppid0);
   setInterval(() => {
     if (process.ppid !== ppid0) process.exit(0);
-    if (gpid0 !== null && parentPpid(ppid0) !== gpid0) process.exit(0);
+    const gp = parentPpid(ppid0);
+    /* `null` = `ps` couldn't say (transient under load) — not evidence; a
+       truly dead parent reparents us, which the first check catches. */
+    if (gpid0 !== null && gp !== null && gp !== gpid0) process.exit(0);
   }, intervalMs).unref();
 }

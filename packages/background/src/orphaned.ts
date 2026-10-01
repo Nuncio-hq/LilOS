@@ -68,10 +68,11 @@ export function watchOrphaned(opts: OrphanWatchOptions): OrphanWatch {
       return;
     }
     /* Our parent is still alive but was itself reparented — the real owner
-       (test worker, shell, `bun run dev` caller) died. A `null` answer means
-       the parent pid vanished — it died and our reparent hasn't landed yet;
-       that is the same orphan event one tick early. */
-    if (gpid0 !== null && parentOf(ppid0) !== gpid0) {
+       (test worker, shell, `bun run dev` caller) died. A `null` answer is
+       only "unknown" (transient `ps` failure under load) — never evidence;
+       a truly dead parent reparents US, which the first check catches. */
+    const gp = parentOf(ppid0);
+    if (gpid0 !== null && gp !== null && gp !== gpid0) {
       fire(`parent reparented (grandparent was ${gpid0})`);
       return;
     }

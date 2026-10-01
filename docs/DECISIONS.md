@@ -134,6 +134,12 @@ PR does not exist.
 - **D-#3 Local verify uses a real LLM via Hermes (HPC `qwen3.8-flash-next`
   local / `openai-codex` cloud); hand-offs state which was used; if both
   fail, tell Oscar.** Not: silently falling back to mock. — #3 · PR #14
+- **D-#347 Spawned dev/test processes die with their spawner: every
+  long-lived entry point runs an orphan watchdog (reparent or parent's
+  reparent past a `bun run` shim → exit), and Playwright's globalTeardown
+  sweeps only tags whose owning worker is dead.** Not: runner-side
+  `pkill`/afterAll as the sole teardown (dies with the runner), or stdin-EOF
+  only (detached spawns never see EOF). — #347 · PR #351
 
 ## Engine
 - **D-#6 The engine protocol is JSON-RPC 2.0 over an ACP-shaped core

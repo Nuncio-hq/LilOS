@@ -82,7 +82,10 @@ const ppid0 = process.ppid;
 const gpid0 = ppid0 <= 1 ? null : parentPidOf(ppid0);
 setInterval(() => {
   if (process.ppid !== ppid0) void shutdown(0);
-  if (gpid0 !== null && parentPidOf(ppid0) !== gpid0) void shutdown(0);
+  const gp = parentPidOf(ppid0);
+  /* `null` = `ps` couldn't say (transient under load) — not evidence; a
+     truly dead parent reparents us, which the first check catches. */
+  if (gpid0 !== null && gp !== null && gp !== gpid0) void shutdown(0);
 }, 300).unref();
 
 const webDir = path.resolve(here, "..");

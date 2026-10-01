@@ -57,14 +57,17 @@ describe("watchOrphaned (#347)", () => {
     expect(reasons).toEqual(["parent reparented (grandparent was 100)"]);
   });
 
-  it("fires when the parent pid vanishes (reparent not landed yet)", () => {
+  it("ignores a transient `ps` failure (null is unknown, never evidence)", () => {
     let parentPpid: number | null = 100;
     const { clock, reasons } = rig({
       ppid: () => 42,
       parentOf: (p) => (p === 42 ? parentPpid : null),
     });
     clock.advance(500);
-    parentPpid = null;
+    parentPpid = null; // `ps` hiccup under load — parent still alive
+    clock.advance(5_000);
+    expect(reasons).toEqual([]);
+    parentPpid = 1; // real reparent once `ps` answers again
     clock.advance(500);
     expect(reasons).toEqual(["parent reparented (grandparent was 100)"]);
   });
