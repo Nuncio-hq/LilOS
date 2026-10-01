@@ -125,6 +125,9 @@ Repo: `Nuncio-hq/LilOS`. Use the `gh` CLI.
   Commits need DCO sign-off (`git commit -s`, bots too).
 - **Done**: the slice closes with its merged PR (hand-off note there); when
   the last slice closes, close the feature.
+- **Board** (org project "LilOS"): cards move to Done on close/merge, but
+  the automation never backfills. After you close or merge, check the card;
+  if it isn't in Done, move it (`gh project item-edit`).
 - Work outside the slice? Open a new issue; don't widen your PR.
 
 ## Verify loop
