@@ -31,12 +31,11 @@ export const SCHEDULED_RUNS: Record<string, Msg[]> = {
       kind: "msg", id: "sched-r2", from: "oscar", time: "Yesterday", text: SEED_TASKS[1].prompt,
       thread: {
         session: "ses_77c1", title: "Nightly verify · Tue 30 Sep", scheduled: { task: "task-verify", name: "Nightly verify" },
-        alert: { kind: "generic", text: "Stopped: waited for approval to run `git reset --hard origin/main` and nobody answered." },
         replies: [
           {
             id: "sched-r2a", from: "builder", time: "Yesterday",
             steps: [{ tool: "terminal", input: { command: "git fetch origin main" }, output: "From github.com:Nuncio-hq/LilOS\n * branch main -> FETCH_HEAD" }],
-            text: "I need to reset my checkout to `origin/main` before verifying. That's a risky command, so I'm waiting for your approval.",
+            text: "I need to reset my checkout to `origin/main` before verifying. That's a risky command and this task runs on Ask, so I stopped: nobody answered the approval before the run timed out.",
           },
         ],
       },

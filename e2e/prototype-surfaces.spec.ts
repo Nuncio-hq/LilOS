@@ -176,8 +176,9 @@ test("AC-4 session management: filter, rename, archive and restore in the DM lis
   await page.goto("/");
   await openDM(page, "Builder");
 
-  // Filter by first message content (4 sessions: two seeded + the subagents (#170) and plan (#175) demos).
-  await expect(page.locator("[data-session]")).toHaveCount(4);
+  // Filter by first message content (6 sessions: two seeded, two past scheduled runs (#366),
+  // and the subagents (#170) and plan (#175) demos).
+  await expect(page.locator("[data-session]")).toHaveCount(6);
   await page.getByPlaceholder("Filter sessions").fill("summarise");
   await expect(page.locator("[data-session]")).toHaveCount(1);
   await expect(page.locator("[data-session]")).toContainText("Summarise");
@@ -199,7 +200,7 @@ test("AC-4 session management: filter, rename, archive and restore in the DM lis
   // Archive hides the row under a disclosure; Restore brings it back.
   await d2.getByRole("button", { name: "Session actions" }).click();
   await page.getByRole("menuitem", { name: "Archive session" }).click();
-  await expect(page.locator("[data-session]")).toHaveCount(3);
+  await expect(page.locator("[data-session]")).toHaveCount(5);
   await page.getByRole("button", { name: /Archived \(1\)/ }).click();
   await expect(page.locator('[data-archived="true"]')).toHaveCount(1);
   await page
@@ -207,7 +208,7 @@ test("AC-4 session management: filter, rename, archive and restore in the DM lis
     .getByRole("button", { name: "Session actions" })
     .click();
   await page.getByRole("menuitem", { name: "Unarchive session" }).click();
-  await expect(page.locator("[data-session]")).toHaveCount(4);
+  await expect(page.locator("[data-session]")).toHaveCount(6);
   expect(errors).toEqual([]);
 });
 
