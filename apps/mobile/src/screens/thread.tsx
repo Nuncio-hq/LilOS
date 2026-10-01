@@ -17,6 +17,7 @@ import {
   modelLabel,
   PlanSheet,
   SubagentSheet,
+  SubagentsSheet,
   ThreadHeaderTitle,
   ThreadInfoSheet,
   ThreadScreen,
@@ -469,6 +470,10 @@ export function Thread({
         ? {
             onOpenSubagent: (a) =>
               navigation.navigate("Subagent", { conversationId, id: a.id }),
+            /* #319 AC-4: the turn shows only the "N subagents · Open" line;
+               the rows live on the session's Subagents sheet. */
+            onOpenSubagents: () =>
+              navigation.navigate("Subagents", { conversationId }),
           }
         : {})}
       {...(jobsCapable
@@ -555,6 +560,41 @@ export function Subagent({
         if (emp) navigation.navigate("Dm", { employeeId: emp });
         navigation.navigate("Thread", { conversationId: threadId });
       }}
+    />
+  );
+}
+
+/** #319 — every helper the thread's turns spun off, Running first then
+    Finished (the phone's Subagents tab): a row opens its brief/steps/report
+    sheet, an employee helper's row their own thread. Re-reads the feed
+    through useThread, so a running helper finishes here live. */
+export function Subagents({
+  navigation,
+  route,
+}: {
+  navigation: Nav;
+  route: RouteProp<DmRoutes, "Subagents">;
+}) {
+  const { conversationId } = route.params;
+  const { detail, conversations, channels } = useThread(conversationId);
+  const agents =
+    detail?.entries.flatMap((e) =>
+      e.kind === "agent" ? (e.subagents ?? []) : [],
+    ) ?? [];
+  return (
+    <SubagentsSheet
+      agents={agents}
+      onOpen={(a) =>
+        navigation.navigate("Subagent", { conversationId, id: a.id })
+      }
+      onOpenThread={(threadId) => {
+        const conv = conversations.find((c) => c.id === threadId);
+        const emp = channels.find((c) => c.id === conv?.channelId)?.employeeId;
+        navigation.goBack();
+        if (emp) navigation.navigate("Dm", { employeeId: emp });
+        navigation.navigate("Thread", { conversationId: threadId });
+      }}
+      onDone={() => navigation.goBack()}
     />
   );
 }

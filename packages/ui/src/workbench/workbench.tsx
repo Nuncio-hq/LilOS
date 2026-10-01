@@ -353,8 +353,10 @@ export function Workbench({
      when the session carries jobs. */
   const bgOn = !liveMode || jobs.length > 0;
   /* Subagents (#317): read off the session's own turns, no host method — shows once any turn
-     spun off a helper. */
-  const subOn = !!emp && helpers.length > 0;
+     spun off a helper. A `?tab=subagents` deep link still opens the tab on a
+     zero-helper session so its empty state answers instead of a silent
+     fallback (#319). */
+  const subOn = !!emp && (helpers.length > 0 || tab === "subagents");
   const allowed: Record<WbTab, boolean> = {
     changes: changesOn,
     files: filesOn,

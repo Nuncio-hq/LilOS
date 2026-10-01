@@ -42,6 +42,7 @@ export function ThreadScreen({
   onStop,
   onPickModel,
   onOpenSubagent,
+  onOpenSubagents,
   onOpenBackground,
   onPlan,
   onOpenPlan,
@@ -60,6 +61,9 @@ export function ThreadScreen({
   onPickModel?: () => void;
   /** A subagent row → its sheet (issue #170). */
   onOpenSubagent?: (a: SubagentRow) => void;
+  /** The turn's "N subagents · Open" line → the session's Subagents sheet
+     (#319 AC-4); passed, the turn shows only that line. */
+  onOpenSubagents?: () => void;
   /** The "N running in background" pill → the background sheet. */
   onOpenBackground?: () => void;
   /** Plan card decisions + the plan sheet (issue #175). */
@@ -145,6 +149,7 @@ export function ThreadScreen({
                   onApprove={onApprove}
                   onDeny={onDeny}
                   onOpenSubagent={onOpenSubagent}
+                  onOpenSubagents={onOpenSubagents}
                   onPlan={onPlan}
                   onOpenPlan={onOpenPlan}
                 />

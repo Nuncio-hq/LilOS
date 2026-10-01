@@ -26,8 +26,10 @@ export type Routes = {
   /* #182: the thread's plan sheet — every version, files per step, risks. */
   Plan: { conversationId: string };
   /* #181: one subagent of a turn in that thread; the session's background
-     jobs sheet (pill above the composer opens it). */
+     jobs sheet (pill above the composer opens it). #319: every helper of
+     that thread — the turn's "N subagents · Open" line opens it. */
   Subagent: { conversationId: string; id: string };
+  Subagents: { conversationId: string };
   Background: { conversationId: string };
   /* #340: a `workbench_open` card's diffs view (the phone's Changes tab);
      `path` narrows the rows to the file the card named. */
@@ -46,6 +48,7 @@ export type DmRoutes = Pick<
   | "ThreadInfo"
   | "Plan"
   | "Subagent"
+  | "Subagents"
   | "Background"
   | "WbDiff"
   | "FolderPicker"
