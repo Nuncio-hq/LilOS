@@ -50,26 +50,91 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const server = await serveSurfaces(0);
 try {
-  const res = await fetch(`${server.url}/surfaces/sessions`, {
+  // Session management is in-process only — nothing on the port may pick a
+  // binding or an alias (AC-3); prove the management route is closed.
+  const closed = await fetch(`${server.url}/surfaces/sessions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ cwd: process.env.HOME }),
   });
-  const session = (await res.json()) as {
-    session: string;
-    token: string;
-    viewerUrl: string;
-    mcpServer: {
-      name: string;
-      command: string;
-      args: string[];
-      env: { name: string; value: string }[];
-    };
-  };
+  check("POST /surfaces/sessions is not reachable", closed.status === 404);
+  const session = server.create({ cwd: process.env.HOME });
   check(
     "create session returns mcpServers spec",
     session.mcpServer?.name === "lilos" && session.mcpServer.env.length === 3,
     JSON.stringify(session.mcpServer),
+  );
+  check(
+    "create session returns the HTTP MCP spec (AC-2)",
+    session.mcpServerHttp?.type === "http" &&
+      session.mcpServerHttp.url.endsWith("/mcp"),
+    JSON.stringify(session.mcpServerHttp),
+  );
+
+  // #337 AC-2 leg: the same session over streamable-HTTP MCP —
+  // initialize (carrying the host policy), tools/list, tools/call.
+  const mcp = async (method: string, params?: unknown, id = 1) => {
+    const r = await fetch(`${server.url}/mcp`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        authorization: `Bearer ${session.token}`,
+        "x-lilos-session": session.session,
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        method,
+        params: params ?? {},
+      }),
+    });
+    return (await r.json()) as {
+      result?: Record<string, unknown>;
+      error?: { message: string };
+    };
+  };
+  const hello = await mcp("initialize", {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "e2e", version: "0" },
+  });
+  check(
+    "mcp initialize carries the host policy (AC-5)",
+    String(hello.result?.instructions).includes("[LilOS host policy v"),
+  );
+  const listed = await mcp("tools/list");
+  const listedNames = ((listed.result?.tools ?? []) as { name: string }[]).map(
+    (t) => t.name,
+  );
+  check(
+    "mcp tools/list renders from the catalog (AC-1)",
+    listedNames.includes("terminal_run") &&
+      listedNames.includes("workbench_previews") &&
+      listedNames.includes("browser_open"),
+    listedNames.join(","),
+  );
+  const catalog = await fetch(`${server.url}/tools`, {
+    headers: {
+      authorization: `Bearer ${session.token}`,
+      "x-lilos-session": session.session,
+    },
+  });
+  const catalogBody = (await catalog.json()) as {
+    tools?: { name: string }[];
+  };
+  check(
+    "GET /tools lists the same catalog",
+    (catalogBody.tools ?? []).length === listedNames.length,
+  );
+  const mcpRun = await mcp("tools/call", {
+    name: "terminal_run",
+    arguments: { command: "echo MCP-OK" },
+  });
+  check(
+    "mcp tools/call runs terminal_run",
+    JSON.stringify(mcpRun.result ?? {}).includes("MCP-OK"),
+    JSON.stringify(mcpRun).slice(0, 120),
   );
 
   const bad = await fetch(`${server.url}/tools/browser_read`, {
@@ -275,7 +340,7 @@ try {
     server.url,
     session.session,
     session.token,
-    "previews_list",
+    "workbench_previews",
   );
   check(
     "PREVIEW: marker found",

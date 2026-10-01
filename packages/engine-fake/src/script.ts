@@ -305,18 +305,22 @@ ${tail}`,
           steps.push({ tool: tool("terminal_read"), input: {}, output: "" });
           break;
         case "previews":
-          steps.push({ tool: tool("previews_list"), input: {}, output: "" });
+          steps.push({
+            tool: tool("workbench_previews"),
+            input: {},
+            output: "",
+          });
           break;
         case "say":
           steps.push({
-            tool: tool("app_post_message"),
+            tool: tool("thread_post"),
             input: { text: arg },
             output: "",
           });
           break;
         case "conv":
           steps.push({
-            tool: tool("app_read_conversation"),
+            tool: tool("thread_read"),
             input: {},
             output: "",
           });

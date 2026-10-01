@@ -1,18 +1,20 @@
 import type {
-  AppPostMessageResult,
-  AppReadConversationResult,
   BrowserClickResult,
   BrowserEvalResult,
   BrowserOpenResult,
   BrowserReadResult,
   BrowserScrollResult,
   BrowserTypeResult,
-  PreviewsListResult,
   PreviewTarget,
+  SessionBinding,
   TerminalReadResult,
   TerminalRunResult,
   TerminalWriteResult,
+  ThreadPostResult,
+  ThreadReadResult,
+  ToolArea,
   ViewerBrowserInputEvent,
+  WorkbenchPreviewsResult,
 } from "@lilos/contracts/harness";
 
 /**
@@ -41,11 +43,9 @@ export interface SurfaceBackend {
   }): Promise<TerminalRunResult>;
   terminalWrite(p: { data: string }): Promise<TerminalWriteResult>;
   terminalRead(p: { tailBytes?: number }): Promise<TerminalReadResult>;
-  previewsList(): Promise<PreviewsListResult>;
-  appPostMessage(p: { text: string }): Promise<AppPostMessageResult>;
-  appReadConversation(p: {
-    afterSeq?: number;
-  }): Promise<AppReadConversationResult>;
+  workbenchPreviews(): Promise<WorkbenchPreviewsResult>;
+  threadPost(p: { text: string }): Promise<ThreadPostResult>;
+  threadRead(p: { afterSeq?: number }): Promise<ThreadReadResult>;
 }
 
 /**
@@ -55,6 +55,11 @@ export interface SurfaceBackend {
  */
 export interface ViewerScope extends SurfaceBackend {
   readonly session: string;
+  /** The tool areas this session really has — `tools/list` and the host
+      policy render only these (issue #337 AC-2/AC-5). */
+  readonly areas: ReadonlySet<ToolArea>;
+  /** Who/what the session is bound to (employee, channel, conversation). */
+  readonly binding?: SessionBinding;
   /** Page-space input (viewer takeover) — CDP Input.dispatch* territory. */
   browserInput(evt: ViewerBrowserInputEvent): void;
   terminalInput(data: string): void;

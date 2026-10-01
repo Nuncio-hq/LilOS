@@ -1,5 +1,8 @@
 import type { AppMessage } from "@lilos/contracts/app";
-import type { ViewerBrowserInputEvent } from "@lilos/contracts/harness";
+import type {
+  SessionBinding,
+  ViewerBrowserInputEvent,
+} from "@lilos/contracts/harness";
 
 /**
  * Drivers the host app injects per scope — the runtime-specific parts
@@ -54,7 +57,7 @@ export type PtySpawner = (
   onExit: (code: number) => void,
 ) => PtyHandle;
 
-/** The app-ops leg (post/read this conversation) — backed by the relay. */
+/** The thread leg (post/read this session's conversation) — backed by the relay. */
 export interface AppOps {
   postMessage(text: string): Promise<AppMessage>;
   readConversation(afterSeq?: number): Promise<AppMessage[]>;
@@ -69,6 +72,8 @@ export interface SurfaceScopeOptions {
   createBrowser?: () => Promise<BrowserDriver>;
   spawnPty: PtySpawner;
   appOps?: AppOps;
+  /** Who/what the session is bound to (employee/channel/conversation) — #337. */
+  binding?: SessionBinding;
   /** Scrollback cap; default 400 KB like the spike's ring. */
   termTailBytes?: number;
   runTimeoutMs?: number;

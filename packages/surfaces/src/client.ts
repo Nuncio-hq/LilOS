@@ -1,6 +1,4 @@
 import {
-  type AppPostMessageResult,
-  type AppReadConversationResult,
   type BrowserClickResult,
   type BrowserEvalResult,
   type BrowserOpenResult,
@@ -8,14 +6,16 @@ import {
   type BrowserScrollResult,
   type BrowserTypeResult,
   LILOS_TOOLS,
-  type PreviewsListResult,
   type TerminalReadResult,
   type TerminalRunResult,
   type TerminalWriteResult,
+  type ThreadPostResult,
+  type ThreadReadResult,
   TOOL_PATH_PREFIX,
   type ViewerClientMsg,
   ViewerServerMsg,
   type ViewerServerMsg as ViewerServerMsgT,
+  type WorkbenchPreviewsResult,
 } from "@lilos/contracts/harness";
 import type { SurfaceBackend } from "./backend.js";
 import { SESSION_HEADER } from "./dispatch.js";
@@ -83,13 +83,29 @@ export function toolBackend(opts: ToolClientOptions): SurfaceBackend {
       call("terminal_write", p) as Promise<TerminalWriteResult>,
     terminalRead: (p) =>
       call("terminal_read", p) as Promise<TerminalReadResult>,
-    previewsList: () =>
-      call("previews_list", {}) as Promise<PreviewsListResult>,
-    appPostMessage: (p) =>
-      call("app_post_message", p) as Promise<AppPostMessageResult>,
-    appReadConversation: (p) =>
-      call("app_read_conversation", p) as Promise<AppReadConversationResult>,
+    workbenchPreviews: () =>
+      call("workbench_previews", {}) as Promise<WorkbenchPreviewsResult>,
+    threadPost: (p) => call("thread_post", p) as Promise<ThreadPostResult>,
+    threadRead: (p) => call("thread_read", p) as Promise<ThreadReadResult>,
   };
+}
+
+/** The tool names the caller's session is bound to — `GET /tools`, the same
+    filtered catalog `tools/list` exposes over MCP. */
+export async function listSessionTools(
+  opts: ToolClientOptions,
+): Promise<string[]> {
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const res = await fetchImpl(`${opts.baseUrl}/tools`, {
+    headers: {
+      authorization: `Bearer ${opts.token}`,
+      [SESSION_HEADER]: opts.session,
+    },
+  });
+  if (!res.ok)
+    throw new Error(`GET /tools failed (${res.status}): ${res.statusText}`);
+  const body = (await res.json()) as { tools?: Array<{ name: string }> };
+  return (body.tools ?? []).map((t) => t.name);
 }
 
 /* ------------------------------ viewer client ------------------------------ */

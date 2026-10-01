@@ -163,31 +163,27 @@ export function fakeAppOps(initial: AppMessage[] = []): AppOps & {
 }
 
 /**
- * The real HTTP tool API (toolApiHandler) over a node server — what the
- * harness mounts. Returns the base URL + parts for assertions.
+ * The real agent gateway (gatewayHandler + SessionRegistry) over a node
+ * server — what the harness mounts. Each registered session gets its own
+ * scope, token and optional engine-session alias. Returns the base URL +
+ * the registry for assertions and alias binding.
  */
-export async function serveToolApi(opts: {
-  session: string;
-  token: string;
-  scope:
-    | import("../src/index.js").SurfaceBackend
-    | Map<string, import("../src/index.js").SurfaceBackend>;
+export async function serveGateway(opts: {
+  sessions: Array<{
+    scope: import("../src/index.js").ViewerScope;
+    token?: string;
+    engineSessionId?: string;
+  }>;
 }) {
-  const { SESSION_HEADER, toolApiHandler } = await import("../src/index.js");
-  const handler = toolApiHandler(
-    {
-      scopeFor: (s: string) => {
-        if (opts.scope instanceof Map) return opts.scope.get(s) ?? null;
-        return s === opts.session || opts.session === "*" ? opts.scope : null;
-      },
-    },
-    {
-      scopeFor: (req: Request) =>
-        req.headers.get("authorization") === `Bearer ${opts.token}`
-          ? req.headers.get(SESSION_HEADER)
-          : null,
-    },
-  );
+  const { SessionRegistry, gatewayHandler } = await import("../src/index.js");
+  const registry = new SessionRegistry();
+  for (const s of opts.sessions) {
+    registry.add(s.scope, {
+      token: s.token,
+      engineSessionId: s.engineSessionId,
+    });
+  }
+  const handler = gatewayHandler(registry);
   const server: Server = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
@@ -208,5 +204,5 @@ export async function serveToolApi(opts: {
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const { port } = server.address() as AddressInfo;
-  return { server, baseUrl: `http://127.0.0.1:${port}` };
+  return { server, registry, baseUrl: `http://127.0.0.1:${port}` };
 }

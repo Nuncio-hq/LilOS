@@ -7,7 +7,7 @@ import {
   FakePtySpawner,
   fakeAppOps,
   SessionSurfaces,
-  serveToolApi,
+  serveGateway,
 } from "./helpers.js";
 
 const CLI = resolve(__dirname, "../src/cli.ts");
@@ -30,10 +30,8 @@ describe("AC-3 session.start { mcpServers } scopes tools to the session", () => 
       createBrowser: async () => browser,
       appOps,
     });
-    const api = await serveToolApi({
-      session: "sess-1",
-      token: "tok",
-      scope,
+    const api = await serveGateway({
+      sessions: [{ scope, token: "tok" }],
     });
     const engine = new FakeEngine({ tick: 1 });
     const events: EngineEvent[] = [];
@@ -98,18 +96,15 @@ describe("AC-3 session.start { mcpServers } scopes tools to the session", () => 
       cwd: "/tmp",
       spawnPty: spawnerB.spawn,
     });
-    const scopes = new Map([
-      ["sess-A", scopeA],
-      ["sess-B", scopeB],
-    ]);
-    const api = await serveToolApi({
-      session: "*",
-      token: "tok",
-      scope: scopes,
+    const api = await serveGateway({
+      sessions: [
+        { scope: scopeA, token: "tok-A" },
+        { scope: scopeB, token: "tok-B" },
+      ],
     });
     const engine = new FakeEngine({ tick: 1 });
     try {
-      const start = async (sess: string) =>
+      const start = async (sess: string, token: string) =>
         (await engine.dispatch("session.start", {
           agent: "builder",
           cwd: "/tmp",
@@ -120,13 +115,13 @@ describe("AC-3 session.start { mcpServers } scopes tools to the session", () => 
               args: [CLI, "mcp"],
               env: [
                 { name: "LILOS_SURFACES_URL", value: api.baseUrl },
-                { name: "LILOS_TOKEN", value: "tok" },
+                { name: "LILOS_TOKEN", value: token },
                 { name: "LILOS_SESSION", value: sess },
               ],
             },
           ],
         })) as { sessionId: string };
-      const a = await start("sess-A");
+      const a = await start("sess-A", "tok-A");
       await engine.dispatch("prompt", {
         sessionId: a.sessionId,
         content: [{ type: "text", text: "surfaces: run echo only-A" }],

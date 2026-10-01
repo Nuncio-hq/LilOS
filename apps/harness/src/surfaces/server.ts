@@ -1,17 +1,18 @@
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
-import type { McpServerStdio } from "@lilos/contracts/engine";
+import type { McpServerHttp, McpServerStdio } from "@lilos/contracts/engine";
+import { MCP_PATH, type SessionBinding } from "@lilos/contracts/harness";
 import {
   type AppOps,
   attachViewer,
   type BrowserDriver,
+  gatewayHandler,
   SESSION_HEADER,
+  SessionRegistry,
   SessionSurfaces,
   SURFACES_ENV,
   type SurfaceHost,
-  toolApiHandler,
-  type ViewerScope,
 } from "@lilos/surfaces";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { Logger } from "../log";
@@ -19,14 +20,30 @@ import { ChromiumBrowser } from "./browser";
 import { bunPtySpawner } from "./pty";
 
 /**
- * The surfaces side of the workspace harness (issue #36, AC-1..AC-5):
- * one SessionSurfaces per engine session — harness-owned Chromium page and
- * PTY shell — plus the HTTP tool API (`POST /tools/<tool>`) the LilOS MCP
- * server and `lilos` CLI call, and the `/view` WebSocket the Workbench
- * attaches to.
+ * The surfaces side of the workspace harness (issue #36), grown into the
+ * agent gateway (issue #337): one SessionSurfaces per engine session —
+ * harness-owned Chromium page and PTY shell — plus the gateway HTTP surface
+ * every engine-facing consumer goes through:
+ *
+ *   POST /tools/<name>        the tool API (`lilos` CLI + stdio MCP call it)
+ *   GET  /tools               this session's rendered catalog
+ *   POST /mcp                 MCP streamable HTTP (initialize/tools/list/tools/call)
+ *   GET  /view?session&token  the Workbench's live viewer socket
+ *
+ * The registry binds (employee/channel/conversation/cwd) per session and
+ * resolves callers by per-session bearer — tool calls never carry agent-
+ * passed ids (AC-3). Session management (`create`, `destroy`,
+ * `bindEngineSession`) is in-process only: nothing reachable over the port
+ * may pick a binding or an alias.
  */
 const VIEW_PATH = "/view";
-const SESSIONS_PATH = "/surfaces/sessions";
+
+export interface CreateSessionInit {
+  cwd?: string;
+  binding?: SessionBinding;
+  /** The engine's own session id, registered as an alias (AC-3). */
+  engineSessionId?: string;
+}
 
 export interface SurfacesServerOptions {
   /** Creates the browser driver; defaults to headless Chromium. */
@@ -34,8 +51,8 @@ export interface SurfacesServerOptions {
   /** Terminal cols/rows every scope starts with. */
   cols?: number;
   rows?: number;
-  /** Per-session app-ops wiring (relay conversation post/read), by session id. */
-  appOps?: (session: string) => AppOps | undefined;
+  /** Per-session thread ops (relay conversation post/read), by session. */
+  appOps?: (session: string, binding?: SessionBinding) => AppOps | undefined;
   log?: Logger;
   /** Absolute path of the `lilos` CLI entry engines' MCP spec points at. */
   cliPath?: string;
@@ -44,8 +61,12 @@ export interface SurfacesServerOptions {
 export interface SessionHandle {
   session: string;
   token: string;
-  /** The `mcpServers` entry the host merges into `session.start` (AC-3). */
+  binding?: SessionBinding;
+  /** The stdio `mcpServers` entry the host merges into `session.start` (AC-3). */
   mcpServer: McpServerStdio;
+  /** The HTTP `mcpServers` entry — engines with the `http` MCP transport use
+      this straight on the gateway (AC-2). */
+  mcpServerHttp: McpServerHttp;
   /** `ws://` URL a Workbench viewer opens. */
   viewerUrl: string;
 }
@@ -53,7 +74,9 @@ export interface SessionHandle {
 export interface SurfacesServer extends SurfaceHost {
   readonly url: string;
   readonly wsUrl: string;
-  create(cwd?: string): SessionHandle;
+  create(init?: CreateSessionInit): SessionHandle;
+  /** Register an engine's own session id as an alias for a gateway session. */
+  bindEngineSession(session: string, engineSessionId: string): boolean;
   destroy(session: string): Promise<boolean>;
   close(): Promise<void>;
 }
@@ -66,52 +89,36 @@ export async function serveSurfaces(
   port: number,
   options: SurfacesServerOptions = {},
 ): Promise<SurfacesServer> {
-  const scopes = new Map<string, { scope: ViewerScope; token: string }>();
+  const registry = new SessionRegistry();
   const sockets = new Set<import("node:net").Socket>();
   const viewers = new Set<WebSocket>();
   const log = options.log;
-
-  const httpTools = toolApiHandler(
-    { scopeFor: (s) => scopes.get(s)?.scope ?? null },
-    {
-      scopeFor(request) {
-        const auth = request.headers.get("authorization") ?? "";
-        const session = request.headers.get(SESSION_HEADER) ?? "";
-        const entry = scopes.get(session);
-        if (!entry || auth !== `Bearer ${entry.token}`) return null;
-        return session;
-      },
-    },
-  );
+  const gateway = gatewayHandler(registry);
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
     void (async () => {
       try {
-        if (req.method === "POST" && url.pathname === SESSIONS_PATH) {
-          const body = await readJson(req);
-          const handle = create(
-            typeof body.cwd === "string" ? body.cwd : undefined,
-          );
-          return json(res, 201, handle);
-        }
-        if (
-          req.method === "DELETE" &&
-          url.pathname.startsWith(`${SESSIONS_PATH}/`)
-        ) {
-          const id = url.pathname.slice(SESSIONS_PATH.length + 1);
-          return json(res, (await destroy(id)) ? 200 : 404, {});
-        }
-        if (url.pathname.startsWith("/tools/")) {
-          const out = await httpTools(
+        const isGateway =
+          url.pathname === MCP_PATH ||
+          url.pathname === "/tools" ||
+          url.pathname.startsWith("/tools/");
+        if (isGateway) {
+          const headers: Record<string, string> = {
+            "content-type": "application/json",
+            authorization: req.headers.authorization ?? "",
+          };
+          const sessionHeader = req.headers[SESSION_HEADER];
+          if (sessionHeader) headers[SESSION_HEADER] = String(sessionHeader);
+          const body =
+            req.method === "GET" || req.method === "HEAD"
+              ? undefined
+              : await readBody(req);
+          const out = await gateway(
             new Request(`http://x${url.pathname}${url.search}`, {
-              method: "POST",
-              headers: {
-                "content-type": "application/json",
-                authorization: req.headers.authorization ?? "",
-                [SESSION_HEADER]: String(req.headers[SESSION_HEADER] ?? ""),
-              },
-              body: await readBody(req),
+              method: req.method ?? "GET",
+              headers,
+              body,
             }),
           );
           if (out) return send(res, out);
@@ -137,7 +144,7 @@ export async function serveSurfaces(
     }
     const session = url.searchParams.get("session") ?? "";
     const token = url.searchParams.get("token") ?? "";
-    const entry = scopes.get(session);
+    const entry = registry.resolve(session);
     if (!entry || entry.token !== token) {
       socket.destroy();
       return;
@@ -162,24 +169,28 @@ export async function serveSurfaces(
   const httpUrl = `http://127.0.0.1:${boundPort}`;
   const wsUrl = `ws://127.0.0.1:${boundPort}`;
 
-  function create(cwd?: string): SessionHandle {
+  function create(init: CreateSessionInit = {}): SessionHandle {
     const session = `s-${randomUUID().slice(0, 8)}`;
-    const token = randomUUID();
     const scope = new SessionSurfaces({
       session,
-      cwd: cwd ?? process.env.HOME ?? process.cwd(),
+      cwd: init.cwd ?? process.env.HOME ?? process.cwd(),
       cols: options.cols,
       rows: options.rows,
       createBrowser:
         options.createBrowser ?? (() => Promise.resolve(new ChromiumBrowser())),
       spawnPty: bunPtySpawner,
-      appOps: options.appOps?.(session),
+      appOps: options.appOps?.(session, init.binding),
+      binding: init.binding,
     });
-    scopes.set(session, { scope, token });
+    const entry = registry.add(scope, {
+      engineSessionId: init.engineSessionId,
+    });
+    const token = entry.token;
     log?.info("surface session created", { session });
     return {
       session,
       token,
+      binding: init.binding,
       viewerUrl: `${wsUrl}${VIEW_PATH}?session=${session}&token=${token}`,
       mcpServer: {
         name: "lilos",
@@ -191,13 +202,25 @@ export async function serveSurfaces(
           { name: SURFACES_ENV.session, value: session },
         ],
       },
+      mcpServerHttp: {
+        type: "http",
+        name: "lilos",
+        url: `${httpUrl}${MCP_PATH}`,
+        headers: [{ name: "Authorization", value: `Bearer ${token}` }],
+      },
     };
   }
 
+  function bindEngineSession(
+    session: string,
+    engineSessionId: string,
+  ): boolean {
+    return registry.bindEngineSession(session, engineSessionId);
+  }
+
   async function destroy(session: string): Promise<boolean> {
-    const entry = scopes.get(session);
+    const entry = registry.remove(session);
     if (!entry) return false;
-    scopes.delete(session);
     await entry.scope.close();
     return true;
   }
@@ -205,12 +228,12 @@ export async function serveSurfaces(
   return {
     url: httpUrl,
     wsUrl,
-    scopeFor: (s) => scopes.get(s)?.scope ?? null,
+    scopeFor: (s) => registry.resolve(s)?.scope ?? null,
     create,
+    bindEngineSession,
     destroy,
     async close() {
-      for (const { scope } of scopes.values()) await scope.close();
-      scopes.clear();
+      for (const entry of registry.all()) await entry.scope.close();
       for (const ws of viewers) ws.terminate();
       for (const s of sockets) s.destroy();
       await new Promise<void>((r) => server.close(() => r()));
@@ -227,16 +250,6 @@ const readBody = (req: http.IncomingMessage): Promise<string> =>
     });
     req.on("end", () => r(b));
   });
-
-const readJson = async (
-  req: http.IncomingMessage,
-): Promise<Record<string, unknown>> => {
-  try {
-    return JSON.parse((await readBody(req)) || "{}") as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-};
 
 const json = (res: http.ServerResponse, status: number, body: unknown) => {
   res.writeHead(status, { "content-type": "application/json" });
