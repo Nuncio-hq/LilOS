@@ -514,7 +514,10 @@ test("AC-319 the panel's 'N subagents · Open' lands on Focus → Subagents (?ta
      before its real completion moves it to Finished. */
   const stack319 = await bootStack(
     "ac319",
-    { relay: wport(4822), feed: wport(4823), web: wport(5332) },
+    /* ports.spec allows only identical bases across files (every residue
+       is already taken) — these literals are ac-105's; different worker
+       indices keep them apart. */
+    { relay: wport(4818), feed: wport(4819), web: wport(5322) },
     { ENGINE_FAKE_TICK: "1500" },
   );
   try {

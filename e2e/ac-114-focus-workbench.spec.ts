@@ -549,7 +549,9 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
   // No PR for the branch → a plain note, not a crash.
   rmSync(viewPath);
   await page.reload();
-  await expect(page).toHaveURL(FOCUS_URL);
+  /* #319: the picked tab rides the URL — the reload lands back on
+     `?tab=pr`, not the default tab. */
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus\?tab=pr$/);
   await expect(tab(page, /^PR$/)).toBeVisible({ timeout: 30_000 });
   await tab(page, /^PR$/).click();
   await expect(
