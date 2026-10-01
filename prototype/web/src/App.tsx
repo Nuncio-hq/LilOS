@@ -22,6 +22,7 @@ import {
   type Folder,
   type AttachedFile,
   type Channel,
+  type ConnectionState,
   type EmpBadge,
   type Employee,
   type EmployeeEditSave,
@@ -48,6 +49,7 @@ import {
   type GitCommit,
   type CheckRun,
   type PullRequest,
+  type ProfileConnection,
   type Thread,
   type TicketRow,
   type Work,
@@ -406,6 +408,18 @@ const STATUS: Record<PreviewScenario, StatusComponent[]> = {
     { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
     { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].id} · responding` },
   ],
+  "all-connected": [
+    { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
+    { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
+    { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
+    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].id} · responding` },
+  ],
+  "connect-updating": [
+    { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
+    { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
+    { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
+    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].id} · responding` },
+  ],
   "first-run": [
     { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
     { id: "harness", label: "Harness", state: "ok", reason: "Running · 1 session" },
@@ -461,6 +475,28 @@ const STATUS: Record<PreviewScenario, StatusComponent[]> = {
 const SESSION_ALERTS: Partial<Record<PreviewScenario, SessionAlert>> = {
   "model-error": { kind: "model", text: `Model error · ${MODELS[0].id}: provider returned 429 (rate limited)`, retry: true },
   sleep: { kind: "sleep", text: "Interrupted — the Mac slept mid-turn. The reply may be incomplete.", retry: true },
+}
+
+/* Per-profile LilOS connection seed per scenario (issue #338): which hired
+   profiles may see the app. Connect walks a profile through updating →
+   connected in the mock; the real plugin wiring is #339. */
+const connectSeed = (s: PreviewScenario): Record<string, ProfileConnection> => {
+  const allOn = s === "all-connected"
+  return {
+    builder: { profile: "builder", state: "connected" },
+    reviewer: {
+      profile: "reviewer",
+      state: s === "connect-updating" ? "updating" : allOn ? "connected" : "not-connected",
+    },
+    marketer: allOn
+      ? { profile: "marketer", state: "connected" }
+      : {
+          profile: "marketer",
+          state: "failed",
+          reason: "Needs Hermes 0.9.2 — run `hermes update`, then retry.",
+        },
+    default: { profile: "default", state: allOn ? "connected" : "not-connected" },
+  }
 }
 
 // Canned turn used by the prototype's fake engine. Real app: Hermes events over /api/ws.
@@ -723,6 +759,14 @@ export default function App() {
      realApp toggle hides demo-only chrome, and the surfaces driven by a scenario. */
   const [scenario, setScenario] = useState<PreviewScenario>("normal")
   const [realApp, setRealApp] = useState(false)
+  /* #338 mock: per-profile LilOS connection state; the hire dialog's
+     "Connect to LilOS" checkbox (checked by default) feeds the same map.
+     ?connectProfiles=empty shows the connect step's zero-profiles variant. */
+  const [connections, setConnections] = useState<Record<string, ProfileConnection>>(() => connectSeed("normal"))
+  const [hireConnect, setHireConnect] = useState(true)
+  const [connectListEmpty] = useState(
+    () => new URLSearchParams(location.search).get("connectProfiles") === "empty",
+  )
   /* Live status (#33): ?statusRelay=ws://…&statusToken=… swaps the scenario
      status mock for the real system.status poll from the relay. */
   const liveStatus = useLiveStatus()
@@ -803,6 +847,7 @@ export default function App() {
   const [alertOff, setAlertOff] = useState(0)
   const pickScenario = (id: PreviewScenario) => {
     setAlertOff(0)
+    setConnections(connectSeed(id))
     if (id === "first-run") setFirstDone(false)
     if (id === "profile-missing")
       setEmployees((es) => es.map((e) => (e.id === "marketer" ? { ...e, profile: "ghost" } : e)))
@@ -816,6 +861,54 @@ export default function App() {
      human so components keying on VIEWER_ID resolve the same person. */
   const human: HumanFn = (id) =>
     id === "user" || id === "oscar" ? me : HUMANS[id]
+
+  /* #338: connList is Settings → Engine's row list — the profiles of the
+     employees the scenario shows, joined with connection state. connOf is the
+     DM header notice's bundle; connectProfile/connectAll walk updating →
+     connected on a timer, like the real plugin update will. */
+  const connectProfile = (profile: string) => {
+    setConnections((m) => ({ ...m, [profile]: { ...m[profile], profile, state: "updating", reason: undefined } }))
+    setTimeout(() => {
+      setConnections((m) =>
+        m[profile]?.state === "updating" ? { ...m, [profile]: { profile, state: "connected" } } : m,
+      )
+    }, 1100)
+  }
+  const connList = useMemo<ProfileConnection[]>(
+    () =>
+      (scenario === "first-run" ? [DEFAULT_EMP] : employees).map((e) => ({
+        employee: e.name,
+        ...(connections[e.profile ?? e.id] ?? { profile: e.profile ?? e.id, state: "not-connected" as ConnectionState }),
+      })),
+    [scenario, employees, connections],
+  )
+  const connOf = (profile: string | undefined) => {
+    if (!profile) return undefined
+    const c = connections[profile]
+    return {
+      state: c?.state ?? ("not-connected" as ConnectionState),
+      reason: c?.reason,
+      onConnect: () => connectProfile(profile),
+    }
+  }
+  const connectAll = async () => {
+    const pending = connList.filter((p) => p.state !== "connected").map((p) => p.profile)
+    setConnections((m) => {
+      const n = { ...m }
+      for (const p of pending) n[p] = { profile: p, state: "updating" }
+      return n
+    })
+    await new Promise((r) => setTimeout(r, 1200))
+    setConnections((m) => {
+      const n = { ...m }
+      for (const p of pending) n[p] = { profile: p, state: "connected" }
+      return n
+    })
+  }
+  const openHire = (d: HireDraft) => {
+    setHireConnect(true)
+    setHireOpen(d)
+  }
   /* ⌘, / Ctrl+, opens Settings from anywhere (issue #139, AC-1). */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1410,6 +1503,12 @@ export default function App() {
     }
     if (profile === null && liveProfiles === null) profileId = id
     setEmployees((es) => [...es, { id, name: d.name, role: d.role, status: "online", profile: profileId, model: d.model, now: "just hired · idle", instructions: d.instructions, respondTo: "me" }])
+    /* #338: the hire dialog's "Connect to LilOS" checkbox (on by default)
+       lands the new profile connected or left plain. */
+    setConnections((m) => ({
+      ...m,
+      [profileId]: { profile: profileId, state: hireConnect ? "connected" : "not-connected" },
+    }))
     chs.forEach((c) => { const ch = PROJECTS.flatMap((p) => p.channels).find((x) => x.id === c); if (ch && !ch.employees.includes(id)) ch.employees.push(id) })
     setHireOpen(null)
     if (view.kind === "channel" && view.id === "general") setResolved((r) => ({ ...r, g2: `Hired ${d.name}` }))
@@ -1560,7 +1659,7 @@ export default function App() {
         onGoDM={goDM}
         onOpenTickets={() => { setFocus(false); setPanelTab("tickets"); setPanelOpen(true) }}
         onAddFolder={() => setAddFolderOpen(true)}
-        onHire={() => setHireOpen(TEMPLATES[0])}
+        onHire={() => openHire(TEMPLATES[0])}
       />
 
       <div className="flex min-h-0 min-w-0">
@@ -1592,6 +1691,7 @@ export default function App() {
           {channel.dm && emp(view.id) ? (
             <EmployeeHome
               e={emp(view.id)!} feed={shownFeed} threadId={threadId} emp={emp} human={human}
+              connection={connOf(emp(view.id)?.profile)}
               onNav={() => setNavOpen(true)} onProfile={() => showEmp(view.id)} onOpen={showThread}
               onSend={sendTop} lastSent={lastSentTop} panelOpen={panelOpen} onPanel={() => setPanelOpen(true)} folders={folders}
               pick={wsPicks[view.id] ?? NO_WS} setPick={(p) => setWsPicks((w) => ({ ...w, [view.id]: p }))} onAddFolder={() => setAddFolderOpen(true)}
@@ -1627,7 +1727,7 @@ export default function App() {
                   feed={feed} emp={emp} human={human} threadId={threadId} resolved={resolved}
                   emptyText={`No messages in #${channel.name} yet.`} workOf={workOf}
                   onOpenThread={showThread}
-                  onReviewHire={(draft) => setHireOpen(draft)}
+                  onReviewHire={(draft) => openHire(draft)}
                   onRejectHire={(id) => setResolved({ ...resolved, [id]: "Hire declined" })}
                   onSay={say}
                 />
@@ -1678,6 +1778,7 @@ export default function App() {
         <HireDialog
           initial={hireOpen} templates={TEMPLATES} profiles={PROFILES} models={MODEL_OPTS}
           allChannels={PROJECTS.flatMap((p) => p.channels.map((c) => ({ id: c.id, label: `${p.name} / #${c.name}` })))}
+          connect={{ checked: hireConnect, onChange: setHireConnect }}
           onClose={() => setHireOpen(null)} onHire={hire} usedProfiles={employees.map((e) => e.profile)}
         />
       )}
@@ -1688,6 +1789,7 @@ export default function App() {
           approvals={{ policy, onPolicy: setPolicy, access, onAccess: setAccess }}
           editors={{ detected: DETECTED_EDITORS, defaultId: defaultEditor, onDefault: setDefaultEditor }}
           models={canModels ? { models: MODEL_OPTS, providers: PROVIDERS, visibility, onVisibility: saveVisibility } : undefined}
+          engine={{ name: engineName ?? "Hermes", version: "0.9", profiles: connList, onConnect: connectProfile }}
           status={{
             components: liveStatus?.components ?? STATUS[scenario],
             diagnostics: liveStatus?.diagnostics ?? STATUS[scenario].map((c) => `${c.id}: ${c.state} — ${c.reason}`).join("\n"),
@@ -1716,6 +1818,7 @@ export default function App() {
         <FirstRun
           employee={DEFAULT_EMP}
           identity={{ name: me.name, company }}
+          connect={{ profiles: connectListEmpty ? [] : connList, onConnect: connectAll }}
           onOpenDM={(id) => {
             setFirstDone(true)
             if (id.name) setMe((m) => ({ ...m, name: id.name }))

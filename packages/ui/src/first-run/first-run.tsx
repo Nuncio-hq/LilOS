@@ -1,11 +1,17 @@
-import { CheckCircle2Icon, Loader2Icon, MessageSquareIcon } from "lucide-react";
+import {
+  CheckCircle2Icon,
+  ChevronRightIcon,
+  Loader2Icon,
+  MessageSquareIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { ConnectStep } from "../connect/connect-step";
 import { Field } from "../dialogs/field";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
-import type { Employee } from "../types";
+import type { Employee, ProfileConnection } from "../types";
 
 const initials = (s: string) =>
   s
@@ -24,17 +30,29 @@ const initials = (s: string) =>
 export function FirstRun({
   employee,
   identity,
+  connect,
   onOpenDM,
   onSkip,
 }: {
   employee: Employee;
   /** Prefill for the identity fields (OS-derived; can arrive after mount). */
   identity?: { name: string; company: string };
+  /** The "Connect Hermes to LilOS" step (issue #338), appended to the flow
+      when passed: the setup card's action becomes Continue and the connect
+      step is the last screen. `onConnect` applies the approval — the step
+      stays open until it resolves so profile states can update live — then
+      the flow finishes; "Later" finishes without connecting. */
+  connect?: {
+    profiles: ProfileConnection[];
+    onConnect: () => void | Promise<unknown>;
+  };
   /** Carries what the user typed — the caller persists it as settings. */
   onOpenDM: (identity: { name: string; company: string }) => void;
   onSkip: () => void;
 }) {
   const [step, setStep] = useState(0);
+  const [page, setPage] = useState<"setup" | "connect">("setup");
+  const [connecting, setConnecting] = useState(false);
   const [name, setName] = useState(identity?.name ?? "");
   const [company, setCompany] = useState(identity?.company ?? "");
   const [touched, setTouched] = useState(false);
@@ -59,6 +77,21 @@ export function FirstRun({
       done: `${employee.name} · ready`,
     },
   ];
+  const finish = () => onOpenDM({ name: name.trim(), company: company.trim() });
+  if (page === "connect" && connect)
+    return (
+      <ConnectStep
+        profiles={connect.profiles}
+        connecting={connecting}
+        onConnect={() => {
+          setConnecting(true);
+          void Promise.resolve(connect.onConnect()).then(finish, () =>
+            setConnecting(false),
+          );
+        }}
+        onLater={finish}
+      />
+    );
   return (
     <div
       data-first-run
@@ -121,13 +154,20 @@ export function FirstRun({
         <div className="mt-6 flex items-center gap-2">
           <Button
             disabled={step < 2 || !name.trim()}
-            onClick={() =>
-              onOpenDM({ name: name.trim(), company: company.trim() })
-            }
+            onClick={() => (connect ? setPage("connect") : finish())}
             className="flex-1"
           >
-            <MessageSquareIcon />
-            Open DM with {employee.name}
+            {connect ? (
+              <>
+                Continue
+                <ChevronRightIcon />
+              </>
+            ) : (
+              <>
+                <MessageSquareIcon />
+                Open DM with {employee.name}
+              </>
+            )}
           </Button>
         </div>
         <button

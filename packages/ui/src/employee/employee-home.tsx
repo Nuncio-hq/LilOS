@@ -39,6 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
+import { NotConnectedNotice } from "../connect/not-connected-notice";
 import { AttachmentChips } from "../conversation/turns";
 import { WorkspacePicker, wsHint } from "../dialogs/workspace-picker";
 import { Body, Row, Who } from "../feed/row";
@@ -48,6 +49,7 @@ import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import type {
   AttachedFile,
+  ConnectionState,
   EmpFn,
   Employee,
   EngineProfile,
@@ -215,6 +217,7 @@ export function EmployeeHome({
   onSearchFiles,
   onSearchMessages,
   onOpenHit,
+  connection,
   draft: composerDraft,
   onDraftChange,
 }: {
@@ -278,6 +281,14 @@ export function EmployeeHome({
   onSearchMessages?: (query: string) => Promise<MessageHit[]>;
   /* Opens a hit's session scrolled to that message (AC-3); omitted → onOpen. */
   onOpenHit?: (hit: MessageHit) => void;
+  /* LilOS connection of this employee's engine profile (issue #338 AC-3):
+     a slim notice under the header for any state but "connected" — omitted
+     or connected renders nothing. Connect action needs onConnect (D-#19). */
+  connection?: {
+    state: ConnectionState;
+    reason?: string;
+    onConnect?: () => void;
+  };
 }) {
   const pickedFolder = folders.find((x) => x.id === pick.folder);
   const [filter, setFilter] = useState("");
@@ -494,6 +505,13 @@ export function EmployeeHome({
           )}
         </div>
       </header>
+      {connection && connection.state !== "connected" && (
+        <NotConnectedNotice
+          state={connection.state}
+          reason={connection.reason}
+          onConnect={connection.onConnect}
+        />
+      )}
       <Conversation className="min-h-0">
         <ConversationContent className="min-h-full justify-end gap-0 p-0 py-3">
           {loading ? (

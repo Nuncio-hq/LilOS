@@ -17,6 +17,8 @@ import {
 
 export type PreviewScenario =
   | "normal"
+  | "all-connected"
+  | "connect-updating"
   | "first-run"
   | "loading"
   | "reconnecting"
@@ -29,6 +31,8 @@ export type PreviewScenario =
 
 export const SCENARIOS: { id: PreviewScenario; label: string }[] = [
   { id: "normal", label: "Normal demo" },
+  { id: "all-connected", label: "All connected" },
+  { id: "connect-updating", label: "Connect updating" },
   { id: "first-run", label: "First run" },
   { id: "loading", label: "Loading sessions" },
   { id: "reconnecting", label: "Reconnecting to relay" },
