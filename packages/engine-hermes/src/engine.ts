@@ -1286,13 +1286,22 @@ export class HermesEngine {
         s.setState("running");
         break;
       }
-      case "reasoning.delta":
-      case "reasoning.available": {
+      case "reasoning.delta": {
         if (typeof p.text === "string" && p.text)
           s.emit("turn.delta", { turnId, stream: "reasoning", delta: p.text });
         if (s.turn) s.turn.phase = "reasoning";
         break;
       }
+      /* `reasoning.available` is not a delta: upstream
+         (turn_response_intake._relay_thinking) emits it once per assistant
+         message with the message's own text, tags stripped, ≤500 chars —
+         a progress preview the OpenAI-compat API surfaces as
+         `tool.progress`. The reasoning stream is `reasoning.delta` only
+         (also fired one-shot for non-streaming providers), so mapping it
+         here would inject the answer into the Reasoning card — and
+         double-append it after real thought (#334). */
+      case "reasoning.available":
+        break;
       case "message.delta": {
         if (typeof p.text === "string" && p.text)
           s.emit("turn.delta", { turnId, stream: "text", delta: p.text });

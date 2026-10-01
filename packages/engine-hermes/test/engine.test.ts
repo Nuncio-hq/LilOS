@@ -85,6 +85,47 @@ describe("engine-hermes AC-1: live turn maps hermes events", () => {
   });
 });
 
+describe("engine-hermes #334: reasoning.available is a summary, not a delta", () => {
+  test("the summary frame never reaches the reasoning stream", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+
+    /* The reported case — real wire order captured on `hermes serve`
+       v0.21.5+3173 (scripts/live/334.ts): no chain-of-thought, so the
+       summary frame carries the assistant's own message text. */
+    const p1 = promptAsync(h, sessionId);
+    gw.emit(gw.lastSid, "message.delta", { text: "\n\n391" });
+    gw.emit(gw.lastSid, "reasoning.available", { text: "391" });
+    gw.complete(gw.lastSid, { text: "391" });
+    await p1;
+
+    /* The general case — a real reasoning stream followed by the
+       summary; the answer must not append onto the thought. */
+    const p2 = promptAsync(h, sessionId);
+    gw.emit(gw.lastSid, "reasoning.delta", { text: "340+51 = 391." });
+    gw.emit(gw.lastSid, "message.delta", { text: "391" });
+    gw.emit(gw.lastSid, "reasoning.available", { text: "391" });
+    gw.complete(gw.lastSid, { text: "391" });
+    await p2;
+
+    const byTurn = new Map<string, { reasoning: string; text: string }>();
+    for (const e of h.events) {
+      if (e.type !== "turn.delta") continue;
+      const p = e.payload as { turnId: string; stream: string; delta: string };
+      const t = byTurn.get(p.turnId) ?? { reasoning: "", text: "" };
+      if (p.stream === "reasoning") t.reasoning += p.delta;
+      else t.text += p.delta;
+      byTurn.set(p.turnId, t);
+    }
+    const turns = [...byTurn.values()];
+    expect(turns).toHaveLength(2);
+    expect(turns[0]?.reasoning).toBe("");
+    expect(turns[0]?.text).toBe("\n\n391");
+    expect(turns[1]?.reasoning).toBe("340+51 = 391.");
+    expect(turns[1]?.text).toBe("391");
+  });
+});
+
 describe("engine-hermes AC-2: approvals & clarifies", () => {
   test("AC-2a approval srq -> request.opened -> respond once", async () => {
     const { gw, h } = setup();
