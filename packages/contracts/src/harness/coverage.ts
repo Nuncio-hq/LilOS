@@ -91,12 +91,16 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "harness.report": "harness bookkeeping — the host reports session state",
   "messages.setCheckpoint":
     "host bookkeeping — stamps the pre-turn rewind checkpoint",
+  "messages.drop":
+    "host bookkeeping — the harness parks still-waiting sends on Stop (#315)",
   /* app wire — the agent raises asks through its engine; answering is the user's */
   "asks.open": "the agent's engine raises asks; the app renders them",
   "asks.respond": "answering an ask is the user's action",
   "asks.list": "the ask inbox is the user's",
   /* app wire — user controls of a session */
   "turns.interrupt": "the user interrupts a running turn",
+  "messages.remove": "the user retracts a still-waiting message (#315)",
+  "messages.send": "the user re-sends a parked (dropped) message (#315)",
   "conversations.rewind": "the user rewinds a conversation",
   "conversations.setModel": "the user picks the session's model",
   "models.list": "the model pick list is the user's",
