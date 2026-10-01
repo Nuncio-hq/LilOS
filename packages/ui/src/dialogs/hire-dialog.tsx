@@ -104,6 +104,7 @@ export function HireDialog({
                 return (
                   <button
                     key={p.id}
+                    data-profile={p.id}
                     disabled={used}
                     onClick={() => pick(p)}
                     className={cn(
