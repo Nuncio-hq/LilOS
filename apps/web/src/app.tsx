@@ -32,6 +32,7 @@ import {
   hireEmployee,
   listHirableProfiles,
 } from "./lib/employees";
+import { parseFocusTab } from "./lib/focus-search";
 import { appFrameClass } from "./lib/frame";
 import { useAtom } from "./lib/hooks";
 import { toUiEmployee } from "./lib/mapping";
@@ -480,10 +481,14 @@ const threadRoute = createRoute({
   component: DmPage,
 });
 /* `/focus` opens the session in Focus — same page component, Focus reads
-   the suffix itself (#114). */
+   the suffix itself (#114). `?tab=` names the Workbench tab (#319 AC-2). */
 const focusRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/dm/$employeeId/$conversationId/focus",
+  validateSearch: (search) => {
+    const tab = parseFocusTab(search);
+    return tab ? { tab } : {};
+  },
   component: DmPage,
 });
 const routeTree = rootRoute.addChildren([

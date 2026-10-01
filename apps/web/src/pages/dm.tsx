@@ -47,6 +47,7 @@ import type {
   Msg,
   Reply,
   Thread,
+  WbTab,
   Work,
   WsPick,
 } from "@lilos/ui/types";
@@ -80,6 +81,7 @@ import {
 } from "../lib/attachments";
 import { requestConnect } from "../lib/connect";
 import { removeEmployee, saveEmployee } from "../lib/employees";
+import { parseFocusTab } from "../lib/focus-search";
 import {
   addFolder,
   cwdInfo,
@@ -195,9 +197,13 @@ export function DmPage() {
   };
   const navigate = useNavigate();
   /* `/dm/$e/$c/focus` renders the session in Focus instead of the panel
-     (#114) — the route carries it, so reload stays in Focus. */
+     (#114) — the route carries it, so reload stays in Focus. `?tab=` names
+     the Workbench tab it opens on (#319 AC-2). */
   const focusOpen = useRouterState({
     select: (s) => s.location.pathname.endsWith("/focus"),
+  });
+  const focusTab = useRouterState({
+    select: (s) => parseFocusTab(s.location.search),
   });
 
   const employees = useAtom(relay.employees);
@@ -1327,6 +1333,18 @@ export function DmPage() {
           onScrolled={() => setScrollTo(null)}
           steer={steer}
           agentWorking={!!modelLive?.agentInitiated}
+          /* #319 AC-2: the URL carries the Workbench tab — opening on
+             `?tab=` (a panel link's pick) and keeping it on further picks
+             means a reload always lands on the tab the URL names. */
+          initialTab={focusTab}
+          onTab={(t: WbTab) =>
+            void navigate({
+              to: "/dm/$employeeId/$conversationId/focus",
+              params: { employeeId, conversationId: conv.id },
+              search: { tab: t },
+              replace: true,
+            })
+          }
           pending={pendingItems}
           onRemovePending={onRemovePending}
           onUnqueue={onUnqueue}
@@ -1415,6 +1433,15 @@ export function DmPage() {
           steer={steer}
           agentWorking={!!modelLive?.agentInitiated}
           onOpenSession={onOpenSession}
+          /* #319 AC-1: the turn's "N subagents · Open" / "N files changed"
+             lines open Focus straight on that Workbench tab. */
+          onOpenTab={(t: WbTab) =>
+            void navigate({
+              to: "/dm/$employeeId/$conversationId/focus",
+              params: { employeeId, conversationId: conv.id },
+              search: { tab: t },
+            })
+          }
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}
           onModel={

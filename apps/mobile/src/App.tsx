@@ -72,6 +72,7 @@ import {
   Background,
   Plan,
   Subagent,
+  Subagents,
   Thread,
   ThreadInfo,
   WbDiff,
@@ -612,6 +613,11 @@ export default function App() {
               <Stack.Screen
                 name="Subagent"
                 component={Subagent}
+                options={SHEET}
+              />
+              <Stack.Screen
+                name="Subagents"
+                component={Subagents}
                 options={SHEET}
               />
               <Stack.Screen

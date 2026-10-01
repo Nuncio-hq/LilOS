@@ -137,6 +137,7 @@ export function FocusView({
   onPlan,
   browser,
   initialTab,
+  onTab,
   wbSpot,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
@@ -230,11 +231,19 @@ export function FocusView({
   /* Opens on this Workbench tab (e.g. a thread panel's "N subagents · Open" link, #317) —
      counts as the user's pick, so follow-the-agent doesn't switch away from it. */
   initialTab?: WbTab;
+  /* The user picked a Workbench tab — the host syncs it into the URL so a
+     reload lands on the same one (#319 AC-2). Follow-the-agent switches
+     don't fire it: only picks go through pickTab. */
+  onTab?: (t: WbTab) => void;
   /* The session's `workbench_open` request (issue #340): the panel opens and
      applies the target's tab — an explicit pick, so follow stops here. */
   wbSpot?: WbSpot;
 }) {
-  const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024);
+  /* A `?tab=` destination shows its tab even under lg, where the panel is
+     an overlay — "open on Subagents" means visibly open (#319 AC-1). */
+  const [wbOpen, setWbOpen] = useState(
+    () => window.innerWidth >= 1024 || initialTab !== undefined,
+  );
   const [tab, setTab] = useState<WbTab>(
     () =>
       initialTab ??
@@ -334,6 +343,7 @@ export function FocusView({
     setTab(t);
     setFollow(false);
     setWbOpen(true);
+    onTab?.(t);
   };
   /* #340 AC-2b: `workbench_open` brings the panel forward on the target's
      tab — the Workbench applies `target`; here the panel opens and follow
