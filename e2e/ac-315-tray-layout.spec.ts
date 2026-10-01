@@ -56,6 +56,7 @@ function killProc(proc: ChildProcess): Promise<void> {
 async function bootStack(
   tag: string,
   ports: { relay: number; feed: number; web: number },
+  extraEnv: Record<string, string> = {},
 ): Promise<Stack> {
   const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
   const proc = spawn("bun", ["run", "dev"], {
@@ -67,6 +68,7 @@ async function bootStack(
       LILOS_FEED_PORT: String(ports.feed),
       LILOS_WEB_PORT: String(ports.web),
       LILOS_USER_NAME: "Oscar",
+      ...extraEnv,
     },
     stdio: ["ignore", "inherit", "inherit"],
   });
@@ -204,11 +206,20 @@ interface ContrastRow {
    each element's background-color over the next until the stack is opaque. */
 const measureTray = (page: Page): Promise<ContrastRow[]> =>
   page.evaluate(() => {
+    /* getComputedStyle hands back whatever syntax the sheet declared — oklch,
+       color-mix, rgb — so colours are sampled through a canvas: fillStyle
+       normalises any CSS colour, and one painted pixel yields rgba + alpha. */
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) throw new Error("no 2d context for colour sampling");
     const parse = (s: string): RGBA | null => {
-      const m = s.match(/rgba?\(([^)]*)\)/);
-      if (!m) return null;
-      const p = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
-      return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillStyle = "#f0f"; // sentinel: an unparseable colour keeps it
+      ctx.fillStyle = s;
+      if (ctx.fillStyle === "#ff00ff") return null;
+      ctx.fillRect(0, 0, 1, 1);
+      const d = ctx.getImageData(0, 0, 1, 1).data;
+      return { r: d[0], g: d[1], b: d[2], a: d[3] / 255 };
     };
     const over = (top: RGBA, under: RGBA): RGBA => {
       const a = top.a + under.a * (1 - top.a);
@@ -224,10 +235,8 @@ const measureTray = (page: Page): Promise<ContrastRow[]> =>
       let acc: RGBA = { r: 0, g: 0, b: 0, a: 0 };
       for (let n: Element | null = el; n; n = n.parentElement) {
         const c = parse(getComputedStyle(n).backgroundColor);
-        if (c && c.a > 0) {
-          acc = over(c, acc);
-          if (acc.a >= 0.999) return { ...acc, a: 1 };
-        }
+        if (c && c.a > 0) acc = over(acc, c); // nearest layer stays on top
+        if (acc.a >= 0.999) return { ...acc, a: 1 };
       }
       return over(acc, { r: 255, g: 255, b: 255, a: 1 }); // canvas fallback
     };
@@ -261,19 +270,69 @@ const measureTray = (page: Page): Promise<ContrastRow[]> =>
     });
   });
 
+/* The tray's Edit/Remove icons render only while an item is still removable —
+   with steer on, engine-fake accepts the mid-turn send almost at once and the
+   icons hide (`removable: false`). A steer-less engine keeps every queued item
+   a plain removable string, so the icons stay up long enough to measure and
+   shoot. serve.ts is a ws endpoint, so the harness gets LILOS_ENGINE=url. */
+async function bootSteerlessEngine(port: number): Promise<{
+  url: string;
+  stop: () => Promise<void>;
+}> {
+  const proc = spawn(
+    "bun",
+    [
+      "packages/engine-fake/scripts/serve.ts",
+      "--port",
+      String(port),
+      "--no-steer",
+      "--tag",
+      "e2e-371",
+    ],
+    { cwd: repo, stdio: ["ignore", "pipe", "inherit"] },
+  );
+  const url = await new Promise<string>((resolve, reject) => {
+    let buf = "";
+    const timer = setTimeout(
+      () => reject(new Error("steer-less engine never printed LISTENING")),
+      30_000,
+    );
+    proc.stdout?.on("data", (d) => {
+      buf += d.toString();
+      const m = buf.match(/LISTENING (ws:\/\/\S+)/);
+      if (m) {
+        clearTimeout(timer);
+        resolve(m[1]);
+      }
+    });
+  });
+  return { url, stop: () => killProc(proc) };
+}
+
 test("tray text holds WCAG AA in dark and keeps its palette in light (#371)", async ({
   page,
 }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack("traycontrast", {
-    relay: wport(4644),
-    feed: wport(4648),
-    web: wport(5242),
-  });
+  const engine = await bootSteerlessEngine(wport(4650));
+  const stack = await bootStack(
+    "traycontrast",
+    {
+      relay: wport(4644),
+      feed: wport(4648),
+      web: wport(5242),
+    },
+    { LILOS_ENGINE: "url", LILOS_ENGINE_URL: engine.url },
+  );
   try {
     await page.setViewportSize({ width: 1288, height: 700 });
     await page.emulateMedia({ colorScheme: "light" });
     await dmDefault(page, stack.webUrl);
+    // Theme toggles run color transitions (~150ms): computed colors read
+    // mid-flight come back as oklab interpolations, not the final value.
+    await page.addStyleTag({
+      content:
+        "*,*::before,*::after{transition:none!important;animation:none!important}",
+    });
     await send(page, "Add a release note to the readme");
     await expect(openCard(page)).toBeVisible({ timeout: 30_000 });
     await send(page, "first waiting nudge");
@@ -293,7 +352,12 @@ test("tray text holds WCAG AA in dark and keeps its palette in light (#371)", as
         const rows = await measureTray(page);
         console.log(
           `#371 ${scheme}@${width}`,
-          rows.map((r) => `${r.name}=${r.ratio.toFixed(2)}:1`).join(" "),
+          rows
+            .map(
+              (r) =>
+                `${r.name}=${r.ratio.toFixed(2)}:1(${Math.round(r.color.r)},${Math.round(r.color.g)},${Math.round(r.color.b)} on ${Math.round(r.bg.r)},${Math.round(r.bg.g)},${Math.round(r.bg.b)})`,
+            )
+            .join(" "),
         );
         for (const r of rows) {
           if (scheme === "dark") {
@@ -311,6 +375,7 @@ test("tray text holds WCAG AA in dark and keeps its palette in light (#371)", as
     // Light mode must not change: the classes still resolve to their light
     // palette values (the fix only adds .dark rules and a dark: variant).
     await page.emulateMedia({ colorScheme: "light" });
+    await expect(html).not.toHaveClass(/dark/);
     const light = Object.fromEntries(
       (await measureTray(page)).map((r) => [r.name, r.color]),
     );
@@ -321,13 +386,14 @@ test("tray text holds WCAG AA in dark and keeps its palette in light (#371)", as
         `${name} must keep its light-mode color`,
       ).toBe(`${rgb[0]},${rgb[1]},${rgb[2]}`);
     };
-    expectInk("header", [60, 32, 8]); // amber-900
-    expectInk("subtitle", [142, 68, 10]); // amber-800
-    expectInk("index", [180, 83, 9]); // amber-700
-    expectInk("queued text", [69, 26, 3]); // amber-950
+    expectInk("header", [123, 51, 6]); // amber-900
+    expectInk("subtitle", [151, 60, 0]); // amber-800
+    expectInk("index", [187, 77, 0]); // amber-700
+    expectInk("queued text", [70, 25, 1]); // amber-950
     expectInk("edit icon", [134, 134, 139]); // muted-foreground
     expectInk("remove icon", [134, 134, 139]); // muted-foreground
   } finally {
     await stack.stop();
+    await engine.stop();
   }
 });

@@ -165,7 +165,7 @@ export function NotSentTray({
                         onClick={() => onRemove(i)}
                         aria-label="Remove"
                         data-notsent-remove={i}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:text-blue-300 dark:hover:text-red-900"
                       />
                     }
                   >
@@ -259,7 +259,7 @@ export function QueuedTray({
                         onClick={() => onEdit(i)}
                         aria-label="Edit"
                         data-queued-edit={i}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-900"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-900"
                       />
                     }
                   >
@@ -279,7 +279,7 @@ export function QueuedTray({
                         onClick={() => onRemove(i)}
                         aria-label="Remove"
                         data-queued-remove={i}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:text-amber-300 dark:hover:text-red-900"
                       />
                     }
                   >

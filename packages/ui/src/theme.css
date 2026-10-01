@@ -643,6 +643,9 @@
 .dark .text-blue-900 {
   color: oklch(80.9% 0.105 251.813);
 }
+.dark .text-blue-950 {
+  color: oklch(88.2% 0.059 254.128);
+}
 .dark .text-emerald-600 {
   color: oklch(76.5% 0.177 163.223);
 }
