@@ -159,8 +159,10 @@ function Reasoning({
   /** The turn is blocked on an open ask mid-reasoning (#264). */
   waiting?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const shown = open || thinking;
+  /* #320: like the web Reasoning — streaming opens the block by default,
+     the first user tap wins for the rest of the turn. */
+  const [userSet, setUserSet] = useState<boolean>();
+  const shown = userSet ?? thinking;
   return (
     <View className="gap-2">
       <Pressable
@@ -174,10 +176,10 @@ function Reasoning({
                 ? `Thought for ${seconds}s`
                 : "Thought"
         }
-        disabled={thinking || waiting}
+        disabled={waiting}
         onPress={() => {
           ease();
-          setOpen(!open);
+          setUserSet(!shown);
         }}
         hitSlop={6}
         className="flex-row items-center gap-1.5 self-start active:opacity-60"
@@ -197,9 +199,9 @@ function Reasoning({
             {seconds ? `Thought for ${seconds}s` : "Thought"}
           </AppText>
         )}
-        {!thinking && (
+        {!waiting && (
           <Icon
-            name={open ? "chevron.down" : "chevron.right"}
+            name={shown ? "chevron.down" : "chevron.right"}
             size={10}
             weight="bold"
             tone="muted-foreground"
@@ -233,8 +235,10 @@ function Steps({
   /** Kind of ask the live turn is blocked on (#264). */
   waiting?: "approval" | "plan" | "question";
 }) {
-  const [open, setOpen] = useState(false);
-  const shown = open || live;
+  /* #320: a live turn opens the block by default — the first user tap wins
+     for the rest of the turn, so collapsing mid-run stays collapsed. */
+  const [userSet, setUserSet] = useState<boolean>();
+  const shown = userSet ?? live;
   const running = steps.find((s) => s.running);
   const files = new Set(
     steps.filter((s) => s.add !== undefined).map((s) => s.arg),
@@ -247,10 +251,9 @@ function Steps({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${steps.length} steps`}
-        disabled={live}
         onPress={() => {
           ease();
-          setOpen(!open);
+          setUserSet(!shown);
         }}
         className="h-11 flex-row items-center gap-2 px-3.5 active:bg-fill"
       >
@@ -278,14 +281,12 @@ function Steps({
           )}
         </AppText>
         {!shown && <ToolIcons steps={steps} />}
-        {!live && (
-          <Icon
-            name={shown ? "chevron.up" : "chevron.down"}
-            size={11}
-            weight="semibold"
-            tone="muted-foreground"
-          />
-        )}
+        <Icon
+          name={shown ? "chevron.up" : "chevron.down"}
+          size={11}
+          weight="semibold"
+          tone="muted-foreground"
+        />
       </Pressable>
       {shown && (
         <View>

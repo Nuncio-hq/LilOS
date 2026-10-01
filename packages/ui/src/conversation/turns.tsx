@@ -118,7 +118,9 @@ export function UserTurn({
 
 /* All tool calls of a turn collapse into ONE Task block (the panel style the client picked in
    #19): a "N steps" trigger — or the running tool's name — that expands into one Tool card
-   per step. While the turn is in the tools phase the block is forced open. */
+   per step. While the turn is in the tools phase the block opens itself (#320:
+   that's only the DEFAULT — the first user click wins for the rest of the
+   turn, in either direction). */
 export function TurnSteps({
   steps,
   autoOpen,
@@ -130,13 +132,13 @@ export function TurnSteps({
      step's card reads "Waiting for approval" (issue #71, AC-4). */
   waitingApproval?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [userSet, setUserSet] = useState<boolean>();
   const running = steps.some((s) => s.running);
   return (
     <Task
       className="mb-1"
-      open={open || !!autoOpen}
-      onOpenChange={setOpen}
+      open={userSet ?? !!autoOpen}
+      onOpenChange={setUserSet}
       data-tasksteps
     >
       <TaskTrigger title={plural(steps.length, "step")}>

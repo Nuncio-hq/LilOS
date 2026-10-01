@@ -64,6 +64,9 @@ export const Reasoning = memo(
 
     const [hasAutoClosed, setHasAutoClosed] = useState(false);
     const [startTime, setStartTime] = useState<number | null>(null);
+    /* #320: the first user toggle wins for the rest of the stream — a
+       user-opened reasoning block must not fold back when streaming ends. */
+    const [userTouched, setUserTouched] = useState(false);
 
     // Track duration when streaming starts and ends
     useEffect(() => {
@@ -79,7 +82,7 @@ export const Reasoning = memo(
 
     // Auto-open when streaming starts, auto-close when streaming ends (once only)
     useEffect(() => {
-      if (defaultOpen && !isStreaming && isOpen && !hasAutoClosed) {
+      if (defaultOpen && !isStreaming && isOpen && !hasAutoClosed && !userTouched) {
         // Add a small delay before closing to allow user to see the content
         const timer = setTimeout(() => {
           setIsOpen(false);
@@ -91,6 +94,7 @@ export const Reasoning = memo(
     }, [isStreaming, isOpen, defaultOpen, setIsOpen, hasAutoClosed]);
 
     const handleOpenChange = (newOpen: boolean) => {
+      setUserTouched(true);
       setIsOpen(newOpen);
     };
 
