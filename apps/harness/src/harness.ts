@@ -14,6 +14,7 @@ import type {
   FoldersDetailResult,
   FoldersDiscoverResult,
   PendingTurn,
+  ProfileConnection,
 } from "@lilos/contracts/app";
 import {
   APP_PROTOCOL_VERSION,
@@ -23,6 +24,7 @@ import {
   ConversationModelRequestedEvent,
   ConversationsRewindHostParams,
   ConversationUpdatedEvent,
+  EmployeeRemovedEvent,
   ENGINE_PASSTHROUGH_METHODS,
   FoldersBrowseParams,
   FoldersDetailParams,
@@ -37,6 +39,7 @@ import {
   type EngineRequest,
   EventsSinceParams,
   type EventsSinceResult,
+  type McpServerStdio,
 } from "@lilos/contracts/engine";
 import {
   type CheckpointStore,
@@ -53,6 +56,7 @@ import {
   resolveUnderHome,
   worktreeAdd,
 } from "@lilos/host";
+import { CONNECT_APPROVAL_KEY } from "./connect";
 import type { EngineConnection } from "./engine/client";
 import { engineErrorCode, SESSION_NOT_FOUND } from "./engine/client";
 import type { EngineHostState } from "./engine/supervisor";
@@ -78,6 +82,15 @@ interface SessionBinding {
   sessionId: string;
   /** Durable ref stored as the conversation's engineRef. */
   ref: string;
+  /**
+   * The engine's own session id inside its engine (#339 — Hermes' stored
+   * session key, returned as `session.start`'s `engineSessionId` and kept
+   * current by `session.ref.changed`). The gateway aliases it so an
+   * in-process engine plugin resolves this binding's scope.
+   */
+  engineSessionId?: string;
+  /** The gateway session id backing this session's surfaces, if wired. */
+  gatewaySession?: string;
   /** Folder the session works in — the checkpoint store's work tree (#134). */
   cwd: string;
   /** Highest engine event seq applied — the `events.since` watermark. */
@@ -173,11 +186,41 @@ export interface HarnessOptions {
    */
   checkpoints?: CheckpointStore;
   /**
-   * The home-folder boundary `folders.browse`/`folders.discover` enforce
+   * The agent-gateway surfaces server (#337/#339): one gateway session per
+   * engine session, aliased by the engine's own session id so an
+   * in-process engine plugin can present it via `x-lilos-session`.
+   * Optional — fixtures skip it; engines still work, `lilos_*` tools just
+   * never resolve.
+   */
+  surfaces?: {
+    create(init: {
+      cwd?: string;
+      binding?: import("@lilos/contracts/harness").SessionBinding;
+      engineSessionId?: string;
+    }): { session: string; mcpServer: McpServerStdio };
+    bindEngineSession(session: string, engineSessionId: string): boolean;
+    destroy(session: string): Promise<boolean>;
+  };
+  /**
+   * How an engine session reaches its surfaces (#339): "plugin" — an
+   * in-process engine plugin renders lilos_* from the gateway catalog
+   * (Hermes); "mcp" — the session's `session.start` carries the surfaces'
+   * stdio `lilos mcp` server spec (engine-fake, ACP engines).
+   */
+  surfacesAttach?: "plugin" | "mcp";
+  /** The home-folder boundary `folders.browse`/`folders.discover` enforce
    * for device peers (#238). Defaults to the OS home dir (injectable for
    * tests).
    */
   homeDir?: string;
+  /** #339 Connect reconciler (Hermes engine only): reconciles the lilos
+     plugin per employee profile after approval, reports the rows on
+     `harness.report`. Undefined on non-Hermes engines. */
+  connect?: {
+    reconcile(): Promise<void>;
+    employeeRemoved(employeeId: string): void;
+    report(): ProfileConnection[];
+  };
 }
 
 const INVALID_STATE = -32003;
@@ -641,10 +684,16 @@ export class Harness {
     const conn = this.engine;
     if (!conn) return;
     const agent = await this.ensureAgent(conn, employee);
-    const started = await conn.request<{ sessionId: string; ref?: string }>(
+    const surface = this.createSurfaces(binding, conv, employee);
+    const started = await conn.request<{
+      sessionId: string;
+      ref?: string;
+      engineSessionId?: string;
+    }>(
       "session.start",
-      this.sessionParams(employee, agent, conv),
+      this.sessionParams(employee, agent, conv, surface?.mcpServer),
     );
+    this.aliasSurfaces(surface?.session, started.engineSessionId);
     // Session lost on the engine (fresh engine/orphan grace expired): a turn
     // that was running ended silently — surface interrupted + Retry (AC-4).
     if (binding.runningTurnId) {
@@ -655,6 +704,8 @@ export class Harness {
       ...binding,
       sessionId: started.sessionId,
       ref: started.ref ?? started.sessionId,
+      engineSessionId: started.engineSessionId,
+      gatewaySession: surface?.session,
       lastSeq: 0,
       runningTurnId: undefined,
       textByTurn: new Map(),
@@ -1237,6 +1288,12 @@ export class Harness {
         this.conversationBySession.set(conv.engineRef, conv.id);
         this.applyReplay(binding, replay);
         this.rebuildHeldPick(binding, conv, replay.snapshot);
+        /* Reattach carries no `engineSessionId` — the stored key was never
+           stored on the conversation. Create the gateway session anyway;
+           the alias lands on the next `session.ref.changed` (#339). */
+        const employee = await this.resolveEmployee(conv);
+        const surface = this.createSurfaces(binding, conv, employee);
+        binding.gatewaySession = surface?.session;
         return binding;
       } catch (error) {
         if (engineErrorCode(error) !== SESSION_NOT_FOUND) throw error;
@@ -1266,15 +1323,11 @@ export class Harness {
 
     const employee = await this.resolveEmployee(conv);
     const agent = await this.ensureAgent(conn, employee);
-    const started = await conn.request<{ sessionId: string; ref?: string }>(
-      "session.start",
-      this.sessionParams(employee, agent, conv),
-    );
     const binding: SessionBinding = {
       conversationId: conv.id,
       channelId,
-      sessionId: started.sessionId,
-      ref: started.ref ?? started.sessionId,
+      sessionId: "",
+      ref: "",
       cwd: expandPath(conv.cwd ?? this.opts.workdir, this.home),
       lastSeq: 0,
       queue: [],
@@ -1286,6 +1339,20 @@ export class Harness {
       steerPending: [],
       stopRequested: false,
     };
+    const surface = this.createSurfaces(binding, conv, employee);
+    const started = await conn.request<{
+      sessionId: string;
+      ref?: string;
+      engineSessionId?: string;
+    }>(
+      "session.start",
+      this.sessionParams(employee, agent, conv, surface?.mcpServer),
+    );
+    this.aliasSurfaces(surface?.session, started.engineSessionId);
+    binding.sessionId = started.sessionId;
+    binding.ref = started.ref ?? started.sessionId;
+    binding.engineSessionId = started.engineSessionId;
+    binding.gatewaySession = surface?.session;
     this.bindings.set(conv.id, binding);
     this.conversationBySession.set(started.sessionId, conv.id);
     await this.updateConversation(conv.id, {
@@ -1453,6 +1520,10 @@ export class Harness {
           // clients resolve it through the feed (`events.since`, live
           // `event.sessionId`), which never sees runtime refs.
           binding.ref = event.payload.ref;
+          /* The rotated ref IS the engine's stored session id — keep the
+             gateway alias current so plugin calls resolve this scope. */
+          binding.engineSessionId = event.payload.ref;
+          this.aliasSurfaces(binding.gatewaySession, event.payload.ref);
           this.opts.log.info("session ref rotated", {
             sessionId: event.sessionId,
             ref: event.payload.ref,
@@ -1583,6 +1654,26 @@ export class Harness {
       case "channel.removed": {
         const parsed = ChannelRemovedEvent.safeParse(params);
         if (parsed.success) void this.onChannelRemoved(parsed.data.channelId);
+        break;
+      }
+      case "settings.changed": {
+        // #339: the Connect step's one-time approval toggles the reconciler.
+        if (params.key === CONNECT_APPROVAL_KEY)
+          void this.opts.connect?.reconcile();
+        break;
+      }
+      case "employee.upserted": {
+        // A new hire's profile needs the plugin when Connect is approved.
+        void this.opts.connect?.reconcile();
+        break;
+      }
+      case "employee.removed": {
+        // Disable the leaving employee's plugin — never delete the profile.
+        const parsed = EmployeeRemovedEvent.safeParse(params);
+        if (parsed.success) {
+          this.opts.connect?.employeeRemoved(parsed.data.employeeId);
+          void this.opts.connect?.reconcile();
+        }
         break;
       }
       case "ask.resolved": {
@@ -2335,8 +2426,74 @@ export class Harness {
   }
 
   private unbind(binding: SessionBinding) {
+    if (binding.gatewaySession) {
+      const gw = binding.gatewaySession;
+      binding.gatewaySession = undefined;
+      void this.opts.surfaces?.destroy(gw).catch(() => {});
+    }
     this.conversationBySession.delete(binding.sessionId);
     this.bindings.delete(binding.conversationId);
+  }
+
+  /**
+   * Mint the gateway session backing a binding's surfaces (#337/#339):
+   * the scope declares employee/channel/conversation up front; the
+   * engine's own session id binds as an alias once `session.start`
+   * returns it. `attach === "mcp"` also yields the stdio server spec the
+   * session must carry; "plugin" engines reach the same surfaces
+   * in-process (Hermes' lilos plugin resolves the alias instead).
+   */
+  private createSurfaces(
+    binding: SessionBinding,
+    conv: Conversation | undefined,
+    employee: Employee | undefined,
+  ): { session: string; mcpServer?: McpServerStdio } | undefined {
+    const surfaces = this.opts.surfaces;
+    if (!surfaces) return undefined;
+    if (binding.gatewaySession) {
+      void surfaces.destroy(binding.gatewaySession).catch(() => {});
+      binding.gatewaySession = undefined;
+    }
+    const employeeId = this.employeeIdFor(conv);
+    try {
+      const handle = surfaces.create({
+        cwd: binding.cwd,
+        ...(employeeId && employee
+          ? {
+              binding: {
+                employeeId,
+                channelId: binding.channelId,
+                conversationId: binding.conversationId,
+              },
+            }
+          : {}),
+      });
+      return {
+        session: handle.session,
+        ...(this.opts.surfacesAttach === "mcp"
+          ? { mcpServer: handle.mcpServer }
+          : {}),
+      };
+    } catch (error) {
+      this.opts.log.warn("surfaces session create failed", {
+        conversationId: binding.conversationId,
+        error: String(error),
+      });
+      return undefined;
+    }
+  }
+
+  /** Alias the engine's own session id onto the gateway session (#339). */
+  private aliasSurfaces(
+    session: string | undefined,
+    engineSessionId: string | undefined,
+  ): void {
+    if (!session || !engineSessionId || !this.opts.surfaces) return;
+    try {
+      this.opts.surfaces.bindEngineSession(session, engineSessionId);
+    } catch {
+      /* Late rotation after the gateway session died — next ref retries. */
+    }
   }
 
   /* ------------------------------- helpers ------------------------------ */
@@ -2407,6 +2564,7 @@ export class Harness {
     employee: Employee | undefined,
     agentId: string,
     conv?: Conversation,
+    mcpServer?: McpServerStdio,
   ) {
     const base = this.opts.sessionParamsFor?.(employee, agentId) ?? {
       agent: agentId,
@@ -2429,6 +2587,7 @@ export class Harness {
       ...(effort ? { effort } : {}),
       ...(fast !== undefined ? { fast } : {}),
       cwd,
+      ...(mcpServer ? { mcpServers: [mcpServer] } : {}),
     };
   }
 

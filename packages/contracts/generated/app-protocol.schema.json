@@ -5286,6 +5286,37 @@
               "items": {
                 "type": "string"
               }
+            },
+            "connect": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "employee": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "connected",
+                      "not-connected",
+                      "updating",
+                      "failed"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "profile",
+                  "state"
+                ]
+              }
             }
           }
         }
@@ -5441,6 +5472,37 @@
           "type": "array",
           "items": {
             "type": "string"
+          }
+        },
+        "connect": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "profile": {
+                "type": "string",
+                "minLength": 1
+              },
+              "employee": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "not-connected",
+                  "updating",
+                  "failed"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "profile",
+              "state"
+            ]
           }
         }
       }
@@ -5759,6 +5821,37 @@
             "update",
             "detail"
           ]
+        },
+        "connect": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "profile": {
+                "type": "string",
+                "minLength": 1
+              },
+              "employee": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "not-connected",
+                  "updating",
+                  "failed"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "profile",
+              "state"
+            ]
+          }
         },
         "logs": {
           "type": "object",

@@ -746,6 +746,33 @@ export type AttachmentsGetResult = z.infer<typeof AttachmentsGetResult>;
 
 /* ------------------------- system status (#33) ------------------------- */
 
+/* Per-profile LilOS connection state (#339, agent gateway #336): "connected"
+   = the profile's lilos plugin is enabled; "not-connected" = the one-time
+   approval was never given or was declined; "updating" = a connect or plugin
+   update is in flight; "failed" = the last attempt failed and `reason`
+   carries the plain why. LilOS only enables/disables the plugin — it never
+   deletes a profile. `packages/ui/src/types.ts` mirrors this shape. */
+export const ConnectionState = z.enum([
+  "connected",
+  "not-connected",
+  "updating",
+  "failed",
+]);
+export type ConnectionState = z.infer<typeof ConnectionState>;
+
+/** One profile's connection row — the Connect step and Settings → Engine
+    both read this off `system.status`. */
+export const ProfileConnection = z.object({
+  /** Engine profile id (`agents.*` handle). */
+  profile: z.string().min(1),
+  /** Display name of the employee hired on this profile, when there is one. */
+  employee: z.string().optional(),
+  state: ConnectionState,
+  /** Plain reason shown when state is "failed". */
+  reason: z.string().optional(),
+});
+export type ProfileConnection = z.infer<typeof ProfileConnection>;
+
 /** The chain a session needs, mirrored by the status UI's row ids. */
 export const StatusComponentId = z.enum([
   "relay",
@@ -821,6 +848,9 @@ export const SystemStatusResult = z.object({
     })
     .optional(),
   mismatch: StatusMismatch.optional(),
+  /** Per-profile LilOS connection rows (#339) — absent when the host never
+     reported them (engine without connect support, older harness). */
+  connect: z.array(ProfileConnection).optional(),
   logs: z
     .object({
       relay: z.array(z.string()),
@@ -891,6 +921,8 @@ export const HarnessStatusReport = z.object({
   probedAt: Timestamp.optional(),
   /** Recent harness log lines (newest last). */
   logTail: z.array(z.string()).max(200).optional(),
+  /** Per-profile Connect rows (#339) — served verbatim on `system.status`. */
+  connect: z.array(ProfileConnection).optional(),
 });
 export type HarnessStatusReport = z.infer<typeof HarnessStatusReport>;
 

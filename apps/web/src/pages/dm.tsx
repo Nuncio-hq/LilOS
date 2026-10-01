@@ -78,6 +78,7 @@ import {
   hydrateAttachments,
   toAttachedFiles,
 } from "../lib/attachments";
+import { requestConnect } from "../lib/connect";
 import { removeEmployee, saveEmployee } from "../lib/employees";
 import {
   addFolder,
@@ -303,6 +304,11 @@ export function DmPage() {
   const channel = channels.find(
     (c) => c.kind === "dm" && c.employeeId === employeeId,
   );
+  /* #339: the harness's connect row for this employee's profile — absent
+     on non-Hermes engines (no `connect` on system.status). */
+  const employeeRow = employee?.profile
+    ? statusPoll.result?.connect?.find((r) => r.profile === employee.profile)
+    : undefined;
 
   /* #193: an employee hired without a DM channel (relay-side
      `employees.create`, pre-fix first-run hires) hung on the session
@@ -1509,6 +1515,17 @@ export function DmPage() {
         onSearchFiles={fileSearch(pickedFolderPath)}
         onSearchMessages={searchMessages}
         onOpenHit={onOpenHit}
+        /* #339: the employee's connect row off system.status — the notice
+           renders only for non-connected states. */
+        connection={
+          employeeRow
+            ? {
+                state: employeeRow.state,
+                ...(employeeRow.reason ? { reason: employeeRow.reason } : {}),
+                onConnect: () => void requestConnect(),
+              }
+            : undefined
+        }
         models={catalog.length ? catalog : undefined}
         modelChoice={
           draftPick[employeeId] ??

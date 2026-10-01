@@ -274,6 +274,10 @@
           "sessionId": {
             "type": "string",
             "minLength": 1
+          },
+          "engineSessionId": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [

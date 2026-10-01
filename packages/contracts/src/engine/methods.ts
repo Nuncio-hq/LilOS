@@ -71,7 +71,16 @@ export const SessionStartParams = z.strictObject({
 });
 export type SessionStartParams = z.infer<typeof SessionStartParams>;
 
-export const SessionStartResult = z.object({ sessionId: z.string().min(1) });
+export const SessionStartResult = z.object({
+  sessionId: z.string().min(1),
+  /**
+   * The engine's own session id inside its engine, when it has one
+   * (#339 — the engine's stored session key). The harness registers it as a
+   * gateway alias so an in-process engine plugin that only knows its own
+   * id resolves the same session scope.
+   */
+  engineSessionId: z.string().min(1).optional(),
+});
 export type SessionStartResult = z.infer<typeof SessionStartResult>;
 
 // ── prompt ──────────────────────────────────────────────────────────────────

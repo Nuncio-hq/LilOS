@@ -56,6 +56,13 @@ export interface SurfacesServerOptions {
   log?: Logger;
   /** Absolute path of the `lilos` CLI entry engines' MCP spec points at. */
   cliPath?: string;
+  /**
+   * Engine-scoped bearer (#339): an in-process engine plugin authenticates
+   * with it and names its own session via `x-lilos-session`. Minted here
+   * when omitted; the harness hands it to the engine process as
+   * `LILOS_ENGINE_TOKEN`. Never placed in a session's MCP spec.
+   */
+  engineToken?: string;
 }
 
 export interface SessionHandle {
@@ -74,6 +81,8 @@ export interface SessionHandle {
 export interface SurfacesServer extends SurfaceHost {
   readonly url: string;
   readonly wsUrl: string;
+  /** The engine-scoped bearer this port accepts (see options.engineToken). */
+  readonly engineToken: string;
   create(init?: CreateSessionInit): SessionHandle;
   /** Register an engine's own session id as an alias for a gateway session. */
   bindEngineSession(session: string, engineSessionId: string): boolean;
@@ -93,7 +102,8 @@ export async function serveSurfaces(
   const sockets = new Set<import("node:net").Socket>();
   const viewers = new Set<WebSocket>();
   const log = options.log;
-  const gateway = gatewayHandler(registry);
+  const engineToken = options.engineToken ?? randomUUID();
+  const gateway = gatewayHandler(registry, { engineToken });
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
@@ -228,6 +238,7 @@ export async function serveSurfaces(
   return {
     url: httpUrl,
     wsUrl,
+    engineToken,
     scopeFor: (s) => registry.resolve(s)?.scope ?? null,
     create,
     bindEngineSession,

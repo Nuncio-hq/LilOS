@@ -264,6 +264,7 @@ export function buildSystemStatus(input: StatusInput): SystemStatusResult {
     },
     engine,
     mismatch,
+    ...(host?.status?.connect ? { connect: host.status.connect } : {}),
   };
   if (logLines > 0) {
     result.logs = {
