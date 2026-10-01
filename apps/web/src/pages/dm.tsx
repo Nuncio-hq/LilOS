@@ -3,6 +3,7 @@ import {
   type SessionFeedState,
   type SessionModel,
   toStatusComponents,
+  waitingMessages,
 } from "@lilos/client-runtime";
 import type {
   AppMessage,
@@ -477,6 +478,9 @@ export function DmPage() {
           afterSeq: all.at(-1)?.seq ?? 0,
           limit: 200,
           includeRewound: true,
+          /* #315: parked not-sent rows ride the fetch so the tray survives a
+             reload (relay truth, not component state). */
+          includeDropped: true,
         });
         all.push(...page.messages);
         if (page.messages.length < 200) break;
@@ -510,17 +514,20 @@ export function DmPage() {
        fetch and now leaves its tail rows unmarked — drop them by seq. The
        rewind note and later messages only arrive through `messages` (the
        `conversation.rewound` event already pruned that store), so the seq
-       rule must not touch that source or it would hide the note. */
+       rule must not touch that source or it would hide the note.
+       Live rows merge FIRST: a flag flip (`dropped`/`removed`, #315
+       `message.changed`) arrives only through `messages`, and the stale
+       fetch copy of the same row must never outrank it. */
+    for (const m of messages) {
+      if (m.conversationId !== openConvId || seen.has(m.id) || m.rewound)
+        continue;
+      seen.add(m.id);
+      out.push(m);
+    }
     for (const m of threadMsgs) {
       if (m.conversationId !== openConvId || seen.has(m.id) || m.rewound)
         continue;
       if (rewoundFrom !== undefined && m.seq >= rewoundFrom) continue;
-      seen.add(m.id);
-      out.push(m);
-    }
-    for (const m of messages) {
-      if (m.conversationId !== openConvId || seen.has(m.id) || m.rewound)
-        continue;
       seen.add(m.id);
       out.push(m);
     }
@@ -694,9 +701,13 @@ export function DmPage() {
   const repliesOf = (conv: Conversation): Reply[] => {
     const s = summaryOf(conv);
     const want = s ? s.messageCount - 1 : undefined;
+    const hidden = waitingFor(conv).hiddenIds;
     const known = conversationReplies(
       (conv.id === conversationId ? threadPool : messages).filter(
-        (m) => m.conversationId === conv.id && m.id !== conv.rootMessageId,
+        (m) =>
+          m.conversationId === conv.id &&
+          m.id !== conv.rootMessageId &&
+          !hidden.has(m.id),
       ),
       conv.id,
     );
@@ -739,6 +750,19 @@ export function DmPage() {
 
   const modelFor = (conv: Conversation): SessionModel | undefined =>
     conv.engineRef ? models[conv.engineRef] : undefined;
+
+  /* #315: mid-turn sends wait in the tray — relay truth (deliveredSeq + the
+     message flags), not component state, so a reload shows the same tray.
+     Waiting rows, landed steers and parked/removed rows never render as
+     reply bubbles. */
+  const waitingFor = (conv: Conversation) =>
+    waitingMessages(
+      (conv.id === conversationId ? threadPool : messages).filter(
+        (m) => m.conversationId === conv.id,
+      ),
+      conv.deliveredSeq,
+      modelFor(conv),
+    );
 
   const convAsks = (conv: Conversation): Ask[] =>
     allAsks.filter((a) => a.conversationId === conv.id);
@@ -961,10 +985,17 @@ export function DmPage() {
     const engineRef = conv.engineRef;
     /* AC-6 (D-#19): plan surfaces only exist when the engine declares `plan`. */
     const planCap = hasCapability("plan");
+    /* #315: waiting items (and parked/removed rows) leave the reply pool —
+       they render in the trays above the composer, not as bubbles. */
+    const waiting = waitingFor(conv);
+    const notSentMsgs = threadPool.filter((m) => m.dropped);
     let replies = mergeTurns(
       conversationReplies(
         threadPool.filter(
-          (m) => m.id !== conv.rootMessageId && m.id !== root?.id,
+          (m) =>
+            m.id !== conv.rootMessageId &&
+            m.id !== root?.id &&
+            !waiting.hiddenIds.has(m.id),
         ),
         conv.id,
       ),
@@ -1121,11 +1152,51 @@ export function DmPage() {
         );
     };
 
+    /* #315 tray actions. The relay owns the row: Remove marks it `removed`
+       (the harness's `message.changed` handler drops it from every in-memory
+       hold, so the engine never gets it); Send clears `dropped` and the
+       harness re-delivers it. `say` carries a failure instead of throwing
+       mid-render. */
+    const onRemovePending = (i: number) => {
+      const target = waiting.waiting[i]?.message;
+      if (!target) return;
+      void relay
+        .request("messages.remove", { messageId: target.id })
+        .catch((e) =>
+          say(`Remove failed — ${e instanceof Error ? e.message : String(e)}`),
+        );
+    };
+    const onUnqueue = (i: number) => {
+      const target = notSentMsgs[i];
+      if (!target) return;
+      void relay
+        .request("messages.remove", { messageId: target.id })
+        .catch((e) =>
+          say(`Remove failed — ${e instanceof Error ? e.message : String(e)}`),
+        );
+    };
+    const onSendQueued = (i: number) => {
+      const target = notSentMsgs[i];
+      if (!target) return;
+      void relay
+        .request("messages.send", { messageId: target.id })
+        .catch((e) =>
+          say(`Send failed — ${e instanceof Error ? e.message : String(e)}`),
+        );
+    };
+    /* An accepted-but-unlanded steer already reached the engine — its row
+       still lists in the tray but Edit/Remove aren't offered (#315 AC-4). */
+    const pendingItems = waiting.waiting.map((w) =>
+      w.removable ? w.message.text : { text: w.message.text, removable: false },
+    );
+
     const thread: Thread = {
       session: engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
       title: conv.title || undefined,
       archived: conv.archived,
       replies,
+      /* #315: the not-sent tray reads ONLY ■-stopped parked sends. */
+      queue: notSentMsgs.map((m) => m.text),
       /* #300: live turn usage first, the persisted conv.usage for sessions
          the engine forgot (legacy engineRefs degrade to an empty replay). */
       usage: threadUsage(model, conv),
@@ -1242,6 +1313,10 @@ export function DmPage() {
           onScrolled={() => setScrollTo(null)}
           steer={steer}
           agentWorking={!!modelLive?.agentInitiated}
+          pending={pendingItems}
+          onRemovePending={onRemovePending}
+          onUnqueue={onUnqueue}
+          onSendQueued={onSendQueued}
           draft={threadDraft}
           onDraftChange={setThreadDraft}
           /* Same capability probe as the thread panel (#110): null pins the
@@ -1337,6 +1412,10 @@ export function DmPage() {
           defaultProvider={defaultProvider}
           onSend={sendInThread}
           onPlan={planCap ? onPlan : undefined}
+          pending={pendingItems}
+          onRemovePending={onRemovePending}
+          onUnqueue={onUnqueue}
+          onSendQueued={onSendQueued}
           draft={threadDraft}
           onDraftChange={setThreadDraft}
           accept={canAttachImages ? "image/*" : undefined}

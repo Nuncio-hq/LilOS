@@ -350,6 +350,208 @@ test("AC-5b without the `steer` capability, mid-turn typing queues", async ({
   }
 });
 
+test("#315 AC-1/AC-2 a mid-turn send waits in the tray, then lands once inside the turn", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await dmDefault(stackA, page);
+  await send(page, "Add a release note to the readme");
+  // The turn is parked on its approval — provably running, so the next send
+  // is accepted as a steer but can't land until a step boundary.
+  await expect(page.getByText("Approval needed").first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await send(page, "also mention bananas");
+  // It waits in the tray above the composer — never as a bubble.
+  const tray = page.locator("[data-queued]");
+  await expect(tray).toBeVisible({ timeout: 30_000 });
+  await expect(tray).toHaveAttribute("data-queued-mode", "steer");
+  await expect(tray).toContainText(/also mention bananas/);
+  await expect(
+    page.locator("[data-userturn]", { hasText: /bananas/i }),
+  ).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/ac-315-waiting-steer.png` });
+
+  // Once the approval resolves the steer lands at the next boundary: the
+  // tray empties and the message shows exactly once — as "Oscar steered …"
+  // inside the turn, with no separate bubble for it.
+  const steered = page.locator("[data-agentturn]").last();
+  await allowAllWhile(page, expectSettled(steered));
+  await expect(page.locator("[data-queued]")).toHaveCount(0);
+  await expect(
+    steered.locator('[data-steerstate="landed"]', { hasText: /bananas/i }),
+  ).toHaveCount(1);
+  await expect(
+    page.locator("[data-userturn]", { hasText: /bananas/i }),
+  ).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/ac-315-steered-once.png` });
+});
+
+test("#315 AC-5 Stop parks waiting sends in the not-sent tray; Send runs it later", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await dmDefault(stackA, page);
+  await send(page, "Add a release note to the readme");
+  await expect(page.getByText("Approval needed").first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await send(page, "first nudge");
+  const tray = page.locator("[data-queued]");
+  // Wait for each item to land in the tray before sending the next — a
+  // send that outpaces the in-flight post can be swallowed by the composer.
+  await expect(tray.getByText(/first nudge/)).toBeVisible({ timeout: 30_000 });
+  await send(page, "second nudge");
+  await expect(tray.getByText(/second nudge/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Stop" }).click();
+
+  // Everything still waiting parks: nothing auto-runs after a stop.
+  const parked = page.locator("[data-notsent]");
+  await expect(parked).toBeVisible({ timeout: 30_000 });
+  await expect(parked).toContainText(/2 not sent/);
+  await expect(parked.getByText(/first nudge/)).toBeVisible();
+  await expect(parked.getByText(/second nudge/)).toBeVisible();
+  await expect(page.locator("[data-queued]")).toHaveCount(0);
+  await expect(
+    page.locator("[data-userturn]", { hasText: /nudge/i }),
+  ).toHaveCount(0);
+  // No new turn appeared on its own.
+  await expect(page.locator("[data-agentturn]")).toHaveCount(1);
+  await page.screenshot({ path: `${SHOTS}/ac-315-not-sent.png` });
+
+  /* AC-6: the not-sent tray is relay state too — a reload shows the same
+     parked sends, in order, ready to Send. */
+  await page.reload();
+  const reparked = page.locator("[data-notsent]");
+  await expect(reparked.getByText(/first nudge/)).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(reparked.locator("li").nth(0)).toContainText(/first nudge/);
+  await expect(reparked.locator("li").nth(1)).toContainText(/second nudge/);
+  await page.screenshot({ path: `${SHOTS}/ac-315-not-sent-reload.png` });
+
+  // Send runs the first parked item as a normal prompt — bubble + new turn.
+  await page.locator('[data-notsent-send="0"]').click();
+  const resent = page.locator("[data-agentturn]").nth(1);
+  await allowAllWhile(page, expectSettled(resent));
+  await expect(
+    page.locator("[data-userturn]", { hasText: /first nudge/i }),
+  ).toHaveCount(1);
+  await expect(parked.getByText(/first nudge/)).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/ac-315-not-sent-sent.png` });
+});
+
+test("#315 AC-6 a reload keeps the waiting tray and its order", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await dmDefault(stackA, page);
+  await send(page, "Add a release note to the readme");
+  await expect(page.getByText("Approval needed").first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await send(page, "first in line");
+  const tray = page.locator("[data-queued]");
+  await expect(tray.getByText(/first in line/)).toBeVisible({
+    timeout: 30_000,
+  });
+  await send(page, "second in line");
+  await expect(tray.getByText(/second in line/)).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.reload();
+  // The tray is relay truth, not component state — same items, same order.
+  const reloaded = page.locator("[data-queued]");
+  await expect(reloaded.getByText(/second in line/)).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(reloaded.locator("li").nth(0)).toContainText(/first in line/);
+  await expect(reloaded.locator("li").nth(1)).toContainText(/second in line/);
+  await page.screenshot({ path: `${SHOTS}/ac-315-reload.png` });
+  // Leave shared stackA clean for AC-6's parallel-sessions count — land the
+  // waiting steers and let the turn settle instead of abandoning it live.
+  await allowAllWhile(
+    page,
+    expectSettled(page.locator("[data-agentturn]").last()),
+  );
+});
+
+test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const stackB = await bootStack(
+    "nosteer-315",
+    /* Bases are suite-saturated (all 100 residues are taken — ports.spec
+       gates it), so reuse literals other spec files already own: identical
+       bases are safe since two specs never share a worker index. */
+    { relay: wport(4680), feed: wport(4681), web: wport(5385) },
+    { LILOS_HIDE_CAPS: "steer" },
+  );
+  try {
+    // Remove first: the queued send leaves the tray and never reaches the
+    // conversation or the engine.
+    await dmDefault(stackB, page);
+    await send(page, "Add a release note to the readme");
+    await expect(page.getByText("Enter queues · ■ stop")).toBeVisible({
+      timeout: 30_000,
+    });
+    await send(page, "never mind that");
+    const tray = page.locator("[data-queued]");
+    await expect(tray).toHaveAttribute("data-queued-mode", "next");
+    await expect(tray.getByText(/never mind that/)).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(
+      page.locator("[data-userturn]", { hasText: /never mind/i }),
+    ).toHaveCount(0);
+    await page.screenshot({ path: `${SHOTS}/ac-315-waiting-next.png` });
+    await page.locator('[data-queued-remove="0"]').click();
+    await expect(page.locator("[data-queued]")).toHaveCount(0);
+    await page.screenshot({ path: `${SHOTS}/ac-315-removed.png` });
+
+    /* Edit moves a waiting send back into the composer (text returns, the
+       row is removed) — AC-4. Must run while the first turn is still parked
+       on its approval, or the "queued" send is really a fresh prompt that
+       only flashes through the tray. */
+    await send(page, "bananas are yellow");
+    await expect(tray.getByText(/bananas are yellow/)).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.locator('[data-queued-edit="0"]').click();
+    await expect(page.locator("[data-queued]")).toHaveCount(0);
+    const box = page.locator("textarea").last();
+    await expect(box).toHaveValue(/bananas are yellow/);
+    await box.fill("also mention bananas");
+    await box.press("Enter");
+    // The edited send queues again behind the same parked turn.
+    await expect(tray.getByText(/also mention bananas/)).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const firstTurn = page.locator("[data-agentturn]").first();
+    await allowAllWhile(page, expectSettled(firstTurn));
+    // The removed message never became a turn or a bubble.
+    await expect(
+      page.locator("[data-userturn]", { hasText: /never mind/i }),
+    ).toHaveCount(0);
+    // Queue-then-run: a second wait leaves the tray when the turn ends and
+    // bubbles below the previous answer, its own turn under it.
+    const queuedTurn = page.locator("[data-agentturn]").nth(1);
+    await allowAllWhile(page, expectSettled(queuedTurn));
+    await expect(page.locator("[data-queued]")).toHaveCount(0);
+    await expect(page.locator("[data-agentturn]")).toHaveCount(2);
+    await expect(
+      page.locator("[data-userturn]", { hasText: /bananas/i }),
+    ).toHaveCount(1);
+    await expect(queuedTurn).toContainText(/bananas/i, { timeout: 30_000 });
+    await page.screenshot({ path: `${SHOTS}/ac-315-queued-bubble.png` });
+  } finally {
+    await stackB.stop();
+  }
+});
+
 test("AC-6 two sessions run in parallel; the DM list shows each live phase", async ({
   page,
 }) => {

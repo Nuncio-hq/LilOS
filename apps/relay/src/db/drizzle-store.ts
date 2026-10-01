@@ -188,6 +188,8 @@ export function createDrizzleStore(db: Db): RelayStore {
       authorId: input.authorId,
       authorKind: input.authorKind,
       rewound: false,
+      dropped: false,
+      removed: false,
       text: input.text,
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.provider !== undefined ? { provider: input.provider } : {}),
@@ -397,9 +399,12 @@ export function createDrizzleStore(db: Db): RelayStore {
       const summaries: ConversationSummary[] = [];
       for (const conversation of convs) {
         const all = conversationMessages(conversation.id).map(rowToMessage);
-        /* Rewound rows are hidden (#134); a rewind to the root message
-           leaves none, and the list row still renders the root for context. */
-        const convMessages = all.filter((m) => !m.rewound);
+        /* Rewound/dropped/removed rows are hidden (#134, #315); a rewind to
+           the root message leaves none, and the list row still renders the
+           root for context. */
+        const convMessages = all.filter(
+          (m) => !m.rewound && !m.dropped && !m.removed,
+        );
         const root =
           convMessages.find((m) => m.id === conversation.rootMessageId) ??
           all.find((m) => m.id === conversation.rootMessageId);
@@ -472,6 +477,8 @@ export function createDrizzleStore(db: Db): RelayStore {
           authorId: input.authorId,
           authorKind: "user",
           rewound: false,
+          dropped: false,
+          removed: false,
           text: input.text,
           seq: bumped.seq,
           createdAt: now(),
@@ -591,7 +598,13 @@ export function createDrizzleStore(db: Db): RelayStore {
     },
     async listMessages(
       channelId: string,
-      { conversationId, afterSeq, limit, includeRewound }: ListMessagesQuery,
+      {
+        conversationId,
+        afterSeq,
+        limit,
+        includeRewound,
+        includeDropped,
+      }: ListMessagesQuery,
     ): Promise<ListMessagesPage> {
       const channel = db
         .select()
@@ -599,6 +612,8 @@ export function createDrizzleStore(db: Db): RelayStore {
         .where(eq(schema.channels.id, channelId))
         .get();
       if (!channel) throw new Error(`unknown channel ${channelId}`);
+      /* Removed rows never read out; dropped ones only for the not-sent
+         tray's `includeDropped` reads (#315). */
       const scope = and(
         conversationId
           ? and(
@@ -607,6 +622,8 @@ export function createDrizzleStore(db: Db): RelayStore {
               messageVisible(),
             )
           : and(eq(schema.messages.channelId, channelId), messageVisible()),
+        eq(schema.messages.removed, false),
+        ...(includeDropped ? [] : [eq(schema.messages.dropped, false)]),
         ...(includeRewound ? [] : [eq(schema.messages.rewound, false)]),
       );
       const rows =
@@ -661,6 +678,8 @@ export function createDrizzleStore(db: Db): RelayStore {
         LEFT JOIN conversations c ON c.id = m.conversation_id
         WHERE messages_fts MATCH ${match}
           AND m.rewound = 0
+          AND m.dropped = 0
+          AND m.removed = 0
           AND (m.dedupe_key IS NULL OR m.dedupe_key NOT LIKE ${NO_FOLDER_DEDUPE_LIKE})
           ${channelId ? sql`AND m.channel_id = ${channelId}` : sql``}
           ${includeArchived ? sql`` : sql`AND (c.id IS NULL OR c.archived = 0)`}
@@ -683,6 +702,26 @@ export function createDrizzleStore(db: Db): RelayStore {
       const updated = db
         .update(schema.messages)
         .set({ checkpoint })
+        .where(eq(schema.messages.id, messageId))
+        .returning()
+        .get();
+      return updated ? rowToMessage(updated) : null;
+    },
+    async setMessageFlags(messageId, flags) {
+      const set: { dropped?: boolean; removed?: boolean } = {};
+      if (flags.dropped !== undefined) set.dropped = flags.dropped;
+      if (flags.removed !== undefined) set.removed = flags.removed;
+      if (Object.keys(set).length === 0) {
+        const row = db
+          .select()
+          .from(schema.messages)
+          .where(eq(schema.messages.id, messageId))
+          .get();
+        return row ? rowToMessage(row) : null;
+      }
+      const updated = db
+        .update(schema.messages)
+        .set(set)
         .where(eq(schema.messages.id, messageId))
         .returning()
         .get();
@@ -1039,6 +1078,8 @@ export function createDrizzleStore(db: Db): RelayStore {
             (m) =>
               m.authorKind === "user" &&
               !m.rewound &&
+              !m.dropped &&
+              !m.removed &&
               m.seq > conversation.deliveredSeq,
           );
         const message = owed.at(-1);

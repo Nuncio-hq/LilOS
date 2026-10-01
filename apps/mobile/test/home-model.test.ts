@@ -77,6 +77,8 @@ const msg = (
   seq: 1,
   createdAt: 1,
   rewound: false,
+  dropped: false,
+  removed: false,
 });
 
 const sum = (

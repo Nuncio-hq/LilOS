@@ -44,6 +44,8 @@ const message = {
   seq: 3,
   createdAt: 1_759_000_000_001,
   rewound: false,
+  dropped: false,
+  removed: false,
 };
 
 describe("AC-1 app protocol contracts", () => {

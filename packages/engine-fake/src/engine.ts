@@ -1243,7 +1243,9 @@ export class FakeEngine {
       s.turn = undefined;
       this.emit(s, "turn.completed", { turnId, stopReason: "cancelled" });
       if (s.state !== "closed") this.setState(s, "idle");
-      this.pumpSteers(s);
+      /* #315: pending steers die with a stopped turn — nothing auto-runs
+         after a Stop; the harness parks them in the not-sent tray. */
+      s.steers.length = 0;
       return { turnId, stopReason: "cancelled" as const };
     }
   }
@@ -1517,8 +1519,12 @@ export class FakeEngine {
     this.emit(s, "turn.completed", { turnId, stopReason, usage: s.usage });
     if (s.state !== "closed") this.setState(s, "idle");
     this.autoTitle(s, "llm", promptText);
-    // A steer that never hit a boundary becomes the next turn's input — never lost.
-    this.pumpSteers(s);
+    // A steer that never hit a boundary becomes the next turn's input — never
+    // lost. Except on an interrupt (#315): Stop discards pending steers so
+    // nothing auto-runs after it — the harness parks them in the not-sent
+    // tray instead.
+    if (stopReason === "cancelled") s.steers.length = 0;
+    else this.pumpSteers(s);
     /* #309: async helpers close a tick after the turn — their frames stamp
        no turnId, so a client must key them session-wide, not per-turn. */
     if (s.pendingSubagentClose.length) void this.drainSubagentCloses(s);
@@ -1575,7 +1581,9 @@ export class FakeEngine {
     s.turn = undefined;
     this.emit(s, "turn.completed", { turnId, stopReason: "cancelled" });
     if (this.isOpen(s)) this.setState(s, "idle");
-    this.pumpSteers(s);
+    /* #315: pending steers die with a stopped turn — nothing auto-runs
+       after a Stop; the harness parks them in the not-sent tray. */
+    s.steers.length = 0;
   }
 
   /* Read through a method so the check stays honest after a leg's own
