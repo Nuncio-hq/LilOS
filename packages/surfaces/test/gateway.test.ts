@@ -1,5 +1,5 @@
 import type { Conversation } from "@lilos/contracts/app";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   SESSION_HEADER,
   SessionRegistry,
@@ -877,9 +877,11 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
       ]);
 
       // The {url} target also navigates the session's browser — the app's
-      // Workbench Preview shows the page, not a blank pane.
-      await new Promise((r) => setTimeout(r, 10));
-      expect(browser?.url).toBe("http://localhost:5173");
+      // Workbench Preview shows the page, not a blank pane. The navigate is
+      // fire-and-forget inside the handler — wait for it to land (#380).
+      await vi.waitFor(() => {
+        expect(browser?.url).toBe("http://localhost:5173");
+      });
 
       /* #340 live-leg: the model guessed `{"diff": "<a diff string>"}` and
          got a bare HTTP 400 — invalid_params must surface the zod issues so

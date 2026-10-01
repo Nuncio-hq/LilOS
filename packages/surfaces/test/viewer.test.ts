@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { attachViewer, SessionSurfaces } from "../src/index.js";
 import { FakeBrowser, FakePtySpawner } from "./fakes.js";
 
@@ -55,8 +55,9 @@ describe("AC-4 viewer channel: snapshot then live, input both ways", () => {
     v.receive(
       JSON.stringify({ type: "browser.navigate", url: "http://localhost:2" }),
     );
-    await new Promise((r) => setTimeout(r, 10));
-    expect(browser.url).toBe("http://localhost:2");
+    await vi.waitFor(() => {
+      expect(browser.url).toBe("http://localhost:2");
+    });
 
     // typed keystrokes held the terminal — hand it back before the agent runs
     v.receive(JSON.stringify({ type: "term.release" }));
