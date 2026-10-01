@@ -175,6 +175,105 @@ function wbPropsFromDescribe(txt: string): string[] | null {
   }
 }
 
+/* Text bodies an ACP update can carry a tool result in: `rawOutput` arrives
+   as a JSON string or an already-decoded object, and tool_call updates may
+   also wrap output in `content` blocks. */
+function updateTexts(u: Record<string, unknown>): string[] {
+  const texts: string[] = [];
+  const push = (v: unknown) => {
+    if (typeof v === "string" && v.trim()) texts.push(v);
+    else if (v !== null && typeof v === "object") texts.push(JSON.stringify(v));
+  };
+  push(u.rawOutput);
+  for (const c of Array.isArray(u.content) ? u.content : []) {
+    const block = c as { text?: unknown; content?: { text?: unknown } };
+    push(block.text);
+    push(block.content?.text);
+  }
+  return texts;
+}
+
+/* The ACP stream renders a tool_describe result as markdown, not raw JSON
+   (`tool_describe result\n- **tools:**\n  - **lilos_workbench_open:**\n
+   - **parameters:**\n      - **properties:** {json}`): pull the properties
+   map back out of that text. [] = the tool's section was there but its
+   properties object was empty (the regression); null = not observed. */
+function wbPropsFromDescribeMd(txt: string): string[] | null {
+  const toolIdx = txt.indexOf("**lilos_workbench_open:**");
+  if (toolIdx < 0) return null;
+  const nextTool = txt.indexOf("\n  - **", toolIdx + 1);
+  const section = txt.slice(toolIdx, nextTool < 0 ? undefined : nextTool);
+  const propIdx = section.indexOf("**properties:**");
+  if (propIdx < 0) return null;
+  const start = section.indexOf("{", propIdx);
+  if (start < 0) return null;
+  let depth = 0;
+  for (let i = start; i < section.length; i += 1) {
+    if (section[i] === "{") depth += 1;
+    else if (section[i] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          return Object.keys(JSON.parse(section.slice(start, i + 1)));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/* Real-mode read of what the model actually received (#375): the
+   tool_describe result streams back on `tool_call`/`tool_call_update`
+   updates of the real `hermes acp` session — raw JSON in some builds,
+   the markdown render above in others. null = never observed in-band. */
+function wbPropsFromAcp(updates: Record<string, unknown>[]): string[] | null {
+  for (const u of updates) {
+    if (
+      u.sessionUpdate !== "tool_call" &&
+      u.sessionUpdate !== "tool_call_update"
+    )
+      continue;
+    for (const t of updateTexts(u)) {
+      const props = wbPropsFromDescribe(t) ?? wbPropsFromDescribeMd(t);
+      if (props !== null) return props;
+    }
+  }
+  return null;
+}
+
+/* The advertised schema at the gateway boundary: `GET /tools` returns the
+   session catalog the lilos plugin registers verbatim
+   (`parameters: tool.get("inputSchema")`), i.e. the same inputSchema the
+   model's tool defs carry. null = not observable. */
+async function wbPropsFromCatalog(
+  baseUrl: string,
+  engineToken: string,
+  session: string,
+): Promise<string[] | null> {
+  try {
+    const res = await fetch(`${baseUrl}/tools`, {
+      headers: {
+        authorization: `Bearer ${engineToken}`,
+        "x-lilos-session": session,
+      },
+    });
+    if (!res.ok) return null;
+    const catalog = (await res.json()) as {
+      tools?: {
+        name?: string;
+        inputSchema?: { properties?: Record<string, unknown> };
+      }[];
+    };
+    const wb = (catalog.tools ?? []).find((t) => t.name === "workbench_open");
+    if (!wb) return null;
+    return Object.keys(wb.inputSchema?.properties ?? {});
+  } catch {
+    return null;
+  }
+}
+
 const QUESTIONS: [RegExp, string, Record<string, unknown>][] = [
   [/who are you|where are you/i, "context", {}],
   [/who.?s on the team|the team/i, "team_list", {}],
@@ -944,17 +1043,52 @@ async function main() {
       "workbench.opened reached the app's relay socket",
       JSON.stringify(opened?.params ?? "none").slice(0, 160),
     );
-    /* Schema regression guard (#340 live leg): the model can only call
-       workbench_open with sane args if its advertised inputSchema lists
-       the target fields — a bare anyOf/{} advertises nothing. */
-    check(
-      stub?.advertised.wbProps?.includes("diff") === true,
-      "workbench_open's advertised schema lists its target fields",
-      JSON.stringify(stub?.advertised.wbProps ?? "not advertised").slice(
-        0,
-        160,
-      ),
-    );
+    /* Schema regression guard (#340 live leg, fixed #375): the model can
+       only call workbench_open with sane args if its advertised inputSchema
+       lists the target fields — a bare anyOf/{} advertises nothing.
+       Stub mode: the stub captured the schema it was sent.
+       Real mode: read what the model actually received — the tool_describe
+       result on the ACP session's tool_call updates, else the gateway
+       catalog the lilos plugin registered verbatim (GET /tools). Only when
+       neither surface exposes the schema is the leg skipped with a printed
+       reason; packages/contracts/test/harness.test.ts's object-schema test
+       stays the always-on guard. */
+    const schemaGuard =
+      "workbench_open's advertised schema lists its target fields";
+    if (REAL_PROVIDER) {
+      const acpProps = wbPropsFromAcp(rpc.updates);
+      const props =
+        acpProps ??
+        (await wbPropsFromCatalog(
+          surfaces.url,
+          surfaces.engineToken,
+          a.session,
+        ));
+      if (props === null) {
+        console.log(
+          `SKIP  ${schemaGuard} — skipped: no tool_describe result in the ` +
+            "ACP session and GET /tools unreachable; the contracts " +
+            "object-schema test stays the guard",
+        );
+      } else {
+        check(
+          props.includes("diff"),
+          schemaGuard,
+          `${JSON.stringify(props).slice(0, 120)} (via ${
+            acpProps !== null ? "tool_describe update" : "GET /tools"
+          })`,
+        );
+      }
+    } else {
+      check(
+        stub?.advertised.wbProps?.includes("diff") === true,
+        schemaGuard,
+        JSON.stringify(stub?.advertised.wbProps ?? "not advertised").slice(
+          0,
+          160,
+        ),
+      );
+    }
   } catch (e) {
     check(false, "acp leg", String(e));
   } finally {
