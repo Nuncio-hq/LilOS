@@ -359,19 +359,17 @@ async function main() {
 
   try {
     // 1. Two bound sessions — distinct employees/threads + an engine alias.
-    const createSession = async (body: Record<string, unknown>) =>
-      (await (
-        await fetch(`${surfaces.url}/surfaces/sessions`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        })
-      ).json()) as {
-        session: string;
-        token: string;
-        mcpServer: { args: string[]; env: { name: string; value: string }[] };
-        mcpServerHttp: { type: string; url: string };
+    // Session management is in-process only (AC-3): the port carries no
+    // management routes, so `surfaces.create` is the whole create path.
+    const createSession = async (body: {
+      cwd?: string;
+      binding?: {
+        employeeId: string;
+        channelId: string;
+        conversationId: string;
       };
+      engineSessionId?: string;
+    }) => surfaces.create(body);
     const engineIdA = `20261001_${Date.now() % 1000000}_abcd1`.slice(0, 20);
     const a = await createSession({
       cwd: process.env.HOME,

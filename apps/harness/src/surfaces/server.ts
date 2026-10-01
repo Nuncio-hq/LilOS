@@ -2,11 +2,7 @@ import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
 import type { McpServerHttp, McpServerStdio } from "@lilos/contracts/engine";
-import {
-  CreateGatewaySession,
-  MCP_PATH,
-  type SessionBinding,
-} from "@lilos/contracts/harness";
+import { MCP_PATH, type SessionBinding } from "@lilos/contracts/harness";
 import {
   type AppOps,
   attachViewer,
@@ -36,10 +32,11 @@ import { bunPtySpawner } from "./pty";
  *
  * The registry binds (employee/channel/conversation/cwd) per session and
  * resolves callers by per-session bearer — tool calls never carry agent-
- * passed ids (AC-3).
+ * passed ids (AC-3). Session management (`create`, `destroy`,
+ * `bindEngineSession`) is in-process only: nothing reachable over the port
+ * may pick a binding or an alias.
  */
 const VIEW_PATH = "/view";
-const SESSIONS_PATH = "/surfaces/sessions";
 
 export interface CreateSessionInit {
   cwd?: string;
@@ -102,36 +99,6 @@ export async function serveSurfaces(
     const url = new URL(req.url ?? "/", "http://x");
     void (async () => {
       try {
-        if (req.method === "POST" && url.pathname === SESSIONS_PATH) {
-          const body = await readJson(req);
-          const parsed = CreateGatewaySession.safeParse(body);
-          if (!parsed.success) {
-            return json(res, 400, {
-              error: { code: "invalid_params", message: parsed.error.message },
-            });
-          }
-          const handle = create({
-            cwd: parsed.data.cwd,
-            binding: parsed.data.binding,
-            engineSessionId: parsed.data.engineSessionId,
-          });
-          return json(res, 201, handle);
-        }
-        if (url.pathname.startsWith(`${SESSIONS_PATH}/`)) {
-          const rest = url.pathname.slice(SESSIONS_PATH.length + 1);
-          if (req.method === "DELETE") {
-            return json(res, (await destroy(rest)) ? 200 : 404, {});
-          }
-          if (req.method === "POST" && rest.endsWith("/engine")) {
-            const session = rest.slice(0, -"/engine".length);
-            const body = await readJson(req);
-            const engineSessionId = body.engineSessionId;
-            const ok =
-              typeof engineSessionId === "string" &&
-              bindEngineSession(session, engineSessionId);
-            return json(res, ok ? 200 : 404, {});
-          }
-        }
         const isGateway =
           url.pathname === MCP_PATH ||
           url.pathname === "/tools" ||
@@ -283,16 +250,6 @@ const readBody = (req: http.IncomingMessage): Promise<string> =>
     });
     req.on("end", () => r(b));
   });
-
-const readJson = async (
-  req: http.IncomingMessage,
-): Promise<Record<string, unknown>> => {
-  try {
-    return JSON.parse((await readBody(req)) || "{}") as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-};
 
 const json = (res: http.ServerResponse, status: number, body: unknown) => {
   res.writeHead(status, { "content-type": "application/json" });

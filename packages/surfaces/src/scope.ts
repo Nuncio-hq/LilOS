@@ -96,6 +96,7 @@ export class SessionSurfaces implements ViewerScope {
       ...(opts.createBrowser ? (["browser"] as const) : []),
       // thread_* only when the session is bound to a conversation.
       ...(opts.appOps ? (["thread"] as const) : []),
+      // `root`/`team` areas land with #340 (DM tools); no session has them yet.
     ]);
     this.cols = opts.cols ?? 110;
     this.rows = opts.rows ?? 28;

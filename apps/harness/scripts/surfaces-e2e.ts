@@ -50,23 +50,15 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const server = await serveSurfaces(0);
 try {
-  const res = await fetch(`${server.url}/surfaces/sessions`, {
+  // Session management is in-process only — nothing on the port may pick a
+  // binding or an alias (AC-3); prove the management route is closed.
+  const closed = await fetch(`${server.url}/surfaces/sessions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ cwd: process.env.HOME }),
   });
-  const session = (await res.json()) as {
-    session: string;
-    token: string;
-    viewerUrl: string;
-    mcpServer: {
-      name: string;
-      command: string;
-      args: string[];
-      env: { name: string; value: string }[];
-    };
-    mcpServerHttp?: { type: string; name: string; url: string };
-  };
+  check("POST /surfaces/sessions is not reachable", closed.status === 404);
+  const session = server.create({ cwd: process.env.HOME });
   check(
     "create session returns mcpServers spec",
     session.mcpServer?.name === "lilos" && session.mcpServer.env.length === 3,

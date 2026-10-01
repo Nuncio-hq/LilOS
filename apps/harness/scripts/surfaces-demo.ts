@@ -54,16 +54,7 @@ setInterval(() => {
   if (process.ppid === 1) shutdown("orphaned");
 }, 1_000);
 
-const res = await fetch(`${server.url}/surfaces/sessions`, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ cwd: process.env.HOME }),
-});
-const s = (await res.json()) as {
-  session: string;
-  token: string;
-  viewerUrl: string;
-};
+const s = server.create({ cwd: process.env.HOME });
 const wsBase = s.viewerUrl.replace(/\/view\?.*$/, "");
 console.log(
   JSON.stringify(

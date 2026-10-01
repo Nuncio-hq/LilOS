@@ -1,9 +1,5 @@
 import type { z } from "zod";
-import {
-  BindEngineSession,
-  CreateGatewaySession,
-  SessionBinding,
-} from "./binding.js";
+import { SessionBinding } from "./binding.js";
 import {
   BrowserClickParams,
   BrowserClickResult,
@@ -82,8 +78,6 @@ export const harnessProtocolSchemas = {
   ThreadReadParams,
   ThreadReadResult,
   SessionBinding,
-  CreateGatewaySession,
-  BindEngineSession,
   ViewerHello,
   ViewerFrame,
   ViewerTerm,

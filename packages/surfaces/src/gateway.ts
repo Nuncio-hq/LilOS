@@ -14,6 +14,7 @@ import {
   JSON_RPC_INVALID_PARAMS,
   JSON_RPC_INVALID_REQUEST,
   JSON_RPC_METHOD_NOT_FOUND,
+  JSON_RPC_PARSE_ERROR,
   type JsonRpcId,
   jsonRpcError,
   jsonRpcResult,
@@ -53,26 +54,41 @@ export class SessionRegistry {
       aliases: new Set<string>(),
     };
     this.entries.set(entry.session, entry);
-    if (init?.engineSessionId) {
-      this.aliasToSession.set(init.engineSessionId, entry.session);
-      entry.aliases.add(init.engineSessionId);
-    }
+    if (init?.engineSessionId) this.bindAlias(entry, init.engineSessionId);
     return entry;
+  }
+
+  /** Point an engine id at an entry; an id that IS a session id can't be
+      shadowed, and a taken alias leaves its previous owner. */
+  private bindAlias(
+    entry: GatewayEntry & { readonly aliases: Set<string> },
+    engineSessionId: string,
+  ): boolean {
+    if (this.entries.has(engineSessionId)) return false;
+    const previous = this.aliasToSession.get(engineSessionId);
+    if (previous !== undefined && previous !== entry.session) {
+      this.entries.get(previous)?.aliases.delete(engineSessionId);
+    }
+    this.aliasToSession.set(engineSessionId, entry.session);
+    entry.aliases.add(engineSessionId);
+    return true;
   }
 
   /** The engine's own session id is an alias for the gateway session. */
   bindEngineSession(session: string, engineSessionId: string): boolean {
     const entry = this.entries.get(session);
-    if (!entry) return false;
-    this.aliasToSession.set(engineSessionId, session);
-    entry.aliases.add(engineSessionId);
-    return true;
+    if (!entry || !engineSessionId) return false;
+    return this.bindAlias(entry, engineSessionId);
   }
 
   /** Look a caller up by gateway session id or any registered engine alias. */
   resolve(idOrAlias: string): GatewayEntry | null {
-    const session = this.aliasToSession.get(idOrAlias) ?? idOrAlias;
-    return this.entries.get(session) ?? null;
+    // Session ids always win — an alias can never shadow one.
+    return (
+      this.entries.get(idOrAlias) ??
+      this.entries.get(this.aliasToSession.get(idOrAlias) ?? "") ??
+      null
+    );
   }
 
   /** Bearer-only lookup — the token itself names the session. */
@@ -92,7 +108,13 @@ export class SessionRegistry {
     const entry = this.entries.get(session);
     if (!entry) return undefined;
     this.entries.delete(session);
-    for (const alias of entry.aliases) this.aliasToSession.delete(alias);
+    // Drop only aliases still owned here — one rebound to a live session
+    // belongs to its new owner.
+    for (const alias of entry.aliases) {
+      if (this.aliasToSession.get(alias) === session) {
+        this.aliasToSession.delete(alias);
+      }
+    }
     return entry;
   }
 }
@@ -183,13 +205,20 @@ async function handleMcpRequest(
       return jsonRpcResult(request.id, { tools: toolListFor(caller.scope) });
     case "tools/call": {
       const name = request.params.name;
-      if (typeof name !== "string" || !(name in LILOS_TOOLS)) {
+      if (typeof name !== "string" || !Object.hasOwn(LILOS_TOOLS, name)) {
         return jsonRpcError(
           request.id,
           JSON_RPC_INVALID_PARAMS,
           typeof name === "string"
             ? `Unknown tool "${name}".`
             : "Missing tool name.",
+        );
+      }
+      if (!toolsForAreas(caller.scope.areas).includes(name)) {
+        return jsonRpcError(
+          request.id,
+          JSON_RPC_INVALID_PARAMS,
+          `Tool "${name}" is not in this session's areas.`,
         );
       }
       const args =
@@ -252,7 +281,7 @@ export function gatewayHandler(
         body = await request.json();
       } catch {
         return Response.json(
-          jsonRpcError(null, JSON_RPC_INVALID_REQUEST, "Body must be JSON-RPC"),
+          jsonRpcError(null, JSON_RPC_PARSE_ERROR, "Body must be JSON-RPC"),
           { status: 400 },
         );
       }
@@ -299,6 +328,12 @@ export function gatewayHandler(
     }
     // POST /tools/<name>
     const name = url.pathname.slice(TOOL_PATH_PREFIX.length);
+    if (
+      !Object.hasOwn(LILOS_TOOLS, name) ||
+      !toolsForAreas(caller.scope.areas).includes(name)
+    ) {
+      return jsonError(404, "not_found", `unknown tool: ${name}`);
+    }
     let args: unknown;
     try {
       args = await request.json();

@@ -25,7 +25,9 @@ export async function callTool(
   name: string,
   args: unknown,
 ): Promise<unknown> {
-  const contract = LILOS_TOOLS[name];
+  const contract = Object.hasOwn(LILOS_TOOLS, name)
+    ? LILOS_TOOLS[name]
+    : undefined;
   if (!contract) throw new SurfaceError("not_found", `unknown tool: ${name}`);
   const parsed = contract.params.safeParse(args ?? {});
   if (!parsed.success)

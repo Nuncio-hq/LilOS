@@ -146,5 +146,5 @@ export const NOT_AGENT_FACING: Record<string, string> = {
     "only Oscar merges — an approval tool may land with the gate (#341)",
   "os.editors": "the editor list opens for the user on the Mac",
   "os.open":
-    "opening apps happens for the user on the Mac; the agent's surface is `workbench_open`",
+    "opening apps happens for the user on the Mac; the agent's surface is `workbench_previews`",
 } as const;

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { SESSION_HEADER, SessionSurfaces } from "../src/index.js";
+import {
+  SESSION_HEADER,
+  SessionRegistry,
+  SessionSurfaces,
+} from "../src/index.js";
 import {
   FakeBrowser,
   FakePtySpawner,
@@ -315,5 +319,134 @@ describe("AC-3 session binding — scope from the session, never agent-passed", 
     } finally {
       api.server.close();
     }
+  });
+});
+
+describe("AC-3 aliases + catalog hardening (review)", () => {
+  it("rebinding an alias moves it; removing the old owner keeps it live", async () => {
+    const { scope: scopeA } = makeScope("sess-rA");
+    const { scope: scopeB } = makeScope("sess-rB");
+    const api = await serveGateway({
+      sessions: [
+        { scope: scopeA, token: "tok-rA", engineSessionId: "eng-shared" },
+        { scope: scopeB, token: "tok-rB" },
+      ],
+    });
+    try {
+      // An alias can never shadow a real session id.
+      expect(api.registry.bindEngineSession("sess-rA", "sess-rB")).toBe(false);
+      // The engine restarts and rebinds its own id to the new session.
+      expect(api.registry.bindEngineSession("sess-rB", "eng-shared")).toBe(
+        true,
+      );
+      api.registry.remove("sess-rA");
+      // The old owner's teardown must not take the live alias down.
+      expect(api.registry.resolve("eng-shared")?.session).toBe("sess-rB");
+      expect(api.registry.resolve("sess-rA")).toBeNull();
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("Object.prototype keys are not tools — 404/-32602, never a 500", async () => {
+    const { scope } = makeScope("s-proto");
+    const api = await serveGateway({
+      sessions: [{ scope, token: "tok-p" }],
+    });
+    try {
+      const rest = await fetch(`${api.baseUrl}/tools/toString`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer tok-p",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      });
+      expect(rest.status).toBe(404);
+      const rpc = (await (
+        await mcpCall(`${api.baseUrl}/mcp`, "tok-p", {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "constructor", arguments: {} },
+        })
+      ).json()) as { error: { code: number } };
+      expect(rpc.error.code).toBe(-32602);
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("tools/call rejects names outside the session's areas", async () => {
+    const { scope } = makeScope("s-lean2"); // terminal + workbench only
+    const api = await serveGateway({
+      sessions: [{ scope, token: "tok-l" }],
+    });
+    try {
+      const rpc = (await (
+        await mcpCall(`${api.baseUrl}/mcp`, "tok-l", {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "browser_open", arguments: { url: "http://x" } },
+        })
+      ).json()) as { error: { code: number; message: string } };
+      expect(rpc.error.code).toBe(-32602);
+      expect(rpc.error.message).toContain("browser_open");
+      // Same over the plain tool API — thread_* isn't in this catalog.
+      const rest = await fetch(`${api.baseUrl}/tools/thread_post`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer tok-l",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ text: "hi" }),
+      });
+      expect(rest.status).toBe(404);
+      // An in-area call still goes through.
+      const ok = await fetch(`${api.baseUrl}/tools/workbench_previews`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer tok-l",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      });
+      expect(ok.status).toBe(200);
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("unparseable JSON-RPC bodies answer -32700 (parse error)", async () => {
+    const { scope } = makeScope("s-parse");
+    const api = await serveGateway({
+      sessions: [{ scope, token: "tok-j" }],
+    });
+    try {
+      const res = await fetch(`${api.baseUrl}/mcp`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer tok-j",
+          "content-type": "application/json",
+        },
+        body: "{not json",
+      });
+      expect(res.status).toBe(400);
+      const msg = (await res.json()) as { error: { code: number } };
+      expect(msg.error.code).toBe(-32700);
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("SessionRegistry.add also rejects an engine id shadowing a session", () => {
+    const registry = new SessionRegistry();
+    const { scope } = makeScope("s-real2");
+    registry.add(scope, { token: "t" });
+    const { scope: scope2 } = makeScope("s-other");
+    // engineSessionId equal to an existing session id would shadow it.
+    registry.add(scope2, { engineSessionId: "s-real2" });
+    expect(registry.resolve("s-real2")?.session).toBe("s-real2");
   });
 });

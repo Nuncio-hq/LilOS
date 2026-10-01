@@ -84,13 +84,8 @@ export async function serveMcpStdioFromEnv(
     process.exitCode = 2;
     return;
   }
-  // Advertise only the areas this session really has; fall back to the whole
-  // catalog when the gateway doesn't serve the catalog leg yet.
-  let toolNames: string[] | undefined;
-  try {
-    toolNames = await listSessionTools(resolved);
-  } catch {
-    toolNames = undefined;
-  }
+  // Advertise only the areas this session really has; fail closed — never
+  // fall back to the whole catalog when the gateway can't be asked.
+  const toolNames = await listSessionTools(resolved);
   await serveMcpStdio(toolBackend(resolved), { toolNames });
 }

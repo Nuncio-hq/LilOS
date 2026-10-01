@@ -176,7 +176,8 @@ PR does not exist.
   canonical `<area>_<action>` names (`thread_*`, `terminal_*`,
   `browser_*`, `workbench_*`); MCP `tools/list` (stdio + streamable
   HTTP), the `lilos` CLI, and the versioned host policy all render from
-  it. Per-engine adapters only attach the catalog — they never grow
+  it. Per-engine adapters (Hermes plugin, Codex app-server, Claude SDK)
+  only attach the catalog — they never grow
   their own tool list. Not: attaching MCP only through ACP, or
   engine-specific UI toolsets (Hermes `desktop_ui` / `drive_preview` /
   `read_terminal`, was #36). — #36, #337 · PR #54

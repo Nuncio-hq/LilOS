@@ -17,23 +17,6 @@ export const SessionBinding = z.strictObject({
 });
 export type SessionBinding = z.infer<typeof SessionBinding>;
 
-/** `POST /surfaces/sessions` — creating one gateway session. */
-export const CreateGatewaySession = z.strictObject({
-  /** Working folder the session's terminal and browser start in. */
-  cwd: z.string().min(1).optional(),
-  binding: SessionBinding.optional(),
-  /**
-   * The engine's own session id (e.g. a timestamped id like
-   * `20261001_124426_cb5b3e`), recorded as an alias so engine-side callers
-   * carrying it resolve to this scope. Can also be bound later via
-   * POST /surfaces/sessions/<id>/engine.
-   */
-  engineSessionId: z.string().min(1).optional(),
-});
-export type CreateGatewaySession = z.infer<typeof CreateGatewaySession>;
-
-/** `POST /surfaces/sessions/<id>/engine` — register an engine-session alias. */
-export const BindEngineSession = z.strictObject({
-  engineSessionId: z.string().min(1),
-});
-export type BindEngineSession = z.infer<typeof BindEngineSession>;
+/* Session management is in-process only (create/destroy/bindEngineSession
+   on the harness's SurfacesServer): nothing reachable over the gateway port
+   may pick a binding or an alias — there is no wire schema for it. */

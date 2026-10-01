@@ -154,6 +154,20 @@ describe("AC-2 MCP server: tools/list + tools/call over real stdio", () => {
     }
   }, 30_000);
 
+  it("fails closed when the session catalog can't be fetched", async () => {
+    // A stdio MCP spawn that cannot ask the gateway for its session's tool
+    // list must not advertise the whole catalog — it would offer tools from
+    // areas the session doesn't have (review finding on AC-2).
+    const { serveMcpStdioFromEnv } = await import("../src/mcp.js");
+    await expect(
+      serveMcpStdioFromEnv({
+        LILOS_SURFACES_URL: "http://127.0.0.1:1",
+        LILOS_TOKEN: "tok",
+        LILOS_SESSION: "sess-dead",
+      }),
+    ).rejects.toThrow();
+  }, 30_000);
+
   it("AC-6 measure per-turn tool-schema token cost (tools/list bytes / 4)", async () => {
     // Same method as spike #23: MCP tools/list JSON size, bytes/4 tokens.
     // Measured in-process (the SDK serializes identically over stdio).
