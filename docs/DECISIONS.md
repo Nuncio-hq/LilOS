@@ -236,6 +236,12 @@ PR does not exist.
   "Queued" means past the watermark AND no `turn.started` ref — the
   client reads the ref, the wire stays as-is. Not: advancing the mark at
   turn.started. — #258
+- **D-#334 The reasoning stream is `reasoning.delta` only.** Hermes'
+  `reasoning.available` is a per-message preview of the assistant text
+  (≤500 chars, tags stripped — `tool.progress` upstream), never a delta;
+  engine-hermes drops it at the adapter. Not: `available` mapped as
+  append or replace on `turn.delta` (injects the answer into the
+  Reasoning card). — #334 · PR #349
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the
