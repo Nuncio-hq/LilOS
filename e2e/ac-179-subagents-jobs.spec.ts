@@ -224,12 +224,14 @@ async function pickSessionFolder(page: Page, dir: string) {
     .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
     .last();
   const recent = menu.locator(`[data-wsfolder="${dir}"]`);
-  if (
-    await recent
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
+  /* Recents populate after the menu opens — a one-shot isVisible would race
+     into the Add-a-folder dialog, which disables its button for an
+     already-picked dir. */
+  const recentVisible = await expect(recent.first())
+    .toBeVisible({ timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (recentVisible) {
     await recent.first().click();
   } else {
     await menu.getByText("Add a folder").click();
