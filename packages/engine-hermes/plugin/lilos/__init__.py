@@ -91,10 +91,17 @@ def _catalog(env):
 def _source_is_lilos(session_id):
     """True when this Hermes session was created with source=lilos.
 
-    Primary: the bound session context (set during agent build and every
-    turn). Fallback: the live session registry (pre_tool_call kwargs carry
-    the stored session key; context may not be bound on every path).
+    Order: (1) the process env — LilOS stamps ``HERMES_SESSION_SOURCE=lilos``
+    on the hermes spawns it owns (the acp path; one session per spawn), and
+    under serve the env is never set so it can't leak to plain sessions;
+    (2) the bound session context var — serve binds it per session from
+    ``session.create(source=...)``, and it WINS over the env fallback only
+    because the env check above already ran; (3) the live session registry —
+    pre_tool_call kwargs carry the stored session key and the context may
+    not be bound on every path.
     """
+    if os.environ.get("HERMES_SESSION_SOURCE") == LILOS_SOURCE:
+        return True
     try:
         from gateway.session_context import get_session_env
         src = str(get_session_env("HERMES_SESSION_SOURCE") or "")
