@@ -354,7 +354,7 @@ describe("thread-model — #157 AC mapping", () => {
       rewoundRefs: new Set(["m-gone"]),
       rewoundTexts: new Set(["old answer"]),
     });
-    const texts = entries.map((e) => e.text);
+    const texts = entries.map((e) => ("text" in e ? e.text : e.kind));
     expect(texts).not.toContain("old answer");
     expect(entries.filter((e) => e.id === "turn-t2")).toHaveLength(1);
   });

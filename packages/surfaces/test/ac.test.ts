@@ -27,6 +27,12 @@ function makeScope(overrides: {
     spawnPty: spawner.spawn,
     createBrowser: overrides.createBrowser ?? (async () => browser),
     ...(overrides.appOps ? { appOps: overrides.appOps } : {}),
+    // Production pairs appOps with its session binding — the fake mirrors it.
+    binding: {
+      employeeId: "emp-fake",
+      channelId: "c1",
+      conversationId: "conv1",
+    },
     ...(overrides.browserOpTimeoutMs !== undefined
       ? { browserOpTimeoutMs: overrides.browserOpTimeoutMs }
       : {}),

@@ -122,6 +122,7 @@ import {
   navOpen,
   relay,
   sessionModels,
+  workbenchRequests,
 } from "../lib/runtime";
 import { say } from "../lib/toast";
 
@@ -341,6 +342,19 @@ export function DmPage() {
     [summaries, channel],
   );
   const openConv = convs.find((c) => c.id === conversationId);
+
+  /* #340 AC-2b: the session's `workbench_open` opens the Workbench — Focus
+     carries it, so a spot for another view navigates there first; the
+     open-conversation's newest spot feeds the panel itself. */
+  const wbSpots = useAtom(workbenchRequests);
+  const wbSpot = conversationId ? wbSpots[conversationId] : undefined;
+  useEffect(() => {
+    if (!wbSpot || !conversationId || focusOpen) return;
+    void navigate({
+      to: "/dm/$employeeId/$conversationId/focus",
+      params: { employeeId, conversationId },
+    });
+  }, [wbSpot, conversationId, focusOpen, navigate, employeeId]);
 
   /* #138: full-text message search behind the session filter. Wire hits are
      conversation-scoped; the box groups by the session's root message id, so
@@ -1333,6 +1347,7 @@ export function DmPage() {
                 }
               : null
           }
+          wbSpot={wbSpot}
         >
           {filesOnly?.conversationId === conv.id && (
             <StatusBanner

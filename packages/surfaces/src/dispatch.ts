@@ -1,16 +1,21 @@
+import type { WorkbenchOpenTarget } from "@lilos/contracts/app";
 import {
   type BrowserClickParams,
   type BrowserEvalParams,
   type BrowserOpenParams,
   type BrowserScrollParams,
   type BrowserTypeParams,
+  type GuideParams,
   LILOS_TOOLS,
   type TerminalReadParams,
   type TerminalRunParams,
   type TerminalWriteParams,
   type ThreadPostParams,
   type ThreadReadParams,
+  type ThreadSearchParams,
+  type ThreadSetTitleParams,
 } from "@lilos/contracts/harness";
+import { z } from "zod";
 import { type SurfaceBackend, SurfaceError } from "./backend.js";
 
 /**
@@ -31,9 +36,13 @@ export async function callTool(
   if (!contract) throw new SurfaceError("not_found", `unknown tool: ${name}`);
   const parsed = contract.params.safeParse(args ?? {});
   if (!parsed.success)
+    /* prettifyError lists each issue as a line the calling model can act
+       on (zod's raw error.message is a JSON blob) — surfaced through the
+       gateway's {error:{code,message}} body so the model can correct and
+       retry (#340 live-leg: bare HTTP 400s taught it nothing). */
     throw new SurfaceError(
       "invalid_params",
-      `invalid params for ${name}: ${parsed.error.message}`,
+      `invalid params for ${name}:\n${z.prettifyError(parsed.error)}`,
     );
   const p = parsed.data;
   let result: unknown;
@@ -68,11 +77,35 @@ export async function callTool(
     case "workbench_previews":
       result = await backend.workbenchPreviews();
       break;
+    case "workbench_open":
+      result = await backend.workbenchOpen(p as WorkbenchOpenTarget);
+      break;
+    case "context":
+      result = await backend.context();
+      break;
+    case "guide":
+      result = await backend.guide(p as GuideParams);
+      break;
+    case "team_list":
+      result = await backend.teamList();
+      break;
     case "thread_post":
       result = await backend.threadPost(p as ThreadPostParams);
       break;
     case "thread_read":
       result = await backend.threadRead(p as ThreadReadParams);
+      break;
+    case "thread_list":
+      result = await backend.threadList();
+      break;
+    case "thread_search":
+      result = await backend.threadSearch(p as ThreadSearchParams);
+      break;
+    case "thread_set_title":
+      result = await backend.threadSetTitle(p as ThreadSetTitleParams);
+      break;
+    case "thread_prs":
+      result = await backend.threadPrs();
       break;
     default:
       throw new SurfaceError("not_found", `unhandled tool: ${name}`);

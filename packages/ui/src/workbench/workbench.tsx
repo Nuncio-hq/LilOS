@@ -75,6 +75,7 @@ import type {
   PrError,
   PullRequest,
   Thread,
+  WbSpot,
   WbTab,
   Work,
 } from "../types";
@@ -134,6 +135,7 @@ export function Workbench({
   browser,
   emp,
   onOpenSession,
+  spot,
 }: {
   thread: Thread;
   work: Work | null;
@@ -173,6 +175,11 @@ export function Workbench({
   emp?: EmpFn;
   /** Opens an employee helper's own session from its Subagents row (issue #170). */
   onOpenSession?: (employeeId: string, session: string) => void;
+  /** The session's `workbench_open` request (issue #340): the panel opens on
+      the target's tab — a changed file's diff or a file view at its line,
+      the changes view, the PR tab, or the preview (a URL the caller
+      navigates its Browser surface to). */
+  spot?: WbSpot;
 }) {
   const a = sessionArtifacts(thread);
   const jobs = thread.jobs ?? [];
@@ -187,6 +194,8 @@ export function Workbench({
     content: string;
     binary: boolean;
     truncated: boolean;
+    /** Line a `workbench_open` pointed at — highlighted + scrolled to. */
+    line?: number;
   } | null>(null);
   const liveCwd = work?.path;
   /* Live mode = host accessors + a real session folder. In it each tab
@@ -249,6 +258,36 @@ export function Workbench({
   }, [liveMode, liveCwd, running, host]);
   const diffs = liveMode ? (probe?.diffs ?? []) : a.diffs;
   const changed = new Map(diffs.map((d) => [d.path, d]));
+  /* #340 AC-2b: the session's `workbench_open` — open the panel on the
+     target's tab. A changed file shows its diff; an unchanged one opens the
+     file view (at `line` when given). The URL's navigation is the caller's
+     (its Browser surface) — here it only lands on the preview tab. Keyed on
+     `at` so a repeated open of the same target re-fires. */
+  const spotAt = spot?.at;
+  useEffect(() => {
+    if (!spot) return;
+    const t = spot.target;
+    if (t.file !== undefined) {
+      const file = t.file;
+      if (changed.has(file)) {
+        setSel(file);
+        setTab("changes");
+        return;
+      }
+      setTab("files");
+      if (host && liveCwd)
+        void host
+          .read(liveCwd, file)
+          .then((r) => r && setViewFile({ path: file, ...r, line: t.line }));
+      return;
+    }
+    if (t.diff === true) {
+      setSel(t.path ?? null);
+      setTab("changes");
+      return;
+    }
+    setTab(t.pr === true ? "pr" : "preview");
+  }, [spotAt]); // eslint-disable-line react-hooks/exhaustive-deps
   const tree = buildTree([
     ...new Set([...(probe?.files ?? repoFiles ?? []), ...changed.keys()]),
   ]);
@@ -873,6 +912,33 @@ export function Workbench({
                   <p className="py-4 text-center text-muted-foreground text-xs">
                     Binary file — not shown.
                   </p>
+                ) : viewFile.line !== undefined ? (
+                  /* #340: `workbench_open` pointed at a line — per-line rows so
+                     that one is highlighted and scrolled into view. */
+                  <pre className="max-h-[60vh] overflow-auto rounded-lg border bg-muted/30 p-3 font-mono text-[11px] leading-5">
+                    {viewFile.content.split("\n").map((ln, i) => (
+                      <div
+                        key={i}
+                        ref={
+                          i + 1 === viewFile.line
+                            ? (el) => el?.scrollIntoView({ block: "center" })
+                            : undefined
+                        }
+                        className={
+                          i + 1 === viewFile.line
+                            ? "-mx-1 rounded bg-work/15 px-1 text-work"
+                            : undefined
+                        }
+                      >
+                        {ln || " "}
+                      </div>
+                    ))}
+                    {viewFile.truncated && (
+                      <div className="pt-2 text-muted-foreground">
+                        … truncated
+                      </div>
+                    )}
+                  </pre>
                 ) : (
                   <pre className="max-h-[60vh] overflow-auto rounded-lg border bg-muted/30 p-3 font-mono text-[11px] leading-5">
                     {viewFile.content}

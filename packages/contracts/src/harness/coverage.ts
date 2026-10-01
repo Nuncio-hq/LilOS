@@ -12,18 +12,10 @@ import { LILOS_TOOLS } from "./tools.js";
 /**
  * Tool names the coverage map may point at that are not implemented yet —
  * declared here so the catalog's canonical names are reserved once and the
- * slices that implement them (C #340: `context`/`guide`/`thread_*`/`team_*`,
- * D #341: the approval gate) drop the name into LILOS_TOOLS as-is.
+ * slices that implement them drop the name into LILOS_TOOLS as-is. Empty
+ * since #340 landed slice C; slice D (#341) may reserve the approval tools.
  */
-export const PLANNED_TOOL_NAMES = [
-  "context",
-  "guide",
-  "team_list",
-  "thread_list",
-  "thread_search",
-  "thread_set_title",
-  "thread_prs",
-] as const;
+export const PLANNED_TOOL_NAMES = [] as const;
 export type PlannedToolName = (typeof PLANNED_TOOL_NAMES)[number];
 
 /** Any name a method may map to: implemented now or planned. */
@@ -48,6 +40,7 @@ export const AGENT_METHOD_TOOLS: Record<string, string> = {
   "system.status": "context",
   "profile.get": "context",
   "folders.detail": "context",
+  "workbench.open": "workbench_open",
 } as const;
 
 /**

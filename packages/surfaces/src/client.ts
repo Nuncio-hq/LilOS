@@ -5,16 +5,24 @@ import {
   type BrowserReadResult,
   type BrowserScrollResult,
   type BrowserTypeResult,
+  type ContextResult,
+  type GuideResult,
   LILOS_TOOLS,
+  type TeamListResult,
   type TerminalReadResult,
   type TerminalRunResult,
   type TerminalWriteResult,
+  type ThreadListResult,
   type ThreadPostResult,
+  type ThreadPrsResult,
   type ThreadReadResult,
+  type ThreadSearchResult,
+  type ThreadSetTitleResult,
   TOOL_PATH_PREFIX,
   type ViewerClientMsg,
   ViewerServerMsg,
   type ViewerServerMsg as ViewerServerMsgT,
+  type WorkbenchOpenResult,
   type WorkbenchPreviewsResult,
 } from "@lilos/contracts/harness";
 import type { SurfaceBackend } from "./backend.js";
@@ -87,6 +95,17 @@ export function toolBackend(opts: ToolClientOptions): SurfaceBackend {
       call("workbench_previews", {}) as Promise<WorkbenchPreviewsResult>,
     threadPost: (p) => call("thread_post", p) as Promise<ThreadPostResult>,
     threadRead: (p) => call("thread_read", p) as Promise<ThreadReadResult>,
+    workbenchOpen: (p) =>
+      call("workbench_open", p) as Promise<WorkbenchOpenResult>,
+    context: () => call("context", {}) as Promise<ContextResult>,
+    guide: (p) => call("guide", p) as Promise<GuideResult>,
+    teamList: () => call("team_list", {}) as Promise<TeamListResult>,
+    threadList: () => call("thread_list", {}) as Promise<ThreadListResult>,
+    threadSearch: (p) =>
+      call("thread_search", p) as Promise<ThreadSearchResult>,
+    threadSetTitle: (p) =>
+      call("thread_set_title", p) as Promise<ThreadSetTitleResult>,
+    threadPrs: () => call("thread_prs", {}) as Promise<ThreadPrsResult>,
   };
 }
 

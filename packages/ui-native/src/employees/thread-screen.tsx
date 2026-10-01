@@ -22,7 +22,9 @@ import type {
   SessionState,
   SubagentRow,
   ThreadDetail,
+  WbCardEntry,
 } from "./types";
+import { WorkbenchCard } from "./workbench-card";
 
 /* One session opened as a thread (web: ThreadView), iOS style: the native
    nav bar carries the title + state (ThreadHeaderTitle) and an info button
@@ -43,6 +45,7 @@ export function ThreadScreen({
   onOpenBackground,
   onPlan,
   onOpenPlan,
+  onOpenWorkbench,
   prefill,
 }: {
   t: ThreadDetail;
@@ -62,6 +65,8 @@ export function ThreadScreen({
   /** Plan card decisions + the plan sheet (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
   onOpenPlan?: () => void;
+  /** A `workbench_open` card's tap → the target's phone view (#340). */
+  onOpenWorkbench?: (e: WbCardEntry) => void;
   /** Composer text to put in and focus (plan "Change…"). */
   prefill?: { text: string };
 }) {
@@ -125,6 +130,12 @@ export function ThreadScreen({
                         : "Queued · runs next"
                       : e.time
                   }
+                />
+              ) : e.kind === "workbench" ? (
+                <WorkbenchCard
+                  target={e.target}
+                  time={e.time}
+                  onPress={() => onOpenWorkbench?.(e)}
                 />
               ) : (
                 <AgentTurn

@@ -55,8 +55,10 @@ it.` (#95).
 
 ## Agent Gateway (#336)
 
-How employees see and use LilOS. Being built in #337–#340; until then only
-the `browser_*` / `terminal_*` surfaces and `lilos` CLI from D-#36 exist.
+How employees see and use LilOS. The catalog covers root tools
+(`context`, `guide`), `team_*` and `thread_*` DM tools plus `workbench_open`
+(#340), and the `browser_*` / `terminal_*` surfaces from D-#36; approvals
+(#341) and channels (#342) are next.
 
 ```
 Relay (company, channels, threads, messages)

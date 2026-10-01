@@ -30,6 +30,7 @@ import {
   ProfileSettings,
   RecentFolder,
   RespondTo,
+  WorkbenchOpenTarget,
   WorkspaceIntent,
 } from "./domain";
 import { UpdateFeed, UpdateRelease } from "./update";
@@ -145,6 +146,8 @@ import {
   TurnInterruptRequestedEvent,
   TurnsInterruptParams,
   WelcomeResult,
+  WorkbenchOpenedEvent,
+  WorkbenchOpenParams,
 } from "./wire";
 
 /**
@@ -299,6 +302,10 @@ export const appProtocolSchemas = {
   AgentsCreateResult,
   ModelsListParams,
   ModelsListResult,
+  /* workbench_open's engine->app event (#340) */
+  WorkbenchOpenTarget,
+  WorkbenchOpenParams,
+  WorkbenchOpenedEvent,
 } satisfies Record<string, z.ZodType>;
 
 export const appProtocol = {

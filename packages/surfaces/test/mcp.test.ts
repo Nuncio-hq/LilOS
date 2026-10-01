@@ -140,11 +140,15 @@ describe("AC-2 MCP server: tools/list + tools/call over real stdio", () => {
       const list = (await request("tools/list")) as {
         tools: { name: string }[];
       };
+      // terminal + workbench + the always-on root area (#340).
       expect(list.tools.map((t) => t.name).sort()).toEqual(
         [
+          "context",
+          "guide",
           "terminal_read",
           "terminal_run",
           "terminal_write",
+          "workbench_open",
           "workbench_previews",
         ].sort(),
       );

@@ -20,13 +20,14 @@ import {
   ThreadHeaderTitle,
   ThreadInfoSheet,
   ThreadScreen,
+  WbDiffSheet,
 } from "@lilos/ui-native";
 import { useStore } from "@nanostores/react";
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { atom } from "nanostores";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Alert, View } from "react-native";
+import { Alert, Linking, View } from "react-native";
 import {
   answerPlanChange,
   awaitPlanAsk,
@@ -35,12 +36,12 @@ import {
   planChangeSend,
 } from "../asks";
 import { defaultModelPick } from "../dm-model";
-import { $asks, $catalog, $pendingOpens, watchDm } from "../dm-store";
+import { $asks, $catalog, $pendingOpens, $wbCards, watchDm } from "../dm-store";
 import { $client, $welcome } from "../link";
 import { describeError } from "../mapping";
 import { $prs, refreshConversationPrs } from "../prs";
 import type { DmRoutes } from "../routes";
-import { dropRewound, toThreadDetail } from "../thread-model";
+import { collectDiffs, dropRewound, toThreadDetail } from "../thread-model";
 
 /* #157 — the live thread: messages.list + channel.subscribe resume (AC-1),
    engine turns projected live through sessionFeed -> reduceSessionEvents ->
@@ -93,6 +94,7 @@ function useThread(conversationId: string) {
   const pending = useStore($pendingOpens);
   const catalog = useStore($catalog);
   const prsMap = useStore($prs);
+  const wbCards = useStore($wbCards);
 
   /* #159 AC-5: opening the thread refetches its PRs; `turn.completed`
      refetches through watchPrs (registered by watchDm below). */
@@ -267,6 +269,7 @@ function useThread(conversationId: string) {
             listedJobs,
             prs: prsMap[conversationId],
             thoughts,
+            wbCards: wbCards[conversationId],
             rewound: {
               refs: new Set(rewind?.removedIds ?? []),
               texts: new Set(
@@ -293,6 +296,7 @@ function useThread(conversationId: string) {
       jobsTick,
       prsMap,
       thoughts,
+      wbCards,
       conversationId,
       rewind,
       rewoundMessages,
@@ -479,6 +483,28 @@ export function Thread({
             onOpenPlan: () => navigation.navigate("Plan", { conversationId }),
           }
         : {})}
+      /* #340 AC-2b: the card opens the target's phone view — the Changes
+         sheet (optionally one file), the thread's PRs in Session info, or
+         the URL itself. */
+      onOpenWorkbench={(e) => {
+        const t = e.target;
+        if (t.url !== undefined) {
+          void Linking.openURL(t.url);
+          return;
+        }
+        if (t.pr === true) {
+          navigation.navigate("ThreadInfo", { conversationId });
+          return;
+        }
+        navigation.navigate("WbDiff", {
+          conversationId,
+          ...(t.file !== undefined
+            ? { path: t.file }
+            : t.path !== undefined
+              ? { path: t.path }
+              : {}),
+        });
+      }}
       prefill={prefill}
     />
   );
@@ -556,6 +582,27 @@ export function Background({
           .request<{ stopped: boolean }>("jobs.stop", { sessionId, jobId })
           .catch((e) => Alert.alert("Couldn't stop it", describeError(e)));
       }}
+      onDone={() => navigation.goBack()}
+    />
+  );
+}
+
+/** #340 AC-2b — a `workbench_open` card's Changes view: the session's
+    recorded edits, narrowed to the file the card named when there is one. */
+export function WbDiff({
+  navigation,
+  route,
+}: {
+  navigation: Nav;
+  route: RouteProp<DmRoutes, "WbDiff">;
+}) {
+  const { conversationId, path } = route.params;
+  const { detail } = useThread(conversationId);
+  if (!detail) return <View className="flex-1 bg-background" />;
+  return (
+    <WbDiffSheet
+      files={collectDiffs(detail.entries)}
+      focus={path}
       onDone={() => navigation.goBack()}
     />
   );

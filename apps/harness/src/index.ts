@@ -9,7 +9,16 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { systemClock, watchOrphaned, watchWake } from "@lilos/background";
 import { RelayClient } from "@lilos/client-runtime";
-import type { AppMessage } from "@lilos/contracts/app";
+import type {
+  AppMessage,
+  Conversation,
+  ConversationSummary,
+  Employee,
+  MessageSearchHit,
+  ProfileSettings,
+  SystemStatusResult,
+} from "@lilos/contracts/app";
+import type { ForgePrListItem } from "@lilos/contracts/host";
 import { createCheckpointStore } from "@lilos/host";
 import { SURFACES_ENV } from "@lilos/surfaces";
 import packageJson from "../package.json";
@@ -63,16 +72,87 @@ const surfaces = await serveSurfaces(0, {
         );
         return message;
       },
-      readConversation: async (afterSeq) => {
+      readConversation: async (opts) => {
         const page = await relay.request<{ messages: AppMessage[] }>(
           "messages.list",
           {
             channelId: binding.channelId,
-            conversationId: binding.conversationId,
-            ...(afterSeq !== undefined ? { afterSeq } : {}),
+            conversationId: opts?.conversationId ?? binding.conversationId,
+            ...(opts?.afterSeq !== undefined
+              ? { afterSeq: opts.afterSeq }
+              : {}),
           },
         );
         return page.messages;
+      },
+      /* DM tools (#340): the rest of the app leg — same relay methods the
+         app uses, scoped to the bound channel/conversation by the binding. */
+      listThreads: async () => {
+        const r = await relay.request<{ conversations: Conversation[] }>(
+          "conversations.list",
+          { channelId: binding.channelId, includeArchived: true },
+        );
+        return r.conversations;
+      },
+      threadSummaries: async () => {
+        const r = await relay.request<{ summaries: ConversationSummary[] }>(
+          "conversations.summaries",
+          { channelId: binding.channelId, includeArchived: true },
+        );
+        return r.summaries;
+      },
+      employees: async () => {
+        const r = await relay.request<{ employees: Employee[] }>(
+          "employees.list",
+          {},
+        );
+        return r.employees;
+      },
+      threadPrs: async (conversationId) => {
+        const r = await relay.request<{ prs: ForgePrListItem[] }>(
+          "conversations.prs",
+          { conversationId },
+        );
+        return r.prs;
+      },
+      searchMessages: async (query, limit) => {
+        const r = await relay.request<{ hits: MessageSearchHit[] }>(
+          "messages.search",
+          {
+            query,
+            channelId: binding.channelId,
+            includeArchived: true,
+            ...(limit !== undefined ? { limit } : {}),
+          },
+        );
+        return r.hits;
+      },
+      setThreadTitle: async (title) => {
+        /* #137 is enforced store-side: a host title write lands as "auto"
+           and never overwrites a user-typed title — the response's
+           titleSource tells which way it went. */
+        const r = await relay.request<{ conversation: Conversation }>(
+          "conversations.update",
+          { conversationId: binding.conversationId, title },
+        );
+        return r.conversation.titleSource === "user"
+          ? { outcome: "user_title" as const, title: r.conversation.title }
+          : { outcome: "set" as const, title: r.conversation.title };
+      },
+      status: () =>
+        relay.request<SystemStatusResult>("system.status", { logLines: 0 }),
+      profile: async () => {
+        const r = await relay.request<{ profile: ProfileSettings }>(
+          "profile.get",
+          {},
+        );
+        return r.profile;
+      },
+      openWorkbench: async (target) => {
+        await relay.request("workbench.open", {
+          conversationId: binding.conversationId,
+          target,
+        });
       },
     };
   },

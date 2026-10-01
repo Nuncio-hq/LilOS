@@ -11,7 +11,7 @@ import type { ToolArea } from "./tools.js";
  * stale prompt is diagnosable. Kept under 2000 chars: it rides in every
  * engine context.
  */
-export const HOST_POLICY_VERSION = 1;
+export const HOST_POLICY_VERSION = 2;
 export const HOST_POLICY_MAX_CHARS = 2000;
 export const HOST_POLICY_MARKER = `[LilOS host policy v${HOST_POLICY_VERSION}]`;
 
@@ -29,10 +29,10 @@ const TOOL_AREA_ORDER: readonly ToolArea[] = [
 const AREA_LINES: Record<ToolArea, string> = {
   root: "- `context`/`guide`: who and where this session is, and how LilOS works — read them first.",
   thread:
-    "- `thread_*`: your own DM thread with the user — `thread_read` to read it, `thread_post` to answer. Posting lands a real message; it is always allowed here and never possible in anyone else's thread.",
+    "- `thread_*`: the threads in your DM with the user — `thread_read`/`thread_search`/`thread_list`/`thread_prs` to look around, `thread_post` to answer, `thread_set_title` to retitle your own thread while its title is auto. Posting lands a real message; it is always allowed here and never possible in anyone else's thread.",
   team: "- `team_*`: the company roster — who else works here.",
   workbench:
-    "- `workbench_*`: what the user's Workbench shows for this session — preview servers your terminal started.",
+    "- `workbench_*`: the user's Workbench for this session — `workbench_previews` lists your preview servers, `workbench_open` puts the panel on the Files/Changes/PR/Preview tab you name (it never opens an editor on the Mac).",
   browser:
     "- `browser_*`: the session's own browser, shared with the user's Workbench — the only browser you may use for web pages.",
   terminal:

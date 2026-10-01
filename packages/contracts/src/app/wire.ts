@@ -31,6 +31,7 @@ import {
   RecentFolder,
   RespondTo,
   Timestamp,
+  WorkbenchOpenTarget,
   WorkspaceIntent,
 } from "./domain";
 import { APP_PROTOCOL_VERSION } from "./version";
@@ -220,6 +221,12 @@ export const AppMethod = z.enum([
   "push.register",
   "push.unregister",
   "push.visibility",
+  /* Host-only (#340): the session's `workbench_open` tool asks the app to
+     open the conversation's Workbench on a target — the relay fans
+     `workbench.opened` out on the channel. It rides the app wire, never the
+     engine event stream: a synthesized event seq would poison `events.since`
+     replay and the push watermark. */
+  "workbench.open",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -1167,6 +1174,7 @@ export const AppEventMethod = z.enum([
   "devices.changed",
   "host.changed",
   "engine.event",
+  "workbench.opened",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 
@@ -1296,6 +1304,29 @@ export const EngineEventEvent = z.object({
   event: EngineEvent,
 });
 export type EngineEventEvent = z.infer<typeof EngineEventEvent>;
+
+/**
+ * `workbench.open` params (#340) — host-only like `engine.event`: the harness
+ * turns a session's `workbench_open` tool call into this method; the relay
+ * resolves the conversation's channel and emits `workbench.opened`.
+ */
+export const WorkbenchOpenParams = z.strictObject({
+  conversationId: z.string().min(1),
+  target: WorkbenchOpenTarget,
+});
+export type WorkbenchOpenParams = z.infer<typeof WorkbenchOpenParams>;
+
+/**
+ * An employee asked to show something in its DM's Workbench (#340): desktop
+ * opens the panel on the target's tab, the phone renders a tappable card in
+ * the thread that opens the same view.
+ */
+export const WorkbenchOpenedEvent = z.object({
+  channelId: z.string().min(1),
+  conversationId: z.string().min(1),
+  target: WorkbenchOpenTarget,
+});
+export type WorkbenchOpenedEvent = z.infer<typeof WorkbenchOpenedEvent>;
 
 /* -------------------------------- settings ------------------------------- */
 

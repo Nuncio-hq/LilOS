@@ -584,3 +584,21 @@ export type HostAccessors = {
     line?: number,
   ) => Promise<void>;
 };
+
+/* A `workbench_open` target as the Workbench's spot request (issue #340):
+   the agent's "look at this" — a file (optionally at a line), the changes
+   view (optionally one file), the PR tab, or a URL for the preview tab.
+   Structural mirror of `WorkbenchOpenTarget` in contracts (ui keeps no
+   contracts dep) — a flat object: exactly one of file/diff/pr/url set.
+   `at` makes a repeated open of the same target re-fire. */
+export type WbSpot = {
+  at: number;
+  target: {
+    file?: string;
+    line?: number;
+    diff?: true;
+    path?: string;
+    pr?: true;
+    url?: string;
+  };
+};

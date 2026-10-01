@@ -78,8 +78,15 @@ export type {
   ThreadDetail,
   ThreadEntry,
   ToolStep,
+  WbCardEntry,
+  WbCardTarget,
   WorkspacePick,
 } from "./employees/types";
+export { WorkbenchCard } from "./employees/workbench-card";
+export {
+  type WbDiffFile,
+  WbDiffSheet,
+} from "./employees/workbench-diff";
 export {
   buildPairingUrl,
   CODE_LENGTH,

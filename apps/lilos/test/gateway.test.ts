@@ -17,7 +17,10 @@ import {
 describe("AC-2/AC-3 engine session drives the gateway over HTTP MCP", () => {
   it("thread_read + thread_post flow through POST /mcp", async () => {
     const spawner = new FakePtySpawner(true);
-    const appOps = fakeAppOps();
+    const appOps = fakeAppOps([], {
+      conversationId: "conv-ada",
+      channelId: "chan-ada",
+    });
     const scope = new SessionSurfaces({
       session: "sess-http",
       cwd: "/tmp",
