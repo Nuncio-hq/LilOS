@@ -270,13 +270,13 @@
         "via"
       ]
     },
-    "PreviewsListParams": {
+    "WorkbenchPreviewsParams": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {},
       "additionalProperties": false
     },
-    "PreviewsListResult": {
+    "WorkbenchPreviewsResult": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
@@ -307,7 +307,7 @@
         "previews"
       ]
     },
-    "AppPostMessageParams": {
+    "ThreadPostParams": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
@@ -321,7 +321,7 @@
       ],
       "additionalProperties": false
     },
-    "AppPostMessageResult": {
+    "ThreadPostResult": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
@@ -439,7 +439,7 @@
         "message"
       ]
     },
-    "AppReadConversationParams": {
+    "ThreadReadParams": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
@@ -451,7 +451,7 @@
       },
       "additionalProperties": false
     },
-    "AppReadConversationResult": {
+    "ThreadReadResult": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
@@ -571,6 +571,30 @@
       "required": [
         "messages"
       ]
+    },
+    "SessionBinding": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "employeeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "employeeId",
+        "channelId",
+        "conversationId"
+      ],
+      "additionalProperties": false
     },
     "ViewerHello": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

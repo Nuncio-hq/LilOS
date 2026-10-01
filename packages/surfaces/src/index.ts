@@ -3,6 +3,7 @@ export * from "./client.js";
 export * from "./config.js";
 export * from "./dispatch.js";
 export * from "./drivers.js";
+export * from "./gateway.js";
 export * from "./hub.js";
 export * from "./previews.js";
 export * from "./scope.js";

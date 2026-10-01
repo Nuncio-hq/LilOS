@@ -50,7 +50,7 @@ import {
   REFRESH_MODEL,
   SEED_AGENTS,
 } from "./catalog.js";
-import { type McpClient, startMcpServer } from "./mcp.js";
+import { type McpClient, startMcpHttp, startMcpServer } from "./mcp.js";
 import {
   type FakeScript,
   type FakeStep,
@@ -350,8 +350,9 @@ export class FakeEngine {
       {
         id: "mcp_servers",
         name: "MCP servers",
-        description: "Accepts stdio MCP servers on session.start (ACP shape).",
-        detail: { transports: ["stdio"] },
+        description:
+          "Accepts stdio + streamable-HTTP MCP servers on session.start (ACP shape).",
+        detail: { transports: ["stdio", "http"] },
       },
       {
         id: "agents",
@@ -399,10 +400,14 @@ export class FakeEngine {
   }
 
   private sessionStart(p: SessionStartParams) {
-    if ((p.mcpServers ?? []).some((s) => "type" in s)) {
+    if (
+      (p.mcpServers ?? []).some(
+        (s) => "type" in s && (s as { type?: unknown }).type !== "http",
+      )
+    ) {
       throw new RpcError(
         RPC_ERRORS.INVALID_PARAMS,
-        "engine-fake accepts stdio mcpServers only",
+        "engine-fake accepts stdio + http mcpServers only",
       );
     }
     const spec = this.agents.get(p.agent);
@@ -1153,8 +1158,8 @@ export class FakeEngine {
           return this.finishTurn(s, turnId, "end_turn", script, promptText);
         }
         await this.sleep(s);
-        // mcp__<server>__<tool> steps really run: the fake spawns the attached
-        // stdio MCP server (lazily) and calls it over the wire.
+        // mcp__<server>__<tool> steps really run: the fake spawns/connects
+        // the attached MCP server (lazily) and calls it over the wire.
         if (mcpMatch) {
           try {
             const client = await this.mcpClient(s, mcpMatch[1]);
@@ -1630,12 +1635,14 @@ export class FakeEngine {
   private async mcpClient(s: FakeSession, name: string): Promise<McpClient> {
     const existing = s.mcpClients.get(name);
     if (existing) return existing;
-    const spec = (s.mcpServers as { name?: string }[]).find(
+    const spec = (s.mcpServers as { name?: string; type?: string }[]).find(
       (x) => x.name === name,
     );
-    if (!spec || "type" in spec)
-      throw new Error(`session has no stdio mcp server '${name}'`);
-    const client = await startMcpServer(spec as never);
+    if (!spec) throw new Error(`session has no mcp server '${name}'`);
+    const client =
+      spec.type === "http"
+        ? await startMcpHttp(spec as never)
+        : await startMcpServer(spec as never);
     s.mcpClients.set(name, client);
     return client;
   }

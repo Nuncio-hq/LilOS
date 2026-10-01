@@ -1,31 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { buildSchemaDoc } from "../scripts/gen-schemas.js";
 import {
-  AppPostMessageParams,
   BrowserClickParams,
   harnessProtocol,
   LILOS_TOOLS,
   PreviewTarget,
   TerminalRunParams,
+  ThreadPostParams,
   ViewerClientMsg,
   ViewerServerMsg,
 } from "../src/harness/index.js";
 
 describe("AC-2 tool surface contracts", () => {
-  it("exposes browser + terminal + previews + app ops", () => {
+  it("exposes browser + terminal + workbench + thread ops", () => {
     expect(Object.keys(LILOS_TOOLS).sort()).toEqual([
-      "app_post_message",
-      "app_read_conversation",
       "browser_click",
       "browser_eval",
       "browser_open",
       "browser_read",
       "browser_scroll",
       "browser_type",
-      "previews_list",
       "terminal_read",
       "terminal_run",
       "terminal_write",
+      "thread_post",
+      "thread_read",
+      "workbench_previews",
     ]);
   });
 
@@ -138,8 +138,8 @@ describe("registry", () => {
     expect(doc.definitions.TerminalRunParams).toBeDefined();
   });
 
-  it("app ops reference the app message shape", () => {
-    const parsed = AppPostMessageParams.parse({ text: "hi" });
+  it("thread ops reference the app message shape", () => {
+    const parsed = ThreadPostParams.parse({ text: "hi" });
     expect(parsed.text).toBe("hi");
   });
 });

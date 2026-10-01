@@ -1,4 +1,8 @@
-import type { ViewerBrowserInputEvent } from "@lilos/contracts/harness";
+import type {
+  SessionBinding,
+  ToolArea,
+  ViewerBrowserInputEvent,
+} from "@lilos/contracts/harness";
 import {
   SurfaceError,
   type ViewerScope,
@@ -37,6 +41,9 @@ const USER_CONTROL_MSG =
 
 export class SessionSurfaces implements ViewerScope {
   readonly session: string;
+  /** Areas this session really has — drives `tools/list` + the host policy. */
+  readonly areas: ReadonlySet<ToolArea>;
+  readonly binding?: SessionBinding;
 
   private readonly spawnPty: PtySpawner;
   private readonly createBrowser?: () => Promise<BrowserDriver>;
@@ -80,6 +87,17 @@ export class SessionSurfaces implements ViewerScope {
     this.spawnPty = opts.spawnPty;
     this.createBrowser = opts.createBrowser;
     this.appOps = opts.appOps;
+    this.binding = opts.binding;
+    this.areas = new Set<ToolArea>([
+      // The PTY is always spawned; the preview scanner rides on its output.
+      "terminal",
+      "workbench",
+      // browser_* only when a real browser can attach — never advertised otherwise.
+      ...(opts.createBrowser ? (["browser"] as const) : []),
+      // thread_* only when the session is bound to a conversation.
+      ...(opts.appOps ? (["thread"] as const) : []),
+      // `root`/`team` areas land with #340 (DM tools); no session has them yet.
+    ]);
     this.cols = opts.cols ?? 110;
     this.rows = opts.rows ?? 28;
     this.tailCap = opts.termTailBytes ?? 400 * 1024;
@@ -393,16 +411,16 @@ export class SessionSurfaces implements ViewerScope {
     });
   }
 
-  previewsList() {
-    return this.tracked("previews_list", "", () => ({
+  workbenchPreviews() {
+    return this.tracked("workbench_previews", "", () => ({
       previews: this.scanner.list(),
     }));
   }
 
-  /* ------------------------------ app ops ----------------------------------- */
+  /* ------------------------------ thread ops -------------------------------- */
 
-  appPostMessage(p: { text: string }) {
-    return this.tracked("app_post_message", p.text.slice(0, 60), async () => {
+  threadPost(p: { text: string }) {
+    return this.tracked("thread_post", p.text.slice(0, 60), async () => {
       if (!this.appOps)
         throw new SurfaceError(
           "unavailable",
@@ -411,8 +429,8 @@ export class SessionSurfaces implements ViewerScope {
       return { message: await this.appOps.postMessage(p.text) };
     });
   }
-  appReadConversation(p: { afterSeq?: number }) {
-    return this.tracked("app_read_conversation", "", async () => {
+  threadRead(p: { afterSeq?: number }) {
+    return this.tracked("thread_read", "", async () => {
       if (!this.appOps)
         throw new SurfaceError(
           "unavailable",
