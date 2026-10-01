@@ -469,6 +469,12 @@ test("#315 AC-6 a reload keeps the waiting tray and its order", async ({
   await expect(reloaded.locator("li").nth(0)).toContainText(/first in line/);
   await expect(reloaded.locator("li").nth(1)).toContainText(/second in line/);
   await page.screenshot({ path: `${SHOTS}/ac-315-reload.png` });
+  // Leave shared stackA clean for AC-6's parallel-sessions count — land the
+  // waiting steers and let the turn settle instead of abandoning it live.
+  await allowAllWhile(
+    page,
+    expectSettled(page.locator("[data-agentturn]").last()),
+  );
 });
 
 test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it", async ({
@@ -477,7 +483,10 @@ test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it",
   test.setTimeout(240_000);
   const stackB = await bootStack(
     "nosteer-315",
-    { relay: wport(4655), feed: wport(4656), web: wport(5247) },
+    /* Bases are suite-saturated (all 100 residues are taken — ports.spec
+       gates it), so reuse literals other spec files already own: identical
+       bases are safe since two specs never share a worker index. */
+    { relay: wport(4680), feed: wport(4681), web: wport(5385) },
     { LILOS_HIDE_CAPS: "steer" },
   );
   try {
