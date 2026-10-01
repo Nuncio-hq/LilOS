@@ -181,3 +181,153 @@ test("tray reserves its height: the approval card stays answerable with a waitin
     await stack.stop();
   }
 });
+
+/* #371: the tray's amber text was unreadable in dark mode — text-amber-950 and
+   text-amber-800 were never remapped under .dark, so the queued item painted
+   ~1.4:1 and the subtitle ~2.5:1. This spec measures the real computed colors
+   in a browser: the queued text, subtitle, index, header and both action icons
+   must hold WCAG AA 4.5:1 against the effective tray background in dark, and
+   light mode must keep exactly its original palette. */
+const SHOTS = path.join(repo, "test-results", "ac-371");
+
+type RGBA = { r: number; g: number; b: number; a: number };
+
+interface ContrastRow {
+  name: string;
+  color: RGBA;
+  bg: RGBA;
+  ratio: number;
+}
+
+/* Read every check's computed color and the background the eye actually sees
+   under it: ancestors paint translucent fills, so walk up the tree compositing
+   each element's background-color over the next until the stack is opaque. */
+const measureTray = (page: Page): Promise<ContrastRow[]> =>
+  page.evaluate(() => {
+    const parse = (s: string): RGBA | null => {
+      const m = s.match(/rgba?\(([^)]*)\)/);
+      if (!m) return null;
+      const p = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+      return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+    };
+    const over = (top: RGBA, under: RGBA): RGBA => {
+      const a = top.a + under.a * (1 - top.a);
+      if (a === 0) return { r: 0, g: 0, b: 0, a: 0 };
+      return {
+        r: (top.r * top.a + under.r * under.a * (1 - top.a)) / a,
+        g: (top.g * top.a + under.g * under.a * (1 - top.a)) / a,
+        b: (top.b * top.a + under.b * under.a * (1 - top.a)) / a,
+        a,
+      };
+    };
+    const effectiveBg = (el: Element): RGBA => {
+      let acc: RGBA = { r: 0, g: 0, b: 0, a: 0 };
+      for (let n: Element | null = el; n; n = n.parentElement) {
+        const c = parse(getComputedStyle(n).backgroundColor);
+        if (c && c.a > 0) {
+          acc = over(c, acc);
+          if (acc.a >= 0.999) return { ...acc, a: 1 };
+        }
+      }
+      return over(acc, { r: 255, g: 255, b: 255, a: 1 }); // canvas fallback
+    };
+    const lum = (c: RGBA) => {
+      const f = (v: number) => {
+        const s = v / 255;
+        return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+    };
+    const checks: { name: string; sel: string }[] = [
+      { name: "header", sel: "[data-queued] .text-amber-900" },
+      { name: "subtitle", sel: "[data-queued-when]" },
+      { name: "index", sel: "[data-queued] li .font-mono" },
+      { name: "queued text", sel: "[data-queued] li .truncate" },
+      { name: "edit icon", sel: "[data-queued-edit]" },
+      { name: "remove icon", sel: "[data-queued-remove]" },
+    ];
+    return checks.map(({ name, sel }) => {
+      const el = document.querySelector(sel);
+      if (!el) throw new Error(`tray check missing: ${name} (${sel})`);
+      const bg = effectiveBg(el);
+      // The ink itself may be translucent — composite it over the same bg.
+      const ink = over(
+        parse(getComputedStyle(el).color) ?? { r: 0, g: 0, b: 0, a: 1 },
+        bg,
+      );
+      const l1 = Math.max(lum(ink), lum(bg));
+      const l2 = Math.min(lum(ink), lum(bg));
+      return { name, color: ink, bg, ratio: (l1 + 0.05) / (l2 + 0.05) };
+    });
+  });
+
+test("tray text holds WCAG AA in dark and keeps its palette in light (#371)", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const stack = await bootStack("traycontrast", {
+    relay: wport(4644),
+    feed: wport(4648),
+    web: wport(5242),
+  });
+  try {
+    await page.setViewportSize({ width: 1288, height: 700 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await dmDefault(page, stack.webUrl);
+    await send(page, "Add a release note to the readme");
+    await expect(openCard(page)).toBeVisible({ timeout: 30_000 });
+    await send(page, "first waiting nudge");
+    await expect(tray(page)).toBeVisible();
+
+    const html = page.locator("html");
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      if (scheme === "dark") {
+        await expect(html).toHaveClass(/dark/);
+      } else {
+        await expect(html).not.toHaveClass(/dark/);
+      }
+      for (const width of [1288, 900, 1440]) {
+        await page.setViewportSize({ width, height: 700 });
+        await expect(tray(page)).toBeVisible();
+        const rows = await measureTray(page);
+        console.log(
+          `#371 ${scheme}@${width}`,
+          rows.map((r) => `${r.name}=${r.ratio.toFixed(2)}:1`).join(" "),
+        );
+        for (const r of rows) {
+          if (scheme === "dark") {
+            expect(
+              r.ratio,
+              `${r.name} dark contrast ${r.ratio.toFixed(2)}:1 (ink ${JSON.stringify(r.color)} on ${JSON.stringify(r.bg)})`,
+            ).toBeGreaterThanOrEqual(4.5);
+          }
+        }
+        await page.screenshot({
+          path: `${SHOTS}/tray-${scheme}-${width}.png`,
+        });
+      }
+    }
+    // Light mode must not change: the classes still resolve to their light
+    // palette values (the fix only adds .dark rules and a dark: variant).
+    await page.emulateMedia({ colorScheme: "light" });
+    const light = Object.fromEntries(
+      (await measureTray(page)).map((r) => [r.name, r.color]),
+    );
+    const expectInk = (name: string, rgb: [number, number, number]) => {
+      const c = light[name] as RGBA;
+      expect(
+        `${Math.round(c.r)},${Math.round(c.g)},${Math.round(c.b)}`,
+        `${name} must keep its light-mode color`,
+      ).toBe(`${rgb[0]},${rgb[1]},${rgb[2]}`);
+    };
+    expectInk("header", [60, 32, 8]); // amber-900
+    expectInk("subtitle", [142, 68, 10]); // amber-800
+    expectInk("index", [180, 83, 9]); // amber-700
+    expectInk("queued text", [69, 26, 3]); // amber-950
+    expectInk("edit icon", [134, 134, 139]); // muted-foreground
+    expectInk("remove icon", [134, 134, 139]); // muted-foreground
+  } finally {
+    await stack.stop();
+  }
+});
