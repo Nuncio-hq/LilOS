@@ -1,9 +1,10 @@
 import { AppWindowIcon, BoxesIcon, CheckIcon, CopyIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { ConnectBadge } from "../connect/connect-badge";
 import { Field } from "../dialogs/field";
 import { cn } from "../lib/utils";
-import { HumanAvatar } from "../shell/avatars";
+import { HermesAvatar, HumanAvatar } from "../shell/avatars";
 import { StatusList } from "../shell/status";
 import { ThemeToggle } from "../shell/theme-toggle";
 import type {
@@ -14,11 +15,12 @@ import type {
   ModelOption,
   ModelProvider,
   ModelVisibility,
+  ProfileConnection,
   StatusComponent,
   Theme,
 } from "../types";
 
-/* The six section panes of SettingsView (issue #139). Each is a pure prop
+/* The section panes of SettingsView (issue #139; Engine added in #338). Each is a pure prop
    group: the app passes the group or the section doesn't exist (D-#19). All
    values come in, every control calls back out — no state lives here. */
 
@@ -51,6 +53,17 @@ export type ModelsProps = {
   providerLabel?: (id: string) => string;
   visibility: ModelVisibility;
   onVisibility: (v: ModelVisibility) => void;
+};
+
+export type EngineProps = {
+  /** Engine display name ("Hermes"). */
+  name: string;
+  /** Version line when the harness reports one ("0.9"). */
+  version?: string;
+  /** One row per hired profile — its LilOS connection state. */
+  profiles: ProfileConnection[];
+  /** Connect a profile — Connect buttons render only when passed (D-#19). */
+  onConnect?: (profile: string) => void;
 };
 
 export type StatusProps = {
@@ -309,6 +322,78 @@ export function ModelsSection({
         </Button>
       </div>
       <Hint>Same list as “Edit models…” in the model picker.</Hint>
+    </Pane>
+  );
+}
+
+export function EngineSection({ engine }: { engine: EngineProps }) {
+  const connected = engine.profiles.filter(
+    (p) => p.state === "connected",
+  ).length;
+  return (
+    <Pane title="Engine">
+      <div className="flex items-center gap-3 rounded-lg border p-3">
+        <HermesAvatar className="size-8" />
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-sm">
+            {engine.name}
+            {engine.version ? ` ${engine.version}` : ""}
+          </div>
+          <div className="text-muted-foreground text-xs">
+            {engine.profiles.length === 0
+              ? "No hired profiles"
+              : `${connected}/${engine.profiles.length} profiles connected`}
+          </div>
+        </div>
+      </div>
+      <Field label="Profiles">
+        {engine.profiles.length === 0 ? (
+          <p className="rounded-lg border border-dashed p-3 text-muted-foreground text-xs">
+            No hired profiles yet — hire an employee and its profile lists here.
+          </p>
+        ) : (
+          <div className="divide-y rounded-lg border">
+            {engine.profiles.map((p) => (
+              <div
+                key={p.profile}
+                className="flex items-center gap-3 px-3 py-2.5"
+              >
+                <HermesAvatar name={p.employee} className="size-6" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-mono text-sm">{p.profile}</div>
+                  {p.employee && (
+                    <div className="truncate text-muted-foreground text-xs">
+                      {p.employee}
+                    </div>
+                  )}
+                  {p.state === "failed" && p.reason && (
+                    <div className="text-red-600 text-xs dark:text-red-400">
+                      {p.reason}
+                    </div>
+                  )}
+                </div>
+                <ConnectBadge state={p.state} />
+                {p.state !== "connected" &&
+                  p.state !== "updating" &&
+                  engine.onConnect && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7"
+                      onClick={() => engine.onConnect?.(p.profile)}
+                    >
+                      Connect
+                    </Button>
+                  )}
+              </div>
+            ))}
+          </div>
+        )}
+        <Hint>
+          Connected profiles see LilOS — DMs, files, tickets, work — in sessions
+          LilOS opens. Declining keeps chat working.
+        </Hint>
+      </Field>
     </Pane>
   );
 }

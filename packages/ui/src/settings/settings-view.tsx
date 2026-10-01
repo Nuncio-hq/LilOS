@@ -3,6 +3,7 @@ import {
   AppWindowIcon,
   BoxesIcon,
   ChevronLeftIcon,
+  CpuIcon,
   InfoIcon,
   SettingsIcon,
   ShieldCheckIcon,
@@ -22,6 +23,8 @@ import {
   ApprovalsSection,
   type EditorsProps,
   EditorsSection,
+  type EngineProps,
+  EngineSection,
   type GeneralProps,
   GeneralSection,
   type ModelsProps,
@@ -46,6 +49,7 @@ const SECTIONS: {
   { id: "approvals", label: "Approvals", icon: ShieldCheckIcon },
   { id: "editors", label: "Editors", icon: AppWindowIcon },
   { id: "models", label: "Models", icon: BoxesIcon },
+  { id: "engine", label: "Engine", icon: CpuIcon },
   { id: "status", label: "Status", icon: ActivityIcon },
   { id: "about", label: "About", icon: InfoIcon },
 ];
@@ -56,6 +60,7 @@ export function SettingsView({
   approvals,
   editors,
   models,
+  engine,
   status,
   about,
 }: {
@@ -64,6 +69,7 @@ export function SettingsView({
   approvals?: ApprovalsProps;
   editors?: EditorsProps;
   models?: ModelsProps;
+  engine?: EngineProps;
   status?: StatusProps;
   about?: AboutProps;
 }) {
@@ -72,6 +78,7 @@ export function SettingsView({
     approvals,
     editors,
     models,
+    engine,
     status,
     about,
   };
@@ -192,6 +199,7 @@ export function SettingsView({
                 onManage={() => setModelsOpen(true)}
               />
             )}
+            {shown === "engine" && engine && <EngineSection engine={engine} />}
             {shown === "status" && status && <StatusSection status={status} />}
             {shown === "about" && about && <AboutSection about={about} />}
           </div>
