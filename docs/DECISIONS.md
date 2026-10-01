@@ -122,7 +122,7 @@ PR does not exist.
   surface drives Chromium over CDP and never loads it, so the missing package
   is excluded at bundle time, not vendored or imported dynamically.
   Not: installing chromium-bidi for the bundler, or marking playwright
-  external (the browser surface must stay bundled). — #388 · PR #391
+  external (the browser surface must stay bundled). — #388 · PR #389
 - **D-#232 Native chrome: `titleBarStyle: "hiddenInset"` + `vibrancy:
   "sidebar"`; the renderer owns the drag regions** (`lilos-drag` on header
   strips, interactive children `no-drag`) and pushes its theme to
