@@ -9,14 +9,7 @@ import { AttachmentChips } from "../conversation/turns";
 import { withFileMentionChips } from "../lib/mentions";
 import { cn } from "../lib/utils";
 import { HermesAvatar, HumanAvatar } from "../shell/avatars";
-import type {
-  EmpFn,
-  HireDraft,
-  HumanFn,
-  Msg,
-  SessionLife,
-  Work,
-} from "../types";
+import type { EmpFn, HireDraft, HumanFn, Msg, Work } from "../types";
 import { VIEWER_ID } from "../types";
 import { HireCardInline } from "./hire-card";
 import { ThreadSummary } from "./thread-summary";
@@ -62,26 +55,19 @@ export function Row({
   emp,
   human,
   active,
-  life,
   children,
 }: {
   from: string;
   emp: EmpFn;
   human: HumanFn;
   active?: boolean;
-  /* #344: a DM session card shows its engine session's life as a wordless
-     ring — spinning while it runs, faint while it sits open, none once closed. */
-  life?: SessionLife;
   children: React.ReactNode;
 }) {
   return (
     <div
-      data-life={life}
       className={cn(
         "lilos-rise group relative mx-1.5 grid grid-cols-[36px_minmax(0,1fr)] gap-3 rounded-2xl px-3 py-2 transition-colors hover:bg-foreground/[0.035] sm:mx-2 sm:px-4",
         active && "bg-primary/7 hover:bg-primary/7",
-        life && life !== "closed" && "lilos-life",
-        life === "running" && "lilos-life-run",
       )}
     >
       {emp(from) ? (
