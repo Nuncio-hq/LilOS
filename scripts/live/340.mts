@@ -22,8 +22,10 @@ import { join } from "node:path";
  *     `hermes acp` with the gateway env: the model answers Oscar's four AC-2
  *     DM questions by calling `lilos_context` / `lilos_team_list` /
  *     `lilos_thread_list` / `lilos_thread_read`, retitles + posts into the
- *     thread, and opens the Workbench on a diff (`workbench_opened` lands on
- *     the app's relay socket).
+ *     thread, edits a scratch file in the session folder — a real git repo,
+ *     since the Workbench's Changes tab is `git.diff` (#381) — and opens the
+ *     Workbench on the diff (`workbench_opened` lands on the app's relay
+ *     socket).
  *
  * Modes:
  *   stub (default): a scratch HERMES_HOME registers `lilos-stub`, a
@@ -46,7 +48,6 @@ const REAL_MODEL = (process.env.HERMES_MODEL || "").trim();
 const PROFILE = (process.env.HERMES_PROFILE || "l340live").trim();
 const PLUGIN_SRC = join(process.cwd(), "packages/engine-hermes/plugin/lilos");
 const HERMES_BIN = process.env.HERMES_BIN ?? "hermes";
-const HOME = process.env.HOME ?? "/tmp";
 const RELAY_DIR = join(process.cwd(), "apps/relay");
 
 const results: [boolean, string, string][] = [];
@@ -284,6 +285,13 @@ const QUESTIONS: [RegExp, string, Record<string, unknown>][] = [
   [/prs|pull requests/i, "thread_prs", {}],
   [/retitle/i, "thread_set_title", { title: `Answered ${MARKER}` }],
   [/post (a |the )?note/i, "thread_post", { text: `note ${MARKER}` }],
+  [
+    /add a line|scratch\.txt/i,
+    "terminal_run",
+    {
+      command: `printf 'seeded ${MARKER}\\n' >> live340-scratch.txt`,
+    },
+  ],
   [/diff/i, "workbench_open", { diff: true }],
 ];
 
@@ -796,8 +804,34 @@ async function main() {
       };
     },
   });
+  /* The session folder: a real git repo (#381) — the Workbench's Changes
+     tab is `git.diff` over this folder, and HOME is no repo. Seeded with a
+     committed scratch file so `git status` starts clean; the model edits it
+     before the diff leg. A temp dir, never $HOME: the run must not litter
+     the user's home on a real run. */
+  const sessionDir = mkdtempSync(join(tmpdir(), "lilos340-session-"));
+  const scratch = join(sessionDir, "live340-scratch.txt");
+  writeFileSync(scratch, `scratch pad — live-340 ${MARKER}\n`);
+  const scratchSeed = readFileSync(scratch, "utf8");
+  const git = (args: string[]) =>
+    spawnSync("git", ["-C", sessionDir, ...args], { encoding: "utf8" });
+  const seeded =
+    git(["init", "-q"]).status === 0 &&
+    git(["add", "live340-scratch.txt"]).status === 0 &&
+    git([
+      "-c",
+      "user.name=live-340",
+      "-c",
+      "user.email=live-340@localhost",
+      "commit",
+      "-qm",
+      "seed scratch",
+    ]).status === 0 &&
+    git(["status", "--porcelain"]).stdout.trim() === "";
+  check(seeded, "session folder seeded (clean git repo)", sessionDir);
+
   const a = surfaces.create({
-    cwd: HOME,
+    cwd: sessionDir,
     binding: {
       employeeId: ada.id,
       channelId: dm.id,
@@ -866,7 +900,7 @@ async function main() {
     const spawnAcp = (env: Record<string, string>) => {
       const p = spawn(HERMES_BIN, ["-p", PROFILE, "acp"], {
         env: { ...(process.env as Record<string, string>), ...env },
-        cwd: HOME,
+        cwd: sessionDir,
         stdio: ["pipe", "pipe", "inherit"],
       });
       acps.push(p);
@@ -888,7 +922,7 @@ async function main() {
     );
     const snew = await rpc.request(
       "session/new",
-      { cwd: HOME, mcpServers: [] },
+      { cwd: sessionDir, mcpServers: [] },
       90_000,
     );
     const sessionId = (snew.result as { sessionId?: string })?.sessionId;
@@ -1022,6 +1056,26 @@ async function main() {
     check(
       page.messages.some((m) => m.text === `note ${MARKER}`),
       "thread_post landed in the relay store",
+    );
+
+    /* A real change for the diff (#381): the model appends a line to the
+       scratch file through its own LilOS terminal — the same path a user
+       watches an employee take — leaving a git-visible change behind, so
+       "show me the diff" is never a request a careful model must refuse. */
+    await ask(
+      "seed scratch edit",
+      `Oscar asks: "add a line to live340-scratch.txt in this folder — run it in your LilOS terminal."`,
+      "terminal_run",
+      [/output|exit|seeded/i],
+    );
+    const dirty = git(["status", "--porcelain"]).stdout.trim();
+    check(
+      dirty.length > 0 || readFileSync(scratch, "utf8") !== scratchSeed,
+      "session folder holds a real change for the diff",
+      (
+        dirty ||
+        `live340-scratch.txt now ${readFileSync(scratch, "utf8").split("\n").length} lines`
+      ).slice(0, 120),
     );
 
     // ── workbench_open → the app's relay socket (AC-2b mechanism) ────────
