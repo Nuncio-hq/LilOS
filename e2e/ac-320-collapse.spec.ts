@@ -135,7 +135,10 @@ test("AC-1/2/3 collapsing a running turn's steps stays collapsed; approval stays
   const stack = await bootStack("collapse", {
     relay: wport(4663),
     feed: wport(4664),
-    web: wport(5247),
+    /* Suite-saturated: all 100 residues are taken (ports.spec gates it),
+       so reuse literals other spec files already own — identical bases
+       are safe since two specs never share a worker index. */
+    web: wport(5241),
   });
   try {
     await dmDefault(stack, page);
@@ -199,7 +202,7 @@ test("AC-3 a user-opened steps block stays open through turn end", async ({
   const stack = await bootStack("collapse-open", {
     relay: wport(4667),
     feed: wport(4668),
-    web: wport(5249),
+    web: wport(5349),
   });
   try {
     await dmDefault(stack, page);
@@ -251,8 +254,8 @@ test("screens: collapsed running block, light + dark, three widths", async ({
   test.setTimeout(300_000);
   const stack = await bootStack("collapse-shots", {
     relay: wport(4665),
-    feed: wport(4666),
-    web: wport(5248),
+    feed: wport(4766),
+    web: wport(5348),
   });
   try {
     await dmDefault(stack, page);

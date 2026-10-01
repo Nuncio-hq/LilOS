@@ -10,7 +10,7 @@ import {
 import { cn } from "../../lib/utils";
 import { BrainIcon, ChevronDownIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { createContext, memo, useContext, useEffect, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
 import { Shimmer } from "./shimmer";
 
@@ -67,10 +67,15 @@ export const Reasoning = memo(
       defaultProp: persist.open ?? defaultOpen,
       onChange: onOpenChange,
     });
-    const setIsOpen = (v: boolean) => {
-      setPersist((p) => ({ ...p, open: v }));
-      setIsOpenRaw(v);
-    };
+    /* Stable across renders: the auto-close effect lists this as a dep, and
+       an unstable setter would re-arm its 1s timer on every streamed update. */
+    const setIsOpen = useCallback(
+      (v: boolean) => {
+        setPersist((p) => ({ ...p, open: v }));
+        setIsOpenRaw(v);
+      },
+      [setPersist, setIsOpenRaw],
+    );
     const [duration, setDuration] = useControllableState({
       prop: durationProp,
       defaultProp: undefined,
@@ -119,14 +124,20 @@ export const Reasoning = memo(
       setIsOpenRaw(newOpen);
     };
 
+    /* Settle folds the block unless the user touched it. The conv-keyed row
+       survives live→settled without a remount, so the fold can't lean on a
+       remount's `defaultOpen=false` initial state — `defaultOpen` tracks
+       r.live here, and once it drops only a user choice keeps the block open. */
+    const shown = isOpen && (isStreaming || defaultOpen || userTouched);
+
     return (
       <ReasoningContext.Provider
-        value={{ isStreaming, isOpen, setIsOpen, duration }}
+        value={{ isStreaming, isOpen: shown, setIsOpen, duration }}
       >
         <Collapsible
           className={cn("not-prose mb-4", className)}
           onOpenChange={handleOpenChange}
-          open={isOpen}
+          open={shown}
           {...props}
         >
           {children}
