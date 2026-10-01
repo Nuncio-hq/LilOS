@@ -743,23 +743,22 @@ export function DmPage() {
       messages.find((m) => m.id === conv.rootMessageId);
     if (!root) return [];
     const model = modelFor(conv);
-    return [
-      toFeed(
-        root,
-        conv,
-        mergeTurns(
-          repliesOf(conv),
-          model,
-          employeeId,
-          convAsks(conv),
-          rewoundInfo.get(conv.id),
-          empRefToId,
-          conv.rootMessageId,
-          conv.state,
-        ),
-        wsFor(conv.cwd, cwdBranches),
-      ),
-    ];
+    const feedReplies = mergeTurns(
+      repliesOf(conv),
+      model,
+      employeeId,
+      convAsks(conv),
+      rewoundInfo.get(conv.id),
+      empRefToId,
+      conv.rootMessageId,
+      conv.state,
+    );
+    /* #320: scope turn keys to the conversation — turnIds are per-session
+       counters (two DMs can both hold "t1"); React keys and the collapse
+       store are keyed on it, so it must be conv-unique. */
+    for (const r of feedReplies)
+      if (r.turnId) r.turnId = `${conv.id}:${r.turnId}`;
+    return [toFeed(root, conv, feedReplies, wsFor(conv.cwd, cwdBranches))];
   });
 
   // "submitted" marker clears once the engine turn is actually running.
@@ -971,6 +970,8 @@ export function DmPage() {
       conv.rootMessageId,
       conv.state,
     );
+    /* #320: same conv-scoped turn keys as the feed path (see above). */
+    for (const r of replies) if (r.turnId) r.turnId = `${conv.id}:${r.turnId}`;
     if (!planCap) replies = stripPlans(replies);
     // An open question ask gets a real answer card (asks.respond).
     const openQuestion = asksHere.find(

@@ -17,6 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "../components/ui/collapsible";
+import { useTurnBlockState } from "../lib/block-state";
 import { plural } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
@@ -173,12 +174,21 @@ export function TurnSubagents({
   agents,
   emp,
   onOpenSession,
+  openKey,
 }: {
   agents: Subagent[];
   emp: EmpFn;
   onOpenSession?: (employeeId: string, session: string) => void;
+  /* Conv-scoped persist key — survives card remounts (#320). */
+  openKey?: string;
 }) {
-  const [open, setOpen] = useState(true);
+  /* #320: same rule as TurnSteps — running opens the block by default; the
+     first user click wins for the rest of the turn, and an untouched block
+     folds back to "N subagents" when the run ends. */
+  const [userSet, setUserSet] = useTurnBlockState<boolean | undefined>(
+    openKey,
+    undefined,
+  );
   const running = agents.filter((a) => a.status === "running").length;
   const failed = agents.filter((a) => a.status === "failed").length;
   const title = running
@@ -187,8 +197,8 @@ export function TurnSubagents({
   return (
     <Task
       className="mb-1 w-full"
-      open={open || running > 0}
-      onOpenChange={setOpen}
+      open={userSet ?? running > 0}
+      onOpenChange={setUserSet}
       data-subagents
     >
       <TaskTrigger title={title}>

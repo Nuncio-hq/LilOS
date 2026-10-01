@@ -210,6 +210,7 @@ export function liveTurnReply(
       : undefined;
   return {
     id: `live-${turn.turnId}`,
+    turnId: turn.turnId,
     from: employeeId,
     time: "",
     text: turn.text,

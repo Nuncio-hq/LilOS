@@ -1,6 +1,7 @@
 "use client";
 
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
+import { useTurnBlockState } from "../../lib/block-state";
 import {
   Collapsible,
   CollapsibleContent,
@@ -9,7 +10,7 @@ import {
 import { cn } from "../../lib/utils";
 import { BrainIcon, ChevronDownIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { createContext, memo, useContext, useEffect, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
 import { Shimmer } from "./shimmer";
 
@@ -36,6 +37,8 @@ export type ReasoningProps = ComponentProps<typeof Collapsible> & {
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   duration?: number;
+  /* Conv-scoped persist key — survives card remounts (#320). */
+  openKey?: string;
 };
 
 const AUTO_CLOSE_DELAY = 1000;
@@ -50,13 +53,29 @@ export const Reasoning = memo(
     onOpenChange,
     duration: durationProp,
     children,
+    openKey,
     ...props
   }: ReasoningProps) => {
-    const [isOpen, setIsOpen] = useControllableState({
+    /* #320: {open, touched} outlives remounts when openKey is set — a
+       user-collapsed (or re-opened) block keeps its state. */
+    const [persist, setPersist] = useTurnBlockState<{
+      open?: boolean;
+      touched?: boolean;
+    }>(openKey, {});
+    const [isOpen, setIsOpenRaw] = useControllableState({
       prop: open,
-      defaultProp: defaultOpen,
+      defaultProp: persist.open ?? defaultOpen,
       onChange: onOpenChange,
     });
+    /* Stable across renders: the auto-close effect lists this as a dep, and
+       an unstable setter would re-arm its 1s timer on every streamed update. */
+    const setIsOpen = useCallback(
+      (v: boolean) => {
+        setPersist((p) => ({ ...p, open: v }));
+        setIsOpenRaw(v);
+      },
+      [setPersist, setIsOpenRaw],
+    );
     const [duration, setDuration] = useControllableState({
       prop: durationProp,
       defaultProp: undefined,
@@ -64,6 +83,9 @@ export const Reasoning = memo(
 
     const [hasAutoClosed, setHasAutoClosed] = useState(false);
     const [startTime, setStartTime] = useState<number | null>(null);
+    /* #320: the first user toggle wins for the rest of the stream — a
+       user-opened reasoning block must not fold back when streaming ends. */
+    const userTouched = persist.touched ?? false;
 
     // Track duration when streaming starts and ends
     useEffect(() => {
@@ -79,7 +101,7 @@ export const Reasoning = memo(
 
     // Auto-open when streaming starts, auto-close when streaming ends (once only)
     useEffect(() => {
-      if (defaultOpen && !isStreaming && isOpen && !hasAutoClosed) {
+      if (defaultOpen && !isStreaming && isOpen && !hasAutoClosed && !userTouched) {
         // Add a small delay before closing to allow user to see the content
         const timer = setTimeout(() => {
           setIsOpen(false);
@@ -88,20 +110,34 @@ export const Reasoning = memo(
 
         return () => clearTimeout(timer);
       }
-    }, [isStreaming, isOpen, defaultOpen, setIsOpen, hasAutoClosed]);
+    }, [
+      isStreaming,
+      isOpen,
+      defaultOpen,
+      setIsOpen,
+      hasAutoClosed,
+      userTouched,
+    ]);
 
     const handleOpenChange = (newOpen: boolean) => {
-      setIsOpen(newOpen);
+      setPersist({ open: newOpen, touched: true });
+      setIsOpenRaw(newOpen);
     };
+
+    /* Settle folds the block unless the user touched it. The conv-keyed row
+       survives live→settled without a remount, so the fold can't lean on a
+       remount's `defaultOpen=false` initial state — `defaultOpen` tracks
+       r.live here, and once it drops only a user choice keeps the block open. */
+    const shown = isOpen && (isStreaming || defaultOpen || userTouched);
 
     return (
       <ReasoningContext.Provider
-        value={{ isStreaming, isOpen, setIsOpen, duration }}
+        value={{ isStreaming, isOpen: shown, setIsOpen, duration }}
       >
         <Collapsible
           className={cn("not-prose mb-4", className)}
           onOpenChange={handleOpenChange}
-          open={isOpen}
+          open={shown}
           {...props}
         >
           {children}
