@@ -194,6 +194,8 @@ describe("AC-6 snapshot cost and pruning", () => {
   it("prunes to the retention window (max age)", async () => {
     const store = createCheckpointStore(root);
     const ids: string[] = [];
+    /* 8 real git commit cycles — same per-test timeout convention as the
+       50k-tree leg above; the 5s vitest default can't absorb suite load. */
     for (let i = 0; i < 8; i++) {
       write("keep.txt", `v${i}\n`);
       ids.push(await store.snapshot(cwd));
@@ -218,11 +220,13 @@ describe("AC-6 snapshot cost and pruning", () => {
        the AC-6 budget), so a restore-by-sha can still land meanwhile. The
        contract is the listing, not the deletion. */
     expect(list.some((c) => c.id === ids[0])).toBe(false);
-  });
+  }, 30_000);
 
   it("prunes to the retention window (last N)", async () => {
     const store = createCheckpointStore(root);
     const ids: string[] = [];
+    /* Same as above: 6 snapshot+commit cycles — real process work, not a
+       wall-clock assertion, so the wait gets a scoped 30s instead of 5s. */
     for (let i = 0; i < 6; i++) {
       write("keep.txt", `v${i}\n`);
       ids.push(await store.snapshot(cwd));
@@ -230,5 +234,5 @@ describe("AC-6 snapshot cost and pruning", () => {
     await store.prune({ keep: 3 });
     const list = await store.list(cwd);
     expect(list.map((c) => c.id)).toEqual(ids.slice(3).reverse());
-  });
+  }, 30_000);
 });
