@@ -584,7 +584,7 @@ export function FocusView({
               {thread.replies.map((r, i) =>
                 emp(r.from) ? (
                   <div
-                    key={r.id ?? i}
+                    key={r.turnId ?? r.id ?? i}
                     data-msg={r.id}
                     className={flashCls(r.id)}
                   >
@@ -630,7 +630,7 @@ export function FocusView({
                     />
                   </div>
                 ) : (
-                  <Fragment key={r.id ?? i}>
+                  <Fragment key={r.turnId ?? r.id ?? i}>
                     {onRewind && r.id && human(r.from) && (
                       <RewindCheckpoint
                         running={running}

@@ -192,6 +192,55 @@ test("AC-1/2/3 collapsing a running turn's steps stays collapsed; approval stays
   }
 });
 
+test("AC-3 a user-opened steps block stays open through turn end", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const stack = await bootStack("collapse-open", {
+    relay: wport(4667),
+    feed: wport(4668),
+    web: wport(5249),
+  });
+  try {
+    await dmDefault(stack, page);
+    await send(page, "Add a release note to the readme");
+    const turn = page.locator("[data-agentturn]").last();
+    await expect(turn.locator("[data-tasksteps]")).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect(turn.locator(PANEL)).toBeVisible({ timeout: 30_000 });
+
+    /* Collapse → re-open while running: the second click marks the block
+       user-opened, and it must survive the turn's end (the live row's id
+       swap can't remount the card — the key is turnId). */
+    await turn.locator(TRIGGER).first().click();
+    await expect(turn.locator(PANEL)).toHaveCount(0);
+    await turn.locator(TRIGGER).first().click();
+    await expect(turn.locator(PANEL)).toBeVisible();
+
+    const staysOpen = (async () => {
+      for (;;) {
+        const settled = await turn.locator("[data-turnsettled]").count();
+        if (settled > 0) return;
+        const open = await turn.locator(PANEL).count();
+        if (open === 0)
+          throw new Error("steps block folded while the turn ran");
+        await page.waitForTimeout(150);
+      }
+    })();
+    await allowAllWhile(page, staysOpen);
+    await expectSettled(turn);
+    // Turn ended — the user-opened block must still be expanded (the live
+    // row's id swap may remount the card; the persisted collapse state must
+    // survive it either way).
+    await expect(turn.locator(PANEL)).toBeVisible();
+    await expect(turn.locator("[data-tasksteps]")).toContainText(/\d+ steps?/);
+    await page.screenshot({ path: `${SHOTS}/settled-useropen.png` });
+  } finally {
+    await stack.stop();
+  }
+});
+
 /* Evidence grid: collapsed-while-running (approval visible) at the three
    PR-bar widths, light + dark. The theme lives in localStorage — flipping it
    needs a reload, which also drops the component's collapse state, so each

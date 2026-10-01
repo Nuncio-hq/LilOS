@@ -334,6 +334,12 @@ PR does not exist.
   (`@src/app.tsx`), never file contents or engine-specific blocks; one `@`
   menu lists Employees then Files.** Not: content inlining, a second
   popover, a `#` trigger. — #105
+- **D-#320 Turn-block collapse state is user-owned, keyed by
+  `${conv.id}:${turnId}:${block}` in `packages/ui/src/lib/block-state.ts`.**
+  Auto-open is only a default while a turn runs. The live→relay-row id swap
+  can remount the card, so the choice also lives outside React state; web
+  row keys use `r.turnId` (dm.tsx stamps the conv id in). Not: auto-open as
+  a lock, per-component `useState` only. — #320 · PR #352
 
 ## Status
 - **D-#33 `system.status` legs carry `{state, reason}`; `blocked` (#53) means

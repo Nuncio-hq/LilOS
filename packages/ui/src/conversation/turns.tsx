@@ -31,6 +31,7 @@ import { Shimmer } from "../components/ai-elements/shimmer";
 import { Task, TaskContent, TaskTrigger } from "../components/ai-elements/task";
 import { Tool, ToolContent, ToolHeader } from "../components/ai-elements/tool";
 import { Badge } from "../components/ui/badge";
+import { useTurnBlockState } from "../lib/block-state";
 import { plural } from "../lib/helpers";
 import { withFileMentionChips } from "../lib/mentions";
 import { cn } from "../lib/utils";
@@ -125,14 +126,20 @@ export function TurnSteps({
   steps,
   autoOpen,
   waitingApproval,
+  openKey,
 }: {
   steps: Step[];
   autoOpen?: boolean;
   /* The turn is parked on an approval (engine request.opened): the running
      step's card reads "Waiting for approval" (issue #71, AC-4). */
   waitingApproval?: boolean;
+  /* Conv-scoped persist key — survives card remounts (#320). */
+  openKey?: string;
 }) {
-  const [userSet, setUserSet] = useState<boolean>();
+  const [userSet, setUserSet] = useTurnBlockState<boolean | undefined>(
+    openKey,
+    undefined,
+  );
   const running = steps.some((s) => s.running);
   return (
     <Task
@@ -247,6 +254,7 @@ export function AgentTurn({
           isStreaming={r.live && r.phase === "thinking"}
           duration={r.thought ?? 0}
           defaultOpen={!!r.live}
+          openKey={r.turnId && `${r.turnId}:reasoning`}
         >
           <ReasoningTrigger
             className="w-fit text-[13px]"
@@ -268,6 +276,7 @@ export function AgentTurn({
           steps={steps}
           autoOpen={r.live && (r.phase === "tools" || r.phase === "waiting")}
           waitingApproval={r.waitingOn === "approval"}
+          openKey={r.turnId && `${r.turnId}:steps`}
         />
       )}
       {/* With a Workbench the helpers live on its Subagents tab (#317); the turn only points there. */}
@@ -282,6 +291,7 @@ export function AgentTurn({
             agents={r.subagents}
             emp={emp}
             onOpenSession={onOpenSession}
+            openKey={r.turnId && `${r.turnId}:subagents`}
           />
         ))}
       {r.live && r.phase === "tools" && !steps.some((s) => s.running) && (

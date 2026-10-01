@@ -11,8 +11,8 @@ import {
   ReasoningTrigger,
 } from "../src/components/ai-elements/reasoning";
 import { TurnSubagents } from "../src/conversation/subagents";
-import { TurnSteps } from "../src/conversation/turns";
-import type { EmpFn, Step, Subagent } from "../src/types";
+import { AgentTurn, TurnSteps } from "../src/conversation/turns";
+import type { EmpFn, Reply, Step, Subagent } from "../src/types";
 
 if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = class {
@@ -144,6 +144,52 @@ describe("AC-3: turn end collapses unless the user opened it", () => {
 
     rerender(<TurnSteps steps={[step("patch")]} autoOpen={false} />);
     expect(panel(container)).toBeTruthy();
+  });
+
+  test("AgentTurn: user-opened steps survive the live→relay-row id swap", () => {
+    /* The web thread keys rows `r.turnId ?? r.id`; the settled card claims its
+       relay row id while turnId stays — so AgentTurn must NOT remount (a
+       remount drops TurnSteps' userSet and silently folds a user-opened
+       block). Rendered through the same list shape thread/focus views use. */
+    const live: Reply = {
+      id: "live-t1",
+      turnId: "t1",
+      from: "builder",
+      time: "",
+      text: "working",
+      steps: [step("patch", true)],
+      phase: "tools",
+      live: true,
+    };
+    const settled: Reply = {
+      ...live,
+      id: "m1",
+      phase: "done",
+      live: false,
+      steps: [step("patch")],
+    };
+    const row = (r: Reply) => (
+      <div key={r.turnId ?? r.id}>
+        <AgentTurn r={r} emp={emp} />
+      </div>
+    );
+    const { container, rerender } = render(<div>{row(live)}</div>);
+    const stepsBlock = () =>
+      container.querySelector("[data-tasksteps]") as HTMLElement;
+    expect(stepsBlock()).toBeTruthy();
+
+    // Collapse, then re-open while the turn runs (user-opened).
+    const trigger = () =>
+      stepsBlock().querySelector(
+        '[data-slot="collapsible-trigger"]',
+      ) as HTMLElement;
+    act(() => fireEvent.click(trigger()));
+    act(() => fireEvent.click(trigger()));
+    expect(panel(stepsBlock())).toBeTruthy();
+
+    // Turn ends; the card claims the relay row (id swap, turnId stable).
+    rerender(<div>{row(settled)}</div>);
+    expect(panel(stepsBlock())).toBeTruthy();
   });
 
   test("Reasoning: user-opened survives the end-of-stream auto-close", () => {

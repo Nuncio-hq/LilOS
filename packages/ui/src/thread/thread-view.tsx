@@ -420,7 +420,7 @@ export function ThreadView({
                wrapped in the row's padding/hover chrome only (issue #19). The
                data-msg wrapper is the search-hit scroll/flash anchor (#138). */
             <div
-              key={r.id ?? i}
+              key={r.turnId ?? r.id ?? i}
               data-msg={r.id}
               className={cn(
                 "transition-colors duration-500",

@@ -103,6 +103,10 @@ export type Reply = {
   /** Engine request kind the turn waits on (phase === "waiting"), e.g. approval. */
   waitingOn?: "approval" | "question" | "plan";
   id?: string;
+  /** Engine turn id on agent-turn cards — stable across the live → relay-row
+      id swap, so React keys survive it (a remount would drop user collapse
+      state, #320). */
+  turnId?: string;
   steers?: string[];
   dur?: number;
   attachments?: AttachedFile[];

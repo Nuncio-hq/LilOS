@@ -1,6 +1,7 @@
 "use client";
 
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
+import { useTurnBlockState } from "../../lib/block-state";
 import {
   Collapsible,
   CollapsibleContent,
@@ -36,6 +37,8 @@ export type ReasoningProps = ComponentProps<typeof Collapsible> & {
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   duration?: number;
+  /* Conv-scoped persist key — survives card remounts (#320). */
+  openKey?: string;
 };
 
 const AUTO_CLOSE_DELAY = 1000;
@@ -50,13 +53,24 @@ export const Reasoning = memo(
     onOpenChange,
     duration: durationProp,
     children,
+    openKey,
     ...props
   }: ReasoningProps) => {
-    const [isOpen, setIsOpen] = useControllableState({
+    /* #320: {open, touched} outlives remounts when openKey is set — a
+       user-collapsed (or re-opened) block keeps its state. */
+    const [persist, setPersist] = useTurnBlockState<{
+      open?: boolean;
+      touched?: boolean;
+    }>(openKey, {});
+    const [isOpen, setIsOpenRaw] = useControllableState({
       prop: open,
-      defaultProp: defaultOpen,
+      defaultProp: persist.open ?? defaultOpen,
       onChange: onOpenChange,
     });
+    const setIsOpen = (v: boolean) => {
+      setPersist((p) => ({ ...p, open: v }));
+      setIsOpenRaw(v);
+    };
     const [duration, setDuration] = useControllableState({
       prop: durationProp,
       defaultProp: undefined,
@@ -66,7 +80,7 @@ export const Reasoning = memo(
     const [startTime, setStartTime] = useState<number | null>(null);
     /* #320: the first user toggle wins for the rest of the stream — a
        user-opened reasoning block must not fold back when streaming ends. */
-    const [userTouched, setUserTouched] = useState(false);
+    const userTouched = persist.touched ?? false;
 
     // Track duration when streaming starts and ends
     useEffect(() => {
@@ -91,11 +105,18 @@ export const Reasoning = memo(
 
         return () => clearTimeout(timer);
       }
-    }, [isStreaming, isOpen, defaultOpen, setIsOpen, hasAutoClosed]);
+    }, [
+      isStreaming,
+      isOpen,
+      defaultOpen,
+      setIsOpen,
+      hasAutoClosed,
+      userTouched,
+    ]);
 
     const handleOpenChange = (newOpen: boolean) => {
-      setUserTouched(true);
-      setIsOpen(newOpen);
+      setPersist({ open: newOpen, touched: true });
+      setIsOpenRaw(newOpen);
     };
 
     return (
