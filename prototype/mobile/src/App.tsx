@@ -940,11 +940,13 @@ const SHEET: NativeStackNavigationOptions = {
   contentStyle: { backgroundColor: "transparent" },
 };
 
-/* A conversation's nav bar: transparent over a native blur material, so the
-   chat scrolls on under the title and stays readable. */
+/* A conversation's nav bar: transparent over a real blur material, so the
+   chat scrolls on under the title and the bar itself stays legible (#373 —
+   the two-line thread title reaches past what a top edge effect covers). */
 const CHAT_HEADER: NativeStackNavigationOptions = {
   headerTransparent: true,
-  scrollEdgeEffects: { top: "soft", bottom: "soft" },
+  headerBlurEffect: "systemMaterial",
+  scrollEdgeEffects: { bottom: "soft" },
 };
 
 function useNavTheme(): Theme {

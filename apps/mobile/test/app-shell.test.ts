@@ -66,3 +66,33 @@ describe("#247 AC-5 — DM rows keep the needs-you badge + trimmed meta", () => 
     expect(dm).toContain("t.branch ?? t.folder");
   });
 });
+
+describe("#373 — the chat nav bar paints a blur backdrop under itself", () => {
+  /* The bleed: `headerTransparent` + only a top scroll edge effect left
+     scrolled message text crisp behind ThreadHeaderTitle's second row —
+     the edge effect only covers the scroll view's own edge zone, not the
+     whole bar. `headerBlurEffect` gives the bar a real material, and the
+     docs flag stacking it with an explicit top edge effect as overlapping
+     effects, so the top edge stays automatic. */
+  const header = app.slice(
+    app.indexOf("const CHAT_HEADER"),
+    app.indexOf("};", app.indexOf("const CHAT_HEADER")),
+  );
+
+  it("CHAT_HEADER is transparent + blurred, with no explicit top edge effect", () => {
+    expect(header).toContain("headerTransparent: true");
+    expect(header).toContain('headerBlurEffect: "systemMaterial"');
+    expect(header).not.toContain("top:");
+    /* The bottom edge fade over the floating composer stays. */
+    expect(header).toContain('bottom: "soft"');
+  });
+
+  it("the prototype's chat header carries the same backdrop (UI source of truth)", () => {
+    const proto = read("prototype/mobile/src/App.tsx");
+    const protoHeader = proto.slice(
+      proto.indexOf("const CHAT_HEADER"),
+      proto.indexOf("};", proto.indexOf("const CHAT_HEADER")),
+    );
+    expect(protoHeader).toContain('headerBlurEffect: "systemMaterial"');
+  });
+});
