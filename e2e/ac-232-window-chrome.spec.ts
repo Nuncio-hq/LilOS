@@ -160,6 +160,42 @@ const appRegion = (page: Page, selector: string) =>
 const sidebarHeader = (page: Page) =>
   page.locator("aside.lilos-glass-side > div").first();
 
+/**
+ * Wait until a native window is actually producing pixels before capturing
+ * it (#365): `Page.captureScreenshot` fails fast with "Unable to capture
+ * screenshot" when the window's compositor surface has never had a frame —
+ * a fresh second window can sit in that state for seconds when the OS is
+ * still presenting it (occluded at birth, GPU/display contention). The
+ * `capturePage` probe reads the same compositor surface: non-empty means a
+ * real frame is readable. The double-rAF then proves the compositor is
+ * still issuing frames, so the capture's fresh-frame request completes
+ * instead of hanging — both are rendered-pixel signals, not retries.
+ */
+async function waitForNativeFrame(app: ElectronApplication, win: Page) {
+  const url = win.url();
+  await expect
+    .poll(() =>
+      app
+        .evaluate(async ({ BrowserWindow }, u) => {
+          const w = BrowserWindow.getAllWindows().find((x) =>
+            x.webContents.getURL().startsWith(u),
+          );
+          if (!w || w.isDestroyed() || w.webContents.isDestroyed())
+            return false;
+          const image = await w.capturePage();
+          return !image.isEmpty();
+        }, url)
+        .catch(() => false),
+    )
+    .toBe(true);
+  await win.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+}
+
 /** A fresh home gates the shell behind the first-run card — dismiss it so
  * the chrome underneath is clickable and screenshot-visible. */
 async function dismissFirstRun(win: Page) {
@@ -233,6 +269,7 @@ test("AC-1 no title bar strip; traffic lights inset into the sidebar header", as
     const logoBox = await head.locator("div").first().boundingBox();
     if (!logoBox) throw new Error("company avatar has no box");
     expect(logoBox.x - TRAFFIC_LIGHTS_END).toBeGreaterThanOrEqual(10);
+    await waitForNativeFrame(app, win);
     await win.screenshot({ path: `${SHOTS}/ac-1-inset.png` });
   } finally {
     await app.close();
@@ -309,6 +346,7 @@ test("AC-3 header strips drag the window, buttons inside still work", async () =
     await expect(win.getByText(/personal|profile|about/i).first()).toBeVisible({
       timeout: 10_000,
     });
+    await waitForNativeFrame(app, win);
     await win.screenshot({ path: `${SHOTS}/ac-3-drag.png` });
   } finally {
     await app.close();
@@ -344,6 +382,7 @@ test("AC-4 full screen hides the lights and drops the sidebar inset", async () =
       .toBe(true);
     // No lights means no reserved gap.
     await expect.poll(padLeft).toBeLessThan(30);
+    await waitForNativeFrame(app, win);
     await win.screenshot({ path: `${SHOTS}/ac-4-fullscreen.png` });
 
     await app.evaluate(({ BrowserWindow }) =>
@@ -393,6 +432,7 @@ test("AC-5 the status window gets the same chrome", async () => {
     expect(contentH).toBe(winH);
     // The status page keeps a drag strip under the inset lights.
     await expect.poll(() => appRegion(statusWin, "#drag-strip")).toBe("drag");
+    await waitForNativeFrame(app, statusWin);
     await statusWin.screenshot({ path: `${SHOTS}/ac-5-status.png` });
   } finally {
     await app.close();
@@ -440,6 +480,7 @@ test("#295 Focus header reserves the lights strip while the sidebar is hidden", 
     const controlBox = await header.getByRole("button").first().boundingBox();
     if (!controlBox) throw new Error("header control has no box");
     expect(controlBox.x - TRAFFIC_LIGHTS_END).toBeGreaterThanOrEqual(10);
+    await waitForNativeFrame(app, win);
     await win.screenshot({ path: `${SHOTS}/295-focus-light.png` });
 
     // Dark AC shot: the sidebar opens as an overlay in Focus — the header
@@ -447,6 +488,7 @@ test("#295 Focus header reserves the lights strip while the sidebar is hidden", 
     await header.getByTitle("Workspace", { exact: true }).click();
     await win.locator('[data-theme-opt="dark"]').click();
     await win.getByRole("button", { name: "Close sidebar" }).last().click();
+    await waitForNativeFrame(app, win);
     await win.screenshot({ path: `${SHOTS}/295-focus-dark.png` });
 
     // Full screen hides the lights — no leftover gap; leaving restores it.
