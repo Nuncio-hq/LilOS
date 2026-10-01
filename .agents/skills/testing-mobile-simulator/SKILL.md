@@ -421,6 +421,12 @@ the Simulator window is never covered.
 - The resulting `.app` lands at
   `~/Library/Developer/Xcode/DerivedData/LilOS-*/Build/Products/Debug-iphonesimulator/LilOS.app`
   and can be installed on other booted sims with `xcrun simctl install <udid> <path>`.
+- After `xcodebuild -downloadPlatform iOS` finishes, verify the platform
+  landed before rebuilding:
+  `xcodebuild -workspace apps/mobile/ios/LilOS.xcworkspace -scheme LilOS -showdestinations`
+  — the target sim (e.g. iPhone 17 OS:26.5) appears as an `iOS Simulator`
+  destination. With Pods + DerivedData already in place, `expo run:ios
+  --device <udid>` then builds in ~2–3 min, not ~15.
 - **iOS-27-SDK builds crash on the iOS 27.0 simulator** ("UIScene lifecycle is
   required" — new enforcement). Install/run the same build on the iOS 26.5
   simulator instead (D0B64A8A-D5F1-4668-8FFC-A86B400AF527 is the known-good
@@ -492,6 +498,44 @@ engine (above) or an engine that genuinely lacks the caps.
   instead: `left_click_drag` from low on the sheet to higher (e.g. devY
   560 → 420). A drag that starts a pull-to-refresh shows a "Refreshing..."
   bar — harmless, re-screenshot after it settles.
+
+## Pair-prompt ordering on iOS 26.5 (observed #386)
+
+The "Open in LilOS?" sheet and the local-network prompt do NOT always
+stack: tapping "Open" can render the "You're connected" screen FIRST,
+with the local-network prompt popping on top a beat later. Sequence that
+works: tap Allow on the local-network prompt whenever it appears, dismiss
+the dev-client "Open debugger to view warnings." pill via its X at the
+right edge (it covers the bottom Continue button — an a11y `press` on
+Continue is refused as "covered"), then tap Continue. The pill reappears;
+re-dismiss.
+
+## Seeded world survives pair-code expiry
+
+`pairing.offer` codes last ~5 min but the scripts/live/NNN.sh stack
+(relay + harness + seeded employees/sessions) keeps running. Mint a fresh
+offer against the RUNNING relay — get `LILOS_RELAY_HOME` from
+`ps eww <relay-pid>`, read `<home>/relay-token`, and `pairing.offer` via a
+token-scoped RelayClient — instead of restarting the script (a restart
+reseeds a new world and invalidates already-woken helper sessions).
+
+## Subagents sheet a11y landmarks (#181/#319/#386 surfaces)
+
+- Turn card link: `button "N subagents[, M running][, K failed], open
+  subagents"` — the a11y label of the "3 subagents · 1 failed · Open" line.
+- Sheet: `SheetHeader "Subagents"`; groups render as labels `"Running ·
+  n"` / `"Finished · n"` (each group omitted when empty).
+- Employee-helper row a11y label: `"<Name>, <job title>, <Done|Working|
+  Failed>"` (e.g. `"Blair, Draft the summary, Done"`); visually it carries
+  an Orb and a bold `"<Name> · "` title prefix — the cues that
+  `employee.threadId` resolved and the row will navigate. A row WITHOUT
+  the orb/name prefix falls back to the helper-brief SubagentSheet — that
+  is the regression signal for issue #386.
+- Verifying a resolved link: the row tap should pop the sheet and land on
+  a Thread whose header is the employee's conversation title with that
+  employee's composer ("Reply to <Name>"); landing on a "Brief / steps /
+  Report" layout means `threadId` never resolved (check the relay
+  conversation's `engineRef` vs the subagent's `sessionRef`).
 
 ## Employee-helper (@mention → helper's own thread) seeding recipe
 
