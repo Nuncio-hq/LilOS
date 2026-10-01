@@ -1,5 +1,12 @@
 /* Small pure helpers shared by the LilOS surfaces. No state, no data. */
-import type { Phase, RespondTo, Status, WsPick } from "../types";
+import type {
+  Phase,
+  RespondTo,
+  SessionLife,
+  Status,
+  Thread,
+  WsPick,
+} from "../types";
 
 export const plural = (n: number, w: string) =>
   `${n} ${w}${n === 1 ? "" : "s"}`;
@@ -69,3 +76,12 @@ export const RESPOND: Record<RespondTo, string> = {
 };
 
 export const NO_WS: WsPick = { folder: null, base: "main", mode: "new" };
+
+/* #344: running while a turn is live or any subagent still works (a session
+   with live helpers is never idle-closed); otherwise the stored life. */
+export const sessionLife = (t: Thread): SessionLife =>
+  t.replies.some(
+    (r) => r.live || r.subagents?.some((s) => s.status === "running"),
+  )
+    ? "running"
+    : (t.life ?? "open");

@@ -335,7 +335,8 @@ const DM_FEEDS: Record<string, Msg[]> = {
     {
       kind: "msg", id: "d1", from: "oscar", time: "Yesterday", text: "What's left before the relay can accept its first harness connection?",
       thread: {
-        session: "ses_4a19", usage: { input: 38400, output: 2900, reasoning: 1100, cache: 24000 },
+        // #344: idle > 30 min → the engine session was closed; no ring, resumes on the next message.
+        session: "ses_4a19", life: "closed", usage: { input: 38400, output: 2900, reasoning: 1100, cache: 24000 },
         replies: [
           {
             id: "d1r1", from: "builder", time: "Yesterday", thought: 6,
@@ -361,7 +362,8 @@ const DM_FEEDS: Record<string, Msg[]> = {
     {
       kind: "msg", id: "d2", from: "oscar", time: "Yesterday", text: "Summarise what changed on `main` since Monday.",
       thread: {
-        session: "ses_c03e", usage: { input: 12100, output: 640, reasoning: 210, cache: 9000 },
+        // #344: answered a few minutes ago — session still loaded and idle (faint ring).
+        session: "ses_c03e", life: "open", usage: { input: 12100, output: 640, reasoning: 210, cache: 9000 },
         replies: [
           {
             id: "d2r1", from: "builder", time: "Yesterday", thought: 3, reasoning: "git log since Monday, group commits by package.",

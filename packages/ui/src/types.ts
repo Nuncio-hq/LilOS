@@ -221,8 +221,15 @@ export type SessionAlert = {
   text: string;
   retry?: boolean;
 };
+/* Whether the session behind a thread holds the machine (#344): `running` while
+   a turn or a subagent works, `open` while it sits loaded and idle, `closed`
+   once idle-closed (resumes on the next message). */
+export type SessionLife = "running" | "open" | "closed";
 export type Thread = {
   session: string;
+  /* Engine session state when nothing runs; unset = open. Running is derived
+     from the replies (sessionLife), never stored. */
+  life?: Exclude<SessionLife, "running">;
   ticket?: string;
   branch?: string;
   /* User-visible session title (renamed by the user; unset = first message is the name). */

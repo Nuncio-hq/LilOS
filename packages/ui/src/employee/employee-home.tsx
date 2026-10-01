@@ -42,7 +42,7 @@ import {
 import { AttachmentChips } from "../conversation/turns";
 import { WorkspacePicker, wsHint } from "../dialogs/workspace-picker";
 import { Body, Row, Who } from "../feed/row";
-import { folderLabel, PHASE_LABEL, preview } from "../lib/helpers";
+import { folderLabel, PHASE_LABEL, preview, sessionLife } from "../lib/helpers";
 import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
@@ -338,7 +338,13 @@ export function EmployeeHome({
         data-session={m.id}
         data-archived={isArchived || undefined}
       >
-        <Row from={m.from} emp={emp} human={human} active={m.id === threadId}>
+        <Row
+          from={m.from}
+          emp={emp}
+          human={human}
+          active={m.id === threadId}
+          life={isArchived ? undefined : sessionLife(t)}
+        >
           <div className="flex items-start gap-1">
             <div className="min-w-0 flex-1">
               <Who id={m.from} time={m.time} emp={emp} human={human} />
