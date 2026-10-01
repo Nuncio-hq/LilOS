@@ -1,6 +1,10 @@
 import { FirstRun } from "@lilos/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
+import {
+  connectApproved,
+  requestConnect,
+} from "../lib/connect";
 import { useAtom } from "../lib/hooks";
 import { toUiEmployee } from "../lib/mapping";
 import {
@@ -23,11 +27,32 @@ const ONBOARDED_KEY = "lilos-onboarded";
  */
 export function IndexPage() {
   const employees = useAtom(relay.employees);
+  const statusPoll = useAtom(relay.status);
+  const approved = useAtom(connectApproved);
   // Prefill resolves live: stored settings > the OS full name (#118 AC-4).
   useAtom(profile);
   useAtom(osFullName);
   const navigate = useNavigate();
   const first = employees[0];
+  /* #339: the harness reports `connect` only on Hermes — when it does and
+     Oscar hasn't approved yet, the setup card's Continue lands on the
+     Connect step; Later skips it without approving. */
+  const rows = statusPoll.result?.connect;
+  const connect =
+    rows !== undefined && approved !== true
+      ? {
+          profiles: rows.length
+            ? rows
+            : employees
+                .filter((e) => e.profile)
+                .map((e) => ({
+                  profile: e.profile as string,
+                  employee: e.name,
+                  state: "not-connected" as const,
+                })),
+          onConnect: requestConnect,
+        }
+      : undefined;
 
   useEffect(() => {
     if (first && localStorage.getItem(ONBOARDED_KEY)) {
@@ -58,6 +83,7 @@ export function IndexPage() {
       <FirstRun
         employee={e}
         identity={{ name: currentName(), company: currentCompany() }}
+        {...(connect ? { connect } : {})}
         onOpenDM={(id) => {
           dismiss();
           // Persist what was typed — an emptied company keeps the derived

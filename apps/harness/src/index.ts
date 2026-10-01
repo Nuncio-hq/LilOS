@@ -5,6 +5,7 @@
  *   LILOS_ENGINE=fake|hermes|url|command bun run apps/harness/src/index.ts
  */
 import { existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { systemClock, watchOrphaned, watchWake } from "@lilos/background";
 import { RelayClient } from "@lilos/client-runtime";
@@ -13,6 +14,8 @@ import { SURFACES_ENV } from "@lilos/surfaces";
 import { createCheckpointStore } from "@lilos/host";
 import packageJson from "../package.json";
 import { launcherFor, resolveHarnessConfig } from "./config";
+import { HermesConnect } from "./connect";
+import { resolveHermesBin } from "./engine/discover";
 import { connectEngineWs } from "./engine/client";
 import { EngineSupervisor } from "./engine/supervisor";
 import { createFeedHandler } from "./feed";
@@ -76,6 +79,51 @@ const surfaces = await serveSurfaces(0, {
   log,
 });
 
+const repoRoot = process.env.LILOS_REPO_ROOT ?? process.cwd();
+// Packaged app: compiled engine adapters sit next to this binary when the
+// bundle ships them (execPath = Contents/MacOS/lilos-harness); in a repo
+// checkout execPath is bun and each engine's serve.ts is used instead.
+const bundledEngine = (name: string) => {
+  const p = join(dirname(process.execPath), name);
+  return existsSync(p) ? p : undefined;
+};
+/* The lilos plugin dir: packaged builds carry it under
+   Contents/Resources/app/plugin/lilos (build.ts), repo checkouts read the
+   workspace source. */
+const bundledPlugin = (root: string) => {
+  const packaged = join(
+    dirname(process.execPath),
+    "..",
+    "Resources",
+    "app",
+    "plugin",
+    "lilos",
+  );
+  return existsSync(packaged)
+    ? packaged
+    : join(root, "packages/engine-hermes/plugin/lilos");
+};
+
+/* #339 Connect: reconciles the bundled lilos plugin onto each employee's
+   Hermes profile once the Connect approval lands (relay setting
+   `connect.hermes`), keeps it updated, disables it when the employee
+   leaves — never deleting a profile. Only the hermes engine has profiles
+   + plugins to connect. */
+const connect =
+  config.engine.kind === "hermes"
+    ? new HermesConnect({
+        relay,
+        hermesBin: () => resolveHermesBin(),
+        hermesHome: process.env.HERMES_HOME ?? join(homedir(), ".hermes"),
+        pluginSrc: bundledPlugin(repoRoot),
+        env: {
+          [SURFACES_ENV.baseUrl]: surfaces.url,
+          [SURFACES_ENV.engineToken]: surfaces.engineToken,
+        },
+        log,
+      })
+    : undefined;
+
 const harness = new Harness({
   relay,
   sleep: createSleepGuard(process.platform, log),
@@ -88,18 +136,11 @@ const harness = new Harness({
   /* Hermes attaches via its plugin; ACP-shaped engines carry `lilos mcp`
      on `session.start`. */
   surfacesAttach: config.engine.kind === "hermes" ? "plugin" : "mcp",
+  connect,
   onNeedEngine: () => supervisor.ensureRunning(),
   version: releaseVersion,
 });
 
-const repoRoot = process.env.LILOS_REPO_ROOT ?? process.cwd();
-// Packaged app: compiled engine adapters sit next to this binary when the
-// bundle ships them (execPath = Contents/MacOS/lilos-harness); in a repo
-// checkout execPath is bun and each engine's serve.ts is used instead.
-const bundledEngine = (name: string) => {
-  const p = join(dirname(process.execPath), name);
-  return existsSync(p) ? p : undefined;
-};
 const supervisor = new EngineSupervisor({
   launcher: launcherFor(
     config,
@@ -133,8 +174,16 @@ const stopStatusReporter = new StatusReporter({
   version: releaseVersion,
   model: "model" in config.engine ? config.engine.model : undefined,
   liveSessions: () => harness.liveSessionCount,
+  connect: connect ? () => connect.report() : undefined,
   logTail: () => [...log.lines],
 }).start();
+
+/* Connect self-heals on a timer too (AC-6 version drift) — events alone
+   can miss (harness was down when the approval or a hire landed). */
+const connectTimer = connect
+  ? setInterval(() => void connect.reconcile(), 30_000)
+  : undefined;
+void connect?.reconcile();
 
 // Sleep detection (AC-4): a frozen heartbeat that fires late means the Mac
 // slept — drop the presumed-dead engine socket so the supervisor reconnects
@@ -191,6 +240,7 @@ const shutdown = async () => {
   wakeWatch.stop();
   feedServer.stop();
   feed.close();
+  if (connectTimer !== undefined) clearInterval(connectTimer);
   await supervisor.stop();
   await harness.stop();
   await surfaces.close();

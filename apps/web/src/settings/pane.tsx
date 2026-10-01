@@ -12,6 +12,7 @@ import { SettingsView, useTheme } from "@lilos/ui";
 import type { Human } from "@lilos/ui/types";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { setDefaultEditor, setModelVisibility } from "../lib/actions";
+import { requestConnect } from "../lib/connect";
 import { useAtom } from "../lib/hooks";
 import { hostEditors, type OsEditor } from "../lib/host";
 import { currentCompany, currentMe, osFullName, profile } from "../lib/me";
@@ -204,6 +205,20 @@ export function SettingsPane({ onClose }: { onClose: () => void }) {
               })),
               visibility,
               onVisibility: (v) => void setModelVisibility(v),
+            }
+          : undefined
+      }
+      /* #339: Engine — the harness's per-profile connect rows on
+         system.status, only when the engine reports them (Hermes). */
+      engine={
+        statusPoll.result?.connect
+          ? {
+              name: "Hermes",
+              ...(statusPoll.result.engine?.version
+                ? { version: statusPoll.result.engine.version }
+                : {}),
+              profiles: statusPoll.result.connect,
+              onConnect: () => void requestConnect(),
             }
           : undefined
       }

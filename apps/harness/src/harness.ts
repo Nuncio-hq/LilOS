@@ -14,6 +14,7 @@ import type {
   FoldersDetailResult,
   FoldersDiscoverResult,
   PendingTurn,
+  ProfileConnection,
 } from "@lilos/contracts/app";
 import {
   APP_PROTOCOL_VERSION,
@@ -23,11 +24,13 @@ import {
   ConversationModelRequestedEvent,
   ConversationsRewindHostParams,
   ConversationUpdatedEvent,
+  EmployeeRemovedEvent,
   ENGINE_PASSTHROUGH_METHODS,
   FoldersBrowseParams,
   FoldersDetailParams,
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
+import { CONNECT_APPROVAL_KEY } from "./connect";
 import {
   type AgentDescriptor,
   type ContentBlock,
@@ -198,6 +201,14 @@ export interface HarnessOptions {
    * tests).
    */
   homeDir?: string;
+  /** #339 Connect reconciler (Hermes engine only): reconciles the lilos
+     plugin per employee profile after approval, reports the rows on
+     `harness.report`. Undefined on non-Hermes engines. */
+  connect?: {
+    reconcile(): Promise<void>;
+    employeeRemoved(employeeId: string): void;
+    report(): ProfileConnection[];
+  };
 }
 
 const INVALID_STATE = -32003;
@@ -1527,6 +1538,26 @@ export class Harness {
       case "channel.removed": {
         const parsed = ChannelRemovedEvent.safeParse(params);
         if (parsed.success) void this.onChannelRemoved(parsed.data.channelId);
+        break;
+      }
+      case "settings.changed": {
+        // #339: the Connect step's one-time approval toggles the reconciler.
+        if (params.key === CONNECT_APPROVAL_KEY)
+          void this.opts.connect?.reconcile();
+        break;
+      }
+      case "employee.upserted": {
+        // A new hire's profile needs the plugin when Connect is approved.
+        void this.opts.connect?.reconcile();
+        break;
+      }
+      case "employee.removed": {
+        // Disable the leaving employee's plugin — never delete the profile.
+        const parsed = EmployeeRemovedEvent.safeParse(params);
+        if (parsed.success) {
+          this.opts.connect?.employeeRemoved(parsed.data.employeeId);
+          void this.opts.connect?.reconcile();
+        }
         break;
       }
       case "ask.resolved": {

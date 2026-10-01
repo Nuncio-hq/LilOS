@@ -419,15 +419,16 @@ async function main() {
         HERMES_PLUGINS_DEBUG: "1",
       },
     });
-    hermes.child.stdout?.on("data", (d) => diag.hermesOut.push(String(d)));
-    hermes.child.stderr?.on("data", (d) => diag.hermesOut.push(String(d)));
+    const serve = hermes;
+    serve.child.stdout?.on("data", (d) => diag.hermesOut.push(String(d)));
+    serve.child.stderr?.on("data", (d) => diag.hermesOut.push(String(d)));
     diag.killServe = () => {
       try {
-        hermes.child.kill("SIGKILL");
+        serve.child.kill("SIGKILL");
       } catch {}
     };
     gateway = await HermesGateway.connect(
-      `ws://127.0.0.1:${hermes.port}/api/ws?token=${hermes.token}`,
+      `ws://127.0.0.1:${serve.port}/api/ws?token=${serve.token}`,
     );
     check(true, "hermes serve up with plugin env on two profiles");
 
