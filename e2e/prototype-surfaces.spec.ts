@@ -220,16 +220,27 @@ test("AC-5 employee management: edit name + role, remove keeps profile, missing 
   await page.getByRole("button", { name: "Profile" }).click();
   const panel = page.locator("aside").last();
 
-  // Edit display name + role.
+  // Edit display name + role. The dialog mounts only after `agents.describe`
+  // resolves — a network-gated wait, not a wall-clock one: the field fill
+  // auto-waits, so a fixed-window visibility gate here flakes under load.
   await panel.getByRole("button", { name: "Edit" }).click();
-  await expect(page.getByText("Edit employee")).toBeVisible();
   await page.getByLabel("Display name").fill("Wren");
   await page.getByLabel("Role").fill("Staff Engineer");
   await page.getByRole("button", { name: "Save" }).click();
   const wrenRow = sidebar(page).getByRole("button", { name: /Wren/ });
-  await expect(wrenRow).toBeVisible();
+  // The rename writes to the engine profile first (`agents.update`), then
+  // mirrors into the sidebar — engine-roundtrip wait like the live-turn
+  // asserts above (15s), not a threshold bump on the same gate.
+  await expect(wrenRow).toBeVisible({ timeout: 15_000 });
   // The restyled row shows the name only; the role lives on the title.
   await expect(wrenRow).toHaveAttribute("title", "Staff Engineer");
+
+  // While Wren is employed the `builder` profile reads as taken in Hire.
+  await sidebar(page).getByRole("button", { name: "Hire employee" }).click();
+  const builderRow = page.locator('[data-profile="builder"]');
+  await expect(builderRow).toBeDisabled();
+  await expect(builderRow).toContainText("hired");
+  await page.getByRole("button", { name: "Cancel" }).click();
 
   // Remove from company: the confirm copy states the engine profile is kept.
   await panel.getByRole("button", { name: "Edit" }).click();
@@ -247,7 +258,14 @@ test("AC-5 employee management: edit name + role, remove keeps profile, missing 
   await expect(sidebar(page).getByRole("button", { name: /Wren/ })).toHaveCount(
     0,
   );
-  await expect(page.getByText(/profile builder kept/)).toBeVisible();
+  /* #350: the "profile kept" toast hides after 2.2s — on a loaded worker the
+     sidebar wait above outlived it. Assert the durable outcome instead: the
+     kept profile is offered enabled in Hire → Engine profiles (off
+     `usedProfiles`, still on the engine). Deleted or still "hired" fails. */
+  await sidebar(page).getByRole("button", { name: "Hire employee" }).click();
+  await expect(builderRow).toBeEnabled();
+  await expect(builderRow).toContainText("skills");
+  await page.getByRole("button", { name: "Cancel" }).click();
   expect(errors).toEqual([]);
 });
 
