@@ -608,3 +608,29 @@ test("AC-319 the panel's 'N subagents · Open' lands on Focus → Subagents (?ta
     await stack319.stop();
   }
 });
+
+/* #319 — the deep link names the tab even on a session whose turns never
+   spun off a helper: the tab renders its empty state rather than silently
+   falling back to the first allowed tab. Runs on the shared stack's own
+   fresh conversation (a steer can't reach it, so "say hi" lands from the
+   DM home). */
+test("AC-319 a `?tab=subagents` deep link on a zero-helper session lands on the tab's empty state", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await openDefault(page);
+  await page.goto(page.url().replace(/\/conv_[^/]+.*$/, ""));
+  await pickSessionFolder(page, repoDir);
+  await send(page, "say hi");
+  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await page.goto(`${page.url()}?tab=subagents`);
+  await expect(tab(page, /Subagents/)).toHaveAttribute(
+    "aria-selected",
+    "true",
+    { timeout: 30_000 },
+  );
+  await expect(
+    page.getByText("No subagents in this session yet."),
+  ).toBeVisible({ timeout: 30_000 });
+  await page.screenshot({ path: `${SHOTS}/ac-319-3-empty.png` });
+});
