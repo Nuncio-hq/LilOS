@@ -273,6 +273,15 @@ if (existsSync(join(WEB_DIST, "index.html"))) {
     recursive: true,
   });
 }
+/* The lilos Hermes plugin (#339 Connect): the harness copies it into each
+   employee profile's plugins dir, so it rides the bundle as data under
+   Resources — nothing in plugins/ is code-signed on its own. */
+const PLUGIN_SRC = join(REPO, "packages", "engine-hermes", "plugin");
+if (existsSync(PLUGIN_SRC)) {
+  cpSync(PLUGIN_SRC, join(APP, "Contents", "Resources", "app", "plugin"), {
+    recursive: true,
+  });
+}
 
 mkdirSync(join(APP, "Contents", "Library", "LaunchAgents"), {
   recursive: true,

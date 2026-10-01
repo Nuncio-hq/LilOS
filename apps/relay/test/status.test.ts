@@ -340,3 +340,40 @@ describe("AC-4 (#33) engine RSS + live sessions come from the harness report", (
     expect(status.engine).toBeUndefined();
   });
 });
+
+describe("AC-1 (#339) system.status carries the host's connect rows", () => {
+  it("per-profile connection rows flow from harness.report to the app", async () => {
+    const relay = newRelay();
+    const host = await registerHarness(relay);
+    await host.connection.receive(
+      req("harness.report", {
+        engine: { state: "running" },
+        status: {
+          connect: [
+            { profile: "ada", employee: "Ada", state: "connected" },
+            {
+              profile: "grace",
+              employee: "Grace",
+              state: "not-connected",
+            },
+          ],
+        },
+      }),
+    );
+
+    const app = await helloed(relay);
+    const status = await systemStatus(app.connection, app.frames);
+    expect(status.connect).toEqual([
+      { profile: "ada", employee: "Ada", state: "connected" },
+      { profile: "grace", employee: "Grace", state: "not-connected" },
+    ]);
+  });
+
+  it("connect is absent until the host reports it", async () => {
+    const relay = newRelay();
+    await registerHarness(relay);
+    const app = await helloed(relay);
+    const status = await systemStatus(app.connection, app.frames);
+    expect(status.connect).toBeUndefined();
+  });
+});

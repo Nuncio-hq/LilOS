@@ -11,6 +11,7 @@ import type { ModelVisibility } from "@lilos/ui";
 import { atom, computed, type ReadableAtom } from "nanostores";
 import { defaultEditor } from "../settings/state";
 import type { LilosConfig } from "./config";
+import { initConnect } from "./connect";
 import { hostUser, initHost } from "./host";
 import { osFullName, osHome, profile } from "./me";
 
@@ -99,6 +100,8 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
       defaultEditor.set(typeof value === "string" ? value : null);
     }
   });
+  // #339: the Connect approval flag + its settings.changed follow-up.
+  initConnect();
 }
 
 /**

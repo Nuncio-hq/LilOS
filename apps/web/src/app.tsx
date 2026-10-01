@@ -26,6 +26,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { employeeBadges } from "./lib/badges";
 import { buildLabel } from "./lib/build-label";
+import { connectApproved, requestConnect } from "./lib/connect";
 import {
   HIRE_TEMPLATES,
   hireEmployee,
@@ -205,8 +206,12 @@ function AppShell() {
       }),
     [catalog, defaultModel, defaultProvider],
   );
+  /* #339: the hire dialog's "Connect to LilOS" checkbox — on by default,
+     rendered only when the engine reports connect rows (Hermes). */
+  const [hireConnect, setHireConnect] = useState(true);
   const openHire = () => {
     setHireError(null);
+    setHireConnect(true);
     setHireOpen(true);
     // Fresh roster each open — a profile created or freed elsewhere shows up.
     void listHirableProfiles()
@@ -219,6 +224,10 @@ function AppShell() {
     setHirePending(true);
     void hireEmployee(d, profile)
       .then((emp) => {
+        // #339: a checked "Connect to LilOS" grants the one-time approval —
+        // the reconciler picks the new profile up on its next pass.
+        if (hireConnect && connectApproved.get() !== true)
+          void requestConnect().catch(() => {});
         setHireOpen(false);
         void navigate({
           to: "/dm/$employeeId",
@@ -372,6 +381,11 @@ function AppShell() {
           usedProfiles={employees.map((e) => e.profile)}
           error={hireError ?? undefined}
           pending={hirePending}
+          connect={
+            statusPoll.result?.connect
+              ? { checked: hireConnect, onChange: setHireConnect }
+              : undefined
+          }
           onClose={() => setHireOpen(false)}
           onHire={(d, profile) => hire(d, profile)}
         />

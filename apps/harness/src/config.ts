@@ -117,6 +117,8 @@ export function launcherFor(
   log: Logger,
   /** Binaries bundled next to the harness exec (packaged app only). */
   serveBins: { fake?: string; hermes?: string } = {},
+  /** Extra env for the engine child process (gateway surfaces creds, #339). */
+  engineEnv: Record<string, string> = {},
 ): EngineLauncher {
   switch (config.engine.kind) {
     case "fake":
@@ -138,6 +140,7 @@ export function launcherFor(
         // #288: the adapter's session registry lives beside the harness's own
         // state so a restart resumes each conversation's stored session.
         sessionsFile: join(config.homeDir, "engine-sessions.json"),
+        env: engineEnv,
         log,
       });
     case "command":
