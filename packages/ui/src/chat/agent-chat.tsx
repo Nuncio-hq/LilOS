@@ -9,7 +9,7 @@ import {
   PencilIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 import {
   Tooltip,
@@ -91,11 +91,16 @@ export function ConversationKeepBottom({
 }: {
   signal: number | string;
 }) {
-  const { scrollToBottom } = useStickToBottomContext();
-  useEffect(() => {
-    // Re-locks to the bottom so the last turn + the tray are both fully visible without scrolling.
+  const { scrollToBottom, scrollRef } = useStickToBottomContext();
+  /* Layout effect + a synchronous write: even "instant" scrollToBottom hops
+     through a rAF, so the frame after the composer column grows would lay out
+     (and could paint) the last card clipped under the tray — the PR #358
+     waiting-tray overlap. The lib call keeps its bottom-lock bookkeeping. */
+  useLayoutEffect(() => {
     scrollToBottom({ animation: "instant" });
-  }, [signal, scrollToBottom]);
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [signal, scrollToBottom, scrollRef]);
   return null;
 }
 
