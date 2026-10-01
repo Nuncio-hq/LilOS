@@ -74,6 +74,12 @@ describe("AC-1 rewind restores files; user git state untouched", () => {
       let userGitBefore: string | null = null;
       if (kind === "git repo") {
         gitCwd(["init", "-q"]);
+        /* The commit below spawns git's detached auto-maintenance, which
+           creates/deletes .git/objects/maintenance.lock mid-snapshot
+           (ENOENT between readdirSync and statSync) and can drift the
+           before/after hash — seen on Linux CI (#357). Off for this repo. */
+        gitCwd(["config", "gc.auto", "0"]);
+        gitCwd(["config", "maintenance.auto", "false"]);
         gitCwd(["add", "-A"]);
         gitCwd([
           "-c",
