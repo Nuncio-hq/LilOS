@@ -121,7 +121,8 @@ export function ScheduledTasks({
             data-paused={t.paused || undefined}
             className={cn(
               "rounded-xl border bg-background p-3 transition-colors",
-              highlight === t.id && "border-primary outline-2 outline-primary/40",
+              highlight === t.id &&
+                "border-primary outline-2 outline-primary/40",
             )}
           >
             <div className="flex items-center gap-2">
