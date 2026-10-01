@@ -21,6 +21,7 @@ import {
   EngineEventEvent,
   JsonRpcNotification,
   JsonRpcResponse,
+  MessageChangedEvent,
   MessageCreatedEvent,
   type PairedDevice,
   type PairingOffer,
@@ -1096,6 +1097,39 @@ export class RelayClient {
         }
         this.patchSummaryForMessage(event.message);
         this.dispatchIfNewer(event.channelId, event.message);
+        return;
+      }
+      case "message.changed": {
+        /* #315: dropped/removed flipped — same seq, so dispatchIfNewer can't
+           carry it; replace the stored row in place. */
+        const event = MessageChangedEvent.parse(params);
+        const store = this.channelStates.get(event.channelId);
+        const state = store?.get();
+        if (store && state?.messages.some((m) => m.id === event.message.id)) {
+          store.set({
+            ...state,
+            messages: state.messages.map((m) =>
+              m.id === event.message.id ? event.message : m,
+            ),
+          });
+        }
+        const summaries = this.conversationSummaries.get();
+        if (
+          event.message.conversationId &&
+          summaries.some(
+            (s) =>
+              s.conversation.id === event.message.conversationId &&
+              s.last?.id === event.message.id,
+          )
+        ) {
+          this.conversationSummaries.set(
+            summaries.map((s) =>
+              s.last?.id === event.message.id
+                ? { ...s, last: event.message }
+                : s,
+            ),
+          );
+        }
         return;
       }
       case "channel.snapshot": {

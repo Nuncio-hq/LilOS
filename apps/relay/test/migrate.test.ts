@@ -55,8 +55,11 @@ describe("relay migrations", () => {
     // v10 adds #137's title provenance; v11 adds #153's phone pairing
     // tables; v12 adds #134's rewind marks; v13 adds #156's workspace
     // intent on conversations; v14 adds #161's push tables; v15 adds
-    // #300's persisted turn usage on conversations.
-    expect(out.version).toBe(15);
+    // #300's persisted turn usage on conversations; v16 adds #315's
+    // dropped/removed flags on messages.
+    expect(out.version).toBe(16);
+    expect(out.msgCols).toContain("dropped");
+    expect(out.msgCols).toContain("removed");
     for (const col of ["provider", "effort", "fast"])
       expect(out.colsAt7).toContain(col);
     for (const col of ["provider", "effort", "fast", "rewound", "checkpoint"])

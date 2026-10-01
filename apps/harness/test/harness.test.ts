@@ -1531,3 +1531,211 @@ describe("interrupt ordering (#274)", () => {
     }
   });
 });
+
+/* #315 — the waiting tray's engine-side contract. Remove on a queued
+   message must mean the engine never sees it (AC-4); ■ Stop parks every
+   wait into the not-sent tray with nothing auto-running after (AC-5); and
+   Send re-delivers a parked message as a real turn. */
+describe("waiting tray (#315)", () => {
+  const listDropped = (user: RelayClient, channelId: string) =>
+    user.request<{ messages: AppMessage[] }>("messages.list", {
+      channelId,
+      limit: 200,
+      includeDropped: true,
+    });
+
+  it("AC-4 removing a queued message drops it from binding.queue — the engine never gets it", {
+    timeout: 20_000,
+  }, async () => {
+    /* No `steer` capability → a mid-turn send queues behind the running
+         turn instead of steering it. */
+    const w = await setupWorld(1, true, { capabilities: { steer: false } });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page", // parks mid-turn on an approval
+      });
+      await waitFor(() => w.sleep.held || undefined, "turn running");
+      const { message: mid } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "never mind that",
+      );
+      await waitFor(
+        () => w.log.lines.find((l) => l.includes("queued behind running turn")),
+        "message queued behind the turn",
+      );
+
+      await w.user.request("messages.remove", { messageId: mid.id });
+
+      /* Let the parked turn finish — the queue must drain nothing. On a
+         miss, the harness log says whether message.changed even landed. */
+      const approveAll = async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        for (const a of asks)
+          await w.user.request("asks.respond", {
+            askId: a.id,
+            outcome: "once",
+          });
+      };
+      await waitFor(async () => {
+        await approveAll();
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+      }, "turn answer").catch((e) => {
+        throw new Error(`${e.message}\n${w.log.lines.join("\n")}`);
+      });
+      // The engine saw the parked prompt only — the removed text never
+      // went out as a prompt (and never would, on any later drain).
+      const prompts = w.engineCalls.filter((c) => c.method === "prompt");
+      expect(
+        prompts.filter((p) =>
+          JSON.stringify(p.params).includes("never mind that"),
+        ),
+      ).toEqual([]);
+      // And the row is gone from every list — the tray's truth is the
+      // relay, so reload agrees.
+      const { messages } = await listConvMessages(w.user, channel.id);
+      expect(messages.find((m) => m.id === mid.id)).toBeUndefined();
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-4 Remove on an already-consumed send is refused — the action isn't offered", {
+    timeout: 20_000,
+  }, async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+      });
+      // The turn must be running first — a post that outraces turn.started
+      // becomes a second prompt, not a steer.
+      await waitFor(() => w.sleep.held || undefined, "turn running");
+      // A steered message is consumed the moment session.steer acks.
+      const { message: mid } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "steer it left",
+      );
+      // `session.steer` acks first; the deliveredSeq write lands right
+      // after — Remove is refused only once the watermark proves the
+      // engine consumed it.
+      await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; deliveredSeq: number }[];
+        }>("conversations.list", {});
+        const c = conversations.find((x) => x.id === conversation.id);
+        return c && c.deliveredSeq >= mid.seq ? c : undefined;
+      }, "deliveredSeq past the steer");
+      await expect(
+        w.user.request("messages.remove", { messageId: mid.id }),
+      ).rejects.toThrow();
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-5 Stop parks every wait into the not-sent tray; Send runs it later — nothing auto-runs", {
+    timeout: 20_000,
+  }, async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page", // parks on its approval ask
+      });
+      /* Wait for the approval to OPEN — the turn is parked past its last
+         tool boundary, so mid-turn sends steer in but never land before
+         the Stop (drainSteers only runs at a boundary). */
+      await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks.find((a) => a.request.kind === "approval");
+      }, "open approval ask");
+      // Two mid-turn sends become accepted-but-unlanded steers.
+      const { message: a } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "first nudge",
+      );
+      const { message: b } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "second nudge",
+      );
+      await waitFor(
+        () =>
+          w.engineCalls.filter((c) => c.method === "session.steer").length >=
+            2 || undefined,
+        "both steers accepted",
+      );
+
+      await w.user.request("turns.interrupt", {
+        conversationId: conversation.id,
+      });
+
+      // Both waits park as dropped rows — invisible to normal reads.
+      const parked = await waitFor(async () => {
+        const { messages } = await listDropped(w.user, channel.id);
+        const drops = messages.filter((m) => m.dropped);
+        return drops.length === 2 ? drops : undefined;
+      }, "both waits parked").catch((e) => {
+        const calls = w.engineCalls.map((c) => c.method).join(",");
+        throw new Error(
+          `${e.message}\nengineCalls: ${calls}\n${w.log.lines.join("\n")}`,
+        );
+      });
+      expect(parked.map((m) => m.id).sort()).toEqual([a.id, b.id].sort());
+      const { messages: visible } = await listConvMessages(w.user, channel.id);
+      expect(
+        visible.find((m) => m.id === a.id || m.id === b.id),
+      ).toBeUndefined();
+
+      // Nothing auto-runs after the stop: the parked texts never prompt.
+      await new Promise((r) => setTimeout(r, 300));
+      const prompts = () =>
+        w.engineCalls
+          .filter((c) => c.method === "prompt")
+          .map((c) => JSON.stringify(c.params));
+      expect(prompts()).toHaveLength(1);
+      expect(prompts()[0]).toContain("Add a footer to the page");
+
+      // Send re-delivers it as a normal next prompt.
+      await w.user.request("messages.send", { messageId: b.id });
+      await waitFor(
+        () => prompts().find((p) => p.includes("second nudge")),
+        "parked message prompts on Send",
+      );
+      // The other parked row stays parked.
+      const { messages: after } = await listDropped(w.user, channel.id);
+      const still = after.find((m) => m.id === a.id);
+      expect(still?.dropped).toBe(true);
+    } finally {
+      await w.cleanup();
+    }
+  });
+});

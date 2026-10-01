@@ -390,6 +390,9 @@
         "messages.list",
         "messages.post",
         "messages.setCheckpoint",
+        "messages.remove",
+        "messages.drop",
+        "messages.send",
         "messages.search",
         "attachments.get",
         "channel.subscribe",
@@ -437,6 +440,7 @@
       "type": "string",
       "enum": [
         "message.created",
+        "message.changed",
         "channel.snapshot",
         "channel.synced",
         "conversation.updated",
@@ -2486,6 +2490,14 @@
               "default": false,
               "type": "boolean"
             },
+            "dropped": {
+              "default": false,
+              "type": "boolean"
+            },
+            "removed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -3077,6 +3089,14 @@
           "default": false,
           "type": "boolean"
         },
+        "dropped": {
+          "default": false,
+          "type": "boolean"
+        },
+        "removed": {
+          "default": false,
+          "type": "boolean"
+        },
         "checkpoint": {
           "type": "string"
         }
@@ -3124,6 +3144,9 @@
           "maximum": 9007199254740991
         },
         "includeRewound": {
+          "type": "boolean"
+        },
+        "includeDropped": {
           "type": "boolean"
         }
       },
@@ -3228,6 +3251,14 @@
                 "type": "boolean"
               },
               "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "dropped": {
+                "default": false,
+                "type": "boolean"
+              },
+              "removed": {
                 "default": false,
                 "type": "boolean"
               },
@@ -3434,6 +3465,14 @@
               "default": false,
               "type": "boolean"
             },
+            "dropped": {
+              "default": false,
+              "type": "boolean"
+            },
+            "removed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -3453,6 +3492,48 @@
       "required": [
         "message"
       ]
+    },
+    "MessagesDropParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "messageId"
+      ],
+      "additionalProperties": false
+    },
+    "MessagesRemoveParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "messageId"
+      ],
+      "additionalProperties": false
+    },
+    "MessagesSendParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "messageId"
+      ],
+      "additionalProperties": false
     },
     "MessagesSearchParams": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4238,6 +4319,14 @@
               "default": false,
               "type": "boolean"
             },
+            "dropped": {
+              "default": false,
+              "type": "boolean"
+            },
+            "removed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -4347,6 +4436,14 @@
                 "type": "boolean"
               },
               "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "dropped": {
+                "default": false,
+                "type": "boolean"
+              },
+              "removed": {
                 "default": false,
                 "type": "boolean"
               },
@@ -4858,6 +4955,14 @@
                     "default": false,
                     "type": "boolean"
                   },
+                  "dropped": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "removed": {
+                    "default": false,
+                    "type": "boolean"
+                  },
                   "checkpoint": {
                     "type": "string"
                   }
@@ -4967,6 +5072,14 @@
                       "type": "boolean"
                     },
                     "rewound": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "dropped": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "removed": {
                       "default": false,
                       "type": "boolean"
                     },
@@ -6328,6 +6441,145 @@
               "default": false,
               "type": "boolean"
             },
+            "dropped": {
+              "default": false,
+              "type": "boolean"
+            },
+            "removed": {
+              "default": false,
+              "type": "boolean"
+            },
+            "checkpoint": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "authorId",
+            "text",
+            "seq",
+            "createdAt",
+            "conversationId",
+            "authorKind"
+          ]
+        }
+      },
+      "required": [
+        "channelId",
+        "message"
+      ]
+    },
+    "MessageChangedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "authorId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "text": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "conversationId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "authorKind": {
+              "type": "string",
+              "enum": [
+                "user",
+                "employee",
+                "system"
+              ]
+            },
+            "attachments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sizeBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "mimeType",
+                  "sizeBytes"
+                ]
+              }
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "provider": {
+              "type": "string"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "fast": {
+              "type": "boolean"
+            },
+            "rewound": {
+              "default": false,
+              "type": "boolean"
+            },
+            "dropped": {
+              "default": false,
+              "type": "boolean"
+            },
+            "removed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -6450,6 +6702,14 @@
                 "type": "boolean"
               },
               "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "dropped": {
+                "default": false,
+                "type": "boolean"
+              },
+              "removed": {
                 "default": false,
                 "type": "boolean"
               },
