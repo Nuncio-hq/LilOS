@@ -53,6 +53,9 @@ export function waitingMessages(
   for (const turn of model?.turns ?? []) {
     const refSeq = turn.ref ? (seqById.get(turn.ref) ?? -1) : -1;
     for (const text of turn.steers) {
+      /* Only delivered rows can have landed — a still-waiting re-send of
+         the same text must not be mistaken for the landed steer (it would
+         be hidden without ever landing). */
       const hit = sorted.find(
         (m) =>
           m.authorKind === "user" &&
@@ -61,6 +64,7 @@ export function waitingMessages(
           !m.removed &&
           !m.rewound &&
           m.seq > refSeq &&
+          m.seq <= deliveredSeq &&
           m.text.trim() === text.trim(),
       );
       if (hit) hiddenIds.add(hit.id);

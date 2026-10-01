@@ -99,6 +99,20 @@ describe("#315 waitingMessages", () => {
     expect(out.waiting).toEqual([]);
   });
 
+  it("AC-2 an undelivered re-send of a steered text is not mistaken for the landed steer", () => {
+    /* Same text steered, then sent again while it still waits
+       (seq > deliveredSeq): only delivered rows can pair — the re-send
+       must stay in the tray, not hide as the landed copy. */
+    const prompt = msg({ id: "m1", seq: 1 });
+    const landed = msg({ id: "m2", seq: 2, text: "again" });
+    const resent = msg({ id: "m3", seq: 3, text: "again" });
+    const done = turn({ phase: "done", ref: "m1", steers: ["again"] });
+    const out = waitingMessages([prompt, landed, resent], 2, model([done]));
+    expect(out.hiddenIds.has("m2")).toBe(true);
+    expect(out.hiddenIds.has("m3")).toBe(true);
+    expect(out.waiting.map((w) => w.message.id)).toEqual(["m3"]);
+  });
+
   it("AC-3 a queued send that ran as the next prompt is a normal bubble, not waiting", () => {
     const prompt = msg({ id: "m1", seq: 1 });
     const next = msg({ id: "m2", seq: 2 });

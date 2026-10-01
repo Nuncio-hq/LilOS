@@ -257,6 +257,10 @@ export class RelayClient {
   private readonly watermarks = new Map<string, number>();
   private readonly catchingUp = new Set<string>();
   private readonly parked = new Map<string, AppMessage[]>();
+  /* `message.changed` frames held during a catchup: applied live they'd be
+     stomped by the in-flight `channel.snapshot`, which carries subscribe-
+     time rows (#315 — a Send right after reload lost its `dropped` flip). */
+  private readonly parkedChanged = new Map<string, AppMessage[]>();
   private readonly channelStates = new Map<
     string,
     WritableAtom<ChannelMessagesState>
@@ -623,6 +627,7 @@ export class RelayClient {
     this.subscribedChannels.delete(channelId);
     this.catchingUp.delete(channelId);
     this.parked.delete(channelId);
+    this.parkedChanged.delete(channelId);
     if (this.state.get() === "ready") {
       await this.request("channel.unsubscribe", { channelId });
     }
@@ -921,6 +926,7 @@ export class RelayClient {
     } catch (error) {
       this.catchingUp.delete(channelId);
       this.parked.delete(channelId);
+      this.parkedChanged.delete(channelId);
       throw error;
     }
   }
@@ -1103,16 +1109,15 @@ export class RelayClient {
         /* #315: dropped/removed flipped — same seq, so dispatchIfNewer can't
            carry it; replace the stored row in place. */
         const event = MessageChangedEvent.parse(params);
-        const store = this.channelStates.get(event.channelId);
-        const state = store?.get();
-        if (store && state?.messages.some((m) => m.id === event.message.id)) {
-          store.set({
-            ...state,
-            messages: state.messages.map((m) =>
-              m.id === event.message.id ? event.message : m,
-            ),
-          });
+        if (this.catchingUp.has(event.channelId)) {
+          /* Park like message.created: the in-flight snapshot's subscribe-
+             time rows would stomp the flag flip if it applied now. */
+          const list = this.parkedChanged.get(event.channelId) ?? [];
+          list.push(event.message);
+          this.parkedChanged.set(event.channelId, list);
+          return;
         }
+        this.applyMessageChanged(event.channelId, event.message);
         const summaries = this.conversationSummaries.get();
         if (
           event.message.conversationId &&
@@ -1151,6 +1156,11 @@ export class RelayClient {
         this.parked.delete(event.channelId);
         for (const message of parked) {
           this.dispatchIfNewer(event.channelId, message);
+        }
+        const parkedFlips = this.parkedChanged.get(event.channelId) ?? [];
+        this.parkedChanged.delete(event.channelId);
+        for (const message of parkedFlips) {
+          this.applyMessageChanged(event.channelId, message);
         }
         const wm = this.watermarks.get(event.channelId) ?? 0;
         if (event.lastSeq > wm)
@@ -1349,6 +1359,22 @@ export class RelayClient {
     }
   }
 
+  /* #315: a flag flip (`dropped`/`removed`) lands at the same seq, so it
+     replaces the stored row in place — or inserts in seq order when the
+     row isn't there (a changed event can beat the fetch that would have
+     carried it). */
+  private applyMessageChanged(channelId: string, message: AppMessage): void {
+    const store = this.channelStates.get(channelId);
+    const state = store?.get();
+    if (!store || !state) return;
+    store.set({
+      ...state,
+      messages: state.messages.some((m) => m.id === message.id)
+        ? state.messages.map((m) => (m.id === message.id ? message : m))
+        : [...state.messages, message].sort((a, b) => a.seq - b.seq),
+    });
+  }
+
   /** Drop a deleted channel: atom, per-channel message state, replay state. */
   private dropChannel(channelId: string): void {
     this.channels.set(this.channels.get().filter((c) => c.id !== channelId));
@@ -1377,6 +1403,7 @@ export class RelayClient {
     this.catchingUp.delete(channelId);
     this.watermarks.delete(channelId);
     this.parked.delete(channelId);
+    this.parkedChanged.delete(channelId);
     this.channelStates.get(channelId)?.set({
       channelId,
       synced: false,

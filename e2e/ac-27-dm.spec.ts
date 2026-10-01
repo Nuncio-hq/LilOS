@@ -420,6 +420,17 @@ test("#315 AC-5 Stop parks waiting sends in the not-sent tray; Send runs it late
   await expect(page.locator("[data-agentturn]")).toHaveCount(1);
   await page.screenshot({ path: `${SHOTS}/ac-315-not-sent.png` });
 
+  /* AC-6: the not-sent tray is relay state too — a reload shows the same
+     parked sends, in order, ready to Send. */
+  await page.reload();
+  const reparked = page.locator("[data-notsent]");
+  await expect(reparked.getByText(/first nudge/)).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(reparked.locator("li").nth(0)).toContainText(/first nudge/);
+  await expect(reparked.locator("li").nth(1)).toContainText(/second nudge/);
+  await page.screenshot({ path: `${SHOTS}/ac-315-not-sent-reload.png` });
+
   // Send runs the first parked item as a normal prompt — bubble + new turn.
   await page.locator('[data-notsent-send="0"]').click();
   const resent = page.locator("[data-agentturn]").nth(1);
@@ -489,21 +500,35 @@ test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it",
     await page.screenshot({ path: `${SHOTS}/ac-315-waiting-next.png` });
     await page.locator('[data-queued-remove="0"]').click();
     await expect(page.locator("[data-queued]")).toHaveCount(0);
-    const firstTurn = page.locator("[data-agentturn]").first();
-    await allowAllWhile(page, expectSettled(firstTurn));
-    // The removed message never became a turn or a bubble.
-    await expect(page.locator("[data-agentturn]")).toHaveCount(1);
-    await expect(
-      page.locator("[data-userturn]", { hasText: /never mind/i }),
-    ).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/ac-315-removed.png` });
 
-    // Queue-then-run: a second wait leaves the tray when the turn ends and
-    // bubbles below the previous answer, its own turn under it.
-    await send(page, "also mention bananas");
+    /* Edit moves a waiting send back into the composer (text returns, the
+       row is removed) — AC-4. Must run while the first turn is still parked
+       on its approval, or the "queued" send is really a fresh prompt that
+       only flashes through the tray. */
+    await send(page, "bananas are yellow");
+    await expect(tray.getByText(/bananas are yellow/)).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.locator('[data-queued-edit="0"]').click();
+    await expect(page.locator("[data-queued]")).toHaveCount(0);
+    const box = page.locator("textarea").last();
+    await expect(box).toHaveValue(/bananas are yellow/);
+    await box.fill("also mention bananas");
+    await box.press("Enter");
+    // The edited send queues again behind the same parked turn.
     await expect(tray.getByText(/also mention bananas/)).toBeVisible({
       timeout: 30_000,
     });
+
+    const firstTurn = page.locator("[data-agentturn]").first();
+    await allowAllWhile(page, expectSettled(firstTurn));
+    // The removed message never became a turn or a bubble.
+    await expect(
+      page.locator("[data-userturn]", { hasText: /never mind/i }),
+    ).toHaveCount(0);
+    // Queue-then-run: a second wait leaves the tray when the turn ends and
+    // bubbles below the previous answer, its own turn under it.
     const queuedTurn = page.locator("[data-agentturn]").nth(1);
     await allowAllWhile(page, expectSettled(queuedTurn));
     await expect(page.locator("[data-queued]")).toHaveCount(0);

@@ -1646,7 +1646,7 @@ describe("waiting tray (#315)", () => {
       }, "deliveredSeq past the steer");
       await expect(
         w.user.request("messages.remove", { messageId: mid.id }),
-      ).rejects.toThrow();
+      ).rejects.toThrow(/already delivered/);
     } finally {
       await w.cleanup();
     }

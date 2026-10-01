@@ -108,6 +108,10 @@ interface SessionBinding {
       seen), keyed by relay message id — a Stop drops these alongside the
       queue so nothing waiting can auto-run after it (#315). */
   steerPending: { messageId: string; text: string }[];
+  /** Grace window for stranded accepted steers (#315): scheduled when a
+     turn ends or an accepted steer lands after it — at fire time any
+     steerPending left parks in the not-sent tray via `messages.drop`. */
+  steerReconcileTimer?: ReturnType<typeof setTimeout>;
   /** Set when ■ Stop is requested until the next `turn.started` — the
       queue drain parks instead of prompting while it's on (#315). */
   stopRequested: boolean;
@@ -611,6 +615,8 @@ export class Harness {
       await this.updateConversation(binding.conversationId, {
         state: "idle",
       });
+      /* The turn vanished mid-run — pending steers can't land anymore. */
+      this.scheduleSteerReconcile(binding);
     }
     await this.postSystem(
       binding,
@@ -658,7 +664,12 @@ export class Harness {
       heldPick: undefined,
       heldPickPrev: undefined,
       promptGates: new Set(),
+      /* A dead session's stop mustn't park the live one, and its reconcile
+         timer dies with it (#315). */
+      stopRequested: false,
+      steerReconcileTimer: undefined,
     };
+    if (binding.steerReconcileTimer) clearTimeout(binding.steerReconcileTimer);
     this.bindings.set(binding.conversationId, rebound);
     this.conversationBySession.set(started.sessionId, binding.conversationId);
     // Idle, not active: a rebind with an empty queue has nothing running —
@@ -668,8 +679,30 @@ export class Harness {
       engineRef: started.sessionId,
       state: "idle",
     });
+    /* The old session is gone: an accepted-but-unlanded steer can never
+       land on the rebound session — park it in the not-sent tray
+       (#315 AC-5/AC-6). Same for the queue when a Stop had armed the
+       park: nothing waiting auto-runs after it. */
+    for (const pending of binding.steerPending.splice(0)) {
+      binding.consumed.delete(pending.messageId);
+      this.relayWrite(`drop steer ${pending.messageId}`, () =>
+        this.opts.relay.request("messages.drop", {
+          messageId: pending.messageId,
+        }),
+      );
+    }
     const queued = binding.queue.splice(0);
-    for (const message of queued) this.enqueueOrPrompt(rebound, message);
+    if (binding.stopRequested) {
+      binding.stopRequested = false;
+      for (const message of queued) {
+        binding.consumed.delete(message.id);
+        this.relayWrite(`drop queued ${message.id}`, () =>
+          this.opts.relay.request("messages.drop", { messageId: message.id }),
+        );
+      }
+    } else {
+      for (const message of queued) this.enqueueOrPrompt(rebound, message);
+    }
     this.mirrorMeta(rebound, conv);
   }
 
@@ -871,6 +904,9 @@ export class Harness {
                 messageId: message.id,
                 text: message.text,
               });
+              /* The steer can resolve after its turn ended: nothing will
+                 land it now — start the stranded-steer reconcile (#315). */
+              if (!binding.runningTurnId) this.scheduleSteerReconcile(binding);
             } else {
               // not_running: the turn ended between our check and the steer
               // (e.g. a Stop just landed). The engine consumed nothing — send
@@ -1315,6 +1351,10 @@ export class Harness {
         /* The stop window ends: this turn (prompted or engine-pumped) runs
            to completion — nothing queued or steer-pending is parked on it. */
         binding.stopRequested = false;
+        if (binding.steerReconcileTimer) {
+          clearTimeout(binding.steerReconcileTimer);
+          binding.steerReconcileTimer = undefined;
+        }
         if (event.payload.ref) {
           binding.consumed.add(event.payload.ref);
           binding.turnSource.set(event.payload.turnId, event.payload.ref);
@@ -2247,6 +2287,7 @@ export class Harness {
        engine's own queued steer/prompt that outlived the turn isn't
        stranded by a stale stop. */
     if (binding.stopRequested) {
+      binding.stopRequested = false;
       for (const pending of binding.steerPending.splice(0)) {
         binding.consumed.delete(pending.messageId);
         this.relayWrite(`drop steer ${pending.messageId}`, () =>
@@ -2263,8 +2304,34 @@ export class Harness {
       }
       return;
     }
+    /* An accepted steer that neither landed nor pumped as this turn's
+       replacement is stranded — give it a grace window, then drop it. */
+    this.scheduleSteerReconcile(binding);
     const next = binding.queue.shift();
     if (next) void this.sendPrompt(binding, next);
+  }
+
+  /* #315: an accepted steer (`session.steer` → `steered`) that neither
+     landed (`turn.steered`) nor pumped as the next turn's `ref` was
+     consumed but will never run — the user sees it "waiting" forever.
+     After a short grace for late events, park it in the not-sent tray
+     (`messages.drop`) so Oscar can Send it again. */
+  private scheduleSteerReconcile(binding: SessionBinding) {
+    if (binding.steerReconcileTimer) clearTimeout(binding.steerReconcileTimer);
+    binding.steerReconcileTimer = setTimeout(() => {
+      binding.steerReconcileTimer = undefined;
+      /* A new turn owns the pend list again — its `turn.steered` / `ref`
+         claims pair what the engine actually kept. */
+      if (binding.runningTurnId || !binding.steerPending.length) return;
+      for (const pending of binding.steerPending.splice(0)) {
+        binding.consumed.delete(pending.messageId);
+        this.relayWrite(`drop stranded steer ${pending.messageId}`, () =>
+          this.opts.relay.request("messages.drop", {
+            messageId: pending.messageId,
+          }),
+        );
+      }
+    }, 2000);
   }
 
   private unbind(binding: SessionBinding) {

@@ -508,17 +508,20 @@ export function DmPage() {
        fetch and now leaves its tail rows unmarked — drop them by seq. The
        rewind note and later messages only arrive through `messages` (the
        `conversation.rewound` event already pruned that store), so the seq
-       rule must not touch that source or it would hide the note. */
+       rule must not touch that source or it would hide the note.
+       Live rows merge FIRST: a flag flip (`dropped`/`removed`, #315
+       `message.changed`) arrives only through `messages`, and the stale
+       fetch copy of the same row must never outrank it. */
+    for (const m of messages) {
+      if (m.conversationId !== openConvId || seen.has(m.id) || m.rewound)
+        continue;
+      seen.add(m.id);
+      out.push(m);
+    }
     for (const m of threadMsgs) {
       if (m.conversationId !== openConvId || seen.has(m.id) || m.rewound)
         continue;
       if (rewoundFrom !== undefined && m.seq >= rewoundFrom) continue;
-      seen.add(m.id);
-      out.push(m);
-    }
-    for (const m of messages) {
-      if (m.conversationId !== openConvId || seen.has(m.id) || m.rewound)
-        continue;
       seen.add(m.id);
       out.push(m);
     }
