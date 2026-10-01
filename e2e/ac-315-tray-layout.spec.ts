@@ -313,13 +313,16 @@ test("tray text holds WCAG AA in dark and keeps its palette in light (#371)", as
   page,
 }) => {
   test.setTimeout(180_000);
-  const engine = await bootSteerlessEngine(wport(4650));
+  /* Ports: reuse literals already in the suite — every distinct wport
+     base must keep a unique residue mod 100 (ports.spec.ts), and all
+     100 residues are taken, so new literals are not an option. */
+  const engine = await bootSteerlessEngine(wport(4653));
   const stack = await bootStack(
     "traycontrast",
     {
-      relay: wport(4644),
-      feed: wport(4648),
-      web: wport(5242),
+      relay: wport(4643),
+      feed: wport(4647),
+      web: wport(5241),
     },
     { LILOS_ENGINE: "url", LILOS_ENGINE_URL: engine.url },
   );
