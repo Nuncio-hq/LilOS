@@ -340,9 +340,11 @@ export function Workbench({
     /* A reply mid-stream is skipped — grabbing a partial first line would
        land "feat:" in the box instead of the whole message (AC-2). */
     const r = replies.slice(suggestAt).find((r) => !human(r.from) && !r.live);
+    /* First real line, minus markdown dressing (a reply like
+       "> feat: foo" or "`feat: foo`" must land in the box usable). */
     const line = r?.text
       .split("\n")
-      .map((s) => s.trim())
+      .map((s) => s.trim().replace(/^>\s*/, "").replace(/^`|`$/g, "").trim())
       .find(Boolean);
     if (line) {
       setCommitMsg(line);
@@ -359,8 +361,6 @@ export function Workbench({
       else n.add(path);
       return n;
     });
-  const toggleAllFiles = (on: boolean) =>
-    setUnchecked(on ? new Set() : new Set(diffs.map((d) => d.path)));
   const shipErrorOf = (e: unknown): ShipError => {
     const d = (
       e as { data?: { reason?: ShipError["reason"]; detail?: string } }
@@ -419,7 +419,12 @@ export function Workbench({
         shipCall("pr", async () => {
           /* On the default branch the form supplied a new branch name —
              branch first (carrying the commits), then push, then create. */
-          if (p.branch && shipHas("git.createBranch") && host.createBranch) {
+          if (p.branch) {
+            if (!(shipHas("git.createBranch") && host.createBranch)) {
+              throw new Error(
+                "this host can't create branches — git.createBranch is not advertised",
+              );
+            }
             await host.createBranch(cwd, p.branch);
           }
           if (shipHas("git.push") && host.push) await host.push(cwd);
@@ -464,8 +469,6 @@ export function Workbench({
         busy: shipBusy,
         error: shipError,
         running: !!running,
-        onToggle: toggleFile,
-        onToggleAll: toggleAllFiles,
         onMessage: setCommitMsg,
         onSuggest,
         ...liveShip,
@@ -484,8 +487,6 @@ export function Workbench({
       error: shipError,
       running: !!running,
       accessory: ship.accessory,
-      onToggle: toggleFile,
-      onToggleAll: toggleAllFiles,
       onMessage: setCommitMsg,
       onSuggest: ship.onSuggest ?? onSuggest,
       onCommit: ship.onCommit

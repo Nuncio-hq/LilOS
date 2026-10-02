@@ -93,6 +93,24 @@ describe("git write methods (issue #107)", () => {
     expect(st.files.map((f) => f.path)).toEqual(["extra.txt"]);
   });
 
+  it("AC-1 git.commit never sweeps in files someone else already staged", async () => {
+    // The blocker a bare `git commit -m` had: the index may hold entries the
+    // agent's shell or the user's IDE staged — `--only` keeps them out.
+    writeFileSync(join(repo, "b.txt"), "bee\n");
+    inRepo(["add", "extra.txt"]); // staged out-of-band, NOT in the list
+    const r = (await callHost("git.commit", {
+      path: repo,
+      files: ["b.txt"],
+      message: "only b",
+    })) as CommitResult;
+    expect(r.subject).toBe("only b");
+    expect(inRepo(["show", "--name-status", "--format=", "HEAD"])).toBe(
+      "A\tb.txt\n",
+    );
+    // extra.txt is still staged, still uncommitted.
+    expect(inRepo(["status", "--porcelain"])).toBe("A  extra.txt\n");
+  });
+
   it("AC-1 git.commit refuses a '-'-leading path (argv never a flag)", async () => {
     await expect(
       callHost("git.commit", {
@@ -124,13 +142,14 @@ describe("git write methods (issue #107)", () => {
   it("AC-1 git.log lists the branch's commits vs its birth sha", async () => {
     const r = (await callHost("git.log", { path: repo })) as LogResult;
     expect(r.branch).toBe("feat/widgets");
-    // feat/widgets was born at trunk's tip — exactly its own two commits,
+    // feat/widgets was born at trunk's tip — exactly its own commits,
     // newest first (init on trunk is not in the range).
     expect(r.commits.map((c) => c.subject)).toEqual([
       "add keep",
+      "only b",
       "add the widget bits",
     ]);
-    const c = r.commits[1];
+    const c = r.commits[2];
     expect(c.sha).toMatch(/^[0-9a-f]{7,}$/);
     expect(c.files.map((f) => f.path).sort()).toEqual(["a.txt", "new.txt"]);
     expect(c.files.find((f) => f.path === "a.txt")?.status).toBe("modified");

@@ -627,8 +627,6 @@ export type ShipBar = {
 /** ShipBar callbacks — async ones are awaited; a rejection surfaces as the
     bar's error, so the app throws `{ reason?, detail? }`-shaped errors. */
 export type ShipHandlers = {
-  onToggle?: (path: string, checked: boolean) => void;
-  onToggleAll?: (checked: boolean) => void;
   onMessage?: (message: string) => void;
   /** Ask the agent for a one-line commit message — posts a normal user
       message; the engine's reply fills `message` (AC-2). */

@@ -54,6 +54,10 @@ const remoteOf = (cwd: string) =>
   gitOr(cwd, ["config", "--get", "remote.origin.url"]).then(
     (o) => o?.trim() || null,
   );
+/** First configured remote's *name* — the push target; repos don't always
+    call it `origin`. */
+const remoteNameOf = (cwd: string) =>
+  gitOr(cwd, ["remote"]).then((o) => o?.trim().split("\n")[0] || null);
 /** `origin/HEAD`'s short name — the remote's default branch (`main`), or
     null with no remote/no default. */
 const remoteDefaultOf = (cwd: string) =>
@@ -182,8 +186,10 @@ function gitWriteFailed(op: GitOp, e: unknown): HostError {
   });
 }
 
-/** `git add -A -- <files>` then `git commit -m <message>` (issue #107).
-    Stages only the listed paths — a checked-files commit, not `-am`. */
+/** `git add -A -- <files>` then `git commit --only -- <files>` (issue #107).
+    Stages only the listed paths and commits only them: `--only` keeps a
+    bare `git commit` from sweeping in files someone else already staged
+    (an agent's `git add`, an IDE). Never `-am`. */
 export async function gitCommit(params: {
   path: string;
   files: string[];
@@ -202,7 +208,14 @@ export async function gitCommit(params: {
     throw gitWriteFailed("commit", e);
   }
   try {
-    await git(root, ["commit", "-m", params.message]);
+    await git(root, [
+      "commit",
+      "--only",
+      "-m",
+      params.message,
+      "--",
+      ...params.files,
+    ]);
   } catch (e) {
     throw gitWriteFailed("commit", e);
   }
@@ -231,12 +244,12 @@ export async function gitPush(params: {
       { reason: "other", detail: "HEAD is detached" },
     );
   }
-  const remote = await remoteOf(root);
+  const remote = await remoteNameOf(root);
   if (!remote) {
     throw new HostError(
       HOST_ERRORS.GIT_FAILED,
-      "git push failed: no remote named 'origin' is configured",
-      { reason: "no-remote", detail: "remote.origin.url is not set" },
+      "git push failed: no remote is configured",
+      { reason: "no-remote", detail: "no remote is configured" },
     );
   }
   const upstream = await gitOr(root, [
@@ -248,7 +261,7 @@ export async function gitPush(params: {
     if (upstream) {
       await git(root, ["push"]);
     } else {
-      await git(root, ["push", "-u", "origin", branch]);
+      await git(root, ["push", "-u", remote, branch]);
     }
   } catch (e) {
     throw gitWriteFailed("push", e);

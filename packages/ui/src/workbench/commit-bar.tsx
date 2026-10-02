@@ -237,7 +237,7 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
                 size="sm"
                 data-shipsuggest
                 onClick={onSuggest}
-                disabled={busyWith}
+                disabled={busyWith || checked.length === 0}
                 title="Ask the agent for a one-line commit message"
               >
                 <SparklesIcon />
