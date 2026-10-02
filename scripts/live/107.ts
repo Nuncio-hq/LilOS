@@ -350,14 +350,11 @@ if (!stBranch.ok || stBranch.result.branch !== "live-107")
 out("PASS leg3 git.createBranch -> checked out live-107");
 
 // Leg 4: commit the checked files through the host — the tree goes clean.
-const commit = await hostCall<{ sha: string; subject: string }>(
-  "git.commit",
-  {
-    path: picked,
-    files: ["a.txt", "new.txt"],
-    message: "live leg: staged widget changes",
-  },
-);
+const commit = await hostCall<{ sha: string; subject: string }>("git.commit", {
+  path: picked,
+  files: ["a.txt", "new.txt"],
+  message: "live leg: staged widget changes",
+});
 if (!commit.ok) fail(`git.commit: ${commit.error.message}`);
 const stClean = await hostCall<Status>("git.status", { path: picked });
 if (!stClean.ok || stClean.result.files.length !== 0)
@@ -371,7 +368,9 @@ const push = await hostCall<{ branch: string | null; upstream: string | null }>(
 );
 if (!push.ok) fail(`git.push: ${push.error.message}`);
 if (push.result.upstream !== "origin/live-107")
-  fail(`git.push: expected upstream origin/live-107, got ${JSON.stringify(push.result)}`);
+  fail(
+    `git.push: expected upstream origin/live-107, got ${JSON.stringify(push.result)}`,
+  );
 const remoteHeads = execFileSync(
   "git",
   ["ls-remote", "--heads", "origin", "live-107"],
