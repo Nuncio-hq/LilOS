@@ -16,6 +16,7 @@ import { atom } from "nanostores";
 import { useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { decide } from "../asks";
+import { $demo, DEMO_MAC } from "../demo/lifecycle";
 import {
   ensureChannelSubscriptions,
   type HomeWire,
@@ -82,7 +83,11 @@ function useLiveChannels(
 }
 
 export function Home() {
-  const mac = useStore($connections)[0];
+  const demo = useStore($demo);
+  const paired = useStore($connections)[0];
+  /* In demo there is no Keychain pairing row — the world still has a Mac,
+     the fake DEMO_MAC (same seam Settings uses; never persisted). */
+  const mac = demo ? DEMO_MAC : paired;
   const link = useStore($link);
   const { client, wire } = useHomeWire();
   useLiveChannels(client, wire.channels);

@@ -239,9 +239,14 @@ function completeTurn(
     ...(script.usage ? { usage: script.usage } : {}),
   });
   client.emit(conv, "session.state", { state: "idle" });
-  if (script.text) {
+  /* The reply the relay posts for a turn is its WHOLE streamed answer —
+     mergeThreadEntries claims it by `turn.text === message.text`, so post
+     the accumulated text (pre-ask partial + branch continuation), not just
+     the closing script's, or the answer renders twice. */
+  const answer = turn.ctx.textSeen;
+  if (answer) {
     client.postMessage(conv.conv.channelId, {
-      text: script.text,
+      text: answer,
       authorId: employeeOf(client, conv),
       authorKind: "employee",
       conversationId: conv.conv.id,

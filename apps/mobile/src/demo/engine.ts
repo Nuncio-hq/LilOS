@@ -26,6 +26,10 @@ export type TurnCtx = {
   /** Tool-call id counter — persists across scripts so held/resumed turns
       never reuse an id the completed-steps lookup would merge wrongly. */
   calls?: number;
+  /** Text already streamed on this turn — a branch script played after an
+     ask resumes the same answer, so it needs the paragraph break a real
+     engine puts inside its own delta stream. */
+  textSeen?: string;
 };
 
 const WORD_MS = { reasoning: 38, text: 26 };
@@ -35,7 +39,15 @@ async function stream(
   streamName: "reasoning" | "text",
   body: string,
 ): Promise<void> {
-  const words = body.split(/(\s+)/).filter((w) => w.length > 0);
+  const head =
+    streamName === "text" &&
+    ctx.textSeen !== undefined &&
+    ctx.textSeen.length > 0 &&
+    !ctx.textSeen.endsWith("\n")
+      ? "\n\n"
+      : "";
+  const delta = head + body;
+  const words = delta.split(/(\s+)/).filter((w) => w.length > 0);
   for (const w of words) {
     ctx.emit("turn.delta", {
       turnId: ctx.turnId,
@@ -44,6 +56,7 @@ async function stream(
     });
     await ctx.delay(WORD_MS[streamName]);
   }
+  if (streamName === "text") ctx.textSeen = (ctx.textSeen ?? "") + delta;
 }
 
 function planUpdated(ctx: TurnCtx, plan: DemoPlan): void {
