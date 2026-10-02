@@ -270,23 +270,6 @@ function AppShell() {
               })),
             ),
           onOpenAsksChange: (fn) => sessionModels.subscribe(fn),
-          /* #400: done/failed the live frame dropped — re-evaluated from
-             the feeds themselves on every model or view change, so a
-             completion that landed in the zero-peer window of a page
-             reload still surfaces. */
-          completionEvents: () =>
-            relay.conversations.get().flatMap((c) => {
-              if (!c.engineRef) return [];
-              const events = engine
-                .sessionFeed(c.engineRef)
-                .get()
-                .events.filter(
-                  (e) =>
-                    e.type === "turn.completed" ||
-                    (e.type === "session.state" && e.payload.state === "error"),
-                );
-              return [{ sessionId: c.engineRef, events }];
-            }),
           openConversationId: () =>
             openConversationFromPath(router.state.location.pathname),
           inForeground: () =>

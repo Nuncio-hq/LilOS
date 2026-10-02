@@ -33,37 +33,18 @@ export function createFeedHandler(harness: Harness) {
   return createFeed(deps);
 }
 
-/* Frames held while no peer is attached. A page reload (or the beat
- * between a socket dropping and its replacement connecting) used to eat
- * whatever the engine emitted in the gap — the event was broadcast to
- * zero peers and gone for good, because replay only covers what a client
- * asks for and no client knew a seq was missing. #400: hold them and
- * flush into the first attach; the cap only matters on a dead feed, and
- * an overflow just falls back to the client's own resync path. */
-const HELD_FRAME_CAP = 1_000;
-
 export function createFeed(deps: FeedDeps) {
   const peers = new Set<(frame: string) => void>();
-  let held: string[] = [];
   const unsubscribe = deps.subscribeEngineEvents((event) => {
     const frame = JSON.stringify({
       jsonrpc: "2.0",
       method: "event",
       params: event,
     });
-    if (peers.size === 0) {
-      held.push(frame);
-      if (held.length > HELD_FRAME_CAP) held.shift();
-      return;
-    }
     for (const send of peers) send(frame);
   });
 
-  const attach = (send: (frame: string) => void) => {
-    peers.add(send);
-    for (const frame of held) send(frame);
-    held = [];
-  };
+  const attach = (send: (frame: string) => void) => peers.add(send);
   const detach = (send: (frame: string) => void) => peers.delete(send);
   const close = () => {
     peers.clear();

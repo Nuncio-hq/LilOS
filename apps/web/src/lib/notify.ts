@@ -134,40 +134,6 @@ export function openConversationFromPath(pathname: string): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
-/** Per-session seq record for the state-driven completion check. */
-export interface CompletionSeqStore {
-  /** Accounted seqs; `undefined` means the watcher has never seen the session. */
-  read(sessionId: string): readonly number[] | undefined;
-  write(sessionId: string, seqs: readonly number[]): void;
-}
-
-const COMPLETION_SEQS_KEY = "lilos:notifiedCompletions";
-
-/** sessionStorage-backed `completionSeqs` — survives a same-tab reload. */
-const defaultCompletionSeqs = (): CompletionSeqStore | undefined => {
-  if (typeof sessionStorage === "undefined") return undefined;
-  const readAll = (): Record<string, number[]> => {
-    try {
-      const raw = sessionStorage.getItem(COMPLETION_SEQS_KEY);
-      return raw ? (JSON.parse(raw) as Record<string, number[]>) : {};
-    } catch {
-      return {};
-    }
-  };
-  return {
-    read: (sessionId) => readAll()[sessionId],
-    write: (sessionId, seqs) => {
-      const all = readAll();
-      all[sessionId] = [...seqs];
-      try {
-        sessionStorage.setItem(COMPLETION_SEQS_KEY, JSON.stringify(all));
-      } catch {
-        /* quota or private mode — the in-page set still dedupes this mount. */
-      }
-    },
-  };
-};
-
 export interface WatchNotificationsOpts {
   /** Live engine frames only (never replayed events). */
   onEvent: (fn: (e: EngineEvent) => void) => () => void;
@@ -200,28 +166,6 @@ export interface WatchNotificationsOpts {
    * focus, visibility). Re-checks open asks against the new view.
    */
   onViewChange?: (fn: () => void) => () => void;
-  /**
-   * `turn.completed` + `session.state{error}` events per watched session —
-   * replayed feed state, not live frames. When provided (with
-   * `completionSeqs`), done/failed post from this set on every state or view
-   * change, so a completion that lost its live frame — a reload gap with
-   * zero feed peers, an in-view suppression, a late engineRef mapping past
-   * the retry — still surfaces once (#400: same recovery the #84 asks got).
-   * Sessions report with an empty list too — seeing a session before its
-   * first completion is what lets the seed tell history from missed-live.
-   */
-  completionEvents?: () => ReadonlyArray<{
-    sessionId: string;
-    events: readonly EngineEvent[];
-  }>;
-  /**
-   * Per-session record of completion seqs already accounted (posted or
-   * classified terminal like a cancelled turn). Persisted across a reload
-   * so a completion that missed its live frame is still "new" to the fresh
-   * page while replayed history stays silent. Defaults to sessionStorage
-   * when present; tests inject a plain store.
-   */
-  completionSeqs?: CompletionSeqStore;
   post: (n: DesktopNotification) => void;
   /**
    * The conversation gets its engineRef via a relay write that can land a
@@ -246,31 +190,6 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
   // Asks already posted, keyed by requestId — dedupes the live fast-path
   // against the state-driven check below.
   const postedAsks = new Set<string>();
-  /* Completion seqs already accounted this mount; the optional store
-     carries the same record across a reload. */
-  const handledSeqs = new Set<string>();
-  const seededSessions = new Set<string>();
-  const seqStore = opts.completionSeqs ?? defaultCompletionSeqs();
-
-  const seqSeen = (sessionId: string, seq: number): boolean =>
-    handledSeqs.has(`${sessionId}:${seq}`) ||
-    (seqStore?.read(sessionId)?.includes(seq) ?? false);
-
-  const recordSeq = (sessionId: string, seq: number): void => {
-    handledSeqs.add(`${sessionId}:${seq}`);
-    const cur = seqStore?.read(sessionId);
-    if (cur && !cur.includes(seq)) seqStore?.write(sessionId, [...cur, seq]);
-  };
-
-  const seeded = (sessionId: string): boolean =>
-    seededSessions.has(sessionId) || seqStore?.read(sessionId) !== undefined;
-
-  const seed = (sessionId: string, seqs: readonly number[]): void => {
-    seededSessions.add(sessionId);
-    for (const seq of seqs) handledSeqs.add(`${sessionId}:${seq}`);
-    if (seqStore && seqStore.read(sessionId) === undefined)
-      seqStore.write(sessionId, seqs);
-  };
 
   const inView = (conversationId: string) =>
     opts.openConversationId() === conversationId && opts.inForeground();
@@ -290,57 +209,6 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
       if (!n || inView(n.conversationId)) continue;
       postedAsks.add(a.requestId);
       opts.post(n);
-    }
-  };
-
-  /**
-   * Post every completion that is new and not in view. Driven by feed
-   * state (not the live stream) so a done/failed that missed its frame —
-   * emitted while the page had no feed peer, suppressed because its
-   * conversation was in view, or unmapped at the retry — re-evaluates on
-   * the next check instead of vanishing (#400). Seeding marks everything
-   * present at first sight of a session as history: only seqs no earlier
-   * mount accounted for ever post.
-   */
-  const checkCompletions = (): void => {
-    if (!opts.completionEvents) return;
-    const ctx = opts.context();
-    for (const { sessionId, events } of opts.completionEvents()) {
-      if (!seeded(sessionId)) {
-        seed(
-          sessionId,
-          events.map((e) => e.seq),
-        );
-        continue;
-      }
-      for (const e of events) {
-        if (seqSeen(sessionId, e.seq)) continue;
-        const n = notificationForEvent(e, ctx);
-        if (!n) {
-          /* Cancelled turns are terminal-quiet — account them so they never
-             re-evaluate. Any other null is an unmapped conversation: the
-             engineRef write can still land, so leave it for the next check. */
-          if (
-            e.type === "turn.completed" &&
-            e.payload.stopReason === "cancelled"
-          )
-            recordSeq(sessionId, e.seq);
-          continue;
-        }
-        /* In view right now: the thread renders the finished turn, so the
-           user is looking at the outcome — account it, don't post. (Asks
-           differ: still open, still owed — checkAsks leaves them pending.) */
-        if (inView(n.conversationId)) {
-          recordSeq(sessionId, e.seq);
-          continue;
-        }
-        if (dupFailed(n)) {
-          recordSeq(sessionId, e.seq);
-          continue;
-        }
-        recordSeq(sessionId, e.seq);
-        opts.post(n);
-      }
     }
   };
 
@@ -390,40 +258,25 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
               return;
             if (e.type === "request.opened")
               postedAsks.add(e.payload.requestId);
-            else recordSeq(e.sessionId, e.seq);
             if (!dupFailed(retry)) opts.post(retry);
           }, retryMs),
         );
       }
       return;
     }
-    if (inView(n.conversationId)) {
-      /* Watched it happen — a completion is accounted (the check never
-         reposts it on a later view change); an ask stays pending for
-         checkAsks since it is still open and still owed. */
-      if (e.type !== "request.opened") recordSeq(e.sessionId, e.seq);
-      return;
-    }
+    if (inView(n.conversationId)) return; // checkAsks owns asks
+    if (dupFailed(n)) return;
     if (e.type === "request.opened") {
       if (postedAsks.has(e.payload.requestId)) return;
       postedAsks.add(e.payload.requestId);
-    } else recordSeq(e.sessionId, e.seq); // delivered — the check never reposts
-    if (dupFailed(n)) return;
+    }
     opts.post(n);
   };
 
-  /* One state-driven pass over asks + completions — both recover what the
-     live stream dropped; asks need an open ask, completions an unaccounted
-     seq. */
-  const checkState = (): void => {
-    checkAsks();
-    checkCompletions();
-  };
-
   const unsub = opts.onEvent(deliver);
-  const unsubAsks = opts.onOpenAsksChange?.(checkState);
-  const unsubView = opts.onViewChange?.(checkState);
-  checkState();
+  const unsubAsks = opts.onOpenAsksChange?.(checkAsks);
+  const unsubView = opts.onViewChange?.(checkAsks);
+  checkAsks();
   return () => {
     unsub();
     unsubAsks?.();
