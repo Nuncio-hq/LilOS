@@ -199,6 +199,12 @@ export type ReasoningContentProps = ComponentProps<
 export const ReasoningContent = memo(
   ({ className, children, ...props }: ReasoningContentProps) => (
     <CollapsibleContent
+      /* #400: keep the folded reasoning in the DOM when closed —
+         unmounting at the settle animation's whim means the turn's text
+         silently leaves the page while its model still has it (the ac-27
+         AC-5b flake). `until-found` also lets in-page search expand the
+         block. It stays hidden — nothing renders or lays out differently. */
+      hiddenUntilFound
       className={cn(
         "mt-4 text-sm",
         "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",

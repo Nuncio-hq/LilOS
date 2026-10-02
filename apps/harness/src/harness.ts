@@ -236,6 +236,18 @@ export class Harness {
   private readonly modelPickQueue = new Map<string, Promise<void>>();
   private readonly conversationBySession = new Map<string, string>(); // sessionId -> convId
   private readonly rebinds = new Map<string, Promise<void>>(); // convId -> in-flight rebind
+  /* #400: a bind is a multi-await RPC chain (session.start + surfaces). Every
+     deliver inside that window must share ONE bind — two racing binds made
+     two engine sessions and the feed (keyed on engineRef, written last) only
+     ever showed one session's turns. The set is also the marker
+     onInterruptRequested reads before dropping a Stop fired mid-bind. */
+  private readonly binds = new Map<
+    string,
+    Promise<SessionBinding | undefined>
+  >();
+  /** Conversation ids whose Stop outran the first bind — fired at the
+      queued prompt's `turn.started`, when the engine has a turn to stop. */
+  private readonly pendingInterrupts = new Set<string>();
   /** engine requestId -> relay ask id (per session). */
   private readonly askByRequest = new Map<string, string>();
   private readonly requestByAsk = new Map<
@@ -1257,6 +1269,24 @@ export class Harness {
   ): Promise<SessionBinding | undefined> {
     const existing = this.bindings.get(conv.id);
     if (existing) return existing;
+    const inFlight = this.binds.get(conv.id);
+    if (inFlight) return inFlight;
+    const pending = this.bindConversation(conv, channelId).finally(() => {
+      this.binds.delete(conv.id);
+      /* A parked Stop is moot when the bind produced nothing to stop — drop
+         it instead of interrupting whatever turn the next bind creates. */
+      if (!this.bindings.has(conv.id)) this.pendingInterrupts.delete(conv.id);
+    });
+    this.binds.set(conv.id, pending);
+    return pending;
+  }
+
+  private async bindConversation(
+    conv: Conversation,
+    channelId: string,
+  ): Promise<SessionBinding | undefined> {
+    const existing = this.bindings.get(conv.id);
+    if (existing) return existing;
     const conn = this.engine;
     if (!conn) return undefined;
 
@@ -1421,6 +1451,24 @@ export class Harness {
         if (binding.steerReconcileTimer) {
           clearTimeout(binding.steerReconcileTimer);
           binding.steerReconcileTimer = undefined;
+        }
+        /* #400: a Stop fired while this turn's bind was still in its awaits
+           parked on `pendingInterrupts` — fire it now that the turn exists
+           (the engine acks interrupted:true instead of dropping it). */
+        if (convId && this.pendingInterrupts.delete(convId)) {
+          this.opts.log.info("interrupt requested", {
+            conversationId: convId,
+          });
+          binding.stopRequested = true;
+          const conn = this.engine;
+          if (conn)
+            void conn
+              .request("interrupt", { sessionId: binding.sessionId })
+              .catch((e) =>
+                this.opts.log.warn("parked interrupt failed", {
+                  error: String(e),
+                }),
+              );
         }
         if (event.payload.ref) {
           binding.consumed.add(event.payload.ref);
@@ -2092,7 +2140,15 @@ export class Harness {
 
   private async onInterruptRequested(conversationId: string) {
     const binding = this.bindings.get(conversationId);
-    if (!binding) return;
+    if (!binding) {
+      /* #400: the first bind is mid-flight — the UI already reads Running
+         off the send-pending marker, so a Stop here is real, not stray.
+         Park it; the queued prompt's `turn.started` fires it, when the
+         engine actually has a turn to cancel. */
+      if (this.binds.has(conversationId))
+        this.pendingInterrupts.add(conversationId);
+      return;
+    }
     this.opts.log.info("interrupt requested", { conversationId });
     /* #315 AC-5: park everything still waiting while the stop propagates —
        even a queue item behind a sendPrompt gate must drop rather than

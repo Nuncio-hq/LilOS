@@ -370,6 +370,29 @@ export class EngineClient {
       /* snapshot updated lazily below */
     }
     feed.set(next);
+    /* #400: a skipped seq means this socket missed a window while connected
+       (attach lag, a hiccup in the live broadcast) — the feed's open
+       requests / turn text / completions now have a hole nothing re-reads
+       until the next reconnect. Refetch it instead of stalling forever. */
+    if (
+      state.synced &&
+      event.seq > state.coverageSeq + 1 &&
+      this.state.get() === "ready"
+    )
+      this.resyncFeedOnce(feed);
+  }
+
+  /* One refetch per feed at a time — a stalled run of live events queues
+     no pile of overlapping events.since calls; whichever lands last covers
+     the newest gap. */
+  private readonly resyncInFlight = new Set<WritableAtom<SessionFeedState>>();
+
+  private resyncFeedOnce(feed: WritableAtom<SessionFeedState>): void {
+    if (this.resyncInFlight.has(feed)) return;
+    this.resyncInFlight.add(feed);
+    void this.resyncFeed(feed)
+      .catch(() => {})
+      .finally(() => this.resyncInFlight.delete(feed));
   }
 
   private async resyncFeeds(): Promise<void> {
