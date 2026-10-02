@@ -156,4 +156,33 @@ export const hostAccessors = {
   osEditors: () => host<{ editors: OsEditor[] }>("os.editors", {}).then((r) => r.editors),
   osOpen: (cwd: string, path: string, app: OsApp, line?: number) =>
     host<Record<string, never>>("os.open", { root: cwd, path, app, line }).then(() => undefined),
+  /* Issue #107: the same git-write/forge surface the real app wires — the
+     prototype drives the ship bar on mock handlers instead (App.tsx), but a
+     live folder browsed here answers for real. */
+  methods: () =>
+    host<{ methods: string[] }>("host.describe")
+      .then((r) => new Set(r.methods))
+      .catch(() => new Set<string>()),
+  status: (cwd: string) =>
+    host<{ branch: string | null; clean: boolean; files: { path: string; status: string; origPath?: string }[] }>(
+      "git.status", { path: cwd },
+    ).catch(() => null),
+  branches: (cwd: string) =>
+    host<{ current: string | null; branches: string[]; remote: string | null; default: string | null }>(
+      "git.branches", { path: cwd },
+    ).catch(() => null),
+  log: (cwd: string) =>
+    host<{ commits: { sha: string; subject: string; files: { path: string; status: Diff["status"]; add: number; del: number }[] }[] }>(
+      "git.log", { path: cwd },
+    )
+      .then((r) => r.commits.map((c) => ({ hash: c.sha, message: c.subject, files: c.files })))
+      .catch(() => null),
+  commit: (cwd: string, files: string[], message: string) =>
+    host<Record<string, never>>("git.commit", { path: cwd, files, message }).then(() => undefined),
+  push: (cwd: string) =>
+    host<Record<string, never>>("git.push", { path: cwd }).then(() => undefined),
+  createBranch: (cwd: string, name: string) =>
+    host<Record<string, never>>("git.createBranch", { path: cwd, name }).then(() => undefined),
+  prCreate: (cwd: string, pr: { title: string; body: string; base?: string }) =>
+    host<{ url: string }>("forge.create", { path: cwd, ...pr }).then((r) => r.url),
 }

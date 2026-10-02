@@ -2,6 +2,8 @@ import { type ZodType, z } from "zod";
 import {
   ForgeCommentParams,
   ForgeCommentResult,
+  ForgeCreateParams,
+  ForgeCreateResult,
   ForgeMergeParams,
   ForgeMergeResult,
   ForgePrParams,
@@ -24,12 +26,20 @@ import {
 import {
   GitBranchesParams,
   GitBranchesResult,
+  GitCommitParams,
+  GitCommitResult,
+  GitCreateBranchParams,
+  GitCreateBranchResult,
   GitDiffParams,
   GitDiffResult,
   GitDiscoverParams,
   GitDiscoverResult,
   GitIsRepoParams,
   GitIsRepoResult,
+  GitLogParams,
+  GitLogResult,
+  GitPushParams,
+  GitPushResult,
   GitStatusParams,
   GitStatusResult,
   GitWorktreesParams,
@@ -106,6 +116,26 @@ export const HOST_METHODS = {
     result: GitStatusResult,
     doc: "Working-tree status (tracked changes + untracked files).",
   },
+  "git.commit": {
+    params: GitCommitParams,
+    result: GitCommitResult,
+    doc: "Stage the listed paths (`git add -A --`) and commit them with the message — argv only, never a shell.",
+  },
+  "git.push": {
+    params: GitPushParams,
+    result: GitPushResult,
+    doc: "Push the current branch to origin; sets `-u` on the first push. Never force, amend or rebase.",
+  },
+  "git.createBranch": {
+    params: GitCreateBranchParams,
+    result: GitCreateBranchResult,
+    doc: "Create + check out a branch (`check-ref-format` validated; fails when the name exists).",
+  },
+  "git.log": {
+    params: GitLogParams,
+    result: GitLogResult,
+    doc: "Commits on the branch vs a base (fork point → remote default → upstream → local main; whole history when none).",
+  },
   "git.diff": {
     params: GitDiffParams,
     result: GitDiffResult,
@@ -130,6 +160,11 @@ export const HOST_METHODS = {
     params: ForgePrsParams,
     result: ForgePrsResult,
     doc: "Every PR for the checkout's branch(es) via `gh pr list` — badge facts + CI rollup (#159).",
+  },
+  "forge.create": {
+    params: ForgeCreateParams,
+    result: ForgeCreateResult,
+    doc: "Open a PR for the checkout's branch via `gh pr create` — the signed-in user's auth, no stored token.",
   },
   "forge.comment": {
     params: ForgeCommentParams,
