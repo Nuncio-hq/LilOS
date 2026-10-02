@@ -1,4 +1,5 @@
 import { AppState, type AppStateStatus } from "react-native";
+import { $demo } from "./demo/lifecycle";
 import { $client, $link } from "./link";
 import { nav, type Routes } from "./routes";
 
@@ -54,7 +55,8 @@ const report = (conversationId: string | null) => {
   if (conversationId === reported && reportedSent) return;
   reported = conversationId;
   const client = $client.get();
-  if (!client || $link.get() !== "online") {
+  /* The demo shows an online link but has no pushes to suppress — skip. */
+  if (!client || $link.get() !== "online" || $demo.get()) {
     /* Not connected: remember the intent so coming online re-reports. */
     reportedSent = false;
     return;

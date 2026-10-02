@@ -5,14 +5,18 @@ import {
   PairingExchangeFailed,
 } from "@lilos/client-runtime";
 import {
+  AppText,
   ConnectedScreen,
   ConnectingScreen,
   type ConnectingState,
+  DemoBadge,
   MacSheet,
   ManualCodeScreen,
   PairIntroScreen,
   parsePairingUrl,
+  Row,
   ScanScreen,
+  Section,
   SettingsScreen,
   useThemeColor,
   WelcomeScreen,
@@ -36,11 +40,18 @@ import * as Device from "expo-device";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Alert, useColorScheme, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import logo from "../assets/logo.png";
 import { directoryCache } from "./cache";
+import { $demo, DEMO_MAC, enterDemo, exitDemo } from "./demo/lifecycle";
 import { openAsks } from "./home-model";
 import {
   $latencyMs,
@@ -51,6 +62,7 @@ import {
   startLink,
   stopLink,
 } from "./link";
+import { NetSpyBadge } from "./netspy-badge";
 import {
   $connections,
   $pairNotice,
@@ -91,13 +103,23 @@ const Tab = createNativeBottomTabNavigator<TabRoutes>();
 
 // ── Onboarding ──────────────────────────────────────────────────────────────
 
+/* After `exitDemo` the nav tree remounts on Welcome; this flag makes the
+   "Connect your Mac" row continue straight into pairing (#168 AC-4). */
+let pendingPairNav = false;
+
 function Welcome({ navigation }: Props<"Welcome">) {
   const notice = useStore($pairNotice);
+  useEffect(() => {
+    if (!pendingPairNav) return;
+    pendingPairNav = false;
+    navigation.navigate("Pair");
+  }, [navigation]);
   return (
     <WelcomeScreen
       logo={logo}
       notice={notice}
       onStart={() => navigation.navigate("Pair")}
+      onDemo={() => void enterDemo()}
     />
   );
 }
@@ -270,6 +292,7 @@ function Connected() {
 function Settings() {
   const mac = useStore($connections)[0];
   const link = useStore($link);
+  const demo = useStore($demo);
   return (
     <SettingsScreen
       title="Settings"
@@ -285,20 +308,42 @@ function Settings() {
         ),
       }}
       mac={
-        mac && {
-          name: mac.name,
-          host: mac.host,
-          routeLabel: ROUTE_LABEL[mac.route],
-          link,
-        }
+        demo
+          ? { name: DEMO_MAC.name, host: DEMO_MAC.host, routeLabel: "demo" }
+          : mac && {
+              name: mac.name,
+              host: mac.host,
+              routeLabel: ROUTE_LABEL[mac.route],
+              link,
+            }
       }
       /* The row's status dot follows the live link; a tap opens the Mac
-         sheet where Forget now lives (#247). */
-      onOpenMac={() => nav.navigate("Mac")}
-      onForget={confirmForget}
+         sheet where Forget now lives (#247). In demo there is no real Mac —
+         the sheet (and its Forget, which deletes the real Keychain) stays
+         unreachable. */
+      onOpenMac={demo ? undefined : () => nav.navigate("Mac")}
+      onForget={demo ? () => {} : confirmForget}
     >
-      {/* #161: the four push kinds + iOS-permission state (AC-6). */}
-      <PushSettingsSection />
+      {demo ? (
+        <Section title="Demo">
+          <Row
+            onPress={() => {
+              pendingPairNav = true;
+              exitDemo();
+            }}
+          >
+            <AppText weight="medium">Connect your Mac</AppText>
+          </Row>
+          <Row onPress={() => exitDemo()}>
+            <AppText tone="destructive" weight="medium">
+              Exit demo
+            </AppText>
+          </Row>
+        </Section>
+      ) : (
+        /* #161: the four push kinds + iOS-permission state (AC-6). */
+        <PushSettingsSection />
+      )}
     </SettingsScreen>
   );
 }
@@ -448,15 +493,42 @@ function confirmForget() {
 // ── App shell ───────────────────────────────────────────────────────────────
 
 /* lilos://pair?host=…#code=… from the iOS Camera app jumps straight to
-   Connecting while onboarding — same validation as an in-app scan. */
+   Connecting while onboarding — same validation as an in-app scan. A link
+   that lands during the demo exits it first (#168 AC-4: pairing a real Mac
+   wins over the demo). */
 function useDeepLinks(phase: string) {
   const url = Linking.useLinkingURL();
   useEffect(() => {
     if (!url) return;
     const offer = parsePairingUrl(url);
-    if (offer && phase === "onboarding" && nav.isReady())
-      nav.navigate("Connecting", { offer });
+    if (!offer || !nav.isReady()) return;
+    /* Exiting flips the phase, which refires this effect on the fresh
+       onboarding nav tree. */
+    if ($demo.get()) return exitDemo();
+    if (phase === "onboarding") nav.navigate("Connecting", { offer });
   }, [url, phase]);
+}
+
+/* screenLayout functions are invoked inside the navigator's own render —
+   they can't call hooks. Gating on $demo has to happen in a mounted child
+   component, never in the layout body itself. */
+function DemoBadgeIfDemo({ variant }: { variant?: "top" | "sheet" }) {
+  const demo = useStore($demo);
+  return demo ? <DemoBadge variant={variant} /> : null;
+}
+
+/* #168 AC-4: the root Demo pill sits in an overlay above the navigator,
+   but iOS form sheets present a new window on top of it — so sheet screens
+   mount the badge inside their own screenLayout (which replaces the
+   navigator's, so the dev net chip gets re-mounted here too). */
+function DemoSheetChrome({ children }: { children: ReactNode }) {
+  return (
+    <View className="flex-1">
+      {children}
+      <DemoBadgeIfDemo variant="sheet" />
+      {__DEV__ && <NetSpyBadge />}
+    </View>
+  );
 }
 
 const MAC_SHEET: NativeStackNavigationOptions = {
@@ -510,6 +582,7 @@ function useNavTheme(): Theme {
 
 export default function App() {
   const phase = useStore($phase);
+  const demo = useStore($demo);
   const theme = useNavTheme();
   const scheme = useColorScheme();
   const [booted, setBooted] = useState(false);
@@ -542,108 +615,137 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style={scheme === "dark" ? "light" : "dark"} />
       <NavigationContainer ref={nav} theme={theme}>
-        <Stack.Navigator
-          key={phase}
-          screenOptions={{
-            headerShadowVisible: false,
-            headerBackButtonDisplayMode: "minimal",
-          }}
-        >
-          {phase === "onboarding" ? (
-            <>
-              <Stack.Screen
-                name="Welcome"
-                component={Welcome}
-                options={{ headerShown: false }}
-              />
-              <Stack.Screen
-                name="Pair"
-                component={Pair}
-                options={{ title: "" }}
-              />
-              <Stack.Screen
-                name="Scan"
-                component={Scan}
-                options={{
-                  title: "",
-                  headerTransparent: true,
-                  headerTintColor: "#ffffff",
-                }}
-              />
-              <Stack.Screen
-                name="Manual"
-                component={Manual}
-                options={{ title: "" }}
-              />
-              <Stack.Screen
-                name="Connecting"
-                component={Connecting}
-                options={{ title: "" }}
-              />
-              <Stack.Screen
-                name="Connected"
-                component={Connected}
-                options={{
-                  title: "",
-                  headerBackVisible: false,
-                  gestureEnabled: false,
-                }}
-              />
-            </>
-          ) : (
-            <>
-              <Stack.Screen
-                name="Tabs"
-                component={Tabs}
-                options={{ headerShown: false }}
-              />
-              <Stack.Screen name="Mac" component={Mac} options={MAC_SHEET} />
-              <Stack.Screen name="Dm" component={Dm} options={CHAT_HEADER} />
-              <Stack.Screen
-                name="Thread"
-                component={Thread}
-                options={CHAT_HEADER}
-              />
-              <Stack.Screen
-                name="ThreadInfo"
-                component={ThreadInfo}
-                options={SHEET}
-              />
-              <Stack.Screen name="Plan" component={Plan} options={SHEET} />
-              <Stack.Screen
-                name="Subagent"
-                component={Subagent}
-                options={SHEET}
-              />
-              <Stack.Screen
-                name="Subagents"
-                component={Subagents}
-                options={SHEET}
-              />
-              <Stack.Screen
-                name="Background"
-                component={Background}
-                options={SHEET}
-              />
-              <Stack.Screen name="WbDiff" component={WbDiff} options={SHEET} />
-              <Stack.Screen
-                name="FolderPicker"
-                component={FolderPicker}
-                options={SHEET}
-              />
-              <Stack.Screen
-                name="BrowseMac"
-                component={BrowseMac}
-                options={SHEET}
-              />
-              <Stack.Screen
-                name="ModelPicker"
-                component={ModelPicker}
-                options={SHEET}
-              />
-            </>
-          )}
-        </Stack.Navigator>
+        <View className="flex-1">
+          <Stack.Navigator
+            key={phase}
+            screenOptions={{
+              headerShadowVisible: false,
+              headerBackButtonDisplayMode: "minimal",
+            }}
+            /* #168 AC-6 evidence: the dev-only net counter floats on every
+             screen — one mount covers stacks, tabs and form sheets alike.
+             The Demo pill lives in the root overlay instead so it can sit
+             in the top safe-area band above native headers. */
+            screenLayout={({ children }) => (
+              <View className="flex-1">
+                {children}
+                {__DEV__ && <NetSpyBadge />}
+              </View>
+            )}
+          >
+            {phase === "onboarding" ? (
+              <>
+                <Stack.Screen
+                  name="Welcome"
+                  component={Welcome}
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen
+                  name="Pair"
+                  component={Pair}
+                  options={{ title: "" }}
+                />
+                <Stack.Screen
+                  name="Scan"
+                  component={Scan}
+                  options={{
+                    title: "",
+                    headerTransparent: true,
+                    headerTintColor: "#ffffff",
+                  }}
+                />
+                <Stack.Screen
+                  name="Manual"
+                  component={Manual}
+                  options={{ title: "" }}
+                />
+                <Stack.Screen
+                  name="Connecting"
+                  component={Connecting}
+                  options={{ title: "" }}
+                />
+                <Stack.Screen
+                  name="Connected"
+                  component={Connected}
+                  options={{
+                    title: "",
+                    headerBackVisible: false,
+                    gestureEnabled: false,
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <Stack.Screen
+                  name="Tabs"
+                  component={Tabs}
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen name="Dm" component={Dm} options={CHAT_HEADER} />
+                <Stack.Screen
+                  name="Thread"
+                  component={Thread}
+                  options={CHAT_HEADER}
+                />
+                {/* iOS form sheets present above the root overlay, so the
+                    Demo pill mounts inside each of them here (the net chip
+                    too — a group's screenLayout replaces the navigator's). */}
+                <Stack.Group screenLayout={DemoSheetChrome}>
+                  <Stack.Screen
+                    name="Mac"
+                    component={Mac}
+                    options={MAC_SHEET}
+                  />
+                  <Stack.Screen
+                    name="ThreadInfo"
+                    component={ThreadInfo}
+                    options={SHEET}
+                  />
+                  <Stack.Screen name="Plan" component={Plan} options={SHEET} />
+                  <Stack.Screen
+                    name="Subagent"
+                    component={Subagent}
+                    options={SHEET}
+                  />
+                  <Stack.Screen
+                    name="Subagents"
+                    component={Subagents}
+                    options={SHEET}
+                  />
+                  <Stack.Screen
+                    name="Background"
+                    component={Background}
+                    options={SHEET}
+                  />
+                  <Stack.Screen
+                    name="WbDiff"
+                    component={WbDiff}
+                    options={SHEET}
+                  />
+                  <Stack.Screen
+                    name="FolderPicker"
+                    component={FolderPicker}
+                    options={SHEET}
+                  />
+                  <Stack.Screen
+                    name="BrowseMac"
+                    component={BrowseMac}
+                    options={SHEET}
+                  />
+                  <Stack.Screen
+                    name="ModelPicker"
+                    component={ModelPicker}
+                    options={SHEET}
+                  />
+                </Stack.Group>
+              </>
+            )}
+          </Stack.Navigator>
+          {/* #168 AC-4: Demo pill in the top safe-area band, above every
+             screen and native header (form sheets mount their own copy —
+             see DemoSheetChrome). */}
+          {demo && <DemoBadge />}
+        </View>
       </NavigationContainer>
     </SafeAreaProvider>
   );

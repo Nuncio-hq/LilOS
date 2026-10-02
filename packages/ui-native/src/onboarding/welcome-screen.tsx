@@ -10,15 +10,32 @@ export function WelcomeScreen({
   logo,
   notice,
   onStart,
+  onDemo,
 }: {
   logo: ImageSourcePropType;
   /** Shown when onboarding re-appears for a reason (e.g. the Mac removed
       this phone) — plain sentence above the intro. */
   notice?: string;
   onStart: () => void;
+  /** "Try the demo" (#168) — the offline world under the primary CTA. */
+  onDemo?: () => void;
 }) {
   return (
-    <Screen footer={<Button label="Get started" onPress={onStart} />}>
+    <Screen
+      footer={
+        <View className="gap-3">
+          <Button label="Connect your Mac" onPress={onStart} />
+          {onDemo && (
+            <Button
+              label="Try the demo"
+              variant="secondary"
+              icon="play.circle"
+              onPress={onDemo}
+            />
+          )}
+        </View>
+      }
+    >
       <View className="flex-1 justify-center gap-8 pb-10">
         <Image
           source={logo}

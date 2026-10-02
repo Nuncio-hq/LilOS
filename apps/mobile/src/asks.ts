@@ -1,4 +1,4 @@
-import { type RelayClient, RelayError } from "@lilos/client-runtime";
+import { type AppClient, RelayError } from "@lilos/client-runtime";
 import type { Ask } from "@lilos/contracts/app";
 import type { ApprovalOutcome } from "@lilos/contracts/engine";
 import * as Haptics from "expo-haptics";
@@ -31,8 +31,8 @@ export function askOutcome(
   return "cancel";
 }
 
-/** The wire shape decide needs — a RelayClient satisfies it. */
-export type DecideClient = Pick<RelayClient, "request" | "asks">;
+/** The wire shape decide needs — an AppClient satisfies it. */
+export type DecideClient = Pick<AppClient, "request" | "asks">;
 
 const inFlight = new Set<string>();
 
