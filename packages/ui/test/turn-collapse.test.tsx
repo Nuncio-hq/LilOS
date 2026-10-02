@@ -55,8 +55,13 @@ const agent = (id: string, status: Subagent["status"]): Subagent => ({
   result: status === "done" ? `result-${id}` : undefined,
 });
 
-const panel = (container: HTMLElement) =>
-  container.querySelector('[data-slot="collapsible-content"]');
+/* A collapsed panel may stay mounted under `hidden="until-found"` so
+   find-in-page can reveal folded content (#400 reasoning) — only a mounted
+   AND unhidden panel counts as open. */
+const panel = (container: HTMLElement) => {
+  const el = container.querySelector('[data-slot="collapsible-content"]');
+  return el && !el.hasAttribute("hidden") ? el : null;
+};
 
 function triggerOf(container: HTMLElement) {
   const trigger = container.querySelector('[data-slot="collapsible-trigger"]');

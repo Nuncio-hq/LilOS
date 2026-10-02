@@ -24,6 +24,9 @@ export interface FakeSubagent {
   /** #309: an async delegate — the helper's subagent.completed lands after
       the parent's turn.completed, not inside the delegate step. */
   outlivesTurn?: boolean;
+  /** #400: the close waits for the next turn intake instead of a tick — a
+      test releases it with a follow-up prompt rather than racing a window. */
+  holdClose?: boolean;
   steps: FakeStep[];
   result?: string;
   durationMs?: number;
@@ -429,6 +432,13 @@ ${tail}`,
        delegation). */
     if (/\bLILOS_DELEGATE_ASYNC\b/i.test(prompt))
       helpers[0].outlivesTurn = true;
+    /* #400: LILOS_DELEGATE_ASYNC_HOLD is the same async helper, but its
+       close is held until the next prompt reaches the engine — the test
+       releases it instead of racing a tick window. */
+    if (/\bLILOS_DELEGATE_ASYNC_HOLD\b/i.test(prompt)) {
+      helpers[0].outlivesTurn = true;
+      helpers[0].holdClose = true;
+    }
     return {
       reasoning: `Three separable reads. Fan out helpers and fold their reports back.`,
       steps: [
