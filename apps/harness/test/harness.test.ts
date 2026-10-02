@@ -1530,6 +1530,62 @@ describe("interrupt ordering (#274)", () => {
       await w.cleanup();
     }
   });
+
+  it("#400 AC-1 a Stop fired while the first bind is mid-flight lands on the turn", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      /* Hold the engine's session.start: the first bind parks inside its
+         RPC window — where a real engine's start costs tens-hundreds of ms
+         — so the Stop arrives while `bindingFor` is still awaiting and
+         `bindings` has nothing yet (ac-104 AC-4, ac-27 AC-5b on a slow
+         runner: the request used to hit `!binding` and vanish). */
+      let releaseStart!: () => void;
+      let startEntered = false;
+      const held = new Promise<void>((r) => (releaseStart = r));
+      const orig = w.engineConn.request.bind(w.engineConn);
+      w.engineConn.request = <T = unknown>(
+        method: string,
+        params?: unknown,
+      ): Promise<T> => {
+        if (method === "session.start" && !startEntered) {
+          startEntered = true;
+          return held.then(() => orig<T>(method, params));
+        }
+        return orig<T>(method, params);
+      };
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+      });
+      await waitFor(
+        () => (startEntered ? true : undefined),
+        "bind inside session.start",
+      );
+      await w.user.request("turns.interrupt", {
+        conversationId: conversation.id,
+      });
+      releaseStart();
+      /* The parked Stop fires at the turn's start — the engine sees
+         prompt → interrupt, never the request silently dropped. */
+      const methods = await waitFor(() => {
+        const m = w.engineCalls.map((c) => c.method);
+        return m.includes("prompt") && m.includes("interrupt") ? m : undefined;
+      }, "prompt and interrupt on the engine conn");
+      expect(methods.indexOf("prompt")).toBeLessThan(
+        methods.indexOf("interrupt"),
+      );
+      const stopped = await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.text === "Stopped.");
+      }, "Stopped. note");
+      expect(stopped).toBeTruthy();
+    } finally {
+      await w.cleanup();
+    }
+  });
 });
 
 /* #315 — the waiting tray's engine-side contract. Remove on a queued

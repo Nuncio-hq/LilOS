@@ -276,7 +276,13 @@ test("AC-1 a delegate turn shows one live row per helper; opening a row shows br
   test.setTimeout(180_000);
   await openDefault(page);
   await pickSessionFolder(page, repoDir);
-  await send(page, "delegate the relay scan to subagents");
+  /* `LILOS_DELEGATE_ASYNC_HOLD` (#400): the first helper's close is held
+     until the next prompt — a live row is still there whenever this test
+     looks, instead of hoping to catch it mid-turn on a loaded runner. */
+  await send(
+    page,
+    "delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
+  );
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
 
   /* #317: in Focus the turn shows one "N subagents · Open" link; the rows live
@@ -300,16 +306,32 @@ test("AC-1 a delegate turn shows one live row per helper; opening a row shows br
     timeout: 60_000,
   });
 
-  // The turn finishes: exactly one row per helper — two done, one failed.
+  // Exactly one row per helper. Two closed inside the turn — one done, one
+  // failed — while the held helper is still Running (#400).
   await expect(replayed.locator("[data-subagent]")).toHaveCount(3, {
     timeout: 60_000,
   });
   await expect(
     replayed.locator("[data-subagent][data-status='done']"),
-  ).toHaveCount(2);
+  ).toHaveCount(1);
   await expect(
     replayed.locator("[data-subagent][data-status='failed']"),
   ).toHaveCount(1);
+  await expect(
+    replayed.locator("[data-subagent][data-status='running']"),
+  ).toHaveCount(1);
+  /* The release prompt is the signal the engine flushes the held close on
+     — deterministic instead of racing a tick window. The first turn must
+     be over first (a mid-turn send would steer into it instead of making
+     the next prompt). Two done, one failed. */
+  await turnSettled(page);
+  await send(page, "wrap up the async helper");
+  await expect(
+    replayed.locator("[data-subagent][data-status='done']"),
+  ).toHaveCount(2, { timeout: 60_000 });
+  await expect(
+    replayed.locator("[data-subagent][data-status='running']"),
+  ).toHaveCount(0);
   await expect(page.locator("[data-subagents-link]").last()).toContainText(
     "1 failed",
   );
@@ -525,12 +547,13 @@ test("AC-319 the panel's 'N subagents · Open' lands on Focus → Subagents (?ta
   try {
     await openDefault(page, stack319);
     await pickSessionFolder(page, repoDir);
-    /* `LILOS_DELEGATE_ASYNC` marks the first helper async — its
-       subagent.completed lands after the turn's, like dispatch-receipt
-       delegation on the real engine (#309). */
+    /* `LILOS_DELEGATE_ASYNC_HOLD` marks the first helper async and holds its
+       subagent.completed until the next prompt (#400): dispatch-receipt
+       delegation on the real engine, but the test controls when the close
+       lands instead of racing a tick window. */
     await send(
       page,
-      "delegate LILOS_DELEGATE_ASYNC the relay scan to subagents",
+      "delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
     );
     await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
     await expect(page.locator("[data-subagents-link]").last()).toBeVisible({
@@ -577,8 +600,8 @@ test("AC-319 the panel's 'N subagents · Open' lands on Focus → Subagents (?ta
     });
 
     /* AC-5: the async helper ("Scan the relay package") stays under Running
-       after the turn settles — its close lands a tick later and the row
-       moves itself to Finished (AC-3's live update). */
+       after the turn settles — its close is held until the next prompt, so
+       the assertion can't lose the window to a slow runner (#400). */
     await turnSettled(page);
     await tab(page, /Subagents/).click();
     const running = subs.locator(
@@ -586,6 +609,9 @@ test("AC-319 the panel's 'N subagents · Open' lands on Focus → Subagents (?ta
     );
     await expect(running).toHaveCount(1, { timeout: 30_000 });
     await page.screenshot({ path: `${SHOTS}/ac-319-5-running-past-end.png` });
+    /* The follow-up prompt is the release: the engine flushes the held close
+       as it takes the new turn, and the row moves itself to Finished. */
+    await send(page, "wrap up the async helper");
     await expect(running).toHaveCount(0, { timeout: 60_000 });
     await expect(
       subs.locator(

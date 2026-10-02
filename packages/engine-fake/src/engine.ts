@@ -169,12 +169,19 @@ interface FakeSession {
   jobs: Map<string, FakeJob>;
   jobCounter: number;
   subCounter: number;
+  /** #400: `LILOS_TURN_HOLD` parks the turn past `turn.started` until this
+      releases it (interrupt or session stop) — a test asserting the running
+      state never races the script's length. */
+  holdTurn?: () => void;
   /** #309: async helpers whose subagent.completed waits past turn end. */
   pendingSubagentClose: {
     subagentId: string;
     status: FakeSubagent["status"];
     result?: string;
     durationMs?: number;
+    /** #400: held entries flush only when the next turn intake arrives —
+        the tick drain leaves them parked. */
+    hold?: boolean;
   }[];
 }
 
@@ -505,6 +512,7 @@ export class FakeEngine {
     const s = this.require(p.sessionId);
     if (!s.turn) return { interrupted: false };
     s.turn.interrupted = true;
+    s.holdTurn?.();
     for (const ask of s.openRequests.values())
       ask.resolve({ outcome: "cancel" });
     return { interrupted: true };
@@ -609,6 +617,7 @@ export class FakeEngine {
     if (s.state === "closed") return { stopped: false };
     const t = s.turn;
     if (t) t.interrupted = true;
+    s.holdTurn?.();
     for (const ask of s.openRequests.values())
       ask.resolve({ outcome: "cancel" });
     for (const c of s.mcpClients.values()) c.close();
@@ -1017,6 +1026,7 @@ export class FakeEngine {
           status: sub.status,
           result: sub.result,
           durationMs: sub.durationMs,
+          hold: sub.holdClose,
         });
         continue;
       }
@@ -1037,6 +1047,9 @@ export class FakeEngine {
     images?: { mimeType: string; sizeBytes: number }[],
     ref?: string,
   ) {
+    /* #400: a test's follow-up prompt is the release signal for held async
+       helpers — their close lands here, while the session is still idle. */
+    this.flushHeldCloses(s);
     // A pick deferred while the previous turn ran lands before the new turn
     // reads model/effort/fast for `turn.started` (#92 AC-4). Every turn path
     // funnels here — `prompt` and steered follow-ups via `pumpSteers`. The
@@ -1083,6 +1096,13 @@ export class FakeEngine {
     this.setState(s, "running");
     this.autoTitle(s, "derived", promptText);
     try {
+      /* #400: `LILOS_TURN_HOLD` parks the turn while it reads as running —
+         an interrupt (or the session stopping) releases it, so an Esc/Stop
+         test never races a short script finishing first. */
+      if (/\bLILOS_TURN_HOLD\b/i.test(promptText))
+        await new Promise<void>((resolve) => {
+          s.holdTurn = resolve;
+        });
       // Deterministic failure path (#32): a prompt starting with "fail" ends
       // the turn as a refusal with an error, so failure surfaces are testable.
       // Reasoning is paced over ~2s like a real turn — an instant failure
@@ -1624,7 +1644,11 @@ export class FakeEngine {
      live-capture shape: turn.completed … subagent.completed ~18s later). */
   private async drainSubagentCloses(s: FakeSession) {
     await this.sleep(s);
-    for (const c of s.pendingSubagentClose.splice(0)) {
+    /* #400: held closes stay parked — only the next turn intake releases
+       them (flushHeldCloses), so a test controls the window. */
+    const closing = s.pendingSubagentClose.filter((c) => !c.hold);
+    s.pendingSubagentClose = s.pendingSubagentClose.filter((c) => c.hold);
+    for (const c of closing) {
       if (s.state === "closed") return;
       this.emit(s, "subagent.completed", {
         subagentId: c.subagentId,
@@ -1633,6 +1657,23 @@ export class FakeEngine {
         durationMs: c.durationMs,
       });
     }
+  }
+
+  /** #400: a held async-helper close (LILOS_DELEGATE_ASYNC_HOLD) flushes
+     when the next turn intake arrives — the test's follow-up prompt is the
+     release signal. Emitted while the session is still idle, before
+     turn.started; a closed session drops them like the tick drain. */
+  private flushHeldCloses(s: FakeSession) {
+    if (s.state === "closed") return;
+    const held = s.pendingSubagentClose.filter((c) => c.hold);
+    s.pendingSubagentClose = s.pendingSubagentClose.filter((c) => !c.hold);
+    for (const c of held)
+      this.emit(s, "subagent.completed", {
+        subagentId: c.subagentId,
+        status: c.status,
+        result: c.result,
+        durationMs: c.durationMs,
+      });
   }
 
   private drainSteers(s: FakeSession, turnId: string) {
