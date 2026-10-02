@@ -588,6 +588,19 @@ function scriptFor(empId: string, prompt: string, followUp = false, branch?: str
       text: CODEBLOCKS_SAMPLE,
     }
   }
+  /* Diff-line review comments (#108/#364): Oscar's Send to agent posts one
+     message listing each pinned comment — answer to the notes he left. */
+  if (q.startsWith("Review comments on the diff:")) {
+    const notes = [...q.matchAll(/^[\w./-]+:\d+(?:-\d+)?$/gm)].length
+    return {
+      reasoning: `Oscar pinned ${notes} comment${notes === 1 ? "" : "s"} on the diff in Changes. Address each one, then confirm.`,
+      steps: [
+        { tool: "read_file", input: { path: "packages/contracts/src/envelope.ts" }, output: "58 lines" },
+        { tool: "patch", input: { path: "packages/contracts/src/envelope.ts" }, output: "+2 lines", diff: { path: "packages/contracts/src/envelope.ts", status: "modified", add: 2, del: 1, patch: "@@ -2,3 +2,4 @@\n export const Envelope = z.object({\n-  seq: z.number().int().nonnegative(),\n+  seq: z.number().int().positive(),\n+  // per-connection, strictly increasing\n   kind: z.string()," } },
+      ],
+      text: `Read the ${notes} pinned comment${notes === 1 ? "" : "s"} — all fair. I addressed them:\n\n- \`seq\` is now \`int().positive()\` with a comment noting it's per-connection\n- left the rest as-is, the naming matches contracts' conventions\n\nThe markers on the diff stay until the patch moves.`,
+    }
+  }
   // Issue #31: a prompt carrying images answers about them first — the reply names the
   // attachment (name, type, bytes) so Oscar can see the image reached the engine.
   if (images?.length) {

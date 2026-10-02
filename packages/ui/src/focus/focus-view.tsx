@@ -862,6 +862,7 @@ export function FocusView({
                 emp={emp}
                 onOpenSession={onOpenSession}
                 running={running}
+                steer={steer}
                 editors={editorsProp}
                 onOpenPath={onOpenPath}
                 browser={browser}
