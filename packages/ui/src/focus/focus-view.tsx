@@ -69,6 +69,8 @@ import type {
   OsApp,
   OsEditor,
   Project,
+  ShipBar,
+  ShipHandlers,
   Thread,
   WbSpot,
   WbTab,
@@ -139,6 +141,7 @@ export function FocusView({
   initialTab,
   onTab,
   wbSpot,
+  ship,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -238,6 +241,9 @@ export function FocusView({
   /* The session's `workbench_open` request (issue #340): the panel opens and
      applies the target's tab — an explicit pick, so follow stops here. */
   wbSpot?: WbSpot;
+  /* The Workbench ship bar's mock seam (issue #107/#359) — forwarded to
+     Workbench.ship; live mode builds the same bar from `host` instead. */
+  ship?: Partial<ShipBar> & ShipHandlers;
 }) {
   /* A `?tab=` destination shows its tab even under lg, where the panel is
      an overlay — "open on Subagents" means visibly open (#319 AC-1). */
@@ -867,6 +873,7 @@ export function FocusView({
                 onOpenPath={onOpenPath}
                 browser={browser}
                 spot={wbSpot}
+                ship={ship}
               />
             </aside>
           </>

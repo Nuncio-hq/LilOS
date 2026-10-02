@@ -518,6 +518,18 @@ ${tail}`,
     };
   }
 
+  /* Ship bar Suggest (issue #107 AC-2): "Write a one-line git commit
+     message for these changed files…" is a normal user message — answer a
+     bare one-liner so the first non-empty line fills the box. */
+  if (/\bcommit message\b/i.test(q)) {
+    return {
+      reasoning:
+        "A one-line commit message for the checked files — imperative mood, under 72 chars, then nothing else.",
+      steps: [],
+      text: "feat: add the staged widget changes",
+    };
+  }
+
   if (EDIT_ASK.test(q)) {
     const h = nextHex();
     return {

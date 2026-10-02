@@ -7,6 +7,7 @@
  * Missing `view.json` = the branch has no PR (exit 1, like real gh).
  * Every invocation is appended to $GH_FAKE_LOG when that env var is set.
  */
+import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
   existsSync,
@@ -86,6 +87,47 @@ switch (`${args[0]} ${args[1]}`) {
       break;
     }
     process.stdout.write(readFileSync(listPath, "utf8"));
+    break;
+  }
+  case "pr create": {
+    /* `gh pr create --title --body [--base]` (issue #107): writes view.json
+       — the host's `forge.pr` re-read then sees the PR it just made, like
+       real gh. The head is the checkout's current branch; a `head` override
+       rides in $GH_FAKE_HEAD when a test can't move the checkout. */
+    const title = flag("--title") ?? fail("pr create needs --title");
+    const body = flag("--body") ?? fail("pr create needs --body");
+    const base = flag("--base") ?? "main";
+    const head =
+      process.env.GH_FAKE_HEAD ??
+      (() => {
+        try {
+          return execFileSync("git", ["symbolic-ref", "--short", "HEAD"], {
+            encoding: "utf8",
+          }).trim();
+        } catch {
+          return "feat/forge";
+        }
+      })();
+    const number = 8;
+    const url = `https://github.com/acme/widgets/pull/${number}`;
+    writeView({
+      number,
+      title,
+      body,
+      url,
+      state: "OPEN",
+      author: { login: "oscar" },
+      baseRefName: base,
+      headRefName: head,
+      createdAt: new Date().toISOString(),
+      mergedAt: null,
+      mergedBy: null,
+      mergeCommit: null,
+      mergeable: "MERGEABLE",
+      statusCheckRollup: [],
+      comments: [],
+    });
+    console.log(url);
     break;
   }
   case "pr comment": {

@@ -132,6 +132,10 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "git.branches": "the engine runs git itself",
   "git.status": "the engine runs git itself",
   "git.diff": "the engine runs git itself",
+  "git.commit": "the engine runs git itself",
+  "git.push": "the engine runs git itself",
+  "git.createBranch": "the engine runs git itself",
+  "git.log": "the engine runs git itself",
   "git.worktrees": "the engine runs git itself",
   "git.discoverRepos": "the engine runs git itself",
   "forge.pr":
@@ -139,6 +143,8 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "forge.prs":
     "the engine uses `gh` itself; the thread's PRs come through `thread_prs`",
   "forge.comment": "the engine uses `gh` itself",
+  "forge.create":
+    "the engine uses `gh` itself; host create is Oscar's bar (#107)",
   "forge.merge":
     "only Oscar merges — an approval tool may land with the gate (#341)",
   "os.editors": "the editor list opens for the user on the Mac",

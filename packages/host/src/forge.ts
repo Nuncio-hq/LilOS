@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type {
   ForgeCommentResult,
+  ForgeCreateParams,
+  ForgeCreateResult,
   ForgeGhReason,
   ForgeMergeParams,
   ForgeMergeResult,
@@ -349,6 +351,38 @@ export async function forgePrs(
     branches,
     prs: mapPrList(perBranch.flat()),
   };
+}
+
+/**
+ * `gh pr create --title --body [--base]` for the checkout's current branch
+ * (issue #107 AC-4). Pushing/branching is the caller's (`git.push` /
+ * `git.createBranch`) — here the signed-in user's gh does the forge write;
+ * LilOS stores no token (D-#37).
+ */
+export async function forgeCreate(
+  params: ForgeCreateParams,
+): Promise<ForgeCreateResult> {
+  const root = await repoOrThrow(params.path);
+  const out = await gh(root, [
+    "pr",
+    "create",
+    "--title",
+    params.title,
+    "--body",
+    params.body,
+    ...(params.base ? ["--base", params.base] : []),
+  ]);
+  /* gh prints the new PR's URL on stdout (its own banner goes to stderr) —
+     take the last non-empty line so stray notice lines can't break us. */
+  const url = out.trim().split("\n").at(-1)?.trim() ?? "";
+  if (!url) {
+    throw new HostError(HOST_ERRORS.GH_FAILED, "gh pr create printed no URL", {
+      reason: "other",
+      detail: out.trim(),
+    });
+  }
+  const number = /\/pull\/(\d+)/.exec(url)?.[1];
+  return { url, ...(number ? { number: Number(number) } : {}) };
 }
 
 export async function forgeComment(params: {
