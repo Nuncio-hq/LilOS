@@ -422,3 +422,33 @@ exit 0`,
     }
   });
 });
+
+/**
+ * Issue #397: dev-only tooling must stay out of the release bundle — the
+ * Metro resolver maps the netspy modules to the empty module when dev=false
+ * and the verify chain rebuilds + re-greps the real bundle. Same repo-state
+ * guard as the hygiene tests above: a later change could quietly drop either
+ * leg, and only a bundle grep catches it.
+ */
+describe("#397 release bundles ship no dev tooling", () => {
+  it("metro.config maps the netspy modules to the empty module when dev=false", () => {
+    const metro = read("apps/mobile/metro.config.js");
+    for (const f of ["netspy.ts", "netspy-badge.tsx"])
+      expect(metro).toContain(f);
+    expect(metro).toContain("context.dev");
+    expect(metro).toContain('"empty"');
+  });
+
+  it("verify:fast runs a release-bundle check that greps for netspy markers", () => {
+    const pkg = JSON.parse(read("package.json"));
+    expect(pkg.scripts["verify:fast"]).toContain("check:mobile-bundle");
+    const script = "scripts/ci/check-mobile-release-bundle.sh";
+    expect(pkg.scripts["check:mobile-bundle"]).toContain(script);
+    expect(has(script)).toBe(true);
+    expect(statSync(join(ROOT, script)).mode & 0o111).toBeGreaterThan(0);
+    const text = read(script);
+    expect(text).toContain("export:embed");
+    expect(text).toContain("--dev false");
+    expect(text).toContain("[Nn]etSpy");
+  });
+});
