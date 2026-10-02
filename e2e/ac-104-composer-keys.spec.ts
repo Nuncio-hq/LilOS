@@ -180,7 +180,9 @@ test("AC-1 Esc in the thread composer stops the running turn — same as Stop", 
 }) => {
   test.setTimeout(120_000);
   await dmDefault(stackA, page);
-  await send(page, "Add a release note to the readme");
+  /* LILOS_TURN_HOLD keeps the fake's turn running until the interrupt lands —
+     Esc must be what ends it (#400). */
+  await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
   await expect(page.getByText(RUNNING_HINT)).toBeVisible({ timeout: 30_000 });
   const box = page.locator("textarea").last();
   await box.click();
@@ -221,7 +223,7 @@ test("AC-3 Esc closes an open popover/dialog first — the turn keeps running", 
 }) => {
   test.setTimeout(120_000);
   await dmDefault(stackA, page);
-  await send(page, "Add a release note to the readme");
+  await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
   await expect(page.getByText(RUNNING_HINT)).toBeVisible({ timeout: 30_000 });
 
   // Model-picker popover: Esc closes it without touching the turn.
@@ -255,7 +257,7 @@ test("AC-4 Esc with a steer draft typed still stops the turn and keeps the text"
 }) => {
   test.setTimeout(120_000);
   await dmDefault(stackA, page);
-  await send(page, "Add a release note to the readme");
+  await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
   await expect(page.getByText(RUNNING_HINT)).toBeVisible({ timeout: 30_000 });
   const box = page.locator("textarea").last();
   await box.fill("also mention bananas");
@@ -313,7 +315,7 @@ test("AC-5 ↑ recalls the last sent message — thread, then home composer", as
 test("AC-6 the Stop button's label mentions Esc", async ({ page }) => {
   test.setTimeout(120_000);
   await dmDefault(stackA, page);
-  await send(page, "Add a release note to the readme");
+  await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
   const stop = page.getByRole("button", { name: /stop/i });
   await expect(stop).toBeVisible({ timeout: 30_000 });
   await expect(stop).toHaveAttribute("aria-label", /Esc/);

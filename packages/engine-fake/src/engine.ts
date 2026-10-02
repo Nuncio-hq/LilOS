@@ -169,6 +169,10 @@ interface FakeSession {
   jobs: Map<string, FakeJob>;
   jobCounter: number;
   subCounter: number;
+  /** #400: `LILOS_TURN_HOLD` parks the turn past `turn.started` until this
+      releases it (interrupt or session stop) — a test asserting the running
+      state never races the script's length. */
+  holdTurn?: () => void;
   /** #309: async helpers whose subagent.completed waits past turn end. */
   pendingSubagentClose: {
     subagentId: string;
@@ -508,6 +512,7 @@ export class FakeEngine {
     const s = this.require(p.sessionId);
     if (!s.turn) return { interrupted: false };
     s.turn.interrupted = true;
+    s.holdTurn?.();
     for (const ask of s.openRequests.values())
       ask.resolve({ outcome: "cancel" });
     return { interrupted: true };
@@ -612,6 +617,7 @@ export class FakeEngine {
     if (s.state === "closed") return { stopped: false };
     const t = s.turn;
     if (t) t.interrupted = true;
+    s.holdTurn?.();
     for (const ask of s.openRequests.values())
       ask.resolve({ outcome: "cancel" });
     for (const c of s.mcpClients.values()) c.close();
@@ -1090,6 +1096,13 @@ export class FakeEngine {
     this.setState(s, "running");
     this.autoTitle(s, "derived", promptText);
     try {
+      /* #400: `LILOS_TURN_HOLD` parks the turn while it reads as running —
+         an interrupt (or the session stopping) releases it, so an Esc/Stop
+         test never races a short script finishing first. */
+      if (/\bLILOS_TURN_HOLD\b/i.test(promptText))
+        await new Promise<void>((resolve) => {
+          s.holdTurn = resolve;
+        });
       // Deterministic failure path (#32): a prompt starting with "fail" ends
       // the turn as a refusal with an error, so failure surfaces are testable.
       // Reasoning is paced over ~2s like a real turn — an instant failure
