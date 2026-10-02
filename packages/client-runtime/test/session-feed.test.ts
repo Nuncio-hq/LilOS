@@ -388,4 +388,47 @@ describe("AC-1 sessionFeed — conversation-scoped engine feed (#157)", () => {
       got.events.filter((e) => e.sessionId === "sess-1").map((e) => e.seq),
     ).toEqual([1, 2, 3, 4, 5]);
   });
+
+  it("a skipped live seq refetches the hole instead of stalling forever (#400)", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, socket);
+    const feed = client.sessionFeed("conv-1");
+    socket.respondTo("session.events", {
+      events: [ev(1), ev(2)],
+      latestSeq: 2,
+      truncated: false,
+      openRequests: [],
+      snapshot: SNAPSHOT,
+    });
+    await flush();
+    expect(feed.get().coverageSeq).toBe(2);
+
+    // seq 3 was lost in a broadcast window; seq 4 arrives live.
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "engine.event",
+      params: {
+        channelId: "ch-1",
+        conversationId: "conv-1",
+        sessionId: "sess-1",
+        event: ev(4),
+      },
+    });
+    await flush();
+    expect(feed.get().events.map((e) => e.seq)).toEqual([1, 2, 4]);
+    // The stall triggered a second replay covering the gap.
+    const replays = socket.requestsOf("session.events");
+    expect(replays).toHaveLength(2);
+    expect(replays.at(-1)?.params).toMatchObject({ after: 2 });
+    socket.respondTo("session.events", {
+      events: [ev(3), ev(4)],
+      latestSeq: 4,
+      truncated: false,
+      openRequests: [],
+      snapshot: SNAPSHOT,
+    });
+    await flush();
+    expect(feed.get().events.map((e) => e.seq)).toEqual([1, 2, 3, 4]);
+    expect(feed.get().coverageSeq).toBe(4);
+  });
 });

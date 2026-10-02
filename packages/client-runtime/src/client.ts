@@ -788,6 +788,19 @@ export class RelayClient {
     );
   }
 
+  /* One gap refetch per conversation at a time — a stalled run of live
+     frames queues no pile of overlapping session.events calls; whichever
+     lands last covers the newest hole. */
+  private readonly feedSyncInFlight = new Set<string>();
+
+  private syncSessionFeedOnce(conversationId: string): void {
+    if (this.feedSyncInFlight.has(conversationId)) return;
+    this.feedSyncInFlight.add(conversationId);
+    void this.syncSessionFeed(conversationId)
+      .catch(() => {})
+      .finally(() => this.feedSyncInFlight.delete(conversationId));
+  }
+
   private async syncSessionFeed(conversationId: string): Promise<void> {
     const store = this.sessionFeeds.get(conversationId);
     if (!store) return;
@@ -1235,15 +1248,35 @@ export class RelayClient {
                 (e) => e.sessionId === sid && e.seq === event.event.seq,
               );
         if (dup) return;
+        /* Coverage is contiguous, not a high-water mark: a frame arriving
+           after a broadcast gap must NOT lift the watermark past the hole,
+           or the next replay's `after` skips the lost seq forever (#400 —
+           an ask or completion emitted while this socket was connected but
+           not yet a feed peer stayed missing until the next reconnect). */
+        const sameSession = event.sessionId === f.sessionId;
+        const nextCoverage = sameSession
+          ? event.event.seq === f.coverageSeq + 1
+            ? event.event.seq
+            : f.coverageSeq
+          : event.event.seq === 1
+            ? 1
+            : 0;
         store.set({
           ...f,
           sessionId: event.sessionId,
-          coverageSeq:
-            event.sessionId === f.sessionId
-              ? Math.max(f.coverageSeq, event.event.seq)
-              : event.event.seq,
+          coverageSeq: nextCoverage,
           events: [...f.events, event.event],
         });
+        /* A skipped seq — a gap inside the current log, or a rebound log
+           whose head we never saw — means this socket missed a window
+           while connected: refetch instead of stalling until reconnect. */
+        if (
+          (sameSession
+            ? nextCoverage < event.event.seq
+            : event.event.seq > 1) &&
+          this.state.get() === "ready"
+        )
+          this.syncSessionFeedOnce(event.conversationId);
         return;
       }
       case "conversation.updated": {
