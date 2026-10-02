@@ -2,6 +2,8 @@
    (and, later, the relay wire types in packages/contracts) produce them. Wire types are NOT defined here —
    this file is the UI contract only (issue #12; wire schemas live in packages/contracts). */
 
+import type { ReactNode } from "react";
+
 export type Status = "online" | "busy" | "offline";
 export type RespondTo = "me" | "selected" | "anyone";
 export type Employee = {
@@ -542,6 +544,87 @@ export type PrError = {
   reason: "missing" | "unauthenticated" | "other";
   detail: string;
 };
+
+/* ── Ship bar: commit → push → Create PR on the Changes tab (issue #107,
+   the accepted #359 design). Presentational: props in, callbacks out; a
+   missing handler hides its control (D-#19). */
+
+/** A file row's stage checkbox state, keyed on the diff's `path`. */
+export type ShipFile = { path: string; checked: boolean };
+
+/** The typed reasons a ship action reports — drives the bar's plain copy
+    (git writes carry GitWriteReason; gh's ForgeGhReason rides along too).
+    `detail` is the raw stderr — a Details disclosure only, never the
+    headline (same rule as PrError, #114 AC-5). */
+export type ShipError = {
+  reason?:
+    | "rejected"
+    | "no-remote"
+    | "auth"
+    | "conflict"
+    | "nothing"
+    | "exists"
+    | "unauthenticated"
+    | "missing"
+    | "other";
+  detail?: string;
+  /** Shown when no known reason arrived (or the app wrote the copy itself). */
+  text: string;
+};
+
+/** Which bar action is in flight — its button reads busy. */
+export type ShipBusy = "commit" | "push" | "pr" | null;
+
+/** The bar's state — app-owned; async work writes back through the
+    handlers, never by mutating this. */
+export type ShipBar = {
+  /** The folder is a git work tree — false renders nothing (AC-6). */
+  isRepo: boolean;
+  /** Working branch; null = detached HEAD. */
+  branch: string | null;
+  /** The remote's default branch (`origin/HEAD` short name): on it, Create
+      PR asks for a new branch name first (AC-4). */
+  defaultBranch?: string | null;
+  /** `origin` URL when configured — copy detail for the no-remote error. */
+  remote?: string | null;
+  /** Every diff row's stage state (all checked by default). */
+  files: ShipFile[];
+  /** Commits on the branch — PR title/body prefill. */
+  commits: GitCommit[];
+  /** Commit message draft (app-owned: Suggest's answer writes back through
+      `onMessage`). */
+  message: string;
+  /** In-flight action — its button reads busy + the rest disables. */
+  busy: ShipBusy;
+  /** The last action's failure — cleared by the next one. */
+  error: ShipError | null;
+  /** A turn is running → the Suggest affordance hides (AC-2). */
+  running: boolean;
+  /** Optional chrome slot (the prototype's error-state switch lands here). */
+  accessory?: ReactNode;
+};
+
+/** ShipBar callbacks — async ones are awaited; a rejection surfaces as the
+    bar's error, so the app throws `{ reason?, detail? }`-shaped errors. */
+export type ShipHandlers = {
+  onToggle?: (path: string, checked: boolean) => void;
+  onToggleAll?: (checked: boolean) => void;
+  onMessage?: (message: string) => void;
+  /** Ask the agent for a one-line commit message — posts a normal user
+      message; the engine's reply fills `message` (AC-2). */
+  onSuggest?: () => void;
+  /** Stage `files` (the checked set) + commit them with `message`. */
+  onCommit?: (files: string[], message: string) => Promise<void>;
+  /** Push the branch — sets upstream on the first push. */
+  onPush?: () => Promise<void>;
+  /** Create the PR; on the default branch `branch` is the new branch's name. */
+  onCreatePr?: (pr: {
+    title: string;
+    body: string;
+    branch?: string;
+  }) => Promise<void>;
+};
+
 /* Live host accessors for a session's real cwd (fs/git issue #11, forge #37).
    An accessor resolves null when the host is unreachable → the caller falls
    back to mock data; `forge.pr` resolving `{ pr: null }` is the host's real
@@ -583,6 +666,40 @@ export type HostAccessors = {
     app: OsApp,
     line?: number,
   ) => Promise<void>;
+  /** host.describe's implemented-method set (issue #107): a bar control
+      renders only when its host method is in it (D-#19, AC-6). The app
+      may cache the answer. */
+  methods?: () => Promise<Set<string>>;
+  /** git.status — the checkout's branch + changed paths; null when the
+      folder is no repo (the ship bar keys isRepo off this). */
+  status?: (cwd: string) => Promise<{
+    branch: string | null;
+    clean: boolean;
+    files: { path: string; status: string; origPath?: string }[];
+  } | null>;
+  /** git.branches — locals + current + `origin` URL + the remote's default
+      branch (Create PR's on-the-default ask keys off `default`). */
+  branches?: (cwd: string) => Promise<{
+    current: string | null;
+    branches: string[];
+    remote: string | null;
+    default: string | null;
+  } | null>;
+  /** git.log — commits on the branch vs its resolved base; feeds the
+      Commits section + the Create-PR prefill. */
+  log?: (cwd: string) => Promise<GitCommit[] | null>;
+  /** git.commit — stage + commit the listed paths; throws on failure. */
+  commit?: (cwd: string, files: string[], message: string) => Promise<void>;
+  /** git.push — `-u origin <branch>` the first time; throws on failure. */
+  push?: (cwd: string) => Promise<void>;
+  /** git.createBranch — `checkout -b`; throws on an invalid/existing name. */
+  createBranch?: (cwd: string, name: string) => Promise<void>;
+  /** forge.create — `gh pr create`; resolves the PR's URL, throws on
+      failure ({reason,detail}-shaped like prComment/prMerge). */
+  prCreate?: (
+    cwd: string,
+    pr: { title: string; body: string; base?: string },
+  ) => Promise<string>;
 };
 
 /* A `workbench_open` target as the Workbench's spot request (issue #340):
