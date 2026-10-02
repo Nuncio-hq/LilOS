@@ -132,6 +132,10 @@ export type Reply = {
       id swap, so React keys survive it (a remount would drop user collapse
       state, #320). */
   turnId?: string;
+  /** The turn began while this surface's feed was attached (its
+      `turn.started` ran past the replay watermark) — vs the turn already
+      live when the view mounted (#396); absent on mock/synthesized rows. */
+  postAttach?: boolean;
   steers?: string[];
   dur?: number;
   attachments?: AttachedFile[];

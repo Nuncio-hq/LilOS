@@ -211,6 +211,7 @@ export function liveTurnReply(
   return {
     id: `live-${turn.turnId}`,
     turnId: turn.turnId,
+    ...(turn.postAttach !== undefined ? { postAttach: turn.postAttach } : {}),
     from: employeeId,
     time: "",
     text: turn.text,

@@ -123,6 +123,11 @@ export interface TurnModel {
   /** #308: the engine opened this leg itself (delivery/auto-continue) —
       renders as its own agent entry, never claimed by a posted answer. */
   agentInitiated?: boolean;
+  /** #396: this turn's `turn.started` seq ran past the attach snapshot's
+      watermark — the turn began while this feed was attached, vs replayed
+      history already running when the view mounted. Unset when the reduce
+      ran without an attach snapshot (mocks/tests keep the old meaning). */
+  postAttach?: boolean;
 }
 
 export interface SessionModel {
@@ -221,6 +226,10 @@ export function reduceSessionEvents(
         t.effort = e.payload.effort ?? t.effort;
         t.fast = e.payload.fast ?? t.fast;
         t.ref = e.payload.ref ?? t.ref;
+        /* #396: seq past the snapshot's attach watermark = the turn began
+           while this feed was attached — the turn that started while you
+           watch, vs the one already live when the view mounted. */
+        t.postAttach = snapshot?.atSeq !== undefined && e.seq > snapshot.atSeq;
         if (e.payload.initiatedBy === "agent") t.agentInitiated = true;
         break;
       }
