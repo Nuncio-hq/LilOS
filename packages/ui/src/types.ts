@@ -36,6 +36,26 @@ export type Diff = {
   del: number;
   patch: string;
 };
+/* A pinned review note on a Changes diff line or range (issue #108).
+   `side` says which gutter the anchor lives on: "b" = new-file lines
+   (added/context rows), "a" = old-file lines (deleted rows exist only
+   there). `start`/`end` are that side's line numbers, `lines` snapshots
+   the quoted text with its +/-/space diff marker so the sent message
+   stays honest if the file later shifts. `patch` fingerprints the diff
+   the note was sent against — resolved markers drop once it changes
+   (AC-4). */
+export type DiffComment = {
+  id: string;
+  path: string;
+  side: "a" | "b";
+  start: number;
+  end: number;
+  /** The anchor rows' displayed text, +/-/space-prefixed, at pin time. */
+  lines: string[];
+  text: string;
+  resolved?: boolean;
+  patch?: string;
+};
 export type GitCommit = {
   hash: string;
   message: string;

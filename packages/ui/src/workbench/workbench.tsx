@@ -9,10 +9,12 @@ import {
   GitPullRequestIcon,
   GlobeIcon,
   ListChecksIcon,
+  MessageSquareTextIcon,
   NetworkIcon,
   PanelRightCloseIcon,
   PlayIcon,
   RefreshCcwIcon,
+  SendIcon,
   SquareTerminalIcon,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -62,6 +64,11 @@ import {
   TabsList,
   TabsTrigger,
 } from "../components/ui/tabs";
+import {
+  diffCommentsMessage,
+  diffSendRoute,
+  useDiffComments,
+} from "../lib/diff-comments";
 import { plural } from "../lib/helpers";
 import type {
   Diff,
@@ -129,6 +136,7 @@ export function Workbench({
   onPrMerge,
   live,
   running,
+  steer,
   editors: editorsProp,
   onOpenPath,
   onStopJob,
@@ -159,6 +167,9 @@ export function Workbench({
   live?: LiveSurfaces;
   /** A turn is running — Changes/Files poll while the agent edits (#114 AC-3). */
   running?: boolean;
+  /** The engine declares `steer`: Send-to-agent labels the mid-turn route
+      (issue #108); absent → plain "Send". */
+  steer?: boolean;
   /* os.editors + a bound os.open (issue #110, same pair ThreadView takes):
      the caller probes `host.describe` — onOpenPath={null} means os.open was
      absent, so rows show no open menu even when the accessors object
@@ -258,6 +269,28 @@ export function Workbench({
   }, [liveMode, liveCwd, running, host]);
   const diffs = liveMode ? (probe?.diffs ?? []) : a.diffs;
   const changed = new Map(diffs.map((d) => [d.path, d]));
+  /* #108: pinned review comments on the Changes diff, keyed by session so
+     tab switches and Focus remounts keep them (module store, D-#320
+     rationale). `prune` re-runs whenever the shown diffs' patches move —
+     resolved markers whose file changed drop off (AC-4), pending notes
+     whose file or anchor vanished drop too. */
+  const dc = useDiffComments(thread.session);
+  const diffsKey = diffs.map((d) => `${d.path}\n${d.patch}`).join("\n\n");
+  useEffect(() => dc.prune(diffs), [diffsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pendingComments = dc.comments.filter((c) => !c.resolved);
+  const sendComments = () => {
+    if (!onSend || pendingComments.length === 0) return;
+    const sent = dc.resolveAll(new Map(diffs.map((d) => [d.path, d.patch])));
+    onSend(diffCommentsMessage(sent));
+    const route = diffSendRoute(!!running, !!steer);
+    say?.(
+      route === "steer"
+        ? `Sent ${plural(sent.length, "comment")} — steered into the running turn`
+        : route === "queue"
+          ? `Sent ${plural(sent.length, "comment")} — queued as the next prompt`
+          : `Sent ${plural(sent.length, "comment")} to the agent`,
+    );
+  };
   /* #340 AC-2b: the session's `workbench_open` — open the panel on the
      target's tab. A changed file shows its diff; an unchanged one opens the
      file view (at `line` when given). The URL's navigation is the caller's
@@ -794,11 +827,46 @@ export function Workbench({
                     Show all
                   </Button>
                 )}
+                {/* #108: pending review comments + the Codex-style send.
+                    Both render only while comments exist and a send handler
+                    is wired (D-#19). */}
+                {onSend && pendingComments.length > 0 && (
+                  <span className="ml-auto flex items-center gap-2">
+                    <span
+                      data-diff-pending
+                      className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-400"
+                    >
+                      <MessageSquareTextIcon className="size-3" />
+                      {pendingComments.length} pending
+                    </span>
+                    <Button
+                      size="xs"
+                      data-diff-send
+                      onClick={sendComments}
+                      title={
+                        running
+                          ? steer
+                            ? "Send as a steer into the running turn"
+                            : "Send — queues as the next prompt"
+                          : "Send comments to the agent"
+                      }
+                    >
+                      <SendIcon />
+                      Send to agent
+                    </Button>
+                  </span>
+                )}
               </div>
               {shown.map((d) => (
                 <DiffView
                   key={d.path}
                   d={d}
+                  comments={{
+                    list: dc.comments.filter((c) => c.path === d.path),
+                    onAdd: dc.add,
+                    onEdit: dc.edit,
+                    onDelete: dc.remove,
+                  }}
                   openMenu={
                     openPath
                       ? {
