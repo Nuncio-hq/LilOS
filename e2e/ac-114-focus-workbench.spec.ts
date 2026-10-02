@@ -131,6 +131,10 @@ const SHOTS = path.join(repo, "test-results", "ac-114");
 const ROOT = mkdtempSync(path.join(tmpdir(), "lilos-114-"));
 const repoDir = path.join(ROOT, "lilos-repo-a");
 const plainDir = path.join(ROOT, "lilos-plain-b");
+/* AC-396's own folder — repoDir/plainDir are already attached by earlier
+   tests, and an already-added folder leaves the Add dialog's button
+   disabled. */
+const regDir = path.join(ROOT, "lilos-reg-c");
 const ghFakeDir = path.join(ROOT, "gh-fake");
 const viewPath = path.join(ghFakeDir, "view.json");
 /* fake-gh's forced-failure switch (packages/host/test/fake-gh): "auth" =
@@ -139,6 +143,7 @@ const failPath = path.join(ghFakeDir, "fail");
 const ghLogFile = path.join(ghFakeDir, "gh.log");
 mkdirSync(repoDir, { recursive: true });
 mkdirSync(plainDir, { recursive: true });
+mkdirSync(regDir, { recursive: true });
 mkdirSync(ghFakeDir, { recursive: true });
 const git = (args: string[], cwd = repoDir) =>
   execFileSync("git", args, { cwd, encoding: "utf8" });
@@ -150,6 +155,8 @@ writeFileSync(path.join(repoDir, "b.txt"), "bees\n");
 writeFileSync(path.join(plainDir, "note.txt"), "plain\n");
 git(["add", "."]);
 git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init"]);
+execFileSync("git", ["init", "-b", "trunk"], { cwd: regDir });
+writeFileSync(path.join(regDir, "note.txt"), "reg\n");
 
 /* `gh pr view --json` fixture — OPEN, all checks green, one comment. */
 const PR_VIEW = {
@@ -674,7 +681,7 @@ test("AC-396 a turn that starts while you watch re-arms follow after a manual ta
 }) => {
   test.setTimeout(120_000);
   await dmDefault(page);
-  await pickSessionFolder(page, repoDir);
+  await pickSessionFolder(page, regDir);
   await send(page, "say hi");
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
   /* Remount with NO live turn: the first live sighting after this mount
