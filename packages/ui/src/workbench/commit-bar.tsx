@@ -1,4 +1,5 @@
 import {
+  ArrowDownToLineIcon,
   ArrowUpIcon,
   CircleAlertIcon,
   GitCommitHorizontalIcon,
@@ -10,6 +11,7 @@ import { useState } from "react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
+import { cn } from "../lib/utils";
 import type { ShipBar, ShipError, ShipHandlers } from "../types";
 
 /* Commit → push → Create PR under the Changes file list (issue #107; the
@@ -21,7 +23,9 @@ import type { ShipBar, ShipError, ShipHandlers } from "../types";
    rule). Unknown reason → the thrown text. */
 const COPY: Record<NonNullable<ShipError["reason"]>, string> = {
   rejected:
-    "The remote has newer commits on this branch — update your checkout (git pull) and push again.",
+    "The remote has newer commits on this branch — Pull to bring them in (or ask the agent to update), then Push again.",
+  diverged:
+    "The branch and its upstream diverged — Pull can't fast-forward. Resolve it in a terminal, or ask the agent to update the branch.",
   "no-remote":
     "This folder has no remote named “origin”. Add one — git remote add origin <url> — and try again.",
   auth: "Git couldn't sign in to the remote. Check your SSH key or credential helper, then push again.",
@@ -66,11 +70,14 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
     busy,
     error,
     running,
+    upstream,
     accessory,
     onMessage,
     onSuggest,
     onCommit,
     onPush,
+    onPull,
+    onAskAgent,
     onCreatePr,
   } = props;
   const [prOpen, setPrOpen] = useState(false);
@@ -112,12 +119,20 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
       ? "Committing…"
       : busy === "push"
         ? "Pushing…"
-        : busy === "pr"
-          ? "Opening PR…"
-          : null;
+        : busy === "pull"
+          ? "Pulling…"
+          : busy === "pr"
+            ? "Opening PR…"
+            : null;
 
+  /* #393 AC-8: a disabled control must stay readable in dark mode — the
+     bar drops the components' opacity-dim for muted colors instead, and
+     lifts placeholders off muted-foreground. */
   return (
-    <div data-shipbar className="shrink-0 border-t bg-background px-3 py-2">
+    <div
+      data-shipbar
+      className="shrink-0 border-t bg-background px-3 py-2 [&_button:disabled]:border-border [&_button:disabled]:bg-muted [&_button:disabled]:opacity-100 [&_button:disabled]:text-muted-foreground [&_input::placeholder]:text-foreground/60 [&_input:disabled]:bg-transparent [&_input:disabled]:opacity-100 [&_input:disabled]:text-muted-foreground [&_textarea::placeholder]:text-foreground/60 [&_textarea:disabled]:bg-transparent [&_textarea:disabled]:opacity-100 [&_textarea:disabled]:text-muted-foreground"
+    >
       {/* header: what the bar acts on + host chrome slot */}
       <div className="flex items-center gap-2 text-muted-foreground text-xs">
         <GitCommitHorizontalIcon className="size-3.5 shrink-0" />
@@ -130,6 +145,18 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
             <>Detached HEAD — commit here at your own risk</>
           )}
         </span>
+        {/* #393 AC-6: upstream after a push is a plain chip — muted while a
+            push error is on screen. */}
+        {upstream && (
+          <span
+            className={cn(
+              "shrink-0 font-mono text-[10px]",
+              error ? "text-muted-foreground" : "text-emerald-600",
+            )}
+          >
+            ↑ {upstream}
+          </span>
+        )}
         {accessory}
       </div>
 
@@ -151,6 +178,42 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
                 </pre>
               </details>
             )}
+            {/* #393 AC-5: the rejected/diverged state offers the fix it
+                names — Pull (git.pull, --ff-only) and one-click
+                ask-the-agent; Push is never the only obvious action. */}
+            {(error.reason === "rejected" || error.reason === "diverged") &&
+              (onPull || onAskAgent) && (
+                <div className="mt-2 flex items-center gap-1.5">
+                  {onPull && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      data-shippull
+                      disabled={busyWith}
+                      onClick={() => void onPull()}
+                    >
+                      {busy === "pull" ? (
+                        <LoaderCircleIcon className="animate-spin" />
+                      ) : (
+                        <ArrowDownToLineIcon />
+                      )}
+                      Pull
+                    </Button>
+                  )}
+                  {onAskAgent && (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      data-shipask
+                      disabled={busyWith}
+                      onClick={onAskAgent}
+                    >
+                      <SparklesIcon />
+                      Ask agent to update
+                    </Button>
+                  )}
+                </div>
+              )}
           </div>
         </div>
       )}
@@ -159,12 +222,16 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
         <div className="mt-2 space-y-2">
           {onDefault && (
             <div>
+              {/* #393 AC-7: a real label — the field reads "Branch name,
+                  required"; the why drops to helper text (AC-8 contrast). */}
               <label
                 htmlFor="ship-branch"
-                className="mb-1 block text-muted-foreground text-xs"
+                className="mb-1 block text-foreground text-xs font-medium"
               >
-                New branch — you're on the default branch ({defaultBranch}), so
-                the PR opens from a new one
+                Branch name{" "}
+                <span className="font-normal text-foreground/70">
+                  (required)
+                </span>
               </label>
               <Input
                 id="ship-branch"
@@ -175,6 +242,10 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
                 className="font-mono"
                 disabled={busyWith}
               />
+              <p className="mt-1 text-foreground/70 text-xs">
+                You're on the default branch ({defaultBranch}) — the PR opens
+                from a new one.
+              </p>
             </div>
           )}
           <Input

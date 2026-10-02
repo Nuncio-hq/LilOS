@@ -18,6 +18,8 @@ import { z } from "zod";
 export const GitWriteReason = z.enum([
   /** Push rejected as non-fast-forward — the remote has newer commits. */
   "rejected",
+  /** `git pull --ff-only` can't run — the branch and its upstream diverged. */
+  "diverged",
   /** No remote named `origin` is configured (or it's unreachable). */
   "no-remote",
   /** The remote refused the push on auth (credential helper / SSH key). */
@@ -171,6 +173,18 @@ export const GitPushResult = z.object({
   upstream: z.string().nullable(),
 });
 export type GitPushResult = z.infer<typeof GitPushResult>;
+
+// ── git.pull (issue #393 AC-5) ─────────────────────────────────────────────
+export const GitPullParams = z.strictObject({ path: Path });
+export type GitPullParams = z.infer<typeof GitPullParams>;
+export const GitPullResult = z.object({
+  root: z.string(),
+  /** Pulled branch; null when HEAD was detached (pull then never ran). */
+  branch: z.string().nullable(),
+  /** Upstream the pull fast-forwarded to (`origin/<branch>`). */
+  upstream: z.string().nullable(),
+});
+export type GitPullResult = z.infer<typeof GitPullResult>;
 
 // ── git.createBranch (issue #107) ───────────────────────────────────────────
 export const GitCreateBranchParams = z.strictObject({

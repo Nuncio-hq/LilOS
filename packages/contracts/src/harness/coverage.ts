@@ -134,6 +134,7 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "git.diff": "the engine runs git itself",
   "git.commit": "the engine runs git itself",
   "git.push": "the engine runs git itself",
+  "git.pull": "the engine runs git itself",
   "git.createBranch": "the engine runs git itself",
   "git.log": "the engine runs git itself",
   "git.worktrees": "the engine runs git itself",

@@ -598,6 +598,50 @@
         "additionalProperties": false
       }
     },
+    "git.pull": {
+      "doc": "Fast-forward-only pull (`git pull --ff-only`, argv only — never merges, rebases or force-pushes); a diverged history answers reason 'diverged'.",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "root": {
+            "type": "string"
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "upstream": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "root",
+          "branch",
+          "upstream"
+        ],
+        "additionalProperties": false
+      }
+    },
     "git.createBranch": {
       "doc": "Create + check out a branch (`check-ref-format` validated; fails when the name exists).",
       "params": {

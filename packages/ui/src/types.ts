@@ -57,6 +57,9 @@ export type DiffComment = {
   text: string;
   resolved?: boolean;
   patch?: string;
+  /** The route the send took — the resolved marker's "Sent · …" pill
+      mirrors the toast's wording (issue #393 AC-2). */
+  via?: "prompt" | "steer" | "queue";
 };
 export type GitCommit = {
   hash: string;
@@ -579,6 +582,7 @@ export type ShipFile = { path: string; checked: boolean };
 export type ShipError = {
   reason?:
     | "rejected"
+    | "diverged"
     | "no-remote"
     | "auth"
     | "conflict"
@@ -593,7 +597,7 @@ export type ShipError = {
 };
 
 /** Which bar action is in flight — its button reads busy. */
-export type ShipBusy = "commit" | "push" | "pr" | null;
+export type ShipBusy = "commit" | "push" | "pull" | "pr" | null;
 
 /** The bar's state — app-owned; async work writes back through the
     handlers, never by mutating this. */
@@ -620,6 +624,9 @@ export type ShipBar = {
   error: ShipError | null;
   /** A turn is running → the Suggest affordance hides (AC-2). */
   running: boolean;
+  /** Upstream after a successful push (`origin/<branch>`) — the bar's ↑
+      chip; muted while a push error is on screen (issue #393 AC-6). */
+  upstream?: string | null;
   /** Optional chrome slot (the prototype's error-state switch lands here). */
   accessory?: ReactNode;
 };
@@ -635,6 +642,12 @@ export type ShipHandlers = {
   onCommit?: (files: string[], message: string) => Promise<void>;
   /** Push the branch — sets upstream on the first push. */
   onPush?: () => Promise<void>;
+  /** `git pull --ff-only` — the fix the rejected-push copy names (issue
+      #393 AC-5); a diverged history rejects with reason 'diverged'. */
+  onPull?: () => Promise<void>;
+  /** Posts a user message asking the agent to update the branch — offered
+      on a rejected/diverged state (issue #393 AC-5). */
+  onAskAgent?: () => void;
   /** Create the PR; on the default branch `branch` is the new branch's name. */
   onCreatePr?: (pr: {
     title: string;
@@ -708,8 +721,11 @@ export type HostAccessors = {
   log?: (cwd: string) => Promise<GitCommit[] | null>;
   /** git.commit — stage + commit the listed paths; throws on failure. */
   commit?: (cwd: string, files: string[], message: string) => Promise<void>;
-  /** git.push — `-u origin <branch>` the first time; throws on failure. */
-  push?: (cwd: string) => Promise<void>;
+  /** git.push — `-u origin <branch>` the first time; resolves the
+      upstream it pushed to, throws on failure. */
+  push?: (cwd: string) => Promise<{ upstream: string | null }>;
+  /** git.pull — `git pull --ff-only`; throws on a diverged history. */
+  pull?: (cwd: string) => Promise<void>;
   /** git.createBranch — `checkout -b`; throws on an invalid/existing name. */
   createBranch?: (cwd: string, name: string) => Promise<void>;
   /** forge.create — `gh pr create`; resolves the PR's URL, throws on

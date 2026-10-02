@@ -255,8 +255,9 @@ export const hostAccessors: HostAccessors = {
       files,
       message,
     }).then(() => undefined),
-  push: (cwd) =>
-    host<Record<string, never>>("git.push", { path: cwd }).then(
+  push: (cwd) => host<{ upstream: string | null }>("git.push", { path: cwd }),
+  pull: (cwd) =>
+    host<Record<string, never>>("git.pull", { path: cwd }).then(
       () => undefined,
     ),
   createBranch: (cwd, name) =>

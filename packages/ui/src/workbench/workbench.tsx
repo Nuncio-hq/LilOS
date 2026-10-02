@@ -330,6 +330,9 @@ export function Workbench({
   const [commitMsg, setCommitMsg] = useState("");
   const [shipBusy, setShipBusy] = useState<ShipBusy>(null);
   const [shipError, setShipError] = useState<ShipError | null>(null);
+  /* Upstream a push in this view landed on — the bar's ↑ chip (issue #393
+     AC-6; a fresh mount leaves the chip off until the next push). */
+  const [pushedUp, setPushedUp] = useState<string | null>(null);
   /* Suggest posts a normal user message — the engine's next reply fills the
      box with its first non-empty line (AC-2). `suggestAt` marks where replies
      stood when the ask went out. */
@@ -412,7 +415,22 @@ export function Workbench({
     }
     if (shipHas("git.push") && host.push) {
       const push = host.push;
-      liveShip.onPush = () => shipCall("push", () => push(cwd));
+      liveShip.onPush = () =>
+        shipCall("push", async () => {
+          setPushedUp((await push(cwd)).upstream);
+        });
+    }
+    /* #393 AC-5: git.pull (`pull --ff-only`) is the fix the rejected-push
+       copy names; a diverged history surfaces its typed reason plainly. */
+    if (shipHas("git.pull") && host.pull) {
+      const pull = host.pull;
+      liveShip.onPull = () => shipCall("pull", () => pull(cwd));
+    }
+    if (onSend != null) {
+      liveShip.onAskAgent = () =>
+        onSend(
+          `The push was rejected — the remote has newer commits on ${probe?.status?.branch ?? "this branch"}. Please update the branch with the remote's latest commits, then push again.`,
+        );
     }
     if (shipHas("forge.create") && host.prCreate) {
       liveShip.onCreatePr = (p) =>
@@ -427,7 +445,8 @@ export function Workbench({
             }
             await host.createBranch(cwd, p.branch);
           }
-          if (shipHas("git.push") && host.push) await host.push(cwd);
+          if (shipHas("git.push") && host.push)
+            setPushedUp((await host.push(cwd)).upstream);
           await host.prCreate?.(cwd, {
             title: p.title,
             body: p.body,
@@ -469,11 +488,15 @@ export function Workbench({
         busy: shipBusy,
         error: shipError,
         running: !!running,
+        upstream: pushedUp,
         onMessage: setCommitMsg,
         onSuggest,
         ...liveShip,
       };
     }
+    /* #393 AC-7: a read-only thread (no session folder yet) with no
+       changes keeps Start work as the single path — no dead ship bar. */
+    if (!work && diffs.length === 0) return null;
     if (!ship) return null;
     return {
       isRepo: ship.isRepo ?? true,
@@ -486,6 +509,7 @@ export function Workbench({
       busy: shipBusy,
       error: shipError,
       running: !!running,
+      upstream: ship.upstream ?? null,
       accessory: ship.accessory,
       onMessage: setCommitMsg,
       onSuggest: ship.onSuggest ?? onSuggest,
@@ -500,6 +524,17 @@ export function Workbench({
       onPush: ship.onPush
         ? () => shipCall("push", () => ship.onPush!())
         : undefined,
+      onPull: ship.onPull
+        ? () => shipCall("pull", () => ship.onPull!())
+        : undefined,
+      onAskAgent:
+        ship.onAskAgent ??
+        (onSend
+          ? () =>
+              onSend(
+                "The push was rejected — the remote has newer commits on this branch. Please update the branch with the remote's latest commits, then push again.",
+              )
+          : undefined),
       onCreatePr: ship.onCreatePr
         ? (p) => shipCall("pr", () => ship.onCreatePr!(p))
         : undefined,
@@ -523,9 +558,12 @@ export function Workbench({
   const pendingComments = dc.comments.filter((c) => !c.resolved);
   const sendComments = () => {
     if (!onSend || pendingComments.length === 0) return;
-    const sent = dc.resolveAll(new Map(diffs.map((d) => [d.path, d.patch])));
-    onSend(diffCommentsMessage(sent));
     const route = diffSendRoute(!!running, !!steer);
+    const sent = dc.resolveAll(
+      new Map(diffs.map((d) => [d.path, d.patch])),
+      route,
+    );
+    onSend(diffCommentsMessage(sent));
     say?.(
       route === "steer"
         ? `Sent ${plural(sent.length, "comment")} — steered into the running turn`
@@ -999,197 +1037,204 @@ export function Workbench({
       </div>
 
       <TabsContent value="changes" className="min-h-0 flex-1 flex flex-col">
-        <ScrollArea className="min-h-0 flex-1">
-          {diffs.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 p-8 text-center text-muted-foreground text-xs">
-              <EyeIcon className="size-5" />
-              {liveMode ? (
-                <p>
-                  Clean working tree in <span className="font-mono">{cwd}</span>
-                  .
-                </p>
-              ) : work?.branch ? (
-                <p>
-                  No edits yet on{" "}
-                  <span className="font-mono">⎇ {work.branch}</span>.
-                </p>
-              ) : isDM ? (
-                <p>
-                  Read-only session. {lead?.name ?? "The employee"} reads code
-                  but can't edit here.
-                  <br />
-                  Edits happen on a ticket in a channel with a repo.
-                </p>
-              ) : (
-                <>
+        {/* #393 AC-9: a fade where the list scrolls under the sticky ship
+            bar — no hard cut on the commit list. */}
+        <div className="relative min-h-0 flex-1">
+          <ScrollArea className="h-full">
+            {diffs.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 p-8 text-center text-muted-foreground text-xs">
+                <EyeIcon className="size-5" />
+                {liveMode ? (
                   <p>
-                    Read-only on <span className="font-mono">main</span>. Start
-                    work gives {lead?.name ?? "the employee"} a ticket +
-                    worktree.
+                    Clean working tree in{" "}
+                    <span className="font-mono">{cwd}</span>.
                   </p>
-                  {onStart && (
-                    <span
-                      className="inline-flex"
-                      title={
-                        startYields ? "Answer the request below" : undefined
-                      }
-                    >
-                      <Button
-                        size="sm"
-                        onClick={onStart}
-                        disabled={startYields}
+                ) : work?.branch ? (
+                  <p>
+                    No edits yet on{" "}
+                    <span className="font-mono">⎇ {work.branch}</span>.
+                  </p>
+                ) : isDM ? (
+                  <p>
+                    Read-only session. {lead?.name ?? "The employee"} reads code
+                    but can't edit here.
+                    <br />
+                    Edits happen on a ticket in a channel with a repo.
+                  </p>
+                ) : (
+                  <>
+                    <p>
+                      Read-only on <span className="font-mono">main</span>.
+                      Start work gives {lead?.name ?? "the employee"} a ticket +
+                      worktree.
+                    </p>
+                    {onStart && (
+                      <span
+                        className="inline-flex"
+                        title={
+                          startYields ? "Answer the request below" : undefined
+                        }
                       >
-                        <PlayIcon />
-                        Start work
+                        <Button
+                          size="sm"
+                          onClick={onStart}
+                          disabled={startYields}
+                        >
+                          <PlayIcon />
+                          Start work
+                        </Button>
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3 p-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-medium">
+                    {plural(diffs.length, "file")} changed
+                  </span>
+                  <span className="font-mono text-emerald-600">+{addT}</span>
+                  <span className="font-mono text-red-600">−{delT}</span>
+                  {work?.branch && (
+                    <span className="flex items-center gap-1 text-muted-foreground">
+                      <GitBranchIcon className="size-3" />
+                      <span className="font-mono">{work.branch}</span>
+                    </span>
+                  )}
+                  {sel && (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => setSel(null)}
+                    >
+                      Show all
+                    </Button>
+                  )}
+                  {/* #108: pending review comments + the Codex-style send.
+                    Both render only while comments exist and a send handler
+                    is wired (D-#19). */}
+                  {onSend && pendingComments.length > 0 && (
+                    <span className="ml-auto flex items-center gap-2">
+                      <span
+                        data-diff-pending
+                        className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-400"
+                      >
+                        <MessageSquareTextIcon className="size-3" />
+                        {pendingComments.length} pending
+                      </span>
+                      <Button
+                        size="xs"
+                        data-diff-send
+                        onClick={sendComments}
+                        title={
+                          running
+                            ? steer
+                              ? "Send as a steer into the running turn"
+                              : "Send — queues as the next prompt"
+                            : "Send comments to the agent"
+                        }
+                      >
+                        <SendIcon />
+                        Send to agent
                       </Button>
                     </span>
                   )}
-                </>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-3 p-3">
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="font-medium">
-                  {plural(diffs.length, "file")} changed
-                </span>
-                <span className="font-mono text-emerald-600">+{addT}</span>
-                <span className="font-mono text-red-600">−{delT}</span>
-                {work?.branch && (
-                  <span className="flex items-center gap-1 text-muted-foreground">
-                    <GitBranchIcon className="size-3" />
-                    <span className="font-mono">{work.branch}</span>
-                  </span>
-                )}
-                {sel && (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={() => setSel(null)}
-                  >
-                    Show all
-                  </Button>
-                )}
-                {/* #108: pending review comments + the Codex-style send.
-                    Both render only while comments exist and a send handler
-                    is wired (D-#19). */}
-                {onSend && pendingComments.length > 0 && (
-                  <span className="ml-auto flex items-center gap-2">
-                    <span
-                      data-diff-pending
-                      className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-400"
-                    >
-                      <MessageSquareTextIcon className="size-3" />
-                      {pendingComments.length} pending
-                    </span>
-                    <Button
-                      size="xs"
-                      data-diff-send
-                      onClick={sendComments}
-                      title={
-                        running
-                          ? steer
-                            ? "Send as a steer into the running turn"
-                            : "Send — queues as the next prompt"
-                          : "Send comments to the agent"
-                      }
-                    >
-                      <SendIcon />
-                      Send to agent
-                    </Button>
-                  </span>
-                )}
-              </div>
-              {shown.map((d) => (
-                <div key={d.path} className="flex items-start gap-2">
-                  {/* Stage checkbox — the ship bar commits the checked
-                      set (issue #107 AC-1; all checked by default). */}
-                  {shipBar && (
-                    <Checkbox
-                      data-stagecheck
-                      className="mt-3 shrink-0"
-                      checked={!unchecked.has(d.path)}
-                      onCheckedChange={(c) => toggleFile(d.path, c === true)}
-                      title={`Stage ${d.path}`}
-                    />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <DiffView
-                      d={d}
-                      comments={{
-                        list: dc.comments.filter((c) => c.path === d.path),
-                        onAdd: dc.add,
-                        onEdit: dc.edit,
-                        onDelete: dc.remove,
-                      }}
-                      openMenu={
-                        openPath
-                          ? {
-                              editors,
-                              onOpen: (app) => openPath(d.path, app),
-                            }
-                          : undefined
-                      }
-                      onOpenLine={
-                        openPath && editors.length
-                          ? (line) => openPath(d.path, editors[0]!.id, line)
-                          : undefined
-                      }
-                    />
-                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-          {/* Commits on this branch — outside the clean/dirty ternary: they
-              still matter once every change is committed (issue #107). */}
-          {liveCommits.length > 0 && (
-            <div className="space-y-2 px-3 pt-2 pb-3">
-              <div className="flex items-center gap-1.5 font-medium text-muted-foreground text-xs">
-                <GitCommitHorizontalIcon className="size-3.5" />
-                Commits on this branch
+                {shown.map((d) => (
+                  <div key={d.path} className="flex items-start gap-2">
+                    {/* Stage checkbox — the ship bar commits the checked
+                      set (issue #107 AC-1; all checked by default). */}
+                    {shipBar && (
+                      <Checkbox
+                        data-stagecheck
+                        className="mt-3 shrink-0"
+                        checked={!unchecked.has(d.path)}
+                        onCheckedChange={(c) => toggleFile(d.path, c === true)}
+                        title={`Stage ${d.path}`}
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <DiffView
+                        d={d}
+                        comments={{
+                          list: dc.comments.filter((c) => c.path === d.path),
+                          onAdd: dc.add,
+                          onEdit: dc.edit,
+                          onDelete: dc.remove,
+                        }}
+                        openMenu={
+                          openPath
+                            ? {
+                                editors,
+                                onOpen: (app) => openPath(d.path, app),
+                              }
+                            : undefined
+                        }
+                        onOpenLine={
+                          openPath && editors.length
+                            ? (line) => openPath(d.path, editors[0]!.id, line)
+                            : undefined
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
-              {liveCommits.map((c) => (
-                <Commit key={c.hash}>
-                  <CommitHeader nativeButton={false}>
-                    <CommitInfo className="min-w-0">
-                      <CommitMessage className="truncate">
-                        {c.message}
-                      </CommitMessage>
-                      <CommitMetadata>
-                        <CommitHash>{c.hash}</CommitHash>
-                        <CommitSeparator />
-                        {lead?.name}
-                        <CommitSeparator />
-                        {plural(c.files.length, "file")}
-                      </CommitMetadata>
-                    </CommitInfo>
-                    <CommitActions>
-                      <CommitCopyButton hash={c.hash} />
-                    </CommitActions>
-                  </CommitHeader>
-                  <CommitContent>
-                    <CommitFiles>
-                      {c.files.map((f) => (
-                        <CommitFile key={f.path}>
-                          <CommitFileInfo>
-                            <CommitFileStatus status={f.status} />
-                            <CommitFileIcon />
-                            <CommitFilePath>{f.path}</CommitFilePath>
-                          </CommitFileInfo>
-                          <CommitFileChanges>
-                            <CommitFileAdditions count={f.add} />
-                            <CommitFileDeletions count={f.del} />
-                          </CommitFileChanges>
-                        </CommitFile>
-                      ))}
-                    </CommitFiles>
-                  </CommitContent>
-                </Commit>
-              ))}
-            </div>
+            )}
+            {/* Commits on this branch — outside the clean/dirty ternary: they
+              still matter once every change is committed (issue #107). */}
+            {liveCommits.length > 0 && (
+              <div className="space-y-2 px-3 pt-2 pb-3">
+                <div className="flex items-center gap-1.5 font-medium text-muted-foreground text-xs">
+                  <GitCommitHorizontalIcon className="size-3.5" />
+                  Commits on this branch
+                </div>
+                {liveCommits.map((c) => (
+                  <Commit key={c.hash}>
+                    <CommitHeader nativeButton={false}>
+                      <CommitInfo className="min-w-0">
+                        <CommitMessage className="truncate">
+                          {c.message}
+                        </CommitMessage>
+                        <CommitMetadata>
+                          <CommitHash>{c.hash}</CommitHash>
+                          <CommitSeparator />
+                          {lead?.name}
+                          <CommitSeparator />
+                          {plural(c.files.length, "file")}
+                        </CommitMetadata>
+                      </CommitInfo>
+                      <CommitActions>
+                        <CommitCopyButton hash={c.hash} />
+                      </CommitActions>
+                    </CommitHeader>
+                    <CommitContent>
+                      <CommitFiles>
+                        {c.files.map((f) => (
+                          <CommitFile key={f.path}>
+                            <CommitFileInfo>
+                              <CommitFileStatus status={f.status} />
+                              <CommitFileIcon />
+                              <CommitFilePath>{f.path}</CommitFilePath>
+                            </CommitFileInfo>
+                            <CommitFileChanges>
+                              <CommitFileAdditions count={f.add} />
+                              <CommitFileDeletions count={f.del} />
+                            </CommitFileChanges>
+                          </CommitFile>
+                        ))}
+                      </CommitFiles>
+                    </CommitContent>
+                  </Commit>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+          {shipBar && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-background to-transparent" />
           )}
-        </ScrollArea>
+        </div>
         {/* The commit → push → Create PR bar (issue #107/#359). */}
         {shipBar && <CommitBar {...shipBar} />}
       </TabsContent>

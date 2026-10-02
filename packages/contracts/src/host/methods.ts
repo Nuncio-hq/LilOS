@@ -38,6 +38,8 @@ import {
   GitIsRepoResult,
   GitLogParams,
   GitLogResult,
+  GitPullParams,
+  GitPullResult,
   GitPushParams,
   GitPushResult,
   GitStatusParams,
@@ -125,6 +127,11 @@ export const HOST_METHODS = {
     params: GitPushParams,
     result: GitPushResult,
     doc: "Push the current branch to origin; sets `-u` on the first push. Never force, amend or rebase.",
+  },
+  "git.pull": {
+    params: GitPullParams,
+    result: GitPullResult,
+    doc: "Fast-forward-only pull (`git pull --ff-only`, argv only — never merges, rebases or force-pushes); a diverged history answers reason 'diverged'.",
   },
   "git.createBranch": {
     params: GitCreateBranchParams,

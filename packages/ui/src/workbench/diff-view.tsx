@@ -103,6 +103,13 @@ function anchorRow(rows: DiffRow[], c: DiffComment): number {
   return hit;
 }
 
+/* Every row a comment's span touches on its numbered side — the marker
+   AC-1 puts on covered lines (pending amber, sent sky). */
+function coversRow(c: DiffComment, r: DiffRow): boolean {
+  const n = c.side === "a" ? r.a : r.b;
+  return n != null && n >= c.start && n <= c.end;
+}
+
 function CommentEditor({
   rows,
   lo,
@@ -247,6 +254,13 @@ export function DiffView({
         </tr>
       );
     const inSel = sel && i >= sel.lo && i <= sel.hi;
+    const anchor = comments
+      ? list.some((c) => !c.resolved && coversRow(c, r))
+        ? "pending"
+        : list.some((c) => c.resolved && coversRow(c, r))
+          ? "resolved"
+          : null
+      : null;
     const clickLine = () => {
       /* A click that ends a gutter drag or one that follows selecting
          code text is not a pick — it's the end of a selection gesture. */
@@ -262,6 +276,7 @@ export function DiffView({
       <tr
         key={i}
         data-diff-line={i}
+        {...(anchor ? { "data-comment-anchor": anchor } : {})}
         className={cn(
           "group",
           r.kind === "add" && "bg-emerald-500/[0.09]",
@@ -312,7 +327,7 @@ export function DiffView({
           )}
         </td>
         <td
-          className="w-9 select-none border-r px-1.5 text-right align-top text-[11px] text-muted-foreground/70 tabular-nums"
+          className="relative w-9 select-none border-r px-1.5 text-right align-top text-[11px] text-muted-foreground/70 tabular-nums"
           onMouseDown={
             comments
               ? (e) => {
@@ -325,6 +340,15 @@ export function DiffView({
               : undefined
           }
         >
+          {anchor && (
+            <span
+              aria-hidden
+              className={cn(
+                "pointer-events-none absolute left-1 top-1/2 size-1.5 -translate-y-1/2 rounded-full",
+                anchor === "pending" ? "bg-amber-500" : "bg-sky-500",
+              )}
+            />
+          )}
           {onOpenLine && r.b != null ? (
             <button
               type="button"
@@ -470,16 +494,28 @@ export function DiffView({
                           className={cn(
                             "flex items-start gap-2 px-3 py-1.5 text-xs",
                             c.resolved
-                              ? "border-l-2 border-l-emerald-500/60 bg-emerald-500/[0.05] text-muted-foreground"
+                              ? "border-l-2 border-l-sky-500/60 bg-sky-500/[0.05] text-muted-foreground"
                               : "border-l-2 border-l-amber-500 bg-amber-500/[0.06]",
                           )}
                         >
                           {c.resolved ? (
-                            <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
+                            <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-sky-600" />
                           ) : (
                             <MessageSquarePlusIcon className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
                           )}
                           <div className="min-w-0 flex-1">
+                            {c.resolved && (
+                              <span
+                                data-sent-pill
+                                className="mr-2 rounded-full bg-sky-500/15 px-1.5 py-px font-medium text-[10px] text-sky-700 dark:text-sky-300"
+                              >
+                                {c.via === "steer"
+                                  ? "Sent · steered"
+                                  : c.via === "queue"
+                                    ? "Sent · queued"
+                                    : "Sent"}
+                              </span>
+                            )}
                             <span className="mr-2 font-mono text-[10px] text-muted-foreground">
                               {c.start === c.end
                                 ? `${c.path}:${c.start}`
@@ -494,7 +530,7 @@ export function DiffView({
                             )}
                           </div>
                           {!c.resolved && (
-                            <span className="flex shrink-0 gap-0.5">
+                            <span className="-mt-1 flex shrink-0 gap-0.5">
                               <Button
                                 variant="ghost"
                                 size="icon-xs"
