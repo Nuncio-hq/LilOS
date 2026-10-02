@@ -382,10 +382,13 @@ test("AC-2 + AC-4 Send posts one message quoting path:line + code; sent comments
   await expect(pending(page)).toHaveText(/2 pending/);
   await page.screenshot({ path: `${SHOTS}/ac-1-pending-range.png` });
 
-  // Idle → the send starts a fresh turn (AC-3's prompt branch).
+  // Idle → the send starts a fresh turn (AC-3's prompt branch). hasNot
+  // [data-agentturn]: the answering turn echoes the prompt, so it also
+  // carries the marker text — only the user message is the sent one.
   const sent = page
     .locator("main [data-msg]")
-    .filter({ hasText: "Review comments on the diff" });
+    .filter({ hasText: "Review comments on the diff" })
+    .filter({ hasNot: page.locator("[data-agentturn]") });
   await page.locator("[data-diff-send]").click();
   await expect(sent).toHaveCount(1, { timeout: 30_000 });
   await expect(sent).toContainText("a.txt:2");
