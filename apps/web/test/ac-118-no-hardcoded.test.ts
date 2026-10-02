@@ -25,6 +25,9 @@ const SKIP_DIRS = new Set([
   // Expo prebuild output (apps/mobile/ios|android/Pods): generated, and its
   // dangling header symlinks crash readdirSync.
   "Pods",
+  // apps/mobile/src/demo: scripted mock world (#168) — the fake identity is
+  // the demo's own data, same standing as the un-scanned prototype mocks.
+  "demo",
 ]);
 const SCAN = /\.(ts|tsx|js|jsx|mjs|cjs|html|css)$/;
 

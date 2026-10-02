@@ -51,7 +51,11 @@ describe("#247 AC-2 — Settings Mac row carries the live link", () => {
       settings.indexOf("mac={") + 300,
     );
     expect(macProp).toContain("link,");
-    expect(settings).toContain('onOpenMac={() => nav.navigate("Mac")}');
+    /* #168: the row still reaches the Mac sheet — unless the demo world is
+       up, where there is no real Mac and the sheet's Forget would target a
+       real Keychain entry. */
+    expect(settings).toContain('nav.navigate("Mac")');
+    expect(settings).toContain("demo ? undefined");
   });
 });
 

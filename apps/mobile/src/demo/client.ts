@@ -24,14 +24,13 @@ import type {
 } from "@lilos/contracts/engine";
 import type { ForgePrListItem } from "@lilos/contracts/host";
 import { atom, type WritableAtom } from "nanostores";
-import { playScript, type TurnCtx } from "./engine";
+import type { TurnCtx } from "./engine";
 import { handleRequest } from "./requests";
 import {
   DEMO_SEEDS,
   firstTurnScript,
   followUpScript,
   RESUME_ON_OPEN,
-  SLEEP_FIX_TURN,
   SLEEP_THREAD,
 } from "./seeds";
 import {
