@@ -20,18 +20,8 @@
  * same flow runs against a real agent (the steer capability is engine-
  * declared, so the observed route is whichever the engine supports).
  */
-import {
-  type ChildProcess,
-  execFileSync,
-  spawn,
-} from "node:child_process";
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // Relative import: scripts/ is not a workspace dir, so @lilos/* does not
@@ -309,7 +299,11 @@ if (!route) fail("no steer.landed and no second turn — message not routed");
 out(`route: ${route}`);
 
 /* The message text must reach the agent either way. */
-if (route === "steer" && steeredText !== null && !steeredText.includes("a.txt:2"))
+if (
+  route === "steer" &&
+  steeredText !== null &&
+  !steeredText.includes("a.txt:2")
+)
   fail("steered text missing the comment payload");
 if (route === "steer" && steeredText === "")
   fail("steered event carried no text");
