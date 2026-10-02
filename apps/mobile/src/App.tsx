@@ -509,16 +509,23 @@ function useDeepLinks(phase: string) {
   }, [url, phase]);
 }
 
+/* screenLayout functions are invoked inside the navigator's own render —
+   they can't call hooks. Gating on $demo has to happen in a mounted child
+   component, never in the layout body itself. */
+function DemoBadgeIfDemo({ variant }: { variant?: "top" | "sheet" }) {
+  const demo = useStore($demo);
+  return demo ? <DemoBadge variant={variant} /> : null;
+}
+
 /* #168 AC-4: the root Demo pill sits in an overlay above the navigator,
    but iOS form sheets present a new window on top of it — so sheet screens
    mount the badge inside their own screenLayout (which replaces the
    navigator's, so the dev net chip gets re-mounted here too). */
 function DemoSheetChrome({ children }: { children: ReactNode }) {
-  const demo = useStore($demo);
   return (
     <View className="flex-1">
       {children}
-      {demo && <DemoBadge variant="sheet" />}
+      <DemoBadgeIfDemo variant="sheet" />
       {__DEV__ && <NetSpyBadge />}
     </View>
   );
