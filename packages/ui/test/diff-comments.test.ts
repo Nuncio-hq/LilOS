@@ -28,7 +28,7 @@ describe("AC-2 diffCommentsMessage — one message, path:line + quoted lines", (
     );
   });
 
-  it("lists a range as path:start-end quoting every selected row", () => {
+  it("lists a range as path:start–end quoting every selected row", () => {
     const msg = diffCommentsMessage([
       c({
         start: 3,
@@ -41,7 +41,8 @@ describe("AC-2 diffCommentsMessage — one message, path:line + quoted lines", (
         text: "why?",
       }),
     ]);
-    expect(msg).toContain("packages/contracts/src/envelope.ts:3-5\n");
+    /* #393 AC-4: one separator everywhere — the en-dash the diff UI uses. */
+    expect(msg).toContain("packages/contracts/src/envelope.ts:3–5\n");
     expect(msg).toContain("+  seq: z.number().int().positive(),\n");
     expect(msg).toContain("   kind: z.string(),\n");
     expect(msg).toContain("\nwhy?");

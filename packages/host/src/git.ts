@@ -12,6 +12,7 @@ import type {
   GitIsRepoResult,
   GitLogCommit,
   GitLogResult,
+  GitPullResult,
   GitPushResult,
   GitStatusResult,
   GitWorktree,
@@ -128,7 +129,7 @@ export async function gitBranches(params: {
 // biome-ignore lint/suspicious/noControlCharactersInRegex: git colors stderr on a TTY — strip ANSI for display
 const ANSI = /\u001B\[[0-9;]*m/g;
 
-type GitOp = "commit" | "push" | "createBranch";
+type GitOp = "commit" | "push" | "pull" | "createBranch";
 
 /** stderr/exec detail → a typed GitWriteReason the client maps to plain copy
     (same contract as forge's ghFailed — raw stderr only in `detail`). */
@@ -175,6 +176,32 @@ function gitWriteFailed(op: GitOp, e: unknown): HostError {
       /nothing to commit|nothing added to commit|no changes added/i.test(detail)
     ) {
       reason = "nothing";
+    }
+  } else if (op === "pull") {
+    if (
+      /not possible to fast-forward|cannot fast-forward|you have divergent|diverged/i.test(
+        detail,
+      )
+    ) {
+      reason = "diverged";
+    } else if (
+      /unmerged|merge conflict|not possible because you have unmerged|fix conflicts|would be overwritten/i.test(
+        detail,
+      )
+    ) {
+      reason = "conflict";
+    } else if (
+      /permission denied|authentication failed|could not read username|terminal prompts disabled|could not read from remote repository/i.test(
+        detail,
+      )
+    ) {
+      reason = "auth";
+    } else if (
+      /could not resolve host|no such remote|failed to connect|does not appear to be a git repository|no tracking information/i.test(
+        detail,
+      )
+    ) {
+      reason = "no-remote";
     }
   } else {
     if (/already exists/i.test(detail)) reason = "exists";
@@ -272,6 +299,49 @@ export async function gitPush(params: {
     "@{upstream}",
   ]).then((o) => o?.trim() || null);
   return { root: collapsePath(root), branch, upstream: after };
+}
+
+/** `git pull --ff-only` — the push-rejected fix (issue #393 AC-5). Argv
+    only; a diverged history answers 'diverged' plainly — never merges,
+    rebases or resolves anything itself. */
+export async function gitPull(params: {
+  path: string;
+}): Promise<GitPullResult> {
+  const root = await rootOrThrow(params.path);
+  const branch = await headOf(root);
+  if (!branch) {
+    throw new HostError(
+      HOST_ERRORS.GIT_FAILED,
+      "git pull failed: detached HEAD — nothing to pull into",
+      { reason: "other", detail: "HEAD is detached" },
+    );
+  }
+  const remote = await remoteNameOf(root);
+  if (!remote) {
+    throw new HostError(
+      HOST_ERRORS.GIT_FAILED,
+      "git pull failed: no remote is configured",
+      { reason: "no-remote", detail: "no remote is configured" },
+    );
+  }
+  const upstream = await gitOr(root, [
+    "rev-parse",
+    "--abbrev-ref",
+    "@{upstream}",
+  ]).then((o) => o?.trim() || null);
+  if (!upstream) {
+    throw new HostError(
+      HOST_ERRORS.GIT_FAILED,
+      "git pull failed: the branch has no upstream to pull from",
+      { reason: "other", detail: "no upstream configured" },
+    );
+  }
+  try {
+    await git(root, ["pull", "--ff-only"]);
+  } catch (e) {
+    throw gitWriteFailed("pull", e);
+  }
+  return { root: collapsePath(root), branch, upstream };
 }
 
 /** `git checkout -b <name>` — check-ref-format validates the name first;

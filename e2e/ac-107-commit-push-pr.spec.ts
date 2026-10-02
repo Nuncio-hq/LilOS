@@ -479,6 +479,53 @@ test("AC-3 Push sets upstream and lands the branch; rejected, no-remote and auth
   ).toContain("rival commit");
   await page.screenshot({ path: `${SHOTS}/ac-3-rejected.png` });
 
+  /* #393 AC-5: the rejected state offers the fix it names — a Pull button
+     (real `git pull --ff-only` through git.pull) plus one-click "Ask agent
+     to update". Push is no longer the only obvious action. */
+  const pullBtn = page.locator("[data-shippull]");
+  const askBtn = page.locator("[data-shipask]");
+  await expect(pullBtn).toBeVisible();
+  await expect(askBtn).toBeVisible();
+
+  // Ask agent to update posts a user message the agent can act on — then
+  // let the turn it started settle so later tests inherit a quiet thread.
+  await askBtn.click();
+  await expect(
+    page
+      .locator("main [data-msg]")
+      .filter({ hasText: /pull|rejected/i })
+      .last(),
+  ).toBeVisible({ timeout: 30_000 });
+  await allowAllWhile(page, expectSettled(turns(page).last()));
+
+  // Pull on a diverged checkout shows a plain error — and never merges or
+  // rebases: HEAD stays put.
+  const headBefore = git(["rev-parse", "HEAD"]).trim();
+  await pullBtn.click();
+  await expect(err).toContainText(/can't fast-forward|diverged/i, {
+    timeout: 30_000,
+  });
+  expect(git(["rev-parse", "HEAD"]).trim()).toBe(headBefore);
+  await page.screenshot({ path: `${SHOTS}/ac-5-pull-diverged.png` });
+
+  /* Resolve the divergence in a terminal (the copy's own advice), let the
+     remote move again, and Pull fast-forwards — the error clears and Push
+     is green again. */
+  git(["reset", "--hard", "origin/trunk"]);
+  rivalPush();
+  await pullBtn.click();
+  await expect(page.locator("[data-shiperror]")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await expect
+    .poll(() => git(["log", "-1", "--format=%s"]).trim(), { timeout: 30_000 })
+    .toContain("rival commit");
+  await page.locator("[data-shippush]").click();
+  await expect(page.locator("[data-shiperror]")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await page.screenshot({ path: `${SHOTS}/ac-5-pulled.png` });
+
   // No remote: a repo without origin.
   await page.keyboard.press("Escape");
   await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });

@@ -33,8 +33,13 @@ export function useDiffComments(scope: string): {
   edit: (id: string, text: string) => void;
   remove: (id: string) => void;
   /** Sent: every pending note becomes a resolved marker fingerprinted to
-      the patch it quoted (AC-4). Returns the comments that were sent. */
-  resolveAll: (patches: Map<string, string>) => DiffComment[];
+      the patch it quoted (AC-4), stamped with the route it left on
+      (#393 AC-2 — the "Sent · steered/queued" pill mirrors the toast).
+      Returns the comments that were sent. */
+  resolveAll: (
+    patches: Map<string, string>,
+    via?: DiffComment["via"],
+  ) => DiffComment[];
   /** The diff moved: drop resolved markers whose file's patch changed,
       pending notes whose file left the diff or whose anchor vanished. */
   prune: (diffs: Diff[]) => void;
@@ -81,12 +86,14 @@ export function useDiffComments(scope: string): {
     [scope],
   );
   const resolveAll = useCallback(
-    (patches: Map<string, string>) => {
+    (patches: Map<string, string>, via?: DiffComment["via"]) => {
       const pending = listFor(scope).filter((c) => !c.resolved);
       publish(
         scope,
         listFor(scope).map((c) =>
-          c.resolved ? c : { ...c, resolved: true, patch: patches.get(c.path) },
+          c.resolved
+            ? c
+            : { ...c, resolved: true, patch: patches.get(c.path), via },
         ),
       );
       return pending;
@@ -148,7 +155,7 @@ export function diffCommentsMessage(list: DiffComment[]): string {
     const where =
       c.start === c.end
         ? `${c.path}:${c.start}`
-        : `${c.path}:${c.start}-${c.end}`;
+        : `${c.path}:${c.start}–${c.end}`;
     const quote = c.lines.join("\n");
     return `${where}\n${quote}\n${c.text}`;
   });

@@ -180,7 +180,9 @@ export const hostAccessors = {
   commit: (cwd: string, files: string[], message: string) =>
     host<Record<string, never>>("git.commit", { path: cwd, files, message }).then(() => undefined),
   push: (cwd: string) =>
-    host<Record<string, never>>("git.push", { path: cwd }).then(() => undefined),
+    host<{ upstream: string | null }>("git.push", { path: cwd }),
+  pull: (cwd: string) =>
+    host<Record<string, never>>("git.pull", { path: cwd }).then(() => undefined),
   createBranch: (cwd: string, name: string) =>
     host<Record<string, never>>("git.createBranch", { path: cwd, name }).then(() => undefined),
   prCreate: (cwd: string, pr: { title: string; body: string; base?: string }) =>

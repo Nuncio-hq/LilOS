@@ -1530,9 +1530,9 @@ export default function App() {
       branch: branch(),
       defaultBranch: "main",
       remote: "git@github.com:acme/lilos.git",
+      upstream: pushed ?? null,
       accessory: (
         <span className="ml-auto flex items-center gap-2">
-          {pushed && <span className="font-mono text-[10px] text-emerald-600">↑ {pushed}</span>}
           <select
             data-shipscenario
             className="h-6 rounded-md border bg-background px-1 text-[10px] text-muted-foreground"
@@ -1541,6 +1541,7 @@ export default function App() {
           >
             <option value="ok">git+gh ok</option>
             <option value="push-rejected">push rejected</option>
+            <option value="pull-diverged">pull diverged</option>
             <option value="no-remote">no remote</option>
             <option value="signed-out">gh signed out</option>
             <option value="not-a-repo">not a git repo</option>
@@ -1564,11 +1565,20 @@ export default function App() {
         say(`Committed ${paths.length} file(s) on ${branch()}`)
       },
       onPush: async () => {
-        if (scen === "push-rejected") shipFail("rejected", `To github.com:acme/lilos.git\n ! [rejected]        ${branch()} -> ${branch()} (fetch first)\nerror: failed to push some refs to 'github.com:acme/lilos.git'`)
+        if (scen === "push-rejected" || scen === "pull-diverged") shipFail("rejected", `To github.com:acme/lilos.git\n ! [rejected]        ${branch()} -> ${branch()} (fetch first)\nerror: failed to push some refs to 'github.com:acme/lilos.git'`)
         if (scen === "no-remote") shipFail("no-remote", "fatal: No configured push destination.")
         if (scen === "signed-out") shipFail("auth", "fatal: could not read Username for 'https://github.com': terminal prompts disabled")
         setShipPushed((s) => ({ ...s, [root.id]: `origin/${branch()}` }))
         say(`Pushed ${branch()} to origin`)
+      },
+      onPull: async () => {
+        /* The pull resolves the rejected scenario — the remote moved once,
+           not forever; a diverged scenario fails plainly (issue #393 AC-5). */
+        if (scen === "pull-diverged") shipFail("diverged", "fatal: Not possible to fast-forward, aborting.")
+        if (scen === "no-remote") shipFail("no-remote", "fatal: No configured pull destination.")
+        if (scen === "signed-out") shipFail("auth", "fatal: could not read Username for 'https://github.com': terminal prompts disabled")
+        if (scen === "push-rejected") setShipScenario((s) => ({ ...s, [root.id]: "ok" }))
+        say(scen === "push-rejected" ? `Pulled — fast-forwarded to origin/${branch()}` : "Already up to date")
       },
       onCreatePr: async (p) => {
         if (scen === "push-rejected") shipFail("rejected", `To github.com:acme/lilos.git\n ! [rejected]        ${branch()} -> ${branch()} (non-fast-forward)`)

@@ -353,9 +353,21 @@ test("AC-1 pending comments add/edit/delete on a line and a dragged range, survi
   await expect(commentsOn(page, "notes.txt")).toContainText("notes.txt:1–3");
   await expect(pending(page)).toHaveText(/2 pending/);
 
-  // Delete the range comment — counter drops back.
+  /* #393 AC-1: every line a pending comment covers carries the anchor
+     marker — one row on a.txt, the three range rows on notes.txt. */
+  await expect(
+    diff(page, "a.txt").locator("[data-comment-anchor]"),
+  ).toHaveCount(1);
+  await expect(
+    diff(page, "notes.txt").locator("[data-comment-anchor]"),
+  ).toHaveCount(3);
+
+  // Delete the range comment — counter drops back, its anchors unmark.
   await commentsOn(page, "notes.txt").locator("[data-comment-delete]").click();
   await expect(commentsOn(page, "notes.txt")).toHaveCount(0);
+  await expect(
+    diff(page, "notes.txt").locator("[data-comment-anchor]"),
+  ).toHaveCount(0);
   await expect(pending(page)).toHaveText(/1 pending/);
 
   // AC-1: pending comments survive a tab switch (the tab unmounts content).
@@ -394,7 +406,8 @@ test("AC-2 + AC-4 Send posts one message quoting path:line + code; sent comments
   await expect(sent).toContainText("a.txt:2");
   await expect(sent).toContainText("+two");
   await expect(sent).toContainText("rename this");
-  await expect(sent).toContainText("notes.txt:1-3");
+  // #393 AC-4: one range separator — the same en-dash the diff label uses.
+  await expect(sent).toContainText("notes.txt:1–3");
   await expect(sent).toContainText("why three lines?");
   // A new agent turn answers the message (AC-2).
   const turn = turns(page).last();
@@ -409,6 +422,16 @@ test("AC-2 + AC-4 Send posts one message quoting path:line + code; sent comments
   await expect(diff(page, "notes.txt").locator("[data-resolved]")).toHaveCount(
     1,
   );
+  /* #393 AC-2: the marker says what happened in words — a "Sent" pill
+     mirroring the toast's route; the suffix depends on whether the send
+     landed mid-turn ("steered"/"queued") or after it settled ("Sent").
+     #393 AC-1: the sent comment's anchors stay marked as resolved rows. */
+  await expect(diff(page, "a.txt").locator("[data-sent-pill]")).toHaveText(
+    /^Sent( · steered| · queued)?$/,
+  );
+  await expect(
+    diff(page, "notes.txt").locator("[data-comment-anchor]"),
+  ).toHaveCount(3);
   await page.screenshot({ path: `${SHOTS}/ac-4-resolved.png` });
 
   /* The file's patch moving drops its markers while an untouched file's
@@ -466,6 +489,10 @@ test("AC-3 send mid-turn rides session.steer — the message lands as a steered 
   // It resolved like a sent comment — marker on a.txt, counter clear.
   await openChanges(page);
   await expect(diff(page, "a.txt").locator("[data-resolved]")).toHaveCount(1);
+  // #393 AC-2: the marker's pill mirrors the toast — "Sent · steered".
+  await expect(diff(page, "a.txt").locator("[data-sent-pill]")).toHaveText(
+    "Sent · steered",
+  );
   await expect(pending(page)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-3-steered.png` });
 });

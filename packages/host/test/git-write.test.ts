@@ -247,6 +247,56 @@ describe("git write methods (issue #107)", () => {
     }
   });
 
+  /* Issue #393 AC-5: `git pull --ff-only` — the rejected push's named fix. */
+  it("AC-5 git.pull on a diverged history answers reason 'diverged' — never merges, never rebases", async () => {
+    // The AC-3 rejection left feat/widgets diverged (local "ours" vs remote
+    // "someone else"). A fast-forward is impossible; HEAD must not move.
+    const headBefore = inRepo(["rev-parse", "HEAD"], repo);
+    await expect(callHost("git.pull", { path: repo })).rejects.toMatchObject({
+      code: HOST_ERRORS.GIT_FAILED,
+      data: { reason: "diverged" },
+    });
+    expect(inRepo(["rev-parse", "HEAD"], repo)).toBe(headBefore);
+    expect(inRepo(["log", "--format=%s", "-3"], repo)).not.toMatch(/merge/i);
+  });
+
+  it("AC-5 git.pull fast-forwards a checkout that is only behind", async () => {
+    // User resolved the divergence in a terminal (the copy's own advice),
+    // then a newer remote commit lands — behind but fast-forwardable.
+    inRepo(["reset", "--hard", "origin/feat/widgets"], repo);
+    const other2 = join(scanRoot, "other2");
+    inRepo(["clone", bare, other2], scanRoot);
+    inRepo(["config", "user.email", "t@t"], other2);
+    inRepo(["config", "user.name", "t"], other2);
+    inRepo(["checkout", "feat/widgets"], other2);
+    writeFileSync(join(other2, "later.txt"), "later\n");
+    inRepo(["add", "."], other2);
+    inRepo(["commit", "-m", "later work"], other2);
+    inRepo(["push", "origin", "feat/widgets"], other2);
+    const r = (await callHost("git.pull", { path: repo })) as PushResult;
+    expect(r.branch).toBe("feat/widgets");
+    expect(r.upstream).toBe("origin/feat/widgets");
+    expect(inRepo(["log", "-1", "--format=%s"], repo)).toBe("later work\n");
+  });
+
+  it("AC-5 git.pull with no remote configured answers plainly", async () => {
+    const lonely2 = makeRepo("lonely2", false);
+    await expect(callHost("git.pull", { path: lonely2 })).rejects.toMatchObject(
+      {
+        code: HOST_ERRORS.GIT_FAILED,
+        data: { reason: "no-remote" },
+      },
+    );
+  });
+
+  it("AC-5 git.pull on a branch without upstream answers plainly", async () => {
+    inRepo(["checkout", "-b", "no-upstream"], repo);
+    await expect(callHost("git.pull", { path: repo })).rejects.toMatchObject({
+      code: HOST_ERRORS.GIT_FAILED,
+    });
+    inRepo(["checkout", "feat/widgets"], repo);
+  });
+
   it("AC-4 git.branches reports the remote default branch", async () => {
     const r = (await callHost("git.branches", { path: repo })) as {
       current: string | null;
