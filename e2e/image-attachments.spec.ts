@@ -127,10 +127,14 @@ test("AC-2 the employee's answer references the image that came through", async 
   }
 
   // …and the employee's answer (in the thread panel) names what arrived.
+  // Scoped to the reply text (.lilos-prose): the folded reasoning can mention
+  // the file too and stays in the DOM under hidden="until-found" (#400).
   const reply = panel.getByText(/reached me on the prompt as an image block/);
   await expect(reply).toBeVisible({ timeout: 30_000 });
   await expect(
-    panel.getByText(/shot\.png \(image\/png, \d+ bytes\)/),
+    panel
+      .locator(".lilos-prose")
+      .getByText(/shot\.png \(image\/png, \d+ bytes\)/),
   ).toBeVisible();
   expect(errors).toEqual([]);
 });
