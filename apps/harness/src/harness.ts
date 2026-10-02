@@ -22,6 +22,7 @@ import {
   ChannelCreatedEvent,
   ChannelRemovedEvent,
   ConversationModelRequestedEvent,
+  ConversationRewoundEvent,
   ConversationsRewindHostParams,
   ConversationUpdatedEvent,
   EmployeeRemovedEvent,
@@ -880,10 +881,13 @@ export class Harness {
       return;
     }
     // Watermark guard: a redelivery (register pending list, channel replay)
-    // of a message the engine already took must not prompt it again.
+    // of a message the engine already took must not prompt it again. The
+    // `dismissed` head-check ran before the bind await — a rewind could have
+    // killed the row in between, so it is checked again here.
     const fresh = this.conversationFromAtom(conv.id) ?? conv;
     if (message.seq <= fresh.deliveredSeq && !isRedeliver) return;
-    if (binding.consumed.has(message.id)) return;
+    if (this.dismissed.has(message.id) || binding.consumed.has(message.id))
+      return;
     this.enqueueOrPrompt(binding, message);
   }
 
@@ -1823,6 +1827,37 @@ export class Harness {
             }),
           );
         }
+        break;
+      }
+      case "conversation.rewound": {
+        /* #400: the relay marks the rewound tail in one batch — no per-message
+           `message.changed` fires — so fold its removedIds into the same
+           kill-set those events feed. A `deliver` still in flight when the
+           host-side handler pruned `early`/`queue` lands past the prune;
+           every later gate (early flush, enqueue, register pending) consults
+           `dismissed`, and re-splicing the holds here removes what slipped
+           in between. */
+        const parsed = ConversationRewoundEvent.safeParse(params);
+        if (!parsed.success) break;
+        const { conversationId, removedIds } = parsed.data;
+        const binding = conversationId
+          ? this.bindings.get(conversationId)
+          : undefined;
+        const holds = (list: AppMessage[]) =>
+          list.filter((m) => !removedIds.includes(m.id));
+        for (const removedId of removedIds) {
+          this.dismissed.add(removedId);
+          this.delivered.delete(removedId);
+          if (binding) {
+            binding.consumed.delete(removedId);
+            binding.steerPending = binding.steerPending.filter(
+              (s) => s.messageId !== removedId,
+            );
+          }
+        }
+        if (binding) binding.queue = holds(binding.queue);
+        const early = this.early.get(conversationId ?? "");
+        if (early?.length) this.early.set(conversationId ?? "", holds(early));
         break;
       }
       case "turn.interruptRequested": {
