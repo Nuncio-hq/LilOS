@@ -40,7 +40,13 @@ import * as Device from "expo-device";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Alert, useColorScheme, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import logo from "../assets/logo.png";
@@ -503,6 +509,21 @@ function useDeepLinks(phase: string) {
   }, [url, phase]);
 }
 
+/* #168 AC-4: the root Demo pill sits in an overlay above the navigator,
+   but iOS form sheets present a new window on top of it — so sheet screens
+   mount the badge inside their own screenLayout (which replaces the
+   navigator's, so the dev net chip gets re-mounted here too). */
+function DemoSheetChrome({ children }: { children: ReactNode }) {
+  const demo = useStore($demo);
+  return (
+    <View className="flex-1">
+      {children}
+      {demo && <DemoBadge variant="sheet" />}
+      {__DEV__ && <NetSpyBadge />}
+    </View>
+  );
+}
+
 const MAC_SHEET: NativeStackNavigationOptions = {
   headerShown: false,
   presentation: "modal",
@@ -587,117 +608,137 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style={scheme === "dark" ? "light" : "dark"} />
       <NavigationContainer ref={nav} theme={theme}>
-        <Stack.Navigator
-          key={phase}
-          screenOptions={{
-            headerShadowVisible: false,
-            headerBackButtonDisplayMode: "minimal",
-          }}
-          /* #168 AC-4: the Demo badge floats over every screen — one mount
-             covers stacks, tabs and form sheets alike. */
-          screenLayout={({ children }) => (
-            <View className="flex-1">
-              {children}
-              {demo && <DemoBadge />}
-              {__DEV__ && <NetSpyBadge />}
-            </View>
-          )}
-        >
-          {phase === "onboarding" ? (
-            <>
-              <Stack.Screen
-                name="Welcome"
-                component={Welcome}
-                options={{ headerShown: false }}
-              />
-              <Stack.Screen
-                name="Pair"
-                component={Pair}
-                options={{ title: "" }}
-              />
-              <Stack.Screen
-                name="Scan"
-                component={Scan}
-                options={{
-                  title: "",
-                  headerTransparent: true,
-                  headerTintColor: "#ffffff",
-                }}
-              />
-              <Stack.Screen
-                name="Manual"
-                component={Manual}
-                options={{ title: "" }}
-              />
-              <Stack.Screen
-                name="Connecting"
-                component={Connecting}
-                options={{ title: "" }}
-              />
-              <Stack.Screen
-                name="Connected"
-                component={Connected}
-                options={{
-                  title: "",
-                  headerBackVisible: false,
-                  gestureEnabled: false,
-                }}
-              />
-            </>
-          ) : (
-            <>
-              <Stack.Screen
-                name="Tabs"
-                component={Tabs}
-                options={{ headerShown: false }}
-              />
-              <Stack.Screen name="Mac" component={Mac} options={MAC_SHEET} />
-              <Stack.Screen name="Dm" component={Dm} options={CHAT_HEADER} />
-              <Stack.Screen
-                name="Thread"
-                component={Thread}
-                options={CHAT_HEADER}
-              />
-              <Stack.Screen
-                name="ThreadInfo"
-                component={ThreadInfo}
-                options={SHEET}
-              />
-              <Stack.Screen name="Plan" component={Plan} options={SHEET} />
-              <Stack.Screen
-                name="Subagent"
-                component={Subagent}
-                options={SHEET}
-              />
-              <Stack.Screen
-                name="Subagents"
-                component={Subagents}
-                options={SHEET}
-              />
-              <Stack.Screen
-                name="Background"
-                component={Background}
-                options={SHEET}
-              />
-              <Stack.Screen name="WbDiff" component={WbDiff} options={SHEET} />
-              <Stack.Screen
-                name="FolderPicker"
-                component={FolderPicker}
-                options={SHEET}
-              />
-              <Stack.Screen
-                name="BrowseMac"
-                component={BrowseMac}
-                options={SHEET}
-              />
-              <Stack.Screen
-                name="ModelPicker"
-                component={ModelPicker}
-                options={SHEET}
-              />
-            </>
-          )}
-        </Stack.Navigator>
+        <View className="flex-1">
+          <Stack.Navigator
+            key={phase}
+            screenOptions={{
+              headerShadowVisible: false,
+              headerBackButtonDisplayMode: "minimal",
+            }}
+            /* #168 AC-6 evidence: the dev-only net counter floats on every
+             screen — one mount covers stacks, tabs and form sheets alike.
+             The Demo pill lives in the root overlay instead so it can sit
+             in the top safe-area band above native headers. */
+            screenLayout={({ children }) => (
+              <View className="flex-1">
+                {children}
+                {__DEV__ && <NetSpyBadge />}
+              </View>
+            )}
+          >
+            {phase === "onboarding" ? (
+              <>
+                <Stack.Screen
+                  name="Welcome"
+                  component={Welcome}
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen
+                  name="Pair"
+                  component={Pair}
+                  options={{ title: "" }}
+                />
+                <Stack.Screen
+                  name="Scan"
+                  component={Scan}
+                  options={{
+                    title: "",
+                    headerTransparent: true,
+                    headerTintColor: "#ffffff",
+                  }}
+                />
+                <Stack.Screen
+                  name="Manual"
+                  component={Manual}
+                  options={{ title: "" }}
+                />
+                <Stack.Screen
+                  name="Connecting"
+                  component={Connecting}
+                  options={{ title: "" }}
+                />
+                <Stack.Screen
+                  name="Connected"
+                  component={Connected}
+                  options={{
+                    title: "",
+                    headerBackVisible: false,
+                    gestureEnabled: false,
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <Stack.Screen
+                  name="Tabs"
+                  component={Tabs}
+                  options={{ headerShown: false }}
+                />
+                <Stack.Screen name="Dm" component={Dm} options={CHAT_HEADER} />
+                <Stack.Screen
+                  name="Thread"
+                  component={Thread}
+                  options={CHAT_HEADER}
+                />
+                {/* iOS form sheets present above the root overlay, so the
+                    Demo pill mounts inside each of them here (the net chip
+                    too — a group's screenLayout replaces the navigator's). */}
+                <Stack.Group screenLayout={DemoSheetChrome}>
+                  <Stack.Screen
+                    name="Mac"
+                    component={Mac}
+                    options={MAC_SHEET}
+                  />
+                  <Stack.Screen
+                    name="ThreadInfo"
+                    component={ThreadInfo}
+                    options={SHEET}
+                  />
+                  <Stack.Screen name="Plan" component={Plan} options={SHEET} />
+                  <Stack.Screen
+                    name="Subagent"
+                    component={Subagent}
+                    options={SHEET}
+                  />
+                  <Stack.Screen
+                    name="Subagents"
+                    component={Subagents}
+                    options={SHEET}
+                  />
+                  <Stack.Screen
+                    name="Background"
+                    component={Background}
+                    options={SHEET}
+                  />
+                  <Stack.Screen
+                    name="WbDiff"
+                    component={WbDiff}
+                    options={SHEET}
+                  />
+                  <Stack.Screen
+                    name="FolderPicker"
+                    component={FolderPicker}
+                    options={SHEET}
+                  />
+                  <Stack.Screen
+                    name="BrowseMac"
+                    component={BrowseMac}
+                    options={SHEET}
+                  />
+                  <Stack.Screen
+                    name="ModelPicker"
+                    component={ModelPicker}
+                    options={SHEET}
+                  />
+                </Stack.Group>
+              </>
+            )}
+          </Stack.Navigator>
+          {/* #168 AC-4: Demo pill in the top safe-area band, above every
+             screen and native header (form sheets mount their own copy —
+             see DemoSheetChrome). */}
+          {demo && <DemoBadge />}
+        </View>
       </NavigationContainer>
     </SafeAreaProvider>
   );

@@ -17,7 +17,7 @@ export function NetSpyBadge() {
     <View
       pointerEvents="none"
       accessible={false}
-      className="absolute bottom-40 left-4"
+      className="absolute bottom-3 left-4"
     >
       <View
         className={`rounded-full border px-3 py-1.5 ${
