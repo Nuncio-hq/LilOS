@@ -143,6 +143,7 @@ export function Workbench({
   onPrMerge,
   live,
   running,
+  sendPending,
   steer,
   editors: editorsProp,
   onOpenPath,
@@ -175,6 +176,10 @@ export function Workbench({
   live?: LiveSurfaces;
   /** A turn is running — Changes/Files poll while the agent edits (#114 AC-3). */
   running?: boolean;
+  /** A user send is relay-accepted but the feed hasn't surfaced a turn for
+      it yet (#315's waiting tray). The ship bar hides Suggest across that
+      gap — turn start lags the relay message that already renders (#396). */
+  sendPending?: boolean;
   /** The engine declares `steer`: Send-to-agent labels the mid-turn route
       (issue #108); absent → plain "Send". */
   steer?: boolean;
@@ -487,7 +492,7 @@ export function Workbench({
         message: commitMsg,
         busy: shipBusy,
         error: shipError,
-        running: !!running,
+        running: !!running || !!sendPending,
         upstream: pushedUp,
         onMessage: setCommitMsg,
         onSuggest,
@@ -508,7 +513,7 @@ export function Workbench({
       message: commitMsg,
       busy: shipBusy,
       error: shipError,
-      running: !!running,
+      running: !!running || !!sendPending,
       upstream: ship.upstream ?? null,
       accessory: ship.accessory,
       onMessage: setCommitMsg,

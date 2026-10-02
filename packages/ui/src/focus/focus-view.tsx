@@ -314,9 +314,16 @@ export function FocusView({
   const liveKey = live
     ? `${live.id}:${live.steps?.length}:${lastStep?.running}`
     : "";
-  // Follow the agent: while a turn runs, the workbench jumps to what it is doing (until you pick a tab yourself).
+  /* Follow the agent: a turn that BEGINS while this view is mounted re-arms
+     follow so the workbench tracks it. The turn already live when the view
+     mounted — a mid-turn reload onto `?tab=` — must not: the deep-linked tab
+     would flip to the turn's latest step before the user ever saw it (#396). */
+  const liveIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (live) setFollow(true);
+    const id = live?.id;
+    if (id == null || id === liveIdRef.current) return;
+    if (liveIdRef.current !== null) setFollow(true);
+    liveIdRef.current = id;
   }, [live?.id]);
   // Turn finished with edits → land on Changes, like Codex's review pane.
   const lastDone = [...thread.replies]
@@ -868,6 +875,7 @@ export function FocusView({
                 emp={emp}
                 onOpenSession={onOpenSession}
                 running={running}
+                sendPending={pendingSteers.length > 0}
                 steer={steer}
                 editors={editorsProp}
                 onOpenPath={onOpenPath}
