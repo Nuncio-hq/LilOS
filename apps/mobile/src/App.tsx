@@ -56,6 +56,7 @@ import {
   startLink,
   stopLink,
 } from "./link";
+import { NetSpyBadge } from "./netspy-badge";
 import {
   $connections,
   $pairNotice,
@@ -598,6 +599,7 @@ export default function App() {
             <View className="flex-1">
               {children}
               {demo && <DemoBadge />}
+              {__DEV__ && <NetSpyBadge />}
             </View>
           )}
         >

@@ -1,6 +1,12 @@
 import { registerRootComponent } from "expo";
 
 import App from "./src/App";
+import { installNetSpy } from "./src/netspy";
+
+/* #168 evidence: dev builds count every JS-level network call so the
+   offline demo run can show a live zero. Installed before App so even
+   boot-time traffic is caught; production never calls this. */
+if (__DEV__) installNetSpy();
 
 /* #264: React Native's dev "Refreshing…" toast is a separate UIWindow pinned
    above the status bar — it covers the nav header and can never push content
