@@ -273,10 +273,17 @@ export function Workbench({
      tab switches and Focus remounts keep them (module store, D-#320
      rationale). `prune` re-runs whenever the shown diffs' patches move —
      resolved markers whose file changed drop off (AC-4), pending notes
-     whose file or anchor vanished drop too. */
+     whose file or anchor vanished drop too. It only runs on real reads:
+     live mode's `probe` is null until the first host read lands, and an
+     empty list then would wipe every note on a panel remount. */
   const dc = useDiffComments(thread.session);
-  const diffsKey = diffs.map((d) => `${d.path}\n${d.patch}`).join("\n\n");
-  useEffect(() => dc.prune(diffs), [diffsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const diffsReady = liveMode ? probe?.diffs != null : true;
+  const diffsKey = diffsReady
+    ? diffs.map((d) => `${d.path}\n${d.patch}`).join("\n\n")
+    : null;
+  useEffect(() => {
+    if (diffsReady) dc.prune(diffs);
+  }, [diffsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const pendingComments = dc.comments.filter((c) => !c.resolved);
   const sendComments = () => {
     if (!onSend || pendingComments.length === 0) return;
