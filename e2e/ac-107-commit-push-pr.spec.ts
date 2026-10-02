@@ -159,15 +159,25 @@ git([...cfg, "commit", "-m", "init"]);
 git(["push", "-u", "origin", "trunk"]);
 git(["remote", "set-head", "origin", "-a"]);
 
+/* Repo-local identity for the app's own `git commit` — CI runners have no
+   ambient user.name/user.email (locally ~/.gitconfig covers it). */
+const fixtureIdentity = (dir: string) => {
+  git(["config", "user.email", "e2e@lilos.dev"], dir);
+  git(["config", "user.name", "LilOS e2e"], dir);
+};
+fixtureIdentity(repoDir);
+
 // No-remote + auth fixtures: an initial commit each, no usable origin.
 git(["init", "-b", "trunk"], nonremoteDir);
 writeFileSync(path.join(nonremoteDir, "n.txt"), "n\n");
 git([...cfg, "add", "."], nonremoteDir);
 git([...cfg, "commit", "-m", "init"], nonremoteDir);
+fixtureIdentity(nonremoteDir);
 git(["init", "-b", "trunk"], authDir);
 writeFileSync(path.join(authDir, "s.txt"), "s\n");
 git([...cfg, "add", "."], authDir);
 git([...cfg, "commit", "-m", "init"], authDir);
+fixtureIdentity(authDir);
 git(["remote", "add", "origin", "ssh://git@127.0.0.1:1/x/y.git"], authDir);
 
 /* A rival clone lands a commit on trunk when the rejection case needs it —
