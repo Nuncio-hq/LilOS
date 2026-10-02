@@ -86,9 +86,7 @@ describe("git write methods (issue #107)", () => {
     expect(r.branch).toBe("feat/widgets");
     expect(r.sha).toMatch(/^[0-9a-f]{7,}$/);
     expect(r.subject).toBe("add the widget bits");
-    expect(inRepo(["log", "-1", "--format=%s"])).toBe(
-      "add the widget bits\n",
-    );
+    expect(inRepo(["log", "-1", "--format=%s"])).toBe("add the widget bits\n");
     const st = (await callHost("git.status", { path: repo })) as {
       files: { path: string }[];
     };
@@ -200,9 +198,7 @@ describe("git write methods (issue #107)", () => {
 
   it("AC-3 git.push with no remote configured reads as 'no-remote'", async () => {
     const lonely = makeRepo("lonely", false);
-    await expect(
-      callHost("git.push", { path: lonely }),
-    ).rejects.toMatchObject({
+    await expect(callHost("git.push", { path: lonely })).rejects.toMatchObject({
       code: HOST_ERRORS.GIT_FAILED,
       data: { reason: "no-remote" },
     });

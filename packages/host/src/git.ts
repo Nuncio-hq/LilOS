@@ -168,9 +168,7 @@ function gitWriteFailed(op: GitOp, e: unknown): HostError {
     ) {
       reason = "conflict";
     } else if (
-      /nothing to commit|nothing added to commit|no changes added/i.test(
-        detail,
-      )
+      /nothing to commit|nothing added to commit|no changes added/i.test(detail)
     ) {
       reason = "nothing";
     }
@@ -178,11 +176,10 @@ function gitWriteFailed(op: GitOp, e: unknown): HostError {
     if (/already exists/i.test(detail)) reason = "exists";
     else if (/not a valid|invalid/i.test(detail)) reason = "invalid";
   }
-  return new HostError(
-    HOST_ERRORS.GIT_FAILED,
-    `git ${op} failed: ${detail}`,
-    { reason, detail },
-  );
+  return new HostError(HOST_ERRORS.GIT_FAILED, `git ${op} failed: ${detail}`, {
+    reason,
+    detail,
+  });
 }
 
 /** `git add -A -- <files>` then `git commit -m <message>` (issue #107).
@@ -426,8 +423,22 @@ export async function gitLog(params: {
   const capped = base ? [] : ["-n", String(limit)];
   const format = "%x1e%H%x00%h%x00%s";
   const [nsRaw, stRaw] = await Promise.all([
-    gitOr(root, ["log", range, `--format=${format}`, "-z", "--name-status", ...capped]),
-    gitOr(root, ["log", range, "--format=%x1e%H", "-z", "--numstat", ...capped]),
+    gitOr(root, [
+      "log",
+      range,
+      `--format=${format}`,
+      "-z",
+      "--name-status",
+      ...capped,
+    ]),
+    gitOr(root, [
+      "log",
+      range,
+      "--format=%x1e%H",
+      "-z",
+      "--numstat",
+      ...capped,
+    ]),
   ]);
   if (!nsRaw) return { root: collapsePath(root), branch, base, commits: [] };
   const nameStatus = parseNameStatus(nsRaw);
@@ -442,7 +453,11 @@ export async function gitLog(params: {
       status: diffFileStatus(f.status),
       ...(numstat.get(full)?.get(f.path) ?? { add: 0, del: 0 }),
     }));
-    commits.push({ sha: head[1] ?? full.slice(0, 7), subject: head[2]?.replace(/\n+$/, "") ?? "", files });
+    commits.push({
+      sha: head[1] ?? full.slice(0, 7),
+      subject: head[2]?.replace(/\n+$/, "") ?? "",
+      files,
+    });
   }
   return { root: collapsePath(root), branch, base, commits };
 }
