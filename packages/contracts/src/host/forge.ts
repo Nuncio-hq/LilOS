@@ -148,6 +148,24 @@ export const ForgePrsResult = z.object({
 });
 export type ForgePrsResult = z.infer<typeof ForgePrsResult>;
 
+// ── forge.create (issue #107) ───────────────────────────────────────────────
+export const ForgeCreateParams = z.strictObject({
+  path: Path,
+  title: z.string().min(1),
+  /** PR body; empty allowed (gh requires the flag, not the content). */
+  body: z.string(),
+  /** Base branch; the repo's default when omitted (`gh pr create` default). */
+  base: z.string().min(1).optional(),
+});
+export type ForgeCreateParams = z.infer<typeof ForgeCreateParams>;
+export const ForgeCreateResult = z.object({
+  /** URL of the created PR (`gh pr create` stdout's last line). */
+  url: z.string(),
+  /** PR number parsed from the URL, when it carried one. */
+  number: z.int().min(1).optional(),
+});
+export type ForgeCreateResult = z.infer<typeof ForgeCreateResult>;
+
 // ── forge.comment ───────────────────────────────────────────────────────────
 export const ForgeCommentParams = z.strictObject({
   path: Path,
