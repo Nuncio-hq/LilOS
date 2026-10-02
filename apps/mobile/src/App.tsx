@@ -5,14 +5,18 @@ import {
   PairingExchangeFailed,
 } from "@lilos/client-runtime";
 import {
+  AppText,
   ConnectedScreen,
   ConnectingScreen,
   type ConnectingState,
+  DemoBadge,
   MacSheet,
   ManualCodeScreen,
   PairIntroScreen,
   parsePairingUrl,
+  Row,
   ScanScreen,
+  Section,
   SettingsScreen,
   useThemeColor,
   WelcomeScreen,
@@ -41,6 +45,7 @@ import { Alert, useColorScheme, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import logo from "../assets/logo.png";
 import { directoryCache } from "./cache";
+import { $demo, DEMO_MAC, enterDemo, exitDemo } from "./demo/lifecycle";
 import { openAsks } from "./home-model";
 import {
   $latencyMs,
@@ -91,13 +96,23 @@ const Tab = createNativeBottomTabNavigator<TabRoutes>();
 
 // ── Onboarding ──────────────────────────────────────────────────────────────
 
+/* After `exitDemo` the nav tree remounts on Welcome; this flag makes the
+   "Connect your Mac" row continue straight into pairing (#168 AC-4). */
+let pendingPairNav = false;
+
 function Welcome({ navigation }: Props<"Welcome">) {
   const notice = useStore($pairNotice);
+  useEffect(() => {
+    if (!pendingPairNav) return;
+    pendingPairNav = false;
+    navigation.navigate("Pair");
+  }, [navigation]);
   return (
     <WelcomeScreen
       logo={logo}
       notice={notice}
       onStart={() => navigation.navigate("Pair")}
+      onDemo={() => void enterDemo()}
     />
   );
 }
@@ -270,6 +285,7 @@ function Connected() {
 function Settings() {
   const mac = useStore($connections)[0];
   const link = useStore($link);
+  const demo = useStore($demo);
   return (
     <SettingsScreen
       title="Settings"
@@ -285,20 +301,42 @@ function Settings() {
         ),
       }}
       mac={
-        mac && {
-          name: mac.name,
-          host: mac.host,
-          routeLabel: ROUTE_LABEL[mac.route],
-          link,
-        }
+        demo
+          ? { name: DEMO_MAC.name, host: DEMO_MAC.host, routeLabel: "demo" }
+          : mac && {
+              name: mac.name,
+              host: mac.host,
+              routeLabel: ROUTE_LABEL[mac.route],
+              link,
+            }
       }
       /* The row's status dot follows the live link; a tap opens the Mac
-         sheet where Forget now lives (#247). */
-      onOpenMac={() => nav.navigate("Mac")}
-      onForget={confirmForget}
+         sheet where Forget now lives (#247). In demo there is no real Mac —
+         the sheet (and its Forget, which deletes the real Keychain) stays
+         unreachable. */
+      onOpenMac={demo ? undefined : () => nav.navigate("Mac")}
+      onForget={demo ? () => {} : confirmForget}
     >
-      {/* #161: the four push kinds + iOS-permission state (AC-6). */}
-      <PushSettingsSection />
+      {demo ? (
+        <Section title="Demo">
+          <Row
+            onPress={() => {
+              pendingPairNav = true;
+              exitDemo();
+            }}
+          >
+            <AppText weight="medium">Connect your Mac</AppText>
+          </Row>
+          <Row onPress={() => exitDemo()}>
+            <AppText tone="destructive" weight="medium">
+              Exit demo
+            </AppText>
+          </Row>
+        </Section>
+      ) : (
+        /* #161: the four push kinds + iOS-permission state (AC-6). */
+        <PushSettingsSection />
+      )}
     </SettingsScreen>
   );
 }
@@ -448,14 +486,19 @@ function confirmForget() {
 // ── App shell ───────────────────────────────────────────────────────────────
 
 /* lilos://pair?host=…#code=… from the iOS Camera app jumps straight to
-   Connecting while onboarding — same validation as an in-app scan. */
+   Connecting while onboarding — same validation as an in-app scan. A link
+   that lands during the demo exits it first (#168 AC-4: pairing a real Mac
+   wins over the demo). */
 function useDeepLinks(phase: string) {
   const url = Linking.useLinkingURL();
   useEffect(() => {
     if (!url) return;
     const offer = parsePairingUrl(url);
-    if (offer && phase === "onboarding" && nav.isReady())
-      nav.navigate("Connecting", { offer });
+    if (!offer || !nav.isReady()) return;
+    /* Exiting flips the phase, which refires this effect on the fresh
+       onboarding nav tree. */
+    if ($demo.get()) return exitDemo();
+    if (phase === "onboarding") nav.navigate("Connecting", { offer });
   }, [url, phase]);
 }
 
@@ -510,6 +553,7 @@ function useNavTheme(): Theme {
 
 export default function App() {
   const phase = useStore($phase);
+  const demo = useStore($demo);
   const theme = useNavTheme();
   const scheme = useColorScheme();
   const [booted, setBooted] = useState(false);
@@ -548,6 +592,14 @@ export default function App() {
             headerShadowVisible: false,
             headerBackButtonDisplayMode: "minimal",
           }}
+          /* #168 AC-4: the Demo badge floats over every screen — one mount
+             covers stacks, tabs and form sheets alike. */
+          screenLayout={({ children }) => (
+            <View className="flex-1">
+              {children}
+              {demo && <DemoBadge />}
+            </View>
+          )}
         >
           {phase === "onboarding" ? (
             <>

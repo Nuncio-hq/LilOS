@@ -1,3 +1,4 @@
+export type { AppClient } from "./app-client";
 export {
   type ChannelMessagesState,
   RelayClient,

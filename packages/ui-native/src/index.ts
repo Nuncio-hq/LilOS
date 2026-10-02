@@ -8,6 +8,7 @@ export { AppText } from "./components/app-text";
 export { LargeTitle, Pill, SectionTitle, StateChip } from "./components/bits";
 export { Button } from "./components/button";
 export { CompanyChip } from "./components/company-chip";
+export { DemoBadge } from "./components/demo-badge";
 export { Glass } from "./components/glass";
 export { Choice, Row, Section } from "./components/grouped-list";
 export { Icon, type IconTone, useThemeColor } from "./components/icon";

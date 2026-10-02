@@ -1,4 +1,4 @@
-import type { RelayClient } from "@lilos/client-runtime";
+import type { AppClient } from "@lilos/client-runtime";
 import type {
   AppChannel,
   Ask,
@@ -43,7 +43,7 @@ function soon(what: string) {
 }
 
 /** Every read model Home derives from, in one bundle for the model. */
-export function useHomeWire(): { client?: RelayClient; wire: HomeWire } {
+export function useHomeWire(): { client?: AppClient; wire: HomeWire } {
   const client = useStore($client);
   const employees = useStore(client?.employees ?? $noEmployees);
   const channels = useStore(client?.channels ?? $noChannels);
@@ -73,7 +73,7 @@ function useNowMs(): number {
 /* ask/turn events ride `channel.subscribe` only — subscribe every DM channel
    once (idempotent; intent survives reconnects through resubscribeAll). */
 function useLiveChannels(
-  client: RelayClient | undefined,
+  client: AppClient | undefined,
   channels: AppChannel[],
 ): void {
   useEffect(() => {
