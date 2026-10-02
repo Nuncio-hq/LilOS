@@ -314,16 +314,15 @@ export function FocusView({
   const liveKey = live
     ? `${live.id}:${live.steps?.length}:${lastStep?.running}`
     : "";
-  /* Follow the agent: a turn that BEGINS while this view is mounted re-arms
-     follow so the workbench tracks it. The turn already live when the view
-     mounted — a mid-turn reload onto `?tab=` — must not: the deep-linked tab
-     would flip to the turn's latest step before the user ever saw it (#396). */
-  const liveIdRef = useRef<string | null>(null);
+  /* Follow the agent: a turn that BEGAN while this feed was attached
+     re-arms follow so the workbench tracks it. The turn already live when
+     the view mounted — a mid-turn reload onto `?tab=` — must not steal the
+     deep-linked tab before the user ever saw it (#396). `live` arrives
+     async, so the discriminator is the turn's own attach boundary
+     (`postAttach`), not mount-time state; mock rows without it keep the
+     old always-follow behavior. */
   useEffect(() => {
-    const id = live?.id;
-    if (id == null || id === liveIdRef.current) return;
-    if (liveIdRef.current !== null) setFollow(true);
-    liveIdRef.current = id;
+    if (live && live.postAttach !== false) setFollow(true);
   }, [live?.id]);
   // Turn finished with edits → land on Changes, like Codex's review pane.
   const lastDone = [...thread.replies]

@@ -668,3 +668,33 @@ test("AC-7 Focus + Workbench compose like the prototype (evidence screenshots)",
     fullPage: true,
   });
 });
+
+test("AC-396 a turn that starts while you watch re-arms follow after a manual tab pick (#396)", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await dmDefault(page);
+  await pickSessionFolder(page, repoDir);
+  await send(page, "say hi");
+  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* Remount with NO live turn: the first live sighting after this mount
+     must be a turn that BEGAN while mounted — that is exactly when
+     follow may re-arm (the mount-time turn must never re-arm it, AC-319). */
+  await expectSettled(turns(page).last(), 60_000);
+  await page.reload();
+  await expect(turns(page)).not.toHaveCount(0, { timeout: 30_000 });
+  // Your own pick holds while the view idles.
+  await tab(page, "Files").click();
+  await expect(tab(page, "Files")).toHaveAttribute("aria-selected", "true");
+  /* An edit turn that starts while you watch re-arms follow — its patch
+     step steals the strip to Changes, so the picked tab yields. The turn
+     parks on its edit approval along the way; keep answering while the
+     strip flips. */
+  await send(page, "Add a release note to the readme");
+  await allowAllWhile(
+    page,
+    expect(tab(page, "Files")).toHaveAttribute("aria-selected", "false", {
+      timeout: 30_000,
+    }),
+  );
+});
