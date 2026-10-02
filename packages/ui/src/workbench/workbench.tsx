@@ -479,7 +479,11 @@ export function Workbench({
       onSuggest: ship.onSuggest ?? onSuggest,
       onCommit: ship.onCommit
         ? (files, message) =>
-            shipCall("commit", () => ship.onCommit!(files, message))
+            shipCall("commit", async () => {
+              await ship.onCommit!(files, message);
+              setCommitMsg("");
+              setUnchecked(new Set());
+            })
         : undefined,
       onPush: ship.onPush
         ? () => shipCall("push", () => ship.onPush!())
