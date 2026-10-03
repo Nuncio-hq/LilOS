@@ -8,6 +8,7 @@ import {
   type SessionSnapshot,
 } from "@lilos/contracts/engine";
 import { atom, type WritableAtom } from "nanostores";
+import { mergeFeedEvents } from "./feed-merge";
 import {
   defaultSocketFactory,
   type RelaySocket,
@@ -421,11 +422,7 @@ export class EngineClient {
       // the fresh state (not the pre-await snapshot) keeps those live events
       // and the watermark they already moved.
       const cur = feed.get();
-      const merged = [...cur.events];
-      for (const e of res.events) {
-        if (!merged.some((m) => m.seq === e.seq)) merged.push(e);
-      }
-      merged.sort((a, b) => a.seq - b.seq);
+      const merged = mergeFeedEvents(cur.events, res.events);
       // `res.openRequests` is the set as of `res.latestSeq`; live events past
       // that watermark already folded into `cur` — re-fold them on top of the
       // replayed set so an ask that opened mid-replay isn't dropped.
