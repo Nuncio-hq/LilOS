@@ -23,10 +23,18 @@ export const StopReason = z.enum([
 export type StopReason = z.infer<typeof StopReason>;
 
 export const Usage = z.object({
+  /* input/output/reasoning/cache are LIFETIME throughput sums (billing-
+     style): engines that re-send the whole context on every tool-loop call
+     grow them past the window — they can never be the meter's numerator
+     (issue #415). */
   input: z.int().min(0),
   output: z.int().min(0),
   reasoning: z.int().min(0),
   cache: z.int().min(0),
+  /** Current context occupancy in tokens — what the meter divides by
+      `contextWindow` (issue #415). Absent when the engine doesn't report
+      occupancy; clients fall back to `input + output`. */
+  context: z.int().min(0).optional(),
   /** The context window in tokens the engine resolved for this session —
       the denominator the used counts fill (issue #294). Absent when the
       engine doesn't report one; clients fall back to a labelled estimate. */

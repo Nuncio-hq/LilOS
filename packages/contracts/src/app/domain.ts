@@ -136,11 +136,12 @@ export const Conversation = z.object({
    */
   deliveredSeq: z.int().min(0).default(0),
   /**
-   * The newest turn.completed's usage the relay saw (#300) — the context
-   * meter's input/output/cache counts + the engine-reported contextWindow.
-   * Relay-persisted so the meter survives replay failure entirely: a dead
-   * engine session (legacy bare engineRefs, forgotten sessions) yields an
-   * empty `events.since` but this row still carries the last numbers.
+   * The newest turn.completed's usage the relay saw (#300) — the meter's
+   * lifetime input/output/cache counts + engine-reported `context` (current
+   * occupancy, #415) and `contextWindow`. Relay-persisted so the meter
+   * survives replay failure entirely: a dead engine session (legacy bare
+   * engineRefs, forgotten sessions) yields an empty `events.since` but this
+   * row still carries the last numbers.
    */
   usage: Usage.optional(),
   createdAt: Timestamp,

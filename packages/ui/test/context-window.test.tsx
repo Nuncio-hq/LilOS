@@ -7,6 +7,7 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { FocusView } from "../src/focus/focus-view";
 import {
+  contextUsedOf,
   contextWindowOf,
   FALLBACK_CONTEXT_WINDOW,
   sessionModelId,
@@ -197,5 +198,95 @@ describe("issue #294 — one session reads the same window everywhere", () => {
     // 94,800 / 100,000 = 94.8% — neither model's catalog window is used.
     expect(percents(panel.container)).toEqual(percents(focus.container));
     expect(percents(focus.container)).toContain("94.8%");
+  });
+});
+
+/* AC tests for issue #415 — the meter's numerator: Hermes reports lifetime
+   token THROUGHPUT in `input`/`output` (each tool-loop call re-sends the
+   whole context, so their sum outgrows the window — the 123.2% repro) and
+   the CURRENT occupancy separately in `context_used` → `Usage.context`. The
+   meter shows occupancy / window, never above 100%. */
+const HERMES_AFTER_8_TURNS = {
+  /* Real `_get_usage` shape off `hermes serve` (qwen3.8-flash-next,
+     262,144-token window): ~8 short turns bill ~323k in/out lifetime while
+     the live context sits at ~21k. */
+  input: 305_800,
+  output: 17_400,
+  reasoning: 2_100,
+  cache: 96_000,
+  context: 21_300,
+  contextWindow: 262_144,
+};
+
+describe("issue #415 — occupancy over the window, never above 100%", () => {
+  test("AC-1 contextUsedOf prefers the engine's occupancy report over the lifetime sum", () => {
+    expect(contextUsedOf(HERMES_AFTER_8_TURNS)).toBe(21_300);
+    /* Engines that report no occupancy keep the pre-#415 numerator: the
+       last turn's in+out is the only context signal they send. */
+    const { context: _absent, ...legacy } = HERMES_AFTER_8_TURNS;
+    expect(contextUsedOf(legacy)).toBe(323_200);
+    expect(contextUsedOf(undefined)).toBe(0);
+  });
+
+  test("AC-1/AC-3 the thread meter divides the live occupancy — 8.1%, not 123.2%", () => {
+    const thread: Thread = { ...sessionThread, usage: HERMES_AFTER_8_TURNS };
+    const panel = render(
+      <ThreadView
+        {...props}
+        thread={thread}
+        channel={dmChannel}
+        repo="Nuncio-hq/LilOS"
+      />,
+    );
+    const shown = percents(panel.container);
+    expect(shown).toContain("8.1%");
+    for (const p of shown)
+      expect(Number.parseFloat(p), p).toBeLessThanOrEqual(100);
+  });
+
+  test("AC-3 an over-subscribed window reads Full and clamps at 100%", () => {
+    const thread: Thread = {
+      ...sessionThread,
+      usage: {
+        input: 305_800,
+        output: 17_400,
+        reasoning: 0,
+        cache: 0,
+        context: 263_000,
+        contextWindow: 262_144,
+      },
+    };
+    const panel = render(
+      <ThreadView
+        {...props}
+        thread={thread}
+        channel={dmChannel}
+        repo="Nuncio-hq/LilOS"
+      />,
+    );
+    const text = panel.container.textContent ?? "";
+    expect(text).toContain("Full");
+    for (const p of percents(panel.container))
+      expect(Number.parseFloat(p), p).toBeLessThanOrEqual(100);
+  });
+
+  test("AC-3 even a cumulative-only engine can never show over 100%", () => {
+    /* No `context` field: the legacy numerator still clamps — a busy
+       session on a small window reads Full, not 142%. */
+    const thread: Thread = {
+      ...sessionThread,
+      usage: { input: 270_000, output: 15_000, reasoning: 0, cache: 0 },
+    };
+    const panel = render(
+      <ThreadView
+        {...props}
+        thread={thread}
+        channel={dmChannel}
+        repo="Nuncio-hq/LilOS"
+      />,
+    );
+    expect(panel.container.textContent ?? "").toContain("Full");
+    for (const p of percents(panel.container))
+      expect(Number.parseFloat(p), p).toBeLessThanOrEqual(100);
   });
 });
