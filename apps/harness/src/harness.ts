@@ -1141,29 +1141,36 @@ export class Harness {
     let releaseGate!: () => void;
     const gate = new Promise<void>((resolve) => (releaseGate = resolve));
     binding.promptGates.add(gate);
+    let requeued = false;
     try {
-      await this.dispatchPrompt(binding, message, releaseGate);
+      requeued = await this.dispatchPrompt(binding, message, releaseGate);
     } finally {
       binding.inflightPrompts.delete(message.id);
       releaseGate();
       binding.promptGates.delete(gate);
       /* The lane just freed: sends queued behind this dispatch (or behind
          the turn it minted) advance now — waiting on the next turn.completed
-         alone would strand a send whose dispatch bailed (#377). */
-      this.drainQueue(binding);
+         alone would strand a send whose dispatch bailed (#377). A dispatch
+         that put its message BACK on the queue must not drain, though:
+         re-queue means the engine is busy or gone, and turn.completed or
+         the rebind already re-fires the drain — an immediate one would
+         hot-loop the same prompt (#377 OOM in the loaded suite). */
+      if (!requeued) this.drainQueue(binding);
     }
   }
 
+  /** True when the message went back on the queue and awaits an external
+      drain (turn.completed / rebind); false when it settled for good. */
   private async dispatchPrompt(
     binding: SessionBinding,
     message: AppMessage,
     promptOnWire: () => void,
-  ) {
+  ): Promise<boolean> {
     const conn = this.engine;
     if (!conn) {
       binding.consumed.delete(message.id);
       binding.queue.push(message);
-      return;
+      return true;
     }
     // A pick held while the last turn ran lands now, before this prompt —
     // the session is idle so setModel applies straight away (#92).
@@ -1202,7 +1209,7 @@ export class Harness {
       // Every attachment failed to load and no text was typed — nothing to
       // send; the postSystem notes above already told the user.
       this.markDelivered(binding, message);
-      return;
+      return false;
     }
     /* #134: snapshot the session folder BEFORE the turn so a later
        "Rewind to here" on this message can restore it. */
@@ -1218,7 +1225,7 @@ export class Harness {
       message.rewound
     ) {
       binding.consumed.delete(message.id);
-      return;
+      return false;
     }
     try {
       // Turn lifecycle (`turn.started`/`turn.completed`) arrives as events
@@ -1252,14 +1259,14 @@ export class Harness {
         message.rewound
       ) {
         binding.consumed.delete(message.id);
-        return;
+        return false;
       }
       if (binding.stopRequested) {
         binding.consumed.delete(message.id);
         this.relayWrite(`drop queued ${message.id}`, () =>
           this.opts.relay.request("messages.drop", { messageId: message.id }),
         );
-        return;
+        return false;
       }
       // Going back on the queue releases the in-flight claim — a rebind
       // drains the queue through enqueueOrPrompt, which dedupes on it.
@@ -1270,18 +1277,18 @@ export class Harness {
         // dedupes on the same key either way.
         binding.consumed.delete(message.id);
         binding.queue.unshift(message);
-        return;
+        return true;
       }
       if (engineErrorCode(error) === INVALID_STATE) {
         binding.consumed.delete(message.id);
         this.insertQueued(binding, message);
-        return;
+        return true;
       }
       if (engineErrorCode(error) === SESSION_NOT_FOUND) {
         binding.consumed.delete(message.id);
         binding.queue.unshift(message);
         await this.rebindConversation(binding);
-        return;
+        return true;
       }
       this.opts.log.error("prompt failed", {
         conversationId: binding.conversationId,
@@ -1293,6 +1300,7 @@ export class Harness {
         `sys:${binding.conversationId}:${message.id}:engine-error`,
       );
     }
+    return false;
   }
 
   /**
