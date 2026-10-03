@@ -458,6 +458,7 @@
         "conversation.rewound",
         "devices.changed",
         "host.changed",
+        "connect.changed",
         "engine.event",
         "workbench.opened"
       ]

@@ -15,7 +15,10 @@ import type { Logger } from "./log";
  * reads "not-connected" (AC-7).
  *
  * The latest rows ride `harness.report` so relay `system.status` answers
- * "which employees aren't connected" for the Connect surfaces.
+ * "which employees aren't connected" for the Connect surfaces. On any row
+ * change `onChange` fires so the reporter re-sends immediately (#413) —
+ * the relay fans the rows out on `connect.changed` and the app patches its
+ * status atom live instead of waiting for the next poll.
  */
 
 /** The relay `settings.*` key the Connect step writes once. */
@@ -27,11 +30,19 @@ interface EmployeeRow {
   profile?: string;
 }
 
-export interface ConnectDeps {
-  /** Relay client — `settings.get` + `employees.list` only. */
-  relay: {
-    request(method: string, params: Record<string, unknown>): Promise<unknown>;
-  };
+/** The relay surface every Connect reconciler reads: settings + employees. */
+interface ConnectRelay {
+  request(method: string, params: Record<string, unknown>): Promise<unknown>;
+}
+
+interface ConnectBaseDeps {
+  relay: ConnectRelay;
+  /** Fired when the rows `report()` returns change (#413). */
+  onChange?: () => void;
+  log?: Logger;
+}
+
+export interface ConnectDeps extends ConnectBaseDeps {
   /** Resolved `hermes` binary (lazy — a missing binary fails rows, not boot). */
   hermesBin: () => string;
   /** HERMES_HOME the engine runs under; profile homes sit in profiles/<p>. */
@@ -51,6 +62,9 @@ export interface ConnectDeps {
   };
 }
 
+/** engine-fake's Connect needs nothing but the relay + the change hook. */
+export interface FakeConnectDeps extends ConnectBaseDeps {}
+
 type Row = ProfileConnection;
 
 const pluginVersion = (dir: string): string | undefined => {
@@ -62,12 +76,25 @@ const pluginVersion = (dir: string): string | undefined => {
   }
 };
 
-export class HermesConnect {
-  private readonly rows = new Map<string, Row>();
+/** Order-insensitive signature of the report rows — `onChange` fires only
+    when this changes (#413), so a reordered or identical roster never
+    re-pushes. */
+const rowsSignature = (rows: Iterable<Row>): string =>
+  JSON.stringify([...rows].sort((a, b) => a.profile.localeCompare(b.profile)));
+
+/**
+ * Shared Connect reconciler plumbing (#339 + #413): the row map, `report()`
+ * snapshots, serialized `reconcile()`, and the `onChange` signature check.
+ * Subclasses decide what a row transition *does* — Hermes installs/enables
+ * the bundled plugin on the profile; the fake just flips the row's state.
+ */
+abstract class ConnectBase<D extends ConnectBaseDeps> {
+  protected readonly rows = new Map<string, Row>();
   private readonly profileByEmployee = new Map<string, string>();
   private inflight?: Promise<void>;
+  private lastSignature = "[]";
 
-  constructor(private readonly deps: ConnectDeps) {}
+  constructor(protected readonly deps: D) {}
 
   /** The report rows — one per row state the reconciler knows. */
   report(): ProfileConnection[] {
@@ -77,8 +104,9 @@ export class HermesConnect {
   /** Serialized reconcile — event triggers collapse into one pass. */
   reconcile(): Promise<void> {
     this.inflight ??= this.reconcileInner()
+      .then(() => this.emitIfChanged())
       .catch((error) =>
-        this.deps.log.warn("connect reconcile failed", {
+        this.deps.log?.warn("connect reconcile failed", {
           error: String(error),
         }),
       )
@@ -88,16 +116,34 @@ export class HermesConnect {
     return this.inflight;
   }
 
-  /** `employee.removed` only carries the id — disable via the last map. */
+  /** `employee.removed` only carries the id — drop via the last map. */
   employeeRemoved(employeeId: string): void {
     const profile = this.profileByEmployee.get(employeeId);
     if (profile === undefined) return;
-    this.disable(profile);
+    this.employeeGone(profile);
     this.rows.delete(profile);
     this.profileByEmployee.delete(employeeId);
+    this.emitIfChanged();
   }
 
-  private async approved(): Promise<boolean> {
+  /** What a reconcile actually reconciles — subclass. */
+  protected abstract reconcileInner(): Promise<void>;
+
+  /** The dropped profile's teardown (plugin disable for Hermes; the fake
+     has nothing on disk to undo). */
+  protected employeeGone(_profile: string): void {}
+
+  protected row(profile: string, employee?: string): Row {
+    let row = this.rows.get(profile);
+    if (!row) {
+      row = { profile, state: "not-connected" };
+      this.rows.set(profile, row);
+    }
+    if (employee !== undefined) row.employee = employee;
+    return row;
+  }
+
+  protected async approved(): Promise<boolean> {
     const { value } = (await this.deps.relay.request("settings.get", {
       key: CONNECT_APPROVAL_KEY,
     })) as { value?: unknown };
@@ -108,22 +154,45 @@ export class HermesConnect {
     );
   }
 
-  private async reconcileInner(): Promise<void> {
-    const ok = await this.approved();
+  /** `employees.list` → profile→employee map, with `profileByEmployee`
+      rebuilt for the next `employee.removed`. */
+  protected async employeeRoster(): Promise<Map<string, EmployeeRow>> {
     const { employees } = (await this.deps.relay.request(
       "employees.list",
       {},
     )) as { employees: EmployeeRow[] };
-    const byProfile = new Map(
-      employees.filter((e) => e.profile).map((e) => [e.profile as string, e]),
-    );
     this.profileByEmployee.clear();
     for (const e of employees)
       if (e.profile) this.profileByEmployee.set(e.id, e.profile);
+    return new Map(
+      employees.filter((e) => e.profile).map((e) => [e.profile as string, e]),
+    );
+  }
 
-    for (const e of employees) {
-      const profile = e.profile;
-      if (!profile) continue;
+  /** Emit `onChange` once per distinct row set — the reporter re-reads
+      `report()` lazily, so the event only says "the rows moved". */
+  private emitIfChanged(): void {
+    const sig = rowsSignature(this.rows.values());
+    if (sig === this.lastSignature) return;
+    this.lastSignature = sig;
+    this.deps.onChange?.();
+  }
+}
+
+export class HermesConnect extends ConnectBase<ConnectDeps> {
+  constructor(deps: ConnectDeps) {
+    super(deps);
+  }
+
+  protected employeeGone(profile: string): void {
+    this.disable(profile);
+  }
+
+  protected async reconcileInner(): Promise<void> {
+    const ok = await this.approved();
+    const byProfile = await this.employeeRoster();
+
+    for (const [profile, e] of byProfile) {
       const row = this.row(profile, e.name);
       if (!ok) {
         // Declined or never asked — leave untouched (AC-7); a previously
@@ -142,16 +211,6 @@ export class HermesConnect {
         this.disable(profile);
       this.rows.delete(profile);
     }
-  }
-
-  private row(profile: string, employee?: string): Row {
-    let row = this.rows.get(profile);
-    if (!row) {
-      row = { profile, state: "not-connected" };
-      this.rows.set(profile, row);
-    }
-    if (employee !== undefined) row.employee = employee;
-    return row;
   }
 
   /** Hermes' profile home layout: the built-in `default` profile's home is
@@ -243,5 +302,24 @@ export class HermesConnect {
         };
       });
     return run(argv, env);
+  }
+}
+
+/**
+ * engine-fake's Connect (#413 e2e): the same approval → rows contract as
+ * HermesConnect with nothing to install — the fake engine owns no profile
+ * homes or plugins, so rows flip purely on the relay approval. This is what
+ * lets the e2e stack exercise the live `connect.changed` path.
+ */
+export class FakeConnect extends ConnectBase<FakeConnectDeps> {
+  protected async reconcileInner(): Promise<void> {
+    const ok = await this.approved();
+    const byProfile = await this.employeeRoster();
+    for (const [profile, e] of byProfile) {
+      this.row(profile, e.name).state = ok ? "connected" : "not-connected";
+    }
+    for (const profile of this.rows.keys()) {
+      if (!byProfile.has(profile)) this.rows.delete(profile);
+    }
   }
 }
