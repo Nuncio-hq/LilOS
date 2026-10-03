@@ -6,7 +6,8 @@
  *
  *   bun scripts/live/414.ts [--seconds N]
  *
- * Same shape as scripts/live/334.ts: spawns `hermes serve` for real
+ * Same shape as the #334 live leg (archived on tag
+ * archive/live-scripts-2026-10): spawns `hermes serve` for real
  * (packages/engine-hermes/src/serve.ts), connects a gateway + engine at
  * the wire layer — no relay/harness needed, the bug lived in the
  * wire->engine mapping — records BOTH sides, then folds the engine log
