@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { MessageSearchHit } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "../src/store";
+import { createMemoryStore } from "./memory-store";
 
 const RELAY_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BUN = process.env.LILOS_BUN_BIN ?? "bun";

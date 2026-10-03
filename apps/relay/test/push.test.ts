@@ -11,7 +11,7 @@ import {
   type ExpoSendResult,
 } from "../src/push";
 import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "../src/store";
+import { createMemoryStore } from "./memory-store";
 
 /* #161 — Expo push fan-out: asks.open-created + engine.event transitions →
    one push per registered phone, gated by per-kind prefs and the phone's

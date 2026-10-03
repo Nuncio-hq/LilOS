@@ -53,8 +53,9 @@ export function AddFolderDialog({
   const listDir = exact ? clean : parentOf(clean);
   const listed = fs[listDir]?.children;
   // Lazy listing: ask the host for every dir we navigate to — even one the
-  // `fs` map already holds, since mock seeds must give way to real listings.
-  // The app dedupes repeat requests for the same dir.
+  // `fs` map already holds, since mock seeds must give way to real listings
+  // and a dir's contents change while the app is open (#418). The app
+  // dedupes only in-flight repeats; settled listings always refetch.
   useEffect(() => {
     onNeedDir?.(listDir);
   }, [onNeedDir, listDir]);

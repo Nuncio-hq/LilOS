@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "../src/store";
+import { createMemoryStore } from "./memory-store";
 
 /**
  * Relay-side coverage for the #26 surface: harness.register host gate,

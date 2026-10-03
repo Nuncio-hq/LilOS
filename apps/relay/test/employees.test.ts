@@ -1,7 +1,7 @@
 import { FakeEngine, handleJsonRpc } from "@lilos/engine-fake";
 import { describe, expect, it } from "vitest";
 import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "../src/store";
+import { createMemoryStore } from "./memory-store";
 
 /**
  * Issue #29 — relay-side employee lifecycle + engine passthrough.

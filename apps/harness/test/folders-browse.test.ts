@@ -20,7 +20,7 @@ import { connectFake, FakeEngine } from "@lilos/engine-fake";
 import { afterEach, describe, expect, it } from "vitest";
 import { createPairingService } from "../../relay/src/pairing";
 import { createRelay } from "../../relay/src/session";
-import { createMemoryStore } from "../../relay/src/store";
+import { createMemoryStore } from "../../relay/test/memory-store";
 import type { EngineConnection } from "../src/engine/client";
 import { Harness } from "../src/harness";
 import { createMemoryLogger } from "../src/log";
