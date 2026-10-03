@@ -64,6 +64,12 @@ const SEED = [...THREADS, ...SUBAGENT_THREADS, ...PLAN_THREADS].map(
 );
 export const $threads = atom<ThreadDetail[]>(SEED);
 
+/* #344: idle threads whose engine session was closed (> 30 min idle). */
+const MOCK_LIFE: Record<string, "open" | "closed"> = {
+  "s-gap": "closed",
+  "s-inbox": "closed",
+};
+
 /** Order approvals were asked in (oldest first → the dock shows the oldest). */
 const ASKED = ["a-flake", "a-post"];
 const asked = atom<string[]>(ASKED);
@@ -164,6 +170,13 @@ export function turnsOf(threads: ThreadDetail[], employeeId: string) {
           : undefined,
         removed: edits.reduce((n, s) => n + (s.del ?? 0), 0),
         replies: t.entries.length - 1,
+        // #344 mock: working (incl. a running subagent) = running; else the
+        // thread's mock life, open by default.
+        life:
+          t.state === "working" ||
+          agents.some((a) => a.subagents?.some((s) => s.status === "running"))
+            ? "running"
+            : (MOCK_LIFE[t.id] ?? "open"),
         preview: [...agents].reverse().find((a) => a.text)?.text,
         live: liveLine(t),
         approval: agents.find((a) => a.approval)?.approval,
