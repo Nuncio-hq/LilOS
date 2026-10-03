@@ -103,6 +103,7 @@ import { OpenPathButton } from "./open-path";
 import { PlanPanel, threadPlans } from "./plan-panel";
 import { PrFailure } from "./pr-failure";
 import { PrPanel } from "./pr-panel";
+import { createPrPoll, type PrPoll } from "./pr-poll";
 import { SubagentsPanel, sessionSubagents } from "./subagents-panel";
 
 /* When the tab strip runs out of room, labels fold to icons least-used first —
@@ -290,6 +291,7 @@ export function Workbench({
   // a short poll keeps Changes/Files/Commits current (#114 AC-3, #107 AC-5);
   // the effect's re-run on `running` flips lands a fresh read at turn end.
   const updateProbe = useRef<(() => Promise<void>) | null>(null);
+  const prPoll = useRef<PrPoll | null>(null);
   useEffect(() => {
     setViewFile(null);
     if (!liveMode || !host || !liveCwd) {
@@ -317,13 +319,51 @@ export function Workbench({
           log: log ?? null,
         });
       });
+    /* #429: `forge.pr` is a `gh pr view` subprocess (~1s) — polling it at
+       the git-read cadence was ~40 calls/min per open Workbench (rate
+       limits, constant process spawns). The running poll keeps only the
+       cheap local git reads; PR re-reads run on signals instead — this
+       effect's re-run on each `running` flip covers turn start and turn
+       end (AC-2) via `update()` above, and the scheduler below owns the
+       rest: PR-tab/OS-window focus and a ≤1/min keep-alive while a turn
+       runs (AC-1). */
+    const updateGit = () =>
+      Promise.all([
+        host.tree(cwd),
+        host.diff(cwd),
+        host.status?.(cwd),
+        host.branches?.(cwd),
+        host.log?.(cwd),
+      ]).then(([files, d, status, branches, log]) => {
+        if (off) return;
+        setProbe((p) => ({
+          files,
+          diffs: d ?? null,
+          pr: p?.pr ?? null,
+          status: status ?? null,
+          branches: branches ?? null,
+          log: log ?? null,
+        }));
+      });
+    const updatePr = () =>
+      host.pr?.(cwd)?.then((r) => {
+        if (!off && r) setProbe((p) => (p ? { ...p, pr: r } : p));
+      });
     updateProbe.current = update;
+    const poll = createPrPoll(() => updatePr());
+    prPoll.current = poll;
     void update();
-    const poll = running ? setInterval(update, 1500) : undefined;
+    poll.setRunning(!!running);
+    const onWindowFocus = () => poll.signal();
+    window.addEventListener("focus", onWindowFocus);
+    const gitPoll = running ? setInterval(updateGit, 3000) : undefined;
     return () => {
       updateProbe.current = null;
+      prPoll.current = null;
+      poll.dispose();
       off = true;
-      if (poll) clearInterval(poll);
+      window.removeEventListener("focus", onWindowFocus);
+      if (gitPoll) clearInterval(gitPoll);
     };
   }, [liveMode, liveCwd, running, host]);
   const diffs = liveMode ? (probe?.diffs ?? []) : a.diffs;
@@ -693,6 +733,16 @@ export function Workbench({
     : (["changes", "files", "pr", "terminal", "preview"] as WbTab[]).find(
         (t) => allowed[t],
       );
+  /* #429 AC-2: landing on the PR tab signals a fresh forge read — the
+     scheduler coalesces repeat visits (and the OS-window-focus signal)
+     into one `gh` call. */
+  const prTabShown = shownTab === "pr";
+  const wasPrTab = useRef(false);
+  useEffect(() => {
+    const became = prTabShown && !wasPrTab.current;
+    wasPrTab.current = prTabShown;
+    if (became) prPoll.current?.signal();
+  }, [prTabShown]);
   const ghError = (e: unknown) =>
     (e instanceof Error ? e.message : String(e)).slice(0, 160);
   /* One bound "open this path" for every workbench surface: `line` opens at
