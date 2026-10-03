@@ -219,6 +219,9 @@ const harness = new Harness({
   connect,
   onNeedEngine: () => supervisor.ensureRunning(),
   version: releaseVersion,
+  /* #346 AC-3: idle-close — suspend a session quiet past the timeout so
+     the next message resumes it; `0` keeps every session live. */
+  sessionIdleMs: config.sessionIdleMs,
 });
 
 const supervisor = new EngineSupervisor({

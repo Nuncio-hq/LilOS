@@ -21,7 +21,7 @@ import {
   type EngineHostState,
   EngineSupervisor,
 } from "../src/engine/supervisor";
-import { Harness } from "../src/harness";
+import { Harness, type HarnessOptions } from "../src/harness";
 import { createMemoryLogger } from "../src/log";
 import { createFakeSleepGuard } from "../src/sleep";
 
@@ -35,7 +35,6 @@ const TOKEN = "test-token";
 
 type Relay = ReturnType<typeof createRelay>;
 
-/** A RelaySocket that talks straight into a relay.connect() peer. */
 const socketFor =
   (relay: Relay): SocketFactory =>
   () => {
@@ -109,6 +108,8 @@ async function setupWorld(
   attachEngine = true,
   engineOpts?: ConstructorParameters<typeof FakeEngine>[0],
   checkpoints?: CheckpointStore,
+  /** #346: reaper knobs for the idle-close tests (sessionIdleMs etc). */
+  harnessExtra?: Partial<HarnessOptions>,
 ): Promise<World> {
   const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
   const engine = new FakeEngine({ tick, ...engineOpts });
@@ -144,6 +145,7 @@ async function setupWorld(
     workdir: "/tmp/lilos-test",
     log,
     ...(checkpoints ? { checkpoints } : {}),
+    ...harnessExtra,
   });
   if (attachEngine) harness.attachEngine(engineConn);
   await harness.start();
