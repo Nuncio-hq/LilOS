@@ -41,7 +41,7 @@ const { conversation: conv } = await s.openConversation({
   channelId: channel.id, title: "", text: "first", authorId: "u",
 });
 
-const usage = { input: 12000, output: 3400, reasoning: 200, cache: 5000, contextWindow: 200000 };
+const usage = { input: 12000, output: 3400, reasoning: 200, cache: 5000, context: 15400, contextWindow: 200000 };
 await s.recordTurnUsage({
   conversationId: conv.id, sessionId: "s-live", seq: 12, usage,
 });
@@ -92,6 +92,7 @@ describe("conversation usage persistence on the real store (#300)", () => {
       output: 3400,
       reasoning: 200,
       cache: 5000,
+      context: 15400,
       contextWindow: 200000,
     });
     expect(lines["after-stale"]).toBe(12000);
