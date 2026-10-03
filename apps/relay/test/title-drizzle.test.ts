@@ -4,12 +4,8 @@
     store, where the same drop is a silent no-op, so this bug only shows
     here. Runs under bun:sqlite via a subprocess (vitest itself is Node). */
 import { spawnSync } from "node:child_process";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-
-const RELAY_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
-const BUN = process.env.LILOS_BUN_BIN ?? "bun";
+import { BUN, RELAY_DIR } from "./helpers";
 
 const SCRIPT = `
 import { Database } from "bun:sqlite";

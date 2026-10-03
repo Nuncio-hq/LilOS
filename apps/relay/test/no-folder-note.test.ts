@@ -4,13 +4,9 @@
     messages.search. The memory store is exercised in-process; the drizzle
     store via a bun:sqlite subprocess (vitest itself is Node). */
 import { spawnSync } from "node:child_process";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { BUN, RELAY_DIR } from "./helpers";
 import { createMemoryStore } from "./memory-store";
-
-const RELAY_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
-const BUN = process.env.LILOS_BUN_BIN ?? "bun";
 
 async function seedConversation(store: ReturnType<typeof createMemoryStore>) {
   const employee = await store.createEmployee({

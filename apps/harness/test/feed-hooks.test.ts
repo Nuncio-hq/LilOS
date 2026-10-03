@@ -1,16 +1,16 @@
-import type { RelaySocket, SocketFactory } from "@lilos/client-runtime";
-import { RelayClient } from "@lilos/client-runtime";
+import type { RelayClient } from "@lilos/client-runtime";
 import type { AppMessage } from "@lilos/contracts/app";
 import type { EngineEvent } from "@lilos/contracts/engine";
 import { connectFake, FakeEngine } from "@lilos/engine-fake";
 import { describe, expect, it } from "vitest";
-import { createRelay } from "../../relay/src/session";
-import { createMemoryStore } from "../../relay/test/memory-store";
 import type { EngineConnection } from "../src/engine/client";
 import { createFeedHandler } from "../src/feed";
-import { Harness } from "../src/harness";
-import { createMemoryLogger } from "../src/log";
-import { createFakeSleepGuard } from "../src/sleep";
+import {
+  openDmConversation,
+  setupWorld as setupWorldBase,
+  type World,
+  waitFor,
+} from "./helpers";
 
 /**
  * The three hooks #27 added on top of the base #26 harness:
@@ -21,126 +21,11 @@ import { createFakeSleepGuard } from "../src/sleep";
  * JSON-RPC on both sides, engine-fake driving real turns.
  */
 
-const TOKEN = "test-token";
-
-type Relay = ReturnType<typeof createRelay>;
-
-const socketFor =
-  (relay: Relay): SocketFactory =>
-  () => {
-    const listeners = new Map<string, Array<(e?: unknown) => void>>();
-    const emit = (type: string, e?: unknown) =>
-      queueMicrotask(() =>
-        (listeners.get(type) ?? []).forEach((fn) => void fn(e)),
-      );
-    let peer: { receive(f: string): Promise<void>; closed(): void };
-    let readyState = 0;
-    const socket = {
-      get readyState() {
-        return readyState;
-      },
-      send: (frame: string) => {
-        void peer.receive(frame);
-      },
-      close: () => {
-        readyState = 3;
-        peer.closed();
-        emit("close", { code: 1000, reason: "closed" });
-      },
-      addEventListener(type: string, fn: (e?: unknown) => void) {
-        listeners.set(type, [...(listeners.get(type) ?? []), fn]);
-      },
-    } as unknown as RelaySocket;
-    peer = relay.connect({
-      send: (frame) => emit("message", { data: frame }),
-      close: (code, reason) => emit("close", { code, reason }),
-    });
-    queueMicrotask(() => {
-      readyState = 1;
-      emit("open");
-    });
-    return socket;
-  };
-
-const waitFor = async <T>(
-  fn: () => T | undefined | Promise<T | undefined>,
-  what: string,
-  timeoutMs = 10_000,
-): Promise<T> => {
-  const start = Date.now();
-  for (;;) {
-    const value = await fn();
-    if (value !== undefined) return value;
-    if (Date.now() - start > timeoutMs) {
-      throw new Error(`timed out waiting for ${what}`);
-    }
-    await new Promise((r) => setTimeout(r, 25));
-  }
-};
-
-interface World {
-  relay: Relay;
-  engine: FakeEngine;
-  harness: Harness;
-  user: RelayClient;
-  log: ReturnType<typeof createMemoryLogger>;
-  cleanup: () => Promise<void>;
-}
-
-async function setupWorld(
+const setupWorld = (
   tick = 1,
   hideCaps?: string[],
   wrap?: (conn: EngineConnection, engine: FakeEngine) => EngineConnection,
-): Promise<World> {
-  const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
-  const engine = new FakeEngine({ tick });
-  const raw = connectFake(engine) as unknown as EngineConnection;
-  const engineConn = wrap ? wrap(raw, engine) : raw;
-  const log = createMemoryLogger();
-  const harnessRelay = new RelayClient({
-    url: "mem://harness",
-    token: TOKEN,
-    socketFactory: socketFor(relay),
-  });
-  const harness = new Harness({
-    relay: harnessRelay,
-    sleep: createFakeSleepGuard(),
-    workdir: "/tmp/lilos-test",
-    log,
-    hideCaps,
-  });
-  harness.attachEngine(engineConn);
-  await harness.start();
-  const user = new RelayClient({
-    url: "mem://user",
-    token: TOKEN,
-    socketFactory: socketFor(relay),
-  });
-  await user.connect();
-  return {
-    relay,
-    engine,
-    harness,
-    user,
-    log,
-    cleanup: async () => {
-      user.close();
-      await harness.stop();
-    },
-  };
-}
-
-/** Open a DM + conversation as the user; returns ids. */
-async function openDmConversation(user: RelayClient) {
-  const { employee } = await user.request<{ employee: { id: string } }>(
-    "employees.create",
-    { name: "Ada", role: "engineer", profile: "builder" },
-  );
-  const { channel } = await user.request<{
-    channel: { id: string; employeeId: string };
-  }>("channels.openDm", { employeeId: employee.id });
-  return { employee, channel };
-}
+): Promise<World> => setupWorldBase({ tick, hideCaps, wrap });
 
 const postMessage = (
   user: RelayClient,

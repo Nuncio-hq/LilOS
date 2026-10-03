@@ -1,52 +1,16 @@
 import type { SystemStatusResult } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
-import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "./memory-store";
-
-const TOKEN = "test-token";
-
-function connectPeer(relay: ReturnType<typeof createRelay>) {
-  const frames: unknown[] = [];
-  const peer: RelayWsPeer = {
-    send: (frame) => frames.push(JSON.parse(frame)),
-    close: () => {},
-  };
-  const connection = relay.connect(peer);
-  return { frames, connection };
-}
-
-const resultOf = (frames: unknown[], id: string) => {
-  const frame = (
-    frames as {
-      id?: string;
-      result?: unknown;
-      error?: { code: number; message: string; data?: Record<string, unknown> };
-    }[]
-  ).find((f) => f.id === id);
-  if (!frame) throw new Error(`no response frame for ${id}`);
-  return frame;
-};
-const errorOf = (frames: unknown[], id: string) => {
-  const { error } = resultOf(frames, id);
-  if (!error) throw new Error(`expected an error frame for ${id}`);
-  return error;
-};
-
-let nextId = 0;
-const req = (method: string, params: Record<string, unknown> = {}) =>
-  JSON.stringify({ jsonrpc: "2.0", id: `t${nextId++}`, method, params });
-
-async function helloed(relay: ReturnType<typeof createRelay>) {
-  const { frames, connection } = connectPeer(relay);
-  await connection.receive(
-    req("session.hello", { protocolVersion: 1, token: TOKEN }),
-  );
-  frames.length = 0;
-  return { frames, connection };
-}
-
-const newRelay = (opts: { protocolVersion?: number } = {}) =>
-  createRelay({ store: createMemoryStore(), token: TOKEN, ...opts });
+import type { createRelay } from "../src/session";
+import {
+  connectPeer,
+  errorOf,
+  helloed,
+  newRelay,
+  nextId,
+  req,
+  resultOf,
+  TOKEN,
+} from "./helpers";
 
 async function systemStatus(
   connection: { receive(d: string): Promise<void> },

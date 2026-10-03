@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "./memory-store";
+import type { createRelay, RelayWsPeer } from "../src/session";
+import {
+  errorOf,
+  eventsNamed,
+  helloed,
+  lastId,
+  newRelay,
+  req,
+  resultOf,
+  TOKEN,
+  tick,
+} from "./helpers";
 
 /**
  * Issue #134 — relay side of "Rewind to here".
@@ -11,56 +21,6 @@ import { createMemoryStore } from "./memory-store";
  * `conversation.rewound`, and appends the plain system note itself so it
  * survives the mark.
  */
-const TOKEN = "test-token";
-
-function connectPeer(relay: ReturnType<typeof createRelay>) {
-  const frames: unknown[] = [];
-  const peer: RelayWsPeer = {
-    send: (frame) => frames.push(JSON.parse(frame)),
-    close: () => {},
-  };
-  const connection = relay.connect(peer);
-  return { frames, connection };
-}
-
-const eventsNamed = (frames: unknown[], method: string) =>
-  (frames as { method?: string; params?: unknown }[]).filter(
-    (f) => f.method === method,
-  );
-const resultOf = (frames: unknown[], id: string) => {
-  const frame = (
-    frames as {
-      id?: string;
-      result?: unknown;
-      error?: { code: number; message: string; data?: Record<string, unknown> };
-    }[]
-  ).find((f) => f.id === id);
-  if (!frame) throw new Error(`no response frame for ${id}`);
-  return frame;
-};
-const errorOf = (frames: unknown[], id: string) => {
-  const { error } = resultOf(frames, id);
-  if (!error) throw new Error(`expected an error frame for ${id}`);
-  return error;
-};
-
-let nextId = 0;
-const req = (method: string, params: Record<string, unknown> = {}) =>
-  JSON.stringify({ jsonrpc: "2.0", id: `t${nextId++}`, method, params });
-const lastId = () => `t${nextId - 1}`;
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-const newRelay = () =>
-  createRelay({ store: createMemoryStore(), token: TOKEN });
-
-async function helloed(relay: ReturnType<typeof createRelay>) {
-  const { frames, connection } = connectPeer(relay);
-  await connection.receive(
-    req("session.hello", { protocolVersion: 1, token: TOKEN }),
-  );
-  frames.length = 0;
-  return { frames, connection };
-}
 
 /**
  * A registered engine host that records relay-initiated requests; tests reply

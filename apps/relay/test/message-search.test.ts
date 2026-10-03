@@ -1,28 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { MessageSearchHit } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
-import { createRelay, type RelayWsPeer } from "../src/session";
+import { createRelay } from "../src/session";
+import { BUN, helloed, RELAY_DIR, req, TOKEN } from "./helpers";
 import { createMemoryStore } from "./memory-store";
 
-const RELAY_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
-const BUN = process.env.LILOS_BUN_BIN ?? "bun";
-const TOKEN = "test-token";
-
-/** Same peer/response helpers as session.test.ts, trimmed to this spec. */
-function connectPeer(relay: ReturnType<typeof createRelay>) {
-  const frames: unknown[] = [];
-  const peer: RelayWsPeer = {
-    send: (frame) => frames.push(JSON.parse(frame)),
-    close: () => {},
-  };
-  const connection = relay.connect(peer);
-  return { frames, connection };
-}
-let nextId = 0;
-const req = (method: string, params: Record<string, unknown> = {}) =>
-  JSON.stringify({ jsonrpc: "2.0", id: `t${nextId++}`, method, params });
 const lastFrame = (frames: unknown[]) =>
   frames.at(-1) as {
     result?: { hits?: MessageSearchHit[] };
@@ -30,15 +12,6 @@ const lastFrame = (frames: unknown[]) =>
   };
 const hitsOf = (frames: unknown[]): MessageSearchHit[] =>
   lastFrame(frames).result?.hits ?? [];
-
-async function helloed(relay: ReturnType<typeof createRelay>) {
-  const { frames, connection } = connectPeer(relay);
-  await connection.receive(
-    req("session.hello", { protocolVersion: 1, token: TOKEN }),
-  );
-  frames.length = 0;
-  return { frames, connection };
-}
 
 interface Seed {
   employeeId: string;
