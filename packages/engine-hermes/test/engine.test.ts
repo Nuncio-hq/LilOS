@@ -91,7 +91,7 @@ describe("engine-hermes #334: reasoning.available is a summary, not a delta", ()
     const { sessionId } = await start(h);
 
     /* The reported case — real wire order captured on `hermes serve`
-       v0.21.5+3173 (scripts/live/334.ts): no chain-of-thought, so the
+       v0.21.5+3173: no chain-of-thought, so the
        summary frame carries the assistant's own message text. */
     const p1 = promptAsync(h, sessionId);
     gw.emit(gw.lastSid, "message.delta", { text: "\n\n391" });
@@ -1529,7 +1529,7 @@ describe("engine-hermes #288: restart resumes the stored session", () => {
 });
 
 describe("engine-hermes #308: post-turn legs mint their own turn", () => {
-  /* Live capture (scripts/live/309.ts): a queued steer drains post-turn as
+  /* Live capture: a queued steer drains post-turn as
      `session.state running` + `message.start` + deltas stamped on the
      SETTLED turn id + a second `turn.completed` — no `turn.started`. The
      engine must mint the leg a real turn so its frames don't merge into

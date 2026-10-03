@@ -14,3 +14,24 @@ describe("issue #261", () => {
     );
   });
 });
+
+describe("issue #417", () => {
+  test("AC-1 inline code and snake_case identifiers keep their underscores", () => {
+    const out = preview(
+      "Set `LILOS_ENGINE` to hermes, then read foo_bar_baz from the config.",
+    );
+    expect(out).toBe(
+      "Set LILOS_ENGINE to hermes, then read foo_bar_baz from the config.",
+    );
+  });
+
+  test("AC-1 bare identifiers keep underscores outside code spans too", () => {
+    expect(preview("run LILOS_ENGINE=hermes with conv_338a111f")).toBe(
+      "run LILOS_ENGINE=hermes with conv_338a111f",
+    );
+  });
+
+  test("AC-2 real emphasis like _this_ still previews as plain text", () => {
+    expect(preview("ran _this_ check first")).toBe("ran this check first");
+  });
+});
