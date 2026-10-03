@@ -3,6 +3,8 @@
  * (see prose.tsx). Pure TS so vitest covers it; the RN component only
  * renders what this returns.
  */
+import type { PhrasingContent, RootContent } from "mdast";
+import { fromMarkdown } from "mdast-util-from-markdown";
 
 export type ProseBlock =
   | { kind: "text"; text: string }
@@ -196,3 +198,45 @@ export function langName(lang: string | null): string {
   };
   return NAMES[lang.toLowerCase()] ?? lang;
 }
+
+/* The native sibling of @lilos/ui's `inline` (#448): one flat line of
+   text through the real markdown parser, so `write_file` keeps its
+   underscore while _emph_ unwraps — the char-class strip it replaces ate
+   the "_" inside identifiers. Blocks and wrapped lines join with a
+   single space. */
+const inlineText = (node: PhrasingContent): string => {
+  if (node.type === "break") return " ";
+  if (node.type === "image" || node.type === "imageReference")
+    return node.alt ?? "";
+  if ("children" in node) return node.children.map(inlineText).join("");
+  return "value" in node ? node.value : "";
+};
+
+const blockLines = (node: RootContent): string[] => {
+  switch (node.type) {
+    case "paragraph":
+    case "heading":
+      return [node.children.map(inlineText).join("")];
+    case "list":
+    case "listItem":
+    case "blockquote":
+      return node.children.flatMap(blockLines);
+    case "code":
+      return [node.value];
+    default:
+      return [];
+  }
+};
+
+export const inline = (md: string): string => {
+  try {
+    return fromMarkdown(md)
+      .children.flatMap(blockLines)
+      .flatMap((l) => l.split("\n"))
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .join(" ");
+  } catch {
+    return md.replace(/\s+/g, " ").trim();
+  }
+};

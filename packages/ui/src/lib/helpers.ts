@@ -40,11 +40,12 @@ export const slugOf = (s: string) =>
     .join("-");
 export const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, "");
 
-/* One-line preview of a markdown reply: flatten through the real parser
-   (the one streamdown renders with) so emphasis markers unwrap but a code
-   span or identifier keeps its underscores (#417 — the old char regex ate
-   "_" inside `LILOS_ENGINE`). A block ending in ":" leads into the next
-   one, so they join with a space; other blocks join with " · ". */
+/* Flatten markdown through the real parser (the one streamdown renders
+   with) so emphasis markers unwrap but a code span or identifier keeps
+   its underscores (#417 — the old char regex ate "_" inside
+   `LILOS_ENGINE`). Two surfaces share the machinery: preview() joins
+   blocks with " · " for the DM card, inline() joins them with one space
+   for single-line spots (#448). */
 const inlineText = (node: PhrasingContent): string => {
   if (node.type === "break") return " ";
   if (node.type === "image" || node.type === "imageReference")
@@ -83,6 +84,27 @@ export const preview = (md: string) => {
     return md.replace(/\s+/g, " ").trim();
   }
 };
+
+/* One flat line, no " · " separators — the subagent now-line and the
+   Start-work title seed (#448). Same parse as preview(); blocks and
+   wrapped lines join with a single space. */
+export const inline = (md: string) => {
+  try {
+    return fromMarkdown(md)
+      .children.flatMap(blockLines)
+      .flatMap((l) => l.split("\n"))
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .join(" ");
+  } catch {
+    return md.replace(/\s+/g, " ").trim();
+  }
+};
+
+/* The Start-work dialog's title seed: `**@name**` mentions out, the rest
+   flattened to one line, capped at 60 chars (#448). */
+export const titleSeed = (text: string) =>
+  inline(text.replace(/\*\*@\w+\*\*/g, "")).slice(0, 60);
 
 export const PHASE_LABEL: Record<Phase, string> = {
   submitted: "opening session",
