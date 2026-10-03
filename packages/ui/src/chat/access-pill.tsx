@@ -1,4 +1,8 @@
-import { ShieldAlertIcon, ShieldQuestionIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ShieldAlertIcon,
+  ShieldQuestionIcon,
+} from "lucide-react";
 import { PromptInputButton } from "../components/ai-elements/prompt-input";
 import { cn } from "../lib/utils";
 import type { ConversationAccess } from "../types";
@@ -34,7 +38,10 @@ export function AccessPill({
       }
       className={cn(
         "shrink gap-1.5 text-foreground/80 text-xs",
-        full && "text-orange-600 dark:text-orange-400",
+        /* The ghost variant's hover:text-foreground must not mute the
+           warning: Full stays orange on hover too (Codex-style). */
+        full &&
+          "text-orange-600 hover:bg-orange-500/10 hover:text-orange-600 dark:text-orange-400 dark:hover:bg-orange-500/15 dark:hover:text-orange-400",
       )}
       data-slot="access-pill"
       data-access={access}
@@ -50,6 +57,9 @@ export function AccessPill({
           <span>Ask</span>
         </>
       )}
+      {/* The only composer control without a menu affordance: the chevron
+          reads "click to switch", matching the model picker beside it. */}
+      <ChevronDownIcon className="size-3 opacity-60" />
     </PromptInputButton>
   );
 }

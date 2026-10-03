@@ -232,7 +232,11 @@ export function ReplyCards({
                   language="bash"
                   className="text-xs [&_pre]:whitespace-pre-wrap [&_pre]:break-all"
                 />
-                <p className="text-muted-foreground text-xs">{a.note}</p>
+                {/* The caption must say what the command DOES — when the
+                    engine just echoes the command it adds nothing. */}
+                {a.note.trim() && a.note.trim() !== a.command.trim() ? (
+                  <p className="text-muted-foreground text-xs">{a.note}</p>
+                ) : null}
               </ConfirmationRequest>
               {setResolved && (
                 <ConfirmationActions className="flex-wrap self-start">
