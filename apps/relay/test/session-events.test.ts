@@ -1,8 +1,16 @@
-import { APP_PROTOCOL_VERSION, type AppErrorCode } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
-import { createPairingService } from "../src/pairing";
-import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "./memory-store";
+import {
+  errorData,
+  helloedDevice,
+  helloedToken,
+  lastId,
+  newWorld,
+  events as notifications,
+  registeredHost,
+  req,
+  requestsTo,
+  resultOf,
+} from "./helpers";
 
 /* `session.events` + `engine.event` (#157): the phone's live engine feed.
    A device-scope client never talks to an engine — the host pushes engine
@@ -11,90 +19,6 @@ import { createMemoryStore } from "./memory-store";
    the conversation's `engineRef` and forwarded to the host as
    `events.since`. Same scoping shape as `folders.detail` (#156): the device
    gets the read it needs, and nothing that widens its gate. */
-
-const TOKEN = "test-token";
-
-function connectPeer(relay: ReturnType<typeof createRelay>) {
-  const frames: unknown[] = [];
-  const peer: RelayWsPeer = {
-    send: (frame) => frames.push(JSON.parse(frame)),
-    close: () => {},
-  };
-  return { frames, connection: relay.connect(peer), peer };
-}
-
-let nextId = 0;
-const req = (method: string, params: Record<string, unknown> = {}) =>
-  JSON.stringify({ jsonrpc: "2.0", id: `t${nextId++}`, method, params });
-const lastId = () => `t${nextId - 1}`;
-const resultOf = (frames: unknown[], id: string) => {
-  const frame = (
-    frames as {
-      id?: string;
-      result?: unknown;
-      error?: { code: number; message: string; data?: Record<string, unknown> };
-    }[]
-  ).find((f) => f.id === id);
-  if (!frame) throw new Error(`no response frame for ${id}`);
-  return frame;
-};
-const errorData = (frames: unknown[], id: string) =>
-  resultOf(frames, id).error?.data?.code as AppErrorCode;
-const requestsTo = (frames: unknown[]) =>
-  (frames as { method?: string; id?: string; params?: unknown }[]).filter(
-    (f) => f.id?.startsWith("hr-") === true,
-  );
-const notifications = (frames: unknown[]) =>
-  (frames as { method?: string; params?: unknown }[]).filter(
-    (f) => f.method !== undefined,
-  );
-
-const newWorld = () => {
-  const store = createMemoryStore();
-  const pairing = createPairingService({ store });
-  const relay = createRelay({ store, token: TOKEN, pairing });
-  return { store, pairing, relay };
-};
-
-async function helloedToken(relay: ReturnType<typeof createRelay>) {
-  const p = connectPeer(relay);
-  await p.connection.receive(
-    req("session.hello", {
-      protocolVersion: APP_PROTOCOL_VERSION,
-      token: TOKEN,
-    }),
-  );
-  p.frames.length = 0;
-  return p;
-}
-
-async function helloedDevice(
-  pairing: ReturnType<typeof createPairingService>,
-  relay: ReturnType<typeof createRelay>,
-) {
-  const grant = await pairing.mintGrant();
-  const ex = await pairing.exchangeGrant({ code: grant.code });
-  if (!("device" in ex)) throw new Error("exchange failed");
-  const p = connectPeer(relay);
-  await p.connection.receive(
-    req("session.hello", {
-      protocolVersion: APP_PROTOCOL_VERSION,
-      deviceId: ex.device.id,
-      credential: ex.credential,
-    }),
-  );
-  p.frames.length = 0;
-  return p;
-}
-
-async function registeredHost(relay: ReturnType<typeof createRelay>) {
-  const p = await helloedToken(relay);
-  await p.connection.receive(
-    req("harness.register", { protocolVersion: 1, version: "0.0.0-test" }),
-  );
-  p.frames.length = 0;
-  return p;
-}
 
 /* A DM channel + open conversation, bound to an engine session id. */
 async function setupConversation(

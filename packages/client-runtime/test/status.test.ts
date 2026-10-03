@@ -303,6 +303,73 @@ describe("AC-1/4 (#33) systemStatus roundtrip + polling atom", () => {
   });
 });
 
+describe("AC-1 (#413) connect.changed patches the status atom live", () => {
+  const ROWS = [
+    { profile: "default", employee: "Default", state: "connected" as const },
+  ];
+
+  it("fresh rows land on status.result.connect without a new poll", async () => {
+    const { socket, client } = makeClient();
+    await connectClient(client, socket);
+    const pending = client.refreshSystemStatus();
+    socket.respondTo("system.status", RESULT); // RESULT carries no connect
+    await pending;
+    expect(client.status.get().result?.connect).toBeUndefined();
+
+    const sentBefore = socket.sent.length;
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "connect.changed",
+      params: { connect: ROWS },
+    });
+    expect(client.status.get().result?.connect).toEqual(ROWS);
+    // The update arrived on the event — no extra system.status request.
+    expect(socket.sent.length).toBe(sentBefore);
+    client.close();
+  });
+
+  it("a connect patch between polls is kept, not stomped by the next poll result", async () => {
+    const { socket, client } = makeClient();
+    await connectClient(client, socket);
+    const pending = client.refreshSystemStatus();
+    socket.respondTo("system.status", {
+      ...RESULT,
+      connect: [
+        { profile: "default", employee: "Default", state: "not-connected" },
+      ],
+    });
+    await pending;
+
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "connect.changed",
+      params: { connect: ROWS },
+    });
+    expect(client.status.get().result?.connect?.[0]?.state).toBe("connected");
+
+    // A later poll with fresh rows replaces the patch wholesale — the wire
+    // stays the source of truth.
+    const repoll = client.refreshSystemStatus();
+    socket.respondTo("system.status", { ...RESULT, connect: ROWS });
+    await repoll;
+    expect(client.status.get().result?.connect).toEqual(ROWS);
+    client.close();
+  });
+
+  it("connect going absent clears the rows", async () => {
+    const { socket, client } = makeClient();
+    await connectClient(client, socket);
+    const pending = client.refreshSystemStatus();
+    socket.respondTo("system.status", { ...RESULT, connect: ROWS });
+    await pending;
+    expect(client.status.get().result?.connect).toEqual(ROWS);
+
+    socket.emit({ jsonrpc: "2.0", method: "connect.changed", params: {} });
+    expect(client.status.get().result?.connect).toBeUndefined();
+    client.close();
+  });
+});
+
 describe("AC-2 (#85) a missing Hermes reads plainly", () => {
   const NO_HERMES: SystemStatusResult = {
     ...RESULT,
