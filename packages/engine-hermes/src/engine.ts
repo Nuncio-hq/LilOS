@@ -1277,12 +1277,26 @@ export class HermesEngine {
       totalTokens?: number | null;
     } | null,
   ) {
+    /* Per-turn counts ride `turn.completed` through the relay's Usage
+       schema — a float/negative on the wire must not poison the event. */
+    const int = (v: number | null | undefined) =>
+      typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : 0;
     const u = usage
       ? ({
-          input: usage.inputTokens ?? 0,
-          output: usage.outputTokens ?? 0,
-          reasoning: usage.thoughtTokens ?? 0,
-          cache: usage.cachedReadTokens ?? 0,
+          /* The prompt response reports PER-TURN tokens — accumulate them
+             into the lifetime sums the contract documents. The live
+             occupancy/window ride `usage_update` ticks and survive onto
+             the turn's usage (#415). */
+          input: (s.usage?.input ?? 0) + int(usage.inputTokens),
+          output: (s.usage?.output ?? 0) + int(usage.outputTokens),
+          reasoning: (s.usage?.reasoning ?? 0) + int(usage.thoughtTokens),
+          cache: (s.usage?.cache ?? 0) + int(usage.cachedReadTokens),
+          ...(s.usage?.context !== undefined
+            ? { context: s.usage.context }
+            : {}),
+          ...(s.usage?.contextWindow !== undefined
+            ? { contextWindow: s.usage.contextWindow }
+            : {}),
         } satisfies Usage)
       : undefined;
     if (u) s.usage = u;
@@ -1548,7 +1562,7 @@ export class HermesEngine {
         /* #294: `usage.context_max` rides session.info too — a deferred
            model switch re-resolves the window before the next
            turn.completed, so the meter follows it without waiting. */
-        this.mirrorContextWindow(s, p.usage);
+        this.mirrorUsageContext(s, p.usage);
         /* #137: `session.info` also carries the session's current title —
            deduped in applyTitle so only the first sighting / changes emit. */
         if (typeof p.title === "string") s.applyTitle(p.title);
@@ -1557,7 +1571,7 @@ export class HermesEngine {
       /* `session.usage` ticks carry the same `_get_usage` shape mid-turn —
          the window moves on config changes that emit no session.info. */
       case "session.usage": {
-        this.mirrorContextWindow(s, p.usage);
+        this.mirrorUsageContext(s, p.usage);
         break;
       }
       /* #137 AC-1: `session.title` events are Hermes' persisted auto-title
@@ -1610,14 +1624,21 @@ export class HermesEngine {
   }
 
   /** Hermes reports the session's resolved window as `usage.context_max`
-     (session.info, mid-turn session.usage ticks): refresh the window on the
-     session's last usage between turn ends — only merges, never fabricates
-     a usage the engine didn't report (#294). */
-  private mirrorContextWindow(s: Session, usage: unknown) {
+     and the live occupancy as `usage.context_used` (session.info, mid-turn
+     session.usage ticks): refresh both on the session's last usage between
+     turn ends — only merges, never fabricates a usage the engine didn't
+     report (#294, #415). */
+  private mirrorUsageContext(s: Session, usage: unknown) {
     if (!s.usage || typeof usage !== "object" || usage === null) return;
-    const max = (usage as Record<string, unknown>).context_max;
-    if (typeof max === "number" && max > 0)
+    const r = usage as Record<string, unknown>;
+    const max = r.context_max;
+    const used = r.context_used;
+    if (typeof max === "number" && Number.isInteger(max) && max > 0)
       s.usage = { ...s.usage, contextWindow: max };
+    /* 0 is a real reading (post-compaction) — only absent/malformed leaves
+       the last value in place. */
+    if (typeof used === "number" && Number.isInteger(used) && used >= 0)
+      s.usage = { ...s.usage, context: used };
   }
 
   /**
@@ -1649,7 +1670,19 @@ export class HermesEngine {
     }
     const { stopReason } = mapStopReason(p.status);
     const usage = mapUsage(p.usage);
-    if (usage) s.usage = usage;
+    if (usage) {
+      /* A completion that omits occupancy/window keeps what mid-turn
+         session.usage/session.info ticks last reported — the same
+         preserve endAcpTurn applies on the ACP path (#415). */
+      if (usage.context === undefined && s.usage?.context !== undefined)
+        usage.context = s.usage.context;
+      if (
+        usage.contextWindow === undefined &&
+        s.usage?.contextWindow !== undefined
+      )
+        usage.contextWindow = s.usage.contextWindow;
+      s.usage = usage;
+    }
     const errText = typeof p.error === "string" ? p.error : undefined;
     s.emit("turn.completed", {
       turnId: completedId,

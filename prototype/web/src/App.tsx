@@ -234,7 +234,7 @@ const FEEDS: Record<string, Msg[]> = {
       text: "Scaffold the monorepo: `contracts`, `client-runtime`, `apps/web`, `apps/relay`. **@Builder** take it, **@Reviewer** check the layout.",
       thread: {
         session: "ses_8f2c", ticket: "LIL-3", branch: "lil-3-monorepo", model: MODELS[0].id,
-        usage: { input: 71200, output: 6100, reasoning: 2400, cache: 52000 },
+        usage: { input: 71200, output: 6100, reasoning: 2400, cache: 52000, context: 77300 },
         todos: [
           { content: "Create branch + pnpm workspace", status: "completed" },
           { content: "Scaffold contracts, client-runtime, web, relay", status: "completed" },
@@ -346,7 +346,7 @@ const DM_FEEDS: Record<string, Msg[]> = {
       kind: "msg", id: "d1", from: "oscar", time: "Yesterday", text: "What's left before the relay can accept its first harness connection?",
       thread: {
         // #344: idle > 30 min → the engine session was closed; no ring, resumes on the next message.
-        session: "ses_4a19", life: "closed", usage: { input: 38400, output: 2900, reasoning: 1100, cache: 24000 },
+        session: "ses_4a19", life: "closed", usage: { input: 38400, output: 2900, reasoning: 1100, cache: 24000, context: 41300 },
         replies: [
           {
             id: "d1r1", from: "builder", time: "Yesterday", thought: 6,
@@ -373,7 +373,7 @@ const DM_FEEDS: Record<string, Msg[]> = {
       kind: "msg", id: "d2", from: "oscar", time: "Yesterday", text: "Summarise what changed on `main` since Monday.",
       thread: {
         // #344: answered a few minutes ago — session still loaded and idle (faint ring).
-        session: "ses_c03e", life: "open", usage: { input: 12100, output: 640, reasoning: 210, cache: 9000 },
+        session: "ses_c03e", life: "open", usage: { input: 12100, output: 640, reasoning: 210, cache: 9000, context: 12740 },
         replies: [
           {
             id: "d2r1", from: "builder", time: "Yesterday", thought: 3, reasoning: "git log since Monday, group commits by package.",
@@ -386,7 +386,7 @@ const DM_FEEDS: Record<string, Msg[]> = {
     {
       kind: "msg", id: "du1", from: "oscar", time: "09:12", text: "The dev bundle booted the fake engine again — where does it pick that up?",
       thread: {
-        session: "ses_9d04", usage: { input: 8200, output: 510, reasoning: 140, cache: 3000 },
+        session: "ses_9d04", usage: { input: 8200, output: 510, reasoning: 140, cache: 3000, context: 8710 },
         replies: [
           {
             id: "du1r1", from: "builder", time: "09:14", thought: 3, reasoning: "Engine selection lives in the launch env; check what stamps it.",
@@ -401,7 +401,7 @@ const DM_FEEDS: Record<string, Msg[]> = {
     {
       kind: "msg", id: "v1", from: "oscar", time: "08:05", text: "What do you check first on a PR from Builder?",
       thread: {
-        session: "ses_77e2", usage: { input: 6400, output: 380, reasoning: 90, cache: 4100 },
+        session: "ses_77e2", usage: { input: 6400, output: 380, reasoning: 90, cache: 4100, context: 6780 },
         replies: [{ id: "v1r1", from: "reviewer", time: "08:06", thought: 1, reasoning: "Answer from my SOUL.md checklist.", text: "Package boundaries first (`client-runtime` must stay DOM-free), then tests for the changed paths, then the diff itself. I never push; I comment with file:line." }],
       },
     },
@@ -1276,10 +1276,13 @@ export default function App() {
       set((r) => ({ ...r, phase: "done", live: false, dur: Math.round((Date.now() - started0) / 1000) }))
       mapRoot(key, rootId, (t) => {
         const u = t.usage ?? { input: 0, output: 0, reasoning: 0, cache: 0 }
+        const nu = { input: u.input + 9000 + prompt.length * 4, output: u.output + s.text.length / 4, reasoning: u.reasoning + s.reasoning.length / 4, cache: u.cache + 6000 }
         return {
           ...t,
           todos: s.todo ? (t.todos ?? []).map((x) => (x.content === s.todo ? { ...x, status: "completed" } : x)) : t.todos,
-          usage: { input: u.input + 9000 + prompt.length * 4, output: u.output + s.text.length / 4, reasoning: u.reasoning + s.reasoning.length / 4, cache: u.cache + 6000 },
+          // Live occupancy like a real engine's `context` report (#415): one
+          // call per turn keeps the whole billed sum in context.
+          usage: { ...nu, context: nu.input + nu.output },
           pr: s.pr ?? t.pr,
         }
       })

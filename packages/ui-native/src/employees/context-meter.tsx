@@ -3,6 +3,7 @@ import { Animated, Easing, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { AppText } from "../components/app-text";
 import { useThemeColor } from "../components/icon";
+import { contextFull, contextShare, contextUsedOf } from "./model-rules";
 import type { ContextUsage } from "./types";
 
 /* How full a session's context window is (web: SessionUsage, laid out like
@@ -13,9 +14,13 @@ import type { ContextUsage } from "./types";
 const k = (x: number) =>
   x >= 1000 ? `${(x / 1000).toFixed(x >= 100_000 ? 0 : 1)}k` : `${x}`;
 const pct = (x: number, of: number) =>
-  `${((x / of) * 100).toFixed(x / of < 0.1 ? 1 : 0)}%`;
+  `${of ? Math.min(100, (x / of) * 100).toFixed(x > 0 && x / of < 0.1 ? 1 : 0) : 0}%`;
 
 function parts(c: ContextUsage) {
+  /* Live occupancy is one number — when the engine reports it (#415) the
+     lifetime counts are session totals, not parts of the window. */
+  if (c.context !== undefined)
+    return [{ label: "In context", value: contextUsedOf(c), color: "#007aff" }];
   return [
     { label: "Cached context", value: c.cache, color: "#00a19a" },
     {
@@ -31,7 +36,7 @@ function parts(c: ContextUsage) {
     },
   ];
 }
-const used = (c: ContextUsage) => c.input + c.output;
+const used = (c: ContextUsage) => contextUsedOf(c);
 
 export function ContextRing({
   c,
@@ -44,7 +49,7 @@ export function ContextRing({
   const fill = useThemeColor("muted-foreground");
   const r = size / 2 - 1.5;
   const len = 2 * Math.PI * r;
-  const share = Math.min(1, used(c) / c.max);
+  const share = contextShare(used(c), c.max);
   return (
     <View className="flex-row items-center gap-1">
       <Svg width={size} height={size}>
@@ -74,7 +79,7 @@ export function ContextRing({
         className="text-[13px]"
         style={{ fontVariant: ["tabular-nums"] }}
       >
-        {pct(used(c), c.max)}
+        {contextFull(used(c), c.max) ? "Full" : pct(used(c), c.max)}
       </AppText>
     </View>
   );
@@ -131,7 +136,7 @@ export function ContextMeter({ c, model }: { c: ContextUsage; model: string }) {
             className="text-[22px]"
             style={{ fontVariant: ["tabular-nums"] }}
           >
-            {pct(used(c), c.max)}
+            {contextFull(used(c), c.max) ? "Full" : pct(used(c), c.max)}
           </AppText>
           <AppText
             tone="muted"
@@ -145,7 +150,7 @@ export function ContextMeter({ c, model }: { c: ContextUsage; model: string }) {
           {ps.map((p, i) => (
             <View
               key={p.label}
-              style={{ width: `${(p.value / c.max) * 100}%` }}
+              style={{ width: `${contextShare(p.value, c.max) * 100}%` }}
             >
               <Segment share={1} color={p.color} delay={i * 80} />
             </View>
@@ -181,6 +186,13 @@ export function ContextMeter({ c, model }: { c: ContextUsage; model: string }) {
             </View>
           ))}
         </View>
+        {c.context !== undefined && (
+          /* Lifetime throughput, labeled as what it is — the sums count
+             every tool-loop call, not what sits in the window (#415). */
+          <AppText tone="muted" className="text-[13px]">
+            {`This session — ${k(c.input)} in · ${k(c.output + c.reasoning)} out${c.cache ? ` · ${k(c.cache)} cached` : ""}`}
+          </AppText>
+        )}
         <View className="flex-row justify-between border-border border-t pt-3">
           <AppText tone="muted" className="text-[13px]">
             Model
