@@ -16,7 +16,9 @@ LILOS_HOME=/tmp/lilos-rec bun apps/web/dev/stack.ts   # or: cd apps/web && bun r
 Env overrides: `LILOS_RELAY_PORT`, `LILOS_FEED_PORT`, `LILOS_WEB_PORT`,
 `LILOS_HOME` (fresh dir = fresh company DB), `LILOS_ENGINE` (`fake` default),
 `LILOS_HIDE_CAPS` (e.g. `rewind` for the files-only fallback path),
-`ENGINE_FAKE_TICK` (ms per streamed step — raise to slow turns for racy checks).
+`ENGINE_FAKE_TICK` (ms per streamed step — slows every turn; for a single
+running/streaming window prefer a `slow[:ms]` prompt prefix, e.g.
+`slow:150 <prompt>`, which paces only that turn, #432).
 
 ## First-run / seeded employee
 

@@ -547,13 +547,14 @@ test("AC-319 the panel's 'N subagents · Open' lands on Focus → Subagents (?ta
   try {
     await openDefault(page, stack319);
     await pickSessionFolder(page, repoDir);
-    /* `LILOS_DELEGATE_ASYNC_HOLD` marks the first helper async and holds its
-       subagent.completed until the next prompt (#400): dispatch-receipt
-       delegation on the real engine, but the test controls when the close
-       lands instead of racing a tick window. */
+    /* `slow:600` keeps this turn running through the mid-test reload
+       (#432); `LILOS_DELEGATE_ASYNC_HOLD` marks the first helper async
+       and holds its subagent.completed until the next prompt (#400):
+       dispatch-receipt delegation on the real engine, but the test
+       controls when the close lands instead of racing a tick window. */
     await send(
       page,
-      "delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
+      "slow:600 delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
     );
     await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
     await expect(page.locator("[data-subagents-link]").last()).toBeVisible({

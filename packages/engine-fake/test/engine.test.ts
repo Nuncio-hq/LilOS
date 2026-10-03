@@ -473,11 +473,11 @@ describe("engine-fake #432: `slow[:ms]` paces only the marked prompt", () => {
       cwd: "/t",
     })) as { sessionId: string };
 
-    /* The default script is ~55 sleep boundaries: 60 ms → a multi-second
+    /* The default script is ~55 sleep boundaries: 40 ms → a multi-second
        turn; a pace that leaked past its turn would stretch the follow-up
        the same way. */
     const t0 = Date.now();
-    await promptText(c, sessionId, "slow:60 take your time");
+    await promptText(c, sessionId, "slow:40 take your time");
     const slowMs = Date.now() - t0;
     const t1 = Date.now();
     await promptText(c, sessionId, "follow-up at normal pace");
@@ -501,7 +501,7 @@ describe("engine-fake #432: `slow[:ms]` paces only the marked prompt", () => {
       agent: "builder",
       cwd: "/t",
     })) as { sessionId: string };
-    await promptText(c, sessionId, "slow:30 leg:ZEBRA report delivered");
+    await promptText(c, sessionId, "slow:20 leg:ZEBRA report delivered");
     /* The leg lands asynchronously after the prompt's turn.completed —
        wait for its delivered text. */
     const legText = () =>
