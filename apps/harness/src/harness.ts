@@ -107,6 +107,11 @@ interface SessionBinding {
   >;
   /** User messages queued while a turn runs (delivered in order). */
   queue: AppMessage[];
+  /** Relay message ids whose `sendPrompt` is between dispatch and settle
+      (#377). A second send during that window must queue, not race the
+      wire: the loser's `prompt` hits INVALID_STATE, its re-queue lands
+      after any `message.changed` splice, and send order inverts. */
+  inflightPrompts: Set<string>;
   /** Resolved once each in-flight `sendPrompt` has put its `prompt` frame on
      the wire (or bailed early). `interrupt` and `conversations.rewind` wait
      on these so a request landing in the pre-prompt window (attachment
@@ -728,6 +733,9 @@ export class Harness {
       heldPick: undefined,
       heldPickPrev: undefined,
       promptGates: new Set(),
+      /* The old session's in-flight sends die with it — the rebound queue
+         drains through sendPrompt, which re-arms its own entry. */
+      inflightPrompts: new Set(),
       /* A dead session's stop mustn't park the live one, and its reconcile
          timer dies with it (#315). */
       stopRequested: false,
@@ -828,11 +836,45 @@ export class Harness {
 
   /* ------------------------- message -> engine -------------------------- */
 
-  private async deliver(message: AppMessage): Promise<void> {
+  /** Per-conversation delivery chains (#377): `deliver`'s own awaits
+      (conversation lookup, bind, replay) leave a window where a later send
+      enqueues first — the queue and the wire then disagree on send order.
+      Each link always resolves so a failed send can't park the convo. */
+  private deliveryChains = new Map<string, Promise<void>>();
+
+  /** Run `fn` after the conversation's earlier delivery work, in arrival order. */
+  private ordered<T>(conversationId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.deliveryChains.get(conversationId) ?? Promise.resolve();
+    const next = prev.then(fn, fn);
+    const tracked: Promise<void> = next.then(
+      () => {},
+      () => {},
+    );
+    this.deliveryChains.set(conversationId, tracked);
+    void tracked.finally(() => {
+      if (this.deliveryChains.get(conversationId) === tracked)
+        this.deliveryChains.delete(conversationId);
+    });
+    return next;
+  }
+
+  private deliver(message: AppMessage): Promise<void> {
+    /* #377: sends for one conversation enqueue strictly in arrival order —
+       without the chain, two sends' interleaved awaits can reach
+       enqueueOrPrompt reversed and the later send prompts first. */
+    const convId = message.conversationId;
+    if (!convId || message.authorKind !== "user") return Promise.resolve();
+    return this.ordered(convId, () => this.deliverOrdered(message));
+  }
+
+  private async deliverOrdered(message: AppMessage): Promise<void> {
     if (message.authorKind !== "user") return;
     if (!message.conversationId) return;
     /* #315: a user-removed row must never reach the engine — not even via
-       a replayed frame that predates the `message.changed` it carried. */
+       a replayed frame that predates the `message.changed` it carried.
+       The row's own flags are checked too: they are the durable truth when
+       a flag-flip frame never arrived on this socket (#377). */
+    if (message.removed || message.dropped || message.rewound) return;
     if (this.dismissed.has(message.id)) return;
     if (this.delivered.has(message.id)) return;
 
@@ -892,6 +934,13 @@ export class Harness {
   }
 
   private async flushEarly(convId: string): Promise<void> {
+    /* Enqueues must still join the conversation's delivery order — a send
+       that arrived while the engine was down lands ahead of anything sent
+       since (#377). */
+    await this.ordered(convId, () => this.flushEarlyOrdered(convId));
+  }
+
+  private async flushEarlyOrdered(convId: string): Promise<void> {
     const waiting = this.early.get(convId);
     if (!waiting?.length) return;
     const conv = await this.findConversation(convId);
@@ -926,6 +975,16 @@ export class Harness {
     // first turn.started lands. The queue-drain path bypasses this by design:
     // entries here failed or steered out, so a fresh send is the point.
     if (binding.consumed.has(message.id)) return;
+    /* Dead rows never enter the queue or the wire: `dismissed` is the
+       event-fed kill-set, the row flags are the durable truth when a
+       `message.changed` frame never arrived (#377). */
+    if (
+      this.dismissed.has(message.id) ||
+      message.removed ||
+      message.dropped ||
+      message.rewound
+    )
+      return;
     binding.consumed.add(message.id);
     if (binding.runningTurnId) {
       // Capability `steer` (#9): a mid-turn user message steers the running
@@ -994,24 +1053,71 @@ export class Harness {
         return;
       }
       binding.consumed.delete(message.id);
-      binding.queue.push(message);
+      this.insertQueued(binding, message);
       this.opts.log.debug("queued behind running turn", {
         conversationId: binding.conversationId,
         queued: binding.queue.length,
       });
       return;
     }
-    void this.sendPrompt(binding, message);
+    /* #377: the send lanes through the same queue — a `sendPrompt` already
+       dispatching (turn.started not yet seen) must reach the wire before
+       the next prompt leaves, or the two race and the loser comes back
+       INVALID_STATE, re-queued out of order. drainQueue fires it when the
+       lane is free. */
+    binding.consumed.delete(message.id);
+    this.insertQueued(binding, message);
+    this.drainQueue(binding);
   }
 
-  /** Prompt now when idle; queue behind the running turn otherwise. */
+  /** FIFO is arrival order; the tray and the drain owe the user send
+      order — insert by relay seq so a late re-queue can't invert it. */
+  private insertQueued(binding: SessionBinding, message: AppMessage): void {
+    const at = binding.queue.findIndex((m) => m.seq > message.seq);
+    if (at === -1) binding.queue.push(message);
+    else binding.queue.splice(at, 0, message);
+  }
+
+  /** Queue it behind whatever occupies the lane; drain when it's free. */
   private promptOrQueue(binding: SessionBinding, message: AppMessage) {
-    if (binding.runningTurnId) {
-      binding.queue.push(message);
+    /* #315 AC-5: while a Stop parks everything waiting, a send the engine
+       never accepted (a `not_running` steer settling late) parks the same
+       way instead of prompting a fresh turn past the stop. */
+    if (binding.stopRequested) {
+      binding.consumed.delete(message.id);
+      this.relayWrite(`drop queued ${message.id}`, () =>
+        this.opts.relay.request("messages.drop", { messageId: message.id }),
+      );
       return;
     }
-    binding.consumed.add(message.id);
-    void this.sendPrompt(binding, message);
+    this.insertQueued(binding, message);
+    this.drainQueue(binding);
+  }
+
+  /**
+   * #377: one `prompt` on the wire at a time per binding, in send order.
+   * Fires only while the lane is free — no running turn, no dispatch in
+   * flight. Rows already dead (removed/dropped/dismissed) skip straight out
+   * of the queue instead of prompting.
+   */
+  private drainQueue(binding: SessionBinding): void {
+    if (binding.runningTurnId || binding.inflightPrompts.size > 0) return;
+    while (binding.queue.length) {
+      const next = binding.queue.shift();
+      if (!next) break;
+      const dead =
+        this.dismissed.has(next.id) ||
+        next.removed ||
+        next.dropped ||
+        next.rewound;
+      if (dead) {
+        binding.consumed.delete(next.id);
+        continue;
+      }
+      binding.consumed.add(next.id);
+      void this.sendPrompt(binding, next);
+      return;
+    }
   }
 
   private async sendPrompt(binding: SessionBinding, message: AppMessage) {
@@ -1021,14 +1127,30 @@ export class Harness {
        checkpoint) then lands BEHIND the prompt on the in-order conn and
        interrupts the turn it meant to stop, instead of being acked
        `interrupted:false` and lost. Released on dispatch or any bail. */
+    binding.inflightPrompts.add(message.id);
+    /* #377: claim the row the moment the lane commits it — while the send
+       is still in its pre-prompt awaits it would otherwise sit "pending"
+       in the waiting tray alongside truly queued sends, and a Remove
+       click could hit it (retracting a send the user meant to keep, then
+       running the queued one in its place). Claimed rows leave the tray
+       and render as their own bubble; the engine never sees a row the
+       user removed. */
+    this.relayWrite(`claim ${message.id}`, () =>
+      this.opts.relay.request("messages.claim", { messageId: message.id }),
+    );
     let releaseGate!: () => void;
     const gate = new Promise<void>((resolve) => (releaseGate = resolve));
     binding.promptGates.add(gate);
     try {
       await this.dispatchPrompt(binding, message, releaseGate);
     } finally {
+      binding.inflightPrompts.delete(message.id);
       releaseGate();
       binding.promptGates.delete(gate);
+      /* The lane just freed: sends queued behind this dispatch (or behind
+         the turn it minted) advance now — waiting on the next turn.completed
+         alone would strand a send whose dispatch bailed (#377). */
+      this.drainQueue(binding);
     }
   }
 
@@ -1085,6 +1207,19 @@ export class Harness {
     /* #134: snapshot the session folder BEFORE the turn so a later
        "Rewind to here" on this message can restore it. */
     await this.stampCheckpoint(binding, message);
+    /* #377: the pre-prompt awaits (held pick, attachment fetch, checkpoint)
+       give a Remove/drop the whole window to land — the `message.changed`
+       splice only reaches rows still sitting in `binding.queue`, so an
+       in-flight send must re-check before its frame hits the wire. */
+    if (
+      this.dismissed.has(message.id) ||
+      message.removed ||
+      message.dropped ||
+      message.rewound
+    ) {
+      binding.consumed.delete(message.id);
+      return;
+    }
     try {
       // Turn lifecycle (`turn.started`/`turn.completed`) arrives as events
       // before the prompt call resolves — they alone own runningTurnId.
@@ -1107,6 +1242,25 @@ export class Harness {
       await turn;
       this.markDelivered(binding, message);
     } catch (error) {
+      /* #377: a row that died mid-dispatch (removed while the prompt raced
+         in, or parked by a Stop that landed meanwhile) never re-enters the
+         queue — the splice window for it already closed. */
+      if (
+        this.dismissed.has(message.id) ||
+        message.removed ||
+        message.dropped ||
+        message.rewound
+      ) {
+        binding.consumed.delete(message.id);
+        return;
+      }
+      if (binding.stopRequested) {
+        binding.consumed.delete(message.id);
+        this.relayWrite(`drop queued ${message.id}`, () =>
+          this.opts.relay.request("messages.drop", { messageId: message.id }),
+        );
+        return;
+      }
       // Going back on the queue releases the in-flight claim — a rebind
       // drains the queue through enqueueOrPrompt, which dedupes on it.
       if (engineErrorCode(error) === undefined) {
@@ -1120,7 +1274,7 @@ export class Harness {
       }
       if (engineErrorCode(error) === INVALID_STATE) {
         binding.consumed.delete(message.id);
-        binding.queue.push(message);
+        this.insertQueued(binding, message);
         return;
       }
       if (engineErrorCode(error) === SESSION_NOT_FOUND) {
@@ -1311,6 +1465,7 @@ export class Harness {
           lastSeq: 0,
           queue: [],
           promptGates: new Set(),
+          inflightPrompts: new Set(),
           textByTurn: new Map(),
           pickByTurn: new Map(),
           consumed: new Set(),
@@ -1366,6 +1521,7 @@ export class Harness {
       lastSeq: 0,
       queue: [],
       promptGates: new Set(),
+      inflightPrompts: new Set(),
       textByTurn: new Map(),
       pickByTurn: new Map(),
       consumed: new Set(),
@@ -2465,11 +2621,11 @@ export class Harness {
 
     /* #315 AC-5: ■ Stop parks everything still waiting — queued sends and
        accepted-but-unlanded steers alike land in the not-sent tray
-       (dropped), never the engine. `turn.started` clears the flag, so an
-       engine's own queued steer/prompt that outlived the turn isn't
-       stranded by a stale stop. */
+       (dropped), never the engine. The flag stays set until the NEXT
+       `turn.started` clears it (#377): a steer resolving `not_running`
+       after this point must still park instead of prompting a fresh turn
+       past the stop. */
     if (binding.stopRequested) {
-      binding.stopRequested = false;
       for (const pending of binding.steerPending.splice(0)) {
         binding.consumed.delete(pending.messageId);
         this.relayWrite(`drop steer ${pending.messageId}`, () =>
@@ -2489,8 +2645,7 @@ export class Harness {
     /* An accepted steer that neither landed nor pumped as this turn's
        replacement is stranded — give it a grace window, then drop it. */
     this.scheduleSteerReconcile(binding);
-    const next = binding.queue.shift();
-    if (next) void this.sendPrompt(binding, next);
+    this.drainQueue(binding);
   }
 
   /* #315: an accepted steer (`session.steer` → `steered`) that neither

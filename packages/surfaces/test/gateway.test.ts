@@ -520,6 +520,7 @@ const msg = (
     rewound: false,
     dropped: false,
     removed: false,
+    claimed: false,
     createdAt: at,
   }) as const;
 

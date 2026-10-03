@@ -311,7 +311,7 @@ export interface RelayStore {
    */
   setMessageFlags(
     messageId: string,
-    flags: { dropped?: boolean; removed?: boolean },
+    flags: { dropped?: boolean; removed?: boolean; claimed?: boolean },
   ): Promise<AppMessage | null>;
   /**
    * Mark every message on the conversation with `seq >= fromSeq` as rewound
@@ -595,6 +595,7 @@ export function createMemoryStore(): RelayStore {
       rewound: false,
       dropped: false,
       removed: false,
+      claimed: false,
       text: input.text,
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.provider !== undefined ? { provider: input.provider } : {}),
@@ -875,6 +876,7 @@ export function createMemoryStore(): RelayStore {
       if (!message) return null;
       if (flags.dropped !== undefined) message.dropped = flags.dropped;
       if (flags.removed !== undefined) message.removed = flags.removed;
+      if (flags.claimed !== undefined) message.claimed = flags.claimed;
       return message;
     },
     async markRewound(conversationId, fromSeq) {

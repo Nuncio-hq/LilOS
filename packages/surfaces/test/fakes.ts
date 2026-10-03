@@ -226,6 +226,7 @@ export function fakeAppOps(
         rewound: false,
         dropped: false,
         removed: false,
+        claimed: false,
         createdAt: Date.now(),
       } satisfies AppMessage;
       messages.push(msg);
