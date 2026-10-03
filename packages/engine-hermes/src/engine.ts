@@ -1286,6 +1286,9 @@ export class HermesEngine {
            turn (`s.turn?.turnId ?? s.lastTurnId` used to merge it in). A
            queued steer anchors to its relay message's ref; anything else
            is engine-initiated work. */
+        /* #414: a new turn/leg opens a fresh text segment chain — the
+           interim-seal tracker starts empty with it. */
+        s.streamedText = "";
         if (!s.turn && !s.legTurnId) {
           /* Positional binding: the wire carries no steer-vs-delivery
              discriminator, so the oldest queued steer is taken to drive
@@ -1323,14 +1326,41 @@ export class HermesEngine {
       case "reasoning.available":
         break;
       case "message.delta": {
-        if (typeof p.text === "string" && p.text)
+        if (typeof p.text === "string" && p.text) {
           s.emit("turn.delta", { turnId, stream: "text", delta: p.text });
+          s.streamedText += p.text;
+        }
         if (s.turn) s.turn.phase = "text";
         break;
       }
       case "message.interim": {
+        /* A segment SEAL, not a delta: `text` is the mid-turn commentary's
+           authoritative full content (upstream
+           `_emit_interim_assistant_message` -> `message.interim` —
+           ui-tui seals the bubble in place). `already_streamed:true`
+           means it already arrived via message.delta, so re-appending it
+           printed every say-then-tool sentence twice (#414). Only the
+           part the stream hasn't delivered yet goes out: nothing for a
+           fully-streamed segment, the missing tail for a partial one,
+           the whole text when nothing streamed (non-streaming providers,
+           Codex-routed replies — the frame is its only carrier). */
         const t = typeof p.text === "string" ? p.text : "";
-        if (t) s.emit("turn.delta", { turnId, stream: "text", delta: t });
+        if (t) {
+          const streamed = s.streamedText;
+          const same = (a: string, b: string) =>
+            a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
+          if (p.already_streamed === true || same(t, streamed)) {
+            /* sealed as-is — nothing new to append */
+          } else {
+            const tail =
+              streamed && t.startsWith(streamed)
+                ? t.slice(streamed.length)
+                : t;
+            if (tail)
+              s.emit("turn.delta", { turnId, stream: "text", delta: tail });
+          }
+        }
+        s.streamedText = "";
         break;
       }
       case "tool.start": {
@@ -1591,6 +1621,10 @@ export class HermesEngine {
        message.complete must not stamp `lastTurnId` or emit a bogus
        turn.completed on a settled turn (it used to). */
     if (!turn && !s.legTurnId) return;
+    /* The turn's last segment closes unsealed (no interim follows the
+       final message) — the #414 tracker must not leak it into the next
+       turn's first seal. */
+    s.streamedText = "";
     /* A post-turn leg closes under its own minted id — the leg's
        turn.completed must not stamp the settled prompt turn's id (a
        second `turn.completed` on t1 used to reopen/merge it). */
