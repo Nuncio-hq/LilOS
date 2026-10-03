@@ -1,4 +1,3 @@
-import type { ProfileConnection } from "@lilos/contracts/app";
 import { atom } from "nanostores";
 import { relay } from "./runtime";
 
@@ -18,9 +17,10 @@ const CONNECT_KEY = "connect.hermes";
 export const connectApproved = atom<boolean | undefined>(undefined);
 
 /**
- * Grant the approval once: write the flag, then pull `system.status` a few
- * times so the badges animate through updating → connected rather than
- * waiting a full poll cycle (the harness reconciles within seconds).
+ * Grant the approval once: write the flag. The rows themselves arrive on
+ * `connect.changed` (#413) — the relay broadcasts them the moment the
+ * harness's reconcile flips a profile, and the client's status atom
+ * patches in place. No extra status pulls needed here.
  */
 export async function requestConnect(): Promise<void> {
   await relay.request("settings.set", {
@@ -28,13 +28,6 @@ export async function requestConnect(): Promise<void> {
     value: { approved: true },
   });
   connectApproved.set(true);
-  const kick = (ms: number) =>
-    setTimeout(() => {
-      void relay.refreshSystemStatus().catch(() => {});
-    }, ms);
-  void relay.refreshSystemStatus().catch(() => {});
-  kick(1_500);
-  kick(5_000);
 }
 
 /** Seed the approval flag + follow `settings.changed` (called once at boot
