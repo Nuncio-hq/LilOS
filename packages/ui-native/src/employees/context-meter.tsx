@@ -14,7 +14,7 @@ import type { ContextUsage } from "./types";
 const k = (x: number) =>
   x >= 1000 ? `${(x / 1000).toFixed(x >= 100_000 ? 0 : 1)}k` : `${x}`;
 const pct = (x: number, of: number) =>
-  `${Math.min(100, (x / of) * 100).toFixed(x / of < 0.1 ? 1 : 0)}%`;
+  `${of ? Math.min(100, (x / of) * 100).toFixed(x > 0 && x / of < 0.1 ? 1 : 0) : 0}%`;
 
 function parts(c: ContextUsage) {
   /* Live occupancy is one number — when the engine reports it (#415) the

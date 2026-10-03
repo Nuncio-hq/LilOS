@@ -25,7 +25,7 @@ const n = (x: number) =>
     maximumFractionDigits: 1,
   }).format(Math.round(x));
 const pct = (x: number, of: number) =>
-  `${of ? Math.min(100, (x / of) * 100).toFixed(x / of < 0.1 ? 1 : 0) : 0}%`;
+  `${of ? Math.min(100, (x / of) * 100).toFixed(x > 0 && x / of < 0.1 ? 1 : 0) : 0}%`;
 
 export function SessionUsage({
   usage,

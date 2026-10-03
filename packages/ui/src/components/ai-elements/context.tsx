@@ -64,7 +64,7 @@ export const Context = ({
 /* The ring + percent never read past full — a stale or estimated numerator
    can overshoot the window, but 100%/"Full" is the ceiling (#415). */
 const shareOf = (usedTokens: number, maxTokens: number) =>
-  maxTokens > 0 ? Math.min(1, usedTokens / maxTokens) : 0;
+  maxTokens > 0 ? Math.min(1, Math.max(0, usedTokens / maxTokens)) : 0;
 const isFull = (usedTokens: number, maxTokens: number) =>
   maxTokens > 0 && usedTokens >= maxTokens;
 

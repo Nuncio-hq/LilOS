@@ -155,7 +155,7 @@ export function contextUsedOf(
 /** The share of the window the meter fills, clamped to [0, 1] — the meter
     never reads past 100% (#415 AC-3). */
 export function contextShare(used: number, max: number): number {
-  return max > 0 ? Math.min(1, used / max) : 0;
+  return max > 0 ? Math.min(1, Math.max(0, used / max)) : 0;
 }
 
 /** True when the context is at/over the window — the meter's "Full" state. */

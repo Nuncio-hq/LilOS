@@ -18,21 +18,26 @@ import type {
 export function mapUsage(u: unknown): Usage | undefined {
   if (typeof u !== "object" || u === null) return undefined;
   const r = u as Record<string, unknown>;
-  const n = (v: unknown) => (typeof v === "number" && v >= 0 ? v : 0);
+  /* Only non-negative integers survive — a float/negative/Infinity on the
+     wire must not poison `Usage`'s `z.int().min(0)` at the relay (#415). */
+  const int = (v: unknown): number | undefined =>
+    typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : undefined;
+  const n = (v: unknown) => int(v) ?? 0;
   /* `context_max` is the window Hermes resolved for THIS session (the
      compressor's context_length — config pins and provider probing already
      folded in), reported only once the compressor is live (#294).
      `context_used` is the LIVE occupancy (the compressor's last real prompt
      tokens); `input`/`output` are session-lifetime sums — they outgrow the
-     window and are never the meter's numerator (#415). */
+     window and are never the meter's numerator (#415). A real `0` occupancy
+     IS a reading (post-compaction); only absent/malformed means unreported. */
   const contextWindow = n(r.context_max);
-  const context = n(r.context_used);
+  const context = int(r.context_used);
   return {
     input: n(r.input) || n(r.prompt),
     output: n(r.output) || n(r.completion),
     reasoning: n(r.reasoning),
     cache: n(r.cache_read) + n(r.cache_write),
-    ...(context > 0 ? { context } : {}),
+    ...(context !== undefined ? { context } : {}),
     ...(contextWindow > 0 ? { contextWindow } : {}),
   };
 }
