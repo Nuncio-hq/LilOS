@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
-import { slugOf } from "../lib/helpers";
+import { slugOf, titleSeed } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import type { Channel, EmpFn, Msg, Thread, Work } from "../types";
@@ -33,14 +33,7 @@ export function StartWorkDialog({
 }) {
   const proposed = thread.replies.find((r) => r.startProposal)?.startProposal
     ?.title;
-  const [title, setTitle] = useState(
-    proposed ??
-      root.text
-        .replace(/\*\*@\w+\*\*/g, "")
-        .replace(/[*`]/g, "")
-        .trim()
-        .slice(0, 60),
-  );
+  const [title, setTitle] = useState(proposed ?? titleSeed(root.text));
   const [branch, setBranch] = useState(
     `${ticket.toLowerCase()}-${slugOf(proposed ?? title)}`,
   );

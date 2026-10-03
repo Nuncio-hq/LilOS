@@ -79,7 +79,7 @@ const TURN_1: Subagent[] = [
     id: "sa-review", name: "Check envelope seq contract", status: "done", dur: 120,
     task: "Confirm envelope seq is monotonic per session.", steps: [],
     employee: { id: "reviewer", session: REVIEW_SESSION },
-    result: "seq is monotonic per session; contract holds.",
+    result: "`seq` is monotonic per session (checked in `ses_9d51`); the contract holds.",
   },
 ]
 
