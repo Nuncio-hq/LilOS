@@ -2,7 +2,7 @@ import { APP_PROTOCOL_VERSION, type AppErrorCode } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import { createPairingService } from "../src/pairing";
 import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "../src/store";
+import { createMemoryStore } from "./memory-store";
 
 /* `folders.detail` (#156): the phone's branch/workstream probe. The relay
    gates the path to the recents the Mac already lists, then forwards the

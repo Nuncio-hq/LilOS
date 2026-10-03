@@ -1,7 +1,7 @@
 import type { AppErrorCode } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "../src/store";
+import { createMemoryStore } from "./memory-store";
 
 /**
  * #106 approval modes — the access level is LilOS data on the conversation:
