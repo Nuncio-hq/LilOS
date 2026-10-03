@@ -13,13 +13,17 @@
  *   LILOS_ENGINE=fake (default) | hermes | url + LILOS_ENGINE_URL
  *   HERMES_PROVIDER / HERMES_MODEL for the hermes leg.
  */
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RelayClient } from "@lilos/client-runtime";
 import type { AppMessage, Ask } from "@lilos/contracts/app";
+import {
+  cleanup,
+  freePort,
+  launch,
+  waitForFile,
+} from "../../../scripts/live/lib/helpers";
 
 const arg = (name: string, dflt?: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -41,57 +45,17 @@ const fail = (line: string): never => {
   process.exit(1);
 };
 
-const port = await new Promise<number>((resolve, reject) => {
-  const srv = createServer();
-  srv.once("error", reject);
-  srv.listen(0, "127.0.0.1", () => {
-    const addr = srv.address();
-    srv.close(() =>
-      typeof addr === "object" && addr
-        ? resolve(addr.port)
-        : reject(new Error("no port")),
-    );
-  });
-});
+const port = await freePort();
+// The harness feed port defaults to 4581 — pick a free one so the demo
+// doesn't collide with another harness on a shared machine.
+const feedPort = await freePort();
 
 const relayHome = mkdtempSync(join(tmpdir(), "lilos-relay-"));
 const harnessHome = mkdtempSync(join(tmpdir(), "lilos-harness-"));
 out(`relay home ${relayHome}`);
 
-const procs: ChildProcess[] = [];
-const launch = (name: string, cmd: string[], env: Record<string, string>) => {
-  const child = spawn(cmd[0] ?? "bun", cmd.slice(1), {
-    cwd: repoRoot,
-    env: { ...process.env, ...env },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  procs.push(child);
-  child.stdout?.on("data", (d) =>
-    String(d)
-      .trimEnd()
-      .split("\n")
-      .forEach((l) => {
-        console.log(`  [${name}] ${l}`);
-      }),
-  );
-  child.stderr?.on("data", (d) =>
-    String(d)
-      .trimEnd()
-      .split("\n")
-      .forEach((l) => {
-        console.error(`  [${name}!] ${l}`);
-      }),
-  );
-  return child;
-};
-
-const cleanup = () => {
-  for (const p of procs) p.kill("SIGTERM");
-  rmSync(relayHome, { recursive: true, force: true });
-  rmSync(harnessHome, { recursive: true, force: true });
-};
 process.on("SIGINT", () => {
-  cleanup();
+  cleanup(relayHome, harnessHome);
   process.exit(130);
 });
 
@@ -100,19 +64,9 @@ launch("relay", ["bun", "apps/relay/src/index.ts"], {
   LILOS_RELAY_PORT: String(port),
 });
 
-const waitForFile = async (path: string, ms = 10_000): Promise<string> => {
-  const deadline = Date.now() + ms;
-  while (Date.now() < deadline) {
-    try {
-      return readFileSync(path, "utf8").trim();
-    } catch {
-      await new Promise((r) => setTimeout(r, 100));
-    }
-  }
-  return fail(`timed out waiting for ${path}`);
-};
-
-const relayToken = await waitForFile(join(relayHome, "relay-token"));
+const relayToken = await waitForFile(join(relayHome, "relay-token")).catch(
+  (e) => fail(String(e)),
+);
 const relayUrl = `ws://127.0.0.1:${port}/ws`;
 out(`relay ws ${relayUrl}`);
 
@@ -141,6 +95,7 @@ launch("harness", ["bun", "apps/harness/src/index.ts"], {
   LILOS_HARNESS_HOME: harnessHome,
   LILOS_WORKDIR: join(harnessHome, "work"),
   LILOS_ENGINE: engineKind,
+  LILOS_FEED_PORT: String(feedPort),
   LILOS_REPO_ROOT: repoRoot,
 });
 out(`harness launched (engine=${engineKind})`);
@@ -253,6 +208,6 @@ out("turns.interrupt sent");
 
 await new Promise((r) => setTimeout(r, 2_000));
 user.close();
-cleanup();
+cleanup(relayHome, harnessHome);
 out("PASS");
 process.exit(0);
