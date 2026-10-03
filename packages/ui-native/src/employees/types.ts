@@ -60,6 +60,9 @@ export type SessionState =
   | "failed"
   | "stopped";
 
+/** #344 (web: SessionLife): whether the engine session holds the Mac. */
+export type SessionLife = "running" | "open" | "closed";
+
 /** One DM row: your message and the session it opened, summarised. */
 /** A pull request a session opened (web: PullRequest, trimmed to what the
     phone shows). A session can open several; newest last. */
@@ -83,6 +86,10 @@ export type SessionTurn = {
   added?: number;
   removed?: number;
   replies?: number;
+  /** #344: the engine session behind this thread — running (a turn or any
+      subagent), open (loaded, idle), closed (idle-closed; reopens on the
+      next message). Drives the ring round the replies count. */
+  life?: SessionLife;
   /** The employee's latest words, shown as the card's body. */
   preview?: string;
   /** What it's doing right now (working sessions). */
