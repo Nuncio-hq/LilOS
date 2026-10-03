@@ -125,9 +125,10 @@ test.beforeAll(async () => {
     {
       LILOS_USER_NAME: "Oscar",
       /* No steer → mid-run sends queue and drain as ref'd turns (AC-1's
-         bug shape); the `slow:` prompt below holds its leg open long
-         enough to type mid-run without slowing every turn (#432). */
+         bug shape); a slower tick holds turns + legs open long enough to
+         type mid-run. */
       LILOS_HIDE_CAPS: "steer",
+      ENGINE_FAKE_TICK: "300",
     },
   );
 });
@@ -194,10 +195,7 @@ test("AC-2/AC-3 an engine leg keeps its own card above newer rows; its post is c
 }) => {
   test.setTimeout(240_000);
   await dmDefault(page);
-  /* `slowleg:250` paces only the leg this turn arms (~3.5 s window) — the
-     prompt turn itself runs flat out; a mid-leg send can queue while the
-     card is live. */
-  await send(page, "slowleg:250 leg:ZEBRA report delivered");
+  await send(page, "leg:ZEBRA report delivered");
   // The prompt turn answers first; the leg opens after it settles.
   const turns = page.locator("[data-agentturn]");
   await expect(turns.first()).toContainText("I'll report back", {
@@ -295,32 +293,18 @@ test("AC-1/AC-5 queued replies anchor under their own prompt — even after relo
   await expect(turns.nth(1)).toContainText("First queued zebra", {
     timeout: 120_000,
   });
-  /* Post-reload the relay replies can land a frame before the session
-     model replays — mergeTurns then renders the employee posts as bare
-     unanchored rows ([mA][mB][post1][postA][postB]) until the model binds
-     and re-anchors each card under its prompt. The invariant below is the
-     converged order, so poll the thread text until the merge lands. */
   const assertOrder = async () => {
-    let text = "";
-    await expect
-      .poll(
-        async () => {
-          text = await mainText(page);
-          const a = text.indexOf("first queued zebra");
-          const aAnswer = text.indexOf("First queued zebra");
-          const b = text.indexOf("second queued apple");
-          const bAnswer = text.indexOf("Second queued apple");
-          // A's drained reply anchors under A — a newer user row never
-          // renders above an older message's answer.
-          return a >= 0 && a < aAnswer && aAnswer < b && b < bAnswer;
-        },
-        { timeout: 60_000 },
-      )
-      .toBe(true)
-      .catch(async (e) => {
-        console.log(`[ac-308] thread text at failure:\n${text}`);
-        throw e;
-      });
+    const text = await mainText(page);
+    const a = text.indexOf("first queued zebra");
+    const aAnswer = text.indexOf("First queued zebra");
+    const b = text.indexOf("second queued apple");
+    const bAnswer = text.indexOf("Second queued apple");
+    expect(a).toBeGreaterThanOrEqual(0);
+    // A's drained reply anchors under A — a newer user row never renders
+    // above an older message's answer.
+    expect(a).toBeLessThan(aAnswer);
+    expect(aAnswer).toBeLessThan(b);
+    expect(b).toBeLessThan(bAnswer);
   };
   await assertOrder();
   await page.screenshot({ path: `${SHOTS}/ac-1-queued-order.png` });
