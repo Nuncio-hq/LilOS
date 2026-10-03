@@ -1,5 +1,18 @@
-import type { AppMessage } from "@lilos/contracts/app";
-import type { ViewerBrowserInputEvent } from "@lilos/contracts/harness";
+import type {
+  AppMessage,
+  Conversation,
+  ConversationSummary,
+  Employee,
+  MessageSearchHit,
+  ProfileSettings,
+  SystemStatusResult,
+  WorkbenchOpenTarget,
+} from "@lilos/contracts/app";
+import type {
+  SessionBinding,
+  ViewerBrowserInputEvent,
+} from "@lilos/contracts/harness";
+import type { ForgePrListItem } from "@lilos/contracts/host";
 
 /**
  * Drivers the host app injects per scope — the runtime-specific parts
@@ -54,10 +67,40 @@ export type PtySpawner = (
   onExit: (code: number) => void,
 ) => PtyHandle;
 
-/** The app-ops leg (post/read this conversation) — backed by the relay. */
+/**
+ * The app leg (#340): every DM/company read or write the DM tools make —
+ * backed by the relay in production. Domain-shaped ops only; tool semantics
+ * (windows, name resolution, roll-ups) live in `SessionSurfaces` so tests
+ * exercise them through one fake.
+ */
 export interface AppOps {
   postMessage(text: string): Promise<AppMessage>;
-  readConversation(afterSeq?: number): Promise<AppMessage[]>;
+  /** Full visible history of one thread in the bound DM, seq-ascending.
+      `conversationId` omitted = the bound thread itself. */
+  readConversation(opts?: {
+    conversationId?: string;
+    afterSeq?: number;
+  }): Promise<AppMessage[]>;
+  /** Every conversation in the bound DM (`conversations.list`). */
+  listThreads(): Promise<Conversation[]>;
+  /** List-row detail for the bound DM's threads (`conversations.summaries`). */
+  threadSummaries(): Promise<ConversationSummary[]>;
+  /** The company roster (`employees.list`). */
+  employees(): Promise<Employee[]>;
+  /** PRs linked to a thread of the bound DM (`conversations.prs`). */
+  threadPrs(conversationId: string): Promise<ForgePrListItem[]>;
+  /** FTS search inside the bound DM (`messages.search`). */
+  searchMessages(query: string, limit?: number): Promise<MessageSearchHit[]>;
+  /** Rename the bound thread; "user_title" when the user's title wins (#137). */
+  setThreadTitle(
+    title: string,
+  ): Promise<{ outcome: "set" | "user_title"; title: string }>;
+  /** `system.status` — the Mac's leg health, for `context`. */
+  status(): Promise<SystemStatusResult>;
+  /** `profile.get` — the signed-in human's LilOS identity. */
+  profile(): Promise<ProfileSettings>;
+  /** Emit `workbench.opened` on the bound DM (`workbench.open`). */
+  openWorkbench(target: WorkbenchOpenTarget): Promise<void>;
 }
 
 export interface SurfaceScopeOptions {
@@ -69,6 +112,8 @@ export interface SurfaceScopeOptions {
   createBrowser?: () => Promise<BrowserDriver>;
   spawnPty: PtySpawner;
   appOps?: AppOps;
+  /** Who/what the session is bound to (employee/channel/conversation) — #337. */
+  binding?: SessionBinding;
   /** Scrollback cap; default 400 KB like the spike's ring. */
   termTailBytes?: number;
   runTimeoutMs?: number;

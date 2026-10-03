@@ -26,11 +26,13 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { employeeBadges } from "./lib/badges";
 import { buildLabel } from "./lib/build-label";
+import { connectApproved, requestConnect } from "./lib/connect";
 import {
   HIRE_TEMPLATES,
   hireEmployee,
   listHirableProfiles,
 } from "./lib/employees";
+import { parseFocusTab } from "./lib/focus-search";
 import { appFrameClass } from "./lib/frame";
 import { useAtom } from "./lib/hooks";
 import { toUiEmployee } from "./lib/mapping";
@@ -205,8 +207,12 @@ function AppShell() {
       }),
     [catalog, defaultModel, defaultProvider],
   );
+  /* #339: the hire dialog's "Connect to LilOS" checkbox — on by default,
+     rendered only when the engine reports connect rows (Hermes). */
+  const [hireConnect, setHireConnect] = useState(true);
   const openHire = () => {
     setHireError(null);
+    setHireConnect(true);
     setHireOpen(true);
     // Fresh roster each open — a profile created or freed elsewhere shows up.
     void listHirableProfiles()
@@ -219,6 +225,10 @@ function AppShell() {
     setHirePending(true);
     void hireEmployee(d, profile)
       .then((emp) => {
+        // #339: a checked "Connect to LilOS" grants the one-time approval —
+        // the reconciler picks the new profile up on its next pass.
+        if (hireConnect && connectApproved.get() !== true)
+          void requestConnect().catch(() => {});
         setHireOpen(false);
         void navigate({
           to: "/dm/$employeeId",
@@ -260,6 +270,23 @@ function AppShell() {
               })),
             ),
           onOpenAsksChange: (fn) => sessionModels.subscribe(fn),
+          /* #400: done/failed the live frame dropped — re-evaluated from
+             the feeds themselves on every model or view change, so a
+             completion that landed in the zero-peer window of a page
+             reload still surfaces. */
+          completionEvents: () =>
+            relay.conversations.get().flatMap((c) => {
+              if (!c.engineRef) return [];
+              const events = engine
+                .sessionFeed(c.engineRef)
+                .get()
+                .events.filter(
+                  (e) =>
+                    e.type === "turn.completed" ||
+                    (e.type === "session.state" && e.payload.state === "error"),
+                );
+              return [{ sessionId: c.engineRef, events }];
+            }),
           openConversationId: () =>
             openConversationFromPath(router.state.location.pathname),
           inForeground: () =>
@@ -372,6 +399,11 @@ function AppShell() {
           usedProfiles={employees.map((e) => e.profile)}
           error={hireError ?? undefined}
           pending={hirePending}
+          connect={
+            statusPoll.result?.connect
+              ? { checked: hireConnect, onChange: setHireConnect }
+              : undefined
+          }
           onClose={() => setHireOpen(false)}
           onHire={(d, profile) => hire(d, profile)}
         />
@@ -466,10 +498,14 @@ const threadRoute = createRoute({
   component: DmPage,
 });
 /* `/focus` opens the session in Focus — same page component, Focus reads
-   the suffix itself (#114). */
+   the suffix itself (#114). `?tab=` names the Workbench tab (#319 AC-2). */
 const focusRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/dm/$employeeId/$conversationId/focus",
+  validateSearch: (search) => {
+    const tab = parseFocusTab(search);
+    return tab ? { tab } : {};
+  },
   component: DmPage,
 });
 const routeTree = rootRoute.addChildren([

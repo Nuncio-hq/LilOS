@@ -3,6 +3,7 @@ import {
   type SessionFeedState,
   type SessionModel,
   toStatusComponents,
+  waitingMessages,
 } from "@lilos/client-runtime";
 import type {
   AppMessage,
@@ -46,6 +47,7 @@ import type {
   Msg,
   Reply,
   Thread,
+  WbTab,
   Work,
   WsPick,
 } from "@lilos/ui/types";
@@ -77,7 +79,9 @@ import {
   hydrateAttachments,
   toAttachedFiles,
 } from "../lib/attachments";
+import { requestConnect } from "../lib/connect";
 import { removeEmployee, saveEmployee } from "../lib/employees";
+import { parseFocusTab } from "../lib/focus-search";
 import {
   addFolder,
   cwdInfo,
@@ -120,6 +124,7 @@ import {
   navOpen,
   relay,
   sessionModels,
+  workbenchRequests,
 } from "../lib/runtime";
 import { say } from "../lib/toast";
 
@@ -192,9 +197,13 @@ export function DmPage() {
   };
   const navigate = useNavigate();
   /* `/dm/$e/$c/focus` renders the session in Focus instead of the panel
-     (#114) — the route carries it, so reload stays in Focus. */
+     (#114) — the route carries it, so reload stays in Focus. `?tab=` names
+     the Workbench tab it opens on (#319 AC-2). */
   const focusOpen = useRouterState({
     select: (s) => s.location.pathname.endsWith("/focus"),
+  });
+  const focusTab = useRouterState({
+    select: (s) => parseFocusTab(s.location.search),
   });
 
   const employees = useAtom(relay.employees);
@@ -302,6 +311,11 @@ export function DmPage() {
   const channel = channels.find(
     (c) => c.kind === "dm" && c.employeeId === employeeId,
   );
+  /* #339: the harness's connect row for this employee's profile — absent
+     on non-Hermes engines (no `connect` on system.status). */
+  const employeeRow = employee?.profile
+    ? statusPoll.result?.connect?.find((r) => r.profile === employee.profile)
+    : undefined;
 
   /* #193: an employee hired without a DM channel (relay-side
      `employees.create`, pre-fix first-run hires) hung on the session
@@ -334,6 +348,19 @@ export function DmPage() {
     [summaries, channel],
   );
   const openConv = convs.find((c) => c.id === conversationId);
+
+  /* #340 AC-2b: the session's `workbench_open` opens the Workbench — Focus
+     carries it, so a spot for another view navigates there first; the
+     open-conversation's newest spot feeds the panel itself. */
+  const wbSpots = useAtom(workbenchRequests);
+  const wbSpot = conversationId ? wbSpots[conversationId] : undefined;
+  useEffect(() => {
+    if (!wbSpot || !conversationId || focusOpen) return;
+    void navigate({
+      to: "/dm/$employeeId/$conversationId/focus",
+      params: { employeeId, conversationId },
+    });
+  }, [wbSpot, conversationId, focusOpen, navigate, employeeId]);
 
   /* #138: full-text message search behind the session filter. Wire hits are
      conversation-scoped; the box groups by the session's root message id, so
@@ -471,6 +498,9 @@ export function DmPage() {
           afterSeq: all.at(-1)?.seq ?? 0,
           limit: 200,
           includeRewound: true,
+          /* #315: parked not-sent rows ride the fetch so the tray survives a
+             reload (relay truth, not component state). */
+          includeDropped: true,
         });
         all.push(...page.messages);
         if (page.messages.length < 200) break;
@@ -504,17 +534,20 @@ export function DmPage() {
        fetch and now leaves its tail rows unmarked — drop them by seq. The
        rewind note and later messages only arrive through `messages` (the
        `conversation.rewound` event already pruned that store), so the seq
-       rule must not touch that source or it would hide the note. */
+       rule must not touch that source or it would hide the note.
+       Live rows merge FIRST: a flag flip (`dropped`/`removed`, #315
+       `message.changed`) arrives only through `messages`, and the stale
+       fetch copy of the same row must never outrank it. */
+    for (const m of messages) {
+      if (m.conversationId !== openConvId || seen.has(m.id) || m.rewound)
+        continue;
+      seen.add(m.id);
+      out.push(m);
+    }
     for (const m of threadMsgs) {
       if (m.conversationId !== openConvId || seen.has(m.id) || m.rewound)
         continue;
       if (rewoundFrom !== undefined && m.seq >= rewoundFrom) continue;
-      seen.add(m.id);
-      out.push(m);
-    }
-    for (const m of messages) {
-      if (m.conversationId !== openConvId || seen.has(m.id) || m.rewound)
-        continue;
       seen.add(m.id);
       out.push(m);
     }
@@ -688,9 +721,13 @@ export function DmPage() {
   const repliesOf = (conv: Conversation): Reply[] => {
     const s = summaryOf(conv);
     const want = s ? s.messageCount - 1 : undefined;
+    const hidden = waitingFor(conv).hiddenIds;
     const known = conversationReplies(
       (conv.id === conversationId ? threadPool : messages).filter(
-        (m) => m.conversationId === conv.id && m.id !== conv.rootMessageId,
+        (m) =>
+          m.conversationId === conv.id &&
+          m.id !== conv.rootMessageId &&
+          !hidden.has(m.id),
       ),
       conv.id,
     );
@@ -734,6 +771,19 @@ export function DmPage() {
   const modelFor = (conv: Conversation): SessionModel | undefined =>
     conv.engineRef ? models[conv.engineRef] : undefined;
 
+  /* #315: mid-turn sends wait in the tray — relay truth (deliveredSeq + the
+     message flags), not component state, so a reload shows the same tray.
+     Waiting rows, landed steers and parked/removed rows never render as
+     reply bubbles. */
+  const waitingFor = (conv: Conversation) =>
+    waitingMessages(
+      (conv.id === conversationId ? threadPool : messages).filter(
+        (m) => m.conversationId === conv.id,
+      ),
+      conv.deliveredSeq,
+      modelFor(conv),
+    );
+
   const convAsks = (conv: Conversation): Ask[] =>
     allAsks.filter((a) => a.conversationId === conv.id);
 
@@ -743,23 +793,22 @@ export function DmPage() {
       messages.find((m) => m.id === conv.rootMessageId);
     if (!root) return [];
     const model = modelFor(conv);
-    return [
-      toFeed(
-        root,
-        conv,
-        mergeTurns(
-          repliesOf(conv),
-          model,
-          employeeId,
-          convAsks(conv),
-          rewoundInfo.get(conv.id),
-          empRefToId,
-          conv.rootMessageId,
-          conv.state,
-        ),
-        wsFor(conv.cwd, cwdBranches),
-      ),
-    ];
+    const feedReplies = mergeTurns(
+      repliesOf(conv),
+      model,
+      employeeId,
+      convAsks(conv),
+      rewoundInfo.get(conv.id),
+      empRefToId,
+      conv.rootMessageId,
+      conv.state,
+    );
+    /* #320: scope turn keys to the conversation — turnIds are per-session
+       counters (two DMs can both hold "t1"); React keys and the collapse
+       store are keyed on it, so it must be conv-unique. */
+    for (const r of feedReplies)
+      if (r.turnId) r.turnId = `${conv.id}:${r.turnId}`;
+    return [toFeed(root, conv, feedReplies, wsFor(conv.cwd, cwdBranches))];
   });
 
   // "submitted" marker clears once the engine turn is actually running.
@@ -956,10 +1005,17 @@ export function DmPage() {
     const engineRef = conv.engineRef;
     /* AC-6 (D-#19): plan surfaces only exist when the engine declares `plan`. */
     const planCap = hasCapability("plan");
+    /* #315: waiting items (and parked/removed rows) leave the reply pool —
+       they render in the trays above the composer, not as bubbles. */
+    const waiting = waitingFor(conv);
+    const notSentMsgs = threadPool.filter((m) => m.dropped);
     let replies = mergeTurns(
       conversationReplies(
         threadPool.filter(
-          (m) => m.id !== conv.rootMessageId && m.id !== root?.id,
+          (m) =>
+            m.id !== conv.rootMessageId &&
+            m.id !== root?.id &&
+            !waiting.hiddenIds.has(m.id),
         ),
         conv.id,
       ),
@@ -971,6 +1027,8 @@ export function DmPage() {
       conv.rootMessageId,
       conv.state,
     );
+    /* #320: same conv-scoped turn keys as the feed path (see above). */
+    for (const r of replies) if (r.turnId) r.turnId = `${conv.id}:${r.turnId}`;
     if (!planCap) replies = stripPlans(replies);
     // An open question ask gets a real answer card (asks.respond).
     const openQuestion = asksHere.find(
@@ -1114,11 +1172,51 @@ export function DmPage() {
         );
     };
 
+    /* #315 tray actions. The relay owns the row: Remove marks it `removed`
+       (the harness's `message.changed` handler drops it from every in-memory
+       hold, so the engine never gets it); Send clears `dropped` and the
+       harness re-delivers it. `say` carries a failure instead of throwing
+       mid-render. */
+    const onRemovePending = (i: number) => {
+      const target = waiting.waiting[i]?.message;
+      if (!target) return;
+      void relay
+        .request("messages.remove", { messageId: target.id })
+        .catch((e) =>
+          say(`Remove failed — ${e instanceof Error ? e.message : String(e)}`),
+        );
+    };
+    const onUnqueue = (i: number) => {
+      const target = notSentMsgs[i];
+      if (!target) return;
+      void relay
+        .request("messages.remove", { messageId: target.id })
+        .catch((e) =>
+          say(`Remove failed — ${e instanceof Error ? e.message : String(e)}`),
+        );
+    };
+    const onSendQueued = (i: number) => {
+      const target = notSentMsgs[i];
+      if (!target) return;
+      void relay
+        .request("messages.send", { messageId: target.id })
+        .catch((e) =>
+          say(`Send failed — ${e instanceof Error ? e.message : String(e)}`),
+        );
+    };
+    /* An accepted-but-unlanded steer already reached the engine — its row
+       still lists in the tray but Edit/Remove aren't offered (#315 AC-4). */
+    const pendingItems = waiting.waiting.map((w) =>
+      w.removable ? w.message.text : { text: w.message.text, removable: false },
+    );
+
     const thread: Thread = {
       session: engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
       title: conv.title || undefined,
       archived: conv.archived,
       replies,
+      /* #315: the not-sent tray reads ONLY ■-stopped parked sends. */
+      queue: notSentMsgs.map((m) => m.text),
       /* #300: live turn usage first, the persisted conv.usage for sessions
          the engine forgot (legacy engineRefs degrade to an empty replay). */
       usage: threadUsage(model, conv),
@@ -1235,6 +1333,22 @@ export function DmPage() {
           onScrolled={() => setScrollTo(null)}
           steer={steer}
           agentWorking={!!modelLive?.agentInitiated}
+          /* #319 AC-2: the URL carries the Workbench tab — opening on
+             `?tab=` (a panel link's pick) and keeping it on further picks
+             means a reload always lands on the tab the URL names. */
+          initialTab={focusTab}
+          onTab={(t: WbTab) =>
+            void navigate({
+              to: "/dm/$employeeId/$conversationId/focus",
+              params: { employeeId, conversationId: conv.id },
+              search: { tab: t },
+              replace: true,
+            })
+          }
+          pending={pendingItems}
+          onRemovePending={onRemovePending}
+          onUnqueue={onUnqueue}
+          onSendQueued={onSendQueued}
           draft={threadDraft}
           onDraftChange={setThreadDraft}
           /* Same capability probe as the thread panel (#110): null pins the
@@ -1251,6 +1365,7 @@ export function DmPage() {
                 }
               : null
           }
+          wbSpot={wbSpot}
         >
           {filesOnly?.conversationId === conv.id && (
             <StatusBanner
@@ -1318,6 +1433,15 @@ export function DmPage() {
           steer={steer}
           agentWorking={!!modelLive?.agentInitiated}
           onOpenSession={onOpenSession}
+          /* #319 AC-1: the turn's "N subagents · Open" / "N files changed"
+             lines open Focus straight on that Workbench tab. */
+          onOpenTab={(t: WbTab) =>
+            void navigate({
+              to: "/dm/$employeeId/$conversationId/focus",
+              params: { employeeId, conversationId: conv.id },
+              search: { tab: t },
+            })
+          }
           transcriptNote={transcriptNote}
           models={catalog.length ? catalog : undefined}
           onModel={
@@ -1330,6 +1454,10 @@ export function DmPage() {
           defaultProvider={defaultProvider}
           onSend={sendInThread}
           onPlan={planCap ? onPlan : undefined}
+          pending={pendingItems}
+          onRemovePending={onRemovePending}
+          onUnqueue={onUnqueue}
+          onSendQueued={onSendQueued}
           draft={threadDraft}
           onDraftChange={setThreadDraft}
           accept={canAttachImages ? "image/*" : undefined}
@@ -1429,6 +1557,17 @@ export function DmPage() {
         onSearchFiles={fileSearch(pickedFolderPath)}
         onSearchMessages={searchMessages}
         onOpenHit={onOpenHit}
+        /* #339: the employee's connect row off system.status — the notice
+           renders only for non-connected states. */
+        connection={
+          employeeRow
+            ? {
+                state: employeeRow.state,
+                ...(employeeRow.reason ? { reason: employeeRow.reason } : {}),
+                onConnect: () => void requestConnect(),
+              }
+            : undefined
+        }
         models={catalog.length ? catalog : undefined}
         modelChoice={
           draftPick[employeeId] ??

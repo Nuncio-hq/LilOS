@@ -14,6 +14,7 @@ import type {
   FoldersDetailResult,
   FoldersDiscoverResult,
   PendingTurn,
+  ProfileConnection,
 } from "@lilos/contracts/app";
 import {
   APP_PROTOCOL_VERSION,
@@ -21,11 +22,14 @@ import {
   ChannelCreatedEvent,
   ChannelRemovedEvent,
   ConversationModelRequestedEvent,
+  ConversationRewoundEvent,
   ConversationsRewindHostParams,
   ConversationUpdatedEvent,
+  EmployeeRemovedEvent,
   ENGINE_PASSTHROUGH_METHODS,
   FoldersBrowseParams,
   FoldersDetailParams,
+  MessageChangedEvent,
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
 import {
@@ -36,6 +40,7 @@ import {
   type EngineRequest,
   EventsSinceParams,
   type EventsSinceResult,
+  type McpServerStdio,
 } from "@lilos/contracts/engine";
 import {
   type CheckpointStore,
@@ -52,6 +57,7 @@ import {
   resolveUnderHome,
   worktreeAdd,
 } from "@lilos/host";
+import { CONNECT_APPROVAL_KEY } from "./connect";
 import type { EngineConnection } from "./engine/client";
 import { engineErrorCode, SESSION_NOT_FOUND } from "./engine/client";
 import type { EngineHostState } from "./engine/supervisor";
@@ -77,6 +83,15 @@ interface SessionBinding {
   sessionId: string;
   /** Durable ref stored as the conversation's engineRef. */
   ref: string;
+  /**
+   * The engine's own session id inside its engine (#339 — Hermes' stored
+   * session key, returned as `session.start`'s `engineSessionId` and kept
+   * current by `session.ref.changed`). The gateway aliases it so an
+   * in-process engine plugin resolves this binding's scope.
+   */
+  engineSessionId?: string;
+  /** The gateway session id backing this session's surfaces, if wired. */
+  gatewaySession?: string;
   /** Folder the session works in — the checkpoint store's work tree (#134). */
   cwd: string;
   /** Highest engine event seq applied — the `events.since` watermark. */
@@ -103,6 +118,17 @@ interface SessionBinding {
   consumed: Set<string>;
   /** turnId -> relay message id that prompted it — the answer's dedupe key. */
   turnSource: Map<string, string>;
+  /** Steers the engine accepted but hasn't landed yet (no `turn.steered`
+      seen), keyed by relay message id — a Stop drops these alongside the
+      queue so nothing waiting can auto-run after it (#315). */
+  steerPending: { messageId: string; text: string }[];
+  /** Grace window for stranded accepted steers (#315): scheduled when a
+     turn ends or an accepted steer lands after it — at fire time any
+     steerPending left parks in the not-sent tray via `messages.drop`. */
+  steerReconcileTimer?: ReturnType<typeof setTimeout>;
+  /** Set when ■ Stop is requested until the next `turn.started` — the
+      queue drain parks instead of prompting while it's on (#315). */
+  stopRequested: boolean;
   /** Latest pick made while a turn runs — applied to the idle session
       before the next prompt goes out (#92). */
   heldPick?: ModelPick;
@@ -161,11 +187,41 @@ export interface HarnessOptions {
    */
   checkpoints?: CheckpointStore;
   /**
-   * The home-folder boundary `folders.browse`/`folders.discover` enforce
+   * The agent-gateway surfaces server (#337/#339): one gateway session per
+   * engine session, aliased by the engine's own session id so an
+   * in-process engine plugin can present it via `x-lilos-session`.
+   * Optional — fixtures skip it; engines still work, `lilos_*` tools just
+   * never resolve.
+   */
+  surfaces?: {
+    create(init: {
+      cwd?: string;
+      binding?: import("@lilos/contracts/harness").SessionBinding;
+      engineSessionId?: string;
+    }): { session: string; mcpServer: McpServerStdio };
+    bindEngineSession(session: string, engineSessionId: string): boolean;
+    destroy(session: string): Promise<boolean>;
+  };
+  /**
+   * How an engine session reaches its surfaces (#339): "plugin" — an
+   * in-process engine plugin renders lilos_* from the gateway catalog
+   * (Hermes); "mcp" — the session's `session.start` carries the surfaces'
+   * stdio `lilos mcp` server spec (engine-fake, ACP engines).
+   */
+  surfacesAttach?: "plugin" | "mcp";
+  /** The home-folder boundary `folders.browse`/`folders.discover` enforce
    * for device peers (#238). Defaults to the OS home dir (injectable for
    * tests).
    */
   homeDir?: string;
+  /** #339 Connect reconciler (Hermes engine only): reconciles the lilos
+     plugin per employee profile after approval, reports the rows on
+     `harness.report`. Undefined on non-Hermes engines. */
+  connect?: {
+    reconcile(): Promise<void>;
+    employeeRemoved(employeeId: string): void;
+    report(): ProfileConnection[];
+  };
 }
 
 const INVALID_STATE = -32003;
@@ -181,6 +237,18 @@ export class Harness {
   private readonly modelPickQueue = new Map<string, Promise<void>>();
   private readonly conversationBySession = new Map<string, string>(); // sessionId -> convId
   private readonly rebinds = new Map<string, Promise<void>>(); // convId -> in-flight rebind
+  /* #400: a bind is a multi-await RPC chain (session.start + surfaces). Every
+     deliver inside that window must share ONE bind — two racing binds made
+     two engine sessions and the feed (keyed on engineRef, written last) only
+     ever showed one session's turns. The set is also the marker
+     onInterruptRequested reads before dropping a Stop fired mid-bind. */
+  private readonly binds = new Map<
+    string,
+    Promise<SessionBinding | undefined>
+  >();
+  /** Conversation ids whose Stop outran the first bind — fired at the
+      queued prompt's `turn.started`, when the engine has a turn to stop. */
+  private readonly pendingInterrupts = new Set<string>();
   /** engine requestId -> relay ask id (per session). */
   private readonly askByRequest = new Map<string, string>();
   private readonly requestByAsk = new Map<
@@ -190,6 +258,12 @@ export class Harness {
   private readonly delivered = new Set<string>(); // relay message ids claimed
   /** Messages that arrived while the engine was down; drained on attach. */
   private readonly early = new Map<string, AppMessage[]>();
+  /** User-removed message ids (#315 `message.changed`): skipped forever. */
+  private readonly dismissed = new Set<string>();
+  /** Un-parked message ids allowed past the deliveredSeq watermark once —
+      a Send on a dropped accepted-steer has seq <= deliveredSeq and must
+      still reach the engine (#315 `message.changed`). */
+  private readonly redeliver = new Set<string>();
   private readonly channelSeen = new Map<string, number>();
   private readonly channelWatch = new Map<string, () => void>(); // channelId -> store unsub
   private readonly unsubs: Array<() => void> = [];
@@ -597,6 +671,8 @@ export class Harness {
       await this.updateConversation(binding.conversationId, {
         state: "idle",
       });
+      /* The turn vanished mid-run — pending steers can't land anymore. */
+      this.scheduleSteerReconcile(binding);
     }
     await this.postSystem(
       binding,
@@ -621,10 +697,16 @@ export class Harness {
     const conn = this.engine;
     if (!conn) return;
     const agent = await this.ensureAgent(conn, employee);
-    const started = await conn.request<{ sessionId: string; ref?: string }>(
+    const surface = this.createSurfaces(binding, conv, employee);
+    const started = await conn.request<{
+      sessionId: string;
+      ref?: string;
+      engineSessionId?: string;
+    }>(
       "session.start",
-      this.sessionParams(employee, agent, conv),
+      this.sessionParams(employee, agent, conv, surface?.mcpServer),
     );
+    this.aliasSurfaces(surface?.session, started.engineSessionId);
     // Session lost on the engine (fresh engine/orphan grace expired): a turn
     // that was running ended silently — surface interrupted + Retry (AC-4).
     if (binding.runningTurnId) {
@@ -635,6 +717,8 @@ export class Harness {
       ...binding,
       sessionId: started.sessionId,
       ref: started.ref ?? started.sessionId,
+      engineSessionId: started.engineSessionId,
+      gatewaySession: surface?.session,
       lastSeq: 0,
       runningTurnId: undefined,
       textByTurn: new Map(),
@@ -644,7 +728,12 @@ export class Harness {
       heldPick: undefined,
       heldPickPrev: undefined,
       promptGates: new Set(),
+      /* A dead session's stop mustn't park the live one, and its reconcile
+         timer dies with it (#315). */
+      stopRequested: false,
+      steerReconcileTimer: undefined,
     };
+    if (binding.steerReconcileTimer) clearTimeout(binding.steerReconcileTimer);
     this.bindings.set(binding.conversationId, rebound);
     this.conversationBySession.set(started.sessionId, binding.conversationId);
     // Idle, not active: a rebind with an empty queue has nothing running —
@@ -654,8 +743,30 @@ export class Harness {
       engineRef: started.sessionId,
       state: "idle",
     });
+    /* The old session is gone: an accepted-but-unlanded steer can never
+       land on the rebound session — park it in the not-sent tray
+       (#315 AC-5/AC-6). Same for the queue when a Stop had armed the
+       park: nothing waiting auto-runs after it. */
+    for (const pending of binding.steerPending.splice(0)) {
+      binding.consumed.delete(pending.messageId);
+      this.relayWrite(`drop steer ${pending.messageId}`, () =>
+        this.opts.relay.request("messages.drop", {
+          messageId: pending.messageId,
+        }),
+      );
+    }
     const queued = binding.queue.splice(0);
-    for (const message of queued) this.enqueueOrPrompt(rebound, message);
+    if (binding.stopRequested) {
+      binding.stopRequested = false;
+      for (const message of queued) {
+        binding.consumed.delete(message.id);
+        this.relayWrite(`drop queued ${message.id}`, () =>
+          this.opts.relay.request("messages.drop", { messageId: message.id }),
+        );
+      }
+    } else {
+      for (const message of queued) this.enqueueOrPrompt(rebound, message);
+    }
     this.mirrorMeta(rebound, conv);
   }
 
@@ -720,6 +831,9 @@ export class Harness {
   private async deliver(message: AppMessage): Promise<void> {
     if (message.authorKind !== "user") return;
     if (!message.conversationId) return;
+    /* #315: a user-removed row must never reach the engine — not even via
+       a replayed frame that predates the `message.changed` it carried. */
+    if (this.dismissed.has(message.id)) return;
     if (this.delivered.has(message.id)) return;
 
     this.opts.log.info("user message", {
@@ -744,8 +858,11 @@ export class Harness {
        reattach) only to drop the message, and the held batch would re-prompt
        on that new session when the engine attaches. Nothing owed → no bind,
        no session.start, no prompt. */
+    /* #315: the `redeliver` claim is one-shot — read it once for both
+       watermark checks below, or the second guard swallows a Send. */
+    const isRedeliver = this.redeliver.delete(message.id);
     const cur = this.conversationFromAtom(conv.id) ?? conv;
-    if (message.seq <= cur.deliveredSeq) return;
+    if (message.seq <= cur.deliveredSeq && !isRedeliver) return;
     const binding = await this.bindingFor(conv, message.channelId);
     if (!binding) {
       // Engine still starting/restarting: hold the message; attachEngine
@@ -754,6 +871,9 @@ export class Harness {
       const waiting = this.early.get(conv.id) ?? [];
       waiting.push(message);
       this.early.set(conv.id, waiting);
+      // The watermark already claimed this send — keep the claim alive so
+      // the post-attach flush can't swallow it.
+      if (isRedeliver) this.redeliver.add(message.id);
       this.opts.log.debug("message held for engine", {
         conversationId: conv.id,
         waiting: waiting.length,
@@ -761,11 +881,13 @@ export class Harness {
       return;
     }
     // Watermark guard: a redelivery (register pending list, channel replay)
-    // of a message the engine already took must not prompt it again.
+    // of a message the engine already took must not prompt it again. The
+    // `dismissed` head-check ran before the bind await — a rewind could have
+    // killed the row in between, so it is checked again here.
     const fresh = this.conversationFromAtom(conv.id) ?? conv;
-    if (message.seq <= fresh.deliveredSeq || binding.consumed.has(message.id)) {
+    if (message.seq <= fresh.deliveredSeq && !isRedeliver) return;
+    if (this.dismissed.has(message.id) || binding.consumed.has(message.id))
       return;
-    }
     this.enqueueOrPrompt(binding, message);
   }
 
@@ -786,7 +908,12 @@ export class Harness {
          held message can sit at/below deliveredSeq (delivered on a previous
          engine attachment or via the register-time pending list while this
          one was queued). Never prompt it a second time. */
-      if (message.seq <= fresh.deliveredSeq || binding.consumed.has(message.id))
+      if (
+        this.dismissed.has(message.id) ||
+        (message.seq <= fresh.deliveredSeq &&
+          !this.redeliver.delete(message.id)) ||
+        binding.consumed.has(message.id)
+      )
         continue;
       this.enqueueOrPrompt(binding, message);
     }
@@ -831,8 +958,22 @@ export class Harness {
             ),
           )
           .then((res) => {
+            /* Removed while the steer RPC was in flight: the engine took it,
+               but the row is `removed` — don't advance deliveredSeq over it
+               (a restart would re-owe it anyway: pending turns skip removed
+               rows) and don't track it as a droppable steer. */
+            if (this.dismissed.has(message.id)) return;
             if (res.status === "steered") {
               this.markDelivered(binding, message);
+              /* Tracked until `turn.steered` lands or a Stop drops it —
+                 engines discard pending steers on interrupt (#315 AC-5). */
+              binding.steerPending.push({
+                messageId: message.id,
+                text: message.text,
+              });
+              /* The steer can resolve after its turn ended: nothing will
+                 land it now — start the stranded-steer reconcile (#315). */
+              if (!binding.runningTurnId) this.scheduleSteerReconcile(binding);
             } else {
               // not_running: the turn ended between our check and the steer
               // (e.g. a Stop just landed). The engine consumed nothing — send
@@ -1132,6 +1273,24 @@ export class Harness {
   ): Promise<SessionBinding | undefined> {
     const existing = this.bindings.get(conv.id);
     if (existing) return existing;
+    const inFlight = this.binds.get(conv.id);
+    if (inFlight) return inFlight;
+    const pending = this.bindConversation(conv, channelId).finally(() => {
+      this.binds.delete(conv.id);
+      /* A parked Stop is moot when the bind produced nothing to stop — drop
+         it instead of interrupting whatever turn the next bind creates. */
+      if (!this.bindings.has(conv.id)) this.pendingInterrupts.delete(conv.id);
+    });
+    this.binds.set(conv.id, pending);
+    return pending;
+  }
+
+  private async bindConversation(
+    conv: Conversation,
+    channelId: string,
+  ): Promise<SessionBinding | undefined> {
+    const existing = this.bindings.get(conv.id);
+    if (existing) return existing;
     const conn = this.engine;
     if (!conn) return undefined;
 
@@ -1156,11 +1315,19 @@ export class Harness {
           pickByTurn: new Map(),
           consumed: new Set(),
           turnSource: new Map(),
+          steerPending: [],
+          stopRequested: false,
         };
         this.bindings.set(conv.id, binding);
         this.conversationBySession.set(conv.engineRef, conv.id);
         this.applyReplay(binding, replay);
         this.rebuildHeldPick(binding, conv, replay.snapshot);
+        /* Reattach carries no `engineSessionId` — the stored key was never
+           stored on the conversation. Create the gateway session anyway;
+           the alias lands on the next `session.ref.changed` (#339). */
+        const employee = await this.resolveEmployee(conv);
+        const surface = this.createSurfaces(binding, conv, employee);
+        binding.gatewaySession = surface?.session;
         return binding;
       } catch (error) {
         if (engineErrorCode(error) !== SESSION_NOT_FOUND) throw error;
@@ -1190,15 +1357,11 @@ export class Harness {
 
     const employee = await this.resolveEmployee(conv);
     const agent = await this.ensureAgent(conn, employee);
-    const started = await conn.request<{ sessionId: string; ref?: string }>(
-      "session.start",
-      this.sessionParams(employee, agent, conv),
-    );
     const binding: SessionBinding = {
       conversationId: conv.id,
       channelId,
-      sessionId: started.sessionId,
-      ref: started.ref ?? started.sessionId,
+      sessionId: "",
+      ref: "",
       cwd: expandPath(conv.cwd ?? this.opts.workdir, this.home),
       lastSeq: 0,
       queue: [],
@@ -1207,7 +1370,23 @@ export class Harness {
       pickByTurn: new Map(),
       consumed: new Set(),
       turnSource: new Map(),
+      steerPending: [],
+      stopRequested: false,
     };
+    const surface = this.createSurfaces(binding, conv, employee);
+    const started = await conn.request<{
+      sessionId: string;
+      ref?: string;
+      engineSessionId?: string;
+    }>(
+      "session.start",
+      this.sessionParams(employee, agent, conv, surface?.mcpServer),
+    );
+    this.aliasSurfaces(surface?.session, started.engineSessionId);
+    binding.sessionId = started.sessionId;
+    binding.ref = started.ref ?? started.sessionId;
+    binding.engineSessionId = started.engineSessionId;
+    binding.gatewaySession = surface?.session;
     this.bindings.set(conv.id, binding);
     this.conversationBySession.set(started.sessionId, conv.id);
     await this.updateConversation(conv.id, {
@@ -1270,9 +1449,55 @@ export class Harness {
         // `ref` proves which relay message this turn consumed — recorded so a
         // pending-tail redelivery can't re-prompt it, and so the turn's answer
         // posts under a dedupe key stable across reconnects.
+        /* The stop window ends: this turn (prompted or engine-pumped) runs
+           to completion — nothing queued or steer-pending is parked on it. */
+        binding.stopRequested = false;
+        if (binding.steerReconcileTimer) {
+          clearTimeout(binding.steerReconcileTimer);
+          binding.steerReconcileTimer = undefined;
+        }
+        /* #400: a Stop fired while this turn's bind was still in its awaits
+           parked on `pendingInterrupts` — fire it now that the turn exists
+           (the engine acks interrupted:true instead of dropping it). */
+        if (convId && this.pendingInterrupts.delete(convId)) {
+          this.opts.log.info("interrupt requested", {
+            conversationId: convId,
+          });
+          binding.stopRequested = true;
+          const conn = this.engine;
+          if (conn)
+            void conn
+              .request("interrupt", { sessionId: binding.sessionId })
+              .catch((e) =>
+                this.opts.log.warn("parked interrupt failed", {
+                  error: String(e),
+                }),
+              );
+        }
         if (event.payload.ref) {
           binding.consumed.add(event.payload.ref);
           binding.turnSource.set(event.payload.turnId, event.payload.ref);
+          /* A pumped steer became a real turn input — it's consumed now,
+             not pending (a later Stop has no pending left to drop). */
+          binding.steerPending = binding.steerPending.filter(
+            (s) => s.messageId !== event.payload.ref,
+          );
+          /* #315 AC-4: the message behind this turn was removed while its
+             steer or prompt raced in — the engine pumped it anyway.
+             Interrupt the turn the ghost alone created instead of running
+             removed text. */
+          if (this.dismissed.has(event.payload.ref)) {
+            const conn = this.engine;
+            if (conn) {
+              void conn
+                .request("interrupt", { sessionId: binding.sessionId })
+                .catch((e) =>
+                  this.opts.log.warn("removed-message interrupt failed", {
+                    error: String(e),
+                  }),
+                );
+            }
+          }
         }
         this.opts.sleep.acquire();
         this.updateConversation(binding.conversationId, {
@@ -1347,10 +1572,24 @@ export class Harness {
           // clients resolve it through the feed (`events.since`, live
           // `event.sessionId`), which never sees runtime refs.
           binding.ref = event.payload.ref;
+          /* The rotated ref IS the engine's stored session id — keep the
+             gateway alias current so plugin calls resolve this scope. */
+          binding.engineSessionId = event.payload.ref;
+          this.aliasSurfaces(binding.gatewaySession, event.payload.ref);
           this.opts.log.info("session ref rotated", {
             sessionId: event.sessionId,
             ref: event.payload.ref,
           });
+        }
+        break;
+      case "turn.steered":
+        /* The steer landed inside the turn — pair it to its relay message
+           (payload carries text only) so it's no longer a pending steer. */
+        if (binding) {
+          const idx = binding.steerPending.findIndex(
+            (s) => s.text === event.payload.text,
+          );
+          if (idx >= 0) binding.steerPending.splice(idx, 1);
         }
         break;
       case "turn.completed":
@@ -1469,6 +1708,26 @@ export class Harness {
         if (parsed.success) void this.onChannelRemoved(parsed.data.channelId);
         break;
       }
+      case "settings.changed": {
+        // #339: the Connect step's one-time approval toggles the reconciler.
+        if (params.key === CONNECT_APPROVAL_KEY)
+          void this.opts.connect?.reconcile();
+        break;
+      }
+      case "employee.upserted": {
+        // A new hire's profile needs the plugin when Connect is approved.
+        void this.opts.connect?.reconcile();
+        break;
+      }
+      case "employee.removed": {
+        // Disable the leaving employee's plugin — never delete the profile.
+        const parsed = EmployeeRemovedEvent.safeParse(params);
+        if (parsed.success) {
+          this.opts.connect?.employeeRemoved(parsed.data.employeeId);
+          void this.opts.connect?.reconcile();
+        }
+        break;
+      }
       case "ask.resolved": {
         const parsed = AskResolvedEvent.safeParse(params);
         if (parsed.success) {
@@ -1510,6 +1769,95 @@ export class Harness {
           break;
         }
         this.mirrorMeta(binding, conv);
+        break;
+      }
+      case "message.changed": {
+        /* #315: a tray action flipped `dropped`/`removed` on the relay.
+           removed → the engine must never see it: splice it out of every
+           in-memory hold and dismiss it permanently. dropped → park it
+           out of the queue (re-Send re-delivers it fresh below). */
+        const parsed = MessageChangedEvent.safeParse(params);
+        if (!parsed.success) break;
+        const message = parsed.data.message;
+        const binding = message.conversationId
+          ? this.bindings.get(message.conversationId)
+          : undefined;
+        const fromQueue = (list: AppMessage[]) =>
+          list.filter((m) => m.id !== message.id);
+        if (message.removed) {
+          this.dismissed.add(message.id);
+          this.delivered.delete(message.id);
+          if (binding) {
+            binding.queue = fromQueue(binding.queue);
+            binding.steerPending = binding.steerPending.filter(
+              (s) => s.messageId !== message.id,
+            );
+            binding.consumed.delete(message.id);
+          }
+          const early = this.early.get(message.conversationId ?? "");
+          if (early?.length)
+            this.early.set(message.conversationId ?? "", fromQueue(early));
+        } else if (message.dropped) {
+          if (binding) {
+            binding.queue = fromQueue(binding.queue);
+            binding.steerPending = binding.steerPending.filter(
+              (s) => s.messageId !== message.id,
+            );
+            binding.consumed.delete(message.id);
+          }
+          const early = this.early.get(message.conversationId ?? "");
+          if (early?.length)
+            this.early.set(message.conversationId ?? "", fromQueue(early));
+          /* A later Send re-delivers: release the delivery claim AND let it
+             past the deliveredSeq watermark (an accepted-then-parked steer
+             sits under it). */
+          this.delivered.delete(message.id);
+          this.redeliver.add(message.id);
+        } else {
+          /* `dropped` cleared (Send): re-deliver like a fresh send. The
+             `redeliver` claim was primed when the drop was parked; if the
+             flag flip arrives without a local drop (another client undid
+             it), arm it here so the watermark can't swallow the resend. */
+          this.dismissed.delete(message.id);
+          this.delivered.delete(message.id);
+          this.redeliver.add(message.id);
+          void this.deliver(message).catch((error) =>
+            this.opts.log.warn("message resend failed", {
+              error: String(error),
+            }),
+          );
+        }
+        break;
+      }
+      case "conversation.rewound": {
+        /* #400: the relay marks the rewound tail in one batch — no per-message
+           `message.changed` fires — so fold its removedIds into the same
+           kill-set those events feed. A `deliver` still in flight when the
+           host-side handler pruned `early`/`queue` lands past the prune;
+           every later gate (early flush, enqueue, register pending) consults
+           `dismissed`, and re-splicing the holds here removes what slipped
+           in between. */
+        const parsed = ConversationRewoundEvent.safeParse(params);
+        if (!parsed.success) break;
+        const { conversationId, removedIds } = parsed.data;
+        const binding = conversationId
+          ? this.bindings.get(conversationId)
+          : undefined;
+        const holds = (list: AppMessage[]) =>
+          list.filter((m) => !removedIds.includes(m.id));
+        for (const removedId of removedIds) {
+          this.dismissed.add(removedId);
+          this.delivered.delete(removedId);
+          if (binding) {
+            binding.consumed.delete(removedId);
+            binding.steerPending = binding.steerPending.filter(
+              (s) => s.messageId !== removedId,
+            );
+          }
+        }
+        if (binding) binding.queue = holds(binding.queue);
+        const early = this.early.get(conversationId ?? "");
+        if (early?.length) this.early.set(conversationId ?? "", holds(early));
         break;
       }
       case "turn.interruptRequested": {
@@ -1827,8 +2175,20 @@ export class Harness {
 
   private async onInterruptRequested(conversationId: string) {
     const binding = this.bindings.get(conversationId);
-    if (!binding) return;
+    if (!binding) {
+      /* #400: the first bind is mid-flight — the UI already reads Running
+         off the send-pending marker, so a Stop here is real, not stray.
+         Park it; the queued prompt's `turn.started` fires it, when the
+         engine actually has a turn to cancel. */
+      if (this.binds.has(conversationId))
+        this.pendingInterrupts.add(conversationId);
+      return;
+    }
     this.opts.log.info("interrupt requested", { conversationId });
+    /* #315 AC-5: park everything still waiting while the stop propagates —
+       even a queue item behind a sendPrompt gate must drop rather than
+       prompt once the turn clears. */
+    binding.stopRequested = true;
     /* #274: a sendPrompt still in its pre-dispatch awaits hasn't put
        `prompt` on the wire — an interrupt sent now overtakes it and the
        engine acks interrupted:false (no live turn), silently swallowing
@@ -2103,13 +2463,128 @@ export class Harness {
       () => {},
     );
 
+    /* #315 AC-5: ■ Stop parks everything still waiting — queued sends and
+       accepted-but-unlanded steers alike land in the not-sent tray
+       (dropped), never the engine. `turn.started` clears the flag, so an
+       engine's own queued steer/prompt that outlived the turn isn't
+       stranded by a stale stop. */
+    if (binding.stopRequested) {
+      binding.stopRequested = false;
+      for (const pending of binding.steerPending.splice(0)) {
+        binding.consumed.delete(pending.messageId);
+        this.relayWrite(`drop steer ${pending.messageId}`, () =>
+          this.opts.relay.request("messages.drop", {
+            messageId: pending.messageId,
+          }),
+        );
+      }
+      for (const queued of binding.queue.splice(0)) {
+        binding.consumed.delete(queued.id);
+        this.relayWrite(`drop queued ${queued.id}`, () =>
+          this.opts.relay.request("messages.drop", { messageId: queued.id }),
+        );
+      }
+      return;
+    }
+    /* An accepted steer that neither landed nor pumped as this turn's
+       replacement is stranded — give it a grace window, then drop it. */
+    this.scheduleSteerReconcile(binding);
     const next = binding.queue.shift();
     if (next) void this.sendPrompt(binding, next);
   }
 
+  /* #315: an accepted steer (`session.steer` → `steered`) that neither
+     landed (`turn.steered`) nor pumped as the next turn's `ref` was
+     consumed but will never run — the user sees it "waiting" forever.
+     After a short grace for late events, park it in the not-sent tray
+     (`messages.drop`) so the user can Send it again. */
+  private scheduleSteerReconcile(binding: SessionBinding) {
+    if (binding.steerReconcileTimer) clearTimeout(binding.steerReconcileTimer);
+    binding.steerReconcileTimer = setTimeout(() => {
+      binding.steerReconcileTimer = undefined;
+      /* A new turn owns the pend list again — its `turn.steered` / `ref`
+         claims pair what the engine actually kept. */
+      if (binding.runningTurnId || !binding.steerPending.length) return;
+      for (const pending of binding.steerPending.splice(0)) {
+        binding.consumed.delete(pending.messageId);
+        this.relayWrite(`drop stranded steer ${pending.messageId}`, () =>
+          this.opts.relay.request("messages.drop", {
+            messageId: pending.messageId,
+          }),
+        );
+      }
+    }, 2000);
+  }
+
   private unbind(binding: SessionBinding) {
+    if (binding.gatewaySession) {
+      const gw = binding.gatewaySession;
+      binding.gatewaySession = undefined;
+      void this.opts.surfaces?.destroy(gw).catch(() => {});
+    }
     this.conversationBySession.delete(binding.sessionId);
     this.bindings.delete(binding.conversationId);
+  }
+
+  /**
+   * Mint the gateway session backing a binding's surfaces (#337/#339):
+   * the scope declares employee/channel/conversation up front; the
+   * engine's own session id binds as an alias once `session.start`
+   * returns it. `attach === "mcp"` also yields the stdio server spec the
+   * session must carry; "plugin" engines reach the same surfaces
+   * in-process (Hermes' lilos plugin resolves the alias instead).
+   */
+  private createSurfaces(
+    binding: SessionBinding,
+    conv: Conversation | undefined,
+    employee: Employee | undefined,
+  ): { session: string; mcpServer?: McpServerStdio } | undefined {
+    const surfaces = this.opts.surfaces;
+    if (!surfaces) return undefined;
+    if (binding.gatewaySession) {
+      void surfaces.destroy(binding.gatewaySession).catch(() => {});
+      binding.gatewaySession = undefined;
+    }
+    const employeeId = this.employeeIdFor(conv);
+    try {
+      const handle = surfaces.create({
+        cwd: binding.cwd,
+        ...(employeeId && employee
+          ? {
+              binding: {
+                employeeId,
+                channelId: binding.channelId,
+                conversationId: binding.conversationId,
+              },
+            }
+          : {}),
+      });
+      return {
+        session: handle.session,
+        ...(this.opts.surfacesAttach === "mcp"
+          ? { mcpServer: handle.mcpServer }
+          : {}),
+      };
+    } catch (error) {
+      this.opts.log.warn("surfaces session create failed", {
+        conversationId: binding.conversationId,
+        error: String(error),
+      });
+      return undefined;
+    }
+  }
+
+  /** Alias the engine's own session id onto the gateway session (#339). */
+  private aliasSurfaces(
+    session: string | undefined,
+    engineSessionId: string | undefined,
+  ): void {
+    if (!session || !engineSessionId || !this.opts.surfaces) return;
+    try {
+      this.opts.surfaces.bindEngineSession(session, engineSessionId);
+    } catch {
+      /* Late rotation after the gateway session died — next ref retries. */
+    }
   }
 
   /* ------------------------------- helpers ------------------------------ */
@@ -2180,6 +2655,7 @@ export class Harness {
     employee: Employee | undefined,
     agentId: string,
     conv?: Conversation,
+    mcpServer?: McpServerStdio,
   ) {
     const base = this.opts.sessionParamsFor?.(employee, agentId) ?? {
       agent: agentId,
@@ -2202,6 +2678,7 @@ export class Harness {
       ...(effort ? { effort } : {}),
       ...(fast !== undefined ? { fast } : {}),
       cwd,
+      ...(mcpServer ? { mcpServers: [mcpServer] } : {}),
     };
   }
 

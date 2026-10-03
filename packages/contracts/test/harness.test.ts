@@ -1,31 +1,40 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { buildSchemaDoc } from "../scripts/gen-schemas.js";
 import {
-  AppPostMessageParams,
   BrowserClickParams,
   harnessProtocol,
   LILOS_TOOLS,
   PreviewTarget,
   TerminalRunParams,
+  ThreadPostParams,
   ViewerClientMsg,
   ViewerServerMsg,
 } from "../src/harness/index.js";
 
 describe("AC-2 tool surface contracts", () => {
-  it("exposes browser + terminal + previews + app ops", () => {
+  it("exposes browser + terminal + workbench + thread + team + root ops", () => {
     expect(Object.keys(LILOS_TOOLS).sort()).toEqual([
-      "app_post_message",
-      "app_read_conversation",
       "browser_click",
       "browser_eval",
       "browser_open",
       "browser_read",
       "browser_scroll",
       "browser_type",
-      "previews_list",
+      "context",
+      "guide",
+      "team_list",
       "terminal_read",
       "terminal_run",
       "terminal_write",
+      "thread_list",
+      "thread_post",
+      "thread_prs",
+      "thread_read",
+      "thread_search",
+      "thread_set_title",
+      "workbench_open",
+      "workbench_previews",
     ]);
   });
 
@@ -46,6 +55,47 @@ describe("AC-2 tool surface contracts", () => {
     expect(() =>
       TerminalRunParams.parse({ command: "ls", session: "other" }),
     ).toThrow();
+  });
+
+  /* #340 live-leg regression: a zod union `params` serializes to a bare
+     `anyOf` — no top-level `type:"object"`/`properties`, so function-calling
+     clients (and the stdio MCP's `params.shape`) saw an EMPTY schema and the
+     model had to guess arguments. Every tool must advertise a real object
+     schema. */
+  it("every tool's params advertise a top-level object schema", () => {
+    for (const [name, t] of Object.entries(LILOS_TOOLS)) {
+      const schema = z.toJSONSchema(t.params) as {
+        type?: string;
+        properties?: Record<string, unknown>;
+      };
+      expect(schema.type, `${name}: JSON schema type`).toBe("object");
+      expect(typeof schema.properties, `${name}: JSON schema properties`).toBe(
+        "object",
+      );
+      // The stdio MCP derives inputSchema from `params.shape` — it must
+      // exist, and every field it names must appear in the JSON schema.
+      const shape = (t.params as { shape?: Record<string, unknown> }).shape;
+      expect(
+        shape && typeof shape === "object",
+        `${name}: params.shape for the stdio MCP inputSchema`,
+      ).toBe(true);
+      expect(
+        Object.keys(schema.properties ?? {}),
+        `${name}: every shape field advertised`,
+      ).toEqual(expect.arrayContaining(Object.keys(shape ?? {})));
+    }
+  });
+
+  it("workbench_open advertises its four targets + modifiers (live-leg regression)", () => {
+    const schema = z.toJSONSchema(LILOS_TOOLS.workbench_open.params) as {
+      properties?: Record<string, { description?: string }>;
+    };
+    expect(Object.keys(schema.properties ?? {})).toEqual(
+      expect.arrayContaining(["file", "line", "diff", "path", "pr", "url"]),
+    );
+    for (const field of ["file", "diff", "pr", "url"]) {
+      expect(schema.properties?.[field]?.description).toBeTruthy();
+    }
   });
 });
 
@@ -138,8 +188,8 @@ describe("registry", () => {
     expect(doc.definitions.TerminalRunParams).toBeDefined();
   });
 
-  it("app ops reference the app message shape", () => {
-    const parsed = AppPostMessageParams.parse({ text: "hi" });
+  it("thread ops reference the app message shape", () => {
+    const parsed = ThreadPostParams.parse({ text: "hi" });
     expect(parsed.text).toBe("hi");
   });
 });

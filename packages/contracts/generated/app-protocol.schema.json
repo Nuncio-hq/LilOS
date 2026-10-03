@@ -390,6 +390,9 @@
         "messages.list",
         "messages.post",
         "messages.setCheckpoint",
+        "messages.remove",
+        "messages.drop",
+        "messages.send",
         "messages.search",
         "attachments.get",
         "channel.subscribe",
@@ -429,7 +432,8 @@
         "session.ping",
         "push.register",
         "push.unregister",
-        "push.visibility"
+        "push.visibility",
+        "workbench.open"
       ]
     },
     "AppEventMethod": {
@@ -437,6 +441,7 @@
       "type": "string",
       "enum": [
         "message.created",
+        "message.changed",
         "channel.snapshot",
         "channel.synced",
         "conversation.updated",
@@ -453,7 +458,8 @@
         "conversation.rewound",
         "devices.changed",
         "host.changed",
-        "engine.event"
+        "engine.event",
+        "workbench.opened"
       ]
     },
     "HelloParams": {
@@ -2486,6 +2492,14 @@
               "default": false,
               "type": "boolean"
             },
+            "dropped": {
+              "default": false,
+              "type": "boolean"
+            },
+            "removed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -3077,6 +3091,14 @@
           "default": false,
           "type": "boolean"
         },
+        "dropped": {
+          "default": false,
+          "type": "boolean"
+        },
+        "removed": {
+          "default": false,
+          "type": "boolean"
+        },
         "checkpoint": {
           "type": "string"
         }
@@ -3124,6 +3146,9 @@
           "maximum": 9007199254740991
         },
         "includeRewound": {
+          "type": "boolean"
+        },
+        "includeDropped": {
           "type": "boolean"
         }
       },
@@ -3228,6 +3253,14 @@
                 "type": "boolean"
               },
               "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "dropped": {
+                "default": false,
+                "type": "boolean"
+              },
+              "removed": {
                 "default": false,
                 "type": "boolean"
               },
@@ -3434,6 +3467,14 @@
               "default": false,
               "type": "boolean"
             },
+            "dropped": {
+              "default": false,
+              "type": "boolean"
+            },
+            "removed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -3453,6 +3494,48 @@
       "required": [
         "message"
       ]
+    },
+    "MessagesDropParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "messageId"
+      ],
+      "additionalProperties": false
+    },
+    "MessagesRemoveParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "messageId"
+      ],
+      "additionalProperties": false
+    },
+    "MessagesSendParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "messageId"
+      ],
+      "additionalProperties": false
     },
     "MessagesSearchParams": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4238,6 +4321,14 @@
               "default": false,
               "type": "boolean"
             },
+            "dropped": {
+              "default": false,
+              "type": "boolean"
+            },
+            "removed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -4347,6 +4438,14 @@
                 "type": "boolean"
               },
               "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "dropped": {
+                "default": false,
+                "type": "boolean"
+              },
+              "removed": {
                 "default": false,
                 "type": "boolean"
               },
@@ -4858,6 +4957,14 @@
                     "default": false,
                     "type": "boolean"
                   },
+                  "dropped": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "removed": {
+                    "default": false,
+                    "type": "boolean"
+                  },
                   "checkpoint": {
                     "type": "string"
                   }
@@ -4967,6 +5074,14 @@
                       "type": "boolean"
                     },
                     "rewound": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "dropped": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "removed": {
                       "default": false,
                       "type": "boolean"
                     },
@@ -5173,6 +5288,37 @@
               "items": {
                 "type": "string"
               }
+            },
+            "connect": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "employee": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "connected",
+                      "not-connected",
+                      "updating",
+                      "failed"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "profile",
+                  "state"
+                ]
+              }
             }
           }
         }
@@ -5328,6 +5474,37 @@
           "type": "array",
           "items": {
             "type": "string"
+          }
+        },
+        "connect": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "profile": {
+                "type": "string",
+                "minLength": 1
+              },
+              "employee": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "not-connected",
+                  "updating",
+                  "failed"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "profile",
+              "state"
+            ]
           }
         }
       }
@@ -5646,6 +5823,37 @@
             "update",
             "detail"
           ]
+        },
+        "connect": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "profile": {
+                "type": "string",
+                "minLength": 1
+              },
+              "employee": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "not-connected",
+                  "updating",
+                  "failed"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "profile",
+              "state"
+            ]
+          }
         },
         "logs": {
           "type": "object",
@@ -6328,6 +6536,145 @@
               "default": false,
               "type": "boolean"
             },
+            "dropped": {
+              "default": false,
+              "type": "boolean"
+            },
+            "removed": {
+              "default": false,
+              "type": "boolean"
+            },
+            "checkpoint": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "authorId",
+            "text",
+            "seq",
+            "createdAt",
+            "conversationId",
+            "authorKind"
+          ]
+        }
+      },
+      "required": [
+        "channelId",
+        "message"
+      ]
+    },
+    "MessageChangedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "authorId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "text": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "conversationId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "authorKind": {
+              "type": "string",
+              "enum": [
+                "user",
+                "employee",
+                "system"
+              ]
+            },
+            "attachments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sizeBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "mimeType",
+                  "sizeBytes"
+                ]
+              }
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "provider": {
+              "type": "string"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "fast": {
+              "type": "boolean"
+            },
+            "rewound": {
+              "default": false,
+              "type": "boolean"
+            },
+            "dropped": {
+              "default": false,
+              "type": "boolean"
+            },
+            "removed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -6450,6 +6797,14 @@
                 "type": "boolean"
               },
               "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "dropped": {
+                "default": false,
+                "type": "boolean"
+              },
+              "removed": {
                 "default": false,
                 "type": "boolean"
               },
@@ -8056,6 +8411,152 @@
       },
       "required": [
         "models"
+      ]
+    },
+    "WorkbenchOpenTarget": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "file": {
+          "description": "Session-folder file to show",
+          "type": "string",
+          "minLength": 1
+        },
+        "line": {
+          "description": "1-based line inside `file` to highlight",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "diff": {
+          "description": "Open the Changes tab — the session's live git diff",
+          "type": "boolean",
+          "const": true
+        },
+        "path": {
+          "description": "Filter Changes to one file (with `diff`)",
+          "type": "string",
+          "minLength": 1
+        },
+        "pr": {
+          "description": "Open the PR tab for the thread's pull requests",
+          "type": "boolean",
+          "const": true
+        },
+        "url": {
+          "description": "Preview URL to open on the Preview tab",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "WorkbenchOpenParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "conversationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "description": "Session-folder file to show",
+              "type": "string",
+              "minLength": 1
+            },
+            "line": {
+              "description": "1-based line inside `file` to highlight",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "diff": {
+              "description": "Open the Changes tab — the session's live git diff",
+              "type": "boolean",
+              "const": true
+            },
+            "path": {
+              "description": "Filter Changes to one file (with `diff`)",
+              "type": "string",
+              "minLength": 1
+            },
+            "pr": {
+              "description": "Open the PR tab for the thread's pull requests",
+              "type": "boolean",
+              "const": true
+            },
+            "url": {
+              "description": "Preview URL to open on the Preview tab",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "conversationId",
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    "WorkbenchOpenedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "description": "Session-folder file to show",
+              "type": "string",
+              "minLength": 1
+            },
+            "line": {
+              "description": "1-based line inside `file` to highlight",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "diff": {
+              "description": "Open the Changes tab — the session's live git diff",
+              "type": "boolean",
+              "const": true
+            },
+            "path": {
+              "description": "Filter Changes to one file (with `diff`)",
+              "type": "string",
+              "minLength": 1
+            },
+            "pr": {
+              "description": "Open the PR tab for the thread's pull requests",
+              "type": "boolean",
+              "const": true
+            },
+            "url": {
+              "description": "Preview URL to open on the Preview tab",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "channelId",
+        "conversationId",
+        "target"
       ]
     }
   }

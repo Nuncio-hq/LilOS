@@ -24,6 +24,9 @@ export interface FakeSubagent {
   /** #309: an async delegate — the helper's subagent.completed lands after
       the parent's turn.completed, not inside the delegate step. */
   outlivesTurn?: boolean;
+  /** #400: the close waits for the next turn intake instead of a tick — a
+      test releases it with a follow-up prompt rather than racing a window. */
+  holdClose?: boolean;
   steps: FakeStep[];
   result?: string;
   durationMs?: number;
@@ -305,18 +308,22 @@ ${tail}`,
           steps.push({ tool: tool("terminal_read"), input: {}, output: "" });
           break;
         case "previews":
-          steps.push({ tool: tool("previews_list"), input: {}, output: "" });
+          steps.push({
+            tool: tool("workbench_previews"),
+            input: {},
+            output: "",
+          });
           break;
         case "say":
           steps.push({
-            tool: tool("app_post_message"),
+            tool: tool("thread_post"),
             input: { text: arg },
             output: "",
           });
           break;
         case "conv":
           steps.push({
-            tool: tool("app_read_conversation"),
+            tool: tool("thread_read"),
             input: {},
             output: "",
           });
@@ -425,6 +432,13 @@ ${tail}`,
        delegation). */
     if (/\bLILOS_DELEGATE_ASYNC\b/i.test(prompt))
       helpers[0].outlivesTurn = true;
+    /* #400: LILOS_DELEGATE_ASYNC_HOLD is the same async helper, but its
+       close is held until the next prompt reaches the engine — the test
+       releases it instead of racing a tick window. */
+    if (/\bLILOS_DELEGATE_ASYNC_HOLD\b/i.test(prompt)) {
+      helpers[0].outlivesTurn = true;
+      helpers[0].holdClose = true;
+    }
     return {
       reasoning: `Three separable reads. Fan out helpers and fold their reports back.`,
       steps: [
@@ -511,6 +525,18 @@ ${tail}`,
         },
       ],
       text: `Opened **PR #${n}** against \`main\` and requested **@Reviewer**.\n\nI'm watching CI and review comments from this session; status is live on the card below.`,
+    };
+  }
+
+  /* Ship bar Suggest (issue #107 AC-2): "Write a one-line git commit
+     message for these changed files…" is a normal user message — answer a
+     bare one-liner so the first non-empty line fills the box. */
+  if (/\bcommit message\b/i.test(q)) {
+    return {
+      reasoning:
+        "A one-line commit message for the checked files — imperative mood, under 72 chars, then nothing else.",
+      steps: [],
+      text: "feat: add the staged widget changes",
     };
   }
 

@@ -622,8 +622,14 @@
 .dark .text-amber-700 {
   color: oklch(87.9% 0.169 91.605);
 }
+.dark .text-amber-800 {
+  color: oklch(87.9% 0.169 91.605);
+}
 .dark .text-amber-900 {
   color: oklch(87.9% 0.169 91.605);
+}
+.dark .text-amber-950 {
+  color: oklch(92.4% 0.12 95.746);
 }
 .dark .text-blue-600 {
   color: oklch(70.7% 0.165 254.624);
@@ -636,6 +642,9 @@
 }
 .dark .text-blue-900 {
   color: oklch(80.9% 0.105 251.813);
+}
+.dark .text-blue-950 {
+  color: oklch(88.2% 0.059 254.128);
 }
 .dark .text-emerald-600 {
   color: oklch(76.5% 0.177 163.223);

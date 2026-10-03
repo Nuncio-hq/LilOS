@@ -28,6 +28,7 @@ import {
   Section,
   SettingsScreen,
   SubagentSheet,
+  SubagentsSheet,
   ThreadHeaderTitle,
   ThreadInfoSheet,
   ThreadScreen,
@@ -139,6 +140,8 @@ type Routes = {
   ThreadInfo: { id: string };
   /** A subagent of a turn in that thread (issue #170). */
   Subagent: { thread: string; id: string };
+  /** Every helper of that thread — the phone's Subagents tab (#319). */
+  Subagents: { thread: string };
   Background: { thread: string };
   /** The thread's plan, every version (issue #175). */
   Plan: { thread: string };
@@ -612,6 +615,7 @@ function Thread({ navigation, route }: Props<"Thread">) {
       onOpenSubagent={(a) =>
         navigation.navigate("Subagent", { thread: t.id, id: a.id })
       }
+      onOpenSubagents={() => navigation.navigate("Subagents", { thread: t.id })}
       onOpenBackground={() =>
         navigation.navigate("Background", { thread: t.id })
       }
@@ -631,6 +635,35 @@ function ThreadInfo({ navigation, route }: Props<"ThreadInfo">) {
   const t = useStore($threads).find((x) => x.id === route.params.id);
   if (!t) return null;
   return <ThreadInfoSheet t={t} onDone={() => navigation.goBack()} />;
+}
+
+/* Every helper the thread's turns spun off — Running first, then Finished
+   (the phone's Workbench → Subagents tab, #319 AC-4). Live: the sheet
+   re-reads the store, so a running helper finishes in it. */
+function Subagents({ navigation, route }: Props<"Subagents">) {
+  const t = useStore($threads).find((x) => x.id === route.params.thread);
+  const agents =
+    t?.entries.flatMap((e) =>
+      e.kind === "agent" ? (e.subagents ?? []) : [],
+    ) ?? [];
+  return (
+    <SubagentsSheet
+      agents={agents}
+      onOpen={(a) =>
+        navigation.navigate("Subagent", {
+          thread: route.params.thread,
+          id: a.id,
+        })
+      }
+      onOpenThread={(id) => {
+        navigation.goBack();
+        const emp = $threads.get().find((x) => x.id === id)?.employee.id;
+        if (emp) navigation.navigate("Dm", { employeeId: emp });
+        navigation.navigate("Thread", { id });
+      }}
+      onDone={() => navigation.goBack()}
+    />
+  );
 }
 
 /* Live: the sheet re-reads the store, so a running helper finishes in it. */
@@ -940,11 +973,13 @@ const SHEET: NativeStackNavigationOptions = {
   contentStyle: { backgroundColor: "transparent" },
 };
 
-/* A conversation's nav bar: transparent over a native blur material, so the
-   chat scrolls on under the title and stays readable. */
+/* A conversation's nav bar: transparent over a real blur material, so the
+   chat scrolls on under the title and the bar itself stays legible (#373 —
+   the two-line thread title reaches past what a top edge effect covers). */
 const CHAT_HEADER: NativeStackNavigationOptions = {
   headerTransparent: true,
-  scrollEdgeEffects: { top: "soft", bottom: "soft" },
+  headerBlurEffect: "systemMaterial",
+  scrollEdgeEffects: { bottom: "soft" },
 };
 
 function useNavTheme(): Theme {
@@ -1051,6 +1086,11 @@ export default function App() {
               <Stack.Screen
                 name="Subagent"
                 component={Subagent}
+                options={SHEET}
+              />
+              <Stack.Screen
+                name="Subagents"
+                component={Subagents}
                 options={SHEET}
               />
               <Stack.Screen name="Plan" component={Plan} options={SHEET} />

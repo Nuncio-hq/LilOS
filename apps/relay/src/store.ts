@@ -119,6 +119,8 @@ export interface ListMessagesQuery {
   limit?: number;
   /** Audit reads can ask for dropped messages back (#134); default hides them. */
   includeRewound?: boolean;
+  /** The not-sent tray reads Stop-parked rows (#315); default hides them. */
+  includeDropped?: boolean;
 }
 
 export interface ListMessagesPage {
@@ -302,6 +304,14 @@ export interface RelayStore {
   setMessageCheckpoint(
     messageId: string,
     checkpoint: string,
+  ): Promise<AppMessage | null>;
+  /**
+   * Flip a message's `dropped`/`removed` delivery flags (#315). Returns the
+   * updated row for the `message.changed` broadcast, null when missing.
+   */
+  setMessageFlags(
+    messageId: string,
+    flags: { dropped?: boolean; removed?: boolean },
   ): Promise<AppMessage | null>;
   /**
    * Mark every message on the conversation with `seq >= fromSeq` as rewound
@@ -583,6 +593,8 @@ export function createMemoryStore(): RelayStore {
       authorId: input.authorId,
       authorKind: input.authorKind,
       rewound: false,
+      dropped: false,
+      removed: false,
       text: input.text,
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.provider !== undefined ? { provider: input.provider } : {}),
@@ -799,13 +811,17 @@ export function createMemoryStore(): RelayStore {
     },
     async listMessages(
       channelId,
-      { conversationId, afterSeq, limit, includeRewound },
+      { conversationId, afterSeq, limit, includeRewound, includeDropped },
     ) {
       const channel = channels.get(channelId);
       if (!channel) throw new Error(`unknown channel ${channelId}`);
       let list = conversationId
         ? conversationMessages(conversationId)
         : channelMessages(channelId);
+      /* Removed rows are gone from every read (#315); dropped ones hide by
+         default too — only the not-sent tray asks for them. */
+      list = list.filter((m) => !m.removed);
+      if (!includeDropped) list = list.filter((m) => !m.dropped);
       if (!includeRewound) list = visible(list);
       if (afterSeq !== undefined) {
         list = list.filter((m) => m.seq > afterSeq);
@@ -822,8 +838,8 @@ export function createMemoryStore(): RelayStore {
       for (const m of messages.values()) {
         if (hiddenIds.has(m.id)) continue;
         if (channelId && m.channelId !== channelId) continue;
-        // Hidden messages don't surface as search hits (#134).
-        if (m.rewound) continue;
+        // Hidden messages don't surface as search hits (#134, #315).
+        if (m.rewound || m.dropped || m.removed) continue;
         if (!includeArchived && m.conversationId) {
           const conversation = conversations.get(m.conversationId);
           if (conversation?.archived) continue;
@@ -852,6 +868,13 @@ export function createMemoryStore(): RelayStore {
       const message = messages.get(messageId);
       if (!message) return null;
       message.checkpoint = checkpoint;
+      return message;
+    },
+    async setMessageFlags(messageId, flags) {
+      const message = messages.get(messageId);
+      if (!message) return null;
+      if (flags.dropped !== undefined) message.dropped = flags.dropped;
+      if (flags.removed !== undefined) message.removed = flags.removed;
       return message;
     },
     async markRewound(conversationId, fromSeq) {
@@ -915,6 +938,8 @@ export function createMemoryStore(): RelayStore {
           (m) =>
             m.authorKind === "user" &&
             !m.rewound &&
+            !m.dropped &&
+            !m.removed &&
             m.seq > conversation.deliveredSeq,
         );
         const message = owed.at(-1);

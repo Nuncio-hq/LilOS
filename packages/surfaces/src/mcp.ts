@@ -5,29 +5,45 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { z } from "zod";
 import type { SurfaceBackend } from "./backend.js";
-import { toolBackend } from "./client.js";
+import { listSessionTools, toolBackend } from "./client.js";
 import { surfacesEnv } from "./config.js";
 import { callTool } from "./dispatch.js";
 
 /**
- * The LilOS MCP server (AC-2): every entry in the contracts' LILOS_TOOLS
- * table becomes an MCP tool; the harness spawns this per engine session via
- * `session.start { mcpServers }` (AC-3), so engines see them as
+ * The LilOS MCP server over stdio (AC-2): entries in the contracts'
+ * LILOS_TOOLS catalog become MCP tools — only the ones the session's bound
+ * areas actually have (`tools/list` never advertises `browser_*` to a
+ * session with no browser attached). The harness attaches this per engine
+ * session via `session.start { mcpServers }`, so engines see
  * `mcp__lilos__*` (server name `lilos` — spike #23's mapping).
  *
- * The server is a thin client of the harness's tool API — the browser/PTY
+ * The server is a thin client of the gateway's tool API — the browser/PTY
  * live in the harness process, scoped by the session env it sets.
  */
-export async function serveMcpStdio(backend: SurfaceBackend): Promise<void> {
+export async function serveMcpStdio(
+  backend: SurfaceBackend,
+  opts?: { toolNames?: readonly string[] },
+): Promise<void> {
   const server = new McpServer({ name: "lilos", version: "0.1.0" });
-  for (const [name, contract] of Object.entries(LILOS_TOOLS)) {
+  const names = opts?.toolNames ?? Object.keys(LILOS_TOOLS);
+  for (const name of names) {
+    const contract = LILOS_TOOLS[name];
+    if (!contract) continue;
+    /* The MCP SDK wants a raw zod shape — only object schemas have one. A
+       non-object `params` (e.g. a zod union) would silently advertise an
+       EMPTY inputSchema — the live-leg bug of #340 — so fail loudly here:
+       the contracts test pins every tool's params to a top-level object. */
+    const shape = (contract.params as { shape?: Record<string, z.ZodType> })
+      .shape;
+    if (!shape)
+      throw new Error(
+        `lilos mcp: ${name} params is not an object schema (no inputSchema to advertise)`,
+      );
     server.registerTool(
       name,
       {
         description: contract.doc,
-        inputSchema: (
-          contract.params as unknown as { shape: Record<string, z.ZodType> }
-        ).shape,
+        inputSchema: shape,
       },
       async (args) => {
         try {
@@ -76,5 +92,8 @@ export async function serveMcpStdioFromEnv(
     process.exitCode = 2;
     return;
   }
-  await serveMcpStdio(toolBackend(resolved));
+  // Advertise only the areas this session really has; fail closed — never
+  // fall back to the whole catalog when the gateway can't be asked.
+  const toolNames = await listSessionTools(resolved);
+  await serveMcpStdio(toolBackend(resolved), { toolNames });
 }

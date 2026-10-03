@@ -422,6 +422,13 @@ describe("engine-hermes ACP delegate dispatch receipt (#309)", () => {
     expect(
       r.events.filter((e) => e.type === "subagent.completed"),
     ).toHaveLength(0);
+    /* `waiting` is not a leave — the session is alive mid-turn (blocked
+       on an open ask) and hears frames again once the ask resolves. */
+    r.session.setState("waiting");
+    expect(
+      r.events.filter((e) => e.type === "subagent.completed"),
+    ).toHaveLength(0);
+    r.session.setState("running");
     r.session.setState("idle");
     const closed = r.events.filter((e) => e.type === "subagent.completed");
     expect(closed).toHaveLength(1);

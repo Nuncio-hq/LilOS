@@ -1,5 +1,8 @@
 import { spawnSync } from "node:child_process";
-import type { HarnessStatusReport } from "@lilos/contracts/app";
+import type {
+  HarnessStatusReport,
+  ProfileConnection,
+} from "@lilos/contracts/app";
 import type { DescribeResult, ModelsListResult } from "@lilos/contracts/engine";
 import type { EngineConnection } from "./engine/client";
 import type { EngineHostState } from "./engine/supervisor";
@@ -37,6 +40,8 @@ export interface StatusReporterOptions {
   model?: string;
   /** Live session count — the harness's session registry supplies this. */
   liveSessions?: () => number;
+  /** Per-profile Connect rows (#339) — the harness's Connect reconciler. */
+  connect?: () => ProfileConnection[];
   logTail?: () => string[];
   /** Deadline for the engine `describe` probe (default 2s). */
   probeTimeoutMs?: number;
@@ -127,6 +132,7 @@ export class StatusReporter {
       sessions: this.opts.liveSessions?.(),
       probedAt: this.lastProbe?.at,
       logTail: this.opts.logTail?.().slice(-100),
+      ...(this.opts.connect ? { connect: this.opts.connect() } : {}),
     };
     await this.opts.send({
       engine: {

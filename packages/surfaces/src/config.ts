@@ -13,6 +13,14 @@ export const SURFACES_ENV = {
   baseUrl: "LILOS_SURFACES_URL",
   token: "LILOS_TOKEN",
   session: "LILOS_SESSION",
+  /**
+   * Engine-scoped credential (#339): set on `hermes serve` by the harness so
+   * an in-process engine plugin can authenticate as the engine subsystem and
+   * name its own session via `x-lilos-session` (resolved through the engine
+   * alias). Unlike `LILOS_TOKEN` it grants no scope by itself — the session
+   * header always picks it.
+   */
+  engineToken: "LILOS_ENGINE_TOKEN",
 } as const;
 
 export function surfacesEnv(

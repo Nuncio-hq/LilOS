@@ -1,4 +1,4 @@
-import type { RelayClient } from "@lilos/client-runtime";
+import type { AppClient } from "@lilos/client-runtime";
 import type { Conversation, EngineEventEvent } from "@lilos/contracts/app";
 import type { ForgePrListItem } from "@lilos/contracts/host";
 import type { PullRequestRef } from "@lilos/ui-native";
@@ -23,13 +23,13 @@ export function toPullRequestRef(item: ForgePrListItem): PullRequestRef {
   };
 }
 
-const inFlight = new WeakMap<RelayClient, Set<string>>();
+const inFlight = new WeakMap<AppClient, Set<string>>();
 
 /** One `conversations.prs` call -> the atom. Failures — no host, not a
    repo, `gh` missing or signed out — are the AC-4 "nothing shown" path:
    they never clobber a list that already landed. */
 export async function refreshConversationPrs(
-  client: RelayClient,
+  client: AppClient,
   conversationId: string,
 ): Promise<void> {
   let flights = inFlight.get(client);
@@ -58,19 +58,19 @@ export async function refreshConversationPrs(
 /** Refresh each conversation's PRs (a DM list opening). Bounded by the
    thread count the employee has; in-flight calls dedupe themselves. */
 export function refreshPrsFor(
-  client: RelayClient,
+  client: AppClient,
   conversations: readonly Conversation[],
 ): void {
   for (const c of conversations) void refreshConversationPrs(client, c.id);
 }
 
-const watched = new WeakSet<RelayClient>();
+const watched = new WeakSet<AppClient>();
 
 /** Event-driven refresh (AC-5): a finished turn re-lists its
    conversation's PRs — that is when a PR the agent opened (or GitHub
    merged) lands on the row without a reload. Runs once per client; no
    timer anywhere. */
-export function watchPrs(client: RelayClient): void {
+export function watchPrs(client: AppClient): void {
   if (watched.has(client)) return;
   watched.add(client);
   client.onEvent((method, params) => {
@@ -79,4 +79,9 @@ export function watchPrs(client: RelayClient): void {
     if (p?.event.type !== "turn.completed") return;
     void refreshConversationPrs(client, p.conversationId);
   });
+}
+
+/** Clear every PR the last client knew (demo exit / re-pair). */
+export function resetPrs(): void {
+  $prs.set({});
 }

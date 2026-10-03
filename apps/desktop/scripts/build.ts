@@ -154,16 +154,15 @@ if (!skipHarness) {
   console.log(
     `==> compile lilos-harness (bun standalone, engine default: ${engines.defaultEngine})`,
   );
+  /* The shared compile script owns the flag set (incl. the chromium-bidi
+     external, #388) so the PR-time `build:harness` smoke checks the exact
+     invocation this release path uses. */
   run("bun", [
-    "build",
-    harnessEntry,
-    "--compile",
-    "--target=bun-darwin-arm64",
+    join(REPO, "apps", "harness", "scripts", "compile.ts"),
+    join(BUILD, "lilos-harness"),
     ...stamp,
     "--define",
     `process.env.LILOS_ENGINE_DEFAULT:${JSON.stringify(engines.defaultEngine)}`,
-    "--outfile",
-    join(BUILD, "lilos-harness"),
   ]);
   // The packaged harness can't run `bun serve.ts` — ship each engine adapter
   // as a sibling binary it auto-discovers next to its own execPath.
@@ -270,6 +269,15 @@ if (existsSync(join(REPO, "apps", "web", "package.json"))) {
 }
 if (existsSync(join(WEB_DIST, "index.html"))) {
   cpSync(WEB_DIST, join(APP, "Contents", "Resources", "app", "web"), {
+    recursive: true,
+  });
+}
+/* The lilos Hermes plugin (#339 Connect): the harness copies it into each
+   employee profile's plugins dir, so it rides the bundle as data under
+   Resources — nothing in plugins/ is code-signed on its own. */
+const PLUGIN_SRC = join(REPO, "packages", "engine-hermes", "plugin");
+if (existsSync(PLUGIN_SRC)) {
+  cpSync(PLUGIN_SRC, join(APP, "Contents", "Resources", "app", "plugin"), {
     recursive: true,
   });
 }

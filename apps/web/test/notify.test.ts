@@ -350,7 +350,17 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
     }
   });
 
-  const stateHarness = () => {
+  const seqStore = () => {
+    const m = new Map<string, number[]>();
+    return {
+      read: (sid: string) => m.get(sid),
+      write: (sid: string, seqs: readonly number[]) => {
+        m.set(sid, [...seqs]);
+      },
+    };
+  };
+
+  const stateHarness = (store = seqStore()) => {
     const posted: DesktopNotification[] = [];
     const listeners = new Set<(e: EngineEvent) => void>();
     const viewListeners = new Set<() => void>();
@@ -359,6 +369,8 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
       openConv: "c1" as string | null,
       foreground: true,
       open: [{ sessionId: "s1", requestId: "r1", request: approval }],
+      convs: [conv("c1", "s1"), conv("c2", "s2")],
+      feeds: {} as Record<string, EngineEvent[]>,
     };
     watchNotifications({
       onEvent: (fn) => {
@@ -374,7 +386,13 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
         return () => askListeners.delete(fn);
       },
       openAsks: () => state.open,
-      context: () => ctx(conv("c1", "s1"), conv("c2", "s2")),
+      completionEvents: () =>
+        Object.entries(state.feeds).map(([sessionId, events]) => ({
+          sessionId,
+          events,
+        })),
+      completionSeqs: store,
+      context: () => ctx(...state.convs),
       openConversationId: () => state.openConv,
       inForeground: () => state.foreground,
       isRequestOpen: (id) => state.open.some((r) => r.requestId === id),
@@ -389,7 +407,15 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
     const asksChanged = () => {
       for (const fn of askListeners) fn();
     };
-    return { posted, state, emit, viewChanged, asksChanged };
+    return {
+      posted,
+      state,
+      emit,
+      viewChanged,
+      asksChanged,
+      store,
+      feeds: state.feeds,
+    };
   };
 
   it("posts an ask suppressed while in view once the user navigates away (#84)", () => {
@@ -441,6 +467,175 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
     state.openConv = "c2";
     viewChanged();
     expect(posted).toEqual([]);
+  });
+  it("posts a completion that missed its live frame once state shows it (#400)", () => {
+    const { posted, state, asksChanged, feeds, store } = stateHarness();
+    state.open = []; // no asks — completions only
+    // First sight of s2 with an empty log → seeded as history baseline.
+    feeds.s2 = [];
+    asksChanged();
+    expect(store.read("s2")).toEqual([]);
+
+    // The completion lands in the feed without a live frame (the
+    // zero-peer reload window the ac-32 e2e hits on CI).
+    feeds.s2 = [
+      {
+        ...ev("turn.completed", "s2", {
+          turnId: "t9",
+          stopReason: "refusal",
+          error: "boom",
+        }),
+        seq: 9,
+      },
+    ];
+    asksChanged();
+    expect(posted.map((n) => n.conversationId)).toEqual(["c2"]);
+    expect(posted[0]?.kind).toBe("failed");
+
+    // Never reposts on later checks.
+    asksChanged();
+    expect(posted).toHaveLength(1);
+  });
+
+  it("treats a first-seen session's whole log as history (no catch-up spam)", () => {
+    const { posted, asksChanged, feeds } = stateHarness();
+    feeds.s2 = [
+      {
+        ...ev("turn.completed", "s2", { turnId: "t1", stopReason: "end_turn" }),
+        seq: 3,
+      },
+    ];
+    asksChanged();
+    expect(posted).toEqual([]);
+  });
+
+  it("a live-posted completion is never reposted by the state check", () => {
+    const { posted, state, emit, asksChanged, feeds } = stateHarness();
+    state.open = []; // no asks — completions only
+    feeds.s2 = [];
+    asksChanged(); // seed
+    const e = {
+      ...ev("turn.completed", "s2", { turnId: "t4", stopReason: "end_turn" }),
+      seq: 4,
+    };
+    feeds.s2 = [e];
+    emit(e); // live fast path posts it
+    expect(posted.map((n) => n.conversationId)).toEqual(["c2"]);
+    asksChanged();
+    asksChanged();
+    expect(posted).toHaveLength(1);
+  });
+
+  it("accounts an in-view completion without ever posting it", () => {
+    const { posted, state, asksChanged, viewChanged, feeds } = stateHarness();
+    state.open = []; // no asks — completions only
+    feeds.s1 = [];
+    asksChanged(); // seed
+    feeds.s1 = [
+      {
+        ...ev("turn.completed", "s1", { turnId: "t5", stopReason: "end_turn" }),
+        seq: 5,
+      },
+    ];
+    state.openConv = "c1"; // the thread is on screen showing the done turn
+    asksChanged();
+    expect(posted).toEqual([]);
+    // Navigating away must not raise a stale notification for a turn the
+    // user watched finish.
+    state.openConv = "c2";
+    viewChanged();
+    expect(posted).toEqual([]);
+  });
+
+  it("a live-suppressed completion stays silent after navigating away", () => {
+    // Live frame suppressed in view → recorded, so the check stays quiet.
+    const { posted, state, emit, asksChanged, viewChanged, feeds } =
+      stateHarness();
+    state.open = []; // no asks — completions only
+    state.openConv = "c1";
+    feeds.s1 = [];
+    asksChanged(); // seed
+    const e = {
+      ...ev("turn.completed", "s1", { turnId: "t6", stopReason: "end_turn" }),
+      seq: 6,
+    };
+    feeds.s1 = [e];
+    emit(e); // in view → suppressed, accounted
+    state.openConv = "c2";
+    viewChanged();
+    expect(posted).toEqual([]);
+  });
+
+  it("leaves an unmapped completion for the next check instead of dropping it", () => {
+    const { posted, state, asksChanged, feeds } = stateHarness();
+    state.open = []; // no asks — completions only
+    feeds["s-new"] = []; // seen before its conversation lands
+    asksChanged();
+    feeds["s-new"] = [
+      {
+        ...ev("turn.completed", "s-new", {
+          turnId: "t7",
+          stopReason: "end_turn",
+        }),
+        seq: 7,
+      },
+    ];
+    asksChanged(); // no conversation maps s-new yet — still nothing
+    expect(posted).toEqual([]);
+    state.convs = [conv("c1", "s1"), conv("c2", "s2"), conv("c3", "s-new")];
+    asksChanged(); // engineRef write landed — the completion posts now
+    expect(posted.map((n) => n.conversationId)).toEqual(["c3"]);
+  });
+
+  it("never posts a cancelled completion found in state", () => {
+    const { posted, asksChanged, feeds } = stateHarness();
+    feeds.s2 = [];
+    asksChanged(); // seed
+    feeds.s2 = [
+      {
+        ...ev("turn.completed", "s2", {
+          turnId: "t8",
+          stopReason: "cancelled",
+        }),
+        seq: 8,
+      },
+    ];
+    asksChanged();
+    asksChanged();
+    expect(posted).toEqual([]);
+  });
+
+  it("remembers across mounts: a missed completion still posts after reload", () => {
+    // Mount 1 seeds s2 (store persists like sessionStorage).
+    const store = seqStore();
+    const first = stateHarness(store);
+    first.state.open = []; // no asks — completions only
+    first.feeds.s2 = [];
+    first.asksChanged();
+    // Mount 2 (the reloaded page) sees the completion as new.
+    const second = stateHarness(store);
+    second.state.open = []; // no asks — completions only
+    second.feeds.s2 = [
+      {
+        ...ev("turn.completed", "s2", { turnId: "t9", stopReason: "end_turn" }),
+        seq: 9,
+      },
+    ];
+    second.state.openConv = "c1";
+    second.asksChanged();
+    expect(second.posted.map((n) => n.conversationId)).toEqual(["c2"]);
+    // While a seq mount 1 already posted stays silent on mount 2.
+    const third = stateHarness(store);
+    third.state.open = []; // no asks — completions only
+    third.feeds.s2 = [
+      {
+        ...ev("turn.completed", "s2", { turnId: "t9", stopReason: "end_turn" }),
+        seq: 9,
+      },
+    ];
+    third.state.openConv = "c1";
+    third.asksChanged();
+    expect(third.posted).toEqual([]);
   });
 });
 

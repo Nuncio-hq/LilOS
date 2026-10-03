@@ -21,6 +21,7 @@ import {
   EngineEventEvent,
   JsonRpcNotification,
   JsonRpcResponse,
+  MessageChangedEvent,
   MessageCreatedEvent,
   type PairedDevice,
   type PairingOffer,
@@ -256,6 +257,10 @@ export class RelayClient {
   private readonly watermarks = new Map<string, number>();
   private readonly catchingUp = new Set<string>();
   private readonly parked = new Map<string, AppMessage[]>();
+  /* `message.changed` frames held during a catchup: applied live they'd be
+     stomped by the in-flight `channel.snapshot`, which carries subscribe-
+     time rows (#315 — a Send right after reload lost its `dropped` flip). */
+  private readonly parkedChanged = new Map<string, AppMessage[]>();
   private readonly channelStates = new Map<
     string,
     WritableAtom<ChannelMessagesState>
@@ -622,6 +627,7 @@ export class RelayClient {
     this.subscribedChannels.delete(channelId);
     this.catchingUp.delete(channelId);
     this.parked.delete(channelId);
+    this.parkedChanged.delete(channelId);
     if (this.state.get() === "ready") {
       await this.request("channel.unsubscribe", { channelId });
     }
@@ -782,6 +788,19 @@ export class RelayClient {
     );
   }
 
+  /* One gap refetch per conversation at a time — a stalled run of live
+     frames queues no pile of overlapping session.events calls; whichever
+     lands last covers the newest hole. */
+  private readonly feedSyncInFlight = new Set<string>();
+
+  private syncSessionFeedOnce(conversationId: string): void {
+    if (this.feedSyncInFlight.has(conversationId)) return;
+    this.feedSyncInFlight.add(conversationId);
+    void this.syncSessionFeed(conversationId)
+      .catch(() => {})
+      .finally(() => this.feedSyncInFlight.delete(conversationId));
+  }
+
   private async syncSessionFeed(conversationId: string): Promise<void> {
     const store = this.sessionFeeds.get(conversationId);
     if (!store) return;
@@ -920,6 +939,7 @@ export class RelayClient {
     } catch (error) {
       this.catchingUp.delete(channelId);
       this.parked.delete(channelId);
+      this.parkedChanged.delete(channelId);
       throw error;
     }
   }
@@ -1098,6 +1118,38 @@ export class RelayClient {
         this.dispatchIfNewer(event.channelId, event.message);
         return;
       }
+      case "message.changed": {
+        /* #315: dropped/removed flipped — same seq, so dispatchIfNewer can't
+           carry it; replace the stored row in place. */
+        const event = MessageChangedEvent.parse(params);
+        if (this.catchingUp.has(event.channelId)) {
+          /* Park like message.created: the in-flight snapshot's subscribe-
+             time rows would stomp the flag flip if it applied now. */
+          const list = this.parkedChanged.get(event.channelId) ?? [];
+          list.push(event.message);
+          this.parkedChanged.set(event.channelId, list);
+          return;
+        }
+        this.applyMessageChanged(event.channelId, event.message);
+        const summaries = this.conversationSummaries.get();
+        if (
+          event.message.conversationId &&
+          summaries.some(
+            (s) =>
+              s.conversation.id === event.message.conversationId &&
+              s.last?.id === event.message.id,
+          )
+        ) {
+          this.conversationSummaries.set(
+            summaries.map((s) =>
+              s.last?.id === event.message.id
+                ? { ...s, last: event.message }
+                : s,
+            ),
+          );
+        }
+        return;
+      }
       case "channel.snapshot": {
         const event = ChannelSnapshotEvent.parse(params);
         const store = this.channelStates.get(event.channelId);
@@ -1117,6 +1169,11 @@ export class RelayClient {
         this.parked.delete(event.channelId);
         for (const message of parked) {
           this.dispatchIfNewer(event.channelId, message);
+        }
+        const parkedFlips = this.parkedChanged.get(event.channelId) ?? [];
+        this.parkedChanged.delete(event.channelId);
+        for (const message of parkedFlips) {
+          this.applyMessageChanged(event.channelId, message);
         }
         const wm = this.watermarks.get(event.channelId) ?? 0;
         if (event.lastSeq > wm)
@@ -1191,15 +1248,35 @@ export class RelayClient {
                 (e) => e.sessionId === sid && e.seq === event.event.seq,
               );
         if (dup) return;
+        /* Coverage is contiguous, not a high-water mark: a frame arriving
+           after a broadcast gap must NOT lift the watermark past the hole,
+           or the next replay's `after` skips the lost seq forever (#400 —
+           an ask or completion emitted while this socket was connected but
+           not yet a feed peer stayed missing until the next reconnect). */
+        const sameSession = event.sessionId === f.sessionId;
+        const nextCoverage = sameSession
+          ? event.event.seq === f.coverageSeq + 1
+            ? event.event.seq
+            : f.coverageSeq
+          : event.event.seq === 1
+            ? 1
+            : 0;
         store.set({
           ...f,
           sessionId: event.sessionId,
-          coverageSeq:
-            event.sessionId === f.sessionId
-              ? Math.max(f.coverageSeq, event.event.seq)
-              : event.event.seq,
+          coverageSeq: nextCoverage,
           events: [...f.events, event.event],
         });
+        /* A skipped seq — a gap inside the current log, or a rebound log
+           whose head we never saw — means this socket missed a window
+           while connected: refetch instead of stalling until reconnect. */
+        if (
+          (sameSession
+            ? nextCoverage < event.event.seq
+            : event.event.seq > 1) &&
+          this.state.get() === "ready"
+        )
+          this.syncSessionFeedOnce(event.conversationId);
         return;
       }
       case "conversation.updated": {
@@ -1315,6 +1392,22 @@ export class RelayClient {
     }
   }
 
+  /* #315: a flag flip (`dropped`/`removed`) lands at the same seq, so it
+     replaces the stored row in place — or inserts in seq order when the
+     row isn't there (a changed event can beat the fetch that would have
+     carried it). */
+  private applyMessageChanged(channelId: string, message: AppMessage): void {
+    const store = this.channelStates.get(channelId);
+    const state = store?.get();
+    if (!store || !state) return;
+    store.set({
+      ...state,
+      messages: state.messages.some((m) => m.id === message.id)
+        ? state.messages.map((m) => (m.id === message.id ? message : m))
+        : [...state.messages, message].sort((a, b) => a.seq - b.seq),
+    });
+  }
+
   /** Drop a deleted channel: atom, per-channel message state, replay state. */
   private dropChannel(channelId: string): void {
     this.channels.set(this.channels.get().filter((c) => c.id !== channelId));
@@ -1343,6 +1436,7 @@ export class RelayClient {
     this.catchingUp.delete(channelId);
     this.watermarks.delete(channelId);
     this.parked.delete(channelId);
+    this.parkedChanged.delete(channelId);
     this.channelStates.get(channelId)?.set({
       channelId,
       synced: false,

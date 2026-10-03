@@ -399,6 +399,67 @@ describe("forge host api (fake gh)", () => {
     expect(r.prs).toEqual([]);
   });
 
+  /* issue #107 AC-4 — forge.create drives `gh pr create` argv-style; the
+     fake gh writes view.json so the next forge.pr re-read sees the new PR,
+     exactly like the real gh it stands in for. */
+
+  it("#107 AC-4 forge.create opens the PR via `gh pr create` and forge.pr then sees it", async () => {
+    // No view.json yet → the branch starts PR-less, like a real create flow.
+    rmSync(viewFile(), { force: true });
+    const r = (await callHost("forge.create", {
+      path: repo,
+      title: "Ship the widgets",
+      body: "## Summary\n\nAdds widgets.",
+      base: "main",
+    })) as { url: string; number?: number };
+    expect(r).toEqual({
+      url: "https://github.com/acme/widgets/pull/8",
+      number: 8,
+    });
+    const log = readLog();
+    expect(log).toContain("pr create");
+    expect(log).toContain("--title Ship the widgets");
+    expect(log).toContain("--base main");
+    // The re-read now finds the created PR (fake gh persisted view.json).
+    const pr = (await callHost("forge.pr", { path: repo })) as PrResult;
+    expect(pr.pr?.number).toBe(8);
+    expect(pr.pr?.head).toBe("feat/forge");
+    expect(pr.pr?.base).toBe("main");
+  });
+
+  it("#107 AC-4 forge.create without a base lets gh pick the repo default", async () => {
+    rmSync(viewFile(), { force: true });
+    const r = (await callHost("forge.create", {
+      path: repo,
+      title: "no base",
+      body: "",
+    })) as { url: string };
+    expect(r.url).toContain("/pull/");
+    expect(readLog()).not.toContain("--base");
+  });
+
+  it("#107 AC-4 forge.create surfaces gh's typed reasons (signed-out → unauthenticated)", async () => {
+    rmSync(viewFile(), { force: true });
+    writeFileSync(join(ghDir, "fail"), "auth\n");
+    await expect(
+      callHost("forge.create", { path: repo, title: "x", body: "" }),
+    ).rejects.toMatchObject({
+      code: HOST_ERRORS.GH_FAILED,
+      data: { reason: "unauthenticated" },
+    });
+  });
+
+  it("#107 AC-4 forge.create on a non-repo throws NOT_A_REPO", async () => {
+    const plain = mkdtempSync(join(tmpdir(), "lilos-norepo-"));
+    try {
+      await expect(
+        callHost("forge.create", { path: plain, title: "x", body: "" }),
+      ).rejects.toMatchObject({ code: HOST_ERRORS.NOT_A_REPO });
+    } finally {
+      rmSync(plain, { recursive: true, force: true });
+    }
+  });
+
   it("#159 AC-4 forge.prs on a non-repo throws NOT_A_REPO; signed-out gh surfaces GH_FAILED", async () => {
     const plain = mkdtempSync(join(tmpdir(), "lilos-norepo-"));
     await expect(callHost("forge.prs", { path: plain })).rejects.toMatchObject({

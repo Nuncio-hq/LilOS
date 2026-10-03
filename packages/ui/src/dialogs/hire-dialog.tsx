@@ -1,6 +1,7 @@
 import { PlusIcon, SparklesIcon, UserPlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../components/ui/button";
+import { Checkbox } from "../components/ui/checkbox";
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { Textarea } from "../components/ui/textarea";
@@ -24,6 +25,7 @@ export function HireDialog({
   usedProfiles,
   error,
   pending,
+  connect,
 }: {
   initial: HireDraft;
   templates: HireDraft[];
@@ -38,6 +40,9 @@ export function HireDialog({
   /** True while a hire request is in flight — Hire stays disabled so a
       second click can't create a duplicate. */
   pending?: boolean;
+  /** The "Connect to LilOS" checkbox (issue #338 AC-2): renders only when
+      passed (D-#19) — the app owns the checked state and what it means. */
+  connect?: { checked: boolean; onChange: (v: boolean) => void };
 }) {
   const [d, setD] = useState<HireDraft>(initial);
   const [mode, setMode] = useState<"existing" | "new">(
@@ -99,6 +104,7 @@ export function HireDialog({
                 return (
                   <button
                     key={p.id}
+                    data-profile={p.id}
                     disabled={used}
                     onClick={() => pick(p)}
                     className={cn(
@@ -294,6 +300,24 @@ export function HireDialog({
               )}
             </div>
           </ScrollArea>
+          {connect && (
+            <div className="flex items-start gap-2.5 border-t px-4 py-3">
+              <Checkbox
+                id="hire-connect"
+                checked={connect.checked}
+                onCheckedChange={(v) => connect.onChange(v === true)}
+                className="mt-0.5"
+              />
+              <label htmlFor="hire-connect" className="min-w-0 text-xs">
+                <span className="font-medium">Connect to LilOS</span>
+                <span className="mt-0.5 block text-muted-foreground">
+                  This employee sees the app — its DMs, folders, tickets and
+                  work — in sessions LilOS opens. Hermes Desktop and the CLI are
+                  unaffected.
+                </span>
+              </label>
+            </div>
+          )}
           {error && (
             <div className="border-t bg-red-50/60 px-4 py-2 text-red-800 text-xs dark:bg-red-950/30 dark:text-red-200">
               {error}

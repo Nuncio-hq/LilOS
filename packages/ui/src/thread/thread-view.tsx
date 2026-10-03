@@ -5,6 +5,8 @@ import {
   ConversationKeepBottom,
   NotSentTray,
   QueuedTray,
+  type QueuedTrayItem,
+  queuedItemText,
   runningComposer,
 } from "../chat/agent-chat";
 import { Composer } from "../chat/composer";
@@ -199,8 +201,9 @@ export function ThreadView({
   onUnqueue?: (i: number) => void;
   onSendQueued?: (i: number) => void;
   /* Messages sent while the turn runs that the agent hasn't read yet. They wait in the tray above the
-     composer; `steer` (engine declared session.steer) only changes when they get read (issue #9). */
-  pending?: string[];
+     composer; `steer` (engine declared session.steer) only changes when they get read (issue #9).
+     A `{text, removable}` row the engine already holds hides its Edit/Remove (#315). */
+  pending?: QueuedTrayItem[];
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
   accept?: string;
   /* Attachment byte cap + count cap + where rejections surface (issue #31). */
@@ -420,7 +423,7 @@ export function ThreadView({
                wrapped in the row's padding/hover chrome only (issue #19). The
                data-msg wrapper is the search-hit scroll/flash anchor (#138). */
             <div
-              key={r.id ?? i}
+              key={r.turnId ?? r.id ?? i}
               data-msg={r.id}
               className={cn(
                 "transition-colors duration-500",
@@ -586,7 +589,9 @@ export function ThreadView({
               onEdit={
                 onRemovePending && onDraftChange
                   ? (i) => {
-                      onDraftChange(pending[i] ?? "");
+                      onDraftChange(
+                        pending[i] ? queuedItemText(pending[i]) : "",
+                      );
                       onRemovePending(i);
                     }
                   : undefined

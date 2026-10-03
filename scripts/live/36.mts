@@ -300,14 +300,8 @@ async function main() {
         },
       ),
   });
-  const handle = await (
-    await fetch(`${surfaces.url}/surfaces/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ cwd: process.env.HOME }),
-    })
-  ).json();
-  check(!!handle.mcpServer, "POST /surfaces/sessions returns mcpServer spec");
+  const handle = surfaces.create({ cwd: process.env.HOME });
+  check(!!handle.mcpServer, "server.create returns mcpServer spec");
   const cliPath = handle.mcpServer.args[0];
   const markerLog = join(mkdtempSync(join(tmpdir(), "lilos36-")), "spawn.log");
   const mcpEnv = Object.fromEntries(

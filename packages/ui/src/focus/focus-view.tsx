@@ -22,6 +22,8 @@ import {
   NotSentTray,
   plain,
   QueuedTray,
+  type QueuedTrayItem,
+  queuedItemText,
   runningComposer,
 } from "../chat/agent-chat";
 import { useEscapeKey } from "../chat/composer-keys";
@@ -67,7 +69,10 @@ import type {
   OsApp,
   OsEditor,
   Project,
+  ShipBar,
+  ShipHandlers,
   Thread,
+  WbSpot,
   WbTab,
   Work,
 } from "../types";
@@ -134,6 +139,9 @@ export function FocusView({
   onPlan,
   browser,
   initialTab,
+  onTab,
+  wbSpot,
+  ship,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -188,7 +196,7 @@ export function FocusView({
   /** Live harness surfaces for Workbench Terminal/Preview tabs (issue #36). */
   surfaces?: LiveSurfaces;
   /* Mid-turn sends the agent hasn't read yet — the waiting tray above the composer (issue #9). */
-  pending?: string[];
+  pending?: QueuedTrayItem[];
   /* os.editors + a bound os.open (issue #110, same pair ThreadView takes):
      the caller probes `host.describe` — onOpenPath={null} means os.open was
      absent, so the badge stays a plain label even when the accessors object
@@ -226,8 +234,22 @@ export function FocusView({
   /* Opens on this Workbench tab (e.g. a thread panel's "N subagents · Open" link, #317) —
      counts as the user's pick, so follow-the-agent doesn't switch away from it. */
   initialTab?: WbTab;
+  /* The user picked a Workbench tab — the host syncs it into the URL so a
+     reload lands on the same one (#319 AC-2). Follow-the-agent switches
+     don't fire it: only picks go through pickTab. */
+  onTab?: (t: WbTab) => void;
+  /* The session's `workbench_open` request (issue #340): the panel opens and
+     applies the target's tab — an explicit pick, so follow stops here. */
+  wbSpot?: WbSpot;
+  /* The Workbench ship bar's mock seam (issue #107/#359) — forwarded to
+     Workbench.ship; live mode builds the same bar from `host` instead. */
+  ship?: Partial<ShipBar> & ShipHandlers;
 }) {
-  const [wbOpen, setWbOpen] = useState(() => window.innerWidth >= 1024);
+  /* A `?tab=` destination shows its tab even under lg, where the panel is
+     an overlay — "open on Subagents" means visibly open (#319 AC-1). */
+  const [wbOpen, setWbOpen] = useState(
+    () => window.innerWidth >= 1024 || initialTab !== undefined,
+  );
   const [tab, setTab] = useState<WbTab>(
     () =>
       initialTab ??
@@ -292,9 +314,15 @@ export function FocusView({
   const liveKey = live
     ? `${live.id}:${live.steps?.length}:${lastStep?.running}`
     : "";
-  // Follow the agent: while a turn runs, the workbench jumps to what it is doing (until you pick a tab yourself).
+  /* Follow the agent: a turn that BEGAN while this feed was attached
+     re-arms follow so the workbench tracks it. The turn already live when
+     the view mounted — a mid-turn reload onto `?tab=` — must not steal the
+     deep-linked tab before the user ever saw it (#396). `live` arrives
+     async, so the discriminator is the turn's own attach boundary
+     (`postAttach`), not mount-time state; mock rows without it keep the
+     old always-follow behavior. */
   useEffect(() => {
-    if (live) setFollow(true);
+    if (live && live.postAttach !== false) setFollow(true);
   }, [live?.id]);
   // Turn finished with edits → land on Changes, like Codex's review pane.
   const lastDone = [...thread.replies]
@@ -327,7 +355,17 @@ export function FocusView({
     setTab(t);
     setFollow(false);
     setWbOpen(true);
+    onTab?.(t);
   };
+  /* #340 AC-2b: `workbench_open` brings the panel forward on the target's
+     tab — the Workbench applies `target`; here the panel opens and follow
+     stops (it is the agent's explicit "look at this"). */
+  const wbSpotAt = wbSpot?.at;
+  useEffect(() => {
+    if (!wbSpot) return;
+    setWbOpen(true);
+    setFollow(false);
+  }, [wbSpotAt]); // eslint-disable-line react-hooks/exhaustive-deps
   const doneTodos = todos.filter((t) => t.status === "completed").length;
   // Plan tray opens while the agent works and folds away when the turn ends (user can still toggle).
   const [planOpen, setPlanOpen] = useState(running);
@@ -584,7 +622,7 @@ export function FocusView({
               {thread.replies.map((r, i) =>
                 emp(r.from) ? (
                   <div
-                    key={r.id ?? i}
+                    key={r.turnId ?? r.id ?? i}
                     data-msg={r.id}
                     className={flashCls(r.id)}
                   >
@@ -630,7 +668,7 @@ export function FocusView({
                     />
                   </div>
                 ) : (
-                  <Fragment key={r.id ?? i}>
+                  <Fragment key={r.turnId ?? r.id ?? i}>
                     {onRewind && r.id && human(r.from) && (
                       <RewindCheckpoint
                         running={running}
@@ -727,7 +765,11 @@ export function FocusView({
               onEdit={
                 onRemovePending && onDraftChange
                   ? (i) => {
-                      onDraftChange(pendingSteers[i] ?? "");
+                      onDraftChange(
+                        pendingSteers[i]
+                          ? queuedItemText(pendingSteers[i])
+                          : "",
+                      );
                       onRemovePending(i);
                     }
                   : undefined
@@ -832,9 +874,13 @@ export function FocusView({
                 emp={emp}
                 onOpenSession={onOpenSession}
                 running={running}
+                sendPending={pendingSteers.length > 0}
+                steer={steer}
                 editors={editorsProp}
                 onOpenPath={onOpenPath}
                 browser={browser}
+                spot={wbSpot}
+                ship={ship}
               />
             </aside>
           </>

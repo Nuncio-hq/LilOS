@@ -316,6 +316,10 @@ export function hermesEngineLauncher(options: {
   model?: string;
   /** #288: where the adapter persists its resumable session rows. */
   sessionsFile?: string;
+  /** Extra env for the adapter (and, through it, `hermes serve`) — the #339
+     gateway surfaces credentials ride this so the lilos plugin can reach
+     the gateway from inside Hermes. */
+  env?: Record<string, string>;
   log: Logger;
 }): EngineLauncher {
   return {
@@ -339,6 +343,7 @@ export function hermesEngineLauncher(options: {
         readyPattern: /LISTENING (ws:\/\/\S+)/,
         startupTimeoutMs: 300_000, // hermes serve cold-starts ACP tooling
         fatalExitCodes: [HERMES_TOO_OLD_EXIT_CODE],
+        env: options.env,
         log: options.log,
       }).start();
     },

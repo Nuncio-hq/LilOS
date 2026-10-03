@@ -20,6 +20,7 @@ import type {
   SubagentRow,
   ThreadDetail,
   ThreadEntry,
+  WbCardTarget,
 } from "@lilos/ui-native";
 import { contextWindowOf } from "@lilos/ui-native/model-rules";
 import {
@@ -602,6 +603,9 @@ export function toThreadDetail(opts: {
   /** Per-turn measured reasoning seconds (#327) — live-measured by the
      screen; replayed turns have none and fall back to "Thought". */
   thoughts?: ReadonlyMap<string, number>;
+  /** `workbench.opened` events for this thread (#340 AC-2b) — the phone's
+     tappable "look at this" cards, appended after the conversation. */
+  wbCards?: readonly { at: number; target: WbCardTarget }[];
 }): ThreadDetail {
   const { conversation: conv } = opts;
   const employee = opts.employee;
@@ -759,6 +763,39 @@ export function toThreadDetail(opts: {
       : {}),
     jobs,
     ...(opts.prs?.length ? { prs: [...opts.prs] } : {}),
-    entries,
+    entries: [
+      ...entries,
+      /* #340 AC-2b: a `workbench_open` is the agent's "look at this" —
+         the card tail like a system note, newest last. */
+      ...(opts.wbCards ?? []).map((c, i) => ({
+        kind: "workbench" as const,
+        id: `wb-${c.at}-${i}`,
+        time: clock(c.at),
+        target: c.target,
+      })),
+    ],
   };
 }
+
+/** The session's recorded edits as {path, patch} rows — the phone's
+    Changes view behind a `workbench_open` card (the relay keeps no fs;
+    the turn steps' unified diffs are what it can honestly show). */
+export function collectDiffs(
+  entries: readonly ThreadEntry[],
+): { path: string; patch: string }[] {
+  const byPath = new Map<string, string[]>();
+  for (const e of entries) {
+    if (e.kind !== "agent") continue;
+    for (const s of e.steps ?? []) {
+      if (!s.patch) continue;
+      const path = s.arg ?? patchPath(s.patch) ?? "file";
+      byPath.set(path, [...(byPath.get(path) ?? []), s.patch]);
+    }
+  }
+  return [...byPath.entries()].map(([path, patches]) => ({
+    path,
+    patch: patches.join("\n"),
+  }));
+}
+const patchPath = (patch: string): string | undefined =>
+  /^\+\+\+ b\/(.+)$/m.exec(patch)?.[1];

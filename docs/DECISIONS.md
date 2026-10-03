@@ -10,6 +10,12 @@ PR does not exist.
   self-host incl. at work — never resell LilOS as a hosted service).
   Not: PolyForm NC (bans use at work), BSL (auto-converts), MIT (resale as a
   service). — #172
+- **D-#329 Outside contributors work from forks; only Oscar triages and
+  merges.** New issues/PRs land in the board's Inbox. `main` ruleset: PRs
+  only, `verify` + `check` (DCO) required, no force-push or deletion, 0
+  approvals. Not: write access for collaborators (a `v*` tag runs the signed
+  release), required CODEOWNERS approval (Oscar can't approve his own PRs).
+  — #329
 
 ## Stack
 - **D-#3 Bun is the runtime + package manager** (workspaces, pinned
@@ -59,6 +65,12 @@ PR does not exist.
   `profile` row (`settings.*` is #92's KV namespace); every surface reads it, nothing is hardcoded.** Prefill
   comes from `host.user` (the OS account's full name). Not: a `ME` constant
   in the web app, or identity fields on the employee record. — #118
+- **D-#315 Wait-state lives on the message row, not the client: `dropped` /
+  `removed` flags (`messages.drop`/`remove`/`send`, `message.changed`) drive
+  the waiting and not-sent trays; `client-runtime`'s `waitingMessages` plus
+  `deliveredSeq` classify.** The harness owns the semantics — a stranded
+  accepted steer reconciles to `dropped`. Not: tray state kept in
+  component memory (a reload must show the same tray). — #315 · PR #358
 
 ## Web
 - **D-#3 Web: React 19 + Vite + Tailwind v4 + shadcn (base-nova) + AI
@@ -111,6 +123,12 @@ PR does not exist.
   bootstrapped jobs — registering over one keeps the old binary and pins
   the version store. Not: trusting `status` alone, or failing the
   register on that error (rolls back working installs). — #206
+- **D-#388 `lilos-harness --compile` marks `chromium-bidi` external.**
+  playwright-core requires it lazily on the BiDi transport only — the browser
+  surface drives Chromium over CDP and never loads it, so the missing package
+  is excluded at bundle time, not vendored or imported dynamically.
+  Not: installing chromium-bidi for the bundler, or marking playwright
+  external (the browser surface must stay bundled). — #388 · PR #389
 - **D-#232 Native chrome: `titleBarStyle: "hiddenInset"` + `vibrancy:
   "sidebar"`; the renderer owns the drag regions** (`lilos-drag` on header
   strips, interactive children `no-drag`) and pushes its theme to
@@ -134,6 +152,12 @@ PR does not exist.
 - **D-#3 Local verify uses a real LLM via Hermes (HPC `qwen3.8-flash-next`
   local / `openai-codex` cloud); hand-offs state which was used; if both
   fail, tell Oscar.** Not: silently falling back to mock. — #3 · PR #14
+- **D-#347 Spawned dev/test processes die with their spawner: every
+  long-lived entry point runs an orphan watchdog (reparent or parent's
+  reparent past a `bun run` shim → exit), and Playwright's globalTeardown
+  sweeps only tags whose owning worker is dead.** Not: runner-side
+  `pkill`/afterAll as the sole teardown (dies with the runner), or stdin-EOF
+  only (detached spawns never see EOF). — #347 · PR #351
 
 ## Engine
 - **D-#6 The engine protocol is JSON-RPC 2.0 over an ACP-shaped core
@@ -168,11 +192,19 @@ PR does not exist.
   token, via `packages/engine-hermes`), crash restart with bounded backoff,
   conversation↔session binding, final-answer posts, and ask relaying.
   Not: the app or relay calling an engine directly. — #26 · PR #48
-- **D-#36 Agents use app surfaces through the LilOS MCP server + `lilos` CLI
-  owned by the harness** (attached per session via `session.start
-  { mcpServers }`); the Workbench Terminal/Preview tabs watch the same
-  surfaces live and take input. Not: engine-specific UI toolsets (Hermes
-  `desktop_ui` / `drive_preview` / `read_terminal`). — #36 · PR #54
+- **D-#36 The agent gateway is the one agent surface.** Every engine
+  session gets a gateway scope bound to its employee/thread; its tool
+  calls reach LilOS through one endpoint and the scope resolves the
+  binding — never agent-passed ids (the engine's own session id is an
+  alias). The tool catalog is declared once in `packages/contracts` with
+  canonical `<area>_<action>` names (`thread_*`, `terminal_*`,
+  `browser_*`, `workbench_*`); MCP `tools/list` (stdio + streamable
+  HTTP), the `lilos` CLI, and the versioned host policy all render from
+  it. Per-engine adapters (Hermes plugin, Codex app-server, Claude SDK)
+  only attach the catalog — they never grow
+  their own tool list. Not: attaching MCP only through ACP, or
+  engine-specific UI toolsets (Hermes `desktop_ui` / `drive_preview` /
+  `read_terminal`, was #36). — #36, #337 · PR #54
 - **D-#308 Every leg is a turn.** A post-turn leg mints its own turn id —
   `ref` echoes the prompting message, `initiatedBy:"agent"` marks
   engine-opened work. Not: stamping legs on the settled turn id, or the
@@ -236,6 +268,12 @@ PR does not exist.
   "Queued" means past the watermark AND no `turn.started` ref — the
   client reads the ref, the wire stays as-is. Not: advancing the mark at
   turn.started. — #258
+- **D-#334 The reasoning stream is `reasoning.delta` only.** Hermes'
+  `reasoning.available` is a per-message preview of the assistant text
+  (≤500 chars, tags stripped — `tool.progress` upstream), never a delta;
+  engine-hermes drops it at the adapter. Not: `available` mapped as
+  append or replace on `turn.delta` (injects the answer into the
+  Reasoning card). — #334 · PR #349
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the
@@ -314,6 +352,12 @@ PR does not exist.
   (`@src/app.tsx`), never file contents or engine-specific blocks; one `@`
   menu lists Employees then Files.** Not: content inlining, a second
   popover, a `#` trigger. — #105
+- **D-#320 Turn-block collapse state is user-owned, keyed by
+  `${conv.id}:${turnId}:${block}` in `packages/ui/src/lib/block-state.ts`.**
+  Auto-open is only a default while a turn runs. The live→relay-row id swap
+  can remount the card, so the choice also lives outside React state; web
+  row keys use `r.turnId` (dm.tsx stamps the conv id in). Not: auto-open as
+  a lock, per-component `useState` only. — #320 · PR #352
 
 ## Status
 - **D-#33 `system.status` legs carry `{state, reason}`; `blocked` (#53) means

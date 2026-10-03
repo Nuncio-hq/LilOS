@@ -408,7 +408,11 @@ export class HermesEngine {
         ...(s.fast !== undefined ? { fast: s.fast } : {}),
       });
       s.setState("idle");
-      return { sessionId: id };
+      /* #339: the stored session key is what the engine's own plugin
+         presents — the harness aliases it to the gateway session. */
+      return s.ref
+        ? { sessionId: id, engineSessionId: s.ref }
+        : { sessionId: id };
     }
 
     if (!this.opts.acp)
@@ -444,7 +448,9 @@ export class HermesEngine {
       ...(s.fast !== undefined ? { fast: s.fast } : {}),
     });
     s.setState("idle");
-    return { sessionId: id };
+    return s.ref
+      ? { sessionId: id, engineSessionId: s.ref }
+      : { sessionId: id };
   }
 
   /**
@@ -1286,13 +1292,22 @@ export class HermesEngine {
         s.setState("running");
         break;
       }
-      case "reasoning.delta":
-      case "reasoning.available": {
+      case "reasoning.delta": {
         if (typeof p.text === "string" && p.text)
           s.emit("turn.delta", { turnId, stream: "reasoning", delta: p.text });
         if (s.turn) s.turn.phase = "reasoning";
         break;
       }
+      /* `reasoning.available` is not a delta: upstream
+         (turn_response_intake._relay_thinking) emits it once per assistant
+         message with the message's own text, tags stripped, ≤500 chars —
+         a progress preview the OpenAI-compat API surfaces as
+         `tool.progress`. The reasoning stream is `reasoning.delta` only
+         (also fired one-shot for non-streaming providers), so mapping it
+         here would inject the answer into the Reasoning card — and
+         double-append it after real thought (#334). */
+      case "reasoning.available":
+        break;
       case "message.delta": {
         if (typeof p.text === "string" && p.text)
           s.emit("turn.delta", { turnId, stream: "text", delta: p.text });

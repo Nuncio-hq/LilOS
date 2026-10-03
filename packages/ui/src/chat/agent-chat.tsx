@@ -9,7 +9,7 @@ import {
   PencilIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 import {
   Tooltip,
@@ -36,7 +36,9 @@ export const plain = (s: string) =>
 
 /* One steer that LANDED inside a running turn: applied at a tool boundary, so it sits in the turn at
    that point. Right-aligned and labelled with the user's name so it reads as their message inside the
-   agent's turn, not agent output. Solid amber-100 + amber-950 text keeps the chip AA-readable. While a
+   agent's turn, not agent output. Solid amber-100 + amber-950 text keeps the chip AA-readable in
+   light; dark melts it into the same amber tint family as the flash rows (amber-900/40) with the
+   remapped light text. While a
    steer still waits it lives in the QueuedTray, never here. */
 export function SteerRow({
   text,
@@ -52,7 +54,7 @@ export function SteerRow({
       className={cn(
         // mt-2 keeps the chip clearly separated from the agent's text above it — it must never read
         // as part of the agent's output (issue #15).
-        "ml-auto mt-2 flex w-fit max-w-full items-start gap-1.5 rounded-md border border-amber-300 border-solid bg-amber-100 px-2 py-1 text-amber-950 text-xs",
+        "ml-auto mt-2 flex w-fit max-w-full items-start gap-1.5 rounded-md border border-amber-300 border-solid bg-amber-100 px-2 py-1 text-amber-950 text-xs dark:bg-amber-900/40",
       )}
     >
       <CheckIcon className="mt-0.5 size-3 shrink-0 text-emerald-700" />
@@ -91,11 +93,16 @@ export function ConversationKeepBottom({
 }: {
   signal: number | string;
 }) {
-  const { scrollToBottom } = useStickToBottomContext();
-  useEffect(() => {
-    // Re-locks to the bottom so the last turn + the tray are both fully visible without scrolling.
+  const { scrollToBottom, scrollRef } = useStickToBottomContext();
+  /* Layout effect + a synchronous write: even "instant" scrollToBottom hops
+     through a rAF, so the frame after the composer column grows would lay out
+     (and could paint) the last card clipped under the tray — the PR #358
+     waiting-tray overlap. The lib call keeps its bottom-lock bookkeeping. */
+  useLayoutEffect(() => {
     scrollToBottom({ animation: "instant" });
-  }, [signal, scrollToBottom]);
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [signal, scrollToBottom, scrollRef]);
   return null;
 }
 
@@ -158,7 +165,7 @@ export function NotSentTray({
                         onClick={() => onRemove(i)}
                         aria-label="Remove"
                         data-notsent-remove={i}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:text-blue-300 dark:hover:text-red-900"
                       />
                     }
                   >
@@ -182,7 +189,19 @@ export function NotSentTray({
    · no steer: they run in order, one prompt each, when the turn ends (issue #9).
    Edit pulls an item back into the composer (it leaves the queue); Remove drops it. Neither is a Send:
    sending now is impossible mid-turn — ■ stops the turn, and anything still here moves to the not-sent
-   tray. Amber: the "waiting on the turn" family (the landed steer rows share it). */
+   tray. Amber: the "waiting on the turn" family (the landed steer rows share it).
+   Rows are bare strings, or `{text, removable}` (#315): the engine already holds an
+   accepted-but-unlanded steer (`removable: false`), so its row lists in the tray but
+   Edit/Remove stay hidden. */
+export type QueuedTrayItem = string | { text: string; removable?: boolean };
+
+/** Item text for callers that take the row back (e.g. Edit → composer). */
+export const queuedItemText = (item: QueuedTrayItem): string =>
+  typeof item === "string" ? item : item.text;
+
+const queuedItemRemovable = (item: QueuedTrayItem): boolean =>
+  typeof item === "string" || item.removable !== false;
+
 export function QueuedTray({
   items,
   steer = false,
@@ -190,12 +209,13 @@ export function QueuedTray({
   onRemove,
   onEdit,
 }: {
-  items: string[];
+  items: QueuedTrayItem[];
   /** Engine declared session.steer — changes when each item gets read. */
   steer?: boolean;
   /** Employee name for the header ("Builder hasn't read these yet"). */
   name?: string;
-  /* Each action renders only with its handler, like NotSentTray. */
+  /* Each action renders only with its handler, like NotSentTray; a
+     `removable: false` item (steer the engine already took) hides them. */
   onRemove?: (i: number) => void;
   onEdit?: (i: number) => void;
 }) {
@@ -225,12 +245,12 @@ export function QueuedTray({
             </span>
             <span
               className="min-w-0 flex-1 truncate text-amber-950"
-              title={plain(q)}
+              title={plain(queuedItemText(q))}
             >
-              {plain(q)}
+              {plain(queuedItemText(q))}
             </span>
             <TooltipProvider>
-              {onEdit && (
+              {onEdit && queuedItemRemovable(q) && (
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -239,7 +259,7 @@ export function QueuedTray({
                         onClick={() => onEdit(i)}
                         aria-label="Edit"
                         data-queued-edit={i}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-900"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-900"
                       />
                     }
                   >
@@ -250,7 +270,7 @@ export function QueuedTray({
                   </TooltipContent>
                 </Tooltip>
               )}
-              {onRemove && (
+              {onRemove && queuedItemRemovable(q) && (
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -259,7 +279,7 @@ export function QueuedTray({
                         onClick={() => onRemove(i)}
                         aria-label="Remove"
                         data-queued-remove={i}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:text-amber-300 dark:hover:text-red-900"
                       />
                     }
                   >

@@ -50,7 +50,7 @@ import {
   REFRESH_MODEL,
   SEED_AGENTS,
 } from "./catalog.js";
-import { type McpClient, startMcpServer } from "./mcp.js";
+import { type McpClient, startMcpHttp, startMcpServer } from "./mcp.js";
 import {
   type FakeScript,
   type FakeStep,
@@ -169,12 +169,19 @@ interface FakeSession {
   jobs: Map<string, FakeJob>;
   jobCounter: number;
   subCounter: number;
+  /** #400: `LILOS_TURN_HOLD` parks the turn past `turn.started` until this
+      releases it (interrupt or session stop) — a test asserting the running
+      state never races the script's length. */
+  holdTurn?: () => void;
   /** #309: async helpers whose subagent.completed waits past turn end. */
   pendingSubagentClose: {
     subagentId: string;
     status: FakeSubagent["status"];
     result?: string;
     durationMs?: number;
+    /** #400: held entries flush only when the next turn intake arrives —
+        the tick drain leaves them parked. */
+    hold?: boolean;
   }[];
 }
 
@@ -350,8 +357,9 @@ export class FakeEngine {
       {
         id: "mcp_servers",
         name: "MCP servers",
-        description: "Accepts stdio MCP servers on session.start (ACP shape).",
-        detail: { transports: ["stdio"] },
+        description:
+          "Accepts stdio + streamable-HTTP MCP servers on session.start (ACP shape).",
+        detail: { transports: ["stdio", "http"] },
       },
       {
         id: "agents",
@@ -399,10 +407,14 @@ export class FakeEngine {
   }
 
   private sessionStart(p: SessionStartParams) {
-    if ((p.mcpServers ?? []).some((s) => "type" in s)) {
+    if (
+      (p.mcpServers ?? []).some(
+        (s) => "type" in s && (s as { type?: unknown }).type !== "http",
+      )
+    ) {
       throw new RpcError(
         RPC_ERRORS.INVALID_PARAMS,
-        "engine-fake accepts stdio mcpServers only",
+        "engine-fake accepts stdio + http mcpServers only",
       );
     }
     const spec = this.agents.get(p.agent);
@@ -500,6 +512,7 @@ export class FakeEngine {
     const s = this.require(p.sessionId);
     if (!s.turn) return { interrupted: false };
     s.turn.interrupted = true;
+    s.holdTurn?.();
     for (const ask of s.openRequests.values())
       ask.resolve({ outcome: "cancel" });
     return { interrupted: true };
@@ -604,6 +617,7 @@ export class FakeEngine {
     if (s.state === "closed") return { stopped: false };
     const t = s.turn;
     if (t) t.interrupted = true;
+    s.holdTurn?.();
     for (const ask of s.openRequests.values())
       ask.resolve({ outcome: "cancel" });
     for (const c of s.mcpClients.values()) c.close();
@@ -1012,6 +1026,7 @@ export class FakeEngine {
           status: sub.status,
           result: sub.result,
           durationMs: sub.durationMs,
+          hold: sub.holdClose,
         });
         continue;
       }
@@ -1032,6 +1047,9 @@ export class FakeEngine {
     images?: { mimeType: string; sizeBytes: number }[],
     ref?: string,
   ) {
+    /* #400: a test's follow-up prompt is the release signal for held async
+       helpers — their close lands here, while the session is still idle. */
+    this.flushHeldCloses(s);
     // A pick deferred while the previous turn ran lands before the new turn
     // reads model/effort/fast for `turn.started` (#92 AC-4). Every turn path
     // funnels here — `prompt` and steered follow-ups via `pumpSteers`. The
@@ -1078,6 +1096,13 @@ export class FakeEngine {
     this.setState(s, "running");
     this.autoTitle(s, "derived", promptText);
     try {
+      /* #400: `LILOS_TURN_HOLD` parks the turn while it reads as running —
+         an interrupt (or the session stopping) releases it, so an Esc/Stop
+         test never races a short script finishing first. */
+      if (/\bLILOS_TURN_HOLD\b/i.test(promptText))
+        await new Promise<void>((resolve) => {
+          s.holdTurn = resolve;
+        });
       // Deterministic failure path (#32): a prompt starting with "fail" ends
       // the turn as a refusal with an error, so failure surfaces are testable.
       // Reasoning is paced over ~2s like a real turn — an instant failure
@@ -1153,8 +1178,8 @@ export class FakeEngine {
           return this.finishTurn(s, turnId, "end_turn", script, promptText);
         }
         await this.sleep(s);
-        // mcp__<server>__<tool> steps really run: the fake spawns the attached
-        // stdio MCP server (lazily) and calls it over the wire.
+        // mcp__<server>__<tool> steps really run: the fake spawns/connects
+        // the attached MCP server (lazily) and calls it over the wire.
         if (mcpMatch) {
           try {
             const client = await this.mcpClient(s, mcpMatch[1]);
@@ -1238,7 +1263,9 @@ export class FakeEngine {
       s.turn = undefined;
       this.emit(s, "turn.completed", { turnId, stopReason: "cancelled" });
       if (s.state !== "closed") this.setState(s, "idle");
-      this.pumpSteers(s);
+      /* #315: pending steers die with a stopped turn — nothing auto-runs
+         after a Stop; the harness parks them in the not-sent tray. */
+      s.steers.length = 0;
       return { turnId, stopReason: "cancelled" as const };
     }
   }
@@ -1512,8 +1539,12 @@ export class FakeEngine {
     this.emit(s, "turn.completed", { turnId, stopReason, usage: s.usage });
     if (s.state !== "closed") this.setState(s, "idle");
     this.autoTitle(s, "llm", promptText);
-    // A steer that never hit a boundary becomes the next turn's input — never lost.
-    this.pumpSteers(s);
+    // A steer that never hit a boundary becomes the next turn's input — never
+    // lost. Except on an interrupt (#315): Stop discards pending steers so
+    // nothing auto-runs after it — the harness parks them in the not-sent
+    // tray instead.
+    if (stopReason === "cancelled") s.steers.length = 0;
+    else this.pumpSteers(s);
     /* #309: async helpers close a tick after the turn — their frames stamp
        no turnId, so a client must key them session-wide, not per-turn. */
     if (s.pendingSubagentClose.length) void this.drainSubagentCloses(s);
@@ -1570,7 +1601,9 @@ export class FakeEngine {
     s.turn = undefined;
     this.emit(s, "turn.completed", { turnId, stopReason: "cancelled" });
     if (this.isOpen(s)) this.setState(s, "idle");
-    this.pumpSteers(s);
+    /* #315: pending steers die with a stopped turn — nothing auto-runs
+       after a Stop; the harness parks them in the not-sent tray. */
+    s.steers.length = 0;
   }
 
   /* Read through a method so the check stays honest after a leg's own
@@ -1611,7 +1644,11 @@ export class FakeEngine {
      live-capture shape: turn.completed … subagent.completed ~18s later). */
   private async drainSubagentCloses(s: FakeSession) {
     await this.sleep(s);
-    for (const c of s.pendingSubagentClose.splice(0)) {
+    /* #400: held closes stay parked — only the next turn intake releases
+       them (flushHeldCloses), so a test controls the window. */
+    const closing = s.pendingSubagentClose.filter((c) => !c.hold);
+    s.pendingSubagentClose = s.pendingSubagentClose.filter((c) => c.hold);
+    for (const c of closing) {
       if (s.state === "closed") return;
       this.emit(s, "subagent.completed", {
         subagentId: c.subagentId,
@@ -1622,6 +1659,23 @@ export class FakeEngine {
     }
   }
 
+  /** #400: a held async-helper close (LILOS_DELEGATE_ASYNC_HOLD) flushes
+     when the next turn intake arrives — the test's follow-up prompt is the
+     release signal. Emitted while the session is still idle, before
+     turn.started; a closed session drops them like the tick drain. */
+  private flushHeldCloses(s: FakeSession) {
+    if (s.state === "closed") return;
+    const held = s.pendingSubagentClose.filter((c) => c.hold);
+    s.pendingSubagentClose = s.pendingSubagentClose.filter((c) => !c.hold);
+    for (const c of held)
+      this.emit(s, "subagent.completed", {
+        subagentId: c.subagentId,
+        status: c.status,
+        result: c.result,
+        durationMs: c.durationMs,
+      });
+  }
+
   private drainSteers(s: FakeSession, turnId: string) {
     for (const { text } of s.steers.splice(0))
       this.emit(s, "turn.steered", { turnId, text });
@@ -1630,12 +1684,14 @@ export class FakeEngine {
   private async mcpClient(s: FakeSession, name: string): Promise<McpClient> {
     const existing = s.mcpClients.get(name);
     if (existing) return existing;
-    const spec = (s.mcpServers as { name?: string }[]).find(
+    const spec = (s.mcpServers as { name?: string; type?: string }[]).find(
       (x) => x.name === name,
     );
-    if (!spec || "type" in spec)
-      throw new Error(`session has no stdio mcp server '${name}'`);
-    const client = await startMcpServer(spec as never);
+    if (!spec) throw new Error(`session has no mcp server '${name}'`);
+    const client =
+      spec.type === "http"
+        ? await startMcpHttp(spec as never)
+        : await startMcpServer(spec as never);
     s.mcpClients.set(name, client);
     return client;
   }

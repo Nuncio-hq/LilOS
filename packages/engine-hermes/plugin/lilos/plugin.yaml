@@ -1,0 +1,6 @@
+name: lilos
+version: "0.1.0"
+description: "LilOS agent gateway adapter — registers the gateway's catalog as lilos_* tools, injects the versioned host policy once per LilOS session, and blocks Hermes' own browser inside LilOS sessions. Inert outside LilOS sessions and when the gateway env is unset."
+author: "LilOS"
+provides_hooks:
+  - pre_tool_call

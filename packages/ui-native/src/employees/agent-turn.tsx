@@ -9,7 +9,7 @@ import { approvalSentence } from "./approval-copy";
 import { type PlanAction, PlanCard } from "./plan-card";
 import { PrCard } from "./pr-badges";
 import { StepRow, tool } from "./step-row";
-import { SubagentsCard } from "./subagents";
+import { SubagentsCard, SubagentsLink } from "./subagents";
 import type { AgentEntry, Approval, SubagentRow, ToolStep } from "./types";
 
 /* One conversation turn — the mobile twin of the web AgentTurn/UserTurn
@@ -51,6 +51,7 @@ export function AgentTurn({
   onApprove,
   onDeny,
   onOpenSubagent,
+  onOpenSubagents,
   onPlan,
   onOpenPlan,
 }: {
@@ -61,6 +62,10 @@ export function AgentTurn({
   onDeny: (id: string) => void;
   /** Opens a subagent's sheet (issue #170); absent = rows don't open. */
   onOpenSubagent?: (a: SubagentRow) => void;
+  /** #319: the session's Subagents sheet exists — the turn shows only the
+     one-line link and the rows live there (web: Workbench → Subagents).
+     Absent = the inline card stays. */
+  onOpenSubagents?: () => void;
   /** Approve / Change / Reject on this turn's plan (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
   onOpenPlan?: () => void;
@@ -91,7 +96,10 @@ export function AgentTurn({
           text={e.reasoning}
           seconds={e.thought}
           thinking={!!thinking}
-          waiting={waiting}
+          /* A turn that already measured its reasoning keeps the
+             tappable "Thought for Ns" even while an ask blocks it —
+             "Waiting for you" only stands in for unmeasured thinking. */
+          waiting={waiting && e.thought === undefined}
         />
       )}
       {steps.length > 0 && (
@@ -101,9 +109,12 @@ export function AgentTurn({
           waiting={e.waiting}
         />
       )}
-      {!!e.subagents?.length && (
-        <SubagentsCard agents={e.subagents} onOpen={onOpenSubagent} />
-      )}
+      {!!e.subagents?.length &&
+        (onOpenSubagents ? (
+          <SubagentsLink agents={e.subagents} onOpen={onOpenSubagents} />
+        ) : (
+          <SubagentsCard agents={e.subagents} onOpen={onOpenSubagent} />
+        ))}
       {e.text ? (
         <Prose text={e.text} />
       ) : (
@@ -156,8 +167,10 @@ function Reasoning({
   /** The turn is blocked on an open ask mid-reasoning (#264). */
   waiting?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const shown = open || thinking;
+  /* #320: like the web Reasoning — streaming opens the block by default,
+     the first user tap wins for the rest of the turn. */
+  const [userSet, setUserSet] = useState<boolean>();
+  const shown = userSet ?? thinking;
   return (
     <View className="gap-2">
       <Pressable
@@ -171,10 +184,10 @@ function Reasoning({
                 ? `Thought for ${seconds}s`
                 : "Thought"
         }
-        disabled={thinking || waiting}
+        disabled={waiting}
         onPress={() => {
           ease();
-          setOpen(!open);
+          setUserSet(!shown);
         }}
         hitSlop={6}
         className="flex-row items-center gap-1.5 self-start active:opacity-60"
@@ -194,9 +207,9 @@ function Reasoning({
             {seconds ? `Thought for ${seconds}s` : "Thought"}
           </AppText>
         )}
-        {!thinking && (
+        {!waiting && (
           <Icon
-            name={open ? "chevron.down" : "chevron.right"}
+            name={shown ? "chevron.down" : "chevron.right"}
             size={10}
             weight="bold"
             tone="muted-foreground"
@@ -230,8 +243,10 @@ function Steps({
   /** Kind of ask the live turn is blocked on (#264). */
   waiting?: "approval" | "plan" | "question";
 }) {
-  const [open, setOpen] = useState(false);
-  const shown = open || live;
+  /* #320: a live turn opens the block by default — the first user tap wins
+     for the rest of the turn, so collapsing mid-run stays collapsed. */
+  const [userSet, setUserSet] = useState<boolean>();
+  const shown = userSet ?? live;
   const running = steps.find((s) => s.running);
   const files = new Set(
     steps.filter((s) => s.add !== undefined).map((s) => s.arg),
@@ -244,10 +259,9 @@ function Steps({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${steps.length} steps`}
-        disabled={live}
         onPress={() => {
           ease();
-          setOpen(!open);
+          setUserSet(!shown);
         }}
         className="h-11 flex-row items-center gap-2 px-3.5 active:bg-fill"
       >
@@ -275,14 +289,12 @@ function Steps({
           )}
         </AppText>
         {!shown && <ToolIcons steps={steps} />}
-        {!live && (
-          <Icon
-            name={shown ? "chevron.up" : "chevron.down"}
-            size={11}
-            weight="semibold"
-            tone="muted-foreground"
-          />
-        )}
+        <Icon
+          name={shown ? "chevron.up" : "chevron.down"}
+          size={11}
+          weight="semibold"
+          tone="muted-foreground"
+        />
       </Pressable>
       {shown && (
         <View>

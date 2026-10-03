@@ -23,7 +23,7 @@
   ],
   "scripts": {
     "verify": "bun run verify:fast && bun run test:e2e",
-    "verify:fast": "biome check . && bun run schema:check && bun run typecheck && bun run test:unit && bun run test:nonts && bun run build:prototype",
+    "verify:fast": "biome check . && bun run schema:check && bun run typecheck && bun run test:unit && bun run test:nonts && bun run build:prototype && bun run build:harness && bun run check:mobile-bundle",
     "typecheck": "tsc -b prototype/web packages/contracts packages/ui packages/engine-fake packages/engine-conformance packages/client-runtime packages/engine-hermes packages/host packages/surfaces apps/relay apps/harness apps/lilos apps/web apps/desktop packages/background && tsc --noEmit -p prototype/mobile && tsc --noEmit -p apps/mobile && tsc --noEmit -p packages/ui-native",
     "schema:gen": "bun packages/contracts/scripts/gen-schemas.ts",
     "schema:check": "bun packages/contracts/scripts/gen-schemas.ts --check",
@@ -31,10 +31,12 @@
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
     "build:prototype": "bun run --cwd prototype/web build",
+    "build:harness": "bun apps/harness/scripts/compile.ts apps/desktop/build/lilos-harness-check",
     "app:local": "bun apps/desktop/scripts/local.ts",
     "prototype:dev": "bun run --cwd prototype/web dev",
     "prototype:mobile": "bun run --cwd prototype/mobile dev",
     "mobile:release": "scripts/release/testflight.sh",
+    "check:mobile-bundle": "scripts/ci/check-mobile-release-bundle.sh",
     "prototype:mobile:ios": "bun run --cwd prototype/mobile ios",
     "format": "biome check --write .",
     "live:hermes": "bun packages/engine-hermes/scripts/live-hermes.ts"

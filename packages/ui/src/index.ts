@@ -29,6 +29,10 @@ export {
   isHidden,
   ModelVisibilityDialog,
 } from "./chat/model-visibility-dialog";
+// connect to LilOS (issue #338): first-run step, DM notice, shared state badge
+export { ConnectBadge } from "./connect/connect-badge";
+export { ConnectStep } from "./connect/connect-step";
+export { NotConnectedNotice } from "./connect/not-connected-notice";
 // conversation (shared by the thread panel and Focus — issue #19)
 export { ReplyCards } from "./conversation/cards";
 export { type PlanAction, PlanCard } from "./conversation/plan-card";
@@ -64,6 +68,13 @@ export { FirstRun } from "./first-run/first-run";
 // focus mode
 export { FocusView } from "./focus/focus-view";
 export { SessionUsage } from "./focus/session-usage";
+// diff-line review comments (issue #108)
+export {
+  anchorVisible,
+  diffCommentsMessage,
+  diffSendRoute,
+  useDiffComments,
+} from "./lib/diff-comments";
 // per-conversation composer drafts (issue #103)
 export {
   clearDraft,
@@ -105,7 +116,7 @@ export * from "./types";
 export type { TreeNode } from "./workbench/artifacts";
 export { buildTree, sessionArtifacts, turnSteps } from "./workbench/artifacts";
 export { BackgroundPanel } from "./workbench/background-panel";
-export type { DiffRow } from "./workbench/diff-view";
+export type { DiffCommentsApi, DiffRow } from "./workbench/diff-view";
 export { DiffStat, DiffView, parsePatch } from "./workbench/diff-view";
 export { TreeNodes } from "./workbench/file-tree-nodes";
 export type { LiveBrowserInput, LiveSurfaces } from "./workbench/live";

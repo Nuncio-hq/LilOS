@@ -131,6 +131,10 @@ const SHOTS = path.join(repo, "test-results", "ac-114");
 const ROOT = mkdtempSync(path.join(tmpdir(), "lilos-114-"));
 const repoDir = path.join(ROOT, "lilos-repo-a");
 const plainDir = path.join(ROOT, "lilos-plain-b");
+/* AC-396's own folder — repoDir/plainDir are already attached by earlier
+   tests, and an already-added folder leaves the Add dialog's button
+   disabled. */
+const regDir = path.join(ROOT, "lilos-reg-c");
 const ghFakeDir = path.join(ROOT, "gh-fake");
 const viewPath = path.join(ghFakeDir, "view.json");
 /* fake-gh's forced-failure switch (packages/host/test/fake-gh): "auth" =
@@ -139,6 +143,7 @@ const failPath = path.join(ghFakeDir, "fail");
 const ghLogFile = path.join(ghFakeDir, "gh.log");
 mkdirSync(repoDir, { recursive: true });
 mkdirSync(plainDir, { recursive: true });
+mkdirSync(regDir, { recursive: true });
 mkdirSync(ghFakeDir, { recursive: true });
 const git = (args: string[], cwd = repoDir) =>
   execFileSync("git", args, { cwd, encoding: "utf8" });
@@ -150,6 +155,8 @@ writeFileSync(path.join(repoDir, "b.txt"), "bees\n");
 writeFileSync(path.join(plainDir, "note.txt"), "plain\n");
 git(["add", "."]);
 git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init"]);
+execFileSync("git", ["init", "-b", "trunk"], { cwd: regDir });
+writeFileSync(path.join(regDir, "note.txt"), "reg\n");
 
 /* `gh pr view --json` fixture — OPEN, all checks green, one comment. */
 const PR_VIEW = {
@@ -549,7 +556,9 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
   // No PR for the branch → a plain note, not a crash.
   rmSync(viewPath);
   await page.reload();
-  await expect(page).toHaveURL(FOCUS_URL);
+  /* #319: the picked tab rides the URL — the reload lands back on
+     `?tab=pr`, not the default tab. */
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus\?tab=pr$/);
   await expect(tab(page, /^PR$/)).toBeVisible({ timeout: 30_000 });
   await tab(page, /^PR$/).click();
   await expect(
@@ -665,4 +674,34 @@ test("AC-7 Focus + Workbench compose like the prototype (evidence screenshots)",
     path: `${SHOTS}/ac-7-focus-workbench.png`,
     fullPage: true,
   });
+});
+
+test("AC-396 a turn that starts while you watch re-arms follow after a manual tab pick (#396)", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await dmDefault(page);
+  await pickSessionFolder(page, regDir);
+  await send(page, "say hi");
+  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* Remount with NO live turn: the first live sighting after this mount
+     must be a turn that BEGAN while mounted — that is exactly when
+     follow may re-arm (the mount-time turn must never re-arm it, AC-319). */
+  await expectSettled(turns(page).last(), 60_000);
+  await page.reload();
+  await expect(turns(page)).not.toHaveCount(0, { timeout: 30_000 });
+  // Your own pick holds while the view idles.
+  await tab(page, "Files").click();
+  await expect(tab(page, "Files")).toHaveAttribute("aria-selected", "true");
+  /* An edit turn that starts while you watch re-arms follow — its patch
+     step steals the strip to Changes, so the picked tab yields. The turn
+     parks on its edit approval along the way; keep answering while the
+     strip flips. */
+  await send(page, "Add a release note to the readme");
+  await allowAllWhile(
+    page,
+    expect(tab(page, "Files")).toHaveAttribute("aria-selected", "false", {
+      timeout: 30_000,
+    }),
+  );
 });

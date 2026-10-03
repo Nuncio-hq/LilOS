@@ -1,4 +1,4 @@
-import type { RelayClient } from "@lilos/client-runtime";
+import type { AppClient } from "@lilos/client-runtime";
 import type {
   AppChannel,
   Ask,
@@ -16,6 +16,7 @@ import { atom } from "nanostores";
 import { useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { decide } from "../asks";
+import { $demo, DEMO_MAC } from "../demo/lifecycle";
 import {
   ensureChannelSubscriptions,
   type HomeWire,
@@ -43,7 +44,7 @@ function soon(what: string) {
 }
 
 /** Every read model Home derives from, in one bundle for the model. */
-export function useHomeWire(): { client?: RelayClient; wire: HomeWire } {
+export function useHomeWire(): { client?: AppClient; wire: HomeWire } {
   const client = useStore($client);
   const employees = useStore(client?.employees ?? $noEmployees);
   const channels = useStore(client?.channels ?? $noChannels);
@@ -73,7 +74,7 @@ function useNowMs(): number {
 /* ask/turn events ride `channel.subscribe` only — subscribe every DM channel
    once (idempotent; intent survives reconnects through resubscribeAll). */
 function useLiveChannels(
-  client: RelayClient | undefined,
+  client: AppClient | undefined,
   channels: AppChannel[],
 ): void {
   useEffect(() => {
@@ -82,7 +83,11 @@ function useLiveChannels(
 }
 
 export function Home() {
-  const mac = useStore($connections)[0];
+  const demo = useStore($demo);
+  const paired = useStore($connections)[0];
+  /* In demo there is no Keychain pairing row — the world still has a Mac,
+     the fake DEMO_MAC (same seam Settings uses; never persisted). */
+  const mac = demo ? DEMO_MAC : paired;
   const link = useStore($link);
   const { client, wire } = useHomeWire();
   useLiveChannels(client, wire.channels);

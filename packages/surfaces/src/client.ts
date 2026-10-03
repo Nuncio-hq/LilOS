@@ -1,21 +1,29 @@
 import {
-  type AppPostMessageResult,
-  type AppReadConversationResult,
   type BrowserClickResult,
   type BrowserEvalResult,
   type BrowserOpenResult,
   type BrowserReadResult,
   type BrowserScrollResult,
   type BrowserTypeResult,
+  type ContextResult,
+  type GuideResult,
   LILOS_TOOLS,
-  type PreviewsListResult,
+  type TeamListResult,
   type TerminalReadResult,
   type TerminalRunResult,
   type TerminalWriteResult,
+  type ThreadListResult,
+  type ThreadPostResult,
+  type ThreadPrsResult,
+  type ThreadReadResult,
+  type ThreadSearchResult,
+  type ThreadSetTitleResult,
   TOOL_PATH_PREFIX,
   type ViewerClientMsg,
   ViewerServerMsg,
   type ViewerServerMsg as ViewerServerMsgT,
+  type WorkbenchOpenResult,
+  type WorkbenchPreviewsResult,
 } from "@lilos/contracts/harness";
 import type { SurfaceBackend } from "./backend.js";
 import { SESSION_HEADER } from "./dispatch.js";
@@ -83,13 +91,40 @@ export function toolBackend(opts: ToolClientOptions): SurfaceBackend {
       call("terminal_write", p) as Promise<TerminalWriteResult>,
     terminalRead: (p) =>
       call("terminal_read", p) as Promise<TerminalReadResult>,
-    previewsList: () =>
-      call("previews_list", {}) as Promise<PreviewsListResult>,
-    appPostMessage: (p) =>
-      call("app_post_message", p) as Promise<AppPostMessageResult>,
-    appReadConversation: (p) =>
-      call("app_read_conversation", p) as Promise<AppReadConversationResult>,
+    workbenchPreviews: () =>
+      call("workbench_previews", {}) as Promise<WorkbenchPreviewsResult>,
+    threadPost: (p) => call("thread_post", p) as Promise<ThreadPostResult>,
+    threadRead: (p) => call("thread_read", p) as Promise<ThreadReadResult>,
+    workbenchOpen: (p) =>
+      call("workbench_open", p) as Promise<WorkbenchOpenResult>,
+    context: () => call("context", {}) as Promise<ContextResult>,
+    guide: (p) => call("guide", p) as Promise<GuideResult>,
+    teamList: () => call("team_list", {}) as Promise<TeamListResult>,
+    threadList: () => call("thread_list", {}) as Promise<ThreadListResult>,
+    threadSearch: (p) =>
+      call("thread_search", p) as Promise<ThreadSearchResult>,
+    threadSetTitle: (p) =>
+      call("thread_set_title", p) as Promise<ThreadSetTitleResult>,
+    threadPrs: () => call("thread_prs", {}) as Promise<ThreadPrsResult>,
   };
+}
+
+/** The tool names the caller's session is bound to — `GET /tools`, the same
+    filtered catalog `tools/list` exposes over MCP. */
+export async function listSessionTools(
+  opts: ToolClientOptions,
+): Promise<string[]> {
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const res = await fetchImpl(`${opts.baseUrl}/tools`, {
+    headers: {
+      authorization: `Bearer ${opts.token}`,
+      [SESSION_HEADER]: opts.session,
+    },
+  });
+  if (!res.ok)
+    throw new Error(`GET /tools failed (${res.status}): ${res.statusText}`);
+  const body = (await res.json()) as { tools?: Array<{ name: string }> };
+  return (body.tools ?? []).map((t) => t.name);
 }
 
 /* ------------------------------ viewer client ------------------------------ */

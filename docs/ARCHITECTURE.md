@@ -52,3 +52,23 @@ note. A child killed by a signal reports `killed by SIG<X>` (never
 `code null`); after the restart budget the plain reason is `The engine was
 stopped by the system (<SIG>) — a device security policy may be blocking
 it.` (#95).
+
+## Agent Gateway (#336)
+
+How employees see and use LilOS. The catalog covers root tools
+(`context`, `guide`), `team_*` and `thread_*` DM tools plus `workbench_open`
+(#340), and the `browser_*` / `terminal_*` surfaces from D-#36; approvals
+(#341) and channels (#342) are next.
+
+```
+Relay (company, channels, threads, messages)
+  │
+Harness ── Agent Gateway: tool catalog (contracts) · session → employee/thread
+  │        binding · versioned host policy · MCP over HTTP + `lilos` CLI
+  ├── Hermes ← plugin `lilos` (tools, host policy, blocks its own browser)
+  ├── Codex  ← app-server + MCP (later, #342)
+  └── Claude ← Agent SDK + MCP (later, #342)
+```
+
+A tool call resolves its scope from the session that made it, then goes to
+the relay over the harness' existing connection.

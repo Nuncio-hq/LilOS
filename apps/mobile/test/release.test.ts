@@ -258,6 +258,9 @@ describe("#268 a bare VM ships with zero manual steps", () => {
   // The full happy path on a stubbed bare VM: brew installs pod, both
   // xcodebuilds run with the ASC auth flags + LILOS_XCARGS, the .ipa lands.
   // Darwin-only: the app.json stamp uses BSD `sed -i ''`.
+  // The timed region is one synchronous run of a ~20-process shell pipeline
+  // (~1.2s warm); the 5s default cannot absorb suite-load spawn contention —
+  // scoped timeout like checkpoints.test.ts's 50k-tree test, not a wider one.
   it.runIf(process.platform === "darwin")(
     "auto-installs pod and reaches done on a stubbed bare VM",
     () => {
@@ -306,6 +309,7 @@ exit 0`,
         });
       }
     },
+    15_000,
   );
 });
 
@@ -416,5 +420,35 @@ exit 0`,
     } finally {
       rmSync(stub, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * Issue #397: dev-only tooling must stay out of the release bundle — the
+ * Metro resolver maps the netspy modules to the empty module when dev=false
+ * and the verify chain rebuilds + re-greps the real bundle. Same repo-state
+ * guard as the hygiene tests above: a later change could quietly drop either
+ * leg, and only a bundle grep catches it.
+ */
+describe("#397 release bundles ship no dev tooling", () => {
+  it("metro.config maps the netspy modules to the empty module when dev=false", () => {
+    const metro = read("apps/mobile/metro.config.js");
+    for (const f of ["netspy.ts", "netspy-badge.tsx"])
+      expect(metro).toContain(f);
+    expect(metro).toContain("context.dev");
+    expect(metro).toContain('"empty"');
+  });
+
+  it("verify:fast runs a release-bundle check that greps for netspy markers", () => {
+    const pkg = JSON.parse(read("package.json"));
+    expect(pkg.scripts["verify:fast"]).toContain("check:mobile-bundle");
+    const script = "scripts/ci/check-mobile-release-bundle.sh";
+    expect(pkg.scripts["check:mobile-bundle"]).toContain(script);
+    expect(has(script)).toBe(true);
+    expect(statSync(join(ROOT, script)).mode & 0o111).toBeGreaterThan(0);
+    const text = read(script);
+    expect(text).toContain("export:embed");
+    expect(text).toContain("--dev false");
+    expect(text).toContain("[Nn]etSpy");
   });
 });

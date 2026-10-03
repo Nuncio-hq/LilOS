@@ -1,14 +1,16 @@
-import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { describe, expect, it, vi } from "vitest";
 import {
   callTool,
   SESSION_HEADER,
   SessionSurfaces,
-  toolApiHandler,
   toolBackend,
 } from "../src/index.js";
-import { FakeBrowser, FakePtySpawner, fakeAppOps } from "./fakes.js";
+import {
+  FakeBrowser,
+  FakePtySpawner,
+  fakeAppOps,
+  serveGateway,
+} from "./fakes.js";
 
 function makeScope(overrides: {
   browser?: FakeBrowser;
@@ -25,6 +27,12 @@ function makeScope(overrides: {
     spawnPty: spawner.spawn,
     createBrowser: overrides.createBrowser ?? (async () => browser),
     ...(overrides.appOps ? { appOps: overrides.appOps } : {}),
+    // Production pairs appOps with its session binding — the fake mirrors it.
+    binding: {
+      employeeId: "emp-fake",
+      channelId: "c1",
+      conversationId: "conv1",
+    },
     ...(overrides.browserOpTimeoutMs !== undefined
       ? { browserOpTimeoutMs: overrides.browserOpTimeoutMs }
       : {}),
@@ -107,12 +115,12 @@ describe("AC-5 preview discovery via PTY scan + PREVIEW: marker", () => {
     spawner.last.emit(
       "$ bun run dev\n  ➜  Local:   \u001b[36mhttp://localhost:5173/\u001b[0m\n",
     );
-    expect(await scope.previewsList()).toEqual({
+    expect(await scope.workbenchPreviews()).toEqual({
       previews: [{ url: "http://localhost:5173", via: "scan" }],
     });
     // A silent server announces itself with the marker (spike convention).
     spawner.last.emit("PREVIEW: http://localhost:9000/app\n");
-    const list = await scope.previewsList();
+    const list = await scope.workbenchPreviews();
     expect(list.previews).toContainEqual({
       url: "http://localhost:9000/app",
       via: "marker",
@@ -121,7 +129,7 @@ describe("AC-5 preview discovery via PTY scan + PREVIEW: marker", () => {
     spawner.last.emit(
       "Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/)\n",
     );
-    expect((await scope.previewsList()).previews).toContainEqual({
+    expect((await scope.workbenchPreviews()).previews).toContainEqual({
       url: "http://localhost:8000",
       via: "scan",
     });
@@ -132,48 +140,20 @@ describe("AC-2 one op set: dispatch, HTTP tool API, client", () => {
   async function serve() {
     const appOps = fakeAppOps();
     const { scope, spawner, browser } = makeScope({ appOps });
-    const handler = toolApiHandler(
-      { scopeFor: (s) => (s === "s1" ? scope : null) },
-      {
-        scopeFor: (req) =>
-          req.headers.get("authorization") === "Bearer tok"
-            ? req.headers.get(SESSION_HEADER)
-            : null,
-      },
-    );
-    const server = createServer(async (req, res) => {
-      const chunks: Buffer[] = [];
-      for await (const c of req) chunks.push(c as Buffer);
-      const request = new Request(`http://x${req.url}`, {
-        method: req.method,
-        headers: Object.fromEntries(
-          Object.entries(req.headers).map(([k, v]) => [k, String(v)]),
-        ),
-        body: chunks.length ? Buffer.concat(chunks) : undefined,
-      });
-      const out = await handler(request);
-      if (!out) {
-        res.writeHead(404).end();
-        return;
-      }
-      res.writeHead(out.status, {
-        "content-type": "application/json",
-      });
-      res.end(Buffer.from(await out.arrayBuffer()));
-    }) as Server;
-    await new Promise<void>((r) => server.listen(0, r));
-    const { port } = server.address() as AddressInfo;
+    const api = await serveGateway({
+      sessions: [{ scope, token: "tok" }],
+    });
     return {
-      server,
+      server: api.server,
       spawner,
       browser,
       appOps,
       client: toolBackend({
-        baseUrl: `http://127.0.0.1:${port}`,
+        baseUrl: api.baseUrl,
         token: "tok",
         session: "s1",
       }),
-      url: `http://127.0.0.1:${port}`,
+      url: api.baseUrl,
     };
   }
 
@@ -182,7 +162,11 @@ describe("AC-2 one op set: dispatch, HTTP tool API, client", () => {
     try {
       // terminal_run crosses the wire and reaches the session's real PTY.
       const run = client.terminalRun({ command: "echo ok" });
-      await new Promise((r) => setTimeout(r, 20));
+      // The emitted output must echo this run's write — wait for the HTTP
+      // request to land it in the PTY, not for a wall-clock sleep (#380).
+      await vi.waitFor(() => {
+        expect(spawner.last.written.join("")).toContain("__LILOS_DONE_1__");
+      });
       spawner.last.emit(
         `${spawner.last.written.join("")}ok\n__LILOS_DONE_1__0\n`,
       );
@@ -204,11 +188,11 @@ describe("AC-2 one op set: dispatch, HTTP tool API, client", () => {
       await client.terminalWrite({ data: "x" });
       expect(spawner.last.written.at(-1)).toBe("x");
       expect(await client.terminalRead({})).toHaveProperty("output");
-      expect(await client.previewsList()).toEqual({ previews: [] });
+      expect(await client.workbenchPreviews()).toEqual({ previews: [] });
 
-      const post = await client.appPostMessage({ text: "hello user" });
+      const post = await client.threadPost({ text: "hello user" });
       expect(post.message.text).toBe("hello user");
-      const conv = await client.appReadConversation({});
+      const conv = await client.threadRead({});
       expect(conv.messages.map((m) => m.text)).toContain("hello user");
       expect(appOps.posted).toEqual(["hello user"]);
     } finally {
@@ -226,6 +210,8 @@ describe("AC-2 one op set: dispatch, HTTP tool API, client", () => {
           body,
         });
       expect((await post("/tools/browser_read")).status).toBe(401);
+      // A session id nobody owns resolves to nothing — same 401 as a bad
+      // token (the caller can't tell the two apart on purpose).
       expect(
         (
           await post("/tools/browser_read", {
@@ -233,7 +219,7 @@ describe("AC-2 one op set: dispatch, HTTP tool API, client", () => {
             [SESSION_HEADER]: "nope",
           })
         ).status,
-      ).toBe(404);
+      ).toBe(401);
       expect(
         (
           await post("/tools/not_a_tool", {

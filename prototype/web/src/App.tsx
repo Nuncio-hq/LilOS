@@ -22,6 +22,7 @@ import {
   type Folder,
   type AttachedFile,
   type Channel,
+  type ConnectionState,
   type EmpBadge,
   type Employee,
   type EmployeeEditSave,
@@ -48,6 +49,7 @@ import {
   type GitCommit,
   type CheckRun,
   type PullRequest,
+  type ProfileConnection,
   type Thread,
   type TicketRow,
   type Work,
@@ -58,6 +60,9 @@ import {
   type DetectedEditor,
   type WsPick,
   type Workspace,
+  type ShipBar,
+  type ShipHandlers,
+  type ShipError,
   NO_WS,
   RightPanel,
   Sidebar,
@@ -408,6 +413,18 @@ const STATUS: Record<PreviewScenario, StatusComponent[]> = {
     { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
     { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].id} · responding` },
   ],
+  "all-connected": [
+    { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
+    { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
+    { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
+    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].id} · responding` },
+  ],
+  "connect-updating": [
+    { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
+    { id: "harness", label: "Harness", state: "ok", reason: "Running · 3 sessions" },
+    { id: "engine", label: "Engine", state: "ok", reason: "Hermes 0.9 · ready" },
+    { id: "model", label: "Model", state: "ok", reason: `${MODELS[1].id} · responding` },
+  ],
   "first-run": [
     { id: "relay", label: "Relay", state: "ok", reason: "Connected · local relay on this Mac" },
     { id: "harness", label: "Harness", state: "ok", reason: "Running · 1 session" },
@@ -463,6 +480,28 @@ const STATUS: Record<PreviewScenario, StatusComponent[]> = {
 const SESSION_ALERTS: Partial<Record<PreviewScenario, SessionAlert>> = {
   "model-error": { kind: "model", text: `Model error · ${MODELS[0].id}: provider returned 429 (rate limited)`, retry: true },
   sleep: { kind: "sleep", text: "Interrupted — the Mac slept mid-turn. The reply may be incomplete.", retry: true },
+}
+
+/* Per-profile LilOS connection seed per scenario (issue #338): which hired
+   profiles may see the app. Connect walks a profile through updating →
+   connected in the mock; the real plugin wiring is #339. */
+const connectSeed = (s: PreviewScenario): Record<string, ProfileConnection> => {
+  const allOn = s === "all-connected"
+  return {
+    builder: { profile: "builder", state: "connected" },
+    reviewer: {
+      profile: "reviewer",
+      state: s === "connect-updating" ? "updating" : allOn ? "connected" : "not-connected",
+    },
+    marketer: allOn
+      ? { profile: "marketer", state: "connected" }
+      : {
+          profile: "marketer",
+          state: "failed",
+          reason: "Needs Hermes 0.9.2 — run `hermes update`, then retry.",
+        },
+    default: { profile: "default", state: allOn ? "connected" : "not-connected" },
+  }
 }
 
 // Canned turn used by the prototype's fake engine. Real app: Hermes events over /api/ws.
@@ -554,6 +593,19 @@ function scriptFor(empId: string, prompt: string, followUp = false, branch?: str
       text: CODEBLOCKS_SAMPLE,
     }
   }
+  /* Diff-line review comments (#108/#364): Oscar's Send to agent posts one
+     message listing each pinned comment — answer to the notes he left. */
+  if (q.startsWith("Review comments on the diff:")) {
+    const notes = [...q.matchAll(/^[\w./-]+:\d+(?:-\d+)?$/gm)].length
+    return {
+      reasoning: `Oscar pinned ${notes} comment${notes === 1 ? "" : "s"} on the diff in Changes. Address each one, then confirm.`,
+      steps: [
+        { tool: "read_file", input: { path: "packages/contracts/src/envelope.ts" }, output: "58 lines" },
+        { tool: "patch", input: { path: "packages/contracts/src/envelope.ts" }, output: "+2 lines", diff: { path: "packages/contracts/src/envelope.ts", status: "modified", add: 2, del: 1, patch: "@@ -2,3 +2,4 @@\n export const Envelope = z.object({\n-  seq: z.number().int().nonnegative(),\n+  seq: z.number().int().positive(),\n+  // per-connection, strictly increasing\n   kind: z.string()," } },
+      ],
+      text: `Read the ${notes} pinned comment${notes === 1 ? "" : "s"} — all fair. I addressed them:\n\n- \`seq\` is now \`int().positive()\` with a comment noting it's per-connection\n- left the rest as-is, the naming matches contracts' conventions\n\nThe markers on the diff stay until the patch moves.`,
+    }
+  }
   // Issue #31: a prompt carrying images answers about them first — the reply names the
   // attachment (name, type, bytes) so Oscar can see the image reached the engine.
   if (images?.length) {
@@ -581,6 +633,16 @@ function scriptFor(empId: string, prompt: string, followUp = false, branch?: str
         checks: CHECKS.map((name) => ({ name, status: "pending" as const })),
         comments: [{ from: empId, time: nowTime(), monitor: true, text: "I'll fix CI failures and address review comments from people with write access in this session. Comments containing \"(aside)\" are skipped." }],
       },
+    }
+  }
+  /* Ship bar Suggest (issue #107 AC-2): "Write a one-line git commit
+     message for these changed files…" is a normal user message — answer a
+     bare one-liner so the first non-empty line fills the box. */
+  if (/\bcommit message\b/i.test(q)) {
+    return {
+      reasoning: "A one-line commit message for the checked files — imperative mood, under 72 chars, then nothing else.",
+      steps: [],
+      text: "feat: add the staged widget changes",
     }
   }
   if (branch && EDIT_ASK.test(q)) {
@@ -725,6 +787,14 @@ export default function App() {
      realApp toggle hides demo-only chrome, and the surfaces driven by a scenario. */
   const [scenario, setScenario] = useState<PreviewScenario>("normal")
   const [realApp, setRealApp] = useState(false)
+  /* #338 mock: per-profile LilOS connection state; the hire dialog's
+     "Connect to LilOS" checkbox (checked by default) feeds the same map.
+     ?connectProfiles=empty shows the connect step's zero-profiles variant. */
+  const [connections, setConnections] = useState<Record<string, ProfileConnection>>(() => connectSeed("normal"))
+  const [hireConnect, setHireConnect] = useState(true)
+  const [connectListEmpty] = useState(
+    () => new URLSearchParams(location.search).get("connectProfiles") === "empty",
+  )
   /* Live status (#33): ?statusRelay=ws://…&statusToken=… swaps the scenario
      status mock for the real system.status poll from the relay. */
   const liveStatus = useLiveStatus()
@@ -805,6 +875,7 @@ export default function App() {
   const [alertOff, setAlertOff] = useState(0)
   const pickScenario = (id: PreviewScenario) => {
     setAlertOff(0)
+    setConnections(connectSeed(id))
     if (id === "first-run") setFirstDone(false)
     if (id === "profile-missing")
       setEmployees((es) => es.map((e) => (e.id === "marketer" ? { ...e, profile: "ghost" } : e)))
@@ -818,6 +889,54 @@ export default function App() {
      human so components keying on VIEWER_ID resolve the same person. */
   const human: HumanFn = (id) =>
     id === "user" || id === "oscar" ? me : HUMANS[id]
+
+  /* #338: connList is Settings → Engine's row list — the profiles of the
+     employees the scenario shows, joined with connection state. connOf is the
+     DM header notice's bundle; connectProfile/connectAll walk updating →
+     connected on a timer, like the real plugin update will. */
+  const connectProfile = (profile: string) => {
+    setConnections((m) => ({ ...m, [profile]: { ...m[profile], profile, state: "updating", reason: undefined } }))
+    setTimeout(() => {
+      setConnections((m) =>
+        m[profile]?.state === "updating" ? { ...m, [profile]: { profile, state: "connected" } } : m,
+      )
+    }, 1100)
+  }
+  const connList = useMemo<ProfileConnection[]>(
+    () =>
+      (scenario === "first-run" ? [DEFAULT_EMP] : employees).map((e) => ({
+        employee: e.name,
+        ...(connections[e.profile ?? e.id] ?? { profile: e.profile ?? e.id, state: "not-connected" as ConnectionState }),
+      })),
+    [scenario, employees, connections],
+  )
+  const connOf = (profile: string | undefined) => {
+    if (!profile) return undefined
+    const c = connections[profile]
+    return {
+      state: c?.state ?? ("not-connected" as ConnectionState),
+      reason: c?.reason,
+      onConnect: () => connectProfile(profile),
+    }
+  }
+  const connectAll = async () => {
+    const pending = connList.filter((p) => p.state !== "connected").map((p) => p.profile)
+    setConnections((m) => {
+      const n = { ...m }
+      for (const p of pending) n[p] = { profile: p, state: "updating" }
+      return n
+    })
+    await new Promise((r) => setTimeout(r, 1200))
+    setConnections((m) => {
+      const n = { ...m }
+      for (const p of pending) n[p] = { profile: p, state: "connected" }
+      return n
+    })
+  }
+  const openHire = (d: HireDraft) => {
+    setHireConnect(true)
+    setHireOpen(d)
+  }
   /* ⌘, / Ctrl+, opens Settings from anywhere (issue #139, AC-1). */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1389,6 +1508,100 @@ export default function App() {
     mapRoot(feedKey, root.id, (t) => (t.pr ? { ...t, pr: { ...t.pr, status: "merged", merged: { by: "Oscar", at: nowTime(), sha: hex() } }, todos: t.todos?.map((x) => (x.content === "Open PR for Reviewer" ? { ...x, status: "completed" } : x)) } : t))
     say(`Merged #${root.thread?.pr?.number} into ${root.thread?.pr?.base} · gh pr merge --${method}`)
   }
+  /* Ship bar (issue #107/#359): the commit → push → Create PR flow on mock
+     data. Commit moves the checked diff steps into a commit step (the
+     Changes list re-derives empty, the Commits section gains the commit);
+     push records the upstream label; Create PR lands a mock `t.pr` and —
+     when the default branch required a branch name — carries the thread
+     onto it. `shipScenario` drives the plain error states + the
+     not-a-git-repo case. */
+  const [shipScenario, setShipScenario] = useState<Record<string, string>>({})
+  const [shipPushed, setShipPushed] = useState<Record<string, string>>({})
+  const shipFail = (reason: ShipError["reason"], detail: string): never => {
+    const e = new Error(detail) as Error & { data?: { reason: ShipError["reason"]; detail: string } }
+    e.data = { reason, detail }
+    throw e
+  }
+  const shipFor = (root: Extract<Msg, { kind: "msg" }>): Partial<ShipBar> & ShipHandlers => {
+    const scen = shipScenario[root.id] ?? "ok"
+    const w = workOf(root)
+    const branch = () => w?.branch || "main"
+    const pushed = shipPushed[root.id]
+    return {
+      isRepo: scen !== "not-a-repo",
+      branch: branch(),
+      defaultBranch: "main",
+      remote: "git@github.com:acme/lilos.git",
+      upstream: pushed ?? null,
+      accessory: (
+        <span className="ml-auto flex items-center gap-2">
+          <select
+            data-shipscenario
+            className="h-6 rounded-md border bg-background px-1 text-[10px] text-muted-foreground"
+            value={scen}
+            onChange={(e) => setShipScenario((s) => ({ ...s, [root.id]: e.target.value }))}
+          >
+            <option value="ok">git+gh ok</option>
+            <option value="push-rejected">push rejected</option>
+            <option value="pull-diverged">pull diverged</option>
+            <option value="no-remote">no remote</option>
+            <option value="signed-out">gh signed out</option>
+            <option value="not-a-repo">not a git repo</option>
+          </select>
+        </span>
+      ),
+      onCommit: async (paths, msg) => {
+        if (scen === "signed-out") shipFail("auth", "fatal: could not read Username for 'https://github.com': terminal prompts disabled")
+        mapRoot(feedKey, root.id, (t) => ({
+          ...t,
+          replies: t.replies.map((r) => {
+            if (!r.steps?.length) return r
+            const picked = r.steps.filter((s) => s.diff && paths.includes(s.diff.path))
+            if (!picked.length) return r
+            const rest = r.steps.filter((s) => !s.diff || !paths.includes(s.diff.path))
+            const files = picked.map((s) => ({ path: s.diff!.path, status: s.diff!.status, add: s.diff!.add, del: s.diff!.del }))
+            const h = hex()
+            return { ...r, steps: [...rest, { tool: "git.commit", input: { message: msg, files: paths }, output: `[${branch()} ${h}] ${msg}\n ${files.length} file(s) changed`, commit: { hash: h, message: msg, files } }] }
+          }),
+        }))
+        say(`Committed ${paths.length} file(s) on ${branch()}`)
+      },
+      onPush: async () => {
+        if (scen === "push-rejected" || scen === "pull-diverged") shipFail("rejected", `To github.com:acme/lilos.git\n ! [rejected]        ${branch()} -> ${branch()} (fetch first)\nerror: failed to push some refs to 'github.com:acme/lilos.git'`)
+        if (scen === "no-remote") shipFail("no-remote", "fatal: No configured push destination.")
+        if (scen === "signed-out") shipFail("auth", "fatal: could not read Username for 'https://github.com': terminal prompts disabled")
+        setShipPushed((s) => ({ ...s, [root.id]: `origin/${branch()}` }))
+        say(`Pushed ${branch()} to origin`)
+      },
+      onPull: async () => {
+        /* The pull resolves the rejected scenario — the remote moved once,
+           not forever; a diverged scenario fails plainly (issue #393 AC-5). */
+        if (scen === "pull-diverged") shipFail("diverged", "fatal: Not possible to fast-forward, aborting.")
+        if (scen === "no-remote") shipFail("no-remote", "fatal: No configured pull destination.")
+        if (scen === "signed-out") shipFail("auth", "fatal: could not read Username for 'https://github.com': terminal prompts disabled")
+        if (scen === "push-rejected") setShipScenario((s) => ({ ...s, [root.id]: "ok" }))
+        say(scen === "push-rejected" ? `Pulled — fast-forwarded to origin/${branch()}` : "Already up to date")
+      },
+      onCreatePr: async (p) => {
+        if (scen === "push-rejected") shipFail("rejected", `To github.com:acme/lilos.git\n ! [rejected]        ${branch()} -> ${branch()} (non-fast-forward)`)
+        if (scen === "no-remote") shipFail("no-remote", "fatal: No configured push destination.")
+        if (scen === "signed-out") shipFail("unauthenticated", "To get started with GitHub CLI, please run: gh auth login")
+        const head = p.branch ?? branch()
+        if (p.branch) setStarted((s) => (s[root.id] ? { ...s, [root.id]: { ...s[root.id], branch: p.branch! } } : s))
+        setShipPushed((s) => ({ ...s, [root.id]: `origin/${head}` }))
+        mapRoot(feedKey, root.id, (t) => ({
+          ...t,
+          branch: head,
+          pr: {
+            number: 8, repo: "acme/lilos", title: p.title, body: p.body,
+            status: "open", mergeable: "mergeable", author: "oscar",
+            base: "main", head, opened: "just now", checks: [], comments: [],
+          },
+        }))
+        say(`Opened PR #8 on acme/lilos — ${p.title}`)
+      },
+    }
+  }
   const retry = (root: Extract<Msg, { kind: "msg" }>, empId: string) => {
     const lastAsk = [...(root.thread?.replies ?? [])].reverse().find((r) => !emp(r.from))?.text ?? root.text
     runTurn(feedKey, root.id, empId, lastAsk)
@@ -1412,6 +1625,12 @@ export default function App() {
     }
     if (profile === null && liveProfiles === null) profileId = id
     setEmployees((es) => [...es, { id, name: d.name, role: d.role, status: "online", profile: profileId, model: d.model, now: "just hired · idle", instructions: d.instructions, respondTo: "me" }])
+    /* #338: the hire dialog's "Connect to LilOS" checkbox (on by default)
+       lands the new profile connected or left plain. */
+    setConnections((m) => ({
+      ...m,
+      [profileId]: { profile: profileId, state: hireConnect ? "connected" : "not-connected" },
+    }))
     chs.forEach((c) => { const ch = PROJECTS.flatMap((p) => p.channels).find((x) => x.id === c); if (ch && !ch.employees.includes(id)) ch.employees.push(id) })
     setHireOpen(null)
     if (view.kind === "channel" && view.id === "general") setResolved((r) => ({ ...r, g2: `Hired ${d.name}` }))
@@ -1562,7 +1781,7 @@ export default function App() {
         onGoDM={goDM}
         onOpenTickets={() => { setFocus(false); setPanelTab("tickets"); setPanelOpen(true) }}
         onAddFolder={() => setAddFolderOpen(true)}
-        onHire={() => setHireOpen(TEMPLATES[0])}
+        onHire={() => openHire(TEMPLATES[0])}
       />
 
       <div className="flex min-h-0 min-w-0">
@@ -1587,6 +1806,7 @@ export default function App() {
           browser={realSurfaces ? undefined : threadBrowser(openThread.id)}
           initialTab={focusTab}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
+          ship={shipFor(openThread)}
         />
       ) : (
         <div className={cn("grid min-h-0 min-w-0 grid-cols-1 lg:gap-[10px]", panelOpen && "xl:grid-cols-[minmax(0,1fr)_420px]")}>
@@ -1594,6 +1814,7 @@ export default function App() {
           {channel.dm && emp(view.id) ? (
             <EmployeeHome
               e={emp(view.id)!} feed={shownFeed} threadId={threadId} emp={emp} human={human}
+              connection={connOf(emp(view.id)?.profile)}
               onNav={() => setNavOpen(true)} onProfile={() => showEmp(view.id)} onOpen={showThread}
               onSend={sendTop} lastSent={lastSentTop} panelOpen={panelOpen} onPanel={() => setPanelOpen(true)} folders={folders}
               pick={wsPicks[view.id] ?? NO_WS} setPick={(p) => setWsPicks((w) => ({ ...w, [view.id]: p }))} onAddFolder={() => setAddFolderOpen(true)}
@@ -1629,7 +1850,7 @@ export default function App() {
                   feed={feed} emp={emp} human={human} threadId={threadId} resolved={resolved}
                   emptyText={`No messages in #${channel.name} yet.`} workOf={workOf}
                   onOpenThread={showThread}
-                  onReviewHire={(draft) => setHireOpen(draft)}
+                  onReviewHire={(draft) => openHire(draft)}
                   onRejectHire={(id) => setResolved({ ...resolved, [id]: "Hire declined" })}
                   onSay={say}
                 />
@@ -1680,6 +1901,7 @@ export default function App() {
         <HireDialog
           initial={hireOpen} templates={TEMPLATES} profiles={PROFILES} models={MODEL_OPTS}
           allChannels={PROJECTS.flatMap((p) => p.channels.map((c) => ({ id: c.id, label: `${p.name} / #${c.name}` })))}
+          connect={{ checked: hireConnect, onChange: setHireConnect }}
           onClose={() => setHireOpen(null)} onHire={hire} usedProfiles={employees.map((e) => e.profile)}
         />
       )}
@@ -1690,6 +1912,7 @@ export default function App() {
           approvals={{ policy, onPolicy: setPolicy, access, onAccess: setAccess }}
           editors={{ detected: DETECTED_EDITORS, defaultId: defaultEditor, onDefault: setDefaultEditor }}
           models={canModels ? { models: MODEL_OPTS, providers: PROVIDERS, visibility, onVisibility: saveVisibility } : undefined}
+          engine={{ name: engineName ?? "Hermes", version: "0.9", profiles: connList, onConnect: connectProfile }}
           status={{
             components: liveStatus?.components ?? STATUS[scenario],
             diagnostics: liveStatus?.diagnostics ?? STATUS[scenario].map((c) => `${c.id}: ${c.state} — ${c.reason}`).join("\n"),
@@ -1718,6 +1941,7 @@ export default function App() {
         <FirstRun
           employee={DEFAULT_EMP}
           identity={{ name: me.name, company }}
+          connect={{ profiles: connectListEmpty ? [] : connList, onConnect: connectAll }}
           onOpenDM={(id) => {
             setFirstDone(true)
             if (id.name) setMe((m) => ({ ...m, name: id.name }))

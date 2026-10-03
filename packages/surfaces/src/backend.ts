@@ -1,18 +1,33 @@
+import type { WorkbenchOpenTarget } from "@lilos/contracts/app";
 import type {
-  AppPostMessageResult,
-  AppReadConversationResult,
   BrowserClickResult,
   BrowserEvalResult,
   BrowserOpenResult,
   BrowserReadResult,
   BrowserScrollResult,
   BrowserTypeResult,
-  PreviewsListResult,
+  ContextResult,
+  GuideParams,
+  GuideResult,
   PreviewTarget,
+  SessionBinding,
+  TeamListResult,
   TerminalReadResult,
   TerminalRunResult,
   TerminalWriteResult,
+  ThreadListResult,
+  ThreadPostResult,
+  ThreadPrsResult,
+  ThreadReadParams,
+  ThreadReadResult,
+  ThreadSearchParams,
+  ThreadSearchResult,
+  ThreadSetTitleParams,
+  ThreadSetTitleResult,
+  ToolArea,
   ViewerBrowserInputEvent,
+  WorkbenchOpenResult,
+  WorkbenchPreviewsResult,
 } from "@lilos/contracts/harness";
 
 /**
@@ -41,11 +56,17 @@ export interface SurfaceBackend {
   }): Promise<TerminalRunResult>;
   terminalWrite(p: { data: string }): Promise<TerminalWriteResult>;
   terminalRead(p: { tailBytes?: number }): Promise<TerminalReadResult>;
-  previewsList(): Promise<PreviewsListResult>;
-  appPostMessage(p: { text: string }): Promise<AppPostMessageResult>;
-  appReadConversation(p: {
-    afterSeq?: number;
-  }): Promise<AppReadConversationResult>;
+  workbenchPreviews(): Promise<WorkbenchPreviewsResult>;
+  workbenchOpen(p: WorkbenchOpenTarget): Promise<WorkbenchOpenResult>;
+  context(): Promise<ContextResult>;
+  guide(p: GuideParams): Promise<GuideResult>;
+  teamList(): Promise<TeamListResult>;
+  threadPost(p: { text: string }): Promise<ThreadPostResult>;
+  threadRead(p: ThreadReadParams): Promise<ThreadReadResult>;
+  threadList(): Promise<ThreadListResult>;
+  threadSearch(p: ThreadSearchParams): Promise<ThreadSearchResult>;
+  threadSetTitle(p: ThreadSetTitleParams): Promise<ThreadSetTitleResult>;
+  threadPrs(): Promise<ThreadPrsResult>;
 }
 
 /**
@@ -55,6 +76,11 @@ export interface SurfaceBackend {
  */
 export interface ViewerScope extends SurfaceBackend {
   readonly session: string;
+  /** The tool areas this session really has — `tools/list` and the host
+      policy render only these (issue #337 AC-2/AC-5). */
+  readonly areas: ReadonlySet<ToolArea>;
+  /** Who/what the session is bound to (employee, channel, conversation). */
+  readonly binding?: SessionBinding;
   /** Page-space input (viewer takeover) — CDP Input.dispatch* territory. */
   browserInput(evt: ViewerBrowserInputEvent): void;
   terminalInput(data: string): void;

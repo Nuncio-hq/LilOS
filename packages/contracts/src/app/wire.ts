@@ -31,6 +31,7 @@ import {
   RecentFolder,
   RespondTo,
   Timestamp,
+  WorkbenchOpenTarget,
   WorkspaceIntent,
 } from "./domain";
 import { APP_PROTOCOL_VERSION } from "./version";
@@ -139,6 +140,12 @@ export const AppMethod = z.enum([
   "messages.post",
   /* Host-only: stamp the pre-turn folder checkpoint onto a user message. */
   "messages.setCheckpoint",
+  /* #315 waiting tray: remove a still-waiting user message (the engine
+     never gets it), park a queued one in the not-sent tray (host-only —
+     the harness's Stop drain calls it), and un-park it to send. */
+  "messages.remove",
+  "messages.drop",
+  "messages.send",
   "messages.search",
   "attachments.get",
   "channel.subscribe",
@@ -214,6 +221,12 @@ export const AppMethod = z.enum([
   "push.register",
   "push.unregister",
   "push.visibility",
+  /* Host-only (#340): the session's `workbench_open` tool asks the app to
+     open the conversation's Workbench on a target — the relay fans
+     `workbench.opened` out on the channel. It rides the app wire, never the
+     engine event stream: a synthesized event seq would poison `events.since`
+     replay and the push watermark. */
+  "workbench.open",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -476,6 +489,9 @@ export const MessagesListParams = z.object({
   limit: z.int().min(1).optional(),
   /** #134: include the hidden rewound tail (audit reads); default hides it. */
   includeRewound: z.boolean().optional(),
+  /** #315: include Stop-parked `dropped` rows (the not-sent tray reads them);
+      default hides them alongside `removed` rows, which never surface. */
+  includeDropped: z.boolean().optional(),
 });
 export type MessagesListParams = z.infer<typeof MessagesListParams>;
 export const MessagesListResult = z.object({
@@ -505,6 +521,36 @@ export const MessagesPostParams = z.object({
 });
 export type MessagesPostParams = z.infer<typeof MessagesPostParams>;
 export const MessageResult = z.object({ message: AppMessage });
+
+/**
+ * #315: the waiting tray's Remove (and a not-sent item's Remove): marks the
+ * message `removed` — hidden everywhere and never delivered to the engine.
+ * The relay refuses when the engine already consumed it (deliveredSeq covers
+ * it and it isn't parked) — the action isn't offered client-side then either.
+ */
+export const MessagesRemoveParams = z.strictObject({
+  messageId: z.string().min(1),
+});
+export type MessagesRemoveParams = z.infer<typeof MessagesRemoveParams>;
+
+/**
+ * #315: host-only — the harness parks a still-waiting message in the
+ * not-sent tray on ■ Stop (`dropped` — hidden, `listPendingTurns` skips it,
+ * `messages.send` un-parks). Idempotent.
+ */
+export const MessagesDropParams = z.strictObject({
+  messageId: z.string().min(1),
+});
+export type MessagesDropParams = z.infer<typeof MessagesDropParams>;
+
+/**
+ * #315: the not-sent tray's Send — clears `dropped`; the harness re-delivers
+ * it like a fresh message. Only valid on a parked row.
+ */
+export const MessagesSendParams = z.strictObject({
+  messageId: z.string().min(1),
+});
+export type MessagesSendParams = z.infer<typeof MessagesSendParams>;
 
 /**
  * Full-text search over the relay's stored messages (issue #138). Search
@@ -707,6 +753,33 @@ export type AttachmentsGetResult = z.infer<typeof AttachmentsGetResult>;
 
 /* ------------------------- system status (#33) ------------------------- */
 
+/* Per-profile LilOS connection state (#339, agent gateway #336): "connected"
+   = the profile's lilos plugin is enabled; "not-connected" = the one-time
+   approval was never given or was declined; "updating" = a connect or plugin
+   update is in flight; "failed" = the last attempt failed and `reason`
+   carries the plain why. LilOS only enables/disables the plugin — it never
+   deletes a profile. `packages/ui/src/types.ts` mirrors this shape. */
+export const ConnectionState = z.enum([
+  "connected",
+  "not-connected",
+  "updating",
+  "failed",
+]);
+export type ConnectionState = z.infer<typeof ConnectionState>;
+
+/** One profile's connection row — the Connect step and Settings → Engine
+    both read this off `system.status`. */
+export const ProfileConnection = z.object({
+  /** Engine profile id (`agents.*` handle). */
+  profile: z.string().min(1),
+  /** Display name of the employee hired on this profile, when there is one. */
+  employee: z.string().optional(),
+  state: ConnectionState,
+  /** Plain reason shown when state is "failed". */
+  reason: z.string().optional(),
+});
+export type ProfileConnection = z.infer<typeof ProfileConnection>;
+
 /** The chain a session needs, mirrored by the status UI's row ids. */
 export const StatusComponentId = z.enum([
   "relay",
@@ -782,6 +855,9 @@ export const SystemStatusResult = z.object({
     })
     .optional(),
   mismatch: StatusMismatch.optional(),
+  /** Per-profile LilOS connection rows (#339) — absent when the host never
+     reported them (engine without connect support, older harness). */
+  connect: z.array(ProfileConnection).optional(),
   logs: z
     .object({
       relay: z.array(z.string()),
@@ -852,6 +928,8 @@ export const HarnessStatusReport = z.object({
   probedAt: Timestamp.optional(),
   /** Recent harness log lines (newest last). */
   logTail: z.array(z.string()).max(200).optional(),
+  /** Per-profile Connect rows (#339) — served verbatim on `system.status`. */
+  connect: z.array(ProfileConnection).optional(),
 });
 export type HarnessStatusReport = z.infer<typeof HarnessStatusReport>;
 
@@ -1076,6 +1154,9 @@ export type ConversationsPrsResult = z.infer<typeof ConversationsPrsResult>;
 
 export const AppEventMethod = z.enum([
   "message.created",
+  /* #315: a message's dropped/removed flags changed — subscribers replace
+     their copy (it does not re-fire `message.created`, seq is unchanged). */
+  "message.changed",
   "channel.snapshot",
   "channel.synced",
   "conversation.updated",
@@ -1093,6 +1174,7 @@ export const AppEventMethod = z.enum([
   "devices.changed",
   "host.changed",
   "engine.event",
+  "workbench.opened",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 
@@ -1101,6 +1183,13 @@ export const MessageCreatedEvent = z.object({
   message: AppMessage,
 });
 export type MessageCreatedEvent = z.infer<typeof MessageCreatedEvent>;
+
+/** #315: `dropped`/`removed` flipped on an existing row — replace it. */
+export const MessageChangedEvent = z.object({
+  channelId: z.string().min(1),
+  message: AppMessage,
+});
+export type MessageChangedEvent = z.infer<typeof MessageChangedEvent>;
 
 export const ChannelSnapshotEvent = z.object({
   channelId: z.string().min(1),
@@ -1215,6 +1304,29 @@ export const EngineEventEvent = z.object({
   event: EngineEvent,
 });
 export type EngineEventEvent = z.infer<typeof EngineEventEvent>;
+
+/**
+ * `workbench.open` params (#340) — host-only like `engine.event`: the harness
+ * turns a session's `workbench_open` tool call into this method; the relay
+ * resolves the conversation's channel and emits `workbench.opened`.
+ */
+export const WorkbenchOpenParams = z.strictObject({
+  conversationId: z.string().min(1),
+  target: WorkbenchOpenTarget,
+});
+export type WorkbenchOpenParams = z.infer<typeof WorkbenchOpenParams>;
+
+/**
+ * An employee asked to show something in its DM's Workbench (#340): desktop
+ * opens the panel on the target's tab, the phone renders a tappable card in
+ * the thread that opens the same view.
+ */
+export const WorkbenchOpenedEvent = z.object({
+  channelId: z.string().min(1),
+  conversationId: z.string().min(1),
+  target: WorkbenchOpenTarget,
+});
+export type WorkbenchOpenedEvent = z.infer<typeof WorkbenchOpenedEvent>;
 
 /* -------------------------------- settings ------------------------------- */
 
