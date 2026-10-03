@@ -587,6 +587,77 @@ export const CORE_SCENARIOS: Scenario[] = [
       );
     },
   },
+  {
+    /* #346 AC-1/AC-2: suspend is close-not-stop — the live session closes
+       (`session.state` closed lands, background work dies exactly like
+       session.stop) but the engine keeps what resume needs: the next prompt
+       reopens the SAME session id and runs the turn, memory intact. A
+       `session.stop` after reopening still ends it for good. */
+    id: "session.suspend closes the session but a prompt reopens it",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      await h.request(
+        "prompt",
+        textPrompt(sessionId, "remember the codeword LILOS_SUSPEND_1"),
+      );
+      const suspended = (await h.request("session.suspend", {
+        sessionId,
+      })) as { suspended: boolean };
+      assert(suspended.suspended === true, "suspend reports suspended:true");
+      await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) => e.type === "session.state" && e.payload.state === "closed",
+        ),
+      );
+      /* AC-2: the prompt reopens the session under the same id and the
+         turn runs — a resumed session re-announces session.started. */
+      const probe = (await h.request(
+        "prompt",
+        textPrompt(sessionId, "recall: what do you remember?"),
+      )) as PromptResult;
+      assert(
+        !!probe.turnId,
+        "a prompt on a suspended session reopens it and runs the turn",
+      );
+      const starts = h.events.filter(
+        (e) => e.type === "session.started" && e.sessionId === sessionId,
+      );
+      assert(
+        starts.length === 2,
+        `resume re-announces session.started under the same id, got ${starts.length}`,
+      );
+      /* Memory survives the close — engine-fake's `recall:` leg is the only
+         deterministic echo; a live engine's recall isn't scripted. */
+      const engineName = ((await h.request("describe")) as DescribeResultShape)
+        .name;
+      if (engineName === "engine-fake") {
+        const recalled = h.events
+          .filter(
+            (e): e is Extract<EngineEvent, { type: "turn.delta" }> =>
+              e.type === "turn.delta" &&
+              e.payload.stream === "text" &&
+              e.payload.turnId === probe.turnId,
+          )
+          .map((e) => e.payload.delta)
+          .join("");
+        assert(
+          recalled.includes("LILOS_SUSPEND_1"),
+          `turn 1 is still remembered after resume, got: ${recalled.slice(0, 200)}`,
+        );
+      }
+      /* session.stop keeps meaning end-for-good — even on a reopened session. */
+      await h.request("session.stop", { sessionId });
+      assert(
+        (await errorCode(h, "prompt", textPrompt(sessionId, READ_PROMPT))) ===
+          -32003,
+        "prompt on a stopped session -> -32003",
+      );
+    },
+  },
 ];
 
 /**

@@ -30,6 +30,7 @@ import {
   type SessionStartParams,
   type SessionSteerParams,
   type SessionStopParams,
+  type SessionSuspendParams,
   type StopReason,
   SUBAGENTS_CAPABILITY,
   type Usage,
@@ -189,6 +190,8 @@ export class HermesEngine {
         return this.eventsSince(parsed.data as EventsSinceParams);
       case "session.stop":
         return this.sessionStop(parsed.data as SessionStopParams);
+      case "session.suspend":
+        return this.sessionSuspend(parsed.data as SessionSuspendParams);
       case "session.steer":
         return this.sessionSteer(parsed.data as SessionSteerParams);
       case "session.rewind":
@@ -499,7 +502,13 @@ export class HermesEngine {
   }
 
   private async prompt(p: PromptParams) {
-    const s = this.require(p.sessionId);
+    /* #346 AC-2: a suspended session was evicted from the maps but kept
+       its registry row — resume it under the same engine id (the #288
+       path), then run the turn. Same rule events.since already applies. */
+    const s =
+      this.sessions.get(p.sessionId) ??
+      (await this.resumeStored(p.sessionId)) ??
+      this.require(p.sessionId);
     if (s.state === "closed")
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
     /* #308: a live leg counts too — a mid-work user message goes through
@@ -518,10 +527,23 @@ export class HermesEngine {
        second `_commit_agent_switch`, write a second switch marker, and
        `switch_model`'s request_overrides reset could drop the fast tier
        the live `config.set fast` already applied (#92 AC-4 review). */
-    const images = p.content.filter(
+    /* #346 AC-5: the first turn after a resume (suspend or adapter
+       restart) tells the agent once that its session reopened — the
+       processes and tabs it left running died with the close. */
+    const content = s.resumed
+      ? [
+          {
+            type: "text" as const,
+            text: "This session was reopened; background processes and browser tabs from before were stopped.",
+          },
+          ...p.content,
+        ]
+      : p.content;
+    s.resumed = false;
+    const images = content.filter(
       (b): b is Extract<ContentBlock, { type: "image" }> => b.type === "image",
     );
-    const text = p.content
+    const text = content
       .filter((b): b is Extract<ContentBlock, { type: "text" }> => {
         return b.type === "text";
       })
@@ -569,7 +591,7 @@ export class HermesEngine {
             RPC_ERRORS.INTERNAL_ERROR,
             `no acp driver for ${s.id}`,
           );
-        void driver.submit(s, turnId, p.content).catch(() => {});
+        void driver.submit(s, turnId, content).catch(() => {});
       }
     } catch (e) {
       const msg = e instanceof RpcError ? e.message : String(e);
@@ -727,6 +749,9 @@ export class HermesEngine {
         ...(s.fast !== undefined ? { fast: s.fast } : {}),
       });
       s.setState("idle");
+      /* #346 AC-5: this session's old processes died with the close that
+         preceded the resume — the next prompt tells the agent, once. */
+      s.resumed = true;
       return s;
     } catch {
       /* The stored row may name a session Hermes no longer has, or this
@@ -751,7 +776,11 @@ export class HermesEngine {
     });
   }
 
-  private async sessionStop(p: SessionStopParams, forget = true) {
+  private async sessionStop(
+    p: SessionStopParams,
+    forget = true,
+    reason?: string,
+  ) {
     const s = this.require(p.sessionId);
     if (s.state === "closed") return { stopped: false };
     cancelAllAsks(s);
@@ -777,20 +806,51 @@ export class HermesEngine {
       s.jobPoll = undefined;
     }
     s.state = "closed";
-    s.emit("session.state", { state: "closed" });
+    s.emit(
+      "session.state",
+      reason ? { state: "closed", reason } : { state: "closed" },
+    );
     if (t) {
       s.emit("turn.completed", { turnId: t.turnId, stopReason: "cancelled" });
       t.resolve({ turnId: t.turnId, stopReason: "cancelled" });
     }
     /* An explicit session.stop ends the LilOS conversation — the stored row
-       goes (resume would resurrect a dead session); close()/shutdown keeps
-       it so the next adapter can resume. */
+       goes (resume would resurrect a dead session); close()/shutdown and
+       session.suspend keep it so the session can resume (#288/#346). */
     if (forget) this.sessionRegistry?.delete(s.id);
     return { stopped: true };
   }
 
+  /**
+   * `session.suspend` (#346 AC-1): `session.close` on the gateway — the
+   * agent's processes die exactly like session.stop — but the registry row
+   * stays and the live Session leaves the maps, so the next prompt/steer or
+   * replay goes through the #288 `session.resume` path under the same
+   * engine session id.
+   */
+  private async sessionSuspend(p: SessionSuspendParams) {
+    const s = this.sessions.get(p.sessionId);
+    if (!s) {
+      /* Not live here: either already suspended (evicted on suspend, still
+         resumable — a registry row is the tell), or genuinely unknown. */
+      return { suspended: !!this.sessionRegistry?.get(p.sessionId) };
+    }
+    if (s.state === "closed") return { suspended: false };
+    const r = await this.sessionStop(p, false, "suspended");
+    if (r.stopped) {
+      this.sessions.delete(s.id);
+      this.byRuntimeSid.delete(s.runtimeSid);
+    }
+    return { suspended: r.stopped };
+  }
+
   private async sessionSteer(p: SessionSteerParams) {
-    const s = this.require(p.sessionId);
+    /* #346: a steer to a suspended session reopens it first — with no turn
+       running it then answers not_running and the caller prompts. */
+    const s =
+      this.sessions.get(p.sessionId) ??
+      (await this.resumeStored(p.sessionId)) ??
+      this.require(p.sessionId);
     if (s.state === "closed")
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
     if (s.driver === "acp") {
