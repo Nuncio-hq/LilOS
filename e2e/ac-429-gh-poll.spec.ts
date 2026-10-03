@@ -175,9 +175,9 @@ test.beforeAll(async () => {
   writeView(PR_VIEW);
   writeFileSync(ghLogFile, "");
   stack = await bootStack("ac429", {
-    relay: wport(5740),
-    feed: wport(5826),
-    web: wport(6327),
+    relay: wport(4740),
+    feed: wport(4826),
+    web: wport(5327),
   });
 });
 test.afterAll(async () => {
