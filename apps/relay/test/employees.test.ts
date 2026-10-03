@@ -1,7 +1,18 @@
 import { FakeEngine, handleJsonRpc } from "@lilos/engine-fake";
 import { describe, expect, it } from "vitest";
-import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "./memory-store";
+import type { createRelay, RelayWsPeer } from "../src/session";
+import {
+  connectPeer,
+  errorData,
+  eventsNamed,
+  helloed,
+  lastId,
+  newRelay,
+  req,
+  resultOf,
+  TOKEN,
+  tick,
+} from "./helpers";
 
 /**
  * Issue #29 — relay-side employee lifecycle + engine passthrough.
@@ -15,45 +26,6 @@ import { createMemoryStore } from "./memory-store";
  * `employees.remove` deletes only the LilOS record + DM graph — the engine
  * profile is never touched (there is no profile-delete call anywhere).
  */
-
-const TOKEN = "test-token";
-
-function connectPeer(relay: ReturnType<typeof createRelay>) {
-  const frames: unknown[] = [];
-  const peer: RelayWsPeer = {
-    send: (frame) => frames.push(JSON.parse(frame)),
-    close: () => {},
-  };
-  const connection = relay.connect(peer);
-  return { frames, connection };
-}
-
-const eventsNamed = (frames: unknown[], method: string) =>
-  (frames as { method?: string; params?: unknown }[]).filter(
-    (f) => f.method === method,
-  );
-const resultOf = (frames: unknown[], id: string) => {
-  const frame = (
-    frames as {
-      id?: string;
-      result?: unknown;
-      error?: { code: number; message: string; data?: Record<string, unknown> };
-    }[]
-  ).find((f) => f.id === id);
-  if (!frame) throw new Error(`no response frame for ${id}`);
-  return frame;
-};
-const errorData = (frames: unknown[], id: string) => {
-  const { error } = resultOf(frames, id);
-  if (!error) throw new Error(`expected an error frame for ${id}`);
-  return error.data?.code as string;
-};
-
-let nextId = 0;
-const req = (method: string, params: Record<string, unknown> = {}) =>
-  JSON.stringify({ jsonrpc: "2.0", id: `t${nextId++}`, method, params });
-const lastId = () => `t${nextId - 1}`;
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 /** Send a request and wait for the (possibly host-forwarded) response frame. */
 const call = async (
   connection: { receive(d: string): Promise<void> },
@@ -65,18 +37,6 @@ const call = async (
   await tick();
   return resultOf(frames, lastId());
 };
-
-const newRelay = () =>
-  createRelay({ store: createMemoryStore(), token: TOKEN });
-
-async function helloed(relay: ReturnType<typeof createRelay>) {
-  const { frames, connection } = connectPeer(relay);
-  await connection.receive(
-    req("session.hello", { protocolVersion: 1, token: TOKEN }),
-  );
-  frames.length = 0;
-  return { frames, connection };
-}
 
 /**
  * A helloed peer registered as the engine host whose forwarded requests are
