@@ -86,6 +86,10 @@ export {
   useDraft,
 } from "./lib/drafts";
 export * from "./lib/helpers";
+// scheduled tasks (issue #136)
+export * from "./schedule/schedule-text";
+export { ScheduledTasks } from "./schedule/scheduled-tasks";
+export { TaskDialog, type TaskDraft } from "./schedule/task-dialog";
 // settings
 export { SettingsView } from "./settings/settings-view";
 // shell
@@ -97,7 +101,7 @@ export {
   PrototypePreviewMenu,
   SCENARIOS,
 } from "./shell/preview-menu";
-export { RightPanel, TicketsList } from "./shell/right-panel";
+export { type PanelTab, RightPanel, TicketsList } from "./shell/right-panel";
 export { Sidebar } from "./shell/sidebar";
 export {
   StatusDialog,
