@@ -294,25 +294,32 @@ test("AC-1/AC-5 queued replies anchor under their own prompt — even after relo
   await expect(turns.nth(1)).toContainText("First queued zebra", {
     timeout: 120_000,
   });
+  /* Post-reload the relay replies can land a frame before the session
+     model replays — mergeTurns then renders the employee posts as bare
+     unanchored rows ([mA][mB][post1][postA][postB]) until the model binds
+     and re-anchors each card under its prompt. The invariant below is the
+     converged order, so poll the thread text until the merge lands. */
   const assertOrder = async () => {
-    const text = await mainText(page);
-    const a = text.indexOf("first queued zebra");
-    const aAnswer = text.indexOf("First queued zebra");
-    const b = text.indexOf("second queued apple");
-    const bAnswer = text.indexOf("Second queued apple");
-    try {
-      expect(a).toBeGreaterThanOrEqual(0);
-      // A's drained reply anchors under A — a newer user row never renders
-      // above an older message's answer.
-      expect(a).toBeLessThan(aAnswer);
-      expect(aAnswer).toBeLessThan(b);
-      expect(b).toBeLessThan(bAnswer);
-    } catch (e) {
-      /* The merge invariants below are positional — when they trip, the raw
-         thread text is the only evidence of which frame rendered. */
-      console.log(`[ac-308] thread text at failure:\n${text}`);
-      throw e;
-    }
+    let text = "";
+    await expect
+      .poll(
+        async () => {
+          text = await mainText(page);
+          const a = text.indexOf("first queued zebra");
+          const aAnswer = text.indexOf("First queued zebra");
+          const b = text.indexOf("second queued apple");
+          const bAnswer = text.indexOf("Second queued apple");
+          // A's drained reply anchors under A — a newer user row never
+          // renders above an older message's answer.
+          return a >= 0 && a < aAnswer && aAnswer < b && b < bAnswer;
+        },
+        { timeout: 60_000 },
+      )
+      .toBe(true)
+      .catch(async (e) => {
+        console.log(`[ac-308] thread text at failure:\n${text}`);
+        throw e;
+      });
   };
   await assertOrder();
   await page.screenshot({ path: `${SHOTS}/ac-1-queued-order.png` });
