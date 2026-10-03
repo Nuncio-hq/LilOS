@@ -1,7 +1,14 @@
 /* Small pure helpers shared by the LilOS surfaces. No state, no data. */
 import type { PhrasingContent, RootContent } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
-import type { Phase, RespondTo, Status, WsPick } from "../types";
+import type {
+  Phase,
+  RespondTo,
+  SessionLife,
+  Status,
+  Thread,
+  WsPick,
+} from "../types";
 
 export const plural = (n: number, w: string) =>
   `${n} ${w}${n === 1 ? "" : "s"}`;
@@ -98,3 +105,25 @@ export const RESPOND: Record<RespondTo, string> = {
 };
 
 export const NO_WS: WsPick = { folder: null, base: "main", mode: "new" };
+
+/* #344: running while a turn works or any subagent still works (a session
+   with live helpers is never idle-closed); a turn waiting on the user is
+   open, not running (it never idle-closes either); otherwise the stored
+   life. */
+export const sessionLife = (t: Thread): SessionLife =>
+  t.replies.some(
+    (r) =>
+      (r.live && r.phase !== "waiting") ||
+      r.subagents?.some((s) => s.status === "running"),
+  )
+    ? "running"
+    : t.replies.some((r) => r.live)
+      ? "open"
+      : (t.life ?? "open");
+
+/* Screen-reader text for the wordless ring. */
+export const LIFE_LABEL: Record<SessionLife, string> = {
+  running: "Session running",
+  open: "Session open",
+  closed: "Session closed",
+};
