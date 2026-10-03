@@ -653,11 +653,22 @@ test("AC-319 a `?tab=subagents` deep link on a zero-helper session lands on the 
   await send(page, "say hi");
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
   await page.goto(`${page.url()}?tab=subagents`);
-  await expect(tab(page, /Subagents/)).toHaveAttribute(
-    "aria-selected",
-    "true",
-    { timeout: 30_000 },
-  );
+  try {
+    await expect(tab(page, /Subagents/)).toHaveAttribute(
+      "aria-selected",
+      "true",
+      { timeout: 30_000 },
+    );
+  } catch (e) {
+    /* A missing trigger means the tab state never took the deep link —
+       the URL and the rendered tab set say which side lost it. */
+    console.log(
+      `[ac-319] url=${page.url()} tabs=${JSON.stringify(
+        await page.getByRole("tab").allTextContents(),
+      )}`,
+    );
+    throw e;
+  }
   await expect(page.getByText("No subagents in this session yet.")).toBeVisible(
     { timeout: 30_000 },
   );
