@@ -421,7 +421,11 @@ test("AC-5 a folder shared with another session warns + names it before rewindin
   });
   await thread.locator("[data-rewind]").first().click();
   await expect(thread.getByText(/shared with/)).toBeVisible();
-  await expect(thread.getByText(/session B alpha/)).toBeVisible();
+  /* The name renders the sharer's title or root text — the fake's llm
+     stage Title-Cases it ("Session B Alpha"), so match case-blind. At the
+     old stack tick the dialog usually opened while the derived title
+     still held; the #432 fast tick lands the llm title first. */
+  await expect(thread.getByText(/session b alpha/i)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-5-shared.png` });
   await thread.getByRole("button", { name: "Cancel" }).click();
   /* The row plus the "I remember 1 earlier turn" list item — cancelling
