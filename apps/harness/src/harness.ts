@@ -134,6 +134,11 @@ interface SessionBinding {
   /** Set when ■ Stop is requested until the next `turn.started` — the
       queue drain parks instead of prompting while it's on (#315). */
   stopRequested: boolean;
+  /** Set once a Stop's park sweep ran, until the next `turn.started` —
+      steer acks for the stopped turn that land after the sweep still park
+      (#377: a `steered`/`not_running` resolution racing the sweep must
+      not deliver or prompt past the tray). */
+  stopParked?: boolean;
   /** Latest pick made while a turn runs — applied to the idle session
       before the next prompt goes out (#92). */
   heldPick?: ModelPick;
@@ -739,6 +744,7 @@ export class Harness {
       /* A dead session's stop mustn't park the live one, and its reconcile
          timer dies with it (#315). */
       stopRequested: false,
+      stopParked: false,
       steerReconcileTimer: undefined,
     };
     if (binding.steerReconcileTimer) clearTimeout(binding.steerReconcileTimer);
@@ -1022,6 +1028,21 @@ export class Harness {
                (a restart would re-owe it anyway: pending turns skip removed
                rows) and don't track it as a droppable steer. */
             if (this.dismissed.has(message.id)) return;
+            /* #377: a steer resolving after its turn's Stop — even after the
+               park sweep ran (`stopParked`) — parks in the tray like the
+               sends the sweep caught; delivering or re-prompting it would
+               slip a sent-before-Stop message past the tray. Send clears
+               `dismissed` and re-delivers it. */
+            if (binding.stopRequested || binding.stopParked) {
+              binding.consumed.delete(message.id);
+              this.dismissed.add(message.id);
+              this.relayWrite(`drop steer ${message.id}`, () =>
+                this.opts.relay.request("messages.drop", {
+                  messageId: message.id,
+                }),
+              );
+              return;
+            }
             if (res.status === "steered") {
               this.markDelivered(binding, message);
               /* Tracked until `turn.steered` lands or a Stop drops it —
@@ -1073,6 +1094,11 @@ export class Harness {
   /** FIFO is arrival order; the tray and the drain owe the user send
       order — insert by relay seq so a late re-queue can't invert it. */
   private insertQueued(binding: SessionBinding, message: AppMessage): void {
+    if (binding.queue.some((m) => m.id === message.id))
+      this.opts.log.warn("queue dup insert", {
+        conversationId: binding.conversationId,
+        messageId: message.id,
+      });
     const at = binding.queue.findIndex((m) => m.seq > message.seq);
     if (at === -1) binding.queue.push(message);
     else binding.queue.splice(at, 0, message);
@@ -1082,9 +1108,11 @@ export class Harness {
   private promptOrQueue(binding: SessionBinding, message: AppMessage) {
     /* #315 AC-5: while a Stop parks everything waiting, a send the engine
        never accepted (a `not_running` steer settling late) parks the same
-       way instead of prompting a fresh turn past the stop. */
+       way instead of prompting a fresh turn past the stop. `dismissed`
+       guards the stale-copy paths too; Send clears it (#377). */
     if (binding.stopRequested) {
       binding.consumed.delete(message.id);
+      this.dismissed.add(message.id);
       this.relayWrite(`drop queued ${message.id}`, () =>
         this.opts.relay.request("messages.drop", { messageId: message.id }),
       );
@@ -1105,6 +1133,16 @@ export class Harness {
     while (binding.queue.length) {
       const next = binding.queue.shift();
       if (!next) break;
+      /* #377: already `consumed` means the engine took this send through
+         another path — `turn.started.ref` claimed it while its re-queued
+         copy still sat here (socket dropped after the prompt landed).
+         Leave the claim in place; the copy just never re-prompts. */
+      if (binding.consumed.has(next.id)) {
+        this.opts.log.warn("drain skip: consumed", {
+          messageId: next.id,
+        });
+        continue;
+      }
       const dead =
         this.dismissed.has(next.id) ||
         next.removed ||
@@ -1168,6 +1206,7 @@ export class Harness {
   ): Promise<boolean> {
     const conn = this.engine;
     if (!conn) {
+      this.opts.log.warn("prompt requeue: no conn", { messageId: message.id });
       binding.consumed.delete(message.id);
       binding.queue.push(message);
       return true;
@@ -1271,6 +1310,16 @@ export class Harness {
       // Going back on the queue releases the in-flight claim — a rebind
       // drains the queue through enqueueOrPrompt, which dedupes on it.
       if (engineErrorCode(error) === undefined) {
+        /* #377: a `turn.started` already consumed this message — the socket
+           dropped after the prompt landed, so the turn ran anyway.
+           Re-queuing would mint a duplicate turn on the next drain; it's
+           delivered, not pending. */
+        if ([...binding.turnSource.values()].includes(message.id))
+          return false;
+        this.opts.log.warn("prompt requeue: transport", {
+          messageId: message.id,
+          error: String(error),
+        });
         // Transport failure (socket dropped / engine died mid-prompt): the
         // engine may still have taken the turn — its replayed
         // `turn.started.ref` reclaims the message on resync, and the answer
@@ -1280,11 +1329,18 @@ export class Harness {
         return true;
       }
       if (engineErrorCode(error) === INVALID_STATE) {
+        this.opts.log.warn("prompt requeue: invalid_state", {
+          messageId: message.id,
+          error: String(error),
+        });
         binding.consumed.delete(message.id);
         this.insertQueued(binding, message);
         return true;
       }
       if (engineErrorCode(error) === SESSION_NOT_FOUND) {
+        this.opts.log.warn("prompt requeue: session_not_found", {
+          messageId: message.id,
+        });
         binding.consumed.delete(message.id);
         binding.queue.unshift(message);
         await this.rebindConversation(binding);
@@ -1616,6 +1672,7 @@ export class Harness {
         /* The stop window ends: this turn (prompted or engine-pumped) runs
            to completion — nothing queued or steer-pending is parked on it. */
         binding.stopRequested = false;
+        binding.stopParked = false;
         if (binding.steerReconcileTimer) {
           clearTimeout(binding.steerReconcileTimer);
           binding.steerReconcileTimer = undefined;
@@ -1645,6 +1702,18 @@ export class Harness {
              not pending (a later Stop has no pending left to drop). */
           binding.steerPending = binding.steerPending.filter(
             (s) => s.messageId !== event.payload.ref,
+          );
+          /* #377: this turn proves the engine took the message — a copy
+             parked in the queue by a transport-error re-queue (the socket
+             dropped after the prompt landed) is dead; left in place the
+             drain would mint a duplicate turn when this one ends. */
+          if (binding.queue.some((m) => m.id === event.payload.ref))
+            this.opts.log.warn("turn claimed queued copy", {
+              turnId: event.payload.turnId,
+              ref: event.payload.ref,
+            });
+          binding.queue = binding.queue.filter(
+            (m) => m.id !== event.payload.ref,
           );
           /* #315 AC-4: the message behind this turn was removed while its
              steer or prompt raced in — the engine pumped it anyway.
@@ -1977,11 +2046,16 @@ export class Harness {
              sits under it). */
           this.delivered.delete(message.id);
           this.redeliver.add(message.id);
-        } else {
-          /* `dropped` cleared (Send): re-deliver like a fresh send. The
-             `redeliver` claim was primed when the drop was parked; if the
-             flag flip arrives without a local drop (another client undid
-             it), arm it here so the watermark can't swallow the resend. */
+        } else if (this.dismissed.has(message.id) || this.redeliver.has(message.id)) {
+          /* `dropped` cleared (Send): re-deliver like a fresh send. Only a
+             row that was parked here (`dismissed`) or seen dropped
+             (`redeliver`, primed in the branch above) can un-drop — other
+             `message.changed` frames (e.g. our own `messages.claim`,
+             #377) carry no drop to undo, and re-delivering them would
+             queue the same send twice behind a re-queue. The `redeliver`
+             claim was primed when the drop was parked; if the flag flip
+             arrives without a local drop (another client undid it), arm
+             it here so the watermark can't swallow the resend. */
           this.dismissed.delete(message.id);
           this.delivered.delete(message.id);
           this.redeliver.add(message.id);
@@ -2629,25 +2703,34 @@ export class Harness {
 
     /* #315 AC-5: ■ Stop parks everything still waiting — queued sends and
        accepted-but-unlanded steers alike land in the not-sent tray
-       (dropped), never the engine. The flag stays set until the NEXT
-       `turn.started` clears it (#377): a steer resolving `not_running`
-       after this point must still park instead of prompting a fresh turn
-       past the stop. */
+       (dropped), never the engine. The sweep rides the delivery chain
+       (#377): every `deliver` already in flight when the turn ended is a
+       pre-stop send and must park too — running ahead of it would let a
+       sent-before-Stop message slip past the tray. Sends arriving after
+       the sweep link see the flag cleared and prompt fresh. Parked ids
+       join `dismissed` so a late `not_running` steer ack holding a stale
+       (pre-drop) row can't re-prompt it; Send clears both. */
     if (binding.stopRequested) {
-      for (const pending of binding.steerPending.splice(0)) {
-        binding.consumed.delete(pending.messageId);
-        this.relayWrite(`drop steer ${pending.messageId}`, () =>
-          this.opts.relay.request("messages.drop", {
-            messageId: pending.messageId,
-          }),
-        );
-      }
-      for (const queued of binding.queue.splice(0)) {
-        binding.consumed.delete(queued.id);
-        this.relayWrite(`drop queued ${queued.id}`, () =>
-          this.opts.relay.request("messages.drop", { messageId: queued.id }),
-        );
-      }
+      void this.ordered(binding.conversationId, async () => {
+        binding.stopRequested = false;
+        binding.stopParked = true;
+        for (const pending of binding.steerPending.splice(0)) {
+          binding.consumed.delete(pending.messageId);
+          this.dismissed.add(pending.messageId);
+          this.relayWrite(`drop steer ${pending.messageId}`, () =>
+            this.opts.relay.request("messages.drop", {
+              messageId: pending.messageId,
+            }),
+          );
+        }
+        for (const queued of binding.queue.splice(0)) {
+          binding.consumed.delete(queued.id);
+          this.dismissed.add(queued.id);
+          this.relayWrite(`drop queued ${queued.id}`, () =>
+            this.opts.relay.request("messages.drop", { messageId: queued.id }),
+          );
+        }
+      });
       return;
     }
     /* An accepted steer that neither landed nor pumped as this turn's
