@@ -207,6 +207,59 @@ describe("thread-model — #157 AC mapping", () => {
     });
   });
 
+  it("#416 the footer counts a created file the same as web — real paths or none", () => {
+    /* Web's AC-1 fixture, wire-level: a patch whose diff carries the
+       "(inline)" placeholder plus a write_file with no diff at all (the ACP
+       shape) must still count as two files. */
+    const reply = msg({
+      id: "m2",
+      seq: 2,
+      authorKind: "employee",
+      authorId: ada.id,
+      text: "done",
+      createdAt: T0 + 30_000,
+    });
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small", ref: "m1" }),
+      ev("tool.started", {
+        turnId: "t1",
+        toolCallId: "c1",
+        tool: "patch",
+        input: { path: "a.ts" },
+      }),
+      ev("tool.completed", {
+        turnId: "t1",
+        toolCallId: "c1",
+        tool: "patch",
+        status: "completed",
+        diff: { path: "(inline)", status: "modified", add: 1, del: 1 },
+      }),
+      ev("tool.started", {
+        turnId: "t1",
+        toolCallId: "c2",
+        tool: "write_file",
+        input: { path: "b.test.ts", content: "…" },
+      }),
+      ev("tool.completed", {
+        turnId: "t1",
+        toolCallId: "c2",
+        tool: "write_file",
+        status: "completed",
+        output: "wrote 3 lines",
+      }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "done" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    ]);
+    const entries = mergeThreadEntries(
+      [msg({ id: "m1", seq: 1 }), reply],
+      model,
+      OPTS,
+    );
+    const card = entries[1];
+    if (card.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.footer?.files).toBe(2);
+  });
+
   it("AC-3 a user message past deliveredSeq renders queued", () => {
     const queued = msg({ id: "m2", seq: 3, text: "also this" });
     const entries = mergeThreadEntries(
@@ -782,6 +835,9 @@ describe("#247 mobile polish — prototype thread details on real data", () => {
           output: 2_000,
           reasoning: 800,
           cache: 12_000,
+          /* The engine's live occupancy rides through to the meter's
+             numerator (#415). */
+          context: 21_300,
           contextWindow: 256_000,
         },
       }),
@@ -800,6 +856,7 @@ describe("#247 mobile polish — prototype thread details on real data", () => {
       output: 2_000,
       reasoning: 800,
       cache: 12_000,
+      context: 21_300,
       max: 256_000,
       estimated: false,
     });

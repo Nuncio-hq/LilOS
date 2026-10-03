@@ -1573,11 +1573,19 @@ export class FakeEngine {
     script: FakeScript,
     promptText: string,
   ) {
+    const input = s.usage.input + 9000 + promptText.length * 4;
+    const output = s.usage.output + Math.floor(script.text.length / 4);
     s.usage = {
-      input: s.usage.input + 9000 + promptText.length * 4,
-      output: s.usage.output + Math.floor(script.text.length / 4),
+      input,
+      output,
       reasoning: s.usage.reasoning + Math.floor(script.reasoning.length / 4),
       cache: s.usage.cache + 6000,
+      /* Live occupancy (#415): the fake runs one call per turn, so the whole
+         billed sum stays in context — clamped to the resolved window like a
+         real compressor keeps it. */
+      context: s.usage.contextWindow
+        ? Math.min(input + output, s.usage.contextWindow)
+        : input + output,
       /* The resolved window rides the session across turns (#294). */
       ...(s.usage.contextWindow
         ? { contextWindow: s.usage.contextWindow }

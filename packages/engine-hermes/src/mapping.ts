@@ -18,16 +18,26 @@ import type {
 export function mapUsage(u: unknown): Usage | undefined {
   if (typeof u !== "object" || u === null) return undefined;
   const r = u as Record<string, unknown>;
-  const n = (v: unknown) => (typeof v === "number" && v >= 0 ? v : 0);
+  /* Only non-negative integers survive — a float/negative/Infinity on the
+     wire must not poison `Usage`'s `z.int().min(0)` at the relay (#415). */
+  const int = (v: unknown): number | undefined =>
+    typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : undefined;
+  const n = (v: unknown) => int(v) ?? 0;
   /* `context_max` is the window Hermes resolved for THIS session (the
      compressor's context_length — config pins and provider probing already
-     folded in), reported only once the compressor is live (#294). */
+     folded in), reported only once the compressor is live (#294).
+     `context_used` is the LIVE occupancy (the compressor's last real prompt
+     tokens); `input`/`output` are session-lifetime sums — they outgrow the
+     window and are never the meter's numerator (#415). A real `0` occupancy
+     IS a reading (post-compaction); only absent/malformed means unreported. */
   const contextWindow = n(r.context_max);
+  const context = int(r.context_used);
   return {
     input: n(r.input) || n(r.prompt),
     output: n(r.output) || n(r.completion),
     reasoning: n(r.reasoning),
     cache: n(r.cache_read) + n(r.cache_write),
+    ...(context !== undefined ? { context } : {}),
     ...(contextWindow > 0 ? { contextWindow } : {}),
   };
 }
@@ -255,8 +265,30 @@ export function mapToolStatus(payload: Record<string, unknown>): {
       }
     | undefined;
   if (typeof payload.inline_diff === "string" && payload.inline_diff) {
+    /* The wire carries no top-level `path` — the file a write call touched
+       lives in its `args` (`path` for write_file/patch-replace; for a V4A
+       `mode:"patch"` call, `*** Add|Update|Delete|Move File:` headers in
+       `args.patch`, first one wins — a FileDiff carries one path). Without
+       this every diff was stamped "(inline)" and the turn footer's
+       unique-path count collapsed to 1 (#416). */
+    const args =
+      typeof payload.args === "object" && payload.args !== null
+        ? (payload.args as Record<string, unknown>)
+        : undefined;
+    const v4a =
+      typeof args?.patch === "string"
+        ? /\*\*\* (?:Add|Update|Delete|Move) File: (.+)/
+            .exec(args.patch)?.[1]
+            ?.trim()
+        : undefined;
+    const path =
+      (typeof args?.path === "string" && args.path) ||
+      v4a ||
+      (typeof payload.path === "string" && payload.path
+        ? payload.path
+        : "(inline)");
     diff = {
-      path: typeof payload.path === "string" ? payload.path : "(inline)",
+      path,
       status: "modified",
       add: 0,
       del: 0,

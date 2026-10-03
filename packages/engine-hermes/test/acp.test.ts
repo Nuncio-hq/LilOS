@@ -2,8 +2,9 @@ import type * as acp from "@agentclientprotocol/sdk";
 import type { ApprovalOutcome, EngineRequest } from "@lilos/contracts/engine";
 import { describe, expect, test } from "vitest";
 import { AcpDriver } from "../src/acp.js";
-import type { HermesEngine } from "../src/engine.js";
+import { HermesEngine } from "../src/engine.js";
 import { resolveOutcomeValid, Session } from "../src/session.js";
+import { FakeGateway } from "./fake-gateway.js";
 
 /**
  * Issue #133 — ACP permission mapping. `hermes acp` offers two options of
@@ -475,5 +476,125 @@ describe("engine-hermes ACP delegate dispatch receipt (#309)", () => {
     const closed = r.events.filter((e) => e.type === "subagent.completed");
     expect(closed).toHaveLength(1);
     expect((closed[0].payload as { status: string }).status).toBe("done");
+  });
+});
+
+/**
+ * Issue #415 — ACP `usage_update.used`/`size` are the CURRENT occupancy and
+ * the window, not billing totals. The `session/prompt` response's per-turn
+ * usage must not clobber them at turn end.
+ */
+describe("engine-hermes ACP usage_update -> context/contextWindow (#415)", () => {
+  const rig = () => {
+    const events: { type: string; payload: unknown }[] = [];
+    const engine = new HermesEngine({ gateway: new FakeGateway() });
+    const driver = new AcpDriver({ bin: "hermes" }, engine);
+    const session = new Session(
+      "s1",
+      "builder",
+      "/tmp",
+      undefined,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      "acp",
+      "rs1",
+      "rs1",
+      (e) => {
+        events.push({ type: e.type, payload: e.payload });
+      },
+    );
+    session.turn = {
+      turnId: "t1",
+      phase: "tools",
+      resolve: () => {},
+      reject: () => {},
+    };
+    const handler = driver as unknown as {
+      onUpdate(s: Session, n: acp.SessionNotification): void;
+    };
+    const notify = (update: Record<string, unknown>) =>
+      handler.onUpdate(session, {
+        sessionId: "rs1",
+        update,
+      } as acp.SessionNotification);
+    return { events, notify, session, engine };
+  };
+
+  test("used/size land on usage.context/contextWindow and survive endAcpTurn", () => {
+    const r = rig();
+    r.notify({ sessionUpdate: "usage_update", used: 41_000, size: 262_000 });
+    expect(r.session.usage?.context).toBe(41_000);
+    expect(r.session.usage?.contextWindow).toBe(262_000);
+
+    r.engine.endAcpTurn(r.session, "t1", "end_turn", {
+      inputTokens: 900,
+      outputTokens: 300,
+      thoughtTokens: 60,
+      cachedReadTokens: 200,
+    });
+    const done = r.events.find((e) => e.type === "turn.completed");
+    if (!done) throw new Error("turn.completed missing");
+    const usage = (
+      done.payload as {
+        usage?: {
+          context?: number;
+          contextWindow?: number;
+          input: number;
+          output: number;
+        };
+      }
+    ).usage;
+    if (!usage) throw new Error("turn.completed usage missing");
+    expect(usage.context).toBe(41_000);
+    expect(usage.contextWindow).toBe(262_000);
+    expect(usage.input).toBe(900);
+    expect(usage.output).toBe(300);
+  });
+
+  test("a malformed usage_update neither clobbers a good reading nor poisons turn.completed", () => {
+    const r = rig();
+    r.notify({ sessionUpdate: "usage_update", used: 41_000, size: 262_000 });
+    /* Strings, floats and negatives are not Usage ints — dropped, never
+       written into s.usage where endAcpTurn would ship them to the
+       relay's schema. */
+    r.notify({ sessionUpdate: "usage_update", used: "lots", size: -1 });
+    r.notify({ sessionUpdate: "usage_update", used: 41_000.5 });
+    r.notify({ sessionUpdate: "usage_update" });
+    expect(r.session.usage?.context).toBe(41_000);
+    expect(r.session.usage?.contextWindow).toBe(262_000);
+
+    /* A real 0 IS a reading — it replaces the stale value rather than
+       being conflated with "absent". */
+    r.notify({ sessionUpdate: "usage_update", used: 0 });
+    expect(r.session.usage?.context).toBe(0);
+  });
+
+  test("per-turn ACP usage accumulates into the session's lifetime sums", () => {
+    const r = rig();
+    r.engine.endAcpTurn(r.session, "t1", "end_turn", {
+      inputTokens: 900,
+      outputTokens: 300,
+    });
+    /* ACP's prompt response is per-turn — the contract's input/output are
+       lifetime sums, so the adapter accumulates them like the WS path's
+       already-cumulative payload. */
+    r.session.turn = {
+      turnId: "t2",
+      phase: "tools",
+      resolve: () => {},
+      reject: () => {},
+    };
+    r.engine.endAcpTurn(r.session, "t2", "end_turn", {
+      inputTokens: 500,
+      outputTokens: 200,
+    });
+    const dones = r.events.filter((e) => e.type === "turn.completed");
+    const usage2 = (
+      dones[1].payload as { usage?: { input: number; output: number } }
+    ).usage;
+    expect(usage2?.input).toBe(1_400);
+    expect(usage2?.output).toBe(500);
   });
 });

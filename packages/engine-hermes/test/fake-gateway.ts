@@ -691,7 +691,12 @@ export class FakeGateway implements GatewayLike {
   /** Finish the open turn for a runtime sid. */
   complete(
     sid: string,
-    opts: { text?: string; status?: string; error?: string } = {},
+    opts: {
+      text?: string;
+      status?: string;
+      error?: string;
+      usage?: Record<string, unknown>;
+    } = {},
   ) {
     this.runningSids.delete(sid);
     this.emit(sid, "message.complete", {
@@ -700,7 +705,7 @@ export class FakeGateway implements GatewayLike {
       ...(opts.error ? { error: opts.error } : {}),
       /* Hermes' context_usage_fields — the window the session resolved
          (issue #294). */
-      usage: {
+      usage: opts.usage ?? {
         input: 10,
         output: 5,
         reasoning: 1,

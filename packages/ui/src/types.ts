@@ -73,6 +73,10 @@ export type Step = {
   input: Record<string, unknown>;
   output: string;
   running?: boolean;
+  /** Wire completion state (engine tool.completed); absent on mock steps,
+      which read as completed. Drives the #416 changed-file count: a denied
+      or failed write changed nothing, so its input path must not count. */
+  status?: "running" | "completed" | "failed" | "denied" | "cancelled";
   /** A delegate_task that closed on its dispatch receipt while the helper
      it spawned still runs (#309) — the step reads "Dispatched", not
      "Completed". */
@@ -210,10 +214,15 @@ export type BackgroundJob = {
   subagent?: boolean;
 };
 export type Usage = {
+  /* Lifetime token throughput (billing-style sums — they outgrow the
+     window across turns, so never the meter's numerator; #415). */
   input: number;
   output: number;
   reasoning: number;
   cache: number;
+  /* The session's CURRENT context occupancy — the meter's numerator (#415);
+     absent when the engine reports no occupancy (fall back to in+out). */
+  context?: number;
   /* The context window the engine resolved for this session, reported with
      the turn's usage (issue #294); absent = the meter's labelled estimate. */
   contextWindow?: number;

@@ -635,4 +635,36 @@ describe("engine-fake #294: reports the session's context window", () => {
     expect(lastUsage()?.contextWindow).toBeUndefined();
     c.close();
   });
+
+  test("turn.completed usage carries live occupancy in `context`, clamped to the window (#415)", async () => {
+    const c = conn();
+    const events: { type: string; payload: Record<string, unknown> }[] = [];
+    c.onEvent((e) =>
+      events.push(e as { type: string; payload: Record<string, unknown> }),
+    );
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+      model: "fake-large",
+    })) as { sessionId: string };
+    await promptText(c, sessionId, "hi");
+    const done = events.find((e) => e.type === "turn.completed");
+    if (!done) throw new Error("no turn.completed");
+    const usage = (
+      done.payload as {
+        usage?: {
+          input: number;
+          output: number;
+          context?: number;
+          contextWindow?: number;
+        };
+      }
+    ).usage;
+    /* The fake runs one call per turn — the whole billed sum stays in
+       context, so `context` equals in+out here, clamped to the window like
+       a real compressor's reading. */
+    expect(usage?.context).toBe((usage?.input ?? 0) + (usage?.output ?? 0));
+    expect(usage?.context).toBeLessThanOrEqual(usage?.contextWindow ?? 0);
+    c.close();
+  });
 });

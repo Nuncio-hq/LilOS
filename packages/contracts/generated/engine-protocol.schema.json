@@ -406,6 +406,11 @@
                 "minimum": 0,
                 "maximum": 9007199254740991
               },
+              "context": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
               "contextWindow": {
                 "type": "integer",
                 "exclusiveMinimum": 0,
@@ -1491,6 +1496,11 @@
                               "minimum": 0,
                               "maximum": 9007199254740991
                             },
+                            "context": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
                             "contextWindow": {
                               "type": "integer",
                               "exclusiveMinimum": 0,
@@ -2016,6 +2026,11 @@
                     "maximum": 9007199254740991
                   },
                   "cache": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "context": {
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 9007199254740991
@@ -3875,6 +3890,11 @@
                         "maximum": 9007199254740991
                       },
                       "cache": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "context": {
                         "type": "integer",
                         "minimum": 0,
                         "maximum": 9007199254740991
