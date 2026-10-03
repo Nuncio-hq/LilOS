@@ -246,8 +246,11 @@ export class Harness {
     string,
     Promise<SessionBinding | undefined>
   >();
-  /** Conversation ids whose Stop outran the first bind — fired at the
-      queued prompt's `turn.started`, when the engine has a turn to stop. */
+  /** Conversation ids whose Stop outran the send it meant to stop — fired
+      at the send's first `turn.started`, when the engine has a turn to
+      stop. Covers both windows the relay's two delivery paths open: the
+      first bind still mid-flight (#400), and the send's row not yet
+      arrived via `channelMessages` at all (#402). */
   private readonly pendingInterrupts = new Set<string>();
   /** engine requestId -> relay ask id (per session). */
   private readonly askByRequest = new Map<string, string>();
@@ -758,6 +761,9 @@ export class Harness {
     const queued = binding.queue.splice(0);
     if (binding.stopRequested) {
       binding.stopRequested = false;
+      /* #402: the queue this Stop dropped was everything a pre-bind parked
+         interrupt could still wait on — the park is moot. */
+      this.pendingInterrupts.delete(binding.conversationId);
       for (const message of queued) {
         binding.consumed.delete(message.id);
         this.relayWrite(`drop queued ${message.id}`, () =>
@@ -849,6 +855,7 @@ export class Harness {
       this.opts.log.warn("dropping message for unknown/closed conversation", {
         conversationId: message.conversationId,
       });
+      this.dropParkedInterruptIfOrphaned(conv.id);
       return;
     }
     this.delivered.add(message.id);
@@ -862,7 +869,10 @@ export class Harness {
        watermark checks below, or the second guard swallows a Send. */
     const isRedeliver = this.redeliver.delete(message.id);
     const cur = this.conversationFromAtom(conv.id) ?? conv;
-    if (message.seq <= cur.deliveredSeq && !isRedeliver) return;
+    if (message.seq <= cur.deliveredSeq && !isRedeliver) {
+      this.dropParkedInterruptIfOrphaned(conv.id);
+      return;
+    }
     const binding = await this.bindingFor(conv, message.channelId);
     if (!binding) {
       // Engine still starting/restarting: hold the message; attachEngine
@@ -885,9 +895,14 @@ export class Harness {
     // `dismissed` head-check ran before the bind await — a rewind could have
     // killed the row in between, so it is checked again here.
     const fresh = this.conversationFromAtom(conv.id) ?? conv;
-    if (message.seq <= fresh.deliveredSeq && !isRedeliver) return;
-    if (this.dismissed.has(message.id) || binding.consumed.has(message.id))
+    if (
+      (message.seq <= fresh.deliveredSeq && !isRedeliver) ||
+      this.dismissed.has(message.id) ||
+      binding.consumed.has(message.id)
+    ) {
+      this.dropParkedInterruptIfOrphaned(conv.id);
       return;
+    }
     this.enqueueOrPrompt(binding, message);
   }
 
@@ -1265,6 +1280,25 @@ export class Harness {
         deliveredSeq: message.seq,
       }),
     );
+  }
+
+  /**
+   * #402: a parked Stop lives only as long as the send it waits on — once
+   * nothing can still produce that send's first turn (no binding, no bind
+   * in flight, no send held for the engine), keeping it would fire the
+   * interrupt on a later unrelated turn instead of the one the user meant.
+   */
+  private dropParkedInterruptIfOrphaned(
+    conversationId: string | null | undefined,
+  ) {
+    if (!conversationId || !this.pendingInterrupts.has(conversationId)) return;
+    if (
+      this.bindings.has(conversationId) ||
+      this.binds.has(conversationId) ||
+      this.early.get(conversationId)?.length
+    )
+      return;
+    this.pendingInterrupts.delete(conversationId);
   }
 
   private async bindingFor(
@@ -1797,6 +1831,9 @@ export class Harness {
           const early = this.early.get(message.conversationId ?? "");
           if (early?.length)
             this.early.set(message.conversationId ?? "", fromQueue(early));
+          /* The send a parked interrupt waited on is gone — clear it
+             instead of firing it on a later unrelated turn (#402). */
+          this.dropParkedInterruptIfOrphaned(message.conversationId);
         } else if (message.dropped) {
           if (binding) {
             binding.queue = fromQueue(binding.queue);
@@ -1808,6 +1845,7 @@ export class Harness {
           const early = this.early.get(message.conversationId ?? "");
           if (early?.length)
             this.early.set(message.conversationId ?? "", fromQueue(early));
+          this.dropParkedInterruptIfOrphaned(message.conversationId);
           /* A later Send re-delivers: release the delivery claim AND let it
              past the deliveredSeq watermark (an accepted-then-parked steer
              sits under it). */
@@ -1858,6 +1896,7 @@ export class Harness {
         if (binding) binding.queue = holds(binding.queue);
         const early = this.early.get(conversationId ?? "");
         if (early?.length) this.early.set(conversationId ?? "", holds(early));
+        this.dropParkedInterruptIfOrphaned(conversationId);
         break;
       }
       case "turn.interruptRequested": {
@@ -2098,6 +2137,7 @@ export class Harness {
       if (binding.channelId !== channelId) continue;
       this.unbind(binding);
       this.early.delete(binding.conversationId);
+      this.pendingInterrupts.delete(binding.conversationId);
       for (const key of [...this.askByRequest.keys()]) {
         if (key.startsWith(`${binding.sessionId}:`)) {
           const askId = this.askByRequest.get(key);
@@ -2176,12 +2216,15 @@ export class Harness {
   private async onInterruptRequested(conversationId: string) {
     const binding = this.bindings.get(conversationId);
     if (!binding) {
-      /* #400: the first bind is mid-flight — the UI already reads Running
-         off the send-pending marker, so a Stop here is real, not stray.
-         Park it; the queued prompt's `turn.started` fires it, when the
-         engine actually has a turn to cancel. */
-      if (this.binds.has(conversationId))
-        this.pendingInterrupts.add(conversationId);
+      /* #400/#402: the UI already reads Running off the send-pending
+         marker, so a Stop here is real, not stray — whether the send's
+         first bind is mid-flight (#400) or its row hasn't even reached
+         the `channelMessages` subscription yet, the relay's bus event
+         beating the store path (#402). Park unconditionally; the send's
+         first `turn.started` fires it, when the engine actually has a
+         turn to cancel. */
+      this.pendingInterrupts.add(conversationId);
+      this.opts.log.info("interrupt parked", { conversationId });
       return;
     }
     this.opts.log.info("interrupt requested", { conversationId });
@@ -2470,6 +2513,9 @@ export class Harness {
        stranded by a stale stop. */
     if (binding.stopRequested) {
       binding.stopRequested = false;
+      /* #402: every send a pre-bind parked interrupt could still wait on
+         just dropped to the tray — the park is moot. */
+      this.pendingInterrupts.delete(binding.conversationId);
       for (const pending of binding.steerPending.splice(0)) {
         binding.consumed.delete(pending.messageId);
         this.relayWrite(`drop steer ${pending.messageId}`, () =>
