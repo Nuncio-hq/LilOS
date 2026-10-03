@@ -155,9 +155,9 @@ test("AC-1+AC-2+AC-4+AC-3 the pill drives the mode; cards offer the four options
 }) => {
   test.setTimeout(300_000);
   const stack = await bootStack("ac106", {
-    relay: wport(4906),
-    feed: wport(4907),
-    web: wport(5406),
+    relay: wport(4690),
+    feed: wport(4691),
+    web: wport(4692),
   });
   try {
     /* ── New conversation starts on Ask (the factory default) ── */
@@ -220,9 +220,9 @@ test("AC-3+AC-9 Settings Approvals: policy pick, honest copy, and the default se
 }) => {
   test.setTimeout(180_000);
   const stack = await bootStack("ac106s", {
-    relay: wport(4916),
-    feed: wport(4917),
-    web: wport(5416),
+    relay: wport(4693),
+    feed: wport(4694),
+    web: wport(4695),
   });
   try {
     await dmHome(stack, page);
