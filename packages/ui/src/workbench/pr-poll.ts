@@ -7,9 +7,11 @@
    The PR read runs on signals instead: the probe (re)attaches (mount and
    every `running` flip — turn start and turn end both land here), the PR
    tab or the OS window gains focus, or the keep-alive tick fires while a
-   turn runs (≤1/min). `createPrPoll` funnels every signal through one
-   coalescer — a burst lands one call, a slow `gh` never stacks a second
-   on itself, and `dispose` silences everything (no sleeps, no retries). */
+   turn runs (≤1/min — AC-1's cap covers the self-driven cadence; each
+   user-driven signal still gets one coalesced read, per AC-2).
+   `createPrPoll` funnels every signal through one coalescer — a burst
+   lands one call, a slow `gh` never stacks a second on itself, and
+   `dispose` silences everything (no sleeps, no retries). */
 
 export type PrPoll = {
   /** "Fresh PR state is wanted now" — a turn boundary, the PR tab gaining
@@ -46,16 +48,25 @@ export function createPrPoll(
       return;
     }
     lastFire = Date.now();
-    const r = refresh();
+    let r: undefined | Promise<unknown>;
+    /* A throwing/rejecting refresh is the caller's problem to surface —
+       the scheduler just skips the call and keeps answering signals. */
+    try {
+      r = refresh();
+    } catch {
+      return;
+    }
     if (r && typeof (r as Promise<unknown>).then === "function") {
       inFlight = true;
-      void Promise.resolve(r).finally(() => {
-        inFlight = false;
-        if (again) {
-          again = false;
-          poke();
-        }
-      });
+      void Promise.resolve(r)
+        .catch(() => {})
+        .finally(() => {
+          inFlight = false;
+          if (again) {
+            again = false;
+            poke();
+          }
+        });
     }
   };
 

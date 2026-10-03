@@ -88,10 +88,33 @@ describe("coalescing — bursts land one call, never a stack", () => {
     const poll = createPrPoll(refresh, { minGapMs: 2_000 });
     poll.signal();
     expect(refresh).toHaveBeenCalledTimes(1);
-    poll.signal(); // in flight — recorded, not stacked
+    poll.signal(); // inside the gap — arms the trailing call
     resolve?.();
-    await Promise.resolve();
-    vi.advanceTimersByTime(10_000);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    poll.dispose();
+  });
+
+  test("a slow refresh that outlives the gap still lands exactly one follow-up", async () => {
+    let resolve: (() => void) | undefined;
+    const refresh = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          resolve = r;
+        }),
+    );
+    const poll = createPrPoll(refresh, { minGapMs: 2_000 });
+    poll.signal();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    /* Signals arriving past the gap while the first call is still in
+       flight are recorded — one settle-time follow-up, never a stack. */
+    vi.advanceTimersByTime(3_000);
+    poll.signal();
+    poll.signal();
+    resolve?.();
+    await vi.advanceTimersByTimeAsync(0); // flush the settle → follow-up
+    expect(refresh).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(MIN);
     expect(refresh).toHaveBeenCalledTimes(2);
     poll.dispose();
   });

@@ -310,14 +310,18 @@ export function Workbench({
         host.log?.(cwd),
       ]).then(([files, d, pr, status, branches, log]) => {
         if (off) return;
-        setProbe({
+        /* `pr ?? p?.pr`: an unanswered `forge.pr` (outer null — unreachable,
+           not "no PR") keeps the last known answer rather than hiding the
+           tab on a transient blip — same keep-last-known merge `updatePr`
+           uses. */
+        setProbe((p) => ({
           files,
           diffs: d ?? null,
-          pr: pr ?? null,
+          pr: pr ?? p?.pr ?? null,
           status: status ?? null,
           branches: branches ?? null,
           log: log ?? null,
-        });
+        }));
       });
     /* #429: `forge.pr` is a `gh pr view` subprocess (~1s) — polling it at
        the git-read cadence was ~40 calls/min per open Workbench (rate
@@ -497,7 +501,9 @@ export function Workbench({
             body: p.body,
             base: probe?.branches?.default ?? undefined,
           });
-          await reloadPr();
+          /* No extra re-read: shipCall's trailing `update()` lands the
+             fresh PR, and landing on the PR tab signals its own read —
+             a reloadPr here would double-call `gh pr view` (#429). */
           setTab("pr");
         });
     }
