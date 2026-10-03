@@ -9,8 +9,10 @@ import { wport } from "./ports";
 
 /**
  * Issue #92 — model picker v2 in the REAL app (apps/web over relay + harness
- * on engine-fake; the prototype spec ac-30 covers the mock stack). Each
- * acceptance criterion is a named test. The fake catalog is
+ * on engine-fake). Each acceptance criterion is a named test. #438 folded the
+ * prototype spec (ac-30, mock stack) into this file: its two unique legs
+ * survive as the first-turn-pick and no-capability tests; the other four
+ * restated AC-1…AC-7 and were dropped with the file. The fake catalog is
  * Fake Small (no dial) / Fake Large (3 stops + fast, the default) /
  * Fake Reasoning (7-stop ladder + fast) / Fake Opus 2 (a "/" id) /
  * Fake Fresh (only via `models.list {refresh:true}`).
@@ -67,9 +69,10 @@ function killProc(proc: ChildProcess): Promise<void> {
 async function bootStack(
   tag: string,
   ports: { relay: number; feed: number; web: number },
-  home?: string,
+  opts: { home?: string; env?: Record<string, string> } = {},
 ): Promise<Stack> {
-  const homeDir = home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
+  const homeDir =
+    opts.home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
   const leakTag = engineTag(tag);
   const proc = spawn("bun", ["run", "dev"], {
     cwd: webDir,
@@ -81,6 +84,7 @@ async function bootStack(
       LILOS_RELAY_PORT: String(ports.relay),
       LILOS_FEED_PORT: String(ports.feed),
       LILOS_WEB_PORT: String(ports.web),
+      ...opts.env,
     },
     stdio: ["ignore", "inherit", "inherit"],
   });
@@ -305,6 +309,60 @@ test("AC-3 + AC-4 the next turn runs the picked model + effort + fast; the foote
   expect(errors).toEqual([]);
 });
 
+/* Was ac-30's "v2 new session" leg (#438): the same pick → footer flow as
+   AC-3+AC-4, but the pick is made on the new-session composer BEFORE the
+   session exists — it rides `conversations.open` into `session.start`, so the
+   FIRST turn already runs it. The back half is AC-5's other clause: a fresh
+   new-session composer starts on the employee default, never a sticky pick. */
+test("AC-4 + AC-5 a pick on the new-session composer lands on the FIRST turn; the next new session is back on the employee default", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const errors = watchConsole(page);
+  await dmDefault(stackA, page);
+  const home = triggers(page).first();
+  await expect(home).toContainText("Fake Large");
+  await home.click();
+  const slider = page.getByRole("slider", { name: "Reasoning effort" });
+  // fake-large reports 3 stops; the pick swaps in its own ladder.
+  await expect(slider).toHaveAttribute("max", "2");
+  await page.getByRole("button", { name: /Model$/ }).click();
+  await option(page, "Fake Reasoning").click();
+  await expect(slider).toHaveAttribute("max", "6");
+  await slider.press("ArrowUp"); // medium → high
+  await page.getByRole("button", { name: "Fast mode" }).click();
+  await page.keyboard.press("Escape");
+  await expect(home).toContainText("Fake Reasoning");
+
+  await send(page, "Check the relay reconnect plan");
+  // The FIRST turn runs the pick — footer = engine turn.started truth.
+  await expect(
+    page
+      .locator("[data-agentturn]")
+      .last()
+      .getByText("· Fake Reasoning · High · Fast"),
+  ).toBeVisible({ timeout: 90_000 });
+  // The session keeps its pick on its own composer.
+  await expect(triggers(page).last()).toContainText("Fake Reasoning");
+  await page.screenshot({ path: `${SHOTS}/ac-4-first-turn-pick.png` });
+
+  // A new-session composer (employee home) is back on the employee default.
+  // The prototype mounted both composers at once; the real app mounts one
+  // view, and Focus has no sidebar (#246) — Back to DM lands on the thread
+  // panel, whose aside carries the employee rows.
+  await page.getByRole("button", { name: "Back to DM" }).click();
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/);
+  await page
+    .locator("aside")
+    .first()
+    .getByRole("button", { name: /default/i })
+    .click();
+  await expect(page).toHaveURL(/\/dm\/[^/]+$/);
+  await expect(triggers(page).first()).toContainText("Fake Large");
+  await expect(triggers(page).first()).toContainText("Medium");
+  expect(errors).toEqual([]);
+});
+
 test("AC-6 + AC-7 Refresh surfaces a new model without restart; Edit models' ONE hide list survives a relay restart; new models default to visible", async ({
   page,
 }) => {
@@ -346,7 +404,7 @@ test("AC-6 + AC-7 Refresh surfaces a new model without restart; Edit models' ONE
   const stackB = await bootStack(
     "picker-restart",
     { relay: wport(4802), feed: wport(4803), web: wport(5304) },
-    stackA.home,
+    { home: stackA.home },
   );
   try {
     await dmDefault(stackB, page);
@@ -356,6 +414,43 @@ test("AC-6 + AC-7 Refresh surfaces a new model without restart; Edit models' ONE
     await page.getByRole("option", { name: /Refresh models/ }).click();
     await expect(option(page, "Fake Fresh")).toHaveCount(1);
     await page.screenshot({ path: `${SHOTS}/ac-7-restart.png` });
+  } finally {
+    await stackB.stop();
+  }
+  expect(errors).toEqual([]);
+});
+
+/* Was ac-30's AC-3 leg (#438; the criterion is #30's). `?models=off` was a
+   prototype flag — the real-stack twin is a stack whose harness filters the
+   `models` capability out of `describe` (LILOS_HIDE_CAPS). No capability →
+   no catalog → no picker control anywhere (D-#19: never a dead shell). */
+test("AC-3 (#30) no picker when the engine lacks the models capability", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const errors = watchConsole(page);
+  /* Bases identical to ac-112's second stack on purpose: every residue
+     mod 100 is already owned, and ports.spec's dedupe blesses literal reuse
+     — two spec files never share a live worker index, so the real ports
+     can't collide. This file is serial, so the bases also can't clash with
+     stackA or the restart stack on the same worker. */
+  const stackB = await bootStack(
+    "picker-nomodels",
+    { relay: wport(4723), feed: wport(4724), web: wport(5344) },
+    { env: { LILOS_HIDE_CAPS: "models" } },
+  );
+  try {
+    await dmDefault(stackB, page);
+    // The new-session composer is rendered but carries no picker trigger.
+    await expect(page.locator("textarea").last()).toBeVisible();
+    await expect(triggers(page)).toHaveCount(0);
+    await send(page, "Check the relay reconnect plan");
+    // …and the open session's composer has none either, mid-turn included.
+    await expect(page.locator("[data-agentturn]").first()).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect(triggers(page)).toHaveCount(0);
+    await page.screenshot({ path: `${SHOTS}/ac-3-no-picker.png` });
   } finally {
     await stackB.stop();
   }
