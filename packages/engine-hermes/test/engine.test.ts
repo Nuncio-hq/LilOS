@@ -138,10 +138,11 @@ describe("engine-hermes #414: message.interim seals a segment, not appends", () 
       )
       .map((e) => (e.payload as { delta: string }).delta)
       .join("");
-  const turnIdOf = (h: Harness) =>
-    (h.events.find((e) => e.type === "turn.started")?.payload as {
-      turnId: string;
-    }).turnId;
+  const turnIdOf = (h: Harness) => {
+    const e = h.events.find((x) => x.type === "turn.started");
+    if (!e) throw new Error("turn.started missing");
+    return (e.payload as { turnId: string }).turnId;
+  };
 
   test("AC-2 recorded sequence: streamed pre-tool text renders once", async () => {
     /* Wire order captured on real `hermes serve` (the issue's live check)

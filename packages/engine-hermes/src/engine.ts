@@ -1353,9 +1353,7 @@ export class HermesEngine {
             /* sealed as-is — nothing new to append */
           } else {
             const tail =
-              streamed && t.startsWith(streamed)
-                ? t.slice(streamed.length)
-                : t;
+              streamed && t.startsWith(streamed) ? t.slice(streamed.length) : t;
             if (tail)
               s.emit("turn.delta", { turnId, stream: "text", delta: tail });
           }
