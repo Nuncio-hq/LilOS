@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "./memory-store";
+import {
+  dmWithConversation,
+  errorData,
+  eventsNamed,
+  helloed,
+  lastId,
+  newRelay,
+  req,
+  resultOf,
+} from "./helpers";
 
 /**
  * Relay coverage for the #30 surface: `conversations.setModel` notifies the
@@ -8,91 +16,6 @@ import { createMemoryStore } from "./memory-store";
  * conversation field, and the engine's catalog rides `welcome.engineHost`
  * + `system.status` from the heartbeat report.
  */
-
-const TOKEN = "test-token";
-
-function connectPeer(relay: ReturnType<typeof createRelay>) {
-  const frames: unknown[] = [];
-  const peer: RelayWsPeer = {
-    send: (frame) => frames.push(JSON.parse(frame)),
-    close: () => {},
-  };
-  const connection = relay.connect(peer);
-  return { frames, connection };
-}
-
-const eventsNamed = (frames: unknown[], method: string) =>
-  (frames as { method?: string; params?: unknown }[]).filter(
-    (f) => f.method === method,
-  );
-const resultOf = (frames: unknown[], id: string) => {
-  const frame = (
-    frames as {
-      id?: string;
-      result?: unknown;
-      error?: { code: number; message: string; data?: Record<string, unknown> };
-    }[]
-  ).find((f) => f.id === id);
-  if (!frame) throw new Error(`no response frame for ${id}`);
-  return frame;
-};
-const errorData = (frames: unknown[], id: string) => {
-  const { error } = resultOf(frames, id);
-  if (!error) throw new Error(`expected an error frame for ${id}`);
-  return error.data?.code as string;
-};
-
-let nextId = 0;
-const req = (method: string, params: Record<string, unknown> = {}) =>
-  JSON.stringify({ jsonrpc: "2.0", id: `t${nextId++}`, method, params });
-const lastId = () => `t${nextId - 1}`;
-
-const newRelay = () =>
-  createRelay({ store: createMemoryStore(), token: TOKEN });
-
-async function helloed(relay: ReturnType<typeof createRelay>) {
-  const { frames, connection } = connectPeer(relay);
-  await connection.receive(
-    req("session.hello", { protocolVersion: 1, token: TOKEN }),
-  );
-  const welcome = resultOf(frames, lastId()).result as {
-    engineHost: {
-      connected: boolean;
-      capabilities?: { id: string }[];
-      models?: { id: string }[];
-      defaultModel?: string;
-      defaultProvider?: string;
-    };
-  };
-  frames.length = 0;
-  return { frames, connection, welcome };
-}
-
-async function dmWithConversation(
-  connection: { receive(d: string): Promise<void> },
-  frames: unknown[],
-) {
-  await connection.receive(
-    req("employees.create", { name: "Ada", role: "eng" }),
-  );
-  const { employee } = resultOf(frames, lastId()).result as {
-    employee: { id: string };
-  };
-  await connection.receive(req("channels.openDm", { employeeId: employee.id }));
-  const { channel } = resultOf(frames, lastId()).result as {
-    channel: { id: string };
-  };
-  await connection.receive(
-    req("conversations.open", {
-      channelId: channel.id,
-      text: "Summarize the repo",
-    }),
-  );
-  const { conversation } = resultOf(frames, lastId()).result as {
-    conversation: { id: string; channelId: string; model?: string };
-  };
-  return { employee, channel, conversation };
-}
 
 describe("model pick relay surface (#30)", () => {
   it("AC-1/AC-2 conversations.setModel emits conversation.modelRequested on the channel", async () => {

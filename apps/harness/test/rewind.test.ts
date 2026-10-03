@@ -1,18 +1,19 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RelaySocket, SocketFactory } from "@lilos/client-runtime";
-import { RelayClient } from "@lilos/client-runtime";
+import type { RelayClient } from "@lilos/client-runtime";
 import type { AppMessage } from "@lilos/contracts/app";
-import { connectFake, FakeEngine } from "@lilos/engine-fake";
+import { FakeEngine } from "@lilos/engine-fake";
 import type { CheckpointStore } from "@lilos/host";
 import { describe, expect, it } from "vitest";
-import { createRelay } from "../../relay/src/session";
-import { createMemoryStore } from "../../relay/test/memory-store";
 import type { EngineConnection } from "../src/engine/client";
-import { Harness } from "../src/harness";
-import { createMemoryLogger } from "../src/log";
-import { createFakeSleepGuard } from "../src/sleep";
+import type { Harness } from "../src/harness";
+import {
+  openDm,
+  type Relay,
+  setupWorld as setupWorldBase,
+  waitFor as waitForBase,
+} from "./helpers";
 
 /**
  * Issue #134 harness leg: the checkpoint stamp on each user message, the
@@ -21,62 +22,10 @@ import { createFakeSleepGuard } from "../src/sleep";
  * folder-cwd.test.ts, kept in its own file to dodge sibling-PR conflicts.
  */
 
-const TOKEN = "test-token";
-
-type Relay = ReturnType<typeof createRelay>;
-
-const socketFor =
-  (relay: Relay): SocketFactory =>
-  () => {
-    const listeners = new Map<string, Array<(e?: unknown) => void>>();
-    const emit = (type: string, e?: unknown) =>
-      queueMicrotask(() =>
-        (listeners.get(type) ?? []).forEach((fn) => void fn(e)),
-      );
-    let peer: { receive(f: string): Promise<void>; closed(): void };
-    let readyState = 0;
-    const socket = {
-      get readyState() {
-        return readyState;
-      },
-      send: (frame: string) => {
-        void peer.receive(frame);
-      },
-      close: () => {
-        readyState = 3;
-        peer.closed();
-        emit("close", { code: 1000, reason: "closed" });
-      },
-      addEventListener(type: string, fn: (e?: unknown) => void) {
-        listeners.set(type, [...(listeners.get(type) ?? []), fn]);
-      },
-    } as unknown as RelaySocket;
-    peer = relay.connect({
-      send: (frame) => emit("message", { data: frame }),
-      close: (code, reason) => emit("close", { code, reason }),
-    });
-    queueMicrotask(() => {
-      readyState = 1;
-      emit("open");
-    });
-    return socket;
-  };
-
-const waitFor = async <T>(
+const waitFor = <T>(
   fn: () => T | undefined | Promise<T | undefined>,
   what: string,
-  timeoutMs = 15_000,
-): Promise<T> => {
-  const start = Date.now();
-  for (;;) {
-    const value = await fn();
-    if (value !== undefined) return value;
-    if (Date.now() - start > timeoutMs) {
-      throw new Error(`timed out waiting for ${what}`);
-    }
-    await new Promise((r) => setTimeout(r, 25));
-  }
-};
+): Promise<T> => waitForBase(fn, what, 15_000);
 
 /** Checkpoint-store stub: ids count snapshots, restore calls are recorded. */
 function stubCheckpoints() {
@@ -100,63 +49,41 @@ function stubCheckpoints() {
   return { store, calls };
 }
 
+interface World {
+  relay: Relay;
+  engine: FakeEngine;
+  engineConn: EngineConnection;
+  checkpoints: ReturnType<typeof stubCheckpoints>;
+  harness: Harness;
+  user: RelayClient;
+  workdir: string;
+  cleanup: () => Promise<void>;
+}
+
 async function setupWorld(opts?: {
   engine?: FakeEngine;
   attachEngine?: boolean;
-}) {
+}): Promise<World> {
   const workdir = mkdtempSync(join(tmpdir(), "lilos-rewind-"));
-  const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
-  const engine = opts?.engine ?? new FakeEngine({ tick: 1 });
-  const engineConn = connectFake(engine) as unknown as EngineConnection;
   const checkpoints = stubCheckpoints();
-  const log = createMemoryLogger();
-  const harnessRelay = new RelayClient({
-    url: "mem://harness",
-    token: TOKEN,
-    socketFactory: socketFor(relay),
+  const w = await setupWorldBase({
+    engine: opts?.engine,
+    attachEngine: opts?.attachEngine,
+    workdir,
+    rmWorkdir: true,
+    checkpoints: checkpoints.store,
     reconnectMinDelayMs: 20,
   });
-  const harness = new Harness({
-    relay: harnessRelay,
-    sleep: createFakeSleepGuard(),
-    workdir,
-    log,
-    checkpoints: checkpoints.store,
-  });
-  if (opts?.attachEngine !== false) harness.attachEngine(engineConn);
-  await harness.start();
-  const user = new RelayClient({
-    url: "mem://user",
-    token: TOKEN,
-    socketFactory: socketFor(relay),
-  });
-  await user.connect();
   return {
-    relay,
-    engine,
-    engineConn,
+    relay: w.relay,
+    engine: w.engine as FakeEngine,
+    engineConn: w.engineConn as EngineConnection,
     checkpoints,
-    harness,
-    user,
+    harness: w.harness,
+    user: w.user,
     workdir,
-    cleanup: async () => {
-      user.close();
-      await harness.stop();
-      rmSync(workdir, { recursive: true, force: true });
-    },
+    cleanup: w.cleanup,
   };
-}
-
-async function openDm(user: RelayClient) {
-  const { employee } = await user.request<{ employee: { id: string } }>(
-    "employees.create",
-    { name: "Ada", role: "engineer", profile: "builder" },
-  );
-  const { channel } = await user.request<{ channel: { id: string } }>(
-    "channels.openDm",
-    { employeeId: employee.id },
-  );
-  return channel;
 }
 
 async function sendAndAnswer(

@@ -1,52 +1,16 @@
 import type { SystemStatusResult } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
-import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "./memory-store";
-
-const TOKEN = "test-token";
-
-function connectPeer(relay: ReturnType<typeof createRelay>) {
-  const frames: unknown[] = [];
-  const peer: RelayWsPeer = {
-    send: (frame) => frames.push(JSON.parse(frame)),
-    close: () => {},
-  };
-  const connection = relay.connect(peer);
-  return { frames, connection };
-}
-
-const resultOf = (frames: unknown[], id: string) => {
-  const frame = (
-    frames as {
-      id?: string;
-      result?: unknown;
-      error?: { code: number; message: string; data?: Record<string, unknown> };
-    }[]
-  ).find((f) => f.id === id);
-  if (!frame) throw new Error(`no response frame for ${id}`);
-  return frame;
-};
-const errorOf = (frames: unknown[], id: string) => {
-  const { error } = resultOf(frames, id);
-  if (!error) throw new Error(`expected an error frame for ${id}`);
-  return error;
-};
-
-let nextId = 0;
-const req = (method: string, params: Record<string, unknown> = {}) =>
-  JSON.stringify({ jsonrpc: "2.0", id: `t${nextId++}`, method, params });
-
-async function helloed(relay: ReturnType<typeof createRelay>) {
-  const { frames, connection } = connectPeer(relay);
-  await connection.receive(
-    req("session.hello", { protocolVersion: 1, token: TOKEN }),
-  );
-  frames.length = 0;
-  return { frames, connection };
-}
-
-const newRelay = (opts: { protocolVersion?: number } = {}) =>
-  createRelay({ store: createMemoryStore(), token: TOKEN, ...opts });
+import type { createRelay } from "../src/session";
+import {
+  connectPeer,
+  errorOf,
+  helloed,
+  newRelay,
+  nextId,
+  req,
+  resultOf,
+  TOKEN,
+} from "./helpers";
 
 async function systemStatus(
   connection: { receive(d: string): Promise<void> },
@@ -375,5 +339,73 @@ describe("AC-1 (#339) system.status carries the host's connect rows", () => {
     const app = await helloed(relay);
     const status = await systemStatus(app.connection, app.frames);
     expect(status.connect).toBeUndefined();
+  });
+});
+
+describe("AC-1/2 (#413) connect rows fan out live on harness.report", () => {
+  const ROWS = [{ profile: "ada", employee: "Ada", state: "not-connected" }];
+  const report = (connect: unknown) =>
+    req("harness.report", {
+      engine: { state: "running" },
+      status: { connect },
+    });
+  const connectEvents = (frames: unknown[]) =>
+    (frames as { method?: string; params?: { connect?: unknown } }[]).filter(
+      (f) => f.method === "connect.changed",
+    );
+
+  it("broadcasts connect.changed with the fresh rows when they change", async () => {
+    const relay = newRelay();
+    const host = await registerHarness(relay);
+    const app = await helloed(relay);
+    app.frames.length = 0;
+
+    await host.connection.receive(report(ROWS));
+    const events = connectEvents(app.frames);
+    expect(events).toHaveLength(1);
+    expect(events[0].params?.connect).toEqual(ROWS);
+
+    // The flip the notice follows: not-connected -> connected lands live.
+    const next = [{ ...ROWS[0], state: "connected" }];
+    await host.connection.receive(report(next));
+    const after = connectEvents(app.frames);
+    expect(after).toHaveLength(2);
+    expect(after[1].params?.connect).toEqual(next);
+  });
+
+  it("does not re-broadcast when the rows are unchanged", async () => {
+    const relay = newRelay();
+    const host = await registerHarness(relay);
+    const app = await helloed(relay);
+    app.frames.length = 0;
+
+    await host.connection.receive(report(ROWS));
+    await host.connection.receive(report(ROWS));
+    // Other telemetry changing alongside identical rows doesn't fire either.
+    await host.connection.receive(
+      req("harness.report", {
+        engine: { state: "running" },
+        status: { connect: ROWS, sessions: 4 },
+      }),
+    );
+    expect(connectEvents(app.frames)).toHaveLength(1);
+  });
+
+  it("broadcasts when the rows go absent (host stopped reporting connect)", async () => {
+    const relay = newRelay();
+    const host = await registerHarness(relay);
+    const app = await helloed(relay);
+    app.frames.length = 0;
+
+    await host.connection.receive(report(ROWS));
+    await host.connection.receive(
+      req("harness.report", {
+        engine: { state: "running" },
+        status: { engineName: "engine-fake" },
+      }),
+    );
+    const events = connectEvents(app.frames);
+    expect(events).toHaveLength(2);
+    expect(events[1].params?.connect).toBeUndefined();
   });
 });
