@@ -38,7 +38,7 @@ export const NO_FOLDER_DEDUPE_LIKE = "sys:%:no-folder";
 export const noFolderDedupeKey = (key: string | null | undefined): boolean =>
   !!key && key.startsWith("sys:") && key.endsWith(":no-folder");
 
-export interface NewEmployee {
+interface NewEmployee {
   name: string;
   role: string;
   status: EmployeeStatus;
@@ -49,7 +49,7 @@ export interface NewEmployee {
   respondTo: RespondTo;
 }
 
-export type EmployeePatchInput = Partial<NewEmployee>;
+type EmployeePatchInput = Partial<NewEmployee>;
 
 export interface ConversationPatch {
   title?: string;
@@ -151,7 +151,7 @@ const textTokens = (text: string): string[] =>
     .filter(Boolean);
 
 /** Term match: earlier terms must hit a whole token; the last is a prefix. */
-export function messageMatchesTerms(text: string, terms: string[]): boolean {
+function messageMatchesTerms(text: string, terms: string[]): boolean {
   if (!terms.length) return false;
   const toks = textTokens(text);
   return terms.every((t, i) =>
@@ -164,7 +164,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /* A relay-snippet-shaped excerpt for the memory store: a ~12-word window
    opening a few words before the first match (the SQLite side uses
    snippet(…, 12)), `…` at clipped edges, `<mark>` around every term hit. */
-export function markSnippet(text: string, terms: string[]): string {
+function markSnippet(text: string, terms: string[]): string {
   if (!terms.length) return text.slice(0, 96);
   const patterns = terms.map(
     (t, i) =>
@@ -468,10 +468,7 @@ export function newId(prefix: string): string {
  * Synara uses — or `Image` for an image-only send. Collapses whitespace so
  * multi-line pastes read as one line.
  */
-export function placeholderTitle(
-  text: string,
-  hasAttachments: boolean,
-): string {
+function placeholderTitle(text: string, hasAttachments: boolean): string {
   const clean = text.replace(/\s+/g, " ").trim();
   if (!clean) return hasAttachments ? "Image" : "";
   const words = clean.split(" ");

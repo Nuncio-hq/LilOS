@@ -94,7 +94,7 @@ function turnApproval(
 }
 
 /** TurnModel -> the AgentEntry the thread renders (live or finished). */
-export function toAgentEntry(
+function toAgentEntry(
   turn: TurnModel,
   opts: {
     /** Wall-clock time on the row (the reply message's time once posted). */

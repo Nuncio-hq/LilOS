@@ -45,7 +45,7 @@ export interface HarnessConfig {
   hideCaps: string[];
 }
 
-export const DEFAULT_RELAY_URL = "ws://127.0.0.1:4577/ws";
+const DEFAULT_RELAY_URL = "ws://127.0.0.1:4577/ws";
 
 export function resolveHarnessConfig(
   env: Record<string, string | undefined> = process.env,

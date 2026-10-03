@@ -1,4 +1,8 @@
-import type { RelaySocket, SocketFactory } from "@lilos/client-runtime";
+import type {
+  ChannelMessagesState,
+  RelaySocket,
+  SocketFactory,
+} from "@lilos/client-runtime";
 import { RelayClient } from "@lilos/client-runtime";
 import type { AppMessage, Ask, WelcomeResult } from "@lilos/contracts/app";
 import { connectFake, FakeEngine } from "@lilos/engine-fake";
@@ -10,6 +14,7 @@ import {
   connectEngineWs,
   type EngineConnection,
   EngineRpcError,
+  type EngineSocket,
 } from "../src/engine/client";
 import { fakeEngineLauncher } from "../src/engine/launcher";
 import {
@@ -361,7 +366,7 @@ describe("workspace harness", () => {
       addEventListener(type: string, fn: (e?: unknown) => void) {
         listeners.set(type, [...(listeners.get(type) ?? []), fn]);
       },
-    } as unknown as import("../src/engine/client").EngineSocket;
+    } as unknown as EngineSocket;
     const connPromise = connectEngineWs("ws://fake", {
       socketFactory: () => {
         queueMicrotask(() =>
@@ -1546,10 +1551,16 @@ describe("interrupt ordering (#274)", () => {
       await w.user.request("turns.interrupt", {
         conversationId: conversation.id,
       });
-      // The harness took the request; only then let the prompt go out.
+      // The harness took the request; only then let the prompt go out. The
+      // Stop is either logged (bound path) or parked for the first turn.
       await waitFor(
-        () => w.log.lines.find((l) => l.includes("interrupt requested")),
-        "interrupt requested",
+        () =>
+          w.log.lines.find(
+            (l) =>
+              l.includes("interrupt requested") ||
+              l.includes("interrupt parked"),
+          ),
+        "interrupt taken",
       );
       releaseSnapshot();
       const methods = await waitFor(() => {
@@ -1697,6 +1708,192 @@ describe("interrupt ordering (#274)", () => {
         return messages.find((m) => m.text === "Stopped.");
       }, "Stopped. note");
       expect(stopped).toBeTruthy();
+    } finally {
+      await w.cleanup();
+    }
+  });
+});
+
+/* #402 — the windows around a send's first turn: a send reaches the harness
+   via the `channelMessages` store subscription while `turn.interruptRequested`
+   arrives on the `onRelayEvent` bus, and the relay orders the two paths
+   arbitrarily. When the bus wins, the Stop used to hit `!binding &&
+   !binds` and vanish; and with the binding set but its bind still inside
+   `bindConversation`'s last awaits (no prompt dispatched, promptGates
+   empty), a dispatched interrupt acks `interrupted:false` — a turn that
+   doesn't exist yet can't be cancelled (ac-104 AC-4: ~25% red under load).
+   Gate each delivery path so the interrupt provably lands in the window. */
+describe("pre-store-row interrupt park (#402)", () => {
+  /** Hold every channelMessages subscriber's notify until released. */
+  const gateChannelMessages = (w: World, held: Promise<void>) => {
+    const orig = w.harnessRelay.channelMessages.bind(w.harnessRelay);
+    w.harnessRelay.channelMessages = (channelId: string) => {
+      const store = orig(channelId);
+      const gated = Object.create(store);
+      gated.subscribe = (cb: (state: ChannelMessagesState) => void) =>
+        store.subscribe((state) => {
+          void held.then(() => cb(state));
+        });
+      return gated as typeof store;
+    };
+  };
+
+  it("AC-1 a Stop fired before the send's store row still lands on its first turn", async () => {
+    const w = await setupWorld();
+    try {
+      let releaseStore!: () => void;
+      const held = new Promise<void>((r) => (releaseStore = r));
+      gateChannelMessages(w, held);
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+      });
+      await w.user.request("turns.interrupt", {
+        conversationId: conversation.id,
+      });
+      /* Give the bus event a beat to land before the store path is
+         released — on the old code the Stop is dropped here (no binding,
+         no bind in flight); on the fix it parks and logs. The wait doubles
+         as the red/green boundary. */
+      await waitFor(
+        () => w.log.lines.find((l) => l.includes("interrupt parked")),
+        "interrupt parked",
+        2_000,
+      ).catch(() => {});
+      releaseStore();
+      /* The parked Stop fires at the send's first turn.started — the
+         engine sees prompt → interrupt, never a silently dropped
+         request. */
+      const methods = await waitFor(() => {
+        const m = w.engineCalls.map((c) => c.method);
+        return m.includes("prompt") && m.includes("interrupt") ? m : undefined;
+      }, "prompt and interrupt on the engine conn");
+      expect(methods.indexOf("prompt")).toBeLessThan(
+        methods.indexOf("interrupt"),
+      );
+      const stopped = await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.text === "Stopped.");
+      }, "Stopped. note");
+      expect(stopped).toBeTruthy();
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-2 a Stop fired while the bind finishes still lands on the first turn", async () => {
+    const w = await setupWorld();
+    try {
+      /* `bindings.set` lands inside bindConversation BEFORE its last await
+         (the `conversations.update` that stamps engineRef/state). Hold that
+         one RPC: the Esc then arrives with a binding present, no bind flag
+         cleared yet, and no prompt anywhere — the stretch where the
+         interrupt used to dispatch straight into `interrupted:false`. */
+      let releaseUpdate!: () => void;
+      const held = new Promise<void>((r) => (releaseUpdate = r));
+      let updateHeld = false;
+      const orig = w.harnessRelay.request.bind(w.harnessRelay);
+      w.harnessRelay.request = ((
+        method: string,
+        params?: Record<string, unknown>,
+      ) => {
+        if (
+          method === "conversations.update" &&
+          (params as { engineRef?: string }).engineRef
+        ) {
+          updateHeld = true;
+          return held.then(() => orig(method, params));
+        }
+        return orig(method, params);
+      }) as typeof w.harnessRelay.request;
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+      });
+      await waitFor(
+        () => updateHeld || undefined,
+        "bind held at conversations.update",
+      );
+      await w.user.request("turns.interrupt", {
+        conversationId: conversation.id,
+      });
+      /* Let the interrupt land while the bind is still suspended — the fix
+         parks it (binding exists, a send is mid-flight) and fires it at
+         the send's first turn.started. */
+      await waitFor(
+        () => w.log.lines.find((l) => l.includes("interrupt parked")),
+        "interrupt parked",
+        2_000,
+      ).catch(() => {});
+      releaseUpdate();
+      const methods = await waitFor(() => {
+        const m = w.engineCalls.map((c) => c.method);
+        return m.includes("prompt") && m.includes("interrupt") ? m : undefined;
+      }, "prompt and interrupt on the engine conn");
+      /* prompt strictly before interrupt — never the `interrupted:false`
+         ordering the lost Stop produced. */
+      expect(methods.indexOf("prompt")).toBeLessThan(
+        methods.indexOf("interrupt"),
+      );
+      const stopped = await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.text === "Stopped.");
+      }, "Stopped. note");
+      expect(stopped).toBeTruthy();
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-3 a parked Stop dies with its send — a removed send can't leak it onto a later turn", async () => {
+    const w = await setupWorld();
+    try {
+      let releaseStore!: () => void;
+      const held = new Promise<void>((r) => (releaseStore = r));
+      gateChannelMessages(w, held);
+      const { channel } = await openDmConversation(w.user);
+      const { conversation, rootMessage } = await w.user.request<{
+        conversation: { id: string };
+        rootMessage: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+      });
+      await w.user.request("turns.interrupt", {
+        conversationId: conversation.id,
+      });
+      await waitFor(
+        () => w.log.lines.find((l) => l.includes("interrupt parked")),
+        "interrupt parked",
+        2_000,
+      ).catch(() => {});
+      // The send the Stop waited on is removed before its row delivers.
+      await w.user.request("messages.remove", { messageId: rootMessage.id });
+      releaseStore();
+      // A later send runs its turn unimpeded — no stray interrupt.
+      await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "Summarize the repo layout",
+      );
+      const answer = await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+      }, "employee answer");
+      expect(answer).toBeTruthy();
+      expect(
+        w.engineCalls.filter((c) => c.method === "interrupt"),
+      ).toHaveLength(0);
     } finally {
       await w.cleanup();
     }

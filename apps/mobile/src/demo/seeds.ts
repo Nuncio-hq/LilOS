@@ -20,11 +20,11 @@ const SONNET = {
 
 const APPROVAL_OPTS = ["once", "always", "deny"] as const;
 
-export const ASK_FLAKE = "a-flake";
-export const ASK_POST = "a-post";
-export const ASK_MIGRATE = "a-migrate";
-export const ASK_PUSH = "a-push";
-export const ASK_PLAN = "a-plan";
+const ASK_FLAKE = "a-flake";
+const ASK_POST = "a-post";
+const ASK_MIGRATE = "a-migrate";
+const ASK_PUSH = "a-push";
+const ASK_PLAN = "a-plan";
 
 /* ── held-at-ask continuations (FLAKE/POST, approve/deny) ────────────────── */
 
@@ -120,7 +120,7 @@ const PUSH_NO: DemoScript = {
 
 /* ── the plan thread (#175/182 coverage) ─────────────────────────────────── */
 
-export const PLAN_V1: DemoPlan = {
+const PLAN_V1: DemoPlan = {
   planId: "plan-1",
   kind: "plan",
   version: 1,
@@ -160,7 +160,7 @@ export const PLAN_V1: DemoPlan = {
 
 /** The work the approved plan runs — one tool call per plan step, ticking
     the plan's own step list as it goes (same planId, same version merges). */
-export const PLAN_WORK: DemoScript = {
+const PLAN_WORK: DemoScript = {
   tickPlan: PLAN_V1,
   steps: [
     {
@@ -226,7 +226,7 @@ export const PLAN_WORK: DemoScript = {
   },
 };
 
-export const PLAN_REJECT: DemoScript = {
+const PLAN_REJECT: DemoScript = {
   text: "Scrapped. The plan is marked rejected — say what to change and I'll write v2.",
 };
 
@@ -242,7 +242,7 @@ const CI_TASKS = [
 /* ── The seeded world ────────────────────────────────────────────────────── */
 
 export const SLEEP_THREAD = "s-sleep";
-export const SEQ_THREAD = "s-seq";
+const SEQ_THREAD = "s-seq";
 const REVIEWER_HELPER = { employeeRef: "reviewer", sessionRef: "ses_rv21" };
 
 export const DEMO_SEEDS: SeedConversation[] = [

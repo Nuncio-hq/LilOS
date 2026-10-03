@@ -167,7 +167,7 @@ const modelCache = new Map<string, ReadableAtom<SessionModel>>();
  * the session's event feed. This is the only place engine events get
  * re-shaped for the UI.
  */
-export function sessionModel(sessionId: string): ReadableAtom<SessionModel> {
+function sessionModel(sessionId: string): ReadableAtom<SessionModel> {
   let m = modelCache.get(sessionId);
   if (!m) {
     const feed: ReadableAtom<SessionFeedState> = engine.sessionFeed(sessionId);

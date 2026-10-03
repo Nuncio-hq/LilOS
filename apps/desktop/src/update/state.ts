@@ -58,7 +58,7 @@ export interface PendingUpdate {
   stagedApp: string;
 }
 
-export type UpdatePhase =
+type UpdatePhase =
   | "downloading"
   | "applying"
   | "verifying"
@@ -67,7 +67,7 @@ export type UpdatePhase =
   | "failed"
   | "skipped";
 
-export interface UpdateStatus {
+interface UpdateStatus {
   phase: UpdatePhase;
   version?: string;
   build?: number;
@@ -80,7 +80,7 @@ export function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-export function readJson<T>(path: string): T | undefined {
+function readJson<T>(path: string): T | undefined {
   if (!existsSync(path)) return undefined;
   try {
     return JSON.parse(readFileSync(path, "utf8")) as T;
@@ -91,10 +91,6 @@ export function readJson<T>(path: string): T | undefined {
 
 export function writeStatus(paths: UpdatePaths, s: Omit<UpdateStatus, "at">) {
   writeJson(paths.statusFile, { ...s, at: Date.now() } satisfies UpdateStatus);
-}
-
-export function readStatus(paths: UpdatePaths): UpdateStatus | undefined {
-  return readJson<UpdateStatus>(paths.statusFile);
 }
 
 /** Builds this app will never try again (rollback already proved them bad). */

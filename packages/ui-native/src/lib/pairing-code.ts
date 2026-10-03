@@ -39,7 +39,7 @@ export function normalizeHost(raw: string): string {
     .toLowerCase();
 }
 
-export function isValidHost(raw: string): boolean {
+function isValidHost(raw: string): boolean {
   return HOST_RE.test(normalizeHost(raw));
 }
 

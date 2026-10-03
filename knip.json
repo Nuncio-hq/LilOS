@@ -1,0 +1,44 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["e2e/*-parent.ts", "scripts/release/*.ts", "scripts/live/*.ts"]
+    },
+    "apps/desktop": {
+      "entry": ["scripts/*.ts", "src/main.ts", "src/preload.cjs"]
+    },
+    "apps/harness": {
+      "entry": ["scripts/*.ts"]
+    },
+    "apps/relay": {
+      "entry": ["test/fts-fixture.ts"]
+    },
+    "apps/web": {
+      "entry": ["vite.ac28.config.ts"]
+    },
+    "packages/contracts": {
+      "entry": ["scripts/*.ts"]
+    },
+    "packages/engine-conformance": {
+      "entry": ["scripts/*.ts", "clients/**/*"]
+    },
+    "packages/engine-fake": {
+      "entry": ["scripts/*.ts"]
+    },
+    "packages/engine-hermes": {
+      "entry": ["scripts/*.ts"]
+    },
+    "prototype/web": {
+      "entry": ["engine-plugin.ts", "host-plugin.ts"]
+    }
+  },
+  "ignoreDependencies": ["expo-updates", "expo-system-ui"],
+  "ignoreBinaries": ["swiftc", "pgrep", "mcp", "osascript", "killall"],
+  "ignoreUnresolved": [
+    "scripts/dev.ts",
+    "scripts/build.ts",
+    "apps/harness/scripts/surfaces-demo.ts",
+    "packages/engine-fake/scripts/serve.ts",
+    "packages/contracts/scripts/gen-schemas.ts"
+  ]
+}

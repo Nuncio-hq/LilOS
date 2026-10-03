@@ -80,7 +80,7 @@ export function createCaffeinateGuard(
 }
 
 /** Platforms without caffeinate (and tests) get the no-op guard. */
-export function createNullSleepGuard(): SleepGuard {
+function createNullSleepGuard(): SleepGuard {
   let count = 0;
   return {
     acquire() {

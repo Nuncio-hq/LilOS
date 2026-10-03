@@ -2,7 +2,6 @@ import type {
   ApprovalOption,
   ApprovalOutcome,
   EngineRequest,
-  Job,
   JobStatus,
   QuestionRequest,
   StopReason,
@@ -189,28 +188,6 @@ export function mapProcessStatus(row: Record<string, unknown>): JobStatus {
     default:
       return "exited"; // exited | lost | already_exited
   }
-}
-
-/** A `process.list` row -> one protocol `Job` row. */
-export function mapProcessRow(row: Record<string, unknown>): Job | undefined {
-  const jobId = typeof row.session_id === "string" ? row.session_id : "";
-  if (!jobId) return undefined;
-  const startedAt = Date.parse(String(row.started_at ?? ""));
-  const status = mapProcessStatus(row);
-  return {
-    jobId,
-    command:
-      typeof row.command === "string" && row.command ? row.command : jobId,
-    status,
-    ...(Number.isFinite(startedAt) ? { startedAt } : {}),
-    ...(typeof row.uptime_seconds === "number"
-      ? { uptimeSeconds: row.uptime_seconds }
-      : {}),
-    ...(typeof row.exit_code === "number" ? { exitCode: row.exit_code } : {}),
-    ...(typeof row.output_tail === "string" && row.output_tail
-      ? { tail: row.output_tail }
-      : {}),
-  };
 }
 
 /** A tool result that may arrive as a JSON string or an object. */

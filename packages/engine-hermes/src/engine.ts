@@ -80,7 +80,7 @@ import {
  * `session.create` fields are negotiated per gateway, so a build between the
  * minimum and current keeps working; anything older is unverified.
  */
-export const MIN_HERMES_VERSION = "v0.21.5 (2026.9.24)";
+const MIN_HERMES_VERSION = "v0.21.5 (2026.9.24)";
 
 /**
  * `session.create` params a gateway may not declare: its Params models are

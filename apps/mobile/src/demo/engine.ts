@@ -7,7 +7,7 @@ import type { DemoPlan, DemoScript, DemoStep } from "./types";
    no-op when a seed bakes its history, so baked logs are byte-for-byte the
    live ones minus the waiting. */
 
-export type TurnEmit = (type: string, payload: Record<string, unknown>) => void;
+type TurnEmit = (type: string, payload: Record<string, unknown>) => void;
 
 export type TurnCtx = {
   turnId: string;

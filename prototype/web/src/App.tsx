@@ -381,6 +381,19 @@ const DM_FEEDS: Record<string, Msg[]> = {
         ],
       },
     },
+    {
+      kind: "msg", id: "du1", from: "oscar", time: "09:12", text: "The dev bundle booted the fake engine again — where does it pick that up?",
+      thread: {
+        session: "ses_9d04", usage: { input: 8200, output: 510, reasoning: 140, cache: 3000 },
+        replies: [
+          {
+            id: "du1r1", from: "builder", time: "09:14", thought: 3, reasoning: "Engine selection lives in the launch env; check what stamps it.",
+            steps: [{ tool: "search_files", input: { pattern: "LILOS_ENGINE", path: "apps/desktop" }, output: "3 matches" }],
+            text: "The ad-hoc bundle stamps `LILOS_ENGINE=fake` at build time — `scripts/build.ts` writes it, and the `emp_be3b` profile's `conv_338a111f` session inherits it. `log_path` under the session's `worker_dir` shows which engine actually booted.",
+          },
+        ],
+      },
+    },
   ],
   "dm-reviewer": [
     {

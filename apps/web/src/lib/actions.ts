@@ -26,8 +26,6 @@ import {
 } from "./runtime";
 import { say } from "./toast";
 
-export { USER_ID };
-
 /** conversationId -> true while the first engine attach is in flight. */
 export const pendingStart = atom<Record<string, boolean>>({});
 
@@ -146,7 +144,7 @@ export function describeSendError(e: unknown): string {
 }
 
 /** Optimistic "submitted" marker until the feed sees turn.started. */
-export function stillPending(conversationId: string): boolean {
+function stillPending(conversationId: string): boolean {
   return pendingStart.get()[conversationId] === true;
 }
 
@@ -300,9 +298,6 @@ export async function setDefaultEditor(id: string): Promise<void> {
   defaultEditor.set(id);
   await relay.request("settings.set", { key: "defaultEditor", value: id });
 }
-
-/** Shared recent folders (relay-owned, #113). */
-export { addFolder, refreshFolders } from "./folders";
 
 export async function archiveConversation(
   conversationId: string,
