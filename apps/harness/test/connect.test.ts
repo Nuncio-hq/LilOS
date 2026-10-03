@@ -8,7 +8,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CONNECT_APPROVAL_KEY, HermesConnect } from "../src/connect";
+import {
+  CONNECT_APPROVAL_KEY,
+  FakeConnect,
+  HermesConnect,
+} from "../src/connect";
 import { createMemoryLogger } from "../src/log";
 
 /**
@@ -23,7 +27,7 @@ interface Call {
   argv: string[];
 }
 
-function fixture(version = "0.1.0") {
+function fixture(version = "0.1.0", onChange?: () => void) {
   const pluginSrc = mkdtempSync(join(tmpdir(), "lilos339-plugin-"));
   writeFileSync(
     join(pluginSrc, "plugin.yaml"),
@@ -54,6 +58,7 @@ function fixture(version = "0.1.0") {
       calls.push({ argv });
       return { status: 0, out: "" };
     },
+    ...(onChange ? { onChange } : {}),
   });
 
   return {
@@ -236,6 +241,103 @@ describe("AC-1 (#339) removal disables the plugin, never deletes the profile", (
     expect(f.disableCalls("ada")).toBe(1);
     expect(f.connect.report()).toEqual([
       { profile: "grace", employee: "Grace", state: "connected" },
+    ]);
+  });
+});
+
+describe("AC-1 (#413) reconcile emits onChange only when the rows change", () => {
+  it("fires on row transitions, not on a no-op reconcile", async () => {
+    let emitted = 0;
+    const f = fixture("0.1.0", () => emitted++);
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+
+    await f.connect.reconcile();
+    expect(emitted).toBe(1); // the rows exist now: not-connected
+
+    await f.connect.reconcile();
+    expect(emitted).toBe(1); // same rows — nothing to re-report
+
+    f.approve();
+    await f.connect.reconcile();
+    expect(emitted).toBe(2); // the flip to connected is the live event
+  });
+
+  it("a roster shrink emits too", async () => {
+    let emitted = 0;
+    const f = fixture("0.1.0", () => emitted++);
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    await f.connect.reconcile();
+    expect(emitted).toBe(1);
+
+    f.employees.splice(0, 1);
+    await f.connect.reconcile();
+    expect(emitted).toBe(2);
+    expect(f.connect.report()).toEqual([]);
+  });
+});
+
+describe("AC-2 (#413) FakeConnect rows follow the approval on engine-fake", () => {
+  function fakeFixture(onChange?: () => void) {
+    const settings = new Map<string, unknown>();
+    const employees: { id: string; name: string; profile?: string }[] = [];
+    const connect = new FakeConnect({
+      relay: {
+        request: async (method, params) => {
+          if (method === "settings.get")
+            return { value: settings.get(String(params.key)) };
+          if (method === "employees.list") return { employees };
+          throw new Error(`unexpected ${method}`);
+        },
+      },
+      ...(onChange ? { onChange } : {}),
+    });
+    return {
+      settings,
+      employees,
+      connect,
+      approve: () => settings.set(CONNECT_APPROVAL_KEY, { approved: true }),
+    };
+  }
+
+  it("reports not-connected until Connect is approved, then connected", async () => {
+    const f = fakeFixture();
+    f.employees.push({ id: "e1", name: "Default", profile: "default" });
+    await f.connect.reconcile();
+    expect(f.connect.report()).toEqual([
+      { profile: "default", employee: "Default", state: "not-connected" },
+    ]);
+
+    f.approve();
+    await f.connect.reconcile();
+    expect(f.connect.report()).toEqual([
+      { profile: "default", employee: "Default", state: "connected" },
+    ]);
+  });
+
+  it("emits onChange on the approval flip and drops removed employees", async () => {
+    let emitted = 0;
+    const f = fakeFixture(() => emitted++);
+    f.employees.push(
+      { id: "e1", name: "Default", profile: "default" },
+      { id: "e2", name: "Ada", profile: "ada" },
+    );
+    await f.connect.reconcile();
+    expect(emitted).toBe(1);
+
+    f.approve();
+    await f.connect.reconcile();
+    expect(emitted).toBe(2);
+    expect(f.connect.report().every((r) => r.state === "connected")).toBe(true);
+
+    // The relay dropped e2 before employee.removed reached the harness.
+    f.employees.splice(1, 1);
+    f.connect.employeeRemoved("e2");
+    await f.connect.reconcile();
+    expect(emitted).toBe(3);
+    expect(f.connect.report()).toEqual([
+      { profile: "default", employee: "Default", state: "connected" },
     ]);
   });
 });

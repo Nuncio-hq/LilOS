@@ -1,4 +1,7 @@
-import type { HarnessStatusReport } from "@lilos/contracts/app";
+import type {
+  HarnessStatusReport,
+  ProfileConnection,
+} from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import type { EngineConnection } from "../src/engine/client";
 import { StatusReporter, type SupervisorView } from "../src/status";
@@ -32,6 +35,7 @@ function makeReporter(opts: {
   readRssBytes?: (pid: number) => number | undefined;
   liveSessions?: () => number;
   logTail?: () => string[];
+  connect?: () => ProfileConnection[];
 }) {
   const sent = opts.sent ?? [];
   const reporter = new StatusReporter({
@@ -45,6 +49,7 @@ function makeReporter(opts: {
     liveSessions: opts.liveSessions,
     logTail: opts.logTail,
     readRssBytes: opts.readRssBytes,
+    connect: opts.connect,
     probeTimeoutMs: 500,
   });
   return { reporter, sent };
@@ -191,5 +196,44 @@ describe("AC-4 (#33) harness status reporter feeds engine RSS + sessions", () =>
         sent[0],
       );
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe("AC-1 (#413) sendNow re-reports fresh connect rows without probing", () => {
+  it("sends the reconciled rows immediately — describe is not re-probed", async () => {
+    let probes = 0;
+    const supervisor: SupervisorView = {
+      state: {
+        current: "running",
+        detail: "engine-fake",
+        conn: {
+          request: async <T>(method: string) => {
+            probes++;
+            if (method === "describe") return DESCRIBE as T;
+            throw new Error(`unexpected ${method}`);
+          },
+        } as EngineConnection,
+      },
+      process: { pid: 42 },
+    };
+    let rows: ProfileConnection[] = [
+      { profile: "default", employee: "Default", state: "not-connected" },
+    ];
+    const { reporter, sent } = makeReporter({
+      supervisor,
+      readRssBytes: () => 1024,
+      connect: () => rows,
+    });
+    await reporter.reportOnce();
+    expect(probes).toBe(1);
+    expect(sent[0].status?.connect?.[0]?.state).toBe("not-connected");
+
+    // The reconcile flipped the row — sendNow carries it with the cached probe.
+    rows = [{ ...rows[0], state: "connected" }];
+    await reporter.sendNow();
+    expect(sent).toHaveLength(2);
+    expect(probes).toBe(1);
+    expect(sent[1].status?.connect?.[0]?.state).toBe("connected");
+    expect(sent[1].status?.engineName).toBe("engine-fake");
   });
 });
