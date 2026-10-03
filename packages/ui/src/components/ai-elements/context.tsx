@@ -61,10 +61,17 @@ export const Context = ({
   </ContextContext.Provider>
 );
 
+/* The ring + percent never read past full — a stale or estimated numerator
+   can overshoot the window, but 100%/"Full" is the ceiling (#415). */
+const shareOf = (usedTokens: number, maxTokens: number) =>
+  maxTokens > 0 ? Math.min(1, Math.max(0, usedTokens / maxTokens)) : 0;
+const isFull = (usedTokens: number, maxTokens: number) =>
+  maxTokens > 0 && usedTokens >= maxTokens;
+
 const ContextIcon = () => {
   const { usedTokens, maxTokens } = useContextValue();
   const circumference = 2 * Math.PI * ICON_RADIUS;
-  const usedPercent = usedTokens / maxTokens;
+  const usedPercent = shareOf(usedTokens, maxTokens);
   const dashOffset = circumference * (1 - usedPercent);
 
   return (
@@ -106,11 +113,13 @@ export type ContextTriggerProps = ComponentProps<typeof Button>;
 
 export const ContextTrigger = ({ children, ...props }: ContextTriggerProps) => {
   const { usedTokens, maxTokens } = useContextValue();
-  const usedPercent = usedTokens / maxTokens;
-  const renderedPercent = new Intl.NumberFormat("en-US", {
-    style: "percent",
-    maximumFractionDigits: 1,
-  }).format(usedPercent);
+  const usedPercent = shareOf(usedTokens, maxTokens);
+  const renderedPercent = isFull(usedTokens, maxTokens)
+    ? "Full"
+    : new Intl.NumberFormat("en-US", {
+        style: "percent",
+        maximumFractionDigits: 1,
+      }).format(usedPercent);
 
   // base-nova: Base UI PreviewCard.Trigger renders its own element; render= avoids nesting the Button in it
   return (
@@ -149,11 +158,13 @@ export const ContextContentHeader = ({
   ...props
 }: ContextContentHeaderProps) => {
   const { usedTokens, maxTokens } = useContextValue();
-  const usedPercent = usedTokens / maxTokens;
-  const displayPct = new Intl.NumberFormat("en-US", {
-    style: "percent",
-    maximumFractionDigits: 1,
-  }).format(usedPercent);
+  const usedPercent = shareOf(usedTokens, maxTokens);
+  const displayPct = isFull(usedTokens, maxTokens)
+    ? "Full"
+    : new Intl.NumberFormat("en-US", {
+        style: "percent",
+        maximumFractionDigits: 1,
+      }).format(usedPercent);
   const used = new Intl.NumberFormat("en-US", {
     notation: "compact",
   }).format(usedTokens);

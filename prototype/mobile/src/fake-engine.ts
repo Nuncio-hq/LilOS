@@ -55,6 +55,9 @@ const withContext = (t: ThreadDetail): ThreadDetail => {
       output,
       reasoning: Math.round(output * 0.4),
       cache: n(m[3]),
+      // The mock's in+out IS its live occupancy — real engines report it as
+      // `context` (#415).
+      context: n(m[1]) + output,
       max: t.model.startsWith("Qwen") ? 262_000 : 200_000,
     },
   };
