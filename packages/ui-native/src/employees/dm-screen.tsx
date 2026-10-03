@@ -13,6 +13,7 @@ import { Icon } from "../components/icon";
 import { Orb, type OrbState, type OrbTone } from "../components/orb";
 import { Pulse, plain } from "../components/prose";
 import { Composer } from "./composer";
+import { LifePill } from "./life-pill";
 import { PrLine } from "./pr-badges";
 import type { SessionState, SessionTurn } from "./types";
 
@@ -147,7 +148,7 @@ function ThreadRow({
       className="flex-row pl-4 active:bg-fill"
     >
       <View className="w-5 items-start pt-[19px]">
-        <StateMark state={t.state} />
+        <StateMark state={t.state} ringed={!!t.replies && !!t.life} />
       </View>
       <View className="min-w-0 flex-1 gap-0.5 py-3 pr-4">
         <View className="flex-row items-center gap-2">
@@ -203,12 +204,12 @@ function ThreadRow({
           )}
           <View className="flex-1" />
           {!!t.replies && (
-            <View className="flex-row items-center gap-1">
+            <LifePill life={t.life}>
               <Icon name="bubble.left" size={11} tone="muted-foreground" />
               <AppText tone="muted" className="text-[13px]">
                 {t.replies}
               </AppText>
-            </View>
+            </LifePill>
           )}
         </View>
         {!!t.prs?.length && <PrLine prs={t.prs} />}
@@ -220,7 +221,13 @@ function ThreadRow({
   );
 }
 
-function StateMark({ state }: { state: SessionState }) {
+function StateMark({
+  state,
+  ringed,
+}: {
+  state: SessionState;
+  ringed?: boolean;
+}) {
   if (state === "needs-you")
     return (
       <View className="-mt-1 -ml-1 size-[18px] items-center justify-center rounded-full bg-primary">
@@ -229,7 +236,9 @@ function StateMark({ state }: { state: SessionState }) {
       </View>
     );
   if (state === "working")
-    return (
+    // #344: with replies, the ring round the replies count says "working";
+    // a dot here too would say it twice. No replies yet → the dot.
+    return ringed ? null : (
       <Pulse>
         <View className="size-2.5 rounded-full bg-work" />
       </Pulse>

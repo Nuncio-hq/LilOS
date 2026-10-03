@@ -5,7 +5,7 @@ import type { EngineEvent } from "@lilos/contracts/engine";
 import { connectFake, FakeEngine } from "@lilos/engine-fake";
 import { describe, expect, it } from "vitest";
 import { createRelay } from "../../relay/src/session";
-import { createMemoryStore } from "../../relay/src/store";
+import { createMemoryStore } from "../../relay/test/memory-store";
 import type { EngineConnection } from "../src/engine/client";
 import { createFeedHandler } from "../src/feed";
 import { Harness } from "../src/harness";

@@ -21,14 +21,17 @@ type ListResult = {
   entries: { name: string; kind: "dir" | "file" | "other"; repo?: { head: string | null; remote: string | null } }[]
 }
 
-const dirCache = new Map<string, Promise<Record<string, FsDir> | null>>()
+/* In-flight dedupe only: a settled listing is never reused — reopening the
+   picker or entering a folder re-reads the dir, so a folder created after
+   the page loaded shows (issue #418). */
+const dirInflight = new Map<string, Promise<Record<string, FsDir> | null>>()
 
 /* fs.list → FsDir rows: the dir's children + a git-marked stub per repo child. The dir's
    own mark (branches) is fetched too, so picking it fills the folder card for real.
    The host collapses paths under its home to `~`, but the dialog looks rows up by the
    path it asked for — so the row is keyed by both the result path and the request path. */
 export function hostDir(path: string): Promise<Record<string, FsDir> | null> {
-  let p = dirCache.get(path)
+  let p = dirInflight.get(path)
   if (!p) {
     p = (async () => {
       const r = await host<ListResult>("fs.list", { path })
@@ -59,12 +62,10 @@ export function hostDir(path: string): Promise<Record<string, FsDir> | null> {
       }
       if (r.path !== path) out[r.path] = out[path]
       return out
-    })().catch(() => null)
-    dirCache.set(path, p)
-    // A failed listing is not cached — the next onNeedDir retries.
-    void p.then((m) => {
-      if (m === null) dirCache.delete(path)
-    })
+    })()
+      .catch(() => null)
+      .finally(() => dirInflight.delete(path))
+    dirInflight.set(path, p)
   }
   return p
 }
