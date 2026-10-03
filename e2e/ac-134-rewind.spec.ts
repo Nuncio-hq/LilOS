@@ -268,9 +268,16 @@ let empA = "";
 
 /** Message-row text match that excludes the composer textarea — after a
     rewind the draft legitimately echoes the dropped message (AC-4), and
-    getByText matches a textarea's content too. */
+    getByText matches a textarea's content too. Turn-card collapsibles are
+    excluded the same way: a live card's reasoning echoes the prompt
+    verbatim (#266), and while it's open getByText strict-matches both —
+    the #432 fast tick lands asserts inside that open window. */
 const rowText = (scope: Locator, text: string | RegExp) =>
-  scope.getByText(text).and(scope.locator(":not(textarea)"));
+  scope
+    .getByText(text)
+    .and(
+      scope.locator(":not(textarea):not([data-slot='collapsible-content'] *)"),
+    );
 
 function watchConsole(page: Page) {
   const errors: string[] = [];
