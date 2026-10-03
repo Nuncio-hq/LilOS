@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
 /** How long a turn may take to end once its approvals are answered (#257). */
-export const TURN_END_TIMEOUT = 90_000;
+const TURN_END_TIMEOUT = 90_000;
 /** Click → relay resolves → the card's wire state flips (#298). */
 const ASK_RESOLVE_TIMEOUT = 15_000;
 /** Between answers, the next gated step can take a beat to ask. */

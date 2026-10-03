@@ -15,8 +15,7 @@
   },
   "dependencies": {
     "@lilos/contracts": "workspace:*",
-    "@lilos/engine-fake": "workspace:*",
-    "zod": "^4.1.11"
+    "@lilos/engine-fake": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

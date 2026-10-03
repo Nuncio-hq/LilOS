@@ -30,7 +30,7 @@ import { nav } from "./routes";
 
 const PREFS_KEY = "lilos.push.prefs.v1";
 
-export const DEFAULT_PUSH_PREFS: PushPrefs = {
+const DEFAULT_PUSH_PREFS: PushPrefs = {
   needsApproval: true,
   waitingForInput: true,
   completed: true,

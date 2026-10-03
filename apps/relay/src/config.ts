@@ -12,7 +12,7 @@ export interface RelayConfig {
   tokenPath: string;
 }
 
-export const DEFAULT_RELAY_PORT = 4577;
+const DEFAULT_RELAY_PORT = 4577;
 
 export function resolveRelayConfig(
   env: Record<string, string | undefined> = process.env,

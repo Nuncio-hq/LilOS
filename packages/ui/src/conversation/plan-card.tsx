@@ -25,7 +25,7 @@ export function planProgress(p: Plan) {
   return { done, total: p.steps.length, pct: (done / p.steps.length) * 100 };
 }
 
-export function StepMark({ s, n }: { s: PlanStep; n: number }) {
+function StepMark({ s, n }: { s: PlanStep; n: number }) {
   if (s.status === "completed")
     return (
       <span className="grid size-5 shrink-0 place-items-center rounded-full bg-emerald-500/15 text-emerald-600">
@@ -99,7 +99,7 @@ export function PlanRisks({ risks }: { risks: string[] }) {
 
 /* Where the card is in its life: waiting on you, working, done, stopped mid-way, or
    superseded. Done folds to one green line (plans: with the goal) — tap for the steps. */
-export function planPhase(p: Plan) {
+function planPhase(p: Plan) {
   const { done, total } = planProgress(p);
   if (p.status === "proposed") return "waiting";
   if (p.status === "replaced" || p.status === "rejected") return p.status;

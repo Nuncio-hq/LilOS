@@ -87,7 +87,7 @@ export const PROJECTS: ProjectGroup[] = [
 
 // ── Pickers (web: FOLDERS + MODELS) ─────────────────────────────────────────
 
-export const FOLDERS: FolderOption[] = [
+const FOLDERS: FolderOption[] = [
   {
     id: "lilos",
     project: "LilOS",

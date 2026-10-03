@@ -5,7 +5,7 @@ import type { Msg, Plan, Reply, Step, Thread } from "@lilos/ui"
    live, Change (Oscar's reply) yields the next version, Reject stops. Real app: Claude Code
    plan mode / Codex plan updates / Hermes todo over the engine protocol. */
 
-export const PLAN_ROOT = "d4"
+const PLAN_ROOT = "d4"
 
 const V1: Plan = {
   id: "plan-1",

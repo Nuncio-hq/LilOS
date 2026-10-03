@@ -540,9 +540,6 @@ export class EngineClient {
   }
 }
 
-/** ids used by tests to assert events the client accepted. */
-export const ENGINE_EVENT_NAMES = ENGINE_EVENT_TYPES;
-
 /** #179: a gone session's replay error is terminal; anything else retries. */
 function isTransientFeedError(error: unknown): boolean {
   const code =

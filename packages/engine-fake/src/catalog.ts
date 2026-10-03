@@ -64,7 +64,7 @@ export interface FakeModel {
 
 /** The full ladder an engine reports when a model reasons but has no
     per-model list. */
-export const FAKE_EFFORT_LADDER = [
+const FAKE_EFFORT_LADDER = [
   "none",
   "minimal",
   "low",

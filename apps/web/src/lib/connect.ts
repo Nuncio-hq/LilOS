@@ -11,27 +11,11 @@ import { relay } from "./runtime";
  */
 
 /** The relay `settings.*` key the Connect step writes once. */
-export const CONNECT_KEY = "connect.hermes";
+const CONNECT_KEY = "connect.hermes";
 
 /** `settings.changed` already ran: true once Connect was approved.
     undefined until the first `settings.get` lands. */
 export const connectApproved = atom<boolean | undefined>(undefined);
-
-/** Per-profile connection rows off the last `system.status` — undefined on
-    non-Hermes engines (the harness never reports `connect`). Callers gate
-    every connect surface on this being defined, not on the engine name. */
-export function connectRows(): ProfileConnection[] | undefined {
-  return relay.status.get().result?.connect;
-}
-
-/** The row for one employee's engine profile, if the harness reported it. */
-export function rowFor(
-  rows: ProfileConnection[] | undefined,
-  profile: string | undefined,
-): ProfileConnection | undefined {
-  if (!rows || !profile) return undefined;
-  return rows.find((r) => r.profile === profile);
-}
 
 /**
  * Grant the approval once: write the flag, then pull `system.status` a few
