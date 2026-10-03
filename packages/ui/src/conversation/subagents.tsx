@@ -18,7 +18,7 @@ import {
   CollapsibleTrigger,
 } from "../components/ui/collapsible";
 import { useTurnBlockState } from "../lib/block-state";
-import { plural } from "../lib/helpers";
+import { inline, plural } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import type { EmpFn, Subagent } from "../types";
@@ -52,7 +52,7 @@ function nowLine(a: Subagent): string {
     return `${s.tool} ${arg}`.trim();
   }
   const first = (a.result ?? "").split("\n").find((l) => l.trim()) ?? "";
-  return first.replace(/[*`_#>]/g, "").trim() || a.status;
+  return inline(first) || a.status;
 }
 
 export function SubagentRow({
