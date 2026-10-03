@@ -183,6 +183,12 @@ interface FakeSession {
       releases it (interrupt or session stop) — a test asserting the running
       state never races the script's length. */
   holdTurn?: () => void;
+  /** #432: a `slow[:ms]` prompt's pacing override, set per turn — the spec
+      needing a running window marks its prompt instead of slowing the whole
+      engine (the old `ENGINE_FAKE_TICK`). The leg a slow turn arms inherits
+      the pace — it's the same window. */
+  turnPace?: number;
+  legPace?: number;
   /** #309: async helpers whose subagent.completed waits past turn end. */
   pendingSubagentClose: {
     subagentId: string;
@@ -1117,10 +1123,22 @@ export class FakeEngine {
         });
       }
     }
+    /* #432: `slow[:ms] <prompt>` — pace this turn (and the leg it arms) at
+       the given tick, default SLOW_TICK; `slowleg[:ms]` paces only the leg
+       the prompt arms, leaving the turn itself at the engine tick. Either
+       way the next prompt resets it. The prefix is consumed here so the
+       routed text still feeds every script key (`slow: leg:…`, `slowleg:
+       plan: tasks`). `userTurns` keeps the raw text — the recall leg echoes
+       what the user literally sent. */
+    const slow = SLOW_PROMPT.exec(promptText);
+    const pace = slow ? Number(slow[2] ?? SLOW_TICK) : undefined;
+    s.turnPace = slow && !slow[1] ? pace : undefined;
+    s.legPace = slow?.[1] ? pace : undefined;
+    const routed = slow ? promptText.slice(slow[0].length).trim() : promptText;
     const turnId = `t${++this.turnCounter}`;
     const script = scriptFor(
       s.agent,
-      promptText,
+      routed,
       s.turnCount > 0,
       s.branch,
       this.nextHex,
@@ -1143,12 +1161,12 @@ export class FakeEngine {
       ...(ref ? { ref } : {}),
     });
     this.setState(s, "running");
-    this.autoTitle(s, "derived", promptText);
+    this.autoTitle(s, "derived", routed);
     try {
       /* #400: `LILOS_TURN_HOLD` parks the turn while it reads as running —
          an interrupt (or the session stopping) releases it, so an Esc/Stop
          test never races a short script finishing first. */
-      if (/\bLILOS_TURN_HOLD\b/i.test(promptText))
+      if (/\bLILOS_TURN_HOLD\b/i.test(routed))
         await new Promise<void>((resolve) => {
           s.holdTurn = resolve;
         });
@@ -1156,7 +1174,7 @@ export class FakeEngine {
       // the turn as a refusal with an error, so failure surfaces are testable.
       // Reasoning is paced over ~2s like a real turn — an instant failure
       // races clients that suppress notifications for the in-view session.
-      if (/^\s*fail\b/i.test(promptText)) {
+      if (/^\s*fail\b/i.test(routed)) {
         for (const w of words(
           "Reading the workspace to find the right files. Applying the change on the branch. Rebuilding the project and running the checks. Several checks came back red and the build output looks broken. Retrying once, then giving up. ",
         )) {
@@ -1167,7 +1185,7 @@ export class FakeEngine {
             delta: w,
           });
         }
-        const error = `engine-fake: scripted failure for "${promptText}"`;
+        const error = `engine-fake: scripted failure for "${routed}"`;
         this.emit(s, "turn.completed", {
           turnId,
           stopReason: "refusal",
@@ -1183,14 +1201,14 @@ export class FakeEngine {
          ticking `plan.updated` snapshots (kind "tasks", never asks),
          `plan: propose` opens a `plan` request (approve → the steps tick;
          reject → nothing runs; change → the next version asks again). */
-      const planMode = PLAN_PROMPT.exec(promptText);
+      const planMode = PLAN_PROMPT.exec(routed);
       if (planMode) {
         const mode = planMode[1].toLowerCase();
         return await this.runPlanTurn(
           s,
           turnId,
           mode === "propose",
-          promptText,
+          routed,
           mode === "slow",
         );
       }
@@ -1225,7 +1243,7 @@ export class FakeEngine {
             status: outcome === "deny" ? "denied" : "cancelled",
           });
           if (outcome === "cancel") throw new Interrupted();
-          return this.finishTurn(s, turnId, "end_turn", script, promptText);
+          return this.finishTurn(s, turnId, "end_turn", script, routed);
         }
         await this.sleep(s);
         // mcp__<server>__<tool> steps really run: the fake spawns/connects
@@ -1304,7 +1322,7 @@ export class FakeEngine {
         await this.sleep(s);
         this.emit(s, "turn.delta", { turnId, stream: "text", delta: w });
       }
-      return this.finishTurn(s, turnId, "end_turn", script, promptText);
+      return this.finishTurn(s, turnId, "end_turn", script, routed);
     } catch (e) {
       if (!(e instanceof Interrupted)) throw e;
       this.cancelOpen(s);
@@ -1617,6 +1635,10 @@ export class FakeEngine {
      id, initiatedBy:"agent", no ref. A steer mid-leg queues (never lands
      inside it) and drains as the next user turn. */
   private async runLeg(s: FakeSession, text: string) {
+    /* #432: `slowleg:` paces only the leg — apply it over whatever pace the
+       arming turn left on the session (a `slow:` prompt's pace still
+       carries in when no `slowleg:` ran). */
+    if (s.legPace !== undefined) s.turnPace = s.legPace;
     await this.sleep(s);
     if (s.turn || !this.isOpen(s)) return;
     const turnId = `t${++this.turnCounter}`;
@@ -1831,7 +1853,7 @@ export class FakeEngine {
   }
 
   private async sleep(s: FakeSession): Promise<void> {
-    await new Promise((r) => setTimeout(r, this.tick));
+    await new Promise((r) => setTimeout(r, s.turnPace ?? this.tick));
     if (s.turn?.interrupted) throw new Interrupted();
   }
 
@@ -1913,6 +1935,13 @@ function llmTitle(promptText: string): string {
 }
 
 const words = (t: string) => t.split(/(?<=\s)/);
+
+/* #432: `slow[:ms] <prompt>` — the one prompt a spec needs a running window
+   on paces itself (`slow:` → SLOW_TICK, `slow:700` → 700 ms per boundary);
+   `slowleg[:ms]` paces only the agent-initiated leg the prompt arms —
+   everything else runs at the engine's `--tick`. */
+const SLOW_PROMPT = /^\s*slow(leg)?:(?:(\d+)\s+)?/i;
+const SLOW_TICK = 300;
 
 /* ── #180 plan scripts ──────────────────────────────────────────────────
    `plan: tasks` = the agent's own working list, ticks live and never asks.

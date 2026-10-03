@@ -264,6 +264,18 @@ export function FocusView({
       (sessionArtifacts(thread).diffs.length ? "changes" : "terminal"),
   );
   const [follow, setFollow] = useState(!initialTab);
+  /* `?tab=` can land after mount — a boot redirect settling the location —
+     and applies then like a fresh deep link (#432); the prop is not
+     mount-only. A user pick writes the same tab back through the URL, so
+     re-applying it is a no-op. */
+  const appliedTab = useRef(initialTab);
+  useEffect(() => {
+    if (!initialTab || initialTab === appliedTab.current) return;
+    appliedTab.current = initialTab;
+    setTab(initialTab);
+    setFollow(false);
+    setWbOpen(true);
+  }, [initialTab]);
   /* #138 AC-3: a search hit opens the session in Focus (#114) scrolled to
      that message with a short flash — mirrors ThreadView's jump-to-hit.
      Waits for the row to render (history may still be loading). */
