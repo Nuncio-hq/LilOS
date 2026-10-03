@@ -229,7 +229,7 @@ check(
   /already exists/.test(caseDup),
   `case-only duplicate rejected: ${caseDup || "(accepted!)"}`,
 );
-// Printed for scripts/live/115.sh so it can cross-check `hermes profile list`.
+// Printed so an outside check can cross-check `hermes profile list`.
 console.log(`PROFILE_SLUG=${slug}`);
 console.log(`PROFILE_CASE=${mixed.id}`);
 let hiredExisting = "skip (no pre-existing profile)";

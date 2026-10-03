@@ -6,7 +6,7 @@ import { reduceSessionEvents } from "../src/turn-model";
    `tool.completed` on the delegate call is only the DISPATCH receipt
    ({status:"dispatched"}), the real `subagent.completed` lands later — after
    `turn.completed`. These tests pin the lifecycle the live Hermes capture
-   shows (scripts/live/309.ts):
+   showed:
      seq 8  tool.completed c1 output={"status":"dispatched","mode":"background"}
      seq 12 turn.completed t1
      seq 20 subagent.completed sa1 status=done            (18s later)

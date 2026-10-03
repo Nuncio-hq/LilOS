@@ -17,7 +17,7 @@ import { contextWindowFromId, displayModelName } from "./model-label.js";
  * `profiles.list/describe/create`, and `session.start.agent` is the profile
  * `session.create` runs under. `models.list` flattens `model.options`;
  * `session.setModel` runs the CLI's own `/model` switch via `slash.exec`
- * (same path the TUI uses — proven by scripts/live/8.py).
+ * (same path the TUI uses).
  */
 
 interface ProfileRow {
