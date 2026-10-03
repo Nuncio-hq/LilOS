@@ -31,9 +31,10 @@ export function IndexPage() {
   useAtom(osFullName);
   const navigate = useNavigate();
   const first = employees[0];
-  /* #339: the harness reports `connect` only on Hermes — when it does and
-     Connect wasn't approved yet, the setup card's Continue lands on the
-     Connect step; Later skips it without approving. */
+  /* #339: the harness reports `connect` only on engines with Connect
+     support — when it does and Connect wasn't approved yet, the setup
+     card's Continue lands on the Connect step; Later skips it without
+     approving. */
   const rows = statusPoll.result?.connect;
   const connect =
     rows !== undefined && approved !== true
