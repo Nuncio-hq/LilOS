@@ -171,7 +171,7 @@ const mainText = async (page: Page) =>
 const allowAll = async (page: Page) => {
   /* Gated steps can arrive seconds apart — only give up after two quiet
      rounds, not the first moment no card is on screen. */
-  const b = page.getByRole("button", { name: "Allow once" });
+  const b = page.getByRole("button", { name: "Once", exact: true });
   let quiet = 0;
   for (let i = 0; i < 30 && quiet < 2; i++) {
     if (

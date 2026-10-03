@@ -4,11 +4,15 @@ import {
   type Conversation,
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@lilos/contracts/app";
-import type { ApprovalOutcome } from "@lilos/contracts/engine";
+import type {
+  ApprovalOutcome,
+  ApprovalPolicy,
+  ConversationAccess,
+} from "@lilos/contracts/engine";
 import type { ModelChoice, ModelVisibility } from "@lilos/ui";
 import type { AttachedFile } from "@lilos/ui/types";
 import { atom } from "nanostores";
-import { defaultEditor } from "../settings/state";
+import { defaultAccess, defaultEditor } from "../settings/state";
 import { toAttachmentInputs } from "./attachments";
 import { USER_ID } from "./me";
 import {
@@ -61,6 +65,10 @@ export async function sendDm(
   files?: AttachedFile[],
   /** Folder the new session works in (#113); ignored on thread replies. */
   cwd?: string,
+  /** #106: the access level the fresh conversation opens on — the
+      composer's pill choice; absent → the relay applies Settings'
+      defaultAccess. */
+  access?: ConversationAccess,
 ): Promise<Conversation | undefined> {
   try {
     const attachments = toAttachmentInputs(files);
@@ -100,6 +108,7 @@ export async function sendDm(
       ...(pick?.effort !== undefined ? { effort: pick.effort } : {}),
       ...(pick?.fast !== undefined ? { fast: pick.fast } : {}),
       ...(cwd !== undefined ? { cwd } : {}),
+      ...(access !== undefined ? { access } : {}),
     });
     pendingStart.set({ ...pendingStart.get(), [res.conversation.id]: true });
     return res.conversation;
@@ -228,6 +237,32 @@ export async function renameConversation(
   title: string,
 ): Promise<void> {
   await relay.request("conversations.update", { conversationId, title });
+}
+
+/** #106 AC-1: switch a conversation's access level — applies from the
+ *  agent's NEXT action, mid-turn included; rides `conversation.updated`
+ *  straight into the session (dedicated method so the pill never falls to
+ *  the non-strict update path). */
+export async function setConversationAccess(
+  conversationId: string,
+  access: ConversationAccess,
+): Promise<void> {
+  await relay.request("conversations.setAccess", { conversationId, access });
+}
+
+/** #106 AC-3: Settings' default for new conversations (relay KV). */
+export async function setDefaultAccess(
+  access: ConversationAccess,
+): Promise<void> {
+  defaultAccess.set(access);
+  await relay.request("settings.set", { key: "defaultAccess", value: access });
+}
+
+/** #106: the engine's own approval policy — passthrough `approvals.setPolicy`
+ *  (method reachability is the caller's job: only engines declaring
+ *  `approval_policy` get the control). */
+export async function setApprovalPolicy(policy: ApprovalPolicy): Promise<void> {
+  await relay.request("approvals.setPolicy", { policy });
 }
 
 /** Pin the pick a conversation's next turn runs on (`conversations.setModel`, #92). */

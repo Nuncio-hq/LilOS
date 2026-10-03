@@ -272,6 +272,15 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `ALTER TABLE messages ADD COLUMN removed INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    /* #106: the per-conversation access level the composer pill switches —
+       `conversations.setAccess` writes it, `conversations.open` stamps the
+       Settings default; existing rows keep Ask. */
+    version: 17,
+    statements: [
+      `ALTER TABLE conversations ADD COLUMN access TEXT NOT NULL DEFAULT 'ask'`,
+    ],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

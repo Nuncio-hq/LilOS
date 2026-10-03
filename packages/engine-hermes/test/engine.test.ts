@@ -145,8 +145,8 @@ describe("engine-hermes AC-2: approvals & clarifies", () => {
       opened.payload as { request: { kind: string; options?: string[] } }
     ).request;
     expect(req.kind).toBe("approval");
-    // `session` has no protocol equivalent -> dropped
-    expect(req.options).toEqual(["once", "always", "deny"]);
+    // #106: every offered choice carries through, session grant included.
+    expect(req.options).toEqual(["once", "session", "always", "deny"]);
     const requestId = (opened.payload as { requestId: string }).requestId;
 
     const snap = (await h.request("events.since", {
@@ -275,6 +275,72 @@ describe("engine-hermes AC-2: approvals & clarifies", () => {
     const resolved = await h.waitEvent((e) => e.type === "request.resolved");
     expect((resolved.payload as { outcome: string }).outcome).toBe("cancel");
     ask.catch(() => {}); // srq left unanswered by design
+    gw.complete(gw.lastSid);
+    await p;
+  });
+});
+
+describe("engine-hermes #106: approval modes", () => {
+  type Describe = {
+    capabilities: { id: string; detail?: { current?: string } }[];
+  };
+  const capCurrent = async (h: Harness) =>
+    ((await h.request("describe")) as Describe).capabilities.find(
+      (c) => c.id === "approval_policy",
+    )?.detail?.current;
+
+  test("AC-3 approvals.setPolicy -> config.set approvals.mode; describe reports current", async () => {
+    const { gw, h } = setup();
+    // `current` seeds from config.get when no setPolicy ran yet.
+    expect(await capCurrent(h)).toBe("smart");
+    expect(await h.request("approvals.setPolicy", { policy: "off" })).toEqual({
+      policy: "off",
+    });
+    expect(
+      gw.configSetCalls.find((c) => c.key === "approvals.mode"),
+    ).toMatchObject({ value: "off" });
+    expect(gw.approvalsMode).toBe("off");
+    expect(await capCurrent(h)).toBe("off");
+  });
+
+  test("AC-1 access:full on session.start sends the session yolo hint; session.setAccess toggles it", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h, { access: "full" });
+    expect(gw.sessionYolo.get(gw.lastSid)).toBe(true);
+    expect(gw.configSetCalls).toContainEqual(
+      expect.objectContaining({
+        key: "yolo",
+        value: "on",
+        scope: "session",
+      }),
+    );
+    expect(
+      await h.request("session.setAccess", { sessionId, access: "ask" }),
+    ).toEqual({ access: "ask" });
+    expect(gw.sessionYolo.get(gw.lastSid)).toBe(false);
+    // A plain start sends no hint — Ask is the transport's own default.
+    const { sessionId: s2 } = await start(h);
+    expect(s2).toBeTruthy();
+    expect(gw.sessionYolo.get(gw.lastSid)).toBeUndefined();
+  });
+
+  test("AC-4 a 'session' outcome maps to wire choice session", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    const ask = gw.ask(gw.lastSid, "approval", {
+      request_id: "r9",
+      command: "rm -rf x",
+      choices: ["once", "session", "always", "deny"],
+    });
+    const opened = await h.waitEvent((e) => e.type === "request.opened");
+    const requestId = (opened.payload as { requestId: string }).requestId;
+    await h.request("request.respond", {
+      sessionId,
+      requestId,
+      outcome: "session",
+    });
+    expect((await ask).result).toEqual({ choice: "session" });
     gw.complete(gw.lastSid);
     await p;
   });

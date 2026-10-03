@@ -404,6 +404,7 @@
         "asks.list",
         "turns.interrupt",
         "conversations.setModel",
+        "conversations.setAccess",
         "session.events",
         "engine.event",
         "conversations.prs",
@@ -425,6 +426,7 @@
         "models.list",
         "jobs.list",
         "jobs.stop",
+        "approvals.setPolicy",
         "pairing.offer",
         "pairing.disable",
         "devices.list",
@@ -1760,6 +1762,14 @@
             }
           ]
         },
+        "access": {
+          "default": "ask",
+          "type": "string",
+          "enum": [
+            "ask",
+            "full"
+          ]
+        },
         "archived": {
           "type": "boolean"
         },
@@ -2024,6 +2034,14 @@
                   }
                 ]
               },
+              "access": {
+                "default": "ask",
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "full"
+                ]
+              },
               "archived": {
                 "type": "boolean"
               },
@@ -2208,6 +2226,13 @@
               "additionalProperties": false
             }
           ]
+        },
+        "access": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "full"
+          ]
         }
       },
       "required": [
@@ -2334,6 +2359,14 @@
                   ],
                   "additionalProperties": false
                 }
+              ]
+            },
+            "access": {
+              "default": "ask",
+              "type": "string",
+              "enum": [
+                "ask",
+                "full"
               ]
             },
             "archived": {
@@ -2549,6 +2582,28 @@
       ],
       "additionalProperties": false
     },
+    "ConversationsSetAccessParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "conversationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "access": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "full"
+          ]
+        }
+      },
+      "required": [
+        "conversationId",
+        "access"
+      ],
+      "additionalProperties": false
+    },
     "ConversationsUpdateParams": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -2733,6 +2788,14 @@
                   ],
                   "additionalProperties": false
                 }
+              ]
+            },
+            "access": {
+              "default": "ask",
+              "type": "string",
+              "enum": [
+                "ask",
+                "full"
               ]
             },
             "archived": {
@@ -3877,6 +3940,7 @@
                     "type": "string",
                     "enum": [
                       "once",
+                      "session",
                       "always",
                       "deny"
                     ]
@@ -3966,6 +4030,7 @@
           "type": "string",
           "enum": [
             "once",
+            "session",
             "always",
             "deny",
             "cancel",
@@ -4127,6 +4192,14 @@
                   ],
                   "additionalProperties": false
                 }
+              ]
+            },
+            "access": {
+              "default": "ask",
+              "type": "string",
+              "enum": [
+                "ask",
+                "full"
               ]
             },
             "archived": {
@@ -4763,6 +4836,14 @@
                         ],
                         "additionalProperties": false
                       }
+                    ]
+                  },
+                  "access": {
+                    "default": "ask",
+                    "type": "string",
+                    "enum": [
+                      "ask",
+                      "full"
                     ]
                   },
                   "archived": {
@@ -5926,6 +6007,7 @@
                     "type": "string",
                     "enum": [
                       "once",
+                      "session",
                       "always",
                       "deny"
                     ]
@@ -6062,6 +6144,7 @@
                         "type": "string",
                         "enum": [
                           "once",
+                          "session",
                           "always",
                           "deny"
                         ]
@@ -6151,6 +6234,7 @@
               "type": "string",
               "enum": [
                 "once",
+                "session",
                 "always",
                 "deny",
                 "cancel",
@@ -6202,6 +6286,7 @@
           "type": "string",
           "enum": [
             "once",
+            "session",
             "always",
             "deny",
             "cancel",
@@ -6292,6 +6377,7 @@
                           "type": "string",
                           "enum": [
                             "once",
+                            "session",
                             "always",
                             "deny"
                           ]
@@ -6381,6 +6467,7 @@
                 "type": "string",
                 "enum": [
                   "once",
+                  "session",
                   "always",
                   "deny",
                   "cancel",
@@ -6980,6 +7067,14 @@
                 }
               ]
             },
+            "access": {
+              "default": "ask",
+              "type": "string",
+              "enum": [
+                "ask",
+                "full"
+              ]
+            },
             "archived": {
               "type": "boolean"
             },
@@ -7146,6 +7241,7 @@
                         "type": "string",
                         "enum": [
                           "once",
+                          "session",
                           "always",
                           "deny"
                         ]
@@ -7235,6 +7331,7 @@
               "type": "string",
               "enum": [
                 "once",
+                "session",
                 "always",
                 "deny",
                 "cancel",
@@ -7328,6 +7425,7 @@
                         "type": "string",
                         "enum": [
                           "once",
+                          "session",
                           "always",
                           "deny"
                         ]
@@ -7417,6 +7515,7 @@
               "type": "string",
               "enum": [
                 "once",
+                "session",
                 "always",
                 "deny",
                 "cancel",
@@ -8411,6 +8510,41 @@
       },
       "required": [
         "models"
+      ]
+    },
+    "ApprovalsSetPolicyParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "policy": {
+          "type": "string",
+          "enum": [
+            "smart",
+            "manual",
+            "off"
+          ]
+        }
+      },
+      "required": [
+        "policy"
+      ],
+      "additionalProperties": false
+    },
+    "ApprovalsSetPolicyResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "policy": {
+          "type": "string",
+          "enum": [
+            "smart",
+            "manual",
+            "off"
+          ]
+        }
+      },
+      "required": [
+        "policy"
       ]
     },
     "WorkbenchOpenTarget": {

@@ -119,6 +119,13 @@
           "fast": {
             "type": "boolean"
           },
+          "access": {
+            "type": "string",
+            "enum": [
+              "ask",
+              "full"
+            ]
+          },
           "mcpServers": {
             "type": "array",
             "items": {
@@ -469,6 +476,7 @@
             "type": "string",
             "enum": [
               "once",
+              "session",
               "always",
               "deny",
               "cancel",
@@ -1090,6 +1098,7 @@
                                     "type": "string",
                                     "enum": [
                                       "once",
+                                      "session",
                                       "always",
                                       "deny"
                                     ]
@@ -1212,6 +1221,7 @@
                           "type": "string",
                           "enum": [
                             "once",
+                            "session",
                             "always",
                             "deny",
                             "cancel",
@@ -1853,6 +1863,7 @@
                             "type": "string",
                             "enum": [
                               "once",
+                              "session",
                               "always",
                               "deny"
                             ]
@@ -2828,6 +2839,89 @@
         ],
         "additionalProperties": false
       }
+    },
+    "approvals.setPolicy": {
+      "doc": "Write the engine's global approval policy (#106: smart/manual/off — the engine's own mode setting).",
+      "capability": "approval_policy",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "policy": {
+            "type": "string",
+            "enum": [
+              "smart",
+              "manual",
+              "off"
+            ]
+          }
+        },
+        "required": [
+          "policy"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "policy": {
+            "type": "string",
+            "enum": [
+              "smart",
+              "manual",
+              "off"
+            ]
+          }
+        },
+        "required": [
+          "policy"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "session.setAccess": {
+      "doc": "Push the conversation's access level onto a live session (#106) — a hint the engine maps where it can (WS yolo / ACP session/set_mode); the harness enforces `full` itself either way.",
+      "capability": "approval_policy",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "access": {
+            "type": "string",
+            "enum": [
+              "ask",
+              "full"
+            ]
+          }
+        },
+        "required": [
+          "sessionId",
+          "access"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "access": {
+            "type": "string",
+            "enum": [
+              "ask",
+              "full"
+            ]
+          }
+        },
+        "required": [
+          "access"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "notifications": {
@@ -3392,6 +3486,7 @@
                               "type": "string",
                               "enum": [
                                 "once",
+                                "session",
                                 "always",
                                 "deny"
                               ]
@@ -3514,6 +3609,7 @@
                     "type": "string",
                     "enum": [
                       "once",
+                      "session",
                       "always",
                       "deny",
                       "cancel",

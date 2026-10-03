@@ -5,11 +5,15 @@ import {
   type AgentsCreateParams,
   type AgentsDescribeParams,
   type AgentsUpdateParams,
+  APPROVAL_POLICY_CAPABILITY,
   type ApprovalOption,
   type ApprovalOutcome,
+  type ApprovalPolicy,
+  type ApprovalsSetPolicyParams,
   BACKGROUND_JOBS_CAPABILITY,
   type Capability,
   type ContentBlock,
+  type ConversationAccess,
   ENGINE_METHODS,
   ENGINE_PROTOCOL,
   type EngineEvent,
@@ -31,6 +35,7 @@ import {
   RPC_ERRORS,
   SESSION_META_CAPABILITY,
   type SessionRewindParams,
+  type SessionSetAccessParams,
   type SessionSetHiddenParams,
   type SessionSetModelParams,
   type SessionSetTitleParams,
@@ -156,6 +161,11 @@ interface FakeSession {
   /** #137: once `session.setTitle` lands, the title is user-provenance —
       derived/llm stages never overwrite it. */
   titleUserSet: boolean;
+  /** #106: the conversation's access level stamped at start / by
+      session.setAccess — recorded only (the harness enforces `full`). */
+  access: ConversationAccess;
+  /** #106: "This session" grants — the command asks again in a NEW session. */
+  sessionGranted: Set<string>;
   usage: Usage;
   steers: { text: string; ref?: string }[];
   /** #134: every user input the session heard (prompt + accepted steer),
@@ -228,6 +238,9 @@ export class FakeEngine {
    * command, and MUST still ask for a different one.
    */
   private alwaysGranted = new Set<string>();
+  /** #106: the engine's global approval policy — `approvals.setPolicy`
+      writes it and `describe` reports it as `detail.current`. */
+  private policy: ApprovalPolicy = "smart";
   private readonly sessionNamespace: string;
   private sessionCounter = 0;
   private refCounter = 0;
@@ -340,6 +353,10 @@ export class FakeEngine {
         return this.jobsList(parsed.data as JobsListParams);
       case "jobs.stop":
         return this.jobsStop(parsed.data as JobsStopParams);
+      case "approvals.setPolicy":
+        return this.approvalsSetPolicy(parsed.data as ApprovalsSetPolicyParams);
+      case "session.setAccess":
+        return this.sessionSetAccess(parsed.data as SessionSetAccessParams);
       default:
         throw new RpcError(
           RPC_ERRORS.METHOD_NOT_FOUND,
@@ -397,6 +414,19 @@ export class FakeEngine {
       /* ── #179: declared only while the switch is on (AC-5). ── */
       ...(this.capOn("subagents") ? [SUBAGENTS_CAPABILITY] : []),
       ...(this.capOn("background_jobs") ? [BACKGROUND_JOBS_CAPABILITY] : []),
+      /* #106: the policy the Settings Approvals section writes via
+         approvals.setPolicy — `current` reports the live value. */
+      ...(this.capOn("approval_policy")
+        ? [
+            {
+              ...APPROVAL_POLICY_CAPABILITY,
+              detail: {
+                options: ["smart", "manual", "off"],
+                current: this.policy,
+              },
+            },
+          ]
+        : []),
     ];
     return {
       name: "engine-fake",
@@ -444,6 +474,8 @@ export class FakeEngine {
       title: "",
       hidden: false,
       titleUserSet: false,
+      access: p.access ?? "ask",
+      sessionGranted: new Set(),
       usage: {
         input: 0,
         output: 0,
@@ -529,7 +561,7 @@ export class FakeEngine {
     if (ask.request.kind === "approval" && p.outcome === "answer") {
       throw new RpcError(
         RPC_ERRORS.INVALID_PARAMS,
-        "an approval takes once/always/deny/cancel, not answer",
+        "an approval takes once/session/always/deny/cancel, not answer",
       );
     }
     if (
@@ -586,6 +618,10 @@ export class FakeEngine {
     }
     if (ask.request.kind === "approval" && p.outcome === "always")
       this.alwaysGranted.add(`${s.agent}\n${ask.request.command}`);
+    /* #106 AC-4: "This session" records the same command on the session —
+       it stops repeats here and nowhere else: a new session asks again. */
+    if (ask.request.kind === "approval" && p.outcome === "session")
+      s.sessionGranted.add(ask.request.command);
     s.openRequests.delete(p.requestId);
     this.emit(s, "request.resolved", {
       requestId: p.requestId,
@@ -594,6 +630,19 @@ export class FakeEngine {
     });
     ask.resolve({ outcome: p.outcome, answer: p.answer });
     return { accepted: true as const };
+  }
+
+  /* ── #106 approval modes ───────────────────────────────────────────── */
+
+  private approvalsSetPolicy(p: ApprovalsSetPolicyParams) {
+    this.policy = p.policy;
+    return { policy: this.policy };
+  }
+
+  private sessionSetAccess(p: SessionSetAccessParams) {
+    const s = this.require(p.sessionId);
+    s.access = p.access;
+    return { access: s.access };
   }
 
   private eventsSince(p: EventsSinceParams) {
@@ -1160,9 +1209,10 @@ export class FakeEngine {
           input: step.input,
         });
         const mcpMatch = /^mcp__(\w+)__(\w+)$/.exec(step.tool);
-        const granted = this.alwaysGranted.has(
-          `${s.agent}\n${FakeEngine.stepCommand(step)}`,
-        );
+        const command = FakeEngine.stepCommand(step);
+        const granted =
+          this.alwaysGranted.has(`${s.agent}\n${command}`) ||
+          s.sessionGranted.has(command);
         const outcome =
           this.needsApproval(step) && !granted && !mcpMatch
             ? await this.awaitApproval(s, turnId, step)
@@ -1714,7 +1764,7 @@ export class FakeEngine {
       kind: "approval" as const,
       command,
       description: `${step.tool} wants to run: ${command}`,
-      options: ["once", "always", "deny"] as ApprovalOption[],
+      options: ["once", "session", "always", "deny"] as ApprovalOption[],
     };
     const promise = new Promise<{ outcome: ApprovalOutcome; answer?: string }>(
       (resolve) => {

@@ -496,6 +496,7 @@ const otherConv = (channelId: string): Conversation => ({
   state: "idle",
   title: "Planning notes",
   titleSource: "auto",
+  access: "ask",
   archived: false,
   deliveredSeq: 0,
   createdAt: 2,
@@ -557,6 +558,7 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
       expect(r.thread).toMatchObject({
         id: "conv-s-ctx",
         title: "Thread conv-s-ctx",
+        access: "ask", // #106
       });
       expect(r.user).toMatchObject({ name: "Oscar" });
       expect(r.mac).toMatchObject({ state: "ok" });
@@ -694,6 +696,9 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
         await dmCall(api.baseUrl, "t-rd", "thread_read", {}),
       );
       expect((own.thread as { id: string }).id).toBe("conv-s-rd");
+      // #106: thread_read reports the level (read-only — the agent never
+      // sets it itself).
+      expect((own.thread as { access?: string }).access).toBe("ask");
       expect((own.messages as { seq: number }[]).map((m) => m.seq)).toEqual([
         1, 2, 4,
       ]);

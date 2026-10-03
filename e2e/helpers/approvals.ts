@@ -30,17 +30,17 @@ const askStillOpen = (page: Page, askId: string) =>
 async function answerOpenCard(page: Page, card: Locator) {
   const askId = await card.getAttribute("data-ask-id");
   if (!askId) throw new Error("approval card is missing data-ask-id");
-  await card.getByRole("button", { name: /Allow once/i }).click();
+  await card.getByRole("button", { name: /^Once$/i }).click();
   await expect
     .poll(() => askStillOpen(page, askId), {
-      message: `ask ${askId} stayed open after "Allow once"`,
+      message: `ask ${askId} stayed open after "Once"`,
       timeout: ASK_RESOLVE_TIMEOUT,
     })
     .toBe(false);
 }
 
 /**
- * Answer every approval card on screen ("Allow once"), confirming each click
+ * Answer every approval card on screen ("Once"), confirming each click
  * actually resolved the ask. After the last answer it keeps watching a short
  * window — the next gated step can take a beat to ask.
  */

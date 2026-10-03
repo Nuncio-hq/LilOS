@@ -50,9 +50,8 @@ export function mapStopReason(status: unknown): {
 
 /**
  * Hermes `ApprovalRequestParams` -> LilOS `approval` request. Hermes offers
- * `once|session|always|deny`; the protocol has no session-scoped grant, so
- * `session` is dropped from the offered options (a client picking "always"
- * is still honored — Hermes treats always as the wider grant).
+ * `once|session|always|deny` and #106 added the session grant to the
+ * protocol, so every offered choice carries through verbatim.
  */
 export function mapApprovalParams(
   params: Record<string, unknown>,
@@ -65,8 +64,8 @@ export function mapApprovalParams(
   const raw = Array.isArray(params.choices) ? params.choices : [];
   const options: ApprovalOption[] = [];
   for (const c of raw) {
-    if (c === "once" || c === "always" || c === "deny") options.push(c);
-    // "session" has no protocol equivalent — not offered to the client.
+    if (c === "once" || c === "session" || c === "always" || c === "deny")
+      options.push(c);
   }
   if (options.length === 0) options.push("once", "deny");
   const request: EngineRequest = {
@@ -142,6 +141,8 @@ export function approvalOutcomeToResult(outcome: ApprovalOutcome): {
   switch (outcome) {
     case "once":
       return { choice: "once" };
+    case "session":
+      return { choice: "session" };
     case "always":
       return { choice: "always" };
     case "deny":

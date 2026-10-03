@@ -6,6 +6,10 @@ import {
   AppMethod,
   ChannelRemovedEvent,
   ChannelSubscribeParams,
+  Conversation,
+  ConversationsOpenParams,
+  ConversationsSetAccessParams,
+  ConversationsUpdateParams,
   Employee,
   EmployeeRemovedEvent,
   EmployeesRemoveParams,
@@ -20,6 +24,18 @@ import {
   WelcomeResult,
 } from "../src/app";
 import { appProtocol } from "../src/app/registry";
+import {
+  ApprovalOption,
+  ApprovalOutcome,
+  ApprovalRequest,
+  ApprovalsSetPolicyParams,
+  ApprovalsSetPolicyResult,
+} from "../src/engine";
+import {
+  ContextResult,
+  ThreadListItem,
+  ThreadReadResult,
+} from "../src/harness/tools";
 
 const employee = {
   id: "emp_ada",
@@ -184,6 +200,7 @@ describe("#29 employee lifecycle + engine passthrough contracts", () => {
       "models.list",
       "jobs.list",
       "jobs.stop",
+      "approvals.setPolicy",
     ]) {
       expect(AppMethod.safeParse(method).success).toBe(true);
     }
@@ -195,6 +212,7 @@ describe("#29 employee lifecycle + engine passthrough contracts", () => {
       "models.list",
       "jobs.list",
       "jobs.stop",
+      "approvals.setPolicy",
     ]);
   });
 
@@ -218,6 +236,103 @@ describe("#29 employee lifecycle + engine passthrough contracts", () => {
   it("keeps the no-delete shape: no profile-delete method exists anywhere", () => {
     for (const method of AppMethod.options) {
       expect(method).not.toMatch(/agents\.(remove|delete)|profiles\.delete/);
+    }
+  });
+});
+
+describe("#106 approval modes per conversation", () => {
+  it("AC-1/AC-3 access rides conversations.open and defaults to the app enum", () => {
+    expect(
+      ConversationsOpenParams.safeParse({
+        channelId: "ch_1",
+        text: "hi",
+        access: "full",
+      }).success,
+    ).toBe(true);
+    expect(
+      ConversationsOpenParams.safeParse({
+        channelId: "ch_1",
+        text: "hi",
+        access: "loud",
+      }).success,
+    ).toBe(false);
+    // A conversation row parses with the level it was opened at; rows
+    // written before #106 default to "ask".
+    const conv = Conversation.parse({
+      id: "c1",
+      channelId: "ch_1",
+      rootMessageId: "m1",
+      engineRef: null,
+      state: "idle",
+      title: "t",
+      archived: false,
+      createdAt: 1,
+    });
+    expect(conv.access).toBe("ask");
+    expect(Conversation.parse({ ...conv, access: "full" }).access).toBe("full");
+  });
+
+  it("AC-1 conversations.setAccess is the user-only switch", () => {
+    expect(AppMethod.safeParse("conversations.setAccess").success).toBe(true);
+    expect(
+      ConversationsSetAccessParams.parse({
+        conversationId: "c1",
+        access: "full",
+      }),
+    ).toEqual({ conversationId: "c1", access: "full" });
+    expect(
+      ConversationsSetAccessParams.safeParse({
+        conversationId: "c1",
+        access: "maybe",
+      }).success,
+    ).toBe(false);
+    // The switch never rides the generic update patch — the loose
+    // (non-strict) update schema drops unknown keys, so `access` smuggled
+    // there lands nowhere; the dedicated method is the only write path.
+    expect(
+      "access" in
+        ConversationsUpdateParams.parse({
+          conversationId: "c1",
+          access: "full",
+        }),
+    ).toBe(false);
+  });
+
+  it("AC-4 approval options/outcomes gain the session grant", () => {
+    expect(ApprovalOption.options).toEqual([
+      "once",
+      "session",
+      "always",
+      "deny",
+    ]);
+    expect(ApprovalOutcome.safeParse("session").success).toBe(true);
+    const req = ApprovalRequest.parse({
+      kind: "approval",
+      command: "rm -rf /tmp/x",
+      options: ["once", "session", "always", "deny"],
+    });
+    expect(req.options).toContain("session");
+  });
+
+  it("AC-3 approvals.setPolicy carries the policy choice", () => {
+    expect(ApprovalsSetPolicyParams.parse({ policy: "manual" })).toEqual({
+      policy: "manual",
+    });
+    expect(ApprovalsSetPolicyParams.safeParse({ policy: "loud" }).success).toBe(
+      false,
+    );
+    expect(ApprovalsSetPolicyResult.parse({ policy: "off" })).toEqual({
+      policy: "off",
+    });
+  });
+
+  it("AC-1 agent surfaces report the thread's access", () => {
+    for (const schema of [
+      ContextResult.shape.thread,
+      ThreadReadResult.shape.thread,
+      ThreadListItem,
+    ]) {
+      expect("access" in schema.shape).toBe(true);
     }
   });
 });

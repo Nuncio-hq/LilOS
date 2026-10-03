@@ -56,6 +56,7 @@ const conv = (
   state: "idle",
   title: "",
   titleSource: "auto",
+  access: "ask",
   deliveredSeq: 0,
   archived: false,
   createdAt: 1,

@@ -263,7 +263,7 @@ const FEEDS: Record<string, Msg[]> = {
               },
             ],
           },
-          { from: "reviewer", time: "10:06", text: "Layout is fine. One ask before I run checks:", approval: { id: "a1", command: "pnpm install && pnpm -r typecheck", note: "Network access · writes node_modules" } },
+          { from: "reviewer", time: "10:06", text: "Layout is fine. One ask before I run checks:", approval: { id: "a1", command: "pnpm install && pnpm -r typecheck", note: "Network access · writes node_modules", options: ["once", "session", "always", "deny"] } },
           { from: "oscar", time: "10:08", text: "Also add a README section for the layout." },
           { from: "builder", time: "10:31", thought: 2, dur: 21, reasoning: "Same session, same worktree. Add a Workspace layout section; keep it to the four packages.", text: "README has a **Workspace layout** section now. Tests still green.", steps: [{ tool: "read_file", input: { path: "README.md" }, output: "42 lines" }, { tool: "patch", input: { path: "README.md" }, output: "+6 lines", diff: { path: "README.md", status: "modified", add: 6, del: 0, patch: "@@ -38,4 +38,10 @@\n ## Develop\n \n pnpm install && pnpm dev\n+\n+## Workspace layout\n+\n+- `packages/contracts` wire types (zod), no runtime deps\n+- `packages/client-runtime` state + reducer, no DOM\n+- `apps/web`, `apps/relay`" } }] },
         ],
@@ -1741,6 +1741,7 @@ export default function App() {
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
       models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined} picker={pickerExtras}
+      access={access} onAccess={setAccess}
       scrollTo={scrollTo ?? undefined} onScrolled={() => setScrollTo(null)}
       editors={openEditors ?? undefined} onOpenSession={openSession} onPlan={(a, id) => planAction(openThread, a, id)}
       onOpenPath={openWsCwd && openEditors !== null
@@ -1797,6 +1798,7 @@ export default function App() {
           draft={threadDraft} onDraftChange={setThreadDraft}
           surfaces={realSurfaces ?? fakeSurfaces}
           models={canModels ? MODEL_OPTS : undefined} picker={pickerExtras} repoFiles={REPO_FILES} host={hostAccessors}
+          access={access} onAccess={setAccess}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
           onOpenSession={openSession} onStopJob={(id) => stopJobIn(openThread, id)} onPlan={(a, id) => planAction(openThread, a, id)}
           // A real harness attach (?surfaces=…) keeps its live Preview tab; the
@@ -1833,6 +1835,7 @@ export default function App() {
               modelChoice={draftPick[view.id] ?? choiceFor(emp(view.id)?.model ?? "", MODEL_OPTS)}
               onModel={canModels ? (c) => setDraftPick((d) => ({ ...d, [view.id]: c })) : undefined}
               picker={pickerExtras}
+              access={access} onAccess={setAccess}
             />
           ) : (
           <main className="lilos-glass flex min-h-0 min-w-0 flex-col">

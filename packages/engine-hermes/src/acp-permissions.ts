@@ -9,6 +9,9 @@ import type { ApprovalOption, ApprovalOutcome } from "@lilos/contracts/engine";
  * cannot map an answer back — a "always" pick by kind silently became the
  * session-scoped option. The optionId carries the real grant; kind is only
  * trusted for ids we do not recognize.
+ *
+ * #106 added the session grant to the protocol: `allow_session` maps to the
+ * `session` outcome by optionId (kind can't tell it from `allow_always`).
  */
 
 /** Minimal shape of a `session/request_permission` option (acp.PermissionOption). */
@@ -18,18 +21,18 @@ export interface AcpPermissionOptionLike {
 }
 
 /**
- * Known Hermes option ids -> the grant each carries. Ids deliberately absent
- * from every outcome (allow_session: a session-scoped grant has no LilOS
- * outcome) map to `undefined` so they are neither offered nor picked.
+ * Known Hermes option ids -> the grant each carries. `allow_session` maps
+ * by optionId only — its kind (`allow_always`) alone would pick the wrong
+ * grant (issue #133).
  */
 const OPTION_ID_OUTCOMES: Record<string, ApprovalOption | undefined> = {
   allow_once: "once",
+  allow_session: "session",
   allow_always: "always",
   deny: "deny",
   deny_always: "deny",
   reject_once: "deny",
   reject_always: "deny",
-  allow_session: undefined,
 };
 
 /** Kind -> outcome, used only when the optionId is not a known Hermes id. */
@@ -43,6 +46,7 @@ const KIND_OUTCOMES: Record<string, ApprovalOption> = {
 /** Canonical Hermes optionIds tried first per outcome, before any fallback. */
 const PREFERRED_IDS: Record<ApprovalOption, readonly string[]> = {
   once: ["allow_once"],
+  session: ["allow_session"],
   always: ["allow_always"],
   deny: ["deny", "reject_once", "reject_always", "deny_always"],
 };

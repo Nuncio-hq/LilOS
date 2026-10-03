@@ -19,6 +19,7 @@ import {
 import type {
   AgentDescriptor,
   ApprovalOutcome,
+  ConversationAccess,
   Job,
 } from "@lilos/contracts/engine";
 import {
@@ -70,6 +71,7 @@ import {
   renameConversation,
   respondToRequest,
   sendDm,
+  setConversationAccess,
   setConversationModel,
   setModelVisibility,
 } from "../lib/actions";
@@ -127,6 +129,7 @@ import {
   workbenchRequests,
 } from "../lib/runtime";
 import { say } from "../lib/toast";
+import { defaultAccess } from "../settings/state";
 
 const EMPTY_MESSAGES = atom<ChannelMessagesState>({
   channelId: "",
@@ -154,6 +157,10 @@ const outcomeLabel = (o: ApprovalOutcome, name: string): string => {
   switch (o) {
     case "once":
       return `Allowed once by ${name}`;
+    /* #106: "This session" — the grant lives until the conversation's
+       session ends; only this thread stopped asking. */
+    case "session":
+      return `Allowed this session by ${name}`;
     case "always":
       return "Always allowed here";
     case "deny":
@@ -175,6 +182,8 @@ const outcomeLabel = (o: ApprovalOutcome, name: string): string => {
 function outcomeFromLabel(v: string): ApprovalOutcome {
   if (v.startsWith("Denied")) return "deny";
   if (v.startsWith("Always")) return "always";
+  /* #106: the card's resolved label for the session-scoped grant. */
+  if (v.startsWith("Allowed this session")) return "session";
   if (v.startsWith("Cancelled")) return "cancel";
   if (v.startsWith("Answered")) return "answer";
   return "once";
@@ -232,6 +241,12 @@ export function DmPage() {
   /* The picker's pick for a session that doesn't exist yet (#92 AC-5): held
      per employee, stamped on `conversations.open`, cleared once sent. */
   const [draftPick, setDraftPick] = useState<Record<string, ModelChoice>>({});
+  /* #106 AC-1/AC-3: the pill's level for a session that doesn't exist yet —
+     seeded from Settings' defaultAccess (never the last-used level), stamped
+     on `conversations.open`, cleared once sent. */
+  const [draftAccess, setDraftAccess] = useState<
+    Record<string, ConversationAccess>
+  >({});
 
   /* Picker extras (#92): Edit models rides the relay-persisted visibility
      list; Refresh renders only when the engine's `models` capability
@@ -939,10 +954,12 @@ export function DmPage() {
       modelPick,
       files,
       folder?.path,
+      draftAccess[employeeId],
     ).then((conv) => {
       if (!conv) throw new Error("send failed");
       clearDraftIfSent(draftKey.dm(employeeId), text);
       setDraftPick(({ [employeeId]: _drop, ...rest }) => rest);
+      setDraftAccess(({ [employeeId]: _drop, ...rest }) => rest);
       /* A fresh session still lands in Focus (#195 keeps send-as-today),
          but through the panel URL first — every way back out of Focus
          (Back/Esc/browser back) then lands on the same open peek. */
@@ -1323,6 +1340,8 @@ export function DmPage() {
           picker={picker}
           defaultModel={defaultModel}
           defaultProvider={defaultProvider}
+          access={conv.access}
+          onAccess={(a) => void setConversationAccess(conv.id, a)}
           accept={canAttachImages ? "image/*" : undefined}
           maxFileSize={MAX_ATTACHMENT_BYTES}
           onAttachError={say}
@@ -1450,6 +1469,8 @@ export function DmPage() {
               : undefined
           }
           picker={picker}
+          access={conv.access}
+          onAccess={(a) => void setConversationAccess(conv.id, a)}
           defaultModel={defaultModel}
           defaultProvider={defaultProvider}
           onSend={sendInThread}
@@ -1569,6 +1590,8 @@ export function DmPage() {
             : undefined
         }
         models={catalog.length ? catalog : undefined}
+        access={draftAccess[employeeId] ?? defaultAccess.get()}
+        onAccess={(a) => setDraftAccess((d) => ({ ...d, [employeeId]: a }))}
         modelChoice={
           draftPick[employeeId] ??
           choiceFor(

@@ -114,7 +114,24 @@ export class AcpDriver {
       },
     })) as { sessionId: string };
     this.sessionId = res.sessionId;
+    /* #106 AC-5: Ask maps to `accept_edits` so ordinary workspace edits
+       don't start asking once sessions move to ACP; Full maps to
+       `dont_ask`. Hint only — the harness enforces access itself. */
+    await this.setAccess(p.access ?? "ask");
     return { runtimeSid: res.sessionId, ref: res.sessionId };
+  }
+
+  /** `session/set_mode` for the conversation's access level (best-effort). */
+  async setAccess(access: "ask" | "full"): Promise<void> {
+    if (!this.conn || !this.sessionId) return;
+    try {
+      await this.conn.agent.request("session/set_mode", {
+        sessionId: this.sessionId,
+        modeId: access === "full" ? "dont_ask" : "accept_edits",
+      });
+    } catch {
+      /* Builds without set_mode keep harness-side enforcement. */
+    }
   }
 
   /** Called by the engine right after `open` resolves. */

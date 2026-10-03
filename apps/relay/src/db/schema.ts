@@ -72,6 +72,13 @@ export const conversations = sqliteTable(
     /** Workstream mode stamped at open (#156): JSON WorkspaceIntent; null =
         direct folder / just chat. */
     workspace: text("workspace"),
+    /** The composer pill's access level (#106): `ask` stops at approval
+        cards, `full` has the harness auto-answer them. Stamped at open from
+        Settings' `defaultAccess`; the conversation never remembers a
+        last-used level. */
+    access: text("access", { enum: ["ask", "full"] })
+      .notNull()
+      .default("ask"),
     title: text("title").notNull().default(""),
     /** Who named the conversation (#137): `user` wins over every later
         engine/auto title write; `auto` is free to be upgraded. */

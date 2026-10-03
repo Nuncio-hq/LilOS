@@ -87,6 +87,7 @@ describe("engine-fake", () => {
       "plan",
       "subagents",
       "background_jobs",
+      "approval_policy",
     ]);
     c.close();
   });
@@ -195,6 +196,124 @@ describe("engine-fake", () => {
       after: 0,
     })) as { openRequests: unknown[] };
     expect(since.openRequests).toEqual([]);
+    c.close();
+  });
+
+  test("#106 approval policy + access hint + session grant scope", async () => {
+    const c = conn();
+    type Describe = {
+      capabilities: { id: string; detail?: { current?: string } }[];
+    };
+    // The engine declares its global policy with a live `current` (AC-6).
+    const d1 = (await c.request("describe")) as Describe;
+    expect(
+      d1.capabilities.find((x) => x.id === "approval_policy")?.detail?.current,
+    ).toBe("smart");
+    expect(
+      await c.request("approvals.setPolicy", { policy: "manual" }),
+    ).toEqual({ policy: "manual" });
+    const d2 = (await c.request("describe")) as Describe;
+    expect(
+      d2.capabilities.find((x) => x.id === "approval_policy")?.detail?.current,
+    ).toBe("manual");
+    await expect(
+      c.request("approvals.setPolicy", { policy: "yolo" }),
+    ).rejects.toMatchObject({ code: -32602 });
+
+    // session.start stamps the conversation's access; session.setAccess
+    // pushes a switch onto the live session.
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+      access: "full",
+    })) as { sessionId: string };
+    expect(
+      await c.request("session.setAccess", { sessionId, access: "ask" }),
+    ).toEqual({ access: "ask" });
+
+    // The ask offers Once / This session / Always / Deny (AC-4).
+    const events: { type: string; payload: any }[] = [];
+    c.onEvent((e) => events.push(e as never));
+    const p = promptText(c, sessionId, "Fix the README title");
+    const deadline = Date.now() + 5_000;
+    let ask = events.find((e) => e.type === "request.opened");
+    while (!ask && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 5));
+      ask = events.find((e) => e.type === "request.opened");
+    }
+    if (!ask) throw new Error("no request.opened event");
+    expect((ask.payload.request as { options: string[] }).options).toEqual([
+      "once",
+      "session",
+      "always",
+      "deny",
+    ]);
+
+    // "This session" resolves the ask…
+    await c.request("request.respond", {
+      sessionId,
+      requestId: ask.payload.requestId,
+      outcome: "session",
+    });
+    // …then drain the rest of the canned turn with "once".
+    let settled = false;
+    void p.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    const answered = new Set<string>([ask?.payload.requestId as string]);
+    const deadline2 = Date.now() + 5_000;
+    while (!settled && Date.now() < deadline2) {
+      for (const e of events) {
+        if (e.type !== "request.opened") continue;
+        const requestId = e.payload.requestId as string;
+        if (answered.has(requestId)) continue;
+        answered.add(requestId);
+        await c.request("request.respond", {
+          sessionId,
+          requestId,
+          outcome: "once",
+        });
+      }
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    await p;
+
+    // A NEW session re-asks the same command — a "session" grant never
+    // leaks into the permanent allowlist the way "always" does.
+    const { sessionId: s2 } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+    })) as { sessionId: string };
+    const events2: typeof events = [];
+    c.onEvent((e) => events2.push(e as never));
+    const p2 = promptText(c, s2, "Fix the README title");
+    const deadline3 = Date.now() + 5_000;
+    let ask2 = events2.find((e) => e.type === "request.opened");
+    while (!ask2 && Date.now() < deadline3) {
+      await new Promise((r) => setTimeout(r, 5));
+      ask2 = events2.find((e) => e.type === "request.opened");
+    }
+    expect(ask2).toBeTruthy();
+    await c.request("interrupt", { sessionId: s2 });
+    await expect(p2).resolves.toMatchObject({ stopReason: "cancelled" });
+    c.close();
+  });
+
+  test("#106 without approval_policy the methods are unknown and describe omits it", async () => {
+    const c = connectFake(
+      new FakeEngine({ capabilities: { approval_policy: false } }),
+    );
+    const r = (await c.request("describe")) as {
+      capabilities: { id: string }[];
+    };
+    expect(r.capabilities.map((x) => x.id)).not.toContain("approval_policy");
+    await expect(
+      c.request("approvals.setPolicy", { policy: "off" }),
+    ).rejects.toMatchObject({ code: -32601 });
+    await expect(
+      c.request("session.setAccess", { sessionId: "x", access: "full" }),
+    ).rejects.toMatchObject({ code: -32601 });
     c.close();
   });
 

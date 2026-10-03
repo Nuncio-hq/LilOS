@@ -124,7 +124,11 @@ export class FakeGateway implements GatewayLike {
   sessionProviders = new Map<string, string>();
   sessionEfforts = new Map<string, string>();
   sessionFast = new Map<string, boolean>();
-  /** config.set calls in order — {key, value, session_id, confirm_expensive_model}. */
+  /** #106: session_id -> session-scoped yolo set via config.set. */
+  sessionYolo = new Map<string, boolean>();
+  /** #106: the global approvals.mode — config.get reads it back. */
+  approvalsMode = "smart";
+  /** config.set calls in order — {key, value, session_id, scope, confirm_expensive_model}. */
   configSetCalls: Record<string, unknown>[] = [];
   /** `method[:key]` in arrival order — order-sensitive assertions, e.g.
       model→fast→prompt.submit for a deferred pick (#92 AC-4). */
@@ -519,6 +523,7 @@ export class FakeGateway implements GatewayLike {
           key,
           value,
           session_id: sid,
+          scope: p.scope,
           confirm_expensive_model: p.confirm_expensive_model === true,
         });
         if (key === "model") {
@@ -596,7 +601,31 @@ export class FakeGateway implements GatewayLike {
           this.sessionEfforts.set(sid, value);
           return Promise.resolve({ key, value, scope: "session" });
         }
+        /* #106: the global approval policy + the session-scoped yolo hint
+           (methods_config_set.py) — yolo values are on/off like `fast`. */
+        if (key === "approvals.mode") {
+          if (value !== "smart" && value !== "manual" && value !== "off")
+            return Promise.reject(
+              new RpcError(4002, `unknown approvals.mode: ${value}`),
+            );
+          this.approvalsMode = value;
+          return Promise.resolve({ key, value, scope: "global" });
+        }
+        if (key === "yolo") {
+          if (value !== "on" && value !== "off")
+            return Promise.reject(
+              new RpcError(4002, `unknown yolo value: ${value}`),
+            );
+          this.sessionYolo.set(sid, value === "on");
+          return Promise.resolve({ key, value, scope: "session" });
+        }
         return Promise.resolve({ key, value });
+      }
+      case "config.get": {
+        const key = String(p.key ?? "");
+        if (key === "approvals.mode")
+          return Promise.resolve({ key, value: this.approvalsMode });
+        return Promise.reject(new RpcError(4002, `unknown config key: ${key}`));
       }
       case "slash.exec": {
         const command = String(p.command ?? "");

@@ -7,12 +7,18 @@
  * runtime.ts, written via actions.ts.
  */
 import type { ProfileSettings } from "@lilos/contracts/app";
+import type { ConversationAccess } from "@lilos/contracts/engine";
 import type { DetectedEditor } from "@lilos/ui/types";
 import { atom } from "nanostores";
 
 /** The picked default editor (relay `settings` key `defaultEditor`); null
  *  means "first detected" — D-#110's pre-#132 behavior. */
 export const defaultEditor = atom<string | null>(null);
+
+/** #106 AC-3: Settings' "Default access for new conversations" (relay
+ *  `settings` key `defaultAccess`); a conversation opens on it and never
+ *  remembers a previous session's level. */
+export const defaultAccess = atom<ConversationAccess>("ask");
 
 /** ⌘, on macOS / Ctrl+, elsewhere — the platform's Settings shortcut. */
 export function isSettingsShortcut(e: {
