@@ -4,7 +4,12 @@
    values in. Mirrors apps/web/src/lib/mapping.ts mergeTurns onto
    ThreadEntry[] — same swap/append rules, phone-shaped rows. */
 
-import type { JobModel, SessionModel, TurnModel } from "@lilos/client-runtime";
+import type {
+  JobModel,
+  SessionModel,
+  TurnModel,
+  TurnStep,
+} from "@lilos/client-runtime";
 import type {
   AppMessage,
   Ask,
@@ -49,6 +54,39 @@ type ResolveEmployee = (link: {
 
 const clock = (ts: number) =>
   new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+/* ── "N files changed" (#416) — same rule as web's turnChangedFiles ─────── */
+
+/** Tools whose args name the workspace files they write. */
+const FILE_WRITE_TOOLS = new Set(["write_file", "patch"]);
+
+/** V4A multi-file patch headers — `*** Add|Update|Delete|Move File: <path>`
+    inside a `patch` call's `patch` arg (no `path` arg in that mode). */
+const V4A_FILE = /\*\*\* (?:Add|Update|Delete|Move) File: (.+)/g;
+
+const normPath = (p: string) => p.trim().replace(/^\.\//, "");
+
+/* What a completed file-write call touched, read from its own args — the
+   count's ground truth when no diff was emitted (ACP) or the diff's path is
+   a placeholder. A denied/failed write changed nothing. */
+function inputPaths(s: TurnStep): string[] {
+  if (!FILE_WRITE_TOOLS.has(s.tool)) return [];
+  if (s.status !== "completed") return [];
+  const out: string[] = [];
+  const p = s.input?.path;
+  if (typeof p === "string" && p) out.push(normPath(p));
+  const v = s.input?.patch;
+  if (typeof v === "string")
+    for (const m of v.matchAll(V4A_FILE)) out.push(normPath(m[1]));
+  return out;
+}
+
+/* The files one step changed — the write call's own args first, else its
+   diff's path. */
+function stepChangedPaths(s: TurnStep): string[] {
+  const paths = inputPaths(s);
+  return paths.length ? paths : s.diff ? [s.diff.path] : [];
+}
 
 /** Ask -> the approval card (or the after-you-chose receipt). A `plan` ask
     never lands here — the Plan card is that ask's own surface (#182). */
@@ -142,8 +180,14 @@ function toAgentEntry(
       : undefined;
   const lastPlan = opts.planCapable === false ? undefined : turn.plans.at(-1);
   const stopped = turn.phase === "stopped";
+  /* #416: same count as web's turnChangedFiles — a completed write call's
+     own args name the file it touched, so creates/ACP turns count without
+     an emitted diff; helpers in the same checkout count too. */
   const files = new Set(
-    turn.steps.flatMap((s) => (s.diff ? [s.diff.path] : [])),
+    [
+      ...turn.steps,
+      ...turn.subagents.flatMap((a) => (a.employee ? [] : a.steps)),
+    ].flatMap(stepChangedPaths),
   ).size;
   const { approval, decided } = turnApproval(
     turn,

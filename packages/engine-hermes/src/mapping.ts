@@ -254,8 +254,30 @@ export function mapToolStatus(payload: Record<string, unknown>): {
       }
     | undefined;
   if (typeof payload.inline_diff === "string" && payload.inline_diff) {
+    /* The wire carries no top-level `path` — the file a write call touched
+       lives in its `args` (`path` for write_file/patch-replace; for a V4A
+       `mode:"patch"` call, `*** Add|Update|Delete|Move File:` headers in
+       `args.patch`, first one wins — a FileDiff carries one path). Without
+       this every diff was stamped "(inline)" and the turn footer's
+       unique-path count collapsed to 1 (#416). */
+    const args =
+      typeof payload.args === "object" && payload.args !== null
+        ? (payload.args as Record<string, unknown>)
+        : undefined;
+    const v4a =
+      typeof args?.patch === "string"
+        ? /\*\*\* (?:Add|Update|Delete|Move) File: (.+)/
+            .exec(args.patch)?.[1]
+            ?.trim()
+        : undefined;
+    const path =
+      (typeof args?.path === "string" && args.path) ||
+      v4a ||
+      (typeof payload.path === "string" && payload.path
+        ? payload.path
+        : "(inline)");
     diff = {
-      path: typeof payload.path === "string" ? payload.path : "(inline)",
+      path,
       status: "modified",
       add: 0,
       del: 0,
