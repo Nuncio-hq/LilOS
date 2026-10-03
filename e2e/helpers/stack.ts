@@ -157,6 +157,83 @@ export async function pickPorts(): Promise<StackPorts> {
   }
 }
 
+const INSTANCE_RE = (kind: string) =>
+  new RegExp(`\\[${kind}\\] instanceId: ([0-9a-fA-F-]{36})`);
+
+/** What answered `<port>/healthz`: the instanceId it serves, or a marker for
+    an answer that isn't one of ours at all. `undefined` = nothing answered. */
+async function healthzId(port: number): Promise<string | undefined> {
+  const r = await fetch(`http://127.0.0.1:${port}/healthz`, {
+    signal: AbortSignal.timeout(1_000),
+  }).catch(() => undefined);
+  if (!r) return undefined;
+  const id = await r
+    .json()
+    .then((j) => (j as { instanceId?: unknown }).instanceId)
+    .catch(() => undefined);
+  return typeof id === "string" ? id : `<HTTP ${r.status}, no instanceId>`;
+}
+
+/**
+ * Identity-checked readiness (#273): poll `<port>/healthz` until it returns
+ * the instanceId OUR spawned process logged on its own stdout. An answer
+ * carrying a different id — or any answer that isn't an instanceId — means
+ * a foreign stack holds the port: fail at once naming the port and both
+ * ids. An answer seen before our id was logged is held for comparison once
+ * the line lands (pipe delivery can lag a real bind by a tick).
+ */
+export async function waitForInstance(
+  kind: "relay" | "harness",
+  port: number,
+  proc: ChildProcess,
+  out: () => string,
+  ms = 60_000,
+): Promise<string> {
+  const start = Date.now();
+  let ours: string | undefined;
+  let foreign: string | undefined;
+  for (;;) {
+    ours ??= INSTANCE_RE(kind).exec(out())?.[1];
+    const seen = await healthzId(port);
+    if (seen !== undefined) {
+      if (ours && seen === ours) return ours;
+      if (ours)
+        throw new Error(
+          `port ${port} answers /healthz, but it is not the ${kind} this spec started (ours ${ours}, theirs ${seen})`,
+        );
+      foreign = seen;
+    }
+    if (proc.exitCode !== null || proc.signalCode !== null)
+      throw new Error(
+        `${kind} stack exited (code ${proc.exitCode ?? proc.signalCode}) before port ${port} was ours — last output:\n${out().slice(-1200)}`,
+      );
+    if (Date.now() - start > ms)
+      throw new Error(
+        `timed out waiting for ${kind} on port ${port}` +
+          (foreign
+            ? ` — it answers /healthz with ${foreign}, but our ${kind} never logged its instanceId`
+            : " — nothing answers /healthz"),
+      );
+    await sleep(150);
+  }
+}
+
+/** `waitForInstance` for a spec's own relay child (ac-28/130/138 style). */
+export const waitForRelay = (
+  port: number,
+  proc: ChildProcess,
+  out: () => string,
+  ms?: number,
+) => waitForInstance("relay", port, proc, out, ms);
+
+/** `waitForInstance` for a spec's own harness child (ac-28/130/138 style). */
+export const waitForFeed = (
+  port: number,
+  proc: ChildProcess,
+  out: () => string,
+  ms?: number,
+) => waitForInstance("harness", port, proc, out, ms);
+
 /** Boot `bun run dev` (relay + harness + vite dev) on the given ports. */
 export async function bootStack(
   tag: string,
@@ -177,16 +254,20 @@ export async function bootStack(
       LILOS_WEB_PORT: String(ports.web),
       ...extraEnv,
     },
-    stdio: ["ignore", "inherit", "inherit"],
+    /* Piped, not inherited: the readiness probe reads `[relay] instanceId`
+       off this stream — captureProc tees it back to the spec's console. */
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  const log = captureProc(proc);
   const webUrl = `http://127.0.0.1:${ports.web}`;
   try {
-    await waitForHttp(webUrl);
-    // The page connects to relay + feed the moment it loads and only retries
-    // post-handshake drops — wait for them to listen so a slow boot under
-    // parallel load can't strand the client on "could not start".
-    await waitForHttp(`http://127.0.0.1:${ports.relay}/`);
-    await waitForHttp(`http://127.0.0.1:${ports.feed}/`);
+    /* Identity before web: a foreign relay/harness fails in ~a second
+       instead of after vite's whole boot. Vite can't carry identity, but
+       its --strictPort dies on a held port and the umbrella exits — the
+       proc-exit check catches that. */
+    await waitForInstance("relay", ports.relay, proc, log);
+    await waitForInstance("harness", ports.feed, proc, log);
+    await waitForHttp(webUrl, 60_000, proc);
     const relayToken = await waitForToken(home);
     return {
       home,
@@ -196,7 +277,7 @@ export async function bootStack(
       relayToken,
       proc,
       leakTag,
-      log: () => "",
+      log,
       harnessLog: () => {
         try {
           return readFileSync(

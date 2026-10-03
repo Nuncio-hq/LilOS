@@ -229,6 +229,11 @@ const app = createApp({
   pairing,
 });
 
+/* Log our id BEFORE bind: an e2e readiness probe (#273) must know the id of
+   the relay it spawned even when a foreign stack already holds the port —
+   post-bind it would never print and the probe couldn't name both ids. */
+console.log(`[relay] instanceId: ${relay.instanceId}`);
+
 const server = listen(config.host);
 
 const address = `${server.hostname}:${server.port}`;
@@ -236,7 +241,6 @@ relay.log(`listening on http://${address} (ws: /ws)`);
 relay.log(`home: ${config.homeDir}`);
 console.log(`[relay] listening on http://${address} (ws: /ws)`);
 console.log(`[relay] home: ${config.homeDir}`);
-console.log(`[relay] instanceId: ${relay.instanceId}`);
 
 // Rebind the tailnet listener after restarts while phone access stays on.
 const phoneAccessOn = await store.getSetting(PHONE_ACCESS_SETTING);
