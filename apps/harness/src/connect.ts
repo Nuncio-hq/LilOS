@@ -35,7 +35,7 @@ interface ConnectRelay {
   request(method: string, params: Record<string, unknown>): Promise<unknown>;
 }
 
-interface ConnectBaseDeps {
+export interface ConnectBaseDeps {
   relay: ConnectRelay;
   /** Fired when the rows `report()` returns change (#413). */
   onChange?: () => void;
@@ -61,9 +61,6 @@ export interface ConnectDeps extends ConnectBaseDeps {
     out: string;
   };
 }
-
-/** engine-fake's Connect needs nothing but the relay + the change hook. */
-export interface FakeConnectDeps extends ConnectBaseDeps {}
 
 type Row = ProfileConnection;
 
@@ -91,6 +88,9 @@ const rowsSignature = (rows: Iterable<Row>): string =>
 abstract class ConnectBase<D extends ConnectBaseDeps> {
   protected readonly rows = new Map<string, Row>();
   private readonly profileByEmployee = new Map<string, string>();
+  /** Employee ids dropped by `employee.removed` — ids are never reused, so
+     a stale in-flight roster can't resurrect the row (#413). */
+  private readonly removedEmployeeIds = new Set<string>();
   private inflight?: Promise<void>;
   private lastSignature = "[]";
 
@@ -118,6 +118,7 @@ abstract class ConnectBase<D extends ConnectBaseDeps> {
 
   /** `employee.removed` only carries the id — drop via the last map. */
   employeeRemoved(employeeId: string): void {
+    this.removedEmployeeIds.add(employeeId);
     const profile = this.profileByEmployee.get(employeeId);
     if (profile === undefined) return;
     this.employeeGone(profile);
@@ -128,6 +129,12 @@ abstract class ConnectBase<D extends ConnectBaseDeps> {
 
   /** What a reconcile actually reconciles — subclass. */
   protected abstract reconcileInner(): Promise<void>;
+
+  /** True when `employee.removed` already landed for this roster row — a
+     roster fetched before the removal must not recreate it. */
+  protected wasRemoved(employeeId: string): boolean {
+    return this.removedEmployeeIds.has(employeeId);
+  }
 
   /** The dropped profile's teardown (plugin disable for Hermes; the fake
      has nothing on disk to undo). */
@@ -193,6 +200,7 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
     const byProfile = await this.employeeRoster();
 
     for (const [profile, e] of byProfile) {
+      if (this.wasRemoved(e.id)) continue;
       const row = this.row(profile, e.name);
       if (!ok) {
         // Declined or never asked — leave untouched (AC-7); a previously
@@ -311,11 +319,12 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
  * homes or plugins, so rows flip purely on the relay approval. This is what
  * lets the e2e stack exercise the live `connect.changed` path.
  */
-export class FakeConnect extends ConnectBase<FakeConnectDeps> {
+export class FakeConnect extends ConnectBase<ConnectBaseDeps> {
   protected async reconcileInner(): Promise<void> {
     const ok = await this.approved();
     const byProfile = await this.employeeRoster();
     for (const [profile, e] of byProfile) {
+      if (this.wasRemoved(e.id)) continue;
       this.row(profile, e.name).state = ok ? "connected" : "not-connected";
     }
     for (const profile of this.rows.keys()) {

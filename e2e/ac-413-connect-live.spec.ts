@@ -17,6 +17,8 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
  *
  * AC-2 (engine-fake): Connect → the notice disappears without reload.
  * AC-1: Settings → Engine reflects the same live row.
+ * `LILOS_CONNECT_FAKE=1` opts the fake stack into `FakeConnect` — the real
+ * engine has no plugin to install, so rows stay off the default stack.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -96,6 +98,7 @@ async function bootStack(tag: string): Promise<Stack> {
       ...process.env,
       LILOS_HOME: home,
       LILOS_ENGINE: "fake",
+      LILOS_CONNECT_FAKE: "1",
       LILOS_ENGINE_TAG: leakTag,
       LILOS_RELAY_PORT: String(relay),
       LILOS_FEED_PORT: String(feed),
@@ -143,7 +146,9 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-test("AC-2 Connect clears the DM notice without a reload", async ({ page }) => {
+test("AC-2+AC-1 Connect clears the DM notice live; Settings reads the same row", async ({
+  page,
+}) => {
   // Past first run: the app lands on the auto-hired employee's DM.
   await page.addInitScript(() => {
     try {
@@ -160,25 +165,8 @@ test("AC-2 Connect clears the DM notice without a reload", async ({ page }) => {
 
   // The reconciled row lands on connect.changed — the notice unmounts live.
   await expect(notice).toBeHidden({ timeout: 10_000 });
-});
 
-test("AC-1 Settings → Engine shows the live connected row", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    try {
-      window.localStorage.setItem("lilos-onboarded", "1");
-    } catch {}
-  });
-  await page.goto(stack.webUrl);
-
-  // Approve Connect once through the notice, then read the Settings row —
-  // same live event, different surface.
-  const notice = page.locator("[data-not-connected]");
-  await expect(notice).toBeVisible({ timeout: 30_000 });
-  await notice.getByRole("button", { name: "Connect" }).click();
-  await expect(notice).toBeHidden({ timeout: 10_000 });
-
+  // Settings → Engine reads the same live row — no second poll or reload.
   await page.locator("aside").getByRole("button", { name: "Settings" }).click();
   const dialog = page.getByRole("dialog", { name: "Settings" });
   await expect(dialog).toBeVisible();

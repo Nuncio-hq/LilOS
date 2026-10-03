@@ -188,12 +188,13 @@ const bundledPlugin = (root: string) => {
    Hermes profile once the Connect approval lands (relay setting
    `connect.hermes`), keeps it updated, disables it when the employee
    leaves — never deleting a profile. The real reconciler needs profiles +
-   plugins, so only hermes + fake (e2e, #413) carry one; other engines
-   leave `connect` undefined and report no rows.
+   plugins, so hermes carries it; engine-fake gets FakeConnect only under
+   `LILOS_CONNECT_FAKE=1` (the #413 e2e opts in — the fake has no plugin to
+   install, so rows must not change the default fake stack's first-run
+   flow); other engines report no rows.
    #413: `onChange` fires when the reported rows move — it re-sends
-   `harness.report` immediately (the reporter below is assigned before any
-   reconcile can run) so the relay broadcasts `connect.changed` and the app
-   patches live instead of waiting for the heartbeat. */
+   `harness.report` immediately so the relay broadcasts `connect.changed`
+   and the app patches live instead of waiting for the heartbeat. */
 let statusReporter: StatusReporter | undefined;
 const onConnectRows = () => {
   void statusReporter?.sendNow().catch(() => {});
@@ -212,7 +213,7 @@ const connect =
         log,
         onChange: onConnectRows,
       })
-    : config.engine.kind === "fake"
+    : config.engine.kind === "fake" && process.env.LILOS_CONNECT_FAKE === "1"
       ? new FakeConnect({ relay, log, onChange: onConnectRows })
       : undefined;
 

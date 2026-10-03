@@ -121,6 +121,13 @@ export class StatusReporter {
    * heartbeat.
    */
   async sendNow(): Promise<void> {
+    // The relay replaces `host.status` wholesale — sending probe-less fields
+    // would blank engine metadata it already holds, so the cold path takes
+    // the full probe once (deadline-bounded like every heartbeat).
+    if (!this.lastProbe) {
+      await this.reportOnce();
+      return;
+    }
     await this.sendReport();
   }
 

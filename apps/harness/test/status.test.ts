@@ -236,4 +236,36 @@ describe("AC-1 (#413) sendNow re-reports fresh connect rows without probing", ()
     expect(sent[1].status?.connect?.[0]?.state).toBe("connected");
     expect(sent[1].status?.engineName).toBe("engine-fake");
   });
+
+  it("with no cached probe yet, falls back to a full probe report", async () => {
+    let probes = 0;
+    const supervisor: SupervisorView = {
+      state: {
+        current: "running",
+        detail: "engine-fake",
+        conn: {
+          request: async <T>(method: string) => {
+            probes++;
+            if (method === "describe") return DESCRIBE as T;
+            throw new Error(`unexpected ${method}`);
+          },
+        } as EngineConnection,
+      },
+      process: { pid: 42 },
+    };
+    const { reporter, sent } = makeReporter({
+      supervisor,
+      readRssBytes: () => 1024,
+      connect: () => [
+        { profile: "default", employee: "Default", state: "connected" },
+      ],
+    });
+    await reporter.sendNow();
+    // Cold path probes once — the report keeps engine metadata instead of
+    // overwriting the relay's richer status with empty fields.
+    expect(probes).toBe(1);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].status?.engineName).toBe("engine-fake");
+    expect(sent[0].status?.connect?.[0]?.state).toBe("connected");
+  });
 });

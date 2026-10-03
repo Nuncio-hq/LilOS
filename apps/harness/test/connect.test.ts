@@ -209,6 +209,54 @@ describe("AC-7 (#339) decline keeps chat working and Connect works later", () =>
   });
 });
 
+describe("AC-1 (#413) a removal landing mid-reconcile can't resurrect the row", () => {
+  it("the stale in-flight roster skips the removed employee", async () => {
+    const f = fixture();
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+
+    // Gate the second reconcile's roster fetch so employee.removed lands
+    // while it still holds the pre-removal list.
+    let employeesCalls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const gated = new HermesConnect({
+      relay: {
+        request: async (method) => {
+          if (method === "settings.get") return { value: { approved: true } };
+          if (method === "employees.list") {
+            employeesCalls++;
+            if (employeesCalls > 1) await gate;
+            return { employees: f.employees }; // stale: still lists e1
+          }
+          throw new Error(`unexpected ${method}`);
+        },
+      },
+      hermesBin: () => "/bin/true",
+      hermesHome: f.hermesHome,
+      pluginSrc: f.pluginSrc,
+      log: createMemoryLogger(),
+      run: () => ({ status: 0, out: "" }),
+    });
+
+    await gated.reconcile(); // row connected, roster map knows e1→ada
+    expect(gated.report()).toEqual([
+      { profile: "ada", employee: "Ada", state: "connected" },
+    ]);
+
+    const second = gated.reconcile();
+    gated.employeeRemoved("e1");
+    release();
+    await second;
+
+    // Without the tombstone the stale roster recreates + re-enables ada.
+    expect(gated.report()).toEqual([]);
+  });
+});
+
 describe("AC-1 (#339) removal disables the plugin, never deletes the profile", () => {
   it("employee.removed runs plugins disable and drops the row", async () => {
     const f = fixture();
