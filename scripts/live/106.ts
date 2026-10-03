@@ -3,7 +3,7 @@
  *
  *   bun scripts/live/106.ts [--seconds 120]
  *
- * Spawns the real relay + harness (same env as scripts/live/105.ts) with
+ * Spawns the real relay + harness (same env the other live legs use) with
  * LILOS_ENGINE=hermes, then drives the seam end to end:
  *
  *   1. `approvals.setPolicy {policy:"manual"}` crosses the relay
@@ -77,8 +77,8 @@ const feedPort = await freePort();
 const relayHome = mkdtempSync(join(tmpdir(), "lilos106-relay-"));
 harnessHome = mkdtempSync(join(tmpdir(), "lilos106-harness-"));
 
-// A real git repo so the chmod lands on a tracked file (same fixture shape
-// as 105 — the folder a session works in).
+// A real git repo so the chmod lands on a tracked file (the same fixture
+// shape the other live legs use — the folder a session works in).
 const picked = mkdtempSync(join(tmpdir(), "lilos106-picked-"));
 writeFileSync(join(picked, "README.md"), "# repo\n");
 execSync(
