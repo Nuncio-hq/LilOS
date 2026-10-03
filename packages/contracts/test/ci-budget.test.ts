@@ -104,20 +104,22 @@ describe("AC-7 the macOS release build never runs per PR", () => {
 /**
  * Issue #433: plan A (`workers: 4` on one runner) starved 4 stacks + 4
  * Chromiums of CPU — 11 fails, 27.5 min, worse than the ~23 min baseline
- * (PR #444 run 37138365037). Plan B: the E2E suite shards across 3 matrix
- * legs on separate runners at the default 2 workers each; `verify` stays
- * the required check as an always() aggregate. A skipped e2e job (draft,
- * docs-only) still reports green, a failed scope job never does.
+ * (PR #444 run 37138365037). Plan B: the E2E suite shards across matrix
+ * legs on separate runners at the default 2 workers each — 4 legs, not 3,
+ * so the two ~6-min spec files can't share a leg and push it over the
+ * 10-minute AC. `verify` stays the required check as an always()
+ * aggregate. A skipped e2e job (draft, docs-only) still reports green, a
+ * failed scope job never does.
  */
-describe("#433 AC-1 E2E shards across 3 matrix legs behind one verify check", () => {
+describe("#433 AC-1 E2E shards across 4 matrix legs behind one verify check", () => {
   const ci = read(".github/workflows/ci.yml");
 
-  it("runs the suite as --shard i/3 on separate runners", () => {
-    expect(ci).toContain("shard: [1, 2, 3]");
+  it("runs the suite as --shard i/4 on separate runners", () => {
+    expect(ci).toContain("shard: [1, 2, 3, 4]");
     expect(ci).toContain("fail-fast: false");
     expect(ci).toContain(
       // biome-ignore lint/suspicious/noTemplateCurlyInString: an Actions expression
-      "run: xvfb-run -a bun run test:e2e --shard ${{ matrix.shard }}/3",
+      "run: xvfb-run -a bun run test:e2e --shard ${{ matrix.shard }}/4",
     );
   });
 
