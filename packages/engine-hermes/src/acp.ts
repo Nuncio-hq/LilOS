@@ -407,9 +407,16 @@ export class AcpDriver {
         break;
       }
       case "usage_update": {
+        /* ACP `used`/`size` are the CURRENT occupancy and the window —
+           the meter's numerator/denominator (#415), not `input`. */
         const used = typeof u.used === "number" ? u.used : 0;
+        const size = typeof u.size === "number" ? u.size : 0;
         const prev = s.usage ?? { input: 0, output: 0, reasoning: 0, cache: 0 };
-        s.usage = { ...prev, input: used };
+        s.usage = {
+          ...prev,
+          context: used,
+          ...(size > 0 ? { contextWindow: size } : {}),
+        };
         break;
       }
       /* #180: ACP `plan` sessionUpdate carries the agent's own working list

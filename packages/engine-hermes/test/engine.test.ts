@@ -1354,6 +1354,42 @@ describe("engine-hermes #294: the resolved context window reaches clients", () =
     expect(usage?.contextWindow).toBe(262_000);
   });
 
+  test("usage.context_used maps to Usage.context — occupancy, not throughput (#415)", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    /* The fake emits the real `_get_usage` split: input/output are
+       session-lifetime sums, context_used is the live occupancy. #415's
+       123.2% repro came from dividing the lifetime sum by the window. */
+    gw.complete(gw.lastSid);
+    await p;
+    const done = h.events.find((e) => e.type === "turn.completed");
+    if (!done) throw new Error("turn.completed missing");
+    const usage = (done.payload as { usage?: { context?: number } }).usage;
+    expect(usage?.context).toBe(18);
+  });
+
+  test("a mid-turn session.usage tick refreshes the live occupancy (#415)", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    gw.complete(gw.lastSid);
+    await p;
+    /* `session.usage` ticks carry the same `_get_usage` shape — the meter's
+       snapshot follows a drifting occupancy between turn ends. */
+    gw.emit(gw.lastSid, "session.usage", {
+      usage: { context_used: 41_000, context_max: 262_000 },
+    });
+    const snap = (await h.request("events.since", {
+      sessionId,
+      after: 0,
+    })) as {
+      snapshot: { usage?: { context?: number; contextWindow?: number } };
+    };
+    expect(snap.snapshot.usage?.context).toBe(41_000);
+    expect(snap.snapshot.usage?.contextWindow).toBe(262_000);
+  });
+
   test("session.info's usage.context_max refreshes the window between turns", async () => {
     const { gw, h } = setup();
     const { sessionId } = await start(h);

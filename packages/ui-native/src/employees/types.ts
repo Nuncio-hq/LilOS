@@ -128,10 +128,15 @@ export type PlanRow = {
 
 /** Tokens in a session's context window. */
 export type ContextUsage = {
+  /* Lifetime token throughput — never the meter's numerator: the sums
+     outgrow the window across turns (#415). */
   input: number;
   output: number;
   reasoning: number;
   cache: number;
+  /** The session's CURRENT occupancy — the numerator when the engine
+      reports it (#415); absent = the in+out fallback. */
+  context?: number;
   /** The window the meter divides by — engine-reported when it carries one,
       else the labelled estimate `contextWindowOf` returns (#294). */
   max: number;

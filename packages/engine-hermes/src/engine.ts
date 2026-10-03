@@ -1223,6 +1223,15 @@ export class HermesEngine {
           output: usage.outputTokens ?? 0,
           reasoning: usage.thoughtTokens ?? 0,
           cache: usage.cachedReadTokens ?? 0,
+          /* The prompt response reports per-turn tokens only — the live
+             occupancy/window ride `usage_update` ticks and survive onto the
+             turn's usage (#415). */
+          ...(s.usage?.context !== undefined
+            ? { context: s.usage.context }
+            : {}),
+          ...(s.usage?.contextWindow !== undefined
+            ? { contextWindow: s.usage.contextWindow }
+            : {}),
         } satisfies Usage)
       : undefined;
     if (u) s.usage = u;
@@ -1550,14 +1559,19 @@ export class HermesEngine {
   }
 
   /** Hermes reports the session's resolved window as `usage.context_max`
-     (session.info, mid-turn session.usage ticks): refresh the window on the
-     session's last usage between turn ends — only merges, never fabricates
-     a usage the engine didn't report (#294). */
+     and the live occupancy as `usage.context_used` (session.info, mid-turn
+     session.usage ticks): refresh both on the session's last usage between
+     turn ends — only merges, never fabricates a usage the engine didn't
+     report (#294, #415). */
   private mirrorContextWindow(s: Session, usage: unknown) {
     if (!s.usage || typeof usage !== "object" || usage === null) return;
-    const max = (usage as Record<string, unknown>).context_max;
+    const r = usage as Record<string, unknown>;
+    const max = r.context_max;
+    const used = r.context_used;
     if (typeof max === "number" && max > 0)
       s.usage = { ...s.usage, contextWindow: max };
+    if (typeof used === "number" && used > 0)
+      s.usage = { ...s.usage, context: used };
   }
 
   /**

@@ -756,6 +756,11 @@ export function toThreadDetail(opts: {
             output: ctxUsage.output,
             reasoning: ctxUsage.reasoning ?? 0,
             cache: ctxUsage.cache ?? 0,
+            /* Live occupancy is the meter's numerator when the engine
+               reports it (#415). */
+            ...(ctxUsage.context !== undefined
+              ? { context: ctxUsage.context }
+              : {}),
             max: ctxWindow.tokens,
             estimated: ctxWindow.estimated,
           },

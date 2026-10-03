@@ -141,6 +141,28 @@ export function modelLabel(models: readonly ModelRow[], p: ModelPick) {
   return effort ? `${name} · ${effortLabel(effort)}` : name;
 }
 
+/** The meter's numerator — twin of the web's `contextUsedOf`
+    (packages/ui/src/lib/context-window.ts, #415): the engine's CURRENT
+    occupancy report when it sends one, else the last turn's in+out.
+    `input`/`output` alone are lifetime throughput — summed over every
+    tool-loop call they outgrow the window (the 123.2% bug). */
+export function contextUsedOf(
+  usage: { input: number; output: number; context?: number } | undefined,
+): number {
+  return usage?.context ?? (usage?.input ?? 0) + (usage?.output ?? 0);
+}
+
+/** The share of the window the meter fills, clamped to [0, 1] — the meter
+    never reads past 100% (#415 AC-3). */
+export function contextShare(used: number, max: number): number {
+  return max > 0 ? Math.min(1, used / max) : 0;
+}
+
+/** True when the context is at/over the window — the meter's "Full" state. */
+export function contextFull(used: number, max: number): boolean {
+  return max > 0 && used >= max;
+}
+
 /** The window shown when the engine reports nothing and the id gives no hint
     (web `FALLBACK_CONTEXT_WINDOW`). */
 export const FALLBACK_CONTEXT_WINDOW = 200_000;

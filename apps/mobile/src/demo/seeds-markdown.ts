@@ -107,7 +107,13 @@ export const SEED_MARKDOWN: SeedConversation = {
         reasoning:
           "The seven-block sample verbatim — ts, python, bash, a long JSON line, markdown inside a fence, an unlabelled block and a diff.",
         text: FENCES,
-        usage: { input: 5600, output: 1900, reasoning: 400, cache: 2200 },
+        usage: {
+          input: 5600,
+          output: 1900,
+          reasoning: 400,
+          cache: 2200,
+          context: 7_500,
+        },
       },
     },
     {
@@ -116,7 +122,13 @@ export const SEED_MARKDOWN: SeedConversation = {
         reasoning:
           "The three-table sample verbatim — a two-column breakdown with long Vietnamese cell text, a six-column status table that needs horizontal scroll, and a right/center/left aligned one.",
         text: TABLES,
-        usage: { input: 3500, output: 1500, reasoning: 300, cache: 1100 },
+        usage: {
+          input: 3500,
+          output: 1500,
+          reasoning: 300,
+          cache: 1100,
+          context: 5_000,
+        },
       },
     },
   ],
