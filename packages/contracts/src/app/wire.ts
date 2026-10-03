@@ -18,6 +18,7 @@ import {
   AskState,
   AuthorKind,
   Conversation,
+  ConversationLife,
   ConversationState,
   ConversationSummary,
   Employee,
@@ -470,6 +471,9 @@ export const ConversationsUpdateParams = z.object({
   effort: z.string().nullable().optional(),
   fast: z.boolean().nullable().optional(),
   deliveredSeq: z.int().min(0).optional(),
+  /** Host-only (#346): the engine session's life — `closed` once suspended,
+      back to `open` when it reopens. `running` is derived client-side. */
+  life: ConversationLife.optional(),
 });
 export type ConversationsUpdateParams = z.infer<
   typeof ConversationsUpdateParams

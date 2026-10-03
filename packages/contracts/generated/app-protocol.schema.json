@@ -1769,6 +1769,13 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "life": {
+          "type": "string",
+          "enum": [
+            "open",
+            "closed"
+          ]
+        },
         "usage": {
           "type": "object",
           "properties": {
@@ -2032,6 +2039,13 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "life": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "closed"
+                ]
               },
               "usage": {
                 "type": "object",
@@ -2345,6 +2359,13 @@
               "minimum": 0,
               "maximum": 9007199254740991
             },
+            "life": {
+              "type": "string",
+              "enum": [
+                "open",
+                "closed"
+              ]
+            },
             "usage": {
               "type": "object",
               "properties": {
@@ -2608,6 +2629,13 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "life": {
+          "type": "string",
+          "enum": [
+            "open",
+            "closed"
+          ]
         }
       },
       "required": [
@@ -2743,6 +2771,13 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
+            },
+            "life": {
+              "type": "string",
+              "enum": [
+                "open",
+                "closed"
+              ]
             },
             "usage": {
               "type": "object",
@@ -4138,6 +4173,13 @@
               "minimum": 0,
               "maximum": 9007199254740991
             },
+            "life": {
+              "type": "string",
+              "enum": [
+                "open",
+                "closed"
+              ]
+            },
             "usage": {
               "type": "object",
               "properties": {
@@ -4773,6 +4815,13 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 9007199254740991
+                  },
+                  "life": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "closed"
+                    ]
                   },
                   "usage": {
                     "type": "object",
@@ -6988,6 +7037,13 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
+            },
+            "life": {
+              "type": "string",
+              "enum": [
+                "open",
+                "closed"
+              ]
             },
             "usage": {
               "type": "object",

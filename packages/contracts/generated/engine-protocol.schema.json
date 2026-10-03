@@ -2086,6 +2086,36 @@
         "additionalProperties": false
       }
     },
+    "session.suspend": {
+      "doc": "Close the live session but keep what resume needs: a later prompt/steer reopens it under the same session id (#346).",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "sessionId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "suspended": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "suspended"
+        ],
+        "additionalProperties": false
+      }
+    },
     "session.steer": {
       "doc": "Inject text into the running turn: lands at the next tool boundary as turn.steered, or becomes the next turn's input when the turn ends first. not_running = nothing was consumed; send prompt instead.",
       "capability": "steer",

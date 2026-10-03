@@ -65,6 +65,17 @@ export const ConversationState = z.enum(["idle", "active", "closed"]);
 export type ConversationState = z.infer<typeof ConversationState>;
 
 /**
+ * The engine session's life behind a conversation (#346): `open` = the
+ * session exists (loaded, idle or mid-turn), `closed` = suspended — it
+ * reopens on the next message. `running` is deliberately absent: that is a
+ * derived state (a turn or any subagent live), computed in one place
+ * client-side (`sessionLife` / `toSessionTurn`), never stored — the same
+ * rule the prototype's life ring uses (#344/#348).
+ */
+export const ConversationLife = z.enum(["open", "closed"]);
+export type ConversationLife = z.infer<typeof ConversationLife>;
+
+/**
  * How a conversation's `cwd` came to be (#156 workstream modes, prototype
  * semantics): `new` = the harness materialized `cwd` as a fresh git
  * worktree of `repoPath` (`git worktree add <cwd> -b <branch> <base>`)
@@ -135,6 +146,14 @@ export const Conversation = z.object({
    * previous turn's answer in seq order.
    */
   deliveredSeq: z.int().min(0).default(0),
+  /**
+   * The engine session's life (#346, AC-4): the host writes `open`/`closed`
+   * — a suspended session is `closed` and reopens on the next message.
+   * Absent on rows that predate the field = treated as `open`. `running`
+   * never crosses the wire — it's derived in one place (the same rule as
+   * the prototype's `sessionLife`).
+   */
+  life: ConversationLife.optional(),
   /**
    * The newest turn.completed's usage the relay saw (#300) — the context
    * meter's input/output/cache counts + the engine-reported contextWindow.
