@@ -1779,3 +1779,58 @@ describe("engine-hermes #308: post-turn legs mint their own turn", () => {
     expect(completed()).toBe(before);
   });
 });
+
+describe("engine-hermes #416: an inline diff carries the file's real path", () => {
+  /* tui_gateway's ToolCompletePayload has no top-level `path` — the file a
+     write call touched lives in `args` (the tool's own input). Reading
+     `payload.path` stamped every diff "(inline)", which collapsed the turn
+     footer's unique-path count to 1. */
+  const diffPathOf = async (
+    completePayload: Record<string, unknown>,
+  ): Promise<string | undefined> => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId, "edit files");
+    gw.emit(gw.lastSid, "tool.start", {
+      tool_id: "call_1",
+      name: "write_file",
+      args: { path: "x" },
+    });
+    gw.emit(gw.lastSid, "tool.complete", {
+      tool_id: "call_1",
+      name: "write_file",
+      result: { ok: true },
+      inline_diff: "a/x → b/x +1",
+      ...completePayload,
+    });
+    gw.complete(gw.lastSid);
+    await p;
+    const done = h.events.find((e) => e.type === "tool.completed")?.payload as {
+      diff?: { path?: string };
+    };
+    return done.diff?.path;
+  };
+
+  test("AC-1 args.path names the file (write_file / patch replace)", async () => {
+    expect(
+      await diffPathOf({ args: { path: "math.test.ts", content: "…" } }),
+    ).toBe("math.test.ts");
+  });
+
+  test("AC-1 V4A patch headers name the file (delete/update/add)", async () => {
+    expect(
+      await diffPathOf({
+        args: {
+          mode: "patch",
+          patch:
+            "*** Begin Patch\n*** Delete File: old.ts\n*** Update File: keep.ts\n*** End Patch",
+        },
+      }),
+    ).toBe("old.ts");
+  });
+
+  test("a legacy top-level path or missing args still falls back", async () => {
+    expect(await diffPathOf({ path: "legacy.ts" })).toBe("legacy.ts");
+    expect(await diffPathOf({ args: null })).toBe("(inline)");
+  });
+});
