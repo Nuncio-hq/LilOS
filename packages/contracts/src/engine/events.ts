@@ -24,9 +24,9 @@ export type StopReason = z.infer<typeof StopReason>;
 
 export const Usage = z.object({
   /* input/output/reasoning/cache are LIFETIME throughput sums (billing-
-     style): engines like Hermes re-send the whole context on every tool-loop
-     call, so their total grows past the window — they can never be the
-     meter's numerator (issue #415). */
+     style): engines that re-send the whole context on every tool-loop call
+     grow them past the window — they can never be the meter's numerator
+     (issue #415). */
   input: z.int().min(0),
   output: z.int().min(0),
   reasoning: z.int().min(0),
