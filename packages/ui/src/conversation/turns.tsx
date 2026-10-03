@@ -47,7 +47,7 @@ import type {
   WbTab,
 } from "../types";
 import { VIEWER_ID } from "../types";
-import { turnSteps } from "../workbench/artifacts";
+import { turnChangedFiles } from "../workbench/artifacts";
 import { type PlanAction, PlanCard } from "./plan-card";
 import { StepDetail } from "./step-detail";
 import { SubagentsLink, TurnSubagents } from "./subagents";
@@ -232,11 +232,7 @@ export function AgentTurn({
 }) {
   const e = emp(r.from);
   const steps = r.steps ?? [];
-  const files = new Set(
-    turnSteps(r)
-      .filter((s) => s.diff)
-      .map((s) => s.diff!.path),
-  ).size;
+  const files = turnChangedFiles(r).size;
   return (
     <Message
       from="assistant"
