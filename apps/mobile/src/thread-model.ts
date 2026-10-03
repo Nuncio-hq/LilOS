@@ -725,18 +725,6 @@ export function toThreadDetail(opts: {
   const jobs = jobsById.size
     ? [...jobsById.values()].map((j) => toJobRow(j, opts.now))
     : undefined;
-  const usage = sessionModel?.turns.reduce(
-    (acc, t) =>
-      t.usage
-        ? {
-            input: acc.input + t.usage.input,
-            output: acc.output + t.usage.output,
-            reasoning: (acc.reasoning ?? 0) + (t.usage.reasoning ?? 0),
-            cache: (acc.cache ?? 0) + (t.usage.cache ?? 0),
-          }
-        : acc,
-    { input: 0, output: 0, reasoning: 0, cache: 0 },
-  );
   /* #247: the ring + Session-info meter read the newest turn's cumulative
      usage — the same pick the web thread panel makes (#294). Its window
      resolves through the shared rules: the engine's report first, the
@@ -787,12 +775,12 @@ export function toThreadDetail(opts: {
       : undefined,
     model: pick?.name ?? conv.model ?? sessionModel?.model ?? "",
     session: conv.engineRef ?? "",
+    /* ctxUsage is the newest CUMULATIVE usage — summing cumulative
+       per-turn payloads across turns would count the session N× (#415). */
     usage:
-      usage && (usage.input || usage.output)
-        ? usageLabel(usage)
-        : conv.usage
-          ? usageLabel(conv.usage)
-          : undefined,
+      ctxUsage && (ctxUsage.input || ctxUsage.output)
+        ? usageLabel(ctxUsage)
+        : undefined,
     ...(ctxUsage
       ? {
           context: {
@@ -800,6 +788,11 @@ export function toThreadDetail(opts: {
             output: ctxUsage.output,
             reasoning: ctxUsage.reasoning ?? 0,
             cache: ctxUsage.cache ?? 0,
+            /* Live occupancy is the meter's numerator when the engine
+               reports it (#415). */
+            ...(ctxUsage.context !== undefined
+              ? { context: ctxUsage.context }
+              : {}),
             max: ctxWindow.tokens,
             estimated: ctxWindow.estimated,
           },

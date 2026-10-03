@@ -1354,6 +1354,87 @@ describe("engine-hermes #294: the resolved context window reaches clients", () =
     expect(usage?.contextWindow).toBe(262_000);
   });
 
+  test("usage.context_used maps to Usage.context — occupancy, not throughput (#415)", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    /* The fake emits the real `_get_usage` split: input/output are
+       session-lifetime sums, context_used is the live occupancy. #415's
+       123.2% repro came from dividing the lifetime sum by the window. */
+    gw.complete(gw.lastSid);
+    await p;
+    const done = h.events.find((e) => e.type === "turn.completed");
+    if (!done) throw new Error("turn.completed missing");
+    const usage = (done.payload as { usage?: { context?: number } }).usage;
+    expect(usage?.context).toBe(18);
+  });
+
+  test("a mid-turn session.usage tick refreshes the live occupancy (#415)", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    gw.complete(gw.lastSid);
+    await p;
+    /* `session.usage` ticks carry the same `_get_usage` shape — the meter's
+       snapshot follows a drifting occupancy between turn ends. */
+    gw.emit(gw.lastSid, "session.usage", {
+      usage: { context_used: 41_000, context_max: 262_000 },
+    });
+    const snap = (await h.request("events.since", {
+      sessionId,
+      after: 0,
+    })) as {
+      snapshot: { usage?: { context?: number; contextWindow?: number } };
+    };
+    expect(snap.snapshot.usage?.context).toBe(41_000);
+    expect(snap.snapshot.usage?.contextWindow).toBe(262_000);
+  });
+
+  test("a mid-turn occupancy tick survives a completion that omits context fields (#415)", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p1 = promptAsync(h, sessionId);
+    gw.complete(gw.lastSid); // seeds s.usage (context: 18)
+    await p1;
+    const p2 = promptAsync(h, sessionId);
+    gw.emit(gw.lastSid, "session.usage", {
+      usage: { context_used: 41_000, context_max: 262_000 },
+    });
+    /* An older/partial `_get_usage` shape that reports neither field must
+       not drop the tick's reading back to the lifetime-sum fallback —
+       the same preserve the ACP endAcpTurn applies. */
+    gw.complete(gw.lastSid, { usage: { input: 900, output: 60 } });
+    await p2;
+    const dones = h.events.filter((e) => e.type === "turn.completed");
+    const usage = (dones[1].payload as { usage?: Record<string, number> })
+      .usage;
+    expect(usage?.context).toBe(41_000);
+    expect(usage?.contextWindow).toBe(262_000);
+    expect(usage?.input).toBe(900);
+  });
+
+  test("a real context_used: 0 maps through — post-compaction occupancy is not 'unreported' (#415)", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    gw.complete(gw.lastSid, {
+      usage: {
+        input: 900,
+        output: 60,
+        context_used: 0,
+        context_max: 262_000,
+      },
+    });
+    await p;
+    const done = h.events.find((e) => e.type === "turn.completed");
+    if (!done) throw new Error("no turn.completed");
+    const usage = (done.payload as { usage?: Record<string, number> }).usage;
+    /* 0 stays 0 — falling back to input+output here would inflate the
+       meter right after a compaction. */
+    expect(usage?.context).toBe(0);
+    expect(usage?.contextWindow).toBe(262_000);
+  });
+
   test("session.info's usage.context_max refreshes the window between turns", async () => {
     const { gw, h } = setup();
     const { sessionId } = await start(h);

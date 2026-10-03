@@ -211,10 +211,15 @@ export type BackgroundJob = {
   subagent?: boolean;
 };
 export type Usage = {
+  /* Lifetime token throughput (billing-style sums — they outgrow the
+     window across turns, so never the meter's numerator; #415). */
   input: number;
   output: number;
   reasoning: number;
   cache: number;
+  /* The session's CURRENT context occupancy — the meter's numerator (#415);
+     absent when the engine reports no occupancy (fall back to in+out). */
+  context?: number;
   /* The context window the engine resolved for this session, reported with
      the turn's usage (issue #294); absent = the meter's labelled estimate. */
   contextWindow?: number;
@@ -258,8 +263,15 @@ export type SessionAlert = {
   text: string;
   retry?: boolean;
 };
+/* Whether the session behind a thread holds the machine (#344): `running` while
+   a turn or a subagent works, `open` while it sits loaded and idle, `closed`
+   once idle-closed (resumes on the next message). */
+export type SessionLife = "running" | "open" | "closed";
 export type Thread = {
   session: string;
+  /* Engine session state when nothing runs; unset = open. Running is derived
+     from the replies (sessionLife), never stored. */
+  life?: Exclude<SessionLife, "running">;
   ticket?: string;
   branch?: string;
   /* User-visible session title (renamed by the user; unset = first message is the name). */

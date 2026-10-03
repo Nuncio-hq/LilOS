@@ -60,6 +60,9 @@ export type SessionState =
   | "failed"
   | "stopped";
 
+/** #344 (web: SessionLife): whether the engine session holds the Mac. */
+export type SessionLife = "running" | "open" | "closed";
+
 /** One DM row: your message and the session it opened, summarised. */
 /** A pull request a session opened (web: PullRequest, trimmed to what the
     phone shows). A session can open several; newest last. */
@@ -83,6 +86,10 @@ export type SessionTurn = {
   added?: number;
   removed?: number;
   replies?: number;
+  /** #344: the engine session behind this thread — running (a turn or any
+      subagent), open (loaded, idle), closed (idle-closed; reopens on the
+      next message). Drives the ring round the replies count. */
+  life?: SessionLife;
   /** The employee's latest words, shown as the card's body. */
   preview?: string;
   /** What it's doing right now (working sessions). */
@@ -128,10 +135,15 @@ export type PlanRow = {
 
 /** Tokens in a session's context window. */
 export type ContextUsage = {
+  /* Lifetime token throughput — never the meter's numerator: the sums
+     outgrow the window across turns (#415). */
   input: number;
   output: number;
   reasoning: number;
   cache: number;
+  /** The session's CURRENT occupancy — the numerator when the engine
+      reports it (#415); absent = the in+out fallback. */
+  context?: number;
   /** The window the meter divides by — engine-reported when it carries one,
       else the labelled estimate `contextWindowOf` returns (#294). */
   max: number;

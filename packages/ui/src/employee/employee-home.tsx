@@ -3,7 +3,6 @@ import {
   ArchiveIcon,
   CalendarClockIcon,
   ChevronRightIcon,
-  CircleDotIcon,
   EllipsisIcon,
   FolderIcon,
   MenuIcon,
@@ -44,7 +43,13 @@ import { NotConnectedNotice } from "../connect/not-connected-notice";
 import { AttachmentChips } from "../conversation/turns";
 import { WorkspacePicker, wsHint } from "../dialogs/workspace-picker";
 import { Body, Row, Who } from "../feed/row";
-import { folderLabel, PHASE_LABEL, preview } from "../lib/helpers";
+import {
+  folderLabel,
+  LIFE_LABEL,
+  PHASE_LABEL,
+  preview,
+  sessionLife,
+} from "../lib/helpers";
 import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
@@ -351,6 +356,7 @@ export function EmployeeHome({
     const t = m.thread!;
     const last = t.replies[t.replies.length - 1];
     const running = t.replies.some((r) => r.live);
+    const life = isArchived ? undefined : sessionLife(t);
     const firstAnswer = t.replies.find((r) => emp(r.from) && r.text);
     return (
       <div
@@ -439,14 +445,21 @@ export function EmployeeHome({
             title={[t.session, t.ws?.project, t.ws?.branch]
               .filter(Boolean)
               .join(" · ")}
-            className="lilos-lift mt-1 flex w-fit max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-full bg-accent px-2.5 py-1 text-left text-xs hover:bg-foreground/10 [&>*]:shrink-0 [&>*]:whitespace-nowrap"
+            data-life={life}
+            className={cn(
+              "lilos-lift relative mt-1 flex w-fit max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-full bg-accent px-2.5 py-1 text-left text-xs hover:bg-foreground/10 [&>*]:shrink-0 [&>*]:whitespace-nowrap",
+              life && life !== "closed" && "lilos-life",
+              life === "running" && "lilos-life-run",
+            )}
           >
             <HermesAvatar name={e.name} className="size-5" />
             <span className="font-medium text-tint-text">
               {t.replies.length} {t.replies.length === 1 ? "reply" : "replies"}
             </span>
             {t.ws && <FolderIcon className="size-3 text-muted-foreground" />}
-            {running && last?.phase === "waiting" ? (
+            {/* #344: no "working" label — the ring around this pill says it.
+                Needs-you keeps its badge: it asks the user to act. */}
+            {running && last?.phase === "waiting" && (
               <span
                 title="Needs you"
                 className="grid size-4 place-items-center rounded-full bg-primary font-bold text-[10px] text-primary-foreground"
@@ -454,12 +467,8 @@ export function EmployeeHome({
                 <span aria-hidden>!</span>
                 <span className="sr-only">{PHASE_LABEL.waiting}</span>
               </span>
-            ) : running ? (
-              <span className="flex items-center gap-1 text-muted-foreground">
-                <CircleDotIcon className="size-3 animate-pulse text-work" />
-                {last?.phase ? PHASE_LABEL[last.phase] : "working"}
-              </span>
-            ) : null}
+            )}
+            {life && <span className="sr-only">{LIFE_LABEL[life]}</span>}
             <ChevronRightIcon className="size-3.5 text-muted-foreground" />
           </button>
         </Row>
