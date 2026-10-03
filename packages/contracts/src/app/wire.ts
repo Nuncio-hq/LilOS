@@ -1187,6 +1187,7 @@ export const AppEventMethod = z.enum([
   "conversation.rewound",
   "devices.changed",
   "host.changed",
+  "connect.changed",
   "engine.event",
   "workbench.opened",
 ]);
@@ -1459,6 +1460,18 @@ export const HostChangedEvent = z.object({
   connected: z.boolean(),
 });
 export type HostChangedEvent = z.infer<typeof HostChangedEvent>;
+
+/**
+ * Broadcast when the per-profile Connect rows the relay serves on
+ * `system.status` change (#413): the DM notice and Settings → Engine read
+ * them live instead of waiting for the next status poll. `connect` absent
+ * = the host stopped reporting rows — clients clear their copy. A later
+ * `system.status` answer stays authoritative and replaces the patched rows.
+ */
+export const ConnectChangedEvent = z.object({
+  connect: z.array(ProfileConnection).optional(),
+});
+export type ConnectChangedEvent = z.infer<typeof ConnectChangedEvent>;
 
 /* ------------------------ push notifications (#161) ------------------------
  *

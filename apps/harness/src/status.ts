@@ -111,7 +111,28 @@ export class StatusReporter {
         // A wedged probe still lets the heartbeat below carry state.
       }
     }
+    await this.sendReport();
+  }
 
+  /**
+   * Send `harness.report` now from the cached describe/models probe — no
+   * engine re-probe (#413): the Connect reconciler's `onChange` hooks this
+   * so a row flip reaches the relay on the next event, not the next
+   * heartbeat.
+   */
+  async sendNow(): Promise<void> {
+    // The relay replaces `host.status` wholesale — sending probe-less fields
+    // would blank engine metadata it already holds, so the cold path takes
+    // the full probe once (deadline-bounded like every heartbeat).
+    if (!this.lastProbe) {
+      await this.reportOnce();
+      return;
+    }
+    await this.sendReport();
+  }
+
+  private async sendReport(): Promise<void> {
+    const { supervisor } = this.opts;
     const pid = supervisor.process?.pid;
     const engineRssBytes =
       supervisor.state.current === "running" && pid !== undefined
