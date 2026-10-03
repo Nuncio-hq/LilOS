@@ -48,6 +48,7 @@ import {
   MessagesSearchParams,
   MessagesSendParams,
   MessagesSetCheckpointParams,
+  type ProfileConnection,
   ProfileUpdateParams,
   PushRegisterParams,
   PushUnregisterParams,
@@ -210,6 +211,15 @@ const badParams = (issues: unknown) =>
   new RpcError(JsonRpcCode.invalidParams, "invalid_params", "invalid params", {
     issues,
   });
+
+/** #413: order-insensitive signature of a report's connect rows — a roster
+    reported in a different order is not a change worth broadcasting. */
+const connectSignature = (rows: ProfileConnection[] | undefined): string =>
+  rows === undefined
+    ? ""
+    : JSON.stringify(
+        [...rows].sort((a, b) => a.profile.localeCompare(b.profile)),
+      );
 
 /**
  * JSON-RPC 2.0 over one ws connection, with T3-style snapshot + replay
@@ -1399,7 +1409,18 @@ export function createRelay(options: RelayOptions): Relay {
             }
             host.engine = parsed.data.engine;
             host.lastReportAt = now();
-            if (parsed.data.status) host.status = parsed.data.status;
+            if (parsed.data.status) {
+              /* #413: the DM notice and Settings → Engine read `connect` off
+                 `system.status` — push the rows live when they change instead
+                 of leaving surfaces on the next poll. */
+              const prev = connectSignature(host.status?.connect);
+              host.status = parsed.data.status;
+              if (prev !== connectSignature(host.status.connect)) {
+                broadcast("connect.changed", {
+                  connect: host.status.connect,
+                });
+              }
+            }
           }
           respond(peer, id, { ok: true });
           return;

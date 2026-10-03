@@ -23,7 +23,7 @@ import { createCheckpointStore } from "@lilos/host";
 import { SURFACES_ENV } from "@lilos/surfaces";
 import packageJson from "../package.json";
 import { launcherFor, resolveHarnessConfig } from "./config";
-import { HermesConnect } from "./connect";
+import { FakeConnect, HermesConnect } from "./connect";
 import { connectEngineWs } from "./engine/client";
 import { resolveHermesBin } from "./engine/discover";
 import { EngineSupervisor } from "./engine/supervisor";
@@ -187,8 +187,18 @@ const bundledPlugin = (root: string) => {
 /* #339 Connect: reconciles the bundled lilos plugin onto each employee's
    Hermes profile once the Connect approval lands (relay setting
    `connect.hermes`), keeps it updated, disables it when the employee
-   leaves — never deleting a profile. Only the hermes engine has profiles
-   + plugins to connect. */
+   leaves — never deleting a profile. The real reconciler needs profiles +
+   plugins, so hermes carries it; engine-fake gets FakeConnect only under
+   `LILOS_CONNECT_FAKE=1` (the #413 e2e opts in — the fake has no plugin to
+   install, so rows must not change the default fake stack's first-run
+   flow); other engines report no rows.
+   #413: `onChange` fires when the reported rows move — it re-sends
+   `harness.report` immediately so the relay broadcasts `connect.changed`
+   and the app patches live instead of waiting for the heartbeat. */
+let statusReporter: StatusReporter | undefined;
+const onConnectRows = () => {
+  void statusReporter?.sendNow().catch(() => {});
+};
 const connect =
   config.engine.kind === "hermes"
     ? new HermesConnect({
@@ -201,8 +211,11 @@ const connect =
           [SURFACES_ENV.engineToken]: surfaces.engineToken,
         },
         log,
+        onChange: onConnectRows,
       })
-    : undefined;
+    : config.engine.kind === "fake" && process.env.LILOS_CONNECT_FAKE === "1"
+      ? new FakeConnect({ relay, log, onChange: onConnectRows })
+      : undefined;
 
 const harness = new Harness({
   relay,
@@ -251,7 +264,7 @@ void supervisor.start();
 
 /* #33: heartbeat engine telemetry (describe probe, RSS, live sessions, log
    tail) into `harness.report` so relay `system.status` stays fresh. */
-const stopStatusReporter = new StatusReporter({
+statusReporter = new StatusReporter({
   send: (params) => relay.request("harness.report", params),
   supervisor,
   version: releaseVersion,
@@ -259,7 +272,8 @@ const stopStatusReporter = new StatusReporter({
   liveSessions: () => harness.liveSessionCount,
   connect: connect ? () => connect.report() : undefined,
   logTail: () => [...log.lines],
-}).start();
+});
+const stopStatusReporter = statusReporter.start();
 
 /* Connect self-heals on a timer too (AC-6 version drift) — events alone
    can miss (harness was down when the approval or a hire landed). */

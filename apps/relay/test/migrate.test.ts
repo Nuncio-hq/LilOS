@@ -1,10 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-
-const RELAY_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
-const BUN = process.env.LILOS_BUN_BIN ?? "bun";
+import { BUN, RELAY_DIR } from "./helpers";
 
 /**
  * #92 / #113 merge safety: main's v6 (#113 cwd + recent_folders) is shipped —

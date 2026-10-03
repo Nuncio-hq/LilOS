@@ -1,15 +1,8 @@
 import { homedir } from "node:os";
-import type { RelaySocket, SocketFactory } from "@lilos/client-runtime";
-import { RelayClient } from "@lilos/client-runtime";
+import type { RelayClient } from "@lilos/client-runtime";
 import type { AppMessage } from "@lilos/contracts/app";
-import { connectFake, FakeEngine } from "@lilos/engine-fake";
 import { describe, expect, it } from "vitest";
-import { createRelay } from "../../relay/src/session";
-import { createMemoryStore } from "../../relay/test/memory-store";
-import type { EngineConnection } from "../src/engine/client";
-import { Harness } from "../src/harness";
-import { createMemoryLogger } from "../src/log";
-import { createFakeSleepGuard } from "../src/sleep";
+import { openDm, setupWorld as setupWorldBase, waitFor } from "./helpers";
 
 /**
  * Issue #113: the picked folder becomes the engine session's `cwd`.
@@ -20,123 +13,9 @@ import { createFakeSleepGuard } from "../src/sleep";
  * sibling PRs editing that file don't conflict).
  */
 
-const TOKEN = "test-token";
 const WORKDIR = "/tmp/lilos-test";
 
-type Relay = ReturnType<typeof createRelay>;
-
-const socketFor =
-  (relay: Relay): SocketFactory =>
-  () => {
-    const listeners = new Map<string, Array<(e?: unknown) => void>>();
-    const emit = (type: string, e?: unknown) =>
-      queueMicrotask(() =>
-        (listeners.get(type) ?? []).forEach((fn) => void fn(e)),
-      );
-    let peer: { receive(f: string): Promise<void>; closed(): void };
-    let readyState = 0;
-    const socket = {
-      get readyState() {
-        return readyState;
-      },
-      send: (frame: string) => {
-        void peer.receive(frame);
-      },
-      close: () => {
-        readyState = 3;
-        peer.closed();
-        emit("close", { code: 1000, reason: "closed" });
-      },
-      addEventListener(type: string, fn: (e?: unknown) => void) {
-        listeners.set(type, [...(listeners.get(type) ?? []), fn]);
-      },
-    } as unknown as RelaySocket;
-    peer = relay.connect({
-      send: (frame) => emit("message", { data: frame }),
-      close: (code, reason) => emit("close", { code, reason }),
-    });
-    queueMicrotask(() => {
-      readyState = 1;
-      emit("open");
-    });
-    return socket;
-  };
-
-const waitFor = async <T>(
-  fn: () => T | undefined | Promise<T | undefined>,
-  what: string,
-  timeoutMs = 10_000,
-): Promise<T> => {
-  const start = Date.now();
-  for (;;) {
-    const value = await fn();
-    if (value !== undefined) return value;
-    if (Date.now() - start > timeoutMs) {
-      throw new Error(`timed out waiting for ${what}`);
-    }
-    await new Promise((r) => setTimeout(r, 25));
-  }
-};
-
-async function setupWorld() {
-  const store = createMemoryStore();
-  const relay = createRelay({ store, token: TOKEN });
-  const engine = new FakeEngine({ tick: 1 });
-  const engineConn = connectFake(engine) as unknown as EngineConnection;
-  const engineCalls: { method: string; params: unknown }[] = [];
-  const origRequest = engineConn.request.bind(engineConn);
-  engineConn.request = <T = unknown>(
-    method: string,
-    params?: unknown,
-  ): Promise<T> => {
-    engineCalls.push({ method, params });
-    return origRequest<T>(method, params);
-  };
-  const log = createMemoryLogger();
-  const harnessRelay = new RelayClient({
-    url: "mem://harness",
-    token: TOKEN,
-    socketFactory: socketFor(relay),
-    reconnectMinDelayMs: 20,
-  });
-  const harness = new Harness({
-    relay: harnessRelay,
-    sleep: createFakeSleepGuard(),
-    workdir: WORKDIR,
-    log,
-  });
-  harness.attachEngine(engineConn);
-  await harness.start();
-  const user = new RelayClient({
-    url: "mem://user",
-    token: TOKEN,
-    socketFactory: socketFor(relay),
-  });
-  await user.connect();
-  return {
-    relay,
-    store,
-    engineCalls,
-    harness,
-    user,
-    cleanup: async () => {
-      user.close();
-      await harness.stop();
-    },
-  };
-}
-
-async function openDm(user: RelayClient) {
-  const { employee } = await user.request<{ employee: { id: string } }>(
-    "employees.create",
-    { name: "Ada", role: "engineer", profile: "builder" },
-  );
-  const { channel } = await user.request<{ channel: { id: string } }>(
-    "channels.openDm",
-    { employeeId: employee.id },
-  );
-  return channel;
-}
+const setupWorld = () => setupWorldBase({ reconnectMinDelayMs: 20 });
 
 const lastSessionStart = (w: {
   engineCalls: { method: string; params: unknown }[];

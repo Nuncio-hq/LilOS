@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createRelay, type RelayWsPeer } from "../src/session";
+import { createRelay } from "../src/session";
+import { helloed, nextId, req, resultOf, TOKEN } from "./helpers";
 import { createMemoryStore } from "./memory-store";
 
 /**
@@ -10,43 +11,6 @@ import { createMemoryStore } from "./memory-store";
  * employee.upserted). AC-4: an untouched store returns an empty profile —
  * the app layers OS-derived prefill on top.
  */
-
-const TOKEN = "test-token";
-
-let nextId = 0;
-const req = (method: string, params: Record<string, unknown> = {}) =>
-  JSON.stringify({ jsonrpc: "2.0", id: `t${nextId++}`, method, params });
-
-function connectPeer(relay: ReturnType<typeof createRelay>) {
-  const frames: unknown[] = [];
-  const peer: RelayWsPeer = {
-    send: (frame) => frames.push(JSON.parse(frame)),
-    close: () => {},
-  };
-  const connection = relay.connect(peer);
-  return { frames, connection };
-}
-
-const resultOf = (frames: unknown[], id: string) => {
-  const frame = (
-    frames as {
-      id?: string;
-      result?: unknown;
-      error?: { code: number; message: string };
-    }[]
-  ).find((f) => f.id === id);
-  if (!frame) throw new Error(`no response frame for ${id}`);
-  return frame;
-};
-
-async function helloed(relay: ReturnType<typeof createRelay>) {
-  const { frames, connection } = connectPeer(relay);
-  await connection.receive(
-    req("session.hello", { protocolVersion: 1, token: TOKEN }),
-  );
-  frames.length = 0;
-  return { frames, connection };
-}
 
 describe("AC-1 relay owns the profile settings", () => {
   it("AC-1 a fresh store reports an empty profile (AC-4: prefill happens app-side)", async () => {
