@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { createMemoryStore } from "../src/store";
+import { createMemoryStore } from "./memory-store";
 
 const RELAY_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BUN = process.env.LILOS_BUN_BIN ?? "bun";

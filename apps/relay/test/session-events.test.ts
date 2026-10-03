@@ -2,7 +2,7 @@ import { APP_PROTOCOL_VERSION, type AppErrorCode } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import { createPairingService } from "../src/pairing";
 import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "../src/store";
+import { createMemoryStore } from "./memory-store";
 
 /* `session.events` + `engine.event` (#157): the phone's live engine feed.
    A device-scope client never talks to an engine — the host pushes engine

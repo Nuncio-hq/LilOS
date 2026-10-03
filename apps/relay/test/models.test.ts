@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "../src/store";
+import { createMemoryStore } from "./memory-store";
 
 /**
  * Relay coverage for the #30 surface: `conversations.setModel` notifies the

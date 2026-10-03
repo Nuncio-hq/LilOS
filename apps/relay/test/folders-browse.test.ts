@@ -11,7 +11,7 @@ import { APP_PROTOCOL_VERSION, type AppErrorCode } from "@lilos/contracts/app";
 import { afterEach, describe, expect, it } from "vitest";
 import { createPairingService } from "../src/pairing";
 import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "../src/store";
+import { createMemoryStore } from "./memory-store";
 
 /* `folders.browse`/`folders.discover` (#238): device-scope reads the relay
    forwards to the registered harness — the relay itself only validates and
