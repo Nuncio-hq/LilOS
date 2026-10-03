@@ -5,19 +5,11 @@
     a replayed older turn from regressing the stored numbers. Runs under
     bun:sqlite via a subprocess (vitest itself is Node). */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
-
-const RELAY_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
-const BUN = process.env.LILOS_BUN_BIN ?? "bun";
-const homes: string[] = [];
-
-afterAll(() => {
-  for (const home of homes) rmSync(home, { recursive: true, force: true });
-});
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { BUN, homes, RELAY_DIR } from "./helpers";
 
 const SCRIPT = (dbPath: string) => `
 import { Database } from "bun:sqlite";

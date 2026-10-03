@@ -1,67 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "./memory-store";
-
-const TOKEN = "test-token";
-
-function connectPeer(relay: ReturnType<typeof createRelay>) {
-  const frames: unknown[] = [];
-  const peer: RelayWsPeer = {
-    send: (frame) => frames.push(JSON.parse(frame)),
-    close: () => {},
-  };
-  const connection = relay.connect(peer);
-  return { frames, connection };
-}
-
-const resultOf = (frames: unknown[], id: string) => {
-  const frame = (
-    frames as {
-      id?: string;
-      result?: unknown;
-      error?: { code: number; message: string };
-    }[]
-  ).find((f) => f.id === id);
-  if (!frame) throw new Error(`no response frame for ${id}`);
-  return frame;
-};
-
-let nextId = 0;
-const req = (method: string, params: Record<string, unknown> = {}) =>
-  JSON.stringify({ jsonrpc: "2.0", id: `t${nextId++}`, method, params });
-
-async function helloed(relay: ReturnType<typeof createRelay>) {
-  const { frames, connection } = connectPeer(relay);
-  await connection.receive(
-    req("session.hello", { protocolVersion: 1, token: TOKEN }),
-  );
-  frames.length = 0;
-  return { frames, connection };
-}
-
-async function setupChannel(
-  frames: unknown[],
-  connection: { receive(d: string): Promise<void> },
-) {
-  await connection.receive(
-    req("employees.create", { name: "Ada", role: "eng" }),
-  );
-  const employee = (
-    resultOf(frames, `t${nextId - 1}`).result as {
-      employee: { id: string; name: string };
-    }
-  ).employee;
-  await connection.receive(req("channels.openDm", { employeeId: employee.id }));
-  const channel = (
-    resultOf(frames, `t${nextId - 1}`).result as {
-      channel: { id: string; kind: string; employeeId: string };
-    }
-  ).channel;
-  return { employee, channel };
-}
-
-const newRelay = () =>
-  createRelay({ store: createMemoryStore(), token: TOKEN });
+import {
+  helloed,
+  newRelay,
+  nextId,
+  req,
+  resultOf,
+  setupChannel,
+} from "./helpers";
 
 describe("AC-4 conversations.open carries the picked folder", () => {
   it("stores `cwd` on the conversation and returns it", async () => {

@@ -1,91 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "./memory-store";
+import {
+  dmWithConversation,
+  errorData,
+  eventsNamed,
+  helloed,
+  lastId,
+  newRelay,
+  req,
+  resultOf,
+} from "./helpers";
 
 /**
  * Relay-side coverage for the #26 surface: harness.register host gate,
  * asks.* round-trip + validation, turns.interrupt broadcast,
  * channel.created broadcast, and pending-turn replay on register.
  */
-
-const TOKEN = "test-token";
-
-function connectPeer(relay: ReturnType<typeof createRelay>) {
-  const frames: unknown[] = [];
-  const peer: RelayWsPeer = {
-    send: (frame) => frames.push(JSON.parse(frame)),
-    close: () => {},
-  };
-  const connection = relay.connect(peer);
-  return { frames, connection };
-}
-
-const eventsNamed = (frames: unknown[], method: string) =>
-  (frames as { method?: string; params?: unknown }[]).filter(
-    (f) => f.method === method,
-  );
-const resultOf = (frames: unknown[], id: string) => {
-  const frame = (
-    frames as {
-      id?: string;
-      result?: unknown;
-      error?: { code: number; message: string; data?: Record<string, unknown> };
-    }[]
-  ).find((f) => f.id === id);
-  if (!frame) throw new Error(`no response frame for ${id}`);
-  return frame;
-};
-const errorData = (frames: unknown[], id: string) => {
-  const { error } = resultOf(frames, id);
-  if (!error) throw new Error(`expected an error frame for ${id}`);
-  return error.data?.code as string;
-};
-
-let nextId = 0;
-const req = (method: string, params: Record<string, unknown> = {}) =>
-  JSON.stringify({ jsonrpc: "2.0", id: `t${nextId++}`, method, params });
-const lastId = () => `t${nextId - 1}`;
-
-const newRelay = () =>
-  createRelay({ store: createMemoryStore(), token: TOKEN });
-
-async function helloed(relay: ReturnType<typeof createRelay>) {
-  const { frames, connection } = connectPeer(relay);
-  await connection.receive(
-    req("session.hello", { protocolVersion: 1, token: TOKEN }),
-  );
-  const welcome = resultOf(frames, lastId()).result as {
-    engineHost: { connected: boolean };
-  };
-  frames.length = 0;
-  return { frames, connection, welcome };
-}
-
-async function dmWithConversation(
-  connection: { receive(d: string): Promise<void> },
-  frames: unknown[],
-) {
-  await connection.receive(
-    req("employees.create", { name: "Ada", role: "eng" }),
-  );
-  const { employee } = resultOf(frames, lastId()).result as {
-    employee: { id: string };
-  };
-  await connection.receive(req("channels.openDm", { employeeId: employee.id }));
-  const { channel } = resultOf(frames, lastId()).result as {
-    channel: { id: string };
-  };
-  await connection.receive(
-    req("conversations.open", {
-      channelId: channel.id,
-      text: "Summarize the repo",
-    }),
-  );
-  const { conversation } = resultOf(frames, lastId()).result as {
-    conversation: { id: string; channelId: string };
-  };
-  return { employee, channel, conversation };
-}
 
 describe("relay harness surface (#26)", () => {
   it("harness.register grants the single host role; a second one conflicts", async () => {

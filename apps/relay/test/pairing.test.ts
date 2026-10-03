@@ -1,6 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { APP_PROTOCOL_VERSION, type AppErrorCode } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
@@ -10,16 +8,17 @@ import {
   PAIRING_GRANT_TTL_MS,
   sha256Hex,
 } from "../src/pairing";
+import { createRelay, type PhoneAccess } from "../src/session";
 import {
-  createRelay,
-  type PhoneAccess,
-  type RelayWsPeer,
-} from "../src/session";
+  BUN,
+  connectPeer,
+  nextId,
+  eventsNamed as notifications,
+  RELAY_DIR,
+  req,
+  TOKEN,
+} from "./helpers";
 import { createMemoryStore, type RelayStore } from "./memory-store";
-
-const TOKEN = "test-token";
-const RELAY_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
-const BUN = process.env.LILOS_BUN_BIN ?? "bun";
 
 /** Pairing store spy: captures what the service hands the store — #153 AC-5. */
 function spiedStore() {
@@ -58,19 +57,6 @@ const tailscaleDown = (): PhoneAccess => ({
   disable: async () => {},
 });
 
-function connectPeer(relay: ReturnType<typeof createRelay>) {
-  const frames: unknown[] = [];
-  const closed: { code?: number; reason?: string }[] = [];
-  const peer: RelayWsPeer = {
-    send: (frame) => frames.push(JSON.parse(frame)),
-    close: (code, reason) => closed.push({ code, reason }),
-  };
-  return { frames, closed, connection: relay.connect(peer) };
-}
-
-let nextId = 0;
-const req = (method: string, params: Record<string, unknown> = {}) =>
-  JSON.stringify({ jsonrpc: "2.0", id: `t${nextId++}`, method, params });
 const frameFor = (frames: unknown[], id: string) => {
   const frame = (
     frames as {
@@ -84,10 +70,6 @@ const frameFor = (frames: unknown[], id: string) => {
 };
 const errorCodeOf = (frames: unknown[], id: string) =>
   frameFor(frames, id).error?.data?.code as AppErrorCode;
-const notifications = (frames: unknown[], method: string) =>
-  (frames as { method?: string; params?: unknown }[]).filter(
-    (f) => f.method === method,
-  );
 
 const helloDevice = (
   connection: { receive(d: string): Promise<void> },

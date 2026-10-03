@@ -1,8 +1,4 @@
-import {
-  APP_PROTOCOL_VERSION,
-  type AppErrorCode,
-  type PushPrefs,
-} from "@lilos/contracts/app";
+import { APP_PROTOCOL_VERSION, type PushPrefs } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import { createPairingService } from "../src/pairing";
 import {
@@ -10,7 +6,19 @@ import {
   type ExpoPushMessage,
   type ExpoSendResult,
 } from "../src/push";
-import { createRelay, type RelayWsPeer } from "../src/session";
+import { createRelay } from "../src/session";
+import {
+  connectPeer,
+  errorData,
+  helloedDevice,
+  helloedToken,
+  lastId,
+  newRelay,
+  registeredHost,
+  req,
+  resultOf,
+  TOKEN,
+} from "./helpers";
 import { createMemoryStore } from "./memory-store";
 
 /* #161 — Expo push fan-out: asks.open-created + engine.event transitions →
@@ -19,42 +27,12 @@ import { createMemoryStore } from "./memory-store";
    watermark so restarts/replays never re-notify; Expo errors are logged and
    dead tokens dropped without ever blocking the relay. */
 
-const TOKEN = "test-token";
-
 const ALL_ON: PushPrefs = {
   needsApproval: true,
   waitingForInput: true,
   completed: true,
   failed: true,
 };
-
-function connectPeer(relay: ReturnType<typeof createRelay>) {
-  const frames: unknown[] = [];
-  const closedCodes: number[] = [];
-  const peer: RelayWsPeer = {
-    send: (frame) => frames.push(JSON.parse(frame)),
-    close: (code) => closedCodes.push(code ?? 1000),
-  };
-  return { frames, closedCodes, connection: relay.connect(peer), peer };
-}
-
-let nextId = 0;
-const req = (method: string, params: Record<string, unknown> = {}) =>
-  JSON.stringify({ jsonrpc: "2.0", id: `t${nextId++}`, method, params });
-const lastId = () => `t${nextId - 1}`;
-const resultOf = (frames: unknown[], id: string) => {
-  const frame = (
-    frames as {
-      id?: string;
-      result?: unknown;
-      error?: { code: number; message: string; data?: Record<string, unknown> };
-    }[]
-  ).find((f) => f.id === id);
-  if (!frame) throw new Error(`no response frame for ${id}`);
-  return frame;
-};
-const errorData = (frames: unknown[], id: string) =>
-  resultOf(frames, id).error?.data?.code as AppErrorCode;
 
 const newWorld = (opts?: {
   send?: (messages: ExpoPushMessage[]) => Promise<ExpoSendResult[]>;
@@ -76,49 +54,9 @@ const newWorld = (opts?: {
     now: opts?.now,
     log: (message) => logs.push(message),
   });
-  const relay = createRelay({ store, token: TOKEN, pairing, push });
+  const relay = newRelay({ store, pairing, push });
   return { store, pairing, relay, push, sent, logs };
 };
-
-async function helloedToken(relay: ReturnType<typeof createRelay>) {
-  const p = connectPeer(relay);
-  await p.connection.receive(
-    req("session.hello", {
-      protocolVersion: APP_PROTOCOL_VERSION,
-      token: TOKEN,
-    }),
-  );
-  p.frames.length = 0;
-  return p;
-}
-
-async function helloedDevice(
-  pairing: ReturnType<typeof createPairingService>,
-  relay: ReturnType<typeof createRelay>,
-) {
-  const grant = await pairing.mintGrant();
-  const ex = await pairing.exchangeGrant({ code: grant.code });
-  if (!("device" in ex)) throw new Error("exchange failed");
-  const p = connectPeer(relay);
-  await p.connection.receive(
-    req("session.hello", {
-      protocolVersion: APP_PROTOCOL_VERSION,
-      deviceId: ex.device.id,
-      credential: ex.credential,
-    }),
-  );
-  p.frames.length = 0;
-  return { ...p, device: ex.device };
-}
-
-async function registeredHost(relay: ReturnType<typeof createRelay>) {
-  const p = await helloedToken(relay);
-  await p.connection.receive(
-    req("harness.register", { protocolVersion: 1, version: "0.0.0-test" }),
-  );
-  p.frames.length = 0;
-  return p;
-}
 
 async function setupConversation(
   host: Awaited<ReturnType<typeof helloedToken>>,
