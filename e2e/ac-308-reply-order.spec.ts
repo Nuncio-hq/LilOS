@@ -300,12 +300,19 @@ test("AC-1/AC-5 queued replies anchor under their own prompt — even after relo
     const aAnswer = text.indexOf("First queued zebra");
     const b = text.indexOf("second queued apple");
     const bAnswer = text.indexOf("Second queued apple");
-    expect(a).toBeGreaterThanOrEqual(0);
-    // A's drained reply anchors under A — a newer user row never renders
-    // above an older message's answer.
-    expect(a).toBeLessThan(aAnswer);
-    expect(aAnswer).toBeLessThan(b);
-    expect(b).toBeLessThan(bAnswer);
+    try {
+      expect(a).toBeGreaterThanOrEqual(0);
+      // A's drained reply anchors under A — a newer user row never renders
+      // above an older message's answer.
+      expect(a).toBeLessThan(aAnswer);
+      expect(aAnswer).toBeLessThan(b);
+      expect(b).toBeLessThan(bAnswer);
+    } catch (e) {
+      /* The merge invariants below are positional — when they trip, the raw
+         thread text is the only evidence of which frame rendered. */
+      console.log(`[ac-308] thread text at failure:\n${text}`);
+      throw e;
+    }
   };
   await assertOrder();
   await page.screenshot({ path: `${SHOTS}/ac-1-queued-order.png` });
