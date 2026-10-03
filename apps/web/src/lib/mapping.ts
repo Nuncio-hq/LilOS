@@ -601,6 +601,9 @@ export function toFeed(
       session: conv.engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
       title: conv.title || undefined,
       archived: conv.archived,
+      /* #346 AC-4: the stored open/closed bit — `running` itself is
+         derived by sessionLife from the replies, never stored. */
+      ...(conv.life ? { life: conv.life } : {}),
       replies,
       ...(ws ? { ws } : {}),
     },

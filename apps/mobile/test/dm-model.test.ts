@@ -654,3 +654,38 @@ describe("dm-model helpers", () => {
     expect(timeLabel(T0 + 60_000, T0)).toBe("now"); // future clamps to now
   });
 });
+
+describe("#346 AC-4: the ring reads real session life", () => {
+  it("derives running | open | closed the way sessionLife does", () => {
+    const needsYou = ask("ask-life", { conversationId: "c-ask" });
+    const turns = toSessionTurns(
+      [
+        summary("c-run", { state: "active" }),
+        summary("c-ask", { state: "idle" }),
+        summary("c-closed", { state: "idle", life: "closed" }),
+        summary("c-open", { state: "idle" }),
+      ],
+      { ...CTX, openAsks: [needsYou] },
+    );
+    expect(turns.find((t) => t.id === "c-run")?.life).toBe("running");
+    // waiting on the user is open, never running — and never suspended.
+    expect(turns.find((t) => t.id === "c-ask")?.life).toBe("open");
+    expect(turns.find((t) => t.id === "c-closed")?.life).toBe("closed");
+    // no stored bit yet: a session the harness never suspended is open.
+    expect(turns.find((t) => t.id === "c-open")?.life).toBe("open");
+  });
+
+  it("a send still landing reads running", () => {
+    const pending = new Map([
+      [
+        "c-new",
+        {
+          conversation: conv("c-new"),
+          root: msg("c-new-root", { conversationId: "c-new" }),
+        },
+      ],
+    ]);
+    const turns = toSessionTurns([], { ...CTX, pending });
+    expect(turns[0].life).toBe("running");
+  });
+});
