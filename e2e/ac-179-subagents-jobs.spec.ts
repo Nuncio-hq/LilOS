@@ -154,8 +154,9 @@ test.beforeAll(async () => {
   stack = await bootStack(
     "ac179",
     { relay: wport(4812), feed: wport(4813), web: wport(5316) },
-    /* #432: no stack-wide tick — the one prompt needing a mid-turn window
-       (AC-1's reload) marks itself `slow:`; everything else runs flat out. */
+    /* #432: no stack-wide tick — the prompts needing a mid-turn window
+       (the delegate turns below) mark themselves `slow:<ms>`; everything
+       else runs flat out. */
   );
 });
 test.afterAll(async () => {
@@ -278,11 +279,11 @@ test("AC-1 a delegate turn shows one live row per helper; opening a row shows br
   /* `LILOS_DELEGATE_ASYNC_HOLD` (#400): the first helper's close is held
      until the next prompt — a live row is still there whenever this test
      looks, instead of hoping to catch it mid-turn on a loaded runner.
-     `slow:` (#432) stretches this turn's boundaries so the reload below
-     lands mid-turn deterministically — no stack-wide tick needed. */
+     `slow:200` (#432) stretches this turn to ~7 s so the reload below lands
+     mid-turn — the held helper keeps the rows live either way. */
   await send(
     page,
-    "slow: delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
+    "slow:200 delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
   );
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
 
@@ -547,14 +548,15 @@ test("AC-319 the panel's 'N subagents · Open' lands on Focus → Subagents (?ta
   try {
     await openDefault(page, stack319);
     await pickSessionFolder(page, repoDir);
-    /* `slow:600` keeps this turn running through the mid-test reload
-       (#432); `LILOS_DELEGATE_ASYNC_HOLD` marks the first helper async
-       and holds its subagent.completed until the next prompt (#400):
+    /* `slow:300` keeps this turn running (~11 s) through the mid-test
+       reload (#432); `LILOS_DELEGATE_ASYNC_HOLD` marks the first helper
+       async and holds its subagent.completed until the next prompt (#400):
        dispatch-receipt delegation on the real engine, but the test
-       controls when the close lands instead of racing a tick window. */
+       controls when the close lands — and the rows replay — regardless of
+       where in the turn the reload happens. */
     await send(
       page,
-      "slow:600 delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
+      "slow:300 delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
     );
     await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
     await expect(page.locator("[data-subagents-link]").last()).toBeVisible({

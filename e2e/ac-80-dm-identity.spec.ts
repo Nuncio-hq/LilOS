@@ -17,7 +17,7 @@ import { wport } from "./ports";
  * Issue #80 — DM identity + streaming markdown. AC-1 asserts the user's
  * message avatar IS the sidebar footer's avatar (same initial, same computed
  * colour — never the anonymous grey "Y"). AC-2 asserts markdown renders
- * mid-stream (the prompt's `slow:150` directive stretches its own text
+ * mid-stream (the prompt's `slow:` directive stretches its own text
  * phase so the stream is observable — #432; no stack-wide tick). AC-3
  * captures both in the Electron desktop app.
  */
@@ -144,9 +144,14 @@ async function bootStack(
 }
 
 const SHOTS = path.join(repo, "test-results", "ac-80");
-/* `slow:150` paces only this prompt's turn (~8 s) — the mid-stream window
-   AC-2/AC-3 need, while the rest of the engine runs at --tick (#432). */
-const PROMPT = "slow:150 What does the replay contract carry?"; // hits the default script
+/* AC-1 never gates on a running turn — its prompt runs at the engine tick. */
+const PROMPT = "What does the replay contract carry?"; // hits the default script
+/* `slow:75` paces only this turn (~4 s) — the mid-stream window AC-2's
+   markdown asserts need; the streaming block is live whenever they look. */
+const STREAM_PROMPT = `slow:75 ${PROMPT}`;
+/* AC-3 asserts mid-stream markdown after reopening the session — its send
+   needs the longer ~8 s window to still be streaming then (#432). */
+const STREAM_PROMPT_DESKTOP = `slow:150 ${PROMPT}`;
 
 /* The footer's me-row: the aside's last child, its avatar fallback. */
 const footerAvatar = (page: Page) =>
@@ -243,13 +248,13 @@ test("AC-2 markdown renders while the reply streams, then settles unchanged", as
   const stack = await bootStack(
     "ac80b",
     { relay: wport(4664), feed: wport(4665), web: wport(5334) },
-    // The `slow:` prompt stretches its own text phase (~6 s → observable
+    // The `slow:` prompt stretches its own text phase (~4 s → observable
     // mid-stream); pin the human's name (#118).
     { LILOS_USER_NAME: "Oscar" },
   );
   try {
     await dmDefault(page, stack.webUrl);
-    await send(page, PROMPT);
+    await send(page, STREAM_PROMPT);
     // Send lands in Focus (#114); the peek panel (conv URL minus /focus)
     // keeps this test covering the thread-panel markdown path.
     await page.waitForURL(/\/focus$/);
@@ -313,7 +318,7 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
     try {
       const win = await app.firstWindow();
       await dmDefault(win, stack.webUrl);
-      await send(win, PROMPT);
+      await send(win, STREAM_PROMPT_DESKTOP);
       // Send opens Focus (#114); Back returns to the feed the row lives on.
       await win.getByRole("button", { name: "Back to DM" }).click();
       // AC-1 in the desktop window: the user's row avatar IS the footer avatar.

@@ -379,9 +379,9 @@ test("AC-5 rewind triggers are disabled while a turn runs", async ({
   await expect(page.locator("[data-rewind]").first()).toBeVisible({
     timeout: 30_000,
   });
-  /* #432: `slow:150` paces only this turn (~9 s streaming) — the disabled
-     assertion gets its running window without slowing the stack's others. */
-  await send(page, "slow:150 a slow-running turn for the disabled check");
+  /* #432: `slow:50` paces only this turn (~3 s) — enough running window for
+     the disabled assertion, without slowing the stack's other prompts. */
+  await send(page, "slow:50 a slow-running turn for the disabled check");
   await expect(page.locator("[data-rewind]").first()).toBeDisabled({
     timeout: 15_000,
   });
