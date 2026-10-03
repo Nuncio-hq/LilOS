@@ -18,7 +18,8 @@ Env overrides: `LILOS_RELAY_PORT`, `LILOS_FEED_PORT`, `LILOS_WEB_PORT`,
 `LILOS_HIDE_CAPS` (e.g. `rewind` for the files-only fallback path),
 `ENGINE_FAKE_TICK` (ms per streamed step — slows every turn; for a single
 running/streaming window prefer a `slow[:ms]` prompt prefix, e.g.
-`slow:150 <prompt>`, which paces only that turn, #432).
+`slow:150 <prompt>`, which paces only that turn and the leg it arms;
+`slowleg[:ms]` paces only the armed leg — #432).
 
 ## First-run / seeded employee
 

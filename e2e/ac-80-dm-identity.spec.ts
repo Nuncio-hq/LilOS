@@ -263,7 +263,9 @@ test("AC-2 markdown renders while the reply streams, then settles unchanged", as
     const streaming = turn.locator("[data-streaming]");
     await expect(streaming).toBeVisible({ timeout: 60_000 });
     // Mid-stream the bullet and the `seq` code span are already real markdown.
-    await expect(streaming.locator("li")).toBeVisible({ timeout: 60_000 });
+    await expect(streaming.locator("li").first()).toBeVisible({
+      timeout: 60_000,
+    });
     await expect(
       streaming.locator("code").filter({ hasText: "seq" }),
     ).toBeVisible();
@@ -334,7 +336,9 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
         timeout: 15_000,
       });
       const streaming = win.locator("[data-agentturn] [data-streaming]");
-      await expect(streaming.locator("li")).toBeVisible({ timeout: 60_000 });
+      await expect(streaming.locator("li").first()).toBeVisible({
+        timeout: 60_000,
+      });
       await expect(streaming.locator("code").first()).toBeVisible();
       await win.screenshot({ path: `${SHOTS}/ac-3-desktop-streaming.png` });
       await expect(streaming).toHaveCount(0, { timeout: 60_000 });

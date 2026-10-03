@@ -194,9 +194,10 @@ test("AC-2/AC-3 an engine leg keeps its own card above newer rows; its post is c
 }) => {
   test.setTimeout(240_000);
   await dmDefault(page);
-  /* `slow:250` paces this turn AND the leg it arms (one running window
-     ~3.5 s on the leg) — a mid-leg send can queue while the card is live. */
-  await send(page, "slow:250 leg:ZEBRA report delivered");
+  /* `slowleg:250` paces only the leg this turn arms (~3.5 s window) — the
+     prompt turn itself runs flat out; a mid-leg send can queue while the
+     card is live. */
+  await send(page, "slowleg:250 leg:ZEBRA report delivered");
   // The prompt turn answers first; the leg opens after it settles.
   const turns = page.locator("[data-agentturn]");
   await expect(turns.first()).toContainText("I'll report back", {

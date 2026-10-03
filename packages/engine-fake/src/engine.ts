@@ -178,6 +178,7 @@ interface FakeSession {
       engine (the old `ENGINE_FAKE_TICK`). The leg a slow turn arms inherits
       the pace — it's the same window. */
   turnPace?: number;
+  legPace?: number;
   /** #309: async helpers whose subagent.completed waits past turn end. */
   pendingSubagentClose: {
     subagentId: string;
@@ -1074,12 +1075,16 @@ export class FakeEngine {
       }
     }
     /* #432: `slow[:ms] <prompt>` — pace this turn (and the leg it arms) at
-       the given tick, default SLOW_TICK; the next prompt resets it. The
-       prefix is consumed here so the routed text still feeds every script
-       key (`slow: leg:…`, `slow: plan: tasks`). `userTurns` keeps the raw
-       text — the recall leg echoes what the user literally sent. */
+       the given tick, default SLOW_TICK; `slowleg[:ms]` paces only the leg
+       the prompt arms, leaving the turn itself at the engine tick. Either
+       way the next prompt resets it. The prefix is consumed here so the
+       routed text still feeds every script key (`slow: leg:…`, `slowleg:
+       plan: tasks`). `userTurns` keeps the raw text — the recall leg echoes
+       what the user literally sent. */
     const slow = SLOW_PROMPT.exec(promptText);
-    s.turnPace = slow ? Number(slow[1] ?? SLOW_TICK) : undefined;
+    const pace = slow ? Number(slow[2] ?? SLOW_TICK) : undefined;
+    s.turnPace = slow && !slow[1] ? pace : undefined;
+    s.legPace = slow?.[1] ? pace : undefined;
     const routed = slow ? promptText.slice(slow[0].length).trim() : promptText;
     const turnId = `t${++this.turnCounter}`;
     const script = scriptFor(
@@ -1572,6 +1577,10 @@ export class FakeEngine {
      id, initiatedBy:"agent", no ref. A steer mid-leg queues (never lands
      inside it) and drains as the next user turn. */
   private async runLeg(s: FakeSession, text: string) {
+    /* #432: `slowleg:` paces only the leg — apply it over whatever pace the
+       arming turn left on the session (a `slow:` prompt's pace still
+       carries in when no `slowleg:` ran). */
+    if (s.legPace !== undefined) s.turnPace = s.legPace;
     await this.sleep(s);
     if (s.turn || !this.isOpen(s)) return;
     const turnId = `t${++this.turnCounter}`;
@@ -1871,8 +1880,9 @@ const words = (t: string) => t.split(/(?<=\s)/);
 
 /* #432: `slow[:ms] <prompt>` — the one prompt a spec needs a running window
    on paces itself (`slow:` → SLOW_TICK, `slow:700` → 700 ms per boundary);
+   `slowleg[:ms]` paces only the agent-initiated leg the prompt arms —
    everything else runs at the engine's `--tick`. */
-const SLOW_PROMPT = /^\s*slow:(?:(\d+)\s+)?/i;
+const SLOW_PROMPT = /^\s*slow(leg)?:(?:(\d+)\s+)?/i;
 const SLOW_TICK = 300;
 
 /* ── #180 plan scripts ──────────────────────────────────────────────────

@@ -516,6 +516,36 @@ describe("engine-fake #432: `slow[:ms]` paces only the marked prompt", () => {
     expect(legText()).toBe(true);
     c.close();
   });
+
+  test("AC-1 `slowleg:<ms>` paces only the armed leg — the arming turn runs at the engine tick", async () => {
+    const c = conn(5);
+    const starts: { initiatedBy?: string; t: number }[] = [];
+    const ends: { initiatedBy?: string; t: number }[] = [];
+    const t0 = Date.now();
+    c.onEvent((e) => {
+      if (e.type === "turn.started")
+        starts.push({ ...(e.payload as object), t: Date.now() - t0 });
+      if (e.type === "turn.completed")
+        ends.push({ ...(e.payload as object), t: Date.now() - t0 });
+    });
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+    })) as { sessionId: string };
+    /* The prompt turn is a normal-speed turn (~50 boundaries at 5 ms);
+       only the leg it arms gets the ~1 s window. */
+    await promptText(c, sessionId, "slowleg:80 leg:ZEBRA report delivered");
+    const deadline = Date.now() + 10_000;
+    while (ends.length < 2 && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 20));
+    expect(starts).toHaveLength(2);
+    expect(starts[1].initiatedBy).toBe("agent");
+    const promptMs = ends[0].t - starts[0].t;
+    const legMs = ends[1].t - starts[1].t;
+    expect(promptMs).toBeLessThan(1_000);
+    expect(legMs).toBeGreaterThanOrEqual(700);
+    c.close();
+  });
 });
 
 describe("engine-fake #294: reports the session's context window", () => {
