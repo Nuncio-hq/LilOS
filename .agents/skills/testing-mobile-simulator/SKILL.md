@@ -58,9 +58,11 @@ lsof -nP -i :4577                        # shows LISTEN addrs + app TCP connecti
 - The startup log prints `listening on http://127.0.0.1:4577` — cosmetic: the
   tailscale listener binds lazily on `pairing.offer` (phoneAccess.enable), so
   check `lsof -nP -iTCP:4577 -sTCP:LISTEN` for the `172.x` row AFTER an offer.
-- Whole env in one shot: `bash scripts/live/156.sh` (relay + harness on
-  engine-fake + seeded employee/folder + printed pair link; `LILOS_ENGINE=hermes`
-  for the real engine; set `TAILSCALE_IP` to the lo0 IP).
+- A one-shot stack script (relay + harness on engine-fake + seeded
+  employee/folder + printed pair link; `LILOS_ENGINE=hermes` for the real
+  engine, `TAILSCALE_IP` the lo0 IP) shipped with issue #156 — archived with
+  the other closed-issue checks; restore one with
+  `git show archive/live-scripts-2026-10:scripts/live/<file>`.
 - A visible Terminal window running the relay in the foreground (positioned beside
   the Simulator: `osascript -e 'tell application "Terminal" to set bounds of front
   window to {8,50,360,700}'`) makes relay kill/restart moments self-evident in a
@@ -122,7 +124,8 @@ the UI instead:
   `simctl uninstall` wipes it back to all-ON.
 - The sim canNOT fetch an Expo push token without an `eas.projectId`
   (`getExpoPushTokenAsync` throws → `register()` no-ops silently) — relay
-  side is proven via `scripts/live/161.sh`'s stub phone, real-device
+  side is proven via a stub-phone live check (the #161 script, archived
+  under tag `archive/live-scripts-2026-10`), real-device
   delivery is a physical-iPhone leg.
 
 ## Device peers vs token peers (wire scope)
@@ -447,9 +450,9 @@ them from `describe` AND skips the scripted event arcs — the clean way to
 exercise client-side capability gating (D-#19) end-to-end on the phone. For
 arbitrary engines copy `serve.ts` to /tmp and use absolute `.ts` imports.
 
-When restarting the relay manually (e.g. after `scripts/live/*.sh` runs — the
-script EXIT trap pkills ALL `apps/relay`/`apps/harness` processes, shared env
-included), pass `LILOS_RELAY_TAILSCALE_IP=172.16.4.2` or the phone's pairing
+When restarting the relay manually (e.g. after a one-shot stack-script run —
+those scripts' EXIT traps pkill ALL `apps/relay`/`apps/harness` processes,
+shared env included), pass `LILOS_RELAY_TAILSCALE_IP=172.16.4.2` or the phone's pairing
 (`ip-172-16-4-2...:4577`) can't connect — the relay binds only 127.0.0.1
 without it; the `phoneAccess` setting re-enables the second listener at boot.
 Reusing the existing `LILOS_RELAY_HOME`/`LILOS_HARNESS_HOME` keeps the pairing,
@@ -470,9 +473,10 @@ welcome the phone gates on (`$welcome.engineHost.capabilities` ←
 visible on the phone under hideCaps. To truly hide surfaces, run a cap-less
 engine (above) or an engine that genuinely lacks the caps.
 
-## Seed-world fixture dirs (`live-*-seed.ts` scripts)
+## Seed-world fixture dirs (seed scripts — archived)
 
-- Seeded worlds (`apps/harness/scripts/live-*-seed.ts`) create
+- Seeded worlds came from `apps/harness/scripts/` seed scripts (e.g. the
+  #159 seed), archived under tag `archive/live-scripts-2026-10`. They create
   `$TMPDIR/lilos<issue>-XXXX/` and only clean up on SIGINT — killed runs
   leave stale dirs behind. NEVER glob the first `lilos159-*` match to find
   the live gh-fake dir: the live one is the dir the seed printed at launch
@@ -512,7 +516,7 @@ re-dismiss.
 
 ## Seeded world survives pair-code expiry
 
-`pairing.offer` codes last ~5 min but the scripts/live/NNN.sh stack
+`pairing.offer` codes last ~5 min but a live stack-script env
 (relay + harness + seeded employees/sessions) keeps running. Mint a fresh
 offer against the RUNNING relay — get `LILOS_RELAY_HOME` from
 `ps eww <relay-pid>`, read `<home>/relay-token`, and `pairing.offer` via a

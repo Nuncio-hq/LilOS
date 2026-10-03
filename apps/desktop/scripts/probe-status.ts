@@ -1,6 +1,6 @@
 /**
  * Print the installed relay's `system.status` as JSON — the same call the
- * app's post-update handshake verifier makes. Used by scripts/live/35.sh.
+ * app's post-update handshake verifier makes.
  *
  *   bun apps/desktop/scripts/probe-status.ts
  *
