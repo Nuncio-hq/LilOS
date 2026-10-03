@@ -347,6 +347,11 @@ test("AC-4 + AC-5 a pick on the new-session composer lands on the FIRST turn; th
   await page.screenshot({ path: `${SHOTS}/ac-4-first-turn-pick.png` });
 
   // A new-session composer (employee home) is back on the employee default.
+  // The prototype mounted both composers at once; the real app mounts one
+  // view, and Focus has no sidebar (#246) — Back to DM lands on the thread
+  // panel, whose aside carries the employee rows.
+  await page.getByRole("button", { name: "Back to DM" }).click();
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/);
   await page
     .locator("aside")
     .first()
@@ -424,9 +429,14 @@ test("AC-3 (#30) no picker when the engine lacks the models capability", async (
 }) => {
   test.setTimeout(240_000);
   const errors = watchConsole(page);
+  /* Bases identical to ac-112's second stack on purpose: every residue
+     mod 100 is already owned, and ports.spec's dedupe blesses literal reuse
+     — two spec files never share a live worker index, so the real ports
+     can't collide. This file is serial, so the bases also can't clash with
+     stackA or the restart stack on the same worker. */
   const stackB = await bootStack(
     "picker-nomodels",
-    { relay: wport(4820), feed: wport(4821), web: wport(5323) },
+    { relay: wport(4723), feed: wport(4724), web: wport(5344) },
     { env: { LILOS_HIDE_CAPS: "models" } },
   );
   try {
