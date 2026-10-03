@@ -30,5 +30,8 @@ export const HOST_ERRORS = {
   APP_NOT_FOUND: -32106,
   /** `os.open` launch failed (argv exec error; detail in error data). */
   OPEN_FAILED: -32107,
+  /** A git write (`git.commit`/`git.push`/`git.createBranch`) failed; the
+     typed reason rides in error data `reason` (stderr in `detail`). */
+  GIT_FAILED: -32108,
 } as const;
 export type HostErrorCode = (typeof HOST_ERRORS)[keyof typeof HOST_ERRORS];

@@ -30,6 +30,7 @@ import {
   ProfileSettings,
   RecentFolder,
   RespondTo,
+  WorkbenchOpenTarget,
   WorkspaceIntent,
 } from "./domain";
 import { UpdateFeed, UpdateRelease } from "./update";
@@ -105,14 +106,18 @@ import {
   JsonRpcResponse,
   MacFolderEntry,
   MacFoundRepo,
+  MessageChangedEvent,
   MessageCreatedEvent,
   MessageResult,
   MessageSearchHit,
+  MessagesDropParams,
   MessagesListParams,
   MessagesListResult,
   MessagesPostParams,
+  MessagesRemoveParams,
   MessagesSearchParams,
   MessagesSearchResult,
+  MessagesSendParams,
   OkResult,
   PairingExchangeError,
   PairingExchangeParams,
@@ -141,6 +146,8 @@ import {
   TurnInterruptRequestedEvent,
   TurnsInterruptParams,
   WelcomeResult,
+  WorkbenchOpenedEvent,
+  WorkbenchOpenParams,
 } from "./wire";
 
 /**
@@ -217,6 +224,9 @@ export const appProtocolSchemas = {
   MessagesListResult,
   MessagesPostParams,
   MessageResult,
+  MessagesDropParams,
+  MessagesRemoveParams,
+  MessagesSendParams,
   MessagesSearchParams,
   MessageSearchHit,
   MessagesSearchResult,
@@ -251,6 +261,7 @@ export const appProtocolSchemas = {
   AsksListResult,
   TurnsInterruptParams,
   MessageCreatedEvent,
+  MessageChangedEvent,
   ChannelSnapshotEvent,
   ChannelSyncedEvent,
   ConversationUpdatedEvent,
@@ -291,6 +302,10 @@ export const appProtocolSchemas = {
   AgentsCreateResult,
   ModelsListParams,
   ModelsListResult,
+  /* workbench_open's engine->app event (#340) */
+  WorkbenchOpenTarget,
+  WorkbenchOpenParams,
+  WorkbenchOpenedEvent,
 } satisfies Record<string, z.ZodType>;
 
 export const appProtocol = {

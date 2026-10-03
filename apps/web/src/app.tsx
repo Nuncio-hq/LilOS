@@ -32,6 +32,7 @@ import {
   hireEmployee,
   listHirableProfiles,
 } from "./lib/employees";
+import { parseFocusTab } from "./lib/focus-search";
 import { appFrameClass } from "./lib/frame";
 import { useAtom } from "./lib/hooks";
 import { toUiEmployee } from "./lib/mapping";
@@ -269,6 +270,23 @@ function AppShell() {
               })),
             ),
           onOpenAsksChange: (fn) => sessionModels.subscribe(fn),
+          /* #400: done/failed the live frame dropped — re-evaluated from
+             the feeds themselves on every model or view change, so a
+             completion that landed in the zero-peer window of a page
+             reload still surfaces. */
+          completionEvents: () =>
+            relay.conversations.get().flatMap((c) => {
+              if (!c.engineRef) return [];
+              const events = engine
+                .sessionFeed(c.engineRef)
+                .get()
+                .events.filter(
+                  (e) =>
+                    e.type === "turn.completed" ||
+                    (e.type === "session.state" && e.payload.state === "error"),
+                );
+              return [{ sessionId: c.engineRef, events }];
+            }),
           openConversationId: () =>
             openConversationFromPath(router.state.location.pathname),
           inForeground: () =>
@@ -480,10 +498,14 @@ const threadRoute = createRoute({
   component: DmPage,
 });
 /* `/focus` opens the session in Focus — same page component, Focus reads
-   the suffix itself (#114). */
+   the suffix itself (#114). `?tab=` names the Workbench tab (#319 AC-2). */
 const focusRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/dm/$employeeId/$conversationId/focus",
+  validateSearch: (search) => {
+    const tab = parseFocusTab(search);
+    return tab ? { tab } : {};
+  },
   component: DmPage,
 });
 const routeTree = rootRoute.addChildren([

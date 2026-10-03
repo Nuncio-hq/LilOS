@@ -60,6 +60,9 @@ import {
   type DetectedEditor,
   type WsPick,
   type Workspace,
+  type ShipBar,
+  type ShipHandlers,
+  type ShipError,
   NO_WS,
   RightPanel,
   Sidebar,
@@ -593,6 +596,19 @@ function scriptFor(empId: string, prompt: string, followUp = false, branch?: str
       text: CODEBLOCKS_SAMPLE,
     }
   }
+  /* Diff-line review comments (#108/#364): Oscar's Send to agent posts one
+     message listing each pinned comment — answer to the notes he left. */
+  if (q.startsWith("Review comments on the diff:")) {
+    const notes = [...q.matchAll(/^[\w./-]+:\d+(?:-\d+)?$/gm)].length
+    return {
+      reasoning: `Oscar pinned ${notes} comment${notes === 1 ? "" : "s"} on the diff in Changes. Address each one, then confirm.`,
+      steps: [
+        { tool: "read_file", input: { path: "packages/contracts/src/envelope.ts" }, output: "58 lines" },
+        { tool: "patch", input: { path: "packages/contracts/src/envelope.ts" }, output: "+2 lines", diff: { path: "packages/contracts/src/envelope.ts", status: "modified", add: 2, del: 1, patch: "@@ -2,3 +2,4 @@\n export const Envelope = z.object({\n-  seq: z.number().int().nonnegative(),\n+  seq: z.number().int().positive(),\n+  // per-connection, strictly increasing\n   kind: z.string()," } },
+      ],
+      text: `Read the ${notes} pinned comment${notes === 1 ? "" : "s"} — all fair. I addressed them:\n\n- \`seq\` is now \`int().positive()\` with a comment noting it's per-connection\n- left the rest as-is, the naming matches contracts' conventions\n\nThe markers on the diff stay until the patch moves.`,
+    }
+  }
   // Issue #31: a prompt carrying images answers about them first — the reply names the
   // attachment (name, type, bytes) so Oscar can see the image reached the engine.
   if (images?.length) {
@@ -620,6 +636,16 @@ function scriptFor(empId: string, prompt: string, followUp = false, branch?: str
         checks: CHECKS.map((name) => ({ name, status: "pending" as const })),
         comments: [{ from: empId, time: nowTime(), monitor: true, text: "I'll fix CI failures and address review comments from people with write access in this session. Comments containing \"(aside)\" are skipped." }],
       },
+    }
+  }
+  /* Ship bar Suggest (issue #107 AC-2): "Write a one-line git commit
+     message for these changed files…" is a normal user message — answer a
+     bare one-liner so the first non-empty line fills the box. */
+  if (/\bcommit message\b/i.test(q)) {
+    return {
+      reasoning: "A one-line commit message for the checked files — imperative mood, under 72 chars, then nothing else.",
+      steps: [],
+      text: "feat: add the staged widget changes",
     }
   }
   if (branch && EDIT_ASK.test(q)) {
@@ -1531,6 +1557,100 @@ export default function App() {
     mapRoot(feedKey, root.id, (t) => (t.pr ? { ...t, pr: { ...t.pr, status: "merged", merged: { by: "Oscar", at: nowTime(), sha: hex() } }, todos: t.todos?.map((x) => (x.content === "Open PR for Reviewer" ? { ...x, status: "completed" } : x)) } : t))
     say(`Merged #${root.thread?.pr?.number} into ${root.thread?.pr?.base} · gh pr merge --${method}`)
   }
+  /* Ship bar (issue #107/#359): the commit → push → Create PR flow on mock
+     data. Commit moves the checked diff steps into a commit step (the
+     Changes list re-derives empty, the Commits section gains the commit);
+     push records the upstream label; Create PR lands a mock `t.pr` and —
+     when the default branch required a branch name — carries the thread
+     onto it. `shipScenario` drives the plain error states + the
+     not-a-git-repo case. */
+  const [shipScenario, setShipScenario] = useState<Record<string, string>>({})
+  const [shipPushed, setShipPushed] = useState<Record<string, string>>({})
+  const shipFail = (reason: ShipError["reason"], detail: string): never => {
+    const e = new Error(detail) as Error & { data?: { reason: ShipError["reason"]; detail: string } }
+    e.data = { reason, detail }
+    throw e
+  }
+  const shipFor = (root: Extract<Msg, { kind: "msg" }>): Partial<ShipBar> & ShipHandlers => {
+    const scen = shipScenario[root.id] ?? "ok"
+    const w = workOf(root)
+    const branch = () => w?.branch || "main"
+    const pushed = shipPushed[root.id]
+    return {
+      isRepo: scen !== "not-a-repo",
+      branch: branch(),
+      defaultBranch: "main",
+      remote: "git@github.com:acme/lilos.git",
+      upstream: pushed ?? null,
+      accessory: (
+        <span className="ml-auto flex items-center gap-2">
+          <select
+            data-shipscenario
+            className="h-6 rounded-md border bg-background px-1 text-[10px] text-muted-foreground"
+            value={scen}
+            onChange={(e) => setShipScenario((s) => ({ ...s, [root.id]: e.target.value }))}
+          >
+            <option value="ok">git+gh ok</option>
+            <option value="push-rejected">push rejected</option>
+            <option value="pull-diverged">pull diverged</option>
+            <option value="no-remote">no remote</option>
+            <option value="signed-out">gh signed out</option>
+            <option value="not-a-repo">not a git repo</option>
+          </select>
+        </span>
+      ),
+      onCommit: async (paths, msg) => {
+        if (scen === "signed-out") shipFail("auth", "fatal: could not read Username for 'https://github.com': terminal prompts disabled")
+        mapRoot(feedKey, root.id, (t) => ({
+          ...t,
+          replies: t.replies.map((r) => {
+            if (!r.steps?.length) return r
+            const picked = r.steps.filter((s) => s.diff && paths.includes(s.diff.path))
+            if (!picked.length) return r
+            const rest = r.steps.filter((s) => !s.diff || !paths.includes(s.diff.path))
+            const files = picked.map((s) => ({ path: s.diff!.path, status: s.diff!.status, add: s.diff!.add, del: s.diff!.del }))
+            const h = hex()
+            return { ...r, steps: [...rest, { tool: "git.commit", input: { message: msg, files: paths }, output: `[${branch()} ${h}] ${msg}\n ${files.length} file(s) changed`, commit: { hash: h, message: msg, files } }] }
+          }),
+        }))
+        say(`Committed ${paths.length} file(s) on ${branch()}`)
+      },
+      onPush: async () => {
+        if (scen === "push-rejected" || scen === "pull-diverged") shipFail("rejected", `To github.com:acme/lilos.git\n ! [rejected]        ${branch()} -> ${branch()} (fetch first)\nerror: failed to push some refs to 'github.com:acme/lilos.git'`)
+        if (scen === "no-remote") shipFail("no-remote", "fatal: No configured push destination.")
+        if (scen === "signed-out") shipFail("auth", "fatal: could not read Username for 'https://github.com': terminal prompts disabled")
+        setShipPushed((s) => ({ ...s, [root.id]: `origin/${branch()}` }))
+        say(`Pushed ${branch()} to origin`)
+      },
+      onPull: async () => {
+        /* The pull resolves the rejected scenario — the remote moved once,
+           not forever; a diverged scenario fails plainly (issue #393 AC-5). */
+        if (scen === "pull-diverged") shipFail("diverged", "fatal: Not possible to fast-forward, aborting.")
+        if (scen === "no-remote") shipFail("no-remote", "fatal: No configured pull destination.")
+        if (scen === "signed-out") shipFail("auth", "fatal: could not read Username for 'https://github.com': terminal prompts disabled")
+        if (scen === "push-rejected") setShipScenario((s) => ({ ...s, [root.id]: "ok" }))
+        say(scen === "push-rejected" ? `Pulled — fast-forwarded to origin/${branch()}` : "Already up to date")
+      },
+      onCreatePr: async (p) => {
+        if (scen === "push-rejected") shipFail("rejected", `To github.com:acme/lilos.git\n ! [rejected]        ${branch()} -> ${branch()} (non-fast-forward)`)
+        if (scen === "no-remote") shipFail("no-remote", "fatal: No configured push destination.")
+        if (scen === "signed-out") shipFail("unauthenticated", "To get started with GitHub CLI, please run: gh auth login")
+        const head = p.branch ?? branch()
+        if (p.branch) setStarted((s) => (s[root.id] ? { ...s, [root.id]: { ...s[root.id], branch: p.branch! } } : s))
+        setShipPushed((s) => ({ ...s, [root.id]: `origin/${head}` }))
+        mapRoot(feedKey, root.id, (t) => ({
+          ...t,
+          branch: head,
+          pr: {
+            number: 8, repo: "acme/lilos", title: p.title, body: p.body,
+            status: "open", mergeable: "mergeable", author: "oscar",
+            base: "main", head, opened: "just now", checks: [], comments: [],
+          },
+        }))
+        say(`Opened PR #8 on acme/lilos — ${p.title}`)
+      },
+    }
+  }
   const retry = (root: Extract<Msg, { kind: "msg" }>, empId: string) => {
     const lastAsk = [...(root.thread?.replies ?? [])].reverse().find((r) => !emp(r.from))?.text ?? root.text
     runTurn(feedKey, root.id, empId, lastAsk)
@@ -1735,6 +1855,7 @@ export default function App() {
           browser={realSurfaces ? undefined : threadBrowser(openThread.id)}
           initialTab={focusTab}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
+          ship={shipFor(openThread)}
         />
       ) : (
         <div className={cn("grid min-h-0 min-w-0 grid-cols-1 lg:gap-[10px]", panelOpen && "xl:grid-cols-[minmax(0,1fr)_420px]")}>

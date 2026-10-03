@@ -182,9 +182,9 @@ async function openSessionFocus(page: Page) {
 }
 
 /** Open the app past first-run, landed on the auto-hired Default's DM. */
-async function openDefault(page: Page) {
+async function openDefault(page: Page, s: Stack = stack) {
   await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
-  await page.goto(`${stack.webUrl}/?roots=${ROOT}`);
+  await page.goto(`${s.webUrl}/?roots=${ROOT}`);
   const aside = page.locator("aside");
   await expect(aside.getByRole("button", { name: /Default/ })).toBeVisible({
     timeout: 30_000,
@@ -224,12 +224,14 @@ async function pickSessionFolder(page: Page, dir: string) {
     .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
     .last();
   const recent = menu.locator(`[data-wsfolder="${dir}"]`);
-  if (
-    await recent
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
+  /* Recents populate after the menu opens — a one-shot isVisible would race
+     into the Add-a-folder dialog, which disables its button for an
+     already-picked dir. */
+  const recentVisible = await expect(recent.first())
+    .toBeVisible({ timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (recentVisible) {
     await recent.first().click();
   } else {
     await menu.getByText("Add a folder").click();
@@ -274,7 +276,13 @@ test("AC-1 a delegate turn shows one live row per helper; opening a row shows br
   test.setTimeout(180_000);
   await openDefault(page);
   await pickSessionFolder(page, repoDir);
-  await send(page, "delegate the relay scan to subagents");
+  /* `LILOS_DELEGATE_ASYNC_HOLD` (#400): the first helper's close is held
+     until the next prompt — a live row is still there whenever this test
+     looks, instead of hoping to catch it mid-turn on a loaded runner. */
+  await send(
+    page,
+    "delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
+  );
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
 
   /* #317: in Focus the turn shows one "N subagents · Open" link; the rows live
@@ -298,16 +306,32 @@ test("AC-1 a delegate turn shows one live row per helper; opening a row shows br
     timeout: 60_000,
   });
 
-  // The turn finishes: exactly one row per helper — two done, one failed.
+  // Exactly one row per helper. Two closed inside the turn — one done, one
+  // failed — while the held helper is still Running (#400).
   await expect(replayed.locator("[data-subagent]")).toHaveCount(3, {
     timeout: 60_000,
   });
   await expect(
     replayed.locator("[data-subagent][data-status='done']"),
-  ).toHaveCount(2);
+  ).toHaveCount(1);
   await expect(
     replayed.locator("[data-subagent][data-status='failed']"),
   ).toHaveCount(1);
+  await expect(
+    replayed.locator("[data-subagent][data-status='running']"),
+  ).toHaveCount(1);
+  /* The release prompt is the signal the engine flushes the held close on
+     — deterministic instead of racing a tick window. The first turn must
+     be over first (a mid-turn send would steer into it instead of making
+     the next prompt). Two done, one failed. */
+  await turnSettled(page);
+  await send(page, "wrap up the async helper");
+  await expect(
+    replayed.locator("[data-subagent][data-status='done']"),
+  ).toHaveCount(2, { timeout: 60_000 });
+  await expect(
+    replayed.locator("[data-subagent][data-status='running']"),
+  ).toHaveCount(0);
   await expect(page.locator("[data-subagents-link]").last()).toContainText(
     "1 failed",
   );
@@ -483,28 +507,7 @@ test("AC-5 no `background_jobs` capability → no Background tab and no Stop (D-
     { LILOS_HIDE_CAPS: "background_jobs" },
   );
   try {
-    await page.addInitScript(() =>
-      localStorage.setItem("lilos-onboarded", "1"),
-    );
-    await page.goto(`${stackB.webUrl}/?roots=${ROOT}`);
-    const aside = page.locator("aside");
-    await expect(aside.getByRole("button", { name: /Default/ })).toBeVisible({
-      timeout: 30_000,
-    });
-    const dmBtn = page.getByRole("button", {
-      name: /open dm|set up later|message/i,
-    });
-    if (
-      await dmBtn
-        .first()
-        .isVisible()
-        .catch(() => false)
-    ) {
-      await dmBtn.first().click();
-    } else {
-      await aside.getByRole("button", { name: /Default/i }).click();
-    }
-    await expect(page).toHaveURL(/\/dm\//);
+    await openDefault(page, stackB);
 
     await send(page, "leave the dev server running in the background");
     await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
@@ -520,4 +523,142 @@ test("AC-5 no `background_jobs` capability → no Background tab and no Stop (D-
   } finally {
     await stackB.stop();
   }
+});
+
+/* #319 — the Subagents tab end to end: the thread-panel link opens Focus on
+   Workbench → Subagents with `?tab=` in the URL (AC-1/AC-2), the tab tracks
+   rows live across a reload without duplicates (AC-3), and an async helper
+   stays under Running past turn.completed until its real close (AC-5). */
+test("AC-319 the panel's 'N subagents · Open' lands on Focus → Subagents (?tab= survives reload + picks); an async helper stays Running past turn end", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  /* A stretched tick stretches the async helper's close ~1.5s past
+     turn.completed — long enough to watch it still under Running (AC-5)
+     before its real completion moves it to Finished. */
+  const stack319 = await bootStack(
+    "ac319",
+    /* ports.spec allows only identical bases across files (every residue
+       is already taken) — these literals are ac-105's; different worker
+       indices keep them apart. */
+    { relay: wport(4818), feed: wport(4819), web: wport(5322) },
+    { ENGINE_FAKE_TICK: "1500" },
+  );
+  try {
+    await openDefault(page, stack319);
+    await pickSessionFolder(page, repoDir);
+    /* `LILOS_DELEGATE_ASYNC_HOLD` marks the first helper async and holds its
+       subagent.completed until the next prompt (#400): dispatch-receipt
+       delegation on the real engine, but the test controls when the close
+       lands instead of racing a tick window. */
+    await send(
+      page,
+      "delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
+    );
+    await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+    await expect(page.locator("[data-subagents-link]").last()).toBeVisible({
+      timeout: 60_000,
+    });
+
+    /* AC-1: back in the DM thread panel the turn shows only the one-line
+       link — the rows live on the Subagents tab, never inline. */
+    await page.getByTitle("Back to DM").click();
+    await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
+    const panel = page.locator("[data-thread-panel]");
+    const link = panel.locator("[data-subagents-link]").last();
+    await expect(link).toBeVisible({ timeout: 30_000 });
+    await expect(panel.locator("[data-subagents]")).toHaveCount(0);
+    await expect(panel.locator("[data-subagent]")).toHaveCount(0);
+    await page.screenshot({ path: `${SHOTS}/ac-319-1-panel-link.png` });
+
+    /* AC-1/2: the link opens Focus on Workbench → Subagents, the tab named
+       in the URL. */
+    await link.click();
+    await expect(page).toHaveURL(/focus\?tab=subagents$/, {
+      timeout: 30_000,
+    });
+    await expect(tab(page, /Subagents/)).toHaveAttribute(
+      "aria-selected",
+      "true",
+      { timeout: 30_000 },
+    );
+    const subs = page.locator("[data-subagents-panel]");
+    await expect(subs).toBeVisible({ timeout: 60_000 });
+    await page.screenshot({ path: `${SHOTS}/ac-319-1-focus-subagents.png` });
+
+    /* AC-2/AC-3: a reload mid-turn lands back on Subagents and replays the
+       same rows — never duplicates. */
+    await page.reload();
+    await expect(page).toHaveURL(/focus\?tab=subagents$/);
+    await expect(tab(page, /Subagents/)).toHaveAttribute(
+      "aria-selected",
+      "true",
+      { timeout: 30_000 },
+    );
+    await expect(subs.locator("[data-subagent]").first()).toBeVisible({
+      timeout: 60_000,
+    });
+
+    /* AC-5: the async helper ("Scan the relay package") stays under Running
+       after the turn settles — its close is held until the next prompt, so
+       the assertion can't lose the window to a slow runner (#400). */
+    await turnSettled(page);
+    await tab(page, /Subagents/).click();
+    const running = subs.locator(
+      "[data-subagents-group='running'] [data-subagent]",
+    );
+    await expect(running).toHaveCount(1, { timeout: 30_000 });
+    await page.screenshot({ path: `${SHOTS}/ac-319-5-running-past-end.png` });
+    /* The follow-up prompt is the release: the engine flushes the held close
+       as it takes the new turn, and the row moves itself to Finished. */
+    await send(page, "wrap up the async helper");
+    await expect(running).toHaveCount(0, { timeout: 60_000 });
+    await expect(
+      subs.locator(
+        "[data-subagents-group='finished'] [data-subagent][data-status='done']",
+      ),
+    ).toHaveCount(2);
+    await expect(subs.locator("[data-subagent]")).toHaveCount(3);
+    await page.screenshot({ path: `${SHOTS}/ac-319-5-finished.png` });
+
+    /* AC-2: the user's own picks keep the URL honest — choosing Changes
+       replaces `?tab=`, and a reload lands there. */
+    await tab(page, /Changes/).click();
+    await expect(page).toHaveURL(/focus\?tab=changes$/, { timeout: 30_000 });
+    await page.reload();
+    await expect(tab(page, /Changes/)).toHaveAttribute(
+      "aria-selected",
+      "true",
+      { timeout: 30_000 },
+    );
+    await page.screenshot({ path: `${SHOTS}/ac-319-2-tab-reload.png` });
+  } finally {
+    await stack319.stop();
+  }
+});
+
+/* #319 — the deep link names the tab even on a session whose turns never
+   spun off a helper: the tab renders its empty state rather than silently
+   falling back to the first allowed tab. Runs on the shared stack's own
+   fresh conversation (a steer can't reach it, so "say hi" lands from the
+   DM home). */
+test("AC-319 a `?tab=subagents` deep link on a zero-helper session lands on the tab's empty state", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await openDefault(page);
+  await page.goto(page.url().replace(/\/conv_[^/]+.*$/, ""));
+  await pickSessionFolder(page, repoDir);
+  await send(page, "say hi");
+  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await page.goto(`${page.url()}?tab=subagents`);
+  await expect(tab(page, /Subagents/)).toHaveAttribute(
+    "aria-selected",
+    "true",
+    { timeout: 30_000 },
+  );
+  await expect(page.getByText("No subagents in this session yet.")).toBeVisible(
+    { timeout: 30_000 },
+  );
+  await page.screenshot({ path: `${SHOTS}/ac-319-3-empty.png` });
 });

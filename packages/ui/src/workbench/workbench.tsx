@@ -9,10 +9,12 @@ import {
   GitPullRequestIcon,
   GlobeIcon,
   ListChecksIcon,
+  MessageSquareTextIcon,
   NetworkIcon,
   PanelRightCloseIcon,
   PlayIcon,
   RefreshCcwIcon,
+  SendIcon,
   SquareTerminalIcon,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -55,6 +57,7 @@ import {
   WebPreviewUrl,
 } from "../components/ai-elements/web-preview";
 import { Button } from "../components/ui/button";
+import { Checkbox } from "../components/ui/checkbox";
 import { ScrollArea } from "../components/ui/scroll-area";
 import {
   Tabs,
@@ -62,11 +65,17 @@ import {
   TabsList,
   TabsTrigger,
 } from "../components/ui/tabs";
+import {
+  diffCommentsMessage,
+  diffSendRoute,
+  useDiffComments,
+} from "../lib/diff-comments";
 import { plural } from "../lib/helpers";
 import type {
   Diff,
   EmpFn,
   Employee,
+  GitCommit,
   HostAccessors,
   HumanFn,
   MergeMethod,
@@ -74,13 +83,19 @@ import type {
   OsEditor,
   PrError,
   PullRequest,
+  ShipBar,
+  ShipBusy,
+  ShipError,
+  ShipHandlers,
   Thread,
+  WbSpot,
   WbTab,
   Work,
 } from "../types";
 import type { TreeNode } from "./artifacts";
 import { buildTree, sessionArtifacts } from "./artifacts";
 import { BackgroundPanel } from "./background-panel";
+import { CommitBar } from "./commit-bar";
 import { DiffView } from "./diff-view";
 import { TreeNodes } from "./file-tree-nodes";
 import { LivePreview, type LiveSurfaces, LiveTerminal } from "./live";
@@ -128,12 +143,16 @@ export function Workbench({
   onPrMerge,
   live,
   running,
+  sendPending,
+  steer,
   editors: editorsProp,
   onOpenPath,
   onStopJob,
   browser,
   emp,
   onOpenSession,
+  spot,
+  ship,
 }: {
   thread: Thread;
   work: Work | null;
@@ -157,6 +176,13 @@ export function Workbench({
   live?: LiveSurfaces;
   /** A turn is running — Changes/Files poll while the agent edits (#114 AC-3). */
   running?: boolean;
+  /** A user send is relay-accepted but the feed hasn't surfaced a turn for
+      it yet (#315's waiting tray). The ship bar hides Suggest across that
+      gap — turn start lags the relay message that already renders (#396). */
+  sendPending?: boolean;
+  /** The engine declares `steer`: Send-to-agent labels the mid-turn route
+      (issue #108); absent → plain "Send". */
+  steer?: boolean;
   /* os.editors + a bound os.open (issue #110, same pair ThreadView takes):
      the caller probes `host.describe` — onOpenPath={null} means os.open was
      absent, so rows show no open menu even when the accessors object
@@ -173,6 +199,16 @@ export function Workbench({
   emp?: EmpFn;
   /** Opens an employee helper's own session from its Subagents row (issue #170). */
   onOpenSession?: (employeeId: string, session: string) => void;
+  /** The session's `workbench_open` request (issue #340): the panel opens on
+      the target's tab — a changed file's diff or a file view at its line,
+      the changes view, the PR tab, or the preview (a URL the caller
+      navigates its Browser surface to). */
+  spot?: WbSpot;
+  /** The commit → push → Create PR bar's mock seam (issue #107/#359): the
+     prototype/app supplies state overrides + the action handlers here; a
+     missing handler hides its control (D-#19). In live mode the same bar
+     is built from the host's git.* + forge.* accessors instead. */
+  ship?: Partial<ShipBar> & ShipHandlers;
 }) {
   const a = sessionArtifacts(thread);
   const jobs = thread.jobs ?? [];
@@ -187,6 +223,8 @@ export function Workbench({
     content: string;
     binary: boolean;
     truncated: boolean;
+    /** Line a `workbench_open` pointed at — highlighted + scrolled to. */
+    line?: number;
   } | null>(null);
   const liveCwd = work?.path;
   /* Live mode = host accessors + a real session folder. In it each tab
@@ -199,6 +237,16 @@ export function Workbench({
     files: string[] | null;
     diffs: Diff[] | null;
     pr: { pr: PullRequest | null; branch?: string; error?: PrError } | null;
+    /* Ship bar reads (issue #107): status null = not a repo (AC-6 hides the
+       bar); branches carries the remote default for the branch-name ask;
+       log feeds the Commits section + the PR prefill. */
+    status: { branch: string | null; clean: boolean } | null;
+    branches: {
+      current: string | null;
+      remote: string | null;
+      default: string | null;
+    } | null;
+    log: GitCommit[] | null;
   } | null>(null);
   /* Open-in-editor affordances (issue #110): editors detected on this host
      (os.editors) + one bound os.open call. No os.open → no controls (D-#19);
@@ -222,9 +270,26 @@ export function Workbench({
     const r = await host.pr(liveCwd).catch(() => null);
     if (r) setProbe((p) => (p ? { ...p, pr: r } : p));
   };
+  /* Which host methods exist — the ship bar's controls render only for the
+     ones in this set (D-#19, AC-6); null while host.describe hasn't answered. */
+  const [shipMethods, setShipMethods] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    let off = false;
+    if (liveMode && host?.methods) {
+      void host
+        .methods()
+        .then((m) => !off && setShipMethods(m))
+        .catch(() => {});
+    } else setShipMethods(null);
+    return () => {
+      off = true;
+    };
+  }, [liveMode, host]);
+  const shipHas = (m: string) => shipMethods?.has(m) ?? false;
   // Read the session folder live. While a turn runs the agent is editing —
-  // a short poll keeps Changes/Files current (#114 AC-3); the effect's
-  // re-run on `running` flips lands a fresh read at turn end.
+  // a short poll keeps Changes/Files/Commits current (#114 AC-3, #107 AC-5);
+  // the effect's re-run on `running` flips lands a fresh read at turn end.
+  const updateProbe = useRef<(() => Promise<void>) | null>(null);
   useEffect(() => {
     setViewFile(null);
     if (!liveMode || !host || !liveCwd) {
@@ -234,21 +299,314 @@ export function Workbench({
     const cwd = liveCwd;
     let off = false;
     const update = () =>
-      Promise.all([host.tree(cwd), host.diff(cwd), host.pr?.(cwd)]).then(
-        ([files, d, pr]) => {
-          if (off) return;
-          setProbe({ files, diffs: d ?? null, pr: pr ?? null });
-        },
-      );
+      Promise.all([
+        host.tree(cwd),
+        host.diff(cwd),
+        host.pr?.(cwd),
+        host.status?.(cwd),
+        host.branches?.(cwd),
+        host.log?.(cwd),
+      ]).then(([files, d, pr, status, branches, log]) => {
+        if (off) return;
+        setProbe({
+          files,
+          diffs: d ?? null,
+          pr: pr ?? null,
+          status: status ?? null,
+          branches: branches ?? null,
+          log: log ?? null,
+        });
+      });
+    updateProbe.current = update;
     void update();
     const poll = running ? setInterval(update, 1500) : undefined;
     return () => {
+      updateProbe.current = null;
       off = true;
       if (poll) clearInterval(poll);
     };
   }, [liveMode, liveCwd, running, host]);
   const diffs = liveMode ? (probe?.diffs ?? []) : a.diffs;
   const changed = new Map(diffs.map((d) => [d.path, d]));
+
+  /* ── Ship bar state (issue #107/#359) — the app owns it; the bar is
+     presentational. `unchecked` keys on Diff.path: all checked by default. */
+  const [unchecked, setUnchecked] = useState<ReadonlySet<string>>(new Set());
+  const [commitMsg, setCommitMsg] = useState("");
+  const [shipBusy, setShipBusy] = useState<ShipBusy>(null);
+  const [shipError, setShipError] = useState<ShipError | null>(null);
+  /* Upstream a push in this view landed on — the bar's ↑ chip (issue #393
+     AC-6; a fresh mount leaves the chip off until the next push). */
+  const [pushedUp, setPushedUp] = useState<string | null>(null);
+  /* Suggest posts a normal user message — the engine's next reply fills the
+     box with its first non-empty line (AC-2). `suggestAt` marks where replies
+     stood when the ask went out. */
+  const [suggestAt, setSuggestAt] = useState<number | null>(null);
+  const replies = thread.replies;
+  useEffect(() => {
+    if (suggestAt === null) return;
+    /* A reply mid-stream is skipped — grabbing a partial first line would
+       land "feat:" in the box instead of the whole message (AC-2). */
+    const r = replies.slice(suggestAt).find((r) => !human(r.from) && !r.live);
+    /* First real line, minus markdown dressing (a reply like
+       "> feat: foo" or "`feat: foo`" must land in the box usable). */
+    const line = r?.text
+      .split("\n")
+      .map((s) => s.trim().replace(/^>\s*/, "").replace(/^`|`$/g, "").trim())
+      .find(Boolean);
+    if (line) {
+      setCommitMsg(line);
+      setSuggestAt(null);
+    }
+  }, [replies, suggestAt, human]);
+  const checkedPaths = diffs
+    .map((d) => d.path)
+    .filter((p) => !unchecked.has(p));
+  const toggleFile = (path: string, on: boolean) =>
+    setUnchecked((s) => {
+      const n = new Set(s);
+      if (on) n.delete(path);
+      else n.add(path);
+      return n;
+    });
+  const shipErrorOf = (e: unknown): ShipError => {
+    const d = (
+      e as { data?: { reason?: ShipError["reason"]; detail?: string } }
+    )?.data;
+    return {
+      reason: d?.reason,
+      detail: d?.detail,
+      text: e instanceof Error ? e.message : String(e),
+    };
+  };
+  /* Runs a ship action: busy + error state, then a probe refresh so the list
+     / Commits / PR tab reflect the write without waiting for a turn flip. */
+  const shipCall = async (stage: ShipBusy, fn: () => Promise<unknown>) => {
+    setShipBusy(stage);
+    setShipError(null);
+    try {
+      await fn();
+      await updateProbe.current?.();
+    } catch (e) {
+      setShipError(shipErrorOf(e));
+      throw e;
+    } finally {
+      setShipBusy(null);
+    }
+  };
+  const onSuggest =
+    onSend != null
+      ? () => {
+          setSuggestAt(replies.length);
+          onSend(
+            `Write a one-line git commit message for these changed files: ${
+              checkedPaths.join(", ") || "the listed files"
+            }`,
+          );
+        }
+      : undefined;
+
+  /* Live-mode ship handlers — one per host method that answered (D-#19). */
+  const liveShip: ShipHandlers = {};
+  if (liveMode && host && liveCwd) {
+    const cwd = liveCwd;
+    if (shipHas("git.commit") && host.commit) {
+      liveShip.onCommit = (files, message) =>
+        shipCall("commit", async () => {
+          await host.commit?.(cwd, files, message);
+          setCommitMsg("");
+          setUnchecked(new Set());
+        });
+    }
+    if (shipHas("git.push") && host.push) {
+      const push = host.push;
+      liveShip.onPush = () =>
+        shipCall("push", async () => {
+          setPushedUp((await push(cwd)).upstream);
+        });
+    }
+    /* #393 AC-5: git.pull (`pull --ff-only`) is the fix the rejected-push
+       copy names; a diverged history surfaces its typed reason plainly. */
+    if (shipHas("git.pull") && host.pull) {
+      const pull = host.pull;
+      liveShip.onPull = () => shipCall("pull", () => pull(cwd));
+    }
+    if (onSend != null) {
+      liveShip.onAskAgent = () =>
+        onSend(
+          `The push was rejected — the remote has newer commits on ${probe?.status?.branch ?? "this branch"}. Please update the branch with the remote's latest commits, then push again.`,
+        );
+    }
+    if (shipHas("forge.create") && host.prCreate) {
+      liveShip.onCreatePr = (p) =>
+        shipCall("pr", async () => {
+          /* On the default branch the form supplied a new branch name —
+             branch first (carrying the commits), then push, then create. */
+          if (p.branch) {
+            if (!(shipHas("git.createBranch") && host.createBranch)) {
+              throw new Error(
+                "this host can't create branches — git.createBranch is not advertised",
+              );
+            }
+            await host.createBranch(cwd, p.branch);
+          }
+          if (shipHas("git.push") && host.push)
+            setPushedUp((await host.push(cwd)).upstream);
+          await host.prCreate?.(cwd, {
+            title: p.title,
+            body: p.body,
+            base: probe?.branches?.default ?? undefined,
+          });
+          await reloadPr();
+          setTab("pr");
+        });
+    }
+  }
+
+  /* Commits for the Commits section + PR prefill: the live `git.log`
+     supersedes step-derived commits once it answers (AC-5); a mock
+     override arrives via `ship.commits`. */
+  const liveCommits: GitCommit[] = liveMode
+    ? (probe?.log ?? a.commits)
+    : (ship?.commits ?? a.commits);
+
+  const shipBar: (ShipBar & ShipHandlers) | null = (() => {
+    const shipFiles = diffs.map((d) => ({
+      path: d.path,
+      checked: !unchecked.has(d.path),
+    }));
+    if (liveMode) {
+      /* AC-6: only in a repo (status answered) and only where a handler
+         exists — a partial host surfaces just the controls it supports. */
+      if (probe?.status == null) return null;
+      if (!liveShip.onCommit && !liveShip.onPush && !liveShip.onCreatePr) {
+        return null;
+      }
+      return {
+        isRepo: true,
+        branch: probe.status.branch,
+        defaultBranch: probe.branches?.default ?? null,
+        remote: probe.branches?.remote ?? null,
+        files: shipFiles,
+        commits: liveCommits,
+        message: commitMsg,
+        busy: shipBusy,
+        error: shipError,
+        running: !!running || !!sendPending,
+        upstream: pushedUp,
+        onMessage: setCommitMsg,
+        onSuggest,
+        ...liveShip,
+      };
+    }
+    /* #393 AC-7: a read-only thread (no session folder yet) with no
+       changes keeps Start work as the single path — no dead ship bar. */
+    if (!work && diffs.length === 0) return null;
+    if (!ship) return null;
+    return {
+      isRepo: ship.isRepo ?? true,
+      branch: ship.branch ?? work?.branch ?? null,
+      defaultBranch: ship.defaultBranch ?? null,
+      remote: ship.remote,
+      files: shipFiles,
+      commits: ship.commits ?? a.commits,
+      message: commitMsg,
+      busy: shipBusy,
+      error: shipError,
+      running: !!running || !!sendPending,
+      upstream: ship.upstream ?? null,
+      accessory: ship.accessory,
+      onMessage: setCommitMsg,
+      onSuggest: ship.onSuggest ?? onSuggest,
+      onCommit: ship.onCommit
+        ? (files, message) =>
+            shipCall("commit", async () => {
+              await ship.onCommit!(files, message);
+              setCommitMsg("");
+              setUnchecked(new Set());
+            })
+        : undefined,
+      onPush: ship.onPush
+        ? () => shipCall("push", () => ship.onPush!())
+        : undefined,
+      onPull: ship.onPull
+        ? () => shipCall("pull", () => ship.onPull!())
+        : undefined,
+      onAskAgent:
+        ship.onAskAgent ??
+        (onSend
+          ? () =>
+              onSend(
+                "The push was rejected — the remote has newer commits on this branch. Please update the branch with the remote's latest commits, then push again.",
+              )
+          : undefined),
+      onCreatePr: ship.onCreatePr
+        ? (p) => shipCall("pr", () => ship.onCreatePr!(p))
+        : undefined,
+    };
+  })();
+  /* #108: pinned review comments on the Changes diff, keyed by session so
+     tab switches and Focus remounts keep them (module store, D-#320
+     rationale). `prune` re-runs whenever the shown diffs' patches move —
+     resolved markers whose file changed drop off (AC-4), pending notes
+     whose file or anchor vanished drop too. It only runs on real reads:
+     live mode's `probe` is null until the first host read lands, and an
+     empty list then would wipe every note on a panel remount. */
+  const dc = useDiffComments(thread.session);
+  const diffsReady = liveMode ? probe?.diffs != null : true;
+  const diffsKey = diffsReady
+    ? diffs.map((d) => `${d.path}\n${d.patch}`).join("\n\n")
+    : null;
+  useEffect(() => {
+    if (diffsReady) dc.prune(diffs);
+  }, [diffsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pendingComments = dc.comments.filter((c) => !c.resolved);
+  const sendComments = () => {
+    if (!onSend || pendingComments.length === 0) return;
+    const route = diffSendRoute(!!running, !!steer);
+    const sent = dc.resolveAll(
+      new Map(diffs.map((d) => [d.path, d.patch])),
+      route,
+    );
+    onSend(diffCommentsMessage(sent));
+    say?.(
+      route === "steer"
+        ? `Sent ${plural(sent.length, "comment")} — steered into the running turn`
+        : route === "queue"
+          ? `Sent ${plural(sent.length, "comment")} — queued as the next prompt`
+          : `Sent ${plural(sent.length, "comment")} to the agent`,
+    );
+  };
+  /* #340 AC-2b: the session's `workbench_open` — open the panel on the
+     target's tab. A changed file shows its diff; an unchanged one opens the
+     file view (at `line` when given). The URL's navigation is the caller's
+     (its Browser surface) — here it only lands on the preview tab. Keyed on
+     `at` so a repeated open of the same target re-fires. */
+  const spotAt = spot?.at;
+  useEffect(() => {
+    if (!spot) return;
+    const t = spot.target;
+    if (t.file !== undefined) {
+      const file = t.file;
+      if (changed.has(file)) {
+        setSel(file);
+        setTab("changes");
+        return;
+      }
+      setTab("files");
+      if (host && liveCwd)
+        void host
+          .read(liveCwd, file)
+          .then((r) => r && setViewFile({ path: file, ...r, line: t.line }));
+      return;
+    }
+    if (t.diff === true) {
+      setSel(t.path ?? null);
+      setTab("changes");
+      return;
+    }
+    setTab(t.pr === true ? "pr" : "preview");
+  }, [spotAt]); // eslint-disable-line react-hooks/exhaustive-deps
   const tree = buildTree([
     ...new Set([...(probe?.files ?? repoFiles ?? []), ...changed.keys()]),
   ]);
@@ -314,8 +672,10 @@ export function Workbench({
      when the session carries jobs. */
   const bgOn = !liveMode || jobs.length > 0;
   /* Subagents (#317): read off the session's own turns, no host method — shows once any turn
-     spun off a helper. */
-  const subOn = !!emp && helpers.length > 0;
+     spun off a helper. A `?tab=subagents` deep link still opens the tab on a
+     zero-helper session so its empty state answers instead of a silent
+     fallback (#319). */
+  const subOn = !!emp && (helpers.length > 0 || tab === "subagents");
   const allowed: Record<WbTab, boolean> = {
     changes: changesOn,
     files: filesOn,
@@ -681,147 +1041,207 @@ export function Workbench({
         </Button>
       </div>
 
-      <TabsContent value="changes" className="min-h-0 flex-1">
-        <ScrollArea className="h-full">
-          {diffs.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 p-8 text-center text-muted-foreground text-xs">
-              <EyeIcon className="size-5" />
-              {liveMode ? (
-                <p>
-                  Clean working tree in <span className="font-mono">{cwd}</span>
-                  .
-                </p>
-              ) : work?.branch ? (
-                <p>
-                  No edits yet on{" "}
-                  <span className="font-mono">⎇ {work.branch}</span>.
-                </p>
-              ) : isDM ? (
-                <p>
-                  Read-only session. {lead?.name ?? "The employee"} reads code
-                  but can't edit here.
-                  <br />
-                  Edits happen on a ticket in a channel with a repo.
-                </p>
-              ) : (
-                <>
+      <TabsContent value="changes" className="min-h-0 flex-1 flex flex-col">
+        {/* #393 AC-9: a fade where the list scrolls under the sticky ship
+            bar — no hard cut on the commit list. */}
+        <div className="relative min-h-0 flex-1">
+          <ScrollArea className="h-full">
+            {diffs.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 p-8 text-center text-muted-foreground text-xs">
+                <EyeIcon className="size-5" />
+                {liveMode ? (
                   <p>
-                    Read-only on <span className="font-mono">main</span>. Start
-                    work gives {lead?.name ?? "the employee"} a ticket +
-                    worktree.
+                    Clean working tree in{" "}
+                    <span className="font-mono">{cwd}</span>.
                   </p>
-                  {onStart && (
-                    <span
-                      className="inline-flex"
-                      title={
-                        startYields ? "Answer the request below" : undefined
-                      }
-                    >
-                      <Button
-                        size="sm"
-                        onClick={onStart}
-                        disabled={startYields}
+                ) : work?.branch ? (
+                  <p>
+                    No edits yet on{" "}
+                    <span className="font-mono">⎇ {work.branch}</span>.
+                  </p>
+                ) : isDM ? (
+                  <p>
+                    Read-only session. {lead?.name ?? "The employee"} reads code
+                    but can't edit here.
+                    <br />
+                    Edits happen on a ticket in a channel with a repo.
+                  </p>
+                ) : (
+                  <>
+                    <p>
+                      Read-only on <span className="font-mono">main</span>.
+                      Start work gives {lead?.name ?? "the employee"} a ticket +
+                      worktree.
+                    </p>
+                    {onStart && (
+                      <span
+                        className="inline-flex"
+                        title={
+                          startYields ? "Answer the request below" : undefined
+                        }
                       >
-                        <PlayIcon />
-                        Start work
+                        <Button
+                          size="sm"
+                          onClick={onStart}
+                          disabled={startYields}
+                        >
+                          <PlayIcon />
+                          Start work
+                        </Button>
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3 p-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-medium">
+                    {plural(diffs.length, "file")} changed
+                  </span>
+                  <span className="font-mono text-emerald-600">+{addT}</span>
+                  <span className="font-mono text-red-600">−{delT}</span>
+                  {work?.branch && (
+                    <span className="flex items-center gap-1 text-muted-foreground">
+                      <GitBranchIcon className="size-3" />
+                      <span className="font-mono">{work.branch}</span>
+                    </span>
+                  )}
+                  {sel && (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => setSel(null)}
+                    >
+                      Show all
+                    </Button>
+                  )}
+                  {/* #108: pending review comments + the Codex-style send.
+                    Both render only while comments exist and a send handler
+                    is wired (D-#19). */}
+                  {onSend && pendingComments.length > 0 && (
+                    <span className="ml-auto flex items-center gap-2">
+                      <span
+                        data-diff-pending
+                        className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-400"
+                      >
+                        <MessageSquareTextIcon className="size-3" />
+                        {pendingComments.length} pending
+                      </span>
+                      <Button
+                        size="xs"
+                        data-diff-send
+                        onClick={sendComments}
+                        title={
+                          running
+                            ? steer
+                              ? "Send as a steer into the running turn"
+                              : "Send — queues as the next prompt"
+                            : "Send comments to the agent"
+                        }
+                      >
+                        <SendIcon />
+                        Send to agent
                       </Button>
                     </span>
                   )}
-                </>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-3 p-3">
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="font-medium">
-                  {plural(diffs.length, "file")} changed
-                </span>
-                <span className="font-mono text-emerald-600">+{addT}</span>
-                <span className="font-mono text-red-600">−{delT}</span>
-                {work?.branch && (
-                  <span className="flex items-center gap-1 text-muted-foreground">
-                    <GitBranchIcon className="size-3" />
-                    <span className="font-mono">{work.branch}</span>
-                  </span>
-                )}
-                {sel && (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={() => setSel(null)}
-                  >
-                    Show all
-                  </Button>
-                )}
-              </div>
-              {shown.map((d) => (
-                <DiffView
-                  key={d.path}
-                  d={d}
-                  openMenu={
-                    openPath
-                      ? {
-                          editors,
-                          onOpen: (app) => openPath(d.path, app),
-                        }
-                      : undefined
-                  }
-                  onOpenLine={
-                    openPath && editors.length
-                      ? (line) => openPath(d.path, editors[0]!.id, line)
-                      : undefined
-                  }
-                />
-              ))}
-              {a.commits.length > 0 && (
-                <div className="space-y-2 pt-2">
-                  <div className="flex items-center gap-1.5 font-medium text-muted-foreground text-xs">
-                    <GitCommitHorizontalIcon className="size-3.5" />
-                    Commits on this branch
-                  </div>
-                  {a.commits.map((c) => (
-                    <Commit key={c.hash}>
-                      <CommitHeader nativeButton={false}>
-                        <CommitInfo className="min-w-0">
-                          <CommitMessage className="truncate">
-                            {c.message}
-                          </CommitMessage>
-                          <CommitMetadata>
-                            <CommitHash>{c.hash}</CommitHash>
-                            <CommitSeparator />
-                            {lead?.name}
-                            <CommitSeparator />
-                            {plural(c.files.length, "file")}
-                          </CommitMetadata>
-                        </CommitInfo>
-                        <CommitActions>
-                          <CommitCopyButton hash={c.hash} />
-                        </CommitActions>
-                      </CommitHeader>
-                      <CommitContent>
-                        <CommitFiles>
-                          {c.files.map((f) => (
-                            <CommitFile key={f.path}>
-                              <CommitFileInfo>
-                                <CommitFileStatus status={f.status} />
-                                <CommitFileIcon />
-                                <CommitFilePath>{f.path}</CommitFilePath>
-                              </CommitFileInfo>
-                              <CommitFileChanges>
-                                <CommitFileAdditions count={f.add} />
-                                <CommitFileDeletions count={f.del} />
-                              </CommitFileChanges>
-                            </CommitFile>
-                          ))}
-                        </CommitFiles>
-                      </CommitContent>
-                    </Commit>
-                  ))}
                 </div>
-              )}
-            </div>
+                {shown.map((d) => (
+                  <div key={d.path} className="flex items-start gap-2">
+                    {/* Stage checkbox — the ship bar commits the checked
+                      set (issue #107 AC-1; all checked by default). */}
+                    {shipBar && (
+                      <Checkbox
+                        data-stagecheck
+                        className="mt-3 shrink-0"
+                        checked={!unchecked.has(d.path)}
+                        onCheckedChange={(c) => toggleFile(d.path, c === true)}
+                        title={`Stage ${d.path}`}
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <DiffView
+                        d={d}
+                        comments={{
+                          list: dc.comments.filter((c) => c.path === d.path),
+                          onAdd: dc.add,
+                          onEdit: dc.edit,
+                          onDelete: dc.remove,
+                        }}
+                        openMenu={
+                          openPath
+                            ? {
+                                editors,
+                                onOpen: (app) => openPath(d.path, app),
+                              }
+                            : undefined
+                        }
+                        onOpenLine={
+                          openPath && editors.length
+                            ? (line) => openPath(d.path, editors[0]!.id, line)
+                            : undefined
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Commits on this branch — outside the clean/dirty ternary: they
+              still matter once every change is committed (issue #107). */}
+            {liveCommits.length > 0 && (
+              <div className="space-y-2 px-3 pt-2 pb-3">
+                <div className="flex items-center gap-1.5 font-medium text-muted-foreground text-xs">
+                  <GitCommitHorizontalIcon className="size-3.5" />
+                  Commits on this branch
+                </div>
+                {liveCommits.map((c) => (
+                  <Commit key={c.hash}>
+                    <CommitHeader nativeButton={false}>
+                      <CommitInfo className="min-w-0">
+                        <CommitMessage className="truncate">
+                          {c.message}
+                        </CommitMessage>
+                        <CommitMetadata>
+                          <CommitHash>{c.hash}</CommitHash>
+                          <CommitSeparator />
+                          {lead?.name}
+                          <CommitSeparator />
+                          {plural(c.files.length, "file")}
+                        </CommitMetadata>
+                      </CommitInfo>
+                      <CommitActions>
+                        <CommitCopyButton hash={c.hash} />
+                      </CommitActions>
+                    </CommitHeader>
+                    <CommitContent>
+                      <CommitFiles>
+                        {c.files.map((f) => (
+                          <CommitFile key={f.path}>
+                            <CommitFileInfo>
+                              <CommitFileStatus status={f.status} />
+                              <CommitFileIcon />
+                              <CommitFilePath>{f.path}</CommitFilePath>
+                            </CommitFileInfo>
+                            <CommitFileChanges>
+                              <CommitFileAdditions count={f.add} />
+                              <CommitFileDeletions count={f.del} />
+                            </CommitFileChanges>
+                          </CommitFile>
+                        ))}
+                      </CommitFiles>
+                    </CommitContent>
+                  </Commit>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+          {shipBar && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-background to-transparent" />
           )}
-        </ScrollArea>
+        </div>
+        {/* The commit → push → Create PR bar (issue #107/#359). */}
+        {shipBar && <CommitBar {...shipBar} />}
       </TabsContent>
 
       <TabsContent value="files" className="min-h-0 flex-1">
@@ -873,6 +1293,33 @@ export function Workbench({
                   <p className="py-4 text-center text-muted-foreground text-xs">
                     Binary file — not shown.
                   </p>
+                ) : viewFile.line !== undefined ? (
+                  /* #340: `workbench_open` pointed at a line — per-line rows so
+                     that one is highlighted and scrolled into view. */
+                  <pre className="max-h-[60vh] overflow-auto rounded-lg border bg-muted/30 p-3 font-mono text-[11px] leading-5">
+                    {viewFile.content.split("\n").map((ln, i) => (
+                      <div
+                        key={i}
+                        ref={
+                          i + 1 === viewFile.line
+                            ? (el) => el?.scrollIntoView({ block: "center" })
+                            : undefined
+                        }
+                        className={
+                          i + 1 === viewFile.line
+                            ? "-mx-1 rounded bg-work/15 px-1 text-work"
+                            : undefined
+                        }
+                      >
+                        {ln || " "}
+                      </div>
+                    ))}
+                    {viewFile.truncated && (
+                      <div className="pt-2 text-muted-foreground">
+                        … truncated
+                      </div>
+                    )}
+                  </pre>
                 ) : (
                   <pre className="max-h-[60vh] overflow-auto rounded-lg border bg-muted/30 p-3 font-mono text-[11px] leading-5">
                     {viewFile.content}

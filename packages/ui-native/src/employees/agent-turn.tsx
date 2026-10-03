@@ -9,7 +9,7 @@ import { approvalSentence } from "./approval-copy";
 import { type PlanAction, PlanCard } from "./plan-card";
 import { PrCard } from "./pr-badges";
 import { StepRow, tool } from "./step-row";
-import { SubagentsCard } from "./subagents";
+import { SubagentsCard, SubagentsLink } from "./subagents";
 import type { AgentEntry, Approval, SubagentRow, ToolStep } from "./types";
 
 /* One conversation turn — the mobile twin of the web AgentTurn/UserTurn
@@ -51,6 +51,7 @@ export function AgentTurn({
   onApprove,
   onDeny,
   onOpenSubagent,
+  onOpenSubagents,
   onPlan,
   onOpenPlan,
 }: {
@@ -61,6 +62,10 @@ export function AgentTurn({
   onDeny: (id: string) => void;
   /** Opens a subagent's sheet (issue #170); absent = rows don't open. */
   onOpenSubagent?: (a: SubagentRow) => void;
+  /** #319: the session's Subagents sheet exists — the turn shows only the
+     one-line link and the rows live there (web: Workbench → Subagents).
+     Absent = the inline card stays. */
+  onOpenSubagents?: () => void;
   /** Approve / Change / Reject on this turn's plan (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
   onOpenPlan?: () => void;
@@ -104,9 +109,12 @@ export function AgentTurn({
           waiting={e.waiting}
         />
       )}
-      {!!e.subagents?.length && (
-        <SubagentsCard agents={e.subagents} onOpen={onOpenSubagent} />
-      )}
+      {!!e.subagents?.length &&
+        (onOpenSubagents ? (
+          <SubagentsLink agents={e.subagents} onOpen={onOpenSubagents} />
+        ) : (
+          <SubagentsCard agents={e.subagents} onOpen={onOpenSubagent} />
+        ))}
       {e.text ? (
         <Prose text={e.text} />
       ) : (

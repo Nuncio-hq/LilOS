@@ -163,7 +163,21 @@ def _make_handler(tool_name):
         try:
             return _call(tool_name, env, sid, args)
         except urllib.error.HTTPError as e:
-            return f"{TOOL_PREFIX}{tool_name} failed: HTTP {e.code} {e.reason}"
+            # The gateway's error body is {"error": {code, message}} — the
+            # message carries the zod validation issues for invalid_params,
+            # so the model sees WHAT was wrong and can correct the call
+            # (a bare "HTTP 400 Bad Request" taught it nothing — #340 live leg).
+            detail = ""
+            try:
+                body = json.loads(e.read() or b"{}")
+                detail = (body.get("error") or {}).get("message") or ""
+            except Exception:
+                detail = ""
+            suffix = f" — {detail}" if detail else ""
+            return (
+                f"{TOOL_PREFIX}{tool_name} failed: HTTP {e.code} {e.reason}"
+                f"{suffix}"
+            )
         except Exception as e:
             return f"{TOOL_PREFIX}{tool_name} failed: {e}"
     return handler

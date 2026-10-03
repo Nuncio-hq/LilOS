@@ -4,13 +4,20 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type {
   GitBranchesResult,
+  GitCommitResult,
+  GitCreateBranchResult,
   GitDiffFile,
   GitDiffResult,
   GitDiscoverResult,
   GitIsRepoResult,
+  GitLogCommit,
+  GitLogResult,
+  GitPullResult,
+  GitPushResult,
   GitStatusResult,
   GitWorktree,
   GitWorktreesResult,
+  GitWriteReason,
 } from "@lilos/contracts/host";
 import { HOST_ERRORS, HostError } from "./errors.js";
 import { collapsePath, expandPath } from "./paths.js";
@@ -48,6 +55,16 @@ const remoteOf = (cwd: string) =>
   gitOr(cwd, ["config", "--get", "remote.origin.url"]).then(
     (o) => o?.trim() || null,
   );
+/** First configured remote's *name* — the push target; repos don't always
+    call it `origin`. */
+const remoteNameOf = (cwd: string) =>
+  gitOr(cwd, ["remote"]).then((o) => o?.trim().split("\n")[0] || null);
+/** `origin/HEAD`'s short name — the remote's default branch (`main`), or
+    null with no remote/no default. */
+const remoteDefaultOf = (cwd: string) =>
+  gitOr(cwd, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).then(
+    (o) => o?.trim().replace(/^origin\//, "") || null,
+  );
 
 /** RepoMark for a directory that is a repo root; null otherwise. */
 export async function repoMark(
@@ -82,10 +99,11 @@ export async function gitBranches(params: {
   path: string;
 }): Promise<GitBranchesResult> {
   const root = await rootOrThrow(params.path);
-  const [current, list, remote] = await Promise.all([
+  const [current, list, remote, remoteDefault] = await Promise.all([
     headOf(root),
     git(root, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]),
     remoteOf(root),
+    remoteDefaultOf(root),
   ]);
   const branches = list
     .split("\n")
@@ -97,7 +115,434 @@ export async function gitBranches(params: {
     if (i !== -1) branches.splice(i, 1);
     branches.unshift(current);
   }
-  return { root: collapsePath(root), current, branches, remote };
+  return {
+    root: collapsePath(root),
+    current,
+    branches,
+    remote,
+    default: remoteDefault,
+  };
+}
+
+// ── Writes (issue #107) ─────────────────────────────────────────────────────
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: git colors stderr on a TTY — strip ANSI for display
+const ANSI = /\u001B\[[0-9;]*m/g;
+
+type GitOp = "commit" | "push" | "pull" | "createBranch";
+
+/** stderr/exec detail → a typed GitWriteReason the client maps to plain copy
+    (same contract as forge's ghFailed — raw stderr only in `detail`). */
+function gitWriteFailed(op: GitOp, e: unknown): HostError {
+  const err = e as { stderr?: string; stdout?: string; message?: string };
+  /* `git commit` prints "nothing added to commit" on *stdout* while real
+     push/checkout errors ride stderr — take both so the reason classifier
+     sees the signal whichever stream git picked. */
+  const detail = (
+    err.stderr?.trim() ||
+    err.stdout?.trim() ||
+    err.message ||
+    String(e)
+  )
+    .replace(ANSI, "")
+    .trim();
+  let reason: GitWriteReason = "other";
+  if (op === "push") {
+    if (
+      /non-fast-forward|fetch first|stale info|!\s*\[rejected\]/i.test(detail)
+    ) {
+      reason = "rejected";
+    } else if (
+      /permission denied|authentication failed|could not read username|terminal prompts disabled|could not read from remote repository/i.test(
+        detail,
+      )
+    ) {
+      reason = "auth";
+    } else if (
+      /no configured push destination|does not appear to be a git repository|could not resolve host|repository not found|no such remote|failed to connect/i.test(
+        detail,
+      )
+    ) {
+      reason = "no-remote";
+    }
+  } else if (op === "commit") {
+    if (
+      /unmerged|you need to resolve|merge conflict|cannot commit|not possible because you have unmerged|fix conflicts/i.test(
+        detail,
+      )
+    ) {
+      reason = "conflict";
+    } else if (
+      /nothing to commit|nothing added to commit|no changes added/i.test(detail)
+    ) {
+      reason = "nothing";
+    }
+  } else if (op === "pull") {
+    if (
+      /not possible to fast-forward|cannot fast-forward|you have divergent|diverged/i.test(
+        detail,
+      )
+    ) {
+      reason = "diverged";
+    } else if (
+      /unmerged|merge conflict|not possible because you have unmerged|fix conflicts|would be overwritten/i.test(
+        detail,
+      )
+    ) {
+      reason = "conflict";
+    } else if (
+      /permission denied|authentication failed|could not read username|terminal prompts disabled|could not read from remote repository/i.test(
+        detail,
+      )
+    ) {
+      reason = "auth";
+    } else if (
+      /could not resolve host|no such remote|failed to connect|does not appear to be a git repository|no tracking information/i.test(
+        detail,
+      )
+    ) {
+      reason = "no-remote";
+    }
+  } else {
+    if (/already exists/i.test(detail)) reason = "exists";
+    else if (/not a valid|invalid/i.test(detail)) reason = "invalid";
+  }
+  return new HostError(HOST_ERRORS.GIT_FAILED, `git ${op} failed: ${detail}`, {
+    reason,
+    detail,
+  });
+}
+
+/** `git add -A -- <files>` then `git commit --only -- <files>` (issue #107).
+    Stages only the listed paths and commits only them: `--only` keeps a
+    bare `git commit` from sweeping in files someone else already staged
+    (an agent's `git add`, an IDE). Never `-am`. */
+export async function gitCommit(params: {
+  path: string;
+  files: string[];
+  message: string;
+}): Promise<GitCommitResult> {
+  const root = await rootOrThrow(params.path);
+  if (params.files.some((f) => f.startsWith("-"))) {
+    throw new HostError(
+      HOST_ERRORS.INVALID_PARAMS,
+      "file paths must not start with '-'",
+    );
+  }
+  try {
+    await git(root, ["add", "-A", "--", ...params.files]);
+  } catch (e) {
+    throw gitWriteFailed("commit", e);
+  }
+  try {
+    await git(root, [
+      "commit",
+      "--only",
+      "-m",
+      params.message,
+      "--",
+      ...params.files,
+    ]);
+  } catch (e) {
+    throw gitWriteFailed("commit", e);
+  }
+  const sha = (await git(root, ["rev-parse", "--short", "HEAD"])).trim();
+  const branch = await headOf(root);
+  return {
+    root: collapsePath(root),
+    branch,
+    sha,
+    subject: params.message.split("\n")[0].trim(),
+  };
+}
+
+/** `git push` — `-u origin <branch>` on the first push; rejected /
+    no-remote / auth failures carry the typed reason (issue #107 AC-3).
+    Never force. */
+export async function gitPush(params: {
+  path: string;
+}): Promise<GitPushResult> {
+  const root = await rootOrThrow(params.path);
+  const branch = await headOf(root);
+  if (!branch) {
+    throw new HostError(
+      HOST_ERRORS.GIT_FAILED,
+      "git push failed: detached HEAD — nothing to push",
+      { reason: "other", detail: "HEAD is detached" },
+    );
+  }
+  const remote = await remoteNameOf(root);
+  if (!remote) {
+    throw new HostError(
+      HOST_ERRORS.GIT_FAILED,
+      "git push failed: no remote is configured",
+      { reason: "no-remote", detail: "no remote is configured" },
+    );
+  }
+  const upstream = await gitOr(root, [
+    "rev-parse",
+    "--abbrev-ref",
+    "@{upstream}",
+  ]).then((o) => o?.trim() || null);
+  try {
+    if (upstream) {
+      await git(root, ["push"]);
+    } else {
+      await git(root, ["push", "-u", remote, branch]);
+    }
+  } catch (e) {
+    throw gitWriteFailed("push", e);
+  }
+  const after = await gitOr(root, [
+    "rev-parse",
+    "--abbrev-ref",
+    "@{upstream}",
+  ]).then((o) => o?.trim() || null);
+  return { root: collapsePath(root), branch, upstream: after };
+}
+
+/** `git pull --ff-only` — the push-rejected fix (issue #393 AC-5). Argv
+    only; a diverged history answers 'diverged' plainly — never merges,
+    rebases or resolves anything itself. */
+export async function gitPull(params: {
+  path: string;
+}): Promise<GitPullResult> {
+  const root = await rootOrThrow(params.path);
+  const branch = await headOf(root);
+  if (!branch) {
+    throw new HostError(
+      HOST_ERRORS.GIT_FAILED,
+      "git pull failed: detached HEAD — nothing to pull into",
+      { reason: "other", detail: "HEAD is detached" },
+    );
+  }
+  const remote = await remoteNameOf(root);
+  if (!remote) {
+    throw new HostError(
+      HOST_ERRORS.GIT_FAILED,
+      "git pull failed: no remote is configured",
+      { reason: "no-remote", detail: "no remote is configured" },
+    );
+  }
+  const upstream = await gitOr(root, [
+    "rev-parse",
+    "--abbrev-ref",
+    "@{upstream}",
+  ]).then((o) => o?.trim() || null);
+  if (!upstream) {
+    throw new HostError(
+      HOST_ERRORS.GIT_FAILED,
+      "git pull failed: the branch has no upstream to pull from",
+      { reason: "other", detail: "no upstream configured" },
+    );
+  }
+  try {
+    await git(root, ["pull", "--ff-only"]);
+  } catch (e) {
+    throw gitWriteFailed("pull", e);
+  }
+  return { root: collapsePath(root), branch, upstream };
+}
+
+/** `git checkout -b <name>` — check-ref-format validates the name first;
+    an existing branch answers GIT_FAILED/'exists' (issue #107 AC-4). */
+export async function gitCreateBranch(params: {
+  path: string;
+  name: string;
+}): Promise<GitCreateBranchResult> {
+  const root = await rootOrThrow(params.path);
+  const ok = await gitOr(root, ["check-ref-format", "--branch", params.name]);
+  if (ok === null) {
+    throw new HostError(
+      HOST_ERRORS.INVALID_PARAMS,
+      `invalid branch name: ${params.name}`,
+    );
+  }
+  const exists = await gitOr(root, [
+    "rev-parse",
+    "--verify",
+    `refs/heads/${params.name}`,
+  ]);
+  if (exists !== null) {
+    throw new HostError(
+      HOST_ERRORS.GIT_FAILED,
+      `git createBranch failed: a branch named '${params.name}' already exists`,
+      { reason: "exists", detail: `refs/heads/${params.name} exists` },
+    );
+  }
+  try {
+    await git(root, ["checkout", "-b", params.name]);
+  } catch (e) {
+    throw gitWriteFailed("createBranch", e);
+  }
+  return { root: collapsePath(root), branch: params.name };
+}
+
+/** The branch's birth sha — the %H of its reflog's "branch: Created from"
+    entry (its start point, whether the subject reads a ref or "HEAD"). */
+async function birthSha(root: string, branch: string): Promise<string | null> {
+  const out = await gitOr(root, [
+    "reflog",
+    "show",
+    "--format=%H%x00%gs",
+    branch,
+  ]);
+  for (const line of out?.split("\n") ?? []) {
+    const i = line.indexOf("\0");
+    if (i === -1) continue;
+    if (line.slice(i + 1).startsWith("branch: Created from")) {
+      return line.slice(0, i) || null;
+    }
+  }
+  return null;
+}
+
+/** Base ref for `git.log`'s `<base>..HEAD`: explicit param, then the branch's
+    own fork sha, then the remote default (≠ current), then upstream, then a
+    local main/master/trunk ≠ current — null = whole history (capped). */
+async function logBase(
+  root: string,
+  branch: string | null,
+  explicit?: string,
+): Promise<string | null> {
+  if (explicit) return explicit;
+  if (branch) {
+    const sha = await birthSha(root, branch);
+    if (sha) return sha;
+  }
+  const remoteDefault = await remoteDefaultOf(root);
+  if (remoteDefault && remoteDefault !== branch) {
+    return `origin/${remoteDefault}`;
+  }
+  const upstream = await gitOr(root, [
+    "rev-parse",
+    "--abbrev-ref",
+    "@{upstream}",
+  ]).then((o) => o?.trim() || null);
+  if (upstream) return upstream;
+  for (const d of ["main", "master", "trunk"]) {
+    if (
+      d !== branch &&
+      (await gitOr(root, ["rev-parse", "--verify", `refs/heads/${d}`])) !== null
+    ) {
+      return d;
+    }
+  }
+  return null;
+}
+
+/** `--name-status -z` records split on the \x1e commit marker. */
+type NameStatusEntry = { status: string; path: string };
+
+function parseNameStatus(raw: string): Map<string, NameStatusEntry[]> {
+  const commits = new Map<string, NameStatusEntry[]>();
+  // A record: "\x1e<full sha>\0<short>\0<subject>\0\n<A>\0<path>\0…"
+  for (const rec of raw.split("\x1e")) {
+    if (!rec.trim()) continue;
+    const tokens = rec.split("\0");
+    const sha = tokens[0].trim();
+    const files: NameStatusEntry[] = [];
+    for (let i = 3; i < tokens.length; i++) {
+      const status = tokens[i].replace(/^\n+/, "").trim();
+      if (!status) continue;
+      let path = tokens[++i];
+      if (path === undefined) break;
+      if (status.startsWith("R") || status.startsWith("C")) {
+        // rename/copy: `R<n>␀old␀new␀` — the row shows the new name.
+        path = tokens[++i] ?? path;
+      }
+      files.push({ status, path });
+    }
+    commits.set(sha, files);
+  }
+  return commits;
+}
+
+/** `--numstat -z` records → per-commit path → {add,del} (binary = 0/0). */
+function parseNumstat(
+  raw: string,
+): Map<string, Map<string, { add: number; del: number }>> {
+  const commits = new Map<string, Map<string, { add: number; del: number }>>();
+  for (const rec of raw.split("\x1e")) {
+    if (!rec.trim()) continue;
+    const tokens = rec.split("\0");
+    const sha = tokens[0].trim();
+    const files = new Map<string, { add: number; del: number }>();
+    for (let i = 1; i < tokens.length; i++) {
+      const m = /^(\d+|-)\t(\d+|-)\t(.*)$/.exec(tokens[i].replace(/^\n+/, ""));
+      if (!m) continue;
+      const add = m[1] === "-" ? 0 : Number(m[1]);
+      const del = m[2] === "-" ? 0 : Number(m[2]);
+      if (m[3] === "") {
+        // rename: path slot empty; next two tokens are old then new path.
+        tokens[++i];
+        const to = tokens[++i];
+        if (to === undefined) break;
+        files.set(to, { add, del });
+      } else {
+        files.set(m[3], { add, del });
+      }
+    }
+    commits.set(sha, files);
+  }
+  return commits;
+}
+
+const diffFileStatus = (s: string): GitLogCommit["files"][number]["status"] =>
+  s.startsWith("A") ? "added" : s.startsWith("D") ? "deleted" : "modified";
+
+/** Commits on the branch vs its base — the Commits section's source in live
+    mode and the Create-PR prefill (issue #107 AC-1/AC-4). */
+export async function gitLog(params: {
+  path: string;
+  base?: string;
+  limit?: number;
+}): Promise<GitLogResult> {
+  const root = await rootOrThrow(params.path);
+  const branch = await headOf(root);
+  const base = await logBase(root, branch, params.base);
+  const limit = params.limit ?? 20;
+  const range = base ? `${base}..HEAD` : "HEAD";
+  const capped = base ? [] : ["-n", String(limit)];
+  const format = "%x1e%H%x00%h%x00%s";
+  const [nsRaw, stRaw] = await Promise.all([
+    gitOr(root, [
+      "log",
+      range,
+      `--format=${format}`,
+      "-z",
+      "--name-status",
+      ...capped,
+    ]),
+    gitOr(root, [
+      "log",
+      range,
+      "--format=%x1e%H",
+      "-z",
+      "--numstat",
+      ...capped,
+    ]),
+  ]);
+  if (!nsRaw) return { root: collapsePath(root), branch, base, commits: [] };
+  const nameStatus = parseNameStatus(nsRaw);
+  const numstat = parseNumstat(stRaw ?? "");
+  const commits: GitLogCommit[] = [];
+  for (const rec of nsRaw.split("\x1e")) {
+    if (!rec.trim()) continue;
+    const head = rec.split("\0");
+    const full = head[0].trim();
+    const files = (nameStatus.get(full) ?? []).map((f) => ({
+      path: f.path,
+      status: diffFileStatus(f.status),
+      ...(numstat.get(full)?.get(f.path) ?? { add: 0, del: 0 }),
+    }));
+    commits.push({
+      sha: head[1] ?? full.slice(0, 7),
+      subject: head[2]?.replace(/\n+$/, "") ?? "",
+      files,
+    });
+  }
+  return { root: collapsePath(root), branch, base, commits };
 }
 
 type StatusFile = GitStatusResult["files"][number];

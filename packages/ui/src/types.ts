@@ -2,6 +2,8 @@
    (and, later, the relay wire types in packages/contracts) produce them. Wire types are NOT defined here —
    this file is the UI contract only (issue #12; wire schemas live in packages/contracts). */
 
+import type { ReactNode } from "react";
+
 export type Status = "online" | "busy" | "offline";
 export type RespondTo = "me" | "selected" | "anyone";
 export type Employee = {
@@ -35,6 +37,29 @@ export type Diff = {
   add: number;
   del: number;
   patch: string;
+};
+/* A pinned review note on a Changes diff line or range (issue #108).
+   `side` says which gutter the anchor lives on: "b" = new-file lines
+   (added/context rows), "a" = old-file lines (deleted rows exist only
+   there). `start`/`end` are that side's line numbers, `lines` snapshots
+   the quoted text with its +/-/space diff marker so the sent message
+   stays honest if the file later shifts. `patch` fingerprints the diff
+   the note was sent against — resolved markers drop once it changes
+   (AC-4). */
+export type DiffComment = {
+  id: string;
+  path: string;
+  side: "a" | "b";
+  start: number;
+  end: number;
+  /** The anchor rows' displayed text, +/-/space-prefixed, at pin time. */
+  lines: string[];
+  text: string;
+  resolved?: boolean;
+  patch?: string;
+  /** The route the send took — the resolved marker's "Sent · …" pill
+      mirrors the toast's wording (issue #393 AC-2). */
+  via?: "prompt" | "steer" | "queue";
 };
 export type GitCommit = {
   hash: string;
@@ -107,6 +132,10 @@ export type Reply = {
       id swap, so React keys survive it (a remount would drop user collapse
       state, #320). */
   turnId?: string;
+  /** The turn began while this surface's feed was attached (its
+      `turn.started` ran past the replay watermark) — vs the turn already
+      live when the view mounted (#396); absent on mock/synthesized rows. */
+  postAttach?: boolean;
   steers?: string[];
   dur?: number;
   attachments?: AttachedFile[];
@@ -585,6 +614,95 @@ export type PrError = {
   reason: "missing" | "unauthenticated" | "other";
   detail: string;
 };
+
+/* ── Ship bar: commit → push → Create PR on the Changes tab (issue #107,
+   the accepted #359 design). Presentational: props in, callbacks out; a
+   missing handler hides its control (D-#19). */
+
+/** A file row's stage checkbox state, keyed on the diff's `path`. */
+export type ShipFile = { path: string; checked: boolean };
+
+/** The typed reasons a ship action reports — drives the bar's plain copy
+    (git writes carry GitWriteReason; gh's ForgeGhReason rides along too).
+    `detail` is the raw stderr — a Details disclosure only, never the
+    headline (same rule as PrError, #114 AC-5). */
+export type ShipError = {
+  reason?:
+    | "rejected"
+    | "diverged"
+    | "no-remote"
+    | "auth"
+    | "conflict"
+    | "nothing"
+    | "exists"
+    | "unauthenticated"
+    | "missing"
+    | "other";
+  detail?: string;
+  /** Shown when no known reason arrived (or the app wrote the copy itself). */
+  text: string;
+};
+
+/** Which bar action is in flight — its button reads busy. */
+export type ShipBusy = "commit" | "push" | "pull" | "pr" | null;
+
+/** The bar's state — app-owned; async work writes back through the
+    handlers, never by mutating this. */
+export type ShipBar = {
+  /** The folder is a git work tree — false renders nothing (AC-6). */
+  isRepo: boolean;
+  /** Working branch; null = detached HEAD. */
+  branch: string | null;
+  /** The remote's default branch (`origin/HEAD` short name): on it, Create
+      PR asks for a new branch name first (AC-4). */
+  defaultBranch?: string | null;
+  /** `origin` URL when configured — copy detail for the no-remote error. */
+  remote?: string | null;
+  /** Every diff row's stage state (all checked by default). */
+  files: ShipFile[];
+  /** Commits on the branch — PR title/body prefill. */
+  commits: GitCommit[];
+  /** Commit message draft (app-owned: Suggest's answer writes back through
+      `onMessage`). */
+  message: string;
+  /** In-flight action — its button reads busy + the rest disables. */
+  busy: ShipBusy;
+  /** The last action's failure — cleared by the next one. */
+  error: ShipError | null;
+  /** A turn is running → the Suggest affordance hides (AC-2). */
+  running: boolean;
+  /** Upstream after a successful push (`origin/<branch>`) — the bar's ↑
+      chip; muted while a push error is on screen (issue #393 AC-6). */
+  upstream?: string | null;
+  /** Optional chrome slot (the prototype's error-state switch lands here). */
+  accessory?: ReactNode;
+};
+
+/** ShipBar callbacks — async ones are awaited; a rejection surfaces as the
+    bar's error, so the app throws `{ reason?, detail? }`-shaped errors. */
+export type ShipHandlers = {
+  onMessage?: (message: string) => void;
+  /** Ask the agent for a one-line commit message — posts a normal user
+      message; the engine's reply fills `message` (AC-2). */
+  onSuggest?: () => void;
+  /** Stage `files` (the checked set) + commit them with `message`. */
+  onCommit?: (files: string[], message: string) => Promise<void>;
+  /** Push the branch — sets upstream on the first push. */
+  onPush?: () => Promise<void>;
+  /** `git pull --ff-only` — the fix the rejected-push copy names (issue
+      #393 AC-5); a diverged history rejects with reason 'diverged'. */
+  onPull?: () => Promise<void>;
+  /** Posts a user message asking the agent to update the branch — offered
+      on a rejected/diverged state (issue #393 AC-5). */
+  onAskAgent?: () => void;
+  /** Create the PR; on the default branch `branch` is the new branch's name. */
+  onCreatePr?: (pr: {
+    title: string;
+    body: string;
+    branch?: string;
+  }) => Promise<void>;
+};
+
 /* Live host accessors for a session's real cwd (fs/git issue #11, forge #37).
    An accessor resolves null when the host is unreachable → the caller falls
    back to mock data; `forge.pr` resolving `{ pr: null }` is the host's real
@@ -626,4 +744,59 @@ export type HostAccessors = {
     app: OsApp,
     line?: number,
   ) => Promise<void>;
+  /** host.describe's implemented-method set (issue #107): a bar control
+      renders only when its host method is in it (D-#19, AC-6). The app
+      may cache the answer. */
+  methods?: () => Promise<Set<string>>;
+  /** git.status — the checkout's branch + changed paths; null when the
+      folder is no repo (the ship bar keys isRepo off this). */
+  status?: (cwd: string) => Promise<{
+    branch: string | null;
+    clean: boolean;
+    files: { path: string; status: string; origPath?: string }[];
+  } | null>;
+  /** git.branches — locals + current + `origin` URL + the remote's default
+      branch (Create PR's on-the-default ask keys off `default`). */
+  branches?: (cwd: string) => Promise<{
+    current: string | null;
+    branches: string[];
+    remote: string | null;
+    default: string | null;
+  } | null>;
+  /** git.log — commits on the branch vs its resolved base; feeds the
+      Commits section + the Create-PR prefill. */
+  log?: (cwd: string) => Promise<GitCommit[] | null>;
+  /** git.commit — stage + commit the listed paths; throws on failure. */
+  commit?: (cwd: string, files: string[], message: string) => Promise<void>;
+  /** git.push — `-u origin <branch>` the first time; resolves the
+      upstream it pushed to, throws on failure. */
+  push?: (cwd: string) => Promise<{ upstream: string | null }>;
+  /** git.pull — `git pull --ff-only`; throws on a diverged history. */
+  pull?: (cwd: string) => Promise<void>;
+  /** git.createBranch — `checkout -b`; throws on an invalid/existing name. */
+  createBranch?: (cwd: string, name: string) => Promise<void>;
+  /** forge.create — `gh pr create`; resolves the PR's URL, throws on
+      failure ({reason,detail}-shaped like prComment/prMerge). */
+  prCreate?: (
+    cwd: string,
+    pr: { title: string; body: string; base?: string },
+  ) => Promise<string>;
+};
+
+/* A `workbench_open` target as the Workbench's spot request (issue #340):
+   the agent's "look at this" — a file (optionally at a line), the changes
+   view (optionally one file), the PR tab, or a URL for the preview tab.
+   Structural mirror of `WorkbenchOpenTarget` in contracts (ui keeps no
+   contracts dep) — a flat object: exactly one of file/diff/pr/url set.
+   `at` makes a repeated open of the same target re-fire. */
+export type WbSpot = {
+  at: number;
+  target: {
+    file?: string;
+    line?: number;
+    diff?: true;
+    path?: string;
+    pr?: true;
+    url?: string;
+  };
 };

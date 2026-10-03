@@ -2,10 +2,48 @@ import { z } from "zod";
 
 /**
  * Git surface of the host API (issue #11). Answers "is this folder a repo,
- * what's in it, what changed" for folders on the machine the host runs on.
- * Everything is read-only: no fetch, no checkout, no index mutation
- * (`git.diff` reports untracked files without `git add -N`).
+ * what's in it, what changed" for folders on the machine the host runs on —
+ * plus the Writes the Workbench's commit/push bar needs (issue #107):
+ * `git.commit`/`git.push`/`git.createBranch`. Writes are argv `execFile`
+ * only (never a shell string) and never force-push, amend or rebase; the
+ * signed-in user's own git/gh auth applies and LilOS stores no token
+ * (D-#11, D-#37).
  */
+
+/**
+ * Which known git-write failure a GIT_FAILED error carries in its error
+ * `data` — clients render plain per-reason copy + one next step; raw stderr
+ * never becomes the headline (same contract as `ForgeGhReason`, #114 AC-5).
+ */
+export const GitWriteReason = z.enum([
+  /** Push rejected as non-fast-forward — the remote has newer commits. */
+  "rejected",
+  /** `git pull --ff-only` can't run — the branch and its upstream diverged. */
+  "diverged",
+  /** No remote named `origin` is configured (or it's unreachable). */
+  "no-remote",
+  /** The remote refused the push on auth (credential helper / SSH key). */
+  "auth",
+  /** The repo sits mid-merge with unresolved conflicts. */
+  "conflict",
+  /** Nothing staged for the requested files. */
+  "nothing",
+  /** A branch with that name already exists. */
+  "exists",
+  /** `git check-ref-format` rejected the branch name. */
+  "invalid",
+  "other",
+]);
+export type GitWriteReason = z.infer<typeof GitWriteReason>;
+
+/** GIT_FAILED error `data` (errors aren't schema-checked on the wire —
+    clients `safeParse` this and fall back to "other"). */
+export const GitWriteErrorData = z.object({
+  reason: GitWriteReason,
+  /** Raw stderr — a Details disclosure only, never the headline. */
+  detail: z.string(),
+});
+export type GitWriteErrorData = z.infer<typeof GitWriteErrorData>;
 
 const Path = z.string().min(1);
 
@@ -30,6 +68,10 @@ export const GitBranchesResult = z.object({
   branches: z.array(z.string()),
   /** `origin` fetch URL as configured; null when absent. */
   remote: z.string().nullable(),
+  /** Remote default branch's short name (`origin/HEAD` → e.g. `main`);
+      null when there's no remote default — the "Create PR asks a branch
+      name" check keys on this (issue #107). */
+  default: z.string().nullable(),
 });
 export type GitBranchesResult = z.infer<typeof GitBranchesResult>;
 
@@ -98,6 +140,103 @@ export const GitDiffResult = z.object({
   files: z.array(GitDiffFile),
 });
 export type GitDiffResult = z.infer<typeof GitDiffResult>;
+
+// ── git.commit (issue #107) ─────────────────────────────────────────────────
+export const GitCommitParams = z.strictObject({
+  path: Path,
+  /** Repo-relative paths to stage (`git add -A -- <files>` — a rename lists
+      both the new path and its `origPath`). */
+  files: z.array(z.string().min(1)).min(1),
+  message: z.string().min(1),
+});
+export type GitCommitParams = z.infer<typeof GitCommitParams>;
+export const GitCommitResult = z.object({
+  root: z.string(),
+  /** Current branch; null on detached HEAD. */
+  branch: z.string().nullable(),
+  /** Short sha of the new commit. */
+  sha: z.string(),
+  /** First line of the commit message. */
+  subject: z.string(),
+});
+export type GitCommitResult = z.infer<typeof GitCommitResult>;
+
+// ── git.push (issue #107) ───────────────────────────────────────────────────
+export const GitPushParams = z.strictObject({ path: Path });
+export type GitPushParams = z.infer<typeof GitPushParams>;
+export const GitPushResult = z.object({
+  root: z.string(),
+  /** Pushed branch; null when HEAD was detached (push then never ran). */
+  branch: z.string().nullable(),
+  /** Upstream after the push (`origin/<branch>`); set with `-u` on the
+      first push — never force. */
+  upstream: z.string().nullable(),
+});
+export type GitPushResult = z.infer<typeof GitPushResult>;
+
+// ── git.pull (issue #393 AC-5) ─────────────────────────────────────────────
+export const GitPullParams = z.strictObject({ path: Path });
+export type GitPullParams = z.infer<typeof GitPullParams>;
+export const GitPullResult = z.object({
+  root: z.string(),
+  /** Pulled branch; null when HEAD was detached (pull then never ran). */
+  branch: z.string().nullable(),
+  /** Upstream the pull fast-forwarded to (`origin/<branch>`). */
+  upstream: z.string().nullable(),
+});
+export type GitPullResult = z.infer<typeof GitPullResult>;
+
+// ── git.createBranch (issue #107) ───────────────────────────────────────────
+export const GitCreateBranchParams = z.strictObject({
+  path: Path,
+  name: z.string().min(1),
+});
+export type GitCreateBranchParams = z.infer<typeof GitCreateBranchParams>;
+export const GitCreateBranchResult = z.object({
+  root: z.string(),
+  /** The new branch, now checked out. */
+  branch: z.string(),
+});
+export type GitCreateBranchResult = z.infer<typeof GitCreateBranchResult>;
+
+// ── git.log (issue #107) ────────────────────────────────────────────────────
+export const GitLogParams = z.strictObject({
+  path: Path,
+  /** Base ref for `<base>..HEAD` (e.g. the PR's base branch). Omitted =
+      resolved host-side: the branch's own "Created from" sha, then the
+      remote default, then the upstream, then a local main/master — whole
+      history (capped) when none of those resolves. */
+  base: z.string().optional(),
+  /** Max commits (default 20). */
+  limit: z.int().min(1).max(200).optional(),
+});
+export type GitLogParams = z.infer<typeof GitLogParams>;
+
+/** One commit as the Workbench's Commits section renders it. */
+export const GitLogCommit = z.object({
+  /** Short sha. */
+  sha: z.string(),
+  subject: z.string(),
+  files: z.array(
+    z.object({
+      path: z.string(),
+      status: GitDiffFileStatus,
+      add: z.int().min(0),
+      del: z.int().min(0),
+    }),
+  ),
+});
+export type GitLogCommit = z.infer<typeof GitLogCommit>;
+
+export const GitLogResult = z.object({
+  root: z.string(),
+  /** Current branch; null on detached HEAD. */
+  branch: z.string().nullable(),
+  /** The resolved base ref/sha, or null when the log covers all of HEAD. */
+  base: z.string().nullable(),
+  commits: z.array(GitLogCommit),
+});
+export type GitLogResult = z.infer<typeof GitLogResult>;
 
 // ── git.worktrees ───────────────────────────────────────────────────────────
 export const GitWorktreesParams = z.strictObject({ path: Path });

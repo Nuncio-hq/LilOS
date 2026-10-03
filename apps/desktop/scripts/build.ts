@@ -154,16 +154,15 @@ if (!skipHarness) {
   console.log(
     `==> compile lilos-harness (bun standalone, engine default: ${engines.defaultEngine})`,
   );
+  /* The shared compile script owns the flag set (incl. the chromium-bidi
+     external, #388) so the PR-time `build:harness` smoke checks the exact
+     invocation this release path uses. */
   run("bun", [
-    "build",
-    harnessEntry,
-    "--compile",
-    "--target=bun-darwin-arm64",
+    join(REPO, "apps", "harness", "scripts", "compile.ts"),
+    join(BUILD, "lilos-harness"),
     ...stamp,
     "--define",
     `process.env.LILOS_ENGINE_DEFAULT:${JSON.stringify(engines.defaultEngine)}`,
-    "--outfile",
-    join(BUILD, "lilos-harness"),
   ]);
   // The packaged harness can't run `bun serve.ts` — ship each engine adapter
   // as a sibling binary it auto-discovers next to its own execPath.

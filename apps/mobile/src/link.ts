@@ -1,4 +1,5 @@
 import {
+  type AppClient,
   type CachedDirectory,
   ConnectionSupervisor,
   RelayClient,
@@ -30,7 +31,9 @@ interface MobileLease extends SupervisedConnection {
   client: RelayClient;
 }
 
-export const $client = atom<RelayClient | undefined>(undefined);
+/* The client interface screens consume (#168): a live RelayClient or the
+   fully-offline demo world — same atoms, same request surface. */
+export const $client = atom<AppClient | undefined>(undefined);
 export const $link = atom<MacLink>("reconnecting");
 /** supervisor.state.lastError — surfaced under the offline banner's Details. */
 export const $linkError = atom<string | undefined>(undefined);

@@ -29,13 +29,21 @@ export async function serveMcpStdio(
   for (const name of names) {
     const contract = LILOS_TOOLS[name];
     if (!contract) continue;
+    /* The MCP SDK wants a raw zod shape — only object schemas have one. A
+       non-object `params` (e.g. a zod union) would silently advertise an
+       EMPTY inputSchema — the live-leg bug of #340 — so fail loudly here:
+       the contracts test pins every tool's params to a top-level object. */
+    const shape = (contract.params as { shape?: Record<string, z.ZodType> })
+      .shape;
+    if (!shape)
+      throw new Error(
+        `lilos mcp: ${name} params is not an object schema (no inputSchema to advertise)`,
+      );
     server.registerTool(
       name,
       {
         description: contract.doc,
-        inputSchema: (
-          contract.params as unknown as { shape: Record<string, z.ZodType> }
-        ).shape,
+        inputSchema: shape,
       },
       async (args) => {
         try {

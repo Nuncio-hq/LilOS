@@ -88,6 +88,9 @@ export type BranchesResult = {
   current: string | null;
   branches: string[];
   remote: string | null;
+  /** The remote's default branch (`origin/HEAD` short name), null when
+      there's no remote default (issue #107). */
+  default: string | null;
 };
 
 export const hostList = (path: string) => host<ListResult>("fs.list", { path });
@@ -204,6 +207,67 @@ export const hostAccessors: HostAccessors = {
   osOpen: (cwd, path, app, line) =>
     host<Record<string, never>>("os.open", { root: cwd, path, app, line }).then(
       () => undefined,
+    ),
+  /* Issue #107 ship bar: the method set gates each control (D-#19, AC-6);
+     git.status answers null on a non-repo (isRepo:false → bar hidden). */
+  methods: () => hostMethods(),
+  status: (cwd) =>
+    host<{
+      branch: string | null;
+      clean: boolean;
+      files: { path: string; status: string; origPath?: string }[];
+    }>("git.status", { path: cwd }).catch(() => null),
+  branches: (cwd) =>
+    host<BranchesResult>("git.branches", { path: cwd })
+      .then(({ current, branches, remote, default: d }) => ({
+        current,
+        branches,
+        remote,
+        default: d,
+      }))
+      .catch(() => null),
+  log: (cwd) =>
+    host<{
+      commits: {
+        sha: string;
+        subject: string;
+        files: {
+          path: string;
+          status: Diff["status"];
+          add: number;
+          del: number;
+        }[];
+      }[];
+    }>("git.log", { path: cwd })
+      .then((r) =>
+        r.commits.map((c) => ({
+          hash: c.sha,
+          message: c.subject,
+          files: c.files,
+        })),
+      )
+      .catch(() => null),
+  /* git.* writes + forge.create throw the host's HostError — its `data`
+     carries the typed reason the bar maps to plain copy. */
+  commit: (cwd, files, message) =>
+    host<Record<string, never>>("git.commit", {
+      path: cwd,
+      files,
+      message,
+    }).then(() => undefined),
+  push: (cwd) => host<{ upstream: string | null }>("git.push", { path: cwd }),
+  pull: (cwd) =>
+    host<Record<string, never>>("git.pull", { path: cwd }).then(
+      () => undefined,
+    ),
+  createBranch: (cwd, name) =>
+    host<Record<string, never>>("git.createBranch", {
+      path: cwd,
+      name,
+    }).then(() => undefined),
+  prCreate: (cwd, pr) =>
+    host<{ url: string }>("forge.create", { path: cwd, ...pr }).then(
+      (r) => r.url,
     ),
 };
 

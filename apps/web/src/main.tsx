@@ -10,6 +10,7 @@ import {
   bootRuntime,
   watchAsks,
   watchSessionFeeds,
+  watchWorkbenchOpens,
 } from "./lib/runtime";
 
 async function main() {
@@ -27,6 +28,7 @@ async function main() {
     await bootRuntime(cfg);
     watchSessionFeeds();
     watchAsks();
+    watchWorkbenchOpens();
     watchDraftPruning();
   } catch (e) {
     bootError.set((e as Error).message);

@@ -5,7 +5,7 @@ import {
   type SessionFeedState,
   type SessionModel,
 } from "@lilos/client-runtime";
-import type { Ask } from "@lilos/contracts/app";
+import type { Ask, WorkbenchOpenTarget } from "@lilos/contracts/app";
 import type { ModelOption, ModelProvider } from "@lilos/contracts/engine";
 import type { ModelVisibility } from "@lilos/ui";
 import { atom, computed, type ReadableAtom } from "nanostores";
@@ -185,6 +185,36 @@ export function watchSessionFeeds(): void {
         }),
       );
     }
+  });
+}
+
+/* ------------------------------ workbench opens --------------------------- */
+
+/** A `workbench.opened` relay event as the Workbench's spot request (#340):
+    `at` re-fires a repeated open of the same target. */
+export interface WorkbenchSpot {
+  at: number;
+  target: WorkbenchOpenTarget;
+}
+
+/** Latest `workbench_open` target per conversation. */
+export const workbenchRequests = atom<Record<string, WorkbenchSpot>>({});
+
+/** Call once after boot: the session's `workbench_open` lands as a channel
+    event; the newest request per conversation stays on the map for the DM
+    page to navigate to and the Workbench to apply. */
+export function watchWorkbenchOpens(): void {
+  relay.onEvent((method, params) => {
+    if (method !== "workbench.opened") return;
+    const p = params as {
+      conversationId?: string;
+      target?: WorkbenchOpenTarget;
+    };
+    if (!p.conversationId || !p.target) return;
+    workbenchRequests.set({
+      ...workbenchRequests.get(),
+      [p.conversationId]: { at: Date.now(), target: p.target },
+    });
   });
 }
 

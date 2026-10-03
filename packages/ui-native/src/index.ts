@@ -8,6 +8,7 @@ export { AppText } from "./components/app-text";
 export { LargeTitle, Pill, SectionTitle, StateChip } from "./components/bits";
 export { Button } from "./components/button";
 export { CompanyChip } from "./components/company-chip";
+export { DemoBadge } from "./components/demo-badge";
 export { Glass } from "./components/glass";
 export { Choice, Row, Section } from "./components/grouped-list";
 export { Icon, type IconTone, useThemeColor } from "./components/icon";
@@ -52,7 +53,12 @@ export {
   PlanCard,
   PlanSheet,
 } from "./employees/plan-card";
-export { SubagentSheet, SubagentsCard } from "./employees/subagents";
+export {
+  SubagentSheet,
+  SubagentsCard,
+  SubagentsLink,
+  SubagentsSheet,
+} from "./employees/subagents";
 export { ThreadInfoSheet } from "./employees/thread-info-sheet";
 export { threadBottomInset } from "./employees/thread-layout";
 export { ThreadHeaderTitle, ThreadScreen } from "./employees/thread-screen";
@@ -78,8 +84,15 @@ export type {
   ThreadDetail,
   ThreadEntry,
   ToolStep,
+  WbCardEntry,
+  WbCardTarget,
   WorkspacePick,
 } from "./employees/types";
+export { WorkbenchCard } from "./employees/workbench-card";
+export {
+  type WbDiffFile,
+  WbDiffSheet,
+} from "./employees/workbench-diff";
 export {
   buildPairingUrl,
   CODE_LENGTH,

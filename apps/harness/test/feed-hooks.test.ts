@@ -222,6 +222,36 @@ describe("client feed (read-only engine surface)", () => {
     }
   });
 
+  it("#400 holds engine events while no peer is attached and flushes them into the next attach", async () => {
+    const w = await setupWorld();
+    try {
+      const feed = createFeedHandler(w.harness);
+      /* The zero-peer window: a page reload (or an attach delayed behind a
+         reconnect) used to eat whatever the engine emitted in it — broadcast
+         to zero peers, gone for good, since replay only covers what a client
+         asks for. Run a turn with nobody attached, then attach. */
+      const { channel } = await openDmConversation(w.user);
+      await openConversation(w.user, channel.id, "Add a release note");
+
+      const a = feedCollector();
+      feed.attach(a.send);
+      const started = await waitFor(
+        () =>
+          a.frames.find(
+            (f) =>
+              f.method === "event" &&
+              (f as { params?: { type?: string } }).params?.type ===
+                "turn.started",
+          ),
+        "held turn.started flush",
+      );
+      expect(started).toBeTruthy();
+      feed.close();
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("rejects writes and malformed calls with JSON-RPC errors", async () => {
     const w = await setupWorld();
     try {

@@ -12,18 +12,10 @@ import { LILOS_TOOLS } from "./tools.js";
 /**
  * Tool names the coverage map may point at that are not implemented yet —
  * declared here so the catalog's canonical names are reserved once and the
- * slices that implement them (C #340: `context`/`guide`/`thread_*`/`team_*`,
- * D #341: the approval gate) drop the name into LILOS_TOOLS as-is.
+ * slices that implement them drop the name into LILOS_TOOLS as-is. Empty
+ * since #340 landed slice C; slice D (#341) may reserve the approval tools.
  */
-export const PLANNED_TOOL_NAMES = [
-  "context",
-  "guide",
-  "team_list",
-  "thread_list",
-  "thread_search",
-  "thread_set_title",
-  "thread_prs",
-] as const;
+export const PLANNED_TOOL_NAMES = [] as const;
 export type PlannedToolName = (typeof PLANNED_TOOL_NAMES)[number];
 
 /** Any name a method may map to: implemented now or planned. */
@@ -48,6 +40,7 @@ export const AGENT_METHOD_TOOLS: Record<string, string> = {
   "system.status": "context",
   "profile.get": "context",
   "folders.detail": "context",
+  "workbench.open": "workbench_open",
 } as const;
 
 /**
@@ -91,12 +84,16 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "harness.report": "harness bookkeeping — the host reports session state",
   "messages.setCheckpoint":
     "host bookkeeping — stamps the pre-turn rewind checkpoint",
+  "messages.drop":
+    "host bookkeeping — the harness parks still-waiting sends on Stop (#315)",
   /* app wire — the agent raises asks through its engine; answering is the user's */
   "asks.open": "the agent's engine raises asks; the app renders them",
   "asks.respond": "answering an ask is the user's action",
   "asks.list": "the ask inbox is the user's",
   /* app wire — user controls of a session */
   "turns.interrupt": "the user interrupts a running turn",
+  "messages.remove": "the user retracts a still-waiting message (#315)",
+  "messages.send": "the user re-sends a parked (dropped) message (#315)",
   "conversations.rewind": "the user rewinds a conversation",
   "conversations.setModel": "the user picks the session's model",
   "models.list": "the model pick list is the user's",
@@ -135,6 +132,11 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "git.branches": "the engine runs git itself",
   "git.status": "the engine runs git itself",
   "git.diff": "the engine runs git itself",
+  "git.commit": "the engine runs git itself",
+  "git.push": "the engine runs git itself",
+  "git.pull": "the engine runs git itself",
+  "git.createBranch": "the engine runs git itself",
+  "git.log": "the engine runs git itself",
   "git.worktrees": "the engine runs git itself",
   "git.discoverRepos": "the engine runs git itself",
   "forge.pr":
@@ -142,6 +144,8 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "forge.prs":
     "the engine uses `gh` itself; the thread's PRs come through `thread_prs`",
   "forge.comment": "the engine uses `gh` itself",
+  "forge.create":
+    "the engine uses `gh` itself; host create is Oscar's bar (#107)",
   "forge.merge":
     "only Oscar merges — an approval tool may land with the gate (#341)",
   "os.editors": "the editor list opens for the user on the Mac",

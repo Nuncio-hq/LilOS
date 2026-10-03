@@ -264,13 +264,14 @@ test("AC-1/AC-5 queued replies anchor under their own prompt — even after relo
   });
   await send(page, "first queued zebra");
   // A second Enter while the first post is in-flight is dropped — wait for
-  // each row before sending the next.
+  // each row before sending the next. #315: a waiting send lives in the
+  // tray above the composer, not as a thread row.
   await expect(
-    page.locator("[data-thread]").getByText("first queued zebra").first(),
+    page.locator("[data-queued]").getByText("first queued zebra").first(),
   ).toBeVisible({ timeout: 15_000 });
   await send(page, "second queued apple");
   await expect(
-    page.locator("[data-thread]").getByText("second queued apple").first(),
+    page.locator("[data-queued]").getByText("second queued apple").first(),
   ).toBeVisible({ timeout: 15_000 });
   await allowAll(page);
   await expect(page.getByText("Allowed once by Oscar").first()).toBeVisible({

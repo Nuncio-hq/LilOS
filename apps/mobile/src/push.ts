@@ -4,6 +4,7 @@ import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { atom } from "nanostores";
 import { AppState, type AppStateStatus } from "react-native";
+import { $demo } from "./demo/lifecycle";
 import { $client, $link } from "./link";
 import { $phase } from "./paired-macs";
 import { nav } from "./routes";
@@ -71,7 +72,9 @@ const persistPrefs = async (prefs: PushPrefs) => {
     trigger before that. */
 const register = async (): Promise<void> => {
   const client = $client.get();
-  if (!client || $link.get() !== "online") return;
+  /* The demo marks the link "online" for chrome, but never owns a device —
+     no permission prompt, no token round-trip (#168). */
+  if (!client || $link.get() !== "online" || $demo.get()) return;
   await refreshPermission();
   await requestPushPermission();
   try {

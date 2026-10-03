@@ -10,6 +10,12 @@ PR does not exist.
   self-host incl. at work — never resell LilOS as a hosted service).
   Not: PolyForm NC (bans use at work), BSL (auto-converts), MIT (resale as a
   service). — #172
+- **D-#329 Outside contributors work from forks; only Oscar triages and
+  merges.** New issues/PRs land in the board's Inbox. `main` ruleset: PRs
+  only, `verify` + `check` (DCO) required, no force-push or deletion, 0
+  approvals. Not: write access for collaborators (a `v*` tag runs the signed
+  release), required CODEOWNERS approval (Oscar can't approve his own PRs).
+  — #329
 
 ## Stack
 - **D-#3 Bun is the runtime + package manager** (workspaces, pinned
@@ -59,6 +65,12 @@ PR does not exist.
   `profile` row (`settings.*` is #92's KV namespace); every surface reads it, nothing is hardcoded.** Prefill
   comes from `host.user` (the OS account's full name). Not: a `ME` constant
   in the web app, or identity fields on the employee record. — #118
+- **D-#315 Wait-state lives on the message row, not the client: `dropped` /
+  `removed` flags (`messages.drop`/`remove`/`send`, `message.changed`) drive
+  the waiting and not-sent trays; `client-runtime`'s `waitingMessages` plus
+  `deliveredSeq` classify.** The harness owns the semantics — a stranded
+  accepted steer reconciles to `dropped`. Not: tray state kept in
+  component memory (a reload must show the same tray). — #315 · PR #358
 
 ## Web
 - **D-#3 Web: React 19 + Vite + Tailwind v4 + shadcn (base-nova) + AI
@@ -111,6 +123,12 @@ PR does not exist.
   bootstrapped jobs — registering over one keeps the old binary and pins
   the version store. Not: trusting `status` alone, or failing the
   register on that error (rolls back working installs). — #206
+- **D-#388 `lilos-harness --compile` marks `chromium-bidi` external.**
+  playwright-core requires it lazily on the BiDi transport only — the browser
+  surface drives Chromium over CDP and never loads it, so the missing package
+  is excluded at bundle time, not vendored or imported dynamically.
+  Not: installing chromium-bidi for the bundler, or marking playwright
+  external (the browser surface must stay bundled). — #388 · PR #389
 - **D-#232 Native chrome: `titleBarStyle: "hiddenInset"` + `vibrancy:
   "sidebar"`; the renderer owns the drag regions** (`lilos-drag` on header
   strips, interactive children `no-drag`) and pushes its theme to

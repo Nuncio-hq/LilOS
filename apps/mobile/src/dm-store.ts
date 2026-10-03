@@ -1,4 +1,4 @@
-import type { RelayClient } from "@lilos/client-runtime";
+import type { AppClient } from "@lilos/client-runtime";
 import type {
   AppMessage,
   Ask,
@@ -11,6 +11,7 @@ import type {
   ModelProviderRow,
   ModelRow,
   ModelVisibility,
+  WbCardTarget,
   WorkspacePick,
 } from "@lilos/ui-native";
 import { atom } from "nanostores";
@@ -43,11 +44,16 @@ export const $modelPicks = atom<Record<string, ModelPick>>({});
 export const $pendingOpens = atom<
   Map<string, { conversation: Conversation; root: AppMessage }>
 >(new Map());
+/** `workbench.opened` events per conversation (#340 AC-2b) — the tappable
+    "look at this" cards appended to the thread, newest last. */
+export const $wbCards = atom<
+  Record<string, { at: number; target: WbCardTarget }[]>
+>({});
 
-const watched = new WeakSet<RelayClient>();
+const watched = new WeakSet<AppClient>();
 
 /** Seed asks + recents + the model catalog, then track ask events live. */
-export function watchDm(client: RelayClient): void {
+export function watchDm(client: AppClient): void {
   if (watched.has(client)) return;
   watched.add(client);
   /* #159: the turn-end PR refresh watcher lives beside the ask watcher —
@@ -91,6 +97,24 @@ export function watchDm(client: RelayClient): void {
   });
 
   client.onEvent((method, params) => {
+    /* #340 AC-2b: the agent's `workbench_open` — a card per call, appended
+       in order like a message; the phone can't open a desktop panel. */
+    if (method === "workbench.opened") {
+      const { conversationId, target } = params as {
+        conversationId?: string;
+        target?: WbCardTarget;
+      };
+      if (!conversationId || !target) return;
+      const cur = $wbCards.get();
+      $wbCards.set({
+        ...cur,
+        [conversationId]: [
+          ...(cur[conversationId] ?? []),
+          { at: Date.now(), target },
+        ],
+      });
+      return;
+    }
     /* A hide-list write by any peer (the Mac's Edit models) lands on every
        surface at once (#92 AC-7). */
     if (method === "settings.changed") {
@@ -119,7 +143,7 @@ export function watchDm(client: RelayClient): void {
  * branches/workstreams. A refused or failed probe resolves to an empty
  * result — the sheet then offers direct/just-chat for that folder.
  */
-export async function refreshFolderDetails(client: RelayClient): Promise<void> {
+export async function refreshFolderDetails(client: AppClient): Promise<void> {
   const empty = (path: string): FoldersDetailResult => ({
     path,
     missing: false,
@@ -144,7 +168,7 @@ export async function refreshFolderDetails(client: RelayClient): Promise<void> {
  * them.
  */
 export async function addRecentFolder(
-  client: RelayClient,
+  client: AppClient,
   path: string,
 ): Promise<void> {
   await client.request("folders.add", { path });
@@ -173,4 +197,18 @@ export function clearPending(conversationId: string): void {
   const next = new Map(cur);
   next.delete(conversationId);
   $pendingOpens.set(next);
+}
+
+/** Demo exit / re-pair: drop everything the last client fed these atoms
+    (#168 AC-4 — nothing demo-owned survives). */
+export function resetDmStore(): void {
+  $asks.set([]);
+  $folders.set([]);
+  $folderDetails.set({});
+  $catalog.set({ models: [], providers: [] });
+  $modelVisibility.set({ providers: [], models: [] });
+  $wsPicks.set({});
+  $modelPicks.set({});
+  $pendingOpens.set(new Map());
+  $wbCards.set({});
 }
