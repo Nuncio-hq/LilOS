@@ -143,7 +143,7 @@ export function watchDm(client: AppClient): void {
  * branches/workstreams. A refused or failed probe resolves to an empty
  * result — the sheet then offers direct/just-chat for that folder.
  */
-export async function refreshFolderDetails(client: AppClient): Promise<void> {
+async function refreshFolderDetails(client: AppClient): Promise<void> {
   const empty = (path: string): FoldersDetailResult => ({
     path,
     missing: false,

@@ -51,7 +51,7 @@ function sessionLabel(conversationId: string, wire: HomeWire): string {
 }
 
 /** "2m" / "1h" / "1d" — relative age the rows render (`when`, `age`). */
-export function ageLabel(createdAt: number, nowMs: number): string {
+function ageLabel(createdAt: number, nowMs: number): string {
   const mins = Math.max(1, Math.round((nowMs - createdAt) / 60_000));
   if (mins < 60) return `${mins}m`;
   const hours = Math.floor(mins / 60);

@@ -14,7 +14,7 @@ import { BUILDER, LILOS } from "./fake-team";
    not a contract. */
 
 const REVIEWER = { id: "reviewer", name: "Reviewer", tone: "violet" as const };
-export const SEQ_THREAD = "s-seq";
+const SEQ_THREAD = "s-seq";
 export const SLEEP_THREAD = "s-sleep";
 
 const JOBS: BackgroundJobRow[] = [

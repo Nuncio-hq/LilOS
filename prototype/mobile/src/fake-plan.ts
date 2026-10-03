@@ -6,9 +6,9 @@ import { BUILDER, LILOS } from "./fake-team";
    nothing is edited until you decide. The fake engine plays the rest. Mock
    data, not a contract. */
 
-export const PLAN_THREAD = "s-plan";
+const PLAN_THREAD = "s-plan";
 
-export const PLAN_V1: PlanRow = {
+const PLAN_V1: PlanRow = {
   id: "plan-1",
   version: 1,
   goal: "The relay client reconnects on its own after a drop, backing off up to 30s, without losing events.",

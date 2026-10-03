@@ -54,7 +54,7 @@ export function sortPrs(prs: PullRequestRef[]) {
 }
 
 /** "Open · checks running", "Merged", "Draft · checks failing". */
-export function prStatusLabel(pr: PullRequestRef) {
+function prStatusLabel(pr: PullRequestRef) {
   const base = LOOK[pr.status].label;
   if (pr.status !== "open" && pr.status !== "draft") return base;
   if (pr.checks === "pending") return `${base} · checks running`;
@@ -118,13 +118,7 @@ export function PrBadge({ pr }: { pr: PullRequestRef }) {
 }
 
 /** A row's PRs: up to three badges, then "+N". */
-export function PrBadges({
-  prs,
-  max = 3,
-}: {
-  prs: PullRequestRef[];
-  max?: number;
-}) {
+function PrBadges({ prs, max = 3 }: { prs: PullRequestRef[]; max?: number }) {
   const sorted = sortPrs(prs);
   const rest = sorted.length - max;
   return (

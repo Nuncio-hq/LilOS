@@ -49,6 +49,7 @@ import {
   type CachedDirectory,
   DEVICE_CACHE_SCHEMA_VERSION,
 } from "./device-cache";
+import { mergeFeedEvents } from "./feed-merge";
 import {
   defaultSocketFactory,
   type RelaySocket,
@@ -835,21 +836,11 @@ export class RelayClient {
       throw error;
     }
     const cur = store.get();
-    /* A session (re)bind restarts seq at 1 — key the dedupe on sessionId too
-       so a fresh session's log can't be dropped against the old one's.
-       Live frames can land before the replay answers in either direction
-       (a frame newer than the window, or one already inside it), so merge
-       by key and re-order by seq — the reducer only reads same-session
-       runs, where seq order is the truth. */
-    const seen = new Set<string>();
-    const merged: EngineEvent[] = [];
-    for (const e of [...cur.events, ...res.events]) {
-      const key = `${e.sessionId}#${e.seq}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(e);
-    }
-    merged.sort((a, b) => a.seq - b.seq);
+    /* A session (re)bind restarts seq at 1 — mergeFeedEvents keys the
+       dedupe on sessionId too, so a fresh session's log can't be dropped
+       against the old one's, and live frames landing mid-replay keep
+       their copy. */
+    const merged = mergeFeedEvents(cur.events, res.events);
     store.set({
       ...cur,
       sessionId: res.snapshot.sessionId,

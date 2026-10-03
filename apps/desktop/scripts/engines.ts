@@ -15,7 +15,7 @@
  *                      fake engine (AC-4).
  */
 
-export interface EngineBinary {
+interface EngineBinary {
   /** Binary name inside Contents/MacOS (auto-discovered by the harness). */
   outfile: string;
   /** Repo-relative serve entry compiled into that binary. */
