@@ -26,7 +26,7 @@ export function NotConnectedNotice({
       className={cn(
         "flex items-center gap-2 border-b px-3 py-1.5 text-xs sm:px-5",
         failed
-          ? "border-red-200 bg-red-50/60 text-red-900 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200"
+          ? "border-red-200 bg-red-50/60 text-red-900 dark:border-red-900/50 dark:bg-red-950/30"
           : "border-amber-200 bg-amber-50/60 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200",
       )}
     >

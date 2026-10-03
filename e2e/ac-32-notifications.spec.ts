@@ -18,7 +18,7 @@ import { wport } from "./ports";
  * through an injected `window.lilos` bridge — the same shape the Electron
  * preload exposes — so the whole event→notification→route path is real, only
  * the OS banner + click are stubbed. The real macOS banner + click-through is
- * recorded on the VM; the live leg (`scripts/live/32.sh`, LILOS_ENGINE=hermes)
+ * recorded on the VM; the live leg (this spec with `LILOS_ENGINE=hermes`)
  * re-runs the deterministic part against real `hermes serve`.
  */
 
@@ -276,7 +276,7 @@ const convUrl = (employeeId: string, conversationId: string) =>
 test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens the conversation, badges count", async ({
   page,
 }) => {
-  test.skip(LIVE, "fake-only leg — live leg runs via scripts/live/32.sh");
+  test.skip(LIVE, "fake-only leg — live leg runs with LILOS_ENGINE=hermes");
   test.setTimeout(240_000);
   await injectBridge(page);
   await dmDefault(page);
@@ -377,7 +377,7 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
 });
 
 /**
- * Live leg (`scripts/live/32.sh`, LILOS_ENGINE=hermes): the deterministic part
+ * Live leg (this spec with `LILOS_ENGINE=hermes`): the deterministic part
  * — a real engine turn finishing out of view posts a notification and the
  * click opens that conversation. Approvals/failures can't be forced
  * deterministically through a real model, so those legs stay in the
@@ -387,7 +387,7 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
 test("AC-32 live: done notification + click-through under real hermes", async ({
   page,
 }) => {
-  test.skip(!LIVE, "live leg — run via scripts/live/32.sh");
+  test.skip(!LIVE, "live leg — run with LILOS_ENGINE=hermes");
   test.setTimeout(300_000);
   await injectBridge(page);
   await dmDefault(page);
