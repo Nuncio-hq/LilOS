@@ -480,6 +480,20 @@ export function mergeTurns(
   const bump = (t: TurnModel) => {
     if (t.ref) refOffset.set(t.ref, (refOffset.get(t.ref) ?? 0) + 1);
   };
+  /* #370: the newest turn that can still claim a relay row — watched
+     live (`liveAttached`), finished, and the first turn for its `ref`
+     (a later re-answer's post dedupes into the first's row and can
+     never claim). Only it bridges the settle→claim window; anything
+     older whose row still hasn't landed is #288's orphan again. */
+  let newestClaimable: TurnModel | undefined;
+  for (const x of model.turns)
+    if (
+      x.liveAttached &&
+      !x.agentInitiated &&
+      (x.phase === "done" || x.phase === "stopped") &&
+      model.turns.find((y) => y.ref === x.ref) === x
+    )
+      newestClaimable = x;
   /* #308 AC-3: block index right after the previous turn's card — an
      agent-initiated leg sits there (above user messages that landed while
      it worked), claimed or live. */
@@ -538,8 +552,21 @@ export function mergeTurns(
        turns keep the tail/live anchor: their marker is the only surface
        of a stop on an invisible prompt. Ref-less turns keep the tail
        fallback too: engines that never echo `ref` can't be positioned
-       any other way. */
-    if (t.ref && refIndex(t.ref) < 0 && t.phase !== "stopped" && t !== liveTurn)
+       any other way. #370: `newestClaimable` — the turn the feed just
+       watched finish and the only one whose relay answer can still be
+       in flight — holds its slot through the settle→claim window
+       instead of unmounting for a frame. The window ends when a newer
+       claimable settle exists (a rewound or deduped answer leaves a
+       ghost, not a card in flight) or when the answer's own row is
+       known to be rewound — then it is the same orphan as #288's
+       replayed re-answer and drops. */
+    if (
+      t.ref &&
+      refIndex(t.ref) < 0 &&
+      t.phase !== "stopped" &&
+      t !== liveTurn &&
+      !(t === newestClaimable && !rewound?.texts?.has(t.text.trim()))
+    )
       continue;
     if (at < 0) {
       owned.add(rs);

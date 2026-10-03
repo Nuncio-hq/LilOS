@@ -237,6 +237,153 @@ describe("mergeTurns ordering", () => {
     const out = mergeTurns(replies, session([done]), "emp");
     expect(out.map((r) => r.id)).toEqual(["u1", "live-t1"]);
   });
+
+  /* #370: turn.completed folds the model one tick before the relay posts
+     the answer — the unclaimed window dropped the card for a frame and
+     the watcher caught the steps block unmounted. A turn the feed watched
+     live (`liveAttached`) is reply-pending, not an orphan: it holds its
+     anchor until the claim lands. #288's replayed re-answer (no flag)
+     still drops. */
+  test("#370 a live-watched finished turn keeps its card while its relay answer is in flight", () => {
+    const replies = conversationReplies(
+      [
+        msg({
+          id: "a1",
+          seq: 2,
+          authorKind: "employee",
+          authorId: "emp",
+          text: "earlier answer",
+        }),
+        msg({
+          id: "u2",
+          seq: 3,
+          authorKind: "user",
+          authorId: "me",
+          text: "and now?",
+        }),
+      ],
+      "c1",
+    );
+    const settled = turn({
+      turnId: "t1",
+      phase: "done",
+      text: "on fake-large",
+      ref: "u1",
+      liveAttached: true,
+    });
+    const out = mergeTurns(
+      replies,
+      session([settled]),
+      "emp",
+      [],
+      undefined,
+      undefined,
+      "u1",
+    );
+    // Anchored under the root header — same slot the claim will hold.
+    expect(out.map((r) => r.id)).toEqual(["live-t1", "a1", "u2"]);
+  });
+
+  test("#370 a live-watched turn anchored nowhere lands at the tail instead of dropping", () => {
+    const replies = conversationReplies(
+      [
+        msg({
+          id: "u2",
+          seq: 3,
+          authorKind: "user",
+          authorId: "me",
+          text: "and now?",
+        }),
+      ],
+      "c1",
+    );
+    const settled = turn({
+      turnId: "t1",
+      phase: "done",
+      text: "on fake-large",
+      ref: "q-gone",
+      liveAttached: true,
+    });
+    const out = mergeTurns(replies, session([settled]), "emp");
+    expect(out.map((r) => r.id)).toEqual(["u2", "live-t1"]);
+  });
+
+  /* The keep is first-turn-for-ref only: a second live-watched turn on the
+     same prompt is a re-answer whose relay post dedupes into the first's
+     row (`answer:{conv}:{ref}`) — it can never claim, so it stays an
+     orphan and drops like #288's replayed one. */
+  test("#370 a second live-watched turn on the same ref still drops", () => {
+    const replies = conversationReplies(
+      [
+        msg({
+          id: "u2",
+          seq: 3,
+          authorKind: "user",
+          authorId: "me",
+          text: "and now?",
+        }),
+      ],
+      "c1",
+    );
+    const first = turn({
+      turnId: "t1",
+      phase: "done",
+      text: "finished",
+      ref: "u1",
+      liveAttached: true,
+    });
+    const redelivery = turn({
+      turnId: "t2",
+      phase: "done",
+      text: "finished",
+      ref: "u1",
+      liveAttached: true,
+    });
+    const out = mergeTurns(
+      replies,
+      session([first, redelivery]),
+      "emp",
+      [],
+      undefined,
+      undefined,
+      "u1",
+    );
+    expect(out.map((r) => r.id)).toEqual(["live-t1", "u2"]);
+  });
+
+  /* The keep only bridges the newest settle→claim transit: once a later
+     turn settled, an earlier unclaimed card is a ghost (its relay row
+     was deduped or rewound — e.g. ac-134's cut answer), not in flight. */
+  test("#370 a live-watched turn superseded by a newer settle drops", () => {
+    const replies = conversationReplies(
+      [
+        msg({
+          id: "u2",
+          seq: 3,
+          authorKind: "user",
+          authorId: "me",
+          text: "and now?",
+        }),
+      ],
+      "c1",
+    );
+    const stale = turn({
+      turnId: "t1",
+      phase: "done",
+      text: "cut answer",
+      ref: "u1",
+      liveAttached: true,
+    });
+    const newest = turn({
+      turnId: "t2",
+      phase: "done",
+      text: "newer answer",
+      ref: "u3",
+      liveAttached: true,
+    });
+    const out = mergeTurns(replies, session([stale, newest]), "emp");
+    expect(out.map((r) => r.id)).toEqual(["u2", "live-t2"]);
+  });
 });
 
 /* Issue #180: plan.updated snapshots land on the turn's reply as a ui Plan;
