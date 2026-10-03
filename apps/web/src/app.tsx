@@ -458,7 +458,7 @@ function BootScreen() {
   if (error) {
     return (
       <div className="grid h-dvh place-items-center bg-background p-6">
-        <div className="max-w-md rounded-xl border border-red-200 bg-red-50/60 p-5 text-sm">
+        <div className="max-w-md rounded-xl border border-red-200 bg-red-50/60 p-5 text-sm dark:bg-red-950/30">
           <div className="font-semibold text-red-900">
             LilOS could not start
           </div>
