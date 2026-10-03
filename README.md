@@ -14,6 +14,13 @@ messages and tickets. Hermes is the first engine — it is never glued in.
 *Stage: prototype. `prototype/` is the UI/UX source of truth; the real app
 (`apps/web` + relay + harness) is landing slice by slice.*
 
+## Try it
+
+- **iPhone**: [join the TestFlight beta](https://testflight.apple.com/join/CVES4nf1), then tap
+  **Try the demo**. No Mac or account needed.
+- **Mac**: [download the latest release](https://github.com/Nuncio-hq/LilOS/releases/latest)
+  (signed and notarized, updates itself).
+
 ## Run it
 
 Requires [Bun](https://bun.sh) (the version pinned in `.bun-version`).
