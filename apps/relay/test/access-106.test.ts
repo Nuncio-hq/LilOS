@@ -1,7 +1,15 @@
 import type { AppErrorCode } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
-import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "./memory-store";
+import {
+  errorOf,
+  eventsNamed,
+  helloed,
+  lastId,
+  newRelay,
+  req,
+  resultOf,
+  setupChannel,
+} from "./helpers";
 
 /**
  * #106 approval modes — the access level is LilOS data on the conversation:
@@ -10,80 +18,6 @@ import { createMemoryStore } from "./memory-store";
  * path (`conversation.updated` carries it to the host mid-turn).
  */
 
-const TOKEN = "test-token";
-
-function connectPeer(relay: ReturnType<typeof createRelay>) {
-  const frames: unknown[] = [];
-  const peer: RelayWsPeer = {
-    send: (frame) => frames.push(JSON.parse(frame)),
-    close: () => {},
-  };
-  const connection = relay.connect(peer);
-  return { frames, connection };
-}
-
-const events = (frames: unknown[]) =>
-  (frames as { method?: string; params?: unknown }[]).filter(
-    (f) => f.method !== undefined,
-  );
-const eventsNamed = (frames: unknown[], method: string) =>
-  events(frames).filter((f) => f.method === method);
-const resultOf = (frames: unknown[], id: string) => {
-  const frame = (
-    frames as {
-      id?: string;
-      result?: unknown;
-      error?: { code: number; message: string };
-    }[]
-  ).find((f) => f.id === id);
-  if (!frame) throw new Error(`no response frame for ${id}`);
-  return frame;
-};
-const errorOf = (frames: unknown[], id: string) => {
-  const { error } = resultOf(frames, id) as {
-    error?: { code: number; message: string; data?: { code?: string } };
-  };
-  if (!error) throw new Error(`expected an error frame for ${id}`);
-  return error;
-};
-
-let nextId = 0;
-const req = (method: string, params: Record<string, unknown> = {}) =>
-  JSON.stringify({ jsonrpc: "2.0", id: `t${nextId++}`, method, params });
-
-const newRelay = () =>
-  createRelay({ store: createMemoryStore(), token: TOKEN });
-
-async function helloed(relay: ReturnType<typeof createRelay>) {
-  const { frames, connection } = connectPeer(relay);
-  await connection.receive(
-    req("session.hello", { protocolVersion: 1, token: TOKEN }),
-  );
-  frames.length = 0;
-  return { frames, connection };
-}
-
-async function setupChannel(
-  frames: unknown[],
-  connection: { receive(d: string): Promise<void> },
-) {
-  await connection.receive(
-    req("employees.create", { name: "Ada", role: "eng" }),
-  );
-  const employee = (
-    resultOf(frames, `t${nextId - 1}`).result as {
-      employee: { id: string };
-    }
-  ).employee;
-  await connection.receive(req("channels.openDm", { employeeId: employee.id }));
-  const channel = (
-    resultOf(frames, `t${nextId - 1}`).result as {
-      channel: { id: string };
-    }
-  ).channel;
-  return { employee, channel };
-}
-
 const openConv = async (
   frames: unknown[],
   connection: { receive(d: string): Promise<void> },
@@ -91,7 +25,7 @@ const openConv = async (
 ) => {
   await connection.receive(req("conversations.open", params));
   return (
-    resultOf(frames, `t${nextId - 1}`).result as {
+    resultOf(frames, lastId()).result as {
       conversation: { id: string; access: "ask" | "full" };
     }
   ).conversation;
@@ -130,7 +64,7 @@ describe("conversation access level (#106)", () => {
     await connection.receive(
       req("conversations.list", { channelId: channel.id }),
     );
-    const { conversations } = resultOf(frames, `t${nextId - 1}`).result as {
+    const { conversations } = resultOf(frames, lastId()).result as {
       conversations: { id: string; access: string }[];
     };
     expect(conversations.find((c) => c.id === c1.id)?.access).toBe("ask");
@@ -155,7 +89,7 @@ describe("conversation access level (#106)", () => {
         access: "full",
       }),
     );
-    const { conversation } = resultOf(frames, `t${nextId - 1}`).result as {
+    const { conversation } = resultOf(frames, lastId()).result as {
       conversation: { id: string; access: string };
     };
     expect(conversation.access).toBe("full");
@@ -168,7 +102,7 @@ describe("conversation access level (#106)", () => {
     await connection.receive(
       req("conversations.list", { channelId: channel.id }),
     );
-    const { conversations } = resultOf(frames, `t${nextId - 1}`).result as {
+    const { conversations } = resultOf(frames, lastId()).result as {
       conversations: { id: string; access: string }[];
     };
     expect(conversations.find((c) => c.id === conv.id)?.access).toBe("full");
@@ -182,7 +116,7 @@ describe("conversation access level (#106)", () => {
     );
     expect(
       (
-        resultOf(frames, `t${nextId - 1}`).result as {
+        resultOf(frames, lastId()).result as {
           conversation: { access: string };
         }
       ).conversation.access,
@@ -198,7 +132,7 @@ describe("conversation access level (#106)", () => {
         access: "full",
       }),
     );
-    expect(errorOf(frames, `t${nextId - 1}`).data?.code).toBe(
+    expect(errorOf(frames, lastId()).data?.code).toBe(
       "not_found" satisfies AppErrorCode,
     );
     await connection.receive(
@@ -207,7 +141,7 @@ describe("conversation access level (#106)", () => {
         access: "yolo",
       }),
     );
-    expect(errorOf(frames, `t${nextId - 1}`).data?.code).toBe(
+    expect(errorOf(frames, lastId()).data?.code).toBe(
       "invalid_params" satisfies AppErrorCode,
     );
   });
