@@ -56,8 +56,9 @@ describe("relay migrations", () => {
     // tables; v12 adds #134's rewind marks; v13 adds #156's workspace
     // intent on conversations; v14 adds #161's push tables; v15 adds
     // #300's persisted turn usage on conversations; v16 adds #315's
-    // dropped/removed flags on messages.
-    expect(out.version).toBe(16);
+    // dropped/removed flags on messages; v18 adds #346's life column on
+    // conversations (v17 is reserved by #450).
+    expect(out.version).toBe(18);
     expect(out.msgCols).toContain("dropped");
     expect(out.msgCols).toContain("removed");
     for (const col of ["provider", "effort", "fast"])

@@ -80,6 +80,7 @@ const rowToConversation = (row: ConversationRow): Conversation => {
       ? (JSON.parse(row.workspace) as WorkspaceIntent)
       : undefined,
     usage: row.usage ? (JSON.parse(row.usage) as Usage) : undefined,
+    life: row.life ?? undefined,
   };
 };
 

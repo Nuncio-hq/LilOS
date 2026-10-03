@@ -91,6 +91,10 @@ export const conversations = sqliteTable(
         session can't regress the row; a rebound session writes freely. */
     usageSessionId: text("usage_session_id"),
     usageSeq: integer("usage_seq").notNull().default(0),
+    /** The engine session's life (#346): host-only `open`/`closed` write —
+        `closed` while suspended, `open` again once it reopens. `running`
+        never crosses the wire; it's derived client-side. */
+    life: text("life", { enum: ["open", "closed"] }),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [index("conversations_channel").on(t.channelId)],

@@ -272,6 +272,14 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `ALTER TABLE messages ADD COLUMN removed INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    /* #346: the engine session's life on the conversation — the host
+       writes open/closed (a suspended session is `closed`, reopening on
+       the next message); `running` is derived client-side, never stored.
+       v17 is reserved for #450 (conversations.access) — this takes v18. */
+    version: 18,
+    statements: [`ALTER TABLE conversations ADD COLUMN life TEXT`],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

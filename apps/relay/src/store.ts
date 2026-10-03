@@ -6,6 +6,7 @@ import type {
   AskState,
   AuthorKind,
   Conversation,
+  ConversationLife,
   ConversationState,
   ConversationSummary,
   Employee,
@@ -68,6 +69,9 @@ export interface ConversationPatch {
   effort?: string | null;
   fast?: boolean | null;
   deliveredSeq?: number;
+  /** The engine session's life (#346): `open`/`closed` — `running` is a
+      client-derived state and never lands on the row. */
+  life?: ConversationLife;
 }
 
 export interface OpenConversationInput {
@@ -144,8 +148,9 @@ const textTokens = (text: string): string[] =>
     .split(/[^\p{L}\p{N}_]+/u)
     .filter(Boolean);
 
-/** Term match: earlier terms must hit a whole token; the last is a prefix. */
-function messageMatchesTerms(text: string, terms: string[]): boolean {
+/** Term match: earlier terms must hit a whole token; the last is a prefix.
+    Exported for the test memory store (#440 moved it to test/). */
+export function messageMatchesTerms(text: string, terms: string[]): boolean {
   if (!terms.length) return false;
   const toks = textTokens(text);
   return terms.every((t, i) =>
@@ -157,8 +162,9 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /* A relay-snippet-shaped excerpt for the memory store: a ~12-word window
    opening a few words before the first match (the SQLite side uses
-   snippet(…, 12)), `…` at clipped edges, `<mark>` around every term hit. */
-function markSnippet(text: string, terms: string[]): string {
+   snippet(…, 12)), `…` at clipped edges, `<mark>` around every term hit.
+   Exported for the test memory store (#440 moved it to test/). */
+export function markSnippet(text: string, terms: string[]): string {
   if (!terms.length) return text.slice(0, 96);
   const patterns = terms.map(
     (t, i) =>
