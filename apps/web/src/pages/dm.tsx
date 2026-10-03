@@ -327,7 +327,7 @@ export function DmPage() {
     (c) => c.kind === "dm" && c.employeeId === employeeId,
   );
   /* #339: the harness's connect row for this employee's profile — absent
-     on non-Hermes engines (no `connect` on system.status). */
+     on engines without Connect support (no `connect` on system.status). */
   const employeeRow = employee?.profile
     ? statusPoll.result?.connect?.find((r) => r.profile === employee.profile)
     : undefined;

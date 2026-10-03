@@ -1,15 +1,9 @@
-import type {
-  ChannelMessagesState,
-  RelaySocket,
-  SocketFactory,
-} from "@lilos/client-runtime";
+import type { ChannelMessagesState } from "@lilos/client-runtime";
 import { RelayClient } from "@lilos/client-runtime";
 import type { AppMessage, Ask, WelcomeResult } from "@lilos/contracts/app";
 import { connectFake, FakeEngine } from "@lilos/engine-fake";
 import type { CheckpointStore } from "@lilos/host";
 import { describe, expect, it } from "vitest";
-import { createRelay } from "../../relay/src/session";
-import { createMemoryStore } from "../../relay/test/memory-store";
 import {
   connectEngineWs,
   type EngineConnection,
@@ -24,6 +18,14 @@ import {
 import { Harness } from "../src/harness";
 import { createMemoryLogger } from "../src/log";
 import { createFakeSleepGuard } from "../src/sleep";
+import {
+  openDmConversation,
+  type Relay,
+  setupWorld as setupWorldBase,
+  socketFor,
+  TOKEN,
+  waitFor,
+} from "./helpers";
 
 /**
  * Harness <-> relay E2E with engine-fake in-process (AC-1..AC-6). The relay
@@ -31,71 +33,13 @@ import { createFakeSleepGuard } from "../src/sleep";
  * it, so every assertion crosses the real JSON-RPC surface on both sides.
  */
 
-const TOKEN = "test-token";
-
-type Relay = ReturnType<typeof createRelay>;
-
-/** A RelaySocket that talks straight into a relay.connect() peer. */
-const socketFor =
-  (relay: Relay): SocketFactory =>
-  () => {
-    const listeners = new Map<string, Array<(e?: unknown) => void>>();
-    const emit = (type: string, e?: unknown) =>
-      queueMicrotask(() =>
-        (listeners.get(type) ?? []).forEach((fn) => void fn(e)),
-      );
-    let peer: { receive(f: string): Promise<void>; closed(): void };
-    let readyState = 0;
-    const socket = {
-      get readyState() {
-        return readyState;
-      },
-      send: (frame: string) => {
-        void peer.receive(frame);
-      },
-      close: () => {
-        readyState = 3;
-        peer.closed();
-        emit("close", { code: 1000, reason: "closed" });
-      },
-      addEventListener(type: string, fn: (e?: unknown) => void) {
-        listeners.set(type, [...(listeners.get(type) ?? []), fn]);
-      },
-    } as unknown as RelaySocket;
-    peer = relay.connect({
-      send: (frame) => emit("message", { data: frame }),
-      close: (code, reason) => emit("close", { code, reason }),
-    });
-    queueMicrotask(() => {
-      readyState = 1;
-      emit("open");
-    });
-    return socket;
-  };
-
-const waitFor = async <T>(
-  fn: () => T | undefined | Promise<T | undefined>,
-  what: string,
-  timeoutMs = 10_000,
-): Promise<T> => {
-  const start = Date.now();
-  for (;;) {
-    const value = await fn();
-    if (value !== undefined) return value;
-    if (Date.now() - start > timeoutMs) {
-      throw new Error(`timed out waiting for ${what}`);
-    }
-    await new Promise((r) => setTimeout(r, 25));
-  }
-};
-
 interface World {
   relay: Relay;
   engine: FakeEngine;
   engineConn: EngineConnection;
   engineCalls: { method: string; params: unknown }[];
   /** Every socket the harness's RelayClient has opened — close() drops it. */
-  relaySockets: RelaySocket[];
+  relaySockets: import("@lilos/client-runtime").RelaySocket[];
   harnessRelay: RelayClient;
   harness: Harness;
   sleep: ReturnType<typeof createFakeSleepGuard>;
@@ -104,90 +48,26 @@ interface World {
   cleanup: () => Promise<void>;
 }
 
-async function setupWorld(
+const setupWorld = (
   tick = 1,
   attachEngine = true,
   engineOpts?: ConstructorParameters<typeof FakeEngine>[0],
   checkpoints?: CheckpointStore,
-): Promise<World> {
-  const relay = createRelay({ store: createMemoryStore(), token: TOKEN });
-  const engine = new FakeEngine({ tick, ...engineOpts });
-  const engineConn = connectFake(engine) as unknown as EngineConnection;
-  const engineCalls: { method: string; params: unknown }[] = [];
-  const origRequest = engineConn.request.bind(engineConn);
-  engineConn.request = <T = unknown>(
-    method: string,
-    params?: unknown,
-  ): Promise<T> => {
-    engineCalls.push({ method, params });
-    return origRequest<T>(method, params);
-  };
-  const relaySockets: RelaySocket[] = [];
-  const capturingFactory =
-    (inner: SocketFactory): SocketFactory =>
-    (url: string) => {
-      const s = inner(url);
-      relaySockets.push(s);
-      return s;
-    };
-  const sleep = createFakeSleepGuard();
-  const log = createMemoryLogger();
-  const harnessRelay = new RelayClient({
-    url: "mem://harness",
-    token: TOKEN,
-    socketFactory: capturingFactory(socketFor(relay)),
+): Promise<World> =>
+  setupWorldBase({
+    tick,
+    attachEngine,
+    engineOpts,
+    checkpoints,
+    captureSockets: true,
     reconnectMinDelayMs: 20,
-  });
-  const harness = new Harness({
-    relay: harnessRelay,
-    sleep,
-    workdir: "/tmp/lilos-test",
-    log,
-    ...(checkpoints ? { checkpoints } : {}),
-  });
-  if (attachEngine) harness.attachEngine(engineConn);
-  await harness.start();
-  const user = new RelayClient({
-    url: "mem://user",
-    token: TOKEN,
-    socketFactory: socketFor(relay),
-  });
-  await user.connect();
-  return {
-    relay,
-    engine,
-    engineConn,
-    engineCalls,
-    relaySockets,
-    harnessRelay,
-    harness,
-    sleep,
-    user,
-    log,
-    cleanup: async () => {
-      user.close();
-      await harness.stop();
-    },
-  };
-}
+  }) as Promise<World>;
 
 const listConvMessages = (user: RelayClient, channelId: string) =>
   user.request<{ messages: AppMessage[] }>("messages.list", {
     channelId,
     limit: 200,
   });
-
-/** Open a DM + conversation as the user; returns ids. */
-async function openDmConversation(user: RelayClient) {
-  const { employee } = await user.request<{ employee: { id: string } }>(
-    "employees.create",
-    { name: "Ada", role: "engineer", profile: "builder" },
-  );
-  const { channel } = await user.request<{
-    channel: { id: string; employeeId: string };
-  }>("channels.openDm", { employeeId: employee.id });
-  return { employee, channel };
-}
 
 const postMessage = (
   user: RelayClient,

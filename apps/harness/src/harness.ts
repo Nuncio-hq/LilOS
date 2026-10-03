@@ -219,9 +219,10 @@ export interface HarnessOptions {
    * tests).
    */
   homeDir?: string;
-  /** #339 Connect reconciler (Hermes engine only): reconciles the lilos
-     plugin per employee profile after approval, reports the rows on
-     `harness.report`. Undefined on non-Hermes engines. */
+  /** #339 Connect reconciler: reconciles the lilos plugin per employee
+     profile after approval, reports the rows on `harness.report`.
+     Undefined on engines without Connect support (#413: hermes, and
+     engine-fake under LILOS_CONNECT_FAKE for e2e). */
   connect?: {
     reconcile(): Promise<void>;
     employeeRemoved(employeeId: string): void;

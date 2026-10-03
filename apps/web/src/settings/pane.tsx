@@ -246,7 +246,7 @@ export function SettingsPane({ onClose }: { onClose: () => void }) {
           : undefined
       }
       /* #339: Engine — the harness's per-profile connect rows on
-         system.status, only when the engine reports them (Hermes). */
+         system.status, only when the engine reports them. */
       engine={
         statusPoll.result?.connect
           ? {

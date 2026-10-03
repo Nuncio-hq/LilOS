@@ -1,103 +1,20 @@
 import { execFileSync } from "node:child_process";
-import {
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { RelaySocket, SocketFactory } from "@lilos/client-runtime";
-import { RelayClient, RelayError } from "@lilos/client-runtime";
+import { type RelayClient, RelayError } from "@lilos/client-runtime";
 import type {
   Conversation,
   FoldersBrowseResult,
   FoldersDiscoverResult,
 } from "@lilos/contracts/app";
-import { connectFake, FakeEngine } from "@lilos/engine-fake";
-import { afterEach, describe, expect, it } from "vitest";
-import { createPairingService } from "../../relay/src/pairing";
-import { createRelay } from "../../relay/src/session";
-import { createMemoryStore } from "../../relay/test/memory-store";
-import type { EngineConnection } from "../src/engine/client";
-import { Harness } from "../src/harness";
-import { createMemoryLogger } from "../src/log";
-import { createFakeSleepGuard } from "../src/sleep";
+import { describe, expect, it } from "vitest";
+import { mkhome, setupWorld as setupWorldBase, waitFor } from "./helpers";
 
 /* `folders.browse`/`folders.discover` (#238): the phone's folder browser,
    driven by a device-scope client over a real relay + harness + tmpdir
    "home" on disk. The home-folder boundary is enforced by the harness
    (server-side) — every escape shape is refused before any listing. The
    pick then lands via `folders.add` and a session in it proves the cwd. */
-
-const TOKEN = "test-token";
-
-type Relay = ReturnType<typeof createRelay>;
-
-const socketFor =
-  (relay: Relay): SocketFactory =>
-  () => {
-    const listeners = new Map<string, Array<(e?: unknown) => void>>();
-    const emit = (type: string, e?: unknown) =>
-      queueMicrotask(() =>
-        (listeners.get(type) ?? []).forEach((fn) => void fn(e)),
-      );
-    let peer: { receive(f: string): Promise<void>; closed(): void };
-    let readyState = 0;
-    const socket = {
-      get readyState() {
-        return readyState;
-      },
-      send: (frame: string) => {
-        void peer.receive(frame);
-      },
-      close: () => {
-        readyState = 3;
-        peer.closed();
-        emit("close", { code: 1000, reason: "closed" });
-      },
-      addEventListener(type: string, fn: (e?: unknown) => void) {
-        listeners.set(type, [...(listeners.get(type) ?? []), fn]);
-      },
-    } as unknown as RelaySocket;
-    peer = relay.connect({
-      send: (frame) => emit("message", { data: frame }),
-      close: (code, reason) => emit("close", { code, reason }),
-    });
-    queueMicrotask(() => {
-      readyState = 1;
-      emit("open");
-    });
-    return socket;
-  };
-
-const waitFor = async <T>(
-  fn: () => T | undefined | Promise<T | undefined>,
-  what: string,
-  timeoutMs = 10_000,
-): Promise<T> => {
-  const start = Date.now();
-  for (;;) {
-    const value = await fn();
-    if (value !== undefined) return value;
-    if (Date.now() - start > timeoutMs) {
-      throw new Error(`timed out waiting for ${what}`);
-    }
-    await new Promise((r) => setTimeout(r, 25));
-  }
-};
-
-const homes: string[] = [];
-const mkhome = () => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "lilos-home-")));
-  homes.push(dir);
-  return dir;
-};
-afterEach(() => {
-  for (const d of homes.splice(0)) rmSync(d, { recursive: true, force: true });
-});
 
 const git = (dir: string, args: string[]) =>
   execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
@@ -114,57 +31,21 @@ function seedRepo(dir: string, branch = "main") {
   return dir;
 }
 
+/* The phone: a paired device peer, like the real app (#153). */
 async function setupWorld(home: string) {
-  const store = createMemoryStore();
-  const pairing = createPairingService({ store });
-  const relay = createRelay({ store, token: TOKEN, pairing, homeDir: home });
-  const engine = new FakeEngine({ tick: 1 });
-  const engineConn = connectFake(engine) as unknown as EngineConnection;
-  const engineCalls: { method: string; params: unknown }[] = [];
-  const origRequest = engineConn.request.bind(engineConn);
-  engineConn.request = <T = unknown>(
-    method: string,
-    params?: unknown,
-  ): Promise<T> => {
-    engineCalls.push({ method, params });
-    return origRequest<T>(method, params);
-  };
-  const harnessRelay = new RelayClient({
-    url: "mem://harness",
-    token: TOKEN,
-    socketFactory: socketFor(relay),
+  const w = await setupWorldBase({
+    homeDir: home,
+    pairing: true,
+    phone: true,
+    workdir: join(home, "work"),
     reconnectMinDelayMs: 20,
   });
-  const harness = new Harness({
-    relay: harnessRelay,
-    sleep: createFakeSleepGuard(),
-    workdir: join(home, "work"),
-    log: createMemoryLogger(),
-    homeDir: home,
-  });
-  harness.attachEngine(engineConn);
-  await harness.start();
-
-  /* The phone: a paired device peer, like the real app (#153). */
-  const grant = await pairing.mintGrant();
-  const ex = await pairing.exchangeGrant({ code: grant.code });
-  if (!("device" in ex)) throw new Error("exchange failed");
-  const phone = new RelayClient({
-    url: "mem://phone",
-    device: { deviceId: ex.device.id, credential: ex.credential },
-    socketFactory: socketFor(relay),
-  });
-  await phone.connect();
-
   return {
-    store,
-    engineCalls,
-    harness,
-    phone,
-    cleanup: async () => {
-      phone.close();
-      await harness.stop();
-    },
+    store: w.store,
+    engineCalls: w.engineCalls,
+    harness: w.harness,
+    phone: w.phone as RelayClient,
+    cleanup: w.cleanup,
   };
 }
 
@@ -178,8 +59,7 @@ function seedHome() {
   mkdirSync(join(home, "Documents", ".hidden"), { recursive: true });
   writeFileSync(join(home, "Documents", "file.txt"), "hi");
   mkdirSync(join(home, "work"), { recursive: true });
-  const outside = realpathSync(mkdtempSync(join(tmpdir(), "lilos-out-")));
-  homes.push(outside);
+  const outside = mkhome();
   symlinkSync(outside, join(home, "outlink"));
   return { home, outside };
 }

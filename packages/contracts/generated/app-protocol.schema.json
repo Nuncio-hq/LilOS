@@ -460,6 +460,7 @@
         "conversation.rewound",
         "devices.changed",
         "host.changed",
+        "connect.changed",
         "engine.event",
         "workbench.opened"
       ]
@@ -6971,6 +6972,43 @@
         "channelId",
         "lastSeq"
       ]
+    },
+    "ConnectChangedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "connect": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "profile": {
+                "type": "string",
+                "minLength": 1
+              },
+              "employee": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "not-connected",
+                  "updating",
+                  "failed"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "profile",
+              "state"
+            ]
+          }
+        }
+      }
     },
     "ConversationUpdatedEvent": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

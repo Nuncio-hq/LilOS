@@ -9,6 +9,7 @@ import {
   ChannelRemovedEvent,
   ChannelSnapshotEvent,
   ChannelSyncedEvent,
+  ConnectChangedEvent,
   type Conversation,
   ConversationRewoundEvent,
   type ConversationSummary,
@@ -1063,6 +1064,22 @@ export class RelayClient {
         // The engine host registered or disconnected — refresh status now
         // instead of waiting for the next poll tick (#148).
         void this.refreshSystemStatus();
+        return;
+      }
+      case "connect.changed": {
+        /* #413: the Connect rows live on `system.status` — patch the atom in
+           place so the DM notice and Settings → Engine update now instead of
+           on the next poll. `connect` absent clears the rows; the next
+           poll's result replaces the patch wholesale. Nothing to patch
+           before the first fetch — that poll already carries the rows. */
+        const event = ConnectChangedEvent.parse(params);
+        const current = this.status.get();
+        if (current.result) {
+          this.status.set({
+            ...current,
+            result: { ...current.result, connect: event.connect },
+          });
+        }
         return;
       }
       case "profile.updated": {
