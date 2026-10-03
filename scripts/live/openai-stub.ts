@@ -185,6 +185,10 @@ const server = Bun.serve({
             arguments: fired.arguments ?? "{}",
           },
         };
+        /* #414: `reply` alongside `name` scripts commentary BESIDE the tool
+           call (one assistant message with text + tool_calls) — what makes
+           upstream emit `message.interim`. Without it content stays null. */
+        const content = typeof fired.reply === "string" ? fired.reply : null;
         if (body.stream) {
           const frame = (delta: object, finish: string | null) =>
             `data: ${JSON.stringify({
@@ -197,6 +201,7 @@ const server = Bun.serve({
           return new Response(
             sse([
               frame({ role: "assistant", content: null }, null),
+              ...(content ? [frame({ content }, null)] : []),
               frame({ tool_calls: [{ index: 0, ...tc }] }, "tool_calls"),
               "data: [DONE]\n\n",
             ]),
@@ -211,7 +216,11 @@ const server = Bun.serve({
           choices: [
             {
               index: 0,
-              message: { role: "assistant", content: null, tool_calls: [tc] },
+              message: {
+                role: "assistant",
+                content,
+                tool_calls: [tc],
+              },
               finish_reason: "tool_calls",
             },
           ],
