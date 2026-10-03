@@ -1154,11 +1154,23 @@ export class RelayClient {
         const event = ChannelSnapshotEvent.parse(params);
         const store = this.channelStates.get(event.channelId);
         this.watermarks.set(event.channelId, event.lastSeq);
+        /* #377: the read layer omits `dropped`/`removed`/`rewound` rows, so
+           a wholesale snapshot replace would erase local tombstones — the
+           fetch-time `threadMsgs` copy then resurrects a dead send as a
+           live bubble (a relay restart resyncs via snapshot, not replay).
+           Carry tombstones the snapshot can't carry. */
+        const tombstones = (store?.get().messages ?? []).filter(
+          (m) =>
+            (m.dropped || m.removed || m.rewound) &&
+            !event.messages.some((n) => n.id === m.id),
+        );
         store?.set({
           channelId: event.channelId,
           synced: false,
           lastSeq: event.lastSeq,
-          messages: [...event.messages].sort((a, b) => a.seq - b.seq),
+          messages: [...event.messages, ...tombstones].sort(
+            (a, b) => a.seq - b.seq,
+          ),
         });
         return;
       }
