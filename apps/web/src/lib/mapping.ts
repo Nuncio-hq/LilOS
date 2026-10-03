@@ -105,6 +105,7 @@ function toStep(s: TurnModel["steps"][number], turn?: TurnModel): Step {
     input: s.input,
     output: s.output ?? "",
     running: s.status === "running",
+    status: s.status,
     ...(dispatched ? { dispatched: true } : {}),
     diff: s.diff as Step["diff"],
     commit: s.commit as Step["commit"],

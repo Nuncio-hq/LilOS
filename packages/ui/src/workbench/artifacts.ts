@@ -10,6 +10,16 @@ export function turnSteps(r: Reply): Step[] {
     ...(r.subagents ?? []).flatMap((a) => (a.employee ? [] : a.steps)),
   ];
 }
+
+/* The footer's "N files changed" — unique paths across the turn's diffs
+   (issue #416). */
+export function turnChangedFiles(r: Reply): Set<string> {
+  return new Set(
+    turnSteps(r)
+      .filter((s) => s.diff)
+      .map((s) => s.diff!.path),
+  );
+}
 export function sessionArtifacts(thread: Thread) {
   const steps = thread.replies.flatMap(turnSteps);
   const diffs = new Map<string, Diff>();
