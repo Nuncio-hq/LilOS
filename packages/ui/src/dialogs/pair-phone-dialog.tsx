@@ -54,7 +54,7 @@ export function pairingUrl(o: PairPhoneOffer): string {
 }
 
 /** "7K4MQR2X9TBP" → "7K4M-QR2X-9TBP". */
-export function formatGrantCode(code: string): string {
+function formatGrantCode(code: string): string {
   return code.match(/.{1,4}/g)?.join("-") ?? code;
 }
 

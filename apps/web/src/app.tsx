@@ -518,7 +518,7 @@ const routeTree = rootRoute.addChildren([
 // file:// gives the app a path URL that matches no route; hash history keeps
 // navigation inside the page. http(s) dev and _electron test pages keep
 // browser history.
-export const router = createRouter({
+const router = createRouter({
   routeTree,
   history:
     window.location.protocol === "file:" ? createHashHistory() : undefined,

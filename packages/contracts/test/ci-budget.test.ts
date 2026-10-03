@@ -44,11 +44,13 @@ describe("AC-2/AC-3 drafts skip E2E; ready for review runs it", () => {
     expect(ci).toMatch(/types:\s*\[[^\]]*ready_for_review[^\]]*\]/);
   });
 
-  it("gates only the E2E steps on the scope, never the fast checks", () => {
+  it("gates only the E2E job on the scope, never the fast checks", () => {
     expect(ci).toContain("run: bun run verify:fast");
-    expect(ci).toContain("if: steps.scope.outputs.e2e == 'true'");
-    const fast = ci.slice(ci.indexOf("name: Fast checks"));
-    expect(fast.slice(0, fast.indexOf("\n      - "))).not.toContain("if:");
+    expect(ci).toContain("if: needs.scope.outputs.e2e == 'true'");
+    const checks = ci.slice(ci.indexOf("  checks:\n"));
+    // the checks job block ends at the next 2-space-indent job key
+    const job = checks.slice(0, checks.search(/\n {2}\S/));
+    expect(job).not.toContain("if:");
   });
 });
 
@@ -96,5 +98,49 @@ describe("AC-7 the macOS release build never runs per PR", () => {
     expect(read(".github/workflows/release.yml")).not.toMatch(
       /^\s*pull_request:/m,
     );
+  });
+});
+
+/**
+ * Issue #433: plan A (`workers: 4` on one runner) starved 4 stacks + 4
+ * Chromiums of CPU — 11 fails, 27.5 min, worse than the ~23 min baseline
+ * (PR #444 run 37138365037). Plan B: the E2E suite shards across matrix
+ * legs on separate runners at the default 2 workers each — 4 legs, not 3,
+ * so the two ~6-min spec files can't share a leg and push it over the
+ * 10-minute AC. `verify` stays the required check as an always()
+ * aggregate. A skipped e2e job (draft, docs-only) still reports green, a
+ * failed scope job never does.
+ */
+describe("#433 AC-1 E2E shards across 4 matrix legs behind one verify check", () => {
+  const ci = read(".github/workflows/ci.yml");
+
+  it("runs the suite as --shard i/4 on separate runners", () => {
+    expect(ci).toContain("shard: [1, 2, 3, 4]");
+    expect(ci).toContain("fail-fast: false");
+    expect(ci).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: an Actions expression
+      "run: xvfb-run -a bun run test:e2e --shard ${{ matrix.shard }}/4",
+    );
+  });
+
+  it("verify needs scope + checks + the shards and reports on every path", () => {
+    expect(ci).toMatch(/^ {2}verify:\n {4}needs: \[scope, checks, e2e\]/m);
+    expect(ci).toContain("if: always()");
+  });
+
+  it("never raises Playwright workers on CI again (the plan-A failure)", () => {
+    expect(read("playwright.config.ts")).not.toContain("workers:");
+  });
+});
+
+describe("#433 AC-2 flakes stay visible under sharding", () => {
+  it("keeps CI retries and the github reporter so a pass-on-retry is flagged", () => {
+    const config = read("playwright.config.ts");
+    expect(config).toContain("retries: process.env.CI ? 1 : 0");
+    expect(config).toContain('[["list"], ["github"]]');
+  });
+
+  it("keeps the per-worker port blocks shards still rely on", () => {
+    expect(read("e2e/ports.ts")).toContain("TEST_WORKER_INDEX");
   });
 });

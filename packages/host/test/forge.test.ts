@@ -28,7 +28,7 @@ import { callHost } from "../src/index";
  * Issue #37 AC tests for the forge host API. `gh` is faked by a stateful bun
  * script on PATH (test/fake-gh/gh) serving fixtures from $GH_FAKE_DIR — the
  * real code path (packages/host → execFile gh → JSON out) is exercised end to
- * end; only GitHub itself is stubbed. Real leg: scripts/live/37-forge.sh.
+ * end; only GitHub itself is stubbed.
  */
 const FAKE_GH_DIR = join(dirname(fileURLToPath(import.meta.url)), "fake-gh");
 chmodSync(join(FAKE_GH_DIR, "gh"), 0o755);

@@ -5,7 +5,7 @@ import { UpdateFeed, type UpdateRelease } from "@lilos/contracts/app";
  * `LILOS_UPDATE_URL` overrides the endpoint (the live test and dev use a
  * local feed); the literal `off` disables updates entirely.
  */
-export const DEFAULT_FEED_URL =
+const DEFAULT_FEED_URL =
   "https://github.com/Nuncio-hq/LilOS/releases/latest/download/update-feed.json";
 
 export function resolveFeedUrl(

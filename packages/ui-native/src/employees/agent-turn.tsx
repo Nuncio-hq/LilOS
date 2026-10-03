@@ -318,7 +318,7 @@ function ToolIcons({ steps }: { steps: ToolStep[] }) {
   );
 }
 
-export function ApprovalCard({
+function ApprovalCard({
   a,
   onApprove,
   onDeny,
@@ -386,7 +386,7 @@ function FlatBox({ children }: { children: React.ReactNode }) {
 }
 
 /** 412 → "6m 52s", 34 → "34s". */
-export function duration(s: number) {
+function duration(s: number) {
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
   return s % 60 ? `${m}m ${s % 60}s` : `${m}m`;

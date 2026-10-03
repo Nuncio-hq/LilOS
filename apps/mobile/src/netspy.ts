@@ -20,7 +20,7 @@ export interface NetSpyCount {
 export const $netSpy = atom<NetSpyCount>({ app: 0, dev: 0 });
 
 /** Every counted non-dev call, in order — surfaced for evidence. */
-export const netSpyTrail: { kind: string; url: string; at: number }[] = [];
+const netSpyTrail: { kind: string; url: string; at: number }[] = [];
 
 const GLOBAL_KEY = "__lilosNetSpyInstalled";
 

@@ -24,7 +24,6 @@
   },
   "devDependencies": {
     "@lilos/engine-fake": "workspace:*",
-    "@lilos/relay": "workspace:*",
     "@types/bun": "1.4.2",
     "@types/node": "^26.6.2",
     "@types/ws": "8.18.1",

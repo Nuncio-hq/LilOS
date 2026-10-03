@@ -17,7 +17,7 @@ import { contextWindowFromId, displayModelName } from "./model-label.js";
  * `profiles.list/describe/create`, and `session.start.agent` is the profile
  * `session.create` runs under. `models.list` flattens `model.options`;
  * `session.setModel` runs the CLI's own `/model` switch via `slash.exec`
- * (same path the TUI uses — proven by scripts/live/8.py).
+ * (same path the TUI uses).
  */
 
 interface ProfileRow {
@@ -252,7 +252,7 @@ interface ModelOptionsProvider {
  * per-model `reasoning` booleans but no level list, so a reasoning-capable
  * model gets the full ladder (issue #92 AC-2).
  */
-export const HERMES_EFFORT_LADDER = [
+const HERMES_EFFORT_LADDER = [
   "none",
   "minimal",
   "low",

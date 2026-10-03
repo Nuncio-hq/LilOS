@@ -51,7 +51,7 @@ const PREFERRED_IDS: Record<ApprovalOption, readonly string[]> = {
  * The outcome one option grants; `undefined` when it grants none of ours
  * (`allow_session`) or is unrecognized. Exact optionId wins over kind.
  */
-export function acpPermissionOutcome(
+function acpPermissionOutcome(
   o: AcpPermissionOptionLike,
 ): ApprovalOption | undefined {
   if (o.optionId in OPTION_ID_OUTCOMES) return OPTION_ID_OUTCOMES[o.optionId];
