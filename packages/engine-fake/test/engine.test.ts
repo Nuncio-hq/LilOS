@@ -465,6 +465,59 @@ describe("engine-fake #140 AC-2: a refresh-only model validates only once a refr
   });
 });
 
+describe("engine-fake #432: `slow[:ms]` paces only the marked prompt", () => {
+  test("AC-1 `slow:<ms>` stretches one turn's boundaries; the next turn runs at the engine tick", async () => {
+    const c = conn(5);
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+    })) as { sessionId: string };
+
+    /* The default script is ~55 sleep boundaries: 60 ms → a multi-second
+       turn; a pace that leaked past its turn would stretch the follow-up
+       the same way. */
+    const t0 = Date.now();
+    await promptText(c, sessionId, "slow:60 take your time");
+    const slowMs = Date.now() - t0;
+    const t1 = Date.now();
+    await promptText(c, sessionId, "follow-up at normal pace");
+    const fastMs = Date.now() - t1;
+    expect(slowMs).toBeGreaterThanOrEqual(1_500);
+    expect(fastMs).toBeLessThan(1_000);
+    c.close();
+  });
+
+  test("AC-1 `slow:` strips before script routing — `slow: leg:` still arms the agent-initiated leg", async () => {
+    const c = conn(5);
+    const started: { initiatedBy?: string }[] = [];
+    const deltas: { stream?: string; delta?: string }[] = [];
+    c.onEvent((e) => {
+      if (e.type === "turn.started")
+        started.push(e.payload as { initiatedBy?: string });
+      if (e.type === "turn.delta")
+        deltas.push(e.payload as { stream?: string; delta?: string });
+    });
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+    })) as { sessionId: string };
+    await promptText(c, sessionId, "slow:30 leg:ZEBRA report delivered");
+    /* The leg lands asynchronously after the prompt's turn.completed —
+       wait for its delivered text. */
+    const legText = () =>
+      deltas.some(
+        (d) => d.stream === "text" && d.delta === "ZEBRA report delivered",
+      );
+    const deadline = Date.now() + 10_000;
+    while (!legText() && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 20));
+    expect(started).toHaveLength(2);
+    expect(started[1].initiatedBy).toBe("agent");
+    expect(legText()).toBe(true);
+    c.close();
+  });
+});
+
 describe("engine-fake #294: reports the session's context window", () => {
   test("models.list rows carry the engine's window only where the engine reports one", async () => {
     const c = conn();

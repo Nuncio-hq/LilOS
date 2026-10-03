@@ -125,10 +125,9 @@ test.beforeAll(async () => {
     {
       LILOS_USER_NAME: "Oscar",
       /* No steer → mid-run sends queue and drain as ref'd turns (AC-1's
-         bug shape); a slower tick holds turns + legs open long enough to
-         type mid-run. */
+         bug shape); the `slow:` prompt below holds its leg open long
+         enough to type mid-run without slowing every turn (#432). */
       LILOS_HIDE_CAPS: "steer",
-      ENGINE_FAKE_TICK: "300",
     },
   );
 });
@@ -195,7 +194,9 @@ test("AC-2/AC-3 an engine leg keeps its own card above newer rows; its post is c
 }) => {
   test.setTimeout(240_000);
   await dmDefault(page);
-  await send(page, "leg:ZEBRA report delivered");
+  /* `slow:` paces this turn AND the leg it arms (one running window) — a
+     mid-leg send can queue while the card is live. */
+  await send(page, "slow: leg:ZEBRA report delivered");
   // The prompt turn answers first; the leg opens after it settles.
   const turns = page.locator("[data-agentturn]");
   await expect(turns.first()).toContainText("I'll report back", {

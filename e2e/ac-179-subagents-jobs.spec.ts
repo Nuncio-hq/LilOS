@@ -148,15 +148,14 @@ execFileSync(
   { cwd: repoDir },
 );
 
-/* A slightly stretched tick so a reload can land mid-turn (AC-1 replay)
-   without making the suite crawl. */
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack(
     "ac179",
     { relay: wport(4812), feed: wport(4813), web: wport(5316) },
-    { ENGINE_FAKE_TICK: "180" },
+    /* #432: no stack-wide tick — the one prompt needing a mid-turn window
+       (AC-1's reload) marks itself `slow:`; everything else runs flat out. */
   );
 });
 test.afterAll(async () => {
@@ -278,10 +277,12 @@ test("AC-1 a delegate turn shows one live row per helper; opening a row shows br
   await pickSessionFolder(page, repoDir);
   /* `LILOS_DELEGATE_ASYNC_HOLD` (#400): the first helper's close is held
      until the next prompt — a live row is still there whenever this test
-     looks, instead of hoping to catch it mid-turn on a loaded runner. */
+     looks, instead of hoping to catch it mid-turn on a loaded runner.
+     `slow:` (#432) stretches this turn's boundaries so the reload below
+     lands mid-turn deterministically — no stack-wide tick needed. */
   await send(
     page,
-    "delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
+    "slow: delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
   );
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
 
@@ -533,16 +534,15 @@ test("AC-319 the panel's 'N subagents · Open' lands on Focus → Subagents (?ta
   page,
 }) => {
   test.setTimeout(300_000);
-  /* A stretched tick stretches the async helper's close ~1.5s past
-     turn.completed — long enough to watch it still under Running (AC-5)
-     before its real completion moves it to Finished. */
+  /* #400: LILOS_DELEGATE_ASYNC_HOLD holds the async helper's close until
+     the next prompt — the Running row is observable for as long as the
+     test wants, no tick stretching needed (#432 drops ENGINE_FAKE_TICK). */
   const stack319 = await bootStack(
     "ac319",
     /* ports.spec allows only identical bases across files (every residue
        is already taken) — these literals are ac-105's; different worker
        indices keep them apart. */
     { relay: wport(4818), feed: wport(4819), web: wport(5322) },
-    { ENGINE_FAKE_TICK: "1500" },
   );
   try {
     await openDefault(page, stack319);

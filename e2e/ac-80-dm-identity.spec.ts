@@ -17,8 +17,9 @@ import { wport } from "./ports";
  * Issue #80 — DM identity + streaming markdown. AC-1 asserts the user's
  * message avatar IS the sidebar footer's avatar (same initial, same computed
  * colour — never the anonymous grey "Y"). AC-2 asserts markdown renders
- * mid-stream (ENGINE_FAKE_TICK stretches the text phase so the stream is
- * observable). AC-3 captures both in the Electron desktop app.
+ * mid-stream (the prompt's `slow:150` directive stretches its own text
+ * phase so the stream is observable — #432; no stack-wide tick). AC-3
+ * captures both in the Electron desktop app.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -143,7 +144,9 @@ async function bootStack(
 }
 
 const SHOTS = path.join(repo, "test-results", "ac-80");
-const PROMPT = "What does the replay contract carry?"; // hits the default script
+/* `slow:150` paces only this prompt's turn (~8 s) — the mid-stream window
+   AC-2/AC-3 need, while the rest of the engine runs at --tick (#432). */
+const PROMPT = "slow:150 What does the replay contract carry?"; // hits the default script
 
 /* The footer's me-row: the aside's last child, its avatar fallback. */
 const footerAvatar = (page: Page) =>
@@ -240,8 +243,9 @@ test("AC-2 markdown renders while the reply streams, then settles unchanged", as
   const stack = await bootStack(
     "ac80b",
     { relay: wport(4664), feed: wport(4665), web: wport(5334) },
-    // ~6s text phase → observable mid-stream; pin the human's name (#118).
-    { ENGINE_FAKE_TICK: "150", LILOS_USER_NAME: "Oscar" },
+    // The `slow:` prompt stretches its own text phase (~6 s → observable
+    // mid-stream); pin the human's name (#118).
+    { LILOS_USER_NAME: "Oscar" },
   );
   try {
     await dmDefault(page, stack.webUrl);
@@ -278,7 +282,7 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
   const stack = await bootStack(
     "ac80c",
     { relay: wport(4667), feed: wport(4669), web: wport(5335) },
-    { ENGINE_FAKE_TICK: "150", LILOS_USER_NAME: "Oscar" },
+    { LILOS_USER_NAME: "Oscar" },
   );
   try {
     const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {

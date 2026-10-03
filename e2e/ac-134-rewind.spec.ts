@@ -164,12 +164,7 @@ test.beforeAll(async () => {
   stackA = await bootStack(
     "rw-a",
     { relay: wport(4643), feed: wport(4647), web: wport(5241) },
-    {
-      LILOS_USER_NAME: "Oscar",
-      /* Slow the fake's steps so the AC-5 "disabled while running" assertion
-         has a window even on a fast VM. */
-      ENGINE_FAKE_TICK: "700",
-    },
+    { LILOS_USER_NAME: "Oscar" },
   );
   stackB = await bootStack(
     "rw-b",
@@ -377,8 +372,9 @@ test("AC-5 rewind triggers are disabled while a turn runs", async ({
   await expect(page.locator("[data-rewind]").first()).toBeVisible({
     timeout: 30_000,
   });
-  /* ENGINE_FAKE_TICK=700 keeps the turn streaming for a few seconds. */
-  await send(page, "a slow-running turn for the disabled check");
+  /* #432: `slow:150` paces only this turn (~9 s streaming) — the disabled
+     assertion gets its running window without slowing the stack's others. */
+  await send(page, "slow:150 a slow-running turn for the disabled check");
   await expect(page.locator("[data-rewind]").first()).toBeDisabled({
     timeout: 15_000,
   });
