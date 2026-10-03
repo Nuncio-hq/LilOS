@@ -6,6 +6,7 @@ import { Card, Pill } from "../components/bits";
 import { Icon, type IconTone } from "../components/icon";
 import { Orb } from "../components/orb";
 import { Prose, Pulse } from "../components/prose";
+import { inline } from "../components/prose-blocks";
 import { Rise } from "../components/rise";
 import { Group, SheetHeader } from "./folder-picker";
 import { StepRow } from "./step-row";
@@ -53,7 +54,7 @@ function nowLine(a: SubagentRow): string {
     return `${VERB[s.tool] ?? s.tool} ${s.arg ?? ""}`.trim();
   }
   const first = (a.result ?? "").split("\n").find((l) => l.trim()) ?? "";
-  return first.replace(/[*`_#>]/g, "").trim() || STATUS[a.status].label;
+  return inline(first) || STATUS[a.status].label;
 }
 
 function Mark({ a, size = 18 }: { a: SubagentRow; size?: number }) {
