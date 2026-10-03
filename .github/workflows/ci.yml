@@ -1,9 +1,10 @@
 name: CI
 
-# Minutes budget (#201): the fast checks run on every PR push; the ~19-minute
-# Playwright E2E runs only on main and on PRs that are ready for review and
-# touch more than docs. The job is always named `verify` and always reports,
-# so it can become a required check without hanging on "Expected".
+# Minutes budget (#201): the fast checks run on every PR push; the Playwright
+# E2E runs only on main and on PRs that are ready for review and touch more
+# than docs. E2E shards across 3 matrix legs on separate runners (#433 —
+# 4 workers on one runner starved every stack of CPU), while `verify` stays
+# the required check by aggregating the shards so it always reports.
 
 on:
   push:
@@ -18,8 +19,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  verify:
+  scope:
     runs-on: ubuntu-latest
+    outputs:
+      e2e: ${{ steps.scope.outputs.e2e }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,6 +47,11 @@ jobs:
             fi
           fi
           echo "e2e=$e2e" >> "$GITHUB_OUTPUT"
+
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
@@ -53,9 +61,43 @@ jobs:
         run: bunx playwright install --with-deps chromium
       - name: Fast checks (biome, schema, typecheck, unit tests, prototype build, mobile bundle check)
         run: bun run verify:fast
+
+  e2e:
+    needs: scope
+    if: needs.scope.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      # A failing leg still lets the others finish: the failure list stays complete.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
       - name: Install Xvfb (Electron e2e display)
-        if: steps.scope.outputs.e2e == 'true'
         run: sudo apt-get install -y xvfb
-      - name: E2E
-        if: steps.scope.outputs.e2e == 'true'
-        run: xvfb-run -a bun run test:e2e
+      - name: E2E shard ${{ matrix.shard }}/3
+        run: xvfb-run -a bun run test:e2e --shard ${{ matrix.shard }}/3
+
+  verify:
+    needs: [scope, checks, e2e]
+    if: always() # reports on every path: draft, docs-only, failure, cancel
+    runs-on: ubuntu-latest
+    steps:
+      - name: All required jobs green
+        env:
+          SCOPE: ${{ needs.scope.result }}
+          CHECKS: ${{ needs.checks.result }}
+          E2E: ${{ needs.e2e.result }}
+        run: |
+          echo "scope=$SCOPE checks=$CHECKS e2e=$E2E"
+          # A failed scope job must not silently skip E2E; a skipped e2e
+          # (draft / docs-only) is green; failure or cancelled is not.
+          [ "$SCOPE" = success ] && [ "$CHECKS" = success ] &&
+            { [ "$E2E" = success ] || [ "$E2E" = skipped ]; }
