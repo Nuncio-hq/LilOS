@@ -23,6 +23,7 @@ import type {
 } from "@lilos/contracts/app";
 import type {
   ApprovalOutcome,
+  ConversationAccess,
   EngineRequest,
   Usage,
 } from "@lilos/contracts/engine";
@@ -68,6 +69,8 @@ export interface ConversationPatch {
   effort?: string | null;
   fast?: boolean | null;
   deliveredSeq?: number;
+  /** The composer pill's level (#106) — `conversations.setAccess`. */
+  access?: ConversationAccess;
 }
 
 export interface OpenConversationInput {
@@ -93,6 +96,9 @@ export interface OpenConversationInput {
   /** Workstream pick stamped at open (#156): new/existing worktree of
       `repoPath`; absent = `cwd` is the folder itself. */
   workspace?: WorkspaceIntent;
+  /** The access level stamped at open (#106) — the relay resolves
+      `params.access ?? Settings' defaultAccess ?? "ask"` before landing. */
+  access?: ConversationAccess;
 }
 
 export interface AppendMessageInput {
@@ -145,7 +151,7 @@ const textTokens = (text: string): string[] =>
     .filter(Boolean);
 
 /** Term match: earlier terms must hit a whole token; the last is a prefix. */
-function messageMatchesTerms(text: string, terms: string[]): boolean {
+export function messageMatchesTerms(text: string, terms: string[]): boolean {
   if (!terms.length) return false;
   const toks = textTokens(text);
   return terms.every((t, i) =>
@@ -158,7 +164,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /* A relay-snippet-shaped excerpt for the memory store: a ~12-word window
    opening a few words before the first match (the SQLite side uses
    snippet(…, 12)), `…` at clipped edges, `<mark>` around every term hit. */
-function markSnippet(text: string, terms: string[]): string {
+export function markSnippet(text: string, terms: string[]): string {
   if (!terms.length) return text.slice(0, 96);
   const patterns = terms.map(
     (t, i) =>
