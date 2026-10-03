@@ -296,9 +296,7 @@ describe("RelayClient", () => {
         },
       },
     });
-    expect(store.get().messages.find((m) => m.id === "m2")?.removed).toBe(
-      true,
-    );
+    expect(store.get().messages.find((m) => m.id === "m2")?.removed).toBe(true);
 
     // Relay restart → instanceId changes → resync via channel.snapshot; the
     // read layer omits removed rows, so the snapshot can't carry m2's flag.

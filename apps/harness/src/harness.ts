@@ -1359,8 +1359,7 @@ export class Harness {
            dropped after the prompt landed, so the turn ran anyway.
            Re-queuing would mint a duplicate turn on the next drain; it's
            delivered, not pending. */
-        if ([...binding.turnSource.values()].includes(message.id))
-          return false;
+        if ([...binding.turnSource.values()].includes(message.id)) return false;
         this.opts.log.warn("prompt requeue: transport", {
           messageId: message.id,
           error: String(error),
@@ -2137,7 +2136,10 @@ export class Harness {
              sits under it). */
           this.delivered.delete(message.id);
           this.redeliver.add(message.id);
-        } else if (this.dismissed.has(message.id) || this.redeliver.has(message.id)) {
+        } else if (
+          this.dismissed.has(message.id) ||
+          this.redeliver.has(message.id)
+        ) {
           /* `dropped` cleared (Send): re-deliver like a fresh send. Only a
              row that was parked here (`dismissed`) or seen dropped
              (`redeliver`, primed in the branch above) can un-drop — other
