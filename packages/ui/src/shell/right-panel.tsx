@@ -11,8 +11,11 @@ import {
 import type { EmpFn, TicketRow } from "../types";
 import { HermesAvatar } from "./avatars";
 
+export type PanelTab = "thread" | "employee" | "tickets" | "scheduled";
+
 /* The right-hand panel: Thread / Employee / Tickets tabs. threadPanel is the ready-rendered ThreadView
-   (or null) the app passes in; employeeCard likewise. */
+   (or null) the app passes in; employeeCard likewise. `scheduled` (#136) adds a Scheduled tab — the
+   app passes it only in a DM (D-#19). */
 export function RightPanel({
   tab,
   onTab,
@@ -22,21 +25,23 @@ export function RightPanel({
   tickets,
   emp,
   dm,
+  scheduled,
 }: {
-  tab: "thread" | "employee" | "tickets";
-  onTab: (t: "thread" | "employee" | "tickets") => void;
+  tab: PanelTab;
+  onTab: (t: PanelTab) => void;
   onClose: () => void;
   threadPanel: React.ReactNode;
   employeeCard: React.ReactNode;
   tickets: TicketRow[];
   emp: EmpFn;
   dm: boolean;
+  scheduled?: React.ReactNode;
 }) {
   return (
     <aside className="lilos-glass flex min-h-0 flex-col border-l bg-background max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(420px,100vw)] max-xl:shadow-2xl">
       <Tabs
         value={tab}
-        onValueChange={(v) => onTab(v as "thread" | "employee" | "tickets")}
+        onValueChange={(v) => onTab(v as PanelTab)}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
         <div className="lilos-drag flex h-14 shrink-0 items-center border-b px-3">
@@ -44,6 +49,9 @@ export function RightPanel({
             <TabsTrigger value="thread">Thread</TabsTrigger>
             <TabsTrigger value="employee">Employee</TabsTrigger>
             <TabsTrigger value="tickets">Tickets</TabsTrigger>
+            {scheduled && (
+              <TabsTrigger value="scheduled">Scheduled</TabsTrigger>
+            )}
           </TabsList>
           <Button
             variant="ghost"
@@ -81,6 +89,11 @@ export function RightPanel({
             <TicketsList tickets={tickets} emp={emp} />
           </ScrollArea>
         </TabsContent>
+        {scheduled && (
+          <TabsContent value="scheduled" className="min-h-0 flex-1">
+            <ScrollArea className="h-full">{scheduled}</ScrollArea>
+          </TabsContent>
+        )}
       </Tabs>
     </aside>
   );

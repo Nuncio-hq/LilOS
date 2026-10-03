@@ -78,6 +78,10 @@ import {
   dropDrafts,
   useDraft,
   type PlanAction,
+  type PanelTab,
+  type ScheduledTask,
+  ScheduledTasks,
+  TaskDialog,
 } from "@lilos/ui"
 import { cn } from "@lilos/ui/lib/utils"
 import { MAX_ATTACHMENT_BYTES } from "@lilos/contracts/app"
@@ -95,6 +99,7 @@ import { DEMO_ROOT, playSubagents, stopJob, SUBAGENT_DMS } from "./fake-subagent
 import { approvePlan, pendingPlan, PLAN_DMS, rejectPlan, revisePlan, stopTasks, tasksFrom, tickTask } from "./fake-plan"
 import { useLiveStatus } from "./live-status"
 import { useFakeBrowser } from "./fake-browser"
+import { runTitle, SCHEDULED_RUNS, SEED_TASKS } from "./fake-schedules"
 import { liveAttachFromLocation, useLiveSurfaces } from "./live-surfaces"
 
 /* Model: Company → Projects → Channels.
@@ -733,7 +738,7 @@ export default function App() {
   const [focus, setFocus] = useState(false)
   // Workbench tab Focus opens on when a thread-panel link asked for one (#317).
   const [focusTab, setFocusTab] = useState<WbTab | undefined>()
-  const [panelTab, setPanelTab] = useState<"thread" | "employee" | "tickets">("thread")
+  const [panelTab, setPanelTab] = useState<PanelTab>("thread")
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 1280)
   const [navOpen, setNavOpen] = useState(false)
   const [selectedEmp, setSelectedEmp] = useState("builder")
@@ -747,12 +752,17 @@ export default function App() {
   const [tickets, setTickets] = useState<TicketRow[]>(TICKETS)
   const [startFor, setStartFor] = useState<string | null>(null)
   const [selfStart, setSelfStart] = useState<Record<string, boolean>>({})
-  const [feeds, setFeeds] = useState<Record<string, Msg[]>>(() => ({
-    ...FEEDS, ...DM_FEEDS,
-    // Subagents + background work demo (issue #170): newest session in each DM.
-    // …then the plan demo (issue #175), so it is the session Builder's DM opens on.
-    ...Object.fromEntries(Object.entries(SUBAGENT_DMS).map(([k, ms]) => [k, [...(DM_FEEDS[k] ?? []), ...ms, ...(PLAN_DMS[k] ?? [])]])),
-  }))
+  const [feeds, setFeeds] = useState<Record<string, Msg[]>>(() => {
+    const base: Record<string, Msg[]> = {
+      ...FEEDS, ...DM_FEEDS,
+      // Subagents + background work demo (issue #170): newest session in each DM.
+      // …then the plan demo (issue #175), so it is the session Builder's DM opens on.
+      ...Object.fromEntries(Object.entries(SUBAGENT_DMS).map(([k, ms]) => [k, [...(DM_FEEDS[k] ?? []), ...ms, ...(PLAN_DMS[k] ?? [])]])),
+    }
+    // Past scheduled runs (#136) go first so each DM still opens on its newest demo session.
+    for (const [k, ms] of Object.entries(SCHEDULED_RUNS)) base[k] = [...ms, ...(base[k] ?? [])]
+    return base
+  })
   const stops = useRef<Record<string, boolean>>({})
   // The engine's declared steer capability: the real app reads describe().capabilities once at connect.
   // The prototype's built-in engine declares it; ?steer=off simulates an engine without it — mid-turn
@@ -1137,6 +1147,47 @@ export default function App() {
     setView({ kind: "dm", id }); setThreadId(last?.id ?? null); setPanelTab("thread"); setPanelOpen(window.innerWidth >= 1280); setFocus(false); setNavOpen(false)
   }
   const showThread = (id: string) => { setThreadId(id); setPanelTab("thread"); setPanelOpen(true) }
+
+  /* ---- Scheduled tasks (prototype #366 for #136). Real app: tasks live on the relay, the harness
+     owns the clock and a run is conversations.open with the task's prompt + folder. Here only
+     Run now fires a run. */
+  const [tasks, setTasks] = useState<ScheduledTask[]>(SEED_TASKS)
+  const [taskEdit, setTaskEdit] = useState<{ emp: string; task?: ScheduledTask } | null>(null)
+  const [taskFlash, setTaskFlash] = useState<string | null>(null)
+  const showTasks = (taskId?: string) => {
+    setPanelTab("scheduled"); setPanelOpen(true)
+    if (taskId) { setTaskFlash(taskId); setTimeout(() => setTaskFlash((f) => (f === taskId ? null : f)), 2000) }
+  }
+  const patchTask = (id: string, p: Partial<ScheduledTask>) => setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, ...p } : t)))
+  const runRoot = (t: ScheduledTask) => {
+    const id = t.lastRun?.rootId
+    const m = id ? (feedsRef.current[`dm-${t.employee}`] ?? []).find((x) => x.id === id) : undefined
+    return m?.kind === "msg" ? m : undefined
+  }
+  // A running run's row reads "running" until its session's turn ends, then "finished".
+  const shownTasks = (empId: string) =>
+    tasks.filter((t) => t.employee === empId).map((t) =>
+      t.lastRun?.result === "running" && !threadRunning(runRoot(t)) ? { ...t, lastRun: { ...t.lastRun, result: "finished" as const } } : t)
+  const runTask = (taskId: string) => {
+    const t = tasks.find((x) => x.id === taskId)
+    if (!t) return
+    // #136 AC-4: never two runs of one task at once — the new one is skipped and noted.
+    if (threadRunning(runRoot(t))) {
+      patchTask(t.id, { skipped: nowTime() })
+      say(`Skipped ${t.name}: the previous run is still going`)
+      return
+    }
+    const key = `dm-${t.employee}`
+    const f = folders.find((x) => x.id === t.folder)
+    const ws = f ? resolveWs({ folder: f.id, base: f.branches[0] ?? "", mode: "direct" }, t.prompt) : undefined
+    const pick = choiceFor(emp(t.employee)?.model ?? "", MODEL_OPTS)
+    const id = `sched-${Date.now()}`
+    const msg: Msg = { kind: "msg", id, from: "oscar", time: nowTime(), text: t.prompt, thread: { session: newSession(), title: runTitle(t.name), scheduled: { task: t.id, name: t.name }, replies: [], model: pick.model, provider: pick.provider, effort: pick.effort, fast: pick.fast, ws } }
+    setFeeds((fs) => ({ ...fs, [key]: [...(fs[key] ?? []), msg] }))
+    patchTask(t.id, { lastRun: { at: nowTime(), result: "running", rootId: id }, skipped: undefined })
+    say(`Started ${runTitle(t.name)}`)
+    void runTurn(key, id, t.employee, t.prompt, ws)
+  }
 
   /* ---- Fake engine. Each step maps to a real Hermes event so the UI contract is honest:
      session.create (first message) → prompt.submit → message.start → reasoning.delta* → tool.start/complete*
@@ -1813,6 +1864,7 @@ export default function App() {
             <EmployeeHome
               e={emp(view.id)!} feed={shownFeed} threadId={threadId} emp={emp} human={human}
               connection={connOf(emp(view.id)?.profile)}
+              scheduled={{ count: tasks.filter((t) => t.employee === view.id).length, onOpen: () => showTasks(), onOpenTask: showTasks }}
               onNav={() => setNavOpen(true)} onProfile={() => showEmp(view.id)} onOpen={showThread}
               onSend={sendTop} lastSent={lastSentTop} panelOpen={panelOpen} onPanel={() => setPanelOpen(true)} folders={folders}
               pick={wsPicks[view.id] ?? NO_WS} setPick={(p) => setWsPicks((w) => ({ ...w, [view.id]: p }))} onAddFolder={() => setAddFolderOpen(true)}
@@ -1862,10 +1914,21 @@ export default function App() {
 
           {panelOpen && (
             <RightPanel
-              tab={panelTab} onTab={setPanelTab} onClose={() => setPanelOpen(false)}
+              tab={panelTab === "scheduled" && view.kind !== "dm" ? "thread" : panelTab} onTab={setPanelTab} onClose={() => setPanelOpen(false)}
               threadPanel={threadPanel}
               employeeCard={emp(selectedEmp) ? <EmployeeCard e={emp(selectedEmp)!} profiles={PROFILES} engineName={engineName ?? undefined} ownerName={me.name} models={MODELS} onDM={() => goDM(selectedEmp)} onEdit={() => { setEditAgent(null); void engineDescribe(emp(selectedEmp)?.profile ?? "").then(setEditAgent).catch(() => {}).finally(() => setEditEmp(selectedEmp)) }} onSwitchProfile={(p) => switchProfile(selectedEmp, p)} /> : null}
               tickets={tickets} emp={emp} dm={!!channel.dm}
+              scheduled={view.kind === "dm" && emp(view.id) ? (
+                <ScheduledTasks
+                  employeeName={emp(view.id)!.name} tasks={shownTasks(view.id)} folders={folders} highlight={taskFlash}
+                  onNew={() => setTaskEdit({ emp: view.id })}
+                  onEdit={(task) => setTaskEdit({ emp: view.id, task })}
+                  onRunNow={runTask}
+                  onPause={(id, paused) => { patchTask(id, { paused }); say(paused ? "Paused. It won't run until you resume it." : "Resumed") }}
+                  onDelete={(id) => { setTasks((ts) => ts.filter((t) => t.id !== id)); say("Task deleted. Its past runs stay in the DM.") }}
+                  onOpenRun={showThread}
+                />
+              ) : undefined}
             />
           )}
         </div>
@@ -1885,6 +1948,19 @@ export default function App() {
           root={startRoot} thread={startRoot.thread} channel={channel} ticket={nextTicket} emp={emp} me={me.name} granted={!!selfStart[channel.id]}
           onClose={() => setStartFor(null)}
           onStart={(w, lead, grant) => startWork(startRoot.id, w, lead, grant)}
+        />
+      )}
+      {taskEdit && (
+        <TaskDialog
+          task={taskEdit.task} employeeName={emp(taskEdit.emp)?.name ?? ""} folders={folders}
+          defaultFolder={wsPicks[taskEdit.emp]?.folder ?? folders[0]?.id}
+          onClose={() => setTaskEdit(null)}
+          onSave={(d) => {
+            const editing = taskEdit.task
+            if (editing) patchTask(editing.id, d)
+            else setTasks((ts) => [...ts, { id: `task-${Date.now()}`, employee: taskEdit.emp, ...d }])
+            setTaskEdit(null); showTasks(); say(editing ? `Saved ${d.name}` : `Created ${d.name}`)
+          }}
         />
       )}
       {addFolderOpen && (
