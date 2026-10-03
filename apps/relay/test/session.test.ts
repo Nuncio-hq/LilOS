@@ -2,7 +2,7 @@ import { type AppErrorCode, MAX_ATTACHMENT_BYTES } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import { createMemoryAttachmentStore } from "../src/attachments";
 import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "../src/store";
+import { createMemoryStore } from "./memory-store";
 
 const TOKEN = "test-token";
 
