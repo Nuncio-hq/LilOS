@@ -15,15 +15,15 @@ import { newId, type RelayStore } from "./store";
 export const PAIRING_GRANT_TTL_MS = 5 * 60 * 1000;
 
 /** 12 chars from T3's unambiguous alphabet — no 0/1/I/O confusion. */
-export const PAIRING_CODE_LENGTH = 12;
-export const PAIRING_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+const PAIRING_CODE_LENGTH = 12;
+const PAIRING_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 
 export function sha256Hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
 /** T3's rejection sampling: drop bytes that would skew the modulo. */
-export function newPairingCode(
+function newPairingCode(
   length = PAIRING_CODE_LENGTH,
   alphabet = PAIRING_CODE_ALPHABET,
 ): string {

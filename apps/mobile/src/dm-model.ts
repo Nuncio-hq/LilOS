@@ -267,7 +267,7 @@ export function toFolderOptions(
 }
 
 /** The "ws/<slug>"-style branch + `.lilos/wt/<slug>` dir name from a prompt. */
-export function slugOf(text: string): string {
+function slugOf(text: string): string {
   return text
     .toLowerCase()
     .split(/[^a-z0-9]+/)
@@ -281,7 +281,7 @@ export function slugOf(text: string): string {
 }
 
 /** Deduped worktree slug: free as both dir name and `ws/<slug>` branch. */
-export function uniqueWorkSlug(folder: FolderOption, base: string): string {
+function uniqueWorkSlug(folder: FolderOption, base: string): string {
   const taken = new Set([
     ...folder.branches,
     ...folder.workstreams.map((w) => w.branch),

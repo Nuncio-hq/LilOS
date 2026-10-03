@@ -19,10 +19,10 @@ export interface TailscaleSelf {
   ipv4s: string[];
 }
 
-export const TAILSCALE_STATUS_TIMEOUT_MS = 1_500;
+const TAILSCALE_STATUS_TIMEOUT_MS = 1_500;
 
 /** True for addresses in Tailscale's CGNAT range (100.64.0.0/10). */
-export function isTailscaleIpv4Address(address: string): boolean {
+function isTailscaleIpv4Address(address: string): boolean {
   const parts = address.split(".");
   if (parts.length !== 4) return false;
   const [first, second, third, fourth] = parts.map((p) =>
@@ -46,7 +46,7 @@ export function isTailscaleIpv4Address(address: string): boolean {
  * a logged-out but running tailscaled yields `{ipv4s: []}` (treated as down
  * by the caller — there is nothing to bind).
  */
-export function parseTailscaleStatus(raw: string): TailscaleSelf | null {
+function parseTailscaleStatus(raw: string): TailscaleSelf | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -72,7 +72,7 @@ export function parseTailscaleStatus(raw: string): TailscaleSelf | null {
 }
 
 /** Failure labels safe to log — raw stderr is never surfaced. */
-export type TailscaleProbeError =
+type TailscaleProbeError =
   | "missing"
   | "not-logged-in"
   | "permission-denied"
@@ -101,7 +101,7 @@ export type TailscaleProbeResult =
  * Any failure (binary missing, logged out, timeout) resolves to a typed
  * failure — callers treat every one of them as "Tailscale down".
  */
-export function probeTailscale(
+function probeTailscale(
   bin = "tailscale",
   env: Record<string, string | undefined> = process.env,
 ): Promise<TailscaleProbeResult> {

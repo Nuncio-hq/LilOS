@@ -14,8 +14,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@lilos/contracts": "workspace:*",
-    "zod": "^4.1.11"
+    "@lilos/contracts": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

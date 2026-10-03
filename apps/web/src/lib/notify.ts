@@ -135,7 +135,7 @@ export function openConversationFromPath(pathname: string): string | null {
 }
 
 /** Per-session seq record for the state-driven completion check. */
-export interface CompletionSeqStore {
+interface CompletionSeqStore {
   /** Accounted seqs; `undefined` means the watcher has never seen the session. */
   read(sessionId: string): readonly number[] | undefined;
   write(sessionId: string, seqs: readonly number[]): void;

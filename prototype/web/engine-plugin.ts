@@ -1,3 +1,4 @@
+import type * as EngineFake from "@lilos/engine-fake";
 import type { Plugin } from "vite";
 
 /**
@@ -25,10 +26,9 @@ export function engineApiPlugin(): Plugin {
         req.on("end", () => {
           void (async () => {
             if (!dispatch) {
-              const m = (await server.ssrLoadModule("@lilos/engine-fake")) as {
-                FakeEngine: new () => { dispatch: never };
-                handleJsonRpc: (e: never, f: string) => Promise<string | null>;
-              };
+              const m = (await server.ssrLoadModule(
+                "@lilos/engine-fake",
+              )) as typeof EngineFake;
               const engine = new m.FakeEngine();
               dispatch = (frame) => m.handleJsonRpc(engine, frame);
             }

@@ -15,7 +15,7 @@ import { hostOf } from "./browser-omnibox";
 import type { BrowserMode, BrowserTab, BrowserThread } from "./browser-types";
 
 /* A site's letter chip until real favicons exist; a spinner while loading. */
-export function Favicon({ tab }: { tab: BrowserTab }) {
+function Favicon({ tab }: { tab: BrowserTab }) {
   if (tab.loading)
     return (
       <Loader2Icon className="size-3.5 shrink-0 animate-spin text-muted-foreground" />

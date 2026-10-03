@@ -9,7 +9,7 @@
  * Ported from Synara's `apps/server/src/agentGateway/protocol.ts` +
  * `mcpTransport.ts` (MIT) — same wire semantics, no Effect layer.
  */
-export const MCP_DEFAULT_PROTOCOL_VERSION = "2025-06-18";
+const MCP_DEFAULT_PROTOCOL_VERSION = "2025-06-18";
 const MCP_SUPPORTED_PROTOCOL_VERSIONS = new Set([
   "2025-06-18",
   "2025-03-26",
@@ -23,14 +23,14 @@ export const JSON_RPC_INVALID_PARAMS = -32602;
 
 export type JsonRpcId = string | number | null;
 
-export interface JsonRpcRequest {
+interface JsonRpcRequest {
   readonly jsonrpc: "2.0";
   readonly id: JsonRpcId;
   readonly method: string;
   readonly params: Record<string, unknown>;
 }
 
-export interface JsonRpcNotification {
+interface JsonRpcNotification {
   readonly method: string;
   readonly params: Record<string, unknown>;
 }
@@ -123,7 +123,7 @@ export function parseMcpMessage(raw: unknown): ParsedMcpMessage {
   };
 }
 
-export function negotiateMcpProtocolVersion(requested: unknown): string {
+function negotiateMcpProtocolVersion(requested: unknown): string {
   if (
     typeof requested === "string" &&
     MCP_SUPPORTED_PROTOCOL_VERSIONS.has(requested)

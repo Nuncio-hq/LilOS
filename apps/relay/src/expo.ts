@@ -1,6 +1,6 @@
 import type { ExpoSendResult, PushSender } from "./push";
 
-export const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 
 /** Expo caps each `/push/send` call at 100 tickets. */
 const EXPO_CHUNK = 100;
