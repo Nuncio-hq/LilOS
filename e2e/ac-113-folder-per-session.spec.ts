@@ -476,3 +476,36 @@ test("AC-3 (#208) a typed non-git folder says 'Not a git repo', adds, and the se
   ).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-208-3-pwd.png` });
 });
+
+test("AC-1 + AC-2 (#418) a folder created while the app is open lists on the next picker open", async ({
+  page,
+}) => {
+  await dmDefault(page);
+  // First open lists ROOT; pre-#418 that listing was cached for the page's
+  // lifetime, so populate it before the new folder exists. Typing a partial
+  // child path lists the parent filtered to the fragment — all lilos-* dirs
+  // show, and the not-yet-created one provably doesn't.
+  await (await openPicker(page)).getByText("Add a folder").click();
+  const dialog = page.locator("[data-addfolder]");
+  await expect(dialog).toBeVisible();
+  await dialog.locator("[data-pathinput]").fill(path.join(ROOT, "lilos"));
+  await expect(dialog.locator('[data-fsrow="lilos-repo-a"]')).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(dialog.locator('[data-fsrow="lilos-late-e"]')).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toHaveCount(0);
+
+  // Oscar creates a folder while the app stays open.
+  mkdirSync(path.join(ROOT, "lilos-late-e"));
+
+  // The next picker open re-reads the dir — no app reload needed. Typing
+  // ROOT itself (its fs row now exists) shows the unfiltered children.
+  await (await openPicker(page)).getByText("Add a folder").click();
+  await expect(dialog).toBeVisible();
+  await dialog.locator("[data-pathinput]").fill(ROOT);
+  await expect(dialog.locator('[data-fsrow="lilos-late-e"]')).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.screenshot({ path: `${SHOTS}/ac-418-late-folder.png` });
+});
