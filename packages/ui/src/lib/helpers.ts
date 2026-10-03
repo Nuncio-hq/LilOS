@@ -1,4 +1,6 @@
 /* Small pure helpers shared by the LilOS surfaces. No state, no data. */
+import type { PhrasingContent, RootContent } from "mdast";
+import { fromMarkdown } from "mdast-util-from-markdown";
 import type { Phase, RespondTo, Status, WsPick } from "../types";
 
 export const plural = (n: number, w: string) =>
@@ -31,22 +33,49 @@ export const slugOf = (s: string) =>
     .join("-");
 export const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, "");
 
-/* One-line preview of a markdown reply: drop markers, join blocks with " · ".
-   A block ending in ":" leads into the next one, so they join with a space. */
-export const preview = (md: string) =>
-  md
-    .split(/\n+/)
-    .map((l) =>
-      l
-        .replace(/^\s*(?:[-*]|\d+[.)])\s+/, "")
-        .replace(/[*`#_]/g, "")
-        .trim(),
-    )
-    .filter(Boolean)
-    .reduce(
-      (acc, l) => acc + (acc.endsWith(":") ? " " : acc ? " · " : "") + l,
-      "",
-    );
+/* One-line preview of a markdown reply: flatten through the real parser
+   (the one streamdown renders with) so emphasis markers unwrap but a code
+   span or identifier keeps its underscores (#417 — the old char regex ate
+   "_" inside `LILOS_ENGINE`). A block ending in ":" leads into the next
+   one, so they join with a space; other blocks join with " · ". */
+const inlineText = (node: PhrasingContent): string => {
+  if (node.type === "break") return " ";
+  if (node.type === "image" || node.type === "imageReference")
+    return node.alt ?? "";
+  if ("children" in node) return node.children.map(inlineText).join("");
+  return "value" in node ? node.value : "";
+};
+
+const blockLines = (node: RootContent): string[] => {
+  switch (node.type) {
+    case "paragraph":
+    case "heading":
+      return [node.children.map(inlineText).join("")];
+    case "list":
+    case "listItem":
+    case "blockquote":
+      return node.children.flatMap(blockLines);
+    case "code":
+      return [node.value];
+    default:
+      return [];
+  }
+};
+
+export const preview = (md: string) => {
+  try {
+    return fromMarkdown(md)
+      .children.flatMap(blockLines)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .reduce(
+        (acc, l) => acc + (acc.endsWith(":") ? " " : acc ? " · " : "") + l,
+        "",
+      );
+  } catch {
+    return md.replace(/\s+/g, " ").trim();
+  }
+};
 
 export const PHASE_LABEL: Record<Phase, string> = {
   submitted: "opening session",
