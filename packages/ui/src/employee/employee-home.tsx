@@ -1,6 +1,7 @@
 import {
   AlertTriangleIcon,
   ArchiveIcon,
+  CalendarClockIcon,
   ChevronRightIcon,
   EllipsisIcon,
   FolderIcon,
@@ -225,6 +226,7 @@ export function EmployeeHome({
   connection,
   draft: composerDraft,
   onDraftChange,
+  scheduled,
 }: {
   e: Employee;
   feed: Msg[];
@@ -293,6 +295,13 @@ export function EmployeeHome({
     state: ConnectionState;
     reason?: string;
     onConnect?: () => void;
+  };
+  /* Scheduled tasks (#136): the header's Scheduled button (with the count)
+     and the chip on sessions a task started. Omitted → neither renders. */
+  scheduled?: {
+    count: number;
+    onOpen: () => void;
+    onOpenTask: (taskId: string) => void;
   };
 }) {
   const pickedFolder = folders.find((x) => x.id === pick.folder);
@@ -406,6 +415,18 @@ export function EmployeeHome({
               </div>
             )
           )}
+          {t.scheduled && scheduled && (
+            <button
+              type="button"
+              data-scheduled-chip={t.scheduled.task}
+              onClick={() => scheduled.onOpenTask(t.scheduled!.task)}
+              title="Started by a scheduled task. Open the task."
+              className="mb-0.5 flex w-fit items-center gap-1 rounded-full border px-2 py-0.5 text-muted-foreground text-xs hover:bg-muted hover:text-foreground"
+            >
+              <CalendarClockIcon className="size-3" />
+              Scheduled · {t.scheduled.name}
+            </button>
+          )}
           <Body text={m.text} />
           {m.attachments && <AttachmentChips files={m.attachments} />}
           {firstAnswer && (
@@ -497,6 +518,24 @@ export function EmployeeHome({
                 className="h-7 rounded-full border-transparent bg-foreground/[0.06] pl-7 text-xs shadow-none dark:bg-white/[0.08]"
               />
             </div>
+          )}
+          {scheduled && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={scheduled.onOpen}
+              title="Scheduled tasks"
+              data-scheduled-button
+              className="gap-1 px-2"
+            >
+              <CalendarClockIcon />
+              <span className="max-sm:sr-only">Scheduled</span>
+              {scheduled.count > 0 && (
+                <span className="rounded-full bg-foreground/10 px-1.5 text-[11px] tabular-nums">
+                  {scheduled.count}
+                </span>
+              )}
+            </Button>
           )}
           <Button
             variant="ghost"
