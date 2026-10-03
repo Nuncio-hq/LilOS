@@ -119,7 +119,7 @@ export function listedJobModel(j: Job): JobModel {
 }
 
 /** "38s" / "14m" / "1h 5m" — the Background tab's uptime column. */
-export function formatUptime(seconds: number): string {
+function formatUptime(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);

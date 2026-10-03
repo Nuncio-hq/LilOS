@@ -69,7 +69,7 @@ export interface EngineSocket {
   addEventListener(type: "error", fn: (event: unknown) => void): void;
 }
 
-export type EngineSocketFactory = (url: string) => EngineSocket;
+type EngineSocketFactory = (url: string) => EngineSocket;
 
 const defaultFactory: EngineSocketFactory = (url) => {
   const Impl = (globalThis as { WebSocket?: new (u: string) => EngineSocket })

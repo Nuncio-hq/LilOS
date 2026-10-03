@@ -86,6 +86,11 @@ export class Session {
      turn.started echoes each entry's `ref` so the relay message the steer
      came from stays the turn's anchor (#308). */
   steeredQueue: { text: string; ref?: string }[] = [];
+  /** #414: text already emitted as `turn.delta` for the segment still open.
+     `message.interim` seals a segment with its authoritative FULL text —
+     this is how much of it the stream already delivered. Reset at each
+     `message.start` and at every interim seal. */
+  streamedText = "";
   /** #134: user inputs delivered (prompts + accepted steers) —
       `session.rewind` truncates Hermes history to this count's `toTurn`. */
   userTurns = 0;

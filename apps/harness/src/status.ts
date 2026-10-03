@@ -51,7 +51,7 @@ export interface StatusReporterOptions {
 }
 
 /** Resident set size of `pid` in bytes via `ps` (macOS + Linux). */
-export function readRssBytesPs(pid: number): number | undefined {
+function readRssBytesPs(pid: number): number | undefined {
   try {
     const out = spawnSync("ps", ["-o", "rss=", "-p", String(pid)], {
       encoding: "utf8",

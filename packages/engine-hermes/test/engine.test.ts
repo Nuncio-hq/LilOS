@@ -126,6 +126,134 @@ describe("engine-hermes #334: reasoning.available is a summary, not a delta", ()
   });
 });
 
+describe("engine-hermes #414: message.interim seals a segment, not appends", () => {
+  /** Concatenate the text stream the way turn-model's `t.text` folds it. */
+  const textOf = (h: Harness, turnId: string) =>
+    h.events
+      .filter(
+        (e) =>
+          e.type === "turn.delta" &&
+          (e.payload as { stream?: string }).stream === "text" &&
+          (e.payload as { turnId?: string }).turnId === turnId,
+      )
+      .map((e) => (e.payload as { delta: string }).delta)
+      .join("");
+  const turnIdOf = (h: Harness) => {
+    const e = h.events.find((x) => x.type === "turn.started");
+    if (!e) throw new Error("turn.started missing");
+    return (e.payload as { turnId: string }).turnId;
+  };
+
+  test("AC-2 recorded sequence: streamed pre-tool text renders once", async () => {
+    /* Wire order captured on real `hermes serve` (the issue's live check)
+       for "the agent says something, then calls a tool" — upstream
+       (tui_gateway/prompt_turn.py `_interim_assistant_cb` <-
+       agent/stream_delivery.py `_emit_interim_assistant_message`):
+         1. message.delta xN — the commentary streams
+         2. message.interim {text:<same>, already_streamed:true} — the
+            mid-turn segment is SEALED; the text is the segment's
+            authoritative full content, not a delta
+         3. tool.start / tool.complete — the calls from that message run
+         4. message.delta — the final answer
+         5. message.complete — turn end                                        */
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const said =
+      "No test framework is set up in this repo (no package.json), so I'll write the test using node:test.";
+    const p = promptAsync(h, sessionId, "add a subtract function and a test");
+    gw.emit(gw.lastSid, "message.delta", { text: said.slice(0, 60) });
+    gw.emit(gw.lastSid, "message.delta", { text: said.slice(60) });
+    gw.emit(gw.lastSid, "message.interim", {
+      text: said,
+      already_streamed: true,
+    });
+    gw.emit(gw.lastSid, "tool.start", {
+      tool_id: "call_1",
+      name: "write_file",
+      args: { path: "subtract.test.mjs" },
+    });
+    gw.emit(gw.lastSid, "tool.complete", {
+      tool_id: "call_1",
+      name: "write_file",
+      result_text: "wrote subtract.test.mjs",
+    });
+    gw.emit(gw.lastSid, "message.delta", { text: "Done: subtract() + test." });
+    gw.complete(gw.lastSid, { text: "Done: subtract() + test." });
+    await p;
+
+    /* The bug: the interim's text was appended AGAIN as a turn.delta —
+       the thread rendered the sentence twice. */
+    expect(textOf(h, turnIdOf(h))).toBe(`${said}Done: subtract() + test.`);
+  });
+
+  test("a non-streamed interim (already_streamed:false) emits its text once", async () => {
+    /* The other half of the contract: non-streaming providers and the
+       Codex runtime route whole completed messages through interim —
+       the frame is then the text's only carrier and MUST emit. */
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    gw.emit(gw.lastSid, "message.interim", {
+      text: "Checking the folder first.",
+      already_streamed: false,
+    });
+    gw.emit(gw.lastSid, "tool.start", {
+      tool_id: "call_1",
+      name: "terminal",
+      args: { command: "ls" },
+    });
+    gw.emit(gw.lastSid, "tool.complete", {
+      tool_id: "call_1",
+      name: "terminal",
+      result_text: "files",
+    });
+    gw.emit(gw.lastSid, "message.interim", {
+      text: "Done.",
+      already_streamed: false,
+    });
+    gw.complete(gw.lastSid, { text: "Done." });
+    await p;
+
+    expect(textOf(h, turnIdOf(h))).toBe("Checking the folder first.Done.");
+  });
+
+  test("an interim longer than what streamed emits only the missing tail", async () => {
+    /* Partial stream (flag absent/false): the segment's text starts with
+       what already streamed — resending the whole frame would re-print
+       the head. Only the unstreamed suffix goes out (upstream replaces
+       its buffer with the authoritative text). */
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    gw.emit(gw.lastSid, "message.delta", { text: "Let me check the" });
+    gw.emit(gw.lastSid, "message.interim", {
+      text: "Let me check the repo.",
+      already_streamed: false,
+    });
+    gw.emit(gw.lastSid, "message.delta", { text: "Done." });
+    gw.complete(gw.lastSid, { text: "Done." });
+    await p;
+
+    expect(textOf(h, turnIdOf(h))).toBe("Let me check the repo.Done.");
+  });
+
+  test("an interim identical to the stream without the flag stays single", async () => {
+    /* Defensive: an older/shaped frame that omits `already_streamed` but
+       re-carries exactly what message.delta delivered still seals — the
+       tracked stream makes the flag unnecessary here. */
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    gw.emit(gw.lastSid, "message.delta", { text: "Looking into it." });
+    gw.emit(gw.lastSid, "message.interim", { text: "Looking into it." });
+    gw.emit(gw.lastSid, "message.delta", { text: "Done." });
+    gw.complete(gw.lastSid, { text: "Done." });
+    await p;
+
+    expect(textOf(h, turnIdOf(h))).toBe("Looking into it.Done.");
+  });
+});
+
 describe("engine-hermes AC-2: approvals & clarifies", () => {
   test("AC-2a approval srq -> request.opened -> respond once", async () => {
     const { gw, h } = setup();
@@ -1354,6 +1482,87 @@ describe("engine-hermes #294: the resolved context window reaches clients", () =
     expect(usage?.contextWindow).toBe(262_000);
   });
 
+  test("usage.context_used maps to Usage.context — occupancy, not throughput (#415)", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    /* The fake emits the real `_get_usage` split: input/output are
+       session-lifetime sums, context_used is the live occupancy. #415's
+       123.2% repro came from dividing the lifetime sum by the window. */
+    gw.complete(gw.lastSid);
+    await p;
+    const done = h.events.find((e) => e.type === "turn.completed");
+    if (!done) throw new Error("turn.completed missing");
+    const usage = (done.payload as { usage?: { context?: number } }).usage;
+    expect(usage?.context).toBe(18);
+  });
+
+  test("a mid-turn session.usage tick refreshes the live occupancy (#415)", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    gw.complete(gw.lastSid);
+    await p;
+    /* `session.usage` ticks carry the same `_get_usage` shape — the meter's
+       snapshot follows a drifting occupancy between turn ends. */
+    gw.emit(gw.lastSid, "session.usage", {
+      usage: { context_used: 41_000, context_max: 262_000 },
+    });
+    const snap = (await h.request("events.since", {
+      sessionId,
+      after: 0,
+    })) as {
+      snapshot: { usage?: { context?: number; contextWindow?: number } };
+    };
+    expect(snap.snapshot.usage?.context).toBe(41_000);
+    expect(snap.snapshot.usage?.contextWindow).toBe(262_000);
+  });
+
+  test("a mid-turn occupancy tick survives a completion that omits context fields (#415)", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p1 = promptAsync(h, sessionId);
+    gw.complete(gw.lastSid); // seeds s.usage (context: 18)
+    await p1;
+    const p2 = promptAsync(h, sessionId);
+    gw.emit(gw.lastSid, "session.usage", {
+      usage: { context_used: 41_000, context_max: 262_000 },
+    });
+    /* An older/partial `_get_usage` shape that reports neither field must
+       not drop the tick's reading back to the lifetime-sum fallback —
+       the same preserve the ACP endAcpTurn applies. */
+    gw.complete(gw.lastSid, { usage: { input: 900, output: 60 } });
+    await p2;
+    const dones = h.events.filter((e) => e.type === "turn.completed");
+    const usage = (dones[1].payload as { usage?: Record<string, number> })
+      .usage;
+    expect(usage?.context).toBe(41_000);
+    expect(usage?.contextWindow).toBe(262_000);
+    expect(usage?.input).toBe(900);
+  });
+
+  test("a real context_used: 0 maps through — post-compaction occupancy is not 'unreported' (#415)", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    gw.complete(gw.lastSid, {
+      usage: {
+        input: 900,
+        output: 60,
+        context_used: 0,
+        context_max: 262_000,
+      },
+    });
+    await p;
+    const done = h.events.find((e) => e.type === "turn.completed");
+    if (!done) throw new Error("no turn.completed");
+    const usage = (done.payload as { usage?: Record<string, number> }).usage;
+    /* 0 stays 0 — falling back to input+output here would inflate the
+       meter right after a compaction. */
+    expect(usage?.context).toBe(0);
+    expect(usage?.contextWindow).toBe(262_000);
+  });
+
   test("session.info's usage.context_max refreshes the window between turns", async () => {
     const { gw, h } = setup();
     const { sessionId } = await start(h);
@@ -1696,5 +1905,60 @@ describe("engine-hermes #308: post-turn legs mint their own turn", () => {
     gw.complete(gw.lastSid);
     await new Promise((r) => setTimeout(r, 0));
     expect(completed()).toBe(before);
+  });
+});
+
+describe("engine-hermes #416: an inline diff carries the file's real path", () => {
+  /* tui_gateway's ToolCompletePayload has no top-level `path` — the file a
+     write call touched lives in `args` (the tool's own input). Reading
+     `payload.path` stamped every diff "(inline)", which collapsed the turn
+     footer's unique-path count to 1. */
+  const diffPathOf = async (
+    completePayload: Record<string, unknown>,
+  ): Promise<string | undefined> => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId, "edit files");
+    gw.emit(gw.lastSid, "tool.start", {
+      tool_id: "call_1",
+      name: "write_file",
+      args: { path: "x" },
+    });
+    gw.emit(gw.lastSid, "tool.complete", {
+      tool_id: "call_1",
+      name: "write_file",
+      result: { ok: true },
+      inline_diff: "a/x → b/x +1",
+      ...completePayload,
+    });
+    gw.complete(gw.lastSid);
+    await p;
+    const done = h.events.find((e) => e.type === "tool.completed")?.payload as {
+      diff?: { path?: string };
+    };
+    return done.diff?.path;
+  };
+
+  test("AC-1 args.path names the file (write_file / patch replace)", async () => {
+    expect(
+      await diffPathOf({ args: { path: "math.test.ts", content: "…" } }),
+    ).toBe("math.test.ts");
+  });
+
+  test("AC-1 V4A patch headers name the file (delete/update/add)", async () => {
+    expect(
+      await diffPathOf({
+        args: {
+          mode: "patch",
+          patch:
+            "*** Begin Patch\n*** Delete File: old.ts\n*** Update File: keep.ts\n*** End Patch",
+        },
+      }),
+    ).toBe("old.ts");
+  });
+
+  test("a legacy top-level path or missing args still falls back", async () => {
+    expect(await diffPathOf({ path: "legacy.ts" })).toBe("legacy.ts");
+    expect(await diffPathOf({ args: null })).toBe("(inline)");
   });
 });

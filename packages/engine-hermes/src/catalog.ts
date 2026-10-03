@@ -252,7 +252,7 @@ interface ModelOptionsProvider {
  * per-model `reasoning` booleans but no level list, so a reasoning-capable
  * model gets the full ladder (issue #92 AC-2).
  */
-export const HERMES_EFFORT_LADDER = [
+const HERMES_EFFORT_LADDER = [
   "none",
   "minimal",
   "low",

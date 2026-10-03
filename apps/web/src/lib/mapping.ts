@@ -66,7 +66,7 @@ const PHASE_MAP: Record<TurnModel["phase"], Phase> = {
 
 /* #180: a turn's plan/task-list snapshot -> the ui Plan the PlanCard renders.
    A tasks list under 2 items is noise (issue default) and is never mapped. */
-export function toUiPlan(p: TurnPlan): UiPlan | undefined {
+function toUiPlan(p: TurnPlan): UiPlan | undefined {
   if (p.kind === "tasks" && p.steps.length < 2) return undefined;
   return {
     id: p.planId,
@@ -105,6 +105,7 @@ function toStep(s: TurnModel["steps"][number], turn?: TurnModel): Step {
     input: s.input,
     output: s.output ?? "",
     running: s.status === "running",
+    status: s.status,
     ...(dispatched ? { dispatched: true } : {}),
     diff: s.diff as Step["diff"],
     commit: s.commit as Step["commit"],
@@ -114,7 +115,7 @@ function toStep(s: TurnModel["steps"][number], turn?: TurnModel): Step {
 /* ── #179: subagent + background-job model -> ui types ─────────────────── */
 
 /** A helper row inside the turn's Subagents block. */
-export function toSubagent(
+function toSubagent(
   s: SubagentModel,
   resolveEmployee: (employeeRef: string) => string = (r) => r,
   turn?: TurnModel,

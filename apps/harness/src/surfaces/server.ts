@@ -38,7 +38,7 @@ import { bunPtySpawner } from "./pty";
  */
 const VIEW_PATH = "/view";
 
-export interface CreateSessionInit {
+interface CreateSessionInit {
   cwd?: string;
   binding?: SessionBinding;
   /** The engine's own session id, registered as an alias (AC-3). */
@@ -65,7 +65,7 @@ export interface SurfacesServerOptions {
   engineToken?: string;
 }
 
-export interface SessionHandle {
+interface SessionHandle {
   session: string;
   token: string;
   binding?: SessionBinding;

@@ -2,7 +2,7 @@ import { APP_PROTOCOL_VERSION, type AppErrorCode } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import { createPairingService } from "../src/pairing";
 import { createRelay, type RelayWsPeer } from "../src/session";
-import { createMemoryStore } from "../src/store";
+import { createMemoryStore } from "./memory-store";
 
 /* `conversations.prs` (#159): a thread's pull requests. The relay resolves
    the conversation's folder (`cwd`/`workspace.repoPath`) + branch

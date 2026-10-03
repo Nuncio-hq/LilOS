@@ -13,7 +13,7 @@ import type { ForgePrListItem } from "@lilos/contracts/host";
    client interface exactly like production. Deterministic: every id is
    fixed; timestamps are `now` offsets baked at DemoClient construction. */
 
-export const DEMO_TEAM = [
+const DEMO_TEAM = [
   {
     id: "builder",
     name: "Builder",

@@ -566,13 +566,10 @@ ${tail}`,
           tool: "write_file",
           input: { path: "docs/decisions/0002-notes.md" },
           output: "9 lines",
-          diff: {
-            path: "docs/decisions/0002-notes.md",
-            status: "added",
-            add: 5,
-            del: 0,
-            patch: `@@ -0,0 +1,5 @@\n+# 0002 ${q}\n+\nStatus: proposed\n+\nWhy: asked by Oscar in session.`,
-          },
+          /* #416: no `diff` on purpose — the wire makes diffs optional and
+             engines that don't emit one per create (the ACP path) exist.
+             "N files changed" must still count the file from the call's
+             own args, not only from emitted diffs. */
         },
         {
           tool: "terminal",

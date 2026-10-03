@@ -42,7 +42,7 @@ export function createFeedHandler(harness: Harness) {
  * an overflow just falls back to the client's own resync path. */
 const HELD_FRAME_CAP = 1_000;
 
-export function createFeed(deps: FeedDeps) {
+function createFeed(deps: FeedDeps) {
   const peers = new Set<(frame: string) => void>();
   let held: string[] = [];
   const unsubscribe = deps.subscribeEngineEvents((event) => {

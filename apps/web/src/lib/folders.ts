@@ -27,7 +27,11 @@ export const discovered = atom<string[]>([]);
 export const cwdInfo = atom<Record<string, { branch: string } | null>>({});
 
 const probed = new Set<string>();
-const dirCache = new Map<string, Promise<Record<string, FsDir> | null>>();
+/* In-flight dedupe only: asks for one dir share a single fs.list while it
+   runs, but a settled listing is never reused — reopening the picker or
+   entering a folder always re-reads the dir, so a folder created after the
+   page loaded shows (issue #418 AC-1). */
+const dirInflight = new Map<string, Promise<Record<string, FsDir> | null>>();
 
 async function probeFolder(path: string): Promise<Folder> {
   try {
@@ -70,7 +74,7 @@ export async function addFolder(path: string): Promise<Folder | undefined> {
 }
 
 /** Lazy probe for a conversation's cwd (thread header branch). */
-export function probeCwd(path: string): void {
+function probeCwd(path: string): void {
   if (probed.has(path)) return;
   probed.add(path);
   void (async () => {
@@ -119,8 +123,8 @@ export function wsFor(
 
 /* fs.list → FsDir rows: the dir's children + a git-marked stub per repo
    child; the dir's own repo mark too (ported from prototype host.ts). */
-export function needDir(path: string): Promise<Record<string, FsDir> | null> {
-  let p = dirCache.get(path);
+function needDir(path: string): Promise<Record<string, FsDir> | null> {
+  let p = dirInflight.get(path);
   if (!p) {
     p = (async () => {
       const r = await hostList(path);
@@ -158,12 +162,10 @@ export function needDir(path: string): Promise<Record<string, FsDir> | null> {
       };
       if (r.path !== path) out[r.path] = out[path];
       return out;
-    })().catch(() => null);
-    dirCache.set(path, p);
-    // A failed listing is not cached — the next needDir retries.
-    void p.then((m) => {
-      if (m === null) dirCache.delete(path);
-    });
+    })()
+      .catch(() => null)
+      .finally(() => dirInflight.delete(path));
+    dirInflight.set(path, p);
   }
   return p;
 }

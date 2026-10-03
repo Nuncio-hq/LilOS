@@ -8,7 +8,7 @@ import type { AppMessage, Conversation } from "@lilos/contracts/app";
 import { connectFake, FakeEngine } from "@lilos/engine-fake";
 import { describe, expect, it } from "vitest";
 import { createRelay } from "../../relay/src/session";
-import { createMemoryStore } from "../../relay/src/store";
+import { createMemoryStore } from "../../relay/test/memory-store";
 import type { EngineConnection } from "../src/engine/client";
 import { Harness } from "../src/harness";
 import { createMemoryLogger } from "../src/log";

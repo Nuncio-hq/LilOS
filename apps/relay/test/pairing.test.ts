@@ -15,7 +15,7 @@ import {
   type PhoneAccess,
   type RelayWsPeer,
 } from "../src/session";
-import { createMemoryStore, type RelayStore } from "../src/store";
+import { createMemoryStore, type RelayStore } from "./memory-store";
 
 const TOKEN = "test-token";
 const RELAY_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
