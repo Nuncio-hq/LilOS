@@ -35,6 +35,29 @@ export function sessionModelId(
   );
 }
 
+/** The meter's numerator (issue #415): the engine's CURRENT occupancy
+    report when it sends one (Hermes `context_used`), else the pre-#415
+    sum of the last turn's in+out — the only context signal those engines
+    emit. `input`/`output` alone are lifetime throughput: summed over every
+    tool-loop call they outgrow the window (the 123.2% bug). */
+export function contextUsedOf(
+  usage: Pick<Usage, "input" | "output" | "context"> | undefined,
+): number {
+  return usage?.context ?? (usage?.input ?? 0) + (usage?.output ?? 0);
+}
+
+/** The share of the window the meter fills — clamped: a stale or estimated
+    numerator can overshoot the window, but the UI never reads past 100%
+    (#415 AC-3). */
+export function contextShare(used: number, max: number): number {
+  return max > 0 ? Math.min(1, Math.max(0, used / max)) : 0;
+}
+
+/** True when the context is at/over the window — the meter's "Full" state. */
+export function contextFull(used: number, max: number): boolean {
+  return max > 0 && used >= max;
+}
+
 /** The window a session's meter divides by: the engine's report on the
     turn's usage first (it is the resolved window — a config pin or variant
     can differ from the catalog row), then the session model's catalog row,

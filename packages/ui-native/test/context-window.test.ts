@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  contextUsedOf,
   contextWindowOf,
   FALLBACK_CONTEXT_WINDOW,
 } from "../src/employees/model-rules";
@@ -49,5 +50,20 @@ describe("contextWindowOf — the window the meter divides by (#294)", () => {
       tokens: FALLBACK_CONTEXT_WINDOW,
       estimated: true,
     });
+  });
+});
+
+/* #415 twin of packages/ui/test/context-window.test.tsx: the meter's
+   numerator is the engine's CURRENT occupancy (`context`), not the lifetime
+   input+output sums — Hermes' 123.2% repro is exactly that mix-up. */
+describe("contextUsedOf — the meter's numerator (#415)", () => {
+  it("prefers the reported occupancy over the lifetime sum", () => {
+    expect(
+      contextUsedOf({ input: 305_800, output: 17_400, context: 21_300 }),
+    ).toBe(21_300);
+  });
+  it("falls back to the last turn's in+out when the engine reports none", () => {
+    expect(contextUsedOf({ input: 305_800, output: 17_400 })).toBe(323_200);
+    expect(contextUsedOf(undefined)).toBe(0);
   });
 });

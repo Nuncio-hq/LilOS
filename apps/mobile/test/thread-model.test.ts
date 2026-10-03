@@ -781,6 +781,9 @@ describe("#247 mobile polish — prototype thread details on real data", () => {
           output: 2_000,
           reasoning: 800,
           cache: 12_000,
+          /* The engine's live occupancy rides through to the meter's
+             numerator (#415). */
+          context: 21_300,
           contextWindow: 256_000,
         },
       }),
@@ -799,6 +802,7 @@ describe("#247 mobile polish — prototype thread details on real data", () => {
       output: 2_000,
       reasoning: 800,
       cache: 12_000,
+      context: 21_300,
       max: 256_000,
       estimated: false,
     });
