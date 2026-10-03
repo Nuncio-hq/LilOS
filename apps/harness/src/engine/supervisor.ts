@@ -14,7 +14,7 @@ import {
  * endpoint (the engine's orphan grace keeps sessions); process exits relaunch.
  */
 
-export const ENGINE_HOST_STATES = [
+const ENGINE_HOST_STATES = [
   "starting",
   "running",
   "restarting",

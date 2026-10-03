@@ -70,7 +70,7 @@ type FakeTab = BrowserTab & { back: string[]; fwd: string[] }
 /* Threads that own tab groups (ids match the prototype's feed: m1 = LIL-3 in
    #engineering). A new thread gets a group the first time its agent (or
    Oscar, from the thread's Workbench) opens a tab. */
-export const BROWSER_THREADS: BrowserThread[] = [
+const BROWSER_THREADS: BrowserThread[] = [
   { id: "m1", title: "LIL-3 · Scaffold monorepo", employeeId: "builder" },
   { id: "m2", title: "Harness reconnect after sleep", employeeId: "builder" },
   { id: "lil-2", title: "LIL-2 · Relay event log", employeeId: "reviewer" },

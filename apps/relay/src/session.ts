@@ -140,7 +140,7 @@ export interface PhoneAccess {
   disable(): Promise<void>;
 }
 
-export interface RelayConnection {
+interface RelayConnection {
   receive(data: string): Promise<void>;
   closed(): void;
 }

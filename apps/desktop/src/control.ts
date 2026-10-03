@@ -9,7 +9,7 @@ export type HelperExec = (
   args: string[],
 ) => Promise<{ stdout: string; stderr: string; code: number }>;
 
-export const realExec: HelperExec = (bin, args) =>
+const realExec: HelperExec = (bin, args) =>
   new Promise((resolve) => {
     execFile(bin, args, { timeout: 30_000 }, (error, stdout, stderr) => {
       const code =

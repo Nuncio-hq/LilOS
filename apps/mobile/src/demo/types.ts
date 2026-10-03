@@ -27,7 +27,7 @@ export type DemoStep = {
 };
 
 /** A helper a scripted turn fans out to (#179/#319 coverage). */
-export type DemoSubagent = {
+type DemoSubagent = {
   id: string;
   name: string;
   task: string;
@@ -92,7 +92,7 @@ export type DemoScript = {
 
 /** A seeded conversation's baked history: user lines then the turn each
    prompts, in order. `waiting` freezes mid-ask (the turn stays open). */
-export type SeedLeg = {
+type SeedLeg = {
   /** The user's message text for this turn. */
   text: string;
   /** Engine turn that answers it; absent = user message with no reply yet. */

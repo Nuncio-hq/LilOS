@@ -36,7 +36,7 @@ const THREAD_ROUTES = new Set<keyof Routes>([
 ]);
 
 /** The conversation on screen right now, or null. */
-export function visibleConversationId(): string | null {
+function visibleConversationId(): string | null {
   if (!nav.isReady() || AppState.currentState !== "active") return null;
   const routes = nav.getRootState()?.routes;
   const top = routes?.[routes.length - 1];

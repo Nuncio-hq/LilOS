@@ -9,7 +9,7 @@
  */
 
 /** Strip a provider prefix and normalize for display. */
-export function modelBaseId(model: string): string {
+function modelBaseId(model: string): string {
   const trimmed = model.trim();
   const slash = trimmed.lastIndexOf("/");
   return slash >= 0 ? trimmed.slice(slash + 1) : trimmed;
@@ -100,7 +100,7 @@ function prettifyBase(base: string): string {
 // EITHER order: `…-flash-Q4_K_XL` and `…-Q4_K_XL-flash` are the same model.
 // One decomposition feeds both the catalog rows and the composer pill, so
 // the two screens can never disagree on which variant an id carries.
-export function splitTrailingTags(base: string): {
+function splitTrailingTags(base: string): {
   base: string;
   variant: string;
   quant: string;

@@ -33,7 +33,7 @@ const toSchema = (s: z.ZodType) =>
   z.toJSONSchema(s, { target: "draft-2020-12", unrepresentable: "throw" });
 
 /** Engine wire doc: methods + notifications (shape fixed by #6's consumers). */
-export function renderEngineDoc(): string {
+function renderEngineDoc(): string {
   const doc = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     title: "LilOS engine protocol",
@@ -102,7 +102,7 @@ export function buildSchemaDoc(protocol: ProtocolRegistry): unknown {
   };
 }
 
-export function renderSchemaDoc(protocol: ProtocolRegistry): string {
+function renderSchemaDoc(protocol: ProtocolRegistry): string {
   return `${JSON.stringify(buildSchemaDoc(protocol), null, 2)}\n`;
 }
 
@@ -140,7 +140,7 @@ export function stalePaths(): string[] {
   );
 }
 
-export function writeAll(): string[] {
+function writeAll(): string[] {
   mkdirSync(GENERATED_DIR, { recursive: true });
   return GENERATED_DOCS.map((doc) => {
     const path = outputPathFor(doc);

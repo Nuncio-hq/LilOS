@@ -45,7 +45,7 @@ export function hostRoots(): string[] {
 /** A host-answered error: `code` is the JSON-RPC code (`HOST_ERRORS.*`),
     absent on transport failures (HTTP error, bad frame). Callers key on it —
     e.g. NOT_A_REPO means the tab stays hidden, GH_FAILED reads plainly. */
-export class HostError extends Error {
+class HostError extends Error {
   code?: number;
   /** Host-side error data (e.g. forge's `{reason, detail}` on GH_FAILED). */
   data?: unknown;
