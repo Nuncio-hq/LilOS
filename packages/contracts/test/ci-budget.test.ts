@@ -98,3 +98,32 @@ describe("AC-7 the macOS release build never runs per PR", () => {
     );
   });
 });
+
+/**
+ * Issue #433: the E2E step ran ~23 min on the 2-worker default (half of the
+ * runner's 4 vCPUs). Plan A is `workers: 4` on CI — per-worker port blocks
+ * (e2e/ports.ts) keep the extra stacks apart. Plan B, if CI flakes: shard the
+ * E2E step across matrix jobs behind an aggregating `verify` job; these tests
+ * then pin the shard setup instead.
+ */
+describe("#433 AC-1 the E2E step's parallelism comes from 4 CI workers", () => {
+  it("playwright.config.ts overrides workers to 4 under CI only", () => {
+    const config = read("playwright.config.ts");
+    expect(config).toContain("workers: process.env.CI ? 4 : undefined");
+  });
+
+  it("the single verify job still runs the suite in one E2E step", () => {
+    const ci = read(".github/workflows/ci.yml");
+    expect(ci).toMatch(/^ {2}verify:$/m);
+    expect(ci).toContain("run: xvfb-run -a bun run test:e2e");
+    expect(ci).not.toContain("--shard");
+  });
+});
+
+describe("#433 AC-2 flakes stay visible under the extra parallelism", () => {
+  it("keeps CI retries and the github reporter so a pass-on-retry is flagged", () => {
+    const config = read("playwright.config.ts");
+    expect(config).toContain("retries: process.env.CI ? 1 : 0");
+    expect(config).toContain('[["list"], ["github"]]');
+  });
+});

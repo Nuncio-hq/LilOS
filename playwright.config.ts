@@ -29,6 +29,10 @@ export default defineConfig({
      never goes silently green. */
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["list"], ["github"]] : [["list"]],
+  /* #433: CI's default is 2 workers (half of the runner's 4 vCPUs) and the E2E
+     step took ~23 min. Each worker's stack stays on its own wport() port
+     block (e2e/ports.ts), so 4 workers halve it; local keeps the default. */
+  workers: process.env.CI ? 4 : undefined,
   use: {
     baseURL: "http://127.0.0.1:5199",
     screenshot: "off",
