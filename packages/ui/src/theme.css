@@ -676,6 +676,12 @@
 .dark .text-red-700 {
   color: oklch(80.8% 0.114 19.571);
 }
+.dark .text-red-800 {
+  color: oklch(80.8% 0.114 19.571);
+}
+.dark .text-red-900 {
+  color: oklch(80.8% 0.114 19.571);
+}
 .dark .text-violet-600 {
   color: oklch(70.2% 0.183 293.541);
 }
