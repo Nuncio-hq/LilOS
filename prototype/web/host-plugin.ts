@@ -1,3 +1,4 @@
+import type * as LilosHost from "@lilos/host";
 import type { Plugin } from "vite";
 
 /**
@@ -23,7 +24,7 @@ export function hostApiPlugin(): Plugin {
         req.on("end", () => {
           void server
             .ssrLoadModule("@lilos/host")
-            .then((m) => m.handleHostFrame(body))
+            .then((m) => (m as typeof LilosHost).handleHostFrame(body))
             .then((text: string | null) => {
               res.setHeader("content-type", "application/json");
               res.end(text ?? "null");

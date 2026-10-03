@@ -14,6 +14,7 @@ import {
   connectEngineWs,
   type EngineConnection,
   EngineRpcError,
+  type EngineSocket,
 } from "../src/engine/client";
 import { fakeEngineLauncher } from "../src/engine/launcher";
 import {
@@ -365,7 +366,7 @@ describe("workspace harness", () => {
       addEventListener(type: string, fn: (e?: unknown) => void) {
         listeners.set(type, [...(listeners.get(type) ?? []), fn]);
       },
-    } as unknown as import("../src/engine/client").EngineSocket;
+    } as unknown as EngineSocket;
     const connPromise = connectEngineWs("ws://fake", {
       socketFactory: () => {
         queueMicrotask(() =>

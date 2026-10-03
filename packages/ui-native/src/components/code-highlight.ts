@@ -67,7 +67,7 @@ function sameClasses(a: string[], b: string[]) {
 }
 
 /** The fence tag → a registered grammar name, or null for plain code. */
-export function resolveLang(lang: string | null): string | null {
+function resolveLang(lang: string | null): string | null {
   if (!lang) return null;
   const l = lang.toLowerCase();
   const name = ALIASES[l] ?? l;

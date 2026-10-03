@@ -9,7 +9,7 @@ import type {
 import { redactSecrets } from "./redact";
 
 /** What the session layer knows about the registered engine host. */
-export interface HostView {
+interface HostView {
   version: string;
   protocolVersion: number;
   registeredAt: number;

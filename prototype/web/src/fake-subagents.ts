@@ -7,7 +7,7 @@ import type { BackgroundJob, Msg, Reply, Step, Subagent, Thread } from "@lilos/u
    Claude Code Task events and the engine's background-process list. */
 
 export const DEMO_ROOT = "d3"
-export const REVIEW_SESSION = "ses_rv21"
+const REVIEW_SESSION = "ses_rv21"
 const LIVE = "r-sub-live"
 
 const DEV_LOG = [

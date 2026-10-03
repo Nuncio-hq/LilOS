@@ -2,7 +2,8 @@
    a folder created while the app is open shows the next time the picker
    opens; no listing is cached for the page's lifetime (AC-1). The host
    transport is mocked onto a real tmpdir — the disk read is real (fs.readdir
-   like the host's fs.list), only the wire is skipped. */
+   like the host's fs.list), only the wire is skipped. The test drives the
+   dialog's real surface: loadDir → fsRows. */
 
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,36 +36,25 @@ vi.mock("../src/lib/host", () => ({
   })),
 }));
 
-import { fsRows, loadDir, needDir } from "../src/lib/folders";
+import { fsRows, loadDir } from "../src/lib/folders";
 import { hostList } from "../src/lib/host";
 
 const ROOT = mkdtempSync(join(tmpdir(), "lilos-418-"));
 afterAll(() => rmSync(ROOT, { recursive: true, force: true }));
 
+const children = (dir: string) => fsRows.get()[dir]?.children;
+
 describe("issue #418 folder picker refresh", () => {
-  test("AC-1 needDir re-reads a dir after a new folder appears", async () => {
+  test("AC-1 loadDir re-reads a dir after a new folder appears", async () => {
     const dir = join(ROOT, "relist");
     mkdirSync(join(dir, "alpha"), { recursive: true });
-    const first = await needDir(dir);
-    expect(first?.[dir]?.children).toEqual(["alpha"]);
+    loadDir(dir);
+    await vi.waitFor(() => expect(children(dir)).toEqual(["alpha"]));
 
     // A new subdir appears while the app is open — the next ask must see it.
     mkdirSync(join(dir, "beta"));
-    const second = await needDir(dir);
-    expect(second?.[dir]?.children).toEqual(["alpha", "beta"]);
-  });
-
-  test("AC-1 loadDir refreshes fsRows on the next picker open", async () => {
-    const dir = join(ROOT, "fsrows");
-    mkdirSync(join(dir, "one"), { recursive: true });
     loadDir(dir);
-    await needDir(dir); // joins the in-flight fetch loadDir started
-    expect(fsRows.get()[dir]?.children).toEqual(["one"]);
-
-    mkdirSync(join(dir, "two"));
-    loadDir(dir);
-    await needDir(dir);
-    expect(fsRows.get()[dir]?.children).toEqual(["one", "two"]);
+    await vi.waitFor(() => expect(children(dir)).toEqual(["alpha", "beta"]));
   });
 
   test("AC-1 in-flight asks still dedupe to one fs.list; a later ask refetches", async () => {
@@ -73,12 +63,15 @@ describe("issue #418 folder picker refresh", () => {
     const list = vi.mocked(hostList);
     list.mockClear();
 
-    const [a, b] = await Promise.all([needDir(dir), needDir(dir)]);
+    // Two asks inside one in-flight window share a single fs.list.
+    loadDir(dir);
+    loadDir(dir);
+    await vi.waitFor(() => expect(children(dir)).toBeDefined());
     expect(list.mock.calls.filter(([p]) => p === dir)).toHaveLength(1);
-    expect(b).toEqual(a);
 
     mkdirSync(join(dir, "later"));
-    await needDir(dir);
+    loadDir(dir);
+    await vi.waitFor(() => expect(children(dir)).toEqual(["later"]));
     expect(list.mock.calls.filter(([p]) => p === dir)).toHaveLength(2);
   });
 });

@@ -30,7 +30,7 @@ const OPEN_OVERLAY = [
 
 /** True while a popup/menu/dialog owns Esc — exported so surfaces that add
     their own Esc handling (Focus exits, issue #114) yield to it too. */
-export const overlayOpen = () => !!document.querySelector(OPEN_OVERLAY);
+const overlayOpen = () => !!document.querySelector(OPEN_OVERLAY);
 
 /* Capture-phase Escape for a surface-level "close" (Focus back, thread
    panel close): ignored while an overlay owns the press and while typing

@@ -7,7 +7,7 @@
  */
 import { DesktopNotification } from "@lilos/contracts/app";
 
-export interface PostedNotification {
+interface PostedNotification {
   onClick(cb: () => void): void;
 }
 

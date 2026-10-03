@@ -74,7 +74,7 @@ export async function addFolder(path: string): Promise<Folder | undefined> {
 }
 
 /** Lazy probe for a conversation's cwd (thread header branch). */
-export function probeCwd(path: string): void {
+function probeCwd(path: string): void {
   if (probed.has(path)) return;
   probed.add(path);
   void (async () => {
@@ -123,7 +123,7 @@ export function wsFor(
 
 /* fs.list → FsDir rows: the dir's children + a git-marked stub per repo
    child; the dir's own repo mark too (ported from prototype host.ts). */
-export function needDir(path: string): Promise<Record<string, FsDir> | null> {
+function needDir(path: string): Promise<Record<string, FsDir> | null> {
   let p = dirInflight.get(path);
   if (!p) {
     p = (async () => {
