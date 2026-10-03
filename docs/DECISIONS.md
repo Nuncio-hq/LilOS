@@ -10,6 +10,12 @@ PR does not exist.
   self-host incl. at work — never resell LilOS as a hosted service).
   Not: PolyForm NC (bans use at work), BSL (auto-converts), MIT (resale as a
   service). — #172
+- **D-#329 Outside contributors work from forks; only Oscar triages and
+  merges.** New issues/PRs land in the board's Inbox. `main` ruleset: PRs
+  only, `verify` + `check` (DCO) required, no force-push or deletion, 0
+  approvals. Not: write access for collaborators (a `v*` tag runs the signed
+  release), required CODEOWNERS approval (Oscar can't approve his own PRs).
+  — #329
 
 ## Stack
 - **D-#3 Bun is the runtime + package manager** (workspaces, pinned

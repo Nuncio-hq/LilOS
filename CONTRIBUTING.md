@@ -2,12 +2,29 @@
 
 Thanks for contributing! A few things to know before you open a pull request.
 
-## Picking work
+## How work flows
 
-Issues are the source of truth. Look for the `agent-ready` label — those
-slices have acceptance criteria and a verify plan. `later` issues are parked;
-`needs-human` issues wait on a human decision. Read `AGENTS.md` first — it is
-the repo's rule book (structure, verify loop, decisions log).
+Issues are the source of truth, and the [LilOS board](https://github.com/orgs/Nuncio-hq/projects/1) shows them
+all in one place: **Inbox → Ready → In progress → In review → Done**, plus
+**Later** for parked work.
+
+- **Report** a bug or ask for a feature with the issue templates. New issues
+  and pull requests land in **Inbox**.
+- **Triage** is done by the maintainer (@oscarlehuu): each Inbox item gets a
+  label and moves to Ready or Later. Contributors don't need to label or move
+  cards.
+- **Pick work** from Ready: `agent-ready` issues have acceptance criteria and a
+  verify plan. `later` issues are parked; `needs-human` issues wait on a
+  maintainer decision. Comment "I'll take this" on the issue and the
+  maintainer assigns it to you; start once it is assigned.
+- **Send changes from a fork.** Contributors don't get write access to this
+  repo: fork it, push a branch there, and open the pull request against
+  `main`. `main` only changes through pull requests that pass CI (`verify`)
+  and the DCO check (`check`), and only the maintainer merges. A first-time
+  contributor's CI run may wait until the maintainer approves it.
+
+Read `AGENTS.md` first — it is the repo's rule book (structure, verify loop,
+decisions log).
 
 ## Sign-off (DCO) — required on every commit
 
