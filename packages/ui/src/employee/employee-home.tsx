@@ -437,7 +437,7 @@ export function EmployeeHome({
             </span>
             {t.ws && <FolderIcon className="size-3 text-muted-foreground" />}
             {/* #344: no "working" label — the ring around this pill says it.
-                Needs-you keeps its badge: it asks Oscar to act. */}
+                Needs-you keeps its badge: it asks the user to act. */}
             {running && last?.phase === "waiting" && (
               <span
                 title="Needs you"

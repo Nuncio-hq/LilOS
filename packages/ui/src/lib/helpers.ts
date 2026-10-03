@@ -78,8 +78,9 @@ export const RESPOND: Record<RespondTo, string> = {
 export const NO_WS: WsPick = { folder: null, base: "main", mode: "new" };
 
 /* #344: running while a turn works or any subagent still works (a session
-   with live helpers is never idle-closed); a turn waiting on Oscar is open,
-   not running (it never idle-closes either); otherwise the stored life. */
+   with live helpers is never idle-closed); a turn waiting on the user is
+   open, not running (it never idle-closes either); otherwise the stored
+   life. */
 export const sessionLife = (t: Thread): SessionLife =>
   t.replies.some(
     (r) =>
