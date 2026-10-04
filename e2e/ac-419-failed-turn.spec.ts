@@ -52,6 +52,12 @@ const dmHome = async (page: Page) => {
   await page.goto(`${stack.webUrl}/dm/${empId}`);
 };
 
+/* Rows mount under `lilos-rise` (0.5s opacity+blur): a reload's screenshot
+   mid-rise reads as a dim smear — wait out the animation on its own end
+   state (filter: none) before shooting. */
+const settled = (page: Page, sel: string) =>
+  expect(page.locator(sel).last()).toHaveCSS("filter", /^(none|blur\(0px\))$/);
+
 /** The first session row → its "N replies" pill opens the thread. */
 const openSession = async (page: Page) => {
   await page
@@ -96,6 +102,7 @@ test("AC-1/AC-3 a turn.completed.error shows the failure chip on the turn and th
   await expect(
     page.getByText(/Error: engine-fake: scripted failure/),
   ).toBeVisible();
+  await settled(page, "[data-agentturn]");
   await page.screenshot({ path: `${SHOTS}/ac-419-1-failed-turn-light.png` });
 
   // The session row card: red model-error alert with its own Retry.
@@ -104,17 +111,20 @@ test("AC-1/AC-3 a turn.completed.error shows the failure chip on the turn and th
   await expect(alert).toBeVisible({ timeout: 30_000 });
   await expect(alert).toContainText(/engine-fake: scripted failure/);
   await expect(alert.getByRole("button", { name: "Retry" })).toBeVisible();
+  await settled(page, "[data-session] .lilos-rise");
   await page.screenshot({ path: `${SHOTS}/ac-419-1-session-alert-light.png` });
 
   // AC-3 dark: the same card + chip in the persisted dark theme.
   await page.evaluate(() => localStorage.setItem("lilos-theme", "dark"));
   await page.reload();
   await expect(alert).toBeVisible({ timeout: 30_000 });
+  await settled(page, "[data-session] .lilos-rise");
   await page.screenshot({ path: `${SHOTS}/ac-419-3-session-alert-dark.png` });
   await openSession(page);
   await expect(
     page.locator("[data-agentturn]").last().locator("[data-turn-failed]"),
   ).toBeVisible({ timeout: 30_000 });
+  await settled(page, "[data-agentturn]");
   await page.screenshot({ path: `${SHOTS}/ac-419-3-failed-turn-dark.png` });
   await page.evaluate(() => localStorage.setItem("lilos-theme", "light"));
 });
@@ -148,6 +158,7 @@ test("AC-2 the turn's hover Retry re-sends the last user message in the same ses
     /Failed · engine-fake: scripted failure for "fail the deploy script"/,
     { timeout: 60_000 },
   );
+  await settled(page, "[data-agentturn]");
   await page.screenshot({ path: `${SHOTS}/ac-419-2-hover-retry.png` });
 });
 
@@ -175,5 +186,6 @@ test("AC-2 the session card's Retry does the same re-send from the DM home", asy
     /Failed · engine-fake: scripted failure for "fail the deploy script"/,
     { timeout: 60_000 },
   );
+  await settled(page, "[data-agentturn]");
   await page.screenshot({ path: `${SHOTS}/ac-419-2-card-retry.png` });
 });
