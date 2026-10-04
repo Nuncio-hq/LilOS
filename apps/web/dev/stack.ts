@@ -15,7 +15,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -115,35 +115,90 @@ function run(
   return p;
 }
 
-const _relay = run("relay", ["bun", "run", "apps/relay/src/index.ts"], {
+/* The relay writes <HOME>/relay-instance-id before it binds (#516); a stale
+   one from an older boot on a reused LILOS_HOME must not be read as ours. */
+const instanceIdPath = path.join(HOME, "relay-instance-id");
+try {
+  unlinkSync(instanceIdPath);
+} catch {}
+
+const relay = run("relay", ["bun", "run", "apps/relay/src/index.ts"], {
   LILOS_RELAY_HOME: HOME,
   LILOS_RELAY_PORT: String(RELAY_PORT),
   LILOS_RELAY_HOST: "127.0.0.1",
 });
 
-// wait for the relay token file AND the socket — the token lands first
-const tokenPath = path.join(HOME, "relay-token");
-for (let i = 0; i < 100 && !existsSync(tokenPath); i++) {
-  await Bun.sleep(50);
-}
-// Bound each poll: a half-dead predecessor can hold the port bound but
-// unanswering, and an unbounded fetch would hang this boot forever (#84).
-let relayUp = false;
-for (let i = 0; i < 200 && !relayUp; i++) {
-  relayUp = await fetch(`http://127.0.0.1:${RELAY_PORT}/`, {
+/* Identity-checked readiness (#516): "something answers on the port" is NOT
+   our relay — a foreign stack (or a still-draining predecessor) can hold it
+   and answer every probe. The port is ours only when /healthz returns the
+   instanceId THIS relay wrote to <HOME>/relay-instance-id before binding.
+   A foreign id gets a short grace — an orphan mid-sweep or a draining stack
+   releases within seconds — but one that keeps answering fails the boot
+   naming the port and both ids, instead of sending the harness at a relay
+   that was never ours. Bound each poll: a half-dead predecessor can hold
+   the port bound but unanswering, and an unbounded fetch would hang this
+   boot forever (#84). */
+const readTrim = (p: string) => {
+  try {
+    return readFileSync(p, "utf8").trim() || undefined;
+  } catch {
+    return undefined;
+  }
+};
+const healthzId = async (port: number) => {
+  const r = await fetch(`http://127.0.0.1:${port}/healthz`, {
     signal: AbortSignal.timeout(1_000),
-  })
-    .then((r) => r.status > 0)
-    .catch(() => false);
-  if (!relayUp) await Bun.sleep(100);
+  }).catch(() => undefined);
+  if (!r) return undefined;
+  const id = await r
+    .json()
+    .then((j) => (j as { instanceId?: unknown }).instanceId)
+    .catch(() => undefined);
+  return typeof id === "string" ? id : `<HTTP ${r.status}, no instanceId>`;
+};
+
+const tokenPath = path.join(HOME, "relay-token");
+let ours: string | undefined;
+let foreign: string | undefined;
+let foreignSince: number | undefined;
+const relayDeadline = Date.now() + 25_000;
+for (;;) {
+  ours ??= readTrim(instanceIdPath);
+  const seen = await healthzId(RELAY_PORT);
+  if (seen !== undefined && seen !== ours) {
+    if (seen !== foreign) foreignSince = undefined;
+    foreign = seen;
+    foreignSince ??= Date.now();
+    if (Date.now() - foreignSince > 4_000) {
+      console.error(
+        `[stack] port ${RELAY_PORT} answers /healthz, but it is not the ` +
+          `relay this stack started (ours ${ours ?? "not up yet"}, theirs ${foreign})`,
+      );
+      await shutdown(1);
+    }
+  } else {
+    foreignSince = undefined; // port silent — the holder may be draining
+  }
+  if (ours && seen === ours) break;
+  if (relay.exitCode !== null) {
+    console.error(
+      `[stack] relay exited (code ${relay.exitCode}) before its port was ours` +
+        (foreign
+          ? ` — port ${RELAY_PORT} answers /healthz with ${foreign}`
+          : ""),
+    );
+    await shutdown(1);
+  }
+  if (Date.now() > relayDeadline) {
+    console.error(
+      `[stack] relay never claimed :${RELAY_PORT}` +
+        (foreign ? ` — it answers /healthz with ${foreign}` : ""),
+    );
+    await shutdown(1);
+  }
+  await Bun.sleep(150);
 }
-if (!relayUp) {
-  console.error("[stack] relay never opened its socket");
-  await shutdown(1);
-}
-const token = existsSync(tokenPath)
-  ? readFileSync(tokenPath, "utf8").trim()
-  : "";
+const token = readTrim(tokenPath) ?? "";
 if (!token) {
   console.error("[stack] relay did not write its token file");
   await shutdown(1);

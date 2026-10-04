@@ -11,6 +11,7 @@
  * the other file's stack (#256/#272).
  */
 import { type ChildProcess, spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -63,6 +64,17 @@ export function killProc(proc: ChildProcess): Promise<void> {
     }
   };
   return new Promise((resolve) => {
+    /* Already exited — 'exit' won't fire again and waiting the full timeout
+       just stalls every dead-stack cleanup (#516: a stack that refuses a
+       foreign port self-terminates before bootStack's catch runs). Still
+       sweep the group: a dead leader can leave bound-port children behind,
+       and a wedged one gets the same SIGKILL backstop — just unblocking. */
+    if (proc.exitCode !== null || proc.signalCode !== null) {
+      killGroup("SIGTERM");
+      setTimeout(() => killGroup("SIGKILL"), 8_000).unref();
+      resolve();
+      return;
+    }
     const t = setTimeout(() => {
       killGroup("SIGKILL");
       resolve();
@@ -218,10 +230,27 @@ export async function waitForInstance(
         );
       foreign = seen;
     }
-    if (proc.exitCode !== null || proc.signalCode !== null)
+    if (proc.exitCode !== null || proc.signalCode !== null) {
+      /* The stack died — but the identity question still stands (#516):
+         drain the last output ('close' lands after 'exit', so buffered
+         stdout can still be in flight), then probe /healthz one final
+         time. A port answering with a different id is the primary error;
+         "process exited" is only the fallback when nothing answers. */
+      await Promise.race([once(proc, "close"), sleep(300)]);
+      ours ??= oursLogged();
+      const them = (await healthzId(port)) ?? foreign;
+      if (them !== undefined && them !== ours)
+        throw new Error(
+          `port ${port} answers /healthz, but it is not the ${kind} this ` +
+            `spec started (ours ${ours ?? "never logged"}, theirs ${them}) ` +
+            `— the ${kind} stack exited (code ${proc.exitCode ?? proc.signalCode}) first`,
+        );
       throw new Error(
-        `${kind} stack exited (code ${proc.exitCode ?? proc.signalCode}) before port ${port} was ours — last output:\n${out().slice(-1200)}`,
+        `${kind} stack exited (code ${proc.exitCode ?? proc.signalCode}) before port ${port} was ours` +
+          (them !== undefined ? ` — /healthz still answers with ${them}` : "") +
+          ` — last output:\n${out().slice(-1200)}`,
       );
+    }
     if (Date.now() - start > ms)
       throw new Error(
         `timed out waiting for ${kind} on port ${port}` +
