@@ -549,10 +549,24 @@ test("AC-319 a `?tab=subagents` deep link on a zero-helper session lands on the 
   await openDefault(page);
   await page.goto(page.url().replace(/\/conv_[^/]+.*$/, ""));
   await pickSessionFolder(page, repoDir);
-  await send(page, "say hi");
+  /* `slowstart:2500` (#476): the prompt lands but the turn's mint waits —
+     the same shape a loaded runner gives the dispatch when `turn.started`
+     emits past this reload's feed attach. The deep link named the tab; a
+     turn whose prompt predates the navigation must not steal it. The
+     post-settle re-assert makes the steal unable to hide between the
+     first paint and the check. */
+  await send(page, "slowstart:2500 say hi");
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
   await page.goto(`${page.url()}?tab=subagents`);
   try {
+    await expect(tab(page, /Subagents/)).toHaveAttribute(
+      "aria-selected",
+      "true",
+      { timeout: 30_000 },
+    );
+    /* The turn minted post-attach is still streaming here — the deep link
+       must survive its steps, not just the first paint. */
+    await turnSettled(page);
     await expect(tab(page, /Subagents/)).toHaveAttribute(
       "aria-selected",
       "true",
