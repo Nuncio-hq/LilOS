@@ -195,10 +195,7 @@ describe("#430 incremental reduce — only the tail replays", () => {
        first apply projects it settled under the stale idle, but the next
        apply must put it live again, exactly as the one-shot reduce of
        each prefix does. */
-    const idle = [
-      ...t1Done(),
-      ev("session.state", { state: "idle" }),
-    ];
+    const idle = [...t1Done(), ev("session.state", { state: "idle" })];
     const legStarted = [
       ...idle,
       ev("turn.started", { turnId: "leg", initiatedBy: "agent" }),
