@@ -102,10 +102,10 @@ test("tray reserves its height: the approval card stays answerable with a waitin
     await page.setViewportSize({ width: 900, height: 700 });
     await cardAboveTray(page, 900);
 
-    // …and the card stays clickable at the tightest width — "Allow once"
+    // …and the card stays clickable at the tightest width — "Once"
     // resolves the ask (the 900px shot hid the button row entirely).
     await openCard(page)
-      .getByRole("button", { name: /Allow once/i })
+      .getByRole("button", { name: /^Once$/i })
       .click();
     const askId = await openCard(page).getAttribute("data-ask-id");
     if (askId) {

@@ -239,6 +239,102 @@ describe("RelayClient", () => {
     expect(store.get().messages.map((m) => m.seq)).toEqual([1, 2, 3]);
   });
 
+  it("keeps tombstone rows a resync snapshot omits (#377)", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    const store = client.channelMessages("ch1");
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "channel.snapshot",
+      params: {
+        channelId: "ch1",
+        lastSeq: 2,
+        messages: [
+          {
+            id: "m1",
+            channelId: "ch1",
+            conversationId: null,
+            authorId: "u",
+            authorKind: "user",
+            text: "a",
+            seq: 1,
+            createdAt: 0,
+          },
+          {
+            id: "m2",
+            channelId: "ch1",
+            conversationId: null,
+            authorId: "u",
+            authorKind: "user",
+            text: "remove me",
+            seq: 2,
+            createdAt: 0,
+          },
+        ],
+      },
+    });
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "channel.synced",
+      params: { channelId: "ch1", lastSeq: 2 },
+    });
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "message.changed",
+      params: {
+        channelId: "ch1",
+        message: {
+          id: "m2",
+          channelId: "ch1",
+          conversationId: null,
+          authorId: "u",
+          authorKind: "user",
+          text: "remove me",
+          seq: 2,
+          createdAt: 0,
+          removed: true,
+        },
+      },
+    });
+    expect(store.get().messages.find((m) => m.id === "m2")?.removed).toBe(true);
+
+    // Relay restart → instanceId changes → resync via channel.snapshot; the
+    // read layer omits removed rows, so the snapshot can't carry m2's flag.
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "channel.snapshot",
+      params: {
+        channelId: "ch1",
+        lastSeq: 3,
+        messages: [
+          {
+            id: "m1",
+            channelId: "ch1",
+            conversationId: null,
+            authorId: "u",
+            authorKind: "user",
+            text: "a",
+            seq: 1,
+            createdAt: 0,
+          },
+          {
+            id: "m3",
+            channelId: "ch1",
+            conversationId: null,
+            authorId: "u",
+            authorKind: "user",
+            text: "new",
+            seq: 3,
+            createdAt: 0,
+          },
+        ],
+      },
+    });
+    const messages = store.get().messages;
+    expect(messages.map((m) => m.id)).toEqual(["m1", "m2", "m3"]);
+    expect(messages.find((m) => m.id === "m2")?.removed).toBe(true);
+  });
+
   it("drops duplicate and stale message.created frames by seq", async () => {
     const { client, socket } = makeClient();
     await connectClient(client, () => socket);

@@ -190,6 +190,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       rewound: false,
       dropped: false,
       removed: false,
+      claimed: false,
       text: input.text,
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.provider !== undefined ? { provider: input.provider } : {}),
@@ -479,6 +480,7 @@ export function createDrizzleStore(db: Db): RelayStore {
           rewound: false,
           dropped: false,
           removed: false,
+          claimed: false,
           text: input.text,
           seq: bumped.seq,
           createdAt: now(),
@@ -497,6 +499,7 @@ export function createDrizzleStore(db: Db): RelayStore {
           engineRef: null,
           state: "idle",
           ...openTitle(input),
+          access: input.access ?? "ask",
           ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
           ...(input.workspace !== undefined
             ? { workspace: input.workspace }
@@ -708,9 +711,14 @@ export function createDrizzleStore(db: Db): RelayStore {
       return updated ? rowToMessage(updated) : null;
     },
     async setMessageFlags(messageId, flags) {
-      const set: { dropped?: boolean; removed?: boolean } = {};
+      const set: {
+        dropped?: boolean;
+        removed?: boolean;
+        claimed?: boolean;
+      } = {};
       if (flags.dropped !== undefined) set.dropped = flags.dropped;
       if (flags.removed !== undefined) set.removed = flags.removed;
+      if (flags.claimed !== undefined) set.claimed = flags.claimed;
       if (Object.keys(set).length === 0) {
         const row = db
           .select()

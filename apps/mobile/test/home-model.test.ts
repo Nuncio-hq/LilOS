@@ -56,6 +56,7 @@ const conv = (
   state: "idle",
   title: "",
   titleSource: "auto",
+  access: "ask",
   deliveredSeq: 0,
   archived: false,
   createdAt: 1,
@@ -79,6 +80,7 @@ const msg = (
   rewound: false,
   dropped: false,
   removed: false,
+  claimed: false,
 });
 
 const sum = (

@@ -23,6 +23,7 @@ import type {
 } from "@lilos/contracts/app";
 import type {
   ApprovalOutcome,
+  ConversationAccess,
   EngineRequest,
   Usage,
 } from "@lilos/contracts/engine";
@@ -68,6 +69,8 @@ export interface ConversationPatch {
   effort?: string | null;
   fast?: boolean | null;
   deliveredSeq?: number;
+  /** The composer pill's level (#106) — `conversations.setAccess`. */
+  access?: ConversationAccess;
 }
 
 export interface OpenConversationInput {
@@ -93,6 +96,9 @@ export interface OpenConversationInput {
   /** Workstream pick stamped at open (#156): new/existing worktree of
       `repoPath`; absent = `cwd` is the folder itself. */
   workspace?: WorkspaceIntent;
+  /** The access level stamped at open (#106) — the relay resolves
+      `params.access ?? Settings' defaultAccess ?? "ask"` before landing. */
+  access?: ConversationAccess;
 }
 
 export interface AppendMessageInput {
@@ -308,12 +314,13 @@ export interface RelayStore {
     checkpoint: string,
   ): Promise<AppMessage | null>;
   /**
-   * Flip a message's `dropped`/`removed` delivery flags (#315). Returns the
-   * updated row for the `message.changed` broadcast, null when missing.
+   * Flip a message's `dropped`/`removed`/`claimed` delivery flags (#315,
+   * #377). Returns the updated row for the `message.changed` broadcast,
+   * null when missing.
    */
   setMessageFlags(
     messageId: string,
-    flags: { dropped?: boolean; removed?: boolean },
+    flags: { dropped?: boolean; removed?: boolean; claimed?: boolean },
   ): Promise<AppMessage | null>;
   /**
    * Mark every message on the conversation with `seq >= fromSeq` as rewound

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConversationAccess } from "../engine/approvals";
 import { Capability } from "../engine/capabilities";
 import { Usage } from "../engine/events";
 import { ModelOption, ModelProvider } from "../engine/models";
@@ -127,6 +128,13 @@ export const Conversation = z.object({
   cwd: z.string().min(1).optional(),
   /** Workstream mode stamped at open (#156); absent = direct/just chat. */
   workspace: WorkspaceIntent.optional(),
+  /**
+   * The conversation's access level (#106): `ask` renders every approval
+   * request as a card; `full` has the harness answer them itself. Set from
+   * Settings' default at open, switched by the composer pill — the switch
+   * applies from the agent's next action.
+   */
+  access: ConversationAccess.default("ask"),
   archived: z.boolean(),
   /**
    * Host-owned watermark: highest user-message seq the harness has handed to
@@ -240,6 +248,16 @@ export const AppMessage = z.object({
    * never get it. Hidden from every read and pending list, kept for audit.
    */
   removed: z.boolean().default(false),
+  /**
+   * The harness committed this send to the engine pipeline (#377): its
+   * prompt is dispatching — checkpoint stamped, frame on the wire or about
+   * to be — but the turn hasn't started yet, so `deliveredSeq` still sits
+   * below it. Claimed rows are NOT "waiting": the tray's Remove boundary
+   * is delivery intent, and a send this far along can't be retracted from
+   * the tray (a `messages.remove` raced in anyway still kills it via the
+   * harness's dismissed set). The row renders as its own sent bubble.
+   */
+  claimed: z.boolean().default(false),
   /**
    * Pre-turn folder checkpoint id stamped by the harness (#134): the point
    * `conversations.rewind` restores the session folder to. Only user

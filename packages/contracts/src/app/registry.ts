@@ -8,6 +8,10 @@ import {
   AgentsListParams,
   AgentsListResult,
 } from "../engine/agents";
+import {
+  ApprovalsSetPolicyParams,
+  ApprovalsSetPolicyResult,
+} from "../engine/approvals";
 import { ModelsListParams, ModelsListResult } from "../engine/models";
 import { ForgePrListItem } from "../host/forge";
 import { ChannelMessage } from "../index";
@@ -70,6 +74,7 @@ import {
   ConversationsOpenResult,
   ConversationsPrsParams,
   ConversationsPrsResult,
+  ConversationsSetAccessParams,
   ConversationsSetModelParams,
   ConversationsUpdateParams,
   ConversationUpdatedEvent,
@@ -111,6 +116,7 @@ import {
   MessageCreatedEvent,
   MessageResult,
   MessageSearchHit,
+  MessagesClaimParams,
   MessagesDropParams,
   MessagesListParams,
   MessagesListResult,
@@ -213,6 +219,7 @@ export const appProtocolSchemas = {
   ConversationsOpenParams,
   ConversationsOpenResult,
   ConversationsSetModelParams,
+  ConversationsSetAccessParams,
   ConversationsUpdateParams,
   ConversationResult,
   ConversationsPrsParams,
@@ -225,6 +232,7 @@ export const appProtocolSchemas = {
   MessagesListResult,
   MessagesPostParams,
   MessageResult,
+  MessagesClaimParams,
   MessagesDropParams,
   MessagesRemoveParams,
   MessagesSendParams,
@@ -304,6 +312,8 @@ export const appProtocolSchemas = {
   AgentsCreateResult,
   ModelsListParams,
   ModelsListResult,
+  ApprovalsSetPolicyParams,
+  ApprovalsSetPolicyResult,
   /* workbench_open's engine->app event (#340) */
   WorkbenchOpenTarget,
   WorkbenchOpenParams,

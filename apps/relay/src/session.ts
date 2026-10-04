@@ -17,6 +17,7 @@ import {
   type ConversationsRewindHostParams,
   type ConversationsRewindHostResult,
   ConversationsRewindParams,
+  ConversationsSetAccessParams,
   ConversationsSetModelParams,
   ConversationsSummariesParams,
   ConversationsUpdateParams,
@@ -41,6 +42,7 @@ import {
   type JsonRpcRequest,
   MAX_ATTACHMENT_BYTES,
   type MessageAttachment,
+  MessagesClaimParams,
   MessagesDropParams,
   MessagesListParams,
   MessagesPostParams,
@@ -63,6 +65,10 @@ import {
   WorkbenchOpenParams,
   WS_CLOSE_DEVICE_REVOKED,
 } from "@lilos/contracts/app";
+import {
+  ConversationAccess,
+  type ConversationAccess as ConversationAccessT,
+} from "@lilos/contracts/engine";
 import type { ForgePrsResult } from "@lilos/contracts/host";
 import { collapsePath, resolveUnderHome } from "@lilos/host";
 import {
@@ -890,9 +896,20 @@ export function createRelay(options: RelayOptions): Relay {
             );
           }
           const attachments = await storeAttachments(parsed.data.attachments);
+          /* #106 AC-3: the pill's level lands on the row — an explicit
+             `access` param wins; otherwise Settings' `defaultAccess`, else
+             Ask. Stored values pass through the enum guard so a corrupt
+             setting can't mint a third level. */
+          const storedDefault = ConversationAccess.safeParse(
+            await store.getSetting("defaultAccess"),
+          );
+          const access: ConversationAccessT =
+            parsed.data.access ??
+            (storedDefault.success ? storedDefault.data : "ask");
           try {
             const { conversation, rootMessage } = await store.openConversation({
               ...parsed.data,
+              access,
               attachments,
               /* #137: a title given at open is user-chosen from a client,
                  engine-owned ("auto") from the host; empty → placeholder. */
@@ -1206,6 +1223,33 @@ export function createRelay(options: RelayOptions): Relay {
           });
           emitMessageChanged(message.channelId, dropped ?? message);
           respond(peer, id, { message: dropped ?? message });
+          return;
+        }
+        case "messages.claim": {
+          const parsed = MessagesClaimParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          /* Host-only (#377): the harness marks a send once its prompt
+             commits to dispatch — the row leaves the waiting tray before
+             `deliveredSeq` can cover it, so Remove is only ever offered
+             on truly queued sends. Idempotent (reclaim on redelivery). */
+          requireHost(peer);
+          const message = await store.getMessage(parsed.data.messageId);
+          if (message?.authorKind !== "user") {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "message not found",
+            );
+          }
+          if (message.claimed) {
+            respond(peer, id, { message });
+            return;
+          }
+          const claimed = await store.setMessageFlags(message.id, {
+            claimed: true,
+          });
+          emitMessageChanged(message.channelId, claimed ?? message);
+          respond(peer, id, { message: claimed ?? message });
           return;
         }
         case "messages.send": {
@@ -1606,6 +1650,27 @@ export function createRelay(options: RelayOptions): Relay {
               : {}),
           });
           respond(peer, id, { ok: true });
+          return;
+        }
+        case "conversations.setAccess": {
+          const parsed = ConversationsSetAccessParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          /* #106: the composer pill's switch is LilOS data — the row writes
+             here and `conversation.updated` carries it; the host sees the
+             next approval request route on the fresh value. */
+          const conversation = await store.updateConversation(
+            parsed.data.conversationId,
+            { access: parsed.data.access },
+          );
+          if (!conversation) {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "conversation not found",
+            );
+          }
+          emitConversation(conversation.channelId, conversation);
+          respond(peer, id, { conversation });
           return;
         }
         case "session.events": {

@@ -38,6 +38,7 @@ const msg = (id: string, over: Partial<AppMessage> = {}): AppMessage => ({
   rewound: false,
   dropped: false,
   removed: false,
+  claimed: false,
   ...over,
 });
 
@@ -49,6 +50,7 @@ const conv = (id: string, over: Partial<Conversation> = {}): Conversation => ({
   state: "idle",
   title: "",
   titleSource: "auto",
+  access: "ask",
   archived: false,
   deliveredSeq: 0,
   createdAt: T0,

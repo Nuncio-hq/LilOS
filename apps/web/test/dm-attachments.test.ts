@@ -24,6 +24,7 @@ const msg = (over: Partial<AppMessage>): AppMessage => ({
   rewound: false,
   dropped: false,
   removed: false,
+  claimed: false,
   ...over,
 });
 
@@ -35,6 +36,7 @@ const conv = {
   state: "idle" as const,
   title: "",
   titleSource: "user" as const,
+  access: "ask" as const,
   archived: false,
   deliveredSeq: 0,
   createdAt: 0,

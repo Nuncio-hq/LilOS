@@ -478,6 +478,10 @@
               "default": false,
               "type": "boolean"
             },
+            "claimed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -537,11 +541,19 @@
             },
             "title": {
               "type": "string"
+            },
+            "access": {
+              "type": "string",
+              "enum": [
+                "ask",
+                "full"
+              ]
             }
           },
           "required": [
             "id",
-            "title"
+            "title",
+            "access"
           ]
         },
         "messages": {
@@ -648,6 +660,10 @@
                 "default": false,
                 "type": "boolean"
               },
+              "claimed": {
+                "default": false,
+                "type": "boolean"
+              },
               "checkpoint": {
                 "type": "string"
               }
@@ -697,6 +713,13 @@
         },
         "archived": {
           "type": "boolean"
+        },
+        "access": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "full"
+          ]
         },
         "lastActivity": {
           "type": "integer",
@@ -779,6 +802,7 @@
         "title",
         "state",
         "archived",
+        "access",
         "prs",
         "current"
       ]
@@ -809,6 +833,13 @@
               },
               "archived": {
                 "type": "boolean"
+              },
+              "access": {
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "full"
+                ]
               },
               "lastActivity": {
                 "type": "integer",
@@ -891,6 +922,7 @@
               "title",
               "state",
               "archived",
+              "access",
               "prs",
               "current"
             ]
@@ -1167,12 +1199,20 @@
             },
             "model": {
               "type": "string"
+            },
+            "access": {
+              "type": "string",
+              "enum": [
+                "ask",
+                "full"
+              ]
             }
           },
           "required": [
             "id",
             "title",
-            "state"
+            "state",
+            "access"
           ]
         },
         "folder": {

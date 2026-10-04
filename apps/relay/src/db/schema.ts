@@ -72,6 +72,13 @@ export const conversations = sqliteTable(
     /** Workstream mode stamped at open (#156): JSON WorkspaceIntent; null =
         direct folder / just chat. */
     workspace: text("workspace"),
+    /** The composer pill's access level (#106): `ask` stops at approval
+        cards, `full` has the harness auto-answer them. Stamped at open from
+        Settings' `defaultAccess`; the conversation never remembers a
+        last-used level. */
+    access: text("access", { enum: ["ask", "full"] })
+      .notNull()
+      .default("ask"),
     title: text("title").notNull().default(""),
     /** Who named the conversation (#137): `user` wins over every later
         engine/auto title write; `auto` is free to be upgraded. */
@@ -129,6 +136,8 @@ export const messages = sqliteTable(
     dropped: integer("dropped", { mode: "boolean" }).notNull().default(false),
     /** User removed it while still waiting (#315): hidden, never delivered. */
     removed: integer("removed", { mode: "boolean" }).notNull().default(false),
+    /** Harness committed its prompt to dispatch (#377): not "waiting". */
+    claimed: integer("claimed", { mode: "boolean" }).notNull().default(false),
     /** Pre-turn folder checkpoint id stamped by the harness (#134). */
     checkpoint: text("checkpoint"),
     createdAt: integer("created_at").notNull(),
