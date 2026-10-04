@@ -1114,7 +1114,6 @@ export default function App() {
             const cur = b[e.id] ?? {}
             if (r.live) cur.running = (cur.running ?? 0) + 1
             if (r.approval && !resolved[r.approval.id]) cur.approvals = (cur.approvals ?? 0) + 1
-            if (r.question && !resolved[r.question.id]) cur.approvals = (cur.approvals ?? 0) + 1
             b[e.id] = cur
           }
     return b
