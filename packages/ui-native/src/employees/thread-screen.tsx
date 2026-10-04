@@ -16,6 +16,7 @@ import { ContextRing } from "./context-meter";
 import type { PlanAction } from "./plan-card";
 import { PrBadge, prHeadline } from "./pr-badges";
 import { threadBottomInset } from "./thread-layout";
+import { transcriptItems } from "./transcript-items";
 import type {
   ContextUsage,
   PullRequestRef,
@@ -125,9 +126,24 @@ export function ThreadScreen({
             gap: 24,
           }}
         >
-          {t.entries.map((e) => (
+          {transcriptItems(t).map((e) => (
             <Rise key={e.id}>
-              {e.kind === "user" ? (
+              {/* #514: a transcript state note heads the scroll — the
+                  trimmed note describes history missing ABOVE the first
+                  entry, so it renders first, a centered divider (not the
+                  bottom box web uses for the #28 'unavailable' note). */}
+              {e.kind === "transcript-note" ? (
+                <View className="flex-row items-center gap-3">
+                  <View className="h-px flex-1 bg-border" />
+                  <AppText
+                    tone="muted"
+                    className="text-center text-[12px] leading-[16px]"
+                  >
+                    {e.text}
+                  </AppText>
+                  <View className="h-px flex-1 bg-border" />
+                </View>
+              ) : e.kind === "user" ? (
                 <UserBubble
                   text={e.text}
                   time={
@@ -159,19 +175,6 @@ export function ThreadScreen({
               )}
             </Rise>
           ))}
-          {/* #514: the transcript's own note (web: the dashed transcriptNote
-             box after the replies) — e.g. the engine's capped log dropped
-             this session's head (#431). */}
-          {!!t.transcriptNote && (
-            <View
-              className="rounded-lg border border-border px-3 py-2"
-              style={{ borderStyle: "dashed" }}
-            >
-              <AppText tone="muted" className="text-[13px] leading-[18px]">
-                {t.transcriptNote}
-              </AppText>
-            </View>
-          )}
         </ScrollView>
 
         <View className="absolute inset-x-0 bottom-0 gap-2">
