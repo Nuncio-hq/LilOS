@@ -2,7 +2,12 @@ import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  type StackPorts,
+} from "./helpers/stack";
 
 /**
  * Issue #103 — unsent DM drafts are kept per conversation. Each acceptance
@@ -19,10 +24,13 @@ const repo = path.resolve(here, "..");
 const SHOTS = path.join(repo, "test-results", "ac-103");
 const DRAFT_PREFIX = "lilos:composer-draft:";
 
+/* AC-5's port-release check reads PORTS.relay after the stack is killed. */
+let PORTS: StackPorts;
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("drafts", await pickPorts());
+  PORTS = await pickPorts();
+  stack = await bootStack("drafts", PORTS);
 });
 test.afterAll(async () => {
   await stack?.stop();
