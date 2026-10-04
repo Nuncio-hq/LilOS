@@ -21,9 +21,12 @@ let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack("ac419", {
-    relay: wport(4760),
-    feed: wport(4761),
-    web: wport(5390),
+    /* Bases are suite-saturated (ports.spec gates every residue), so reuse
+       literals ac-132 already owns — identical bases dedupe and two spec
+       files never share a live worker index. */
+    relay: wport(4700),
+    feed: wport(4701),
+    web: wport(5359),
   });
 });
 test.afterAll(async () => {
