@@ -34,8 +34,10 @@ export type GeneralProps = {
 };
 
 export type ApprovalsProps = {
-  policy: ApprovalPolicy;
-  onPolicy: (p: ApprovalPolicy) => void;
+  /* #106 D-#19: the engine policy control renders only when the engine
+     declares `approval_policy` — both fields absent otherwise. */
+  policy?: ApprovalPolicy;
+  onPolicy?: (p: ApprovalPolicy) => void;
   access: ConversationAccess;
   onAccess: (a: ConversationAccess) => void;
 };
@@ -209,22 +211,24 @@ export function GeneralSection({ general }: { general: GeneralProps }) {
 export function ApprovalsSection({ approvals }: { approvals: ApprovalsProps }) {
   return (
     <Pane title="Approvals">
-      <Field label="Engine approval policy">
-        <Choice<ApprovalPolicy>
-          label="Engine approval policy"
-          value={approvals.policy}
-          onChange={approvals.onPolicy}
-          options={[
-            { id: "smart", label: "Smart" },
-            { id: "manual", label: "Manual" },
-            { id: "off", label: "Off" },
-          ]}
-        />
-        <Hint>
-          Smart runs routine steps and asks for risky ones. Manual asks every
-          time. Off never asks.
-        </Hint>
-      </Field>
+      {approvals.policy !== undefined && approvals.onPolicy && (
+        <Field label="Engine approval policy">
+          <Choice<ApprovalPolicy>
+            label="Engine approval policy"
+            value={approvals.policy}
+            onChange={approvals.onPolicy}
+            options={[
+              { id: "smart", label: "Smart" },
+              { id: "manual", label: "Manual" },
+              { id: "off", label: "Off" },
+            ]}
+          />
+          <Hint>
+            Smart runs routine steps and asks for risky ones. Manual asks every
+            time. Off never asks.
+          </Hint>
+        </Field>
+      )}
       <Field label="Default access for new conversations">
         <Choice<ConversationAccess>
           label="Default access for new conversations"
@@ -235,9 +239,12 @@ export function ApprovalsSection({ approvals }: { approvals: ApprovalsProps }) {
             { id: "full", label: "Full access" },
           ]}
         />
+        {/* #106 AC-9: what the level actually gates — Ask means the agent
+            stops before risky commands; Full means it never stops to ask.
+            No folder-sandbox promise: the level doesn't bound the folder. */}
         <Hint>
-          Ask: a session asks before it touches files outside its folder. Full
-          access: it works anywhere on this Mac.
+          Ask: the agent asks before risky commands. Full access: it never stops
+          to ask.
         </Hint>
       </Field>
     </Pane>

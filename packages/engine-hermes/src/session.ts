@@ -265,7 +265,7 @@ export function cancelAllAsks(s: Session) {
 export function resolveOutcomeValid(ask: PendingAsk, outcome: ApprovalOutcome) {
   if (ask.request.kind === "approval") {
     if (outcome === "answer")
-      return "an approval takes once/always/deny/cancel, not answer";
+      return "an approval takes once/session/always/deny/cancel, not answer";
     if (!ask.request.options.includes(outcome as never))
       return `outcome ${outcome} not in offered options`;
     return undefined;

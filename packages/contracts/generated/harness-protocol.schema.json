@@ -541,11 +541,19 @@
             },
             "title": {
               "type": "string"
+            },
+            "access": {
+              "type": "string",
+              "enum": [
+                "ask",
+                "full"
+              ]
             }
           },
           "required": [
             "id",
-            "title"
+            "title",
+            "access"
           ]
         },
         "messages": {
@@ -706,6 +714,13 @@
         "archived": {
           "type": "boolean"
         },
+        "access": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "full"
+          ]
+        },
         "lastActivity": {
           "type": "integer",
           "minimum": 0,
@@ -787,6 +802,7 @@
         "title",
         "state",
         "archived",
+        "access",
         "prs",
         "current"
       ]
@@ -817,6 +833,13 @@
               },
               "archived": {
                 "type": "boolean"
+              },
+              "access": {
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "full"
+                ]
               },
               "lastActivity": {
                 "type": "integer",
@@ -899,6 +922,7 @@
               "title",
               "state",
               "archived",
+              "access",
               "prs",
               "current"
             ]
@@ -1175,12 +1199,20 @@
             },
             "model": {
               "type": "string"
+            },
+            "access": {
+              "type": "string",
+              "enum": [
+                "ask",
+                "full"
+              ]
             }
           },
           "required": [
             "id",
             "title",
-            "state"
+            "state",
+            "access"
           ]
         },
         "folder": {

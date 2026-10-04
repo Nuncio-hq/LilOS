@@ -16,6 +16,7 @@ const conv = (over: Partial<Conversation> = {}): Conversation => ({
   state: "idle",
   title: "legacy thread",
   titleSource: "auto",
+  access: "ask",
   archived: false,
   deliveredSeq: 1,
   createdAt: 0,

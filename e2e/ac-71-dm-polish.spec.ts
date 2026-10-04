@@ -266,7 +266,7 @@ test("AC-4 an approval-blocked session reads `needs you` / `Waiting for approval
     .locator('[data-ask-state="open"]')
     .first()
     .getAttribute("data-ask-id");
-  await page.getByRole("button", { name: "Allow once" }).first().click();
+  await page.getByRole("button", { name: "Once", exact: true }).first().click();
   // The fake's script has more approval-gated steps (patch → write_file →
   // git commit): `request.opened(r2)` re-adds "Waiting for approval" ~one
   // engine tick after `request.resolved(r1)` lands, so a zero count — or a

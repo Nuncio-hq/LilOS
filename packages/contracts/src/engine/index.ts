@@ -1,4 +1,5 @@
 export * from "./agents.js";
+export * from "./approvals.js";
 export * from "./capabilities.js";
 export * from "./content.js";
 export * from "./envelope.js";

@@ -198,7 +198,7 @@ test("AC-2 a mid-turn rename survives the late llm title", async ({ page }) => {
   await send(page, "Add a footer to the page");
   await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_/, { timeout: 10_000 });
   await expect(
-    page.getByRole("button", { name: "Allow once" }).first(),
+    page.getByRole("button", { name: "Once", exact: true }).first(),
   ).toBeVisible({ timeout: 60_000 });
 
   // Back to the session list; rename the running session.
@@ -218,7 +218,7 @@ test("AC-2 a mid-turn rename survives the late llm title", async ({ page }) => {
   await page.screenshot({ path: `${SHOTS}/ac2-renamed-mid-turn.png` });
 
   // Finish the turn: the canned flow asks more than once — keep answering
-  // "Allow once" until it completes; the llm title must not overwrite the
+  // "Once" until it completes; the llm title must not overwrite the
   // rename.
   // The row opens the session's peek panel (#195) — the turn text lives
   // there now, not in `main` (which stays the feed).
@@ -230,7 +230,9 @@ test("AC-2 a mid-turn rename survives the late llm title", async ({ page }) => {
   const deadline = Date.now() + 60_000;
   for (;;) {
     if (await doneOn.isVisible().catch(() => false)) break;
-    const allow = page.getByRole("button", { name: "Allow once" }).first();
+    const allow = page
+      .getByRole("button", { name: "Once", exact: true })
+      .first();
     if (await allow.isVisible().catch(() => false)) await allow.click();
     if (Date.now() > deadline)
       throw new Error("turn never completed after answering approvals");
