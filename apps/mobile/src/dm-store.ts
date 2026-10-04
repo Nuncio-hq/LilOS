@@ -5,6 +5,7 @@ import type {
   Conversation,
   FoldersDetailResult,
   RecentFolder,
+  WelcomeResult,
 } from "@lilos/contracts/app";
 import type {
   ModelPick,
@@ -14,7 +15,7 @@ import type {
   WbCardTarget,
   WorkspacePick,
 } from "@lilos/ui-native";
-import { atom } from "nanostores";
+import { atom, type ReadableAtom } from "nanostores";
 import { toModelCatalog } from "./dm-model";
 import { watchPrs } from "./prs";
 
@@ -33,6 +34,10 @@ export const $catalog = atom<{
   defaultModel?: string;
   defaultProvider?: string;
 }>({ models: [], providers: [] });
+/** #483: a catalog load finished and NO source had models (live `models.list`
+    plus the relay-cached `welcome.engineHost`) — the composer keeps a
+    disabled "Models unavailable" chip with retry instead of hiding. */
+export const $catalogUnavailable = atom(false);
 /** The shared "Edit models" hide list (#160 AC-1) — relay-persisted, the
     same KV the Mac's picker reads (`modelVisibility`). */
 export const $modelVisibility = atom<ModelVisibility>({
@@ -52,8 +57,13 @@ export const $wbCards = atom<
 
 const watched = new WeakSet<AppClient>();
 
-/** Seed asks + recents + the model catalog, then track ask events live. */
-export function watchDm(client: AppClient): void {
+/** Seed asks + recents + the model catalog, then track ask events live.
+    `welcome` is the link's hello atom — its `engineHost` is the catalog
+    fallback when `models.list` can't answer (#483). */
+export function watchDm(
+  client: AppClient,
+  welcome?: ReadableAtom<WelcomeResult | undefined>,
+): void {
   if (watched.has(client)) return;
   watched.add(client);
   /* #159: the turn-end PR refresh watcher lives beside the ask watcher —
@@ -72,18 +82,7 @@ export function watchDm(client: AppClient): void {
         void refreshFolderDetails(client);
       })
       .catch(() => {});
-    void client
-      .listModels({ refresh: false })
-      .then((res) => {
-        const { models, providers } = toModelCatalog(res);
-        $catalog.set({
-          models,
-          providers,
-          defaultModel: res.default,
-          defaultProvider: res.defaultProvider,
-        });
-      })
-      .catch(() => {});
+    void refreshModelCatalog(client, welcome);
     void client
       .request<{ value: unknown }>("settings.get", { key: "modelVisibility" })
       .then((res) => {
@@ -115,6 +114,16 @@ export function watchDm(client: AppClient): void {
       });
       return;
     }
+    /* #483 AC-3: the engine host registering again is a fresh catalog
+       source — `models.list` then answers even though it failed while the
+       host was gone. (The relay caches the same list on
+       `welcome.engineHost`, but that's hello-time data.) */
+    if (method === "host.changed") {
+      if ((params as { connected?: boolean }).connected === true) {
+        void refreshModelCatalog(client, welcome, { refresh: true });
+      }
+      return;
+    }
     /* A hide-list write by any peer (the Mac's Edit models) lands on every
        surface at once (#92 AC-7). */
     if (method === "settings.changed") {
@@ -136,6 +145,58 @@ export function watchDm(client: AppClient): void {
         : [...list, ask],
     );
   });
+}
+
+/**
+ * The engine model catalog (#483): ask `models.list` first; when it fails
+ * or comes back empty, fall back to the relay-cached list on
+ * `welcome.engineHost` so the chip/picker keep working through a slow or
+ * dead engine. The fallback applies BEFORE the live call resolves, so even
+ * a hanging `models.list` leaves the chip on the last-known list. When
+ * neither source has models, `$catalogUnavailable` marks the chip's
+ * disabled state; `refresh: true` is the retry/picker-open/host-return
+ * path (the engine re-probes instead of answering its cache).
+ */
+export async function refreshModelCatalog(
+  client: AppClient,
+  welcome?: ReadableAtom<WelcomeResult | undefined>,
+  opts?: { refresh?: boolean },
+): Promise<void> {
+  /* Optimistic fallback only when nothing is known — a live catalog that
+     already landed never downgrades to hello-time rows. */
+  if (!$catalog.get().models.length) {
+    const host = welcome?.get()?.engineHost;
+    if (host?.models?.length) {
+      const { models, providers } = toModelCatalog({
+        models: host.models,
+        providers: host.providers,
+      });
+      $catalog.set({
+        models,
+        providers,
+        defaultModel: host.defaultModel,
+        defaultProvider: host.defaultProvider,
+      });
+      $catalogUnavailable.set(false);
+    }
+  }
+  try {
+    const res = await client.listModels({ refresh: opts?.refresh ?? false });
+    if (res.models?.length) {
+      const { models, providers } = toModelCatalog(res);
+      $catalog.set({
+        models,
+        providers,
+        defaultModel: res.default,
+        defaultProvider: res.defaultProvider,
+      });
+    }
+    /* Answered-empty or failed: whatever the fallback left stands; the
+       unavailable flag is honest about whether anything rendered. */
+    $catalogUnavailable.set(!$catalog.get().models.length);
+  } catch {
+    $catalogUnavailable.set(!$catalog.get().models.length);
+  }
 }
 
 /**
@@ -206,6 +267,7 @@ export function resetDmStore(): void {
   $folders.set([]);
   $folderDetails.set({});
   $catalog.set({ models: [], providers: [] });
+  $catalogUnavailable.set(false);
   $modelVisibility.set({ providers: [], models: [] });
   $wsPicks.set({});
   $modelPicks.set({});
