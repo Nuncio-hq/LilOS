@@ -88,3 +88,59 @@ describe("mergeFeedEvents (#428)", () => {
     expect(elapsed).toBeLessThan(250);
   });
 });
+
+describe("mergeFeedEvents (#431 compact replay)", () => {
+  /* The blocking review repro: a client that mounted mid-turn holds live
+     deltas [S..anchor] with NO earlier coverage. The resync's compacted
+     replay carries a turn.recap at the anchor seq — if the held delta won
+     the sessionId|seq dedupe, the compacted prefix was lost for good. */
+  const recap = (seq: number, text: string): EngineEvent =>
+    ({
+      seq,
+      sessionId: "sess-1",
+      type: "turn.recap",
+      payload: { turnId: "t1", text, reasoning: "" },
+    }) as EngineEvent;
+
+  it("a replayed turn.recap beats a held live delta at the anchor seq", () => {
+    const held = [
+      ev(10, {
+        payload: { turnId: "t1", stream: "text", delta: "tail " },
+      }),
+      ev(12, {
+        payload: { turnId: "t1", stream: "text", delta: "end" },
+      }),
+    ];
+    const replay = [
+      ev(1, {
+        type: "session.started",
+        payload: { agent: "default", cwd: "/w", model: "fake" },
+      }),
+      ev(3, {
+        type: "turn.started",
+        payload: { turnId: "t1", model: "fake" },
+      }),
+      recap(12, "head middle tail end"),
+      ev(13, {
+        type: "turn.completed",
+        payload: { turnId: "t1", stopReason: "end_turn" },
+      }),
+    ];
+    const merged = mergeFeedEvents(held, replay);
+    expect(seqs(merged)).toEqual([1, 3, 10, 12, 13]);
+    const atAnchor = merged.find((e) => e.seq === 12);
+    expect(atAnchor?.type).toBe("turn.recap");
+    /* The held delta@10 stays — a live frame the recap doesn't shadow;
+       folding the run gives the full text either way (recap is replace). */
+    expect(merged.some((e) => e.seq === 10 && e.type === "turn.delta")).toBe(
+      true,
+    );
+  });
+
+  it("a held recap still wins over a same-seq replayed frame", () => {
+    const heldRecap = recap(7, "whole");
+    const merged = mergeFeedEvents([heldRecap], [recap(7, "also whole")]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toBe(heldRecap);
+  });
+});

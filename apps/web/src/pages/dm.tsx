@@ -1087,7 +1087,12 @@ export function DmPage() {
               ? "the engine feed is disconnected (harness down or restarting)"
               : "still syncing")
           }`
-        : undefined;
+        : /* #431: a capped engine log means the transcript's retained tail
+             is all that exists — say so rather than letting the missing
+             head read as a render gap. */
+          conv.engineRef && openFeed.historyTrimmed
+          ? "Earlier history was trimmed — this session's event log is capped."
+          : undefined;
 
     const resolved: Record<string, string> = {};
     for (const a of asksHere) {

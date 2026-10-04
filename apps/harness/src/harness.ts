@@ -745,11 +745,15 @@ export class Harness {
     // AC-4: a turn that vanished across sleep/restart must end as
     // `interrupted` with Retry — never a spinner. Lost iff the replay shows
     // it neither still running nor terminated by a replayed turn.completed.
+    // A truncated replay can't prove either (#431): the completed may be
+    // cap-dropped, so the inference stays silent rather than stamping a
+    // healthy turn interrupted.
     const finishedInReplay = replay.events.some(
       (e) => e.type === "turn.completed" && e.payload.turnId === watchedTurnId,
     );
     if (
       watchedTurnId &&
+      !replay.truncated &&
       replay.snapshot.turn?.turnId !== watchedTurnId &&
       !finishedInReplay
     ) {

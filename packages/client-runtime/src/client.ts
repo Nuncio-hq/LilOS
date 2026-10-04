@@ -112,6 +112,9 @@ export interface RelaySessionFeedState {
   openRequests: OpenRequest[];
   /** The engine's session snapshot (state/model/turn), when synced. */
   snapshot?: SessionSnapshot;
+  /** #431: the host's log is capped — the transcript's retained head is
+     all that exists (session.events answered `truncated`). */
+  historyTrimmed?: boolean;
   error?: string;
 }
 
@@ -822,6 +825,14 @@ export class RelayClient {
           conversationId,
           after: 0,
         });
+      } else if (res.truncated && f.coverageSeq > 0) {
+        /* #431: the watermark sits in a cap-dropped hole — the range can't
+           be patched. Refetch the retained log from 0, same as the rebind
+           refetch above. */
+        res = await this.request<EventsSinceResult>("session.events", {
+          conversationId,
+          after: 0,
+        });
       }
     } catch (error) {
       // `not_found` = no engine session bound yet — an honestly empty feed,
@@ -859,6 +870,7 @@ export class RelayClient {
          a current snapshot from a stale one. */
       snapshot: { ...res.snapshot, atSeq: res.latestSeq } as SessionSnapshot,
       error: undefined,
+      historyTrimmed: res.truncated,
     });
   }
 

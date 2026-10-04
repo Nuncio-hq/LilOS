@@ -417,3 +417,123 @@ describe("EngineClient session feed (#84 ac-32 race)", () => {
     expect(feed.get().latestSeq).toBe(8);
   });
 });
+
+describe("EngineClient session feed (#431 truncated replay)", () => {
+  it("a truncated answer on a nonzero watermark refetches from 0 and flags historyTrimmed", async () => {
+    const { socket, client } = makeClient();
+    await connectClient(client, socket);
+
+    const feed = client.sessionFeed("s1");
+    await vi.waitFor(() =>
+      expect(socket.sawRequest("events.since")).toBe(true),
+    );
+    // First sync: coverage lands at 5.
+    socket.respondTo("events.since", {
+      events: [
+        {
+          seq: 5,
+          sessionId: "s1",
+          type: "turn.delta",
+          payload: { turnId: "t1", stream: "text", delta: "x" },
+        },
+      ],
+      latestSeq: 5,
+      truncated: false,
+      openRequests: [],
+      snapshot: SNAPSHOT,
+    });
+    await vi.waitFor(() => expect(feed.get().coverageSeq).toBe(5));
+
+    // Socket drop -> reconnect -> resync from coverageSeq. The engine's cap
+    // dropped frames inside the range (droppedSeq > 5): truncated.
+    (client as unknown as { resyncFeeds(): Promise<void> }).resyncFeeds();
+    await vi.waitFor(() => {
+      const reqs = socket.sent.filter((raw) => raw.includes("events.since"));
+      expect(reqs.length).toBeGreaterThanOrEqual(2);
+    });
+    // Answer the coverage-watermark request with truncated.
+    const coverageReq = socket.sent
+      .map(
+        (raw) =>
+          JSON.parse(raw) as {
+            id?: string;
+            method?: string;
+            params?: { after?: number };
+          },
+      )
+      .reverse()
+      .find((f) => f.method === "events.since" && f.params?.after === 5);
+    expect(coverageReq).toBeTruthy();
+    socket.emit({
+      jsonrpc: "2.0",
+      id: coverageReq?.id,
+      result: {
+        events: [],
+        latestSeq: 9,
+        truncated: true,
+        openRequests: [],
+        snapshot: SNAPSHOT,
+      },
+    });
+
+    // The client must refetch the retained log from 0 rather than patch.
+    await vi.waitFor(() => {
+      const afterZero = socket.sent
+        .map(
+          (raw) =>
+            JSON.parse(raw) as {
+              method?: string;
+              params?: { after?: number };
+            },
+        )
+        .filter((f) => f.method === "events.since");
+      expect(
+        afterZero.filter((f) => f.params?.after === 0).length,
+      ).toBeGreaterThanOrEqual(2);
+    });
+    const retainedTail = [
+      {
+        seq: 7,
+        sessionId: "s1",
+        type: "turn.recap",
+        payload: { turnId: "t1", text: "whole turn", reasoning: "" },
+      },
+      {
+        seq: 9,
+        sessionId: "s1",
+        type: "turn.completed",
+        payload: { turnId: "t1", stopReason: "end_turn" },
+      },
+    ];
+    socket.respondTo("events.since", {
+      events: retainedTail,
+      latestSeq: 9,
+      truncated: true,
+      openRequests: [],
+      snapshot: SNAPSHOT,
+    });
+    await vi.waitFor(() => expect(feed.get().latestSeq).toBe(9));
+    expect(feed.get().historyTrimmed).toBe(true);
+    /* The retained tail merges in; the held delta@5 stays (it was live —
+       only the engine's copy was dropped). */
+    expect(feed.get().events.map((e) => e.seq)).toEqual([5, 7, 9]);
+  });
+
+  it("a clean (non-truncated) replay leaves historyTrimmed false", async () => {
+    const { socket, client } = makeClient();
+    await connectClient(client, socket);
+    const feed = client.sessionFeed("s1");
+    await vi.waitFor(() =>
+      expect(socket.sawRequest("events.since")).toBe(true),
+    );
+    socket.respondTo("events.since", {
+      events: [],
+      latestSeq: 1,
+      truncated: false,
+      openRequests: [],
+      snapshot: SNAPSHOT,
+    });
+    await vi.waitFor(() => expect(feed.get().synced).toBe(true));
+    expect(feed.get().historyTrimmed).toBe(false);
+  });
+});

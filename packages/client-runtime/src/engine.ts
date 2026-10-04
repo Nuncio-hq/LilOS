@@ -74,6 +74,9 @@ export interface SessionFeedState {
    * Cleared on the next successful resync.
    */
   error?: string;
+  /** #431: the engine's log is capped — the transcript's retained head is
+     all that exists (events.since answered `truncated`). */
+  historyTrimmed?: boolean;
 }
 
 /**
@@ -413,10 +416,20 @@ export class EngineClient {
          watermark: coverageSeq only advances in order, so mid-turn events
          landing before the first resync can't skip the prefix — turn text,
          plans, requests (#180 AC-1). */
-      const res = await this.request<EventsSinceResult>("events.since", {
+      let res = await this.request<EventsSinceResult>("events.since", {
         sessionId: state.sessionId,
         after: state.coverageSeq,
       });
+      /* #431: a `truncated` answer on a nonzero watermark means the engine
+         dropped frames inside the range we asked to patch — the coverage
+         watermark sits in a hole. Refetch the retained log from 0; the merge
+         still keeps live frames the hole never covered. */
+      if (res.truncated && state.coverageSeq > 0) {
+        res = await this.request<EventsSinceResult>("events.since", {
+          sessionId: state.sessionId,
+          after: 0,
+        });
+      }
       // Re-read: live events can land while the replay is in flight. The
       // replay is authoritative only through `res.latestSeq` — merging onto
       // the fresh state (not the pre-await snapshot) keeps those live events
@@ -458,6 +471,7 @@ export class EngineClient {
           atSeq: res.latestSeq,
         } as SessionSnapshot,
         error: undefined,
+        historyTrimmed: res.truncated,
       });
       const pending = this.resyncRetries.get(feed);
       if (pending?.timer) clearTimeout(pending.timer);
