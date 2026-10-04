@@ -2,8 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, expect, type Page, test } from "@playwright/test";
 import { electronScreenshot, ensureDesktopPayload } from "./helpers/electron";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #71 — desktop DM polish (incl. the AC-7 model-display-name scope
@@ -25,11 +24,7 @@ const SHOTS = path.join(repo, "test-results", "ac-71");
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac71", {
-    relay: wport(4656),
-    feed: wport(4657),
-    web: wport(5258),
-  });
+  stack = await bootStack("ac71", await pickPorts());
 });
 test.afterAll(async () => {
   await stack?.stop();

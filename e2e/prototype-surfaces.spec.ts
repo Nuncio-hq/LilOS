@@ -213,6 +213,111 @@ test("AC-4 session management: filter, rename, archive and restore in the DM lis
   expect(errors).toEqual([]);
 });
 
+test("AC-4b archive menu item stays clickable while the session list settles (#492)", async ({
+  page,
+}) => {
+  const errors = watchConsole(page);
+  /* #492: the DM session list sits inside a use-stick-to-bottom scroller
+     that smooth-scrolls to its bottom when filtered rows come back. When
+     that settle lands while the row menu is open, the anchor clips out of
+     the scrollport — and without `sticky` on the Positioner, floating-ui's
+     limitShift caps the shift clamp at the anchor's own edge, so the popup
+     parks above the viewport and the item stays "outside of the viewport"
+     until timeout. Inject a named delay on the row layout —
+     `__armRowLayoutDelay` holds the scroller's ResizeObserver callbacks
+     until the menu mounts — so the settle scroll deterministically lands
+     inside the menu-open window. */
+  await page.addInitScript(() => {
+    let armed = false;
+    const held: [
+      ResizeObserverCallback,
+      ResizeObserverEntry[],
+      ResizeObserver,
+    ][] = [];
+    const menuOpen = () =>
+      !!document.querySelector(
+        '[data-slot="dropdown-menu-content"][data-open]',
+      );
+    /* Scroll events are held back too: otherwise the scroller's scroll
+       handler can un-pin the list before the deferred resize runs, which
+       makes the reproduction nondeterministic. */
+    const holdScroll = (e: Event) => {
+      if (armed) e.stopImmediatePropagation();
+    };
+    const flush = () => {
+      if (!armed) return;
+      if (menuOpen() && held.length) {
+        armed = false;
+        document.removeEventListener("scroll", holdScroll, true);
+        for (const [cb, entries, obs] of held.splice(0)) cb(entries, obs);
+        return;
+      }
+      requestAnimationFrame(flush);
+    };
+    const NativeResizeObserver = window.ResizeObserver;
+    window.ResizeObserver = class extends NativeResizeObserver {
+      constructor(cb: ResizeObserverCallback) {
+        super((entries, obs) =>
+          armed ? held.push([cb, entries, obs]) : cb(entries, obs),
+        );
+      }
+    };
+    Object.defineProperty(window, "__armRowLayoutDelay", {
+      value: () => {
+        armed = true;
+        document.addEventListener("scroll", holdScroll, true);
+        requestAnimationFrame(flush);
+      },
+    });
+  });
+  await page.goto("/");
+  await openDM(page, "Builder");
+  await expect(page.locator("[data-session]")).toHaveCount(7);
+
+  /* Same settle pattern as AC-4: filter → clear → rename → filter → clear,
+     so the second regrowth lands while the archive menu is opening. */
+  const d2 = page.locator('[data-session="d2"]');
+  await page.getByPlaceholder("Filter sessions").fill("summarise");
+  await expect(page.locator("[data-session]")).toHaveCount(1);
+  await page.getByPlaceholder("Filter sessions").fill("");
+  await d2.getByRole("button", { name: "Session actions" }).click();
+  await page.getByRole("menuitem", { name: "Rename session" }).click();
+  await page.getByLabel("Session title").fill("Monday summary");
+  await page.getByLabel("Session title").press("Enter");
+  await expect(d2).toContainText("Monday summary");
+  await page.getByPlaceholder("Filter sessions").fill("monday");
+  await expect(page.locator("[data-session]")).toHaveCount(1);
+
+  /* Re-pin the list to its bottom — the armed-pin state the settle spring
+     runs from. The scroll-to-bottom button unmounts once the list reports
+     pinned, so the arm can't race the scroller's own bookkeeping. */
+  await page.evaluate(() => {
+    const scroller = [
+      ...document.querySelectorAll<HTMLElement>('[role="log"]'),
+    ].find((el) => el.querySelector("[data-session]"))
+      ?.firstElementChild as HTMLElement;
+    scroller.scrollTop = scroller.scrollHeight;
+  });
+  await expect(
+    page.locator('[role="log"]:has([data-session]) > button.absolute'),
+  ).toHaveCount(0);
+  await page.evaluate(() =>
+    (
+      window as unknown as { __armRowLayoutDelay: () => void }
+    ).__armRowLayoutDelay(),
+  );
+  await page.getByPlaceholder("Filter sessions").fill("");
+  await d2.getByRole("button", { name: "Session actions" }).click();
+  /* The injected delay has delivered when the settle scroll clips the
+     anchor while the menu is open — data-anchor-hidden is the positioner's
+     marker for it. This is the wild failure's precondition; without the
+     injection it almost never happens inside the click window. */
+  await expect(page.locator(".isolate[data-anchor-hidden]")).toBeAttached();
+  await page.getByRole("menuitem", { name: "Archive session" }).click();
+  await expect(page.locator("[data-session]")).toHaveCount(6);
+  expect(errors).toEqual([]);
+});
+
 test("AC-5 employee management: edit name + role, remove keeps profile, missing profile switch", async ({
   page,
 }) => {

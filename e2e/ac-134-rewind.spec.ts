@@ -11,8 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #134 — "Rewind to here" on every user message: the relay marks the
@@ -64,16 +63,13 @@ let stackA: Stack; // engine-fake with every capability — incl. `rewind`
 let stackB: Stack; // engine-fake with `rewind` hidden (the ACP path)
 test.beforeAll(async () => {
   test.setTimeout(180_000);
-  stackA = await bootStack(
-    "rw-a",
-    { relay: wport(4643), feed: wport(4647), web: wport(5241) },
-    { LILOS_USER_NAME: "Oscar" },
-  );
-  stackB = await bootStack(
-    "rw-b",
-    { relay: wport(4782), feed: wport(4783), web: wport(5385) },
-    { LILOS_USER_NAME: "Oscar", LILOS_HIDE_CAPS: "rewind" },
-  );
+  stackA = await bootStack("rw-a", await pickPorts(), {
+    LILOS_USER_NAME: "Oscar",
+  });
+  stackB = await bootStack("rw-b", await pickPorts(), {
+    LILOS_USER_NAME: "Oscar",
+    LILOS_HIDE_CAPS: "rewind",
+  });
 });
 test.afterAll(async () => {
   await stackA?.stop();

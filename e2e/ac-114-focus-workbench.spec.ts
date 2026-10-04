@@ -11,8 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #114 — Focus mode + Workbench in the real app (apps/web), on the real
@@ -100,19 +99,11 @@ let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   writeView(PR_VIEW);
-  stack = await bootStack(
-    "ac114",
-    {
-      relay: wport(4740),
-      feed: wport(4826),
-      web: wport(5327),
-    },
-    {
-      PATH: `${fakeGh}:${process.env.PATH}`,
-      GH_FAKE_DIR: ghFakeDir,
-      GH_FAKE_LOG: ghLogFile,
-    },
-  );
+  stack = await bootStack("ac114", await pickPorts(), {
+    PATH: `${fakeGh}:${process.env.PATH}`,
+    GH_FAKE_DIR: ghFakeDir,
+    GH_FAKE_LOG: ghLogFile,
+  });
 });
 test.afterAll(async () => {
   await stack?.stop();
