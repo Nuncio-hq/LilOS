@@ -186,6 +186,11 @@ async function runningFocus(page: Page) {
   await expect(page.locator(`${CAPSULE} .lilos-hint`)).toHaveText(
     "Enter steers · ■ stop",
   );
+  /* The chip is one of the measured surfaces — wait for the catalog, don't
+     measure while it's still loading. */
+  await expect(
+    page.locator(`${CAPSULE} [data-slot="model-picker-trigger"]`),
+  ).toBeVisible({ timeout: 30_000 });
 }
 
 const capsule = (page: Page) =>
