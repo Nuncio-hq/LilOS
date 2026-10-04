@@ -350,6 +350,10 @@ export function ModelPicker({
     try {
       await onRefresh();
       setRefreshed(true);
+    } catch {
+      /* The caller already said why (toast); the `refreshed` marker staying
+         false is the picker's own failure signal — don't also leak an
+         unhandled rejection. */
     } finally {
       setRefreshing(false);
     }

@@ -192,9 +192,20 @@ export class FakeGateway implements GatewayLike {
   /** #288: session.resume calls in order — {session_id, profile, lazy, ...}. */
   resumeCalls: Record<string, unknown>[] = [];
 
+  /** When set, session.title answers only after this promise resolves —
+      lets a test hold completeTurn's post-turn rotation poll mid-flight. */
+  titleGate?: Promise<void>;
+
   private refs = new Map<string, string>();
   /** stored_session_id -> the durable row session.resume reattaches to. */
   private storedByRef = new Map<string, { message_count: number }>();
+
+  /** Mint n dummy sid→ref pairs so the next session.create's
+      stored_session_id is provably distinct (no stored row, so
+      session.resume still 4040s). */
+  burnRefs(n: number) {
+    for (let i = 0; i < n; i++) this.refs.set(`pre-${i}`, `pre-${i}`);
+  }
   private sreqId = 0;
   private sreqPending = new Map<
     string,
@@ -389,14 +400,18 @@ export class FakeGateway implements GatewayLike {
           completion_reason: "killed",
         });
       }
-      case "session.title":
+      case "session.title": {
         /* The gateway echoes the just-set title back (tui_gateway/methods
            _session_title returns the stored row); tests need the echo to be
            the requested value, not a canned one. */
-        return Promise.resolve({
+        const reply = () => ({
           title: String(p.title ?? "t"),
           session_key: this.refs.get(String(p.session_id)) ?? "",
         });
+        return this.titleGate
+          ? this.titleGate.then(reply)
+          : Promise.resolve(reply());
+      }
       case "image.attach_bytes":
         this.attachedImages.push(p);
         return Promise.resolve({

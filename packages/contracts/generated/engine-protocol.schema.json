@@ -857,6 +857,52 @@
                     },
                     "type": {
                       "type": "string",
+                      "const": "turn.recap"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "turnId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "reasoning": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "turnId",
+                        "text",
+                        "reasoning"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "sessionId",
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "type": {
+                      "type": "string",
                       "const": "tool.started"
                     },
                     "payload": {
@@ -3259,6 +3305,52 @@
                   "turnId",
                   "stream",
                   "delta"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "seq",
+              "sessionId",
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "const": "turn.recap"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "turnId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "reasoning": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "turnId",
+                  "text",
+                  "reasoning"
                 ],
                 "additionalProperties": false
               }

@@ -174,7 +174,9 @@ export type SessionSnapshot = z.infer<typeof SessionSnapshot>;
 export const EventsSinceResult = z.object({
   events: z.array(EngineEvent),
   latestSeq: z.int().min(0),
-  /** True when the replay buffer dropped events <= after: refetch, don't patch. */
+  /** True when the buffer dropped events inside the requested range —
+      `latestSeq` can move past a hole the caller can't see: refetch,
+      don't patch. */
   truncated: z.boolean(),
   /** Asks still awaiting `request.respond`. */
   openRequests: z.array(OpenRequest),

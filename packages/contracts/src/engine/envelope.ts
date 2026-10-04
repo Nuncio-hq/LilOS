@@ -59,6 +59,11 @@ export const RPC_ERRORS = {
   INVALID_STATE: -32003,
   AGENT_NOT_FOUND: -32004,
   MODEL_NOT_FOUND: -32005,
+  /* #482: the engine's inference backend is down — the adapter is
+     restarting it. Distinct from INVALID_STATE: the caller's request was
+     well-formed and may succeed once the backend is back (retryable,
+     user-visible as the app-code `engine_unavailable`). */
+  BACKEND_DOWN: -32006,
 } as const;
 export type RpcErrorCode = (typeof RPC_ERRORS)[keyof typeof RPC_ERRORS];
 

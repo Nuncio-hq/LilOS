@@ -177,9 +177,10 @@ export function loadDir(path: string): void {
   });
 }
 
-/** git.discoverRepos over the usual roots → "Found on this Mac" rows. */
+/** git.discoverRepos over the usual roots → "Found on this Mac" rows.
+    Rejects on a host failure — the Add-folder caller toasts the reason. */
 export async function loadDiscovered(): Promise<void> {
-  const r = await hostDiscoverRepos(hostRoots()).catch(() => null);
+  const r = await hostDiscoverRepos(hostRoots());
   if (!r) return;
   const stubs: Record<string, FsDir> = {};
   for (const x of r.repos) {

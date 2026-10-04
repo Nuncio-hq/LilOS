@@ -207,6 +207,21 @@ PR does not exist.
   token, via `packages/engine-hermes`), crash restart with bounded backoff,
   conversation↔session binding, final-answer posts, and ask relaying.
   Not: the app or relay calling an engine directly. — #26 · PR #48
+- **D-#482 The Hermes adapter owns its `hermes serve` child's lifetime;
+  the harness watches the adapter, never the child.** The adapter's backend
+  supervisor watches both the child exit and the gateway socket; either
+  loss fails every in-flight and new engine call fast with typed
+  `BACKEND_DOWN` (-32006 → app `engine_unavailable`), then relaunches with
+  capped backoff and swaps in the new gateway — stored sessions lazily
+  `session.resume` on next touch (a completed dead turn first emits
+  `turn.completed{refusal}`; a turn the restarted backend finishes
+  server-side completes as a leg under D-#308). `describe()` carries
+  `backend.{state,detail}` with a short post-flap exposure so a sub-second
+  restart still registers. The harness side only probes `describe` (2s /
+  1.5s): a coded answer keeps the adapter alive on reported state, dead
+  air twice restarts the adapter process. Not: the harness watching the
+  hermes child itself, requests queueing on a dead socket, or per-request
+  waits bounded by nothing. — #482
 - **D-#36 The agent gateway is the one agent surface.** Every engine
   session gets a gateway scope bound to its employee/thread; its tool
   calls reach LilOS through one endpoint and the scope resolves the
@@ -224,6 +239,17 @@ PR does not exist.
   `ref` echoes the prompting message, `initiatedBy:"agent"` marks
   engine-opened work. Not: stamping legs on the settled turn id, or the
   mapping layer guessing ownership. — #308
+- **D-#431 The replay log is compacted + bounded: a finished turn's
+  `turn.delta` run collapses into one `turn.recap` (`{turnId, text,
+  reasoning}` — both whole streams, replace not append) that reuses the
+  last delta's `seq`, and the per-session log sheds its prefix past
+  `EVENT_LOG_CAP` (an open turn's `turn.started` seq protected), reported
+  by `events.since.truncated` (`droppedSeq > after` = the range lost
+  events — refetch, don't patch). Live streams never carry `turn.recap`.**
+  Not: snapshot+tail (the snapshot exists; the fat was the middle),
+  unbounded per-session logs (the ~17 MB/400-turn replay this kills), or a
+  fresh `seq` for the recap (reusing the anchor's is what lets a
+  partial-live fold dedupe it). — #431 · PR #509
 - **D-#56 The terminal has one holder: a Workbench keystroke hands it to
   the user; `terminal_run`/`terminal_write` then fail `user_control` (HTTP
   409), in-flight runs too.** Hand-back is explicit (`term.release`) or

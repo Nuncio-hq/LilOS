@@ -24,7 +24,7 @@ const PNG = Buffer.from(
   "base64",
 );
 
-const TOAST = "div.fixed.bottom-5";
+const TOAST = "[data-toast]";
 
 /** The employee home DM for the fake engine's seeded employee. */
 async function dmDefault(page: Page, base: string) {
