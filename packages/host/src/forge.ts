@@ -1,5 +1,3 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import type {
   ForgeCommentResult,
   ForgeCreateParams,
@@ -15,10 +13,10 @@ import type {
   ForgePullRequest,
 } from "@lilos/contracts/host";
 import { HOST_ERRORS, HostError } from "./errors.js";
+import { run } from "./exec.js";
 import { repoRoot } from "./git.js";
 import { collapsePath, expandPath } from "./paths.js";
 
-const run = promisify(execFile);
 const MAX_BUFFER = 32 * 1024 * 1024;
 
 /** Fields of `gh pr view --json` the PR tab consumes. */

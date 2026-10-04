@@ -49,7 +49,7 @@ const engineKind =
   arg("engine", process.env.LILOS_ENGINE ?? "hermes") ?? "hermes";
 const HOME = process.env.HOME ?? "";
 
-/* Mirrors ENGINE_ENV_ALLOW_LIST in apps/harness/src/engine/launcher.ts —
+/* Mirrors LILOS_ENV_ALLOW_LIST in packages/contracts/src/env.ts —
    the documented env an agent session may see. */
 const ALLOW_LIST = ["LILOS_ENGINE_TOKEN", "LILOS_SURFACES_URL"];
 
