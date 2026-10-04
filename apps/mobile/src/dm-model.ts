@@ -201,12 +201,22 @@ export function toSessionTurns(
   ctx: DmCtx,
 ): SessionTurn[] {
   const rows = summaries
-    .filter((s) => s.conversation.channelId === ctx.channelId)
+    /* #424: the runtime fetches includeArchived so it KNOWS the flag — the
+       phone's job is hiding it (the Mac keeps an Archived disclosure; the
+       compact list drops the row). conversation.updated carries the flip in
+       one update, so archive hides and unarchive returns here. */
+    .filter(
+      (s) =>
+        s.conversation.channelId === ctx.channelId && !s.conversation.archived,
+    )
     .map((s) => ({ turn: toSessionTurn(s, ctx), at: s.last.createdAt }));
   // A just-sent open may still lack a summary (refresh in flight): render it
   // from what the phone itself wrote so the Working row appears at once.
   for (const [id, p] of ctx.pending) {
-    if (p.conversation.channelId !== ctx.channelId) continue;
+    /* #424: same cut as the summary path — a stale pending marker must not
+       resurrect a session the Mac already archived. */
+    if (p.conversation.channelId !== ctx.channelId || p.conversation.archived)
+      continue;
     if (summaries.some((s) => s.conversation.id === id)) continue;
     rows.push({
       at: p.conversation.createdAt,
