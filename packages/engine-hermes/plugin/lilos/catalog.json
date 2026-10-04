@@ -1,0 +1,1542 @@
+{
+  "tools": [
+    {
+      "name": "browser_open",
+      "description": "Open a URL in the session's browser and return the loaded page.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "browser",
+        "lilos/access": "write"
+      }
+    },
+    {
+      "name": "browser_click",
+      "description": "Click an element by CSS selector (Playwright selector syntax).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "selector"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "browser",
+        "lilos/access": "write"
+      }
+    },
+    {
+      "name": "browser_type",
+      "description": "Type text — into `selector`'s field when given, else the focused element.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "browser",
+        "lilos/access": "write"
+      }
+    },
+    {
+      "name": "browser_read",
+      "description": "Read the current page: url, title and visible text.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "title",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "browser",
+        "lilos/access": "read"
+      }
+    },
+    {
+      "name": "browser_scroll",
+      "description": "Scroll the page by a pixel delta (negative = up).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "dy": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "dy"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "browser",
+        "lilos/access": "write"
+      }
+    },
+    {
+      "name": "browser_eval",
+      "description": "Evaluate JavaScript in the page and return the JSON value.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "expression": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "expression"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "value": {}
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "browser",
+        "lilos/access": "write"
+      }
+    },
+    {
+      "name": "terminal_run",
+      "description": "Run a shell command in the session's terminal and return its output + exit code.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "minLength": 1
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "output": {
+            "type": "string"
+          },
+          "exitCode": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "output",
+          "exitCode"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "terminal",
+        "lilos/access": "write"
+      }
+    },
+    {
+      "name": "terminal_write",
+      "description": "Send raw input to the terminal (interactive programs; use terminal_run for commands).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "terminal",
+        "lilos/access": "write"
+      }
+    },
+    {
+      "name": "terminal_read",
+      "description": "Read the terminal's recent output (scrollback tail).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "tailBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "output": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "output"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "terminal",
+        "lilos/access": "read"
+      }
+    },
+    {
+      "name": "workbench_previews",
+      "description": "List dev-server preview URLs the user's Workbench shows for this session (URL scan + PREVIEW: markers).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "previews": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "via": {
+                  "type": "string",
+                  "enum": [
+                    "scan",
+                    "marker"
+                  ]
+                }
+              },
+              "required": [
+                "url",
+                "via"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "previews"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "workbench",
+        "lilos/access": "read"
+      }
+    },
+    {
+      "name": "workbench_open",
+      "description": "Show the user something in this session's Workbench: `{file, line?}`, `{diff, path?}`, `{pr}` or `{url}` — the panel opens on that tab. It never opens an editor on the Mac.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "file": {
+            "description": "Session-folder file to show",
+            "type": "string",
+            "minLength": 1
+          },
+          "line": {
+            "description": "1-based line inside `file` to highlight",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "diff": {
+            "description": "Open the Changes tab — the session's live git diff",
+            "type": "boolean",
+            "const": true
+          },
+          "path": {
+            "description": "Filter Changes to one file (with `diff`)",
+            "type": "string",
+            "minLength": 1
+          },
+          "pr": {
+            "description": "Open the PR tab for the thread's pull requests",
+            "type": "boolean",
+            "const": true
+          },
+          "url": {
+            "description": "Preview URL to open on the Preview tab",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "opened": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "opened"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "workbench",
+        "lilos/access": "write"
+      }
+    },
+    {
+      "name": "context",
+      "description": "Who and where this session is: the employee record, DM, thread, folder, the user's name, Mac status and attached tool areas.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "employee": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "role": {
+                "type": "string"
+              },
+              "profile": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "role",
+              "profile",
+              "model"
+            ],
+            "additionalProperties": false
+          },
+          "channel": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "thread": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "idle",
+                  "active",
+                  "closed"
+                ]
+              },
+              "model": {
+                "type": "string"
+              },
+              "access": {
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "full"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "state",
+              "access"
+            ],
+            "additionalProperties": false
+          },
+          "folder": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "repoPath": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "mac": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "degraded",
+                  "down"
+                ]
+              },
+              "components": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "enum": [
+                        "relay",
+                        "harness",
+                        "engine",
+                        "model"
+                      ]
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "connecting",
+                        "degraded",
+                        "blocked",
+                        "down"
+                      ]
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "state",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "state",
+              "components"
+            ],
+            "additionalProperties": false
+          },
+          "areas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hostPolicyVersion": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "employee",
+          "channel",
+          "thread",
+          "user",
+          "mac",
+          "areas",
+          "hostPolicyVersion"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "root",
+        "lilos/access": "read"
+      }
+    },
+    {
+      "name": "guide",
+      "description": "LilOS docs shipped with the app — pass a topic (overview, dm-and-threads, employees, approvals, workbench, mobile, gateway); none returns the index.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "enum": [
+              "overview",
+              "dm-and-threads",
+              "employees",
+              "approvals",
+              "workbench",
+              "mobile",
+              "gateway"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "title",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "root",
+        "lilos/access": "read"
+      }
+    },
+    {
+      "name": "team_list",
+      "description": "The company roster: every employee's name, role, status and model.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "employees": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "role": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "online",
+                    "busy",
+                    "offline"
+                  ]
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "role",
+                "status",
+                "model"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "employees"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "team",
+        "lilos/access": "read"
+      }
+    },
+    {
+      "name": "thread_post",
+      "description": "Post a message to this session's own thread — the user sees it in the app.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "channelId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "authorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "conversationId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "authorKind": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "employee",
+                  "system"
+                ]
+              },
+              "attachments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "mimeType": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "sizeBytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "mimeType",
+                    "sizeBytes"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "model": {
+                "type": "string",
+                "minLength": 1
+              },
+              "provider": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "fast": {
+                "type": "boolean"
+              },
+              "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "dropped": {
+                "default": false,
+                "type": "boolean"
+              },
+              "removed": {
+                "default": false,
+                "type": "boolean"
+              },
+              "claimed": {
+                "default": false,
+                "type": "boolean"
+              },
+              "checkpoint": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "channelId",
+              "authorId",
+              "text",
+              "seq",
+              "createdAt",
+              "conversationId",
+              "authorKind",
+              "rewound",
+              "dropped",
+              "removed",
+              "claimed"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "thread",
+        "lilos/access": "write"
+      }
+    },
+    {
+      "name": "thread_read",
+      "description": "Read the visible messages of a thread in this DM — the session's own unless `thread` names another by id or title; `before`/`afterSeq` window it.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "before": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "afterSeq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "thread": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              },
+              "access": {
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "full"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "access"
+            ],
+            "additionalProperties": false
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "channelId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "authorId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "text": {
+                  "type": "string"
+                },
+                "seq": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "createdAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "conversationId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "authorKind": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "employee",
+                    "system"
+                  ]
+                },
+                "attachments": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "mimeType": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "sizeBytes": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "mimeType",
+                      "sizeBytes"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "effort": {
+                  "type": "string"
+                },
+                "fast": {
+                  "type": "boolean"
+                },
+                "rewound": {
+                  "default": false,
+                  "type": "boolean"
+                },
+                "dropped": {
+                  "default": false,
+                  "type": "boolean"
+                },
+                "removed": {
+                  "default": false,
+                  "type": "boolean"
+                },
+                "claimed": {
+                  "default": false,
+                  "type": "boolean"
+                },
+                "checkpoint": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "channelId",
+                "authorId",
+                "text",
+                "seq",
+                "createdAt",
+                "conversationId",
+                "authorKind",
+                "rewound",
+                "dropped",
+                "removed",
+                "claimed"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "thread",
+          "messages"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "thread",
+        "lilos/access": "read"
+      }
+    },
+    {
+      "name": "thread_list",
+      "description": "The threads in this DM — title, state, last activity and linked PRs.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "threads": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "idle",
+                    "active",
+                    "closed"
+                  ]
+                },
+                "archived": {
+                  "type": "boolean"
+                },
+                "access": {
+                  "type": "string",
+                  "enum": [
+                    "ask",
+                    "full"
+                  ]
+                },
+                "lastActivity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "prs": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "number": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "url": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "repo": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "merged",
+                          "closed"
+                        ]
+                      },
+                      "draft": {
+                        "type": "boolean"
+                      },
+                      "head": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "base": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "openedAt": {
+                        "type": "string"
+                      },
+                      "checks": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "pending",
+                          "passing",
+                          "failing"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "number",
+                      "url",
+                      "repo",
+                      "title",
+                      "state",
+                      "draft",
+                      "head",
+                      "base",
+                      "openedAt",
+                      "checks"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "current": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "state",
+                "archived",
+                "access",
+                "prs",
+                "current"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "threads"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "thread",
+        "lilos/access": "read"
+      }
+    },
+    {
+      "name": "thread_search",
+      "description": "Search messages inside this DM (the relay's FTS index).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "hits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "messageId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "conversationId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "channelId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "authorId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "snippet": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "messageId",
+                "conversationId",
+                "channelId",
+                "authorId",
+                "snippet",
+                "createdAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "hits"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "thread",
+        "lilos/access": "read"
+      }
+    },
+    {
+      "name": "thread_set_title",
+      "description": "Rename this session's thread — only while its title is auto-generated; a user-typed title wins and returns `user_title`.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "set",
+              "user_title"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome",
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "thread",
+        "lilos/access": "write"
+      }
+    },
+    {
+      "name": "thread_prs",
+      "description": "Pull requests linked to this session's thread.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "prs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "number": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "url": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "repo": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "merged",
+                    "closed"
+                  ]
+                },
+                "draft": {
+                  "type": "boolean"
+                },
+                "head": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "base": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "openedAt": {
+                  "type": "string"
+                },
+                "checks": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "pending",
+                    "passing",
+                    "failing"
+                  ]
+                }
+              },
+              "required": [
+                "number",
+                "url",
+                "repo",
+                "title",
+                "state",
+                "draft",
+                "head",
+                "base",
+                "openedAt",
+                "checks"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "prs"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "thread",
+        "lilos/access": "read"
+      }
+    }
+  ]
+}

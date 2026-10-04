@@ -106,9 +106,9 @@ function renderSchemaDoc(protocol: ProtocolRegistry): string {
   return `${JSON.stringify(buildSchemaDoc(protocol), null, 2)}\n`;
 }
 
-/** One committed JSON Schema artifact under `generated/`. */
+/** One committed generated artifact (JSON Schema under `generated/`). */
 export interface GeneratedDoc {
-  /** File name inside GENERATED_DIR. */
+  /** File name used for display (and the default output under GENERATED_DIR). */
   file: string;
   /** Renders the byte-stable doc content. */
   render: () => string;
@@ -144,6 +144,7 @@ function writeAll(): string[] {
   mkdirSync(GENERATED_DIR, { recursive: true });
   return GENERATED_DOCS.map((doc) => {
     const path = outputPathFor(doc);
+    mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, doc.render());
     return path;
   });

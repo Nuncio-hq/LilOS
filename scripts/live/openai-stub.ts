@@ -86,6 +86,9 @@ const server = Bun.serve({
           type?: string;
           json_schema?: { name?: string };
         };
+        /* #411: the model-facing tool list — logged so a live leg can
+           assert an engine-registered tool was actually offered. */
+        tools?: { function?: { name?: string } }[];
       };
       const model = body.model ?? "stub-model";
       const flatText = (c: unknown): string =>
@@ -153,7 +156,10 @@ const server = Bun.serve({
               : ""
           ).slice(0, 1000),
         );
-        const line = `${JSON.stringify({ model, service_tier: body.service_tier, speed: body.speed, reasoning_effort: body.reasoning_effort ?? body.reasoning?.effort, image_parts: images.length, content_blocks: parts.length, text_sample: texts.join(" ").slice(0, 300), texts })}\n`;
+        const toolNames = (body.tools ?? [])
+          .map((t) => t.function?.name)
+          .filter((n): n is string => Boolean(n));
+        const line = `${JSON.stringify({ model, service_tier: body.service_tier, speed: body.speed, reasoning_effort: body.reasoning_effort ?? body.reasoning?.effort, image_parts: images.length, content_blocks: parts.length, tool_names: toolNames, text_sample: texts.join(" ").slice(0, 300), texts })}\n`;
         const { appendFileSync } = await import("node:fs");
         appendFileSync(process.env.STUB_REQUEST_LOG, line);
       }

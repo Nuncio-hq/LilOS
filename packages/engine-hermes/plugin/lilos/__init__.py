@@ -3,8 +3,12 @@
 One small adapter, three jobs:
 
 1. Register the LilOS gateway's catalog as ``lilos_<name>`` tools — the tool
-   list lives in the LilOS contracts package; this plugin only renders what
-   ``GET <gateway>/tools`` returns. Every tool call carries the Hermes
+   list lives in the LilOS contracts package; this plugin renders the
+   ``catalog.json`` snapshot shipped next to this file (rendered by the same
+   contract renderer the gateway's ``GET /tools`` uses). ``register()`` never
+   touches the network: a fetch inside plugin load can outlive Hermes' 10 s
+   plugin-load deadline while the harness event loop is blocked (#411), and
+   the abandoned load drops every tool. Every tool call carries the Hermes
    session id so the gateway resolves the session's own scope.
 2. Inject the versioned LilOS host policy into each LilOS session's system
    prompt (``register_system_prompt_section`` — rendered once per session
@@ -30,9 +34,11 @@ where the gate sits.
 """
 
 import json
+import logging
 import os
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 ENV_URL = "LILOS_SURFACES_URL"
 ENV_TOKEN = "LILOS_ENGINE_TOKEN"
@@ -42,7 +48,7 @@ TOOL_PREFIX = "lilos_"
 BROWSER_PREFIX = "browser_"
 TOOLSET = "lilos"
 
-# Filled by _catalog(); None until the first successful fetch.
+# Filled by _catalog(); None until the first read.
 _catalog_cache = None
 # Session ids proven to have source "lilos" (sessions live for the process
 # lifetime; a source never changes once minted).
@@ -51,6 +57,11 @@ _lilos_sessions = set()
 _policies = {}
 
 _TIMEOUT_S = 15
+
+# The tool catalog snapshot shipped with the plugin — rendered from the
+# same LILOS_TOOLS contract as the gateway's GET /tools (#411).
+_CATALOG_FILE = Path(__file__).with_name("catalog.json")
+_log = logging.getLogger("lilos")
 
 
 # ---------------------------------------------------------------- env/auth
@@ -75,13 +86,23 @@ def _request(method, url, token, path, session=None, payload=None, timeout=_TIME
     return json.loads(raw) if raw else {}
 
 
-def _catalog(env):
-    """GET /tools with the engine token → the full catalog (all areas)."""
+def _catalog():
+    """The shipped catalog snapshot → the full catalog (all areas).
+
+    A plain file read: ``register()`` runs under Hermes' plugin-load
+    deadline, so it must never wait on the gateway (#411 — a blocked
+    ``GET /tools`` burned the whole 10 s deadline and every ``lilos_*``
+    registration was dropped). The network is only for tool CALLS, which
+    run at session time when the gateway must answer anyway. A missing or
+    corrupt snapshot yields no tools rather than a hang."""
     global _catalog_cache
     if _catalog_cache is None:
         try:
-            _catalog_cache = _request("GET", env[0], env[1], "/tools").get("tools") or []
-        except Exception:
+            _catalog_cache = (
+                json.loads(_CATALOG_FILE.read_text()).get("tools") or []
+            )
+        except Exception as e:
+            _log.warning("lilos catalog snapshot unreadable (%s): %s", _CATALOG_FILE, e)
             _catalog_cache = []
     return _catalog_cache
 
@@ -260,7 +281,7 @@ def register(ctx):
     if env is None:
         return
 
-    for tool in _catalog(env):
+    for tool in _catalog():
         name = str(tool.get("name") or "")
         if not name:
             continue
