@@ -46,6 +46,26 @@ gateway that refuses them fails the start with the gateway's own error.
 lazy `/model` switch, so an unknown id fails `MODEL_NOT_FOUND` immediately
 instead of resolving and breaking the next prompt.
 
+## Backend watchdog (#482)
+
+`scripts/serve.ts` runs the backend through `HermesBackendSupervisor`
+(`src/backend.ts`): it watches the `hermes serve` child's exit AND the
+gateway socket; either loss marks the engine down — every in-flight turn,
+open ask and pending gateway call settles fast with typed
+`RPC_ERRORS.BACKEND_DOWN` (-32006) after a `turn.completed{refusal}` — and
+the supervisor relaunches with capped backoff (a child surviving
+`stableAfterMs` resets the budget; `maxAttempts` consecutive failures give
+up as `failed` until a caller re-arms via `kick()`). The new gateway swaps
+in through `setGateway`; stored sessions lazily `session.resume` on next
+touch, so a thread outlives the backend that served it.
+
+`describe()` reports `backend.{state,detail}` (`running` / `restarting` /
+`failed`) — that is the surface the harness's liveness probe reads, so a
+dead backend behind a live adapter shows as not-running instead of lying
+`running` while calls hang. A resumed Hermes may finish the killed turn
+server-side; its events mint a leg turn (D-#308), so `prompt` during that
+leg legitimately answers `-32003` until the leg's `turn.completed` lands.
+
 ## Live conformance run
 
 ```
