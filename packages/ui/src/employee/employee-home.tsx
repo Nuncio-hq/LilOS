@@ -845,7 +845,15 @@ export function EmployeeCard({
           <dt className="text-muted-foreground">Model</dt>
           <dd>{models?.find((m) => m.id === e.model)?.name ?? e.model}</dd>
           <dt className="text-muted-foreground">Now</dt>
-          <dd>{e.now}</dd>
+          <dd>
+            {e.now ? (
+              e.now
+            ) : (
+              /* #504: an empty row reads broken — say it in muted text,
+                 reusing #422's "Idle" wording. */
+              <span className="text-muted-foreground">Idle</span>
+            )}
+          </dd>
         </dl>
         {missing && (
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900 text-xs">
@@ -879,7 +887,28 @@ export function EmployeeCard({
         <div className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wide">
           Instructions (SOUL.md)
         </div>
-        <p>{e.instructions}</p>
+        {e.instructions ? (
+          <p>{e.instructions}</p>
+        ) : (
+          /* #504: a profile with no SOUL.md gets an empty state instead of
+             a lone heading; the Edit link renders only with its handler
+             (D-#19). */
+          <p className="text-muted-foreground">
+            No instructions yet.
+            {onEdit && (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  onClick={onEdit}
+                >
+                  Edit
+                </button>
+              </>
+            )}
+          </p>
+        )}
       </div>
       <p className="text-muted-foreground text-xs">
         Persona, memory and skills live in the engine profile. LilOS stores only

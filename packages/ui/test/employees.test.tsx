@@ -199,6 +199,77 @@ describe("AC-5 EmployeeCard profile-missing state", () => {
   });
 });
 
+describe("#504 card empty states", () => {
+  test("AC-1 empty instructions → 'No instructions yet.' + an Edit link", () => {
+    let edits = 0;
+    const { getByText, unmount } = render(
+      <EmployeeCard
+        e={EMPLOYEE}
+        profiles={PROFILES}
+        ownerName="Ada"
+        onDM={() => {}}
+        onEdit={() => edits++}
+      />,
+    );
+    const line = getByText(/no instructions yet/i);
+    // The link lives inside the empty-state line and routes to the same
+    // editor as the header's Edit button.
+    fireEvent.click(within(line).getByRole("button", { name: "Edit" }));
+    expect(edits).toBe(1);
+    unmount();
+
+    // No handler → no dead control (D-#19); the line still reads.
+    const silent = render(
+      <EmployeeCard
+        e={EMPLOYEE}
+        profiles={PROFILES}
+        ownerName="Ada"
+        onDM={() => {}}
+      />,
+    );
+    expect(silent.getByText(/no instructions yet/i)).toBeTruthy();
+    expect(silent.queryByText("Edit")).toBeNull();
+  });
+
+  test("AC-1 a filled SOUL.md renders the text, no empty state", () => {
+    const { getByText, queryByText } = render(
+      <EmployeeCard
+        e={{ ...EMPLOYEE, instructions: "You are Reviewer." }}
+        profiles={PROFILES}
+        ownerName="Ada"
+        onDM={() => {}}
+        onEdit={() => {}}
+      />,
+    );
+    expect(getByText("You are Reviewer.")).toBeTruthy();
+    expect(queryByText(/no instructions yet/i)).toBeNull();
+  });
+
+  test("AC-2 an idle Now row reads 'Idle' in muted text; a live one shows the step", () => {
+    const { getByText, unmount } = render(
+      <EmployeeCard
+        e={EMPLOYEE}
+        profiles={PROFILES}
+        ownerName="Ada"
+        onDM={() => {}}
+      />,
+    );
+    expect(getByText("Idle").className).toMatch(/text-muted-foreground/);
+    unmount();
+
+    const busy = render(
+      <EmployeeCard
+        e={{ ...EMPLOYEE, now: "LIL-3 · write_file" }}
+        profiles={PROFILES}
+        ownerName="Ada"
+        onDM={() => {}}
+      />,
+    );
+    expect(busy.getByText("LIL-3 · write_file")).toBeTruthy();
+    expect(busy.queryByText("Idle")).toBeNull();
+  });
+});
+
 describe("AC-3/AC-4 EditEmployeeDialog", () => {
   test("edits display name + role; removal keeps the engine profile", () => {
     const saves: EmployeeEditSave[] = [];
