@@ -13,6 +13,7 @@ import {
   ENGINE_PROTOCOL,
   type EngineEvent,
   type EngineRequest,
+  EVENT_LOG_CAP,
   type EventsSinceParams,
   type InterruptParams,
   type Job,
@@ -120,6 +121,9 @@ export interface HermesEngineOptions {
      each stored session under its engine id instead of minting a new one. */
   sessionsFile?: string;
   version?: string;
+  /** #431: per-session replay log bound — defaults to EVENT_LOG_CAP;
+      tests pass a small value to exercise `truncated`. */
+  eventLogCap?: number;
 }
 
 /**
@@ -150,8 +154,11 @@ export class HermesEngine {
   /** #106: the global approval policy — set by `approvals.setPolicy`,
       pre-seeded best-effort from `config.get` in describe. */
   private policy?: ApprovalPolicy;
+  /** #431: bound handed to every Session's replay log. */
+  private readonly eventLogCap: number;
 
   constructor(private opts: HermesEngineOptions) {
+    this.eventLogCap = opts.eventLogCap ?? EVENT_LOG_CAP;
     this.sessionRegistry = opts.sessionsFile
       ? new SessionRegistry(opts.sessionsFile)
       : undefined;
@@ -421,6 +428,7 @@ export class HermesEngine {
         r.session_id,
         typeof r.stored_session_id === "string" ? r.stored_session_id : "",
         (e) => this.emitAll(e),
+        this.eventLogCap,
       );
       this.sessions.set(id, s);
       this.byRuntimeSid.set(s.runtimeSid, s);
@@ -465,6 +473,7 @@ export class HermesEngine {
       opened.runtimeSid,
       opened.ref,
       (e) => this.emitAll(e),
+      this.eventLogCap,
     );
     driver.bind(s);
     this.sessions.set(id, s);
@@ -747,6 +756,7 @@ export class HermesEngine {
         r.session_id,
         ref,
         (e) => this.emitAll(e),
+        this.eventLogCap,
       );
       s.userTurns = rec.userTurns;
       this.sessions.set(sessionId, s);

@@ -2028,3 +2028,60 @@ describe("engine-hermes #416: an inline diff carries the file's real path", () =
     expect(await diffPathOf({ args: null })).toBe("(inline)");
   });
 });
+
+/* #431: the adapter's per-session log is bounded (D-#431) and a finished
+   turn's streams replay as one recap — the WS and resume paths share
+   Session.emit, so the hook covers every event source. */
+describe("engine-hermes #431: compact replay + bounded log", () => {
+  test("a finished turn's deltas replay as one turn.recap", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    gw.emit(gw.lastSid, "reasoning.delta", { text: "think" });
+    gw.emit(gw.lastSid, "message.delta", { text: "answer" });
+    gw.complete(gw.lastSid, { text: "answer" });
+    const { turnId } = await p;
+
+    const since = (await h.request("events.since", {
+      sessionId,
+      after: 0,
+    })) as { events: EngineEvent[]; truncated: boolean };
+    const turnEvents = since.events.filter(
+      (e) => (e.payload as { turnId?: string }).turnId === turnId,
+    );
+    expect(turnEvents.filter((e) => e.type === "turn.delta")).toEqual([]);
+    const recaps = turnEvents.filter((e) => e.type === "turn.recap");
+    expect(recaps).toHaveLength(1);
+    expect((recaps[0].payload as { text: string }).text).toBe("answer");
+    expect((recaps[0].payload as { reasoning: string }).reasoning).toBe(
+      "think",
+    );
+    // Log-only: a live listener never sees a recap frame.
+    expect(h.events.map((e) => e.type)).not.toContain("turn.recap");
+  });
+
+  test("eventLogCap bounds the log and events.since reports truncation", async () => {
+    const gw = new FakeGateway();
+    const h = new Harness(
+      connectInMemory(new HermesEngine({ gateway: gw, eventLogCap: 8 })),
+    );
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    for (let i = 0; i < 10; i++)
+      gw.emit(gw.lastSid, "message.delta", { text: `w${i} ` });
+    gw.complete(gw.lastSid, { text: "w" });
+    await p;
+
+    const since = (await h.request("events.since", {
+      sessionId,
+      after: 0,
+    })) as { events: EngineEvent[]; truncated: boolean };
+    expect(since.events.length).toBeLessThanOrEqual(8);
+    expect(since.truncated).toBe(true);
+    const tail = (await h.request("events.since", {
+      sessionId,
+      after: since.events[0].seq,
+    })) as { truncated: boolean };
+    expect(tail.truncated).toBe(false);
+  });
+});

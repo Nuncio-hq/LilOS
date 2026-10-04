@@ -1,8 +1,11 @@
 import {
   type ApprovalOutcome,
+  capEventLog,
+  coalesceTurnDeltas,
   type EngineEvent,
   type EngineEventType,
   type EngineRequest,
+  EVENT_LOG_CAP,
   type JobStatus,
   type McpServer,
   RPC_ERRORS,
@@ -71,6 +74,13 @@ export interface PendingAsk {
 export class Session {
   seq = 0;
   log: EngineEvent[] = [];
+  /** #431: the largest seq the log cap dropped (0 = nothing fell) —
+     `events.since` reports `truncated` when it passes the caller's
+     `after`. */
+  droppedSeq = 0;
+  /** #431: the open turn's `turn.started` seq — the log cap never drops
+     frames at or past it (a running turn's replay stays whole). */
+  openTurnSeq?: number;
   state: SessionState = "idle";
   usage: Usage | undefined;
   openRequests = new Map<string, PendingAsk>();
@@ -148,6 +158,8 @@ export class Session {
     /** Durable ref (stored_session_id) — rotates on compression. */
     public ref: string,
     private emitFn: (e: EngineEvent) => void,
+    /** #431: replay log bound — see `capEventLog`. */
+    public eventLogCap = EVENT_LOG_CAP,
   ) {}
 
   emit(type: EngineEventType, payload: EngineEvent["payload"]) {
@@ -159,6 +171,16 @@ export class Session {
     } as EngineEvent;
     this.log.push(event);
     this.emitFn(event);
+    /* #431 replay contract: the turn's stream stays verbatim only while
+       it runs — close it and the deltas collapse into a log-only recap
+       (live clients already folded them; they never see the frame). */
+    if (type === "turn.started") this.openTurnSeq = event.seq;
+    if (type === "turn.completed") {
+      coalesceTurnDeltas(this.log, (payload as { turnId: string }).turnId);
+      this.openTurnSeq = undefined;
+    }
+    const dropped = capEventLog(this.log, this.eventLogCap, this.openTurnSeq);
+    if (dropped > this.droppedSeq) this.droppedSeq = dropped;
   }
 
   setState(state: SessionState, reason?: string) {
@@ -224,7 +246,10 @@ export class Session {
     return {
       events: this.log.filter((e) => e.seq > after),
       latestSeq: this.seq,
-      truncated: false,
+      /* #431: the requested range lost events to the log cap — refetch,
+         don't patch. Compaction alone never truncates: a client below
+         the recap's seq still receives it. */
+      truncated: this.droppedSeq > after,
       openRequests: [...this.openRequests.values()].map((a) => ({
         requestId: a.requestId,
         turnId: a.turnId,

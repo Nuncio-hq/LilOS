@@ -262,6 +262,26 @@ export function reduceSessionEvents(
         }
         break;
       }
+      case "turn.recap": {
+        const t = turn(e.payload.turnId);
+        /* #431: a finished turn's whole streams in one frame — replace,
+           never append: the fold lands identically whether it saw the
+           delta run or its recap (a client whose watermark sits inside
+           the compacted run folds deltas up to it, then the recap
+           re-stamps the full text at the last delta's seq). */
+        t.reasoning = e.payload.reasoning;
+        t.text = e.payload.text;
+        if (
+          e.payload.text &&
+          t.phase !== "done" &&
+          t.phase !== "stopped" &&
+          t.phase !== "failed"
+        )
+          t.phase = "text";
+        else if (e.payload.reasoning && t.phase === "submitted")
+          t.phase = "reasoning";
+        break;
+      }
       case "tool.started": {
         const t = turn(e.payload.turnId);
         /* #309: an async subagent's calls land after its parent's

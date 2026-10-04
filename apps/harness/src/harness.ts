@@ -2152,6 +2152,12 @@ export class Harness {
           );
         }
         break;
+      /* #431: a replayed finished turn's streams in one frame — replace
+         the accumulation like the fold does so the turn still posts its
+         answer at turn.completed. */
+      case "turn.recap":
+        binding?.textByTurn.set(event.payload.turnId, event.payload.text);
+        break;
       /* tool.started/completed never post feed rows — the tool cards
          inside the turn are the single rendering (issue #71, AC-1). But
          tool.started IS the employee's live "now:" step (#422): the
