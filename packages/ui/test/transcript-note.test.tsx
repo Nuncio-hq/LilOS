@@ -131,9 +131,7 @@ describe("issue #532 — transcript note kind decides head vs tail", () => {
   });
 
   test("trimmed note heads the transcript in FocusView", () => {
-    const c = render(
-      <FocusView {...focusProps} transcriptNote={TRIMMED} />,
-    );
+    const c = render(<FocusView {...focusProps} transcriptNote={TRIMMED} />);
     const n = note(c.container);
     const es = entries(c.container);
     expect(n).not.toBeNull();
