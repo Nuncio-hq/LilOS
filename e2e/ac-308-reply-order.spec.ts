@@ -181,23 +181,17 @@ test("AC-1/AC-5 queued replies anchor under their own prompt — even after relo
     timeout: 120_000,
   });
   const assertOrder = async () => {
-    /* Rows hydrate from `messages.list`/the channel snapshot while turn
-       cards replay from the engine feed — after a reload either can land
-       first under load, so poll until the composed thread holds the order
-       rather than sampling one frame (#451). */
-    await expect(async () => {
-      const text = await mainText(page);
-      const a = text.indexOf("first queued zebra");
-      const aAnswer = text.indexOf("First queued zebra");
-      const b = text.indexOf("second queued apple");
-      const bAnswer = text.indexOf("Second queued apple");
-      expect(a).toBeGreaterThanOrEqual(0);
-      // A's drained reply anchors under A — a newer user row never renders
-      // above an older message's answer.
-      expect(a).toBeLessThan(aAnswer);
-      expect(aAnswer).toBeLessThan(b);
-      expect(b).toBeLessThan(bAnswer);
-    }).toPass({ timeout: 30_000 });
+    const text = await mainText(page);
+    const a = text.indexOf("first queued zebra");
+    const aAnswer = text.indexOf("First queued zebra");
+    const b = text.indexOf("second queued apple");
+    const bAnswer = text.indexOf("Second queued apple");
+    expect(a).toBeGreaterThanOrEqual(0);
+    // A's drained reply anchors under A — a newer user row never renders
+    // above an older message's answer.
+    expect(a).toBeLessThan(aAnswer);
+    expect(aAnswer).toBeLessThan(b);
+    expect(b).toBeLessThan(bAnswer);
   };
   await assertOrder();
   await page.screenshot({ path: `${SHOTS}/ac-1-queued-order.png` });
