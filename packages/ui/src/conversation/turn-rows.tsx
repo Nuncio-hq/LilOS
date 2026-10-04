@@ -25,6 +25,7 @@ import type {
   Work,
 } from "../types";
 import { ReplyCards } from "./cards";
+import { useFindUnstub } from "./find-unstub";
 import type { PlanAction } from "./plan-card";
 import { AgentTurn, AttachmentChips, PrCard, UserTurn } from "./turns";
 
@@ -171,9 +172,14 @@ function LazyShell({
   const wasHeldRef = useRef(false);
   const [held, setHeld] = useState(false);
   const [remounted, setRemounted] = useState(false);
+  /* #512: while a find chord's ~10 s window runs, every held row mounts so
+     browser find-in-page can match its text; the window lapsing re-arms
+     the observer path and off-screen rows re-stub. */
+  const findOpen = useFindUnstub(lazy);
+  const lazyOn = lazy && !findOpen;
 
   useEffect(() => {
-    if (!lazy || keep || typeof IntersectionObserver === "undefined") {
+    if (!lazyOn || keep || typeof IntersectionObserver === "undefined") {
       if (wasHeldRef.current) {
         wasHeldRef.current = false;
         setRemounted(true);
@@ -208,7 +214,7 @@ function LazyShell({
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [lazy, keep]);
+  }, [lazyOn, keep]);
 
   return (
     <div
