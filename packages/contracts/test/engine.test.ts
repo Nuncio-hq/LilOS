@@ -34,6 +34,7 @@ describe("engine wire contract", () => {
       "request.respond",
       "events.since",
       "session.stop",
+      "session.suspend",
       "session.steer",
       "agents.list",
       "agents.describe",

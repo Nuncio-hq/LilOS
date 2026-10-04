@@ -11,8 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #114 — Focus mode + Workbench in the real app (apps/web), on the real
@@ -100,19 +99,11 @@ let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   writeView(PR_VIEW);
-  stack = await bootStack(
-    "ac114",
-    {
-      relay: wport(4740),
-      feed: wport(4826),
-      web: wport(5327),
-    },
-    {
-      PATH: `${fakeGh}:${process.env.PATH}`,
-      GH_FAKE_DIR: ghFakeDir,
-      GH_FAKE_LOG: ghLogFile,
-    },
-  );
+  stack = await bootStack("ac114", await pickPorts(), {
+    PATH: `${fakeGh}:${process.env.PATH}`,
+    GH_FAKE_DIR: ghFakeDir,
+    GH_FAKE_LOG: ghLogFile,
+  });
 });
 test.afterAll(async () => {
   await stack?.stop();
@@ -487,7 +478,11 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
     page.getByText("Sign in to GitHub to see this PR", { exact: false }),
   ).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("gh auth login")).toBeVisible();
-  const retry = page.getByRole("button", { name: "Retry" });
+  /* #419 wired the last turn's own hover Retry — scope this one to the PR
+     panel or the name resolves to both. */
+  const retry = page
+    .getByRole("tabpanel", { name: "PR" })
+    .getByRole("button", { name: "Retry" });
   await expect(retry).toBeVisible();
   await expect(page.getByText(/gh failed:/)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-5-gh-auth.png` });

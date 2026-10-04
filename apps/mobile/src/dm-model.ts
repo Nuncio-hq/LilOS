@@ -159,6 +159,16 @@ function toSessionTurn(s: ConversationSummary, ctx: DmCtx): SessionTurn {
     prompt: s.root.text,
     title: conv.title || s.root.text,
     state,
+    /* #346 AC-4 — sessionLife's rule in this file's one derivation spot:
+       a turn working (or a send still landing) is running; an ask waiting
+       on the user is open — neither idle-closes; otherwise the stored
+       open/closed bit the host writes, unset = open. */
+    life:
+      state === "working"
+        ? "running"
+        : state === "needs-you"
+          ? "open"
+          : (conv.life ?? "open"),
     when: timeLabel(s.last.createdAt, ctx.now),
     ...(convFolderLabel(conv) ? { folder: convFolderLabel(conv) } : {}),
     ...(conv.workspace?.branch ? { branch: conv.workspace.branch } : {}),
@@ -191,12 +201,22 @@ export function toSessionTurns(
   ctx: DmCtx,
 ): SessionTurn[] {
   const rows = summaries
-    .filter((s) => s.conversation.channelId === ctx.channelId)
+    /* #424: the runtime fetches includeArchived so it KNOWS the flag — the
+       phone's job is hiding it (the Mac keeps an Archived disclosure; the
+       compact list drops the row). conversation.updated carries the flip in
+       one update, so archive hides and unarchive returns here. */
+    .filter(
+      (s) =>
+        s.conversation.channelId === ctx.channelId && !s.conversation.archived,
+    )
     .map((s) => ({ turn: toSessionTurn(s, ctx), at: s.last.createdAt }));
   // A just-sent open may still lack a summary (refresh in flight): render it
   // from what the phone itself wrote so the Working row appears at once.
   for (const [id, p] of ctx.pending) {
-    if (p.conversation.channelId !== ctx.channelId) continue;
+    /* #424: same cut as the summary path — a stale pending marker must not
+       resurrect a session the Mac already archived. */
+    if (p.conversation.channelId !== ctx.channelId || p.conversation.archived)
+      continue;
     if (summaries.some((s) => s.conversation.id === id)) continue;
     rows.push({
       at: p.conversation.createdAt,
@@ -205,6 +225,8 @@ export function toSessionTurns(
         prompt: p.root.text,
         title: p.conversation.title || p.root.text,
         state: "working",
+        /* #346 AC-4: a send in flight is running — toSessionTurn's rule. */
+        life: "running",
         when: timeLabel(p.conversation.createdAt, ctx.now),
         live: "Working…",
         ...(convFolderLabel(p.conversation)

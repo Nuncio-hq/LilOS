@@ -2,8 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { killProc, waitForHttp } from "./helpers/stack";
-import { wport } from "./ports";
+import { killProc, pickPorts, waitForHttp } from "./helpers/stack";
 
 /**
  * #374: dark-mode red ink was unreadable — `text-red-800`/`text-red-900` were
@@ -286,11 +285,9 @@ test("boot error text holds WCAG AA in dark and keeps its palette in light (#374
 }) => {
   test.setTimeout(120_000);
   /* apps/web BootScreen (app.tsx) only renders when the relay can't be
-     reached at boot: run vite alone with a dead relay WS. Ports reuse literals
-     already in the suite — every distinct wport base must keep a unique
-     residue mod 100 (ports.spec.ts), and all 100 residues are taken. */
-  const webPort = wport(5241);
-  const deadRelay = wport(4643); // nothing binds it in this spec → refused
+     reached at boot: run vite alone with a dead relay WS — `feed` stays
+     unused, so nothing ever binds deadRelay and the socket is refused. */
+  const { web: webPort, feed: deadRelay } = await pickPorts();
   const proc = spawn(
     "bun",
     [

@@ -8,8 +8,7 @@ import {
   type Page,
   test,
 } from "@playwright/test";
-import { bootStack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts } from "./helpers/stack";
 
 /**
  * Issue #80 — DM identity + streaming markdown. AC-1 asserts the user's
@@ -92,11 +91,7 @@ test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", asy
   test.setTimeout(180_000);
   const stack = await bootStack(
     "ac80a",
-    {
-      relay: wport(4660),
-      feed: wport(4661),
-      web: wport(5262),
-    },
+    await pickPorts(),
     // #118: the signed-in name is the OS user's — pin it so the identity
     // assertions below stay deterministic on any machine.
     { LILOS_USER_NAME: "Oscar" },
@@ -131,7 +126,7 @@ test("AC-2 markdown renders while the reply streams, then settles unchanged", as
   test.setTimeout(150_000);
   const stack = await bootStack(
     "ac80b",
-    { relay: wport(4664), feed: wport(4665), web: wport(5334) },
+    await pickPorts(),
     // The `slow:` prompt stretches its own text phase (~4 s → observable
     // mid-stream); pin the human's name (#118).
     { LILOS_USER_NAME: "Oscar" },
@@ -170,11 +165,9 @@ test("AC-2 markdown renders while the reply streams, then settles unchanged", as
 
 test("AC-3 desktop app: same identity + streaming markdown in Electron", async () => {
   test.setTimeout(240_000);
-  const stack = await bootStack(
-    "ac80c",
-    { relay: wport(4667), feed: wport(4669), web: wport(5335) },
-    { LILOS_USER_NAME: "Oscar" },
-  );
+  const stack = await bootStack("ac80c", await pickPorts(), {
+    LILOS_USER_NAME: "Oscar",
+  });
   try {
     const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
       cwd: desktopDir,

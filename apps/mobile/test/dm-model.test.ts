@@ -149,6 +149,26 @@ describe("AC-1: threads come from conversations.summaries for the DM channel, gr
     ]);
   });
 
+  it("#424 an archived session leaves the list; unarchiving brings it back", () => {
+    /* The runtime fetches includeArchived so it KNOWS the flag — the list's
+       job is hiding it (the Mac keeps its own Archived disclosure; the phone
+       drops the row outright). conversation.updated carries the flip in one
+       update both ways. */
+    const turns = toSessionTurns(
+      [summary("live"), summary("arch", { archived: true })],
+      CTX,
+    );
+    expect(turns.map((t) => t.id)).toEqual(["live"]);
+    const back = toSessionTurns(
+      [
+        summary("live"),
+        summary("arch", { archived: false }, { last: { createdAt: T0 - 1 } }),
+      ],
+      CTX,
+    );
+    expect(back.map((t) => t.id)).toEqual(["arch", "live"]);
+  });
+
   it("AC-1 shows a freshly opened conversation as Working before its summary lands", () => {
     const opened = conv("c-new", { engineRef: null });
     const root = msg("c-new-root", {
@@ -163,6 +183,19 @@ describe("AC-1: threads come from conversations.summaries for the DM channel, gr
     expect(turns[0]?.id).toBe("c-new");
     expect(turns[0]?.state).toBe("working");
     expect(turns[0]?.title).toBe("hello");
+  });
+
+  it("#424 a stale pending open stays hidden once the Mac archived it", () => {
+    const opened = conv("c-arch", { archived: true });
+    const root = msg("c-arch-root", {
+      conversationId: "c-arch",
+      text: "hello",
+    });
+    const turns = toSessionTurns([], {
+      ...CTX,
+      pending: new Map([["c-arch", { conversation: opened, root }]]),
+    });
+    expect(turns).toHaveLength(0);
   });
 
   it("AC-1 carries title, last words, folder and reply count on the row", () => {
@@ -654,5 +687,40 @@ describe("dm-model helpers", () => {
     expect(timeLabel(at(3 * 86_400_000), T0)).toBe("Sat");
     expect(timeLabel(at(40 * 86_400_000), T0)).toBe("Aug 20");
     expect(timeLabel(T0 + 60_000, T0)).toBe("now"); // future clamps to now
+  });
+});
+
+describe("#346 AC-4: the ring reads real session life", () => {
+  it("derives running | open | closed the way sessionLife does", () => {
+    const needsYou = ask("ask-life", { conversationId: "c-ask" });
+    const turns = toSessionTurns(
+      [
+        summary("c-run", { state: "active" }),
+        summary("c-ask", { state: "idle" }),
+        summary("c-closed", { state: "idle", life: "closed" }),
+        summary("c-open", { state: "idle" }),
+      ],
+      { ...CTX, openAsks: [needsYou] },
+    );
+    expect(turns.find((t) => t.id === "c-run")?.life).toBe("running");
+    // waiting on the user is open, never running — and never suspended.
+    expect(turns.find((t) => t.id === "c-ask")?.life).toBe("open");
+    expect(turns.find((t) => t.id === "c-closed")?.life).toBe("closed");
+    // no stored bit yet: a session the harness never suspended is open.
+    expect(turns.find((t) => t.id === "c-open")?.life).toBe("open");
+  });
+
+  it("a send still landing reads running", () => {
+    const pending = new Map([
+      [
+        "c-new",
+        {
+          conversation: conv("c-new"),
+          root: msg("c-new-root", { conversationId: "c-new" }),
+        },
+      ],
+    ]);
+    const turns = toSessionTurns([], { ...CTX, pending });
+    expect(turns[0].life).toBe("running");
   });
 });

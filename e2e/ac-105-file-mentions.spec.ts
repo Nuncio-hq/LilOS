@@ -4,8 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #105 — `@`-mention files and folders in the DM composer, end to end
@@ -53,11 +52,7 @@ let stack: Stack & { repoAdded: boolean };
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = {
-    ...(await bootStack("ac105", {
-      relay: wport(4818),
-      feed: wport(4819),
-      web: wport(5322),
-    })),
+    ...(await bootStack("ac105", await pickPorts())),
     repoAdded: false,
   };
 });
