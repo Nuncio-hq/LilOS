@@ -348,6 +348,12 @@ export function FocusView({
   const lastDone = [...thread.replies]
     .reverse()
     .find((r) => emp(r.from) && !r.live);
+  /* #419: the Retry lives on the last TURN — system notes (a failed turn's
+     error row) sit below it and don't count. */
+  const lastTurnIdx = thread.replies.reduce(
+    (a, r, i) => (emp(r.from) ? i : a),
+    -1,
+  );
   useEffect(() => {
     if (follow && !live && lastDone?.steps?.some((s) => s.diff))
       setTab("changes");
@@ -650,7 +656,7 @@ export function FocusView({
                       r={r}
                       emp={emp}
                       human={human}
-                      last={i === thread.replies.length - 1}
+                      last={i === lastTurnIdx}
                       onRetry={onRetry}
                       models={models}
                       onOpen={pickTab}

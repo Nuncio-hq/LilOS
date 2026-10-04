@@ -164,6 +164,7 @@ function toAgentEntry(
   const live =
     turn.phase !== "done" &&
     turn.phase !== "stopped" &&
+    turn.phase !== "failed" &&
     opts.sessionRunning !== false;
   /* The PR card under the reply (web: PrCard): the turn must have run
      `gh pr create`; the card is the PR the step's output URL names
@@ -180,6 +181,9 @@ function toAgentEntry(
       : undefined;
   const lastPlan = opts.planCapable === false ? undefined : turn.plans.at(-1);
   const stopped = turn.phase === "stopped";
+  /* #419: a turn ended on `turn.completed.error` reads failed — the entry
+     carries the engine's error text like web's failure chip. */
+  const failed = turn.phase === "failed" ? turn.error : undefined;
   /* #416: same count as web's turnChangedFiles — a completed write call's
      own args name the file it touched, so creates/ACP turns count without
      an emitted diff; helpers in the same checkout count too. */
@@ -222,6 +226,7 @@ function toAgentEntry(
     live,
     waiting,
     stopped,
+    ...(failed !== undefined ? { failed } : {}),
     ...(turn.agentInitiated ? { agentInitiated: true } : {}),
     writing: turn.phase === "text",
     approval,
@@ -400,7 +405,10 @@ export function mergeThreadEntries(
       (x) =>
         !used.has(x) &&
         !x.agentInitiated &&
-        (x.phase === "done" || x.phase === "stopped") &&
+        (x.phase === "done" ||
+          x.phase === "stopped" ||
+          /* #419: a failed turn's partial answer posts too — claim it. */
+          x.phase === "failed") &&
         x.text.trim() &&
         x.text.trim() === m.text.trim() &&
         (promptIdx.get(x) ?? -1) < mi,
@@ -423,7 +431,7 @@ export function mergeThreadEntries(
     if (
       !t.agentInitiated ||
       used.has(t) ||
-      (t.phase !== "done" && t.phase !== "stopped") ||
+      (t.phase !== "done" && t.phase !== "stopped" && t.phase !== "failed") ||
       !t.text.trim()
     )
       continue;
@@ -468,7 +476,15 @@ export function mergeThreadEntries(
       !t.reasoning &&
       !t.subagents.length &&
       !t.plans.length;
-    if (empty && t.phase !== "stopped" && t !== liveTurn) return false;
+    /* #419: a failed turn with nothing to show still renders — its
+       failure row is the only surface the error has (same as stopped). */
+    if (
+      empty &&
+      t.phase !== "stopped" &&
+      t.phase !== "failed" &&
+      t !== liveTurn
+    )
+      return false;
     const wasRewound = t.ref
       ? (opts.rewoundRefs?.has(t.ref) ?? false)
       : text.length > 0 && (opts.rewoundTexts?.has(text) ?? false);

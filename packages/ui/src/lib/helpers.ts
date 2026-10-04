@@ -114,6 +114,7 @@ export const PHASE_LABEL: Record<Phase, string> = {
   typing: "replying",
   done: "done",
   stopped: "stopped",
+  failed: "failed",
 };
 export const STATUS_DOT: Record<Status, string> = {
   online: "bg-[#34c759]",

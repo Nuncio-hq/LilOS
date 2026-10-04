@@ -98,6 +98,10 @@ export const conversations = sqliteTable(
         session can't regress the row; a rebound session writes freely. */
     usageSessionId: text("usage_session_id"),
     usageSeq: integer("usage_seq").notNull().default(0),
+    /** The last turn's failure (#419): JSON TurnFailure {kind, text} —
+        the DM session row's alert card; host-written, cleared on the
+        next `turn.started`. */
+    turnFailure: text("turn_failure"),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [index("conversations_channel").on(t.channelId)],

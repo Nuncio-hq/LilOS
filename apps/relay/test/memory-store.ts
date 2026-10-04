@@ -318,9 +318,15 @@ export function createMemoryStore(): RelayStore {
           patch.deliveredSeq,
         );
       }
-      /* `null` in a patch clears an engine-pinned field (#92); the domain
-         object holds `undefined`, never `null`. */
-      for (const k of ["model", "provider", "effort", "fast"] as const) {
+      /* `null` in a patch clears an engine-pinned field (#92, and #419's
+         turnFailure); the domain object holds `undefined`, never `null`. */
+      for (const k of [
+        "model",
+        "provider",
+        "effort",
+        "fast",
+        "turnFailure",
+      ] as const) {
         if (patch[k] === null) {
           delete (conversation as Record<string, unknown>)[k];
           patch = { ...patch, [k]: undefined };

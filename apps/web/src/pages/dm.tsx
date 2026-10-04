@@ -802,6 +802,33 @@ export function DmPage() {
   const convAsks = (conv: Conversation): Ask[] =>
     allAsks.filter((a) => a.conversationId === conv.id);
 
+  /* #419 AC-2: Retry re-sends the user's last delivered message into the
+     same session — a new user row the harness prompts as a fresh turn
+     under the failed one (not a ghost re-prompt). Messages the engine
+     never took (dropped/removed/rewound) can't be the retry text; the
+     summary's root covers a conv whose replies fell out of the window. */
+  const retryConv = (conv: Conversation) => {
+    const last = (
+      (conv.id === conversationId ? threadPool : messages).filter(
+        (m) =>
+          m.conversationId === conv.id &&
+          m.authorKind === "user" &&
+          !m.dropped &&
+          !m.removed &&
+          !m.rewound,
+      ) as AppMessage[]
+    ).reduce<AppMessage | undefined>(
+      (a, m) => (!a || m.seq > a.seq ? m : a),
+      undefined,
+    );
+    const text = last?.text ?? summaryOf(conv)?.root?.text;
+    if (!text) {
+      say("Nothing to retry — the session has no sent message.");
+      return;
+    }
+    void sendDm(employeeId, text, conv.id);
+  };
+
   const feed: Msg[] = convs.flatMap((conv) => {
     const root =
       summaryOf(conv)?.root ??
@@ -1328,6 +1355,9 @@ export function DmPage() {
           onPlan={planCap ? onPlan : undefined}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           lastSent={lastSent}
+          /* #419: hover Retry on the last turn re-sends the last user
+             message into this same session. */
+          onRetry={() => retryConv(conv)}
           onRewind={conv.engineRef ? (id) => rewindTo(conv, id) : undefined}
           rewindWarning={rewindWarning}
           seedFiles={seedFiles}
@@ -1487,6 +1517,9 @@ export function DmPage() {
           onAttachError={say}
           onStop={running ? () => void interruptSession(conv.id) : undefined}
           lastSent={lastSent}
+          /* #419: hover Retry on the last turn re-sends the last user
+             message into this same session. */
+          onRetry={() => retryConv(conv)}
           /* The peek panel's Focus button jumps to the full view (#114),
              and Esc closes the panel back to the plain DM feed (#195). */
           onFocus={() =>
@@ -1614,6 +1647,12 @@ export function DmPage() {
         onArchive={(id, archived) => {
           const conv = convs.find((c) => c.rootMessageId === id);
           if (conv) void archiveConversation(conv.id, archived);
+        }}
+        /* #419: the session row's failure card retries the whole session —
+           same re-send as the turn's hover Retry. */
+        onRetrySession={(m) => {
+          const conv = convs.find((c) => c.rootMessageId === m.id);
+          if (conv) retryConv(conv);
         }}
       />
       {threadEl}
