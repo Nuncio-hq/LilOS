@@ -287,6 +287,17 @@ PR does not exist.
   engine-hermes drops it at the adapter. Not: `available` mapped as
   append or replace on `turn.delta` (injects the answer into the
   Reasoning card). — #334 · PR #349
+- **D-#411 A Hermes plugin's `register()` must never do network I/O —
+  it runs under a ~10 s plugin-load deadline that the harness's own
+  event loop can starve (spawnSync), and an abandoned load drops every
+  tool for the session.** The `lilos` plugin ships a `catalog.json`
+  generated from the same `toolListAll` the gateway serves
+  (`schema:gen` keeps it fresh); tool CALLS still hit the gateway.
+  Connect also sets profile `tools.tool_search.enabled=off` (restored
+  on disconnect) because upstream tool search defers every plugin tool
+  behind `tool_search`. Not: fetching `GET /tools` inside `register()`,
+  a hand-written tool list in Python, or leaving tool search `auto`.
+  — #411 · PR #495
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the
