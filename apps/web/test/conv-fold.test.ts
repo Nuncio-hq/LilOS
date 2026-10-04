@@ -4,11 +4,7 @@
    on the inputs it reads so a word streaming into one session recomputes
    only that conversation. */
 import type { SessionModel } from "@lilos/client-runtime";
-import type {
-  AppMessage,
-  Conversation,
-  Employee,
-} from "@lilos/contracts/app";
+import type { AppMessage, Conversation, Employee } from "@lilos/contracts/app";
 import { describe, expect, test } from "vitest";
 import { FoldCache, type FoldInputs } from "../src/lib/conv-fold";
 
@@ -46,7 +42,7 @@ const EMP: Employee = {
   id: "e1",
   name: "Ada",
   role: "engineer",
-  status: "idle",
+  status: "online",
   profile: "ada",
   model: "m",
   now: "",
@@ -213,8 +209,8 @@ describe("AC-427 FoldCache", () => {
     /* want = messageCount - 1 = 3 replies, padded with placeholders. */
     expect(f.replies).toHaveLength(3);
     expect(f.msg?.id).toBe("root-c1");
-    expect(f.replies.every((r) => !r.turnId || r.turnId.startsWith("c1:"))).toBe(
-      true,
-    );
+    expect(
+      f.replies.every((r) => !r.turnId || r.turnId.startsWith("c1:")),
+    ).toBe(true);
   });
 });
