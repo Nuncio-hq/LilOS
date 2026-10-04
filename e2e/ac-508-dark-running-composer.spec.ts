@@ -196,12 +196,12 @@ async function runningFocus(page: Page) {
 }
 
 const capsule = (page: Page) =>
-  page.evaluate(() => {
-    const el = document.querySelector(CAPSULE);
+  page.evaluate((sel) => {
+    const el = document.querySelector(sel);
     if (!el) throw new Error("running composer capsule not found");
     const cs = getComputedStyle(el);
     return { bg: cs.backgroundColor, transition: cs.transitionProperty };
-  });
+  }, CAPSULE);
 
 test("AC-2 placeholder, hint and chip label hold 4.5:1 in dark; light stays byte-exact", async ({
   page,
