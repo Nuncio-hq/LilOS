@@ -1,10 +1,7 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { bootStack, type Stack } from "./helpers/stack";
 import { wport } from "./ports";
 
 /**
@@ -30,133 +27,8 @@ const repo = path.resolve(here, "..");
 // past 18, and 4579+18*100 lands on Redis's 6379 on Oscar's/dev VMs, which
 // left the relay retry-loop dead and the web port never served (#84).
 
-const webDir = path.join(repo, "apps", "web");
 const SHOTS = path.join(repo, "test-results", "ac-32");
 const LIVE = process.env.LILOS_ENGINE === "hermes";
-
-interface Stack {
-  home: string;
-  webUrl: string;
-  relayWs: string;
-  feedWs: string;
-  relayToken: string;
-  stop: () => Promise<void>;
-}
-
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    // Bound each poll: a socket that completes the handshake but never
-    // answers would otherwise hang the wait past its budget (#84).
-    const ok = await fetch(url, { signal: AbortSignal.timeout(1_000) })
-      .then((r) => r.ok || r.status === 404)
-      .catch(() => false);
-    if (ok) return;
-    if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
-function killProc(proc: ChildProcess): Promise<void> {
-  // `bun run dev` stacks intermediate shim layers between `proc` and the
-  // real dev-stack children, and bun doesn't forward signals through them —
-  // signal the whole process group (the spawn is `detached`) or the stack
-  // orphans and keeps its ports bound, poisoning the next boot (#84).
-  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
-    try {
-      if (proc.pid) process.kill(-proc.pid, sig);
-    } catch {
-      try {
-        proc.kill(sig);
-      } catch {}
-    }
-  };
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      killGroup("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    killGroup("SIGTERM");
-  });
-}
-
-async function bootStack(
-  tag: string,
-  ports: { relay: number; feed: number; web: number },
-): Promise<Stack> {
-  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
-  const leakTag = engineTag(tag);
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: webDir,
-    detached: true,
-    env: {
-      ...process.env,
-      LILOS_HOME: home,
-      LILOS_ENGINE_TAG: leakTag,
-      LILOS_RELAY_PORT: String(ports.relay),
-      LILOS_FEED_PORT: String(ports.feed),
-      LILOS_WEB_PORT: String(ports.web),
-    },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  const webUrl = `http://127.0.0.1:${ports.web}`;
-  // The stack umbrella exits as soon as any supervised child dies (e.g. a
-  // vite whose --strictPort is still held by the previous repeat's draining
-  // child) — fail on that exit instead of timing out against dead air (#84).
-  const procDied = new Promise<never>((_, reject) => {
-    proc.once("exit", (code) =>
-      reject(new Error(`dev stack exited early (code ${code})`)),
-    );
-  });
-  try {
-    // Race every readiness probe against the umbrella's exit — a supervised
-    // child dying between probes used to burn the full 30s timeout against
-    // dead air (and misreported the port as the failure).
-    const ready = (async () => {
-      await waitForHttp(webUrl);
-      // The page connects to relay + feed the moment it loads and only
-      // retries post-handshake drops — wait for them to listen so a slow
-      // boot under parallel load can't strand the client.
-      await waitForHttp(`http://127.0.0.1:${ports.relay}/`);
-      await waitForHttp(`http://127.0.0.1:${ports.feed}/`);
-    })();
-    await Promise.race([ready, procDied]);
-    const tokenPath = path.join(home, "relay-token");
-    let relayToken = "";
-    // 30s headroom: under a full-suite run several stacks boot at once and
-    // the relay can take >5s to write its token — an empty token surfaces as
-    // a faraway "bad auth token", so fail here instead.
-    for (let i = 0; i < 300 && !relayToken; i++) {
-      try {
-        relayToken = readFileSync(tokenPath, "utf8").trim();
-      } catch {}
-      if (!relayToken) await new Promise((r) => setTimeout(r, 100));
-    }
-    if (!relayToken)
-      throw new Error(`relay token never appeared at ${tokenPath}`);
-    return {
-      home,
-      webUrl,
-      relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
-      feedWs: `ws://127.0.0.1:${ports.feed}/ws`,
-      relayToken,
-      stop: async () => {
-        await killProc(proc);
-        await expectNoEngineLeak(leakTag);
-      },
-    };
-  } catch (e) {
-    // Group kill: `bun run dev` spawns detached — killing only the shim
-    // orphans stack.ts + relay + harness + vite and poisons the next boot.
-    await killProc(proc);
-    throw e;
-  }
-}
 
 let stack: Stack;
 test.beforeAll(async () => {
@@ -337,7 +209,7 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
   });
   await expect(page.getByText("Approval needed").first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-2-click-through.png` });
-  await page.getByRole("button", { name: "Allow once" }).first().click();
+  await page.getByRole("button", { name: "Once", exact: true }).first().click();
 
   // ── conv C: finishes out of view → done notification + running badge ─
   await page.goto(`${stack.webUrl}/dm/${convA.employeeId}`);

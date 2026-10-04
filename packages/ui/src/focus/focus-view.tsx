@@ -17,6 +17,7 @@ import {
   PlayIcon,
 } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import { AccessPill } from "../chat/access-pill";
 import {
   ConversationKeepBottom,
   NotSentTray,
@@ -57,6 +58,7 @@ import { RewindCheckpoint } from "../thread/thread-view";
 import type {
   AttachedFile,
   Channel,
+  ConversationAccess,
   EmpFn,
   Employee,
   HostAccessors,
@@ -142,6 +144,8 @@ export function FocusView({
   onTab,
   wbSpot,
   ship,
+  access,
+  onAccess,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -229,6 +233,10 @@ export function FocusView({
   onStopJob?: (id: string) => void;
   /* Plan card decisions (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
+  /* #106: the thread's access level + toggle → the composer pill
+     (both or neither; D-#19). */
+  access?: ConversationAccess;
+  onAccess?: (a: ConversationAccess) => void;
   /* This thread's own tabs of the LilOS Browser → Workbench Browser (#214). */
   browser?: ReactNode;
   /* Opens on this Workbench tab (e.g. a thread panel's "N subagents · Open" link, #317) —
@@ -809,6 +817,11 @@ export function FocusView({
               models={models}
               onModel={onModel}
               picker={picker}
+              tools={
+                access !== undefined && onAccess ? (
+                  <AccessPill access={access} onAccess={onAccess} />
+                ) : undefined
+              }
               onStop={onStop}
               lastSent={lastSent}
               placeholder={

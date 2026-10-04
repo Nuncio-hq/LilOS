@@ -57,6 +57,7 @@ export function FocusComposer({
   onDraftChange,
   seedFiles,
   onSeededFiles,
+  tools,
 }: {
   running: boolean;
   status: ChatStatus;
@@ -87,6 +88,8 @@ export function FocusComposer({
   /* AC-4 (#134): a rewound message's images re-entering the composer. */
   seedFiles?: AttachedFile[];
   onSeededFiles?: () => void;
+  /* Extra pills next to the attach button (e.g. #106's AccessPill). */
+  tools?: React.ReactNode;
 }) {
   const [draft, setDraft] = useControllableState({
     prop: draftProp,
@@ -175,6 +178,7 @@ export function FocusComposer({
                 {...picker}
               />
             ) : null}
+            {tools}
             <span className="lilos-hint hidden truncate text-muted-foreground text-xs md:inline">
               {hint}
             </span>

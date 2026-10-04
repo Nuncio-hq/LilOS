@@ -241,6 +241,11 @@ PR does not exist.
   "still remembers" note and Start a new session.
   Not: engine-owned file checkpoints (opt-in, transport-dependent),
   deleting messages, or the engine owning the folder snapshot. — #134
+- **D-#106 Access levels are LilOS data on the conversation; Full access
+  is enforced by the harness auto-answering approvals (`once`), engine-neutral —
+  the engine's own approval policy stays a separate `approval_policy`
+  capability.** Not: an engine-specific yolo as the only mechanism, or the
+  access level living in engine session state. — #106
 - **D-#180 Plans and task lists are engine state: the engine streams a full
   snapshot on every change (`plan.updated` keyed by `planId`), and LilOS
   derives the Tasks card / Plan card / Workbench Plan tab from events

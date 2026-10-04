@@ -38,6 +38,7 @@ export const KNOWN_CAPABILITIES = [
   "session_meta",
   "subagents",
   "background_jobs",
+  "approval_policy",
 ] as const;
 export type KnownCapability = (typeof KNOWN_CAPABILITIES)[number];
 
@@ -147,4 +148,24 @@ export const BACKGROUND_JOBS_CAPABILITY: Capability = {
   description:
     "Processes the engine leaves running list under jobs.list and stop via jobs.stop; job.* events stream state.",
   methods: ["jobs.list", "jobs.stop"],
+};
+
+/**
+ * The canonical `approval_policy` descriptor (issue #106): the engine's
+ * global approval policy (its own `approvals.mode`-style setting) is
+ * read/written via `approvals.setPolicy`; `session.setAccess` lets the app push the
+ * conversation's access level onto a live session as a hint (WS yolo /
+ * ACP `session/set_mode`) — Full access is still enforced by the harness
+ * answering requests itself, so correctness never depends on the hint.
+ * `detail.options` lists the selectable policies; `detail.current` carries
+ * the engine's current value when known. Clients render the Settings
+ * policy section only when this capability is declared (D-#19).
+ */
+export const APPROVAL_POLICY_CAPABILITY: Capability = {
+  id: "approval_policy",
+  name: "Approval policy",
+  description:
+    "approvals.setPolicy writes the engine's global approval policy; session.setAccess hints a session's access level.",
+  methods: ["approvals.setPolicy", "session.setAccess"],
+  detail: { options: ["smart", "manual", "off"] },
 };

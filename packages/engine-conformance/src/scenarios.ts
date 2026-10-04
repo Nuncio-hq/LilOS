@@ -2099,6 +2099,64 @@ const MCP_SCENARIOS: Scenario[] = [
   },
 ];
 
+/* ── #106: `approval_policy` suite ─────────────────────────────────────────
+   Pure-API legs — no prompt needed: the capability contract is describe +
+   approvals.setPolicy + the access hint on session.start/session.setAccess.
+   The harness-side auto-answer on Full access is covered at the app layer
+   (apps/harness + e2e with engine-fake), never here — a conformance run
+   drives the engine seam only. */
+const APPROVAL_POLICY_SCENARIOS: Scenario[] = [
+  {
+    id: "approval_policy: setPolicy round-trips through describe",
+    async run(h) {
+      const d1 = (await h.request("describe")) as DescribeResultShape;
+      const cap = d1.capabilities.find((c) => c.id === "approval_policy");
+      assert(cap !== undefined, "suite ran without the capability declared");
+      const options = (cap?.detail?.options ?? []) as string[];
+      for (const p of ["smart", "manual", "off"])
+        assert(options.includes(p), `policy option "${p}" is offered`);
+
+      const before = cap?.detail?.current as string | undefined;
+      const w = (await h.request("approvals.setPolicy", {
+        policy: "manual",
+      })) as { policy?: string };
+      assert(w.policy === "manual", "setPolicy echoes the written policy");
+      const d2 = (await h.request("describe")) as DescribeResultShape;
+      const cap2 = d2.capabilities.find((c) => c.id === "approval_policy");
+      assert(
+        cap2?.detail?.current === "manual",
+        "describe reports the new current after setPolicy",
+      );
+
+      /* Leave the engine as found — a live engine's approvals.mode is
+         persisted global config, not session scratch. */
+      if (before) await h.request("approvals.setPolicy", { policy: before });
+    },
+  },
+  {
+    id: "approval_policy: session access hint round-trips",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+        access: "full",
+      })) as StartResult;
+      assert(!!sessionId, "session.start accepts the access hint");
+      const r = (await h.request("session.setAccess", {
+        sessionId,
+        access: "ask",
+      })) as { access?: string };
+      assert(r.access === "ask", "session.setAccess echoes the new level");
+      const r2 = (await h.request("session.setAccess", {
+        sessionId,
+        access: "full",
+      })) as { access?: string };
+      assert(r2.access === "full", "setAccess toggles back to full");
+      await h.request("session.stop", { sessionId });
+    },
+  },
+];
+
 /* ── #179: `subagents` + `background_jobs` suites ────────────────────────────
    The prompts carry keys both engines honour: the fake scripts match the
    English (`delegate`, `dev server`, `background build`), the live OpenAI
@@ -2528,6 +2586,11 @@ export const SUITES: {
     capability: "background_jobs",
     implemented: true,
     scenarios: BACKGROUND_JOBS_SCENARIOS,
+  },
+  {
+    capability: "approval_policy",
+    implemented: true,
+    scenarios: APPROVAL_POLICY_SCENARIOS,
   },
   { capability: "usage", implemented: false, scenarios: [] },
   { capability: "plan", implemented: true, scenarios: PLAN_SCENARIOS },

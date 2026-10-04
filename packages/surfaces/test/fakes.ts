@@ -178,6 +178,7 @@ export function fakeAppOps(
     state: "active",
     title: `Thread ${convId}`,
     titleSource: opts.titleSource ?? "auto",
+    access: "ask",
     archived: false,
     deliveredSeq: 0,
     createdAt: 1,

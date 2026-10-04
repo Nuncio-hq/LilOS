@@ -1,10 +1,18 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import {
+  captureProc,
+  killProc,
+  waitForFeed,
+  waitForHttp,
+  waitForRelay,
+  waitForToken,
+} from "./helpers/stack";
 import { WORKER, wport } from "./ports";
 
 /**
@@ -35,44 +43,6 @@ interface Procs {
   restartRelay: () => Promise<void>;
 }
 
-const killProc = (proc: ChildProcess): Promise<void> =>
-  new Promise((resolve) => {
-    const t = setTimeout(() => {
-      proc.kill("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    proc.kill("SIGTERM");
-  });
-
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    const ok = await fetch(url)
-      .then((r) => r.status > 0)
-      .catch(() => false);
-    if (ok) return;
-    if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
-async function waitForToken(home: string): Promise<string> {
-  const tokenPath = path.join(home, "relay-token");
-  for (let i = 0; i < 200; i++) {
-    try {
-      const t = readFileSync(tokenPath, "utf8").trim();
-      if (t) return t;
-    } catch {}
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error("relay never wrote its token file");
-}
-
 async function spawnRelay(home: string, port: number): Promise<ChildProcess> {
   const p = spawn("bun", ["run", "apps/relay/src/index.ts"], {
     cwd: repo,
@@ -82,9 +52,11 @@ async function spawnRelay(home: string, port: number): Promise<ChildProcess> {
       LILOS_RELAY_PORT: String(port),
       LILOS_RELAY_HOST: "127.0.0.1",
     },
-    stdio: ["ignore", "inherit", "inherit"],
+    // Piped: readiness checks the spawned relay's own instanceId against
+    // /healthz — a foreign relay on the port is a hard boot failure (#273).
+    stdio: ["ignore", "pipe", "pipe"],
   });
-  await waitForHttp(`http://127.0.0.1:${port}/`);
+  await waitForRelay(port, p, captureProc(p));
   return p;
 }
 
@@ -114,7 +86,7 @@ async function boot(tag: string, home?: string): Promise<Procs> {
   const relayToken = await waitForToken(base);
 
   const harnessHome = path.join(base, "harness");
-  procs.harness = spawn("bun", ["run", "apps/harness/src/index.ts"], {
+  const harness = spawn("bun", ["run", "apps/harness/src/index.ts"], {
     cwd: repo,
     env: {
       ...process.env,
@@ -128,9 +100,10 @@ async function boot(tag: string, home?: string): Promise<Procs> {
       LILOS_FEED_PORT: String(ports.feed),
       LILOS_ENGINE_TAG: leakTag,
     },
-    stdio: ["ignore", "inherit", "inherit"],
+    stdio: ["ignore", "pipe", "pipe"],
   });
-  await waitForHttp(`http://127.0.0.1:${ports.feed}/`);
+  procs.harness = harness;
+  await waitForFeed(ports.feed, harness, captureProc(harness));
 
   procs.web = spawn(
     "bun",
@@ -410,7 +383,7 @@ test("AC-5 kill the relay mid-turn, restore: output complete, no duplicates", as
   // "Add a footer" pauses on an approval ask — a deterministic mid-turn hold.
   await dmDefault(stack, page);
   await send(page, "Add a footer to the page");
-  const allow = page.getByRole("button", { name: "Allow once" }).first();
+  const allow = page.getByRole("button", { name: "Once", exact: true }).first();
   await expect(allow).toBeVisible({ timeout: 60_000 });
 
   // Relay down mid-turn; the harness's answer can't reach the app yet.
@@ -424,7 +397,9 @@ test("AC-5 kill the relay mid-turn, restore: output complete, no duplicates", as
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     if (await done.isVisible().catch(() => false)) break;
-    const again = page.getByRole("button", { name: "Allow once" }).first();
+    const again = page
+      .getByRole("button", { name: "Once", exact: true })
+      .first();
     if (await again.isVisible().catch(() => false))
       await again.click().catch(() => {});
     await page.waitForTimeout(1_000);

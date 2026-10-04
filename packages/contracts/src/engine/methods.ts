@@ -9,6 +9,13 @@ import {
   AgentsUpdateParams,
   AgentsUpdateResult,
 } from "./agents.js";
+import {
+  ApprovalsSetPolicyParams,
+  ApprovalsSetPolicyResult,
+  ConversationAccess,
+  SessionSetAccessParams,
+  SessionSetAccessResult,
+} from "./approvals.js";
 import { Capability } from "./capabilities.js";
 import { ContentBlock } from "./content.js";
 import {
@@ -66,6 +73,9 @@ export const SessionStartParams = z.strictObject({
   effort: z.string().optional(),
   /** Fast/priority tier the session should run on. */
   fast: z.boolean().optional(),
+  /** The conversation's access level (#106) — an engine hint; the harness
+      still auto-answers approvals on `"full"` itself. */
+  access: ConversationAccess.optional(),
   /** ACP-shaped MCP server list; the LilOS MCP server rides in here (#23). */
   mcpServers: z.array(McpServer).optional(),
 });
@@ -393,6 +403,18 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
     result: JobsStopResult,
     doc: "Stop a background process by the jobId from job.started / jobs.list. The stop lands as a job.exited event with status stopped.",
     capability: "background_jobs",
+  },
+  "approvals.setPolicy": {
+    params: ApprovalsSetPolicyParams,
+    result: ApprovalsSetPolicyResult,
+    doc: "Write the engine's global approval policy (#106: smart/manual/off — the engine's own mode setting).",
+    capability: "approval_policy",
+  },
+  "session.setAccess": {
+    params: SessionSetAccessParams,
+    result: SessionSetAccessResult,
+    doc: "Push the conversation's access level onto a live session (#106) — a hint the engine maps where it can (WS yolo / ACP session/set_mode); the harness enforces `full` itself either way.",
+    capability: "approval_policy",
   },
 };
 export type EngineMethodName = keyof typeof ENGINE_METHODS;

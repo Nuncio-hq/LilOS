@@ -8,10 +8,16 @@
  */
 import { formatDiagnostics, toStatusComponents } from "@lilos/client-runtime";
 import type { DesktopAbout } from "@lilos/contracts/app";
+import type { ApprovalPolicy } from "@lilos/contracts/engine";
 import { SettingsView, useTheme } from "@lilos/ui";
 import type { Human } from "@lilos/ui/types";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { setDefaultEditor, setModelVisibility } from "../lib/actions";
+import {
+  setApprovalPolicy,
+  setDefaultAccess,
+  setDefaultEditor,
+  setModelVisibility,
+} from "../lib/actions";
 import { requestConnect } from "../lib/connect";
 import { useAtom } from "../lib/hooks";
 import { hostEditors, type OsEditor } from "../lib/host";
@@ -26,6 +32,7 @@ import {
 import { say } from "../lib/toast";
 import {
   aboutLines,
+  defaultAccess,
   defaultEditor,
   editorsProps,
   profilePatch,
@@ -42,11 +49,26 @@ export function SettingsPane({ onClose }: { onClose: () => void }) {
   const statusPoll = useAtom(relay.status);
   const relayState = useAtom(relay.state);
   const fatal = useAtom(relay.fatal);
-  useAtom(engine.description);
+  const engineDesc = useAtom(engine.description);
   const catalog = useAtom(engineModels);
   const providers = useAtom(engineProviders);
   const visibility = useAtom(modelVisibility);
   const defaultEd = useAtom(defaultEditor);
+  const defAccess = useAtom(defaultAccess);
+  /* #106 D-#19: the engine policy row renders only while the engine
+     declares `approval_policy`; the access default is LilOS data and
+     shows regardless. The policy echo arrives on the next describe —
+     the local override keeps the click visible meanwhile. */
+  const approvalCap = engineDesc?.capabilities.find(
+    (c) => c.id === "approval_policy",
+  );
+  const capPolicy = approvalCap?.detail?.current;
+  const [policyLocal, setPolicyLocal] = useState<ApprovalPolicy | undefined>();
+  const policy: ApprovalPolicy | undefined =
+    policyLocal ??
+    (capPolicy === "manual" || capPolicy === "off" || capPolicy === "smart"
+      ? capPolicy
+      : "smart");
   const bridge = window.lilos;
 
   /* Detected editors — probed per open so a new install shows up. */
@@ -195,6 +217,21 @@ export function SettingsPane({ onClose }: { onClose: () => void }) {
           ? { ...editorProps, onDefault: (id) => void setDefaultEditor(id) }
           : undefined
       }
+      approvals={{
+        ...(approvalCap && policy
+          ? {
+              policy,
+              onPolicy: (p: ApprovalPolicy) => {
+                setPolicyLocal(p);
+                void setApprovalPolicy(p).catch(() =>
+                  say("Couldn't update the approval policy"),
+                );
+              },
+            }
+          : {}),
+        access: defAccess,
+        onAccess: (a) => void setDefaultAccess(a),
+      }}
       models={
         catalog.length
           ? {

@@ -1,10 +1,8 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { bootStack, type Stack } from "./helpers/stack";
 import { wport } from "./ports";
 
 /**
@@ -20,7 +18,6 @@ import { wport } from "./ports";
  * as ac-27: `LILOS_ENGINE=fake bun run dev` in apps/web on offset ports.
  */
 const ROOT = path.dirname(fileURLToPath(import.meta.url)).replace(/\/e2e$/, "");
-const WEB = path.join(ROOT, "apps", "web");
 const SHOTS = path.join(ROOT, "test-results", "ac-112");
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVQI12P8z/CfAQMwMCooKOgDAu2zC+h6pBe+AAAAAElFTkSuQmCC",
@@ -28,120 +25,6 @@ const PNG = Buffer.from(
 );
 
 const TOAST = "div.fixed.bottom-5";
-
-type Stack = {
-  proc: ChildProcess;
-  base: string;
-  home: string;
-  relay: number;
-  feed: number;
-  leakTag: string;
-};
-
-function bootStack(opts: {
-  relay: number;
-  feed: number;
-  web: number;
-  hideCaps?: string;
-}): Stack {
-  const home = mkdtempSync(path.join(tmpdir(), "lilos-ac112-"));
-  const leakTag = engineTag("ac112");
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: WEB,
-    env: {
-      ...process.env,
-      LILOS_ENGINE: "fake",
-      LILOS_ENGINE_TAG: leakTag,
-      LILOS_HOME: home,
-      LILOS_RELAY_PORT: String(opts.relay),
-      LILOS_FEED_PORT: String(opts.feed),
-      LILOS_WEB_PORT: String(opts.web),
-      ...(opts.hideCaps ? { LILOS_HIDE_CAPS: opts.hideCaps } : {}),
-    },
-    detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const tag = `${proc.pid}:`;
-  proc.stderr?.on("data", (d) => console.log(`[web ${tag} err]`, String(d)));
-  proc.stdout?.on("data", (d) => console.log(`[web ${tag}]`, String(d)));
-  return {
-    proc,
-    base: `http://127.0.0.1:${opts.web}`,
-    home,
-    relay: opts.relay,
-    feed: opts.feed,
-    leakTag,
-  };
-}
-
-async function waitForStack(s: Stack) {
-  await waitForHttp(s.base, s.proc);
-  // The page connects to relay + feed the moment it loads and only retries
-  // post-handshake drops — wait for them to listen so a slow boot under
-  // parallel load can't strand the client on "could not start".
-  await waitForHttp(`http://127.0.0.1:${s.relay}/`, s.proc);
-  await waitForHttp(`http://127.0.0.1:${s.feed}/`, s.proc);
-  await waitForToken(s);
-}
-
-/** Waits for the stack's relay token to land so rpc() can authenticate. */
-async function waitForToken(s: Stack) {
-  const tokenPath = path.join(s.home, "relay-token");
-  for (let i = 0; i < 300; i++) {
-    try {
-      if (readFileSync(tokenPath, "utf8").trim()) return;
-    } catch {}
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error(`relay token never appeared at ${tokenPath}`);
-}
-
-async function waitForHttp(url: string, proc: ChildProcess, ms = 90_000) {
-  const t0 = Date.now();
-  let last = "unreachable";
-  while (Date.now() - t0 < ms) {
-    if (proc.exitCode !== null)
-      throw new Error(`stack exited ${proc.exitCode}: last=${last}`);
-    try {
-      // Any HTTP answer (even 404) means the server is listening.
-      const r = await fetch(url);
-      if (r.ok || r.status === 404) return;
-      last = `HTTP ${r.status}`;
-    } catch (e) {
-      last = String(e);
-    }
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  throw new Error(`timeout waiting for ${url}: ${last}`);
-}
-
-/* `bun run dev` puts shim layers between `proc` and the real stack children,
-   and bun doesn't forward signals through them — signal the whole detached
-   process group or the stack orphans and keeps its ports bound (#84). */
-function killProc(proc: ChildProcess | undefined): Promise<void> {
-  if (!proc?.pid) return Promise.resolve();
-  const pid = proc.pid;
-  const group = (sig: "SIGTERM" | "SIGKILL") => {
-    try {
-      process.kill(-pid, sig);
-    } catch {
-      try {
-        proc.kill(sig);
-      } catch {}
-    }
-  };
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      group("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    group("SIGTERM");
-  });
-}
 
 /** The employee home DM for the fake engine's seeded employee. */
 async function dmDefault(page: Page, base: string) {
@@ -251,21 +134,22 @@ let stack: Stack;
 let stack2: Stack | undefined;
 
 test.beforeAll(async () => {
-  stack = bootStack({ relay: RELAY, feed: FEED, web: PORT });
-  await waitForStack(stack);
+  stack = await bootStack(
+    "ac112",
+    { relay: RELAY, feed: FEED, web: PORT },
+    { LILOS_ENGINE: "fake" },
+  );
 });
 
 test.afterAll(async () => {
-  await killProc(stack?.proc);
-  await killProc(stack2?.proc);
-  if (stack?.leakTag) await expectNoEngineLeak(stack.leakTag);
-  if (stack2?.leakTag) await expectNoEngineLeak(stack2.leakTag);
+  await stack?.stop();
+  await stack2?.stop();
 });
 
 test("AC-1 attach button + pick/drop/paste chips in both composers", async ({
   page,
 }) => {
-  await dmDefault(page, stack.base);
+  await dmDefault(page, stack.webUrl);
   await expect(page.locator('main input[type="file"]')).toHaveCount(1);
   await expect(page.locator('main input[type="file"]')).toHaveAttribute(
     "accept",
@@ -302,14 +186,12 @@ test("AC-1 attach button + pick/drop/paste chips in both composers", async ({
 test("AC-1b without image_prompt no attach affordance renders", async ({
   page,
 }) => {
-  stack2 = bootStack({
-    relay: RELAY2,
-    feed: FEED2,
-    web: PORT2,
-    hideCaps: "image_prompt",
-  });
-  await waitForStack(stack2);
-  await dmDefault(page, stack2.base);
+  stack2 = await bootStack(
+    "ac112b",
+    { relay: RELAY2, feed: FEED2, web: PORT2 },
+    { LILOS_ENGINE: "fake", LILOS_HIDE_CAPS: "image_prompt" },
+  );
+  await dmDefault(page, stack2.webUrl);
   await expect(page.locator('[aria-label="Attach files"]')).toHaveCount(0);
   await expect(page.locator('main input[type="file"]')).not.toHaveAttribute(
     "accept",
@@ -326,7 +208,7 @@ test("AC-1b without image_prompt no attach affordance renders", async ({
 test("AC-2 sends attachments over conversations.open and messages.post", async ({
   page,
 }) => {
-  await dmDefault(page, stack.base);
+  await dmDefault(page, stack.webUrl);
   await attach(page, "pick", "picked.png");
   await page
     .locator("main textarea")
@@ -396,7 +278,7 @@ test("AC-2 sends attachments over conversations.open and messages.post", async (
 test("AC-3 thumbnails render from stored refs, survive reload + reopen", async ({
   page,
 }) => {
-  await dmDefault(page, stack.base);
+  await dmDefault(page, stack.webUrl);
   await attach(page, "pick", "stored.png");
   await page
     .locator("main textarea")
@@ -422,7 +304,7 @@ test("AC-3 thumbnails render from stored refs, survive reload + reopen", async (
   ).toBeVisible({ timeout: 15_000 });
 
   // Home feed row shows it; reopening the session from the list does too.
-  await page.goto(`${stack.base}/`);
+  await page.goto(`${stack.webUrl}/`);
   await page
     .locator("aside")
     .first()
@@ -447,7 +329,7 @@ test("AC-3 thumbnails render from stored refs, survive reload + reopen", async (
 test("AC-4 oversize and too many files toast and send nothing", async ({
   page,
 }) => {
-  await dmDefault(page, stack.base);
+  await dmDefault(page, stack.webUrl);
   // Serial mode shares the stack: earlier tests already left sessions in the
   // list — assert the count doesn't grow when a send is refused.
   const sessions = () => page.locator("[data-session]").count();
@@ -516,7 +398,7 @@ test("AC-4 oversize and too many files toast and send nothing", async ({
 test("AC-5 engine-fake receives the image as a prompt content block", async ({
   page,
 }) => {
-  await dmDefault(page, stack.base);
+  await dmDefault(page, stack.webUrl);
   await attach(page, "pick", "seen.png");
   await page
     .locator("main textarea")
@@ -534,7 +416,7 @@ test("AC-5 engine-fake receives the image as a prompt content block", async ({
 test("AC-2b an image-only send (no typed text) opens a session and replies", async ({
   page,
 }) => {
-  await dmDefault(page, stack.base);
+  await dmDefault(page, stack.webUrl);
   // Chip only — no text in the composer at all.
   await attach(page, "pick", "only.png");
   await page.locator("main form").evaluate((f: HTMLFormElement) => {
@@ -590,7 +472,7 @@ test("AC-5b a mid-turn image queues as the next prompt instead of steering", asy
   page,
 }) => {
   test.setTimeout(240_000);
-  await dmDefault(page, stack.base);
+  await dmDefault(page, stack.webUrl);
   // An edit prompt parks the fake on an approval — the turn is provably
   // running, so the next message meets the steer-or-queue fork.
   await page
@@ -621,7 +503,7 @@ test("AC-5b a mid-turn image queues as the next prompt instead of steering", asy
   // Unblock the parked turn; the queued image message runs as its own turn.
   // Same approval loop as ac-27 — the edit script can raise several asks.
   for (let i = 0; i < 6; i++) {
-    const allow = page.getByRole("button", { name: "Allow once" });
+    const allow = page.getByRole("button", { name: "Once", exact: true });
     if (
       !(await allow
         .first()

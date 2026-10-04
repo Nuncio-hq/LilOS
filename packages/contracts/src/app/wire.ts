@@ -5,6 +5,10 @@ import {
   AgentsListParams,
   AgentsUpdateParams,
 } from "../engine/agents";
+import {
+  ApprovalsSetPolicyParams,
+  ConversationAccess,
+} from "../engine/approvals";
 import { Capability } from "../engine/capabilities";
 import { EngineEvent } from "../engine/events";
 import { JobsListParams, JobsStopParams } from "../engine/methods";
@@ -159,6 +163,10 @@ export const AppMethod = z.enum([
   "asks.list",
   "turns.interrupt",
   "conversations.setModel",
+  /* The composer pill's access switch (#106) — user-only, the relay stamps
+     the new level on the conversation and `conversation.updated` carries
+     it; the next approval request is routed by the fresh value. */
+  "conversations.setAccess",
   /* Engine-event replay scoped to one conversation (#157): a device-scope
      client (the phone) replays the turn stream through the relay — the
      relay resolves the conversation's `engineRef` and forwards
@@ -206,6 +214,9 @@ export const AppMethod = z.enum([
   "models.list",
   "jobs.list",
   "jobs.stop",
+  /* The engine's global approval policy (#106) — Settings writes it through
+     the same passthrough the model catalog uses. */
+  "approvals.setPolicy",
   /* Phone pairing (#153): minting a grant is the opt-in that also binds the
      Tailscale listener; devices.list/revoke manage what the grant exchange
      created. `pairing.disable` turns phone access off again. */
@@ -248,6 +259,7 @@ export const ENGINE_PASSTHROUGH_METHODS = [
   "models.list",
   "jobs.list",
   "jobs.stop",
+  "approvals.setPolicy",
 ] as const;
 export type EnginePassthroughMethod =
   (typeof ENGINE_PASSTHROUGH_METHODS)[number];
@@ -261,6 +273,7 @@ export const ENGINE_PASSTHROUGH_PARAMS = {
   "models.list": ModelsListParams,
   "jobs.list": JobsListParams,
   "jobs.stop": JobsStopParams,
+  "approvals.setPolicy": ApprovalsSetPolicyParams,
 } as const satisfies Record<EnginePassthroughMethod, z.ZodType>;
 
 const HelloClient = z
@@ -443,6 +456,9 @@ export const ConversationsOpenParams = z
         worktree of `workspace.repoPath` before `session.start`; `existing`
         resumes the workstream already at `cwd`. Absent = direct folder. */
     workspace: WorkspaceIntent.optional(),
+    /** The new conversation's access level (#106); absent = Settings'
+        default (`defaultAccess`, fallback `"ask"`). */
+    access: ConversationAccess.optional(),
   })
   .refine(
     (p) => p.text.length > 0 || (p.attachments?.length ?? 0) > 0,
@@ -1107,6 +1123,23 @@ export const ConversationsSetModelParams = z
   .strict();
 export type ConversationsSetModelParams = z.infer<
   typeof ConversationsSetModelParams
+>;
+
+/**
+ * Switch a conversation's access level (#106) — the composer pill writes
+ * it directly on the conversation (LilOS data, user-only). The relay stamps
+ * it and emits `conversation.updated`; the next approval request routes by
+ * the fresh value, mid-turn included. Never agent-facing: an agent must
+ * never grant itself Full access.
+ */
+export const ConversationsSetAccessParams = z
+  .object({
+    conversationId: z.string().min(1),
+    access: ConversationAccess,
+  })
+  .strict();
+export type ConversationsSetAccessParams = z.infer<
+  typeof ConversationsSetAccessParams
 >;
 
 /**

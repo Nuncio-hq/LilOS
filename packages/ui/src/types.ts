@@ -120,7 +120,10 @@ export type Reply = {
   text: string;
   steps?: Step[];
   streaming?: string;
-  approval?: { id: string; command: string; note: string };
+  /** #106: `options` = the outcome ids the engine offered on the card
+      (e.g. ["once","session","always","deny"]) — the buttons follow it;
+      absent on old stored asks → the default once/always/deny set. */
+  approval?: { id: string; command: string; note: string; options?: string[] };
   startProposal?: { title: string };
   reasoning?: string;
   thought?: number;

@@ -149,6 +149,46 @@ export function ReplyCards({
           const a = r.approval;
           const answer = (v: string) =>
             setResolved?.({ ...resolved, [a.id]: v });
+          /* #106 AC-4: the card offers the options the engine offered
+             (Once / This session / Always / Deny) — asks stored before
+             options existed fall back to the original three. */
+          const actions = a.options?.length
+            ? a.options
+            : ["once", "always", "deny"];
+          const actionMeta: Record<
+            string,
+            {
+              label: string;
+              title: (command: string) => string;
+              resolved: (viewer: string, command: string) => string;
+              ghost?: boolean;
+            }
+          > = {
+            once: {
+              label: "Once",
+              title: () => "Once — it asks again next time",
+              resolved: (v) => `Allowed once by ${v}`,
+            },
+            session: {
+              label: "This session",
+              title: (c) =>
+                `Allow ${c.slice(0, 60)} for the rest of this session`,
+              resolved: (v) => `Allowed this session by ${v}`,
+            },
+            always: {
+              label: "Always",
+              /* "Always" names what it covers — the tooltip spells out the
+                 command it grants; the code block sits right above. */
+              title: (c) => `Always allow ${c.slice(0, 60)}`,
+              resolved: () => "Always allowed here",
+            },
+            deny: {
+              label: "Deny",
+              title: () => "Deny — the agent sees the refusal",
+              resolved: (v) => `Denied by ${v}`,
+              ghost: true,
+            },
+          };
           return (
             <Confirmation
               className={cn(
@@ -192,27 +232,30 @@ export function ReplyCards({
                   language="bash"
                   className="text-xs [&_pre]:whitespace-pre-wrap [&_pre]:break-all"
                 />
-                <p className="text-muted-foreground text-xs">{a.note}</p>
+                {/* The caption must say what the command DOES — when the
+                    engine just echoes the command it adds nothing. */}
+                {a.note.trim() && a.note.trim() !== a.command.trim() ? (
+                  <p className="text-muted-foreground text-xs">{a.note}</p>
+                ) : null}
               </ConfirmationRequest>
               {setResolved && (
                 <ConfirmationActions className="flex-wrap self-start">
-                  <ConfirmationAction
-                    onClick={() => answer(`Allowed once by ${viewer}`)}
-                  >
-                    Allow once
-                  </ConfirmationAction>
-                  <ConfirmationAction
-                    variant="outline"
-                    onClick={() => answer("Always allowed here")}
-                  >
-                    Always here
-                  </ConfirmationAction>
-                  <ConfirmationAction
-                    variant="ghost"
-                    onClick={() => answer(`Denied by ${viewer}`)}
-                  >
-                    Deny
-                  </ConfirmationAction>
+                  {actions.map((opt, i) => {
+                    const meta = actionMeta[opt];
+                    if (!meta) return null;
+                    return (
+                      <ConfirmationAction
+                        key={opt}
+                        variant={
+                          meta.ghost ? "ghost" : i === 0 ? undefined : "outline"
+                        }
+                        title={meta.title(a.command)}
+                        onClick={() => answer(meta.resolved(viewer, a.command))}
+                      >
+                        {meta.label}
+                      </ConfirmationAction>
+                    );
+                  })}
                 </ConfirmationActions>
               )}
             </Confirmation>
