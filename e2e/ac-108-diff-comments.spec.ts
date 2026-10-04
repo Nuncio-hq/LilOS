@@ -125,7 +125,8 @@ const turns = (page: Page) => page.locator("main [data-agentturn]");
    landing mid-turn goes through `session.steer` and lands as an "Oscar
    steered …" row inside the running turn — no bubble, and no new turn
    ever mounts. Wait for whichever shape the send took and return the turn
-   it landed in. */
+   it landed in. `text` must be unique within the session — hasText is a
+   substring match, and a stale row would silently satisfy the or-wait. */
 const awaitSendLanding = async (page: Page, text: string) => {
   const mine = page
     .locator("main [data-msg]")
@@ -151,7 +152,9 @@ const awaitSendLanding = async (page: Page, text: string) => {
    #474: the idle read is the thread's last row — it must be a settled
    agent turn. `turns.count() > 0` couldn't see a minted turn whose card
    hadn't mounted yet, so the old guard skipped the settle wait exactly
-   when a turn was still dispatching (the wild flake's window). */
+   when a turn was still dispatching (the wild flake's window). A pumped
+   follow-up can still slip through that mount gap — awaitSendLanding
+   resolves whichever landing the send takes. */
 const sendTurn = async (page: Page, text: string) => {
   await expect(
     page
@@ -449,6 +452,11 @@ test("AC-3b a send landing mid-turn steers — the landing wait resolves the tur
      seeded turn was still dispatching. */
   await send(page, "slow:150 Add a readme note");
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* The card mounts only after the harness has processed turn.started
+     (runningTurnId set) — a send past this point provably steers. Send
+     earlier and it queues behind the minting turn, draining as the next
+     turn: a correct landing, but not the one under test. */
+  await expect(turns(page).last()).toBeVisible({ timeout: 60_000 });
   await send(page, "Add a changelog note while it runs");
 
   /* The send sits in the queued tray until the turn continues — the same
