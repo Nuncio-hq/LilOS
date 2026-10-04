@@ -8,6 +8,7 @@ import type {
   Ask,
   AttachmentsGetResult,
   Conversation,
+  ConversationLife,
   ConversationsRewindHostResult,
   Employee,
   FoldersBrowseResult,
@@ -15,6 +16,7 @@ import type {
   FoldersDiscoverResult,
   PendingTurn,
   ProfileConnection,
+  TurnFailure,
 } from "@lilos/contracts/app";
 import {
   APP_PROTOCOL_VERSION,
@@ -63,6 +65,7 @@ import type { EngineConnection } from "./engine/client";
 import { engineErrorCode, SESSION_NOT_FOUND } from "./engine/client";
 import type { EngineHostState } from "./engine/supervisor";
 import type { Logger } from "./log";
+import { type ReaperCandidate, SessionReaper } from "./reaper";
 import type { SleepGuard } from "./sleep";
 
 /**
@@ -151,6 +154,31 @@ interface SessionBinding {
       every `approval` request.opened through autoApprove instead of the
       card path; `conversation.updated` refreshes it mid-turn. */
   access: ConversationAccess;
+  /** #422: this session's line for the employee's live "now:" —
+      `thinking` from `turn.started` until the first `tool.started` names a
+      step; absent when no turn runs. */
+  nowStep?: string;
+  /** #422: engine requests currently waiting on the user —
+      requestId -> its wait line. */
+  nowWaits: Map<string, string>;
+  /** #422: bumped on every now-state mutation — the freshness key when
+      several sessions of one employee race for the line. */
+  nowAt: number;
+  /** #422: the DM channel's employee, resolved at bind — the atom can lag
+      the RPC view, so the now-line never re-derives it per event. */
+  employeeId?: string;
+  /** #346 AC-3: epoch ms of the session's last engine event — the
+      reaper's "idle for 30 minutes" clock. Engine events are the signal:
+      a session still reporting can't be idle, and a send not yet an
+      event is guarded by `sendCanProduceTurn` instead. */
+  lastActivity: number;
+  /** #346 AC-3: subagent ids still running — a session under one never
+      suspends, even when the parent turn is quiet. */
+  openSubagents: Set<string>;
+  /** #346: marked after `session.suspend` so the reaper skips it; any
+      engine event or a dispatched send clears it — the session is live
+      again through the resume path. */
+  suspended: boolean;
 }
 
 /** A pick as the app sends it (#92): `{provider?, id}` plus its legs. */
@@ -239,6 +267,13 @@ export interface HarnessOptions {
     employeeRemoved(employeeId: string): void;
     report(): ProfileConnection[];
   };
+  /** #346 AC-3: suspend a bound session after this much quiet time (ms).
+     `0`/undefined = never — the AC's 30-minute default arrives via
+     `LILOS_SESSION_IDLE_MINUTES` in config.ts. */
+  sessionIdleMs?: number;
+  /** #346 AC-3: the reaper's check period — the AC's "every minute".
+     Tests shrink it; the env knob only sets `sessionIdleMs`. */
+  reaperIntervalMs?: number;
 }
 
 const INVALID_STATE = -32003;
@@ -305,6 +340,10 @@ export class Harness {
   private readonly delivered = new Set<string>(); // relay message ids claimed
   /** Messages that arrived while the engine was down; drained on attach. */
   private readonly early = new Map<string, AppMessage[]>();
+  /** #422: monotonic clock — per-binding now-line freshness. */
+  private nowClock = 0;
+  /** #422: employeeId -> the now-line the harness last pushed. */
+  private readonly nowWritten = new Map<string, string>();
   /** User-removed message ids (#315 `message.changed`): skipped forever. */
   private readonly dismissed = new Set<string>();
   /** Un-parked message ids allowed past the deliveredSeq watermark once —
@@ -337,6 +376,8 @@ export class Harness {
   private readonly feedListeners = new Set<(event: EngineEvent) => void>();
   /** First-run auto-hire ran (or employees already existed). */
   private hired = false;
+  /** #346 AC-3: suspends bound sessions idle past `sessionIdleMs`. */
+  private readonly reaper: SessionReaper;
 
   /** Live engine sessions the harness owns (status reports this — #33). */
   get liveSessionCount(): number {
@@ -349,6 +390,15 @@ export class Harness {
 
   constructor(private readonly opts: HarnessOptions) {
     this.home = opts.homeDir ?? homedir();
+    this.reaper = new SessionReaper({
+      idleMs: opts.sessionIdleMs ?? 0,
+      intervalMs: opts.reaperIntervalMs ?? 60_000,
+      log: opts.log,
+      candidates: () => this.reaperCandidates(),
+      suspend: (sessionId) => this.suspendBinding(sessionId),
+      onSuspended: (conversationId, sessionId) =>
+        this.onReaperSuspended(conversationId, sessionId),
+    });
   }
 
   /* ------------------------------- startup ------------------------------ */
@@ -375,6 +425,7 @@ export class Harness {
       instanceId: welcome.instanceId,
       engineHost: welcome.engineHost,
     });
+    this.reaper.start();
   }
 
   private async onRelayReady(): Promise<void> {
@@ -404,6 +455,7 @@ export class Harness {
         // already-prompted tail ineligible a second time.
         await this.flushOutbox();
         await this.reconcileAsks();
+        await this.sweepNow();
         for (const channel of this.opts.relay.channels.get()) {
           this.watchChannel(channel.id);
         }
@@ -424,6 +476,7 @@ export class Harness {
   }
 
   async stop(): Promise<void> {
+    this.reaper.stop();
     for (const unsub of this.unsubs.splice(0)) unsub();
     this.opts.relay.close();
     this.engine = undefined;
@@ -715,15 +768,27 @@ export class Harness {
       binding.runningTurnId = undefined;
       binding.textByTurn.delete(turnId);
       this.opts.sleep.release();
+      binding.nowStep = undefined;
+      binding.nowWaits.clear();
+      this.noteNow(binding);
+      /* #419: the lost turn's event log orphans with this session (the
+         rebind swaps engineRef), so the failure card can't ride the turn
+         — stamp it on the conversation; the next turn.started clears it. */
       await this.updateConversation(binding.conversationId, {
         state: "idle",
+        turnFailure: {
+          kind: "sleep",
+          text: "Interrupted — the Mac slept or the engine restarted.",
+        },
       });
       /* The turn vanished mid-run — pending steers can't land anymore. */
       this.scheduleSteerReconcile(binding);
     }
+    /* #419 AC-4: the note reports the interrupt; the Retry lives on the
+       session card + turn, not in text nobody can click. */
     await this.postSystem(
       binding,
-      "Turn interrupted — the Mac slept or the engine restarted. Retry.",
+      "Turn interrupted — the Mac slept or the engine restarted.",
     );
   }
 
@@ -775,6 +840,9 @@ export class Harness {
       heldPick: undefined,
       heldPickPrev: undefined,
       promptGates: new Set(),
+      nowStep: undefined,
+      nowWaits: new Map(),
+      nowAt: 0,
       /* The old session's in-flight sends die with it — the rebound queue
          drains through sendPrompt, which re-arms its own entry. */
       inflightPrompts: new Set(),
@@ -783,6 +851,11 @@ export class Harness {
       stopRequested: false,
       stopParked: false,
       steerReconcileTimer: undefined,
+      /* #346: the new session is live now — fresh clock, no suspended
+         mark, and no subagents of the dead session survive it. */
+      lastActivity: Date.now(),
+      openSubagents: new Set(),
+      suspended: false,
     };
     if (binding.steerReconcileTimer) clearTimeout(binding.steerReconcileTimer);
     this.bindings.set(binding.conversationId, rebound);
@@ -1446,8 +1519,19 @@ export class Harness {
           error: String(error),
         });
         binding.consumed.delete(message.id);
+        /* #346 AC-2: a turn running makes the requeue right — it drains
+           on turn.completed. With none, the session is closed for good
+           (a suspended session resumes inside `prompt` and never lands
+           here): requeueing was the parent's infinite INVALID_STATE
+           loop, so rebind — session.start, then the queue drains on the
+           fresh session. #377: requeues insert in send order. */
+        if (binding.runningTurnId) {
+          this.insertQueued(binding, message);
+          return true;
+        }
         this.insertQueued(binding, message);
         this.unclaimMessage(message);
+        await this.rebindConversation(binding);
         return true;
       }
       if (engineErrorCode(error) === SESSION_NOT_FOUND) {
@@ -1464,11 +1548,17 @@ export class Harness {
         conversationId: binding.conversationId,
         error: String(error),
       });
+      const detail = error instanceof Error ? error.message : String(error);
       await this.postSystem(
         binding,
-        `Engine error: ${error instanceof Error ? error.message : String(error)}`,
+        `Engine error: ${detail}`,
         `sys:${binding.conversationId}:${message.id}:engine-error`,
       );
+      /* #419: the prompt never made a turn — the DM card carries the
+         failure so the thread isn't silent + Retry has a surface. */
+      await this.updateConversation(binding.conversationId, {
+        turnFailure: { kind: "generic", text: `Engine error: ${detail}` },
+      });
     }
     return false;
   }
@@ -1608,6 +1698,64 @@ export class Harness {
    * `consumed` whose `turn.started` never landed. A bare binding or a
    * running turn is NOT pending — neither produces the next turn alone.
    */
+  /** #346 AC-4: write the conversation's `life` once per change — the
+      relay mirrors it to every client for the ring. */
+  private writeLife(conversationId: string, life: ConversationLife) {
+    const conv = this.conversationFromAtom(conversationId);
+    if (conv?.life === life) return;
+    this.updateConversation(conversationId, { life }).catch((error) =>
+      this.opts.log.warn("life write failed", {
+        conversationId,
+        error: String(error),
+      }),
+    );
+  }
+
+  /* ------------------------- #346 idle reaper ------------------------- */
+
+  /** Sessions the reaper may suspend: live, quiet, and with nothing that
+      could still produce a turn, an open ask, or a running subagent. */
+  private reaperCandidates(): ReaperCandidate[] {
+    const out: ReaperCandidate[] = [];
+    for (const binding of this.bindings.values()) {
+      if (!binding.sessionId || binding.suspended) continue;
+      if (binding.runningTurnId) continue; // a turn runs
+      if (binding.openSubagents.size) continue; // a subagent runs
+      if (this.sessionHasOpenAsk(binding.sessionId)) continue; // an ask is open
+      if (this.sendCanProduceTurn(binding.conversationId)) continue;
+      out.push({
+        conversationId: binding.conversationId,
+        sessionId: binding.sessionId,
+        lastActivity: binding.lastActivity,
+      });
+    }
+    return out;
+  }
+
+  /** An engine ask (approval/question) still open on this session — the
+      `requestByAsk` map keys are relay ask ids, its rows hold the session. */
+  private sessionHasOpenAsk(sessionId: string): boolean {
+    for (const rec of this.requestByAsk.values()) {
+      if (rec.sessionId === sessionId) return true;
+    }
+    return false;
+  }
+
+  private async suspendBinding(sessionId: string): Promise<void> {
+    const conn = this.engine;
+    if (!conn) throw new Error("engine not attached");
+    await conn.request("session.suspend", { sessionId });
+  }
+
+  private onReaperSuspended(conversationId: string, sessionId: string) {
+    const binding = this.bindings.get(conversationId);
+    if (binding?.sessionId === sessionId) binding.suspended = true;
+    /* The suspend's `session.state closed` event usually lands too — this
+       write covers engines that don't echo it (and races where the event
+       arrived first are deduped by writeLife). */
+    this.writeLife(conversationId, "closed");
+  }
+
   private sendCanProduceTurn(conversationId: string): boolean {
     if (this.binds.has(conversationId)) return true;
     if (this.rebinds.has(conversationId)) return true;
@@ -1693,6 +1841,11 @@ export class Harness {
           turnSource: new Map(),
           steerPending: [],
           stopRequested: false,
+          nowWaits: new Map(),
+          nowAt: 0,
+          lastActivity: Date.now(),
+          openSubagents: new Set(),
+          suspended: false,
         };
         this.bindings.set(conv.id, binding);
         this.conversationBySession.set(conv.engineRef, conv.id);
@@ -1702,6 +1855,7 @@ export class Harness {
            stored on the conversation. Create the gateway session anyway;
            the alias lands on the next `session.ref.changed` (#339). */
         const employee = await this.resolveEmployee(conv);
+        binding.employeeId = employee?.id;
         const surface = this.createSurfaces(binding, conv, employee);
         binding.gatewaySession = surface?.session;
         return binding;
@@ -1750,7 +1904,13 @@ export class Harness {
       turnSource: new Map(),
       steerPending: [],
       stopRequested: false,
+      nowWaits: new Map(),
+      nowAt: 0,
+      lastActivity: Date.now(),
+      openSubagents: new Set(),
+      suspended: false,
     };
+    binding.employeeId = employee?.id;
     const surface = this.createSurfaces(binding, conv, employee);
     const started = await conn.request<{
       sessionId: string;
@@ -1800,6 +1960,13 @@ export class Harness {
     }
     const binding = convId ? this.bindings.get(convId) : undefined;
     if (binding && event.seq > binding.lastSeq) binding.lastSeq = event.seq;
+    /* #346: an event from the session proves it is alive — reset the
+       reaper clock and drop the suspended mark; the session.started/
+       session.state cases below write `life` when the wire says more. */
+    if (binding) {
+      binding.lastActivity = Date.now();
+      binding.suspended = false;
+    }
     switch (event.type) {
       case "turn.started": {
         if (!binding) return;
@@ -1913,7 +2080,17 @@ export class Harness {
         this.opts.sleep.acquire();
         this.updateConversation(binding.conversationId, {
           state: "active",
+          /* #419: a fresh turn erases the last failure's card — a retry
+             that made it this far worked. */
+          turnFailure: null,
         }).catch(() => {});
+        /* #422: a turn is running but named no step yet — the header reads
+           "thinking" until the first tool.started replaces it. Waits stay:
+           applyReplay raises openRequests before replaying this event, and
+           a live wait must survive; leftovers can't exist — turn end and
+           interruption both clear them. */
+        binding.nowStep = "thinking";
+        this.noteNow(binding);
         break;
       }
       case "session.titled": {
@@ -1933,6 +2110,26 @@ export class Harness {
         );
         break;
       }
+      case "session.started":
+        /* #346 AC-4: a live session exists — fresh bind or a resume's
+           reopen — the conversation's life is open. */
+        if (binding) this.writeLife(binding.conversationId, "open");
+        break;
+      case "session.state":
+        /* #346 AC-4: `closed` is the only persistent bit — suspend and
+           stop alike; `running` stays client-derived, never stored (the
+           prototype's rule — sessionLife, #344/#348). */
+        if (binding && event.payload.state === "closed") {
+          this.writeLife(binding.conversationId, "closed");
+        }
+        break;
+      case "subagent.started":
+        /* #346 AC-3: a session under a running subagent never suspends. */
+        binding?.openSubagents.add(event.payload.subagentId);
+        break;
+      case "subagent.completed":
+        binding?.openSubagents.delete(event.payload.subagentId);
+        break;
       case "session.note":
         /* Engine-authored note (e.g. a deferred model switch that failed at
            turn start — "Couldn't switch to X — staying on Y"). Surfaced as a
@@ -1955,8 +2152,24 @@ export class Harness {
           );
         }
         break;
-      // tool.started/completed never post feed rows — the tool cards inside
-      // the turn are the single rendering (issue #71, AC-1).
+      /* tool.started/completed never post feed rows — the tool cards
+         inside the turn are the single rendering (issue #71, AC-1). But
+         tool.started IS the employee's live "now:" step (#422): the
+         running tool + its target — the same arg pick the subagent row
+         uses (`command ?? path ?? pattern ?? query`). */
+      case "tool.started":
+        if (binding) {
+          const arg = String(
+            event.payload.input.command ??
+              event.payload.input.path ??
+              event.payload.input.pattern ??
+              event.payload.input.query ??
+              "",
+          );
+          binding.nowStep = `${event.payload.tool} ${arg}`.trim();
+          this.noteNow(binding);
+        }
+        break;
       case "request.opened":
         if (binding) {
           /* #106 AC-2: Full access is enforced here, engine-neutral — the
@@ -1990,6 +2203,10 @@ export class Harness {
         }
         break;
       case "request.resolved":
+        if (binding) {
+          binding.nowWaits.delete(event.payload.requestId);
+          this.noteNow(binding);
+        }
         void this.onEngineRequestResolved(
           event.sessionId,
           event.payload.requestId,
@@ -2038,6 +2255,10 @@ export class Harness {
     requestId: string,
     request: EngineRequest,
   ): Promise<void> {
+    /* #422: the turn is parked on the user — the header reads "waiting on
+       your approval" (replays through applyReplay land here too). */
+    binding.nowWaits.set(requestId, Harness.waitLine(request));
+    this.noteNow(binding);
     const key = `${binding.sessionId}:${requestId}`;
     const open = async () => {
       const result = await this.opts.relay.request<{ ask: Ask }>("asks.open", {
@@ -3036,6 +3257,10 @@ export class Harness {
     binding.pickByTurn.delete(turnId);
     binding.runningTurnId = undefined;
     this.opts.sleep.release();
+    // #422: the turn ended — the header falls back to the role only.
+    binding.nowStep = undefined;
+    binding.nowWaits.clear();
+    this.noteNow(binding);
 
     const employeeId = this.employeeIdFor(
       this.conversationFromAtom(binding.conversationId),
@@ -3082,9 +3307,19 @@ export class Harness {
         `sys:${binding.conversationId}:${source}:silent`,
       );
     }
-    this.updateConversation(binding.conversationId, { state: "idle" }).catch(
-      () => {},
-    );
+    this.updateConversation(binding.conversationId, {
+      state: "idle",
+      /* #419: the DM session card's failure — the turn model carries it
+         too, but the row keeps it across a session rebind/reload. */
+      ...(event.payload.error
+        ? {
+            turnFailure: {
+              kind: "model" as const,
+              text: event.payload.error,
+            },
+          }
+        : {}),
+    }).catch(() => {});
 
     /* #315 AC-5: ■ Stop parks everything still waiting — queued sends and
        accepted-but-unlanded steers alike land in the not-sent tray
@@ -3172,6 +3407,10 @@ export class Harness {
   }
 
   private unbind(binding: SessionBinding) {
+    // #422: this session's line stops counting toward the employee's now.
+    binding.nowStep = undefined;
+    binding.nowWaits.clear();
+    this.noteNow(binding);
     if (binding.gatewaySession) {
       const gw = binding.gatewaySession;
       binding.gatewaySession = undefined;
@@ -3340,6 +3579,90 @@ export class Harness {
     };
   }
 
+  /* --------------------- employee "now:" line (#422) ------------------- */
+
+  /** What an open request says while it waits on the user (prototype voice). */
+  private static waitLine(request: EngineRequest): string {
+    switch (request.kind) {
+      case "approval":
+        return "waiting on your approval";
+      case "question":
+        return "waiting on your answer";
+      default:
+        return "waiting on you";
+    }
+  }
+
+  /** This session's line right now — an open wait outranks the step. */
+  private bindingNow(binding: SessionBinding): string {
+    return binding.nowWaits.values().next().value ?? binding.nowStep ?? "";
+  }
+
+  /** Recompute the employee's line after a state change on this binding. */
+  private noteNow(binding: SessionBinding) {
+    binding.nowAt = ++this.nowClock;
+    const employeeId = this.employeeIdFor(
+      this.conversationFromAtom(binding.conversationId),
+    );
+    if (employeeId) this.pushEmployeeNow(employeeId);
+  }
+
+  /** The freshest non-empty line across the employee's sessions, else "". */
+  private employeeNowLine(employeeId: string): string {
+    let line = "";
+    let at = -1;
+    for (const binding of this.bindings.values()) {
+      if (
+        this.employeeIdFor(
+          this.conversationFromAtom(binding.conversationId),
+        ) !== employeeId
+      )
+        continue;
+      const current = this.bindingNow(binding);
+      if (current && binding.nowAt > at) {
+        at = binding.nowAt;
+        line = current;
+      }
+    }
+    return line;
+  }
+
+  private pushEmployeeNow(employeeId: string) {
+    const line = this.employeeNowLine(employeeId);
+    if (this.nowWritten.get(employeeId) === line) return;
+    this.nowWritten.set(employeeId, line);
+    this.relayWrite(`now ${employeeId}`, () =>
+      this.opts.relay.request("employees.update", {
+        id: employeeId,
+        now: line,
+      }),
+    );
+  }
+
+  /** On every (re)register the derived truth wins: a `now` a dead harness
+      left behind clears, and a live binding's line re-pushes if the wire
+      drifted while the socket was down. */
+  private async sweepNow(): Promise<void> {
+    try {
+      const { employees } = await this.opts.relay.request<{
+        employees: Employee[];
+      }>("employees.list", {});
+      for (const employee of employees) {
+        const want = this.employeeNowLine(employee.id);
+        if (employee.now === want) continue;
+        this.nowWritten.set(employee.id, want);
+        this.relayWrite(`now sweep ${employee.id}`, () =>
+          this.opts.relay.request("employees.update", {
+            id: employee.id,
+            now: want,
+          }),
+        );
+      }
+    } catch (error) {
+      this.opts.log.warn("now sweep failed", { error: String(error) });
+    }
+  }
+
   private employeeIdFor(conv: Conversation | undefined) {
     if (!conv) return undefined;
     const channel: AppChannel | undefined = this.opts.relay.channels
@@ -3407,6 +3730,10 @@ export class Harness {
       effort?: string | null;
       fast?: boolean | null;
       deliveredSeq?: number;
+      life?: ConversationLife;
+      /** #419: stamp the last turn's failure (DM alert card); `null`
+          clears it. */
+      turnFailure?: TurnFailure | null;
     },
   ) {
     await this.opts.relay.request("conversations.update", {

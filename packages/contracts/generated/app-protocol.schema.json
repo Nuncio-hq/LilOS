@@ -1781,6 +1781,13 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "life": {
+          "type": "string",
+          "enum": [
+            "open",
+            "closed"
+          ]
+        },
         "usage": {
           "type": "object",
           "properties": {
@@ -1821,6 +1828,28 @@
             "reasoning",
             "cache"
           ]
+        },
+        "turnFailure": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "model",
+                "sleep",
+                "generic"
+              ]
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "additionalProperties": false
         },
         "createdAt": {
           "type": "integer",
@@ -2058,6 +2087,13 @@
                 "minimum": 0,
                 "maximum": 9007199254740991
               },
+              "life": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "closed"
+                ]
+              },
               "usage": {
                 "type": "object",
                 "properties": {
@@ -2098,6 +2134,28 @@
                   "reasoning",
                   "cache"
                 ]
+              },
+              "turnFailure": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "model",
+                      "sleep",
+                      "generic"
+                    ]
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "text"
+                ],
+                "additionalProperties": false
               },
               "createdAt": {
                 "type": "integer",
@@ -2390,6 +2448,13 @@
               "minimum": 0,
               "maximum": 9007199254740991
             },
+            "life": {
+              "type": "string",
+              "enum": [
+                "open",
+                "closed"
+              ]
+            },
             "usage": {
               "type": "object",
               "properties": {
@@ -2430,6 +2495,28 @@
                 "reasoning",
                 "cache"
               ]
+            },
+            "turnFailure": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "model",
+                    "sleep",
+                    "generic"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "additionalProperties": false
             },
             "createdAt": {
               "type": "integer",
@@ -2684,6 +2771,42 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "life": {
+          "type": "string",
+          "enum": [
+            "open",
+            "closed"
+          ]
+        },
+        "turnFailure": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "model",
+                    "sleep",
+                    "generic"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -2828,6 +2951,13 @@
               "minimum": 0,
               "maximum": 9007199254740991
             },
+            "life": {
+              "type": "string",
+              "enum": [
+                "open",
+                "closed"
+              ]
+            },
             "usage": {
               "type": "object",
               "properties": {
@@ -2868,6 +2998,28 @@
                 "reasoning",
                 "cache"
               ]
+            },
+            "turnFailure": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "model",
+                    "sleep",
+                    "generic"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "additionalProperties": false
             },
             "createdAt": {
               "type": "integer",
@@ -4267,6 +4419,13 @@
               "minimum": 0,
               "maximum": 9007199254740991
             },
+            "life": {
+              "type": "string",
+              "enum": [
+                "open",
+                "closed"
+              ]
+            },
             "usage": {
               "type": "object",
               "properties": {
@@ -4307,6 +4466,28 @@
                 "reasoning",
                 "cache"
               ]
+            },
+            "turnFailure": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "model",
+                    "sleep",
+                    "generic"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "additionalProperties": false
             },
             "createdAt": {
               "type": "integer",
@@ -4924,6 +5105,13 @@
                     "minimum": 0,
                     "maximum": 9007199254740991
                   },
+                  "life": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "closed"
+                    ]
+                  },
                   "usage": {
                     "type": "object",
                     "properties": {
@@ -4964,6 +5152,28 @@
                       "reasoning",
                       "cache"
                     ]
+                  },
+                  "turnFailure": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "model",
+                          "sleep",
+                          "generic"
+                        ]
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "text"
+                    ],
+                    "additionalProperties": false
                   },
                   "createdAt": {
                     "type": "integer",
@@ -7222,6 +7432,13 @@
               "minimum": 0,
               "maximum": 9007199254740991
             },
+            "life": {
+              "type": "string",
+              "enum": [
+                "open",
+                "closed"
+              ]
+            },
             "usage": {
               "type": "object",
               "properties": {
@@ -7262,6 +7479,28 @@
                 "reasoning",
                 "cache"
               ]
+            },
+            "turnFailure": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "model",
+                    "sleep",
+                    "generic"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "additionalProperties": false
             },
             "createdAt": {
               "type": "integer",

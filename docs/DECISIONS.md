@@ -73,12 +73,19 @@ PR does not exist.
   `dropped`, and a send committed to dispatch gets `claimed` so the tray's
   Remove boundary is claim, not delivery (#377). Not: tray state kept in
   component memory (a reload must show the same tray). — #315 · PR #358
+
 - **D-#403 A Stop's scope is causal, not temporal: `turn.interruptRequested`
   carries `afterSeq` (the channel seq it follows) and the harness parks any
   send at or below it wherever it surfaces.** The event bus and
   `channelMessages` are unordered paths, so a pre-Stop send can land after
   the drain. Not: ordering the bus against the store, or snapshotting which
   rows were visible at Stop time. — #403
+- **D-#419 Turn failure lives on the conversation row: the harness stamps
+  `turnFailure {kind: model|sleep|generic, text}`** on `turn.completed.error`,
+  an interrupted turn (slept/restarted engine), or a terminal dispatch
+  failure; `turn.started` clears it. The fold still marks the turn `failed`
+  (vs `done`/`stopped`). Not: deriving failure from turn replay — an
+  interrupted turn orphans with the dead session's event log. — #419 · PR #486
 
 ## Web
 - **D-#3 Web: React 19 + Vite + Tailwind v4 + shadcn (base-nova) + AI
@@ -287,6 +294,20 @@ PR does not exist.
   engine-hermes drops it at the adapter. Not: `available` mapped as
   append or replace on `turn.delta` (injects the answer into the
   Reasoning card). — #334 · PR #349
+- **D-#346 Idle-close suspends, it never stops.** `session.suspend` closes
+  the live engine session but keeps what it needs to resume
+  (engine-hermes: `session.close` on the gateway, registry row kept;
+  `session.stop` still means "end for good"); the next prompt/steer
+  reopens the SAME LilOS session through the resume path
+  (`session.resume`/`eager_build`) and the resumed turn hears once that
+  it was reopened. The harness's reaper suspends a session idle past
+  `LILOS_SESSION_IDLE_MINUTES` (default 30, `0` = never, checked every
+  minute) — never mid-turn, mid-ask, or with a subagent running —
+  background jobs do not block it. The conversation carries
+  `life: running|open|closed` derived in one place so web/mobile render
+  the ring from real state. Not: `session.stop` for idle cleanup (kills
+  memory + the INVALID_STATE re-queue loop), a second life derivation
+  outside `sessionLife`, or LilOS-owned session memory. — #346
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the

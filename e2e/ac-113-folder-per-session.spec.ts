@@ -4,8 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #113 — pick a folder per DM session, end to end on the real stack
@@ -39,11 +38,7 @@ execSync(
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac113", {
-    relay: wport(4680),
-    feed: wport(4681),
-    web: wport(5338),
-  });
+  stack = await bootStack("ac113", await pickPorts());
 });
 test.afterAll(async () => {
   await stack?.stop();

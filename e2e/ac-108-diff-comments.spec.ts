@@ -5,8 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #108 — comment on a diff line and the agent gets it: in Focus →
@@ -41,19 +40,11 @@ git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init"]);
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack(
-    "ac108",
-    {
-      relay: wport(4740),
-      feed: wport(4826),
-      web: wport(5327),
-    },
-    {
-      PATH: `${fakeGh}:${process.env.PATH}`,
-      GH_FAKE_DIR: ghFakeDir,
-      GH_FAKE_LOG: ghLogFile,
-    },
-  );
+  stack = await bootStack("ac108", await pickPorts(), {
+    PATH: `${fakeGh}:${process.env.PATH}`,
+    GH_FAKE_DIR: ghFakeDir,
+    GH_FAKE_LOG: ghLogFile,
+  });
 });
 test.afterAll(async () => {
   await stack?.stop();

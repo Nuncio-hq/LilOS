@@ -206,6 +206,9 @@ export type AgentEntry = {
   waiting?: "approval" | "plan" | "question";
   /** You pressed Stop mid-turn. */
   stopped?: boolean;
+  /** #419: the turn ended on an engine error — the failure row reads it
+      (web: the turn's "Failed · <error>" chip). */
+  failed?: string;
   /** #308: the engine opened this leg itself — "Agent-initiated" chip
       instead of reading as an answer to a user message. */
   agentInitiated?: boolean;

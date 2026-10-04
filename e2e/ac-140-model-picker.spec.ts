@@ -2,8 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * AC-140: the picker always shows the model the session runs, even when the
@@ -24,13 +23,14 @@ import { wport } from "./ports";
  */
 const ROOT = path.dirname(fileURLToPath(import.meta.url)).replace(/\/e2e$/, "");
 const SHOTS = path.join(ROOT, "test-results", "ac-140");
-const RELAY = wport(4805);
-const FEED = wport(4806);
-const WEBP = wport(5307);
+let RELAY: number;
+let FEED: number;
+let WEBP: number;
 
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
+  ({ relay: RELAY, feed: FEED, web: WEBP } = await pickPorts());
   stack = await bootStack(
     "ac140",
     { relay: RELAY, feed: FEED, web: WEBP },
