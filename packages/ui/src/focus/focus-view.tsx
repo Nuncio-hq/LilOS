@@ -133,6 +133,7 @@ export function FocusView({
   draft,
   onDraftChange,
   transcriptNote,
+  banner,
   scrollTo,
   onScrolled,
   children,
@@ -190,7 +191,9 @@ export function FocusView({
   defaultModel?: string;
   /* The default's provider — a `{provider?, id}` pair disambiguates a shared id. */
   defaultProvider?: string;
-  say?: (t: string) => void;
+  /* `{error:true}` marks a failed action — the host toasts it with the
+     destructive accent instead of a neutral note (#423). */
+  say?: (t: string, opts?: { error?: boolean }) => void;
   models?: ModelOption[];
   repoFiles?: string[];
   /** Live host accessors forwarded to the Workbench (issue #11 fs/git, #37 forge). */
@@ -221,6 +224,10 @@ export function FocusView({
   /* Why the working transcript can't be shown — same note ThreadView renders
      where the transcript would be (issue #28). */
   transcriptNote?: string;
+  /* A pinned strip at the top of the conversation column (#423 AC-2 — the
+     DM history-failure notice). The caller renders the surface (e.g. a
+     StatusBanner); Focus only owns the slot above the scroll. */
+  banner?: ReactNode;
   /* #138 AC-3 jump-to-hit, same contract as ThreadView: scroll the message
      with this id into view, flash it, then call onScrolled. */
   scrollTo?: string;
@@ -517,6 +524,7 @@ export function FocusView({
                               .catch((e) =>
                                 say?.(
                                   `Open failed — ${e instanceof Error ? e.message : String(e)}`,
+                                  { error: true },
                                 ),
                               ),
                         }
@@ -644,6 +652,13 @@ export function FocusView({
         )}
       >
         <section ref={turnsRef} className="flex min-h-0 min-w-0 flex-col">
+          {/* The banner lives in the same column as the messages — never a
+              full-bleed strip the action floats away on (#423). */}
+          {banner && (
+            <div className="mx-auto w-full max-w-[46rem] px-5 pt-3">
+              {banner}
+            </div>
+          )}
           <Conversation className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]">
             <ConversationContent
               data-thread
@@ -752,7 +767,13 @@ export function FocusView({
             />
           </Conversation>
 
-          <div className="mx-auto w-full max-w-[46rem] shrink-0 px-3 pb-3">
+          {/* data-composer on the whole dock (plan tray + steer tray +
+              not-sent tray + composer): the app's toast floats above the
+              tallest bottom block, never over a control (#423). */}
+          <div
+            data-composer
+            className="mx-auto w-full max-w-[46rem] shrink-0 px-3 pb-3"
+          >
             {todos.length > 0 && (
               <Queue className="mb-2 gap-1 py-1.5 shadow-none">
                 <QueueSection open={planOpen} onOpenChange={setPlanOpen}>

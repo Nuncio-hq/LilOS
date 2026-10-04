@@ -53,7 +53,8 @@ import {
   relay,
   sessionModels,
 } from "./lib/runtime";
-import { say, toast } from "./lib/toast";
+import { say, sayError, toast } from "./lib/toast";
+import { ToastView } from "./lib/toast-view";
 import { DmPage } from "./pages/dm";
 import { IndexPage } from "./pages/index";
 import { SettingsPane } from "./settings/pane";
@@ -93,7 +94,7 @@ function AppShell() {
       if (e instanceof RelayError && e.code === "tailscale_unavailable") {
         setPairPhone({ kind: "no-remote" });
       } else {
-        say("Couldn't reach the relay — try again.");
+        sayError("Couldn't reach the relay — try again.");
       }
     }
   };
@@ -412,7 +413,7 @@ function AppShell() {
           onRevokeDevice={(id) =>
             void relay
               .revokeDevice(id)
-              .catch(() => say("Couldn't remove that phone — try again."))
+              .catch(() => sayError("Couldn't remove that phone — try again."))
           }
           onTurnOff={() => {
             void relay.pairingDisable().catch(() => {});
@@ -437,13 +438,9 @@ function AppShell() {
           onCopied={() => {}}
         />
       )}
-      {/* One-line notices (attach rejections, failed sends) — same look as
-          the prototype's toast. */}
-      {toastMsg && (
-        <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-foreground px-4 py-2 text-background text-sm shadow-lg">
-          {toastMsg}
-        </div>
-      )}
+      {/* One-line notices (attach rejections, failed sends) — floats above
+          the composer, same affordance as the prototype's toast. */}
+      {toastMsg && <ToastView toast={toastMsg} />}
     </div>
   );
 }
