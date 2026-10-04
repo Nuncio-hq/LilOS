@@ -2040,6 +2040,69 @@ describe("waiting tray (#315)", () => {
     }
   });
 
+  it("#459 AC-4 sends delivered before the bind stay unclaimed — a removed one never reaches the engine", {
+    timeout: 20_000,
+  }, async () => {
+    /* Hold the conversation bind (the seam `LILOS_BIND_DELAY_MS` drives)
+       so both sends land before a SessionBinding exists — the #459
+       window. Pre-bind sends must sit unclaimed until their lane commits
+       them, and a Remove inside the window must drop the send outright:
+       no claim, no prompt, no later delivery. */
+    const w = await setupWorldBase({
+      tick: 1,
+      captureSockets: true,
+      reconnectMinDelayMs: 20,
+      harnessExtra: { bindDelayMs: 150 },
+    });
+    try {
+      const claims: string[] = [];
+      const orig = w.harnessRelay.request.bind(w.harnessRelay);
+      w.harnessRelay.request = ((
+        method: string,
+        params?: Record<string, unknown>,
+      ) => {
+        if (method === "messages.claim")
+          claims.push(
+            `${params?.messageId}:${params?.claimed === false ? 0 : 1}`,
+          );
+        return orig(method, params);
+      }) as typeof w.harnessRelay.request;
+
+      const { channel } = await openDmConversation(w.user);
+      const { conversation, rootMessage } = await w.user.request<{
+        conversation: { id: string };
+        rootMessage: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Summarize the repo layout",
+      });
+      const { message: neverMind } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "never mind that",
+      );
+      await w.user.request("messages.remove", { messageId: neverMind.id });
+
+      await waitFor(
+        () => w.engineCalls.find((c) => c.method === "prompt"),
+        "first prompt",
+      );
+      // Only the kept send ever became an engine turn — the removed one
+      // was neither prompted nor claimed.
+      expect(
+        w.engineCalls
+          .filter((c) => c.method === "prompt")
+          .map((c) => JSON.stringify(c.params)),
+      ).toEqual([expect.stringContaining("Summarize the repo layout")]);
+      expect(claims).toEqual([`${rootMessage.id}:1`]);
+      const { messages } = await listConvMessages(w.user, channel.id);
+      expect(messages.find((m) => m.id === neverMind.id)).toBeUndefined();
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("AC-5 Stop parks every wait into the not-sent tray; Send runs it later — nothing auto-runs", {
     timeout: 20_000,
   }, async () => {

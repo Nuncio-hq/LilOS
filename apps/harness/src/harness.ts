@@ -280,6 +280,10 @@ export interface HarnessOptions {
   /** #346 AC-3: the reaper's check period — the AC's "every minute".
      Tests shrink it; the env knob only sets `sessionIdleMs`. */
   reaperIntervalMs?: number;
+  /** #459: e2e-only probe — hold every session bind this long (ms) at its
+     start, so a send arriving pre-bind lands in the same ~1s window the
+     loaded run measured. `0`/unset = no hold (`LILOS_BIND_DELAY_MS`). */
+  bindDelayMs?: number;
 }
 
 const INVALID_STATE = -32003;
@@ -1875,6 +1879,12 @@ export class Harness {
     if (existing) return existing;
     const conn = this.engine;
     if (!conn) return undefined;
+    /* #459: named e2e probe — park the whole bind so "surface session
+       created" lands ~`bindDelayMs` after the send that triggered it, the
+       same window the ~910ms prod bind opened. Deliveries waiting on
+       `binds` must keep queuing/removable through the hold. */
+    if (this.opts.bindDelayMs)
+      await new Promise((r) => setTimeout(r, this.opts.bindDelayMs));
 
     // Reattach path: harness restarted while the engine kept the session
     // (orphan grace, #22) — the stored engineRef still resolves on the engine.
