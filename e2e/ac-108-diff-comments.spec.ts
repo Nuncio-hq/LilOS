@@ -19,6 +19,7 @@ import { wport } from "./ports";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
+const fakeGh = path.join(repo, "packages", "host", "test", "fake-gh");
 
 const SHOTS = path.join(repo, "test-results", "ac-108");
 
@@ -39,11 +40,19 @@ git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init"]);
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac108", {
-    relay: wport(4740),
-    feed: wport(4826),
-    web: wport(5327),
-  });
+  stack = await bootStack(
+    "ac108",
+    {
+      relay: wport(4740),
+      feed: wport(4826),
+      web: wport(5327),
+    },
+    {
+      PATH: `${fakeGh}:${process.env.PATH}`,
+      GH_FAKE_DIR: ghFakeDir,
+      GH_FAKE_LOG: ghLogFile,
+    },
+  );
 });
 test.afterAll(async () => {
   await stack?.stop();

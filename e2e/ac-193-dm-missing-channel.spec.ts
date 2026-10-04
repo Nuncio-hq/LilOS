@@ -64,11 +64,19 @@ async function relayRpc<T>(
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac193", {
-    relay: wport(4653),
-    feed: wport(4657),
-    web: wport(5251),
-  });
+  stack = await bootStack(
+    "ac193",
+    {
+      relay: wport(4653),
+      feed: wport(4657),
+      web: wport(5251),
+    },
+    {
+      // #118: pin the signed-in name so the first-run card's Open-DM
+      // button is enabled deterministically.
+      LILOS_USER_NAME: "Oscar",
+    },
+  );
 });
 test.afterAll(async () => {
   await stack?.stop();

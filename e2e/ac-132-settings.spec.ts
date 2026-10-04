@@ -18,7 +18,15 @@ import { wport } from "./ports";
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 const desktopDir = path.join(repo, "apps", "desktop");
+const FAKE_OS = path.join(here, "os-fake");
 const BUN = process.env.LILOS_BUN_BIN ?? "bun";
+
+/* Shared stack env (#118 pins the signed-in name; os.editors sees the
+   committed fake Cursor/Zed bundles for the Editors section). */
+const SETTINGS_ENV = {
+  LILOS_USER_NAME: "Test User",
+  LILOS_APP_DIRS: path.join(FAKE_OS, "Applications"),
+};
 
 const SHOTS = path.join(repo, "test-results", "ac-132");
 
@@ -56,11 +64,15 @@ test("AC-1+AC-5 Settings opens via ⌘, and the sidebar gear; Approvals stays hi
   page,
 }) => {
   test.setTimeout(120_000);
-  const stack = await bootStack("ac132a", {
-    relay: wport(4690),
-    feed: wport(4691),
-    web: wport(5372),
-  });
+  const stack = await bootStack(
+    "ac132a",
+    {
+      relay: wport(4690),
+      feed: wport(4691),
+      web: wport(5372),
+    },
+    SETTINGS_ENV,
+  );
   try {
     await page.addInitScript(() =>
       localStorage.setItem("lilos-onboarded", "1"),
@@ -93,11 +105,15 @@ test("AC-1+AC-5 Settings opens via ⌘, and the sidebar gear; Approvals stays hi
 
 test("AC-2 every section renders real data", async ({ page }) => {
   test.setTimeout(120_000);
-  const stack = await bootStack("ac132b", {
-    relay: wport(4692),
-    feed: wport(4693),
-    web: wport(5348),
-  });
+  const stack = await bootStack(
+    "ac132b",
+    {
+      relay: wport(4692),
+      feed: wport(4693),
+      web: wport(5348),
+    },
+    SETTINGS_ENV,
+  );
   try {
     await page.addInitScript(() =>
       localStorage.setItem("lilos-onboarded", "1"),
@@ -155,11 +171,15 @@ test("AC-3 edits in one window land live in another", async ({
   context,
 }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack("ac132c", {
-    relay: wport(4694),
-    feed: wport(4695),
-    web: wport(5349),
-  });
+  const stack = await bootStack(
+    "ac132c",
+    {
+      relay: wport(4694),
+      feed: wport(4695),
+      web: wport(5349),
+    },
+    SETTINGS_ENV,
+  );
   try {
     await context.addInitScript(() =>
       localStorage.setItem("lilos-onboarded", "1"),
@@ -210,11 +230,15 @@ test("screenshots: the AC matrix (light + dark, 1288 / 900 / 1440)", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  const stack = await bootStack("ac132shots", {
-    relay: wport(4700),
-    feed: wport(4701),
-    web: wport(5359),
-  });
+  const stack = await bootStack(
+    "ac132shots",
+    {
+      relay: wport(4700),
+      feed: wport(4701),
+      web: wport(5359),
+    },
+    SETTINGS_ENV,
+  );
   try {
     await page.setViewportSize({ width: 1288, height: 700 });
     await page.addInitScript(() =>
@@ -249,11 +273,15 @@ test("AC-4 on plain web the update control does not render", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  const stack = await bootStack("ac132d", {
-    relay: wport(4696),
-    feed: wport(4697),
-    web: wport(5350),
-  });
+  const stack = await bootStack(
+    "ac132d",
+    {
+      relay: wport(4696),
+      feed: wport(4697),
+      web: wport(5350),
+    },
+    SETTINGS_ENV,
+  );
   try {
     await page.addInitScript(() =>
       localStorage.setItem("lilos-onboarded", "1"),
@@ -274,11 +302,15 @@ test("AC-4 on plain web the update control does not render", async ({
 
 test("AC-1 the desktop menu opens Settings on ⌘, and Service Status stays", async () => {
   test.setTimeout(180_000);
-  const stack = await bootStack("ac132e", {
-    relay: wport(4698),
-    feed: wport(4817),
-    web: wport(5352),
-  });
+  const stack = await bootStack(
+    "ac132e",
+    {
+      relay: wport(4698),
+      feed: wport(4817),
+      web: wport(5352),
+    },
+    SETTINGS_ENV,
+  );
   let app: Awaited<ReturnType<typeof _electron.launch>> | undefined;
   try {
     const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {

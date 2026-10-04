@@ -54,14 +54,20 @@ test("AC-1/2/3 collapsing a running turn's steps stays collapsed; approval stays
   page,
 }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack("collapse", {
-    relay: wport(4663),
-    feed: wport(4664),
-    /* Suite-saturated: all 100 residues are taken (ports.spec gates it),
+  const stack = await bootStack(
+    "collapse",
+    {
+      relay: wport(4663),
+      feed: wport(4664),
+      /* Suite-saturated: all 100 residues are taken (ports.spec gates it),
        so reuse literals other spec files already own — identical bases
        are safe since two specs never share a worker index. */
-    web: wport(5241),
-  });
+      web: wport(5241),
+    },
+    {
+      LILOS_USER_NAME: "Oscar",
+    },
+  );
   try {
     await dmDefault(stack, page);
     // An edit-ask prompt parks the turn on an approval — deterministic
@@ -121,11 +127,17 @@ test("AC-3 a user-opened steps block stays open through turn end", async ({
   page,
 }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack("collapse-open", {
-    relay: wport(4667),
-    feed: wport(4668),
-    web: wport(5349),
-  });
+  const stack = await bootStack(
+    "collapse-open",
+    {
+      relay: wport(4667),
+      feed: wport(4668),
+      web: wport(5349),
+    },
+    {
+      LILOS_USER_NAME: "Oscar",
+    },
+  );
   try {
     await dmDefault(stack, page);
     await send(page, "Add a release note to the readme");

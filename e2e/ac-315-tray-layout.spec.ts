@@ -73,11 +73,17 @@ test("tray reserves its height: the approval card stays answerable with a waitin
   page,
 }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack("traygeo", {
-    relay: wport(4643),
-    feed: wport(4647),
-    web: wport(5241),
-  });
+  const stack = await bootStack(
+    "traygeo",
+    {
+      relay: wport(4643),
+      feed: wport(4647),
+      web: wport(5241),
+    },
+    {
+      LILOS_USER_NAME: "Oscar",
+    },
+  );
   try {
     await page.setViewportSize({ width: 1288, height: 700 });
     await dmDefault(page, stack.webUrl);
@@ -260,7 +266,11 @@ test("tray text holds WCAG AA in dark and keeps its palette in light (#371)", as
       feed: wport(4647),
       web: wport(5241),
     },
-    { LILOS_ENGINE: "url", LILOS_ENGINE_URL: engine.url },
+    {
+      LILOS_ENGINE: "url",
+      LILOS_ENGINE_URL: engine.url,
+      LILOS_USER_NAME: "Oscar",
+    },
   );
   try {
     await page.setViewportSize({ width: 1288, height: 700 });

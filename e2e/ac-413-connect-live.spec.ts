@@ -18,7 +18,10 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 let stack: Stack;
 
 test.beforeAll(async () => {
-  stack = await bootStack("ac413", await pickPorts());
+  stack = await bootStack("ac413", await pickPorts(), {
+    LILOS_ENGINE: "fake",
+    LILOS_CONNECT_FAKE: "1",
+  });
 });
 
 test.afterAll(async () => {

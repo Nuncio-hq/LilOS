@@ -5,6 +5,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -31,6 +32,7 @@ const repo = path.resolve(here, "..");
 const SHOTS = path.join(repo, "test-results", "ac-110");
 
 /* Committed fakes: Cursor.app + Zed.app bundles, and a fake `open` on PATH. */
+const FAKE_OS = path.join(repo, "e2e", "os-fake");
 const LOG_DIR = path.join(repo, "e2e", ".os-fake");
 const LOG = path.join(LOG_DIR, "open.log");
 mkdirSync(LOG_DIR, { recursive: true });
@@ -49,11 +51,22 @@ execSync(
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac110", {
-    relay: await freePort(),
-    feed: await freePort(),
-    web: await freePort(),
-  });
+  writeFileSync(LOG, "");
+  stack = await bootStack(
+    "ac110",
+    {
+      relay: await freePort(),
+      feed: await freePort(),
+      web: await freePort(),
+    },
+    {
+      // os.editors sees the fake bundles; os.open's `open` resolves to the
+      // fake bin — both write argv lines to LOG.
+      LILOS_APP_DIRS: path.join(FAKE_OS, "Applications"),
+      LILOS_OPEN_LOG: LOG,
+      PATH: `${path.join(FAKE_OS, "bin")}:${process.env.PATH}`,
+    },
+  );
 });
 test.afterAll(async () => {
   await stack?.stop();
