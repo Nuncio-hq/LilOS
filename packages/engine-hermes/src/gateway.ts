@@ -41,12 +41,17 @@ export interface GatewayCancel {
 interface Pending {
   resolve: (v: unknown) => void;
   reject: (e: unknown) => void;
+  timer?: ReturnType<typeof setTimeout>;
 }
 
 /** Public surface of the gateway — also implemented by the test fake. */
 export interface GatewayLike {
   readonly serverRequests: readonly string[];
-  request(method: string, params?: unknown): Promise<unknown>;
+  request(
+    method: string,
+    params?: unknown,
+    timeoutMs?: number,
+  ): Promise<unknown>;
   respond(id: string, body: { result?: unknown; error?: unknown }): void;
   onEvent(fn: (e: GatewayEvent) => void): () => void;
   onRequest(fn: (r: GatewayRequest) => void): () => void;
@@ -113,12 +118,41 @@ export class HermesGateway implements GatewayLike {
     });
   }
 
-  /** JSON-RPC request over the gateway socket (client->server `c<n>` ids). */
-  request(method: string, params: unknown = {}): Promise<unknown> {
+  /**
+   * JSON-RPC request over the gateway socket (client->server `c<n>` ids).
+   * `timeoutMs` arms a per-call deadline: without it a request written into
+   * a silently-dead socket never settled (#482 — the 15 s hangs came from
+   * the caller's own timeout, not ours). 0/undefined = no deadline.
+   */
+  request(
+    method: string,
+    params: unknown = {},
+    timeoutMs?: number,
+  ): Promise<unknown> {
     const id = `c${++this.nextId}`;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.send({ jsonrpc: "2.0", id, method, params });
+      const p: Pending = { resolve, reject };
+      if (timeoutMs && timeoutMs > 0) {
+        p.timer = setTimeout(() => {
+          if (!this.pending.delete(id)) return;
+          reject(
+            new RpcError(
+              RPC_ERRORS.INTERNAL_ERROR,
+              `engine request ${method} timed out after ${timeoutMs}ms`,
+            ),
+          );
+        }, timeoutMs);
+      }
+      this.pending.set(id, p);
+      try {
+        this.send({ jsonrpc: "2.0", id, method, params });
+      } catch (e) {
+        /* A send on a closed socket throws on some runtimes — settle the
+           call right now rather than leaving it parked in `pending`. */
+        if (p.timer) clearTimeout(p.timer);
+        this.pending.delete(id);
+        reject(e);
+      }
     });
   }
 
@@ -154,8 +188,12 @@ export class HermesGateway implements GatewayLike {
   }
 
   private didClose(): void {
+    /* #482: requests parked on a socket that just died fail typed
+       BACKEND_DOWN — the caller sees `engine_unavailable` (retryable) and
+       the relay maps it, instead of a generic engine_error. */
     for (const [, p] of this.pending) {
-      p.reject(new RpcError(RPC_ERRORS.INTERNAL_ERROR, "gateway closed"));
+      if (p.timer) clearTimeout(p.timer);
+      p.reject(new RpcError(RPC_ERRORS.BACKEND_DOWN, "gateway closed"));
     }
     this.pending.clear();
     for (const fn of this.closeListeners) fn();
@@ -233,6 +271,7 @@ export class HermesGateway implements GatewayLike {
       const p = this.pending.get(f.id as string);
       if (!p) return;
       this.pending.delete(f.id as string);
+      if (p.timer) clearTimeout(p.timer);
       if (f.error) {
         const err = f.error as { code?: unknown; message?: unknown };
         p.reject(

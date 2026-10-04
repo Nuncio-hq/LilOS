@@ -1,5 +1,5 @@
 import type { Logger } from "../log";
-import type { EngineConnection } from "./client";
+import { type EngineConnection, engineErrorCode } from "./client";
 import {
   type EngineExit,
   type EngineLauncher,
@@ -40,6 +40,15 @@ export interface EngineSupervisorOptions {
   stableAfterMs?: number;
   /** Consecutive fast crashes before the supervisor gives up. */
   maxConsecutiveCrashes?: number;
+  /* #482: liveness probe — a cheap `describe` every probeIntervalMs with
+     probeTimeoutMs deadline. An adapter whose backend died answers with
+     `backend.state` restarting/failed (mapped into host state — the
+     adapter itself stays up and self-heals); an adapter that stops
+     answering at all is restarted after probeMissesBeforeRestart
+     consecutive misses. */
+  probeIntervalMs?: number;
+  probeTimeoutMs?: number;
+  probeMissesBeforeRestart?: number;
 }
 
 export class EngineSupervisor {
@@ -57,6 +66,10 @@ export class EngineSupervisor {
   private startedAt = 0;
   private reconnecting = false;
   private starting?: Promise<void>;
+  private probeTimer?: ReturnType<typeof setInterval>;
+  private probeMisses = 0;
+  /** Probe-driven not-running state — cleared on the next healthy probe. */
+  private probeDown = false;
 
   constructor(options: EngineSupervisorOptions) {
     this.opts = {
@@ -65,6 +78,9 @@ export class EngineSupervisor {
       reconnectAttempts: 5,
       stableAfterMs: 30_000,
       maxConsecutiveCrashes: 5,
+      probeIntervalMs: 2_000,
+      probeTimeoutMs: 1_500,
+      probeMissesBeforeRestart: 2,
       ...options,
     };
   }
@@ -200,6 +216,94 @@ export class EngineSupervisor {
     });
   }
 
+  /* #482 BACKEND_DOWN (-32006): the adapter's backend is down and
+     relaunching — the adapter itself is healthy, keep the conn. */
+  private static readonly BACKEND_DOWN = -32006;
+
+  private armProbe(conn: EngineConnection) {
+    this.stopProbe();
+    const every = this.opts.probeIntervalMs;
+    if (!(every > 0)) return;
+    this.probeTimer = setInterval(() => void this.probe(conn), every);
+    this.probeTimer.unref?.();
+  }
+
+  private stopProbe() {
+    if (this.probeTimer) clearInterval(this.probeTimer);
+    this.probeTimer = undefined;
+    this.probeMisses = 0;
+    this.probeDown = false;
+  }
+
+  /**
+   * #482: before this, a wedged adapter looked exactly like a healthy one —
+   * the socket stayed open, state stayed `running`, and every forwarded
+   * call hung until its own (longer) deadline. The probe draws the line:
+   * backend-down signals map straight into host state while the adapter
+   * self-heals; repeated dead air means the adapter itself is gone and the
+   * process gets restarted.
+   */
+  private async probe(conn: EngineConnection) {
+    if (this.stopping || conn !== this.state.conn) {
+      this.stopProbe();
+      return;
+    }
+    try {
+      const r = await conn.request<{
+        backend?: { state?: string; detail?: string };
+      }>("describe", {}, this.opts.probeTimeoutMs);
+      if (conn !== this.state.conn) return;
+      this.probeMisses = 0;
+      const b = r?.backend;
+      if (b?.state === "restarting" || b?.state === "failed") {
+        this.probeDown = true;
+        if (this.state.current !== b.state || this.state.detail !== b.detail)
+          this.set(b.state, b.detail);
+        return;
+      }
+      if (this.probeDown) {
+        this.probeDown = false;
+        this.set("running", this.opts.launcher.name);
+      }
+    } catch (error) {
+      if (conn !== this.state.conn) return;
+      const code = engineErrorCode(error);
+      if (code === EngineSupervisor.BACKEND_DOWN) {
+        this.probeDown = true;
+        const detail = error instanceof Error ? error.message : String(error);
+        if (this.state.current !== "restarting" || this.state.detail !== detail)
+          this.set("restarting", detail);
+        return;
+      }
+      /* An answered error frame means the adapter is responsive — only dead
+         air (transport timeout / plain Error) counts as a miss. */
+      if (code !== undefined) return;
+      this.probeMisses += 1;
+      this.probeDown = true;
+      if (this.probeMisses < this.opts.probeMissesBeforeRestart) {
+        this.opts.log.warn("engine probe timeout", {
+          miss: this.probeMisses,
+        });
+        if (this.state.current !== "restarting")
+          this.set("restarting", "engine probe timeout");
+        return;
+      }
+      this.opts.log.warn("engine probe timeout — restarting adapter", {
+        misses: this.probeMisses,
+      });
+      this.stopProbe();
+      conn.close();
+      /* Kill the wedged adapter — its own exit handler does the bounded
+         relaunch (crashCount resets past stableAfterMs, so a long-lived
+         engine restarts cleanly). External engines reconnect instead. */
+      this.launched?.process?.kill();
+      if (!this.procAlive && this.launched?.url)
+        void this.reconnect(this.launched.url);
+      else if (!this.procAlive && !this.starting)
+        this.relaunchAfter(this.backoff(), "engine probe timeout");
+    }
+  }
+
   private onConnected(conn: EngineConnection, reconnect: boolean) {
     // A connect that resolved while the process was exiting (or while a
     // stop/failure verdict landed) must not be published — drop it.
@@ -224,6 +328,7 @@ export class EngineSupervisor {
       }
     });
     this.set("running", this.opts.launcher.name);
+    this.armProbe(conn);
     this.opts.onConnection(conn, reconnect);
   }
 
@@ -275,6 +380,7 @@ export class EngineSupervisor {
 
   async stop(): Promise<void> {
     this.stopping = true;
+    this.stopProbe();
     try {
       this.state.conn?.close();
       this.launched?.process?.kill();

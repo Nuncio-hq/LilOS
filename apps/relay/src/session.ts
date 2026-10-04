@@ -171,6 +171,9 @@ const JsonRpcCode = {
   forbidden: -32003,
   notFound: -32004,
   unavailable: -32005,
+  /* #482: engine RPC_ERRORS.BACKEND_DOWN — the adapter's Hermes backend
+     died and it is restarting; callers see engine_unavailable, not a hang. */
+  backendDown: -32006,
   conflict: -32009,
   attachmentTooLarge: -32010,
 } as const;
@@ -517,7 +520,8 @@ export function createRelay(options: RelayOptions): Relay {
       /* Engine INVALID_STATE (-32003) — "a turn is running / session is in
          the wrong state" — is a state conflict, not a generic failure. */
       const appCode: AppErrorCode =
-        numeric === JsonRpcCode.unavailable
+        numeric === JsonRpcCode.unavailable ||
+        numeric === JsonRpcCode.backendDown
           ? "engine_unavailable"
           : numeric === JsonRpcCode.conflict || numeric === -32_003
             ? "conflict"
@@ -1473,6 +1477,14 @@ export function createRelay(options: RelayOptions): Relay {
               log(
                 `engine state ${host.engine?.state ?? "unknown"} -> ${parsed.data.engine.state}${parsed.data.engine.detail ? ` (${parsed.data.engine.detail})` : ""}`,
               );
+              /* #482: engine-state flips reach every subscribed client live
+                 (the phone's Mac-sheet + desktop System status refresh) —
+                 before this, a dead-backend outage only showed on the next
+                 status poll. */
+              broadcast("host.changed", {
+                connected: true,
+                engine: parsed.data.engine,
+              });
             }
             host.engine = parsed.data.engine;
             host.lastReportAt = now();

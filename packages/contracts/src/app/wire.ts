@@ -26,6 +26,7 @@ import {
   ConversationSummary,
   Employee,
   EmployeeStatus,
+  EngineHostState,
   EngineHostStatus,
   MessageAttachment,
   PairedDevice,
@@ -1498,12 +1499,19 @@ export const PairingExchangeError = z.object({
 export type PairingExchangeError = z.infer<typeof PairingExchangeError>;
 
 /**
- * Broadcast when the engine host registers or its socket dies. Clients
- * re-poll `system.status` on receipt so host presence heals/fails over
- * immediately instead of on the next status tick (issue #148).
+ * Broadcast when the engine host registers or its socket dies, and on every
+ * `harness.report` engine-state flip (#482 — a dying backend behind a live
+ * adapter now reports `restarting`/`failed`, and the phone's Mac-sheet row +
+ * the desktop System status must show the outage while it lasts, not on the
+ * next status poll). Clients re-poll `system.status` on receipt (#148);
+ * `engine` carries the reported lifecycle state so listeners that only patch
+ * `welcome.engineHost` (no status call) still see the flip.
  */
 export const HostChangedEvent = z.object({
   connected: z.boolean(),
+  engine: z
+    .object({ state: EngineHostState, detail: z.string().optional() })
+    .optional(),
 });
 export type HostChangedEvent = z.infer<typeof HostChangedEvent>;
 

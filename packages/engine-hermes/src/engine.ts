@@ -119,6 +119,9 @@ export interface HermesEngineOptions {
      each stored session under its engine id instead of minting a new one. */
   sessionsFile?: string;
   version?: string;
+  /** #482: a caller touched the engine while the backend was down — the
+     owning supervisor re-arms a spent relaunch budget on demand. */
+  onBackendNeeded?: () => void;
 }
 
 /**
@@ -149,14 +152,255 @@ export class HermesEngine {
   /** #106: the global approval policy — set by `approvals.setPolicy`,
       pre-seeded best-effort from `config.get` in describe. */
   private policy?: ApprovalPolicy;
+  /* #482: the backend supervisor swaps the live gateway on each restart.
+     `current` is what calls actually hit; `gwView` is the STABLE handle
+     handed to catalog helpers that outlive a single gateway. A detail
+     string in `backendDown` means the backend is gone and every backend
+     call fails fast typed instead of writing into a dead socket. */
+  private current: GatewayLike;
+  private readonly gwView: GatewayLike;
+  private backendDown?: string;
+  private backendState: "running" | "restarting" | "failed" = "running";
+  /* describe() keeps reporting `restarting` this long after a flap — a
+     sub-second death→recovery would otherwise slip between the harness's
+     2 s probe ticks and the outage would never be reported (AC-1). The
+     backend itself is NOT held down: calls resume on setGateway. */
+  private backendExposeUntil = 0;
+  private static readonly BACKEND_EXPOSE_MS = 4_000;
+  /** One lazy resume per engine session id while a restart is mid-flight. */
+  private liveResumes = new Set<string>();
 
   constructor(private opts: HermesEngineOptions) {
     this.sessionRegistry = opts.sessionsFile
       ? new SessionRegistry(opts.sessionsFile)
       : undefined;
-    opts.gateway.onEvent((e) => this.onGatewayEvent(e));
-    opts.gateway.onRequest((r) => this.onServerRequest(r));
-    opts.gateway.onCancel((c) => this.onServerCancel(c));
+    this.current = opts.gateway;
+    this.gwView = {
+      get serverRequests() {
+        return opts.gateway.serverRequests;
+      },
+      request: (m, p, t) => this.gw(m, p, t),
+      respond: (id, body) => this.current.respond(id, body),
+      onEvent: (fn) => this.current.onEvent(fn),
+      onRequest: (fn) => this.current.onRequest(fn),
+      onCancel: (fn) => this.current.onCancel(fn),
+      onClose: (fn) => this.current.onClose(fn),
+      close: () => this.current.close(),
+    };
+    this.wireGateway(this.current);
+  }
+
+  private wireGateway(gw: GatewayLike) {
+    gw.onEvent((e) => this.onGatewayEvent(e));
+    gw.onRequest((r) => this.onServerRequest(r));
+    gw.onCancel((c) => this.onServerCancel(c));
+  }
+
+  /** Control calls get this ceiling; session.create/resume may eager-build
+      an agent and pass their own. */
+  private static readonly GW_TIMEOUT_MS = 30_000;
+  private static readonly GW_RESUME_TIMEOUT_MS = 240_000;
+
+  /**
+   * Every backend call goes through here so a dead backend fails FAST with
+   * a typed error (#482): before this, a post-close `gateway.request` wrote
+   * into a dead socket and hung until the transport's own timeout — the
+   * 15-second stalls Oscar saw on every engine call. The miss also nudges
+   * the owning supervisor so a `failed` backend re-arms on demand.
+   */
+  private gw(
+    method: string,
+    params?: unknown,
+    timeoutMs = HermesEngine.GW_TIMEOUT_MS,
+  ): Promise<unknown> {
+    if (this.backendDown !== undefined) {
+      this.opts.onBackendNeeded?.();
+      throw new RpcError(
+        RPC_ERRORS.BACKEND_DOWN,
+        `hermes backend is down (${this.backendDown})`,
+      );
+    }
+    return this.current.request(method, params, timeoutMs);
+  }
+
+  /**
+   * #482: the adapter's backend supervisor reports the `hermes serve` child
+   * or its socket gone. Every in-flight turn + open ask settles NOW with a
+   * typed error — the caller's `done` promise, the turn.completed feed and
+   * the session snapshot all close consistently — and every later backend
+   * call fails fast until `setGateway` installs the replacement.
+   */
+  markBackendDown(
+    detail: string,
+    state: "restarting" | "failed" = "restarting",
+  ) {
+    this.backendState = state;
+    this.backendExposeUntil = Date.now() + HermesEngine.BACKEND_EXPOSE_MS;
+    if (this.backendDown !== undefined) return;
+    this.backendDown = detail;
+    const down = new RpcError(
+      RPC_ERRORS.BACKEND_DOWN,
+      `hermes backend is down (${detail})`,
+    );
+    for (const s of this.sessions.values()) {
+      if (s.driver !== "ws") continue;
+      s.backendDead = true;
+      cancelAllAsks(s);
+      const turn = s.turn;
+      s.turn = undefined;
+      s.legTurnId = undefined;
+      s.steeredQueue = [];
+      s.streamedText = "";
+      if (turn) {
+        /* Same event order as a normal turn end: turn.completed (refusal +
+           the typed error text) lands BEFORE the prompt() `done` rejects. */
+        s.emit("turn.completed", {
+          turnId: turn.turnId,
+          stopReason: "refusal",
+          error: down.message,
+        });
+        if (s.state !== "closed") s.setState("error");
+        turn.reject(down);
+      }
+    }
+  }
+
+  /**
+   * The backend supervisor's terminal state — `failed` stays down but the
+   * adapter keeps serving (calls fail typed; `onBackendNeeded` re-arms).
+   */
+  markBackendFailed(detail: string) {
+    this.markBackendDown(detail, "failed");
+  }
+
+  /**
+   * A restarted backend takes over: register the engine's listeners on the
+   * new socket, re-open calls, and let ws sessions lazily `session.resume`
+   * their stored ref on the next touch (`ensureLive`).
+   */
+  setGateway(gw: GatewayLike) {
+    const same = gw === this.current;
+    this.current = gw;
+    this.backendDown = undefined;
+    this.backendState = "running";
+    /* A same-instance call (e.g. the supervisor's first attach) must not
+       double-register the listeners the constructor already wired. */
+    if (!same) this.wireGateway(gw);
+  }
+
+  /**
+   * #482: a ws session whose backend restarted has `backendDead` — its
+   * `runtimeSid` names a session on a dead process. The next touch
+   * `session.resume`s the stored ref under a new runtime sid (the engine
+   * session id and its `conv.engineRef` never move, memory intact), or
+   * falls back to a fresh `session.create` when the stored row is gone.
+   */
+  private async ensureLive(s: Session): Promise<void> {
+    if (s.driver !== "ws" || !s.backendDead) return;
+    if (this.backendDown !== undefined || this.liveResumes.has(s.id))
+      /* Down again, or a sibling call is already resuming this session —
+         the caller's backend hit still goes through gw() and fails/succeeds
+         on the state at THAT moment (a resumed runtimeSid must not be
+         handed to a request the backend would reject). */
+      throw new RpcError(
+        RPC_ERRORS.BACKEND_DOWN,
+        `hermes backend is down (${this.backendDown ?? "resume in flight"})`,
+      );
+    this.liveResumes.add(s.id);
+    try {
+      const rec = this.sessionRegistry?.get(s.id);
+      const ref = rec?.ref ?? s.ref;
+      try {
+        const r = (await this.gw(
+          "session.resume",
+          {
+            session_id: ref,
+            profile: s.agent,
+            source: "lilos",
+            eager_build: true,
+            omit_messages: true,
+            close_on_disconnect: true,
+          },
+          HermesEngine.GW_RESUME_TIMEOUT_MS,
+        )) as { session_id?: unknown; stored_session_id?: unknown };
+        if (typeof r.session_id === "string" && r.session_id) {
+          this.byRuntimeSid.delete(s.runtimeSid);
+          s.runtimeSid = r.session_id;
+          this.byRuntimeSid.set(s.runtimeSid, s);
+          if (
+            typeof r.stored_session_id === "string" &&
+            r.stored_session_id &&
+            r.stored_session_id !== s.ref
+          ) {
+            s.ref = r.stored_session_id;
+          }
+          /* A rebuilt agent comes back on profile defaults — re-apply the
+             pick the session was running (#288's resume path does the same). */
+          const model = rec?.model ?? s.model;
+          if (model) {
+            const ack = await setSessionModel(this.gwView, s.runtimeSid, {
+              model,
+              provider: rec?.provider ?? s.provider,
+              effort: rec?.effort ?? s.effort,
+              fast: rec?.fast ?? s.fast,
+            });
+            s.model = ack.model;
+            if (ack.provider !== undefined) s.provider = ack.provider;
+            if (ack.effort !== undefined) s.effort = ack.effort;
+            if (ack.fast !== undefined) s.fast = ack.fast;
+          }
+          this.persistSession(s);
+          /* Re-announce the session so feed snapshots carry the new
+             runtime id truth (memory came back — the same stored ref). */
+          s.emit("session.started", {
+            agent: s.agent,
+            cwd: s.cwd,
+            ...(s.model ? { model: s.model } : {}),
+            ...(s.provider ? { provider: s.provider } : {}),
+            ...(s.effort ? { effort: s.effort } : {}),
+            ...(s.fast !== undefined ? { fast: s.fast } : {}),
+          });
+          s.setState("idle");
+          s.backendDead = false;
+          return;
+        }
+      } catch {
+        /* The stored row names a session Hermes no longer has (or the
+           resume raced another restart) — fall through to a fresh create. */
+      }
+      const created = (await this.createSessionCompat({
+        profile: s.agent,
+        title: `${s.agent} · LilOS`,
+        cwd: s.cwd,
+        cwd_explicit: true,
+        source: "lilos",
+        close_on_disconnect: true,
+        ...(s.model ? { model: s.model } : {}),
+        ...(s.provider ? { provider: s.provider } : {}),
+        ...(s.effort ? { reasoning_effort: s.effort } : {}),
+        ...(s.fast !== undefined ? { fast: s.fast } : {}),
+      })) as { session_id?: unknown; stored_session_id?: unknown };
+      if (typeof created.session_id !== "string" || !created.session_id)
+        throw new RpcError(
+          RPC_ERRORS.INTERNAL_ERROR,
+          "session.create returned no session_id",
+        );
+      this.byRuntimeSid.delete(s.runtimeSid);
+      s.runtimeSid = created.session_id;
+      this.byRuntimeSid.set(s.runtimeSid, s);
+      s.backendDead = false;
+      s.emit("session.started", {
+        agent: s.agent,
+        cwd: s.cwd,
+        ...(s.model ? { model: s.model } : {}),
+        ...(s.provider ? { provider: s.provider } : {}),
+        ...(s.effort ? { effort: s.effort } : {}),
+        ...(s.fast !== undefined ? { fast: s.fast } : {}),
+      });
+      s.setState("idle");
+    } finally {
+      this.liveResumes.delete(s.id);
+    }
   }
 
   onEvent(fn: (e: EngineEvent) => void): () => void {
@@ -201,25 +445,22 @@ export class HermesEngine {
       case "session.rewind":
         return this.sessionRewind(parsed.data as SessionRewindParams);
       case "agents.list":
-        return listAgents(this.opts.gateway);
+        return listAgents(this.gwView);
       case "agents.describe":
         return describeAgent(
-          this.opts.gateway,
+          this.gwView,
           (parsed.data as AgentsDescribeParams).id,
         );
       case "agents.create":
-        return createAgent(
-          this.opts.gateway,
-          parsed.data as AgentsCreateParams,
-        );
+        return createAgent(this.gwView, parsed.data as AgentsCreateParams);
       case "agents.update":
         return updateAgent(
-          this.opts.gateway,
+          this.gwView,
           parsed.data as AgentsUpdateParams,
           this.opts.provider,
         );
       case "models.list":
-        return listModels(this.opts.gateway, {
+        return listModels(this.gwView, {
           refresh: (parsed.data as ModelsListParams).refresh,
         });
       case "session.setModel":
@@ -369,6 +610,19 @@ export class HermesEngine {
       version: this.opts.version ?? "0.0.0",
       protocol: ENGINE_PROTOCOL,
       capabilities,
+      /* #482: backend liveness — the harness's probe reads this so a dead
+         `hermes serve` behind a live adapter surfaces as
+         restarting/failed instead of lying `running`. Non-strict
+         DescribeResult carries it through unmodified. */
+      backend: {
+        state:
+          this.backendDown !== undefined || Date.now() < this.backendExposeUntil
+            ? this.backendState === "running"
+              ? "restarting"
+              : this.backendState
+            : "running",
+        ...(this.backendDown ? { detail: this.backendDown } : {}),
+      },
     };
   }
 
@@ -377,7 +631,7 @@ export class HermesEngine {
     const mcp = p.mcpServers ?? [];
     // The LilOS `agent` is a Hermes profile name: refuse unknown ones up front
     // (AGENT_NOT_FOUND) and run the session under that profile.
-    await requireAgent(this.opts.gateway, p.agent);
+    await requireAgent(this.gwView, p.agent);
     /* #92 AC-8: `p.model` is an opaque id — it may itself contain `/`
        (aggregator ids like `devin/claude-opus-5`); it is never split into a
        `provider/model` pair. `p.provider` is a separate wire field. */
@@ -494,7 +748,13 @@ export class HermesEngine {
     // Bounded: one retry per refused field, and only droppable ones retry.
     for (let attempt = 0; attempt < 6; attempt++) {
       try {
-        const r = (await this.opts.gateway.request("session.create", send)) as {
+        const r = (await this.gw(
+          "session.create",
+          send,
+          /* Cold profile builds can take minutes — keep the pre-#482
+             unbounded-ish ceiling rather than the 30s control default. */
+          HermesEngine.GW_RESUME_TIMEOUT_MS,
+        )) as {
           info?: { version?: unknown; release_date?: unknown };
         };
         const info = r?.info;
@@ -529,6 +789,11 @@ export class HermesEngine {
     const s = this.require(p.sessionId);
     if (s.state === "closed")
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    /* #482: a session whose backend restarted re-attaches its stored row
+       before the turn hits the wire. The guard keeps the common path
+       synchronous — the turn below must be claimed before this dispatch
+       yields, or gateway events for it could land on nothing. */
+    if (s.backendDead) await this.ensureLive(s);
     /* #308: a live leg counts too — a mid-work user message goes through
        `session.steer` (it queues as the next leg), so `prompt` while a leg
        runs is the same misuse as prompting mid-turn. Without this the leg's
@@ -576,14 +841,14 @@ export class HermesEngine {
       if (s.driver === "ws") {
         for (const img of images) {
           const ext = img.mimeType.split("/")[1] || "png";
-          await this.opts.gateway.request("image.attach_bytes", {
+          await this.gw("image.attach_bytes", {
             session_id: s.runtimeSid,
             content_base64: img.data,
             filename: `image.${ext}`,
             ext,
           });
         }
-        await this.opts.gateway.request("prompt.submit", {
+        await this.gw("prompt.submit", {
           session_id: s.runtimeSid,
           text,
         });
@@ -600,13 +865,18 @@ export class HermesEngine {
       }
     } catch (e) {
       const msg = e instanceof RpcError ? e.message : String(e);
-      s.turn = undefined;
-      s.emit("turn.completed", {
-        turnId,
-        stopReason: "refusal",
-        error: msg,
-      });
-      s.setState("idle");
+      /* #482: a backend death can settle this turn first (markBackendDown
+         already emitted turn.completed + rejected `done`) — don't stamp a
+         second completed frame or resurrect the state it chose. */
+      if ((s.turn as { turnId: string } | undefined)?.turnId === turnId) {
+        s.turn = undefined;
+        s.emit("turn.completed", {
+          turnId,
+          stopReason: "refusal",
+          error: msg,
+        });
+        s.setState("idle");
+      }
       throw e;
     }
     return done;
@@ -626,7 +896,7 @@ export class HermesEngine {
       await this.acpDrivers.get(s.id)?.interrupt(s);
       return { interrupted: true };
     }
-    const r = (await this.opts.gateway.request("session.interrupt", {
+    const r = (await this.gw("session.interrupt", {
       session_id: s.runtimeSid,
     })) as { status?: unknown };
     return { interrupted: r.status === "interrupted" };
@@ -694,18 +964,22 @@ export class HermesEngine {
     const rec = this.sessionRegistry?.get(sessionId);
     if (!rec) return undefined;
     try {
-      const r = (await this.opts.gateway.request("session.resume", {
-        session_id: rec.ref,
-        profile: rec.agent,
-        source: "lilos",
-        /* Eager: a resume only happens when something wants the session
-           (replay or a prompt), and a lazy session prompts before its agent
-           exists — Hermes answers with a "No LLM provider configured"
-           refusal. Build it now. */
-        eager_build: true,
-        omit_messages: true,
-        close_on_disconnect: true,
-      })) as { session_id?: unknown; stored_session_id?: unknown };
+      const r = (await this.gw(
+        "session.resume",
+        {
+          session_id: rec.ref,
+          profile: rec.agent,
+          source: "lilos",
+          /* Eager: a resume only happens when something wants the session
+             (replay or a prompt), and a lazy session prompts before its agent
+             exists — Hermes answers with a "No LLM provider configured"
+             refusal. Build it now. */
+          eager_build: true,
+          omit_messages: true,
+          close_on_disconnect: true,
+        },
+        HermesEngine.GW_RESUME_TIMEOUT_MS,
+      )) as { session_id?: unknown; stored_session_id?: unknown };
       if (typeof r.session_id !== "string" || !r.session_id)
         throw new Error("session.resume returned no session_id");
       const ref =
@@ -734,7 +1008,7 @@ export class HermesEngine {
          rebuilt agent comes back on profile defaults and refuses to answer.
          Re-apply the pick the original session was running. */
       if (rec.model) {
-        const ack = await setSessionModel(this.opts.gateway, s.runtimeSid, {
+        const ack = await setSessionModel(this.gwView, s.runtimeSid, {
           model: rec.model,
           provider: rec.provider,
           effort: rec.effort,
@@ -790,7 +1064,7 @@ export class HermesEngine {
       if (d) await d.close(s);
     } else {
       try {
-        await this.opts.gateway.request("session.close", {
+        await this.gw("session.close", {
           session_id: s.runtimeSid,
         });
       } catch {
@@ -820,6 +1094,7 @@ export class HermesEngine {
     const s = this.require(p.sessionId);
     if (s.state === "closed")
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    if (s.backendDead) await this.ensureLive(s);
     if (s.driver === "acp") {
       const d = this.acpDrivers.get(s.id);
       const turnId = s.turn?.turnId ?? s.legTurnId;
@@ -838,7 +1113,7 @@ export class HermesEngine {
     }
     let r: { status?: unknown };
     try {
-      r = (await this.opts.gateway.request("session.steer", {
+      r = (await this.gw("session.steer", {
         session_id: s.runtimeSid,
         text: p.text,
       })) as { status?: unknown };
@@ -878,6 +1153,7 @@ export class HermesEngine {
     const s = this.require(p.sessionId);
     if (s.state === "closed")
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    if (s.backendDead) await this.ensureLive(s);
     if (s.turn)
       throw new RpcError(
         RPC_ERRORS.INVALID_STATE,
@@ -895,7 +1171,7 @@ export class HermesEngine {
     let done = 0;
     try {
       for (let i = 0; i < drop; i++) {
-        await this.opts.gateway.request("session.undo", {
+        await this.gw("session.undo", {
           session_id: s.runtimeSid,
         });
         done++;
@@ -1023,7 +1299,7 @@ export class HermesEngine {
     if (s.driver !== "ws") return;
     let rows: Record<string, unknown>[];
     try {
-      const r = (await this.opts.gateway.request("process.list", {
+      const r = (await this.gw("process.list", {
         session_id: s.runtimeSid,
       })) as { processes?: unknown };
       rows = Array.isArray(r?.processes)
@@ -1075,6 +1351,7 @@ export class HermesEngine {
     const s = this.require(p.sessionId);
     /* WS truth is the registry — refresh so a late-joining web sees the rows
        a past turn left running even without a live output frame. */
+    if (s.backendDead) await this.ensureLive(s);
     await this.syncJobs(s);
     const jobs: Job[] = [...s.jobs.values()].map((j) => ({
       jobId: j.jobId,
@@ -1095,6 +1372,7 @@ export class HermesEngine {
 
   private async jobsStop(p: JobsStopParams) {
     const s = this.require(p.sessionId);
+    if (s.backendDead) await this.ensureLive(s);
     if (s.driver !== "ws")
       throw new RpcError(
         RPC_ERRORS.METHOD_NOT_FOUND,
@@ -1104,7 +1382,7 @@ export class HermesEngine {
     if (job && job.status !== "running") return { stopped: false };
     let r: Record<string, unknown> | undefined;
     try {
-      r = (await this.opts.gateway.request("process.kill", {
+      r = (await this.gw("process.kill", {
         session_id: s.runtimeSid,
         process_id: p.jobId,
       })) as Record<string, unknown>;
@@ -1157,6 +1435,7 @@ export class HermesEngine {
     const s = this.require(p.sessionId);
     if (s.state === "closed")
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    if (s.backendDead) await this.ensureLive(s);
     if (s.driver === "acp")
       throw new RpcError(
         RPC_ERRORS.METHOD_NOT_FOUND,
@@ -1169,7 +1448,7 @@ export class HermesEngine {
        is sent live even mid-turn: `_set_fast` has no running check — it
        mutates service_tier + request_overrides immediately, and the stash
        apply keeps those keys through `switch_model` (#92 AC-4 review). */
-    const ack = await setSessionModel(this.opts.gateway, s.runtimeSid, {
+    const ack = await setSessionModel(this.gwView, s.runtimeSid, {
       model: p.model,
       provider: p.provider,
       effort: p.effort,
@@ -1204,7 +1483,7 @@ export class HermesEngine {
       can't read it (a describe must not fail over a policy probe). */
   private async readPolicy(): Promise<ApprovalPolicy | undefined> {
     try {
-      const r = (await this.opts.gateway.request("config.get", {
+      const r = (await this.gw("config.get", {
         key: "approvals.mode",
       })) as { value?: unknown };
       const v = r?.value;
@@ -1216,7 +1495,7 @@ export class HermesEngine {
 
   /** `approvals.setPolicy` -> global `config.set approvals.mode` (#106). */
   private async approvalsSetPolicy(p: ApprovalsSetPolicyParams) {
-    await this.opts.gateway.request("config.set", {
+    await this.gw("config.set", {
       key: "approvals.mode",
       value: p.policy,
     });
@@ -1234,6 +1513,7 @@ export class HermesEngine {
    */
   private async sessionSetAccess(p: SessionSetAccessParams) {
     const s = this.require(p.sessionId);
+    if (s.backendDead) await this.ensureLive(s);
     if (s.driver === "acp") {
       await this.acpDrivers.get(p.sessionId)?.setAccess(p.access);
     } else {
@@ -1248,7 +1528,7 @@ export class HermesEngine {
     access: "ask" | "full",
   ): Promise<void> {
     try {
-      await this.opts.gateway.request("config.set", {
+      await this.gw("config.set", {
         key: "yolo",
         value: access === "full" ? "on" : "off",
         scope: "session",
@@ -1266,7 +1546,8 @@ export class HermesEngine {
    */
   private async sessionSetTitle(p: SessionSetTitleParams) {
     const s = this.require(p.sessionId);
-    const r = (await this.opts.gateway.request("session.title", {
+    if (s.backendDead) await this.ensureLive(s);
+    const r = (await this.gw("session.title", {
       session_id: s.driver === "ws" ? s.runtimeSid : s.ref,
       title: p.title,
     })) as { title?: unknown };
@@ -1284,7 +1565,8 @@ export class HermesEngine {
   /** `session.set_hidden` flags the session out of the default list. */
   private async sessionSetHidden(p: SessionSetHiddenParams) {
     const s = this.require(p.sessionId);
-    const r = (await this.opts.gateway.request("session.set_hidden", {
+    if (s.backendDead) await this.ensureLive(s);
+    const r = (await this.gw("session.set_hidden", {
       session_id: s.driver === "ws" ? s.runtimeSid : s.ref,
       hidden: p.hidden,
       profile: s.agent,
@@ -1718,7 +2000,7 @@ export class HermesEngine {
     s.lastTurnId = completedId;
     if (s.driver === "ws") {
       try {
-        const r = (await this.opts.gateway.request("session.title", {
+        const r = (await this.gw("session.title", {
           session_id: s.runtimeSid,
         })) as { session_key?: unknown };
         if (typeof r.session_key === "string") {
@@ -1772,7 +2054,7 @@ export class HermesEngine {
           : "";
     const s = this.byRuntimeSid.get(sid);
     if (!s) {
-      this.opts.gateway.respond(r.id, {
+      this.current.respond(r.id, {
         error: {
           code: RPC_ERRORS.METHOD_NOT_FOUND,
           message: `unknown session for ${r.method}`,
@@ -1780,7 +2062,7 @@ export class HermesEngine {
       });
       return;
     }
-    const gw = this.opts.gateway;
+    const gw = this.current;
     if (r.method === "approval") {
       const request = mapApprovalParams(r.params);
       if (!request) {
@@ -1843,7 +2125,7 @@ export class HermesEngine {
     }
     // sudo/secret/vault.*/preview.*/terminal.read/display.*/tour/window.read:
     // desktop bridges LilOS never crosses — refuse per the issue spec.
-    this.opts.gateway.respond(r.id, {
+    this.current.respond(r.id, {
       error: {
         code: RPC_ERRORS.METHOD_NOT_FOUND,
         message: `server request ${r.method} is not supported by engine-hermes`,
@@ -1934,7 +2216,7 @@ export class HermesEngine {
         /* best effort */
       }
     }
-    this.opts.gateway.close();
+    this.current.close();
   }
 }
 
