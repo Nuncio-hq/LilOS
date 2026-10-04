@@ -238,7 +238,13 @@ export function Composer({
   };
   const busy = status === "submitted" || status === "streaming";
   return (
-    <div ref={wrapRef} className="relative m-2 mt-1 shrink-0 sm:m-3 sm:mt-2">
+    /* data-composer marks the bottom-anchored block the app's toast clears
+       (queued chips included — they're inside this wrapper). */
+    <div
+      ref={wrapRef}
+      data-composer
+      className="relative m-2 mt-1 shrink-0 sm:m-3 sm:mt-2"
+    >
       {queued}
       {mentionOpen && (
         <div

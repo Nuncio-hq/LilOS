@@ -1,15 +1,22 @@
 import {
   EngineClient,
   RelayClient,
-  reduceSessionEvents,
   type SessionFeedState,
   type SessionModel,
+  SessionReducer,
 } from "@lilos/client-runtime";
-import type { Ask, WorkbenchOpenTarget } from "@lilos/contracts/app";
+import type {
+  Ask,
+  EngineHostStatus,
+  SystemStatusResult,
+  WelcomeResult,
+  WorkbenchOpenTarget,
+} from "@lilos/contracts/app";
 import type {
   ConversationAccess,
   ModelOption,
   ModelProvider,
+  ModelsListResult,
 } from "@lilos/contracts/engine";
 import type { ModelVisibility } from "@lilos/ui";
 import type { EmpBadge } from "@lilos/ui/types";
@@ -51,8 +58,9 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
       osHome.set(u.home);
     })
     .catch(() => {});
+  let welcome: WelcomeResult;
   try {
-    await relay.connect();
+    welcome = await relay.connect();
   } catch (e) {
     bootError.set((e as Error).message);
     throw e;
@@ -62,21 +70,43 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
   // #85: poll `system.status` so the status row/dialog read the real legs
   // (engine down reasons included), not just socket liveness.
   relay.startStatusPolling(cfg.statusPollMs);
-  // The picker's catalog: models.list via the relay, once, when the engine
-  // declares the `models` capability (issue #71, AC-7). `describe` lands
-  // asynchronously after connect, so listen for it rather than sampling once.
+  /* The picker's catalog (issue #71, AC-7): `describe` lands asynchronously
+     after connect, so it listens for the `models` capability rather than
+     sampling once. #423 AC-3 — the fetch used to run once and drop failures
+     on the floor, leaving the picker empty until a reload; now the relay's
+     hello-time cache (`welcome.engineHost`) seeds it, the loader retries
+     through the host's boot gap, and `host.changed` / a reconnect re-ask
+     while the catalog stays empty (#483's fix, same seam). */
+  catalogSeed = welcome.engineHost;
+  /* A hello sent before the host's first models-carrying report keeps an
+     empty seed — every status poll carries the same fields, so keep it
+     fresh and re-ask while the catalog is still empty (#423 AC-3). */
+  relay.status.listen((s) => {
+    catalogSeed = mergeCatalogSeed(catalogSeed, s?.result?.engine);
+    if (catalogCapable() && !engineModels.get().length)
+      void loadCatalog({ retries: CATALOG_RETRIES });
+  });
   const un = engine.description.listen((d) => {
     if (!d?.capabilities.some((c) => c.id === "models")) return;
     un();
-    void relay
-      .listModels()
-      .then((r) => {
-        engineModels.set(r.models);
-        engineProviders.set(r.providers ?? []);
-        engineDefaultModel.set(r.default);
-        engineDefaultProvider.set(r.defaultProvider);
-      })
-      .catch(() => {});
+    void loadCatalog({ retries: CATALOG_RETRIES });
+  });
+  /* The host registering again is a fresh catalog source — `models.list`
+     answers even though it failed while the host was gone. The event fires
+     at harness.register, before the engine finishes booting, so the refresh
+     re-polls a few times rather than losing to the boot race (#483). */
+  relay.onEvent((method, params) => {
+    if (method !== "host.changed") return;
+    if (
+      (params as { connected?: boolean }).connected === true &&
+      catalogCapable()
+    )
+      void loadCatalog({ refresh: true, retries: CATALOG_RETRIES });
+  });
+  /* A reconnect after the once-only era: only an empty catalog re-asks. */
+  relay.state.listen((s) => {
+    if (s === "ready" && catalogCapable() && !engineModels.get().length)
+      void loadCatalog({ retries: CATALOG_RETRIES });
   });
   // The LilOS-owned Edit-models list (#92 AC-7) lives in the relay's settings
   // store: seed it once, then follow `settings.changed` so a second window
@@ -162,20 +192,145 @@ export const modelVisibility = atom<ModelVisibility>({
   models: [],
 });
 
+/* `host.changed` lands at harness.register while the engine is still
+   starting, so a catalog refresh re-asks a bounded number of times before
+   giving the attempt up (#483's race). */
+const CATALOG_RETRIES = 3;
+const CATALOG_RETRY_MS = 800;
+
+/** The relay's hello-time `welcome.engineHost` — its cached `models.list`
+    answer seeds the catalog while the live call can't answer (#423 AC-3). */
+let catalogSeed: EngineHostStatus | undefined;
+
+/**
+ * One live `models.list` answer -> the catalog atoms. Only non-empty rows
+ * overwrite — an answered-empty (engine mid-restart) never blanks a picker
+ * that already had models.
+ */
+export function applyModelCatalog(r: ModelsListResult): void {
+  if (!r.models?.length) return;
+  engineModels.set(r.models);
+  engineProviders.set(r.providers ?? []);
+  engineDefaultModel.set(r.default);
+  engineDefaultProvider.set(r.defaultProvider);
+}
+
+/**
+ * The engine model catalog (#423 AC-3, mirroring #483's phone fix): seed
+ * from the relay-cached `welcome.engineHost` list while nothing is known,
+ * then the live `models.list`. A live non-empty answer always wins; a
+ * failed or empty one keeps whatever the seed left. Retries bridge the
+ * host's boot gap after `host.changed`. Resolves true once rows are on
+ * `engineModels` — false only when no source had any.
+ */
+export async function loadModelCatalog(
+  listModels: (params?: { refresh?: boolean }) => Promise<ModelsListResult>,
+  host: EngineHostStatus | undefined,
+  opts?: { refresh?: boolean; retries?: number; retryMs?: number },
+): Promise<boolean> {
+  const attempts = 1 + (opts?.retries ?? 0);
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0)
+      await new Promise((r) =>
+        setTimeout(r, opts?.retryMs ?? CATALOG_RETRY_MS),
+      );
+    /* Optimistic fallback only when nothing is known — a live catalog that
+       already landed never downgrades to hello-time rows (#483). */
+    if (!engineModels.get().length && host?.models?.length) {
+      applyModelCatalog({
+        models: host.models,
+        providers: host.providers,
+        default: host.defaultModel,
+        defaultProvider: host.defaultProvider,
+      });
+    }
+    try {
+      /* A live answer — even an empty one — ends the poll. A rejection
+         re-asks through the budget: rows already on screen may be the
+         seed's while the host is still booting (#483's race). */
+      applyModelCatalog(await listModels({ refresh: opts?.refresh }));
+      return engineModels.get().length > 0;
+    } catch {
+      /* keep polling */
+    }
+  }
+  return engineModels.get().length > 0;
+}
+
+/**
+ * Fold a `system.status` engine block into the catalog seed (#423 AC-3):
+ * an early hello predates the host's first models-carrying report, so each
+ * poll refreshes the fallback — a block without a field never blanks what
+ * the seed already holds.
+ */
+export function mergeCatalogSeed(
+  seed: EngineHostStatus | undefined,
+  engine: SystemStatusResult["engine"],
+): EngineHostStatus | undefined {
+  if (!engine) return seed;
+  return {
+    connected: true,
+    state: seed?.state,
+    detail: seed?.detail,
+    capabilities: engine.capabilities ?? seed?.capabilities,
+    models: engine.models ?? seed?.models,
+    providers: seed?.providers,
+    defaultModel: engine.defaultModel ?? seed?.defaultModel,
+    defaultProvider: engine.defaultProvider ?? seed?.defaultProvider,
+  };
+}
+
+/** Models capability from either source: the engine feed's `describe`, or
+    the relay's hello-time `engineHost` report when describe hasn't landed. */
+function catalogCapable(): boolean {
+  return (
+    engine.description.get()?.capabilities.some((c) => c.id === "models") ===
+      true || catalogSeed?.capabilities?.some((c) => c.id === "models") === true
+  );
+}
+
+/** The boot-bound loader: the live call through `relay`, the seed captured
+    at hello. `refresh: true` is the host-return path — the engine re-probes
+    instead of answering its cache. Triggers overlap by design (describe,
+    host.changed, reconnect, every status poll while empty), so one run at
+    a time: a caller that arrives mid-flight rides the run already asking. */
+let catalogInFlight = false;
+async function loadCatalog(opts?: {
+  refresh?: boolean;
+  retries?: number;
+}): Promise<boolean> {
+  if (catalogInFlight) return engineModels.get().length > 0;
+  catalogInFlight = true;
+  try {
+    return await loadModelCatalog(
+      (params) => relay.listModels(params),
+      catalogSeed,
+      opts,
+    );
+  } finally {
+    catalogInFlight = false;
+  }
+}
+
 const modelCache = new Map<string, ReadableAtom<SessionModel>>();
 
 /**
  * Reduced turn model for one engine session — a memoized computed atom over
  * the session's event feed. This is the only place engine events get
  * re-shaped for the UI.
+ *
+ * #430: the reducer is incremental — a live feed appends, so only the new
+ * tail replays and untouched `TurnModel`s keep their identity across
+ * deltas (that's what lets the fold cache + memoized rows skip unchanged
+ * turns). A resync swaps the snapshot/events and the reducer resets to a
+ * full replay — same answer as before.
  */
 function sessionModel(sessionId: string): ReadableAtom<SessionModel> {
   let m = modelCache.get(sessionId);
   if (!m) {
     const feed: ReadableAtom<SessionFeedState> = engine.sessionFeed(sessionId);
-    m = computed(feed, (f) =>
-      reduceSessionEvents(sessionId, f.events, f.snapshot),
-    );
+    const reducer = new SessionReducer(sessionId);
+    m = computed(feed, (f) => reducer.apply(f.events, f.snapshot));
     modelCache.set(sessionId, m);
   }
   return m;

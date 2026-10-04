@@ -154,6 +154,19 @@ interface SessionBinding {
       every `approval` request.opened through autoApprove instead of the
       card path; `conversation.updated` refreshes it mid-turn. */
   access: ConversationAccess;
+  /** #422: this session's line for the employee's live "now:" —
+      `thinking` from `turn.started` until the first `tool.started` names a
+      step; absent when no turn runs. */
+  nowStep?: string;
+  /** #422: engine requests currently waiting on the user —
+      requestId -> its wait line. */
+  nowWaits: Map<string, string>;
+  /** #422: bumped on every now-state mutation — the freshness key when
+      several sessions of one employee race for the line. */
+  nowAt: number;
+  /** #422: the DM channel's employee, resolved at bind — the atom can lag
+      the RPC view, so the now-line never re-derives it per event. */
+  employeeId?: string;
   /** #346 AC-3: epoch ms of the session's last engine event — the
       reaper's "idle for 30 minutes" clock. Engine events are the signal:
       a session still reporting can't be idle, and a send not yet an
@@ -332,6 +345,10 @@ export class Harness {
   private readonly delivered = new Set<string>(); // relay message ids claimed
   /** Messages that arrived while the engine was down; drained on attach. */
   private readonly early = new Map<string, AppMessage[]>();
+  /** #422: monotonic clock — per-binding now-line freshness. */
+  private nowClock = 0;
+  /** #422: employeeId -> the now-line the harness last pushed. */
+  private readonly nowWritten = new Map<string, string>();
   /** User-removed message ids (#315 `message.changed`): skipped forever. */
   private readonly dismissed = new Set<string>();
   /** Un-parked message ids allowed past the deliveredSeq watermark once —
@@ -443,6 +460,7 @@ export class Harness {
         // already-prompted tail ineligible a second time.
         await this.flushOutbox();
         await this.reconcileAsks();
+        await this.sweepNow();
         for (const channel of this.opts.relay.channels.get()) {
           this.watchChannel(channel.id);
         }
@@ -755,6 +773,9 @@ export class Harness {
       binding.runningTurnId = undefined;
       binding.textByTurn.delete(turnId);
       this.opts.sleep.release();
+      binding.nowStep = undefined;
+      binding.nowWaits.clear();
+      this.noteNow(binding);
       /* #419: the lost turn's event log orphans with this session (the
          rebind swaps engineRef), so the failure card can't ride the turn
          — stamp it on the conversation; the next turn.started clears it. */
@@ -824,6 +845,9 @@ export class Harness {
       heldPick: undefined,
       heldPickPrev: undefined,
       promptGates: new Set(),
+      nowStep: undefined,
+      nowWaits: new Map(),
+      nowAt: 0,
       /* The old session's in-flight sends die with it — the rebound queue
          drains through sendPrompt, which re-arms its own entry. */
       inflightPrompts: new Set(),
@@ -1822,6 +1846,8 @@ export class Harness {
           turnSource: new Map(),
           steerPending: [],
           stopRequested: false,
+          nowWaits: new Map(),
+          nowAt: 0,
           lastActivity: Date.now(),
           openSubagents: new Set(),
           suspended: false,
@@ -1834,6 +1860,7 @@ export class Harness {
            stored on the conversation. Create the gateway session anyway;
            the alias lands on the next `session.ref.changed` (#339). */
         const employee = await this.resolveEmployee(conv);
+        binding.employeeId = employee?.id;
         const surface = this.createSurfaces(binding, conv, employee);
         binding.gatewaySession = surface?.session;
         return binding;
@@ -1882,10 +1909,13 @@ export class Harness {
       turnSource: new Map(),
       steerPending: [],
       stopRequested: false,
+      nowWaits: new Map(),
+      nowAt: 0,
       lastActivity: Date.now(),
       openSubagents: new Set(),
       suspended: false,
     };
+    binding.employeeId = employee?.id;
     const surface = this.createSurfaces(binding, conv, employee);
     const started = await conn.request<{
       sessionId: string;
@@ -2059,6 +2089,13 @@ export class Harness {
              that made it this far worked. */
           turnFailure: null,
         }).catch(() => {});
+        /* #422: a turn is running but named no step yet — the header reads
+           "thinking" until the first tool.started replaces it. Waits stay:
+           applyReplay raises openRequests before replaying this event, and
+           a live wait must survive; leftovers can't exist — turn end and
+           interruption both clear them. */
+        binding.nowStep = "thinking";
+        this.noteNow(binding);
         break;
       }
       case "session.titled": {
@@ -2120,8 +2157,24 @@ export class Harness {
           );
         }
         break;
-      // tool.started/completed never post feed rows — the tool cards inside
-      // the turn are the single rendering (issue #71, AC-1).
+      /* tool.started/completed never post feed rows — the tool cards
+         inside the turn are the single rendering (issue #71, AC-1). But
+         tool.started IS the employee's live "now:" step (#422): the
+         running tool + its target — the same arg pick the subagent row
+         uses (`command ?? path ?? pattern ?? query`). */
+      case "tool.started":
+        if (binding) {
+          const arg = String(
+            event.payload.input.command ??
+              event.payload.input.path ??
+              event.payload.input.pattern ??
+              event.payload.input.query ??
+              "",
+          );
+          binding.nowStep = `${event.payload.tool} ${arg}`.trim();
+          this.noteNow(binding);
+        }
+        break;
       case "request.opened":
         if (binding) {
           /* #106 AC-2: Full access is enforced here, engine-neutral — the
@@ -2155,6 +2208,10 @@ export class Harness {
         }
         break;
       case "request.resolved":
+        if (binding) {
+          binding.nowWaits.delete(event.payload.requestId);
+          this.noteNow(binding);
+        }
         void this.onEngineRequestResolved(
           event.sessionId,
           event.payload.requestId,
@@ -2203,6 +2260,10 @@ export class Harness {
     requestId: string,
     request: EngineRequest,
   ): Promise<void> {
+    /* #422: the turn is parked on the user — the header reads "waiting on
+       your approval" (replays through applyReplay land here too). */
+    binding.nowWaits.set(requestId, Harness.waitLine(request));
+    this.noteNow(binding);
     const key = `${binding.sessionId}:${requestId}`;
     const open = async () => {
       const result = await this.opts.relay.request<{ ask: Ask }>("asks.open", {
@@ -3215,6 +3276,10 @@ export class Harness {
     binding.pickByTurn.delete(turnId);
     binding.runningTurnId = undefined;
     this.opts.sleep.release();
+    // #422: the turn ended — the header falls back to the role only.
+    binding.nowStep = undefined;
+    binding.nowWaits.clear();
+    this.noteNow(binding);
 
     const employeeId = this.employeeIdFor(
       this.conversationFromAtom(binding.conversationId),
@@ -3361,6 +3426,10 @@ export class Harness {
   }
 
   private unbind(binding: SessionBinding) {
+    // #422: this session's line stops counting toward the employee's now.
+    binding.nowStep = undefined;
+    binding.nowWaits.clear();
+    this.noteNow(binding);
     if (binding.gatewaySession) {
       const gw = binding.gatewaySession;
       binding.gatewaySession = undefined;
@@ -3527,6 +3596,90 @@ export class Harness {
       ...(conv?.access ? { access: conv.access } : {}),
       ...(mcpServer ? { mcpServers: [mcpServer] } : {}),
     };
+  }
+
+  /* --------------------- employee "now:" line (#422) ------------------- */
+
+  /** What an open request says while it waits on the user (prototype voice). */
+  private static waitLine(request: EngineRequest): string {
+    switch (request.kind) {
+      case "approval":
+        return "waiting on your approval";
+      case "question":
+        return "waiting on your answer";
+      default:
+        return "waiting on you";
+    }
+  }
+
+  /** This session's line right now — an open wait outranks the step. */
+  private bindingNow(binding: SessionBinding): string {
+    return binding.nowWaits.values().next().value ?? binding.nowStep ?? "";
+  }
+
+  /** Recompute the employee's line after a state change on this binding. */
+  private noteNow(binding: SessionBinding) {
+    binding.nowAt = ++this.nowClock;
+    const employeeId = this.employeeIdFor(
+      this.conversationFromAtom(binding.conversationId),
+    );
+    if (employeeId) this.pushEmployeeNow(employeeId);
+  }
+
+  /** The freshest non-empty line across the employee's sessions, else "". */
+  private employeeNowLine(employeeId: string): string {
+    let line = "";
+    let at = -1;
+    for (const binding of this.bindings.values()) {
+      if (
+        this.employeeIdFor(
+          this.conversationFromAtom(binding.conversationId),
+        ) !== employeeId
+      )
+        continue;
+      const current = this.bindingNow(binding);
+      if (current && binding.nowAt > at) {
+        at = binding.nowAt;
+        line = current;
+      }
+    }
+    return line;
+  }
+
+  private pushEmployeeNow(employeeId: string) {
+    const line = this.employeeNowLine(employeeId);
+    if (this.nowWritten.get(employeeId) === line) return;
+    this.nowWritten.set(employeeId, line);
+    this.relayWrite(`now ${employeeId}`, () =>
+      this.opts.relay.request("employees.update", {
+        id: employeeId,
+        now: line,
+      }),
+    );
+  }
+
+  /** On every (re)register the derived truth wins: a `now` a dead harness
+      left behind clears, and a live binding's line re-pushes if the wire
+      drifted while the socket was down. */
+  private async sweepNow(): Promise<void> {
+    try {
+      const { employees } = await this.opts.relay.request<{
+        employees: Employee[];
+      }>("employees.list", {});
+      for (const employee of employees) {
+        const want = this.employeeNowLine(employee.id);
+        if (employee.now === want) continue;
+        this.nowWritten.set(employee.id, want);
+        this.relayWrite(`now sweep ${employee.id}`, () =>
+          this.opts.relay.request("employees.update", {
+            id: employee.id,
+            now: want,
+          }),
+        );
+      }
+    } catch (error) {
+      this.opts.log.warn("now sweep failed", { error: String(error) });
+    }
   }
 
   private employeeIdFor(conv: Conversation | undefined) {

@@ -1,5 +1,5 @@
 import type { ChatStatus } from "ai";
-import { CheckIcon, Maximize2Icon, PlayIcon, Undo2Icon } from "lucide-react";
+import { CheckIcon, Maximize2Icon, PlayIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AccessPill } from "../chat/access-pill";
 import {
@@ -14,19 +14,20 @@ import { Composer } from "../chat/composer";
 import { useEscapeKey } from "../chat/composer-keys";
 import { ModelPicker, sessionChoice } from "../chat/model-picker";
 import {
-  Checkpoint,
-  CheckpointIcon,
-  CheckpointTrigger,
-} from "../components/ai-elements/checkpoint";
-import {
   Conversation,
   ConversationContent,
   ConversationScrollButton,
 } from "../components/ai-elements/conversation";
 import { Button } from "../components/ui/button";
-import { openStartRequest, ReplyCards } from "../conversation/cards";
+import { openStartRequest } from "../conversation/cards";
 import type { PlanAction } from "../conversation/plan-card";
-import { AgentTurn, AttachmentChips } from "../conversation/turns";
+import {
+  RewindCheckpoint,
+  TURN_LAZY_AFTER,
+  type TurnActs,
+  TurnRow,
+} from "../conversation/turn-rows";
+import { AttachmentChips } from "../conversation/turns";
 import { Body, Row, Who } from "../feed/row";
 import { SessionUsage } from "../focus/session-usage";
 import { sessionModelId } from "../lib/context-window";
@@ -51,63 +52,8 @@ import type {
 } from "../types";
 import { WorkspaceBadge, WsBadge } from "../workbench/ws-badges";
 
-/* #134: the "Rewind to here" checkpoint above each user message — the same
-   affordance FocusView ships (issue #38), keyed by message id here. A shared
-   folder (`warning`) turns the click into an inline confirm; a running turn
-   greys it out (AC-5). */
-export function RewindCheckpoint({
-  running,
-  warning,
-  onRewind,
-}: {
-  running: boolean;
-  warning?: string;
-  onRewind: () => void;
-}) {
-  const [confirming, setConfirming] = useState(false);
-  if (confirming && warning) {
-    return (
-      <div className="mx-3 my-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 sm:mx-5">
-        <div className="mb-1.5 text-amber-700 text-xs dark:text-amber-300">
-          {warning}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="xs" onClick={onRewind} data-rewind-confirm>
-            Rewind anyway
-          </Button>
-          <Button
-            size="xs"
-            variant="ghost"
-            onClick={() => setConfirming(false)}
-          >
-            Cancel
-          </Button>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <Checkpoint className="mx-3 my-0.5 text-xs sm:mx-5">
-      <CheckpointIcon className="size-3.5" />
-      <span title={running ? "Stop the running turn first" : undefined}>
-        <CheckpointTrigger
-          size="xs"
-          disabled={running}
-          tooltip={
-            running
-              ? "Stop the running turn first"
-              : "Undo files + conversation back to before this message"
-          }
-          onClick={() => (warning ? setConfirming(true) : onRewind())}
-          data-rewind
-        >
-          <Undo2Icon className="size-3" />
-          Rewind to here
-        </CheckpointTrigger>
-      </span>
-    </Checkpoint>
-  );
-}
+/* #134/#430: the "Rewind to here" checkpoint lives in
+   conversation/turn-rows.tsx so both frames share the memoized row. */
 
 /* The right-panel frame around the conversation — channel threads AND DM sessions (issue #19).
    The employee turns render through the shared AgentTurn (identical to Focus); human turns keep
@@ -304,6 +250,20 @@ export function ThreadView({
     (a, r, i) => (emp(r.from) ? i : a),
     -1,
   );
+  /* #430: row handlers ride a ref rewritten each render — the memoized
+     TurnRow never sees a fresh callback identity, and its reads are always
+     the latest closures. */
+  const actsRef = useRef<TurnActs>({});
+  actsRef.current = {
+    onRetry,
+    onOpen: onOpenTab,
+    onOpenSession,
+    onPlan,
+    onRewind,
+    setResolved,
+    onStart,
+  };
+  const lazyRows = thread.replies.length > TURN_LAZY_AFTER;
   return (
     <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col">
       <div className="lilos-drag flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
@@ -435,60 +395,29 @@ export function ThreadView({
           {thread.replies.map((r, i) => (
             /* Employee turns render through the one shared AgentTurn — same DOM as Focus,
                wrapped in the row's padding/hover chrome only (issue #19). The
-               data-msg wrapper is the search-hit scroll/flash anchor (#138). */
-            <div
+               data-msg wrapper is the search-hit scroll/flash anchor (#138).
+               #430: memoized per row — a delta re-renders only the turn it
+               touched; long threads hold far-off-screen rows as stubs. */
+            <TurnRow
               key={r.turnId ?? r.id ?? i}
-              data-msg={r.id}
-              className={cn(
-                "transition-colors duration-500",
-                flash === r.id && "bg-amber-100 dark:bg-amber-900/40",
-              )}
-            >
-              {emp(r.from) ? (
-                <div className="group px-3 py-2 hover:bg-muted/40 sm:px-5">
-                  <AgentTurn
-                    r={r}
-                    emp={emp}
-                    human={human}
-                    last={i === lastTurnIdx}
-                    onRetry={onRetry}
-                    models={models}
-                    onOpenSession={onOpenSession}
-                    onPlan={onPlan}
-                    onOpen={onOpenTab}
-                    cards={
-                      <ReplyCards
-                        r={r}
-                        i={i}
-                        last={i === thread.replies.length - 1}
-                        work={work}
-                        repo={repo}
-                        emp={emp}
-                        human={human}
-                        resolved={resolved}
-                        setResolved={setResolved}
-                        onStart={onStart}
-                      />
-                    }
-                  />
-                </div>
-              ) : (
-                <>
-                  {onRewind && r.id && human(r.from) && (
-                    <RewindCheckpoint
-                      running={running}
-                      warning={rewindWarning}
-                      onRewind={() => onRewind(r.id ?? "")}
-                    />
-                  )}
-                  <Row from={r.from} emp={emp} human={human}>
-                    <Who id={r.from} time={r.time} emp={emp} human={human} />
-                    <Body text={r.text} />
-                    {r.attachments && <AttachmentChips files={r.attachments} />}
-                  </Row>
-                </>
-              )}
-            </div>
+              frame="panel"
+              r={r}
+              i={i}
+              lastTurn={i === lastTurnIdx}
+              lastRow={i === thread.replies.length - 1}
+              flashed={flash === r.id}
+              lazy={lazyRows}
+              scrollTarget={scrollTo === r.id}
+              running={running}
+              emp={emp}
+              human={human}
+              resolved={resolved}
+              work={work}
+              repo={repo}
+              models={models}
+              rewindWarning={rewindWarning}
+              acts={actsRef}
+            />
           ))}
           {transcriptNote && (
             <div
