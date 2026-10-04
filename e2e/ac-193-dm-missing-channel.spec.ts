@@ -1,8 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #193 — an employee with no DM channel hung the DM page on the
@@ -64,19 +63,11 @@ async function relayRpc<T>(
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack(
-    "ac193",
-    {
-      relay: wport(4653),
-      feed: wport(4657),
-      web: wport(5251),
-    },
-    {
-      // #118: pin the signed-in name so the first-run card's Open-DM
-      // button is enabled deterministically.
-      LILOS_USER_NAME: "Oscar",
-    },
-  );
+  stack = await bootStack("ac193", await pickPorts(), {
+    // #118: pin the signed-in name so the first-run card's Open-DM
+    // button is enabled deterministically.
+    LILOS_USER_NAME: "Oscar",
+  });
 });
 test.afterAll(async () => {
   await stack?.stop();

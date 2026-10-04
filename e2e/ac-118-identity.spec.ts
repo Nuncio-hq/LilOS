@@ -2,8 +2,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts } from "./helpers/stack";
 
 /**
  * Issue #118 — the user's name, company name and avatar colour are
@@ -48,11 +47,9 @@ test("AC-2 first run folds name+company into the card, prefilled; AC-1 the choic
   page,
 }) => {
   test.setTimeout(120_000);
-  const stack = await bootStack(
-    "ac118a",
-    { relay: wport(4670), feed: wport(4671), web: wport(5336) },
-    { LILOS_USER_NAME: "Test User" },
-  );
+  const stack = await bootStack("ac118a", await pickPorts(), {
+    LILOS_USER_NAME: "Test User",
+  });
   try {
     await page.goto(`${stack.webUrl}/`);
     const card = page.locator("[data-first-run]");
@@ -106,11 +103,9 @@ test("AC-2 first run folds name+company into the card, prefilled; AC-1 the choic
 test("AC-4 an existing install without stored values shows the prefilled identity", async ({
   page,
 }) => {
-  const stack = await bootStack(
-    "ac118b",
-    { relay: wport(4674), feed: wport(4675), web: wport(5337) },
-    { LILOS_USER_NAME: "Test User" },
-  );
+  const stack = await bootStack("ac118b", await pickPorts(), {
+    LILOS_USER_NAME: "Test User",
+  });
   try {
     await page.addInitScript(() =>
       localStorage.setItem("lilos-onboarded", "1"),

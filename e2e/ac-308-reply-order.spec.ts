@@ -2,8 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #308 — a reply must anchor under ITS own prompt row, never below a
@@ -21,21 +20,14 @@ const SHOTS = path.join(repo, "test-results", "ac-308");
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(180_000);
-  stack = await bootStack(
-    "order",
-    /* Bases identical to ac-132's — every residue 0–98 is already claimed,
-       and the ports.spec rule allows identical bases (two spec files never
-       share a live worker index). */
-    { relay: wport(5348), feed: wport(5349), web: wport(5342) },
-    {
-      LILOS_USER_NAME: "Oscar",
-      /* No steer → mid-run sends queue and drain as ref'd turns (AC-1's
+  stack = await bootStack("order", await pickPorts(), {
+    LILOS_USER_NAME: "Oscar",
+    /* No steer → mid-run sends queue and drain as ref'd turns (AC-1's
          bug shape); a slower tick holds turns + legs open long enough to
          type mid-run. */
-      LILOS_HIDE_CAPS: "steer",
-      ENGINE_FAKE_TICK: "300",
-    },
-  );
+    LILOS_HIDE_CAPS: "steer",
+    ENGINE_FAKE_TICK: "300",
+  });
 });
 test.afterAll(async () => {
   await stack?.stop();
