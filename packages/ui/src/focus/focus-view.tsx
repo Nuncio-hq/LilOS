@@ -268,6 +268,12 @@ export function FocusView({
      below read the stale pre-deep-link `follow` and steal the tab it just
      applied (their setState queues after, so the steal would win). */
   const followRef = useRef(!initialTab);
+  /* Why follow is disarmed matters for the re-arm below: a `?tab=` deep
+     link holds the named tab even while a still-starting turn streams in
+     (#319); a manual pick or a `workbench_open` spot does not — a turn
+     that begins post-attach re-engages follow there (#396). Both write
+     `?tab=`, so the hold can't key on `initialTab` alone. */
+  const deepLinkHold = useRef(!!initialTab);
   /* `?tab=` can land after mount — a boot redirect settling the location —
      and applies then like a fresh deep link (#432); the prop is not
      mount-only. A user pick writes the same tab back through the URL, so
@@ -276,6 +282,7 @@ export function FocusView({
   useEffect(() => {
     if (!initialTab || initialTab === appliedTab.current) return;
     appliedTab.current = initialTab;
+    deepLinkHold.current = true;
     setTab(initialTab);
     followRef.current = false;
     setWbOpen(true);
@@ -344,15 +351,14 @@ export function FocusView({
      deep-linked tab before the user ever saw it (#396). `live` arrives
      async, so the discriminator is the turn's own attach boundary
      (`postAttach`), not mount-time state; mock rows without it keep the
-     old always-follow behavior. An explicit tab choice — a `?tab=` deep
-     link or a user pick (which writes the same param back) — also disarms
-     re-arming: a still-starting turn whose `turn.started` lands
-     post-attach would otherwise re-arm follow and let `liveKey` steal the
-     chosen tab on its next step (#179). */
+     old always-follow behavior. Under `deepLinkHold` (`?tab=` applied,
+     not yet picked away) a still-starting turn must NOT re-arm — its
+     `turn.started` landing post-attach would let `liveKey` steal the
+     deep-linked tab on the next step (#319). */
   useEffect(() => {
-    if (!initialTab && live && live.postAttach !== false)
+    if (!deepLinkHold.current && live && live.postAttach !== false)
       followRef.current = true;
-  }, [live?.id, initialTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [live?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // Turn finished with edits → land on Changes, like Codex's review pane.
   const lastDone = [...thread.replies]
     .reverse()
@@ -383,6 +389,11 @@ export function FocusView({
   const pickTab = (t: WbTab) => {
     setTab(t);
     followRef.current = false;
+    /* A pick lifts the deep-link hold (new turns re-arm follow) and its
+       `?tab=` echo must not re-mark the hold — record it as applied so
+       the effect above treats the echo as a no-op. */
+    deepLinkHold.current = false;
+    appliedTab.current = t;
     setWbOpen(true);
     onTab?.(t);
   };
@@ -394,6 +405,7 @@ export function FocusView({
     if (!wbSpot) return;
     setWbOpen(true);
     followRef.current = false;
+    deepLinkHold.current = false;
   }, [wbSpotAt]); // eslint-disable-line react-hooks/exhaustive-deps
   const doneTodos = todos.filter((t) => t.status === "completed").length;
   // Plan tray opens while the agent works and folds away when the turn ends (user can still toggle).
