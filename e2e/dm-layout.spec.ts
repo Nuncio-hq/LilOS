@@ -1,9 +1,5 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { bootStack } from "./helpers/stack";
 
 /**
  * DM page layout. With no session open, the employee feed must fill the
@@ -11,79 +7,6 @@ import { expect, type Page, test } from "@playwright/test";
  * any thread or workbench was opened. Layout needs a real browser, so this is
  * an e2e over the live web app (engine-fake).
  */
-
-const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
-const repo = path.resolve(here, "..");
-const webDir = path.join(repo, "apps", "web");
-
-interface Stack {
-  home: string;
-  webUrl: string;
-  relayWs: string;
-  feedWs: string;
-  stop: () => Promise<void>;
-}
-
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    const ok = await fetch(url)
-      .then((r) => r.ok || r.status === 404)
-      .catch(() => false);
-    if (ok) return;
-    if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
-function killProc(proc: ChildProcess): Promise<void> {
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      proc.kill("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    proc.kill("SIGTERM");
-  });
-}
-
-async function bootStack(
-  tag: string,
-  ports: { relay: number; feed: number; web: number },
-  extraEnv: Record<string, string> = {},
-): Promise<Stack> {
-  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: webDir,
-    env: {
-      ...process.env,
-      LILOS_HOME: home,
-      LILOS_RELAY_PORT: String(ports.relay),
-      LILOS_FEED_PORT: String(ports.feed),
-      LILOS_WEB_PORT: String(ports.web),
-      ...extraEnv,
-    },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  const webUrl = `http://127.0.0.1:${ports.web}`;
-  try {
-    await waitForHttp(webUrl);
-    return {
-      home,
-      webUrl,
-      relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
-      feedWs: `ws://127.0.0.1:${ports.feed}/ws`,
-      stop: () => killProc(proc),
-    };
-  } catch (e) {
-    proc.kill("SIGKILL");
-    throw e;
-  }
-}
 
 const PROMPT = "What does the replay contract carry?"; // engine-fake script
 

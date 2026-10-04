@@ -1,10 +1,7 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
-import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { bootStack, pickPorts } from "./helpers/stack";
 
 /**
  * Issue #85 — release builds run Hermes; engine-fake is test/dev only.
@@ -18,118 +15,7 @@ import { expect, test } from "@playwright/test";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
-const webDir = path.join(repo, "apps", "web");
 const SHOTS = path.join(repo, "test-results", "ac-85");
-
-interface Stack {
-  home: string;
-  webUrl: string;
-  relayWs: string;
-  relayToken: string;
-  stop: () => Promise<void>;
-}
-
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    const ok = await fetch(url)
-      .then((r) => r.ok || r.status === 404)
-      .catch(() => false);
-    if (ok) return;
-    if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
-function killProc(proc: ChildProcess): Promise<void> {
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      proc.kill("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    proc.kill("SIGTERM");
-  });
-}
-
-const freePort = () =>
-  new Promise<number>((resolve, reject) => {
-    const srv = createServer();
-    srv.once("error", reject);
-    srv.listen(0, "127.0.0.1", () => {
-      const addr = srv.address();
-      srv.close(() =>
-        typeof addr === "object" && addr
-          ? resolve(addr.port)
-          : reject(new Error("no port")),
-      );
-    });
-  });
-
-/** Three distinct free ports — repeat/parallel runs must never collide. */
-async function pickPorts(): Promise<{
-  relay: number;
-  feed: number;
-  web: number;
-}> {
-  for (;;) {
-    const [relay, feed, web] = await Promise.all([
-      freePort(),
-      freePort(),
-      freePort(),
-    ]);
-    if (new Set([relay, feed, web]).size === 3) return { relay, feed, web };
-  }
-}
-
-async function bootStack(
-  tag: string,
-  extraEnv: Record<string, string> = {},
-): Promise<Stack> {
-  const ports = await pickPorts();
-  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: webDir,
-    env: {
-      ...process.env,
-      LILOS_HOME: home,
-      LILOS_RELAY_PORT: String(ports.relay),
-      LILOS_FEED_PORT: String(ports.feed),
-      LILOS_WEB_PORT: String(ports.web),
-      ...extraEnv,
-    },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  const webUrl = `http://127.0.0.1:${ports.web}`;
-  try {
-    await waitForHttp(webUrl);
-    await waitForHttp(`http://127.0.0.1:${ports.relay}/`);
-    await waitForHttp(`http://127.0.0.1:${ports.feed}/`);
-    const tokenPath = path.join(home, "relay-token");
-    let relayToken = "";
-    for (let i = 0; i < 300 && !relayToken; i++) {
-      try {
-        relayToken = readFileSync(tokenPath, "utf8").trim();
-      } catch {}
-      if (!relayToken) await new Promise((r) => setTimeout(r, 100));
-    }
-    if (!relayToken) throw new Error("relay token never appeared");
-    return {
-      home,
-      webUrl,
-      relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
-      relayToken,
-      stop: () => killProc(proc),
-    };
-  } catch (e) {
-    proc.kill("SIGKILL");
-    throw e;
-  }
-}
 
 /** Bare JSON-RPC seed client — e2e runs under Node without workspace deps. */
 async function rpc(
@@ -170,7 +56,7 @@ test("AC-2 (#85) a missing Hermes reads plainly — status dialog + DM composer"
   page,
 }) => {
   test.setTimeout(120_000);
-  const stack = await bootStack("nohermes", {
+  const stack = await bootStack("nohermes", await pickPorts(), {
     LILOS_ENGINE: "hermes",
     HERMES_BIN: "/nonexistent/hermes-ac85",
   });
@@ -220,7 +106,9 @@ test("AC-4 (#85) a dev stack on the fake engine is labeled", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  const stack = await bootStack("fakelabel", { LILOS_ENGINE: "fake" });
+  const stack = await bootStack("fakelabel", await pickPorts(), {
+    LILOS_ENGINE: "fake",
+  });
   try {
     await page.goto(`${stack.webUrl}/?statusPollMs=500`);
     const label = page.locator("[data-build-label]");
