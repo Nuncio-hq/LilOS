@@ -132,14 +132,26 @@ const relayProc = spawn(["bun", "run", "apps/relay/src/index.ts"], {
 });
 kids.push(relayProc);
 console.log(`[stack] relay: bun run apps/relay/src/index.ts`);
+
+let relayInstance: string | undefined;
+let relayUp = false;
+let foreign: string | undefined;
 relayProc.exited.then((code) => {
   if (!shuttingDown) {
-    console.error(`[stack] relay exited (code ${code})`);
+    /* A pre-ready exit still names who held the port (#516) — the outer boot
+       probe reads this from the forwarded output. */
+    console.error(
+      `[stack] relay exited (code ${code})` +
+        (relayUp
+          ? ""
+          : ` before port ${RELAY_PORT} was ours` +
+            (foreign !== undefined ? ` — /healthz answers ${foreign}` : "") +
+            ` (ours ${relayInstance ?? "never logged"})`),
+    );
     void shutdown(1);
   }
 });
 
-let relayInstance: string | undefined;
 const INSTANCE_LINE = /instanceId: ([0-9a-fA-F-]{36})/;
 void (async () => {
   const dec = new TextDecoder();
@@ -156,29 +168,42 @@ const tokenPath = path.join(HOME, "relay-token");
 for (let i = 0; i < 100 && !existsSync(tokenPath); i++) {
   await Bun.sleep(50);
 }
-/* Identity-checked readiness (#273, same rule as e2e/helpers/stack.ts): a
-   bare `fetch /` accepts whatever already holds the port — a foreign relay's
-   stand-in answers it too, and the harness then dies on a WebSocket upgrade
-   to a plain-HTTP endpoint. Require /healthz to serve OUR relay's own
-   instanceId. Bound each poll: a half-dead predecessor can hold the port
-   bound but unanswering, and an unbounded fetch hangs this boot (#84). */
-let relayUp = false;
-for (let i = 0; i < 200 && !relayUp; i++) {
-  relayUp = await fetch(`http://127.0.0.1:${RELAY_PORT}/healthz`, {
+/* Identity-checked readiness (#273/#516, same rule as e2e/helpers/stack.ts):
+   a bare `fetch /` accepts whatever already holds the port — a foreign
+   relay's stand-in answers it too, and the harness then dies on a WebSocket
+   upgrade to a plain-HTTP endpoint. Require /healthz to serve OUR relay's
+   own instanceId (parsed from its stdout above). A foreign answer is not an
+   instant fail — the holder may be draining while our relay's bind-retry
+   races the same port — but it is remembered so a boot that never lands
+   names the port and both ids (the exited handler does the same). Bound
+   each poll: a half-dead predecessor can hold the port bound but
+   unanswering, and an unbounded fetch hangs this boot (#84). */
+const relayDeadline = Date.now() + 25_000;
+while (!relayUp) {
+  const seen = await fetch(`http://127.0.0.1:${RELAY_PORT}/healthz`, {
     signal: AbortSignal.timeout(1_000),
   })
     .then((r) => r.json())
-    .then(
-      (j) =>
-        typeof (j as { instanceId?: unknown }).instanceId === "string" &&
-        (j as { instanceId: string }).instanceId === relayInstance,
-    )
-    .catch(() => false);
-  if (!relayUp) await Bun.sleep(100);
-}
-if (!relayUp) {
-  console.error("[stack] relay never opened its socket");
-  await shutdown(1);
+    .then((j) => {
+      const id = (j as { instanceId?: unknown }).instanceId;
+      return typeof id === "string" ? id : `<HTTP ${r.status}, no instanceId>`;
+    })
+    .catch(() => undefined);
+  if (seen !== undefined && seen === relayInstance) {
+    relayUp = true;
+    break;
+  }
+  if (seen !== undefined) foreign = seen;
+  if (Date.now() > relayDeadline) {
+    console.error(
+      `[stack] relay never claimed port ${RELAY_PORT} ` +
+        `(ours ${relayInstance ?? "never logged"}` +
+        (foreign !== undefined ? `, /healthz answers ${foreign}` : "") +
+        `)`,
+    );
+    await shutdown(1);
+  }
+  await Bun.sleep(100);
 }
 const token = existsSync(tokenPath)
   ? readFileSync(tokenPath, "utf8").trim()

@@ -953,3 +953,122 @@ describe("engine-fake #431: compact replay + bounded log", () => {
     c.close();
   });
 });
+
+describe("engine-fake #458: an interrupted leg settles instead of wedging the session", () => {
+  /* `runLeg` is launched `void`'d — nobody awaits it, so an interrupt (or
+     session.stop) mid-leg escaped `sleep`'s `Interrupted` as an unhandled
+     rejection and left `s.turn` minted: the session read `running` forever
+     and the next prompt answered INVALID_STATE. The tests below install an
+     `unhandledRejection` listener that must stay empty. */
+  const trackUnhandled = () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    return {
+      unhandled,
+      off: () => process.off("unhandledRejection", onUnhandled),
+    };
+  };
+
+  /* Arms a `slowleg:` leg and waits for it to mint its own turn — the leg
+     holds a paced window long enough to interrupt or stop inside it. */
+  const startLeg = async (c: ReturnType<typeof conn>) => {
+    const events: { type: string; payload: Record<string, unknown> }[] = [];
+    c.onEvent((e) => events.push(e as never));
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+    })) as { sessionId: string };
+    await promptText(c, sessionId, "slowleg:60 leg:ZEBRA report delivered");
+    const legStarted = () =>
+      events.find(
+        (e) => e.type === "turn.started" && e.payload.initiatedBy === "agent",
+      );
+    const deadline = Date.now() + 5_000;
+    while (!legStarted() && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 5));
+    const turnId = legStarted()?.payload.turnId as string | undefined;
+    expect(turnId).toBeTruthy();
+    return { sessionId, events, turnId: turnId as string };
+  };
+
+  const legCompleted = (
+    events: { type: string; payload: Record<string, unknown> }[],
+    turnId: string,
+  ) =>
+    events.find(
+      (e) => e.type === "turn.completed" && e.payload.turnId === turnId,
+    );
+
+  const waitLegSettled = async (
+    events: { type: string; payload: Record<string, unknown> }[],
+    turnId: string,
+  ) => {
+    /* The leg paces ~11 boundaries at 60 ms — 2.5 s is a wide margin, and
+       it doubles as the flush window for an escaped rejection. */
+    const deadline = Date.now() + 2_500;
+    while (!legCompleted(events, turnId) && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 5));
+  };
+
+  const snapshot = async (c: ReturnType<typeof conn>, sessionId: string) =>
+    (
+      (await c.request("events.since", { sessionId, after: 0 })) as {
+        snapshot: { state: string; turn?: unknown };
+      }
+    ).snapshot;
+
+  test("AC-1 interrupt mid-leg: the leg settles cancelled, the session idles, the next prompt runs — no unhandled rejection", async () => {
+    const { unhandled, off } = trackUnhandled();
+    const c = conn(2);
+    try {
+      const { sessionId, events, turnId } = await startLeg(c);
+      const ack = (await c.request("interrupt", { sessionId })) as {
+        interrupted: boolean;
+      };
+      expect(ack.interrupted).toBe(true);
+      await waitLegSettled(events, turnId);
+      expect(legCompleted(events, turnId)?.payload.stopReason).toBe(
+        "cancelled",
+      );
+      const snap = await snapshot(c, sessionId);
+      expect(snap.state).toBe("idle");
+      expect(snap.turn).toBeUndefined();
+      const res = await promptText(c, sessionId, "follow-up after the stop");
+      expect(res.stopReason).toBe("end_turn");
+      /* Any escaped rejection fires on its own microtask turn — give it a
+         flush window before asserting none landed. */
+      await new Promise((r) => setTimeout(r, 20));
+      expect(unhandled).toEqual([]);
+    } finally {
+      off();
+      c.close();
+    }
+  });
+
+  test("AC-2 session.stop mid-leg: the leg settles cancelled inside the closed session — no unhandled rejection", async () => {
+    const { unhandled, off } = trackUnhandled();
+    const c = conn(2);
+    try {
+      const { sessionId, events, turnId } = await startLeg(c);
+      const ack = (await c.request("session.stop", { sessionId })) as {
+        stopped: boolean;
+      };
+      expect(ack.stopped).toBe(true);
+      await waitLegSettled(events, turnId);
+      expect(legCompleted(events, turnId)?.payload.stopReason).toBe(
+        "cancelled",
+      );
+      const snap = await snapshot(c, sessionId);
+      expect(snap.state).toBe("closed");
+      expect(snap.turn).toBeUndefined();
+      await new Promise((r) => setTimeout(r, 20));
+      expect(unhandled).toEqual([]);
+    } finally {
+      off();
+      c.close();
+    }
+  });
+});

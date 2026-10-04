@@ -321,6 +321,10 @@ export const TurnCompletedPayload = z.strictObject({
   stopReason: StopReason,
   usage: Usage.optional(),
   error: z.string().optional(),
+  /** #521: the JSON-RPC error code when the turn failed typed (e.g.
+      BACKEND_DOWN -32006) — lets the harness pick the typed failure
+      surface instead of guessing from `error` text. */
+  errorCode: z.number().optional(),
 });
 
 /** type -> payload map. The registry below is generated from this union. */

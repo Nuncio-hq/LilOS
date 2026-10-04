@@ -1,13 +1,13 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { scrubLilosEnv } from "@lilos/contracts/env";
 import {
   HERMES_TOO_OLD_EXIT_CODE,
   hermesTooOldMessage,
   isHermesVersionSupported,
   parseHermesVersion,
 } from "@lilos/engine-hermes";
-import { SURFACES_ENV } from "@lilos/surfaces";
 import type { Logger } from "../log";
 import { resolveHermesBin } from "./discover";
 
@@ -64,31 +64,12 @@ export interface EngineLauncher {
   start(): Promise<LaunchedEngine>;
 }
 
-/**
- * #412: the LILOS_* names an engine — and every agent shell under it — may
- * see. Everything else in the LILOS_ namespace is LilOS-internal
- * (`LILOS_RELAY_TOKEN`, harness/relay home dirs, `LILOS_WORKDIR`, ...) and
- * never crosses the launcher seam: an agent running `env | grep LILOS`
- * should not be handed the relay token or pointers into ~/.lilos. Entries
- * a session legitimately needs (the gateway URL + engine token the lilos
- * plugin reads) ride `options.env` — merged AFTER this scrub, so an
- * explicit grant always wins. Non-LILOS_* env (PATH, HOME, proxies,
- * provider keys) passes through untouched: that's the process
- * environment, not LilOS state.
- */
-export const ENGINE_ENV_ALLOW_LIST: readonly string[] = [
-  SURFACES_ENV.baseUrl, // LILOS_SURFACES_URL
-  SURFACES_ENV.engineToken, // LILOS_ENGINE_TOKEN
-];
-
-/** `env` minus every LILOS_* outside the allow-list above. */
-export const scrubEngineEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
-  const keep = new Set<string>(ENGINE_ENV_ALLOW_LIST);
-  const out: NodeJS.ProcessEnv = {};
-  for (const [key, value] of Object.entries(env))
-    if (!key.startsWith("LILOS_") || keep.has(key)) out[key] = value;
-  return out;
-};
+/* #412/#507: the engine spawn — and every agent shell under it — gets the
+   allow-listed env from `@lilos/contracts/env` (an agent running
+   `env | grep LILOS` must not be handed the relay token or pointers into
+   ~/.lilos). Entries a session legitimately needs (the gateway URL +
+   engine token the lilos plugin reads) ride `options.env` — merged AFTER
+   the scrub, so an explicit grant always wins. */
 
 export interface CommandLauncherOptions {
   name: string;
@@ -134,7 +115,7 @@ export function commandLauncher(
         const child = spawn(bin, args, {
           cwd: options.cwd,
           env: {
-            ...scrubEngineEnv(process.env),
+            ...scrubLilosEnv(process.env),
             ...options.env,
           } as NodeJS.ProcessEnv,
           // stdin stays an open pipe: engines that watch it (serve.ts
@@ -158,6 +139,29 @@ export function commandLauncher(
         };
         let out = "";
         let err = "";
+        let readyMatched = false;
+        /* #521: the child's output mirrors into the harness log — the
+           adapter's `hermes backend down:`/`up` diagnostics live only on
+           this stream, so without forwarding they never reach
+           harness.log. `out` itself stops growing once ready matched. */
+        let outLine = "";
+        let errLine = "";
+        const mirrorLine = (line: string, into: "out" | "err") => {
+          const text = line.replace(ANSI_RE, "").trimEnd();
+          if (!text) return;
+          const clipped = text.length > 500 ? `${text.slice(0, 500)}…` : text;
+          if (into === "out")
+            options.log.info(`engine ${options.name}: ${clipped}`);
+          else options.log.warn(`engine ${options.name} stderr: ${clipped}`);
+        };
+        const mirrorChunk = (text: string, into: "out" | "err") => {
+          let buf = (into === "out" ? outLine : errLine) + text;
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          if (into === "out") outLine = buf;
+          else errLine = buf;
+          for (const line of lines) mirrorLine(line, into);
+        };
         const timer = setTimeout(() => {
           proc.kill();
           reject(
@@ -168,10 +172,18 @@ export function commandLauncher(
         }, timeout);
         const onLine = (chunk: Buffer, into: "out" | "err") => {
           const text = chunk.toString();
-          if (into === "out") out += text;
-          else err += text;
+          mirrorChunk(text, into);
+          if (into !== "out") {
+            err += text;
+            // The exit tail needs only the last few lines — bound the buffer.
+            if (err.length > 32_000) err = err.slice(-16_000);
+            return;
+          }
+          if (readyMatched) return;
+          out += text;
           const match = options.readyPattern.exec(out);
           if (match) {
+            readyMatched = true;
             clearTimeout(timer);
             const url = match[1] ?? options.url;
             if (!url) {
@@ -187,15 +199,16 @@ export function commandLauncher(
           }
         };
         child.stdout?.on("data", (c) => onLine(c as Buffer, "out"));
-        child.stderr?.on("data", (c) => {
-          err += c.toString();
-        });
+        child.stderr?.on("data", (c) => onLine(c as Buffer, "err"));
         child.once("error", (error) => {
           clearTimeout(timer);
           reject(new Error(`engine ${options.name} spawn failed: ${error}`));
         });
         child.once("exit", (code, signal) => {
           clearTimeout(timer);
+          // Flush the trailing partial line — a killed child ends mid-line.
+          if (outLine) mirrorLine(outLine, "out");
+          if (errLine) mirrorLine(errLine, "err");
           const why = exitReason(code, signal);
           const tail = err
             .replace(ANSI_RE, "") // keep color junk out of status text
@@ -386,6 +399,7 @@ function probeHermesVersion(hermesBin: string): string | undefined {
     const r = spawnSync(hermesBin, ["--version"], {
       encoding: "utf8",
       timeout: 10_000,
+      env: scrubLilosEnv(process.env), // hermes runs LilOS profile code (#507)
     });
     return parseHermesVersion(`${r.stdout ?? ""}\n${r.stderr ?? ""}`);
   } catch {

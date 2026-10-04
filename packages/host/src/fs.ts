@@ -1,7 +1,5 @@
-import { execFile } from "node:child_process";
 import { existsSync, promises as fsp } from "node:fs";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import type {
   FsCompleteResult,
   FsEntry,
@@ -11,10 +9,10 @@ import type {
   FsTreeResult,
 } from "@lilos/contracts/host";
 import { HOST_ERRORS, HostError } from "./errors.js";
+import { run } from "./exec.js";
 import { repoMark, repoRoot } from "./git.js";
 import { collapsePath, expandPath } from "./paths.js";
 
-const run = promisify(execFile);
 const SKIP = new Set([".git", "node_modules", ".DS_Store"]);
 const COMPLETE_CAP = 50;
 const TREE_CAP = 5000;
