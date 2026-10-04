@@ -124,10 +124,15 @@ export function watchDm(
     /* #483 AC-3: the engine host registering again is a fresh catalog
        source — `models.list` then answers even though it failed while the
        host was gone. (The relay caches the same list on
-       `welcome.engineHost`, but that's hello-time data.) */
+       `welcome.engineHost`, but that's hello-time data.) The event fires
+       at harness.register, before the engine finishes booting, so the
+       refresh re-polls a few times rather than losing to the boot race. */
     if (method === "host.changed") {
       if ((params as { connected?: boolean }).connected === true) {
-        void refreshModelCatalog(client, welcome, { refresh: true });
+        void refreshModelCatalog(client, welcome, {
+          refresh: true,
+          retries: HOST_CATALOG_RETRIES,
+        });
       }
       return;
     }
@@ -164,45 +169,61 @@ export function watchDm(
  * disabled state; `refresh: true` is the retry/picker-open/host-return
  * path (the engine re-probes instead of answering its cache).
  */
+/* `host.changed` lands at harness.register while the engine is still
+   starting, so the catalog refresh re-asks a bounded number of times
+   before leaving the chip on "Models unavailable". */
+const HOST_CATALOG_RETRIES = 4;
+const HOST_CATALOG_RETRY_MS = 800;
+
 export async function refreshModelCatalog(
   client: AppClient,
   welcome?: ReadableAtom<WelcomeResult | undefined>,
-  opts?: { refresh?: boolean },
+  opts?: { refresh?: boolean; retries?: number },
 ): Promise<void> {
-  /* Optimistic fallback only when nothing is known — a live catalog that
-     already landed never downgrades to hello-time rows. */
-  if (!$catalog.get().models.length) {
-    const host = welcome?.get()?.engineHost;
-    if (host?.models?.length) {
-      const { models, providers } = toModelCatalog({
-        models: host.models,
-        providers: host.providers,
-      });
-      $catalog.set({
-        models,
-        providers,
-        defaultModel: host.defaultModel,
-        defaultProvider: host.defaultProvider,
-      });
-      $catalogUnavailable.set(false);
+  const attempts = 1 + (opts?.retries ?? 0);
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, HOST_CATALOG_RETRY_MS),
+      );
     }
-  }
-  try {
-    const res = await client.listModels({ refresh: opts?.refresh ?? false });
-    if (res.models?.length) {
-      const { models, providers } = toModelCatalog(res);
-      $catalog.set({
-        models,
-        providers,
-        defaultModel: res.default,
-        defaultProvider: res.defaultProvider,
-      });
+    /* Optimistic fallback only when nothing is known — a live catalog that
+       already landed never downgrades to hello-time rows. */
+    if (!$catalog.get().models.length) {
+      const host = welcome?.get()?.engineHost;
+      if (host?.models?.length) {
+        const { models, providers } = toModelCatalog({
+          models: host.models,
+          providers: host.providers,
+        });
+        $catalog.set({
+          models,
+          providers,
+          defaultModel: host.defaultModel,
+          defaultProvider: host.defaultProvider,
+        });
+        $catalogUnavailable.set(false);
+      }
     }
-    /* Answered-empty or failed: whatever the fallback left stands; the
-       unavailable flag is honest about whether anything rendered. */
-    $catalogUnavailable.set(!$catalog.get().models.length);
-  } catch {
-    $catalogUnavailable.set(!$catalog.get().models.length);
+    try {
+      const res = await client.listModels({ refresh: opts?.refresh ?? false });
+      if (res.models?.length) {
+        const { models, providers } = toModelCatalog(res);
+        $catalog.set({
+          models,
+          providers,
+          defaultModel: res.default,
+          defaultProvider: res.defaultProvider,
+        });
+      }
+      /* Answered-empty or failed: whatever the fallback left stands; the
+         unavailable flag is honest about whether anything rendered. */
+      $catalogUnavailable.set(!$catalog.get().models.length);
+    } catch {
+      $catalogUnavailable.set(!$catalog.get().models.length);
+    }
+    /* Rows landed (live call or fallback): stop polling. */
+    if ($catalog.get().models.length) return;
   }
 }
 

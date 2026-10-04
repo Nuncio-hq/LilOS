@@ -254,6 +254,32 @@ describe("#483 AC-3 the catalog refreshes on host.changed, not only reconnect", 
     expect($catalog.get().defaultModel).toBe("fake-large");
   });
 
+  it("host.changed while the engine is still booting re-polls until models land", async () => {
+    let calls = 0;
+    const client = fakeClient({
+      listModels: async () => {
+        calls += 1;
+        if (calls < 2) throw new Error("engine_unavailable");
+        return { models: HOST_MODELS, default: "fake-large" };
+      },
+    });
+    const welcome = welcomeWith({ connected: false });
+    watchDm(client, welcome);
+    client.state.set("ready");
+    await vi.waitFor(() => expect($catalogUnavailable.get()).toBe(true));
+    calls = 0;
+
+    /* The relay fires host.changed at harness.register — before the engine
+       finishes booting, so the first models.list still fails. The refresh
+       must re-poll instead of leaving the chip on "Models unavailable". */
+    client.emit("host.changed", { connected: true });
+    await vi.waitFor(() => expect($catalog.get().models.length).toBe(2), {
+      timeout: 4_000,
+    });
+    expect(calls).toBe(2);
+    expect($catalogUnavailable.get()).toBe(false);
+  });
+
   it("host.changed connected:false does not re-fetch or clear the catalog", async () => {
     const client = fakeClient({
       listModels: async () => ({ models: HOST_MODELS }),
