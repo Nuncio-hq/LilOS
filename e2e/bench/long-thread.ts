@@ -1,9 +1,9 @@
 /**
  * Issue #427 AC-1 — long-thread streaming benchmark.
  *
- * Boots its own stack via e2e/helpers/stack.ts on bench-reserved ports
- * (5637/5639/5641 + 5643 for the preview — the ports.spec registry only
- * scans e2e/*.ts, never these), serves a production `vite build` through
+ * Boots its own stack via e2e/helpers/stack.ts on pickPorts()'d free
+ * ports (#484: bound-and-probed, no fixed registry) plus a fourth free
+ * port for the vite preview, serves a production `vite build` through
  * `vite preview` (its /lilos-config.json middleware points the built app at
  * OUR relay + feed — no reuseExistingServer, never 5199), then streams
  * `slow:2 md: blocks` replies into one DM thread.
@@ -37,23 +37,16 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
-import { bootStack } from "../helpers/stack";
-import { safePort } from "../ports";
+import { bootStack, freePort, pickPorts } from "../helpers/stack";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/bench
 const repo = path.resolve(here, "../..");
 const webDir = path.join(repo, "apps", "web");
 const viteBin = path.join(webDir, "node_modules", ".bin", "vite");
 
-/* Bench-reserved triple + preview (specs keep to the 46xx–53xx registry
-   bases; these sit outside it and bootStack's identity checks fail loudly
-   if a foreign stack squats on one). */
-const PORTS = {
-  relay: safePort(5637),
-  feed: safePort(5639),
-  web: safePort(5641),
-  preview: safePort(5643),
-};
+/* Resolved in main() before the first trial — pickPorts() is async and
+   bound-and-probed (#484 deleted the fixed safePort registry). */
+const PORTS = { relay: 0, feed: 0, web: 0, preview: 0 };
 const PROMPT = "slow:2 md: blocks";
 const CHECKPOINTS = [1, 25, 50, 100];
 const VIEWPORT = { width: 1288, height: 900 };
@@ -316,11 +309,77 @@ async function takeShots(page: Page, dir: string) {
         if (el.scrollHeight > el.clientHeight + 4)
           el.scrollTop = el.scrollHeight;
     });
+  /* Held rows (issue #430) remount through IntersectionObserver, which
+     delivers on the rendering step after the scroll — settle a couple of
+     frames so the capture sees mounted content. */
+  const twoFrames = () =>
+    page.evaluate(
+      () =>
+        new Promise<void>((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => r())),
+        ),
+    );
   await scrollBottom();
+  await twoFrames();
+  /* #430 diagnostics: held stubs + scroller extent vs the sum of row
+     heights — a mismatch means held rows hold stale measurements. */
+  const pane = () =>
+    page.evaluate(() => {
+      const scroller = [
+        ...document.querySelectorAll("[data-thread-panel] *"),
+      ].find((el) => el.scrollHeight > el.clientHeight + 4);
+      const rows = [...document.querySelectorAll("[data-msg]")];
+      const held = document.querySelectorAll("[data-held-stub]").length;
+      return {
+        scrollHeight: scroller?.scrollHeight,
+        clientHeight: scroller?.clientHeight,
+        rowSum: rows.reduce(
+          (a, el) => a + el.getBoundingClientRect().height,
+          0,
+        ),
+        msgs: rows.length,
+        held,
+      };
+    });
+  console.log("    pane:", await pane());
+  /* Anchored capture: bottom-align the LAST mounted reply row (held stubs
+     remount through IntersectionObserver — wait until none are held inside
+     the pane's viewport). Same anchor on main and the branch → identical
+     slice for the pixel diff. */
+  const settleVisible = () =>
+    page.waitForFunction(
+      () => {
+        const scroller = [
+          ...document.querySelectorAll("[data-thread-panel] *"),
+        ].find((el) => el.scrollHeight > el.clientHeight + 4);
+        if (!scroller) return false;
+        const vTop = scroller.getBoundingClientRect().top;
+        const vBot = scroller.getBoundingClientRect().bottom;
+        return ![...document.querySelectorAll("[data-held-stub]")].some(
+          (el) => {
+            const r = el.getBoundingClientRect();
+            return r.bottom > vTop + 40 && r.top < vBot - 40;
+          },
+        );
+      },
+      { timeout: 15_000 },
+    );
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll("[data-msg]")];
+    rows[rows.length - 1]?.scrollIntoView({ block: "end" });
+  });
+  await settleVisible().catch(() => {});
+  await twoFrames();
+  console.log("    pane:", await pane());
   await page.screenshot({ path: path.join(dir, "thread-50-light.png") });
   await page.emulateMedia({ colorScheme: "dark" });
   await quiet(page);
-  await scrollBottom();
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll("[data-msg]")];
+    rows[rows.length - 1]?.scrollIntoView({ block: "end" });
+  });
+  await settleVisible().catch(() => {});
+  await twoFrames();
   await page.screenshot({ path: path.join(dir, "thread-50-dark.png") });
   await page.emulateMedia({ colorScheme: "light" });
   console.log(`    shots → ${dir}/thread-50-{light,dark}.png`);
@@ -330,6 +389,11 @@ async function main() {
   console.log(
     `bench: long-thread streaming (#427) — ${RUNS} run(s) × ${TURNS} turns, prompt "${PROMPT}"`,
   );
+  const picked = await pickPorts();
+  PORTS.relay = picked.relay;
+  PORTS.feed = picked.feed;
+  PORTS.web = picked.web;
+  PORTS.preview = await freePort();
   console.log(`building apps/web (production)…`);
   execFileSync("bun", ["run", "build"], {
     cwd: webDir,

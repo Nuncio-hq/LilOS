@@ -605,10 +605,15 @@ export function DmPage() {
   }, [messages, threadMsgs, summaries]);
 
   const uiEmp = employee ? toUiEmployee(employee, engineDown) : undefined;
-  const empFn = (id: string) => {
-    const e = employees.find((x) => x.id === id);
-    return e ? toUiEmployee(e, engineDown) : undefined;
-  };
+  /* #430: stable across renders — the memoized turn rows compare `emp` by
+     identity, so a fresh closure each render would defeat the memo. */
+  const empFn = useCallback(
+    (id: string) => {
+      const e = employees.find((x) => x.id === id);
+      return e ? toUiEmployee(e, engineDown) : undefined;
+    },
+    [employees, engineDown],
+  );
   const summaryOf = (conv: Conversation) => summaryByConv.get(conv.id);
 
   /* #134: the relay rewinds files + conversation to just before the picked

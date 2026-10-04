@@ -17,6 +17,7 @@
  */
 import {
   type SessionModel,
+  type TurnModel,
   type WaitingResult,
   waitingMessages,
 } from "@lilos/client-runtime";
@@ -30,7 +31,13 @@ import type {
 import type { QueuedTrayItem } from "@lilos/ui";
 import type { Msg, Reply, Workspace } from "@lilos/ui/types";
 import { wsFor } from "./folders";
-import { conversationReplies, mergeTurns, stripPlans, toFeed } from "./mapping";
+import {
+  conversationReplies,
+  liveReplies,
+  mergeTurns,
+  stripPlans,
+  toFeed,
+} from "./mapping";
 
 type Inputs = readonly unknown[];
 
@@ -116,8 +123,78 @@ const inputKey = (i: FoldInputs): Inputs => [
   i.employeeId,
 ];
 
-const empRef = (employees: Employee[]) => (ref: string) =>
-  employees.find((x) => x.profile === ref)?.id ?? ref;
+/* #430: identity caches. The reducer keeps a `TurnModel`'s object identity
+   while a delta leaves it untouched — these WeakMaps carry that identity
+   through the fold so the memoized rows see the SAME `Reply` objects.
+   Keyed on the source objects, so nothing is retained past GC. */
+
+/** AppMessage row -> its Reply (conversationReplies cache). */
+const msgReplyCache = new WeakMap<AppMessage, Reply>();
+
+/** Reply -> its plan-stripped clone (stripPlans cache). */
+const strippedCache = new WeakMap<Reply, Reply>();
+
+/** employees array -> the resolveEmployee fn for it (mergeTurns arg). */
+const empRefCache = new WeakMap<Employee[], (ref: string) => string>();
+
+const empRef = (employees: Employee[]) => {
+  let fn = empRefCache.get(employees);
+  if (!fn) {
+    fn = (ref: string) => employees.find((x) => x.profile === ref)?.id ?? ref;
+    empRefCache.set(employees, fn);
+  }
+  return fn;
+};
+
+/* TurnModel -> its merged reply blocks. One entry per turn, variant-keyed
+   on what the block depends on beyond the turn: `liveNow` (the live turn
+   carries streaming chrome the settled one doesn't) and `claimId` (the
+   relay row id the claim pass stamps onto the block's last reply — the
+   #138 search-anchor swap). asks / employeeId / resolveEmployee / conv are
+   inputs too — when any of them moves the variants are stale. `conv` keys
+   the conversation: the callers rescope `turnId` in place, so a shared
+   session must never see another conversation's prefixed replies. */
+interface TurnBlockEntry {
+  asks: Ask[];
+  emp: string;
+  resFn: (ref: string) => string;
+  conv: string;
+  variants: Map<string, Reply[]>;
+}
+const turnBlockCache = new WeakMap<TurnModel, TurnBlockEntry>();
+
+/** The `liveFor` mergeTurns hook: same replies, cached per turn so an
+    incremental fold reuses the exact `Reply[]` of every untouched turn. */
+const cachedLiveFor = (i: FoldInputs, resFn: (ref: string) => string) => {
+  return (t: TurnModel, liveNow: boolean, claimId?: string): Reply[] => {
+    let entry = turnBlockCache.get(t);
+    if (
+      !entry ||
+      entry.asks !== i.asks ||
+      entry.emp !== i.employeeId ||
+      entry.resFn !== resFn ||
+      entry.conv !== i.conv.id
+    ) {
+      entry = {
+        asks: i.asks,
+        emp: i.employeeId,
+        resFn,
+        conv: i.conv.id,
+        variants: new Map(),
+      };
+      turnBlockCache.set(t, entry);
+    }
+    const key = `${liveNow ? 1 : 0}:${claimId ?? ""}`;
+    let rs = entry.variants.get(key);
+    if (!rs) {
+      rs = liveReplies(t, i.employeeId, i.asks, resFn, liveNow);
+      if (claimId !== undefined)
+        rs[rs.length - 1] = { ...rs[rs.length - 1], id: claimId };
+      entry.variants.set(key, rs);
+    }
+    return rs;
+  };
+};
 
 /** #134 refs/texts a turn must not resurrect through — the merged view the
     page's per-conv rewoundInfo used to build. */
@@ -142,6 +219,7 @@ function computeFeed(i: FoldInputs): FeedFold {
       (m) => m.id !== i.conv.rootMessageId && !waiting.hiddenIds.has(m.id),
     ),
     i.conv.id,
+    msgReplyCache,
   );
   let out = known;
   if (want !== undefined && known.length < want) {
@@ -150,7 +228,11 @@ function computeFeed(i: FoldInputs): FeedFold {
       i.summary?.firstAnswer &&
       !out.some((r) => r.id === i.summary?.firstAnswer?.id)
     ) {
-      const [preview] = conversationReplies([i.summary.firstAnswer], i.conv.id);
+      const [preview] = conversationReplies(
+        [i.summary.firstAnswer],
+        i.conv.id,
+        msgReplyCache,
+      );
       if (preview) out.unshift(preview);
     }
     while (out.length < want)
@@ -161,17 +243,22 @@ function computeFeed(i: FoldInputs): FeedFold {
         text: "",
       });
   }
+  const resFn = empRef(i.employees);
   const replies = mergeTurns(
     out,
     i.bound,
     i.employeeId,
     i.asks,
     rewoundOf(i),
-    empRef(i.employees),
+    resFn,
     i.conv.rootMessageId,
     i.conv.state,
+    cachedLiveFor(i, resFn),
   );
-  for (const r of replies) if (r.turnId) r.turnId = `${i.conv.id}:${r.turnId}`;
+  /* Cached replies rescope across folds — don't double-prefix. */
+  for (const r of replies)
+    if (r.turnId && !r.turnId.startsWith(`${i.conv.id}:`))
+      r.turnId = `${i.conv.id}:${r.turnId}`;
   const ws = wsFor(i.conv.cwd, i.cwdInfo);
   return {
     waiting,
@@ -186,6 +273,7 @@ function computeThread(
   t: ThreadInputs,
   waiting: WaitingResult,
 ): ThreadFold {
+  const resFn = empRef(i.employees);
   let replies = mergeTurns(
     conversationReplies(
       i.msgs.filter(
@@ -195,17 +283,21 @@ function computeThread(
           !waiting.hiddenIds.has(m.id),
       ),
       i.conv.id,
+      msgReplyCache,
     ),
     i.bound,
     i.employeeId,
     i.asks,
     rewoundOf(i),
-    empRef(i.employees),
+    resFn,
     i.conv.rootMessageId,
     i.conv.state,
+    cachedLiveFor(i, resFn),
   );
-  for (const r of replies) if (r.turnId) r.turnId = `${i.conv.id}:${r.turnId}`;
-  if (!t.planCap) replies = stripPlans(replies);
+  for (const r of replies)
+    if (r.turnId && !r.turnId.startsWith(`${i.conv.id}:`))
+      r.turnId = `${i.conv.id}:${r.turnId}`;
+  if (!t.planCap) replies = stripPlans(replies, strippedCache);
   return {
     replies,
     notSent: i.msgs.filter((m) => m.dropped),

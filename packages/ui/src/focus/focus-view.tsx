@@ -16,7 +16,7 @@ import {
   PanelRightOpenIcon,
   PlayIcon,
 } from "lucide-react";
-import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AccessPill } from "../chat/access-pill";
 import {
   ConversationKeepBottom,
@@ -47,14 +47,19 @@ import {
   QueueSectionTrigger,
 } from "../components/ai-elements/queue";
 import { Button } from "../components/ui/button";
-import { openStartRequest, ReplyCards } from "../conversation/cards";
+import { openStartRequest } from "../conversation/cards";
 import type { PlanAction } from "../conversation/plan-card";
-import { AgentTurn, PrCard, UserTurn } from "../conversation/turns";
+import {
+  RewindCheckpoint,
+  TURN_LAZY_AFTER,
+  type TurnActs,
+  TurnRow,
+} from "../conversation/turn-rows";
+import { UserTurn } from "../conversation/turns";
 import { sessionModelId } from "../lib/context-window";
 import { PHASE_LABEL } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
-import { RewindCheckpoint } from "../thread/thread-view";
 import type {
   AttachedFile,
   Channel,
@@ -403,6 +408,20 @@ export function FocusView({
     setWbOpen(true);
     onTab?.(t);
   };
+  /* #430: row handlers ride a ref rewritten each render — the memoized
+     TurnRow never sees a fresh callback identity (pickTab is one), and
+     its reads are always the latest closures. */
+  const actsRef = useRef<TurnActs>({});
+  actsRef.current = {
+    onRetry,
+    onOpen: pickTab,
+    onOpenSession,
+    onPlan,
+    onRewind,
+    setResolved,
+    onStart,
+  };
+  const lazyRows = thread.replies.length > TURN_LAZY_AFTER;
   /* #340 AC-2b: `workbench_open` brings the panel forward on the target's
      tab — the Workbench applies `target`; here the panel opens and follow
      stops (it is the agent's explicit "look at this"). */
@@ -666,75 +685,33 @@ export function FocusView({
                   attachments={root.attachments}
                 />
               </div>
-              {thread.replies.map((r, i) =>
-                emp(r.from) ? (
-                  <div
-                    key={r.turnId ?? r.id ?? i}
-                    data-msg={r.id}
-                    className={flashCls(r.id)}
-                  >
-                    <AgentTurn
-                      r={r}
-                      emp={emp}
-                      human={human}
-                      last={i === lastTurnIdx}
-                      onRetry={onRetry}
-                      models={models}
-                      onOpen={pickTab}
-                      onOpenSession={onOpenSession}
-                      onPlan={onPlan}
-                      cards={
-                        <>
-                          <ReplyCards
-                            r={r}
-                            i={i}
-                            last={i === thread.replies.length - 1}
-                            work={work}
-                            repo={channel.repo}
-                            emp={emp}
-                            human={human}
-                            resolved={resolved}
-                            setResolved={setResolved}
-                            onStart={onStart}
-                          />
-                          {pr &&
-                            !r.live &&
-                            r.steps?.some((s) =>
-                              String(s.input.command ?? "").startsWith(
-                                "gh pr create",
-                              ),
-                            ) && (
-                              <PrCard
-                                pr={pr}
-                                author={lead?.name ?? pr.author}
-                                onOpen={() => pickTab("pr")}
-                              />
-                            )}
-                        </>
-                      }
-                    />
-                  </div>
-                ) : (
-                  <Fragment key={r.turnId ?? r.id ?? i}>
-                    {onRewind && r.id && human(r.from) && (
-                      <RewindCheckpoint
-                        running={running}
-                        warning={rewindWarning}
-                        onRewind={() => onRewind(r.id ?? "")}
-                      />
-                    )}
-                    <div data-msg={r.id} className={flashCls(r.id)}>
-                      <UserTurn
-                        from={r.from}
-                        time={r.time}
-                        text={r.text}
-                        human={human}
-                        attachments={r.attachments}
-                      />
-                    </div>
-                  </Fragment>
-                ),
-              )}
+              {/* #430: memoized per row — a delta re-renders only the
+                  turn it touched; long threads hold far-off-screen rows
+                  as stubs (data-msg/turnsettled anchors preserved). */}
+              {thread.replies.map((r, i) => (
+                <TurnRow
+                  key={r.turnId ?? r.id ?? i}
+                  frame="focus"
+                  r={r}
+                  i={i}
+                  lastTurn={i === lastTurnIdx}
+                  lastRow={i === thread.replies.length - 1}
+                  flashed={flash === r.id}
+                  lazy={lazyRows}
+                  scrollTarget={scrollTo === r.id}
+                  running={running}
+                  emp={emp}
+                  human={human}
+                  resolved={resolved}
+                  work={work}
+                  repo={channel.repo}
+                  models={models}
+                  pr={pr}
+                  prAuthor={lead?.name ?? pr?.author}
+                  rewindWarning={rewindWarning}
+                  acts={actsRef}
+                />
+              ))}
               {transcriptNote && (
                 <div
                   data-transcript-note
