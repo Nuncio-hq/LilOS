@@ -23,11 +23,12 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-/* First-run → land on Default's DM. `?findUnstubMs=800` must ride the FIRST
-   load — the store reads it once at module eval, so client-side route
-   changes keep it. */
+/* First-run → land on Default's DM. `?findUnstubMs=2500` must ride the
+   FIRST load — the store reads it once at module eval, so client-side
+   route changes keep it. 2.5 s is long enough that slow CI polls can't
+   race the lapse, short enough the re-stub leg still lands fast. */
 async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/?findUnstubMs=800`);
+  await page.goto(`${stack.webUrl}/?findUnstubMs=2500`);
   const aside = page.locator("aside");
   await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
     timeout: 30_000,
@@ -91,14 +92,19 @@ test("AC-1: Cmd+F mounts held rows — turn-1 text is in the DOM; the lapse re-b
     await waitSettled(panel, i);
   }
 
-  /* 121 reply rows » TURN_LAZY_AFTER — far-off-screen rows hold as stubs
-     and the turn-1 phrase exists nowhere in the DOM. */
+  /* 121 reply rows » TURN_LAZY_AFTER — far-off-screen rows hold as stubs.
+     The phrase poll is the proof turn-1's own row held: it exists nowhere
+     in the DOM until the row mounts. */
   const stubs = panel.locator("[data-held-stub]");
   await expect
     .poll(() => stubs.count(), { timeout: 30_000 })
     .toBeGreaterThan(0);
   const heldBefore = await stubs.count();
-  expect(await panel.getByText("findprobe-alpha-turn1").count()).toBe(0);
+  await expect
+    .poll(() => panel.getByText("findprobe-alpha-turn1").count(), {
+      timeout: 30_000,
+    })
+    .toBe(0);
 
   /* Ctrl+F — the find chord: every held row mounts; the turn-1 phrase is
      DOM text a find-in-page could match. */
@@ -111,7 +117,7 @@ test("AC-1: Cmd+F mounts held rows — turn-1 text is in the DOM; the lapse re-b
     () => document.querySelectorAll("*").length,
   );
 
-  /* The window lapses (test-hooked to ~800 ms) → off-screen rows re-stub
+  /* The window lapses (test-hooked to ~2.5 s) → off-screen rows re-stub
      and the DOM re-bounds. */
   await expect
     .poll(() => stubs.count(), { timeout: 15_000 })
