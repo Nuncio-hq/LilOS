@@ -169,10 +169,12 @@ async function dmDefault(page: Page) {
   await expect(page).toHaveURL(/\/dm\//);
 }
 
-/** Send a `slow:` prompt and land on the Focus view mid-turn. */
+/** Send and land on the Focus view mid-turn. `LILOS_TURN_HOLD` (#400) parks
+    the fake engine's turn as running until an interrupt — the composer never
+    drops the Stop button between the measurements and the six shots. */
 async function runningFocus(page: Page) {
   const box = page.locator("textarea").last();
-  await box.fill("slow:400 keep this turn running");
+  await box.fill("LILOS_TURN_HOLD keep this turn running");
   await box.press("Enter");
   await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/, { timeout: 30_000 });
   await expect(page.getByRole("button", { name: "Stop (Esc)" })).toBeVisible({
