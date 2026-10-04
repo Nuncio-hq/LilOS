@@ -1,9 +1,9 @@
 /**
  * Issue #427 AC-1 — long-thread streaming benchmark.
  *
- * Boots its own stack via e2e/helpers/stack.ts on bench-reserved ports
- * (5637/5639/5641 + 5643 for the preview — the ports.spec registry only
- * scans e2e/*.ts, never these), serves a production `vite build` through
+ * Boots its own stack via e2e/helpers/stack.ts on pickPorts()'d free
+ * ports (#484: bound-and-probed, no fixed registry) plus a fourth free
+ * port for the vite preview, serves a production `vite build` through
  * `vite preview` (its /lilos-config.json middleware points the built app at
  * OUR relay + feed — no reuseExistingServer, never 5199), then streams
  * `slow:2 md: blocks` replies into one DM thread.
@@ -37,23 +37,16 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
-import { bootStack } from "../helpers/stack";
-import { safePort } from "../ports";
+import { bootStack, freePort, pickPorts } from "../helpers/stack";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/bench
 const repo = path.resolve(here, "../..");
 const webDir = path.join(repo, "apps", "web");
 const viteBin = path.join(webDir, "node_modules", ".bin", "vite");
 
-/* Bench-reserved triple + preview (specs keep to the 46xx–53xx registry
-   bases; these sit outside it and bootStack's identity checks fail loudly
-   if a foreign stack squats on one). */
-const PORTS = {
-  relay: safePort(5637),
-  feed: safePort(5639),
-  web: safePort(5641),
-  preview: safePort(5643),
-};
+/* Resolved in main() before the first trial — pickPorts() is async and
+   bound-and-probed (#484 deleted the fixed safePort registry). */
+const PORTS = { relay: 0, feed: 0, web: 0, preview: 0 };
 const PROMPT = "slow:2 md: blocks";
 const CHECKPOINTS = [1, 25, 50, 100];
 const VIEWPORT = { width: 1288, height: 900 };
@@ -65,6 +58,19 @@ const arg = (name: string, dflt: string) => {
 const RUNS = Math.max(1, Number(arg("runs", "3")) || 3);
 const TURNS = Math.max(1, Number(arg("turns", "100")) || 100);
 const SHOTS = arg("shots", ""); // dir → screenshot the 50-turn thread
+/* --mix: cycle prompt kinds so the 50-turn thread carries plans,
+   subagents, steps, markdown and a queued steer — the AC-2 "long threads
+   (steps, subagents, plans, queued)" coverage lives in the element shots
+   this mode adds to --shots. */
+const MIXED = process.argv.includes("--mix");
+const MIX_PROMPTS = [
+  "plan: tasks",
+  "delegate subagents",
+  "md: blocks",
+  "walk me through the last diff",
+];
+const promptFor = (i: number) =>
+  MIXED ? MIX_PROMPTS[(i - 1) % MIX_PROMPTS.length] : PROMPT;
 
 interface Window {
   taskMs: number;
@@ -188,9 +194,9 @@ async function dmDefault(webUrl: string, page: Page) {
   await expect(page).toHaveURL(/\/dm\//);
 }
 
-const send = async (page: Page) => {
+const send = async (page: Page, text = PROMPT) => {
   const box = page.locator("textarea").last();
-  await box.fill(PROMPT);
+  await box.fill(text);
   await box.press("Enter");
 };
 
@@ -253,7 +259,7 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
 
         const focus = page.locator("[data-thread]");
         let m0 = await snap(cdp, page);
-        await send(page);
+        await send(page, promptFor(1));
         await waitSettled(focus, 1);
         await quiet(page);
         out.set(1, between(m0, await snap(cdp, page)));
@@ -269,8 +275,51 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
         for (let i = 2; i <= TURNS; i++) {
           const checkpoint = CHECKPOINTS.includes(i);
           if (checkpoint) m0 = await snap(cdp, page);
-          await send(page);
-          await waitSettled(panel, i);
+          /* --mix queue probe: turn 6 runs slow, then an attachment send
+             queues as the next prompt (attachments can't steer) — the
+             `data-queued` tray stays up for the rest of the turn. The
+             queued message becomes turn 7, so sends after i=6 land on
+             card i+1; the extra card is waited on before shots. */
+          if (MIXED && shotsDir && i === 6) {
+            await send(page, "slow:100 md: blocks");
+            const png = path.join(
+              process.env.TMPDIR ?? "/tmp",
+              "lilos-bench-queue.png",
+            );
+            await Bun.write(
+              png,
+              Buffer.from(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+                "base64",
+              ),
+            );
+            await page
+              .locator("[data-thread-panel]")
+              .locator('input[type="file"]')
+              .last()
+              .setInputFiles(png);
+            await send(page, "queued next prompt");
+            const q = page.locator("[data-queued]").first();
+            await expect(q).toBeAttached({ timeout: 15_000 });
+            await quiet(page);
+            await q.screenshot({
+              path: path.join(shotsDir, "queued-light.png"),
+            });
+            await page.emulateMedia({ colorScheme: "dark" });
+            await quiet(page);
+            await q.screenshot({
+              path: path.join(shotsDir, "queued-dark.png"),
+            });
+            await page.emulateMedia({ colorScheme: "light" });
+          } else {
+            await send(page, promptFor(i));
+          }
+          /* --mix: after the queued send, card index = send index + 1 —
+             wait for the CURRENT send's card, not the one already done. */
+          await waitSettled(panel, i + (MIXED && shotsDir && i > 6 ? 1 : 0));
+          /* The i=6 queued send runs as its own turn (card 7) right behind
+             turn 6 — let it finish so send 7 doesn't steer into it. */
+          if (MIXED && shotsDir && i === 6) await waitSettled(panel, 7);
           await quiet(page);
           if (checkpoint) {
             const w = between(m0, await snap(cdp, page));
@@ -287,7 +336,10 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
           }
           if (shotsDir && i === 50 && !shot50) {
             shot50 = true;
-            await takeShots(page, shotsDir);
+            /* --mix added one turn (the queued prompt) — the last send's
+               card is TURNS+1; wait for it before capturing. */
+            if (MIXED) await waitSettled(panel, TURNS + 1);
+            await takeShots(page, shotsDir, MIXED);
           }
         }
         if (shotsDir && !shot50) await takeShots(page, shotsDir);
@@ -304,8 +356,11 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
   return out;
 }
 
-/** 1288×900 50-turn shots, light + dark — cursor parked: hover styles off. */
-async function takeShots(page: Page, dir: string) {
+/** 1288×900 50-turn shots, light + dark — cursor parked: hover styles off.
+   `mix` adds element-scoped shots of the plan/subagents/steps blocks on
+   mid-thread cards (they ride held stubs — scrolling them into view
+   exercises the remount path the AC cares about). */
+async function takeShots(page: Page, dir: string, mix = false) {
   mkdirSync(dir, { recursive: true });
   await page.mouse.move(0, 0);
   const scrollBottom = () =>
@@ -316,20 +371,164 @@ async function takeShots(page: Page, dir: string) {
         if (el.scrollHeight > el.clientHeight + 4)
           el.scrollTop = el.scrollHeight;
     });
+  /* Held rows (issue #430) remount through IntersectionObserver, which
+     delivers on the rendering step after the scroll — settle a couple of
+     frames so the capture sees mounted content. */
+  const twoFrames = () =>
+    page.evaluate(
+      () =>
+        new Promise<void>((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => r())),
+        ),
+    );
   await scrollBottom();
+  await twoFrames();
+  /* The feed can keep delivering a turn's deltas after its settled marker
+     fires (the idle sweep phases it done before the last deltas land, or
+     the wire just lags): the capture must also wait for the last card's
+     text to stop growing, else the shot catches a mid-stream render. */
+  const lastCard = page.locator("[data-thread-panel] [data-agentturn]").last();
+  for (let n = 0, last = -1, stable = 0; n < 80 && stable < 3; n++) {
+    const len = (await lastCard.textContent())?.length ?? 0;
+    stable = len > 0 && len === last ? stable + 1 : 0;
+    last = len;
+    await page.waitForTimeout(150);
+  }
+  /* #430 diagnostics: held stubs + scroller extent vs the sum of row
+     heights — a mismatch means held rows hold stale measurements. */
+  const pane = () =>
+    page.evaluate(() => {
+      const scroller = [
+        ...document.querySelectorAll("[data-thread-panel] *"),
+      ].find((el) => el.scrollHeight > el.clientHeight + 4);
+      const rows = [...document.querySelectorAll("[data-msg]")];
+      const held = document.querySelectorAll("[data-held-stub]").length;
+      return {
+        scrollHeight: scroller?.scrollHeight,
+        clientHeight: scroller?.clientHeight,
+        rowSum: rows.reduce(
+          (a, el) => a + el.getBoundingClientRect().height,
+          0,
+        ),
+        msgs: rows.length,
+        held,
+        tail: rows.slice(-4).map((el) => ({
+          k: el.hasAttribute("data-agentturn")
+            ? "agent"
+            : el.hasAttribute("data-userturn")
+              ? "user"
+              : "?",
+          h: Math.round(el.getBoundingClientRect().height),
+          stub:
+            !!el.querySelector("[data-held-stub]") ||
+            el.hasAttribute("data-held-stub"),
+          t: (el.textContent ?? "").replace(/\s+/g, " ").slice(-60),
+        })),
+      };
+    });
+  console.log("    pane:", await pane());
+  /* Anchored capture: bottom-align the LAST mounted reply row (held stubs
+     remount through IntersectionObserver — wait until none are held inside
+     the pane's viewport). Same anchor on main and the branch → identical
+     slice for the pixel diff. */
+  const settleVisible = () =>
+    page.waitForFunction(
+      () => {
+        const scroller = [
+          ...document.querySelectorAll("[data-thread-panel] *"),
+        ].find((el) => el.scrollHeight > el.clientHeight + 4);
+        if (!scroller) return false;
+        const vTop = scroller.getBoundingClientRect().top;
+        const vBot = scroller.getBoundingClientRect().bottom;
+        return ![...document.querySelectorAll("[data-held-stub]")].some(
+          (el) => {
+            const r = el.getBoundingClientRect();
+            return r.bottom > vTop + 40 && r.top < vBot - 40;
+          },
+        );
+      },
+      { timeout: 15_000 },
+    );
+  const anchorEnd = () =>
+    page.evaluate(() => {
+      const rows = [...document.querySelectorAll("[data-msg]")];
+      rows[rows.length - 1]?.scrollIntoView({ block: "end" });
+    });
+  await anchorEnd();
+  await settleVisible().catch(() => {});
+  /* Remounted rows hold real heights now — the extent shifted, so the
+     anchor slid; align again, then settle once more. */
+  await anchorEnd();
+  await settleVisible().catch(() => {});
+  await twoFrames();
+  console.log("    pane:", await pane());
   await page.screenshot({ path: path.join(dir, "thread-50-light.png") });
   await page.emulateMedia({ colorScheme: "dark" });
   await quiet(page);
-  await scrollBottom();
+  await anchorEnd();
+  await settleVisible().catch(() => {});
+  await anchorEnd();
+  await settleVisible().catch(() => {});
+  await twoFrames();
   await page.screenshot({ path: path.join(dir, "thread-50-dark.png") });
   await page.emulateMedia({ colorScheme: "light" });
   console.log(`    shots → ${dir}/thread-50-{light,dark}.png`);
+
+  if (mix) {
+    /* Element-scoped shots — deterministic surfaces: scoped to the block,
+       immune to scroll drift. The last instance of each kind lives in the
+       last few turns (mix cycle); rows above the viewport hold as stubs,
+       so walk the scroller up in nudges until a mounted instance shows. */
+    const targets: { sel: string; name: string; expand?: boolean }[] = [
+      { sel: "[data-plan]", name: "plan" },
+      /* With a Workbench the card carries a link to its Subagents tab —
+         that line is the on-thread subagents surface (#317). */
+      { sel: "[data-subagents-link]", name: "subagents" },
+      { sel: "[data-tasksteps]", name: "steps", expand: true },
+    ];
+    for (const { sel, name, expand } of targets) {
+      const el = page.locator(`[data-thread-panel] ${sel}`).last();
+      for (let n = 0; n < 12 && !(await el.count()); n++) {
+        await page.evaluate(() => {
+          const sc = [
+            ...document.querySelectorAll("[data-thread-panel] *"),
+          ].find((x) => x.scrollHeight > x.clientHeight + 4);
+          sc?.scrollBy({ top: -400 });
+        });
+        await twoFrames();
+      }
+      await el.scrollIntoViewIfNeeded();
+      await twoFrames();
+      /* Expand the collapsible Task block (its trigger row) so the shot
+         covers contents, not just the header. */
+      if (expand)
+        await el
+          .locator("[class*=cursor-pointer]")
+          .first()
+          .click()
+          .catch(() => {});
+      await twoFrames();
+      await el.scrollIntoViewIfNeeded();
+      await el.screenshot({ path: path.join(dir, `${name}-light.png`) });
+      await page.emulateMedia({ colorScheme: "dark" });
+      await el.screenshot({ path: path.join(dir, `${name}-dark.png`) });
+      await page.emulateMedia({ colorScheme: "light" });
+    }
+    console.log(
+      `    shots → ${dir}/{plan,subagents,steps,queued}-{light,dark}.png`,
+    );
+  }
 }
 
 async function main() {
   console.log(
     `bench: long-thread streaming (#427) — ${RUNS} run(s) × ${TURNS} turns, prompt "${PROMPT}"`,
   );
+  const picked = await pickPorts();
+  PORTS.relay = picked.relay;
+  PORTS.feed = picked.feed;
+  PORTS.web = picked.web;
+  PORTS.preview = await freePort();
   console.log(`building apps/web (production)…`);
   execFileSync("bun", ["run", "build"], {
     cwd: webDir,

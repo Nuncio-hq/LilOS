@@ -1,9 +1,9 @@
 import {
   EngineClient,
   RelayClient,
-  reduceSessionEvents,
   type SessionFeedState,
   type SessionModel,
+  SessionReducer,
 } from "@lilos/client-runtime";
 import type {
   Ask,
@@ -318,14 +318,19 @@ const modelCache = new Map<string, ReadableAtom<SessionModel>>();
  * Reduced turn model for one engine session — a memoized computed atom over
  * the session's event feed. This is the only place engine events get
  * re-shaped for the UI.
+ *
+ * #430: the reducer is incremental — a live feed appends, so only the new
+ * tail replays and untouched `TurnModel`s keep their identity across
+ * deltas (that's what lets the fold cache + memoized rows skip unchanged
+ * turns). A resync swaps the snapshot/events and the reducer resets to a
+ * full replay — same answer as before.
  */
 function sessionModel(sessionId: string): ReadableAtom<SessionModel> {
   let m = modelCache.get(sessionId);
   if (!m) {
     const feed: ReadableAtom<SessionFeedState> = engine.sessionFeed(sessionId);
-    m = computed(feed, (f) =>
-      reduceSessionEvents(sessionId, f.events, f.snapshot),
-    );
+    const reducer = new SessionReducer(sessionId);
+    m = computed(feed, (f) => reducer.apply(f.events, f.snapshot));
     modelCache.set(sessionId, m);
   }
   return m;

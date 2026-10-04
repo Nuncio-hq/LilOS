@@ -248,3 +248,120 @@ describe("AC-427 FoldCache", () => {
     ).toBe(true);
   });
 });
+
+/* #430 — the fold's identity contract: the incremental reducer keeps an
+   untouched TurnModel's object identity across a delta; the fold must
+   carry that through to the `Reply` objects the memoized rows compare.
+   A delta that only extends the tail therefore produces the SAME reply
+   objects for every turn it didn't touch. */
+describe("AC-430 fold identity — a delta reuses untouched turns' Replies", () => {
+  const turn = (turnId: string, text: string): SessionModel["turns"][0] => ({
+    turnId,
+    phase: "done",
+    reasoning: "",
+    text,
+    steps: [],
+    steers: [],
+    requests: [],
+    plans: [],
+    subagents: [],
+  });
+
+  /* Fold inputs that must be identity-stable share fixtures — the real
+     page feeds atom-held slices (asks/msgs stay put until a write). */
+  const ASKS: FoldInputs["asks"] = [];
+
+  test("a tail delta reuses the untouched turn's reply objects (and no double scope)", () => {
+    const cache = new FoldCache();
+    const c = { ...conv("c1"), deliveredSeq: 10 };
+    const q = msg({ id: "m-q", authorId: "me", text: "question?", seq: 1 });
+    const ta = turn("ta", "answer A");
+    const tb = turn("tb", "answer B");
+    const m1 = model({ sessionId: "s-c1", turns: [ta, tb] });
+    const f1 = cache.for(
+      inputs(c, { msgs: [q], model: m1, bound: m1, asks: ASKS }),
+    );
+    expect(f1.replies).toHaveLength(3); // q + turn a + turn b
+
+    /* The reducer's clone-on-write: tb lands as a NEW object, ta is the
+       same one. The fold rebuilds — but only tb's replies are new. */
+    const tb2 = { ...tb, text: "answer B, more" };
+    const m2 = model({ sessionId: "s-c1", turns: [ta, tb2] });
+    const f2 = cache.for(
+      inputs(c, { msgs: [q], model: m2, bound: m2, asks: ASKS }),
+    );
+    expect(f2).not.toBe(f1);
+    const byTurn = (rs: typeof f1.replies) =>
+      new Map(rs.map((r) => [r.turnId, r]));
+    expect(byTurn(f2.replies).get("c1:ta")).toBe(
+      byTurn(f1.replies).get("c1:ta"),
+    );
+    expect(byTurn(f2.replies).get("c1:tb")).not.toBe(
+      byTurn(f1.replies).get("c1:tb"),
+    );
+    /* The relay row's Reply kept its identity through the message cache. */
+    expect(f2.replies[0]).toBe(f1.replies[0]);
+    /* Scoped once — the cached reply's turnId never re-prefixes. */
+    expect(byTurn(f2.replies).get("c1:ta")?.turnId).toBe("c1:ta");
+  });
+
+  test("two conversations on one session scope separately (no c1:c1 or cross talk)", () => {
+    const cache = new FoldCache();
+    const c1 = conv("c1");
+    const c2 = conv("c2");
+    const ta = turn("ta", "answer A");
+    const m = model({ sessionId: "shared", turns: [ta] });
+    /* Same TurnModel folded under both conversations — each fold rescopes
+       in place, so the block cache must key on the conversation too. */
+    const f1 = cache.for(
+      inputs(c1, { msgs: [], model: m, bound: m, asks: ASKS }),
+    );
+    const f2 = cache.for(
+      inputs(c2, { msgs: [], model: m, bound: m, asks: ASKS }),
+    );
+    expect(f1.replies[0].turnId).toBe("c1:ta");
+    expect(f2.replies[0].turnId).toBe("c2:ta");
+    /* And a refold for c1 keeps its own scoped reply — not c2's. */
+    const f3 = cache.for(
+      inputs(c1, { msgs: [], model: m, bound: m, asks: ASKS }),
+    );
+    expect(f3).toBe(f1);
+    expect(f1.replies[0].turnId).toBe("c1:ta");
+  });
+
+  test("an asks change rebuilds turn replies (the variant key covers asks)", () => {
+    const cache = new FoldCache();
+    const c = conv("c1");
+    const ta = turn("ta", "answer A");
+    const m = model({ sessionId: "s-c1", turns: [ta] });
+    const ask = { id: "a1" } as FoldInputs["asks"][0];
+    const f1 = cache.for(
+      inputs(c, { msgs: [], model: m, bound: m, asks: [ask] }),
+    );
+    const f2 = cache.for(
+      inputs(c, { msgs: [], model: m, bound: m, asks: [ask, ask] }),
+    );
+    expect(f2).not.toBe(f1);
+    expect(f2.replies[0]).not.toBe(f1.replies[0]);
+  });
+
+  test("the open thread's strip keeps identity through planCap folds", () => {
+    const cache = new FoldCache();
+    const c = conv("c1");
+    const ta = turn("ta", "answer A");
+    const m = model({ sessionId: "s-c1", turns: [ta] });
+    const i = inputs(c, { msgs: [], model: m, bound: m, asks: ASKS });
+    /* planCap off strips plan rows — the strip is cached like the rest. */
+    const t1 = cache.thread(i, { rootId: "x", planCap: false });
+    const t2 = cache.thread({ ...i }, { rootId: "x", planCap: false });
+    expect(t2.thread).toBe(t1.thread);
+    /* A refold on new inputs (same values) hits the same cache entry —
+       the strip map keeps reply identity inside it. */
+    const m2 = model({ sessionId: "s-c1", turns: [ta] });
+    const t3 = cache.thread(
+      inputs(c, { msgs: [], model: m2, bound: m2, asks: ASKS }),
+      { rootId: "x", planCap: false },
+    );
+    expect(t3.thread.replies[0]).toBe(t1.thread.replies[0]);
+  });
+});

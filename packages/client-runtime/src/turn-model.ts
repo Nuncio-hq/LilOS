@@ -163,76 +163,224 @@ export interface SessionModel {
   fast?: boolean;
 }
 
+/** The attach-snapshot slice the reducer reads (the feed's
+    `events.since` snapshot + its `atSeq` watermark, #467/#327). */
+export interface ReduceSnapshot {
+  state: SessionState;
+  model?: string;
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
+  turn?: { turnId: string };
+  /** The seq the snapshot was captured at (the feed's replay
+      watermark). Live frames keep appending past it without touching
+      the snapshot — when set, an event beyond it marks the snapshot
+      stale so its `state`/`turn` can't outrank the live stream. */
+  atSeq?: number;
+}
+
+const TERMINAL = new Set<TurnPhase>(["done", "stopped", "failed"]);
+
 /**
- * Reduce one session's engine event log (+ optional snapshot) into turn
- * models for rendering. Pure and replay-safe: feed it the events.since log,
- * the session feed atom's events, or a live stream — same result.
+ * #430: one session's event log → turn models, applied INCREMENTALLY.
+ *
+ * The old `reduceSessionEvents` replayed the whole log on every feed
+ * change — at 100 turns each streamed word re-ran ~1000 events, and every
+ * emitted `SessionModel` held all-new `TurnModel` objects, so nothing
+ * downstream could tell the 99 untouched turns from the one that changed.
+ *
+ * `SessionReducer` keeps the working model between `apply` calls: when
+ * the new event list is a prefix-extension of the last (the steady state
+ * for a live feed — feed-merge dedup keeps shared prefix elements
+ * identical), only the new tail replays, and clone-on-write means a
+ * `TurnModel` untouched by the tail keeps its object identity. Anything
+ * else (a replaced prefix, a fresh attach snapshot) resets and replays
+ * the full log — same answer as the one-shot reduce, by construction.
+ *
+ * The emitted `turns` array is always a fresh slice so `order` can swap
+ * draft clones in without mutating a previously emitted model.
  */
-export function reduceSessionEvents(
-  sessionId: string,
-  events: EngineEvent[],
-  snapshot?: {
-    state: SessionState;
-    model?: string;
-    provider?: string;
-    effort?: string;
-    fast?: boolean;
-    turn?: { turnId: string };
-    /** The seq the snapshot was captured at (the feed's replay
-        watermark). Live frames keep appending past it without touching
-        the snapshot — when set, an event beyond it marks the snapshot
-        stale so its `state`/`turn` can't outrank the live stream. */
-    atSeq?: number;
-  },
-): SessionModel {
-  const turns = new Map<string, TurnModel>();
-  const order: TurnModel[] = [];
+export class SessionReducer {
+  private readonly turns = new Map<string, TurnModel>();
+  private order: TurnModel[] = [];
   /* #179: session-scoped state. `subagentId` is unique per session; steps
      arriving before their subagent.started buffer per parent id. */
-  const jobs = new Map<string, JobModel>();
-  const orphanSteps = new Map<string, TurnStep[]>();
-  let state: SessionState | "unknown" = "unknown";
-  let model: string | undefined = snapshot?.model;
-  let provider: string | undefined = snapshot?.provider;
-  let effort: string | undefined = snapshot?.effort;
-  let fast: boolean | undefined = snapshot?.fast;
+  private readonly jobs = new Map<string, JobModel>();
+  private readonly orphanSteps = new Map<string, TurnStep[]>();
+  private state: SessionState | "unknown" = "unknown";
+  private model: string | undefined;
+  private provider: string | undefined;
+  private effort: string | undefined;
+  private fast: boolean | undefined;
+  private snapshot: ReduceSnapshot | undefined;
+  /* Latched once an event runs past the snapshot's atSeq — the #327
+     stale check, computed while applying instead of re-scanned. */
+  private snapshotStale = false;
+  /* Events already applied — `lastEvents` is the caller's array (they
+     own it; the feed only ever appends or replaces). */
+  private applied = 0;
+  private lastEvents: EngineEvent[] | undefined;
+  /* Turn/job ids cloned in the current apply — a second write in the
+     same batch hits the existing draft instead of cloning again. */
+  private readonly draftTurns = new Set<string>();
+  private readonly draftJobs = new Set<string>();
 
-  const turn = (turnId: string): TurnModel => {
-    let t = turns.get(turnId);
-    if (!t) {
-      t = {
-        turnId,
-        phase: "submitted",
-        reasoning: "",
-        text: "",
-        steps: [],
-        steers: [],
-        requests: [],
-        plans: [],
-        subagents: [],
-      };
-      turns.set(turnId, t);
-      order.push(t);
+  constructor(private readonly sessionId: string) {}
+
+  /** Fold `events` (the whole known log — the reducer keeps the cursor)
+      under `snapshot` and return the current model. */
+  apply(events: EngineEvent[], snapshot?: ReduceSnapshot): SessionModel {
+    if (snapshot !== this.snapshot || !this.isPrefix(events)) {
+      this.reset(snapshot);
     }
-    return t;
-  };
+    for (let i = this.applied; i < events.length; i++) this.event(events[i]);
+    this.applied = events.length;
+    this.lastEvents = events;
+    return this.emit();
+  }
 
-  for (const e of events) {
-    if (e.sessionId !== sessionId) continue;
+  /** The new list shares every applied element (same objects, same
+      order) — only then can the tail be the only work. */
+  private isPrefix(events: EngineEvent[]): boolean {
+    const prev = this.lastEvents;
+    if (!prev || events.length < this.applied) return false;
+    for (let i = 0; i < this.applied; i++) {
+      if (events[i] !== prev[i]) return false;
+    }
+    return true;
+  }
+
+  private reset(snapshot?: ReduceSnapshot): void {
+    this.turns.clear();
+    this.order = [];
+    this.jobs.clear();
+    this.orphanSteps.clear();
+    this.state = "unknown";
+    this.snapshot = snapshot;
+    this.model = snapshot?.model;
+    this.provider = snapshot?.provider;
+    this.effort = snapshot?.effort;
+    this.fast = snapshot?.fast;
+    this.snapshotStale = false;
+    this.applied = 0;
+    this.lastEvents = undefined;
+  }
+
+  /* Clone-on-write: the first write to a committed turn in this batch
+     swaps a fresh draft into `turns`/`order` — the previously emitted
+     model's objects stay untouched. Nested lists a case can mutate
+     (steps' fields, requests' outcomes, plans' steps, subagent steps)
+     come along one level deep; replaced-not-mutated refs (diff, commit,
+     usage, request, employee) ride the shallow copy. */
+  private wTurn(turnId: string): TurnModel {
+    const t = this.turns.get(turnId);
+    if (!t) throw new Error(`SessionReducer.wTurn: no turn ${turnId}`);
+    if (this.draftTurns.has(turnId)) return t;
+    const c: TurnModel = {
+      ...t,
+      steps: t.steps.map((s) => ({ ...s })),
+      steers: [...t.steers],
+      requests: t.requests.map((r) => ({ ...r })),
+      plans: t.plans.map((p) => ({
+        ...p,
+        steps: p.steps.map((s) => ({ ...s })),
+        ...(p.risks ? { risks: [...p.risks] } : {}),
+      })),
+      subagents: t.subagents.map((sa) => ({
+        ...sa,
+        steps: sa.steps.map((s) => ({ ...s })),
+        ...(sa.employee ? { employee: { ...sa.employee } } : {}),
+      })),
+    };
+    this.turns.set(turnId, c);
+    this.order[this.order.indexOf(t)] = c;
+    this.draftTurns.add(turnId);
+    return c;
+  }
+
+  /** Mint-or-write: the case handlers' `turn()` — a fresh mint is a
+      draft already (no clone needed). */
+  private turn(turnId: string): TurnModel {
+    if (this.turns.has(turnId)) return this.wTurn(turnId);
+    const t: TurnModel = {
+      turnId,
+      phase: "submitted",
+      reasoning: "",
+      text: "",
+      steps: [],
+      steers: [],
+      requests: [],
+      plans: [],
+      subagents: [],
+    };
+    this.turns.set(turnId, t);
+    this.order.push(t);
+    this.draftTurns.add(turnId);
+    return t;
+  }
+
+  /* A helper by id across every turn — subagent.* frames are stamped
+     with whichever turn is open, not the one that spawned it (#309).
+     Writeable: the owning turn is drafted before the row mutates. */
+  private wSubagent(id: string): SubagentModel | undefined {
+    for (const t of this.order) {
+      if (t.subagents.some((s) => s.subagentId === id)) {
+        const w = this.wTurn(t.turnId);
+        return w.subagents.find((s) => s.subagentId === id);
+      }
+    }
+    return undefined;
+  }
+
+  private wJob(jobId: string): JobModel | undefined {
+    const j = this.jobs.get(jobId);
+    if (!j) return undefined;
+    if (this.draftJobs.has(jobId)) return j;
+    const c = { ...j };
+    this.jobs.set(jobId, c);
+    this.draftJobs.add(jobId);
+    return c;
+  }
+
+  /* The newest snapshot for a planId, or undefined (#180). */
+  private latestPlan(t: TurnModel, planId: string): TurnPlan | undefined {
+    for (let i = t.plans.length - 1; i >= 0; i--) {
+      if (t.plans[i].planId === planId) return t.plans[i];
+    }
+    return undefined;
+  }
+
+  /* Unfinished plan steps read cancelled on a stopped turn — engines
+     don't re-emit a cancelled snapshot (#180 AC-2). Shared by the
+     user-stop path and the session-settle sweep (#327). */
+  private cancelPlanSteps(t: TurnModel): void {
+    for (const p of t.plans) {
+      for (const s of p.steps) {
+        if (s.status === "pending" || s.status === "in_progress") {
+          s.status = "cancelled";
+        }
+      }
+    }
+  }
+
+  private event(e: EngineEvent): void {
+    if (e.sessionId !== this.sessionId) return;
+    const atSeq = this.snapshot?.atSeq;
+    if (atSeq !== undefined && e.seq > atSeq) this.snapshotStale = true;
     switch (e.type) {
       case "session.started": {
-        model = e.payload.model ?? model;
-        provider = e.payload.provider ?? provider;
-        effort = e.payload.effort ?? effort;
-        fast = e.payload.fast ?? fast;
+        this.model = e.payload.model ?? this.model;
+        this.provider = e.payload.provider ?? this.provider;
+        this.effort = e.payload.effort ?? this.effort;
+        this.fast = e.payload.fast ?? this.fast;
         break;
       }
       case "session.state": {
-        state = e.payload.state;
+        this.state = e.payload.state;
         break;
       }
       case "turn.started": {
-        const t = turn(e.payload.turnId);
+        const t = this.turn(e.payload.turnId);
         t.phase = "reasoning";
         t.model = e.payload.model ?? t.model;
         t.provider = e.payload.provider ?? t.provider;
@@ -242,12 +390,12 @@ export function reduceSessionEvents(
         /* #396: seq past the snapshot's attach watermark = the turn began
            while this feed was attached — the turn that started while you
            watch, vs the one already live when the view mounted. */
-        t.postAttach = snapshot?.atSeq !== undefined && e.seq > snapshot.atSeq;
+        t.postAttach = atSeq !== undefined && e.seq > atSeq;
         if (e.payload.initiatedBy === "agent") t.agentInitiated = true;
         break;
       }
       case "turn.delta": {
-        const t = turn(e.payload.turnId);
+        const t = this.turn(e.payload.turnId);
         if (e.payload.stream === "reasoning") {
           t.reasoning += e.payload.delta;
           if (t.phase === "submitted") t.phase = "reasoning";
@@ -263,7 +411,7 @@ export function reduceSessionEvents(
         break;
       }
       case "turn.recap": {
-        const t = turn(e.payload.turnId);
+        const t = this.turn(e.payload.turnId);
         /* #431: a finished turn's whole streams in one frame — replace,
            never append: the fold lands identically whether it saw the
            delta run or its recap (a client whose watermark sits inside
@@ -283,7 +431,7 @@ export function reduceSessionEvents(
         break;
       }
       case "tool.started": {
-        const t = turn(e.payload.turnId);
+        const t = this.turn(e.payload.turnId);
         /* #309: an async subagent's calls land after its parent's
            turn.completed — they nest under the helper's row and must not
            reopen the settled turn. The engine stamps them with whichever
@@ -301,28 +449,29 @@ export function reduceSessionEvents(
            list; when the subagent.started hasn't arrived yet it buffers. */
         const parentId = e.payload.parentToolCallId;
         if (parentId) {
-          const sa = findSubagent(parentId);
+          const sa = this.wSubagent(parentId);
           if (sa) sa.steps.push(step);
-          else
-            (orphanSteps.get(parentId) ?? []).length
-              ? orphanSteps.get(parentId)?.push(step)
-              : orphanSteps.set(parentId, [step]);
+          else {
+            const buffered = this.orphanSteps.get(parentId);
+            if (buffered) buffered.push(step);
+            else this.orphanSteps.set(parentId, [step]);
+          }
         } else {
           t.steps.push(step);
         }
         break;
       }
       case "tool.completed": {
-        const t = turn(e.payload.turnId);
+        const t = this.turn(e.payload.turnId);
         const parentId = e.payload.parentToolCallId;
         /* #179: nested calls update the subagent's list, never the parent's
            "N steps" (decided default on the issue). The helper may sit on
            a different turn than the stamped one (#309 cross-turn steps). */
         const list = parentId
-          ? (findSubagent(parentId)?.steps ?? orphanSteps.get(parentId))
+          ? (this.wSubagent(parentId)?.steps ?? this.orphanSteps.get(parentId))
           : t.steps;
         if (!list) {
-          orphanSteps.set(parentId ?? "", [
+          this.orphanSteps.set(parentId ?? "", [
             {
               id: e.payload.toolCallId,
               tool: e.payload.tool,
@@ -356,8 +505,8 @@ export function reduceSessionEvents(
       }
       /* ── subagents (#179) ── */
       case "subagent.started": {
-        const t = turn(e.payload.turnId);
-        let sa = findSubagent(e.payload.subagentId);
+        const t = this.turn(e.payload.turnId);
+        let sa = this.wSubagent(e.payload.subagentId);
         if (!sa) {
           sa = {
             subagentId: e.payload.subagentId,
@@ -377,15 +526,15 @@ export function reduceSessionEvents(
         sa.parentToolCallId = e.payload.parentToolCallId ?? sa.parentToolCallId;
         sa.employee = e.payload.employee ?? sa.employee;
         /* Flush calls buffered before the started frame arrived. */
-        const buffered = orphanSteps.get(e.payload.subagentId);
+        const buffered = this.orphanSteps.get(e.payload.subagentId);
         if (buffered) {
           sa.steps.push(...buffered);
-          orphanSteps.delete(e.payload.subagentId);
+          this.orphanSteps.delete(e.payload.subagentId);
         }
         break;
       }
       case "subagent.completed": {
-        const sa = findSubagent(e.payload.subagentId);
+        const sa = this.wSubagent(e.payload.subagentId);
         if (sa) {
           sa.status = e.payload.status;
           sa.result = e.payload.result ?? sa.result;
@@ -395,14 +544,14 @@ export function reduceSessionEvents(
       }
       /* ── background jobs (#179): session-scoped, merge by jobId ── */
       case "job.started": {
-        const existing = jobs.get(e.payload.jobId);
+        const existing = this.wJob(e.payload.jobId);
         if (existing) {
           existing.command = e.payload.command;
           existing.startedAt = e.payload.startedAt ?? existing.startedAt;
           existing.url = e.payload.url ?? existing.url;
           existing.by = e.payload.by ?? existing.by;
         } else {
-          jobs.set(e.payload.jobId, {
+          const j: JobModel = {
             jobId: e.payload.jobId,
             command: e.payload.command,
             status: "running",
@@ -410,19 +559,21 @@ export function reduceSessionEvents(
             url: e.payload.url,
             by: e.payload.by,
             tail: "",
-          });
+          };
+          this.jobs.set(e.payload.jobId, j);
+          this.draftJobs.add(e.payload.jobId);
         }
         break;
       }
       case "job.output": {
-        const job = jobs.get(e.payload.jobId);
+        const job = this.wJob(e.payload.jobId);
         if (!job) break;
         job.tail = e.payload.tail;
         job.url = e.payload.url ?? job.url;
         break;
       }
       case "job.exited": {
-        const job = jobs.get(e.payload.jobId);
+        const job = this.wJob(e.payload.jobId);
         if (!job) break;
         job.status = e.payload.status;
         job.exitCode = e.payload.exitCode ?? job.exitCode;
@@ -430,7 +581,7 @@ export function reduceSessionEvents(
         break;
       }
       case "request.opened": {
-        const t = turn(e.payload.turnId);
+        const t = this.turn(e.payload.turnId);
         /* #309: a request stamped on a settled turn records but never
            reopens it — same post-turn guard tool.started takes. */
         if (t.phase !== "done" && t.phase !== "stopped" && t.phase !== "failed")
@@ -444,32 +595,35 @@ export function reduceSessionEvents(
       }
       case "request.resolved": {
         const { requestId, outcome, answer } = e.payload;
-        const t = order.find((x) =>
+        const owner = this.order.find((x) =>
           x.requests.some((r) => r.requestId === requestId),
         );
-        const req = t?.requests.find((r) => r.requestId === requestId);
-        if (req) {
-          req.outcome = outcome;
-          req.answer = answer;
-          if (t && t.phase === "waiting") t.phase = "reasoning";
-          /* A plan request's answer lands on the plan it decided (#180):
-             approve -> the checklist runs; reject -> nothing runs;
-             change -> this version is superseded by what comes back. */
-          if (t && req.request.kind === "plan") {
-            const plan = latestPlan(t, req.request.planId);
-            if (plan) {
-              if (outcome === "approve") plan.status = "approved";
-              else if (outcome === "reject") plan.status = "rejected";
-              else if (outcome === "change") plan.status = "replaced";
+        if (owner) {
+          const t = this.wTurn(owner.turnId);
+          const req = t.requests.find((r) => r.requestId === requestId);
+          if (req) {
+            req.outcome = outcome;
+            req.answer = answer;
+            if (t.phase === "waiting") t.phase = "reasoning";
+            /* A plan request's answer lands on the plan it decided (#180):
+               approve -> the checklist runs; reject -> nothing runs;
+               change -> this version is superseded by what comes back. */
+            if (req.request.kind === "plan") {
+              const plan = this.latestPlan(t, req.request.planId);
+              if (plan) {
+                if (outcome === "approve") plan.status = "approved";
+                else if (outcome === "reject") plan.status = "rejected";
+                else if (outcome === "change") plan.status = "replaced";
+              }
             }
           }
         }
         break;
       }
       case "plan.updated": {
-        const t = turn(e.payload.turnId);
+        const t = this.turn(e.payload.turnId);
         const { planId, kind, version, goal, steps, risks } = e.payload;
-        const current = latestPlan(t, planId);
+        const current = this.latestPlan(t, planId);
         if (!current) {
           t.plans.push({
             planId,
@@ -508,11 +662,11 @@ export function reduceSessionEvents(
         break;
       }
       case "turn.steered": {
-        turn(e.payload.turnId).steers.push(e.payload.text);
+        this.turn(e.payload.turnId).steers.push(e.payload.text);
         break;
       }
       case "turn.completed": {
-        const t = turn(e.payload.turnId);
+        const t = this.turn(e.payload.turnId);
         /* #419: an error payload means the turn failed — the stop reason
            stays on `stopReason` (refusal/cancelled/…) but the phase reads
            failed so nothing downstream treats it as a clean end. */
@@ -528,20 +682,12 @@ export function reduceSessionEvents(
            snapshot on interrupt, so unfinished items derive it here — the
            card reads "Stopped · n/m" from the steps alone. */
         if (e.payload.stopReason === "cancelled") {
-          for (const p of t.plans) {
-            for (const s of p.steps) {
-              if (s.status === "pending" || s.status === "in_progress") {
-                s.status = "cancelled";
-              }
-            }
-          }
-        }
-        /* #309: an async delegate call closes with its dispatch receipt —
-           the turn ending does not settle helpers it spawned; they run
-           past turn end until the engine's real subagent.completed lands.
-           A cancelled turn kills the work tree instead: no close arrives,
-           so running rows settle "stopped" here. */
-        if (e.payload.stopReason === "cancelled") {
+          this.cancelPlanSteps(t);
+          /* #309: an async delegate call closes with its dispatch receipt —
+             the turn ending does not settle helpers it spawned; they run
+             past turn end until the engine's real subagent.completed lands.
+             A cancelled turn kills the work tree instead: no close arrives,
+             so running rows settle "stopped" here. */
           for (const sa of t.subagents) {
             if (sa.status === "running") sa.status = "stopped";
           }
@@ -554,150 +700,164 @@ export function reduceSessionEvents(
        turn.started. Marked only when the case minted/held the turn (a
        stray turnId on a frame that created none mints no phantom). */
     const tid = (e.payload as { turnId?: string }).turnId;
-    if (
-      tid !== undefined &&
-      snapshot?.atSeq !== undefined &&
-      e.seq > snapshot.atSeq
-    ) {
-      const t = turns.get(tid);
-      if (t) t.liveAttached = true;
+    if (tid !== undefined && atSeq !== undefined && e.seq > atSeq) {
+      const t = this.turns.get(tid);
+      if (t) this.wTurn(tid).liveAttached = true;
     }
   }
-  /* #327: `snapshot.state` is true only at the watermark it was
-     captured at. A live feed merges replay + `engine.event` frames into
-     the same log while the snapshot stays frozen — an "idle" snapshot
-     from the last sync must not settle a running turn the stream has
-     already announced. Any event past `atSeq` makes it stale (callers
-     that replay a closed log pass no `atSeq`, so it always applies). */
-  const atSeq = snapshot?.atSeq;
-  const snapshotStale =
-    atSeq !== undefined &&
-    events.some((e) => e.sessionId === sessionId && e.seq > atSeq);
-  if (snapshot && !snapshotStale) state = snapshot.state;
 
-  /* Unfinished plan steps read cancelled on a stopped turn — engines
-     don't re-emit a cancelled snapshot (#180 AC-2). Shared by the
-     user-stop path above and the session-settle sweep below (#327). */
-  const cancelPlanSteps = (t: TurnModel) => {
-    for (const p of t.plans) {
-      for (const s of p.steps) {
-        if (s.status === "pending" || s.status === "in_progress") {
-          s.status = "cancelled";
-        }
+  /* Snapshot + settle + derived passes — the emit half of the old
+     one-shot reduce, run per apply so every emitted model is complete.
+     Settles go through `wTurn`: a turn the sweep closes is a real change
+     and must not mutate the last emission's object. */
+  private emit(): SessionModel {
+    const snapshot = this.snapshot;
+    /* #327: `snapshot.state` is true only at the watermark it was
+       captured at. A live feed merges replay + `engine.event` frames into
+       the same log while the snapshot stays frozen — an "idle" snapshot
+       from the last sync must not settle a running turn the stream has
+       already announced. Any event past `atSeq` makes it stale (callers
+       that replay a closed log pass no `atSeq`, so it always applies). */
+    const state = snapshot && !this.snapshotStale ? snapshot.state : this.state;
+
+    /* #327: a turn can't stay live once its session is no longer running —
+       engines emit `session.state` idle at every turn end and closed on
+       close, so a still-open phase under either means its turn.completed
+       was lost to a truncated or degraded replay (#300). A later turn in
+       the log proves the same with no state event at all (engines run one
+       turn at a time), and so does a snapshot naming another turn current.
+       Requests orphaned on the settled turn cancel out like the engine's
+       own turn-end cancelAllAsks; a still-"running" step cancels the same
+       way (the tool.completed was lost with it). Helper rows settle only
+       under closed/error — an async subagent legitimately runs through
+       the idle gap between turns (#309), and an ACP-mode row the wire can
+       never close is settled by the adapter where dead is provable
+       (engine-hermes acp.ts), not guessed here. */
+    const settle =
+      state === "closed" || state === "error"
+        ? ("stopped" as const)
+        : state === "idle"
+          ? ("done" as const)
+          : undefined;
+    const snapshotTurn = this.snapshotStale
+      ? undefined
+      : snapshot?.turn?.turnId;
+    /* The settle is a PROJECTION onto the emitted turns, never written
+       into the working model: a turn minted while the last-known session
+       state was still idle/closed reads settled at this prefix, but a
+       later apply (the state event landing a frame after turn.started)
+       must revive it — the one-shot reducer self-healed the same way by
+       replaying `turn.started` over the whole log each time. Writing the
+       settle back would make it irrevocable (#430 regression: legs and
+       late-state turns never went live again). */
+    const stopHelpers = (t: TurnModel): TurnModel =>
+      t.subagents.some((sa) => sa.status === "running")
+        ? {
+            ...t,
+            subagents: t.subagents.map((sa) =>
+              sa.status === "running" ? { ...sa, status: "stopped" } : sa,
+            ),
+          }
+        : t;
+    const out: TurnModel[] = new Array(this.order.length);
+    for (const [i, t] of this.order.entries()) {
+      if (TERMINAL.has(t.phase)) {
+        out[i] = settle === "stopped" ? stopHelpers(t) : t;
+        continue;
+      }
+      const superseded =
+        i < this.order.length - 1 ||
+        (snapshotTurn !== undefined && snapshotTurn !== t.turnId);
+      const phase = settle ?? (superseded ? ("done" as const) : undefined);
+      if (!phase) {
+        out[i] = settle === "stopped" ? stopHelpers(t) : t;
+        continue;
+      }
+      const w: TurnModel = {
+        ...t,
+        phase,
+        requests: t.requests.map((r) =>
+          r.outcome === undefined ? { ...r, outcome: "cancel" } : r,
+        ),
+        steps: t.steps.map((s) =>
+          s.status === "running" ? { ...s, status: "cancelled" } : s,
+        ),
+      };
+      if (phase === "stopped") {
+        w.plans = t.plans.map((p) => ({
+          ...p,
+          steps: p.steps.map((s) =>
+            s.status === "pending" || s.status === "in_progress"
+              ? { ...s, status: "cancelled" }
+              : s,
+          ),
+        }));
+      }
+      out[i] = settle === "stopped" ? stopHelpers(w) : w;
+    }
+
+    const live = out.find((t) => !TERMINAL.has(t.phase));
+    const openRequests: TurnRequest[] = [];
+    /* #309: helpers as job-like rows — a subagent left running past its
+       turn lands on the Background tab (web) and the thread's job rows
+       (mobile) through the same feed, next to real jobs (which can also
+       carry by: <subagent name>). */
+    const SUBAGENT_JOB_STATUS: Record<SubagentModel["status"], JobStatus> = {
+      running: "running",
+      done: "exited",
+      failed: "failed",
+      stopped: "stopped",
+    };
+    const subagentJobs: JobModel[] = out.flatMap((t) =>
+      t.subagents.map((sa) => ({
+        jobId: `sa:${sa.subagentId}`,
+        command: sa.task || sa.name,
+        status: SUBAGENT_JOB_STATUS[sa.status],
+        /* Real times, not "up 0s": dispatch epoch while it runs; the
+           engine's reported duration freezes the finished row. */
+        ...(sa.startedAt !== undefined ? { startedAt: sa.startedAt } : {}),
+        ...(sa.status !== "running" && sa.startedAt !== undefined
+          ? { endedAt: sa.startedAt + (sa.durationMs ?? 0) }
+          : {}),
+        by: sa.name,
+        tail: sa.result ?? "",
+        subagent: true,
+      })),
+    );
+    for (const t of out) {
+      for (const r of t.requests) {
+        if (r.outcome === undefined) openRequests.push(r);
       }
     }
-  };
+    /* Emit boundaries: the next batch clones fresh on first write —
+       this emit's objects become immutable the moment they ship. */
+    this.draftTurns.clear();
+    this.draftJobs.clear();
+    return {
+      sessionId: this.sessionId,
+      state,
+      turns: out,
+      live,
+      openRequests,
+      jobs: [...this.jobs.values()],
+      subagentJobs,
+      model: this.model,
+      provider: this.provider,
+      effort: this.effort,
+      fast: this.fast,
+    };
+  }
+}
 
-  /* #327: a turn can't stay live once its session is no longer running —
-     engines emit `session.state` idle at every turn end and closed on
-     close, so a still-open phase under either means its turn.completed
-     was lost to a truncated or degraded replay (#300). A later turn in
-     the log proves the same with no state event at all (engines run one
-     turn at a time), and so does a snapshot naming another turn current.
-     Requests orphaned on the settled turn cancel out like the engine's
-     own turn-end cancelAllAsks; a still-"running" step cancels the same
-     way (the tool.completed was lost with it). Helper rows settle only
-     under closed/error — an async subagent legitimately runs through
-     the idle gap between turns (#309), and an ACP-mode row the wire can
-     never close is settled by the adapter where dead is provable
-     (engine-hermes acp.ts), not guessed here. */
-  const settle =
-    state === "closed" || state === "error"
-      ? ("stopped" as const)
-      : state === "idle"
-        ? ("done" as const)
-        : undefined;
-  const snapshotTurn = snapshotStale ? undefined : snapshot?.turn?.turnId;
-  for (const [i, t] of order.entries()) {
-    if (t.phase === "done" || t.phase === "stopped" || t.phase === "failed")
-      continue;
-    const superseded =
-      i < order.length - 1 ||
-      (snapshotTurn !== undefined && snapshotTurn !== t.turnId);
-    const phase = settle ?? (superseded ? ("done" as const) : undefined);
-    if (!phase) continue;
-    t.phase = phase;
-    for (const r of t.requests) {
-      if (r.outcome === undefined) r.outcome = "cancel";
-    }
-    for (const s of t.steps) {
-      if (s.status === "running") s.status = "cancelled";
-    }
-    if (phase === "stopped") cancelPlanSteps(t);
-  }
-  if (settle === "stopped") {
-    for (const t of order) {
-      for (const sa of t.subagents) {
-        if (sa.status === "running") sa.status = "stopped";
-      }
-    }
-  }
-
-  /* A helper by id across every turn — subagent.* frames are stamped
-     with whichever turn is open, not the one that spawned it (#309). */
-  function findSubagent(id: string): SubagentModel | undefined {
-    for (const t of order) {
-      const sa = t.subagents.find((s) => s.subagentId === id);
-      if (sa) return sa;
-    }
-    return undefined;
-  }
-
-  /* The newest snapshot for a planId, or undefined (#180). */
-  function latestPlan(t: TurnModel, planId: string): TurnPlan | undefined {
-    for (let i = t.plans.length - 1; i >= 0; i--) {
-      if (t.plans[i].planId === planId) return t.plans[i];
-    }
-    return undefined;
-  }
-
-  const live = order.find(
-    (t) => t.phase !== "done" && t.phase !== "stopped" && t.phase !== "failed",
-  );
-  const openRequests: TurnRequest[] = [];
-  const jobList = [...jobs.values()];
-  /* #309: helpers as job-like rows — a subagent left running past its
-     turn lands on the Background tab (web) and the thread's job rows
-     (mobile) through the same feed, next to real jobs (which can also
-     carry by: <subagent name>). */
-  const SUBAGENT_JOB_STATUS: Record<SubagentModel["status"], JobStatus> = {
-    running: "running",
-    done: "exited",
-    failed: "failed",
-    stopped: "stopped",
-  };
-  const subagentJobs: JobModel[] = order.flatMap((t) =>
-    t.subagents.map((sa) => ({
-      jobId: `sa:${sa.subagentId}`,
-      command: sa.task || sa.name,
-      status: SUBAGENT_JOB_STATUS[sa.status],
-      /* Real times, not "up 0s": dispatch epoch while it runs; the
-         engine's reported duration freezes the finished row. */
-      ...(sa.startedAt !== undefined ? { startedAt: sa.startedAt } : {}),
-      ...(sa.status !== "running" && sa.startedAt !== undefined
-        ? { endedAt: sa.startedAt + (sa.durationMs ?? 0) }
-        : {}),
-      by: sa.name,
-      tail: sa.result ?? "",
-      subagent: true,
-    })),
-  );
-  for (const t of order) {
-    for (const r of t.requests) {
-      if (r.outcome === undefined) openRequests.push(r);
-    }
-  }
-  return {
-    sessionId,
-    state,
-    turns: order,
-    live,
-    openRequests,
-    jobs: jobList,
-    subagentJobs,
-    model,
-    provider,
-    effort,
-    fast,
-  };
+/**
+ * Reduce one session's engine event log (+ optional snapshot) into turn
+ * models for rendering. Pure and replay-safe: feed it the events.since log,
+ * the session feed atom's events, or a live stream — same result.
+ */
+export function reduceSessionEvents(
+  sessionId: string,
+  events: EngineEvent[],
+  snapshot?: ReduceSnapshot,
+): SessionModel {
+  return new SessionReducer(sessionId).apply(events, snapshot);
 }
