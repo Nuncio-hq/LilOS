@@ -51,8 +51,14 @@ export function toUiEmployee(e: Employee, engineDown = false): UiEmployee {
   };
 }
 
-const clock = (ts: number) =>
-  new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+/* #427: `toLocaleTimeString` with options built a fresh Intl.DateTimeFormat
+   per message per render — the top of the long-thread profile. `[]` means
+   "default locale", so one formatter serves every call. */
+const CLOCK_FMT = new Intl.DateTimeFormat(undefined, {
+  hour: "2-digit",
+  minute: "2-digit",
+});
+export const clock = (ts: number) => CLOCK_FMT.format(new Date(ts));
 
 const PHASE_MAP: Record<TurnModel["phase"], Phase> = {
   submitted: "submitted",
@@ -162,12 +168,7 @@ export function toJob(j: JobModel, now = Date.now()): BackgroundJob {
     id: j.jobId,
     command: j.command,
     status: j.status,
-    started: j.startedAt
-      ? new Date(j.startedAt).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : "",
+    started: j.startedAt ? clock(j.startedAt) : "",
     uptime: j.startedAt
       ? formatUptime(((j.endedAt ?? now) - j.startedAt) / 1000)
       : "0s",

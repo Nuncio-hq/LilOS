@@ -6,8 +6,9 @@
 
 import type { SessionModel } from "@lilos/client-runtime";
 import type { AppChannel, Conversation } from "@lilos/contracts/app";
+import { atom } from "nanostores";
 import { describe, expect, it } from "vitest";
-import { employeeBadges } from "../src/lib/badges";
+import { badgeStore, employeeBadges } from "../src/lib/badges";
 
 const dm = (id: string, employeeId: string): AppChannel => ({
   id,
@@ -125,5 +126,52 @@ describe("AC-3 employeeBadges", () => {
       s1: model({}),
     });
     expect(badges.e1).toBeUndefined();
+  });
+});
+
+/* #427: the computed store keeps one record while the counts are equal —
+   a `sessionModels` rebuild per streamed word must not fan out a sidebar
+   re-render. */
+describe("AC-427 badgeStore", () => {
+  const setup = () => {
+    const channels = atom<AppChannel[]>([dm("ch1", "e1")]);
+    const convs = atom<Conversation[]>([conv("c1", "ch1", "s1")]);
+    const models = atom<Record<string, SessionModel>>({
+      s1: model({ live: true }),
+    });
+    return { channels, convs, models, store: badgeStore(channels, convs, models) };
+  };
+
+  it("returns the same record when sources change but counts do not", () => {
+    const { models, store } = setup();
+    const a = store.get();
+    expect(a.e1).toEqual({ running: 1, approvals: undefined });
+    /* A delta rebuilds the session's model — same badge counts. */
+    models.set({ s1: model({ live: true }) });
+    expect(store.get()).toBe(a);
+  });
+
+  it("emits a new record only when a badge value moves", () => {
+    const { models, store } = setup();
+    const a = store.get();
+    models.set({ s1: model({ live: true, openRequests: 2 }) });
+    const b = store.get();
+    expect(b).not.toBe(a);
+    expect(b.e1).toEqual({ running: 1, approvals: 2 });
+    /* Count back down → another record; equal counts in between stay put. */
+    models.set({ s1: model({ live: true }) });
+    const c = store.get();
+    expect(c).not.toBe(b);
+    models.set({ s1: model({ live: true }) });
+    expect(store.get()).toBe(c);
+  });
+
+  it("empties to a fresh record when the last badge clears", () => {
+    const { models, store } = setup();
+    const a = store.get();
+    models.set({});
+    const b = store.get();
+    expect(b).not.toBe(a);
+    expect(b).toEqual({});
   });
 });

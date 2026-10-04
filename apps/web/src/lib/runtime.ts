@@ -12,8 +12,10 @@ import type {
   ModelProvider,
 } from "@lilos/contracts/engine";
 import type { ModelVisibility } from "@lilos/ui";
+import type { EmpBadge } from "@lilos/ui/types";
 import { atom, computed, type ReadableAtom } from "nanostores";
 import { defaultAccess, defaultEditor } from "../settings/state";
+import { badgeStore } from "./badges";
 import type { LilosConfig } from "./config";
 import { initConnect } from "./connect";
 import { hostUser, initHost } from "./host";
@@ -185,6 +187,17 @@ function sessionModel(sessionId: string): ReadableAtom<SessionModel> {
  * feed reduced so list rows and badges can read live phases without hooks.
  */
 export const sessionModels = atom<Record<string, SessionModel>>({});
+
+/* #427: the sidebar badge map as a computed store — `sessionModels`
+   rebuilds on every engine event, but the badge counts almost never move.
+   `badgeStore` keeps the same record while counts are equal, so AppShell
+   re-renders on real badge changes only. `relay` binds at boot, so the
+   computed is built on first read (AppShell mounts post-boot). */
+let empBadges: ReadableAtom<Record<string, EmpBadge>> | undefined;
+export function employeeBadgeMap(): ReadableAtom<Record<string, EmpBadge>> {
+  empBadges ??= badgeStore(relay.channels, relay.conversations, sessionModels);
+  return empBadges;
+}
 
 const feedSubs = new Map<string, () => void>();
 
