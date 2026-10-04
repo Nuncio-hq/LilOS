@@ -83,8 +83,15 @@ test("AC-1: Cmd+F mounts held rows — turn-1 text is in the DOM; the lapse re-b
   await waitSettled(focus, 1);
 
   /* The same thread peeked open in the panel — the frame the issue
-     profiled. Turns 2..60 run there. */
-  await page.goto(page.url().replace(/\/focus.*$/, ""));
+     profiled. Turns 2..60 run there. `page.goto` is a real reload — the
+     store re-reads `?findUnstubMs=` on module eval, so the hook must
+     ride this URL too (any prior query is stripped first). */
+  await page.goto(
+    `${page
+      .url()
+      .replace(/\/focus.*$/, "")
+      .replace(/\?.*$/, "")}?findUnstubMs=2500`,
+  );
   const panel = page.locator("[data-thread-panel]");
   await expect(panel).toBeVisible({ timeout: 60_000 });
   for (let i = 2; i <= 60; i++) {
