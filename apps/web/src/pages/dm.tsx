@@ -39,10 +39,10 @@ import type {
   AttachedFile,
   BackgroundJob,
   Channel,
+  EngineProfile,
   FileMention,
   MessageHit,
   ModelChoice,
-  ModelOption,
   ModelPickerExtras,
   Msg,
   Thread,
@@ -84,7 +84,11 @@ import {
 } from "../lib/attachments";
 import { requestConnect } from "../lib/connect";
 import { FoldCache, type FoldInputs } from "../lib/conv-fold";
-import { removeEmployee, saveEmployee } from "../lib/employees";
+import {
+  listHirableProfiles,
+  removeEmployee,
+  saveEmployee,
+} from "../lib/employees";
 import { parseFocusTab } from "../lib/focus-search";
 import {
   addFolder,
@@ -129,6 +133,7 @@ import {
 } from "../lib/runtime";
 import { say, sayError, sayNotice } from "../lib/toast";
 import { defaultAccess } from "../settings/state";
+import { DmProfileCard } from "./dm-profile-card";
 
 const EMPTY_MESSAGES = atom<ChannelMessagesState>({
   channelId: "",
@@ -240,7 +245,30 @@ export function DmPage() {
   const statusPoll = useAtom(relay.status);
   const fatal = useAtom(relay.fatal);
   const [profileOpen, setProfileOpen] = useState(false);
+  /* #421: the header card lists the engine's profiles for the
+     missing-profile switch — fetched per open so a profile created
+     elsewhere shows; stays undefined until first load (an empty list
+     would paint a false "Profile missing"). */
+  const [cardProfiles, setCardProfiles] = useState<EngineProfile[] | null>(
+    null,
+  );
   const [editOpen, setEditOpen] = useState(false);
+  useEffect(() => {
+    if (!profileOpen) return;
+    let dead = false;
+    void listHirableProfiles()
+      .then((list) => {
+        if (!dead) setCardProfiles(list);
+      })
+      .catch(() => {
+        /* No profiles → no Switch: renders like a profile-less card, still
+           matching the "missing" copy row (D-#19). */
+        if (!dead) setCardProfiles((prev) => prev ?? []);
+      });
+    return () => {
+      dead = true;
+    };
+  }, [profileOpen]);
   const [editError, setEditError] = useState<string | null>(null);
   /* The picker's pick for a session that doesn't exist yet (#92 AC-5): held
      per employee, stamped on `conversations.open`, cleared once sent. */
@@ -1737,12 +1765,14 @@ export function DmPage() {
         />
       )}
       {profileOpen && !editOpen && (
-        <EmployeeProfileCard
-          name={uiEmp.name}
-          profile={uiEmp.profile}
-          model={uiEmp.model}
+        <DmProfileCard
+          /* A record with no pinned model shows the engine default, same as
+             the picker's effective model — never a blank Model row. */
+          e={{ ...uiEmp, model: uiEmp.model || defaultModel || "" }}
+          profiles={cardProfiles ?? undefined}
+          engineName={statusPoll.result?.engine?.name}
+          ownerName={currentName()}
           models={catalog.length ? catalog : undefined}
-          instructions={uiEmp.instructions}
           onEdit={() => {
             setEditError(null);
             setEditAgent(undefined);
@@ -1754,6 +1784,16 @@ export function DmPage() {
               .catch(() => setEditAgent(null))
               .finally(() => setEditOpen(true));
           }}
+          /* #421 AC-2: the switch works end to end — employees.update
+             re-points the record and the harness resolves the new
+             profile on the next session.start, so it renders (D-#19). */
+          onSwitchProfile={(p) =>
+            void relay
+              .updateEmployee(employee.id, { profile: p })
+              .catch((err) =>
+                say(err instanceof Error ? err.message : String(err)),
+              )
+          }
           onClose={() => setProfileOpen(false)}
         />
       )}
@@ -1857,73 +1897,6 @@ function QuestionCard({
         >
           Cancel
         </button>
-      </div>
-    </div>
-  );
-}
-
-function EmployeeProfileCard({
-  name,
-  profile,
-  model,
-  models,
-  instructions,
-  onEdit,
-  onClose,
-}: {
-  name: string;
-  profile: string;
-  model: string;
-  models?: ModelOption[];
-  instructions: string;
-  onEdit: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-background/60 p-6">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${name} profile`}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") onClose();
-        }}
-        className="w-full max-w-sm rounded-xl border bg-background p-5 shadow-2xl"
-      >
-        <div className="font-semibold">{name}</div>
-        <dl className="mt-3 space-y-1.5 text-xs">
-          <div className="flex gap-2">
-            <dt className="w-20 text-muted-foreground">Profile</dt>
-            <dd className="font-mono">{profile}</dd>
-          </div>
-          <div className="flex gap-2">
-            <dt className="w-20 text-muted-foreground">Model</dt>
-            <dd className="font-mono">
-              {models?.find((m) => m.id === model)?.name ??
-                (model || "engine default")}
-            </dd>
-          </div>
-          <div className="flex gap-2">
-            <dt className="w-20 text-muted-foreground">Soul</dt>
-            <dd className="min-w-0 flex-1">{instructions || "—"}</dd>
-          </div>
-        </dl>
-        <div className="mt-4 flex gap-2">
-          <button
-            type="button"
-            className="flex-1 rounded-md bg-primary px-2 py-1.5 text-primary-foreground text-sm"
-            onClick={onEdit}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            className="flex-1 rounded-md border px-2 py-1.5 text-sm hover:bg-muted"
-            onClick={onClose}
-          >
-            Close
-          </button>
-        </div>
       </div>
     </div>
   );
