@@ -63,6 +63,27 @@ jobs:
       - name: Fast checks (biome, schema, typecheck, unit tests, prototype build, mobile bundle check)
         run: bun run verify:fast
 
+  # TEMPORARY (#516 AC-2): hammer the stack-identity spec 20× — the flake
+  # must not come back. Reverted in the follow-up commit once green.
+  ac516-repeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install Playwright browsers # spawned stack's surfaces can drive Chromium
+        run: bunx playwright install --with-deps chromium
+      - name: e2e-stack-identity ×20
+        run: |
+          for i in $(seq 1 20); do
+            echo "=== iteration $i/20 ==="
+            bunx vitest run apps/web/test/e2e-stack-identity.test.ts || exit 1
+          done
+
   e2e:
     needs: scope
     if: needs.scope.outputs.e2e == 'true'
