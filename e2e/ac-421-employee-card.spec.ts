@@ -68,24 +68,23 @@ async function rpc(
   return out;
 }
 
-/** Open the app past first-run, landed on the auto-hired Default's DM.
- *  `statusPollMs` shortens the engine-name poll so the card's Engine row
- *  reads `engine-fake` well inside the waits. */
-async function openApp(page: Page) {
+/** Open the app past first-run, landed on `name`'s DM (defaults to the
+ *  auto-hired Default). `statusPollMs` shortens the engine-name poll so the
+ *  card's Engine row reads `engine-fake` well inside the waits. */
+async function openApp(page: Page, name = "Default") {
   await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
   await page.goto(`${stack.webUrl}/`);
   await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
   await page.goto(`${page.url()}?statusPollMs=500`);
-  /* AC-2 leaves a second employee ("Switchy") on this shared stack, so `/`
-     can land on her DM. Always click through the Default sidebar row —
-     AC-1/AC-3 are about Default's card. */
+  /* AC-2/AC-504 leave extra employees on this shared stack, so `/` can land
+     on another DM. Always click through the named sidebar row. */
   const row = page
     .locator("aside")
-    .getByRole("button", { name: /^Default Default$/ });
+    .getByRole("button", { name: new RegExp(`^${name} `) });
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.click();
   await expect(
-    page.getByRole("textbox", { name: /New session with Default/ }),
+    page.getByRole("textbox", { name: new RegExp(`New session with ${name}`) }),
   ).toBeVisible();
 }
 
@@ -117,14 +116,22 @@ test("AC-1 the DM header opens the shared EmployeeCard, app-local modal gone", a
     dlg.getByText(/Persona, memory and skills live in the engine profile/),
   ).toBeVisible();
   await expect(dlg.getByRole("button", { name: "Message" })).toBeVisible();
-  await expect(dlg.getByRole("button", { name: "Edit" })).toBeVisible();
-  // The old modal's signature: a "Soul" row and a Close button — both gone.
+  // #504: two Edit affordances — the header button and the empty-state link.
+  await expect(dlg.getByRole("button", { name: "Edit" })).toHaveCount(2);
+  // The old modal's signature: a "Soul" row — gone. #504: the close
+  // affordance is the shell's visible ✕ inside the dialog.
   expect(await dlg.locator("dt", { hasText: "Soul" }).count()).toBe(0);
-  expect(await dlg.getByRole("button", { name: "Close" }).count()).toBe(0);
+  await expect(dlg.getByRole("button", { name: "Close" })).toBeVisible();
+  // #504 empty states on the real stack: Default's record carries no
+  // SOUL.md and she sits idle — the card says so instead of bare labels.
+  await expect(dlg.getByText(/No instructions yet/)).toBeVisible();
+  await expect(dlg.getByText("Idle")).toBeVisible();
 
   // Edit still routes into the engine-profile editor; closing it brings the
-  // card back (the shell stays mounted behind the dialog).
-  await dlg.getByRole("button", { name: "Edit" }).click();
+  // card back (the shell stays mounted behind the dialog). Two Edit
+  // affordances exist now — the header button + the empty-state link (#504);
+  // the header one is first.
+  await dlg.getByRole("button", { name: "Edit" }).first().click();
   const edit = page.locator("div.fixed.inset-0", { hasText: "Edit employee" });
   await expect(edit).toBeVisible();
   await expect(dlg).toHaveCount(0);
@@ -132,6 +139,11 @@ test("AC-1 the DM header opens the shared EmployeeCard, app-local modal gone", a
   await expect(dlg).toBeVisible();
   // Message closes (you are already in the DM).
   await dlg.getByRole("button", { name: "Message" }).click();
+  await expect(dlg).toHaveCount(0);
+  // #504: the visible ✕ closes too — reopen, click it, gone.
+  await page.getByRole("button", { name: /^Profile$/ }).click();
+  await expect(dlg).toBeVisible();
+  await dlg.getByRole("button", { name: "Close" }).click();
   await expect(dlg).toHaveCount(0);
 });
 
@@ -286,6 +298,84 @@ test("AC-3 side-by-side vs the prototype card, 3 dims × light/dark", async ({
         w,
         h,
       );
+    }
+  }
+});
+
+const SHOTS_504 = path.join(repo, "test-results", "ac-504");
+
+/* #504 AC-3: the polished card in the real app, one shot per
+   SOUL.md-state × dims × scheme. "Souly" carries `instructions` (the
+   hire-time mirror of a profile's soul); Default's record has none — the
+   first-run hire reads the soul-less `agents.list` row. Both stay idle, so
+   every shot also shows the muted "Idle" Now row and the single-frame
+   dialog with its ✕. CI uploads test-results/ac-504/ as an artifact; the
+   shots land in pr-assets/504/ from there. */
+test("AC-3 (#504) shots: with + without SOUL.md, 3 dims × light/dark", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await rpc(stack.relayWs, stack.relayToken, [
+    {
+      method: "employees.create",
+      params: {
+        name: "Souly",
+        role: "Reviewer",
+        status: "online",
+        profile: "reviewer",
+        model: "fake-small",
+        instructions:
+          "You review changes for correctness, tests and boundaries. Comment with file:line. Never push to main.",
+      },
+    },
+  ]);
+  const html = page.locator("html");
+  const schemeIs = async (s: "light" | "dark") => {
+    if (s === "dark") await expect(html).toHaveClass(/dark/);
+    else await expect(html).not.toHaveClass(/dark/);
+  };
+  /** Open `name`'s card from the sidebar row (openApp already landed us on a DM). */
+  const openCard = async (name: "Default" | "Souly") => {
+    await page
+      .locator("aside")
+      .getByRole("button", { name: new RegExp(`^${name} `) })
+      .click();
+    await expect(
+      page.getByRole("textbox", {
+        name: new RegExp(`New session with ${name}`),
+      }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: /^Profile$/ }).click();
+    const dlg = page.getByRole("dialog", {
+      name: new RegExp(`${name} profile`, "i"),
+    });
+    await expect(dlg).toBeVisible();
+    await expect(dlg.getByText("engine-fake")).toBeVisible({
+      timeout: 30_000,
+    });
+    return dlg;
+  };
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    for (const [w, h] of DIMS) {
+      await page.setViewportSize({ width: w, height: h });
+      await openApp(page);
+      const noSoul = await openCard("Default");
+      await schemeIs(scheme);
+      await expect(noSoul.getByText(/No instructions yet/)).toBeVisible();
+      await page.screenshot({
+        path: `${SHOTS_504}/card-nosoul-${w}x${h}-${scheme}.png`,
+      });
+      await noSoul.getByRole("button", { name: "Close" }).click();
+      await expect(noSoul).toHaveCount(0);
+      const soul = await openCard("Souly");
+      await schemeIs(scheme);
+      await expect(soul.getByText(/You review changes/)).toBeVisible();
+      await page.screenshot({
+        path: `${SHOTS_504}/card-soul-${w}x${h}-${scheme}.png`,
+      });
+      await soul.getByRole("button", { name: "Close" }).click();
+      await expect(soul).toHaveCount(0);
     }
   }
 });
