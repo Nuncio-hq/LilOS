@@ -37,6 +37,7 @@ function msg(): AppMessage {
     rewound: false,
     dropped: false,
     removed: false,
+    claimed: false,
   };
 }
 

@@ -393,6 +393,7 @@
         "messages.remove",
         "messages.drop",
         "messages.send",
+        "messages.claim",
         "messages.search",
         "attachments.get",
         "channel.subscribe",
@@ -2537,6 +2538,10 @@
               "default": false,
               "type": "boolean"
             },
+            "claimed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -3155,6 +3160,10 @@
           "default": false,
           "type": "boolean"
         },
+        "claimed": {
+          "default": false,
+          "type": "boolean"
+        },
         "checkpoint": {
           "type": "string"
         }
@@ -3317,6 +3326,10 @@
                 "type": "boolean"
               },
               "removed": {
+                "default": false,
+                "type": "boolean"
+              },
+              "claimed": {
                 "default": false,
                 "type": "boolean"
               },
@@ -3531,6 +3544,10 @@
               "default": false,
               "type": "boolean"
             },
+            "claimed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -3550,6 +3567,20 @@
       "required": [
         "message"
       ]
+    },
+    "MessagesClaimParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "messageId"
+      ],
+      "additionalProperties": false
     },
     "MessagesDropParams": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4397,6 +4428,10 @@
               "default": false,
               "type": "boolean"
             },
+            "claimed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -4514,6 +4549,10 @@
                 "type": "boolean"
               },
               "removed": {
+                "default": false,
+                "type": "boolean"
+              },
+              "claimed": {
                 "default": false,
                 "type": "boolean"
               },
@@ -5045,6 +5084,10 @@
                     "default": false,
                     "type": "boolean"
                   },
+                  "claimed": {
+                    "default": false,
+                    "type": "boolean"
+                  },
                   "checkpoint": {
                     "type": "string"
                   }
@@ -5162,6 +5205,10 @@
                       "type": "boolean"
                     },
                     "removed": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "claimed": {
                       "default": false,
                       "type": "boolean"
                     },
@@ -6624,6 +6671,10 @@
               "default": false,
               "type": "boolean"
             },
+            "claimed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -6752,6 +6803,10 @@
               "type": "boolean"
             },
             "removed": {
+              "default": false,
+              "type": "boolean"
+            },
+            "claimed": {
               "default": false,
               "type": "boolean"
             },
@@ -6885,6 +6940,10 @@
                 "type": "boolean"
               },
               "removed": {
+                "default": false,
+                "type": "boolean"
+              },
+              "claimed": {
                 "default": false,
                 "type": "boolean"
               },

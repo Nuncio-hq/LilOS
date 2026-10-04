@@ -24,6 +24,7 @@ const msg = (over: Partial<AppMessage>): AppMessage => ({
   rewound: false,
   dropped: false,
   removed: false,
+  claimed: false,
   ...over,
 });
 
@@ -163,5 +164,18 @@ describe("#315 waitingMessages", () => {
     const out = waitingMessages([prompt], 1, model([done]));
     expect(out.waiting).toEqual([]);
     expect(out.hiddenIds.size).toBe(0);
+  });
+
+  it("#377 a claimed send is not waiting — it renders as its own bubble", () => {
+    /* A dispatching send sits under deliveredSeq until its turn starts;
+       claimed takes it out of the tray so Remove only ever lands on a
+       truly queued send — but it is NOT hidden: the row is a sent user
+       message and renders as its bubble until the turn consumes it. */
+    const dispatching = msg({ id: "m1", seq: 1, claimed: true });
+    const queued = msg({ id: "m2", seq: 2 });
+    const out = waitingMessages([dispatching, queued], 0, model([]));
+    expect(out.waiting.map((w) => w.message.id)).toEqual(["m2"]);
+    expect(out.hiddenIds.has("m1")).toBe(false);
+    expect(out.hiddenIds.has("m2")).toBe(true);
   });
 });
