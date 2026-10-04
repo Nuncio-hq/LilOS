@@ -275,6 +275,15 @@ export type SessionAlert = {
    a turn or a subagent works, `open` while it sits loaded and idle, `closed`
    once idle-closed (resumes on the next message). */
 export type SessionLife = "running" | "open" | "closed";
+/* #532: a note on the transcript's state — the kind decides WHERE it
+   renders: "trimmed" (#431, the engine's capped log dropped the session's
+   head) heads the transcript since it describes history missing above the
+   first entry; "unavailable" (#28, the feed can't replay) stays at the
+   tail it describes. */
+export type TranscriptNote = {
+  kind: "trimmed" | "unavailable";
+  text: string;
+};
 export type Thread = {
   session: string;
   /* Engine session state when nothing runs; unset = open. Running is derived

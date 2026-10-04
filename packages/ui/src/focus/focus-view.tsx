@@ -49,6 +49,7 @@ import {
 import { Button } from "../components/ui/button";
 import { openStartRequest } from "../conversation/cards";
 import type { PlanAction } from "../conversation/plan-card";
+import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
   RewindCheckpoint,
   TURN_LAZY_AFTER,
@@ -79,6 +80,7 @@ import type {
   ShipBar,
   ShipHandlers,
   Thread,
+  TranscriptNote,
   WbSpot,
   WbTab,
   Work,
@@ -226,9 +228,11 @@ export function FocusView({
      contract as ThreadView. */
   agentWorking?: boolean;
   onRemovePending?: (i: number) => void;
-  /* Why the working transcript can't be shown — same note ThreadView renders
-     where the transcript would be (issue #28). */
-  transcriptNote?: string;
+  /* A note on the transcript's state — same contract as ThreadView (#532):
+     "trimmed" heads the transcript (#431 — history missing above the
+     first entry); "unavailable" tails it (#28 — the live tail can't
+     replay). */
+  transcriptNote?: TranscriptNote;
   /* A pinned strip at the top of the conversation column (#423 AC-2 — the
      DM history-failure notice). The caller renders the surface (e.g. a
      StatusBanner); Focus only owns the slot above the scroll. */
@@ -683,6 +687,9 @@ export function FocusView({
               data-thread
               className="mx-auto w-full max-w-[46rem] gap-7 px-5 py-8"
             >
+              {transcriptNote?.kind === "trimmed" && (
+                <TranscriptNoteRow note={transcriptNote} />
+              )}
               {onRewind && root.id && human(root.from) && (
                 <RewindCheckpoint
                   running={running}
@@ -727,13 +734,8 @@ export function FocusView({
                   acts={actsRef}
                 />
               ))}
-              {transcriptNote && (
-                <div
-                  data-transcript-note
-                  className="rounded-lg border border-dashed px-3 py-2 text-muted-foreground text-xs"
-                >
-                  {transcriptNote}
-                </div>
+              {transcriptNote?.kind === "unavailable" && (
+                <TranscriptNoteRow note={transcriptNote} />
               )}
             </ConversationContent>
             <ConversationScrollButton />
