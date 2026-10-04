@@ -4,6 +4,7 @@
  *
  *   LILOS_ENGINE=fake|hermes|url|command bun run apps/harness/src/index.ts
  */
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -38,6 +39,13 @@ import { serveSurfaces } from "./surfaces/server";
 const config = resolveHarnessConfig();
 mkdirSync(config.workdir, { recursive: true });
 mkdirSync(config.checkpointsDir, { recursive: true });
+
+/* Boot nonce served on the feed's /healthz (#273): an e2e readiness probe
+   compares it against this line so a foreign harness answering the port is
+   a hard boot failure, not silent cross-talk. Logged before the feed binds
+   so ours is known even when the bind retries. */
+const instanceId = randomUUID();
+console.log(`[harness] instanceId: ${instanceId}`);
 
 /** Release version — stamped at bundle build time (#35); repo builds report package.json's. */
 const releaseVersion = process.env.LILOS_RELEASE_VERSION ?? packageJson.version;
@@ -306,6 +314,8 @@ const feedServer = Bun.serve<FeedData>({
   fetch(req, server) {
     const pathname = new URL(req.url).pathname;
     if (pathname === "/host") return host(req);
+    // Identity for e2e readiness probes (#273) — mirrors the relay's /healthz.
+    if (pathname === "/healthz") return Response.json({ ok: true, instanceId });
     if (
       pathname === "/ws" &&
       server.upgrade(req, { data: { send: () => {} } })

@@ -1,6 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -10,7 +8,7 @@ import {
   type Page,
   test,
 } from "@playwright/test";
-import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { bootStack } from "./helpers/stack";
 import { wport } from "./ports";
 
 /**
@@ -27,121 +25,7 @@ const repo = path.resolve(here, "..");
 // --repeat-each spreads a file's repeats across worker processes; each boots
 // the stack again, so ports are offset per worker or relays race one port (#84).
 
-const webDir = path.join(repo, "apps", "web");
 const desktopDir = path.join(repo, "apps", "desktop");
-
-interface Stack {
-  home: string;
-  webUrl: string;
-  relayWs: string;
-  feedWs: string;
-  stop: () => Promise<void>;
-}
-
-async function waitForHttp(
-  url: string,
-  proc?: ChildProcess,
-  ms = 120_000,
-): Promise<void> {
-  const start = Date.now();
-  let last = "unreachable";
-  for (;;) {
-    // A wedged fetch (accepted socket, starved handler) hangs the loop for
-    // the whole budget otherwise — cap each attempt so retries stay cheap.
-    const ok = await fetch(url, { signal: AbortSignal.timeout(5_000) })
-      .then((r) => {
-        if (r.ok || r.status === 404) return true;
-        last = `HTTP ${r.status}`;
-        return false;
-      })
-      .catch((e) => {
-        last = String(e?.cause ?? e);
-        return false;
-      });
-    if (ok) return;
-    // A dead stack never serves (vite --strictPort losing a port race,
-    // relay dying) — fail fast instead of burning the whole budget.
-    if (proc && proc.exitCode !== null)
-      throw new Error(`stack exited ${proc.exitCode} before ${url}`);
-    if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}: last=${last}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
-function killProc(proc: ChildProcess): Promise<void> {
-  // `bun run dev` stacks intermediate shim layers between `proc` and the
-  // real dev-stack children, and bun doesn't forward signals through them —
-  // signal the whole process group (the spawn is `detached`) or the stack
-  // orphans and keeps its ports bound, poisoning the next boot (#84).
-  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
-    try {
-      if (proc.pid) process.kill(-proc.pid, sig);
-    } catch {
-      try {
-        proc.kill(sig);
-      } catch {}
-    }
-  };
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      killGroup("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    killGroup("SIGTERM");
-  });
-}
-
-async function bootStack(
-  tag: string,
-  ports: { relay: number; feed: number; web: number },
-  extraEnv: Record<string, string> = {},
-): Promise<Stack> {
-  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
-  const leakTag = engineTag(tag);
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: webDir,
-    detached: true,
-    env: {
-      ...process.env,
-      LILOS_HOME: home,
-      LILOS_ENGINE_TAG: leakTag,
-      LILOS_RELAY_PORT: String(ports.relay),
-      LILOS_FEED_PORT: String(ports.feed),
-      LILOS_WEB_PORT: String(ports.web),
-      ...extraEnv,
-    },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  const webUrl = `http://127.0.0.1:${ports.web}`;
-  try {
-    // vite answers HTTP before the relay accepts WS — wait for both or the
-    // page hits "WebSocket error before open" under parallel load (#84). The
-    // app's first WS connect has no retry, so the relay port must listen
-    // before the page ever loads.
-    await waitForHttp(webUrl, proc);
-    await waitForHttp(`http://127.0.0.1:${ports.relay}/`, proc);
-    return {
-      home,
-      webUrl,
-      relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
-      feedWs: `ws://127.0.0.1:${ports.feed}/ws`,
-      stop: async () => {
-        await killProc(proc);
-        await expectNoEngineLeak(leakTag);
-      },
-    };
-  } catch (e) {
-    // Group kill: `bun run dev` spawns detached — killing only the shim
-    // orphans stack.ts + relay + harness + vite and poisons the next boot.
-    await killProc(proc);
-    throw e;
-  }
-}
 
 const SHOTS = path.join(repo, "test-results", "ac-80");
 /* AC-1 never gates on a running turn — its prompt runs at the engine tick. */

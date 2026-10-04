@@ -1,9 +1,8 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { bootStack, killProc } from "./helpers/stack";
 import { wport } from "./ports";
 
 /**
@@ -18,69 +17,6 @@ import { wport } from "./ports";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
-const webDir = path.join(repo, "apps", "web");
-
-interface Stack {
-  home: string;
-  webUrl: string;
-  stop: () => Promise<void>;
-}
-
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    const ok = await fetch(url)
-      .then((r) => r.ok || r.status === 404)
-      .catch(() => false);
-    if (ok) return;
-    if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
-function killProc(proc: ChildProcess): Promise<void> {
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      proc.kill("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    proc.kill("SIGTERM");
-  });
-}
-
-async function bootStack(
-  tag: string,
-  ports: { relay: number; feed: number; web: number },
-  extraEnv: Record<string, string> = {},
-): Promise<Stack> {
-  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: webDir,
-    env: {
-      ...process.env,
-      LILOS_HOME: home,
-      LILOS_RELAY_PORT: String(ports.relay),
-      LILOS_FEED_PORT: String(ports.feed),
-      LILOS_WEB_PORT: String(ports.web),
-      LILOS_USER_NAME: "Oscar",
-      ...extraEnv,
-    },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  const webUrl = `http://127.0.0.1:${ports.web}`;
-  try {
-    await waitForHttp(webUrl);
-    return { home, webUrl, stop: () => killProc(proc) };
-  } catch (e) {
-    proc.kill("SIGKILL");
-    throw e;
-  }
-}
 
 async function dmDefault(page: Page, webUrl: string) {
   await page.goto(`${webUrl}/`);
@@ -137,11 +73,17 @@ test("tray reserves its height: the approval card stays answerable with a waitin
   page,
 }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack("traygeo", {
-    relay: wport(4643),
-    feed: wport(4647),
-    web: wport(5241),
-  });
+  const stack = await bootStack(
+    "traygeo",
+    {
+      relay: wport(4643),
+      feed: wport(4647),
+      web: wport(5241),
+    },
+    {
+      LILOS_USER_NAME: "Oscar",
+    },
+  );
   try {
     await page.setViewportSize({ width: 1288, height: 700 });
     await dmDefault(page, stack.webUrl);
@@ -324,7 +266,11 @@ test("tray text holds WCAG AA in dark and keeps its palette in light (#371)", as
       feed: wport(4647),
       web: wport(5241),
     },
-    { LILOS_ENGINE: "url", LILOS_ENGINE_URL: engine.url },
+    {
+      LILOS_ENGINE: "url",
+      LILOS_ENGINE_URL: engine.url,
+      LILOS_USER_NAME: "Oscar",
+    },
   );
   try {
     await page.setViewportSize({ width: 1288, height: 700 });
