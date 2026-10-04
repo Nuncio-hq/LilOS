@@ -127,7 +127,7 @@ import {
   sessionModels,
   workbenchRequests,
 } from "../lib/runtime";
-import { say, sayError } from "../lib/toast";
+import { say, sayError, sayNotice } from "../lib/toast";
 import { defaultAccess } from "../settings/state";
 
 const EMPTY_MESSAGES = atom<ChannelMessagesState>({
@@ -402,24 +402,31 @@ export function DmPage() {
   const searchMessages = useCallback(
     async (query: string): Promise<MessageHit[]> => {
       if (!channel?.id) return [];
-      const res = await relay.request<{ hits: MessageSearchHit[] }>(
-        "messages.search",
-        { query, channelId: channel.id, includeArchived: true, limit: 50 },
-      );
-      return res.hits.flatMap((h) => {
-        const conv = convs.find((c) => c.id === h.conversationId);
-        if (h.conversationId && !conv) return [];
-        return [
-          {
-            rootId: conv?.rootMessageId ?? h.messageId,
-            messageId: h.messageId,
-            from: h.authorId,
-            time: clock(h.createdAt),
-            snippet: h.snippet,
-            archived: conv?.archived,
-          },
-        ];
-      });
+      try {
+        const res = await relay.request<{ hits: MessageSearchHit[] }>(
+          "messages.search",
+          { query, channelId: channel.id, includeArchived: true, limit: 50 },
+        );
+        return res.hits.flatMap((h) => {
+          const conv = convs.find((c) => c.id === h.conversationId);
+          if (h.conversationId && !conv) return [];
+          return [
+            {
+              rootId: conv?.rootMessageId ?? h.messageId,
+              messageId: h.messageId,
+              from: h.authorId,
+              time: clock(h.createdAt),
+              snippet: h.snippet,
+              archived: conv?.archived,
+            },
+          ];
+        });
+      } catch (e) {
+        /* The feed swallows the rejection — the toast is the only signal
+           the search failed rather than finding nothing (#423). */
+        sayError(describeActionError("Couldn't search messages", e));
+        throw e;
+      }
     },
     [channel?.id, convs],
   );
@@ -1401,7 +1408,7 @@ export function DmPage() {
           accept={canAttachImages ? "image/*" : undefined}
           maxFileSize={MAX_ATTACHMENT_BYTES}
           onAttachError={sayError}
-          say={say}
+          say={sayNotice}
           host={conv.cwd ? hostAccessors : undefined}
           transcriptNote={transcriptNote}
           scrollTo={scrollTo ?? undefined}

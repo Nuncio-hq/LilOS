@@ -242,6 +242,18 @@ test("AC-1 a failed Stop shows its reason", async ({ page }) => {
   });
   await expect(page.locator(TOAST)).toContainText(LOST);
   await expect(page.locator(TOAST)).not.toContainText("engine host");
+  /* The review's geometry claim, pinned: the pill's bottom edge clears the
+     composer's top, so it can never sit on the toolbar's controls. */
+  const toastBox = await page.locator(TOAST).boundingBox();
+  const composerBox = await page
+    .locator("[data-composer]")
+    .last()
+    .boundingBox();
+  expect(toastBox).not.toBeNull();
+  expect(composerBox).not.toBeNull();
+  expect(toastBox!.y + toastBox!.height).toBeLessThanOrEqual(
+    composerBox!.y + 1,
+  );
   await shot(page, "ac1-stop-toast");
 });
 
@@ -296,6 +308,7 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
     "Couldn't rename the session",
     { timeout: 15_000 },
   );
+  await expect(page.locator(TOAST)).toContainText(LOST);
 
   /* Archive — same method, {archived} instead. */
   fail.heal();
@@ -309,6 +322,7 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
     "Couldn't archive the session",
     { timeout: 15_000 },
   );
+  await expect(page.locator(TOAST)).toContainText(LOST);
   await shot(page, "ac1-archive-toast");
 
   /* Unarchive — the row moves under the collapsed Archived section first. */
@@ -331,6 +345,7 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
     "Couldn't unarchive the session",
     { timeout: 15_000 },
   );
+  await expect(page.locator(TOAST)).toContainText(LOST);
 });
 
 test("AC-1 a failed background-jobs list shows its reason", async ({

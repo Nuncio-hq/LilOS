@@ -191,7 +191,9 @@ export function FocusView({
   defaultModel?: string;
   /* The default's provider — a `{provider?, id}` pair disambiguates a shared id. */
   defaultProvider?: string;
-  say?: (t: string) => void;
+  /* `{error:true}` marks a failed action — the host toasts it with the
+     destructive accent instead of a neutral note (#423). */
+  say?: (t: string, opts?: { error?: boolean }) => void;
   models?: ModelOption[];
   repoFiles?: string[];
   /** Live host accessors forwarded to the Workbench (issue #11 fs/git, #37 forge). */
@@ -522,6 +524,7 @@ export function FocusView({
                               .catch((e) =>
                                 say?.(
                                   `Open failed — ${e instanceof Error ? e.message : String(e)}`,
+                                  { error: true },
                                 ),
                               ),
                         }
@@ -652,7 +655,7 @@ export function FocusView({
           {/* The banner lives in the same column as the messages — never a
               full-bleed strip the action floats away on (#423). */}
           {banner && (
-            <div className="mx-auto w-full max-w-[46rem] px-3 pt-3 sm:px-5">
+            <div className="mx-auto w-full max-w-[46rem] px-5 pt-3">
               {banner}
             </div>
           )}

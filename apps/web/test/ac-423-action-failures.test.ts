@@ -127,6 +127,27 @@ describe("AC-1 describeActionError", () => {
     );
     expect(describeActionError("Couldn't X", undefined)).toBe("Couldn't X");
   });
+
+  test("jargon shapes collapse: invalid_params, errno codes, [object Object]", () => {
+    /* "invalid params" is a refused request, not toast copy. */
+    expect(
+      describeActionError(
+        "Couldn't rename the session",
+        new RelayError("invalid params", "invalid_params"),
+      ),
+    ).toBe("Couldn't rename the session — try again.");
+    /* errno-style reasons (ENOENT/ECONNREFUSED…) are codes, not words. */
+    expect(
+      describeActionError(
+        "Couldn't open the file",
+        new Error("ENOENT: no such file or directory, open '/tmp/x/y'"),
+      ),
+    ).toBe("Couldn't open the file — try again.");
+    /* A rejection carrying a bare object never stringifies into the UI. */
+    expect(describeActionError("Couldn't X", { weird: true })).toBe(
+      "Couldn't X — try again.",
+    );
+  });
 });
 
 describe("AC-1 toastOnFail", () => {

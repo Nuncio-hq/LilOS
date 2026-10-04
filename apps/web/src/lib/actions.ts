@@ -164,16 +164,23 @@ export function describeActionError(action: string, e: unknown): string {
       return `${action} — the relay didn't answer; try again.`;
     if (e.code === "engine_unavailable")
       return `${action} — ${CONNECTION_LOST}`;
+    /* "invalid params" is a refused request, not user copy. */
+    if (e.code === "invalid_params") return `${action} — try again.`;
   }
   const raw = e instanceof Error ? e.message : e == null ? "" : String(e);
   if (e == null) return action;
   /* First line only — a stack tail is never toast copy. A reason that is
-     itself jargon ("engine host …") or a bare snake_case code collapses
-     to the plain line / a bare "try again". */
+     itself jargon ("engine host …"), a bare snake_case code, an errno
+     (ENOENT…) or a stringified object collapses to the plain line /
+     a bare "try again". */
   const reason = raw.split("\n", 1)[0].trim();
   if (/engine host/i.test(reason)) return `${action} — ${CONNECTION_LOST}`;
-  if (!reason) return `${action} — try again.`;
-  if (/^[a-z][a-z0-9_]*$/.test(reason) && reason.includes("_"))
+  if (
+    !reason ||
+    /^\[object /.test(reason) ||
+    (/^[a-z][a-z0-9_]*$/.test(reason) && reason.includes("_")) ||
+    /\bE[A-Z][A-Z0-9]{2,}\b/.test(reason)
+  )
     return `${action} — try again.`;
   return `${action} — ${reason}`;
 }
@@ -315,7 +322,14 @@ export async function respondToRequest(
         sayError("Couldn't send that answer — try again.");
         throw e;
       }
-      await waitForRelayReady(deadline);
+      /* The budget running out inside the wait throws past the catch —
+         the callers swallow it, so the toast has to land here (#423). */
+      try {
+        await waitForRelayReady(deadline);
+      } catch (wait) {
+        sayError(describeActionError("Couldn't send that answer", wait));
+        throw wait;
+      }
     }
   }
 }

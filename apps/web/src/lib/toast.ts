@@ -30,3 +30,11 @@ export function say(message: string): void {
 export function sayError(message: string): void {
   show({ text: message, error: true });
 }
+
+/** The `(text, {error})` shape Focus/Workbench `say` props take: a
+    flagged line gets the destructive accent, anything else stays a
+    neutral note (#423). */
+export function sayNotice(text: string, opts?: { error?: boolean }): void {
+  if (opts?.error) sayError(text);
+  else say(text);
+}
