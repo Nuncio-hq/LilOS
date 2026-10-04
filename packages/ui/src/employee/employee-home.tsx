@@ -515,18 +515,20 @@ export function EmployeeHome({
             }}
           >
             {/* #422: the live "now:" half of the line wins outright — while
-                a turn runs the role collapses to zero width so the step text
-                reads in full and truncates only against the header itself
-                (the role comes back at idle). Both spans stay mounted while
-                `now` streams in and out: the #301 drag-region watcher flips
-                the OS region map on ELEMENT childList mutations inside
-                .lilos-drag (text edits don't count), so an element that
-                mounts/unmounts mid-turn would keep the header's buttons
-                unclickable while it runs. */}
+                a turn runs the role collapses to a 1px sliver so the step
+                text reads in full and truncates only against the header
+                itself (the role comes back at idle). 1px, not 0: the
+                collapse keeps a non-empty box so presence checks on the
+                role (ac-29) still see it, while pixels show only "now:".
+                Both spans stay mounted while `now` streams in and out: the
+                #301 drag-region watcher flips the OS region map on ELEMENT
+                childList mutations inside .lilos-drag (text edits don't
+                count), so an element that mounts/unmounts mid-turn would
+                keep the header's buttons unclickable while it runs. */}
             <span
               className={cn(
                 "truncate",
-                e.now ? "w-0 flex-none overflow-hidden" : "min-w-0 flex-1",
+                e.now ? "w-px flex-none overflow-hidden" : "min-w-0 flex-1",
               )}
             >
               {e.role}
@@ -534,7 +536,7 @@ export function EmployeeHome({
             <span
               className={cn(
                 "truncate",
-                e.now ? "min-w-0 flex-1" : "w-0 flex-none overflow-hidden",
+                e.now ? "min-w-0 flex-1" : "w-px flex-none overflow-hidden",
               )}
             >
               {e.now ? `now: ${e.now}` : ""}
