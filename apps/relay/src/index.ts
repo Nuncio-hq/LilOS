@@ -4,7 +4,7 @@
  * machine, stores' SQL, and Hono app stay testable under Node/vitest.
  */
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { systemClock, watchOrphaned } from "@lilos/background";
@@ -86,38 +86,17 @@ const listenOnce = (bindHost: string) =>
     },
   });
 
-// Under launchd a re-registered agent spawns while the old process is still
-// tearing down, so EADDRINUSE is transient there — retry briefly before
-// giving up (launchd throttles fast exits into "spawn failed"). The tailnet
-// bind needs the same grace: accepted sockets outlive a killed process in
-// TIME_WAIT, so a restart's rebind can collide.
-const listen = (bindHost: string) => {
+/* Under launchd a re-registered agent spawns while the old process is still
+   tearing down, so EADDRINUSE is transient there — retry briefly before
+   giving up (launchd throttles fast exits into "spawn failed"). The tailnet
+   bind needs the same grace: accepted sockets outlive a killed process in
+   TIME_WAIT, so a restart's rebind can collide. Always async (#516): a
+   Bun.sleepSync retry freezes the loop for the whole window — a kill in
+   that window is ignored until SIGKILL and every buffered log line is
+   dropped. */
+const listen = async (bindHost: string) => {
   let server: ReturnType<typeof listenOnce> | undefined;
   for (let i = 0; i < 60 && !server; i++) {
-    try {
-      server = listenOnce(bindHost);
-    } catch (err) {
-      const e = err as NodeJS.ErrnoException;
-      if (e.code !== "EADDRINUSE" && !/in use|EADDRINUSE/i.test(e.message)) {
-        throw err;
-      }
-      console.error(
-        `[relay] port ${config.port} on ${bindHost} busy, retrying`,
-      );
-      Bun.sleepSync(250);
-    }
-  }
-  if (!server) throw new Error(`port ${config.port} still busy after retries`);
-  return server;
-};
-
-/* Same retry loop but async: the tailnet bind runs while the loopback
-   server is already serving, and Bun.sleepSync there would freeze every
-   local client for the whole retry window. Still retries — a restart's
-   rebind can hit TIME_WAIT from its own accepted tailnet sockets. */
-const listenAsync = async (bindHost: string) => {
-  let server: ReturnType<typeof listenOnce> | undefined;
-  for (let i = 0; i < 40 && !server; i++) {
     try {
       server = listenOnce(bindHost);
     } catch (err) {
@@ -142,7 +121,7 @@ const listenAsync = async (bindHost: string) => {
  * persists as a setting so a relay restart keeps the chosen mode.
  */
 const probeTailscale = resolveTailscaleProbe();
-let tailscaleServer: ReturnType<typeof listen> | undefined;
+let tailscaleServer: Awaited<ReturnType<typeof listen>> | undefined;
 let tailscaleAdvertised: string | undefined;
 const PHONE_ACCESS_SETTING = "phoneAccess";
 
@@ -177,7 +156,7 @@ const phoneAccess: PhoneAccess = {
         return null;
       }
       try {
-        tailscaleServer = await listenAsync(bindIp);
+        tailscaleServer = await listen(bindIp);
       } catch (err) {
         relay.log(`tailscale bind ${bindIp}:${config.port} failed: ${err}`);
         return null;
@@ -231,10 +210,17 @@ const app = createApp({
 
 /* Log our id BEFORE bind: an e2e readiness probe (#273) must know the id of
    the relay it spawned even when a foreign stack already holds the port —
-   post-bind it would never print and the probe couldn't name both ids. */
-console.log(`[relay] instanceId: ${relay.instanceId}`);
+   post-bind it would never print and the probe couldn't name both ids.
+   Written unbuffered (#516): buffered stdout can be dropped when the
+   process is killed mid-boot, and the probe then never sees the id. This
+   line is also how `bun run dev` learns which instanceId is its own. */
+try {
+  writeSync(1, `[relay] instanceId: ${relay.instanceId}\n`);
+} catch {
+  // fd 1 closed (spawned with stdout ignored) — /healthz carries the id.
+}
 
-const server = listen(config.host);
+const server = await listen(config.host);
 
 const address = `${server.hostname}:${server.port}`;
 relay.log(`listening on http://${address} (ws: /ws)`);
