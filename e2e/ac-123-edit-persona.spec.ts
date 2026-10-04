@@ -1,11 +1,7 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
-import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #123 — edit an employee's persona (soul) and default model from the
@@ -16,122 +12,7 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
-const webDir = path.join(repo, "apps", "web");
 const SHOTS = path.join(repo, "test-results", "ac-123");
-
-interface Stack {
-  home: string;
-  webUrl: string;
-  relayWs: string;
-  relayToken: string;
-  stop: () => Promise<void>;
-}
-
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    const ok = await fetch(url)
-      .then((r) => r.ok || r.status === 404)
-      .catch(() => false);
-    if (ok) return;
-    if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
-function killProc(proc: ChildProcess): Promise<void> {
-  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
-    try {
-      if (proc.pid) process.kill(-proc.pid, sig);
-    } catch {
-      try {
-        proc.kill(sig);
-      } catch {}
-    }
-  };
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      killGroup("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    killGroup("SIGTERM");
-  });
-}
-
-const freePort = () =>
-  new Promise<number>((resolve, reject) => {
-    const srv = createServer();
-    srv.once("error", reject);
-    srv.listen(0, "127.0.0.1", () => {
-      const addr = srv.address();
-      srv.close(() =>
-        typeof addr === "object" && addr
-          ? resolve(addr.port)
-          : reject(new Error("no port")),
-      );
-    });
-  });
-
-async function bootStack(
-  tag: string,
-  extraEnv: Record<string, string> = {},
-): Promise<Stack> {
-  const [relay, feed, web] = await Promise.all([
-    freePort(),
-    freePort(),
-    freePort(),
-  ]);
-  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
-  const leakTag = engineTag(tag);
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: webDir,
-    detached: true,
-    env: {
-      ...process.env,
-      LILOS_HOME: home,
-      LILOS_ENGINE_TAG: leakTag,
-      LILOS_RELAY_PORT: String(relay),
-      LILOS_FEED_PORT: String(feed),
-      LILOS_WEB_PORT: String(web),
-      ...extraEnv,
-    },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  const webUrl = `http://127.0.0.1:${web}`;
-  try {
-    await waitForHttp(webUrl);
-    await waitForHttp(`http://127.0.0.1:${relay}/`);
-    await waitForHttp(`http://127.0.0.1:${feed}/`);
-    const tokenPath = path.join(home, "relay-token");
-    let relayToken = "";
-    for (let i = 0; i < 300 && !relayToken; i++) {
-      try {
-        relayToken = readFileSync(tokenPath, "utf8").trim();
-      } catch {}
-      if (!relayToken) await new Promise((r) => setTimeout(r, 100));
-    }
-    if (!relayToken)
-      throw new Error(`relay token never appeared at ${tokenPath}`);
-    return {
-      home,
-      webUrl,
-      relayWs: `ws://127.0.0.1:${relay}/ws`,
-      relayToken,
-      stop: async () => {
-        await killProc(proc);
-        await expectNoEngineLeak(leakTag);
-      },
-    };
-  } catch (e) {
-    proc.kill("SIGKILL");
-    throw e;
-  }
-}
 
 /** Bare JSON-RPC client — e2e runs under Node without workspace deps. */
 async function rpc(
@@ -185,7 +66,7 @@ test.describe.configure({ mode: "serial" });
 let stackA: Stack; // engine-fake advertising every capability
 test.beforeAll(async () => {
   test.setTimeout(180_000);
-  stackA = await bootStack("main");
+  stackA = await bootStack("main", await pickPorts());
 });
 test.afterAll(async () => {
   await stackA?.stop();

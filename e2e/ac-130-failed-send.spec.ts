@@ -5,6 +5,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import {
+  captureProc,
+  killProc,
+  waitForFeed,
+  waitForHttp,
+  waitForRelay,
+  waitForToken,
+} from "./helpers/stack";
 import { WORKER, wport } from "./ports";
 
 /**
@@ -39,32 +47,6 @@ interface Procs {
   restartRelay: () => Promise<void>;
 }
 
-const killProc = (proc: ChildProcess): Promise<void> =>
-  new Promise((resolve) => {
-    const t = setTimeout(() => {
-      proc.kill("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    proc.kill("SIGTERM");
-  });
-
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    const ok = await fetch(url)
-      .then((r) => r.status > 0)
-      .catch(() => false);
-    if (ok) return;
-    if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
 /** The opposite of waitForHttp: resolves once nothing answers on the port. */
 async function waitForDown(url: string, ms = 15_000): Promise<void> {
   const start = Date.now();
@@ -80,18 +62,6 @@ async function waitForDown(url: string, ms = 15_000): Promise<void> {
   }
 }
 
-async function waitForToken(home: string): Promise<string> {
-  const tokenPath = path.join(home, "relay-token");
-  for (let i = 0; i < 200; i++) {
-    try {
-      const t = readFileSync(tokenPath, "utf8").trim();
-      if (t) return t;
-    } catch {}
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error("relay never wrote its token file");
-}
-
 async function spawnRelay(home: string, port: number): Promise<ChildProcess> {
   const p = spawn("bun", ["run", "apps/relay/src/index.ts"], {
     cwd: ROOT,
@@ -101,9 +71,11 @@ async function spawnRelay(home: string, port: number): Promise<ChildProcess> {
       LILOS_RELAY_PORT: String(port),
       LILOS_RELAY_HOST: "127.0.0.1",
     },
-    stdio: ["ignore", "inherit", "inherit"],
+    // Piped: readiness checks the spawned relay's own instanceId against
+    // /healthz — a foreign relay on the port is a hard boot failure (#273).
+    stdio: ["ignore", "pipe", "pipe"],
   });
-  await waitForHttp(`http://127.0.0.1:${port}/`);
+  await waitForRelay(port, p, captureProc(p));
   return p;
 }
 
@@ -119,7 +91,7 @@ async function boot(): Promise<Procs> {
   procs.relay = await spawnRelay(home, PORTS.relay);
   const relayToken = await waitForToken(home);
 
-  procs.harness = spawn("bun", ["run", "apps/harness/src/index.ts"], {
+  const harness = spawn("bun", ["run", "apps/harness/src/index.ts"], {
     cwd: ROOT,
     env: {
       ...process.env,
@@ -133,9 +105,10 @@ async function boot(): Promise<Procs> {
       LILOS_FEED_PORT: String(PORTS.feed),
       LILOS_ENGINE_TAG: leakTag,
     },
-    stdio: ["ignore", "inherit", "inherit"],
+    stdio: ["ignore", "pipe", "pipe"],
   });
-  await waitForHttp(`http://127.0.0.1:${PORTS.feed}/`);
+  procs.harness = harness;
+  await waitForFeed(PORTS.feed, harness, captureProc(harness));
 
   procs.web = spawn(
     "bun",
