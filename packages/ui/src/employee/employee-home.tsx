@@ -98,7 +98,12 @@ function SessionMenu({
       >
         <EllipsisIcon className="size-4" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44">
+      {/* sticky: the session list scroll-settles (use-stick-to-bottom) right
+          as the menu opens; without it, floating-ui's limitShift caps the
+          clamp at the clipped anchor's edge and the popup parks offscreen.
+          sticky removes the limiter so the popup stays inside the
+          scrollport. (#492) */}
+      <DropdownMenuContent align="end" sticky className="w-44">
         {onRename && (
           <DropdownMenuItem onClick={onRename}>
             <PencilIcon />
