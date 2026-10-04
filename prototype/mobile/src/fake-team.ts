@@ -297,6 +297,10 @@ export const THREADS: ThreadDetail[] = [
     model: "Claude Opus 5.5 · High",
     session: "ses_4a19",
     usage: "38.4k in · 2.9k out · 24k cached",
+    /* #514: the engine's capped log dropped this session's head — the
+       transcript note the real feed raises on historyTrimmed (#431). */
+    transcriptNote:
+      "Earlier history was trimmed — this session's event log is capped.",
     entries: [
       {
         kind: "user",

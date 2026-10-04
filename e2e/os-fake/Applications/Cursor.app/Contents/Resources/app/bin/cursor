@@ -1,6 +1,6 @@
 #!/bin/sh
-# Fake Cursor CLI (issue #110 e2e): records argv in $LILOS_OPEN_LOG.
+# Fake Cursor CLI (issue #110 e2e): records argv in $FAKE_OPEN_LOG.
 {
   echo "exec:cursor"
   for a in "$@"; do echo "arg:$a"; done
-} >>"${LILOS_OPEN_LOG:-/dev/null}"
+} >>"${FAKE_OPEN_LOG:-/dev/null}"

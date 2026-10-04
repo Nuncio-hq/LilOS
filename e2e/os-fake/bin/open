@@ -1,6 +1,6 @@
 #!/bin/sh
-# Fake `open` (issue #110 e2e): records argv in $LILOS_OPEN_LOG; exit 0.
+# Fake `open` (issue #110 e2e): records argv in $FAKE_OPEN_LOG; exit 0.
 {
   echo "exec:open"
   for a in "$@"; do echo "arg:$a"; done
-} >>"${LILOS_OPEN_LOG:-/dev/null}"
+} >>"${FAKE_OPEN_LOG:-/dev/null}"

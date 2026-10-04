@@ -1,6 +1,8 @@
 import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { LILOS_ENV_ALLOW_LIST } from "@lilos/contracts/env";
+import { SURFACES_ENV } from "@lilos/surfaces";
 import { describe, expect, it } from "vitest";
 import {
   commandLauncher,
@@ -179,6 +181,16 @@ describe("#521 engine output mirrors into the harness log", () => {
 });
 
 describe("AC-1 (#412) the engine env is allow-listed — no LilOS internals", () => {
+  it("the shared allow-list names exactly the surfaces creds it must pass", () => {
+    /* LILOS_ENV_ALLOW_LIST lives in @lilos/contracts so packages/host can
+       share it (#507) — its literal names must stay equal to SURFACES_ENV
+       or the engine silently loses a grant. */
+    expect(LILOS_ENV_ALLOW_LIST).toEqual([
+      SURFACES_ENV.baseUrl,
+      SURFACES_ENV.engineToken,
+    ]);
+  });
+
   it("the child sees only the documented LILOS_* names; options.env grants survive", async () => {
     const dir = mkdtempSync(join(tmpdir(), "lilos-env-"));
     const out = join(dir, "env.txt");

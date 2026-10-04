@@ -17,7 +17,7 @@ import { expect, type Page, test } from "@playwright/test";
  * Issue #110 — the Workbench entry points (Files tree, Changes list, diff
  * rows) plus the Focus session header, on the prototype dev stack. The
  * shared webServer carries LILOS_APP_DIRS (fake Cursor.app/Zed.app in
- * e2e/os-fake), a fake `open` on PATH, and LILOS_OPEN_LOG — every fake
+ * e2e/os-fake), a fake `open` on PATH, and FAKE_OPEN_LOG — every fake
  * binary appends its argv there, so each click is verified against the
  * real host `os.open` running in the dev middleware.
  */

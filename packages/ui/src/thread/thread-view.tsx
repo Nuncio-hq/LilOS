@@ -21,6 +21,7 @@ import {
 import { Button } from "../components/ui/button";
 import { openStartRequest } from "../conversation/cards";
 import type { PlanAction } from "../conversation/plan-card";
+import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
   type QuestionAnswer,
   QuestionAwareScrollButton,
@@ -52,6 +53,7 @@ import type {
   OsEditor,
   QuestionAsk,
   Thread,
+  TranscriptNote,
   WbTab,
   Work,
 } from "../types";
@@ -173,9 +175,11 @@ export function ThreadView({
      steer. */
   agentWorking?: boolean;
   onRemovePending?: (i: number) => void;
-  /* Why the working transcript can't be shown (harness down, engine restarted) —
-     rendered as a muted note where the transcript would be (issue #28). */
-  transcriptNote?: string;
+  /* A note on the transcript's state — the kind picks the slot (#532):
+     "trimmed" heads the transcript (#431 — history missing above the
+     first entry); "unavailable" tails it (#28 — the live tail can't
+     replay). */
+  transcriptNote?: TranscriptNote;
   /* os.editors result + the os.open call bound to the session folder
      (issue #110): the folder badge gains an "Open in …/Reveal in Finder"
      menu only when both are passed (D-#19). */
@@ -386,6 +390,9 @@ export function ThreadView({
             question card's Skip row included — scrolls fully clear of the
             composer instead of landing under it (Hermes FIX #515). */}
         <ConversationContent className="gap-0 p-0 pt-2 pb-28">
+          {transcriptNote?.kind === "trimmed" && (
+            <TranscriptNoteRow note={transcriptNote} />
+          )}
           {onRewind && root.id && human(root.from) && (
             <RewindCheckpoint
               running={running}
@@ -444,13 +451,13 @@ export function ThreadView({
               acts={actsRef}
             />
           ))}
-          {transcriptNote && (
-            <div
-              data-transcript-note
-              className="mx-3 my-2 rounded-lg border border-dashed px-3 py-2 text-muted-foreground text-xs sm:mx-5"
-            >
-              {transcriptNote}
-            </div>
+          {transcriptNote?.kind === "unavailable" && (
+            /* Same outer insets as the #28 note this replaces — the panel's
+               content column carries no horizontal padding. */
+            <TranscriptNoteRow
+              note={transcriptNote}
+              className="mx-3 my-2 sm:mx-5"
+            />
           )}
           {work?.by && (
             <div className="mx-3 my-2 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 text-xs sm:mx-5">

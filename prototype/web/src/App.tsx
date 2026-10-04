@@ -52,6 +52,7 @@ import {
   type ProfileConnection,
   type Thread,
   type TicketRow,
+  type TranscriptNote,
   type Work,
   type SessionAlert,
   type StatusComponent,
@@ -1921,6 +1922,13 @@ export default function App() {
     say(`${emp(id)?.name ?? id} now uses profile \`${profileId}\``)
   }
 
+  /* #532: stage the trimmed-history note on the seeded harness-reconnect
+     thread (session ses_b71d) — the mock equivalent of dm.tsx's
+     openFeed.historyTrimmed branch. */
+  const transcriptNoteOf = (t: Thread): TranscriptNote | undefined =>
+    t.session === "ses_b71d"
+      ? { kind: "trimmed", text: "Earlier history was trimmed — this session's event log is capped." }
+      : undefined
   const workOf = (m: Extract<Msg, { kind: "msg" }>): Work | null =>
     started[m.id] ?? (m.thread?.ticket ? { ticket: m.thread.ticket, branch: m.thread.branch, title: "" }
       : m.thread?.ws ? { ticket: "", branch: m.thread.ws.branch, title: "", path: m.thread.ws.cwd } : null)
@@ -1951,6 +1959,7 @@ export default function App() {
       draft={threadDraft} onDraftChange={setThreadDraft}
       onRewind={(id) => rewindTo(openThread, id)}
       mentionables={employees} onSearchFiles={fileMentions(openThread.thread.ws?.folder)}
+      transcriptNote={transcriptNoteOf(openThread.thread)}
       lastSent={lastSentIn(openThread)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
       pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
@@ -2007,6 +2016,7 @@ export default function App() {
           resolved={resolved} setResolved={setResolved} work={workOf(openThread)}
           onBack={() => setFocus(false)} onNav={() => setNavOpen(true)} onStart={() => setStartFor(openThread.id)}
           running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
+          transcriptNote={transcriptNoteOf(openThread.thread)}
           lastSent={lastSentIn(openThread)}
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
           onRewind={(id) => rewindTo(openThread, id)} onModel={canModels ? (m) => setModel(openThread, m) : undefined} say={say}
