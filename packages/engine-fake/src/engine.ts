@@ -1855,7 +1855,18 @@ export class FakeEngine {
      — the frames land while the session idles, carrying no turnId (the
      live-capture shape: turn.completed … subagent.completed ~18s later). */
   private async drainSubagentCloses(s: FakeSession) {
-    await this.sleep(s);
+    /* #524: `sleep` borrows the turn's interrupt machinery — it throws
+       when whatever turn currently holds `s.turn` is interrupted, but the
+       drain owns no turn. A prompt landing inside this one-tick window can
+       mint a new turn whose interrupt (or session.stop) would otherwise
+       escape this `void`'d call as an unhandled rejection and strand the
+       queued closes. Swallow `Interrupted`; anything else still
+       propagates. */
+    try {
+      await this.sleep(s);
+    } catch (e) {
+      if (!(e instanceof Interrupted)) throw e;
+    }
     /* #400: held closes stay parked — only the next turn intake releases
        them (flushHeldCloses), so a test controls the window. */
     const closing = s.pendingSubagentClose.filter((c) => !c.hold);

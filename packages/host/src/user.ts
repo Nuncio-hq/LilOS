@@ -1,9 +1,6 @@
-import { execFile } from "node:child_process";
 import os from "node:os";
-import { promisify } from "node:util";
 import type { HostUserResult } from "@lilos/contracts/host";
-
-const run = promisify(execFile);
+import { run } from "./exec.js";
 
 /** The account's display name: macOS `id -F`, else Linux GECOS field 5. */
 async function fullName(username: string): Promise<string | null> {
