@@ -57,7 +57,11 @@ the supervisor relaunches with capped backoff (a child surviving
 `stableAfterMs` resets the budget; `maxAttempts` consecutive failures give
 up as `failed` until a caller re-arms via `kick()`). The new gateway swaps
 in through `setGateway`; stored sessions lazily `session.resume` on next
-touch, so a thread outlives the backend that served it.
+touch, so a thread outlives the backend that served it. A `session.resume`
+that finds the stored row gone falls back to `session.create` — the new
+stored ref, registry row and access hint are rebound there too, or the
+next restart would resume the abandoned pre-fallback session and silently
+rewind every turn since out of memory.
 
 `describe()` reports `backend.{state,detail}` (`running` / `restarting` /
 `failed`) — that is the surface the harness's liveness probe reads, so a
