@@ -583,6 +583,9 @@ export type MessagesSendParams = z.infer<typeof MessagesSendParams>;
  */
 export const MessagesClaimParams = z.strictObject({
   messageId: z.string().min(1),
+  /* #403: `false` un-claims — the send came to rest short of the wire
+     (queued, pending steer, re-queued) so the waiting tray owns it again. */
+  claimed: z.boolean().default(true),
 });
 export type MessagesClaimParams = z.infer<typeof MessagesClaimParams>;
 
@@ -1240,6 +1243,11 @@ export type MessageCreatedEvent = z.infer<typeof MessageCreatedEvent>;
 export const MessageChangedEvent = z.object({
   channelId: z.string().min(1),
   message: AppMessage,
+  /* #403: which flags this frame flipped (`"removed"`, `"dropped"`,
+     `"claimed"`) — lets a receiver tell a Send (`dropped` cleared) from a
+     lane bookkeeping flip (`claimed` only), whose row it must NOT
+     re-deliver. */
+  flags: z.array(z.string().min(1)).optional(),
 });
 export type MessageChangedEvent = z.infer<typeof MessageChangedEvent>;
 
@@ -1302,6 +1310,11 @@ export type AskResolvedEvent = z.infer<typeof AskResolvedEvent>;
 export const TurnInterruptRequestedEvent = z.object({
   channelId: z.string().min(1),
   conversationId: z.string().min(1),
+  /* #403: the channel seq the interrupt logically follows — every send at
+     or below it predates the Stop. Bus events and `channelMessages` rows
+     travel unordered paths to the host, so the stamp (not arrival order)
+     marks the causal boundary. */
+  afterSeq: z.int().min(0),
 });
 export type TurnInterruptRequestedEvent = z.infer<
   typeof TurnInterruptRequestedEvent
