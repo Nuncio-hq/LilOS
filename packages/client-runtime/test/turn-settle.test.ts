@@ -171,6 +171,27 @@ describe("#327 turn settle — the session stopped running", () => {
     expect(model.live).toBeUndefined();
   });
 
+  it("#370 a turn event past the attach watermark marks liveAttached; replayed history stays unmarked", () => {
+    /* mergeTurns keeps a finished card through the settle→claim window
+       only when the feed watched the turn live — #288's orphan arrives
+       already-done in the replayed prefix and stays droppable. */
+    const attach = ev("session.state", { state: "idle" });
+    const model = reduceSessionEvents(
+      "sess-1",
+      [
+        ev("turn.started", { turnId: "t-old" }),
+        ev("turn.completed", { turnId: "t-old" }),
+        ev("turn.started", { turnId: "t-new" }),
+        ev("turn.completed", { turnId: "t-new" }),
+      ],
+      /* atSeq covers the marker plus t-old's two frames; t-new's pair
+         lands past it — watched live. */
+      { state: "idle", atSeq: attach.seq + 2 },
+    );
+    expect(model.turns[0].liveAttached).toBeUndefined();
+    expect(model.turns[1].liveAttached).toBe(true);
+  });
+
   it("idle does NOT settle a running helper row (#309) — closed does", () => {
     const frames = () => [
       ev("turn.started", { turnId: "t1" }),

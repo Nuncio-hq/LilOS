@@ -128,6 +128,13 @@ export interface TurnModel {
       history already running when the view mounted. Unset when the reduce
       ran without an attach snapshot (mocks/tests keep the old meaning). */
   postAttach?: boolean;
+  /** #370: any of this turn's events ran past the attach watermark — the
+      feed watched it work or finish rather than replaying it as history.
+      mergeTurns keeps its finished card through the settle→claim window:
+      its answer's relay row is still in flight, so the card is
+      reply-pending, not an orphan like #288's replayed re-answer. Unset
+      when the reduce ran without an attach snapshot. */
+  liveAttached?: boolean;
 }
 
 export interface SessionModel {
@@ -500,6 +507,19 @@ export function reduceSessionEvents(
         }
         break;
       }
+    }
+    /* #370: a turn-stamped frame past the attach watermark means this feed
+       watched the turn live — `postAttach` generalized beyond
+       turn.started. Marked only when the case minted/held the turn (a
+       stray turnId on a frame that created none mints no phantom). */
+    const tid = (e.payload as { turnId?: string }).turnId;
+    if (
+      tid !== undefined &&
+      snapshot?.atSeq !== undefined &&
+      e.seq > snapshot.atSeq
+    ) {
+      const t = turns.get(tid);
+      if (t) t.liveAttached = true;
     }
   }
   /* #327: `snapshot.state` is true only at the watermark it was
