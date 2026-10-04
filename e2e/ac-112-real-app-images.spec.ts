@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { allowAllWhile } from "./helpers/approvals";
 import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
@@ -496,20 +497,6 @@ test("AC-5b a mid-turn image queues as the next prompt instead of steering", asy
     f.requestSubmit(),
   );
 
-  // Unblock the parked turn; the queued image message runs as its own turn.
-  // Same approval loop as ac-27 — the edit script can raise several asks.
-  for (let i = 0; i < 6; i++) {
-    const allow = page.getByRole("button", { name: "Once", exact: true });
-    if (
-      !(await allow
-        .first()
-        .isVisible()
-        .catch(() => false))
-    )
-      break;
-    await allow.first().click();
-    await page.waitForTimeout(400);
-  }
   // The fake echoes the image block AND the message's own text — the image
   // reached the engine on the queued message's prompt, not folded into the
   // steered turn.
@@ -517,9 +504,15 @@ test("AC-5b a mid-turn image queues as the next prompt instead of steering", asy
     .locator("[data-agentturn]")
     .filter({ hasText: "prompt content block" })
     .last();
-  await expect(imageAnswer).toContainText("image/png", {
-    timeout: 120_000,
-  });
+  /* Unblock the parked turn; the queued image message runs as its own turn.
+     The edit script raises several gated asks seconds apart — keep answering
+     each one until the queued turn's answer lands instead of bailing on the
+     first quiet beat, which parks the turn mid-approvals and starves the
+     drain (#451). */
+  await allowAllWhile(
+    page,
+    expect(imageAnswer).toContainText("image/png", { timeout: 120_000 }),
+  );
   await expect(imageAnswer).toContainText("carry this image too");
   // No steer ever landed — a steered text shows as an "Oscar steered" chip.
   await expect(page.getByText("Oscar steered")).toHaveCount(0);
