@@ -1,7 +1,5 @@
-import { execFile } from "node:child_process";
 import { existsSync, promises as fsp } from "node:fs";
 import { join, resolve } from "node:path";
-import { promisify } from "node:util";
 import type {
   GitBranchesResult,
   GitCommitResult,
@@ -20,9 +18,9 @@ import type {
   GitWriteReason,
 } from "@lilos/contracts/host";
 import { HOST_ERRORS, HostError } from "./errors.js";
+import { run } from "./exec.js";
 import { collapsePath, expandPath } from "./paths.js";
 
-const run = promisify(execFile);
 const MAX_BUFFER = 64 * 1024 * 1024;
 const DISCOVER_CAP = 200;
 const PATCH_CAP = 200 * 1024;
