@@ -345,7 +345,8 @@ PR does not exist.
   behind `tool_search`. Not: fetching `GET /tools` inside `register()`,
   a hand-written tool list in Python, or leaving tool search `auto`.
   — #411 · PR #495
-- **D-#412 Every spawned child gets an allow-listed environment:
+- **D-#412 Every spawn that can run agent-influenced code gets an
+  allow-listed environment:
   `LILOS_ENV_ALLOW_LIST` (`LILOS_SURFACES_URL` + `LILOS_ENGINE_TOKEN`,
   `@lilos/contracts/env`) is the only LILOS_* kept — by `hermes serve`,
   the surfaces PTY/browser, every `packages/host` exec
