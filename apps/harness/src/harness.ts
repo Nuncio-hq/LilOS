@@ -1173,6 +1173,9 @@ export class Harness {
   }
 
   private enqueueOrPrompt(binding: SessionBinding, message: AppMessage) {
+    /* #487: entries can arrive on a captured copy (a dispatch's re-queue
+       path) — always serve the live binding's lane. */
+    binding = this.liveBinding(binding);
     // In-flight guard: replayed `turn.started` refs populate `consumed`, and
     // claiming the id here means a message can't be prompted twice even when
     // two delivery paths (register pending + channel replay) race before the
@@ -1304,6 +1307,19 @@ export class Harness {
     this.drainQueue(binding);
   }
 
+  /**
+   * #487: callers that held `binding` across awaits (sendPrompt's dispatch,
+   * the steer RPC) must not queue on it blind — a rebind swaps
+   * `bindings[convId]` mid-flight and splices the queue, so a re-queue onto
+   * the replaced copy lands after the splice with nothing left to drain it
+   * (`consumed` cleared, `delivered` already claimed): the send orphans —
+   * the ac-112 AC-5b mid-turn image that never rendered. Re-resolve the
+   * binding the map actually serves.
+   */
+  private liveBinding(binding: SessionBinding): SessionBinding {
+    return this.bindings.get(binding.conversationId) ?? binding;
+  }
+
   /** FIFO is arrival order; the tray and the drain owe the user send
       order — insert by relay seq so a late re-queue can't invert it. */
   private insertQueued(binding: SessionBinding, message: AppMessage): void {
@@ -1319,6 +1335,9 @@ export class Harness {
 
   /** Queue it behind whatever occupies the lane; drain when it's free. */
   private promptOrQueue(binding: SessionBinding, message: AppMessage) {
+    /* #487: the steer failure fallback reaches here across an RPC await —
+       the captured binding may already be replaced. */
+    binding = this.liveBinding(binding);
     /* #315 AC-5: while a Stop parks everything waiting, a send the engine
        never accepted (a `not_running` steer settling late) parks the same
        way instead of prompting a fresh turn past the stop. `dismissed`
@@ -1344,6 +1363,9 @@ export class Harness {
    * of the queue instead of prompting.
    */
   private drainQueue(binding: SessionBinding): void {
+    /* #487: a stale copy's drain would fire queued sends on the dead session
+       — always serve the live binding's lane. */
+    binding = this.liveBinding(binding);
     if (binding.runningTurnId || binding.inflightPrompts.size > 0) return;
     while (binding.queue.length) {
       const next = binding.queue.shift();
@@ -1428,11 +1450,18 @@ export class Harness {
     const conn = this.engine;
     if (!conn) {
       this.opts.log.warn("prompt requeue: no conn", { messageId: message.id });
-      binding.consumed.delete(message.id);
-      binding.queue.push(message);
+      const live = this.liveBinding(binding);
+      live.consumed.delete(message.id);
       /* #403: resting in the queue is waiting again — the tray owns the
          row until the lane re-claims it. */
       this.unclaimMessage(message);
+      /* #487: the binding may have been rebound while this dispatch was in
+         its pre-conn awaits — the live binding owns the re-queue. */
+      if (live !== binding) {
+        this.enqueueOrPrompt(live, message);
+        return true;
+      }
+      binding.queue.push(message);
       return true;
     }
     // A pick held while the last turn ran lands now, before this prompt —
@@ -1550,7 +1579,16 @@ export class Harness {
         // engine may still have taken the turn — its replayed
         // `turn.started.ref` reclaims the message on resync, and the answer
         // dedupes on the same key either way.
-        binding.consumed.delete(message.id);
+        const live = this.liveBinding(binding);
+        live.consumed.delete(message.id);
+        /* #487: a socket that drops during a rebind lands this re-queue
+           AFTER the rebind's queue splice — the splice's successor owns
+           it, or the send sits on the replaced binding's queue forever. */
+        if (live !== binding) {
+          this.unclaimMessage(message);
+          this.enqueueOrPrompt(live, message);
+          return true;
+        }
         binding.queue.unshift(message);
         this.unclaimMessage(message);
         return true;
@@ -1560,7 +1598,16 @@ export class Harness {
           messageId: message.id,
           error: String(error),
         });
-        binding.consumed.delete(message.id);
+        const live = this.liveBinding(binding);
+        live.consumed.delete(message.id);
+        /* #487: rebound mid-dispatch — the fresh session is live's; this
+           send re-enters through the live lane rather than re-binding a
+           session that was already replaced. */
+        if (live !== binding) {
+          this.unclaimMessage(message);
+          this.enqueueOrPrompt(live, message);
+          return true;
+        }
         /* #346 AC-2: a turn running makes the requeue right — it drains
            on turn.completed. With none, the session is closed for good
            (a suspended session resumes inside `prompt` and never lands
@@ -1580,7 +1627,16 @@ export class Harness {
         this.opts.log.warn("prompt requeue: session_not_found", {
           messageId: message.id,
         });
-        binding.consumed.delete(message.id);
+        const live = this.liveBinding(binding);
+        live.consumed.delete(message.id);
+        /* #487: the dead session's binding may already be replaced — a
+           re-queue + rebind on the captured copy would strand the send
+           after the splice and mint a third session for nothing. */
+        if (live !== binding) {
+          this.unclaimMessage(message);
+          this.enqueueOrPrompt(live, message);
+          return true;
+        }
         binding.queue.unshift(message);
         this.unclaimMessage(message);
         await this.rebindConversation(binding);
