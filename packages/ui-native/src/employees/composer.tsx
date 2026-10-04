@@ -13,6 +13,7 @@ export function Composer({
   folder,
   model,
   modelLogo,
+  modelUnavailable,
   insetBottom,
   onSend,
   onStop,
@@ -29,6 +30,9 @@ export function Composer({
   model?: string;
   /** models.dev slug of the model's provider: its logo leads the chip. */
   modelLogo?: string;
+  /** #483 AC-2: no source had models — the chip renders dimmed as
+      "Models unavailable"; `onPickModel` becomes the retry affordance. */
+  modelUnavailable?: boolean;
   insetBottom: number;
   onSend: (text: string) => void;
   /** Set while the employee is mid-turn: an empty composer shows ■ Stop. */
@@ -81,8 +85,13 @@ export function Composer({
           {model !== undefined && onPickModel && (
             <Chip
               icon="sparkle"
-              lead={modelLogo && <ProviderLogo slug={modelLogo} size={14} />}
+              lead={
+                !modelUnavailable && modelLogo ? (
+                  <ProviderLogo slug={modelLogo} size={14} />
+                ) : undefined
+              }
               label={model}
+              unavailable={modelUnavailable}
               onPress={onPickModel}
             />
           )}
@@ -122,34 +131,49 @@ function Chip({
   icon,
   lead,
   label,
+  unavailable,
   onPress,
 }: {
   icon: Parameters<typeof Icon>[0]["name"];
   /** Replaces the icon (a provider logo). */
   lead?: ReactNode;
   label: string;
+  /** Disabled look + a retry glyph: the press re-asks for the list (#483). */
+  unavailable?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      {...(unavailable
+        ? { accessibilityHint: "Double-tap to retry loading models" }
+        : {})}
       onPress={onPress}
-      className="h-[30px] max-w-[170px] flex-row items-center gap-1.5 rounded-full bg-fill pr-2.5 pl-2.5 active:opacity-60"
+      /* Unavailable: no max-width cap (the fixed label is short) and no
+         opacity-50 — an all-grey error reads as inactive. Amber content +
+         a brighter retry glyph carry the warning; the whole chip still
+         taps to retry. */
+      className={`h-[30px] ${unavailable ? "" : "max-w-[170px]"} flex-row items-center gap-1.5 rounded-full bg-fill pr-2.5 pl-2.5 active:opacity-60`}
     >
       {lead || (
-        <Icon name={icon} size={12} tone="subtle-foreground" weight="medium" />
+        <Icon
+          name={unavailable ? "exclamationmark.triangle" : icon}
+          size={12}
+          tone={unavailable ? "warning" : "subtle-foreground"}
+          weight="medium"
+        />
       )}
       <Text
         numberOfLines={1}
-        className="shrink font-medium text-[13px] text-subtle-foreground"
+        className={`shrink font-medium text-[13px] ${unavailable ? "text-warning" : "text-subtle-foreground"}`}
       >
         {label}
       </Text>
       <Icon
-        name="chevron.up.chevron.down"
+        name={unavailable ? "arrow.clockwise" : "chevron.up.chevron.down"}
         size={9}
-        tone="muted-foreground"
+        tone={unavailable ? "subtle-foreground" : "muted-foreground"}
         weight="semibold"
       />
     </Pressable>

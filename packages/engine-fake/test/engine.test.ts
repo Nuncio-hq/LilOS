@@ -751,3 +751,89 @@ describe("engine-fake #294: reports the session's context window", () => {
     c.close();
   });
 });
+
+describe("engine-fake #431: compact replay + bounded log", () => {
+  test("a finished turn's deltas replay as one turn.recap", async () => {
+    const c = conn();
+    const live: { type: string; text?: string; reasoning?: string }[] = [];
+    const text: string[] = [];
+    const reasoning: string[] = [];
+    let turnId = "";
+    c.onEvent((e) => {
+      live.push(e as never);
+      if (e.type === "turn.started") turnId = e.payload.turnId;
+      if (e.type === "turn.delta") {
+        if (e.payload.stream === "text") text.push(e.payload.delta);
+        else reasoning.push(e.payload.delta);
+      }
+    });
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/tmp/lilos-fake",
+    })) as { sessionId: string };
+    await promptText(c, sessionId, "md: table");
+
+    /* Live listeners still see the verbatim delta stream — the recap is
+       log-only, minted at turn.completed after the broadcast. */
+    expect(live.map((e) => e.type)).toContain("turn.delta");
+    expect(live.map((e) => e.type)).not.toContain("turn.recap");
+
+    const since = (await c.request("events.since", {
+      sessionId,
+      after: 0,
+    })) as {
+      events: {
+        seq: number;
+        type: string;
+        payload: { turnId?: string; text?: string; reasoning?: string };
+      }[];
+      truncated: boolean;
+      latestSeq: number;
+    };
+    const turnEvents = since.events.filter((e) => e.payload.turnId === turnId);
+    expect(turnEvents.filter((e) => e.type === "turn.delta")).toEqual([]);
+    const recaps = turnEvents.filter((e) => e.type === "turn.recap");
+    expect(recaps).toHaveLength(1);
+    expect(recaps[0].payload.text).toBe(text.join(""));
+    expect(recaps[0].payload.reasoning).toBe(reasoning.join(""));
+    /* The recap sits at the last delta's seq — no new seq minted, order
+       stays monotonic, and the run's tool.started/completed survive. */
+    const seqs = since.events.map((e) => e.seq);
+    expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
+    expect(since.truncated).toBe(false);
+    c.close();
+  });
+
+  test("eventLogCap bounds the log and events.since reports truncation", async () => {
+    const c = connectFake(new FakeEngine({ tick: 1, eventLogCap: 12 }));
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/tmp/lilos-fake",
+    })) as { sessionId: string };
+    await promptText(c, sessionId, "md: table");
+
+    const since = (await c.request("events.since", {
+      sessionId,
+      after: 0,
+    })) as {
+      events: { seq: number; type: string }[];
+      truncated: boolean;
+      latestSeq: number;
+    };
+    expect(since.events.length).toBeLessThanOrEqual(12);
+    /* The requested range lost events: `after: 0` can never rebuild the
+       early log — the client must refetch state, not patch. */
+    expect(since.truncated).toBe(true);
+    /* turn.completed is the newest frame — the cap drops from the head,
+       so the settled turn's end always survives. */
+    expect(since.events.some((e) => e.type === "turn.completed")).toBe(true);
+
+    /* A watermark past the dropped prefix is honest again. */
+    const tail = (await c.request("events.since", {
+      sessionId,
+      after: since.events[0].seq,
+    })) as { truncated: boolean };
+    expect(tail.truncated).toBe(false);
+    c.close();
+  });
+});

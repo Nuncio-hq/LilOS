@@ -2444,4 +2444,86 @@ describe("the prompt lane + claimed boundary (#403)", () => {
       await w.cleanup();
     }
   });
+
+  it("#431 a truncated replay can't prove the watched turn died — no false interrupted", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page", // parks mid-turn on an approval ask
+      });
+      await waitFor(() => w.sleep.held || undefined, "turn running");
+
+      /* Simulate the cap having dropped frames below the harness's replay
+         watermark: the watched turn vanished from the snapshot, its
+         turn.completed may have been trimmed — the death inference is
+         unprovable, so applyReplay must stay silent (#431 review). */
+      const sessions = (
+        w.engine as unknown as {
+          sessions: Map<
+            string,
+            {
+              turn?: unknown;
+              openRequests: Map<string, unknown>;
+              droppedSeq: number;
+            }
+          >;
+        }
+      ).sessions;
+      const engineRef = await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        return (
+          conversations.find((c) => c.id === conversation.id)?.engineRef ??
+          undefined
+        );
+      }, "engineRef");
+      const sess = sessions.get(engineRef as string);
+      if (!sess) throw new Error("fake engine lost the session");
+      sess.turn = undefined;
+      sess.openRequests.clear();
+      sess.droppedSeq = Number.MAX_SAFE_INTEGER;
+
+      w.harness.attachEngine(
+        connectFake(w.engine) as unknown as EngineConnection,
+      );
+
+      // The replay ran (the truncated warn lands) — then a settle window.
+      await waitFor(
+        () =>
+          w.log.lines.some((l) => l.includes("log truncated"))
+            ? true
+            : undefined,
+        "truncated replay applied",
+      );
+      await new Promise((r) => setTimeout(r, 500));
+
+      const { messages } = await w.user.request<{ messages: AppMessage[] }>(
+        "messages.list",
+        { channelId: channel.id, limit: 50 },
+      );
+      expect(messages.filter((m) => m.text.includes("interrupted"))).toEqual(
+        [],
+      );
+      const { conversations } = await w.user.request<{
+        conversations: {
+          id: string;
+          turnFailure?: { kind: string; text: string };
+        }[];
+      }>("conversations.list", {});
+      /* The reattach closing the parked prompt's conn stamps a generic
+         "Engine error: connection closed" card — that failure is real and
+         unrelated. What must NOT land is markTurnInterrupted's sleep card:
+         the truncated replay couldn't prove the turn died. */
+      expect(
+        conversations.find((c) => c.id === conversation.id)?.turnFailure?.kind,
+      ).not.toBe("sleep");
+    } finally {
+      await w.cleanup();
+    }
+  });
 });

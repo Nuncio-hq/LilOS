@@ -241,6 +241,15 @@ export function createPushFanout(options: {
         }
         return;
       }
+      if (event.type === "turn.recap") {
+        /* #431: a replayed recap stands in for the whole delta run — the
+           completion push needs its text for the excerpt. */
+        textByTurn.set(
+          `${sessionId}:${event.payload.turnId}`,
+          event.payload.text,
+        );
+        return;
+      }
       let alert: { kind: PushKind; body: string } | undefined;
       if (event.type === "turn.completed") {
         const { turnId, stopReason, error } = event.payload;

@@ -37,6 +37,7 @@ export function ThreadScreen({
   t,
   model,
   modelLogo,
+  modelUnavailable,
   onApprove,
   onDeny,
   onAnswer,
@@ -56,6 +57,8 @@ export function ThreadScreen({
   model?: string;
   /** models.dev slug for the composer's model chip. */
   modelLogo?: string;
+  /** #483: chip renders "Models unavailable" dimmed; its press retries. */
+  modelUnavailable?: boolean;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
   /** #420: a question ask's answer — a question's Cancel rides `onDeny`. */
@@ -180,6 +183,7 @@ export function ThreadScreen({
             }
             {...(model !== undefined ? { model } : {})}
             modelLogo={modelLogo}
+            modelUnavailable={modelUnavailable}
             insetBottom={insets.bottom}
             onSend={onSend}
             onStop={running ? onStop : undefined}

@@ -322,6 +322,40 @@ describe("push fan-out — transition → push decision (#161)", () => {
     });
   });
 
+  it("#431 a replayed turn.recap feeds the completion-push excerpt", async () => {
+    /* A gap-resync replays the compacted log: the recap carries the reply
+       text the delta run used to stream — without its case the completion
+       push falls back to the thread title. */
+    const { relay, pairing, sent } = newWorld();
+    const host = await registeredHost(relay);
+    const { conversation } = await setupConversation(host, {
+      title: "Fix the readme",
+    });
+    const phone = await helloedDevice(pairing, relay);
+    await registerPush(phone);
+
+    await engineEvent(host, conversation, {
+      seq: 2,
+      sessionId: "fake:sess-1",
+      type: "turn.recap",
+      payload: {
+        turnId: "turn-3",
+        text: "Recapped answer: **tests** green, commit `abc123`",
+        reasoning: "",
+      },
+    });
+    await engineEvent(
+      host,
+      conversation,
+      turnCompleted(3, { stopReason: "end_turn" }),
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      body: "Recapped answer: tests green, commit abc123",
+      data: { conversationId: conversation.id },
+    });
+  });
+
   it("#289 the excerpt strips markdown and drops fenced code blocks", async () => {
     const { relay, pairing, sent } = newWorld();
     const host = await registeredHost(relay);
