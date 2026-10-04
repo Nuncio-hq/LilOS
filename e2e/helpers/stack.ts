@@ -194,12 +194,21 @@ export async function waitForInstance(
   proc: ChildProcess,
   out: () => string,
   ms = 60_000,
+  opts: { holdOursMs?: number } = {},
 ): Promise<string> {
   const start = Date.now();
+  /* #516 repro knob: the spawned child's `instanceId` line can arrive late
+     or never — a relay frozen in Bun.sleepSync dies with its stdout
+     undelivered. `holdOursMs` withholds the line from the live probe for
+     that long, modelling the window where the stack exits before the
+     identity probe has named both ids. The post-exit re-parse below always
+     sees whatever the child actually managed to emit. */
+  const holdOursUntil = start + (opts.holdOursMs ?? 0);
+  const oursLogged = () => INSTANCE_RE(kind).exec(out())?.[1];
   let ours: string | undefined;
   let foreign: string | undefined;
   for (;;) {
-    ours ??= INSTANCE_RE(kind).exec(out())?.[1];
+    if (!ours && Date.now() >= holdOursUntil) ours = oursLogged();
     const seen = await healthzId(port);
     if (seen !== undefined) {
       if (ours && seen === ours) return ours;
@@ -247,7 +256,7 @@ export async function bootStack(
   tag: string,
   ports: StackPorts,
   extraEnv: Record<string, string> = {},
-  opts: { home?: string } = {},
+  opts: { home?: string; holdOursMs?: number } = {},
 ): Promise<Stack> {
   const home =
     opts.home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
@@ -275,7 +284,9 @@ export async function bootStack(
        instead of after vite's whole boot. Vite can't carry identity, but
        its --strictPort dies on a held port and the umbrella exits — the
        proc-exit check catches that. */
-    await waitForInstance("relay", ports.relay, proc, log);
+    await waitForInstance("relay", ports.relay, proc, log, 60_000, {
+      holdOursMs: opts.holdOursMs,
+    });
     await waitForInstance("harness", ports.feed, proc, log);
     await waitForHttp(webUrl, 60_000, proc);
     const relayToken = await waitForToken(home);
