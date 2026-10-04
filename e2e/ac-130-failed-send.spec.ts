@@ -8,12 +8,14 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 import {
   captureProc,
   killProc,
+  pickPorts,
+  type StackPorts,
+  WORKER,
   waitForFeed,
   waitForHttp,
   waitForRelay,
   waitForToken,
 } from "./helpers/stack";
-import { WORKER, wport } from "./ports";
 
 /**
  * AC-130: a send the relay refuses (killed mid-send / down) keeps the draft —
@@ -29,7 +31,7 @@ import { WORKER, wport } from "./ports";
 const ROOT = path.dirname(fileURLToPath(import.meta.url)).replace(/\/e2e$/, "");
 const webDir = path.join(ROOT, "apps", "web");
 const SHOTS = path.join(ROOT, "test-results", "ac-130");
-const PORTS = { relay: wport(4740), feed: wport(4826), web: wport(5327) };
+let PORTS: StackPorts;
 
 const TOAST = "div.fixed.bottom-5";
 const PNG = Buffer.from(
@@ -266,6 +268,7 @@ async function channelIdFor(page: Page, stack: Procs): Promise<string> {
 
 let stack: Procs;
 test.beforeAll(async () => {
+  PORTS = await pickPorts();
   stack = await boot();
 });
 test.afterAll(async () => {

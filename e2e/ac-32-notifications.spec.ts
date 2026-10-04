@@ -1,8 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #32 — macOS notifications + per-employee badges. ACs:
@@ -33,11 +32,7 @@ const LIVE = process.env.LILOS_ENGINE === "hermes";
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac32", {
-    relay: wport(4663),
-    feed: wport(4668),
-    web: wport(5255),
-  });
+  stack = await bootStack("ac32", await pickPorts());
 });
 test.afterAll(async () => {
   await stack?.stop();
