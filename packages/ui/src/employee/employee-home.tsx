@@ -502,17 +502,30 @@ export function EmployeeHome({
             {e.name}
           </div>
           <div
-            className="truncate text-muted-foreground text-xs"
+            className="flex min-w-0 items-center text-muted-foreground text-xs"
+            data-nowline
             onPointerEnter={(ev) => {
               const el = ev.currentTarget;
-              el.title =
-                el.scrollWidth > el.clientWidth
-                  ? `${e.role}${e.now ? ` · now: ${e.now}` : ""}`
-                  : "";
+              const cut = Array.from(el.children).some(
+                (c) => c.scrollWidth > c.clientWidth,
+              );
+              el.title = cut
+                ? `${e.role}${e.now ? ` · now: ${e.now}` : ""}`
+                : "";
             }}
           >
-            {e.role}
-            {e.now ? ` · now: ${e.now}` : ""}
+            {/* #422: the live "now:" half of the line survives truncation —
+                the role gives way first, and the step text caps at 60% so a
+                long command still clips instead of overflowing the header.
+                Both spans stay mounted while `now` streams in and out: the
+                #301 drag-region watcher flips the OS region map on ELEMENT
+                childList mutations inside .lilos-drag (text edits don't
+                count), so an element that mounts/unmounts mid-turn would
+                keep the header's buttons unclickable while it runs. */}
+            <span className="min-w-0 flex-1 truncate">{e.role}</span>
+            <span className="max-w-[60%] flex-none truncate">
+              {e.now ? ` · now: ${e.now}` : ""}
+            </span>
           </div>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
