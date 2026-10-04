@@ -393,10 +393,8 @@ describe("AC-2 (#507) hermes CLI runs get the allow-listed env", () => {
       const c = new HermesConnect({
         relay: {
           request: async (method) => {
-            if (method === "settings.get")
-              return { value: { approved: true } };
-            if (method === "employees.list")
-              return { employees: f.employees };
+            if (method === "settings.get") return { value: { approved: true } };
+            if (method === "employees.list") return { employees: f.employees };
             throw new Error("unexpected");
           },
         },

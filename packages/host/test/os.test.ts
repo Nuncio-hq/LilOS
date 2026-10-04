@@ -20,7 +20,7 @@ import { detectEditors, openPlan } from "../src/os";
  * under a tmp dir ($LILOS_APP_DIRS): an Info.plist carrying the real
  * CFBundleIdentifier plus a bundled cli script that logs its argv — so the
  * test sees the exact execFile argv (no shell). `open` itself is faked by a
- * script on PATH logging to $LILOS_OPEN_LOG.
+ * script on PATH logging to $FAKE_OPEN_LOG.
  */
 const TOP = mkdtempSync(join(tmpdir(), "lilos-os-"));
 const APPS = join(TOP, "apps");
@@ -50,7 +50,7 @@ function writeApp(
     // Argv proof: each arg logged on its own line (spaces stay inside one arg).
     writeFileSync(
       p,
-      '#!/usr/bin/env bash\nfor a in "$@"; do echo "arg:$a" >> "$LILOS_OPEN_LOG"; done\necho "exec:$(basename "$0")" >> "$LILOS_OPEN_LOG"\n',
+      '#!/usr/bin/env bash\nfor a in "$@"; do echo "arg:$a" >> "$FAKE_OPEN_LOG"; done\necho "exec:$(basename "$0")" >> "$FAKE_OPEN_LOG"\n',
     );
     chmodSync(p, 0o755);
   }
@@ -61,7 +61,7 @@ function writeFakeOpen() {
   mkdirSync(BIN, { recursive: true });
   writeFileSync(
     join(BIN, "open"),
-    '#!/usr/bin/env bash\nfor a in "$@"; do echo "arg:$a" >> "$LILOS_OPEN_LOG"; done\necho "exec:open" >> "$LILOS_OPEN_LOG"\n',
+    '#!/usr/bin/env bash\nfor a in "$@"; do echo "arg:$a" >> "$FAKE_OPEN_LOG"; done\necho "exec:open" >> "$FAKE_OPEN_LOG"\n',
   );
   chmodSync(join(BIN, "open"), 0o755);
 }
@@ -72,7 +72,7 @@ let savedEnv: Record<string, string | undefined> = {};
 beforeAll(() => {
   savedEnv = {
     LILOS_APP_DIRS: process.env.LILOS_APP_DIRS,
-    LILOS_OPEN_LOG: process.env.LILOS_OPEN_LOG,
+    FAKE_OPEN_LOG: process.env.FAKE_OPEN_LOG,
     PATH: process.env.PATH,
   };
   mkdirSync(ROOT, { recursive: true });
@@ -80,7 +80,7 @@ beforeAll(() => {
   mkdirSync(join(ROOT, "sub"));
   writeFakeOpen();
   process.env.LILOS_APP_DIRS = APPS;
-  process.env.LILOS_OPEN_LOG = LOG;
+  process.env.FAKE_OPEN_LOG = LOG;
   process.env.PATH = `${BIN}:${process.env.PATH}`;
   writeApp(
     APPS,

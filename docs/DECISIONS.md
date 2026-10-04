@@ -345,15 +345,18 @@ PR does not exist.
   behind `tool_search`. Not: fetching `GET /tools` inside `register()`,
   a hand-written tool list in Python, or leaving tool search `auto`.
   — #411 · PR #495
-- **D-#412 Engine and PTY spawns get an allow-listed environment: every
-  `LILOS_*` outside `ENGINE_ENV_ALLOW_LIST` (`LILOS_SURFACES_URL` +
-  `LILOS_ENGINE_TOKEN`) is stripped before `hermes serve`, and a
+- **D-#412 Every spawned child gets an allow-listed environment:
+  `LILOS_ENV_ALLOW_LIST` (`LILOS_SURFACES_URL` + `LILOS_ENGINE_TOKEN`,
+  `@lilos/contracts/env`) is the only LILOS_* kept — by `hermes serve`,
+  the surfaces PTY/browser, every `packages/host` exec
+  (`packages/host/src/exec.ts`), and Connect's `hermes` CLI. A caller's
+  explicit env merges after the scrub, so a grant always wins. A
   no-folder session runs in `~` with `hasFolder` gating
   checkpoints/rewind so home is never snapshotted or restored.** Not:
   passing the whole harness env (hands `LILOS_RELAY_TOKEN` + state dirs
-  to every agent shell), a per-session temp folder (rejected
-  2026-10-04), or Workbench/rewind treating `~` as a session folder.
-  — #412 · PR #505
+  to agent shells, repo hooks and hermes plugin code), a per-session
+  temp folder (rejected 2026-10-04), or Workbench/rewind treating `~`
+  as a session folder. — #412, #507 · PR #505, #519
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the

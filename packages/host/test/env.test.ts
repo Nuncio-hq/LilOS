@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { run } from "../src/exec";
 import { callHost } from "../src/index";
 
 /**
@@ -117,6 +118,20 @@ describe("AC-1 (#507) host exec children see only the allow-listed LILOS_* env",
     const seen = lilosLines(readFileSync(dump, "utf8"));
     expect(seen).toEqual([
       "LILOS_ENGINE_TOKEN=eng-token",
+      "LILOS_SURFACES_URL=http://127.0.0.1:9/gw",
+    ]);
+  });
+
+  it("a caller-supplied env is an explicit grant, not a leak", async () => {
+    /* Same contract as the launcher's options.env (#505): a LILOS_* name a
+       caller deliberately forwards keeps working — the checkpoint shadow
+       store passes GIT_* this way. */
+    const { stdout } = await run("env", [], {
+      env: { LILOS_FUTURE_KNOB: "granted" },
+    });
+    expect(lilosLines(stdout)).toEqual([
+      "LILOS_ENGINE_TOKEN=eng-token",
+      "LILOS_FUTURE_KNOB=granted",
       "LILOS_SURFACES_URL=http://127.0.0.1:9/gw",
     ]);
   });

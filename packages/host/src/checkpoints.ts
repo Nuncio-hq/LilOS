@@ -1,11 +1,9 @@
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, promises as fsp } from "node:fs";
 import { dirname, join } from "node:path";
-import { promisify } from "node:util";
 import { HOST_ERRORS, HostError } from "./errors.js";
+import { run } from "./exec.js";
 
-const run = promisify(execFile);
 const MAX_BUFFER = 64 * 1024 * 1024;
 
 /** Default retention: newest 50 checkpoints per folder, nothing older than 7 days. */
@@ -78,19 +76,11 @@ const identity = [
   "user.email=checkpoints@lilos.local",
 ];
 
+/* Only the shadow-store vars — `run` merges them over the allow-listed
+   ambient env, so GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE always point at the
+   shadow repo and ambient LILOS_* never reach the shadow git (#507). */
 function shadowEnv(f: Folder, cwd: string): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  for (const key of Object.keys(env)) {
-    if (
-      key === "GIT_DIR" ||
-      key === "GIT_WORK_TREE" ||
-      key === "GIT_INDEX_FILE"
-    ) {
-      delete env[key];
-    }
-  }
   return {
-    ...env,
     GIT_DIR: f.gitDir,
     GIT_WORK_TREE: cwd,
     GIT_INDEX_FILE: f.indexFile,

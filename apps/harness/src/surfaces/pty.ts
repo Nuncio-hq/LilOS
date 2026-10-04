@@ -1,5 +1,5 @@
+import { scrubLilosEnv } from "@lilos/contracts/env";
 import type { PtyHandle, PtySpawnOptions } from "@lilos/surfaces";
-import { scrubEngineEnv } from "../engine/launcher";
 
 /**
  * The harness-owned PTY (issue #36, AC-1): a login shell on Bun's native
@@ -10,7 +10,7 @@ import { scrubEngineEnv } from "../engine/launcher";
  */
 export function ptySpawnEnv(): Record<string, string> {
   return {
-    ...scrubEngineEnv(process.env),
+    ...scrubLilosEnv(process.env),
     TERM: "xterm-256color",
     COLORTERM: "truecolor",
   };
