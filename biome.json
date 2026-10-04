@@ -19,6 +19,7 @@
       "!**/playwright-report",
       "!**/bun.lock",
       "!packages/contracts/generated",
+      "!packages/engine-hermes/plugin/lilos/catalog.json",
       "!**/*.svg",
       "!**/*.png",
       "!**/*.ico",

@@ -11,7 +11,7 @@ import {
   killTagged,
   taggedPids,
 } from "./engine-leak";
-import { wport } from "./ports";
+import { pickPorts } from "./helpers/stack";
 
 /* #347: a test run's engine-fake/surfaces-demo must not outlive it — Oscar
    found four `serve.ts --tick 25` and one surfaces-demo alive 3.5 days after
@@ -61,15 +61,7 @@ test.describe("engine leak — killed runner leaves nothing (#347)", () => {
     const tag_ = engineTag("ac347");
     tag = tag_;
     const home = mkdtempSync(path.join(tmpdir(), "lilos-ac347-"));
-    /* Residues 0–98 are all taken by other specs (ports.spec.ts enforces
-       distinct bases mod 100), so this spec piggybacks on the last free
-       one: every port stays ≡99. Base must be >5199 or a high worker index
-       lands on the reserved prototype webServer port. */
-    const ports = {
-      relay: wport(5299),
-      feed: wport(5299) + 10_000,
-      web: wport(5299) + 20_000,
-    };
+    const ports = await pickPorts();
 
     parent = spawn(
       "bun",

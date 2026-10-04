@@ -98,7 +98,12 @@ function SessionMenu({
       >
         <EllipsisIcon className="size-4" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44">
+      {/* sticky: the session list scroll-settles (use-stick-to-bottom) right
+          as the menu opens; without it, floating-ui's limitShift caps the
+          clamp at the clipped anchor's edge and the popup parks offscreen.
+          sticky removes the limiter so the popup stays inside the
+          scrollport. (#492) */}
+      <DropdownMenuContent align="end" sticky className="w-44">
         {onRename && (
           <DropdownMenuItem onClick={onRename}>
             <PencilIcon />
@@ -502,17 +507,45 @@ export function EmployeeHome({
             {e.name}
           </div>
           <div
-            className="truncate text-muted-foreground text-xs"
+            className="flex min-w-0 items-center text-muted-foreground text-xs"
+            data-nowline
             onPointerEnter={(ev) => {
               const el = ev.currentTarget;
-              el.title =
-                el.scrollWidth > el.clientWidth
-                  ? `${e.role}${e.now ? ` · now: ${e.now}` : ""}`
-                  : "";
+              const cut = Array.from(el.children).some(
+                (c) => c.scrollWidth > c.clientWidth,
+              );
+              el.title = cut
+                ? `${e.role}${e.now ? ` · now: ${e.now}` : ""}`
+                : "";
             }}
           >
-            {e.role}
-            {e.now ? ` · now: ${e.now}` : ""}
+            {/* #422: the live "now:" half of the line wins outright — while
+                a turn runs the role collapses to a 1px sliver so the step
+                text reads in full and truncates only against the header
+                itself (the role comes back at idle). 1px, not 0: the
+                collapse keeps a non-empty box so presence checks on the
+                role (ac-29) still see it, while pixels show only "now:".
+                Both spans stay mounted while `now` streams in and out: the
+                #301 drag-region watcher flips the OS region map on ELEMENT
+                childList mutations inside .lilos-drag (text edits don't
+                count), so an element that mounts/unmounts mid-turn would
+                keep the header's buttons unclickable while it runs. */}
+            <span
+              className={cn(
+                "truncate",
+                e.now ? "w-px flex-none overflow-hidden" : "min-w-0 flex-1",
+              )}
+            >
+              {e.role}
+            </span>
+            <span
+              className={cn(
+                "truncate",
+                e.now ? "min-w-0 flex-1" : "w-px flex-none overflow-hidden",
+              )}
+            >
+              {e.now ? `now: ${e.now}` : ""}
+            </span>
           </div>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">

@@ -268,6 +268,11 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
       row.reason = `plugins enable failed: ${result.out.slice(-200)}`;
       return;
     }
+    if (!this.toolSearch(profile, "off")) {
+      row.state = "failed";
+      row.reason = "couldn't disable Hermes tool search for this profile";
+      return;
+    }
     row.state = "connected";
     row.reason = undefined;
   }
@@ -281,6 +286,34 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
         out: result.out.slice(-200),
       });
     }
+    this.toolSearch(profile, "auto");
+  }
+
+  /** LilOS plugin tools must reach the model's tool list directly: Hermes'
+      tool search defers every plugin-registered tool behind `tool_search`
+      (`tools/tool_search.py` — plugin toolsets are never in its
+      `_DIRECT_SURFACE_TOOLSETS`), so a LilOS profile with tool search on
+      offers `tool_search` instead of `lilos_context` (#411). The host policy
+      names the `lilos_*` tools outright — they must be offered, not
+      searched for. Profile-scoped `tools.tool_search.enabled` is the only
+      off switch upstream provides; restore the default on disconnect. */
+  private toolSearch(profile: string, enabled: "off" | "auto"): boolean {
+    const result = this.hermes([
+      "-p",
+      profile,
+      "config",
+      "set",
+      "tools.tool_search.enabled",
+      enabled,
+    ]);
+    if (result !== undefined && result.status !== 0) {
+      this.deps.log.warn("config set tools.tool_search.enabled failed", {
+        profile,
+        out: result.out.slice(-200),
+      });
+      return false;
+    }
+    return true;
   }
 
   private hermes(argv: string[]): { status: number; out: string } | undefined {
