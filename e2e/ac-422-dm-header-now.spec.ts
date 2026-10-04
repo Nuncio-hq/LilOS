@@ -97,7 +97,7 @@ test("AC-1/AC-3: role at idle, 'now: <tool> <target>' on the scripted step, clea
   });
 });
 
-test("AC-2 screenshot matrix: header 1288/900/1440, light + dark, running and idle", async ({
+test("AC-2 screenshot matrix: header 1288x700/1288x900/1440x900, light + dark, running and idle", async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -121,12 +121,12 @@ test("AC-2 screenshot matrix: header 1288/900/1440, light + dark, running and id
     (async () => {
       for (const [w, h] of [
         [1288, 700],
-        [900, 700],
+        [1288, 900],
         [1440, 900],
       ] as const) {
         await page.setViewportSize({ width: w, height: h });
         await page.screenshot({
-          path: `${SHOTS}/${phase}-${w}-${scheme}.png`,
+          path: `${SHOTS}/${phase}-${w}x${h}-${scheme}.png`,
         });
       }
     })();
