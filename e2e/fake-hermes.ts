@@ -24,6 +24,12 @@
  *                             the spec can hold the outage open for the
  *                             System-status screenshot (AC-3).
  *   FAKE_COMPLETE_DELAY_MS  — delay before message.complete (default 200).
+ *   FAKE_SUBMIT_DELAY_MS    — delay before the prompt.submit REPLY for a
+ *                             HOLD_TURN prompt (default 0). #521: holds the
+ *                             submit call in-flight so the spec's kill lands
+ *                             while `prompt()` is still awaiting it — the
+ *                             whichever-path-notices-first ordering the
+ *                             watchdog must type correctly.
  *
  * Behaviors the specs lean on:
  *   - `model.options` with `refresh:true` never answers (held in-flight).
@@ -65,6 +71,7 @@ const writeState = (s: FakeState) => {
 };
 
 const completeDelayMs = Number(process.env.FAKE_COMPLETE_DELAY_MS ?? 200);
+const submitDelayMs = Number(process.env.FAKE_SUBMIT_DELAY_MS ?? 0);
 
 /* One socket per connection; events broadcast to every connected client —
    the adapter keeps a single gateway socket, so this just reaches it. */
@@ -265,6 +272,15 @@ function handleRequest(method: string, params: Json, sessionIds: Set<string>) {
           });
         }, completeDelayMs);
       }
+      /* #521: the submit reply defers so the spec's SIGKILL lands while the
+         adapter's `prompt.submit` is parked in-flight — deterministic
+         gateway-close-first ordering instead of a lucky kill window. */
+      if (text.includes("HOLD_TURN") && submitDelayMs > 0) {
+        return {
+          __defer__: submitDelayMs,
+          result: { status: "streaming", user_row_id: "u1" },
+        };
+      }
       return { status: "streaming", user_row_id: "u1" };
     }
     case "process.list":
@@ -280,7 +296,10 @@ function handleRequest(method: string, params: Json, sessionIds: Set<string>) {
   }
 }
 
-function onFrame(data: string, sessionIds: Set<string>): string | undefined {
+function onFrame(
+  data: string,
+  sessionIds: Set<string>,
+): string | { deferMs: number; reply: string } | undefined {
   let frame: Json;
   try {
     frame = JSON.parse(data) as Json;
@@ -299,6 +318,16 @@ function onFrame(data: string, sessionIds: Set<string>): string | undefined {
   if (typeof result === "string" && result.startsWith("__err__")) {
     const m = /^__err__(-?\d+)_(.*)$/.exec(result);
     return err(frame.id, Number(m?.[1] ?? -32603), m?.[2] ?? "error");
+  }
+  if (
+    result !== null &&
+    typeof result === "object" &&
+    typeof (result as Json).__defer__ === "number"
+  ) {
+    return {
+      deferMs: (result as Json).__defer__ as number,
+      reply: ok(frame.id, (result as Json).result),
+    };
   }
   return ok(frame.id, result);
 }
@@ -351,7 +380,17 @@ function serve(argv: string[]): void {
           typeof message === "string" ? message : String(message),
           (ws.data as { sid: Set<string> }).sid,
         );
-        if (reply) ws.send(reply);
+        if (typeof reply === "string") ws.send(reply);
+        else if (reply) {
+          const { deferMs, reply: frame } = reply;
+          setTimeout(() => {
+            try {
+              ws.send(frame);
+            } catch {
+              /* socket already gone — the kill landed in the window */
+            }
+          }, deferMs);
+        }
       },
       close(ws) {
         clients.delete(ws as unknown as { send(d: string): void });

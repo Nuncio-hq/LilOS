@@ -11,6 +11,7 @@
  * the other file's stack (#256/#272).
  */
 import { type ChildProcess, spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -63,6 +64,17 @@ export function killProc(proc: ChildProcess): Promise<void> {
     }
   };
   return new Promise((resolve) => {
+    /* Already exited — 'exit' won't fire again and waiting the full timeout
+       just stalls every dead-stack cleanup (#516: a stack that refuses a
+       foreign port self-terminates before bootStack's catch runs). Still
+       sweep the group: a dead leader can leave bound-port children behind,
+       and a wedged one gets the same SIGKILL backstop — just unblocking. */
+    if (proc.exitCode !== null || proc.signalCode !== null) {
+      killGroup("SIGTERM");
+      setTimeout(() => killGroup("SIGKILL"), 8_000).unref();
+      resolve();
+      return;
+    }
     const t = setTimeout(() => {
       killGroup("SIGKILL");
       resolve();
@@ -194,12 +206,21 @@ export async function waitForInstance(
   proc: ChildProcess,
   out: () => string,
   ms = 60_000,
+  opts: { holdOursMs?: number } = {},
 ): Promise<string> {
   const start = Date.now();
+  /* #516 repro knob: the spawned child's `instanceId` line can arrive late
+     or never — a relay frozen in Bun.sleepSync dies with its stdout
+     undelivered. `holdOursMs` withholds the line from the live probe for
+     that long, modelling the window where the stack exits before the
+     identity probe has named both ids. The post-exit re-parse below always
+     sees whatever the child actually managed to emit. */
+  const holdOursUntil = start + (opts.holdOursMs ?? 0);
+  const oursLogged = () => INSTANCE_RE(kind).exec(out())?.[1];
   let ours: string | undefined;
   let foreign: string | undefined;
   for (;;) {
-    ours ??= INSTANCE_RE(kind).exec(out())?.[1];
+    if (!ours && Date.now() >= holdOursUntil) ours = oursLogged();
     const seen = await healthzId(port);
     if (seen !== undefined) {
       if (ours && seen === ours) return ours;
@@ -209,15 +230,28 @@ export async function waitForInstance(
         );
       foreign = seen;
     }
-    if (proc.exitCode !== null || proc.signalCode !== null)
+    if (proc.exitCode !== null || proc.signalCode !== null) {
+      /* The stack died — but the identity question still stands (#516):
+         drain the last output ('close' lands after 'exit', so buffered
+         stdout can still be in flight), then probe /healthz one final
+         time. A port answering with a different id is the primary error;
+         "process exited" is only the fallback when nothing answers. */
+      await Promise.race([once(proc, "close").catch(() => {}), sleep(300)]);
+      ours ??= oursLogged();
+      const them = (await healthzId(port)) ?? foreign;
+      if (them !== undefined && them !== ours)
+        throw new Error(
+          `port ${port} answers /healthz, but it is not the ${kind} this ` +
+            `spec started (ours ${ours ?? "never logged"}, theirs ${them}) ` +
+            `— the ${kind} stack exited (code ${proc.exitCode ?? proc.signalCode}) first`,
+        );
       throw new Error(
         `${kind} stack exited (code ${proc.exitCode ?? proc.signalCode}) before port ${port} was ours` +
-          (foreign !== undefined
-            ? ` — /healthz still answers ${foreign}`
-            : "") +
+          (them !== undefined ? ` — /healthz still answers ${them}` : "") +
           (ours !== undefined ? ` (ours ${ours})` : "") +
           ` — last output:\n${out().slice(-1200)}`,
       );
+    }
     if (Date.now() - start > ms)
       throw new Error(
         `timed out waiting for ${kind} on port ${port}` +
@@ -252,7 +286,7 @@ export async function bootStack(
   tag: string,
   ports: StackPorts,
   extraEnv: Record<string, string> = {},
-  opts: { home?: string } = {},
+  opts: { home?: string; holdOursMs?: number } = {},
 ): Promise<Stack> {
   const home =
     opts.home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
@@ -284,7 +318,9 @@ export async function bootStack(
        instead of after vite's whole boot. Vite can't carry identity, but
        its --strictPort dies on a held port and the umbrella exits — the
        proc-exit check catches that. */
-    await waitForInstance("relay", ports.relay, proc, log);
+    await waitForInstance("relay", ports.relay, proc, log, 60_000, {
+      holdOursMs: opts.holdOursMs,
+    });
     await waitForInstance("harness", ports.feed, proc, log);
     await waitForHttp(webUrl, 60_000, proc);
     const relayToken = await waitForToken(home);

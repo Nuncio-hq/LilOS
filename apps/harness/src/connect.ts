@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProfileConnection } from "@lilos/contracts/app";
+import { scrubLilosEnv } from "@lilos/contracts/env";
 import type { Logger } from "./log";
 
 /**
@@ -324,8 +325,11 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
       this.deps.log.warn("hermes bin unresolved", { error: String(error) });
       return undefined;
     }
+    /* #507: `hermes` may load profile plugin code — same allow-list scrub
+       as the engine spawn; the explicit Connect env + HERMES_HOME ride on
+       top (an explicit grant always wins). */
     const env = {
-      ...(process.env as Record<string, string>),
+      ...(scrubLilosEnv(process.env) as Record<string, string>),
       ...this.deps.env,
       HERMES_HOME: this.deps.hermesHome,
     };

@@ -854,6 +854,81 @@ describe("workspace harness", () => {
     }
   });
 
+  it("#521 a typed BACKEND_DOWN prompt rejection posts the restart surface, not an Engine error", async () => {
+    let failPrompts = false;
+    const w = (await setupWorldBase({
+      tick: 1,
+      captureSockets: true,
+      reconnectMinDelayMs: 20,
+      /* The engine call dies typed -32006 (the gateway-close-first
+         ordering) — no turn.started/turn.completed arrive, so
+         dispatchPrompt's catch is the only surface that can fire. */
+      wrap: (conn) => {
+        const orig = conn.request.bind(conn);
+        conn.request = <T = unknown>(
+          method: string,
+          params?: unknown,
+        ): Promise<T> =>
+          failPrompts && method === "prompt"
+            ? Promise.reject(
+                new EngineRpcError(
+                  -32006,
+                  "hermes backend is down (gateway socket closed)",
+                ),
+              )
+            : orig<T>(method, params);
+        return conn;
+      },
+    })) as World;
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "first ping",
+      });
+      // Baseline turn lands → the session binds; later prompts dispatch.
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.authorKind === "employee");
+      }, "baseline answer");
+
+      failPrompts = true;
+      await postMessage(w.user, channel.id, conversation.id, "die under me");
+
+      const note = await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "system" && m.text.includes("engine restarted"),
+        );
+      }, "restart note");
+      expect(note.text).toContain("interrupted");
+
+      const failed = await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: {
+            id: string;
+            turnFailure?: { kind: string; text: string };
+          }[];
+        }>("conversations.list", {});
+        return conversations.find((x) => x.id === conversation.id)?.turnFailure;
+      }, "turnFailure stamped");
+      expect(failed?.kind).toBe("sleep");
+      expect(failed?.text).toContain("slept");
+
+      /* The generic failure path must not ride the same rejection — one
+         typed surface, no "Engine error:" duplicate. */
+      const { messages } = await listConvMessages(w.user, channel.id);
+      expect(
+        messages.filter((m) => m.text.includes("Engine error")),
+      ).toHaveLength(0);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("AC-4b does not double-report a turn that already ended cleanly", async () => {
     const w = await setupWorld();
     try {
@@ -1965,6 +2040,69 @@ describe("waiting tray (#315)", () => {
     }
   });
 
+  it("#459 AC-4 sends delivered before the bind stay unclaimed — a removed one never reaches the engine", {
+    timeout: 20_000,
+  }, async () => {
+    /* Hold the conversation bind (the seam `LILOS_BIND_DELAY_MS` drives)
+       so both sends land before a SessionBinding exists — the #459
+       window. Pre-bind sends must sit unclaimed until their lane commits
+       them, and a Remove inside the window must drop the send outright:
+       no claim, no prompt, no later delivery. */
+    const w = await setupWorldBase({
+      tick: 1,
+      captureSockets: true,
+      reconnectMinDelayMs: 20,
+      harnessExtra: { bindDelayMs: 150 },
+    });
+    try {
+      const claims: string[] = [];
+      const orig = w.harnessRelay.request.bind(w.harnessRelay);
+      w.harnessRelay.request = ((
+        method: string,
+        params?: Record<string, unknown>,
+      ) => {
+        if (method === "messages.claim")
+          claims.push(
+            `${params?.messageId}:${params?.claimed === false ? 0 : 1}`,
+          );
+        return orig(method, params);
+      }) as typeof w.harnessRelay.request;
+
+      const { channel } = await openDmConversation(w.user);
+      const { conversation, rootMessage } = await w.user.request<{
+        conversation: { id: string };
+        rootMessage: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Summarize the repo layout",
+      });
+      const { message: neverMind } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "never mind that",
+      );
+      await w.user.request("messages.remove", { messageId: neverMind.id });
+
+      await waitFor(
+        () => w.engineCalls.find((c) => c.method === "prompt"),
+        "first prompt",
+      );
+      // Only the kept send ever became an engine turn — the removed one
+      // was neither prompted nor claimed.
+      expect(
+        w.engineCalls
+          .filter((c) => c.method === "prompt")
+          .map((c) => JSON.stringify(c.params)),
+      ).toEqual([expect.stringContaining("Summarize the repo layout")]);
+      expect(claims).toEqual([`${rootMessage.id}:1`]);
+      const { messages } = await listConvMessages(w.user, channel.id);
+      expect(messages.find((m) => m.id === neverMind.id)).toBeUndefined();
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("AC-5 Stop parks every wait into the not-sent tray; Send runs it later — nothing auto-runs", {
     timeout: 20_000,
   }, async () => {
@@ -2533,6 +2671,257 @@ describe("the prompt lane + claimed boundary (#403)", () => {
       expect(
         conversations.find((c) => c.id === conversation.id)?.turnFailure?.kind,
       ).not.toBe("sleep");
+    } finally {
+      await w.cleanup();
+    }
+  });
+});
+
+/* #487 (e2e ac-112 AC-5b): `sendPrompt` holds `binding` across its dispatch
+   awaits, but `doRebindConversation` swaps `bindings[convId]` and splices the
+   queue mid-dispatch. A prompt that rejects AFTER the splice — the socket
+   dropped while the rebind's session.start was still in flight — re-queues
+   onto the replaced binding: `consumed` is cleared and `delivered` already
+   claimed it, yet nothing ever drains that queue again. The send is orphaned
+   (the mid-turn image prompt that settled the turn structure but never
+   rendered). The re-queue must land on the LIVE binding. */
+describe("rebind vs in-flight prompt (#487)", () => {
+  it("a transport-dropped prompt re-queues onto the rebound session, not the dead binding", {
+    timeout: 20_000,
+  }, async () => {
+    /* The named knob for the window: once armed, `prompt` calls park on a
+       deferred the test drops on demand — a socket dying mid-dispatch, made
+       deterministic. The rejection lands exactly after the rebind's queue
+       splice, the order the flake needs. */
+    let holdPrompts = false;
+    let dropPrompt: ((error: Error) => void) | undefined;
+    const w = (await setupWorldBase({
+      tick: 1,
+      attachEngine: true,
+      captureSockets: true,
+      reconnectMinDelayMs: 20,
+      wrap: (conn) => {
+        const orig = conn.request.bind(conn);
+        conn.request = <T = unknown>(
+          method: string,
+          params?: unknown,
+        ): Promise<T> => {
+          if (method === "prompt" && holdPrompts) {
+            return new Promise<T>((_resolve, reject) => {
+              dropPrompt = reject;
+            });
+          }
+          return orig<T>(method, params);
+        };
+        return conn;
+      },
+    })) as World;
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "first turn",
+      });
+      const engineRef = await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        return (
+          conversations.find((c) => c.id === conversation.id)?.engineRef ??
+          undefined
+        );
+      }, "engineRef");
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.authorKind === "employee");
+      }, "first answer");
+
+      // msg2's prompt reaches the wire and parks — in flight across the rebind.
+      holdPrompts = true;
+      const { message: msg2 } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "second turn",
+      );
+      await waitFor(
+        () => (dropPrompt ? true : undefined),
+        "msg2 prompt in flight",
+      );
+
+      /* Engine-process restart: a fresh engine knows no sessions — attach
+         resyncs (events.since → SESSION_NOT_FOUND) and rebinds a new one. */
+      const engine2 = new FakeEngine({ tick: 1 });
+      const conn2 = connectFake(engine2) as unknown as EngineConnection;
+      const engine2Calls: { method: string; params: unknown }[] = [];
+      const orig2 = conn2.request.bind(conn2);
+      conn2.request = <T = unknown>(
+        method: string,
+        params?: unknown,
+      ): Promise<T> => {
+        engine2Calls.push({ method, params });
+        return orig2<T>(method, params);
+      };
+      w.harness.attachEngine(conn2);
+      await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        const ref = conversations.find(
+          (c) => c.id === conversation.id,
+        )?.engineRef;
+        return ref && ref !== engineRef ? ref : undefined;
+      }, "rebound engineRef");
+      /* The rebind's queue splice runs in the synchronous tail after its last
+         awaited write (the engineRef update observed above) — one macrotask
+         later it has certainly run. Only now does the held prompt's socket
+         "drop": the re-queue lands strictly AFTER the splice. */
+      await new Promise((r) => setTimeout(r, 0));
+      dropPrompt?.(new Error("engine socket closed"));
+
+      // msg2 must still run — on the rebound session, not the dead queue.
+      await waitFor(
+        () =>
+          engine2Calls.find(
+            (c) =>
+              c.method === "prompt" &&
+              (c.params as { ref?: string }).ref === msg2.id,
+          ),
+        "msg2 prompt on the rebound session",
+        8_000,
+      );
+      const answers = await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        const list = messages.filter((m) => m.authorKind === "employee");
+        return list.length >= 2 ? list : undefined;
+      }, "msg2 answer");
+      expect(answers.length).toBeGreaterThanOrEqual(2);
+      // Exactly once: a re-prompt that also stayed live on the old lane
+      // would mint a duplicate turn on the rebound session.
+      expect(
+        engine2Calls.filter(
+          (c) =>
+            c.method === "prompt" &&
+            (c.params as { ref?: string }).ref === msg2.id,
+        ).length,
+      ).toBe(1);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("a steer acked across a rebind re-prompts on the rebound session, not the dead one", {
+    timeout: 20_000,
+  }, async () => {
+    /* Same race, second surface: the `session.steer` callbacks hold
+       `binding` across the RPC await too. Arm the steer ack behind a
+       deferred so it resolves strictly after the rebind splice — a
+       "steered" from the dead session must re-prompt msg2 on the live
+       lane, not markDelivered + steerPending it into the void. */
+    let holdSteers = false;
+    let ackSteer:
+      | ((res: { status: "steered" | "not_running" }) => void)
+      | undefined;
+    const w = (await setupWorldBase({
+      tick: 1,
+      attachEngine: true,
+      wrap: (conn) => {
+        const orig = conn.request.bind(conn);
+        conn.request = <T = unknown>(
+          method: string,
+          params?: unknown,
+        ): Promise<T> => {
+          if (method === "session.steer" && holdSteers) {
+            return new Promise<T>((resolve) => {
+              ackSteer = resolve as (res: {
+                status: "steered" | "not_running";
+              }) => void;
+            });
+          }
+          return orig<T>(method, params);
+        };
+        return conn;
+      },
+    })) as World;
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page", // parks on its approval ask
+      });
+      const engineRef = await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        return (
+          conversations.find((c) => c.id === conversation.id)?.engineRef ??
+          undefined
+        );
+      }, "engineRef");
+      // The turn must be running — a pre-turn.started post prompts, not steers.
+      await waitFor(() => w.sleep.held || undefined, "turn running");
+
+      // msg2's steer reaches the wire and parks — in flight across the rebind.
+      holdSteers = true;
+      const { message: msg2 } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "steer it left",
+      );
+      await waitFor(
+        () => (ackSteer ? true : undefined),
+        "msg2 steer in flight",
+      );
+
+      const engine2 = new FakeEngine({ tick: 1 });
+      const conn2 = connectFake(engine2) as unknown as EngineConnection;
+      const engine2Calls: { method: string; params: unknown }[] = [];
+      const orig2 = conn2.request.bind(conn2);
+      conn2.request = <T = unknown>(
+        method: string,
+        params?: unknown,
+      ): Promise<T> => {
+        engine2Calls.push({ method, params });
+        return orig2<T>(method, params);
+      };
+      w.harness.attachEngine(conn2);
+      await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        const ref = conversations.find(
+          (c) => c.id === conversation.id,
+        )?.engineRef;
+        return ref && ref !== engineRef ? ref : undefined;
+      }, "rebound engineRef");
+      // One macrotask past the observed engineRef write: the splice ran.
+      await new Promise((r) => setTimeout(r, 0));
+      // The dead session's "steered" ack lands strictly after the splice.
+      ackSteer?.({ status: "steered" });
+
+      // msg2 must still run — on the rebound session, exactly once.
+      await waitFor(
+        () =>
+          engine2Calls.find(
+            (c) =>
+              c.method === "prompt" &&
+              (c.params as { ref?: string }).ref === msg2.id,
+          ),
+        "msg2 prompt on the rebound session",
+        8_000,
+      );
+      expect(
+        engine2Calls.filter(
+          (c) =>
+            c.method === "prompt" &&
+            (c.params as { ref?: string }).ref === msg2.id,
+        ).length,
+      ).toBe(1);
     } finally {
       await w.cleanup();
     }
