@@ -16,6 +16,7 @@ import { ContextRing } from "./context-meter";
 import type { PlanAction } from "./plan-card";
 import { PrBadge, prHeadline } from "./pr-badges";
 import type { QuestionAnswer } from "./question-card";
+import { waitingOnQuestion } from "./question-gate";
 import { threadBottomInset } from "./thread-layout";
 import type {
   ContextUsage,
@@ -86,13 +87,12 @@ export function ThreadScreen({
   const [composerHeight, setComposerHeight] = useState(96);
   const [pillHeight, setPillHeight] = useState(0);
   const running = t.state === "working";
-  /* #420: parked on an open QUESTION ask — the composer says waiting, no
-     steer copy and no stop (Hermes FIX #515). Approval asks keep their
-     own flow (the sheet); scoped the same way the real model derives
-     entry.waiting — a live entry carrying a question ask. */
-  const waiting = t.entries.some(
-    (e) => e.kind === "agent" && e.live && e.approval?.kind === "question",
-  );
+  /* #420: parked on an open QUESTION ask the card can answer — the
+     composer says waiting, no steer copy and no stop (Hermes FIX #515).
+     `waitingOnQuestion` also requires options/freeText, so a real-app
+     question ask (its view-model maps neither) keeps the Reply
+     composer; approval asks keep their own flow (the sheet). */
+  const waiting = waitingOnQuestion(t.entries);
   // The background pill floats above the composer; keep the last turn clear of it.
   const pill =
     !!onOpenBackground && !!t.jobs?.some((j) => j.status === "running");
@@ -213,6 +213,7 @@ export function ThreadHeaderTitle({
   state,
   prs,
   context,
+  waiting,
   onPress,
 }: {
   title: string;
@@ -220,6 +221,10 @@ export function ThreadHeaderTitle({
   prs?: PullRequestRef[];
   /** Adds the context gauge beside the state. */
   context?: ContextUsage;
+  /** #420: needs-you is a question the card can answer (waitingOnQuestion)
+      — waiting is not working, so the ring hides. Omitted (the real app)
+      the ring renders on needs-you exactly as before. */
+  waiting?: boolean;
   onPress: () => void;
 }) {
   const one = prs?.length === 1 ? prs[0] : undefined;
@@ -240,8 +245,11 @@ export function ThreadHeaderTitle({
       <View className="flex-row items-center gap-1.5">
         <StateChip state={state} />
         {/* Waiting is not working — no progress ring next to "Needs you"
-            (Hermes FIX #515). */}
-        {context && state !== "needs-you" && <ContextRing c={context} />}
+            while a question the card can answer is open (Hermes FIX #515).
+            Other needs-you asks keep the ring: they ARE still working. */}
+        {context && (state !== "needs-you" || !waiting) && (
+          <ContextRing c={context} />
+        )}
         {!!prs?.length && (
           <>
             <AppText tone="muted" className="text-[13px]">

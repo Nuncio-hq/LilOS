@@ -57,6 +57,7 @@ export {
   type QuestionAnswer,
   QuestionCard,
 } from "./employees/question-card";
+export { waitingOnQuestion } from "./employees/question-gate";
 export {
   SubagentSheet,
   SubagentsCard,

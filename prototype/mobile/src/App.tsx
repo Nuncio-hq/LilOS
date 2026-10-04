@@ -34,6 +34,7 @@ import {
   ThreadScreen,
   useThemeColor,
   WelcomeScreen,
+  waitingOnQuestion,
 } from "@lilos/ui-native";
 import { useStore } from "@nanostores/react";
 import { createNativeBottomTabNavigator } from "@react-navigation/bottom-tabs/unstable";
@@ -571,6 +572,8 @@ function Thread({ navigation, route }: Props<"Thread">) {
   const state = t?.state;
   const prs = t?.prs;
   const context = t?.context;
+  // #420: parked on an answerable question — the header hides the ring.
+  const waiting = waitingOnQuestion(t?.entries ?? []);
   // Plan "Change…" puts this in the composer (a new object each tap).
   const [prefill, setPrefill] = useState<{ text: string }>();
   useEffect(() => playOnOpen(route.params.id), [route.params.id]);
@@ -585,6 +588,7 @@ function Thread({ navigation, route }: Props<"Thread">) {
           state={state}
           prs={prs}
           context={context}
+          waiting={waiting}
           onPress={info}
         />
       ),
@@ -597,7 +601,7 @@ function Thread({ navigation, route }: Props<"Thread">) {
         },
       ],
     });
-  }, [navigation, route.params.id, title, state, prs, context]);
+  }, [navigation, route.params.id, title, state, prs, context, waiting]);
   if (!t) return null;
   const pick = picks[t.id] ?? fallback;
   return (

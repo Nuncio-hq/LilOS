@@ -8,11 +8,8 @@ import { Prose, Pulse } from "../components/prose";
 import { approvalSentence } from "./approval-copy";
 import { type PlanAction, PlanCard } from "./plan-card";
 import { PrCard } from "./pr-badges";
-import {
-  isAnswerableQuestion,
-  type QuestionAnswer,
-  QuestionCard,
-} from "./question-card";
+import { type QuestionAnswer, QuestionCard } from "./question-card";
+import { isAnswerableQuestion } from "./question-gate";
 import { StepRow, tool } from "./step-row";
 import { SubagentsCard, SubagentsLink } from "./subagents";
 import type { AgentEntry, Approval, SubagentRow, ToolStep } from "./types";
