@@ -371,6 +371,66 @@ describe("AC-1 (#413) reconcile emits onChange only when the rows change", () =>
   });
 });
 
+describe("AC-2 (#507) hermes CLI runs get the allow-listed env", () => {
+  it("plugins enable/disable + config set never see LILOS_* internals; explicit grants win", async () => {
+    const f = fixture();
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+    const prev: Record<string, string | undefined> = {};
+    for (const k of [
+      "LILOS_RELAY_TOKEN",
+      "LILOS_HARNESS_HOME",
+      "LILOS_WORKDIR",
+    ]) {
+      prev[k] = process.env[k];
+    }
+    process.env.LILOS_RELAY_TOKEN = "relay-secret";
+    process.env.LILOS_HARNESS_HOME = "/lilos/harness";
+    process.env.LILOS_WORKDIR = "/lilos/harness/work";
+    try {
+      const seen: { argv: string[]; env: Record<string, string> }[] = [];
+      const c = new HermesConnect({
+        relay: {
+          request: async (method) => {
+            if (method === "settings.get")
+              return { value: { approved: true } };
+            if (method === "employees.list")
+              return { employees: f.employees };
+            throw new Error("unexpected");
+          },
+        },
+        hermesBin: () => "/bin/true",
+        hermesHome: f.hermesHome,
+        pluginSrc: f.pluginSrc,
+        // The Connect grant (surfaces creds) is an explicit env entry — it
+        // must survive the same way #505's options.env does.
+        env: { LILOS_ENGINE_TOKEN: "eng-grant" },
+        log: createMemoryLogger(),
+        run: (argv, env) => {
+          seen.push({ argv, env });
+          return { status: 0, out: "" };
+        },
+      });
+      await c.reconcile();
+      // enable + tool_search off both spawn `hermes` — every call scrubs.
+      expect(seen.length).toBeGreaterThan(0);
+      for (const call of seen) {
+        const lilos = Object.keys(call.env)
+          .filter((k) => k.startsWith("LILOS_"))
+          .sort();
+        expect(lilos).toEqual(["LILOS_ENGINE_TOKEN"]);
+        expect(call.env.HERMES_HOME).toBe(f.hermesHome);
+      }
+    } finally {
+      for (const [k, v] of Object.entries(prev)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+});
+
 describe("AC-2 (#413) FakeConnect rows follow the approval on engine-fake", () => {
   function fakeFixture(onChange?: () => void) {
     const settings = new Map<string, unknown>();
