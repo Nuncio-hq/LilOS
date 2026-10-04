@@ -1,4 +1,4 @@
-import { type ChildProcess, execSync, spawn } from "node:child_process";
+import { execSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
@@ -7,12 +7,11 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { type AddressInfo, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { bootStack, freePort, type Stack } from "./helpers/stack";
 
 /**
  * Issue #110 — "Open in <editor>" / "Reveal in Finder" on the real stack
@@ -29,17 +28,7 @@ const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 /* Kernel-assigned ports — the shared `wport(base + WORKER*100)` scheme
    collides across spec files (base differences < worker stride). */
-const freePort = () =>
-  new Promise<number>((resolve, reject) => {
-    const s = createServer();
-    s.once("error", reject);
-    s.listen(0, "127.0.0.1", () => {
-      const p = (s.address() as AddressInfo).port;
-      s.close(() => resolve(p));
-    });
-  });
 
-const webDir = path.join(repo, "apps", "web");
 const SHOTS = path.join(repo, "test-results", "ac-110");
 
 /* Committed fakes: Cursor.app + Zed.app bundles, and a fake `open` on PATH. */
@@ -59,107 +48,25 @@ execSync(
   { cwd: repoDir },
 );
 
-interface Stack {
-  home: string;
-  webUrl: string;
-  stop: () => Promise<void>;
-}
-
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    const ok = await fetch(url)
-      .then((r) => r.ok || r.status === 404)
-      .catch(() => false);
-    if (ok) return;
-    if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
-function killProc(proc: ChildProcess): Promise<void> {
-  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
-    try {
-      if (proc.pid) process.kill(-proc.pid, sig);
-    } catch {
-      try {
-        proc.kill(sig);
-      } catch {}
-    }
-  };
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      killGroup("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    killGroup("SIGTERM");
-  });
-}
-
-async function bootStack(
-  tag: string,
-  ports: { relay: number; feed: number; web: number },
-): Promise<Stack> {
-  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
-  const leakTag = engineTag(tag);
+let stack: Stack;
+test.beforeAll(async () => {
+  test.setTimeout(120_000);
   writeFileSync(LOG, "");
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: webDir,
-    detached: true,
-    env: {
-      ...process.env,
-      LILOS_HOME: home,
-      LILOS_ENGINE_TAG: leakTag,
-      LILOS_RELAY_PORT: String(ports.relay),
-      LILOS_FEED_PORT: String(ports.feed),
-      LILOS_WEB_PORT: String(ports.web),
+  stack = await bootStack(
+    "ac110",
+    {
+      relay: await freePort(),
+      feed: await freePort(),
+      web: await freePort(),
+    },
+    {
       // os.editors sees the fake bundles; os.open's `open` resolves to the
       // fake bin — both write argv lines to LOG.
       LILOS_APP_DIRS: path.join(FAKE_OS, "Applications"),
       LILOS_OPEN_LOG: LOG,
       PATH: `${path.join(FAKE_OS, "bin")}:${process.env.PATH}`,
     },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  const webUrl = `http://127.0.0.1:${ports.web}`;
-  try {
-    await waitForHttp(webUrl);
-    await waitForHttp(`http://127.0.0.1:${ports.relay}/`);
-    await waitForHttp(`http://127.0.0.1:${ports.feed}/`);
-    const tokenPath = path.join(home, "relay-token");
-    for (let i = 0; i < 300; i++) {
-      try {
-        if (readFileSync(tokenPath, "utf8").trim()) break;
-      } catch {}
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    return {
-      home,
-      webUrl,
-      stop: async () => {
-        await killProc(proc);
-        await expectNoEngineLeak(leakTag);
-      },
-    };
-  } catch (e) {
-    proc.kill("SIGKILL");
-    throw e;
-  }
-}
-
-let stack: Stack;
-test.beforeAll(async () => {
-  test.setTimeout(120_000);
-  stack = await bootStack("ac110", {
-    relay: await freePort(),
-    feed: await freePort(),
-    web: await freePort(),
-  });
+  );
 });
 test.afterAll(async () => {
   await stack?.stop();

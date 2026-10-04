@@ -1,10 +1,8 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { bootStack, type Stack } from "./helpers/stack";
 import { wport } from "./ports";
 
 /**
@@ -25,103 +23,23 @@ import { wport } from "./ports";
  * models by design, which is the premise being tested.
  */
 const ROOT = path.dirname(fileURLToPath(import.meta.url)).replace(/\/e2e$/, "");
-const WEB = path.join(ROOT, "apps", "web");
 const SHOTS = path.join(ROOT, "test-results", "ac-140");
 const RELAY = wport(4805);
 const FEED = wport(4806);
 const WEBP = wport(5307);
 
-type Stack = {
-  proc: ChildProcess;
-  base: string;
-  home: string;
-  leakTag: string;
-};
-
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  const home = mkdtempSync(path.join(tmpdir(), "lilos-ac140-"));
-  const leakTag = engineTag("ac140");
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: WEB,
-    env: {
-      ...process.env,
-      LILOS_ENGINE: "fake",
-      LILOS_ENGINE_TAG: leakTag,
-      LILOS_HOME: home,
-      LILOS_RELAY_PORT: String(RELAY),
-      LILOS_FEED_PORT: String(FEED),
-      LILOS_WEB_PORT: String(WEBP),
-    },
-    detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  proc.stderr?.on("data", (d) => console.log("[ac140 err]", String(d)));
-  stack = { proc, base: `http://127.0.0.1:${WEBP}`, home, leakTag };
-  await waitForHttp(stack.base, proc);
-  await waitForHttp(`http://127.0.0.1:${RELAY}/`, proc);
-  await waitForHttp(`http://127.0.0.1:${FEED}/`, proc);
-  // The relay writes its token asynchronously — wait so rpc() can auth.
-  const tokenPath = path.join(home, "relay-token");
-  for (let i = 0; i < 300; i++) {
-    try {
-      if (readFileSync(tokenPath, "utf8").trim()) return;
-    } catch {}
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error("relay token never appeared");
+  stack = await bootStack(
+    "ac140",
+    { relay: RELAY, feed: FEED, web: WEBP },
+    { LILOS_ENGINE: "fake" },
+  );
 });
 test.afterAll(async () => {
-  await killProc(stack?.proc);
-  await expectNoEngineLeak(stack?.leakTag);
+  await stack?.stop();
 });
-
-async function waitForHttp(url: string, proc: ChildProcess, ms = 90_000) {
-  const t0 = Date.now();
-  let last = "unreachable";
-  while (Date.now() - t0 < ms) {
-    if (proc.exitCode !== null)
-      throw new Error(`stack exited ${proc.exitCode}: last=${last}`);
-    try {
-      const r = await fetch(url);
-      if (r.ok || r.status === 404) return;
-      last = `HTTP ${r.status}`;
-    } catch (e) {
-      last = String(e);
-    }
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  throw new Error(`timeout waiting for ${url}: ${last}`);
-}
-
-/* `bun run dev` puts shim layers between `proc` and the real stack children,
-   and bun doesn't forward signals through them — signal the whole detached
-   process group or the stack orphans and keeps its ports bound (#84). */
-function killProc(proc: ChildProcess | undefined): Promise<void> {
-  if (!proc?.pid) return Promise.resolve();
-  const pid = proc.pid;
-  const group = (sig: "SIGTERM" | "SIGKILL") => {
-    try {
-      process.kill(-pid, sig);
-    } catch {
-      try {
-        proc.kill(sig);
-      } catch {}
-    }
-  };
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      group("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    group("SIGTERM");
-  });
-}
 
 /** Bare JSON-RPC client — e2e runs under Node without workspace deps. */
 async function rpc(
@@ -185,7 +103,7 @@ test("AC-1 + AC-2 a session on a catalog-absent model: hint → Refresh → swit
   /* A conversation pinned to the refresh-only model at open — the same
      stamp Hermes sessions get on Oscar's Mac when Astra isn't in the
      cached catalog. */
-  await page.goto(`${stack.base}/`);
+  await page.goto(`${stack.webUrl}/`);
   const aside = page.locator("aside").first();
   await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
     timeout: 30_000,
@@ -218,7 +136,7 @@ test("AC-1 + AC-2 a session on a catalog-absent model: hint → Refresh → swit
 
   // The picker shows what the session actually runs — the catalog doesn't
   // list it, but the trigger and the checked row do.
-  await page.goto(`${stack.base}/dm/${employeeId}/${conv.id}/focus`);
+  await page.goto(`${stack.webUrl}/dm/${employeeId}/${conv.id}/focus`);
   const trigger = triggers(page).last();
   await expect(trigger).toContainText("fake-fresh", { timeout: 30_000 });
 

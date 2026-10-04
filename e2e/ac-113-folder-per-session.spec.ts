@@ -1,10 +1,10 @@
-import { type ChildProcess, execSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { bootStack, type Stack } from "./helpers/stack";
 import { wport } from "./ports";
 
 /**
@@ -16,106 +16,6 @@ import { wport } from "./ports";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
-
-const webDir = path.join(repo, "apps", "web");
-
-interface Stack {
-  home: string;
-  webUrl: string;
-  relayWs: string;
-  feedWs: string;
-  relayToken: string;
-  stop: () => Promise<void>;
-}
-
-async function waitForHttp(url: string, ms = 90_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    const ok = await fetch(url)
-      .then((r) => r.ok || r.status === 404)
-      .catch(() => false);
-    if (ok) return;
-    if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
-function killProc(proc: ChildProcess): Promise<void> {
-  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
-    try {
-      if (proc.pid) process.kill(-proc.pid, sig);
-    } catch {
-      try {
-        proc.kill(sig);
-      } catch {}
-    }
-  };
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      killGroup("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    killGroup("SIGTERM");
-  });
-}
-
-async function bootStack(
-  tag: string,
-  ports: { relay: number; feed: number; web: number },
-): Promise<Stack> {
-  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
-  const leakTag = engineTag(tag);
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: webDir,
-    detached: true,
-    env: {
-      ...process.env,
-      LILOS_HOME: home,
-      LILOS_ENGINE_TAG: leakTag,
-      LILOS_RELAY_PORT: String(ports.relay),
-      LILOS_FEED_PORT: String(ports.feed),
-      LILOS_WEB_PORT: String(ports.web),
-    },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  const webUrl = `http://127.0.0.1:${ports.web}`;
-  try {
-    await waitForHttp(webUrl);
-    await waitForHttp(`http://127.0.0.1:${ports.relay}/`);
-    await waitForHttp(`http://127.0.0.1:${ports.feed}/`);
-    const tokenPath = path.join(home, "relay-token");
-    let relayToken = "";
-    for (let i = 0; i < 300 && !relayToken; i++) {
-      try {
-        relayToken = readFileSync(tokenPath, "utf8").trim();
-      } catch {}
-      if (!relayToken) await new Promise((r) => setTimeout(r, 100));
-    }
-    if (!relayToken)
-      throw new Error(`relay token never appeared at ${tokenPath}`);
-    return {
-      home,
-      webUrl,
-      relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
-      feedWs: `ws://127.0.0.1:${ports.feed}/ws`,
-      relayToken,
-      stop: async () => {
-        await killProc(proc);
-        await expectNoEngineLeak(leakTag);
-      },
-    };
-  } catch (e) {
-    // Group kill: `bun run dev` spawns detached — killing only the shim
-    // orphans stack.ts + relay + harness + vite and poisons the next boot.
-    await killProc(proc);
-    throw e;
-  }
-}
 
 const SHOTS = path.join(repo, "test-results", "ac-113");
 

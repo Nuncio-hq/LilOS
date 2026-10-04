@@ -1,10 +1,7 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { bootStack, type Stack } from "./helpers/stack";
 import { wport } from "./ports";
 
 /**
@@ -16,80 +13,17 @@ import { wport } from "./ports";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
-const webDir = path.join(repo, "apps", "web");
 const SHOTS = path.join(repo, "test-results", "ac-137");
 
 const PORTS = { relay: wport(4808), feed: wport(4809), web: wport(5311) };
 
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    const ok = await fetch(url)
-      .then((r) => r.ok || r.status === 404)
-      .catch(() => false);
-    if (ok) return;
-    if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
-function killProc(proc: ChildProcess): Promise<void> {
-  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
-    try {
-      if (proc.pid) process.kill(-proc.pid, sig);
-    } catch {
-      try {
-        proc.kill(sig);
-      } catch {}
-    }
-  };
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      killGroup("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    killGroup("SIGTERM");
-  });
-}
-
-let stack: { home: string; webUrl: string; proc: ChildProcess };
+let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  const home = mkdtempSync(path.join(tmpdir(), "lilos-e2e-137-"));
-  const leakTag = engineTag("ac137");
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: webDir,
-    detached: true,
-    env: {
-      ...process.env,
-      LILOS_HOME: home,
-      LILOS_ENGINE_TAG: leakTag,
-      LILOS_RELAY_PORT: String(PORTS.relay),
-      LILOS_FEED_PORT: String(PORTS.feed),
-      LILOS_WEB_PORT: String(PORTS.web),
-    },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  stack = { home, webUrl: `http://127.0.0.1:${PORTS.web}`, proc };
-  try {
-    await waitForHttp(stack.webUrl);
-    await waitForHttp(`http://127.0.0.1:${PORTS.relay}/`);
-    await waitForHttp(`http://127.0.0.1:${PORTS.feed}/`);
-  } catch (e) {
-    await killProc(proc);
-    throw e;
-  }
+  stack = await bootStack("ac137", PORTS);
 });
 test.afterAll(async () => {
-  if (stack?.proc) {
-    await killProc(stack.proc);
-    await expectNoEngineLeak(engineTag("ac137"));
-  }
+  await stack?.stop();
 });
 test.describe.configure({ mode: "serial" });
 test.use({ trace: "retain-on-failure" });

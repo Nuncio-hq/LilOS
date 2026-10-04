@@ -1,10 +1,8 @@
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { bootStack } from "./helpers/stack";
 import { wport } from "./ports";
 
 /**
@@ -21,89 +19,6 @@ import { wport } from "./ports";
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 const BUN = process.env.LILOS_BUN_BIN ?? "bun";
-
-const webDir = path.join(repo, "apps", "web");
-
-interface Stack {
-  home: string;
-  webUrl: string;
-  stop: () => Promise<void>;
-}
-
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    const ok = await fetch(url)
-      .then((r) => r.ok || r.status === 404)
-      .catch(() => false);
-    if (ok) return;
-    if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
-function killProc(proc: ChildProcess): Promise<void> {
-  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
-    try {
-      if (proc.pid) process.kill(-proc.pid, sig);
-    } catch {
-      try {
-        proc.kill(sig);
-      } catch {}
-    }
-  };
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      killGroup("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    killGroup("SIGTERM");
-  });
-}
-
-async function bootStack(
-  tag: string,
-  ports: { relay: number; feed: number; web: number },
-  extraEnv: Record<string, string> = {},
-): Promise<Stack> {
-  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
-  const leakTag = engineTag(tag);
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: webDir,
-    detached: true,
-    env: {
-      ...process.env,
-      LILOS_HOME: home,
-      LILOS_ENGINE_TAG: leakTag,
-      LILOS_RELAY_PORT: String(ports.relay),
-      LILOS_FEED_PORT: String(ports.feed),
-      LILOS_WEB_PORT: String(ports.web),
-      ...extraEnv,
-    },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  const webUrl = `http://127.0.0.1:${ports.web}`;
-  try {
-    await waitForHttp(webUrl);
-    await waitForHttp(`http://127.0.0.1:${ports.relay}`);
-    return {
-      home,
-      webUrl,
-      stop: async () => {
-        await killProc(proc);
-        await expectNoEngineLeak(leakTag);
-      },
-    };
-  } catch (e) {
-    proc.kill("SIGKILL");
-    throw e;
-  }
-}
 
 const SHOTS = path.join(repo, "test-results", "ac-118");
 
