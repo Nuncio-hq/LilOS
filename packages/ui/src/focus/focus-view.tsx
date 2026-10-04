@@ -49,11 +49,11 @@ import {
 import { Button } from "../components/ui/button";
 import { openStartRequest } from "../conversation/cards";
 import type { PlanAction } from "../conversation/plan-card";
-import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
   type QuestionAnswer,
   QuestionAwareScrollButton,
 } from "../conversation/question-card";
+import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
   RewindCheckpoint,
   TURN_LAZY_AFTER,
