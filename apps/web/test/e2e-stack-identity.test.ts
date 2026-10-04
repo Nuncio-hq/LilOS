@@ -105,4 +105,19 @@ describe("AC-2 (#273) every stack-booting spec uses the shared helper", () => {
     );
     expect(offenders).toEqual([]);
   });
+
+  /* #484: `wport`'s fixed `base + worker·100` blocks could land on a port
+     the machine already owns (repeat-11 hit :6379) — `pickPorts()` binds and
+     probes a free port instead. The scheme is gone; keep it gone. */
+  it("no e2e file uses the deleted wport scheme", () => {
+    const files = [e2eDir, path.join(e2eDir, "helpers")].flatMap((d) =>
+      readdirSync(d)
+        .filter((f) => f.endsWith(".ts"))
+        .map((f) => path.join(d, f)),
+    );
+    const offenders = files
+      .filter((f) => /\bwport\b|["']\.\/ports["']/.test(readFileSync(f, "utf8")))
+      .map((f) => path.basename(f));
+    expect(offenders).toEqual([]);
+  });
 });
