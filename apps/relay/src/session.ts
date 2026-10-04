@@ -390,8 +390,11 @@ export function createRelay(options: RelayOptions): Relay {
   const emitMessage = (channelId: string, message: unknown) =>
     emit(channelId, "message.created", { channelId, message });
 
-  const emitMessageChanged = (channelId: string, message: unknown) =>
-    emit(channelId, "message.changed", { channelId, message });
+  const emitMessageChanged = (
+    channelId: string,
+    message: unknown,
+    flags?: string[],
+  ) => emit(channelId, "message.changed", { channelId, message, flags });
 
   const emitConversation = (channelId: string, conversation: unknown) =>
     emit(channelId, "conversation.updated", { channelId, conversation });
@@ -1198,8 +1201,15 @@ export function createRelay(options: RelayOptions): Relay {
           const removed = await store.setMessageFlags(message.id, {
             removed: true,
             dropped: false,
+            /* #403: a Remove beats the claim — clear it so the row can't
+               resurface as "committed" if it is ever un-removed. */
+            claimed: false,
           });
-          emitMessageChanged(message.channelId, removed ?? message);
+          emitMessageChanged(message.channelId, removed ?? message, [
+            "removed",
+            "dropped",
+            "claimed",
+          ]);
           respond(peer, id, { message: removed ?? message });
           return;
         }
@@ -1223,7 +1233,9 @@ export function createRelay(options: RelayOptions): Relay {
           const dropped = await store.setMessageFlags(message.id, {
             dropped: true,
           });
-          emitMessageChanged(message.channelId, dropped ?? message);
+          emitMessageChanged(message.channelId, dropped ?? message, [
+            "dropped",
+          ]);
           respond(peer, id, { message: dropped ?? message });
           return;
         }
@@ -1233,24 +1245,29 @@ export function createRelay(options: RelayOptions): Relay {
           /* Host-only (#377): the harness marks a send once its prompt
              commits to dispatch — the row leaves the waiting tray before
              `deliveredSeq` can cover it, so Remove is only ever offered
-             on truly queued sends. Idempotent (reclaim on redelivery). */
+             on truly queued sends. `claimed: false` (#403) puts a send
+             back when it comes to rest short of the wire (queued behind
+             a turn, accepted as a pending steer, re-queued) so the tray
+             owns it again. Idempotent in both directions. */
           requireHost(peer);
           const message = await store.getMessage(parsed.data.messageId);
-          if (message?.authorKind !== "user") {
+          if (message?.authorKind !== "user" || message.removed) {
             throw new RpcError(
               JsonRpcCode.notFound,
               "not_found",
               "message not found",
             );
           }
-          if (message.claimed) {
+          if (message.claimed === parsed.data.claimed) {
             respond(peer, id, { message });
             return;
           }
           const claimed = await store.setMessageFlags(message.id, {
-            claimed: true,
+            claimed: parsed.data.claimed,
           });
-          emitMessageChanged(message.channelId, claimed ?? message);
+          emitMessageChanged(message.channelId, claimed ?? message, [
+            "claimed",
+          ]);
           respond(peer, id, { message: claimed ?? message });
           return;
         }
@@ -1265,10 +1282,17 @@ export function createRelay(options: RelayOptions): Relay {
               "message is not parked",
             );
           }
+          /* Un-parking resets the row to a fresh send: `claimed` clears too
+             (#403) — the row is waiting/removable again until the lane
+             re-claims it. */
           const sent = await store.setMessageFlags(message.id, {
             dropped: false,
+            claimed: false,
           });
-          emitMessageChanged(message.channelId, sent ?? message);
+          emitMessageChanged(message.channelId, sent ?? message, [
+            "dropped",
+            "claimed",
+          ]);
           respond(peer, id, { message: sent ?? message });
           return;
         }
@@ -1614,9 +1638,16 @@ export function createRelay(options: RelayOptions): Relay {
               "conversation not found",
             );
           }
+          /* #403: stamp the channel seq this interrupt logically follows —
+             every send committed at or below it predates the Stop. Sends
+             and bus events travel different paths to the host, so without
+             the stamp a pre-Stop send whose row is still in transit can
+             prompt a fresh turn after the drain. */
+          const channel = await store.getChannel(conversation.channelId);
           emit(conversation.channelId, "turn.interruptRequested", {
             channelId: conversation.channelId,
             conversationId: conversation.id,
+            afterSeq: channel?.lastSeq ?? 0,
           });
           respond(peer, id, { ok: true });
           return;

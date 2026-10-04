@@ -125,6 +125,7 @@ import {
   modelVisibility,
   navOpen,
   relay,
+  sessionFeedAttached,
   sessionModels,
   workbenchRequests,
 } from "../lib/runtime";
@@ -783,8 +784,24 @@ export function DmPage() {
     );
   }, [employeeId, convs, folderRows, wsPicks]);
 
+  const feedAttached = useAtom(sessionFeedAttached);
+
   const modelFor = (conv: Conversation): SessionModel | undefined =>
     conv.engineRef ? models[conv.engineRef] : undefined;
+
+  /* #467: an engine-backed conversation can anchor replies only once its
+     feed's attach watermark is stamped — before that, engine-post rows would
+     paint unanchored below newer user rows for a frame. "pending" holds them
+     (and the partial model live frames alone would mint) until the first
+     replay lands; a terminal replay error latches attached too so the #28
+     degraded thread keeps the raw relay view. Non-engine conversations are
+     always bound — there is no feed to wait on. */
+  const transcriptBound = (conv: Conversation): boolean =>
+    !conv.engineRef || feedAttached[conv.engineRef] === true;
+  const boundModel = (
+    conv: Conversation,
+  ): SessionModel | "pending" | undefined =>
+    conv.engineRef && !transcriptBound(conv) ? "pending" : modelFor(conv);
 
   /* #315: mid-turn sends wait in the tray — relay truth (deliveredSeq + the
      message flags), not component state, so a reload shows the same tray.
@@ -834,10 +851,9 @@ export function DmPage() {
       summaryOf(conv)?.root ??
       messages.find((m) => m.id === conv.rootMessageId);
     if (!root) return [];
-    const model = modelFor(conv);
     const feedReplies = mergeTurns(
       repliesOf(conv),
-      model,
+      boundModel(conv),
       employeeId,
       convAsks(conv),
       rewoundInfo.get(conv.id),
@@ -1063,7 +1079,7 @@ export function DmPage() {
         ),
         conv.id,
       ),
-      model,
+      boundModel(conv),
       employeeId,
       asksHere,
       rewoundInfo.get(conv.id),
