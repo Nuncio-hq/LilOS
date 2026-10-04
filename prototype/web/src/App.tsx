@@ -79,9 +79,12 @@ import {
   useDraft,
   type PlanAction,
   type PanelTab,
+  type QuestionAnswer,
+  type QuestionAsk,
   type ScheduledTask,
   ScheduledTasks,
   TaskDialog,
+  VIEWER_ID,
 } from "@lilos/ui"
 import { cn } from "@lilos/ui/lib/utils"
 import { MAX_ATTACHMENT_BYTES } from "@lilos/contracts/app"
@@ -405,6 +408,51 @@ const DM_FEEDS: Record<string, Msg[]> = {
         replies: [{ id: "v1r1", from: "reviewer", time: "08:06", thought: 1, reasoning: "Answer from my SOUL.md checklist.", text: "Package boundaries first (`client-runtime` must stay DOM-free), then tests for the changed paths, then the diff itself. I never push; I comment with file:line." }],
       },
     },
+    {
+      /* #420: a `question` ask — one answered earlier in the thread (the
+         resolved-map receipt), one still open (the live waiting turn
+         showing the card: options, many enough to scroll, + free text). */
+      kind: "msg", id: "v2", from: "oscar", time: "10:04", text: "Review #96 before the release cut — and figure out where it should land.",
+      thread: {
+        session: "ses_9b42", usage: { input: 52100, output: 4200, reasoning: 1800, cache: 38000, context: 56300 },
+        replies: [
+          { id: "v2r1", from: "reviewer", time: "10:06", thought: 4, dur: 19,
+            reasoning: "Read the diff, run its test slice, then decide whether it merges straight to main.",
+            steps: [
+              { tool: "terminal", input: { command: "gh pr diff 96 --stat" }, output: "apps/relay/replay.ts · +64 −11 · e2e/replay.spec.ts · +40" },
+              { tool: "terminal", input: { command: "bun test apps/relay" }, output: "✓ 12 pass · 0 fail (1.9s)" },
+            ],
+            text: "The diff is clean — relay replay fix plus a regression test. Before I merge, one thing: should it land **straight on main** or go through the release branch?",
+            question: {
+              id: "q-land",
+              question: "Should #96 land straight on main, or go through the release branch?",
+              options: [
+                { id: "main", label: "Merge to main" },
+                { id: "release", label: "Go through release/0.1" },
+              ],
+              freeText: true,
+            } },
+          { id: "v2r2", from: "reviewer", time: "10:09", thought: 3, live: true, phase: "waiting", waitingOn: "question",
+            reasoning: "Merging to main keeps it out of the release; that leaves the timing call — cherry-pick it into the cut or let it ride the next train.",
+            steps: [
+              { tool: "terminal", input: { command: "git merge --squash origin/pr/96" }, output: "Squash commit — not updating HEAD\n 2 files changed, +104 −11" },
+            ],
+            text: "Merged to `main` as 9c41d0e. Now the timing call is yours — this changes what the release notes need.",
+            question: {
+              id: "q-rel",
+              question: "The release cut is Thursday. Do you want the replay fix on `release/0.1` too, or does it wait for the next train?",
+              options: [
+                { id: "cherry-pick", label: "Cherry-pick to release/0.1", description: "Opens a second PR against the release branch." },
+                { id: "next-train", label: "Keep it on main", description: "Ships with the next regular train, not the release." },
+                { id: "hold", label: "Hold until after the cut", description: "Leaves it unmerged while the freeze is on." },
+                { id: "draft", label: "Mark #96 a draft for now", description: "Keeps it open but unmergable until Thursday." },
+                { id: "spinoff", label: "Open a separate release PR", description: "Cherry-picks onto release/0.1 under its own PR." },
+              ],
+              freeText: true,
+            } },
+        ],
+      },
+    },
   ],
 }
 
@@ -523,7 +571,9 @@ const connectSeed = (s: PreviewScenario): Record<string, ProfileConnection> => {
 }
 
 // Canned turn used by the prototype's fake engine. Real app: Hermes events over /api/ws.
-type Script = { reasoning: string; steps: Step[]; text: string; todo?: string; pr?: PullRequest }
+/* #420: `question` ends the turn on the engine's question ask — the reply
+   stays live in phase "waiting" and the card under it is the ask. */
+type Script = { reasoning: string; steps: Step[]; text: string; todo?: string; pr?: PullRequest; question?: QuestionAsk }
 const hex = () => Math.random().toString(16).slice(2, 9)
 const CHECKS = ["CI Policy", "Typecheck", "Unit tests", "Lint", "Relay e2e"]
 const EDIT_ASK = /\b(add|fix|change|update|write|implement|refactor|bump|remove|rename|create|make|edit|move|delete|scaffold)\b/i
@@ -609,6 +659,28 @@ function scriptFor(empId: string, prompt: string, followUp = false, branch?: str
       reasoning: `Code-block rendering check — answer with the 7-block sample: a typed fence, python, bash, a long unbroken JSON line, markdown-looking text in a fence, an unlabelled indented block and a diff.`,
       steps: [],
       text: CODEBLOCKS_SAMPLE,
+    }
+  }
+  /* #420: "…and ask me …" → the employee ends the turn on a `question`
+     ask: the card under the reply (option buttons + free text). */
+  if (/\bask me\b/i.test(q)) {
+    return {
+      reasoning: `Oscar wants the decision checkpoint mid-turn. Do the review first, then ask where the work should land — options up front, not a blank box.`,
+      steps: [
+        { tool: "terminal", input: { command: "gh pr view 96 --json baseRefName,title" }, output: `{"baseRefName":"main","title":"relay: replay the gap after sleep"}` },
+        { tool: "terminal", input: { command: "git branch -r | grep release" }, output: "  origin/main\n  origin/release/0.1" },
+      ],
+      text: `Read it — #96 targets \`main\` and its tests are green. **Before I merge I need your call on the base:**`,
+      question: {
+        id: `q-${hex()}`,
+        question: "The release cut is Thursday. Where should PR #96 land?\nIt touches relay replay — safe for the release branch, or should it wait for the next train?",
+        options: [
+          { id: "cherry-pick", label: "Cherry-pick to release/0.1", description: "Opens a second PR against the release branch." },
+          { id: "next-train", label: "Keep it on main", description: "Ships with the next regular train, not the release." },
+          { id: "hold", label: "Hold until after the cut", description: "Leaves it unmerged while the freeze is on." },
+        ],
+        freeText: true,
+      },
     }
   }
   /* Diff-line review comments (#108/#364): Oscar's Send to agent posts one
@@ -757,7 +829,11 @@ export default function App() {
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 1280)
   const [navOpen, setNavOpen] = useState(false)
   const [selectedEmp, setSelectedEmp] = useState("builder")
-  const [resolved, setResolved] = useState<Record<string, string>>({})
+  /* #420 seed: the answered question in the reviewer's #96 thread — its
+     receipt lives in the resolved map like every answered card. */
+  const [resolved, setResolved] = useState<Record<string, string>>({
+    "q-land": "Answered “Merge to main” by Oscar",
+  })
   const [hireOpen, setHireOpen] = useState<HireDraft | null>(null)
   const [theme, setTheme] = useTheme()
   const [toast, setToast] = useState<string | null>(null)
@@ -779,6 +855,13 @@ export default function App() {
     return base
   })
   const stops = useRef<Record<string, boolean>>({})
+  /* #420: open question asks → the turn that raised them (answer/cancel
+     continues it). The seeded open question registers here too. */
+  const questionsRef = useRef(
+    new Map<string, { key: string; rootId: string; rid: string; empId: string }>([
+      ["q-rel", { key: "dm-reviewer", rootId: "v2", rid: "v2r2", empId: "reviewer" }],
+    ]),
+  )
   // The engine's declared steer capability: the real app reads describe().capabilities once at connect.
   // The prototype's built-in engine declares it; ?steer=off simulates an engine without it — mid-turn
   // sends then queue in the tray and run as the next prompt instead of steering (issue #9, AC-2).
@@ -1031,6 +1114,7 @@ export default function App() {
             const cur = b[e.id] ?? {}
             if (r.live) cur.running = (cur.running ?? 0) + 1
             if (r.approval && !resolved[r.approval.id]) cur.approvals = (cur.approvals ?? 0) + 1
+            if (r.question && !resolved[r.question.id]) cur.approvals = (cur.approvals ?? 0) + 1
             b[e.id] = cur
           }
     return b
@@ -1220,13 +1304,15 @@ export default function App() {
   }
 
   // wsNew: the workspace of a session created in this same tick (feedsRef has not caught up yet).
-  const runTurn = async (key: string, rootId: string, empId: string, prompt: string, wsNew?: Workspace, files?: AttachedFile[]) => {
+  /* `script` overrides scriptFor — question-answer continuations are
+     canned, not prompt-derived (#420). */
+  const runTurn = async (key: string, rootId: string, empId: string, prompt: string, wsNew?: Workspace, files?: AttachedFile[], script?: Script) => {
     const rid = `r-${Date.now()}`
     const followUp = !!(feedsRef.current[key] ?? []).find((m) => m.kind === "msg" && m.id === rootId && m.thread?.replies.some((r) => r.from === empId))
     const root0 = (feedsRef.current[key] ?? []).find((m) => m.kind === "msg" && m.id === rootId)
     const ws = wsNew ?? (root0?.kind === "msg" ? root0.thread?.ws : undefined)
     const repo = ws ? ws.repo : [...PROJECTS.flatMap((p) => p.channels)].find((c) => c.id === key)?.repo
-    const s = scriptFor(empId, prompt, followUp, ws?.branch ?? branchOf(key, rootId), repo, ws?.cwd, files)
+    const s = script ?? scriptFor(empId, prompt, followUp, ws?.branch ?? branchOf(key, rootId), repo, ws?.cwd, files)
     // New workstream: the engine creates the worktree before session.create { cwd }, shown as the first step of turn 1.
     if (ws?.mode === "new" && ws.worktree && !followUp)
       s.steps = [{ tool: "terminal", input: { command: `git worktree add ${ws.worktree} -b ${ws.branch} ${ws.base}` }, output: `Preparing worktree (new branch '${ws.branch}')\nHEAD is now at ${hex()} (${ws.base})` }, ...s.steps]
@@ -1273,7 +1359,15 @@ export default function App() {
       if (applied.length) s.text += `\n\nFolded in your steer: *“${plain(applied.join(" "))}”.`
       set((r) => ({ ...r, phase: "typing" }))
       for (const w of words(s.text)) { await tick(28); set((r) => ({ ...r, text: r.text + w })) }
-      set((r) => ({ ...r, phase: "done", live: false, dur: Math.round((Date.now() - started0) / 1000) }))
+      if (s.question) {
+        /* #420: a `question` ask ends the turn blocked on the user — the
+           reply stays live in phase "waiting" (open, not running) and the
+           ask registers for its answer to continue the turn. */
+        questionsRef.current.set(s.question.id, { key, rootId, rid, empId })
+        set((r) => ({ ...r, phase: "waiting", waitingOn: "question", question: s.question }))
+      } else {
+        set((r) => ({ ...r, phase: "done", live: false, dur: Math.round((Date.now() - started0) / 1000) }))
+      }
       mapRoot(key, rootId, (t) => {
         const u = t.usage ?? { input: 0, output: 0, reasoning: 0, cache: 0 }
         const nu = { input: u.input + 9000 + prompt.length * 4, output: u.output + s.text.length / 4, reasoning: u.reasoning + s.reasoning.length / 4, cache: u.cache + 6000 }
@@ -1316,6 +1410,35 @@ export default function App() {
     }
   }
   const stopTurn = (rootId: string) => { stops.current[rootId] = true }
+
+  /* #420: a question ask's answer/cancel — the card locks as "Sending…"
+     while the answer goes to the engine, the resolved write lands (the
+     card's receipt), the waiting turn closes, then the continuation runs
+     as the next reply. Same round-trip the approval card makes. */
+  const QUESTION_CONT = (answer: string): Script => ({
+    reasoning: `Oscar answered: ${answer}. Line the merge up that way and flag it in the release notes.`,
+    steps: [{ tool: "terminal", input: { command: "git log --oneline -1 origin/release/0.1" }, output: "9f41d0e release/0.1: cut notes + freeze the lockfile" }],
+    text: `Got it — **${answer}**. I'll line #96 up that way and flag it in the release notes.`,
+  })
+  const QUESTION_CANCEL: Script = {
+    reasoning: "Oscar cancelled — leave the PR where it is.",
+    steps: [],
+    text: "OK — leaving #96 where it is until you say where it should land.",
+  }
+  const settleQuestion = (q: QuestionAsk, label: string) => {
+    const pending = questionsRef.current.get(q.id)
+    if (!pending) return
+    questionsRef.current.delete(q.id)
+    const { key, rootId, rid, empId } = pending
+    const viewerName = human(VIEWER_ID)?.name ?? "you"
+    setTimeout(() => {
+      setResolved((cur) => ({ ...cur, [q.id]: label ? `Answered “${label}” by ${viewerName}` : `Cancelled by ${viewerName}` }))
+      mapReply(key, rootId, rid, (r) => ({ ...r, phase: "done", live: false }))
+    }, 450)
+    setTimeout(() => void runTurn(key, rootId, empId, "", undefined, undefined, label ? QUESTION_CONT(label) : QUESTION_CANCEL), 900)
+  }
+  const answerQuestion = (q: QuestionAsk, a: QuestionAnswer) => settleQuestion(q, a.label)
+  const cancelQuestion = (q: QuestionAsk) => settleQuestion(q, "")
 
   /* ↑ recall (issue #104): the message Oscar sent last — inside the open
      thread and top-level for the home/channel composer. A mid-turn send is
@@ -1809,6 +1932,7 @@ export default function App() {
       access={access} onAccess={setAccess}
       scrollTo={scrollTo ?? undefined} onScrolled={() => setScrollTo(null)}
       editors={openEditors ?? undefined} onOpenSession={openSession} onPlan={(a, id) => planAction(openThread, a, id)}
+      onAnswer={answerQuestion} onCancel={cancelQuestion}
       onOpenPath={openWsCwd && openEditors !== null
         ? (path, app, line) => void hostAccessors.osOpen(openWsCwd, path, app, line).catch((e) => say(`Open failed — ${e instanceof Error ? e.message : String(e)}`))
         : undefined}
@@ -1866,6 +1990,7 @@ export default function App() {
           access={access} onAccess={setAccess}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
           onOpenSession={openSession} onStopJob={(id) => stopJobIn(openThread, id)} onPlan={(a, id) => planAction(openThread, a, id)}
+          onAnswer={answerQuestion} onCancel={cancelQuestion}
           // A real harness attach (?surfaces=…) keeps its live Preview tab; the
           // LilOS Browser (#214) replaces it only in the mock prototype.
           browser={realSurfaces ? undefined : threadBrowser(openThread.id)}

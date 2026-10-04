@@ -244,6 +244,35 @@ export const APPROVALS: Approval[] = [
     file: { name: "launch-thread.md", detail: "6 posts · 2 images" },
     age: "1m",
   },
+  {
+    id: "q-base",
+    employeeId: "reviewer",
+    employee: "Reviewer",
+    tone: "violet",
+    session: "Where #96 lands",
+    kind: "question",
+    reason:
+      "The release cut is Thursday. Do you want the replay fix on `release/0.1` too, or does it wait for the next train?",
+    options: [
+      {
+        id: "cherry-pick",
+        label: "Cherry-pick to release/0.1",
+        description: "Opens a second PR against the release branch.",
+      },
+      {
+        id: "next-train",
+        label: "Keep it on main",
+        description: "Ships with the next regular train, not the release.",
+      },
+      {
+        id: "hold",
+        label: "Hold until after the cut",
+        description: "Leaves it unmerged while the freeze is on.",
+      },
+    ],
+    freeText: true,
+    age: "now",
+  },
 ];
 
 // ── Builder's sessions (web: DM_FEEDS["dm-builder"]) ────────────────────────
@@ -659,6 +688,72 @@ export const THREADS: ThreadDetail[] = [
         ],
         text: "Draft is ready: **6 posts** and 2 screenshots (Home and the approval dock). Want me to post it?",
         approval: APPROVALS[2],
+      },
+    ],
+  },
+  {
+    /* #420: a `question` ask — one answered earlier in the thread (the
+       decided receipt), one still open (the card: options + free text). */
+    id: "s-question",
+    title: "Where #96 lands",
+    state: "needs-you",
+    employee: { id: "reviewer", name: "Reviewer", tone: "violet" },
+    when: "now",
+    started: "Today 10:04",
+    folder: LILOS,
+    branch: { name: "main", detail: "read-only · no worktree" },
+    model: "Claude Opus 5.5 · High",
+    session: "ses_9b42",
+    usage: "52.1k in · 4.2k out · 38k cached",
+    entries: [
+      {
+        kind: "user",
+        id: "u1",
+        time: "10:04",
+        text: "Review #96 before the release cut — and figure out where it should land.",
+      },
+      {
+        kind: "agent",
+        id: "g1",
+        time: "10:06",
+        thought: 4,
+        reasoning:
+          "Read the diff, run its test slice, then decide whether it merges straight to main.",
+        steps: [
+          {
+            id: "1",
+            tool: "terminal",
+            arg: "gh pr diff 96 --stat",
+            output: "apps/relay/replay.ts · +64 −11 · e2e/replay.spec.ts · +40",
+          },
+          {
+            id: "2",
+            tool: "terminal",
+            arg: "bun test apps/relay",
+            output: "✓ 12 pass · 0 fail (1.9s)",
+          },
+        ],
+        text: "The diff is clean — relay replay fix plus a regression test. Before I merge, one thing: should it land **straight on main** or go through the release branch?",
+        decided: { approved: true, question: true, what: "Merge to main" },
+      },
+      {
+        kind: "agent",
+        id: "g2",
+        time: "10:09",
+        thought: 3,
+        reasoning:
+          "Merging to main keeps it out of the release; that leaves the timing call — cherry-pick it into the cut or let it ride the next train.",
+        steps: [
+          {
+            id: "1",
+            tool: "terminal",
+            arg: "git merge --squash origin/pr/96",
+            output:
+              "Squash commit — not updating HEAD\n 2 files changed, +104 −11",
+          },
+        ],
+        text: "Merged to `main` as 9c41d0e. Now the timing call is yours — this changes what the release notes need.",
+        approval: APPROVALS[3],
       },
     ],
   },

@@ -73,6 +73,7 @@ import {
   $employees,
   $projects,
   $threads,
+  answerAsk,
   approve,
   approvePlan,
   deny,
@@ -606,6 +607,12 @@ function Thread({ navigation, route }: Props<"Thread">) {
       modelLogo={logoOf(pick.model)}
       onApprove={(id) => decide(id, true)}
       onDeny={(id) => decide(id, false)}
+      onAnswer={(id, a) => {
+        void Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        );
+        answerAsk(id, a);
+      }}
       onSend={(text) => reply(t.id, text)}
       onStop={() => {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

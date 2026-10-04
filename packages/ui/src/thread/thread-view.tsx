@@ -21,6 +21,7 @@ import {
 import { Button } from "../components/ui/button";
 import { openStartRequest } from "../conversation/cards";
 import type { PlanAction } from "../conversation/plan-card";
+import type { QuestionAnswer } from "../conversation/question-card";
 import {
   RewindCheckpoint,
   TURN_LAZY_AFTER,
@@ -46,6 +47,7 @@ import type {
   Msg,
   OsApp,
   OsEditor,
+  QuestionAsk,
   Thread,
   WbTab,
   Work,
@@ -107,6 +109,8 @@ export function ThreadView({
   onSeededFiles,
   onOpenSession,
   onPlan,
+  onAnswer,
+  onCancel,
   access,
   onAccess,
 }: {
@@ -199,6 +203,10 @@ export function ThreadView({
   onOpenSession?: (employeeId: string, session: string) => void;
   /* Plan card decisions (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
+  /* #420: question-ask answer/cancel — passed, the handler owns the
+     resolved write (the card locks as "Sending…" until it lands). */
+  onAnswer?: (q: QuestionAsk, a: QuestionAnswer) => void;
+  onCancel?: (q: QuestionAsk) => void;
   /* #106: the thread's access level + toggle → the composer pill.
      Both or neither (D-#19: no access record, no control). */
   access?: ConversationAccess;
@@ -262,6 +270,8 @@ export function ThreadView({
     onRewind,
     setResolved,
     onStart,
+    onAnswer,
+    onCancel,
   };
   const lazyRows = thread.replies.length > TURN_LAZY_AFTER;
   return (

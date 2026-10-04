@@ -11,8 +11,16 @@ import {
 } from "../components/ai-elements/confirmation";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
-import type { EmpFn, HumanFn, Reply, Thread, Work } from "../types";
+import type {
+  EmpFn,
+  HumanFn,
+  QuestionAsk,
+  Reply,
+  Thread,
+  Work,
+} from "../types";
 import { VIEWER_ID } from "../types";
+import { type QuestionAnswer, QuestionCard } from "./question-card";
 
 /* The one "asks to start work" request that currently owns the start-work action (issue #15).
    Decision (recorded on #15): while a request card is OPEN — the LAST reply proposed work, work has
@@ -43,6 +51,8 @@ export function ReplyCards({
   resolved,
   setResolved,
   onStart,
+  onAnswer,
+  onCancel,
   human,
 }: {
   r: Reply;
@@ -58,6 +68,10 @@ export function ReplyCards({
   resolved: Record<string, string>;
   setResolved?: (r: Record<string, string>) => void;
   onStart?: () => void;
+  /** #420: question-ask continuations — passed, they own the resolved
+      write; absent, the card resolves itself. */
+  onAnswer?: (q: QuestionAsk, a: QuestionAnswer) => void;
+  onCancel?: (q: QuestionAsk) => void;
 }) {
   const done = r.approval && resolved[r.approval.id];
   const viewer = human(VIEWER_ID)?.name ?? "you";
@@ -261,6 +275,17 @@ export function ReplyCards({
             </Confirmation>
           );
         })()}
+      {r.question && (
+        <QuestionCard
+          q={r.question}
+          viewer={viewer}
+          done={resolved[r.question.id]}
+          resolved={resolved}
+          setResolved={setResolved}
+          onAnswer={onAnswer}
+          onCancel={onCancel}
+        />
+      )}
     </>
   );
 }

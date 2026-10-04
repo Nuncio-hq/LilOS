@@ -20,12 +20,14 @@ import type {
   HumanFn,
   ModelOption,
   PullRequest,
+  QuestionAsk,
   Reply,
   WbTab,
   Work,
 } from "../types";
 import { ReplyCards } from "./cards";
 import type { PlanAction } from "./plan-card";
+import type { QuestionAnswer } from "./question-card";
 import { AgentTurn, AttachmentChips, PrCard, UserTurn } from "./turns";
 
 /**
@@ -63,6 +65,9 @@ export interface TurnActs {
   onRewind?: (messageId: string) => void;
   setResolved?: (r: Record<string, string>) => void;
   onStart?: () => void;
+  /** #420: question-ask answer/cancel continuations. */
+  onAnswer?: (q: QuestionAsk, a: QuestionAnswer) => void;
+  onCancel?: (q: QuestionAsk) => void;
 }
 
 /* #134: the "Rewind to here" checkpoint above each user message (moved out
@@ -290,6 +295,8 @@ function TurnRowImpl({
     onRewind,
     setResolved,
     onStart,
+    onAnswer,
+    onCancel,
   } = acts.current;
   const cls = cn(
     "transition-colors duration-500",
@@ -334,6 +341,8 @@ function TurnRowImpl({
                   resolved={resolved}
                   setResolved={setResolved}
                   onStart={onStart}
+                  onAnswer={onAnswer}
+                  onCancel={onCancel}
                 />
               }
             />
@@ -362,6 +371,8 @@ function TurnRowImpl({
                   resolved={resolved}
                   setResolved={setResolved}
                   onStart={onStart}
+                  onAnswer={onAnswer}
+                  onCancel={onCancel}
                 />
                 {pr &&
                   !r.live &&

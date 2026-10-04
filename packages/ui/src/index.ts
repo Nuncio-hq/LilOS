@@ -37,6 +37,10 @@ export { NotConnectedNotice } from "./connect/not-connected-notice";
 // conversation (shared by the thread panel and Focus — issue #19)
 export { ReplyCards } from "./conversation/cards";
 export { type PlanAction, PlanCard } from "./conversation/plan-card";
+export {
+  type QuestionAnswer,
+  QuestionCard,
+} from "./conversation/question-card";
 export { TurnSubagents } from "./conversation/subagents";
 export {
   AgentTurn,

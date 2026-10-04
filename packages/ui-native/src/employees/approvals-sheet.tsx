@@ -125,7 +125,7 @@ export function ApprovalsSheet({
               )}
               {onDeny && (
                 <Pill
-                  label="Deny"
+                  label={a.kind === "question" ? "Cancel" : "Deny"}
                   variant="soft"
                   onPress={() => onDeny(a.id)}
                 />

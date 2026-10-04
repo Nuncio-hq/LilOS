@@ -74,7 +74,7 @@ const MOCK_LIFE: Record<string, "open" | "closed"> = {
 };
 
 /** Order approvals were asked in (oldest first → the dock shows the oldest). */
-const ASKED = ["a-flake", "a-post"];
+const ASKED = ["a-flake", "a-post", "q-base"];
 const asked = atom<string[]>(ASKED);
 
 /** Every pending approval, read off the sessions so both always agree. */
@@ -212,6 +212,10 @@ type Script = {
   /** Runs when that approval is approved / denied. */
   onApprove?: Script;
   onDeny?: Script;
+  /** #420: a question ask's continuation — the answered text/id in, the
+      next script out (a question can't be approved, only answered or
+      cancelled → onDeny is its cancel path). */
+  onAnswer?: (answer: string) => Script;
   /** A PR this turn opens (added to the session when the turn ends). */
   pr?: PullRequestRef;
   /** Helpers that run side by side after the steps (issue #170). */
@@ -223,7 +227,13 @@ type Script = {
 /** Scripts waiting on an approval, by approval id. */
 const pending = new Map<
   string,
-  { tid: string; eid: string; yes?: Script; no?: Script }
+  {
+    tid: string;
+    eid: string;
+    yes?: Script;
+    no?: Script;
+    answer?: (a: string) => Script;
+  }
 >();
 /** Bumped by a reset: every running turn from an older generation stops writing. */
 let gen = 0;
@@ -346,7 +356,13 @@ async function run(tid: string, s: Script, eid?: string) {
     if (s.approval) {
       const a: Approval = { ...s.approval, age: "now" };
       asked.set([...asked.get().filter((x) => x !== a.id), a.id]);
-      pending.set(a.id, { tid, eid: id, yes: s.onApprove, no: s.onDeny });
+      pending.set(a.id, {
+        tid,
+        eid: id,
+        yes: s.onApprove,
+        no: s.onDeny,
+        answer: s.onAnswer,
+      });
       set((e) => ({ ...e, live: false, writing: false, approval: a }));
       mapThread(tid, (x) => ({ ...x, state: "needs-you", when: "now" }));
     } else {
@@ -528,6 +544,9 @@ function settle(id: string, yes: boolean) {
     approval: undefined,
     decided: {
       approved: yes,
+      /* #420: a denied question ask is a *cancelled* question — the receipt
+         wording branches on this flag. */
+      question: e.approval?.kind === "question" ? true : undefined,
       what:
         e.approval?.command ??
         e.approval?.file?.name ??
@@ -536,6 +555,24 @@ function settle(id: string, yes: boolean) {
     },
   }));
   void run(p.tid, next);
+}
+
+/* #420: a question ask's answer — the option's label or the typed text is
+   what the receipt keeps (`what`), and the turn continues from the ask's
+   `onAnswer` script (label in, so the reply can read naturally). */
+export function answerAsk(id: string, answer: { label: string }) {
+  const p = pending.get(id);
+  if (!p) return;
+  pending.delete(id);
+  mapEntry(p.tid, p.eid, (e) => ({
+    ...e,
+    approval: undefined,
+    decided: { approved: true, question: true, what: answer.label },
+  }));
+  void run(
+    p.tid,
+    p.answer?.(answer.label) ?? { text: `Noted — ${answer.label}.` },
+  );
 }
 
 /** Stop the running turn (■). What it already did stays. */
@@ -709,14 +746,20 @@ export function startLife() {
   if (alive) return;
   alive = true;
   const g = gen;
-  const wait = (tid: string, s: Pick<Script, "onApprove" | "onDeny">) => ({
+  const wait = (
+    tid: string,
+    s: Pick<Script, "onApprove" | "onDeny" | "onAnswer">,
+    eid = "g1",
+  ) => ({
     tid,
-    eid: "g1",
+    eid,
     yes: s.onApprove,
     no: s.onDeny,
+    answer: s.onAnswer,
   });
   pending.set("a-flake", wait("s-flake", FLAKE));
   pending.set("a-post", wait("s-launch", POST));
+  pending.set("q-base", wait("s-question", QUESTION, "g2"));
   // Builder has two sessions going: the relay one hits a wall and asks you
   // (the dock grows), the CI one finds the bug and asks to push.
   setTimeout(() => g === gen && void run("s-relay", RELAY, "g1"), 900);
@@ -890,6 +933,26 @@ const FLAKE: Pick<Script, "onApprove" | "onDeny"> = {
   },
   onDeny: {
     text: "OK, skipping the repeat run. One green run is weak proof for a flake, so I'd hold #86 until it's shown.",
+  },
+};
+
+/* #420: the seeded question ask's continuation. The answer's label arrives
+   (option label or the typed text) — the turn acknowledges it and moves on;
+   cancelling rides onDeny like every other ask. */
+const QUESTION: Pick<Script, "onDeny" | "onAnswer"> = {
+  onAnswer: (answer) => ({
+    steps: [
+      {
+        tool: "terminal",
+        arg: "git log --oneline -1 origin/release/0.1",
+        output: "9f41d0e release/0.1: cut notes + freeze the lockfile",
+        ms: 1400,
+      },
+    ],
+    text: `Got it — **${answer}**. I'll line #96 up that way and flag it in the release notes.`,
+  }),
+  onDeny: {
+    text: "OK — leaving #96 where it is until you say where it should land.",
   },
 };
 

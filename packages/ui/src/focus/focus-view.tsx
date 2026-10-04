@@ -49,6 +49,7 @@ import {
 import { Button } from "../components/ui/button";
 import { openStartRequest } from "../conversation/cards";
 import type { PlanAction } from "../conversation/plan-card";
+import type { QuestionAnswer } from "../conversation/question-card";
 import {
   RewindCheckpoint,
   TURN_LAZY_AFTER,
@@ -76,6 +77,7 @@ import type {
   OsApp,
   OsEditor,
   Project,
+  QuestionAsk,
   ShipBar,
   ShipHandlers,
   Thread,
@@ -145,6 +147,8 @@ export function FocusView({
   onOpenSession,
   onStopJob,
   onPlan,
+  onAnswer,
+  onCancel,
   browser,
   initialTab,
   onTab,
@@ -245,6 +249,10 @@ export function FocusView({
   onStopJob?: (id: string) => void;
   /* Plan card decisions (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
+  /* #420: question-ask answer/cancel — passed, the handler owns the
+     resolved write (the card locks as "Sending…" until it lands). */
+  onAnswer?: (q: QuestionAsk, a: QuestionAnswer) => void;
+  onCancel?: (q: QuestionAsk) => void;
   /* #106: the thread's access level + toggle → the composer pill
      (both or neither; D-#19). */
   access?: ConversationAccess;
@@ -427,6 +435,8 @@ export function FocusView({
     onRewind,
     setResolved,
     onStart,
+    onAnswer,
+    onCancel,
   };
   const lazyRows = thread.replies.length > TURN_LAZY_AFTER;
   /* #340 AC-2b: `workbench_open` brings the panel forward on the target's

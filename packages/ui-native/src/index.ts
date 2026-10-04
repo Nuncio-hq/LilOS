@@ -54,6 +54,10 @@ export {
   PlanSheet,
 } from "./employees/plan-card";
 export {
+  type QuestionAnswer,
+  QuestionCard,
+} from "./employees/question-card";
+export {
   SubagentSheet,
   SubagentsCard,
   SubagentsLink,
@@ -78,6 +82,7 @@ export type {
   PlanRow,
   ProjectGroup,
   PullRequestRef,
+  QuestionOption,
   SessionState,
   SessionTurn,
   SubagentRow,

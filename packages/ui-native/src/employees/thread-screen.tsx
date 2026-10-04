@@ -15,6 +15,7 @@ import { Composer } from "./composer";
 import { ContextRing } from "./context-meter";
 import type { PlanAction } from "./plan-card";
 import { PrBadge, prHeadline } from "./pr-badges";
+import type { QuestionAnswer } from "./question-card";
 import { threadBottomInset } from "./thread-layout";
 import type {
   ContextUsage,
@@ -38,6 +39,7 @@ export function ThreadScreen({
   modelLogo,
   onApprove,
   onDeny,
+  onAnswer,
   onSend,
   onStop,
   onPickModel,
@@ -56,6 +58,8 @@ export function ThreadScreen({
   modelLogo?: string;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
+  /** #420: a question ask's answer — a question's Cancel rides `onDeny`. */
+  onAnswer?: (id: string, answer: QuestionAnswer) => void;
   onSend: (text: string) => void;
   onStop: () => void;
   onPickModel?: () => void;
@@ -148,6 +152,7 @@ export function ThreadScreen({
                   tone={t.employee.tone}
                   onApprove={onApprove}
                   onDeny={onDeny}
+                  onAnswer={onAnswer}
                   onOpenSubagent={onOpenSubagent}
                   onOpenSubagents={onOpenSubagents}
                   onPlan={onPlan}
