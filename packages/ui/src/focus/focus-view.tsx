@@ -255,7 +255,11 @@ export function FocusView({
       initialTab ??
       (sessionArtifacts(thread).diffs.length ? "changes" : "terminal"),
   );
-  const [follow, setFollow] = useState(!initialTab);
+  /* Follow lives in a ref, not state: a `?tab=` deep link applying in the
+     same commit as a turn's step/settle event would let the later effects
+     below read the stale pre-deep-link `follow` and steal the tab it just
+     applied (their setState queues after, so the steal would win). */
+  const followRef = useRef(!initialTab);
   /* `?tab=` can land after mount — a boot redirect settling the location —
      and applies then like a fresh deep link (#432); the prop is not
      mount-only. A user pick writes the same tab back through the URL, so
@@ -265,7 +269,7 @@ export function FocusView({
     if (!initialTab || initialTab === appliedTab.current) return;
     appliedTab.current = initialTab;
     setTab(initialTab);
-    setFollow(false);
+    followRef.current = false;
     setWbOpen(true);
   }, [initialTab]);
   /* #138 AC-3: a search hit opens the session in Focus (#114) scrolled to
@@ -332,16 +336,21 @@ export function FocusView({
      deep-linked tab before the user ever saw it (#396). `live` arrives
      async, so the discriminator is the turn's own attach boundary
      (`postAttach`), not mount-time state; mock rows without it keep the
-     old always-follow behavior. */
+     old always-follow behavior. An explicit tab choice — a `?tab=` deep
+     link or a user pick (which writes the same param back) — also disarms
+     re-arming: a still-starting turn whose `turn.started` lands
+     post-attach would otherwise re-arm follow and let `liveKey` steal the
+     chosen tab on its next step (#179). */
   useEffect(() => {
-    if (live && live.postAttach !== false) setFollow(true);
-  }, [live?.id]);
+    if (!initialTab && live && live.postAttach !== false)
+      followRef.current = true;
+  }, [live?.id, initialTab]); // eslint-disable-line react-hooks/exhaustive-deps
   // Turn finished with edits → land on Changes, like Codex's review pane.
   const lastDone = [...thread.replies]
     .reverse()
     .find((r) => emp(r.from) && !r.live);
   useEffect(() => {
-    if (follow && !live && lastDone?.steps?.some((s) => s.diff))
+    if (followRef.current && !live && lastDone?.steps?.some((s) => s.diff))
       setTab("changes");
   }, [lastDone?.id, !!live]); // eslint-disable-line react-hooks/exhaustive-deps
   // A PR appearing on the session opens its tab (Devin opens a PR tab per PR).
@@ -354,18 +363,18 @@ export function FocusView({
   const pr = thread.pr;
   const prPending = pr?.checks.some((c) => c.status === "pending");
   useEffect(() => {
-    if (!follow || !lastStep) return;
+    if (!followRef.current || !lastStep) return;
     if (lastStep.diff) setTab("changes");
     else if (lastStep.tool === "terminal") setTab("terminal");
   }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
   /* The running turn spins off a new helper → Subagents comes forward (#317). */
   const liveHelpers = live?.subagents?.map((x) => x.id).join(",") ?? "";
   useEffect(() => {
-    if (follow && liveHelpers) setTab("subagents");
+    if (followRef.current && liveHelpers) setTab("subagents");
   }, [liveHelpers]); // eslint-disable-line react-hooks/exhaustive-deps
   const pickTab = (t: WbTab) => {
     setTab(t);
-    setFollow(false);
+    followRef.current = false;
     setWbOpen(true);
     onTab?.(t);
   };
@@ -376,7 +385,7 @@ export function FocusView({
   useEffect(() => {
     if (!wbSpot) return;
     setWbOpen(true);
-    setFollow(false);
+    followRef.current = false;
   }, [wbSpotAt]); // eslint-disable-line react-hooks/exhaustive-deps
   const doneTodos = todos.filter((t) => t.status === "completed").length;
   // Plan tray opens while the agent works and folds away when the turn ends (user can still toggle).
