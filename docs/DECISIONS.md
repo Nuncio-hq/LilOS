@@ -239,6 +239,17 @@ PR does not exist.
   `ref` echoes the prompting message, `initiatedBy:"agent"` marks
   engine-opened work. Not: stamping legs on the settled turn id, or the
   mapping layer guessing ownership. — #308
+- **D-#431 The replay log is compacted + bounded: a finished turn's
+  `turn.delta` run collapses into one `turn.recap` (`{turnId, text,
+  reasoning}` — both whole streams, replace not append) that reuses the
+  last delta's `seq`, and the per-session log sheds its prefix past
+  `EVENT_LOG_CAP` (an open turn's `turn.started` seq protected), reported
+  by `events.since.truncated` (`droppedSeq > after` = the range lost
+  events — refetch, don't patch). Live streams never carry `turn.recap`.**
+  Not: snapshot+tail (the snapshot exists; the fat was the middle),
+  unbounded per-session logs (the ~17 MB/400-turn replay this kills), or a
+  fresh `seq` for the recap (reusing the anchor's is what lets a
+  partial-live fold dedupe it). — #431 · PR #509
 - **D-#56 The terminal has one holder: a Workbench keystroke hands it to
   the user; `terminal_run`/`terminal_write` then fail `user_control` (HTTP
   409), in-flight runs too.** Hand-back is explicit (`term.release`) or

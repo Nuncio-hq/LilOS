@@ -109,6 +109,21 @@ export const TurnDeltaPayload = z.strictObject({
   delta: z.string(),
 });
 
+/**
+ * A finished turn's streams replayed in one frame (#431). The engine
+ * rewrites a closed turn's `turn.delta` run into a single recap at the
+ * last superseded delta's `seq` — log-only, never broadcast live — so a
+ * replay folds deltas OR the recap into the same turn text. Semantics are
+ * replace, not append: `text`/`reasoning` are the whole stream content
+ * through that seq (both always present, empty when the turn streamed
+ * nothing on it).
+ */
+export const TurnRecapPayload = z.strictObject({
+  turnId: TurnId,
+  text: z.string(),
+  reasoning: z.string(),
+});
+
 export const FileDiff = z.strictObject({
   path: z.string().min(1),
   status: z.enum(["added", "modified", "deleted"]),
@@ -345,6 +360,12 @@ export const EngineEvent = z.discriminatedUnion("type", [
     sessionId: SessionId,
     type: z.literal("turn.delta"),
     payload: TurnDeltaPayload,
+  }),
+  z.strictObject({
+    seq: Seq,
+    sessionId: SessionId,
+    type: z.literal("turn.recap"),
+    payload: TurnRecapPayload,
   }),
   z.strictObject({
     seq: Seq,

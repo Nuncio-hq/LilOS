@@ -528,6 +528,59 @@ export const CORE_SCENARIOS: Scenario[] = [
     },
   },
   {
+    /* #431: an engine may replay a finished turn's streams verbatim or
+       coalesced into `turn.recap` — the replay contract only promises the
+       fold lands the same text (deltas append, recap replaces). */
+    id: "a finished turn's replay folds to the live text (deltas or recap)",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const res = (await h.request(
+        "prompt",
+        textPrompt(sessionId, READ_PROMPT),
+      )) as PromptResult;
+      const liveText = h.events
+        .filter(
+          (e) =>
+            e.type === "turn.delta" &&
+            (e.payload as { turnId?: string }).turnId === res.turnId &&
+            (e.payload as { stream?: string }).stream === "text",
+        )
+        .map((e) => (e.payload as { delta: string }).delta)
+        .join("");
+      const since = (await h.request("events.since", {
+        sessionId,
+        after: 0,
+      })) as SinceResult;
+      let replayText = "";
+      let recaps = 0;
+      for (const e of since.events) {
+        const p = e.payload as { turnId?: string };
+        if (p.turnId !== res.turnId) continue;
+        if (e.type === "turn.delta") {
+          const d = e.payload as { stream: string; delta: string };
+          if (d.stream === "text") replayText += d.delta;
+        } else if (e.type === "turn.recap") {
+          recaps += 1;
+          replayText = (e.payload as { text: string }).text;
+        }
+      }
+      assert(recaps <= 1, "at most one recap per turn");
+      assert(
+        replayText === liveText,
+        "replayed turn text matches the live stream",
+      );
+      /* A live listener never sees a recap — the frame exists only inside
+         the replayed log. */
+      assert(
+        !h.events.some((e) => e.type === "turn.recap"),
+        "recap is a replay frame, never a live broadcast",
+      );
+    },
+  },
+  {
     id: "protocol errors map to JSON-RPC codes",
     async run(h) {
       assert(
