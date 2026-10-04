@@ -283,6 +283,7 @@ export class HermesEngine {
             turnId: turn.turnId,
             stopReason: "refusal",
             error: down.message,
+            errorCode: down.code,
           });
           if (s.state !== "closed") s.setState("error");
         }
@@ -954,6 +955,7 @@ export class HermesEngine {
           turnId,
           stopReason: "refusal",
           error: msg,
+          ...(e instanceof RpcError ? { errorCode: e.code } : {}),
         });
         s.setState("idle");
       }

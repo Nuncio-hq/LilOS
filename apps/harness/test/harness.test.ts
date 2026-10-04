@@ -854,6 +854,81 @@ describe("workspace harness", () => {
     }
   });
 
+  it("#521 a typed BACKEND_DOWN prompt rejection posts the restart surface, not an Engine error", async () => {
+    let failPrompts = false;
+    const w = (await setupWorldBase({
+      tick: 1,
+      captureSockets: true,
+      reconnectMinDelayMs: 20,
+      /* The engine call dies typed -32006 (the gateway-close-first
+         ordering) — no turn.started/turn.completed arrive, so
+         dispatchPrompt's catch is the only surface that can fire. */
+      wrap: (conn) => {
+        const orig = conn.request.bind(conn);
+        conn.request = <T = unknown>(
+          method: string,
+          params?: unknown,
+        ): Promise<T> =>
+          failPrompts && method === "prompt"
+            ? Promise.reject(
+                new EngineRpcError(
+                  -32006,
+                  "hermes backend is down (gateway socket closed)",
+                ),
+              )
+            : orig<T>(method, params);
+        return conn;
+      },
+    })) as World;
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "first ping",
+      });
+      // Baseline turn lands → the session binds; later prompts dispatch.
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.authorKind === "employee");
+      }, "baseline answer");
+
+      failPrompts = true;
+      await postMessage(w.user, channel.id, conversation.id, "die under me");
+
+      const note = await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "system" && m.text.includes("engine restarted"),
+        );
+      }, "restart note");
+      expect(note.text).toContain("interrupted");
+
+      const failed = await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: {
+            id: string;
+            turnFailure?: { kind: string; text: string };
+          }[];
+        }>("conversations.list", {});
+        return conversations.find((x) => x.id === conversation.id)?.turnFailure;
+      }, "turnFailure stamped");
+      expect(failed?.kind).toBe("sleep");
+      expect(failed?.text).toContain("slept");
+
+      /* The generic failure path must not ride the same rejection — one
+         typed surface, no "Engine error:" duplicate. */
+      const { messages } = await listConvMessages(w.user, channel.id);
+      expect(
+        messages.filter((m) => m.text.includes("Engine error")),
+      ).toHaveLength(0);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("AC-4b does not double-report a turn that already ended cleanly", async () => {
     const w = await setupWorld();
     try {
