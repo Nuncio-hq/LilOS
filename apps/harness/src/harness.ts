@@ -280,6 +280,11 @@ const INVALID_STATE = -32003;
 const REQUEST_NOT_FOUND = -32002;
 /** Tells the relay to answer the caller `engine_unavailable` (not error). */
 const ENGINE_UNAVAILABLE = -32005;
+/* #482: forwarded engine calls get their own deadline — a wedged adapter
+   (or one whose backend died) must fail the caller fast typed instead of
+   riding the transport's 15 s default. Longer than the probe's deadline so
+   real traffic still distinguishes a dead adapter from a slow answer. */
+const ENGINE_CALL_DEADLINE_MS = 12_000;
 
 export class Harness {
   private engine?: EngineConnection;
@@ -745,11 +750,15 @@ export class Harness {
     // AC-4: a turn that vanished across sleep/restart must end as
     // `interrupted` with Retry — never a spinner. Lost iff the replay shows
     // it neither still running nor terminated by a replayed turn.completed.
+    // A truncated replay can't prove either (#431): the completed may be
+    // cap-dropped, so the inference stays silent rather than stamping a
+    // healthy turn interrupted.
     const finishedInReplay = replay.events.some(
       (e) => e.type === "turn.completed" && e.payload.turnId === watchedTurnId,
     );
     if (
       watchedTurnId &&
+      !replay.truncated &&
       replay.snapshot.turn?.turnId !== watchedTurnId &&
       !finishedInReplay
     ) {
@@ -2152,6 +2161,12 @@ export class Harness {
           );
         }
         break;
+      /* #431: a replayed finished turn's streams in one frame — replace
+         the accumulation like the fold does so the turn still posts its
+         answer at turn.completed. */
+      case "turn.recap":
+        binding?.textByTurn.set(event.payload.turnId, event.payload.text);
+        break;
       /* tool.started/completed never post feed rows — the tool cards
          inside the turn are the single rendering (issue #71, AC-1). But
          tool.started IS the employee's live "now:" step (#422): the
@@ -2692,7 +2707,21 @@ export class Harness {
         code: ENGINE_UNAVAILABLE,
       });
     }
-    return conn.request(method, params);
+    /* #482: a timeout (no numeric code — transport deadline, not an engine
+       error frame) is re-minted `engine_unavailable` so the app surfaces a
+       typed miss instead of a generic engine_error. */
+    return conn
+      .request(method, params, ENGINE_CALL_DEADLINE_MS)
+      .catch((error) => {
+        if (engineErrorCode(error) === undefined)
+          throw Object.assign(
+            new Error(
+              `engine ${method} timed out after ${ENGINE_CALL_DEADLINE_MS}ms`,
+            ),
+            { code: ENGINE_UNAVAILABLE },
+          );
+        throw error;
+      });
   }
 
   /**

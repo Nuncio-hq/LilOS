@@ -37,6 +37,7 @@ export function EmployeeDmScreen({
   folder,
   model,
   modelLogo,
+  modelUnavailable,
   onOpenSession,
   onSend,
   onPickFolder,
@@ -51,6 +52,8 @@ export function EmployeeDmScreen({
   model?: string;
   /** models.dev slug for the composer's model chip. */
   modelLogo?: string;
+  /** #483: chip renders "Models unavailable" dimmed; its press retries. */
+  modelUnavailable?: boolean;
   onOpenSession: (id: string) => void;
   onSend: (text: string) => void;
   onPickFolder: () => void;
@@ -109,6 +112,7 @@ export function EmployeeDmScreen({
             folder={folder}
             {...(model !== undefined ? { model } : {})}
             modelLogo={modelLogo}
+            modelUnavailable={modelUnavailable}
             insetBottom={insets.bottom}
             onSend={onSend}
             onPickFolder={onPickFolder}

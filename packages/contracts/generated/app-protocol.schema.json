@@ -5888,6 +5888,27 @@
       "properties": {
         "connected": {
           "type": "boolean"
+        },
+        "engine": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "starting",
+                "running",
+                "restarting",
+                "failed",
+                "stopped"
+              ]
+            },
+            "detail": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "state"
+          ]
         }
       },
       "required": [

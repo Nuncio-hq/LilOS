@@ -883,6 +883,11 @@ body:has(.lilos-float)::before {
 .lilos-rise {
   animation: lilos-rise 0.5s cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
 }
+/* #430: a virtualized row re-mounts when it scrolls back into view — its
+   rise animation must not replay (the row is not new, just re-shown). */
+[data-remount] .lilos-rise {
+  animation: none !important;
+}
 .lilos-lift {
   transition:
     transform 0.25s cubic-bezier(0.2, 0.9, 0.25, 1.2),

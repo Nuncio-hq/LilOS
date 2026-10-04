@@ -87,7 +87,13 @@ const editDialog = (page: Page) =>
 
 async function openEdit(page: Page) {
   await page.getByRole("button", { name: /Profile/ }).click();
-  await page.getByRole("button", { name: "Edit" }).click();
+  // #504: Default has no SOUL.md yet, so the card shows two "Edit" entries —
+  // the header pencil and the empty-state link — both opening the same dialog.
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Edit" })
+    .first()
+    .click();
   const dlg = editDialog(page);
   await expect(dlg).toBeVisible();
   return dlg;

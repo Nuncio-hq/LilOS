@@ -102,6 +102,60 @@ describe("session.events / engine.event — device-scope live feed (#157)", () =
     ).toEqual(events);
   });
 
+  it("#431 a compacted replay — recap frames + truncated — forwards verbatim", async () => {
+    /* The relay owns no engine log; whatever the host's events.since
+       answers (bounded-window `truncated`, turn.recap frames) must reach
+       the device peer byte-for-byte — the phone's fold handles recaps
+       itself. */
+    const { relay, pairing } = newWorld();
+    const host = await registeredHost(relay);
+    const { conversation } = await setupConversation(host);
+    const phone = await helloedDevice(pairing, relay);
+
+    await phone.connection.receive(
+      req("session.events", { conversationId: conversation.id, after: 0 }),
+    );
+    const forwarded = requestsTo(host.frames);
+    expect(forwarded).toHaveLength(1);
+    const events = [
+      {
+        seq: 40,
+        sessionId: "fake:sess-1",
+        type: "turn.recap",
+        payload: { turnId: "t1", text: "whole answer", reasoning: "chain" },
+      },
+      {
+        seq: 41,
+        sessionId: "fake:sess-1",
+        type: "turn.completed",
+        payload: { turnId: "t1", stopReason: "end_turn" },
+      },
+    ];
+    await host.connection.receive(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: forwarded[0].id,
+        result: {
+          events,
+          latestSeq: 41,
+          truncated: true,
+          openRequests: [],
+          snapshot: {
+            sessionId: "fake:sess-1",
+            state: "idle",
+            openRequests: [],
+          },
+        },
+      }),
+    );
+    const result = resultOf(phone.frames, lastId()).result as {
+      events: unknown[];
+      truncated: boolean;
+    };
+    expect(result.events).toEqual(events);
+    expect(result.truncated).toBe(true);
+  });
+
   it("an unbound conversation is not_found (nothing to replay)", async () => {
     const { relay, pairing } = newWorld();
     const host = await registeredHost(relay);

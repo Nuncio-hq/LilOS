@@ -2028,3 +2028,201 @@ describe("engine-hermes #416: an inline diff carries the file's real path", () =
     expect(await diffPathOf({ args: null })).toBe("(inline)");
   });
 });
+
+/* #431: the adapter's per-session log is bounded (D-#431) and a finished
+   turn's streams replay as one recap — the WS and resume paths share
+   Session.emit, so the hook covers every event source. */
+describe("engine-hermes #431: compact replay + bounded log", () => {
+  test("a finished turn's deltas replay as one turn.recap", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    gw.emit(gw.lastSid, "reasoning.delta", { text: "think" });
+    gw.emit(gw.lastSid, "message.delta", { text: "answer" });
+    gw.complete(gw.lastSid, { text: "answer" });
+    const { turnId } = await p;
+
+    const since = (await h.request("events.since", {
+      sessionId,
+      after: 0,
+    })) as { events: EngineEvent[]; truncated: boolean };
+    const turnEvents = since.events.filter(
+      (e) => (e.payload as { turnId?: string }).turnId === turnId,
+    );
+    expect(turnEvents.filter((e) => e.type === "turn.delta")).toEqual([]);
+    const recaps = turnEvents.filter((e) => e.type === "turn.recap");
+    expect(recaps).toHaveLength(1);
+    expect((recaps[0].payload as { text: string }).text).toBe("answer");
+    expect((recaps[0].payload as { reasoning: string }).reasoning).toBe(
+      "think",
+    );
+    // Log-only: a live listener never sees a recap frame.
+    expect(h.events.map((e) => e.type)).not.toContain("turn.recap");
+  });
+
+  test("eventLogCap bounds the log and events.since reports truncation", async () => {
+    const gw = new FakeGateway();
+    const h = new Harness(
+      connectInMemory(new HermesEngine({ gateway: gw, eventLogCap: 8 })),
+    );
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    for (let i = 0; i < 10; i++)
+      gw.emit(gw.lastSid, "message.delta", { text: `w${i} ` });
+    gw.complete(gw.lastSid, { text: "w" });
+    await p;
+
+    const since = (await h.request("events.since", {
+      sessionId,
+      after: 0,
+    })) as { events: EngineEvent[]; truncated: boolean };
+    expect(since.events.length).toBeLessThanOrEqual(8);
+    expect(since.truncated).toBe(true);
+    const tail = (await h.request("events.since", {
+      sessionId,
+      after: since.events[0].seq,
+    })) as { truncated: boolean };
+    expect(tail.truncated).toBe(false);
+  });
+});
+
+/* #482 review pass: the death settle and the heal must each be TOTAL —
+   a throwing listener can't strand the next session's `done`, a turn that
+   dies mid-completion-await can't settle twice, and the create-fallback
+   must rebind every field a dead row implied (stored ref + access hint). */
+describe("engine-hermes #482: settle + heal invariants", () => {
+  test("markBackendDown fails every in-flight turn typed even when a listener throws", async () => {
+    const { gw, engine, h } = setup();
+    const a = await start(h);
+    /* A running job on a — the settle's emitJobExited fires a job.exited
+       event the throwing listener will kill mid-settle, BEFORE a's own
+       refusal emit. The turn's reject must still land (finally). */
+    const proc = gw.pushProcess(gw.lastSid, {
+      command: "sleep 99",
+      tail: "",
+    });
+    /* The engine only learns the registry row when a frame names it — an
+       output chunk mints the tracked job before the kill. */
+    gw.emit(gw.lastSid, "agent.terminal.output", {
+      process_id: proc.id,
+      chunk: "x\n",
+    });
+    const b = await start(h);
+    const pa = promptAsync(h, a.sessionId, "hi");
+    const pb = promptAsync(h, b.sessionId, "hi");
+    engine.onEvent((e) => {
+      if (
+        e.sessionId === a.sessionId &&
+        (e.type === "turn.completed" || e.type === "job.exited")
+      )
+        throw new Error("listener bug");
+    });
+    engine.markBackendDown("test kill");
+    await expect(pa).rejects.toMatchObject({ code: -32006 });
+    await expect(pb).rejects.toMatchObject({ code: -32006 });
+    /* a's own refusal emit was skipped by the early throw — the caller's
+       reject and the error state still landed from `finally`. The job row
+       was marked failed before its event emit threw, proving the loop ran. */
+    expect(
+      h.events.filter(
+        (e) => e.type === "turn.completed" && e.sessionId === a.sessionId,
+      ),
+    ).toHaveLength(0);
+    expect(engine.sessionFor(a.sessionId)?.jobs.get(proc.id)?.status).toBe(
+      "failed",
+    );
+    expect(engine.sessionFor(a.sessionId)?.state).toBe("error");
+    const bRefusal = h.events.filter(
+      (e) => e.type === "turn.completed" && e.sessionId === b.sessionId,
+    );
+    expect(bRefusal).toHaveLength(1);
+    expect((bRefusal[0].payload as { stopReason: string }).stopReason).toBe(
+      "refusal",
+    );
+    const sb = engine.sessionFor(b.sessionId);
+    expect(sb?.backendDead).toBe(true);
+    expect(sb?.state).toBe("error");
+    gw.close();
+  });
+
+  test("a turn whose backend dies mid-completion-await settles exactly once", async () => {
+    const { gw, engine, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId, "hi");
+    /* Hold completeTurn's post-turn session.title poll, kill the backend
+       inside that await, then let the poll answer — the pre-fix engine
+       emitted a second turn.completed (end_turn) over the refusal and
+       flipped the session back to idle mid-outage. */
+    let release!: () => void;
+    gw.titleGate = new Promise<void>((r) => {
+      release = r;
+    });
+    gw.complete(gw.lastSid);
+    await new Promise<void>((resolve, reject) => {
+      const deadline = Date.now() + 5_000;
+      const tick = () => {
+        if (gw.callLog.includes("session.title")) return resolve();
+        if (Date.now() > deadline)
+          return reject(new Error("session.title poll never fired"));
+        setTimeout(tick, 5);
+      };
+      tick();
+    });
+    engine.markBackendDown("kill mid-title-poll");
+    release();
+    await expect(p).rejects.toMatchObject({ code: -32006 });
+    // Let the released title answer unwind through completeTurn.
+    await new Promise((r) => setTimeout(r, 20));
+    const dones = h.events.filter((e) => e.type === "turn.completed");
+    expect(dones).toHaveLength(1);
+    expect((dones[0].payload as { stopReason: string }).stopReason).toBe(
+      "refusal",
+    );
+    expect(engine.sessionFor(sessionId)?.state).toBe("error");
+  });
+
+  test("the resume-fail heal rebinds the new stored row and re-applies access", async () => {
+    const sessionsFile = join(
+      mkdtempSync(join(tmpdir(), "lilos-hermes-sessions-")),
+      "engine-sessions.json",
+    );
+    const gw1 = new FakeGateway();
+    const engine = new HermesEngine({ gateway: gw1, sessionsFile });
+    const h = new Harness(connectInMemory(engine));
+    const { sessionId } = await start(h, { access: "ask" });
+    const s = engine.sessionFor(sessionId);
+    expect(s?.ref).toBe("ref-1");
+
+    engine.markBackendDown("kill");
+    /* A fresh backend has no stored rows: session.resume 4040s and the
+       engine must fall back to session.create. Burn one ref id first (no
+       stored row) so the fallback's new stored id is provably different. */
+    const gw2 = new FakeGateway();
+    gw2.burnRefs(1);
+    engine.setGateway(gw2);
+
+    await h.request("session.setTitle", { sessionId, title: "x" });
+    expect(gw2.resumeCalls).toHaveLength(1);
+    expect(gw2.resumeCalls[0].session_id).toBe("ref-1");
+    expect(gw2.createCalls).toHaveLength(1);
+    expect(s?.runtimeSid).toBe(gw2.lastSid);
+    /* The persisted row must name the NEW stored ref or the next adapter
+       restart would resume the abandoned pre-fallback session — every
+       turn since silently out of memory. */
+    expect(s?.ref).toBe("ref-2");
+    /* access:"ask" rides yolo=off onto the freshly created agent. */
+    expect(
+      gw2.configSetCalls.some(
+        (c) =>
+          c.key === "yolo" && c.value === "off" && c.session_id === gw2.lastSid,
+      ),
+    ).toBe(true);
+    expect(s?.backendDead).toBe(false);
+
+    const p = promptAsync(h, sessionId, "after heal");
+    gw2.complete(gw2.lastSid);
+    expect((await p).stopReason).toBe("end_turn");
+    expect(gw2.lastPrompt?.session_id).toBe(gw2.lastSid);
+    await engine.close();
+  });
+});

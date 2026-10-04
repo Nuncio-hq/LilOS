@@ -256,10 +256,40 @@ def main():
 
     r = rpc.request("events.since", {"sessionId": sid, "after": 0})
     check(r["latestSeq"] == seqs[-1], "events.since.latestSeq must equal the last event seq")
-    check(len(r["events"]) == len(my_events), "replay after=0 must return the whole log")
+    # #431 — a finished turn's deltas replay coalesced into one log-only
+    # turn.recap: the replay is the log's state, not the verbatim stream.
+    check(
+        any(e["type"] == "turn.recap" for e in r["events"]),
+        "finished turn must replay a turn.recap (compacted stream)",
+    )
+    check(
+        not any(e["type"] == "turn.recap" for e in my_events),
+        "turn.recap is a replay frame, never a live broadcast",
+    )
+
+    def fold_text(events):
+        text = ""
+        for e in events:
+            if e["type"] == "turn.delta" and e["payload"].get("stream") == "text":
+                text += e["payload"]["delta"]
+            elif e["type"] == "turn.recap":
+                text = e["payload"]["text"]
+        return text
+
+    check(
+        fold_text(r["events"]) == fold_text(my_events),
+        "replayed turn text must equal the live stream",
+    )
+    # Non-delta frames are never compacted — every one still replays.
+    live_nondelta = [e["seq"] for e in my_events if e["type"] != "turn.delta"]
+    replay_seqs = {e["seq"] for e in r["events"]}
+    check(
+        all(s in replay_seqs for s in live_nondelta),
+        "replay must keep every non-delta frame",
+    )
     check(r["openRequests"] == [], "openRequests must be empty after the turn")
     check(r["snapshot"]["state"] in ("idle", "closed"), f"snapshot.state={r['snapshot']['state']}")
-    print("PASS events.since — replay + snapshot + openRequests")
+    print("PASS events.since — compacted replay + snapshot + openRequests")
 
     try:
         rpc.request("no.such.method", {})

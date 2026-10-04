@@ -9,12 +9,14 @@
  *
  * Spawns `hermes serve` (generated token on 127.0.0.1), connects the engine,
  * then serves the LilOS protocol at ws://127.0.0.1:PORT/ws and prints
- * `LISTENING ws://...` on stdout once up.
+ * `LISTENING ws://...` on stdout once up. #482: `HermesBackendSupervisor`
+ * keeps the backend watched — a dead child or dropped socket fails engine
+ * calls fast typed and relaunches `hermes serve` with backoff instead of
+ * leaving the adapter "running" on a corpse.
  */
+import { HermesBackendSupervisor } from "../src/backend.js";
 import { HermesEngine } from "../src/engine.js";
 import { RpcError } from "../src/errors.js";
-import { HermesGateway } from "../src/gateway.js";
-import { type HermesServeHandle, startHermesServe } from "../src/serve.js";
 import { eventFrame, handleJsonRpc } from "../src/transport.js";
 import {
   HERMES_TOO_OLD_EXIT_CODE,
@@ -40,22 +42,49 @@ const arg = (name: string, dflt?: string) => {
 };
 
 const hermesArgs = arg("hermes-args");
-let hermes: HermesServeHandle;
-try {
-  hermes = await startHermesServe({
-    bin: arg("hermes-bin", process.env.HERMES_BIN ?? "hermes"),
-    ...(hermesArgs ? { args: hermesArgs.split(" ").filter(Boolean) } : {}),
-    timeoutMs: Number(process.env.HERMES_SERVE_TIMEOUT_MS ?? 240_000),
-  });
-} catch (e) {
-  die(e);
-}
-console.log(`hermes serve ready at ${hermes.url} (token generated)`);
+const backend = new HermesBackendSupervisor({
+  bin: arg("hermes-bin", process.env.HERMES_BIN ?? "hermes"),
+  ...(hermesArgs ? { args: hermesArgs.split(" ").filter(Boolean) } : {}),
+  spawnTimeoutMs: Number(process.env.HERMES_SERVE_TIMEOUT_MS ?? 240_000),
+  ...(process.env.HERMES_SERVE_PID_FILE
+    ? { pidFile: process.env.HERMES_SERVE_PID_FILE }
+    : {}),
+  onLog: (line) => console.log(line),
+});
 
-let gateway: HermesGateway;
+let engine: HermesEngine;
 try {
-  gateway = await HermesGateway.connect(
-    `ws://127.0.0.1:${hermes.port}/api/ws?token=${hermes.token}`,
+  const gateway = await backend.start();
+  console.log(`hermes serve ready (token generated)`);
+  const acpArgs = arg("acp-args");
+  const acpEnv = arg("acp-env");
+  engine = new HermesEngine({
+    gateway,
+    ...(arg("provider") ? { provider: arg("provider") } : {}),
+    ...(arg("model") ? { model: arg("model") } : {}),
+    ...(arg("sessions-file") ? { sessionsFile: arg("sessions-file") } : {}),
+    onBackendNeeded: () => backend.kick(),
+    onLog: (line) => console.log(line),
+    acp: {
+      bin: arg("hermes-bin", process.env.HERMES_BIN ?? "hermes"),
+      ...(acpArgs ? { args: acpArgs.split(" ").filter(Boolean) } : {}),
+      ...(acpEnv
+        ? {
+            env: Object.fromEntries(
+              acpEnv
+                .split(",")
+                .map((kv) => kv.split("=", 2) as [string, string]),
+            ),
+          }
+        : {}),
+    },
+  });
+  /* From here the supervisor owns the backend lifetime: death →
+     markBackendDown (calls fail fast typed) → backoff relaunch →
+     setGateway — and sessions lazily resume their stored row. */
+  backend.attachReactor(engine);
+  console.log(
+    `handshake server_requests: ${[...gateway.serverRequests].sort().join(",")}`,
   );
 } catch (e) {
   // -32601 on client.capabilities = a Hermes older than the handshake
@@ -67,28 +96,6 @@ try {
   }
   die(e);
 }
-const acpArgs = arg("acp-args");
-const acpEnv = arg("acp-env");
-const engine = new HermesEngine({
-  gateway,
-  ...(arg("provider") ? { provider: arg("provider") } : {}),
-  ...(arg("model") ? { model: arg("model") } : {}),
-  ...(arg("sessions-file") ? { sessionsFile: arg("sessions-file") } : {}),
-  acp: {
-    bin: arg("hermes-bin", process.env.HERMES_BIN ?? "hermes"),
-    ...(acpArgs ? { args: acpArgs.split(" ").filter(Boolean) } : {}),
-    ...(acpEnv
-      ? {
-          env: Object.fromEntries(
-            acpEnv.split(",").map((kv) => kv.split("=", 2) as [string, string]),
-          ),
-        }
-      : {}),
-  },
-});
-console.log(
-  `handshake server_requests: ${[...gateway.serverRequests].sort().join(",")}`,
-);
 
 const clients = new Set<{ send: (s: string) => void }>();
 engine.onEvent((e) => {
@@ -126,7 +133,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, async () => {
     server.stop(true);
     await engine.close();
-    await hermes.close();
+    await backend.close();
     process.exit(0);
   });
 }

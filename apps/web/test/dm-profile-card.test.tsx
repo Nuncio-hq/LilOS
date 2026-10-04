@@ -83,7 +83,11 @@ describe("AC-1 DmProfileCard hosts the shared EmployeeCard", () => {
     expect(within(card).getByText(/^Model$/)).toBeTruthy();
     expect(within(card).getByText("default", { selector: "dd" })).toBeTruthy();
     expect(within(card).getByRole("button", { name: /message/i })).toBeTruthy();
-    expect(within(card).getByRole("button", { name: /edit/i })).toBeTruthy();
+    // Two Edit affordances (#504): the header button + the link inside the
+    // empty-instructions state (DEFAULT carries no SOUL.md).
+    expect(within(card).getAllByRole("button", { name: "Edit" })).toHaveLength(
+      2,
+    );
   });
 
   test("profiles still loading renders a placeholder, not a missing state", () => {
@@ -116,17 +120,39 @@ describe("AC-1 DmProfileCard hosts the shared EmployeeCard", () => {
     expect(silent.queryByText(/switch profile/i)).toBeNull();
   });
 
-  test("Message, backdrop, and Escape all close the card", () => {
+  test("AC-4 Message, backdrop, Escape, and the ✕ all close the card", () => {
     let closes = 0;
     const onClose = () => closes++;
-    const { getByRole, unmount } = render(
+    const { getByRole, getAllByRole, unmount } = render(
       <DmProfileCard {...cardProps} onClose={onClose} />,
     );
     fireEvent.click(getByRole("button", { name: /message/i }));
     fireEvent.keyDown(window, { key: "Escape" });
-    fireEvent.click(getByRole("button", { name: /close/i }));
+    // Two "Close" buttons: the backdrop scrim and the dialog's ✕ (#504).
+    const closeButtons = getAllByRole("button", { name: /close/i });
+    expect(closeButtons).toHaveLength(2);
+    for (const b of closeButtons) fireEvent.click(b);
     unmount();
-    expect(closes).toBe(3);
+    expect(closes).toBe(4);
+  });
+
+  test("AC-4 a visible ✕ sits inside the dialog (the backdrop is outside it)", () => {
+    let closes = 0;
+    const { getByRole } = render(
+      <DmProfileCard {...cardProps} onClose={() => closes++} />,
+    );
+    const dlg = getByRole("dialog", { name: /default profile/i });
+    fireEvent.click(within(dlg).getByRole("button", { name: "Close" }));
+    expect(closes).toBe(1);
+  });
+
+  test("AC-3 the shell carries no frame — the card's own surface is the dialog", () => {
+    const { getByRole } = render(<DmProfileCard {...cardProps} />);
+    const dlg = getByRole("dialog", { name: /default profile/i });
+    // The double frame (#504 item 3): the shell used to wrap the card in a
+    // bordered bg-background box. Now the card's own boxes are the surface.
+    expect(dlg.className).not.toMatch(/(^| )border( |$)/);
+    expect(dlg.className).not.toMatch(/bg-background/);
   });
 });
 
