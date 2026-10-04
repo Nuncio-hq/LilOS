@@ -5,12 +5,14 @@ import {
   XIcon,
 } from "lucide-react";
 import {
+  type ComponentProps,
   type ReactNode,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
 } from "react";
+import { useStickToBottomContext } from "use-stick-to-bottom";
 import {
   Confirmation,
   ConfirmationAccepted,
@@ -18,6 +20,7 @@ import {
   ConfirmationRequest,
   ConfirmationTitle,
 } from "../components/ai-elements/confirmation";
+import { ConversationScrollButton } from "../components/ai-elements/conversation";
 import { MessageResponse } from "../components/ai-elements/message";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -157,16 +160,37 @@ export function QuestionCard({
      behind it (Hermes FIX #515 r3). Keep-bottom re-pins the port while
      the turn streams, so a one-shot scroll loses the race: re-align on a
      short arrival window (scrolling up only — never drag the card down),
-     and stop the moment the user scrolls. */
+     and stop the moment the user scrolls. `resolved` in deps re-arms
+     the window when a sibling ask resolves — the question that becomes
+     visible after an answer gets the same lift (FIX r4). */
   useEffect(() => {
     const el = cardRef.current;
     if (!el || !interactive) return;
     const port = scrollPortOf(el);
     if (!port) return;
     const align = () => {
-      const deficit =
-        port.getBoundingClientRect().top + 8 - el.getBoundingClientRect().top;
-      if (deficit > 1) port.scrollTop -= deficit;
+      const e = el.getBoundingClientRect();
+      const p = port.getBoundingClientRect();
+      const over = p.top + 8 - e.top;
+      if (over > 1) {
+        // head clipped under the sticky header — lift until it clears
+        port.scrollTop -= over;
+        return;
+      }
+      if (e.top > p.bottom - 48 && e.top - p.bottom < p.height) {
+        // below the fold — a question that arrives after an answer gets
+        // the same lift as a fresh arrival (FIX r4), but never a giant
+        // jump when the card is deep below
+        port.scrollTop += e.top - p.top - 8;
+        return;
+      }
+      const under = e.bottom - (p.bottom - 8);
+      if (under > 1) {
+        // partially visible with the tail cut — reveal the whole card,
+        // or as much as fits before the head would clip again
+        const nudge = Math.min(under, e.top - p.top - 8);
+        if (Math.abs(nudge) > 1) port.scrollTop += nudge;
+      }
     };
     const kick = setTimeout(align, 450);
     const ride = setInterval(align, 350);
@@ -185,7 +209,7 @@ export function QuestionCard({
       port.removeEventListener("touchstart", cancel);
       port.removeEventListener("keydown", cancel);
     };
-  }, [interactive]);
+  }, [interactive, resolved]);
 
   const pick = (a: QuestionAnswer) => {
     if (!interactive || pending) return;
@@ -215,6 +239,7 @@ export function QuestionCard({
           : "border-amber-300 bg-amber-50/50",
       )}
       data-ask-id={q.id}
+      data-question-card
       data-ask-state={done ? "resolved" : "open"}
       state={done ? "approval-responded" : "approval-requested"}
       approval={
@@ -353,3 +378,51 @@ export function QuestionCard({
     </Confirmation>
   );
 }
+
+/* The floating ↓ scroll-to-bottom button absolutely positions inside the
+   scrollport; while a pending question card fills it, the button sits ON
+   the card — on the Skip pill or the next card's head (Hermes FIX #515
+   r4: it must never overlap). Whenever an open question card intersects
+   the port this guard yields the button entirely; it comes back once the
+   card is out of view, so jump-to-bottom survives a scrolled-away ask.
+   Renders for the real app unchanged — no `[data-question-card]` ever
+   mounts outside the prototype surfaces. */
+export const QuestionAwareScrollButton = (
+  props: ComponentProps<typeof ConversationScrollButton>,
+) => {
+  const { scrollRef } = useStickToBottomContext();
+  const [blocked, setBlocked] = useState(false);
+  useEffect(() => {
+    const port = scrollRef?.current;
+    if (!port) return;
+    const measure = () => {
+      const p = port.getBoundingClientRect();
+      const overlap = [
+        ...port.querySelectorAll<HTMLElement>(
+          '[data-question-card][data-ask-state="open"]',
+        ),
+      ].some((el) => {
+        const c = el.getBoundingClientRect();
+        return c.bottom > p.top && c.top < p.bottom;
+      });
+      setBlocked(overlap);
+    };
+    measure();
+    /* The card mounts/grows while the turn streams — watch the tree,
+       the port's own scroll and layout. */
+    const mo = new MutationObserver(measure);
+    mo.observe(port, { childList: true, subtree: true });
+    const ro = new ResizeObserver(measure);
+    ro.observe(port);
+    port.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    return () => {
+      mo.disconnect();
+      ro.disconnect();
+      port.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+    };
+  }, [scrollRef]);
+  if (blocked) return null;
+  return <ConversationScrollButton {...props} />;
+};

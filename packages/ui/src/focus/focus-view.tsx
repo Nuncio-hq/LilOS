@@ -34,7 +34,6 @@ import { sessionChoice } from "../chat/model-picker";
 import {
   Conversation,
   ConversationContent,
-  ConversationScrollButton,
 } from "../components/ai-elements/conversation";
 import {
   Queue,
@@ -50,7 +49,10 @@ import {
 import { Button } from "../components/ui/button";
 import { openStartRequest } from "../conversation/cards";
 import type { PlanAction } from "../conversation/plan-card";
-import type { QuestionAnswer } from "../conversation/question-card";
+import {
+  type QuestionAnswer,
+  QuestionAwareScrollButton,
+} from "../conversation/question-card";
 import {
   RewindCheckpoint,
   TURN_LAZY_AFTER,
@@ -754,7 +756,9 @@ export function FocusView({
                 </div>
               )}
             </ConversationContent>
-            <ConversationScrollButton />
+            {/* Same guard as the thread panel — the ↓ never overlaps a
+                pending question card (FIX #515 r4). */}
+            <QuestionAwareScrollButton />
             {/* Not-sent tray / plan tray / steer chips grow the area below the conversation;
                 re-stick so everything stays visible without scrolling (issue #15). */}
             <ConversationKeepBottom

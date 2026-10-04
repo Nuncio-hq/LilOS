@@ -428,7 +428,7 @@ const DM_FEEDS: Record<string, Msg[]> = {
               question: "Should #96 land straight on main, or go through the release branch?",
               options: [
                 { id: "main", label: "Merge to main" },
-                { id: "release", label: "Go through release/0.1" },
+                { id: "release", label: "Go through `release/0.1`" },
               ],
               freeText: true,
             } },
@@ -442,11 +442,11 @@ const DM_FEEDS: Record<string, Msg[]> = {
               id: "q-rel",
               question: "The release cut is Thursday. Do you want the replay fix on `release/0.1` too, or does it wait for the next train?",
               options: [
-                { id: "cherry-pick", label: "Cherry-pick to release/0.1", description: "Opens a second PR against the release branch." },
+                { id: "cherry-pick", label: "Cherry-pick to `release/0.1`", description: "Opens a second PR against the release branch." },
                 { id: "next-train", label: "Keep it on main", description: "Ships with the next regular train, not the release." },
                 { id: "hold", label: "Hold the cherry-pick until after the cut", description: "Leaves `release/0.1` alone while the freeze is on." },
                 { id: "draft", label: "Mark #96 a draft for now", description: "Keeps it open but unmergeable until Thursday." },
-                { id: "spinoff", label: "Open a separate release PR", description: "Cherry-picks onto release/0.1 under its own PR." },
+                { id: "delegate", label: "Let Builder call it", description: "It owns the replay path — Builder picks the timing." },
               ],
               freeText: true,
             } },
@@ -702,7 +702,7 @@ function scriptFor(empId: string, prompt: string, followUp = false, branch?: str
         id: `q-${hex()}`,
         question: "The release cut is Thursday. Where should PR #96 land?\nIt touches relay replay — safe for the release branch, or should it wait for the next train?",
         options: [
-          { id: "cherry-pick", label: "Cherry-pick to release/0.1", description: "Opens a second PR against the release branch." },
+          { id: "cherry-pick", label: "Cherry-pick to `release/0.1`", description: "Opens a second PR against the release branch." },
           { id: "next-train", label: "Keep it on main", description: "Ships with the next regular train, not the release." },
           { id: "hold", label: "Hold the cherry-pick until after the cut", description: "Leaves `release/0.1` alone while the freeze is on." },
         ],

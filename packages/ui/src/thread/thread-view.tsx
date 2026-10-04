@@ -17,12 +17,14 @@ import { ModelPicker, sessionChoice } from "../chat/model-picker";
 import {
   Conversation,
   ConversationContent,
-  ConversationScrollButton,
 } from "../components/ai-elements/conversation";
 import { Button } from "../components/ui/button";
 import { openStartRequest } from "../conversation/cards";
 import type { PlanAction } from "../conversation/plan-card";
-import type { QuestionAnswer } from "../conversation/question-card";
+import {
+  type QuestionAnswer,
+  QuestionAwareScrollButton,
+} from "../conversation/question-card";
 import {
   RewindCheckpoint,
   TURN_LAZY_AFTER,
@@ -485,7 +487,9 @@ export function ThreadView({
             </div>
           )}
         </ConversationContent>
-        <ConversationScrollButton />
+        {/* The ↓ never overlaps a pending question card — the guard hides
+            it while an open card intersects the port (FIX #515 r4). */}
+        <QuestionAwareScrollButton />
         {/* The not-sent tray and pending-steer chips grow the composer area below; re-stick so the
            stopped turn + tray are both fully visible (issue #15). Inside <Conversation> so it can
            use the stick-to-bottom context. */}

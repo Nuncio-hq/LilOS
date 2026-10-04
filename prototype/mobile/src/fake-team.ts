@@ -256,7 +256,7 @@ export const APPROVALS: Approval[] = [
     options: [
       {
         id: "cherry-pick",
-        label: "Cherry-pick to release/0.1",
+        label: "Cherry-pick to `release/0.1`",
         description: "Opens a second PR against the release branch.",
       },
       {
