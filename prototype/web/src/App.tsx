@@ -412,11 +412,11 @@ const DM_FEEDS: Record<string, Msg[]> = {
       /* #420: a `question` ask — one answered earlier in the thread (the
          resolved-map receipt), one still open (the live waiting turn
          showing the card: options, many enough to scroll, + free text). */
-      kind: "msg", id: "v2", from: "oscar", time: "10:04", text: "Review #96 before the release cut — and figure out where it should land.",
+      kind: "msg", id: "v3", from: "oscar", time: "10:04", text: "Review #96 before the release cut — and figure out where it should land.",
       thread: {
         session: "ses_9b42", usage: { input: 52100, output: 4200, reasoning: 1800, cache: 38000, context: 56300 },
         replies: [
-          { id: "v2r1", from: "reviewer", time: "10:06", thought: 4, dur: 19,
+          { id: "v3r1", from: "reviewer", time: "10:06", thought: 4, dur: 19,
             reasoning: "Read the diff, run its test slice, then decide whether it merges straight to main.",
             steps: [
               { tool: "terminal", input: { command: "gh pr diff 96 --stat" }, output: "apps/relay/replay.ts · +64 −11 · e2e/replay.spec.ts · +40" },
@@ -432,7 +432,7 @@ const DM_FEEDS: Record<string, Msg[]> = {
               ],
               freeText: true,
             } },
-          { id: "v2r2", from: "reviewer", time: "10:09", thought: 3, live: true, phase: "waiting", waitingOn: "question",
+          { id: "v3r2", from: "reviewer", time: "10:09", thought: 3, live: true, phase: "waiting", waitingOn: "question",
             reasoning: "Merging to main keeps it out of the release; that leaves the timing call — cherry-pick it into the cut or let it ride the next train.",
             steps: [
               { tool: "terminal", input: { command: "git merge --squash origin/pr/96" }, output: "Squash commit — not updating HEAD\n 2 files changed, +104 −11" },
@@ -859,7 +859,7 @@ export default function App() {
      continues it). The seeded open question registers here too. */
   const questionsRef = useRef(
     new Map<string, { key: string; rootId: string; rid: string; empId: string }>([
-      ["q-rel", { key: "dm-reviewer", rootId: "v2", rid: "v2r2", empId: "reviewer" }],
+      ["q-rel", { key: "dm-reviewer", rootId: "v3", rid: "v3r2", empId: "reviewer" }],
     ]),
   )
   // The engine's declared steer capability: the real app reads describe().capabilities once at connect.

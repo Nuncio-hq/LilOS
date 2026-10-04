@@ -5,6 +5,7 @@ import { Card, CommandLine, LargeTitle, Pill } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb } from "../components/orb";
 import { approvalSentence } from "./approval-copy";
+import { isAnswerableQuestion } from "./question-card";
 import type { Approval } from "./types";
 
 /* Everything waiting on you, oldest first — as a modal sheet (onClose) or
@@ -125,7 +126,7 @@ export function ApprovalsSheet({
               )}
               {onDeny && (
                 <Pill
-                  label={a.kind === "question" ? "Cancel" : "Deny"}
+                  label={isAnswerableQuestion(a) ? "Cancel" : "Deny"}
                   variant="soft"
                   onPress={() => onDeny(a.id)}
                 />

@@ -9,6 +9,13 @@ import type { Approval } from "./types";
    with the typed string; `label` is the human wording the receipt shows. */
 export type QuestionAnswer = { value: string; label: string };
 
+/* A question ask this card can actually answer. Prototype asks carry
+   `options`/`freeText`; the real app's Approval view-model doesn't map
+   them yet, so those asks stay on the old Deny-only card until the
+   real-app slice wires answers end to end. */
+export const isAnswerableQuestion = (a: Approval) =>
+  a.kind === "question" && (a.options != null || a.freeText != null);
+
 /* #420: a `question` ask under the turn — the question text, its options
    as tap rows, a free-text field when allowed, and Cancel. Answering or
    cancelling folds the ask to the "You answered:" / "You cancelled:"

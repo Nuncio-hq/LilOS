@@ -8,7 +8,11 @@ import { Prose, Pulse } from "../components/prose";
 import { approvalSentence } from "./approval-copy";
 import { type PlanAction, PlanCard } from "./plan-card";
 import { PrCard } from "./pr-badges";
-import { type QuestionAnswer, QuestionCard } from "./question-card";
+import {
+  isAnswerableQuestion,
+  type QuestionAnswer,
+  QuestionCard,
+} from "./question-card";
 import { StepRow, tool } from "./step-row";
 import { SubagentsCard, SubagentsLink } from "./subagents";
 import type { AgentEntry, Approval, SubagentRow, ToolStep } from "./types";
@@ -163,7 +167,7 @@ export function AgentTurn({
         </View>
       )}
       {e.approval &&
-        (e.approval.kind === "question" ? (
+        (isAnswerableQuestion(e.approval) ? (
           <QuestionCard a={e.approval} onAnswer={onAnswer} onCancel={onDeny} />
         ) : (
           <ApprovalCard a={e.approval} onApprove={onApprove} onDeny={onDeny} />
