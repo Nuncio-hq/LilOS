@@ -14,10 +14,13 @@ import {
   type Capability,
   type ContentBlock,
   type ConversationAccess,
+  capEventLog,
+  coalesceTurnDeltas,
   ENGINE_METHODS,
   ENGINE_PROTOCOL,
   type EngineEvent,
   type EngineEventType,
+  EVENT_LOG_CAP,
   type EventsSinceParams,
   type FileDiff,
   IMAGE_PROMPT_CAPABILITY,
@@ -159,6 +162,13 @@ interface FakeSession {
   branch: string;
   seq: number;
   log: EngineEvent[];
+  /** #431: the largest seq the log cap dropped (0 = nothing fell) —
+     `events.since` reports `truncated` when it passes the caller's
+     `after`. */
+  droppedSeq: number;
+  /** #431: the open turn's `turn.started` seq — the log cap never drops
+     frames at or past it (a running turn's replay stays whole). */
+  openTurnSeq?: number;
   state: SessionState;
   openRequests: Map<string, PendingAsk>;
   /** session_meta (#28): user-visible title + archive flag, mirrored from LilOS. */
@@ -231,6 +241,9 @@ export interface FakeEngineOptions {
    * deterministic ids.
    */
   sessionNamespace?: string;
+  /** #431: per-session replay log bound — defaults to EVENT_LOG_CAP;
+      tests pass a small value to exercise `truncated`. */
+  eventLogCap?: number;
 }
 
 /**
@@ -261,6 +274,7 @@ export class FakeEngine {
       writes it and `describe` reports it as `detail.current`. */
   private policy: ApprovalPolicy = "smart";
   private readonly sessionNamespace: string;
+  private readonly eventLogCap: number;
   private sessionCounter = 0;
   private refCounter = 0;
   private turnCounter = 0;
@@ -270,6 +284,7 @@ export class FakeEngine {
     this.tick = opts.tick ?? 25;
     this.caps = opts.capabilities ?? {};
     this.sessionNamespace = opts.sessionNamespace ?? randomNamespace();
+    this.eventLogCap = opts.eventLogCap ?? EVENT_LOG_CAP;
   }
 
   private readonly caps: Partial<Record<KnownCapability, boolean>>;
@@ -490,6 +505,7 @@ export class FakeEngine {
       branch: `work/${p.agent}-${id}`,
       seq: 0,
       log: [],
+      droppedSeq: 0,
       state: "idle",
       openRequests: new Map(),
       title: "",
@@ -684,7 +700,10 @@ export class FakeEngine {
     return {
       events: s.log.filter((e) => e.seq > p.after),
       latestSeq: s.seq,
-      truncated: false,
+      /* #431: the requested range lost events to the log cap — refetch,
+         don't patch. Compaction alone never truncates: a client below
+         the recap's seq still receives it. */
+      truncated: s.droppedSeq > p.after,
       openRequests: [...s.openRequests.values()].map((a) => ({
         requestId: a.requestId,
         turnId: a.turnId,
@@ -1976,6 +1995,16 @@ export class FakeEngine {
     } as EngineEvent;
     s.log.push(event);
     for (const fn of this.listeners) fn(event);
+    /* #431 replay contract: the turn's stream stays verbatim only while
+       it runs — close it and the deltas collapse into a log-only recap
+       (live clients already folded them; they never see the frame). */
+    if (type === "turn.started") s.openTurnSeq = event.seq;
+    if (type === "turn.completed") {
+      coalesceTurnDeltas(s.log, (payload as { turnId: string }).turnId);
+      s.openTurnSeq = undefined;
+    }
+    const dropped = capEventLog(s.log, this.eventLogCap, s.openTurnSeq);
+    if (dropped > s.droppedSeq) s.droppedSeq = dropped;
   }
 
   private require(sessionId: string): FakeSession {

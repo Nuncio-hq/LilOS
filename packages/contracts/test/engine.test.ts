@@ -90,6 +90,7 @@ describe("engine wire contract", () => {
       "session.titled",
       "turn.started",
       "turn.delta",
+      "turn.recap",
       "tool.started",
       "tool.completed",
       "request.opened",
