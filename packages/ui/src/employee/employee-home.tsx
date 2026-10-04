@@ -514,17 +514,30 @@ export function EmployeeHome({
                 : "";
             }}
           >
-            {/* #422: the live "now:" half of the line survives truncation —
-                the role gives way first, and the step text caps at 60% so a
-                long command still clips instead of overflowing the header.
-                Both spans stay mounted while `now` streams in and out: the
-                #301 drag-region watcher flips the OS region map on ELEMENT
-                childList mutations inside .lilos-drag (text edits don't
-                count), so an element that mounts/unmounts mid-turn would
-                keep the header's buttons unclickable while it runs. */}
-            <span className="min-w-0 flex-1 truncate">{e.role}</span>
-            <span className="max-w-[60%] flex-none truncate">
-              {e.now ? ` · now: ${e.now}` : ""}
+            {/* #422: the live "now:" half of the line wins outright — while
+                a turn runs the role collapses to zero width so the step text
+                reads in full and truncates only against the header itself
+                (the role comes back at idle). Both spans stay mounted while
+                `now` streams in and out: the #301 drag-region watcher flips
+                the OS region map on ELEMENT childList mutations inside
+                .lilos-drag (text edits don't count), so an element that
+                mounts/unmounts mid-turn would keep the header's buttons
+                unclickable while it runs. */}
+            <span
+              className={cn(
+                "truncate",
+                e.now ? "w-0 flex-none overflow-hidden" : "min-w-0 flex-1",
+              )}
+            >
+              {e.role}
+            </span>
+            <span
+              className={cn(
+                "truncate",
+                e.now ? "min-w-0 flex-1" : "w-0 flex-none overflow-hidden",
+              )}
+            >
+              {e.now ? `now: ${e.now}` : ""}
             </span>
           </div>
         </div>

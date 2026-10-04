@@ -1,8 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #422 — the DM header's live "now:" line. Under the employee's name
@@ -19,15 +18,9 @@ const SHOTS = path.join(repo, "test-results", "ac-422");
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack(
-    "ac422",
-    /* Ports reuse ac-27's base triple — every residue mod 100 is taken on
-       main, and identical bases are safe (ports.spec): worker index
-       separates live ports, and bootStack's identity check refuses a
-       foreign stack anyway. */
-    { relay: wport(4643), feed: wport(4647), web: wport(5241) },
-    { LILOS_USER_NAME: "Oscar" },
-  );
+  stack = await bootStack("ac422", await pickPorts(), {
+    LILOS_USER_NAME: "Oscar",
+  });
 });
 test.afterAll(async () => {
   await stack?.stop();
