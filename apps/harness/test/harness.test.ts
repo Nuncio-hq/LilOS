@@ -1987,3 +1987,401 @@ describe("waiting tray (#315)", () => {
     }
   });
 });
+
+/* #403 — the relay bus and the `channelMessages` subscription have no
+   ordering guarantee, so a control event (Stop, Remove) can land before
+   the send row it logically follows. The relay stamps every
+   `turn.interruptRequested` with `afterSeq` — the channel seq it predates
+   — and the host parks exactly the sends inside that causal scope wherever
+   they surface, not just whatever happened to be queued when the sweep
+   ran. */
+describe("post-drain delivery parks by the Stop's stamp (#403)", () => {
+  /* Withhold channelMessages rows from the harness's store view while
+     `hold` is on — the row is committed relay-side (the interrupt's stamp
+     covers it) but the subscription can't see it, exactly the parked /
+     bus-beats-store window. `release()` replays the full state. */
+  const holdChannelRows = (w: World) => {
+    const orig = w.harnessRelay.channelMessages.bind(w.harnessRelay);
+    let holding = false;
+    const releases = new Set<() => void>();
+    w.harnessRelay.channelMessages = (channelId: string) => {
+      const store = orig(channelId);
+      const gated = Object.create(store);
+      gated.subscribe = (cb: (state: ChannelMessagesState) => void) => {
+        const seen = new Set<string>(); // ids already passed through
+        let last: ChannelMessagesState | undefined;
+        const unsub = store.subscribe((state) => {
+          last = state;
+          const messages = holding
+            ? state.messages.filter((m) => seen.has(m.id))
+            : state.messages;
+          for (const m of messages) seen.add(m.id);
+          if (!holding || messages.length > 0) cb({ ...state, messages });
+        });
+        releases.add(() => {
+          holding = false;
+          if (last) cb(last);
+        });
+        return unsub;
+      };
+      return gated as typeof store;
+    };
+    return {
+      hold: () => {
+        holding = true;
+      },
+      release: () => {
+        for (const flush of releases) flush();
+      },
+    };
+  };
+
+  const listDropped = (user: RelayClient, channelId: string) =>
+    user.request<{ messages: AppMessage[] }>("messages.list", {
+      channelId,
+      limit: 200,
+      includeDropped: true,
+    });
+
+  it("AC-2 sends whose rows land after the Stop drain park in the tray — they never prompt", {
+    timeout: 20_000,
+  }, async () => {
+    const w = await setupWorld();
+    try {
+      const gate = holdChannelRows(w);
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page", // parks on its approval ask
+      });
+      /* The root send's turn is parked on the approval — mid-turn sends
+         steer in. */
+      await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks.find((a) => a.request.kind === "approval");
+      }, "open approval ask");
+      /* The bus wins: both nudges commit on the relay but their rows stay
+         invisible to the harness for the whole interrupt+drain. */
+      gate.hold();
+      const { message: a } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "first nudge",
+      );
+      const { message: b } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "second nudge",
+      );
+      await w.user.request("turns.interrupt", {
+        conversationId: conversation.id,
+      });
+      /* The drain ran: the turn ended, the state row reads idle — and the
+         queue the drain spliced was empty because the sends hadn't
+         surfaced yet. */
+      await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; state: string }[];
+        }>("conversations.list", {});
+        const c = conversations.find((x) => x.id === conversation.id);
+        return c?.state === "idle" ? c : undefined;
+      }, "turn drained to idle");
+      gate.release();
+
+      /* On the unfixed host both sends prompt a fresh turn here. With the
+         stamp they park as dropped rows — the not-sent tray. */
+      const parked = await waitFor(async () => {
+        const { messages } = await listDropped(w.user, channel.id);
+        const drops = messages.filter((m) => m.dropped);
+        return drops.length === 2 ? drops : undefined;
+      }, "both late sends parked");
+      expect(parked.map((m) => m.id).sort()).toEqual([a.id, b.id].sort());
+      await new Promise((r) => setTimeout(r, 300));
+      const prompts = () =>
+        w.engineCalls
+          .filter((c) => c.method === "prompt")
+          .map((c) => JSON.stringify(c.params));
+      expect(prompts()).toHaveLength(1);
+      expect(prompts()[0]).toContain("Add a footer to the page");
+
+      /* A Send on a parked row is new intent — the gate can't park it
+         twice. */
+      await w.user.request("messages.send", { messageId: a.id });
+      await waitFor(
+        () => prompts().find((p) => p.includes("first nudge")),
+        "re-Sent parked row prompts",
+      );
+      /* Settle that turn back to idle so the last leg lands on an empty
+         lane — a post-Stop send must prompt, not queue. */
+      await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        for (const ask of asks)
+          await w.user.request("asks.respond", {
+            askId: ask.id,
+            outcome: "once",
+          });
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; state: string }[];
+        }>("conversations.list", {});
+        const c = conversations.find((x) => x.id === conversation.id);
+        return c?.state === "idle" ? c : undefined;
+      }, "re-Sent turn settled");
+
+      /* And a send posted AFTER the Stop still runs — the stamp gates
+         only what predates it. */
+      await postMessage(w.user, channel.id, conversation.id, "after the stop");
+      await waitFor(
+        () => prompts().find((p) => p.includes("after the stop")),
+        "post-Stop send prompts",
+      );
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-2 a re-Sent row belongs to the NEXT Stop — the Send exemption lapses", {
+    timeout: 20_000,
+  }, async () => {
+    /* No steer capability: mid-turn sends sit in binding.queue, so the
+       sweep's causal gate — not the steer path — decides who parks. */
+    const w = await setupWorld(1, true, { capabilities: { steer: false } });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+      });
+      await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks.find((a) => a.request.kind === "approval");
+      }, "first approval ask");
+      const { message: nudge } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "nudge while queued",
+      );
+      /* Stop #1: the queued nudge parks. */
+      await w.user.request("turns.interrupt", {
+        conversationId: conversation.id,
+      });
+      await waitFor(async () => {
+        const { messages } = await listDropped(w.user, channel.id);
+        return messages.find((m) => m.id === nudge.id && m.dropped);
+      }, "nudge parked by first Stop");
+
+      /* Turn 2 parks on its own approval; re-Sending the row exempts it
+         from the Stop it escaped — it queues behind the running turn. */
+      await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "Add a footer to the page",
+      );
+      await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks.find((a) => a.request.kind === "approval");
+      }, "second approval ask");
+      await w.user.request("messages.send", { messageId: nudge.id });
+      await waitFor(async () => {
+        const { messages } = await listDropped(w.user, channel.id);
+        return messages.find((m) => m.id === nudge.id && !m.dropped);
+      }, "re-Sent row un-parked");
+
+      /* Stop #2: the exemption was scoped to the Stop it escaped — the
+         re-Sent send is inside this Stop's scope like any other row. */
+      await w.user.request("turns.interrupt", {
+        conversationId: conversation.id,
+      });
+      await waitFor(async () => {
+        const { messages } = await listDropped(w.user, channel.id);
+        return messages.find((m) => m.id === nudge.id && m.dropped);
+      }, "re-Sent row parked by second Stop");
+      const prompts = () =>
+        w.engineCalls
+          .filter((c) => c.method === "prompt")
+          .map((c) => JSON.stringify(c.params));
+      await new Promise((r) => setTimeout(r, 300));
+      expect(prompts().filter((p) => p.includes("nudge"))).toHaveLength(0);
+    } finally {
+      await w.cleanup();
+    }
+  });
+});
+
+/* #403 — the other face of the same race: a send's prompt lane. Between
+   `conn.request("prompt")` being dispatched and its `turn.started`
+   landing, `runningTurnId` can't see the in-flight turn — a queued-send
+   control (Remove) aimed at a row the tray still showed as waiting used
+   to hit the wrong send, and a Remove on the dispatching send itself
+   reached the wire too late. `claimed` marks the committed send (the tray
+   only offers truly queued rows); `dismissed` is re-read at the wire and
+   at every re-queue gate. */
+describe("the prompt lane + claimed boundary (#403)", () => {
+  const prompts = (w: World) =>
+    w.engineCalls
+      .filter((c) => c.method === "prompt")
+      .map((c) => JSON.stringify(c.params));
+
+  const heldCheckpoint = () => {
+    let releaseSnapshot!: () => void;
+    let snapshotEntered = false;
+    const held = new Promise<void>((r) => (releaseSnapshot = r));
+    const checkpoints: CheckpointStore = {
+      snapshot: async () => {
+        snapshotEntered = true;
+        await held;
+        return "ck-1";
+      },
+      restore: async () => ({ removed: [], restoredTo: "" }),
+      list: async () => [],
+      prune: async () => {},
+    };
+    return {
+      checkpoints,
+      releaseSnapshot,
+      entered: () => snapshotEntered,
+    };
+  };
+
+  it("AC-3/AC-4 a send inside the dispatch window queues — Remove reaches it, it never prompts", {
+    timeout: 20_000,
+  }, async () => {
+    const gate = heldCheckpoint();
+    const w = await setupWorld(1, true, undefined, gate.checkpoints);
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+      });
+      /* The first send's dispatch is parked inside stampCheckpoint —
+         exactly where a real snapshot costs time. On the unfixed lane a
+         second send prompts concurrently here. */
+      await waitFor(() => gate.entered() || undefined, "checkpoint window");
+      const { message: b } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "never mind that",
+      );
+      /* #403 the tray contract: the dispatching send reads `claimed` (the
+         lane owns it — hidden from the tray) while the queued send rests
+         unclaimed — tray-visible and removable. */
+      await waitFor(async () => {
+        const { messages } = await w.user.request<{
+          messages: AppMessage[];
+        }>("messages.list", {
+          channelId: channel.id,
+          limit: 50,
+        });
+        const first = messages.find((m) => m.seq === 1);
+        const second = messages.find((m) => m.id === b.id);
+        return first?.claimed === true && second?.claimed === false
+          ? true
+          : undefined;
+      }, "lane claim stamped, queued send unclaimed");
+      /* The queued send leaves the tray: the row is removed while the
+         first dispatch is still held. */
+      const { message: gone } = await w.user.request<{ message: AppMessage }>(
+        "messages.remove",
+        { messageId: b.id },
+      );
+      expect(gone.removed).toBe(true);
+      gate.releaseSnapshot();
+      /* Turn one prompts, parks on its approval ask — the removed send's
+         only chance to prompt was the concurrent dispatch, now gone. */
+      await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks.find((a) => a.request.kind === "approval");
+      }, "open approval ask");
+      expect(prompts(w)).toHaveLength(1);
+      expect(prompts(w)[0]).toContain("Add a footer to the page");
+      /* Settle it: the removed send must not surface as the next turn. */
+      await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        for (const ask of asks)
+          await w.user.request("asks.respond", {
+            askId: ask.id,
+            outcome: "once",
+          });
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; state: string }[];
+        }>("conversations.list", {});
+        const c = conversations.find((x) => x.id === conversation.id);
+        return c?.state === "idle" ? c : undefined;
+      }, "first turn settled");
+      await new Promise((r) => setTimeout(r, 300));
+      expect(prompts(w)).toHaveLength(1);
+      /* Removed rows are gone from every read (#315) — its absence, not
+         a flag, is the observable state. */
+      const { messages } = await w.user.request<{ messages: AppMessage[] }>(
+        "messages.list",
+        { channelId: channel.id, limit: 200, includeDropped: true },
+      );
+      expect(messages.some((m) => m.id === b.id)).toBe(false);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-3/AC-4 a send removed while its prompt is mid-dispatch never reaches the wire", {
+    timeout: 20_000,
+  }, async () => {
+    const gate = heldCheckpoint();
+    const w = await setupWorld(1, true, undefined, gate.checkpoints);
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation, rootMessage } = await w.user.request<{
+        conversation: { id: string };
+        rootMessage: AppMessage;
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+      });
+      await waitFor(() => gate.entered() || undefined, "checkpoint window");
+      await w.user.request("messages.remove", {
+        messageId: rootMessage.id,
+      });
+      gate.releaseSnapshot();
+      /* The dispatch resumes, re-reads `dismissed` at the wire, and bails —
+         no prompt, no deliveredSeq advance over the removed row. */
+      await new Promise((r) => setTimeout(r, 500));
+      expect(prompts(w)).toHaveLength(0);
+      const { conversations } = await w.user.request<{
+        conversations: { id: string; deliveredSeq: number }[];
+      }>("conversations.list", {});
+      expect(
+        conversations.find((c) => c.id === conversation.id)?.deliveredSeq,
+      ).toBe(0);
+    } finally {
+      await w.cleanup();
+    }
+  });
+});
