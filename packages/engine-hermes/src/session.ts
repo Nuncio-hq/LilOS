@@ -132,6 +132,15 @@ export class Session {
   /** Reconcile timer while any job runs (silent exits have no push frame). */
   jobPoll?: ReturnType<typeof setInterval>;
 
+  /** #482: the backend that owned `runtimeSid` died and the adapter
+      restarted it — the next session-touching call must `session.resume`
+      the stored ref (or create a fresh runtime) before it proceeds. Set by
+      `HermesEngine.markBackendDown`, cleared by `ensureLive`. */
+  backendDead?: boolean;
+  /** The session's approval access — a rebuilt backend session drops the
+      yolo hint, so ensureLive re-applies it after resume/fallback. */
+  access?: "ask" | "full";
+
   /** Stable LilOS subagentId for a wire-level child key. */
   subagentId(key: string): string {
     let id = this.subIds.get(key);
