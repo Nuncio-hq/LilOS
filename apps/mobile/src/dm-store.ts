@@ -66,6 +66,13 @@ export function watchDm(
 ): void {
   if (watched.has(client)) return;
   watched.add(client);
+  /* #483: a new client object means a new link (another paired Mac or a
+     fresh startLink) — the last connection's catalog is stale, so drop it
+     before seeding or the chip could offer a different Mac's models. The
+     supervisor keeps ONE client across its reconnects, so this only runs
+     on a real link change. */
+  $catalog.set({ models: [], providers: [] });
+  $catalogUnavailable.set(false);
   /* #159: the turn-end PR refresh watcher lives beside the ask watcher —
      same once-per-client registration. */
   watchPrs(client);

@@ -288,4 +288,25 @@ describe("catalog load keeps what already landed", () => {
     expect($catalog.get().models.length).toBe(2);
     expect($catalogUnavailable.get()).toBe(false);
   });
+
+  it("a NEW client (another paired Mac) drops the old catalog first", async () => {
+    const clientA = fakeClient({
+      listModels: async () => ({ models: HOST_MODELS }),
+    });
+    watchDm(clientA, welcomeWith());
+    clientA.state.set("ready");
+    await vi.waitFor(() => expect($catalog.get().models.length).toBe(2));
+
+    /* Pairing to a different Mac creates a new client object; the old
+       Mac's models must not ride over — client B has no engine host. */
+    const clientB = fakeClient({
+      listModels: async () => {
+        throw new Error("engine_unavailable");
+      },
+    });
+    watchDm(clientB, welcomeWith({ connected: false }));
+    clientB.state.set("ready");
+    await vi.waitFor(() => expect($catalogUnavailable.get()).toBe(true));
+    expect($catalog.get().models).toHaveLength(0);
+  });
 });
