@@ -234,7 +234,12 @@ function useThread(conversationId: string) {
     for (const m of chanState.messages) {
       if (m.conversationId === conversationId) byId.set(m.id, m);
     }
-    if (pendingEntry) byId.set(pendingEntry.root.id, pendingEntry.root);
+    /* #425: relay truth wins over the optimistic open-root — if history or
+       chanState already carries the id (e.g. a tombstone arriving mid-open
+       while the pending marker lives), keep that version or the stale copy
+       resurrects a removed/dropped row until the engine bind clears it. */
+    if (pendingEntry && !byId.has(pendingEntry.root.id))
+      byId.set(pendingEntry.root.id, pendingEntry.root);
     const all = [...byId.values()].sort((a, b) => a.seq - b.seq);
     return dropRewound(all, rewind);
   }, [history, chanState.messages, conversationId, pendingEntry, rewind]);
