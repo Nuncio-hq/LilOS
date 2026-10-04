@@ -222,6 +222,14 @@ PR does not exist.
   air twice restarts the adapter process. Not: the harness watching the
   hermes child itself, requests queueing on a dead socket, or per-request
   waits bounded by nothing. — #482
+- **D-#521 Engine failure surfaces are typed end to end: `turn.completed`
+  carries optional `errorCode` (-32006 on backend death) and the launcher
+  mirrors the engine child's stdout/stderr lines into `harness.log`.** A
+  backend-death turn posts the restart surface (interrupted note + sleep
+  failure card, deduped on the prompting message), never a generic
+  "Engine error:". Not: classifying failures by matching error text, or
+  asserting on adapter diagnostics the harness only sometimes forwards.
+  — #521
 - **D-#36 The agent gateway is the one agent surface.** Every engine
   session gets a gateway scope bound to its employee/thread; its tool
   calls reach LilOS through one endpoint and the scope resolves the
@@ -345,15 +353,19 @@ PR does not exist.
   behind `tool_search`. Not: fetching `GET /tools` inside `register()`,
   a hand-written tool list in Python, or leaving tool search `auto`.
   — #411 · PR #495
-- **D-#412 Engine and PTY spawns get an allow-listed environment: every
-  `LILOS_*` outside `ENGINE_ENV_ALLOW_LIST` (`LILOS_SURFACES_URL` +
-  `LILOS_ENGINE_TOKEN`) is stripped before `hermes serve`, and a
+- **D-#412 Every spawn that can run agent-influenced code gets an
+  allow-listed environment:
+  `LILOS_ENV_ALLOW_LIST` (`LILOS_SURFACES_URL` + `LILOS_ENGINE_TOKEN`,
+  `@lilos/contracts/env`) is the only LILOS_* kept — by `hermes serve`,
+  the surfaces PTY/browser, every `packages/host` exec
+  (`packages/host/src/exec.ts`), and Connect's `hermes` CLI. A caller's
+  explicit env merges after the scrub, so a grant always wins. A
   no-folder session runs in `~` with `hasFolder` gating
   checkpoints/rewind so home is never snapshotted or restored.** Not:
   passing the whole harness env (hands `LILOS_RELAY_TOKEN` + state dirs
-  to every agent shell), a per-session temp folder (rejected
-  2026-10-04), or Workbench/rewind treating `~` as a session folder.
-  — #412 · PR #505
+  to agent shells, repo hooks and hermes plugin code), a per-session
+  temp folder (rejected 2026-10-04), or Workbench/rewind treating `~`
+  as a session folder. — #412, #507 · PR #505, #519
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the

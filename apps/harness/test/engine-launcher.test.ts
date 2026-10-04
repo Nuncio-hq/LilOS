@@ -1,6 +1,8 @@
 import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { LILOS_ENV_ALLOW_LIST } from "@lilos/contracts/env";
+import { SURFACES_ENV } from "@lilos/surfaces";
 import { describe, expect, it } from "vitest";
 import {
   commandLauncher,
@@ -138,7 +140,57 @@ describe("AC-1 (#95) a too-old Hermes is fatal — no retry loop", () => {
   });
 });
 
+describe("#521 engine output mirrors into the harness log", () => {
+  it("stdout lines keep landing in the logger after ready (#521)", async () => {
+    const logger = log();
+    const launcher = commandLauncher({
+      name: "hermes",
+      command: [
+        "sh",
+        "-c",
+        "echo LISTENING ws://x; echo 'hermes backend down: gateway socket closed'; sleep 0.2",
+      ],
+      readyPattern: /LISTENING (ws:\/\/\S+)/,
+      startupTimeoutMs: 10_000,
+      log: logger,
+    });
+    await launcher.start();
+    await new Promise((r) => setTimeout(r, 400));
+    expect(logger.lines.join("\n")).toContain(
+      "engine hermes: hermes backend down: gateway socket closed",
+    );
+  });
+
+  it("stderr mirrors at warn and the trailing partial line flushes on exit", async () => {
+    const logger = log();
+    const launcher = commandLauncher({
+      name: "victim",
+      command: [
+        "sh",
+        "-c",
+        "echo 'warn-one' >&2; printf 'tail-partial' >&2; exit 2",
+      ],
+      readyPattern: /NEVER/,
+      log: logger,
+    });
+    await expect(launcher.start()).rejects.toThrow(/code 2/);
+    const lines = logger.lines.join("\n");
+    expect(lines).toContain("engine victim stderr: warn-one");
+    expect(lines).toContain("engine victim stderr: tail-partial");
+  });
+});
+
 describe("AC-1 (#412) the engine env is allow-listed — no LilOS internals", () => {
+  it("the shared allow-list names exactly the surfaces creds it must pass", () => {
+    /* LILOS_ENV_ALLOW_LIST lives in @lilos/contracts so packages/host can
+       share it (#507) — its literal names must stay equal to SURFACES_ENV
+       or the engine silently loses a grant. */
+    expect(LILOS_ENV_ALLOW_LIST).toEqual([
+      SURFACES_ENV.baseUrl,
+      SURFACES_ENV.engineToken,
+    ]);
+  });
+
   it("the child sees only the documented LILOS_* names; options.env grants survive", async () => {
     const dir = mkdtempSync(join(tmpdir(), "lilos-env-"));
     const out = join(dir, "env.txt");
