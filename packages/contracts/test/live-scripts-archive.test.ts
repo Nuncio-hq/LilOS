@@ -71,10 +71,12 @@ describe("AC-2 no dangling live-script reference", () => {
       if (file === SELF) continue;
       const text = readFileSync(join(ROOT, file), "utf8");
       for (const m of text.matchAll(ref)) {
-        // `scripts/live/x` is the top-level dir; `scripts/live-x` resolves
-        // in any package's own scripts dir (a per-package live runner).
+        // `scripts/live/x` resolves at the top level — a file OR a dir
+        // (#439: `lib/` holds the shared helpers, so citations like
+        // `scripts/live/lib/helpers` match `scripts/live/lib` here).
+        // `scripts/live-x` resolves in any package's own scripts dir.
         const hit = m[0].startsWith("scripts/live/")
-          ? tracked.has(m[0])
+          ? has(m[0])
           : [...tracked].some((f) => f.endsWith(`/${m[0]}`));
         expect(
           hit,
