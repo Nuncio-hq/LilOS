@@ -819,8 +819,7 @@ describe("engine-fake #524: an interrupt inside the subagent-close drain leaks n
       expect(
         events.some(
           (e) =>
-            e.type === "subagent.completed" &&
-            e.payload.subagentId === "sa-1",
+            e.type === "subagent.completed" && e.payload.subagentId === "sa-1",
         ),
       ).toBe(true);
       const snap = await snapshot(c, sessionId);
@@ -854,8 +853,7 @@ describe("engine-fake #524: an interrupt inside the subagent-close drain leaks n
       expect(
         events.some(
           (e) =>
-            e.type === "subagent.completed" &&
-            e.payload.subagentId === "sa-1",
+            e.type === "subagent.completed" && e.payload.subagentId === "sa-1",
         ),
       ).toBe(false);
       const snap = await snapshot(c, sessionId);
