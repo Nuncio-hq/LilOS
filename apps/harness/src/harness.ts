@@ -286,6 +286,9 @@ const INVALID_STATE = -32003;
 const REQUEST_NOT_FOUND = -32002;
 /** Tells the relay to answer the caller `engine_unavailable` (not error). */
 const ENGINE_UNAVAILABLE = -32005;
+/** The engine's backend died under the call — restart surface, not a
+    generic engine error (#521). */
+const BACKEND_DOWN = -32006;
 /* #482: forwarded engine calls get their own deadline — a wedged adapter
    (or one whose backend died) must fail the caller fast typed instead of
    riding the transport's 15 s default. Longer than the probe's deadline so
@@ -804,6 +807,30 @@ export class Harness {
     await this.postSystem(
       binding,
       "Turn interrupted — the Mac slept or the engine restarted.",
+    );
+  }
+
+  /**
+   * #521: a turn killed by the backend dying gets the same surface the
+   * lost-turn path posts — interrupted note + the sleep failure card —
+   * deduped on the prompting message: the prompt's own rejection AND the
+   * turn's turn.completed can both carry -32006, and only one note posts.
+   */
+  private async surfaceBackendDown(
+    binding: SessionBinding,
+    sourceId: string,
+  ): Promise<void> {
+    await this.updateConversation(binding.conversationId, {
+      state: "idle",
+      turnFailure: {
+        kind: "sleep",
+        text: "Interrupted — the Mac slept or the engine restarted.",
+      },
+    });
+    await this.postSystem(
+      binding,
+      "Turn interrupted — the Mac slept or the engine restarted.",
+      `sys:${binding.conversationId}:${sourceId}:engine-restart`,
     );
   }
 
@@ -1558,6 +1585,17 @@ export class Harness {
         this.unclaimMessage(message);
         await this.rebindConversation(binding);
         return true;
+      }
+      if (engineErrorCode(error) === BACKEND_DOWN) {
+        /* #521: the backend died under this prompt — restart surface, not
+           a generic Engine error. turn.completed lands on the same dedupe
+           key (source = the prompting message id), so one note either way. */
+        this.opts.log.warn("prompt interrupted: backend down", {
+          conversationId: binding.conversationId,
+          error: String(error),
+        });
+        await this.surfaceBackendDown(binding, message.id);
+        return false;
       }
       this.opts.log.error("prompt failed", {
         conversationId: binding.conversationId,
@@ -3332,7 +3370,11 @@ export class Harness {
     }
     // An errored turn must leave a trace even when text streamed before it —
     // in-view conversations never notify, so this is the only failure signal.
-    if (event.payload.error) {
+    if (event.payload.errorCode === BACKEND_DOWN) {
+      /* #521: the turn died with the backend — same restart surface as the
+         prompt's own rejection path; the shared dedupe key keeps it single. */
+      await this.surfaceBackendDown(binding, source);
+    } else if (event.payload.error) {
       await this.postSystem(
         binding,
         `Error: ${event.payload.error}`,
@@ -3354,8 +3396,9 @@ export class Harness {
     this.updateConversation(binding.conversationId, {
       state: "idle",
       /* #419: the DM session card's failure — the turn model carries it
-         too, but the row keeps it across a session rebind/reload. */
-      ...(event.payload.error
+         too, but the row keeps it across a session rebind/reload. A
+         backend-death turn was already stamped by surfaceBackendDown. */
+      ...(event.payload.error && event.payload.errorCode !== BACKEND_DOWN
         ? {
             turnFailure: {
               kind: "model" as const,

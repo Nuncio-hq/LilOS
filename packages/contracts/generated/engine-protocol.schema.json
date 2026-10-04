@@ -1563,6 +1563,9 @@
                         },
                         "error": {
                           "type": "string"
+                        },
+                        "errorCode": {
+                          "type": "number"
                         }
                       },
                       "required": [
@@ -4037,6 +4040,9 @@
                   },
                   "error": {
                     "type": "string"
+                  },
+                  "errorCode": {
+                    "type": "number"
                   }
                 },
                 "required": [

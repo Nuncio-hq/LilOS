@@ -75,6 +75,47 @@ describe("AC-1 (#273) stack boot refuses a foreign relay on its port", () => {
     // "Within seconds" — not after the relay's whole bind-retry budget.
     expect(elapsed).toBeLessThan(30_000);
   }, 60_000);
+
+  /* #516: the stack can die before the identity probe has named both ids —
+     on CI the spawned relay's `instanceId` line never reached the captured
+     output (frozen in Bun.sleepSync, killed mid-retry), the harness died
+     on the stand-in's HTTP-only socket, and the probe reported only
+     "exited before port was ours". `holdOursMs` withholds the child's id
+     from the live probe to model that window; the report must still name
+     the port and both ids. With the dev stack's own readiness identity-
+     checked, the stack's exit now comes from the relay's ~15 s bind-retry
+     budget, so the hold must outlast it for the probe to still be blind at
+     exit. */
+  it("AC-1 (#516) names the port and both ids when the stack exits before identity lands", async () => {
+    const foreign = await standInRelay();
+    try {
+      const [feed, web] = [await freePort(), await freePort()];
+      const started = Date.now();
+      const res = await bootStack(
+        "ac1-516",
+        { relay: foreign.port, feed, web },
+        {},
+        { holdOursMs: 20_000 },
+      ).then(
+        (stack) => ({ ok: true as const, stack }),
+        (e: Error) => ({ ok: false as const, e }),
+      );
+      const elapsed = Date.now() - started;
+      if (res.ok) {
+        await res.stack.stop();
+        throw new Error(
+          "bootStack resolved against a foreign relay — the probe is identity-blind",
+        );
+      }
+      console.log(`boot failed in ${elapsed}ms: ${res.e.message}`);
+      expect(String(res.e.message)).toContain(`port ${foreign.port}`);
+      expect(String(res.e.message)).toContain(FOREIGN_ID);
+      expect(String(res.e.message)).toMatch(/ours [0-9a-f-]{36}/);
+      expect(elapsed).toBeLessThan(30_000);
+    } finally {
+      foreign.server.close();
+    }
+  }, 60_000);
 });
 
 describe("AC-2 (#273) every stack-booting spec uses the shared helper", () => {
