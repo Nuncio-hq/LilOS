@@ -38,7 +38,8 @@ const arg = (name: string, dflt?: string) => {
 
 const repoRoot = process.env.LILOS_REPO_ROOT ?? process.cwd();
 const seconds = Number(arg("seconds", "150") ?? "150");
-const engineKind = arg("engine", process.env.LILOS_ENGINE ?? "hermes");
+const engineKind =
+  arg("engine", process.env.LILOS_ENGINE ?? "hermes") ?? "hermes";
 const requestLog = process.env.STUB_REQUEST_LOG ?? "/tmp/live-346-requests.log";
 
 const out = (line: string) => console.log(`[live-346] ${line}`);

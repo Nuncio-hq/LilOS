@@ -9,6 +9,8 @@
         "@playwright/test": "^1.56.1",
         "@testing-library/dom": "10",
         "@testing-library/react": "16",
+        "@types/bun": "1.4.2",
+        "@types/node": "^26.6.2",
         "happy-dom": "19",
         "typescript": "^7.0.2",
         "vitest": "^3.2.4",
