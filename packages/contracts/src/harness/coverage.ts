@@ -98,6 +98,10 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "messages.send": "the user re-sends a parked (dropped) message (#315)",
   "conversations.rewind": "the user rewinds a conversation",
   "conversations.setModel": "the user picks the session's model",
+  "conversations.setAccess":
+    "the composer pill is the user's — an agent must never grant itself Full access (#106)",
+  "approvals.setPolicy":
+    "the engine's approval policy is the user's global Setting — an agent must never lower its own approval bar (#106)",
   "models.list": "the model pick list is the user's",
   /* app wire — user and device admin */
   "settings.get": "user settings, not agent scope",

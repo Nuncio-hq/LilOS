@@ -500,6 +500,7 @@ export function createDrizzleStore(db: Db): RelayStore {
           engineRef: null,
           state: "idle",
           ...openTitle(input),
+          access: input.access ?? "ask",
           ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
           ...(input.workspace !== undefined
             ? { workspace: input.workspace }

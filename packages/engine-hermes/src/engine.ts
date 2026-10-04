@@ -2,7 +2,10 @@ import {
   type AgentsCreateParams,
   type AgentsDescribeParams,
   type AgentsUpdateParams,
+  APPROVAL_POLICY_CAPABILITY,
   type ApprovalOutcome,
+  type ApprovalPolicy,
+  type ApprovalsSetPolicyParams,
   BACKGROUND_JOBS_CAPABILITY,
   type Capability,
   type ContentBlock,
@@ -24,6 +27,7 @@ import {
   type RequestRespondParams,
   RPC_ERRORS,
   type SessionRewindParams,
+  type SessionSetAccessParams,
   type SessionSetHiddenParams,
   type SessionSetModelParams,
   type SessionSetTitleParams,
@@ -143,6 +147,9 @@ export class HermesEngine {
   private droppedCreateFields = new Set<string>();
   /** Build the gateway advertised in `session.create`'s `info` (#50 AC-4). */
   private gatewayInfo: { version?: string; releaseDate?: string } = {};
+  /** #106: the global approval policy — set by `approvals.setPolicy`,
+      pre-seeded best-effort from `config.get` in describe. */
+  private policy?: ApprovalPolicy;
 
   constructor(private opts: HermesEngineOptions) {
     this.sessionRegistry = opts.sessionsFile
@@ -224,6 +231,11 @@ export class HermesEngine {
         return this.sessionSetTitle(parsed.data as SessionSetTitleParams);
       case "session.setHidden":
         return this.sessionSetHidden(parsed.data as SessionSetHiddenParams);
+      /* #106 */
+      case "approvals.setPolicy":
+        return this.approvalsSetPolicy(parsed.data as ApprovalsSetPolicyParams);
+      case "session.setAccess":
+        return this.sessionSetAccess(parsed.data as SessionSetAccessParams);
       /* #179 */
       case "jobs.list":
         return this.jobsList(parsed.data as JobsListParams);
@@ -239,7 +251,7 @@ export class HermesEngine {
 
   // ── methods ──────────────────────────────────────────────────────────────
 
-  private describe() {
+  private async describe() {
     const capabilities: Capability[] = [
       {
         id: "steer",
@@ -329,6 +341,17 @@ export class HermesEngine {
        sessions synthesize the same rows from delegate/terminal tool calls
        (jobs.stop is WS-only and refuses per-session like setModel). */
     capabilities.push(SUBAGENTS_CAPABILITY, BACKGROUND_JOBS_CAPABILITY);
+    /* #106: the global approval policy — `approvals.setPolicy` writes
+       `approvals.mode`; `current` reports the live value when a `config.get`
+       read or a setPolicy this run knows it (omitted otherwise). */
+    const current = this.policy ?? (await this.readPolicy());
+    capabilities.push({
+      ...APPROVAL_POLICY_CAPABILITY,
+      detail: {
+        options: ["smart", "manual", "off"],
+        ...(current ? { current } : {}),
+      },
+    });
     capabilities.push({
       id: "hermes_gateway",
       name: "Hermes gateway",
@@ -402,6 +425,10 @@ export class HermesEngine {
       this.sessions.set(id, s);
       this.byRuntimeSid.set(s.runtimeSid, s);
       this.persistSession(s);
+      /* #106: a conversation on Full access gets the session yolo hint — a
+         round-trip saver only, the harness still auto-answers approvals
+         itself, so a refused/absent hint changes nothing. */
+      if (p.access === "full") await this.applyWsAccess(s.runtimeSid, "full");
       s.emit("session.started", {
         agent: p.agent,
         cwd: p.cwd,
@@ -1229,6 +1256,67 @@ export class HermesEngine {
       ...(ack.fast !== undefined ? { fast: ack.fast } : {}),
       ...(ack.deferred === true ? { deferred: true } : {}),
     };
+  }
+
+  /* ── #106 approval modes ───────────────────────────────────────────── */
+
+  /** Best-effort `config.get approvals.mode` — `undefined` when the build
+      can't read it (a describe must not fail over a policy probe). */
+  private async readPolicy(): Promise<ApprovalPolicy | undefined> {
+    try {
+      const r = (await this.opts.gateway.request("config.get", {
+        key: "approvals.mode",
+      })) as { value?: unknown };
+      const v = r?.value;
+      return v === "smart" || v === "manual" || v === "off" ? v : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** `approvals.setPolicy` -> global `config.set approvals.mode` (#106). */
+  private async approvalsSetPolicy(p: ApprovalsSetPolicyParams) {
+    await this.opts.gateway.request("config.set", {
+      key: "approvals.mode",
+      value: p.policy,
+    });
+    this.policy = p.policy;
+    return { policy: this.policy };
+  }
+
+  /**
+   * #106 — push the conversation's access level onto the live session as a
+   * native hint where the transport has one: WS sessions get the
+   * session-scoped `yolo` config.set, ACP sessions `session/set_mode`
+   * (`accept_edits` on Ask — AC-5 — `dont_ask` on Full). Every leg is
+   * best-effort: the harness auto-answer is the enforcement, so a refused
+   * hint must never fail the call.
+   */
+  private async sessionSetAccess(p: SessionSetAccessParams) {
+    const s = this.require(p.sessionId);
+    if (s.driver === "acp") {
+      await this.acpDrivers.get(p.sessionId)?.setAccess(p.access);
+    } else {
+      await this.applyWsAccess(s.runtimeSid, p.access);
+    }
+    return { access: p.access };
+  }
+
+  /** Session-scoped `yolo` config.set; errors swallowed (hint only). */
+  private async applyWsAccess(
+    runtimeSid: string,
+    access: "ask" | "full",
+  ): Promise<void> {
+    try {
+      await this.opts.gateway.request("config.set", {
+        key: "yolo",
+        value: access === "full" ? "on" : "off",
+        scope: "session",
+        session_id: runtimeSid,
+      });
+    } catch {
+      /* A build without the yolo key simply keeps harness-side enforcement. */
+    }
   }
 
   /**

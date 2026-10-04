@@ -283,11 +283,20 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     ],
   },
   {
+    /* #106: the per-conversation access level the composer pill switches —
+       `conversations.setAccess` writes it, `conversations.open` stamps the
+       Settings default; existing rows keep Ask. */
+    version: 18,
+    statements: [
+      `ALTER TABLE conversations ADD COLUMN access TEXT NOT NULL DEFAULT 'ask'`,
+    ],
+  },
+  {
     /* #346: the engine session's life on the conversation — the host
        writes open/closed (a suspended session is `closed`, reopening on
        the next message); `running` is derived client-side, never stored.
-       v17 is #377's messages.claimed (#450's access takes the next). */
-    version: 18,
+       v18 is #450's conversations.access. */
+    version: 19,
     statements: [`ALTER TABLE conversations ADD COLUMN life TEXT`],
   },
 ];

@@ -264,7 +264,7 @@ test("AC-3 + AC-4 the next turn runs the picked model + effort + fast; the foote
   await page.keyboard.press("Escape");
   // Approve the pending ask so the parked turn can finish.
   for (let i = 0; i < 6; i++) {
-    const b = page.getByRole("button", { name: "Allow once" });
+    const b = page.getByRole("button", { name: "Once", exact: true });
     if (
       !(await b
         .first()

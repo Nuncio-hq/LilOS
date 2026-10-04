@@ -1,6 +1,7 @@
 import type { ChatStatus } from "ai";
 import { CheckIcon, Maximize2Icon, PlayIcon, Undo2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { AccessPill } from "../chat/access-pill";
 import {
   ConversationKeepBottom,
   NotSentTray,
@@ -33,6 +34,7 @@ import { cn } from "../lib/utils";
 import type {
   AttachedFile,
   Channel,
+  ConversationAccess,
   EmpFn,
   Employee,
   FileMention,
@@ -159,6 +161,8 @@ export function ThreadView({
   onSeededFiles,
   onOpenSession,
   onPlan,
+  access,
+  onAccess,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -249,6 +253,10 @@ export function ThreadView({
   onOpenSession?: (employeeId: string, session: string) => void;
   /* Plan card decisions (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
+  /* #106: the thread's access level + toggle → the composer pill.
+     Both or neither (D-#19: no access record, no control). */
+  access?: ConversationAccess;
+  onAccess?: (a: ConversationAccess) => void;
 }) {
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
@@ -563,20 +571,25 @@ export function ThreadView({
         onAttachError={onAttachError}
         onStop={onStop}
         tools={
-          onModel && models?.length ? (
-            <ModelPicker
-              value={sessionChoice(
-                thread,
-                leadEmp?.model,
-                models,
-                defaultModel,
-                defaultProvider,
-              )}
-              models={models}
-              onChoice={onModel}
-              {...picker}
-            />
-          ) : undefined
+          <>
+            {onModel && models?.length ? (
+              <ModelPicker
+                value={sessionChoice(
+                  thread,
+                  leadEmp?.model,
+                  models,
+                  defaultModel,
+                  defaultProvider,
+                )}
+                models={models}
+                onChoice={onModel}
+                {...picker}
+              />
+            ) : undefined}
+            {access !== undefined && onAccess ? (
+              <AccessPill access={access} onAccess={onAccess} />
+            ) : undefined}
+          </>
         }
         queued={
           <>

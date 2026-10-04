@@ -247,8 +247,8 @@ describe("issue #19 — one conversation from shared pieces", () => {
       /^Retry$/,
       /Review & start/,
       /Not yet/,
-      /Allow once/,
-      /Always here/,
+      /^Once$/,
+      /^Always$/,
       /Deny/,
     ])
       expect(qp.queryByRole("button", { name })).toBeNull();
@@ -277,7 +277,7 @@ describe("issue #19 — one conversation from shared pieces", () => {
       /Squash and merge/,
       /gpt-test-1/, // model picker trigger shows the model name
       /Review & start/,
-      /Allow once/,
+      /^Once$/,
       /Rewind to here/,
     ])
       expect(qf.queryByRole("button", { name })).toBeNull();
@@ -307,7 +307,7 @@ describe("issue #19 — one conversation from shared pieces", () => {
     const wp = within(wiredPanel.container);
     expect(wp.getByRole("button", { name: /Start work/ })).toBeTruthy();
     expect(wp.getByRole("button", { name: "Focus" })).toBeTruthy();
-    expect(wp.getByRole("button", { name: /Allow once/ })).toBeTruthy();
+    expect(wp.getByRole("button", { name: /^Once$/ })).toBeTruthy();
     expect(wp.getByRole("button", { name: /Not yet/ })).toBeTruthy();
     expect(
       wiredPanel.container.querySelector("[data-notsent-send]"),

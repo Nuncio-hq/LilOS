@@ -52,9 +52,10 @@ describe("relay migrations", () => {
     // tables; v12 adds #134's rewind marks; v13 adds #156's workspace
     // intent on conversations; v14 adds #161's push tables; v15 adds
     // #300's persisted turn usage on conversations; v16 adds #315's
-    // dropped/removed flags on messages; v17 adds #377's claimed flag;
-    // v18 adds #346's life column on conversations.
-    expect(out.version).toBe(18);
+    // dropped/removed flags on messages; v17 adds #377's claimed flag; v18
+    // adds #106's access level on conversations; v19 adds #346's life
+    // column on conversations.
+    expect(out.version).toBe(19);
     expect(out.msgCols).toContain("dropped");
     expect(out.msgCols).toContain("removed");
     expect(out.msgCols).toContain("claimed");
@@ -65,6 +66,8 @@ describe("relay migrations", () => {
     expect(out.colsAt7).toContain("title_source");
     expect(out.colsAt7).toContain("workspace");
     expect(out.colsAt7).toContain("usage");
+    expect(out.colsAt7).toContain("access");
+    expect(out.colsAt7).toContain("life");
     expect(out.tables).toContain("settings");
     expect(out.tables).toContain("profile");
     expect(out.tables).toContain("messages_fts");

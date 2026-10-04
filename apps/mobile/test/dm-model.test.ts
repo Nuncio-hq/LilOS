@@ -50,6 +50,7 @@ const conv = (id: string, over: Partial<Conversation> = {}): Conversation => ({
   state: "idle",
   title: "",
   titleSource: "auto",
+  access: "ask",
   archived: false,
   deliveredSeq: 0,
   createdAt: T0,

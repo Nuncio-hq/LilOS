@@ -24,6 +24,7 @@ import type {
 } from "@lilos/contracts/app";
 import type {
   ApprovalOutcome,
+  ConversationAccess,
   EngineRequest,
   Usage,
 } from "@lilos/contracts/engine";
@@ -69,6 +70,8 @@ export interface ConversationPatch {
   effort?: string | null;
   fast?: boolean | null;
   deliveredSeq?: number;
+  /** The composer pill's level (#106) — `conversations.setAccess`. */
+  access?: ConversationAccess;
   /** The engine session's life (#346): `open`/`closed` — `running` is a
       client-derived state and never lands on the row. */
   life?: ConversationLife;
@@ -97,6 +100,9 @@ export interface OpenConversationInput {
   /** Workstream pick stamped at open (#156): new/existing worktree of
       `repoPath`; absent = `cwd` is the folder itself. */
   workspace?: WorkspaceIntent;
+  /** The access level stamped at open (#106) — the relay resolves
+      `params.access ?? Settings' defaultAccess ?? "ask"` before landing. */
+  access?: ConversationAccess;
 }
 
 export interface AppendMessageInput {

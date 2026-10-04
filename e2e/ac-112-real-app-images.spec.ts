@@ -621,7 +621,7 @@ test("AC-5b a mid-turn image queues as the next prompt instead of steering", asy
   // Unblock the parked turn; the queued image message runs as its own turn.
   // Same approval loop as ac-27 — the edit script can raise several asks.
   for (let i = 0; i < 6; i++) {
-    const allow = page.getByRole("button", { name: "Allow once" });
+    const allow = page.getByRole("button", { name: "Once", exact: true });
     if (
       !(await allow
         .first()

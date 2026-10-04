@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConversationAccess } from "../engine/approvals";
 import { Capability } from "../engine/capabilities";
 import { Usage } from "../engine/events";
 import { ModelOption, ModelProvider } from "../engine/models";
@@ -138,6 +139,13 @@ export const Conversation = z.object({
   cwd: z.string().min(1).optional(),
   /** Workstream mode stamped at open (#156); absent = direct/just chat. */
   workspace: WorkspaceIntent.optional(),
+  /**
+   * The conversation's access level (#106): `ask` renders every approval
+   * request as a card; `full` has the harness answer them itself. Set from
+   * Settings' default at open, switched by the composer pill — the switch
+   * applies from the agent's next action.
+   */
+  access: ConversationAccess.default("ask"),
   archived: z.boolean(),
   /**
    * Host-owned watermark: highest user-message seq the harness has handed to

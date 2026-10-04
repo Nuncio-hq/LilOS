@@ -9,7 +9,10 @@ import { z } from "zod";
  * `openRequests`).
  */
 
-export const ApprovalOption = z.enum(["once", "always", "deny"]);
+/* #106: `session` = grant for this engine session only ("This session" on
+   the card) — it stops repeats for the conversation without the permanent
+   grant `always` writes. */
+export const ApprovalOption = z.enum(["once", "session", "always", "deny"]);
 export type ApprovalOption = z.infer<typeof ApprovalOption>;
 
 export const ApprovalRequest = z.strictObject({
@@ -60,14 +63,15 @@ export const EngineRequest = z.discriminatedUnion("kind", [
 export type EngineRequest = z.infer<typeof EngineRequest>;
 
 /**
- * `request.respond` outcome. Approval -> `"once" | "always" | "deny" | "cancel"`;
- * question -> `"answer"` with `answer` set, or `"cancel"`; plan ->
- * `"approve" | "reject" | "change"` (change carries the requested edit in
- * `answer`), or `"cancel"`. The engine validates the outcome against the
- * open request's kind.
+ * `request.respond` outcome. Approval -> `"once" | "session" | "always" |
+ * "deny" | "cancel"`; question -> `"answer"` with `answer` set, or
+ * `"cancel"`; plan -> `"approve" | "reject" | "change"` (change carries the
+ * requested edit in `answer`), or `"cancel"`. The engine validates the
+ * outcome against the open request's kind.
  */
 export const ApprovalOutcome = z.enum([
   "once",
+  "session",
   "always",
   "deny",
   "cancel",
