@@ -46,6 +46,7 @@ import type {
   ModelPickerExtras,
   Msg,
   Thread,
+  TranscriptNote,
   WbTab,
   Work,
   WsPick,
@@ -1083,20 +1084,29 @@ export function DmPage() {
     const modelLive = model?.live;
     const asksHere = convAsks(conv);
     /* Visible messages are the relay's; the working transcript is the engine
-       feed's — when it can't replay, say why instead of going silent (#28). */
-    const transcriptNote =
+       feed's. Notes carry a kind so the views pick the slot (#532):
+       "unavailable" (#28) tails the transcript — the live tail can't
+       replay; "trimmed" (#431) heads it — the missing history sits above
+       the first entry. */
+    const transcriptNote: TranscriptNote | undefined =
       conv.engineRef && (!openFeed.synced || openFeed.error)
-        ? `Working transcript unavailable — ${
-            openFeed.error ??
-            (engineState !== "ready"
-              ? "the engine feed is disconnected (harness down or restarting)"
-              : "still syncing")
-          }`
+        ? {
+            kind: "unavailable",
+            text: `Working transcript unavailable — ${
+              openFeed.error ??
+              (engineState !== "ready"
+                ? "the engine feed is disconnected (harness down or restarting)"
+                : "still syncing")
+            }`,
+          }
         : /* #431: a capped engine log means the transcript's retained tail
              is all that exists — say so rather than letting the missing
              head read as a render gap. */
           conv.engineRef && openFeed.historyTrimmed
-          ? "Earlier history was trimmed — this session's event log is capped."
+          ? {
+              kind: "trimmed",
+              text: "Earlier history was trimmed — this session's event log is capped.",
+            }
           : undefined;
 
     const resolved: Record<string, string> = {};
