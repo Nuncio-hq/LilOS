@@ -80,6 +80,7 @@ const msg = (
   rewound: false,
   dropped: false,
   removed: false,
+  claimed: false,
 });
 
 const sum = (

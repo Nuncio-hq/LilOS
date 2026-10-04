@@ -62,6 +62,7 @@ const message = {
   rewound: false,
   dropped: false,
   removed: false,
+  claimed: false,
 };
 
 describe("AC-1 app protocol contracts", () => {

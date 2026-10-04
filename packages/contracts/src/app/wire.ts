@@ -150,6 +150,8 @@ export const AppMethod = z.enum([
   "messages.remove",
   "messages.drop",
   "messages.send",
+  /* Host-only: mark a send claimed by the engine pipeline (#377). */
+  "messages.claim",
   "messages.search",
   "attachments.get",
   "channel.subscribe",
@@ -567,6 +569,18 @@ export const MessagesSendParams = z.strictObject({
   messageId: z.string().min(1),
 });
 export type MessagesSendParams = z.infer<typeof MessagesSendParams>;
+
+/**
+ * #377: host-only — the harness marks a send `claimed` the moment its prompt
+ * commits to dispatch (before the checkpoint/wire awaits). A claimed row
+ * leaves the waiting tray: Remove isn't offered on a send that can no
+ * longer be reordered, and the row renders as its own user bubble until
+ * `turn.started` consumes it. Idempotent; re-claim on redelivery is a no-op.
+ */
+export const MessagesClaimParams = z.strictObject({
+  messageId: z.string().min(1),
+});
+export type MessagesClaimParams = z.infer<typeof MessagesClaimParams>;
 
 /**
  * Full-text search over the relay's stored messages (issue #138). Search

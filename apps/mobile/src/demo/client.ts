@@ -393,6 +393,7 @@ export class DemoClient {
       rewound: false,
       dropped: false,
       removed: false,
+      claimed: false,
       ...(body.model ? { model: body.model } : {}),
       ...(body.provider ? { provider: body.provider } : {}),
       ...(body.effort ? { effort: body.effort } : {}),

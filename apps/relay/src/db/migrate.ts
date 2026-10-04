@@ -273,10 +273,20 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     ],
   },
   {
+    /* #377: `claimed` marks a send whose prompt committed to dispatch — it
+       leaves the waiting tray (Remove boundary moves from "delivered" to
+       "claimed") but stays owed in `listPendingTurns` until deliveredSeq
+       covers it. */
+    version: 17,
+    statements: [
+      `ALTER TABLE messages ADD COLUMN claimed INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
+  {
     /* #106: the per-conversation access level the composer pill switches —
        `conversations.setAccess` writes it, `conversations.open` stamps the
        Settings default; existing rows keep Ask. */
-    version: 17,
+    version: 18,
     statements: [
       `ALTER TABLE conversations ADD COLUMN access TEXT NOT NULL DEFAULT 'ask'`,
     ],

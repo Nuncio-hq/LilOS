@@ -24,6 +24,7 @@ const msg = (over: Partial<AppMessage>): AppMessage => ({
   rewound: false,
   dropped: false,
   removed: false,
+  claimed: false,
   ...over,
 });
 

@@ -86,6 +86,8 @@ export const NOT_AGENT_FACING: Record<string, string> = {
     "host bookkeeping — stamps the pre-turn rewind checkpoint",
   "messages.drop":
     "host bookkeeping — the harness parks still-waiting sends on Stop (#315)",
+  "messages.claim":
+    "host bookkeeping — the harness claims a send once its prompt commits (#377)",
   /* app wire — the agent raises asks through its engine; answering is the user's */
   "asks.open": "the agent's engine raises asks; the app renders them",
   "asks.respond": "answering an ask is the user's action",
