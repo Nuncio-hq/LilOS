@@ -1,6 +1,7 @@
 import { RelayError } from "@lilos/client-runtime";
 import {
   type AppChannel,
+  type AppMessage,
   type Conversation,
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@lilos/contracts/app";
@@ -15,15 +16,7 @@ import { atom } from "nanostores";
 import { defaultAccess, defaultEditor } from "../settings/state";
 import { toAttachmentInputs } from "./attachments";
 import { USER_ID } from "./me";
-import {
-  engine,
-  engineDefaultModel,
-  engineDefaultProvider,
-  engineModels,
-  engineProviders,
-  modelVisibility,
-  relay,
-} from "./runtime";
+import { applyModelCatalog, engine, modelVisibility, relay } from "./runtime";
 import { say } from "./toast";
 
 /** conversationId -> true while the first engine attach is in flight. */
@@ -141,6 +134,85 @@ export function describeSendError(e: unknown): string {
       return "Couldn't reach the relay — try again.";
   }
   return "Couldn't send that. Try again.";
+}
+
+/**
+ * One plain line for a failed DM action (#423 AC-1): transport trouble
+ * reads as reconnecting / no answer, and a relay-side reason rides through
+ * as-is — the toast always says why in words a user can act on. `action`
+ * is the leading "Couldn't …" fragment.
+ */
+export function describeActionError(action: string, e: unknown): string {
+  if (e instanceof RelayError) {
+    if (
+      e.code === "not_connected" ||
+      e.code === "socket_closed" ||
+      e.code === "closed" ||
+      e.code === "connect_failed" ||
+      e.code === "connect_timeout"
+    ) {
+      return `${action} — LilOS is reconnecting; try again in a moment.`;
+    }
+    if (e.code === "timeout")
+      return `${action} — the relay didn't answer; try again.`;
+  }
+  const reason = e instanceof Error ? e.message : e == null ? "" : String(e);
+  return reason ? `${action} — ${reason}` : action;
+}
+
+/**
+ * Fire-and-forget a DM action that can reject: the rejection becomes a
+ * toast instead of landing nowhere (#423 AC-1). Actions that answer with
+ * their own error UI (asks.respond's line, a failed send's draft) keep
+ * their own wording — this is for calls that had NO visible outcome.
+ */
+export function toastOnFail(action: string, p: Promise<unknown>): void {
+  void p.catch((e) => say(describeActionError(action, e)));
+}
+
+/**
+ * The open thread's whole visible history (#28 AC-2): paged `messages.list`
+ * scoped to the conversation. Rejects so the caller can show the retryable
+ * notice — the fetch is never swallowed (#423 AC-2). `request` is injected
+ * so tests can force the rejection.
+ */
+export async function loadThreadHistory(
+  request: (
+    method: string,
+    params?: Record<string, unknown>,
+  ) => Promise<unknown>,
+  channelId: string,
+  conversationId: string,
+): Promise<{
+  messages: AppMessage[];
+  rewoundIds: ReadonlySet<string>;
+  rewoundTexts: ReadonlySet<string>;
+}> {
+  const all: AppMessage[] = [];
+  for (;;) {
+    const page = (await request("messages.list", {
+      channelId,
+      conversationId,
+      afterSeq: all.at(-1)?.seq ?? 0,
+      limit: 200,
+      includeRewound: true,
+      /* #315: parked not-sent rows ride the fetch so the tray survives a
+         reload (relay truth, not component state). */
+      includeDropped: true,
+    })) as { messages: AppMessage[] };
+    all.push(...page.messages);
+    if (page.messages.length < 200) break;
+  }
+  const rewound = all.filter((m) => m.rewound);
+  return {
+    messages: all.filter((m) => !m.rewound),
+    rewoundIds: new Set(rewound.map((m) => m.id)),
+    rewoundTexts: new Set(
+      rewound
+        .filter((m) => m.authorKind === "employee")
+        .map((m) => m.text.trim()),
+    ),
+  };
 }
 
 /** Optimistic "submitted" marker until the feed sees turn.started. */
@@ -277,13 +349,11 @@ export async function setConversationModel(
   });
 }
 
-/** Re-fetch the engine's model catalog (`models.list {refresh:true}`, #92 AC-6). */
+/** Re-fetch the engine's model catalog (`models.list {refresh:true}`, #92
+ *  AC-6). Still a thrower — the caller toasts a failure (#423 AC-1); an
+ *  answered-empty keeps the known rows instead of blanking the picker. */
 export async function refreshModels(): Promise<void> {
-  const r = await relay.listModels({ refresh: true });
-  engineModels.set(r.models);
-  engineProviders.set(r.providers ?? []);
-  engineDefaultModel.set(r.default);
-  engineDefaultProvider.set(r.defaultProvider);
+  applyModelCatalog(await relay.listModels({ refresh: true }));
 }
 
 /** Write the ONE Edit-models hide list (#92 AC-7) — the relay persists and broadcasts it. */

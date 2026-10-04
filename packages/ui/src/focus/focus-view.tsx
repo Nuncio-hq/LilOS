@@ -133,6 +133,7 @@ export function FocusView({
   draft,
   onDraftChange,
   transcriptNote,
+  banner,
   scrollTo,
   onScrolled,
   children,
@@ -221,6 +222,10 @@ export function FocusView({
   /* Why the working transcript can't be shown — same note ThreadView renders
      where the transcript would be (issue #28). */
   transcriptNote?: string;
+  /* A pinned strip at the top of the conversation column (#423 AC-2 — the
+     DM history-failure notice). The caller renders the surface (e.g. a
+     StatusBanner); Focus only owns the slot above the scroll. */
+  banner?: ReactNode;
   /* #138 AC-3 jump-to-hit, same contract as ThreadView: scroll the message
      with this id into view, flash it, then call onScrolled. */
   scrollTo?: string;
@@ -644,6 +649,7 @@ export function FocusView({
         )}
       >
         <section ref={turnsRef} className="flex min-h-0 min-w-0 flex-col">
+          {banner}
           <Conversation className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]">
             <ConversationContent
               data-thread
