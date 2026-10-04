@@ -315,8 +315,7 @@ const feedServer = Bun.serve<FeedData>({
     const pathname = new URL(req.url).pathname;
     if (pathname === "/host") return host(req);
     // Identity for e2e readiness probes (#273) — mirrors the relay's /healthz.
-    if (pathname === "/healthz")
-      return Response.json({ ok: true, instanceId });
+    if (pathname === "/healthz") return Response.json({ ok: true, instanceId });
     if (
       pathname === "/ws" &&
       server.upgrade(req, { data: { send: () => {} } })

@@ -5,9 +5,10 @@
  * "something answers". Today the probe is blind: `waitForHttp(...:port/)`
  * passes against the other stack and the spec rides it until teardown.
  */
+
+import { readdirSync, readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
@@ -88,7 +89,8 @@ describe("AC-2 (#273) every stack-booting spec uses the shared helper", () => {
      names, and any probe of a relay/feed port that isn't identity-checked. */
   const PRIVATE_HELPER =
     /\b(?:async function|function|const)\s+(bootStack|waitForHttp|waitForToken|killProc|freePort|pickPorts|waitForInstance|waitForRelay|waitForFeed)\b/;
-  const BLIND_RELAY_FEED = /waitForHttp\(`http:\/\/127\.0\.0\.1:\$\{[^}]*(relay|feed)/i;
+  const BLIND_RELAY_FEED =
+    /waitForHttp\(`http:\/\/127\.0\.0\.1:\$\{[^}]*(relay|feed)/i;
 
   it("no spec re-declares a private boot/readiness helper", () => {
     const offenders = specs.filter((f) =>
