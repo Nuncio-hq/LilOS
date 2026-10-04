@@ -1,11 +1,12 @@
 import {
+  catalogRows,
   LILOS_TOOLS,
   MCP_PATH,
   renderHostPolicy,
   TOOL_PATH_PREFIX,
+  toolListAll,
   toolsForAreas,
 } from "@lilos/contracts/harness";
-import { z } from "zod";
 import type { ViewerScope } from "./backend.js";
 import { SurfaceError } from "./backend.js";
 import { callTool, SESSION_HEADER } from "./dispatch.js";
@@ -186,29 +187,6 @@ function surfaceErrorStatus(code: SurfaceError["code"]): number {
     the MCP `tools/list`. Everything renders FROM `LILOS_TOOLS`. */
 function toolListFor(scope: ViewerScope) {
   return catalogRows(toolsForAreas(scope.areas));
-}
-
-/** Catalog rows for a name list — the one renderer for scoped and full. */
-function catalogRows(names: readonly string[]) {
-  return names.map((name) => {
-    const contract = LILOS_TOOLS[name];
-    return {
-      name,
-      description: contract.doc,
-      inputSchema: z.toJSONSchema(contract.params) as Record<string, unknown>,
-      outputSchema: z.toJSONSchema(contract.result) as Record<string, unknown>,
-      annotations: { readOnlyHint: contract.access === "read" },
-      _meta: {
-        "lilos/area": contract.area,
-        "lilos/access": contract.access,
-      },
-    };
-  });
-}
-
-/** The whole catalog — what an engine caller without a session gets. */
-function toolListAll() {
-  return catalogRows(Object.keys(LILOS_TOOLS));
 }
 
 const MCP_MAX_BATCH_MESSAGES = 50;

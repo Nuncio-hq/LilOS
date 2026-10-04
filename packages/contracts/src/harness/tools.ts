@@ -508,6 +508,36 @@ export function toolsForAreas(areas: ReadonlySet<ToolArea>): LilosToolName[] {
   );
 }
 
+/* --------------------------- catalog rendering -------------------------- */
+
+/**
+ * The catalog row shape every catalog consumer shares (`GET /tools`, the
+ * MCP `tools/list`, and each engine plugin's shipped catalog snapshot —
+ * #411). One renderer, so a snapshot can't drift from what the gateway
+ * serves.
+ */
+export function catalogRows(names: readonly string[]) {
+  return names.map((name) => {
+    const contract = LILOS_TOOLS[name];
+    return {
+      name,
+      description: contract.doc,
+      inputSchema: z.toJSONSchema(contract.params) as Record<string, unknown>,
+      outputSchema: z.toJSONSchema(contract.result) as Record<string, unknown>,
+      annotations: { readOnlyHint: contract.access === "read" },
+      _meta: {
+        "lilos/area": contract.area,
+        "lilos/access": contract.access,
+      },
+    };
+  });
+}
+
+/** The whole catalog — what an engine caller without a session gets. */
+export function toolListAll() {
+  return catalogRows(Object.keys(LILOS_TOOLS));
+}
+
 /** HTTP tool API: `POST <harness>/tools/<name>` with the params as body. */
 export const TOOL_PATH_PREFIX = "/tools/";
 
