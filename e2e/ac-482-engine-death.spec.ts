@@ -289,6 +289,23 @@ test("AC-1/2/3 (#482) killed hermes child → typed errors fast, outage shown, s
     expect(newCode).toBe("engine_unavailable");
     expect(Date.now() - killAt).toBeLessThan(5_000);
 
+    /* #521: the in-flight TURN fails typed too — whichever path notices the
+       death first, the DM shows the restart surface (interrupted note +
+       sleep failure card), never a generic "Engine error:" line. */
+    await probe.waitEvent(
+      "message.created",
+      (p) => {
+        const m = (p as { message?: { authorKind?: string; text?: string } })
+          .message;
+        return (
+          m?.authorKind === "system" &&
+          typeof m.text === "string" &&
+          m.text.includes("engine restarted")
+        );
+      },
+      10_000,
+    );
+
     // Harness reports the engine not-running within 5 s of the kill.
     const outageBroadcast = probe.waitEvent(
       "host.changed",
@@ -380,9 +397,26 @@ test("AC-1/2/3 (#482) killed hermes child → typed errors fast, outage shown, s
       60_000,
     );
 
+    /* #521: no generic "Engine error:" note may ride the killed turn —
+       its only failure surface is the typed restart note above. */
+    const genericNotes = probe.events.filter((f) => {
+      if (f.method !== "message.created") return false;
+      const m = (
+        f.params as { message?: { authorKind?: string; text?: string } }
+      ).message;
+      return (
+        m?.authorKind === "system" &&
+        typeof m.text === "string" &&
+        m.text.includes("Engine error")
+      );
+    });
+    expect(genericNotes).toHaveLength(0);
+
     const log = stack.harnessLog();
     expect(log).toMatch(/engine state.*(restarting|backend)/);
-    expect(log).toMatch(/hermes backend/);
+    /* The adapter's own line, mirrored by the launcher's stdout → log
+       forwarding — no longer luck-of-the-error-message plumbing. */
+    expect(log).toMatch(/hermes backend down:/);
   } finally {
     probe.close();
     await stack.stop();
