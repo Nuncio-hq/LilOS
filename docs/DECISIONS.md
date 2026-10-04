@@ -222,6 +222,14 @@ PR does not exist.
   air twice restarts the adapter process. Not: the harness watching the
   hermes child itself, requests queueing on a dead socket, or per-request
   waits bounded by nothing. — #482
+- **D-#521 Engine failure surfaces are typed end to end: `turn.completed`
+  carries optional `errorCode` (-32006 on backend death) and the launcher
+  mirrors the engine child's stdout/stderr lines into `harness.log`.** A
+  backend-death turn posts the restart surface (interrupted note + sleep
+  failure card, deduped on the prompting message), never a generic
+  "Engine error:". Not: classifying failures by matching error text, or
+  asserting on adapter diagnostics the harness only sometimes forwards.
+  — #521
 - **D-#36 The agent gateway is the one agent surface.** Every engine
   session gets a gateway scope bound to its employee/thread; its tool
   calls reach LilOS through one endpoint and the scope resolves the

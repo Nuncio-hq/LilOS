@@ -2145,6 +2145,43 @@ describe("engine-hermes #482: settle + heal invariants", () => {
     gw.close();
   });
 
+  test("#521 markBackendDown stamps the typed errorCode on the refusal frame", async () => {
+    const { engine, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId, "hi");
+    engine.markBackendDown("gateway socket closed");
+    await expect(p).rejects.toMatchObject({ code: -32006 });
+    const done = h.events.filter((e) => e.type === "turn.completed");
+    expect(done).toHaveLength(1);
+    expect(done[0].payload).toMatchObject({
+      stopReason: "refusal",
+      errorCode: -32006,
+    });
+  });
+
+  test("#521 a typed prompt.submit rejection stamps errorCode on the refusal frame", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    /* The gateway-close-first ordering: the submit call is the one parked
+       when the backend dies — its typed reject reaches the caller AND the
+       refusal frame, both carrying -32006. */
+    gw.submitError = new RpcError(
+      -32006,
+      "hermes backend is down (gateway socket closed)",
+    );
+    const p = promptAsync(h, sessionId, "hi");
+    await expect(p).rejects.toMatchObject({ code: -32006 });
+    const done = h.events.filter((e) => e.type === "turn.completed");
+    expect(done).toHaveLength(1);
+    expect(done[0].payload).toMatchObject({
+      stopReason: "refusal",
+      errorCode: -32006,
+    });
+    expect((done[0].payload as { error?: string }).error).toContain(
+      "hermes backend is down",
+    );
+  });
+
   test("a turn whose backend dies mid-completion-await settles exactly once", async () => {
     const { gw, engine, h } = setup();
     const { sessionId } = await start(h);

@@ -199,7 +199,16 @@ export class HermesGateway implements GatewayLike {
        the relay maps it, instead of a generic engine_error. */
     for (const [, p] of this.pending) {
       if (p.timer) clearTimeout(p.timer);
-      p.reject(new RpcError(RPC_ERRORS.BACKEND_DOWN, "gateway closed"));
+      /* #521: the socket-close path notices the death first when a call is
+         in-flight — its reject must read like a backend death (the same
+         `hermes backend is down (...)` family `markBackendDown` uses), not
+         an untyped-looking "gateway closed". */
+      p.reject(
+        new RpcError(
+          RPC_ERRORS.BACKEND_DOWN,
+          "hermes backend is down (gateway socket closed)",
+        ),
+      );
     }
     this.pending.clear();
     for (const fn of this.closeListeners) fn();
