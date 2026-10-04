@@ -120,7 +120,7 @@ if [ "$LABEL" = "stub" ]; then
   # waits for the real "listening" line) — here we only hand it the port
   # the provider config above points at, plus the request log path.
   export LILOS_STUB_PORT="$STUB_PORT"
-  export STUB_REQUEST_LOG=/tmp/openai-stub-411-requests.log
+  export STUB_REQUEST_LOG="$SCRATCH/openai-stub-requests.log"
 fi
 
 export LILOS_ENGINE=hermes
