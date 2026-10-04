@@ -98,6 +98,12 @@ interface SessionBinding {
   gatewaySession?: string;
   /** Folder the session works in — the checkpoint store's work tree (#134). */
   cwd: string;
+  /**
+   * The conversation picked a real folder (`conv.cwd`) — #412: folder-less
+   * sessions run in `~` too, but folder-only state (checkpoints, file
+   * restores) must never key off that fallback cwd.
+   */
+  hasFolder: boolean;
   /** Highest engine event seq applied — the `events.since` watermark. */
   lastSeq: number;
   /** Running turn, if any. */
@@ -1583,7 +1589,10 @@ export class Harness {
     message: AppMessage,
   ): Promise<void> {
     const checkpoints = this.opts.checkpoints;
-    if (!checkpoints) return;
+    /* #412: a folder-less session's cwd is the user's home — snapshotting
+       it would `git add -A` the whole ~, and a later restore would delete
+       user files. Folder checkpoints only exist for folder-bound sessions. */
+    if (!checkpoints || !binding.hasFolder) return;
     try {
       const checkpoint = await checkpoints.snapshot(binding.cwd);
       await this.opts.relay.request("messages.setCheckpoint", {
@@ -1625,12 +1634,13 @@ export class Harness {
         { code: -32009 },
       );
     }
-    /* Stored cwd may be `~/x` (host fs echoes collapsed): expand before
-       any spawn/fs use — literal `~` is not a valid cwd for execFile. */
-    const cwd = expandPath(
-      params.cwd ?? binding?.cwd ?? this.opts.workdir,
-      this.home,
-    );
+    /* Restore only into a real folder (#412): a folder-less session's
+       fallback cwd is the user's home — restoring a checkpoint there would
+       delete user files. `params.cwd` (a scheduled/scripted rewind naming
+       its target) still wins. Stored cwd may be `~/x` (host fs echoes
+       collapsed): expand before any fs use. */
+    const restoreCwd =
+      params.cwd ?? (binding?.hasFolder ? binding.cwd : undefined);
     /* Engine first: a refusal (INVALID_STATE — a turn is running) must leave
        everything untouched, before any file or queue mutation. */
     let engineRewound = false;
@@ -1661,8 +1671,11 @@ export class Harness {
       }
     }
     let filesRestored = false;
-    if (params.checkpoint && this.opts.checkpoints) {
-      await this.opts.checkpoints.restore(cwd, params.checkpoint);
+    if (params.checkpoint && this.opts.checkpoints && restoreCwd) {
+      await this.opts.checkpoints.restore(
+        expandPath(restoreCwd, this.home),
+        params.checkpoint,
+      );
       filesRestored = true;
     }
     /* Queued-behind-a-turn user messages at/after the rewind point never
@@ -1839,6 +1852,7 @@ export class Harness {
           sessionId: conv.engineRef,
           ref: conv.engineRef,
           cwd: expandPath(conv.cwd ?? this.opts.workdir, this.home),
+          hasFolder: Boolean(conv.cwd),
           access: conv.access,
           lastSeq: 0,
           queue: [],
@@ -1902,6 +1916,7 @@ export class Harness {
       sessionId: "",
       ref: "",
       cwd: expandPath(conv.cwd ?? this.opts.workdir, this.home),
+      hasFolder: Boolean(conv?.cwd),
       access: conv?.access ?? "ask",
       lastSeq: 0,
       queue: [],

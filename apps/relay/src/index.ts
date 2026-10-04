@@ -4,7 +4,7 @@
  * machine, stores' SQL, and Hono app stay testable under Node/vitest.
  */
 import { Database } from "bun:sqlite";
-import { mkdirSync, writeFileSync, writeSync } from "node:fs";
+import { mkdirSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { systemClock, watchOrphaned } from "@lilos/background";
@@ -211,16 +211,14 @@ const app = createApp({
 /* Log our id BEFORE bind: an e2e readiness probe (#273) must know the id of
    the relay it spawned even when a foreign stack already holds the port —
    post-bind it would never print and the probe couldn't name both ids.
-   Written unbuffered and to a file (#516): buffered stdout can be dropped
-   when the process is killed mid-boot, and the probe then never sees the
-   id. `relay-instance-id` is also how `bun run dev` learns which
-   instanceId is its own. */
+   Written unbuffered (#516): buffered stdout can be dropped when the
+   process is killed mid-boot, and the probe then never sees the id. This
+   line is also how `bun run dev` learns which instanceId is its own. */
 try {
   writeSync(1, `[relay] instanceId: ${relay.instanceId}\n`);
 } catch {
-  // fd 1 closed (spawned with stdout ignored) — the file still carries it.
+  // fd 1 closed (spawned with stdout ignored) — /healthz carries the id.
 }
-writeFileSync(config.instanceIdPath, relay.instanceId);
 
 const server = await listen(config.host);
 

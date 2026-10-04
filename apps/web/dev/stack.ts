@@ -15,7 +15,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -115,90 +115,99 @@ function run(
   return p;
 }
 
-/* The relay writes <HOME>/relay-instance-id before it binds (#516); a stale
-   one from an older boot on a reused LILOS_HOME must not be read as ours. */
-const instanceIdPath = path.join(HOME, "relay-instance-id");
-try {
-  unlinkSync(instanceIdPath);
-} catch {}
+/* The relay's stdout is piped, not inherited: an identity-checked readiness
+   needs the instanceId the relay logs pre-bind (`[relay] instanceId:`), and
+   "inherit" gives no access to the stream. Every line is still forwarded so
+   the outer boot probe sees the same output. */
+const relayProc = spawn(["bun", "run", "apps/relay/src/index.ts"], {
+  cwd: repo,
+  env: {
+    ...process.env,
+    LILOS_RELAY_HOME: HOME,
+    LILOS_RELAY_PORT: String(RELAY_PORT),
+    LILOS_RELAY_HOST: "127.0.0.1",
+  },
+  stdout: "pipe",
+  stderr: "inherit",
+});
+kids.push(relayProc);
+console.log(`[stack] relay: bun run apps/relay/src/index.ts`);
 
-const relay = run("relay", ["bun", "run", "apps/relay/src/index.ts"], {
-  LILOS_RELAY_HOME: HOME,
-  LILOS_RELAY_PORT: String(RELAY_PORT),
-  LILOS_RELAY_HOST: "127.0.0.1",
+let relayInstance: string | undefined;
+let relayUp = false;
+let foreign: string | undefined;
+relayProc.exited.then((code) => {
+  if (!shuttingDown) {
+    /* A pre-ready exit still names who held the port (#516) — the outer boot
+       probe reads this from the forwarded output. */
+    console.error(
+      `[stack] relay exited (code ${code})` +
+        (relayUp
+          ? ""
+          : ` before port ${RELAY_PORT} was ours` +
+              (foreign !== undefined ? ` — /healthz answers ${foreign}` : "") +
+              ` (ours ${relayInstance ?? "never logged"})`),
+    );
+    void shutdown(1);
+  }
 });
 
-/* Identity-checked readiness (#516): "something answers on the port" is NOT
-   our relay — a foreign stack (or a still-draining predecessor) can hold it
-   and answer every probe. The port is ours only when /healthz returns the
-   instanceId THIS relay wrote to <HOME>/relay-instance-id before binding.
-   A foreign id gets a short grace — an orphan mid-sweep or a draining stack
-   releases within seconds — but one that keeps answering fails the boot
-   naming the port and both ids, instead of sending the harness at a relay
-   that was never ours. Bound each poll: a half-dead predecessor can hold
-   the port bound but unanswering, and an unbounded fetch would hang this
-   boot forever (#84). */
-const readTrim = (p: string) => {
-  try {
-    return readFileSync(p, "utf8").trim() || undefined;
-  } catch {
-    return undefined;
+const INSTANCE_LINE = /instanceId: ([0-9a-fA-F-]{36})/;
+void (async () => {
+  const dec = new TextDecoder();
+  const stream = relayProc.stdout as ReadableStream<Uint8Array>;
+  for await (const chunk of stream) {
+    const text = dec.decode(chunk, { stream: true });
+    relayInstance ??= INSTANCE_LINE.exec(text)?.[1];
+    process.stdout.write(text);
   }
-};
-const healthzId = async (port: number) => {
-  const r = await fetch(`http://127.0.0.1:${port}/healthz`, {
-    signal: AbortSignal.timeout(1_000),
-  }).catch(() => undefined);
-  if (!r) return undefined;
-  const id = await r
-    .json()
-    .then((j) => (j as { instanceId?: unknown }).instanceId)
-    .catch(() => undefined);
-  return typeof id === "string" ? id : `<HTTP ${r.status}, no instanceId>`;
-};
+})();
 
+// wait for the relay token file AND the socket — the token lands first
 const tokenPath = path.join(HOME, "relay-token");
-let ours: string | undefined;
-let foreign: string | undefined;
-let foreignSince: number | undefined;
+for (let i = 0; i < 100 && !existsSync(tokenPath); i++) {
+  await Bun.sleep(50);
+}
+/* Identity-checked readiness (#273/#516, same rule as e2e/helpers/stack.ts):
+   a bare `fetch /` accepts whatever already holds the port — a foreign
+   relay's stand-in answers it too, and the harness then dies on a WebSocket
+   upgrade to a plain-HTTP endpoint. Require /healthz to serve OUR relay's
+   own instanceId (parsed from its stdout above). A foreign answer is not an
+   instant fail — the holder may be draining while our relay's bind-retry
+   races the same port — but it is remembered so a boot that never lands
+   names the port and both ids (the exited handler does the same). Bound
+   each poll: a half-dead predecessor can hold the port bound but
+   unanswering, and an unbounded fetch hangs this boot (#84). */
 const relayDeadline = Date.now() + 25_000;
-for (;;) {
-  ours ??= readTrim(instanceIdPath);
-  const seen = await healthzId(RELAY_PORT);
-  if (seen !== undefined && seen !== ours) {
-    if (seen !== foreign) foreignSince = undefined;
-    foreign = seen;
-    foreignSince ??= Date.now();
-    if (Date.now() - foreignSince > 4_000) {
-      console.error(
-        `[stack] port ${RELAY_PORT} answers /healthz, but it is not the ` +
-          `relay this stack started (ours ${ours ?? "not up yet"}, theirs ${foreign})`,
-      );
-      await shutdown(1);
-    }
-  } else {
-    foreignSince = undefined; // port silent — the holder may be draining
+while (!relayUp) {
+  const seen = await fetch(`http://127.0.0.1:${RELAY_PORT}/healthz`, {
+    signal: AbortSignal.timeout(1_000),
+  })
+    .then((r) => r.json())
+    .then((j) => {
+      const id = (j as { instanceId?: unknown }).instanceId;
+      return typeof id === "string" ? id : `<HTTP ${r.status}, no instanceId>`;
+    })
+    .catch(() => undefined);
+  if (seen !== undefined && seen === relayInstance) {
+    relayUp = true;
+    break;
   }
-  if (ours && seen === ours) break;
-  if (relay.exitCode !== null) {
-    console.error(
-      `[stack] relay exited (code ${relay.exitCode}) before its port was ours` +
-        (foreign
-          ? ` — port ${RELAY_PORT} answers /healthz with ${foreign}`
-          : ""),
-    );
-    await shutdown(1);
-  }
+  if (seen !== undefined) foreign = seen;
   if (Date.now() > relayDeadline) {
     console.error(
-      `[stack] relay never claimed :${RELAY_PORT}` +
-        (foreign ? ` — it answers /healthz with ${foreign}` : ""),
+      `[stack] relay never claimed port ${RELAY_PORT} ` +
+        `(ours ${relayInstance ?? "never logged"}` +
+        (foreign !== undefined ? `, /healthz answers ${foreign}` : "") +
+        `)`,
     );
     await shutdown(1);
   }
-  await Bun.sleep(150);
+  await Bun.sleep(100);
 }
-const token = readTrim(tokenPath) ?? "";
+const token = existsSync(tokenPath)
+  ? readFileSync(tokenPath, "utf8").trim()
+  : "";
 if (!token) {
   console.error("[stack] relay did not write its token file");
   await shutdown(1);
@@ -213,7 +222,8 @@ const harnessEnv: Record<string, string> = {
   LILOS_RELAY_TOKEN: token,
   LILOS_HARNESS_HOME: HARNESS_HOME,
   LILOS_REPO_ROOT: repo,
-  LILOS_WORKDIR: path.join(HARNESS_HOME, "work"),
+  /* No LILOS_WORKDIR: #412 defaults no-folder sessions to the user's home —
+     the shipped behavior. e2e pins its own scratch workdir instead. */
   LILOS_FEED_PORT: String(FEED_PORT),
 };
 if (!process.env.LILOS_ENGINE) harnessEnv.LILOS_ENGINE = "fake";

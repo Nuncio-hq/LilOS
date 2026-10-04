@@ -10,7 +10,6 @@ export interface RelayConfig {
   homeDir: string;
   dbPath: string;
   tokenPath: string;
-  instanceIdPath: string;
 }
 
 const DEFAULT_RELAY_PORT = 4577;
@@ -33,6 +32,5 @@ export function resolveRelayConfig(
     homeDir,
     dbPath: join(homeDir, "relay.sqlite"),
     tokenPath: join(homeDir, "relay-token"),
-    instanceIdPath: join(homeDir, "relay-instance-id"),
   };
 }

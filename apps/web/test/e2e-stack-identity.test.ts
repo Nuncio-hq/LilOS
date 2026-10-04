@@ -82,7 +82,10 @@ describe("AC-1 (#273) stack boot refuses a foreign relay on its port", () => {
      on the stand-in's HTTP-only socket, and the probe reported only
      "exited before port was ours". `holdOursMs` withholds the child's id
      from the live probe to model that window; the report must still name
-     the port and both ids. */
+     the port and both ids. With the dev stack's own readiness identity-
+     checked, the stack's exit now comes from the relay's ~15 s bind-retry
+     budget, so the hold must outlast it for the probe to still be blind at
+     exit. */
   it("AC-1 (#516) names the port and both ids when the stack exits before identity lands", async () => {
     const foreign = await standInRelay();
     try {
@@ -92,7 +95,7 @@ describe("AC-1 (#273) stack boot refuses a foreign relay on its port", () => {
         "ac1-516",
         { relay: foreign.port, feed, web },
         {},
-        { holdOursMs: 10_000 },
+        { holdOursMs: 20_000 },
       ).then(
         (stack) => ({ ok: true as const, stack }),
         (e: Error) => ({ ok: false as const, e }),

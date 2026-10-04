@@ -18,9 +18,13 @@ import type { Logger } from "./log";
 export interface HarnessConfig {
   relayUrl: string;
   relayToken: string;
-  /** Harness state dir: logs + the default engine workdir live here. */
+  /** Harness state dir: logs and engine-side state live here. */
   homeDir: string;
-  /** Engine sessions' cwd (a repo/workspace the agents edit). */
+  /**
+   * Engine sessions' cwd when the conversation picked no folder — the
+   * user's home, like Claude Code and Codex (#412); `LILOS_WORKDIR` pins
+   * a different default for tests/dev stacks.
+   */
   workdir: string;
   /** Shadow-git checkpoint stores: <dir>/<folder-hash> per session cwd (#134). */
   checkpointsDir: string;
@@ -99,7 +103,7 @@ export function resolveHarnessConfig(
     relayUrl: env.LILOS_RELAY_URL ?? DEFAULT_RELAY_URL,
     relayToken,
     homeDir,
-    workdir: env.LILOS_WORKDIR ?? join(homeDir, "work"),
+    workdir: env.LILOS_WORKDIR ?? homedir(),
     /* ~/.lilos/checkpoints by default — sibling of the harness home, per
        folder-hash (#134). */
     checkpointsDir:

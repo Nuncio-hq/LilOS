@@ -9,6 +9,9 @@ import { openDm, setupWorld as setupWorldBase, waitFor } from "./helpers";
  * Issue #196: a folder-less session is a plain chat — no system note
  * announces the default workdir anymore (#113 AC-6 superseded), and a note
  * stored under the old `sys:<conv>:no-folder` dedupe key never renders.
+ * Issue #412: that default workdir is the user's home — the conversation
+ * row still carries `cwd: null`, so composer/header read "No folder" and
+ * the Workbench never opens over ~.
  * Same in-process world as harness.test.ts (borrowed, kept separate so
  * sibling PRs editing that file don't conflict).
  */
@@ -132,6 +135,16 @@ describe("AC-1 no folder keeps the harness default and stays silent", () => {
         return lastSessionStart(w);
       }, "session.start for default folder");
       expect(lastSessionStart(w)?.cwd).toBe(WORKDIR);
+
+      /* #412 AC-2b: the conversation row keeps cwd null — composer + thread
+         header still say "No folder" and the Workbench (gated on conv.cwd)
+         never lists/diffs the home folder this session runs in. */
+      const { conversations: rows } = await w.user.request<{
+        conversations: { id: string; cwd: string | null }[];
+      }>("conversations.list", {});
+      expect(
+        rows.find((c) => c.id === conversation.id)?.cwd ?? null,
+      ).toBeNull();
 
       // Give the turn a beat to settle, then read the whole thread: no
       // "No folder: working in …" note — the session is a plain chat (#196).

@@ -247,7 +247,8 @@ export async function waitForInstance(
         );
       throw new Error(
         `${kind} stack exited (code ${proc.exitCode ?? proc.signalCode}) before port ${port} was ours` +
-          (them !== undefined ? ` — /healthz still answers with ${them}` : "") +
+          (them !== undefined ? ` — /healthz still answers ${them}` : "") +
+          (ours !== undefined ? ` (ours ${ours})` : "") +
           ` — last output:\n${out().slice(-1200)}`,
       );
     }
@@ -296,6 +297,10 @@ export async function bootStack(
     env: {
       ...process.env,
       LILOS_HOME: home,
+      /* #412: the shipped default sends no-folder sessions to the user's
+         home — a spec must never work there, so the scratch home pins a
+         workdir explicitly. */
+      LILOS_WORKDIR: path.join(home, "work"),
       LILOS_ENGINE_TAG: leakTag,
       LILOS_RELAY_PORT: String(ports.relay),
       LILOS_FEED_PORT: String(ports.feed),

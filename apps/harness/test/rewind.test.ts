@@ -91,6 +91,9 @@ async function sendAndAnswer(
   channelId: string,
   conversationId: string | undefined,
   text: string,
+  /** Pick a real folder — checkpoints only stamp for folder-bound
+      sessions (#412). */
+  cwd?: string,
 ) {
   if (conversationId) {
     await user.request("messages.post", {
@@ -101,7 +104,7 @@ async function sendAndAnswer(
   } else {
     const opened = await user.request<{ conversation: { id: string } }>(
       "conversations.open",
-      { channelId, text },
+      { channelId, text, ...(cwd ? { cwd } : {}) },
     );
     conversationId = opened.conversation.id;
   }
@@ -140,6 +143,7 @@ describe("conversations.rewind — harness leg (#134)", () => {
         channel.id,
         undefined,
         "look around",
+        w.workdir,
       );
       const { messages } = await waitFor(async () => {
         const { messages } = await conversationMessages(
@@ -168,6 +172,7 @@ describe("conversations.rewind — harness leg (#134)", () => {
         channel.id,
         undefined,
         "remember alpha",
+        w.workdir,
       );
       void first;
       /* sendAndAnswer returns after the turn — and the stamp lands before
@@ -270,6 +275,7 @@ describe("conversations.rewind — harness leg (#134)", () => {
         channel.id,
         undefined,
         "remember alpha",
+        w.workdir,
       );
       void first;
       const { messages: second } = await sendAndAnswer(
@@ -355,6 +361,36 @@ describe("conversations.rewind — harness leg (#134)", () => {
       expect(texts).toHaveLength(1);
       expect(texts[0]).toContain("first");
       expect(texts[0]).not.toContain("second");
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("a folder-less session stamps no checkpoint and restores nothing (#412)", async () => {
+    /* Folder-less sessions run in the user's home — snapshotting ~ into the
+       shadow store, or restoring a checkpoint over it, must never happen. */
+    const w = await setupWorld();
+    try {
+      const channel = await openDm(w.user);
+      const { conversationId, messages } = await sendAndAnswer(
+        w.user,
+        channel.id,
+        undefined,
+        "plain chat",
+      );
+      const userMsg = messages.find((m) => m.authorKind === "user");
+      if (!userMsg) throw new Error("user message not posted");
+      expect(w.checkpoints.calls.snapshots).toEqual([]);
+      expect(userMsg.checkpoint ?? null).toBeNull();
+      const res = await w.user.request<{
+        engineRewound: boolean;
+        filesRestored: boolean;
+      }>("conversations.rewind", {
+        conversationId,
+        messageId: userMsg.id,
+      });
+      expect(res.filesRestored).toBe(false);
+      expect(w.checkpoints.calls.restores).toEqual([]);
     } finally {
       await w.cleanup();
     }
