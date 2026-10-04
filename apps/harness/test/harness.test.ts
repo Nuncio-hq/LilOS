@@ -2706,8 +2706,9 @@ describe("rebind vs in-flight prompt (#487)", () => {
         const { conversations } = await w.user.request<{
           conversations: { id: string; engineRef: string | null }[];
         }>("conversations.list", {});
-        const ref = conversations.find((c) => c.id === conversation.id)
-          ?.engineRef;
+        const ref = conversations.find(
+          (c) => c.id === conversation.id,
+        )?.engineRef;
         return ref && ref !== engineRef ? ref : undefined;
       }, "rebound engineRef");
       /* The rebind's queue splice runs in the synchronous tail after its last
