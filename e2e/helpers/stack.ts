@@ -31,6 +31,7 @@ export interface StackPorts {
 export interface Stack {
   home: string;
   webUrl: string;
+  ports: StackPorts;
   relayWs: string;
   feedWs: string;
   relayToken: string;
@@ -234,13 +235,17 @@ export const waitForFeed = (
   ms?: number,
 ) => waitForInstance("harness", port, proc, out, ms);
 
-/** Boot `bun run dev` (relay + harness + vite dev) on the given ports. */
+/** Boot `bun run dev` (relay + harness + vite dev) on the given ports.
+    `opts.home` reuses a LILOS_HOME — a restart on the same relay state
+    (ac-92's persistence leg). */
 export async function bootStack(
   tag: string,
   ports: StackPorts,
   extraEnv: Record<string, string> = {},
+  opts: { home?: string } = {},
 ): Promise<Stack> {
-  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
+  const home =
+    opts.home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
   const leakTag = engineTag(tag);
   const proc = spawn("bun", ["run", "dev"], {
     cwd: webDir,
@@ -272,6 +277,7 @@ export async function bootStack(
     return {
       home,
       webUrl,
+      ports,
       relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
       feedWs: `ws://127.0.0.1:${ports.feed}/ws`,
       relayToken,

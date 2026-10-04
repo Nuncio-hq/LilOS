@@ -7,6 +7,9 @@
  */
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { bootStack, freePort } from "../../../e2e/helpers/stack";
 
@@ -71,4 +74,33 @@ describe("AC-1 (#273) stack boot refuses a foreign relay on its port", () => {
     // "Within seconds" — not after the relay's whole bind-retry budget.
     expect(elapsed).toBeLessThan(30_000);
   }, 60_000);
+});
+
+describe("AC-2 (#273) every stack-booting spec uses the shared helper", () => {
+  const e2eDir = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../e2e",
+  );
+  const specs = readdirSync(e2eDir).filter((f) => f.endsWith(".spec.ts"));
+
+  /* A private copy of the readiness probe is how the identity-blind bug
+     spread in the first place — forbid re-declaring the shared helpers'
+     names, and any probe of a relay/feed port that isn't identity-checked. */
+  const PRIVATE_HELPER =
+    /\b(?:async function|function|const)\s+(bootStack|waitForHttp|waitForToken|killProc|freePort|pickPorts|waitForInstance|waitForRelay|waitForFeed)\b/;
+  const BLIND_RELAY_FEED = /waitForHttp\(`http:\/\/127\.0\.0\.1:\$\{[^}]*(relay|feed)/i;
+
+  it("no spec re-declares a private boot/readiness helper", () => {
+    const offenders = specs.filter((f) =>
+      PRIVATE_HELPER.test(readFileSync(path.join(e2eDir, f), "utf8")),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("no spec probes a relay/feed port with plain waitForHttp", () => {
+    const offenders = specs.filter((f) =>
+      BLIND_RELAY_FEED.test(readFileSync(path.join(e2eDir, f), "utf8")),
+    );
+    expect(offenders).toEqual([]);
+  });
 });
