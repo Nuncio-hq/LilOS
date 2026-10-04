@@ -173,6 +173,9 @@ export class FakeGateway implements GatewayLike {
   steerStatus: "queued" | "rejected" = "queued";
   /** When set, session.steer rejects with this error code (e.g. 4010 build window). */
   steerError?: number;
+  /** #521: when set, prompt.submit rejects with it — a typed backend-death
+      wire error landing inside prompt()'s submit await. */
+  submitError?: RpcError;
   /**
    * #50 AC-1 — `session.create` params this gateway's contract forbids
    * (older Hermes builds: Params models are `extra="forbid"` and answer the
@@ -298,6 +301,7 @@ export class FakeGateway implements GatewayLike {
       }
       case "prompt.submit": {
         this.lastPrompt = p;
+        if (this.submitError) return Promise.reject(this.submitError);
         const sid = String(p.session_id);
         const promptRef = this.refs.get(sid);
         const promptStored = promptRef

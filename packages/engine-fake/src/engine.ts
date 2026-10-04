@@ -1758,42 +1758,55 @@ export class FakeEngine {
        arming turn left on the session (a `slow:` prompt's pace still
        carries in when no `slowleg:` ran). */
     if (s.legPace !== undefined) s.turnPace = s.legPace;
-    await this.sleep(s);
-    if (s.turn || !this.isOpen(s)) return;
-    const turnId = `t${++this.turnCounter}`;
-    s.turn = { turnId, phase: "reasoning", interrupted: false };
-    s.turnCount += 1;
-    this.emit(s, "turn.started", {
-      turnId,
-      model: s.model,
-      provider: s.provider,
-      effort: s.effort,
-      fast: s.fast,
-      initiatedBy: "agent",
-    });
-    this.setState(s, "running");
-    for (const w of words(
-      "Wrapping the background run and packaging the result for delivery. ",
-    )) {
+    let turnId: string | undefined;
+    try {
+      await this.sleep(s);
+      if (s.turn || !this.isOpen(s)) return;
+      turnId = `t${++this.turnCounter}`;
+      s.turn = { turnId, phase: "reasoning", interrupted: false };
+      s.turnCount += 1;
+      this.emit(s, "turn.started", {
+        turnId,
+        model: s.model,
+        provider: s.provider,
+        effort: s.effort,
+        fast: s.fast,
+        initiatedBy: "agent",
+      });
+      this.setState(s, "running");
+      for (const w of words(
+        "Wrapping the background run and packaging the result for delivery. ",
+      )) {
+        await this.sleep(s);
+        if (!s.turn || s.turn.interrupted) return this.legStopped(s, turnId);
+        this.emit(s, "turn.delta", {
+          turnId,
+          stream: "reasoning",
+          delta: w,
+        });
+      }
+      /* A couple of open ticks: a mid-leg steer has a window to queue. */
       await this.sleep(s);
       if (!s.turn || s.turn.interrupted) return this.legStopped(s, turnId);
-      this.emit(s, "turn.delta", {
-        turnId,
-        stream: "reasoning",
-        delta: w,
-      });
+      await this.sleep(s);
+      if (!s.turn || s.turn.interrupted) return this.legStopped(s, turnId);
+      s.turn.phase = "text";
+      this.emit(s, "turn.delta", { turnId, stream: "text", delta: text });
+      s.turn = undefined;
+      this.emit(s, "turn.completed", { turnId, stopReason: "end_turn" });
+      if (this.isOpen(s)) this.setState(s, "idle");
+      this.pumpSteers(s);
+    } catch (e) {
+      if (!(e instanceof Interrupted)) throw e;
+      /* #458: an interrupt (or session.stop) mid-leg throws out of `sleep`;
+         this `void`'d call has nobody to reject to, so it escaped as an
+         unhandled rejection and left `s.turn` minted — the session read
+         `running` forever and the next prompt answered INVALID_STATE.
+         Settle the leg the same way the main turn's interrupt path does.
+         An Interrupted raised before the mint belongs to the turn then
+         holding `s.turn` — that turn's own path settles it. */
+      if (turnId !== undefined) this.legStopped(s, turnId);
     }
-    /* A couple of open ticks: a mid-leg steer has a window to queue. */
-    await this.sleep(s);
-    if (!s.turn || s.turn.interrupted) return this.legStopped(s, turnId);
-    await this.sleep(s);
-    if (!s.turn || s.turn.interrupted) return this.legStopped(s, turnId);
-    s.turn.phase = "text";
-    this.emit(s, "turn.delta", { turnId, stream: "text", delta: text });
-    s.turn = undefined;
-    this.emit(s, "turn.completed", { turnId, stopReason: "end_turn" });
-    if (this.isOpen(s)) this.setState(s, "idle");
-    this.pumpSteers(s);
   }
 
   private legStopped(s: FakeSession, turnId: string) {
@@ -1842,7 +1855,18 @@ export class FakeEngine {
      — the frames land while the session idles, carrying no turnId (the
      live-capture shape: turn.completed … subagent.completed ~18s later). */
   private async drainSubagentCloses(s: FakeSession) {
-    await this.sleep(s);
+    /* #524: `sleep` borrows the turn's interrupt machinery — it throws
+       when whatever turn currently holds `s.turn` is interrupted, but the
+       drain owns no turn. A prompt landing inside this one-tick window can
+       mint a new turn whose interrupt (or session.stop) would otherwise
+       escape this `void`'d call as an unhandled rejection and strand the
+       queued closes. Swallow `Interrupted`; anything else still
+       propagates. */
+    try {
+      await this.sleep(s);
+    } catch (e) {
+      if (!(e instanceof Interrupted)) throw e;
+    }
     /* #400: held closes stay parked — only the next turn intake releases
        them (flushHeldCloses), so a test controls the window. */
     const closing = s.pendingSubagentClose.filter((c) => !c.hold);

@@ -1,8 +1,6 @@
-import { execFile } from "node:child_process";
 import { existsSync, promises as fsp } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, normalize, sep } from "node:path";
-import { promisify } from "node:util";
 import type {
   OsEditor,
   OsEditorId,
@@ -11,9 +9,8 @@ import type {
   OsOpenResult,
 } from "@lilos/contracts/host";
 import { HOST_ERRORS, HostError } from "./errors.js";
+import { run } from "./exec.js";
 import { expandPath } from "./paths.js";
-
-const run = promisify(execFile);
 
 /** How the editor's bundled CLI expresses "open at line". */
 type LineSyntax = "-g" | "colon" | "none";

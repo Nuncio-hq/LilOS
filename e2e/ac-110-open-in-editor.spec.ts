@@ -17,7 +17,7 @@ import { bootStack, freePort, type Stack } from "./helpers/stack";
  * Issue #110 — "Open in <editor>" / "Reveal in Finder" on the real stack
  * (relay + harness + vite dev, engine-fake). The spawned stack inherits
  * LILOS_APP_DIRS pointing at the committed fake Cursor.app/Zed.app bundles
- * (e2e/os-fake), a fake `open` earlier on PATH, and LILOS_OPEN_LOG where
+ * (e2e/os-fake), a fake `open` earlier on PATH, and FAKE_OPEN_LOG where
  * every fake binary records its argv — so a menu click proves the REAL
  * `os.open` end to end, not a stub. AC-5's "no host method → no controls"
  * leg stubs `host.describe` at the network layer (page.route), exactly
@@ -62,7 +62,7 @@ test.beforeAll(async () => {
       // os.editors sees the fake bundles; os.open's `open` resolves to the
       // fake bin — both write argv lines to LOG.
       LILOS_APP_DIRS: path.join(FAKE_OS, "Applications"),
-      LILOS_OPEN_LOG: LOG,
+      FAKE_OPEN_LOG: LOG,
       PATH: `${path.join(FAKE_OS, "bin")}:${process.env.PATH}`,
     },
   );
