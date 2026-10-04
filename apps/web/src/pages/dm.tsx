@@ -984,6 +984,14 @@ export function DmPage() {
       root = listed && !listed.rewound ? listed : threadPool[0];
     }
     const modelLive = model?.live;
+    /* #476: the live turn's prompt stamp — `postAttach` marks the feed's
+       attach watermark, but a send that raced a reload can mint
+       `turn.started` past it. The prompt row's `createdAt` against the
+       view's mount is the honest "began while you watch" test; `null`
+       means the turn is ref'd but its prompt row hasn't loaded yet. */
+    const livePromptAt = modelLive?.ref
+      ? (threadPool.find((m) => m.id === modelLive.ref)?.createdAt ?? null)
+      : undefined;
     const asksHere = convAsks(conv);
     /* Visible messages are the relay's; the working transcript is the engine
        feed's — when it can't replay, say why instead of going silent (#28). */
@@ -1337,6 +1345,7 @@ export function DmPage() {
              `?tab=` (a panel link's pick) and keeping it on further picks
              means a reload always lands on the tab the URL names. */
           initialTab={focusTab}
+          livePromptAt={livePromptAt}
           onTab={(t: WbTab) =>
             void navigate({
               to: "/dm/$employeeId/$conversationId/focus",

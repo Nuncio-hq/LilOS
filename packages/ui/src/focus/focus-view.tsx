@@ -139,6 +139,7 @@ export function FocusView({
   onPlan,
   browser,
   initialTab,
+  livePromptAt,
   onTab,
   wbSpot,
   ship,
@@ -234,6 +235,14 @@ export function FocusView({
   /* Opens on this Workbench tab (e.g. a thread panel's "N subagents · Open" link, #317) —
      counts as the user's pick, so follow-the-agent doesn't switch away from it. */
   initialTab?: WbTab;
+  /* #476: the live turn's prompt stamp — the relay `createdAt` of the
+     message `turn.started.ref` names. `postAttach` marks the feed's
+     attach watermark, but a send that raced this view's mount can still
+     mint `turn.started` past it; the prompt's own stamp is what says the
+     turn is not new here. `null` = ref'd but the prompt row hasn't
+     loaded — the re-arm holds until it lands. Undefined = no ref to
+     test (mocks, agent legs, engines that don't echo `ref`). */
+  livePromptAt?: number | null;
   /* The user picked a Workbench tab — the host syncs it into the URL so a
      reload lands on the same one (#319 AC-2). Follow-the-agent switches
      don't fire it: only picks go through pickTab. */
@@ -332,10 +341,24 @@ export function FocusView({
      deep-linked tab before the user ever saw it (#396). `live` arrives
      async, so the discriminator is the turn's own attach boundary
      (`postAttach`), not mount-time state; mock rows without it keep the
-     old always-follow behavior. */
+     old always-follow behavior.
+     #476: `postAttach` alone still misreads one case — a prompt sent
+     before this view opened can mint `turn.started` past the feed's
+     attach (the send raced the reload; dispatch outlived the attach).
+     The prompt's own stamp is the honest test: `livePromptAt` at or
+     before this mount means the turn is not new here; `null` means the
+     ref'd prompt row is still loading, so the re-arm holds and its
+     landing re-fires this effect. */
+  const mountedAt = useRef(Date.now());
   useEffect(() => {
-    if (live && live.postAttach !== false) setFollow(true);
-  }, [live?.id]);
+    if (!live || live.postAttach === false) return;
+    if (
+      livePromptAt === null ||
+      (livePromptAt !== undefined && livePromptAt <= mountedAt.current)
+    )
+      return;
+    setFollow(true);
+  }, [live?.id, livePromptAt]);
   // Turn finished with edits → land on Changes, like Codex's review pane.
   const lastDone = [...thread.replies]
     .reverse()
