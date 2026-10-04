@@ -104,10 +104,14 @@ test("tray reserves its height: the approval card stays answerable with a waitin
 
     // …and the card stays clickable at the tightest width — "Once"
     // resolves the ask (the 900px shot hid the button row entirely).
+    // Read the ask id BEFORE clicking: the turn's next gated step mints a
+    // new ask within ms of this one resolving, and a post-click read on the
+    // auto-waiting `openCard` locator re-binds to that fresh card — the
+    // poll below would then track an ask nobody answered (#493).
+    const askId = await openCard(page).getAttribute("data-ask-id");
     await openCard(page)
       .getByRole("button", { name: /^Once$/i })
       .click();
-    const askId = await openCard(page).getAttribute("data-ask-id");
     if (askId) {
       await expect
         .poll(
