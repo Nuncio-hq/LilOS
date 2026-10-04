@@ -1236,6 +1236,17 @@ export class Harness {
                (a restart would re-owe it anyway: pending turns skip removed
                rows) and don't track it as a droppable steer. */
             if (this.dismissed.has(message.id)) return;
+            /* #487: a rebind during the steer RPC swapped the binding — this
+               ack belongs to a session that no longer exists. A "steered" the
+               live lane never saw is really a `not_running`: the send
+               re-prompts on the rebound session rather than marking
+               delivered + steerPending into the void. */
+            const live = this.liveBinding(binding);
+            if (live !== binding) {
+              live.consumed.delete(message.id);
+              this.promptOrQueue(live, message);
+              return;
+            }
             /* #377: a steer resolving after its turn's Stop — even after the
                park sweep ran (`stopParked`) — parks in the tray like the
                sends the sweep caught; delivering or re-prompting it would
@@ -1284,8 +1295,11 @@ export class Harness {
             this.opts.log.warn("steer failed; queued instead", {
               error: String(error),
             });
-            binding.consumed.delete(message.id);
-            this.promptOrQueue(binding, message);
+            /* #487: same rebind window as the ack — the failure fallback
+               re-prompts on the live lane. */
+            const live = this.liveBinding(binding);
+            live.consumed.delete(message.id);
+            this.promptOrQueue(live, message);
           });
         return;
       }
@@ -1461,7 +1475,7 @@ export class Harness {
         this.enqueueOrPrompt(live, message);
         return true;
       }
-      binding.queue.push(message);
+      this.insertQueued(binding, message);
       return true;
     }
     // A pick held while the last turn ran lands now, before this prompt —
@@ -1518,6 +1532,18 @@ export class Harness {
     ) {
       binding.consumed.delete(message.id);
       return false;
+    }
+    /* #487: the pre-prompt awaits (held pick, attachment fetch, checkpoint)
+       give a rebind the whole window — this frame must leave on the session
+       the map actually serves, not a replaced one. A send aimed at the dead
+       sessionId re-enters the live lane instead of round-tripping a
+       SESSION_NOT_FOUND. */
+    const current = this.liveBinding(binding);
+    if (current !== binding) {
+      current.consumed.delete(message.id);
+      this.unclaimMessage(message);
+      this.enqueueOrPrompt(current, message);
+      return true;
     }
     try {
       // Turn lifecycle (`turn.started`/`turn.completed`) arrives as events
@@ -1589,7 +1615,7 @@ export class Harness {
           this.enqueueOrPrompt(live, message);
           return true;
         }
-        binding.queue.unshift(message);
+        this.insertQueued(binding, message);
         this.unclaimMessage(message);
         return true;
       }
@@ -1637,7 +1663,7 @@ export class Harness {
           this.enqueueOrPrompt(live, message);
           return true;
         }
-        binding.queue.unshift(message);
+        this.insertQueued(binding, message);
         this.unclaimMessage(message);
         await this.rebindConversation(binding);
         return true;
@@ -1722,6 +1748,7 @@ export class Harness {
        send bailed and the rewind proceeds. */
     if (binding?.promptGates.size) await Promise.all(binding.promptGates);
     // A rebind may have swapped the binding while the gates were held.
+    const live = binding ? this.liveBinding(binding) : undefined;
     if (this.bindings.get(params.conversationId)?.runningTurnId) {
       throw Object.assign(
         new Error("a turn is still running — stop it before rewinding"),
@@ -1733,13 +1760,12 @@ export class Harness {
        delete user files. `params.cwd` (a scheduled/scripted rewind naming
        its target) still wins. Stored cwd may be `~/x` (host fs echoes
        collapsed): expand before any fs use. */
-    const restoreCwd =
-      params.cwd ?? (binding?.hasFolder ? binding.cwd : undefined);
+    const restoreCwd = params.cwd ?? (live?.hasFolder ? live.cwd : undefined);
     /* Engine first: a refusal (INVALID_STATE — a turn is running) must leave
        everything untouched, before any file or queue mutation. */
     let engineRewound = false;
     const conn = this.engine;
-    const sessionId = binding?.sessionId ?? params.engineRef ?? undefined;
+    const sessionId = live?.sessionId ?? params.engineRef ?? undefined;
     if (conn && sessionId && this.hasCapability("rewind")) {
       try {
         await conn.request("session.rewind", {
@@ -1776,9 +1802,9 @@ export class Harness {
        send; release their delivery claims so nothing re-prompts them. The
        `early` map holds the same kind of queued sends for sessions with no
        binding yet — prune it identically. */
-    if (binding) {
-      binding.queue = binding.queue.filter((m) => {
-        if (m.seq >= params.fromSeq) binding.consumed.delete(m.id);
+    if (live) {
+      live.queue = live.queue.filter((m) => {
+        if (m.seq >= params.fromSeq) live.consumed.delete(m.id);
         return m.seq < params.fromSeq;
       });
     }
@@ -3475,25 +3501,29 @@ export class Harness {
        (pre-drop) row can't re-prompt it; Send clears both. */
     if (binding.stopRequested) {
       void this.ordered(binding.conversationId, async () => {
-        binding.stopRequested = false;
-        binding.stopParked = true;
+        /* #487: the sweep runs deferred through `ordered` — a rebind in
+           between must not leave `stopRequested`/`stopParked` set on the
+           live binding while the flags clear on a replaced copy. */
+        const live = this.liveBinding(binding);
+        live.stopRequested = false;
+        live.stopParked = true;
         /* #402: every send a pre-bind parked interrupt could still wait on
            just dropped to the tray — the park is moot. */
-        this.pendingInterrupts.delete(binding.conversationId);
+        this.pendingInterrupts.delete(live.conversationId);
         /* #403: the stamp splits "waiting when Stop landed" (park) from
            "sent after" (kept): a send above `afterSeq`, or a re-Sent row,
            stays queued for the drain below. */
-        const stopSeq = this.stopSeqs.get(binding.conversationId);
+        const stopSeq = this.stopSeqs.get(live.conversationId);
         const owns = (id: string, seq: number) =>
           (stopSeq === undefined || seq <= stopSeq) &&
-          !this.exemptFromCurrentStop(binding.conversationId, id);
+          !this.exemptFromCurrentStop(live.conversationId, id);
         const keptSteers: SessionBinding["steerPending"] = [];
-        for (const pending of binding.steerPending.splice(0)) {
+        for (const pending of live.steerPending.splice(0)) {
           if (!owns(pending.messageId, pending.seq)) {
             keptSteers.push(pending);
             continue;
           }
-          binding.consumed.delete(pending.messageId);
+          live.consumed.delete(pending.messageId);
           this.dismissed.add(pending.messageId);
           this.relayWrite(`drop steer ${pending.messageId}`, () =>
             this.opts.relay.request("messages.drop", {
@@ -3501,13 +3531,13 @@ export class Harness {
             }),
           );
         }
-        binding.steerPending.push(...keptSteers);
-        for (const queued of binding.queue.splice(0)) {
+        live.steerPending.push(...keptSteers);
+        for (const queued of live.queue.splice(0)) {
           if (!owns(queued.id, queued.seq)) {
-            binding.queue.push(queued);
+            live.queue.push(queued);
             continue;
           }
-          binding.consumed.delete(queued.id);
+          live.consumed.delete(queued.id);
           this.dismissed.add(queued.id);
           this.relayWrite(`drop queued ${queued.id}`, () =>
             this.opts.relay.request("messages.drop", { messageId: queued.id }),
@@ -3516,7 +3546,7 @@ export class Harness {
         /* Sends that postdate the Stop drain like a normal turn end —
            only now that the sweep ran inside this conversation's delivery
            order. */
-        this.drainQueue(binding);
+        this.drainQueue(live);
       });
       return;
     }

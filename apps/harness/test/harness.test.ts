@@ -2735,6 +2735,130 @@ describe("rebind vs in-flight prompt (#487)", () => {
         return list.length >= 2 ? list : undefined;
       }, "msg2 answer");
       expect(answers.length).toBeGreaterThanOrEqual(2);
+      // Exactly once: a re-prompt that also stayed live on the old lane
+      // would mint a duplicate turn on the rebound session.
+      expect(
+        engine2Calls.filter(
+          (c) =>
+            c.method === "prompt" &&
+            (c.params as { ref?: string }).ref === msg2.id,
+        ).length,
+      ).toBe(1);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("a steer acked across a rebind re-prompts on the rebound session, not the dead one", {
+    timeout: 20_000,
+  }, async () => {
+    /* Same race, second surface: the `session.steer` callbacks hold
+       `binding` across the RPC await too. Arm the steer ack behind a
+       deferred so it resolves strictly after the rebind splice — a
+       "steered" from the dead session must re-prompt msg2 on the live
+       lane, not markDelivered + steerPending it into the void. */
+    let holdSteers = false;
+    let ackSteer:
+      | ((res: { status: "steered" | "not_running" }) => void)
+      | undefined;
+    const w = (await setupWorldBase({
+      tick: 1,
+      attachEngine: true,
+      wrap: (conn) => {
+        const orig = conn.request.bind(conn);
+        conn.request = <T = unknown>(
+          method: string,
+          params?: unknown,
+        ): Promise<T> => {
+          if (method === "session.steer" && holdSteers) {
+            return new Promise<T>((resolve) => {
+              ackSteer = resolve as (res: {
+                status: "steered" | "not_running";
+              }) => void;
+            });
+          }
+          return orig<T>(method, params);
+        };
+        return conn;
+      },
+    })) as World;
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page", // parks on its approval ask
+      });
+      const engineRef = await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        return (
+          conversations.find((c) => c.id === conversation.id)?.engineRef ??
+          undefined
+        );
+      }, "engineRef");
+      // The turn must be running — a pre-turn.started post prompts, not steers.
+      await waitFor(() => w.sleep.held || undefined, "turn running");
+
+      // msg2's steer reaches the wire and parks — in flight across the rebind.
+      holdSteers = true;
+      const { message: msg2 } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "steer it left",
+      );
+      await waitFor(
+        () => (ackSteer ? true : undefined),
+        "msg2 steer in flight",
+      );
+
+      const engine2 = new FakeEngine({ tick: 1 });
+      const conn2 = connectFake(engine2) as unknown as EngineConnection;
+      const engine2Calls: { method: string; params: unknown }[] = [];
+      const orig2 = conn2.request.bind(conn2);
+      conn2.request = <T = unknown>(
+        method: string,
+        params?: unknown,
+      ): Promise<T> => {
+        engine2Calls.push({ method, params });
+        return orig2<T>(method, params);
+      };
+      w.harness.attachEngine(conn2);
+      await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        const ref = conversations.find(
+          (c) => c.id === conversation.id,
+        )?.engineRef;
+        return ref && ref !== engineRef ? ref : undefined;
+      }, "rebound engineRef");
+      // One macrotask past the observed engineRef write: the splice ran.
+      await new Promise((r) => setTimeout(r, 0));
+      // The dead session's "steered" ack lands strictly after the splice.
+      ackSteer?.({ status: "steered" });
+
+      // msg2 must still run — on the rebound session, exactly once.
+      await waitFor(
+        () =>
+          engine2Calls.find(
+            (c) =>
+              c.method === "prompt" &&
+              (c.params as { ref?: string }).ref === msg2.id,
+          ),
+        "msg2 prompt on the rebound session",
+        8_000,
+      );
+      expect(
+        engine2Calls.filter(
+          (c) =>
+            c.method === "prompt" &&
+            (c.params as { ref?: string }).ref === msg2.id,
+        ).length,
+      ).toBe(1);
     } finally {
       await w.cleanup();
     }
