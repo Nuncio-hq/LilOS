@@ -118,28 +118,52 @@ const send = async (page: Page, text: string) => {
   await box.press("Enter");
 };
 
-const turns = (page: Page) => page.locator("[data-agentturn]");
+const turns = (page: Page) => page.locator("main [data-agentturn]");
 
-/* See ac-114: send as a NEW turn (idle sends steer a running one instead). */
-const sendTurn = async (page: Page, text: string) => {
-  await expect(turns(page).locator("[data-streaming]")).toHaveCount(0, {
-    timeout: 60_000,
-  });
-  if ((await turns(page).count()) > 0) {
-    await expectSettled(turns(page).last(), 60_000);
-  }
-  await send(page, text);
+/* #474: where a send lands is decided by the session, not the spec. An
+   idle send claims its own bubble and a new agent turn answers it; a send
+   landing mid-turn goes through `session.steer` and lands as an "Oscar
+   steered …" row inside the running turn — no bubble, and no new turn
+   ever mounts. Wait for whichever shape the send took and return the turn
+   it landed in. `text` must be unique within the session — hasText is a
+   substring match, and a stale row would silently satisfy the or-wait. */
+const awaitSendLanding = async (page: Page, text: string) => {
   const mine = page
     .locator("main [data-msg]")
     .filter({ hasText: text })
     .filter({ hasNot: page.locator("[data-agentturn]") })
     .last();
-  await expect(mine).toBeVisible({ timeout: 60_000 });
+  const steered = page
+    .locator("main [data-agentturn]")
+    .filter({
+      has: page.locator("[data-steerstate='landed']").filter({ hasText: text }),
+    })
+    .last();
+  await expect(mine.or(steered)).toBeVisible({ timeout: 60_000 });
+  if (await steered.isVisible()) return steered;
   const turn = mine.locator(
     "xpath=following-sibling::*[.//*[@data-agentturn]][1]//*[@data-agentturn]",
   );
   await expect(turn).toBeVisible({ timeout: 60_000 });
   return turn;
+};
+
+/* See ac-114: send as a NEW turn (idle sends steer a running one instead).
+   #474: the idle read is the thread's last row — it must be a settled
+   agent turn. `turns.count() > 0` couldn't see a minted turn whose card
+   hadn't mounted yet, so the old guard skipped the settle wait exactly
+   when a turn was still dispatching (the wild flake's window). A pumped
+   follow-up can still slip through that mount gap — awaitSendLanding
+   resolves whichever landing the send takes. */
+const sendTurn = async (page: Page, text: string) => {
+  await expect(
+    page
+      .locator("main [data-msg]")
+      .last()
+      .locator("[data-agentturn] [data-turnsettled]"),
+  ).toBeVisible({ timeout: 60_000 });
+  await send(page, text);
+  return awaitSendLanding(page, text);
 };
 
 const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
@@ -201,6 +225,11 @@ async function freshSession(page: Page) {
   await pickSessionFolder(page, repoDir);
   await send(page, "check in");
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #474/#496: hand each test an idle session. While the seeded turn is
+     still dispatching, a send can slip in mid-turn (steer) and a
+     `turns.last()` read can latch the seeded turn while the real one is
+     still minting — both wild flakes came out of that window. */
+  await expectSettled(turns(page).last());
 }
 
 /* Uncommitted edits the Changes tab diffs (a.txt tracked+modified, notes.txt
@@ -218,10 +247,14 @@ test("AC-1 pending comments add/edit/delete on a line and a dragged range, survi
   page,
 }) => {
   test.setTimeout(180_000);
+  /* Dirty the repo BEFORE the session mounts — the Workbench's git probe
+     re-reads on mount, on `running` flips, and on a 3s poll that only
+     exists while a turn runs. A settled session never sees a later write
+     (the seeded turn used to keep that poll alive until it landed). */
+  seedChanges();
   await freshSession(page);
 
   // Uncommitted edits → the Changes tab lists both files (live git.diff).
-  seedChanges();
   await openChanges(page);
   await expect(diff(page, "a.txt")).toBeVisible({ timeout: 30_000 });
   await expect(diff(page, "notes.txt")).toBeVisible();
@@ -280,8 +313,11 @@ test("AC-2 + AC-4 Send posts one message quoting path:line + code; sent comments
   page,
 }) => {
   test.setTimeout(180_000);
-  await freshSession(page);
+  /* Same as AC-1: dirty before the session mounts so the Workbench's
+     first git probe already sees the changes — an idle session never
+     re-polls (its poll only lives while a turn runs). */
   seedChanges();
+  await freshSession(page);
   await openChanges(page);
   await expect(diff(page, "a.txt")).toBeVisible({ timeout: 30_000 });
   await expect(diff(page, "notes.txt")).toBeVisible();
@@ -307,8 +343,13 @@ test("AC-2 + AC-4 Send posts one message quoting path:line + code; sent comments
   // #393 AC-4: one range separator — the same en-dash the diff label uses.
   await expect(sent).toContainText("notes.txt:1–3");
   await expect(sent).toContainText("why three lines?");
-  // A new agent turn answers the message (AC-2).
-  const turn = turns(page).last();
+  /* A new agent turn answers the message (AC-2). #496: anchor it to the
+     sent bubble's following sibling — `turns.last()` can still read the
+     seeded turn while this one is minting, and `expectSettled` would pass
+     on the wrong turn while the real one parks on its approval card. */
+  const turn = sent.locator(
+    "xpath=following-sibling::*[.//*[@data-agentturn]][1]//*[@data-agentturn]",
+  );
   await expect(turn).toBeVisible({ timeout: 60_000 });
   await allowAllWhile(page, expectSettled(turn));
   await page.screenshot({ path: `${SHOTS}/ac-2-sent.png` });
@@ -393,4 +434,50 @@ test("AC-3 send mid-turn rides session.steer — the message lands as a steered 
   );
   await expect(pending(page)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-3-steered.png` });
+});
+
+test("AC-3b a send landing mid-turn steers — the landing wait resolves the turn it joined (#474)", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await dmDefault(page);
+  await pickSessionFolder(page, repoDir);
+  /* #474: `slow:` paces the seeded turn and its edit-ask parks on the
+     patch approval — a parked turn can't end, so the next send always
+     lands mid-turn: claimed=0, `session.steer`, pairs into `turn.steers`.
+     (A steer that outlives its drain window instead pumps as the next
+     turn — also a correct landing, but not the one under test; the park
+     makes the steer itself deterministic.) The wild flake hit exactly
+     this when `sendTurn`'s count guard read the session as idle while the
+     seeded turn was still dispatching. */
+  await send(page, "slow:150 Add a readme note");
+  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* The card mounts only after the harness has processed turn.started
+     (runningTurnId set) — a send past this point provably steers. Send
+     earlier and it queues behind the minting turn, draining as the next
+     turn: a correct landing, but not the one under test. */
+  await expect(turns(page).last()).toBeVisible({ timeout: 60_000 });
+  await send(page, "Add a changelog note while it runs");
+
+  /* The send sits in the queued tray until the turn continues — the same
+     accepted-steer shape AC-3 asserts on the diff-send path. */
+  await expect(page.locator("[data-queued]")).toContainText(
+    "Add a changelog note while it runs",
+    { timeout: 30_000 },
+  );
+
+  /* The landing wait must resolve the turn the send joined — waiting for
+     a bubble + a new [data-agentturn] (the old shape) hangs, since neither
+     mounts for a steer. Answer the parked approvals while it lands. */
+  const landing = awaitSendLanding(page, "Add a changelog note while it runs");
+  await allowAllWhile(
+    page,
+    landing.then((turn) => expectSettled(turn)),
+  );
+  const turn = await landing;
+  await expect(
+    turn.locator("[data-steerstate='landed']").filter({
+      hasText: "Add a changelog note while it runs",
+    }),
+  ).toHaveCount(1);
 });
