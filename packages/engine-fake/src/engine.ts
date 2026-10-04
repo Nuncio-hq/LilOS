@@ -1083,8 +1083,9 @@ export class FakeEngine {
        what the user literally sent. */
     const slow = SLOW_PROMPT.exec(promptText);
     const pace = slow ? Number(slow[2] ?? SLOW_TICK) : undefined;
-    s.turnPace = slow && !slow[1] ? pace : undefined;
-    s.legPace = slow?.[1] ? pace : undefined;
+    const slowKind = slow?.[1]?.toLowerCase();
+    s.turnPace = slow && !slowKind ? pace : undefined;
+    s.legPace = slowKind === "leg" ? pace : undefined;
     const routed = slow ? promptText.slice(slow[0].length).trim() : promptText;
     const turnId = `t${++this.turnCounter}`;
     const script = scriptFor(
@@ -1102,6 +1103,13 @@ export class FakeEngine {
       s.userTurns.filter((_, i) => i !== s.userTurns.lastIndexOf(promptText)),
     );
     s.turn = { turnId, phase: "reasoning", interrupted: false };
+    /* #476: `slowstart[:ms]` holds the turn's mint — the prompt lands, no
+       frames emit, then `turn.started` opens the turn `ms` later. A spec
+       needing a turn that BEGINS past a client's feed attach (a send that
+       raced its own reload — the loaded-runner dispatch window) names the
+       gap per prompt. Minting `s.turn` first keeps a racing second prompt
+       reading the session as busy. */
+    if (slowKind === "start") await new Promise((r) => setTimeout(r, pace));
     s.turnCount += 1;
     this.emit(s, "turn.started", {
       turnId,
@@ -1889,8 +1897,10 @@ const words = (t: string) => t.split(/(?<=\s)/);
 /* #432: `slow[:ms] <prompt>` — the one prompt a spec needs a running window
    on paces itself (`slow:` → SLOW_TICK, `slow:700` → 700 ms per boundary);
    `slowleg[:ms]` paces only the agent-initiated leg the prompt arms —
-   everything else runs at the engine's `--tick`. */
-const SLOW_PROMPT = /^\s*slow(leg)?:(?:(\d+)\s+)?/i;
+   everything else runs at the engine's `--tick`. #476: `slowstart[:ms]`
+   delays only the turn's mint — the prompt sits silent `ms`, then
+   `turn.started` opens the turn. */
+const SLOW_PROMPT = /^\s*slow(leg|start)?:(?:(\d+)\s+)?/i;
 const SLOW_TICK = 300;
 
 /* ── #180 plan scripts ──────────────────────────────────────────────────
