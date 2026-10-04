@@ -281,7 +281,9 @@ function supersededPlanEntries(
  * Merge engine turns into the relay message list (the web `mergeTurns`
  * port): a turn whose text landed as an employee message swaps into that
  * slot as a rich card; turns not yet posted — and the live one — append at
- * the end. `rewound` (#134): refs/texts hide rewound-tail turns.
+ * the end. `rewound` (#134): refs/texts hide rewound-tail turns. Tombstone
+ * rows (#425: `dropped`/`removed`) never enter — the read layer already omits
+ * them, and the live merge re-drops them before they can render or anchor.
  */
 export function mergeThreadEntries(
   messages: readonly AppMessage[],
@@ -316,6 +318,14 @@ export function mergeThreadEntries(
   const blocked = opts.asks.some(
     (a) => a.state === "open" && a.conversationId === opts.conversationId,
   );
+  /* #425: `removed`/`dropped` tombstones ride the live merge (message.changed
+     replaces the row in place; channel.snapshot carries them, #377) even
+     though the read layer omits them on fetch — so the merge drops them
+     again here, the same cut the Mac's waiting tray makes (#315): the phone
+     has no tray, so a parked or removed send renders nowhere at all. The
+     filter comes before every positional pass — a tombstoned row can never
+     anchor a turn (it was never delivered) or be claimed as an answer. */
+  const visible = messages.filter((m) => !m.dropped && !m.removed);
   /* #258: `deliveredSeq` is a durability watermark — the harness advances
      it once the turn's outcome is secured (turn end), not when the engine
      starts the turn. "Past the watermark" therefore means queued OR
@@ -325,15 +335,20 @@ export function mergeThreadEntries(
   const startedRefs = new Set(
     model?.turns.flatMap((t) => (t.ref ? [t.ref] : [])) ?? [],
   );
-  const entries: ThreadEntry[] = messages.map((m) =>
+  const entries: ThreadEntry[] = visible.map((m) =>
     m.authorKind === "user"
       ? {
           kind: "user",
           id: m.id,
           time: clock(m.createdAt),
           text: m.text,
+          /* #425: `claimed` rows keep the bubble but lose the caption — the
+             harness committed the send to the engine pipeline (#377), so it
+             is mid-dispatch, never queued. Same rule as the Mac, where a
+             claimed row leaves the waiting tray but stays a sent bubble. */
           ...(opts.deliveredSeq !== undefined &&
           m.seq > opts.deliveredSeq &&
+          !m.claimed &&
           !startedRefs.has(m.id)
             ? { queued: true, ...(blocked ? { waiting: true } : {}) }
             : {}),
@@ -372,7 +387,7 @@ export function mergeThreadEntries(
   const promptIdx = new Map<TurnModel, number>();
   for (const t of model.turns) {
     if (!t.ref) continue;
-    const i = messages.findIndex((x) => x.id === t.ref);
+    const i = visible.findIndex((x) => x.id === t.ref);
     if (i >= 0) promptIdx.set(t, i);
   }
   const used = new Set<TurnModel>();
@@ -380,7 +395,7 @@ export function mergeThreadEntries(
   let legClaimed = -1;
   /* dur = prompt -> reply latency, the only honest wall-clock available. */
   const claimedEntry = (t: TurnModel, m: AppMessage) => {
-    const prompt = t.ref ? messages.find((x) => x.id === t.ref) : undefined;
+    const prompt = t.ref ? visible.find((x) => x.id === t.ref) : undefined;
     const dur = prompt
       ? Math.max(0, Math.round((m.createdAt - prompt.createdAt) / 1000))
       : undefined;
@@ -399,7 +414,7 @@ export function mergeThreadEntries(
       now: opts.now,
     });
   };
-  for (const [mi, m] of messages.entries()) {
+  for (const [mi, m] of visible.entries()) {
     if (m.authorKind !== "employee") continue;
     const turn = model.turns.find(
       (x) =>
@@ -436,8 +451,8 @@ export function mergeThreadEntries(
     )
       continue;
     let mi = -1;
-    for (let i = legClaimed + 1; i < messages.length; i++) {
-      const m = messages[i];
+    for (let i = legClaimed + 1; i < visible.length; i++) {
+      const m = visible[i];
       if (
         m.authorKind === "employee" &&
         m.text.trim() === t.text.trim() &&
@@ -450,7 +465,7 @@ export function mergeThreadEntries(
     if (mi < 0) continue;
     used.add(t);
     legClaimed = mi;
-    const m = messages[mi];
+    const m = visible[mi];
     const idx = entries.findIndex((e) => e.id === m.id);
     const entry = claimedEntry(t, m);
     const superseded = supersededPlanEntries(t, opts.planCapable);
