@@ -203,7 +203,10 @@ export function toSessionTurns(
   // A just-sent open may still lack a summary (refresh in flight): render it
   // from what the phone itself wrote so the Working row appears at once.
   for (const [id, p] of ctx.pending) {
-    if (p.conversation.channelId !== ctx.channelId) continue;
+    /* #424: same cut as the summary path — a stale pending marker must not
+       resurrect a session the Mac already archived. */
+    if (p.conversation.channelId !== ctx.channelId || p.conversation.archived)
+      continue;
     if (summaries.some((s) => s.conversation.id === id)) continue;
     rows.push({
       at: p.conversation.createdAt,

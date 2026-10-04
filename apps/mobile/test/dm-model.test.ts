@@ -185,6 +185,19 @@ describe("AC-1: threads come from conversations.summaries for the DM channel, gr
     expect(turns[0]?.title).toBe("hello");
   });
 
+  it("#424 a stale pending open stays hidden once the Mac archived it", () => {
+    const opened = conv("c-arch", { archived: true });
+    const root = msg("c-arch-root", {
+      conversationId: "c-arch",
+      text: "hello",
+    });
+    const turns = toSessionTurns([], {
+      ...CTX,
+      pending: new Map([["c-arch", { conversation: opened, root }]]),
+    });
+    expect(turns).toHaveLength(0);
+  });
+
   it("AC-1 carries title, last words, folder and reply count on the row", () => {
     const turns = toSessionTurns(
       [
