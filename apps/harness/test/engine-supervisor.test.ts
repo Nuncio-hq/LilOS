@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EngineConnection } from "../src/engine/client.js";
+import { EngineRpcError } from "../src/engine/client.js";
 import type {
   EngineExit,
   EngineLauncher,
@@ -25,18 +26,34 @@ function fakeProc(pid: number): {
   };
 }
 
-/** EngineConnection that never makes real I/O; `drop()` fires onClose. */
-function fakeConn(): EngineConnection & { drop: (reason?: string) => void } {
+/** EngineConnection that never makes real I/O; `drop()` fires onClose.
+    `responder` answers every request (default: plain Error = dead air). */
+function fakeConn(): EngineConnection & {
+  drop: (reason?: string) => void;
+  responder: () => Promise<unknown>;
+  requestCalls: number;
+  closed: boolean;
+} {
   let closeCb: ((reason?: string) => void) | undefined;
-  return {
-    request: () => Promise.reject(new Error("not implemented in test")),
+  const conn = {
+    requestCalls: 0,
+    closed: false,
+    responder: (): Promise<unknown> =>
+      Promise.reject(new Error("not implemented in test")),
+    request: <T>() => {
+      conn.requestCalls += 1;
+      return conn.responder() as Promise<T>;
+    },
     onEvent: () => () => {},
-    onClose: (fn) => {
+    onClose: (fn: (reason?: string) => void) => {
       closeCb = fn;
     },
-    close: () => {},
-    drop: (reason) => closeCb?.(reason ?? "dropped"),
+    close: () => {
+      conn.closed = true;
+    },
+    drop: (reason?: string) => closeCb?.(reason ?? "dropped"),
   };
+  return conn;
 }
 
 interface World {
@@ -56,6 +73,11 @@ function world(
     stableAfterMs?: number;
     reconnectAttempts?: number;
     maxConsecutiveCrashes?: number;
+    probeIntervalMs?: number;
+    probeTimeoutMs?: number;
+    probeMissesBeforeRestart?: number;
+    /** Per-conn responder overrides, in connect() order. */
+    responders?: Array<(() => Promise<unknown>) | undefined>;
   } = {},
 ): World {
   const procs: ReturnType<typeof fakeProc>[] = [];
@@ -78,6 +100,8 @@ function world(
     launcher,
     connect: () => {
       const c = fakeConn();
+      const responder = extra.responders?.[conns.length];
+      if (responder) c.responder = responder;
       conns.push(c);
       return Promise.resolve(c);
     },
@@ -287,5 +311,118 @@ describe("AC-1 (#95) a fatal start error stops retries immediately", () => {
     expect(states).toEqual(["starting", "failed"]);
     expect(details.at(-1)).toContain("Hermes 0.20.2 is too old");
     await supervisor.stop();
+  });
+});
+
+/* #482: the liveness probe distinguishes "adapter dead" (dead air) from
+   "adapter alive, backend down" (any answered frame, coded or healthy).
+   Dead air restarts the launched process; coded frames reset the miss
+   count and mirror the backend state without touching the process. */
+describe("#482 engine liveness probe", () => {
+  it("dead-air probes kill the launched adapter and relaunch it", async () => {
+    const w = world({
+      probeIntervalMs: 5,
+      probeTimeoutMs: 20,
+      probeMissesBeforeRestart: 2,
+      // conn[0] wedges (dead air); the relaunched engine answers healthy.
+      responders: [undefined, () => Promise.resolve({})],
+    });
+    await w.supervisor.start();
+    expect(w.procs).toHaveLength(1);
+    expect(w.states.at(-1)).toBe("running");
+
+    for (let i = 0; i < 20 && w.procs.length < 2; i++) await tick();
+
+    // The wedged conn was closed and the launched process killed — the
+    // exit handler owns the relaunch, so the new engine attaches fresh
+    // (not as a reconnect on the same socket).
+    expect(w.conns[0]?.closed).toBe(true);
+    expect(w.procs).toHaveLength(2);
+    expect(w.connections.at(-1)?.reconnect).toBe(false);
+    for (let i = 0; i < 10 && w.states.at(-1) !== "running"; i++) await tick();
+    expect(w.states.at(-1)).toBe("running");
+    await w.supervisor.stop();
+  });
+
+  it("a BACKEND_DOWN answer keeps the adapter alive and mirrors restarting", async () => {
+    const w = world({
+      probeIntervalMs: 5,
+      probeTimeoutMs: 20,
+      probeMissesBeforeRestart: 2,
+      responders: [
+        () =>
+          Promise.reject(
+            new EngineRpcError(-32006, "hermes backend is down (socket)"),
+          ),
+      ],
+    });
+    await w.supervisor.start();
+    expect(w.procs).toHaveLength(1);
+
+    // Many intervals pass — the coded frame proves the adapter answers,
+    // so no miss ever accumulates and the process is never killed.
+    for (let i = 0; i < 8; i++) await tick();
+    expect(w.procs).toHaveLength(1);
+    expect(w.conns).toHaveLength(1);
+    expect(w.states.at(-1)).toBe("restarting");
+    expect(w.details.at(-1)).toContain("backend is down");
+
+    // Backend heals on the same adapter: the next healthy describe
+    // flips host state back to running.
+    const c0 = w.conns[0];
+    if (!c0) throw new Error("conn missing");
+    c0.responder = () => Promise.resolve({});
+    for (let i = 0; i < 10 && w.states.at(-1) !== "running"; i++) await tick();
+    expect(w.states.at(-1)).toBe("running");
+    expect(w.procs).toHaveLength(1);
+    await w.supervisor.stop();
+  });
+
+  it("a process exit retires the conn and stops the probe on it", async () => {
+    const w = world({
+      probeIntervalMs: 5,
+      probeTimeoutMs: 20,
+      probeMissesBeforeRestart: 2,
+      responders: [() => Promise.resolve({}), () => Promise.resolve({})],
+    });
+    await w.supervisor.start();
+    await tick();
+    expect(w.conns[0]?.requestCalls).toBeGreaterThan(0); // probe armed
+
+    w.procs[0]?.die(1);
+    await tick();
+
+    // The dead process's conn is closed and the probe no longer ticks
+    // it — before this fix the stranded probe kept "missing" on a socket
+    // that could never answer and double-drove the restart paths.
+    expect(w.conns[0]?.closed).toBe(true);
+    const calls = w.conns[0]?.requestCalls;
+    await tick();
+    await tick();
+    expect(w.conns[0]?.requestCalls).toBe(calls);
+    // The relaunch still lands: one fresh process, one fresh conn.
+    for (let i = 0; i < 10 && w.procs.length < 2; i++) await tick();
+    expect(w.procs).toHaveLength(2);
+    expect(w.connections.at(-1)?.reconnect).toBe(false);
+    await w.supervisor.stop();
+  });
+
+  it("ensureRunning does not double-start while a relaunch timer is armed", async () => {
+    const w = world({ minBackoffMs: 200, maxBackoffMs: 200 });
+    await w.supervisor.start();
+    w.procs[0]?.die(1);
+    await tick(); // exit handled, relaunchAfter armed (state restarting)
+    expect(w.states.at(-1)).toBe("restarting");
+
+    w.supervisor.ensureRunning();
+    await tick();
+
+    // The armed relaunch owns recovery — a demand poke that stacked a
+    // second start() on top would already show a third launcher call.
+    expect(w.procs).toHaveLength(1);
+    for (let i = 0; i < 20 && w.procs.length < 2; i++) await tick();
+    expect(w.procs).toHaveLength(2);
+    expect(w.states.at(-1)).toBe("running");
+    await w.supervisor.stop();
   });
 });

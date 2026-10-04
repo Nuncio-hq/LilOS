@@ -67,6 +67,7 @@ export class EngineSupervisor {
   private reconnecting = false;
   private starting?: Promise<void>;
   private probeTimer?: ReturnType<typeof setInterval>;
+  private relaunchTimer?: ReturnType<typeof setTimeout>;
   private probeMisses = 0;
   /** Probe-driven not-running state — cleared on the next healthy probe. */
   private probeDown = false;
@@ -114,7 +115,18 @@ export class EngineSupervisor {
   /** Self-heal on demand (e.g. a new user message lands while down). */
   ensureRunning(): void {
     const s = this.state.current;
-    if (s === "failed" || s === "stopped") void this.start();
+    if (s === "failed" || s === "stopped") return void this.start();
+    /* A "restarting" flag with nothing armed behind it (no probe, no
+       reconnect loop, no in-flight start, no pending relaunch) is a
+       stranded engine — a user message is the demand signal to heal now. */
+    if (
+      s === "restarting" &&
+      !this.starting &&
+      !this.reconnecting &&
+      !this.probeTimer &&
+      !this.relaunchTimer
+    )
+      void this.start();
   }
 
   /**
@@ -208,6 +220,11 @@ export class EngineSupervisor {
         crashCount: this.crashCount,
       });
       this.state.conn?.close();
+      /* The conn is dead with the process — retire it so the probe
+         stops ticking on a socket that can never answer (its misses
+         would otherwise rewrite the verdict below or re-kill). */
+      this.state.conn = undefined;
+      this.stopProbe();
       if (this.crashCount >= this.opts.maxConsecutiveCrashes) {
         this.set("failed", `engine exited x${this.crashCount} (${why})`);
         return;
@@ -268,10 +285,17 @@ export class EngineSupervisor {
     } catch (error) {
       if (conn !== this.state.conn) return;
       const code = engineErrorCode(error);
+      /* Any answered frame — even an error — proves the adapter itself is
+         responsive, so it resets the dead-air count and can never be
+         overwritten back into a terminal "failed" verdict. */
+      if (code !== undefined) this.probeMisses = 0;
       if (code === EngineSupervisor.BACKEND_DOWN) {
         this.probeDown = true;
         const detail = error instanceof Error ? error.message : String(error);
-        if (this.state.current !== "restarting" || this.state.detail !== detail)
+        if (
+          this.state.current !== "failed" &&
+          (this.state.current !== "restarting" || this.state.detail !== detail)
+        )
           this.set("restarting", detail);
         return;
       }
@@ -284,7 +308,10 @@ export class EngineSupervisor {
         this.opts.log.warn("engine probe timeout", {
           miss: this.probeMisses,
         });
-        if (this.state.current !== "restarting")
+        if (
+          this.state.current !== "restarting" &&
+          this.state.current !== "failed"
+        )
           this.set("restarting", "engine probe timeout");
         return;
       }
@@ -293,14 +320,16 @@ export class EngineSupervisor {
       });
       this.stopProbe();
       conn.close();
-      /* Kill the wedged adapter — its own exit handler does the bounded
-         relaunch (crashCount resets past stableAfterMs, so a long-lived
-         engine restarts cleanly). External engines reconnect instead. */
-      this.launched?.process?.kill();
-      if (!this.procAlive && this.launched?.url)
+      /* A launched adapter gets killed — its own exit handler accounts
+         uptime and relaunches with backoff (crashCount resets past
+         stableAfterMs, so a long-lived engine restarts cleanly). An
+         external engine has no process to kill: the socket is already
+         dropped, so reconnect it. */
+      if (this.launched?.process) {
+        this.launched.process.kill();
+      } else if (this.launched?.url) {
         void this.reconnect(this.launched.url);
-      else if (!this.procAlive && !this.starting)
-        this.relaunchAfter(this.backoff(), "engine probe timeout");
+      }
     }
   }
 
@@ -371,16 +400,22 @@ export class EngineSupervisor {
 
   private relaunchAfter(waitMs: number, detail: string) {
     this.set("restarting", detail);
-    const t = setTimeout(() => {
+    if (this.relaunchTimer) clearTimeout(this.relaunchTimer);
+    this.relaunchTimer = setTimeout(() => {
+      this.relaunchTimer = undefined;
       if (this.stopping) return;
       void this.start();
     }, waitMs);
-    t.unref?.();
+    this.relaunchTimer.unref?.();
   }
 
   async stop(): Promise<void> {
     this.stopping = true;
     this.stopProbe();
+    if (this.relaunchTimer) {
+      clearTimeout(this.relaunchTimer);
+      this.relaunchTimer = undefined;
+    }
     try {
       this.state.conn?.close();
       this.launched?.process?.kill();

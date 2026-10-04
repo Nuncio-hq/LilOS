@@ -1476,14 +1476,18 @@ export function createRelay(options: RelayOptions): Relay {
           if (!parsed.success) throw badParams(parsed.error.issues);
           requireHost(peer);
           if (host) {
-            if (host.engine?.state !== parsed.data.engine.state) {
+            if (
+              host.engine?.state !== parsed.data.engine.state ||
+              host.engine?.detail !== parsed.data.engine.detail
+            ) {
               log(
                 `engine state ${host.engine?.state ?? "unknown"} -> ${parsed.data.engine.state}${parsed.data.engine.detail ? ` (${parsed.data.engine.detail})` : ""}`,
               );
               /* #482: engine-state flips reach every subscribed client live
                  (the phone's Mac-sheet + desktop System status refresh) —
                  before this, a dead-backend outage only showed on the next
-                 status poll. */
+                 status poll. Detail rides the same flip: a new restart
+                 reason — or its clearing — is the signal too. */
               broadcast("host.changed", {
                 connected: true,
                 engine: parsed.data.engine,

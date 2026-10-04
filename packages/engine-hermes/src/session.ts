@@ -127,6 +127,9 @@ export class Session {
       the stored ref (or create a fresh runtime) before it proceeds. Set by
       `HermesEngine.markBackendDown`, cleared by `ensureLive`. */
   backendDead?: boolean;
+  /** The session's approval access — a rebuilt backend session drops the
+      yolo hint, so ensureLive re-applies it after resume/fallback. */
+  access?: "ask" | "full";
 
   /** Stable LilOS subagentId for a wire-level child key. */
   subagentId(key: string): string {

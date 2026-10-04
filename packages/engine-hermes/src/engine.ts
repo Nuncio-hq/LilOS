@@ -123,6 +123,9 @@ export interface HermesEngineOptions {
   /** #482: a caller touched the engine while the backend was down — the
      owning supervisor re-arms a spent relaunch budget on demand. */
   onBackendNeeded?: () => void;
+  /** One-line diagnostics for the adapter's own stdout (serve.ts wires the
+     same channel the backend supervisor logs through). */
+  onLog?: (line: string) => void;
 }
 
 /**
@@ -245,23 +248,44 @@ export class HermesEngine {
     );
     for (const s of this.sessions.values()) {
       if (s.driver !== "ws") continue;
-      s.backendDead = true;
-      cancelAllAsks(s);
-      const turn = s.turn;
-      s.turn = undefined;
-      s.legTurnId = undefined;
-      s.steeredQueue = [];
-      s.streamedText = "";
-      if (turn) {
-        /* Same event order as a normal turn end: turn.completed (refusal +
-           the typed error text) lands BEFORE the prompt() `done` rejects. */
-        s.emit("turn.completed", {
-          turnId: turn.turnId,
-          stopReason: "refusal",
-          error: down.message,
-        });
-        if (s.state !== "closed") s.setState("error");
-        turn.reject(down);
+      /* One session's settle must never abort the rest — a throw here
+         would strand every later session's `done` (the hang #482 exists
+         to fix) and skip the supervisor's relaunch arming. */
+      try {
+        s.backendDead = true;
+        cancelAllAsks(s);
+        const turn = s.turn;
+        s.turn = undefined;
+        s.legTurnId = undefined;
+        s.steeredQueue = [];
+        s.streamedText = "";
+        /* Jobs died with the backend — settle the rows now or they read
+           "running" forever (the poll's gw call just throws BACKEND_DOWN). */
+        if (s.jobPoll) {
+          clearInterval(s.jobPoll);
+          s.jobPoll = undefined;
+        }
+        for (const job of s.jobs.values()) this.emitJobExited(s, job, "failed");
+        if (turn) {
+          /* Same event order as a normal turn end: turn.completed (refusal +
+             the typed error text) lands BEFORE the prompt() `done` rejects —
+             but a throwing listener must never skip the reject, or the very
+             hang this settle exists to break comes back. */
+          try {
+            s.emit("turn.completed", {
+              turnId: turn.turnId,
+              stopReason: "refusal",
+              error: down.message,
+            });
+            if (s.state !== "closed") s.setState("error");
+          } finally {
+            turn.reject(down);
+          }
+        }
+      } catch (e) {
+        this.opts.onLog?.(
+          `markBackendDown: session ${s.id} settle threw (${e instanceof Error ? e.message : String(e)})`,
+        );
       }
     }
   }
@@ -351,6 +375,9 @@ export class HermesEngine {
             if (ack.fast !== undefined) s.fast = ack.fast;
           }
           this.persistSession(s);
+          /* A rebuilt agent also drops the yolo hint — re-apply the
+             session's access like the model pick above. */
+          if (s.access) await this.applyWsAccess(s.runtimeSid, s.access);
           /* Re-announce the session so feed snapshots carry the new
              runtime id truth (memory came back — the same stored ref). */
           s.emit("session.started", {
@@ -389,6 +416,17 @@ export class HermesEngine {
       this.byRuntimeSid.delete(s.runtimeSid);
       s.runtimeSid = created.session_id;
       this.byRuntimeSid.set(s.runtimeSid, s);
+      /* The fallback session is a NEW stored row — bind `ref` to it and
+         persist, or the next restart resumes the abandoned pre-fallback
+         session and every turn since silently rewinds out of memory. */
+      if (
+        typeof created.stored_session_id === "string" &&
+        created.stored_session_id
+      ) {
+        s.ref = created.stored_session_id;
+      }
+      this.persistSession(s);
+      if (s.access) await this.applyWsAccess(s.runtimeSid, s.access);
       s.backendDead = false;
       s.emit("session.started", {
         agent: s.agent,
@@ -682,6 +720,7 @@ export class HermesEngine {
       /* #106: a conversation on Full access gets the session yolo hint — a
          round-trip saver only, the harness still auto-answers approvals
          itself, so a refused/absent hint changes nothing. */
+      s.access = p.access;
       if (p.access === "full") await this.applyWsAccess(s.runtimeSid, "full");
       s.emit("session.started", {
         agent: p.agent,
@@ -1579,6 +1618,7 @@ export class HermesEngine {
     } else {
       await this.applyWsAccess(s.runtimeSid, p.access);
     }
+    s.access = p.access;
     return { access: p.access };
   }
 
@@ -2049,6 +2089,7 @@ export class HermesEngine {
        message.complete must not stamp `lastTurnId` or emit a bogus
        turn.completed on a settled turn (it used to). */
     if (!turn && !s.legTurnId) return;
+    const legId = s.legTurnId;
     /* The turn's last segment closes unsealed (no interim follows the
        final message) — the #414 tracker must not leak it into the next
        turn's first seal. */
@@ -2070,6 +2111,11 @@ export class HermesEngine {
         /* best effort: session.info events still catch most rotations */
       }
     }
+    /* #482: if the backend died during that await, markBackendDown already
+       settled this turn (refusal emit + done reject + error state). Emitting
+       again would double `turn.completed` on one turnId AND flip state back
+       to idle mid-outage — the feed would call a refused turn successful. */
+    if (turn ? s.turn !== turn : s.legTurnId !== legId) return;
     const { stopReason } = mapStopReason(p.status);
     const usage = mapUsage(p.usage);
     if (usage) {

@@ -87,7 +87,9 @@ export function startLink(mac: PairedMac, cached?: CachedDirectory): void {
         ...(event.data.engine
           ? {
               state: event.data.engine.state,
-              detail: event.data.engine.detail ?? eh.detail,
+              /* detail clears with the state — a recovered "running" row
+                 must not keep wearing the last outage's reason. */
+              detail: event.data.engine.detail,
             }
           : {}),
       },

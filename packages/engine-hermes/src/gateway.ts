@@ -158,7 +158,13 @@ export class HermesGateway implements GatewayLike {
 
   /** Answer a server->client `srq-*` request (result or JSON-RPC error). */
   respond(id: string, body: { result?: unknown; error?: unknown }): void {
-    this.send({ jsonrpc: "2.0", id, ...body });
+    /* Best-effort: a send on a closed socket throws on some runtimes — the
+       ask is already settled client-side, so a dead wire just drops it. */
+    try {
+      this.send({ jsonrpc: "2.0", id, ...body });
+    } catch {
+      /* socket already gone */
+    }
   }
 
   onEvent(fn: (e: GatewayEvent) => void): () => void {

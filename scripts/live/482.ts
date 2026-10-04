@@ -27,6 +27,7 @@
  * stdout prints every adapter log line prefixed [adapter] so the death →
  * restart sequence is visible verbatim (the harness-log equivalent).
  */
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -232,6 +233,16 @@ try {
      in flight on the dying backend. */
   await sleep(750);
   const pid = Number(await waitForFile(pidFile, 15_000));
+  /* Never SIGKILL a pid we can't identity-check: a stale pid file plus pid
+     reuse would hit an unrelated process (on Oscar's Mac real engines run). */
+  const cmd = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
+    encoding: "utf8",
+  }).trim();
+  check(
+    /hermes|bun/.test(cmd),
+    `pid ${pid} is a hermes/bun child (command: ${cmd})`,
+    `pid ${pid} command "${cmd}" doesn't look like the spawned hermes`,
+  );
   const killAt = Date.now();
   out(
     `killing hermes serve child pid=${pid} (SIGKILL — pid only, never a name match)`,

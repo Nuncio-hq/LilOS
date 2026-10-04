@@ -173,6 +173,12 @@ export class HermesBackendSupervisor {
     this.down = detail;
     this.failures += 1;
     this.log(`hermes backend down: ${detail}`);
+    /* A dead child's stable-timer must not reset the crash budget
+       mid-outage — it's only meaningful while the backend is up. */
+    if (this.stableTimer) {
+      clearTimeout(this.stableTimer);
+      this.stableTimer = undefined;
+    }
     const dead = this.live;
     this.live = undefined;
     if (dead) {
@@ -183,10 +189,20 @@ export class HermesBackendSupervisor {
       this.log(
         `hermes backend failed after ${this.failures} consecutive failures — engine stays down until a call re-arms it`,
       );
-      this.reactor?.markBackendFailed(detail);
+      try {
+        this.reactor?.markBackendFailed(detail);
+      } catch (e) {
+        this.log(`markBackendFailed threw: ${String(e)}`);
+      }
       return;
     }
-    this.reactor?.markBackendDown(detail, "restarting");
+    try {
+      this.reactor?.markBackendDown(detail, "restarting");
+    } catch (e) {
+      /* A reactor throw must never skip the relaunch — the whole point
+         of the watchdog is that the backend comes back. */
+      this.log(`markBackendDown threw: ${String(e)}`);
+    }
     this.scheduleRelaunch();
   }
 
@@ -223,9 +239,13 @@ export class HermesBackendSupervisor {
         const msg = e instanceof Error ? e.message.split("\n")[0] : String(e);
         this.log(`hermes backend relaunch failed (${msg ?? e})`);
         if (this.failed()) {
-          this.reactor?.markBackendFailed(
-            `relaunch failed: ${msg ?? "unknown"}`,
-          );
+          try {
+            this.reactor?.markBackendFailed(
+              `relaunch failed: ${msg ?? "unknown"}`,
+            );
+          } catch {
+            /* the state is logged either way */
+          }
           return;
         }
         this.scheduleRelaunch();
@@ -249,6 +269,14 @@ export class HermesBackendSupervisor {
     this.closed = true;
     if (this.relaunchTimer) clearTimeout(this.relaunchTimer);
     if (this.stableTimer) clearTimeout(this.stableTimer);
+    /* An in-flight spawn gets a bounded moment to land — its own closed
+       check then retires the child instead of orphaning a `hermes serve`
+       holding a port+token. Bounded because serve.ts exits right after. */
+    if (this.relaunching)
+      await Promise.race([
+        this.relaunching,
+        new Promise((r) => setTimeout(r, 2_000)),
+      ]);
     const dead = this.live;
     this.live = undefined;
     if (dead) {
