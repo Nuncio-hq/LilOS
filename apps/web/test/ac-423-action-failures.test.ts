@@ -74,12 +74,51 @@ describe("AC-1 describeActionError", () => {
         new RelayError("conversation not found", "not_found"),
       ),
     ).toBe("Couldn't rename the session — conversation not found");
+  });
+
+  test("engine_unavailable reads as a lost connection, never 'engine host'", () => {
+    /* Whatever jargon the wire carries, the toast says the plain thing. */
+    for (const message of [
+      "no engine host connected",
+      "engine host did not answer in time",
+      "the engine host is gone",
+      "",
+    ]) {
+      expect(
+        describeActionError(
+          "Couldn't stop the turn",
+          new RelayError(message, "engine_unavailable"),
+        ),
+      ).toBe(
+        "Couldn't stop the turn — LilOS lost its connection to the agent. Try again in a moment.",
+      );
+    }
+  });
+
+  test("'engine host' wording never rides through under another code either", () => {
     expect(
       describeActionError(
         "Couldn't stop the turn",
-        new RelayError("no engine host registered", "engine_unavailable"),
+        new RelayError("the engine host is gone", "engine_error"),
       ),
-    ).toBe("Couldn't stop the turn — no engine host registered");
+    ).toBe(
+      "Couldn't stop the turn — LilOS lost its connection to the agent. Try again in a moment.",
+    );
+  });
+
+  test("a bare error code or a stack tail never reaches the toast", () => {
+    expect(
+      describeActionError(
+        "Couldn't archive the session",
+        new RelayError("engine_unavailable", "engine_error"),
+      ),
+    ).toBe("Couldn't archive the session — try again.");
+    expect(
+      describeActionError(
+        "Couldn't X",
+        new Error("kaboom\n    at doThing (file.ts:12:3)"),
+      ),
+    ).toBe("Couldn't X — kaboom");
   });
 
   test("a non-relay error keeps its message; nothing -> the action alone", () => {
@@ -91,14 +130,17 @@ describe("AC-1 describeActionError", () => {
 });
 
 describe("AC-1 toastOnFail", () => {
-  test("a rejecting action lands on the toast atom with action + reason", async () => {
+  test("a rejecting action lands a plain-words error toast", async () => {
     toast.set(null);
     toastOnFail(
       "Couldn't archive the session",
       Promise.reject(new RelayError("engine down", "engine_unavailable")),
     );
     await new Promise((r) => setTimeout(r, 0));
-    expect(toast.get()).toBe("Couldn't archive the session — engine down");
+    expect(toast.get()).toEqual({
+      text: "Couldn't archive the session — LilOS lost its connection to the agent. Try again in a moment.",
+      error: true,
+    });
     toast.set(null);
   });
 

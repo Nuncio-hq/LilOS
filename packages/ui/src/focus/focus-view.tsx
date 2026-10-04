@@ -649,7 +649,13 @@ export function FocusView({
         )}
       >
         <section ref={turnsRef} className="flex min-h-0 min-w-0 flex-col">
-          {banner}
+          {/* The banner lives in the same column as the messages — never a
+              full-bleed strip the action floats away on (#423). */}
+          {banner && (
+            <div className="mx-auto w-full max-w-[46rem] px-3 pt-3 sm:px-5">
+              {banner}
+            </div>
+          )}
           <Conversation className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]">
             <ConversationContent
               data-thread
@@ -758,7 +764,13 @@ export function FocusView({
             />
           </Conversation>
 
-          <div className="mx-auto w-full max-w-[46rem] shrink-0 px-3 pb-3">
+          {/* data-composer on the whole dock (plan tray + steer tray +
+              not-sent tray + composer): the app's toast floats above the
+              tallest bottom block, never over a control (#423). */}
+          <div
+            data-composer
+            className="mx-auto w-full max-w-[46rem] shrink-0 px-3 pb-3"
+          >
             {todos.length > 0 && (
               <Queue className="mb-2 gap-1 py-1.5 shadow-none">
                 <QueueSection open={planOpen} onOpenChange={setPlanOpen}>

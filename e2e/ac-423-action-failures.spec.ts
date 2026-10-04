@@ -26,14 +26,16 @@ const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 const SHOTS = path.join(repo, "test-results", "ac-423");
 
-const TOAST = "div.fixed.bottom-5";
+const TOAST = "[data-toast]";
 const BANNER = "[data-status-banner]";
 const PICKER = '[data-slot="model-picker-trigger"]';
 const VIEW = { width: 1288, height: 900 };
-/* The wire reason every injected rejection carries — the toast must show
-   the action AND this, so an assertion on the action prefix can never pass
-   on a swallowed reason. */
+/* The wire reason every injected rejection carries — raw relay jargon the
+   toast must NOT show. What it shows instead is the plain-words mapping
+   (LOST), so an assertion on the action prefix can never pass on a
+   swallowed reason, and the jargon itself is asserted gone. */
 const ERR = "the engine host is gone";
+const LOST = "LilOS lost its connection to the agent";
 
 let stack: Stack;
 test.setTimeout(180_000);
@@ -238,7 +240,8 @@ test("AC-1 a failed Stop shows its reason", async ({ page }) => {
   await expect(page.locator(TOAST)).toContainText("Couldn't stop the turn", {
     timeout: 15_000,
   });
-  await expect(page.locator(TOAST)).toContainText(ERR);
+  await expect(page.locator(TOAST)).toContainText(LOST);
+  await expect(page.locator(TOAST)).not.toContainText("engine host");
   await shot(page, "ac1-stop-toast");
 });
 
@@ -262,7 +265,7 @@ test("AC-1 a failed model pick shows its reason", async ({ page }) => {
   await expect(page.locator(TOAST)).toContainText("Couldn't switch the model", {
     timeout: 15_000,
   });
-  await expect(page.locator(TOAST)).toContainText(ERR);
+  await expect(page.locator(TOAST)).toContainText(LOST);
   await shot(page, "ac1-model-toast");
 });
 
@@ -345,5 +348,5 @@ test("AC-1 a failed background-jobs list shows its reason", async ({
     "Couldn't load background jobs",
     { timeout: 30_000 },
   );
-  await expect(page.locator(TOAST)).toContainText(ERR);
+  await expect(page.locator(TOAST)).toContainText(LOST);
 });

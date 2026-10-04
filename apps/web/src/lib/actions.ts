@@ -17,7 +17,7 @@ import { defaultAccess, defaultEditor } from "../settings/state";
 import { toAttachmentInputs } from "./attachments";
 import { USER_ID } from "./me";
 import { applyModelCatalog, engine, modelVisibility, relay } from "./runtime";
-import { say } from "./toast";
+import { sayError } from "./toast";
 
 /** conversationId -> true while the first engine attach is in flight. */
 export const pendingStart = atom<Record<string, boolean>>({});
@@ -66,7 +66,7 @@ export async function sendDm(
     // A file whose blob → data conversion failed can't cross the wire —
     // refuse the send rather than post the message missing its image.
     if (files?.length && (attachments?.length ?? 0) < files.length) {
-      say("An image couldn't be read — nothing was sent. Re-attach it.");
+      sayError("An image couldn't be read — nothing was sent. Re-attach it.");
       return undefined;
     }
     const channel = await openDmChannel(employeeId);
@@ -104,7 +104,7 @@ export async function sendDm(
     pendingStart.set({ ...pendingStart.get(), [res.conversation.id]: true });
     return res.conversation;
   } catch (e) {
-    say(describeSendError(e));
+    sayError(describeSendError(e));
     return undefined;
   }
 }
@@ -136,11 +136,18 @@ export function describeSendError(e: unknown): string {
   return "Couldn't send that. Try again.";
 }
 
+/* The one plain reading of "the agent can't be reached" — the wire's
+   "engine host" phrasing, raw codes and stack text never reach a toast
+   (#423 review). */
+const CONNECTION_LOST =
+  "LilOS lost its connection to the agent. Try again in a moment.";
+
 /**
  * One plain line for a failed DM action (#423 AC-1): transport trouble
- * reads as reconnecting / no answer, and a relay-side reason rides through
- * as-is — the toast always says why in words a user can act on. `action`
- * is the leading "Couldn't …" fragment.
+ * reads as reconnecting / no answer, the engine host being gone reads as
+ * a lost connection, and a relay-side reason rides through as-is — the
+ * toast always says why in words a user can act on. `action` is the
+ * leading "Couldn't …" fragment.
  */
 export function describeActionError(action: string, e: unknown): string {
   if (e instanceof RelayError) {
@@ -155,9 +162,20 @@ export function describeActionError(action: string, e: unknown): string {
     }
     if (e.code === "timeout")
       return `${action} — the relay didn't answer; try again.`;
+    if (e.code === "engine_unavailable")
+      return `${action} — ${CONNECTION_LOST}`;
   }
-  const reason = e instanceof Error ? e.message : e == null ? "" : String(e);
-  return reason ? `${action} — ${reason}` : action;
+  const raw = e instanceof Error ? e.message : e == null ? "" : String(e);
+  if (e == null) return action;
+  /* First line only — a stack tail is never toast copy. A reason that is
+     itself jargon ("engine host …") or a bare snake_case code collapses
+     to the plain line / a bare "try again". */
+  const reason = raw.split("\n", 1)[0].trim();
+  if (/engine host/i.test(reason)) return `${action} — ${CONNECTION_LOST}`;
+  if (!reason) return `${action} — try again.`;
+  if (/^[a-z][a-z0-9_]*$/.test(reason) && reason.includes("_"))
+    return `${action} — try again.`;
+  return `${action} — ${reason}`;
 }
 
 /**
@@ -167,7 +185,7 @@ export function describeActionError(action: string, e: unknown): string {
  * their own wording — this is for calls that had NO visible outcome.
  */
 export function toastOnFail(action: string, p: Promise<unknown>): void {
-  void p.catch((e) => say(describeActionError(action, e)));
+  void p.catch((e) => sayError(describeActionError(action, e)));
 }
 
 /**
@@ -294,7 +312,7 @@ export async function respondToRequest(
       )
         return;
       if (!isTransientRelayError(e) || Date.now() >= deadline) {
-        say("Couldn't send that answer — try again.");
+        sayError("Couldn't send that answer — try again.");
         throw e;
       }
       await waitForRelayReady(deadline);

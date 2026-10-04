@@ -127,7 +127,7 @@ import {
   sessionModels,
   workbenchRequests,
 } from "../lib/runtime";
-import { say } from "../lib/toast";
+import { say, sayError } from "../lib/toast";
 import { defaultAccess } from "../settings/state";
 
 const EMPTY_MESSAGES = atom<ChannelMessagesState>({
@@ -272,7 +272,9 @@ export function DmPage() {
                its "refreshed" marker stays honest (#423 AC-1). */
             onRefresh: () =>
               refreshModels().catch((e) => {
-                say(describeActionError("Couldn't refresh the model list", e));
+                sayError(
+                  describeActionError("Couldn't refresh the model list", e),
+                );
                 throw e;
               }),
           }
@@ -580,7 +582,7 @@ export function DmPage() {
       /* #423 AC-1: a failed list used to leave the Background tab quietly
          empty — the rows the event stream can't carry just vanished. */
       .catch((e) =>
-        say(describeActionError("Couldn't load background jobs", e)),
+        sayError(describeActionError("Couldn't load background jobs", e)),
       );
     return () => {
       dead = true;
@@ -667,7 +669,7 @@ export function DmPage() {
               },
         );
       } catch (e) {
-        say(describeActionError("Couldn't rewind the turn", e));
+        sayError(describeActionError("Couldn't rewind the turn", e));
       }
     })();
   };
@@ -1205,7 +1207,9 @@ export function DmPage() {
           sessionId: conv.engineRef,
           jobId,
         })
-        .catch((e) => say(describeActionError("Couldn't stop the job", e)));
+        .catch((e) =>
+          sayError(describeActionError("Couldn't stop the job", e)),
+        );
     };
 
     /* #315 tray actions. The relay owns the row: Remove marks it `removed`
@@ -1219,7 +1223,7 @@ export function DmPage() {
       void relay
         .request("messages.remove", { messageId: target.id })
         .catch((e) =>
-          say(describeActionError("Couldn't remove the message", e)),
+          sayError(describeActionError("Couldn't remove the message", e)),
         );
     };
     const onUnqueue = (i: number) => {
@@ -1228,7 +1232,7 @@ export function DmPage() {
       void relay
         .request("messages.remove", { messageId: target.id })
         .catch((e) =>
-          say(describeActionError("Couldn't remove the message", e)),
+          sayError(describeActionError("Couldn't remove the message", e)),
         );
     };
     const onSendQueued = (i: number) => {
@@ -1236,7 +1240,9 @@ export function DmPage() {
       if (!target) return;
       void relay
         .request("messages.send", { messageId: target.id })
-        .catch((e) => say(describeActionError("Couldn't send the message", e)));
+        .catch((e) =>
+          sayError(describeActionError("Couldn't send the message", e)),
+        );
     };
     const pendingItems = folded.thread.pendingItems;
 
@@ -1292,10 +1298,12 @@ export function DmPage() {
     const steer = hasCapability("steer");
     /* #423 AC-2: a failed history fetch says so with a retry instead of
        silently showing a shorter thread — the red band #419 introduced,
-       above the conversation in both the panel and Focus. */
+       inline so it sits in the message column with Retry right after the
+       text in both the panel and Focus. */
     const historyNotice = historyFailed ? (
       <StatusBanner
         tone="red"
+        inline
         action={{
           label: "Retry",
           onClick: () => setHistoryAttempt((n) => n + 1),
@@ -1392,7 +1400,7 @@ export function DmPage() {
           }
           accept={canAttachImages ? "image/*" : undefined}
           maxFileSize={MAX_ATTACHMENT_BYTES}
-          onAttachError={say}
+          onAttachError={sayError}
           say={say}
           host={conv.cwd ? hostAccessors : undefined}
           transcriptNote={transcriptNote}
@@ -1425,7 +1433,7 @@ export function DmPage() {
             openCwd && editors !== null
               ? (path, app, line) => {
                   void hostOsOpen(openCwd, path, app, line).catch((e) =>
-                    say(describeActionError("Couldn't open the file", e)),
+                    sayError(describeActionError("Couldn't open the file", e)),
                   );
                 }
               : null
@@ -1469,7 +1477,9 @@ export function DmPage() {
         data-thread-panel
         className="flex min-h-0 w-[420px] shrink-0 flex-col border-l xl:w-[460px]"
       >
-        {historyNotice}
+        {historyNotice && (
+          <div className="px-3 pt-2 sm:px-5">{historyNotice}</div>
+        )}
         {filesOnly?.conversationId === conv.id && (
           <StatusBanner
             tone="amber"
@@ -1546,7 +1556,7 @@ export function DmPage() {
           accept={canAttachImages ? "image/*" : undefined}
           maxFileSize={MAX_ATTACHMENT_BYTES}
           maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
-          onAttachError={say}
+          onAttachError={sayError}
           onStop={
             running
               ? () =>
@@ -1592,7 +1602,7 @@ export function DmPage() {
             openCwd && editors !== null
               ? (path, app, line) => {
                   void hostOsOpen(openCwd, path, app, line).catch((e) =>
-                    say(describeActionError("Couldn't open the file", e)),
+                    sayError(describeActionError("Couldn't open the file", e)),
                   );
                 }
               : undefined
@@ -1632,7 +1642,7 @@ export function DmPage() {
         accept={canAttachImages ? "image/*" : undefined}
         maxFileSize={MAX_ATTACHMENT_BYTES}
         maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
-        onAttachError={say}
+        onAttachError={sayError}
         lastSent={lastSentTop}
         panelOpen={!!openConv}
         onPanel={() => {

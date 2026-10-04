@@ -18,6 +18,7 @@
     "@lilos/contracts": "workspace:*",
     "@lilos/ui": "workspace:*",
     "@tanstack/react-router": "^1.170.38",
+    "lucide-react": "^1.48.0",
     "nanostores": "^1.5.3",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
