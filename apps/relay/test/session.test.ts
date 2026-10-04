@@ -768,6 +768,80 @@ describe("sessions history (#28)", () => {
       "one more",
     ]);
   });
+
+  it("#403 turns.interrupt stamps afterSeq; messages.claim is host-only, two-directional, idempotent", async () => {
+    const relay = newRelay();
+    const { frames, connection } = await helloed(relay);
+    const { channel } = await setupChannel(frames, connection);
+    const host = await hostOf(relay);
+    await connection.receive(
+      req("channel.subscribe", { channelId: channel.id }),
+    );
+    await connection.receive(
+      req("conversations.open", { channelId: channel.id, text: "first" }),
+    );
+    const { conversation } = resultOf(frames, `t${nextId - 1}`).result as {
+      conversation: { id: string };
+    };
+    await postAs(
+      connection,
+      channel.id,
+      conversation.id,
+      "second send",
+      "user",
+    );
+    const { message } = resultOf(frames, `t${nextId - 1}`).result as {
+      message: { id: string; seq: number; claimed: boolean };
+    };
+
+    /* A device never claims — the prompt lane is the host's. */
+    await connection.receive(req("messages.claim", { messageId: message.id }));
+    expect(errorOf(frames, `t${nextId - 1}`).data?.code).toBe("forbidden");
+
+    /* Claim → `claimed` flips and the frame names the flag. */
+    const changedBefore = eventsNamed(frames, "message.changed").length;
+    await host.connection.receive(
+      req("messages.claim", { messageId: message.id }),
+    );
+    const { message: claimed } = resultOf(host.frames, `t${nextId - 1}`)
+      .result as { message: { claimed: boolean } };
+    expect(claimed.claimed).toBe(true);
+    const claims = eventsNamed(frames, "message.changed");
+    expect(claims).toHaveLength(changedBefore + 1);
+    expect(claims.at(-1)?.params).toMatchObject({ flags: ["claimed"] });
+
+    /* Same value again → idempotent, no second emit. */
+    await host.connection.receive(
+      req("messages.claim", { messageId: message.id }),
+    );
+    expect(eventsNamed(frames, "message.changed")).toHaveLength(
+      changedBefore + 1,
+    );
+
+    /* Un-claim puts a resting send back in the tray (#403). */
+    await host.connection.receive(
+      req("messages.claim", { messageId: message.id, claimed: false }),
+    );
+    const { message: unclaimed } = resultOf(host.frames, `t${nextId - 1}`)
+      .result as { message: { claimed: boolean } };
+    expect(unclaimed.claimed).toBe(false);
+
+    /* A removed row can't be claimed. */
+    await connection.receive(req("messages.remove", { messageId: message.id }));
+    await host.connection.receive(
+      req("messages.claim", { messageId: message.id }),
+    );
+    expect(errorOf(host.frames, `t${nextId - 1}`).data?.code).toBe("not_found");
+
+    /* turns.interrupt emits the channel seq the Stop follows — the causal
+       line the host parks pre-Stop sends under. `message` is the newest
+       committed row, so `channel.lastSeq` is its seq. */
+    await connection.receive(
+      req("turns.interrupt", { conversationId: conversation.id }),
+    );
+    const irq = eventsNamed(frames, "turn.interruptRequested").at(-1);
+    expect(irq?.params).toMatchObject({ afterSeq: message.seq });
+  });
 });
 
 describe("auto titles + provenance (#137)", () => {
