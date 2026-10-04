@@ -35,6 +35,7 @@ import {
 import {
   $asks,
   $catalog,
+  $catalogUnavailable,
   $folderDetails,
   $folders,
   $modelPicks,
@@ -43,6 +44,7 @@ import {
   $wsPicks,
   clearPending,
   markPending,
+  refreshModelCatalog,
   watchDm,
 } from "../dm-store";
 import { $client, $welcome } from "../link";
@@ -93,6 +95,7 @@ export function Dm({
   const recents = useStore($folders);
   const details = useStore($folderDetails);
   const catalog = useStore($catalog);
+  const catalogUnavailable = useStore($catalogUnavailable);
   const wsPicks = useStore($wsPicks);
   const modelPicks = useStore($modelPicks);
   const pending = useStore($pendingOpens);
@@ -110,10 +113,11 @@ export function Dm({
   const [prefill, setPrefill] = useState<{ text: string } | undefined>();
   const opening = useRef(false);
 
-  /* Seed asks/recents/models once per client; resubscribe the DM channel. */
+  /* Seed asks/recents/models once per client; resubscribe the DM channel.
+     `$welcome` feeds the catalog's engineHost fallback (#483). */
   useEffect(() => {
     if (!client) return;
-    watchDm(client);
+    watchDm(client, $welcome);
   }, [client]);
   useEffect(() => {
     if (client && channel) void client.channelMessages(channel.id);
@@ -273,13 +277,16 @@ export function Dm({
      provider row carries the models.dev logo slug for the chip. */
   const modelRow = modelPick ? findModel(catalog.models, modelPick) : undefined;
   const provider = catalog.providers.find((p) => p.id === modelRow?.provider);
-  /* No model surface at all (engine reported none) -> no chip — the
-     picker's gate is the same models?.length check the web uses. */
-  const modelChip = !catalog.models.length
-    ? undefined
-    : modelPick
+  /* #483: models from either source (live list or welcome fallback) keep
+     the chip; only a confirmed-empty catalog renders the disabled
+     "Models unavailable" state — its press retries the load (AC-2). */
+  const modelChip = catalog.models.length
+    ? modelPick
       ? modelLabel(catalog.models, modelPick)
-      : employee.model || catalog.defaultModel || "Default";
+      : employee.model || catalog.defaultModel || "Default"
+    : catalogUnavailable
+      ? "Models unavailable"
+      : undefined;
 
   const send = (text: string) => {
     const c = client;
@@ -326,6 +333,7 @@ export function Dm({
       folder={pickLabel(folderOptions, wsPick)}
       model={modelChip}
       modelLogo={provider?.logo}
+      modelUnavailable={!catalog.models.length && catalogUnavailable}
       onOpenSession={(id) =>
         navigation.navigate("Thread", { conversationId: id })
       }
@@ -336,7 +344,16 @@ export function Dm({
             onPickModel: () =>
               navigation.navigate("ModelPicker", { employeeId }),
           }
-        : {})}
+        : catalogUnavailable && client
+          ? {
+              /* AC-2's retry affordance: re-asks the engine (refresh) so
+                 the chip flips live the moment models answer again. */
+              onPickModel: () =>
+                void refreshModelCatalog(client, $welcome, {
+                  refresh: true,
+                }),
+            }
+          : {})}
       prefill={prefill}
     />
   );
@@ -396,6 +413,13 @@ export function ModelPicker({
   const welcome = useStore($welcome);
   const picks = useStore($modelPicks);
   const [picked, setPicked] = useState<ModelPick>();
+
+  /* AC-2: opening the sheet re-asks the engine (refresh) so a catalog
+     that failed at seed heals without a reconnect. */
+  useEffect(() => {
+    if (!client) return;
+    void refreshModelCatalog(client, $welcome, { refresh: true });
+  }, [client]);
   const value = (conversationId
     ? (picked ??
       (conv?.model

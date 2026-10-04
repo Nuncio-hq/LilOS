@@ -37,7 +37,15 @@ import {
   planChangeSend,
 } from "../asks";
 import { defaultModelPick } from "../dm-model";
-import { $asks, $catalog, $pendingOpens, $wbCards, watchDm } from "../dm-store";
+import {
+  $asks,
+  $catalog,
+  $catalogUnavailable,
+  $pendingOpens,
+  $wbCards,
+  refreshModelCatalog,
+  watchDm,
+} from "../dm-store";
 import { $client, $welcome } from "../link";
 import { describeError } from "../mapping";
 import { $prs, refreshConversationPrs } from "../prs";
@@ -94,6 +102,7 @@ function useThread(conversationId: string) {
   const asks = useStore($asks);
   const pending = useStore($pendingOpens);
   const catalog = useStore($catalog);
+  const catalogUnavailable = useStore($catalogUnavailable);
   const prsMap = useStore($prs);
   const wbCards = useStore($wbCards);
 
@@ -203,7 +212,7 @@ function useThread(conversationId: string) {
   const [history, setHistory] = useState<AppMessage[]>([]);
   useEffect(() => {
     if (!client || !channelId) return;
-    watchDm(client);
+    watchDm(client, $welcome);
     let alive = true;
     const pull = () => {
       void client
@@ -316,6 +325,7 @@ function useThread(conversationId: string) {
     employee,
     detail,
     catalog,
+    catalogUnavailable,
     planCapable,
     subagentsCapable,
     jobsCapable,
@@ -339,6 +349,7 @@ export function Thread({
     employee,
     detail,
     catalog,
+    catalogUnavailable,
     planCapable,
     subagentsCapable,
     jobsCapable,
@@ -372,12 +383,15 @@ export function Thread({
     ? findModel(catalog.models, threadPick)
     : undefined;
   const provider = catalog.providers.find((p) => p.id === modelRow?.provider);
-  /* No engine model surface -> no chip (the web's models?.length gate). */
-  const modelChip = !catalog.models.length
-    ? undefined
-    : threadPick
+  /* #483: same contract as the DM composer — a confirmed-empty catalog
+     keeps a disabled "Models unavailable" chip whose press retries. */
+  const modelChip = catalog.models.length
+    ? threadPick
       ? modelLabel(catalog.models, threadPick)
-      : (conv?.model ?? employee?.model ?? "");
+      : (conv?.model ?? employee?.model ?? "")
+    : catalogUnavailable
+      ? "Models unavailable"
+      : undefined;
 
   const send = (text: string) => {
     const c = client;
@@ -454,6 +468,7 @@ export function Thread({
       t={detail}
       model={modelChip}
       modelLogo={provider?.logo}
+      modelUnavailable={!catalog.models.length && catalogUnavailable}
       onApprove={(id) => {
         if (client) void decide(client, id, true);
       }}
@@ -470,7 +485,14 @@ export function Thread({
                 conversationId,
               }),
           }
-        : {})}
+        : catalogUnavailable && client
+          ? {
+              onPickModel: () =>
+                void refreshModelCatalog(client, $welcome, {
+                  refresh: true,
+                }),
+            }
+          : {})}
       {...(subagentsCapable
         ? {
             onOpenSubagent: (a) =>
