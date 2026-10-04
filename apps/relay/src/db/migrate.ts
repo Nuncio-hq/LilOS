@@ -292,11 +292,18 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     ],
   },
   {
+    /* #419: the last turn's failure (JSON TurnFailure: kind + text) — the
+       DM session row's alert card, host-written and cleared on the next
+       turn.started. */
+    version: 19,
+    statements: [`ALTER TABLE conversations ADD COLUMN turn_failure TEXT`],
+  },
+  {
     /* #346: the engine session's life on the conversation — the host
        writes open/closed (a suspended session is `closed`, reopening on
        the next message); `running` is derived client-side, never stored.
-       v18 is #450's conversations.access. */
-    version: 19,
+       v18 is #450's conversations.access, v19 is #486's turn_failure. */
+    version: 20,
     statements: [`ALTER TABLE conversations ADD COLUMN life TEXT`],
   },
 ];

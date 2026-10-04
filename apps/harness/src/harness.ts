@@ -16,6 +16,7 @@ import type {
   FoldersDiscoverResult,
   PendingTurn,
   ProfileConnection,
+  TurnFailure,
 } from "@lilos/contracts/app";
 import {
   APP_PROTOCOL_VERSION,
@@ -749,15 +750,24 @@ export class Harness {
       binding.runningTurnId = undefined;
       binding.textByTurn.delete(turnId);
       this.opts.sleep.release();
+      /* #419: the lost turn's event log orphans with this session (the
+         rebind swaps engineRef), so the failure card can't ride the turn
+         — stamp it on the conversation; the next turn.started clears it. */
       await this.updateConversation(binding.conversationId, {
         state: "idle",
+        turnFailure: {
+          kind: "sleep",
+          text: "Interrupted — the Mac slept or the engine restarted.",
+        },
       });
       /* The turn vanished mid-run — pending steers can't land anymore. */
       this.scheduleSteerReconcile(binding);
     }
+    /* #419 AC-4: the note reports the interrupt; the Retry lives on the
+       session card + turn, not in text nobody can click. */
     await this.postSystem(
       binding,
-      "Turn interrupted — the Mac slept or the engine restarted. Retry.",
+      "Turn interrupted — the Mac slept or the engine restarted.",
     );
   }
 
@@ -1514,11 +1524,17 @@ export class Harness {
         conversationId: binding.conversationId,
         error: String(error),
       });
+      const detail = error instanceof Error ? error.message : String(error);
       await this.postSystem(
         binding,
-        `Engine error: ${error instanceof Error ? error.message : String(error)}`,
+        `Engine error: ${detail}`,
         `sys:${binding.conversationId}:${message.id}:engine-error`,
       );
+      /* #419: the prompt never made a turn — the DM card carries the
+         failure so the thread isn't silent + Retry has a surface. */
+      await this.updateConversation(binding.conversationId, {
+        turnFailure: { kind: "generic", text: `Engine error: ${detail}` },
+      });
     }
     return false;
   }
@@ -2034,6 +2050,9 @@ export class Harness {
         this.opts.sleep.acquire();
         this.updateConversation(binding.conversationId, {
           state: "active",
+          /* #419: a fresh turn erases the last failure's card — a retry
+             that made it this far worked. */
+          turnFailure: null,
         }).catch(() => {});
         break;
       }
@@ -3223,9 +3242,19 @@ export class Harness {
         `sys:${binding.conversationId}:${source}:silent`,
       );
     }
-    this.updateConversation(binding.conversationId, { state: "idle" }).catch(
-      () => {},
-    );
+    this.updateConversation(binding.conversationId, {
+      state: "idle",
+      /* #419: the DM session card's failure — the turn model carries it
+         too, but the row keeps it across a session rebind/reload. */
+      ...(event.payload.error
+        ? {
+            turnFailure: {
+              kind: "model" as const,
+              text: event.payload.error,
+            },
+          }
+        : {}),
+    }).catch(() => {});
 
     /* #315 AC-5: ■ Stop parks everything still waiting — queued sends and
        accepted-but-unlanded steers alike land in the not-sent tray
@@ -3549,6 +3578,9 @@ export class Harness {
       fast?: boolean | null;
       deliveredSeq?: number;
       life?: ConversationLife;
+      /** #419: stamp the last turn's failure (DM alert card); `null`
+          clears it. */
+      turnFailure?: TurnFailure | null;
     },
   ) {
     await this.opts.relay.request("conversations.update", {

@@ -68,6 +68,7 @@ const PHASE_MAP: Record<TurnModel["phase"], Phase> = {
   waiting: "waiting",
   done: "done",
   stopped: "stopped",
+  failed: "failed",
 };
 
 /* #180: a turn's plan/task-list snapshot -> the ui Plan the PlanCard renders.
@@ -232,7 +233,12 @@ export function liveTurnReply(
     /* #327: `liveNow` is mergeTurns' conversation-state clamp — a settled
        phase alone can't mark a turn dead when the feed degraded before
        the reducer's settle could see it. */
-    live: liveNow && turn.phase !== "done" && turn.phase !== "stopped",
+    live:
+      liveNow &&
+      turn.phase !== "done" &&
+      turn.phase !== "stopped" &&
+      turn.phase !== "failed",
+    ...(turn.error ? { error: turn.error } : {}),
     ...(turn.agentInitiated ? { agentInitiated: true } : {}),
     plan: currentPlan(turn),
     waitingOn: turn.phase === "waiting" ? open?.request.kind : undefined,
@@ -434,7 +440,11 @@ export function mergeTurns(
       !t.agentInitiated ||
       used.has(t) ||
       !t.text.trim() ||
-      (t.phase !== "done" && t.phase !== "stopped")
+      (t.phase !== "done" &&
+        t.phase !== "stopped" &&
+        /* #419: a failed leg still claims the row its partial text posted
+           (finishTurn ships whatever streamed before the error). */
+        t.phase !== "failed")
     )
       continue;
     let ri = -1;
@@ -505,7 +515,7 @@ export function mergeTurns(
     if (
       x.liveAttached &&
       !x.agentInitiated &&
-      (x.phase === "done" || x.phase === "stopped") &&
+      (x.phase === "done" || x.phase === "stopped" || x.phase === "failed") &&
       model.turns.find((y) => y.ref === x.ref) === x
     )
       newestClaimable = x;
@@ -552,7 +562,15 @@ export function mergeTurns(
     }
     if (t.ref ? rewound?.refs?.has(t.ref) : rewound?.texts?.has(t.text.trim()))
       continue;
-    if (!t.text.trim() && t.phase !== "stopped" && t !== liveTurn) continue;
+    /* #419: a failed turn with no output still renders — its failure chip
+       is the only surface the error has (same reason stopped stays). */
+    if (
+      !t.text.trim() &&
+      t.phase !== "stopped" &&
+      t.phase !== "failed" &&
+      t !== liveTurn
+    )
+      continue;
     const rs = liveReplies(
       t,
       employeeId,
@@ -579,6 +597,8 @@ export function mergeTurns(
       t.ref &&
       refIndex(t.ref) < 0 &&
       t.phase !== "stopped" &&
+      /* #419: a failed turn's error must not drop as an orphan either. */
+      t.phase !== "failed" &&
       t !== liveTurn &&
       !(t === newestClaimable && !rewound?.texts?.has(t.text.trim()))
     )
@@ -647,6 +667,12 @@ export function toFeed(
          derived by sessionLife from the replies, never stored. */
       ...(conv.life ? { life: conv.life } : {}),
       replies,
+      /* #419: the session row's failure card — the harness stamps
+         `turnFailure` when a turn dies on an error or a sleep/restart
+         interrupt; Retry re-sends the user's last message (dm.tsx). */
+      ...(conv.turnFailure
+        ? { alert: { ...conv.turnFailure, retry: true } }
+        : {}),
       ...(ws ? { ws } : {}),
     },
   };

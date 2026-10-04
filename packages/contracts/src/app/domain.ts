@@ -105,6 +105,23 @@ export const WorkspaceIntent = z.discriminatedUnion("mode", [
 ]);
 export type WorkspaceIntent = z.infer<typeof WorkspaceIntent>;
 
+/**
+ * Why the conversation's last turn failed (#419). Host-written, persisted
+ * on the row: an interrupted turn orphans with the dead session's event
+ * log (a rebind swaps `engineRef`), so the failure card can't ride the
+ * turn itself — it lives here until the next `turn.started` clears it.
+ * `kind` mirrors the ui `SessionAlert` kinds: "sleep" = the Mac slept or
+ * the engine restarted (amber), "model"/"generic" = the turn ended on
+ * `turn.completed.error` / the prompt never dispatched (red).
+ */
+export const TurnFailure = z.strictObject({
+  kind: z.enum(["model", "sleep", "generic"]),
+  /** The user-facing failure line (the engine's error text or the
+      interrupt reason). */
+  text: z.string().min(1),
+});
+export type TurnFailure = z.infer<typeof TurnFailure>;
+
 export const Conversation = z.object({
   id: z.string().min(1),
   channelId: z.string().min(1),
@@ -171,6 +188,11 @@ export const Conversation = z.object({
    * row still carries the last numbers.
    */
   usage: Usage.optional(),
+  /**
+   * The last turn's failure (#419) — the DM session row's alert card.
+   * Absent once a turn started fresh or no turn has failed yet.
+   */
+  turnFailure: TurnFailure.optional(),
   createdAt: Timestamp,
 });
 export type Conversation = z.infer<typeof Conversation>;

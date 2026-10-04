@@ -20,6 +20,7 @@ import type {
   PushPrefs,
   RecentFolder,
   RespondTo,
+  TurnFailure,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
 import type {
@@ -75,6 +76,9 @@ export interface ConversationPatch {
   /** The engine session's life (#346): `open`/`closed` — `running` is a
       client-derived state and never lands on the row. */
   life?: ConversationLife;
+  /** Host-only (#419): stamp the last turn's failure for the DM alert
+      card; `null` clears it (next `turn.started`). */
+  turnFailure?: TurnFailure | null;
 }
 
 export interface OpenConversationInput {

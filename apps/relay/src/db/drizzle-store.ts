@@ -11,6 +11,7 @@ import type {
   ProfileSettings,
   PushPrefs,
   RecentFolder,
+  TurnFailure,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
 import {
@@ -81,6 +82,10 @@ const rowToConversation = (row: ConversationRow): Conversation => {
       : undefined,
     usage: row.usage ? (JSON.parse(row.usage) as Usage) : undefined,
     life: row.life ?? undefined,
+    /* JSON TurnFailure (#419); absent on rows that never failed. */
+    turnFailure: row.turnFailure
+      ? (JSON.parse(row.turnFailure) as TurnFailure)
+      : undefined,
   };
 };
 
@@ -522,6 +527,11 @@ export function createDrizzleStore(db: Db): RelayStore {
             usage: conversation.usage
               ? JSON.stringify(conversation.usage)
               : null,
+            /* #419: the domain object holds TurnFailure; the column its
+               JSON — absent rows stay NULL. */
+            turnFailure: conversation.turnFailure
+              ? JSON.stringify(conversation.turnFailure)
+              : null,
           })
           .run();
         /* The picker's folder bumps recents — a `.lilos/wt/*` run dir never
@@ -570,9 +580,21 @@ export function createDrizzleStore(db: Db): RelayStore {
           return this.getConversation(id);
         }
       }
+      /* turnFailure crosses the patch API as the domain object (#419);
+         the column holds its JSON like `workspace`/`usage` — serialize at
+         the boundary, `null` clears. */
+      const { turnFailure, ...cols } = patch;
       const updated = db
         .update(schema.conversations)
-        .set(patch)
+        .set({
+          ...cols,
+          ...(turnFailure !== undefined
+            ? {
+                turnFailure:
+                  turnFailure === null ? null : JSON.stringify(turnFailure),
+              }
+            : {}),
+        })
         .where(eq(schema.conversations.id, id))
         .returning()
         .get();

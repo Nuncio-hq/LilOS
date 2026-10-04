@@ -36,6 +36,7 @@ import {
   RecentFolder,
   RespondTo,
   Timestamp,
+  TurnFailure,
   WorkbenchOpenTarget,
   WorkspaceIntent,
 } from "./domain";
@@ -492,6 +493,9 @@ export const ConversationsUpdateParams = z.object({
   /** Host-only (#346): the engine session's life — `closed` once suspended,
       back to `open` when it reopens. `running` is derived client-side. */
   life: ConversationLife.optional(),
+  /** Host-only (#419): the last turn's failure the DM card shows —
+      `null` clears it (the next `turn.started` erases the card). */
+  turnFailure: TurnFailure.nullable().optional(),
 });
 export type ConversationsUpdateParams = z.infer<
   typeof ConversationsUpdateParams

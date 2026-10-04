@@ -96,7 +96,10 @@ export type TurnPhase =
   | "text"
   | "waiting"
   | "done"
-  | "stopped";
+  | "stopped"
+  /* #419: the turn ended on `turn.completed.error` — terminal like done
+     (never live, never reopened), but it failed and reads that way. */
+  | "failed";
 
 /** The UI-ready model of one engine turn, reduced from its event log. */
 export interface TurnModel {
@@ -118,6 +121,9 @@ export interface TurnModel {
   subagents: SubagentModel[];
   usage?: Usage;
   stopReason?: string;
+  /** #419: `turn.completed.error` — the engine's failure text, kept so
+     surfaces can say *what* failed instead of a bare `failed` phase. */
+  error?: string;
   /** The user message that prompted this turn (engine `turn.started.ref`). */
   ref?: string;
   /** #308: the engine opened this leg itself (delivery/auto-continue) —
@@ -141,7 +147,7 @@ export interface SessionModel {
   sessionId: string;
   state: SessionState | "unknown";
   turns: TurnModel[];
-  /** The turn currently producing output (phase not done/stopped). */
+  /** The turn currently producing output (phase not done/stopped/failed). */
   live?: TurnModel;
   /** Requests still awaiting request.respond. */
   openRequests: TurnRequest[];
@@ -247,7 +253,12 @@ export function reduceSessionEvents(
           if (t.phase === "submitted") t.phase = "reasoning";
         } else {
           t.text += e.payload.delta;
-          if (t.phase !== "done" && t.phase !== "stopped") t.phase = "text";
+          if (
+            t.phase !== "done" &&
+            t.phase !== "stopped" &&
+            t.phase !== "failed"
+          )
+            t.phase = "text";
         }
         break;
       }
@@ -258,7 +269,8 @@ export function reduceSessionEvents(
            reopen the settled turn. The engine stamps them with whichever
            turn is CURRENT (not the spawning one), so the lookup crosses
            turns just like subagent.completed does. */
-        if (t.phase !== "done" && t.phase !== "stopped") t.phase = "tools";
+        if (t.phase !== "done" && t.phase !== "stopped" && t.phase !== "failed")
+          t.phase = "tools";
         const step = {
           id: e.payload.toolCallId,
           tool: e.payload.tool,
@@ -401,7 +413,8 @@ export function reduceSessionEvents(
         const t = turn(e.payload.turnId);
         /* #309: a request stamped on a settled turn records but never
            reopens it — same post-turn guard tool.started takes. */
-        if (t.phase !== "done" && t.phase !== "stopped") t.phase = "waiting";
+        if (t.phase !== "done" && t.phase !== "stopped" && t.phase !== "failed")
+          t.phase = "waiting";
         t.requests.push({
           requestId: e.payload.requestId,
           turnId: e.payload.turnId,
@@ -480,8 +493,16 @@ export function reduceSessionEvents(
       }
       case "turn.completed": {
         const t = turn(e.payload.turnId);
-        t.phase = e.payload.stopReason === "cancelled" ? "stopped" : "done";
+        /* #419: an error payload means the turn failed — the stop reason
+           stays on `stopReason` (refusal/cancelled/…) but the phase reads
+           failed so nothing downstream treats it as a clean end. */
+        t.phase = e.payload.error
+          ? "failed"
+          : e.payload.stopReason === "cancelled"
+            ? "stopped"
+            : "done";
         t.stopReason = e.payload.stopReason;
+        t.error = e.payload.error;
         t.usage = e.payload.usage;
         /* Stopped mid-list (#180 AC-2): engines don't re-emit a cancelled
            snapshot on interrupt, so unfinished items derive it here — the
@@ -568,7 +589,8 @@ export function reduceSessionEvents(
         : undefined;
   const snapshotTurn = snapshotStale ? undefined : snapshot?.turn?.turnId;
   for (const [i, t] of order.entries()) {
-    if (t.phase === "done" || t.phase === "stopped") continue;
+    if (t.phase === "done" || t.phase === "stopped" || t.phase === "failed")
+      continue;
     const superseded =
       i < order.length - 1 ||
       (snapshotTurn !== undefined && snapshotTurn !== t.turnId);
@@ -609,7 +631,9 @@ export function reduceSessionEvents(
     return undefined;
   }
 
-  const live = order.find((t) => t.phase !== "done" && t.phase !== "stopped");
+  const live = order.find(
+    (t) => t.phase !== "done" && t.phase !== "stopped" && t.phase !== "failed",
+  );
   const openRequests: TurnRequest[] = [];
   const jobList = [...jobs.values()];
   /* #309: helpers as job-like rows — a subagent left running past its

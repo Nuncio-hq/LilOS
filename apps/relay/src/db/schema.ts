@@ -102,6 +102,10 @@ export const conversations = sqliteTable(
         `closed` while suspended, `open` again once it reopens. `running`
         never crosses the wire; it's derived client-side. */
     life: text("life", { enum: ["open", "closed"] }),
+    /** The last turn's failure (#419): JSON TurnFailure {kind, text} —
+        the DM session row's alert card; host-written, cleared on the
+        next `turn.started`. */
+    turnFailure: text("turn_failure"),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [index("conversations_channel").on(t.channelId)],
