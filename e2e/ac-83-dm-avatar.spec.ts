@@ -2,8 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, expect, type Page, test } from "@playwright/test";
-import { bootStack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts } from "./helpers/stack";
 
 /**
  * Issue #83 — DM feed row avatar alignment. A session row's first content
@@ -71,11 +70,7 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
   test.setTimeout(150_000);
   const stack = await bootStack(
     "ac83a",
-    {
-      relay: wport(4670),
-      feed: wport(4671),
-      web: wport(5273),
-    },
+    await pickPorts(),
     // #118: the row's name is the OS user's — pin it for the exact-text
     // name-line measurements.
     { LILOS_USER_NAME: "Oscar" },
@@ -240,15 +235,9 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
 
 test("AC-3 desktop app: the DM feed row in Electron", async () => {
   test.setTimeout(240_000);
-  const stack = await bootStack(
-    "ac83b",
-    {
-      relay: wport(4674),
-      feed: wport(4676),
-      web: wport(5277),
-    },
-    { LILOS_USER_NAME: "Oscar" },
-  );
+  const stack = await bootStack("ac83b", await pickPorts(), {
+    LILOS_USER_NAME: "Oscar",
+  });
   try {
     const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
       cwd: desktopDir,

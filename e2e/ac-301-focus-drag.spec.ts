@@ -88,10 +88,10 @@ const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  /* pickPorts (bound-and-probed), not wport: --repeat-each N marches
-     TEST_WORKER_INDEX and a base+index·100 slot can land on a port the
-     machine already owns (index 10 → web :6379, this fleet's redis), where
-     --strictPort vite exits the stack before the first click. */
+  /* pickPorts (bound-and-probed): --repeat-each N marches the worker index
+     and a fixed base+index·100 slot can land on a port the machine already
+     owns (index 10 → web :6379, this fleet's redis), where --strictPort
+     vite exits the stack before the first click (#484). */
   stack = await bootStack("ac301", await pickPorts());
 });
 test.afterAll(async () => {

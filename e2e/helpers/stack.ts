@@ -132,6 +132,11 @@ export async function waitForToken(home: string): Promise<string> {
   throw new Error(`relay token never appeared at ${tokenPath}`);
 }
 
+/** This Playwright worker's index (stable per process) — specs use it for
+    per-worker dirs (vite caches) that must not clobber a sibling worker's
+    running optimizer (#84). */
+export const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
+
 export const freePort = () =>
   new Promise<number>((resolve, reject) => {
     const srv = createServer();

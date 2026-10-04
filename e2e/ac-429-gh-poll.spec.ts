@@ -11,8 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #429 — the Workbench's `forge.pr` re-read is a `gh pr view`
@@ -82,19 +81,11 @@ test.beforeAll(async () => {
   writeFileSync(ghLogFile, "");
   /* The fake gh rides PATH (forge.* shells out to it) and logs argv to
      GH_FAKE_LOG — the spec counts `pr view` lines. */
-  stack = await bootStack(
-    "ac429",
-    {
-      relay: wport(4740),
-      feed: wport(4826),
-      web: wport(5327),
-    },
-    {
-      PATH: `${fakeGh}:${process.env.PATH}`,
-      GH_FAKE_DIR: ghFakeDir,
-      GH_FAKE_LOG: ghLogFile,
-    },
-  );
+  stack = await bootStack("ac429", await pickPorts(), {
+    PATH: `${fakeGh}:${process.env.PATH}`,
+    GH_FAKE_DIR: ghFakeDir,
+    GH_FAKE_LOG: ghLogFile,
+  });
 });
 test.afterAll(async () => {
   await stack?.stop();

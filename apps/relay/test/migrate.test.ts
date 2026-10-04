@@ -54,8 +54,8 @@ describe("relay migrations", () => {
     // #300's persisted turn usage on conversations; v16 adds #315's
     // dropped/removed flags on messages; v17 adds #377's claimed flag; v18
     // adds #106's access level on conversations; v19 adds #419's
-    // turn_failure card on conversations.
-    expect(out.version).toBe(19);
+    // turn_failure card on conversations; v20 adds #346's life column.
+    expect(out.version).toBe(20);
     expect(out.msgCols).toContain("dropped");
     expect(out.msgCols).toContain("removed");
     expect(out.msgCols).toContain("claimed");
@@ -68,6 +68,7 @@ describe("relay migrations", () => {
     expect(out.colsAt7).toContain("usage");
     expect(out.colsAt7).toContain("access");
     expect(out.colsAt7).toContain("turn_failure");
+    expect(out.colsAt7).toContain("life");
     expect(out.tables).toContain("settings");
     expect(out.tables).toContain("profile");
     expect(out.tables).toContain("messages_fts");

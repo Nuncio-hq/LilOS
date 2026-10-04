@@ -1,8 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #419 — a failed turn (model error, Mac slept, engine restart) stops
@@ -20,14 +19,7 @@ const SHOTS = path.join(repo, "test-results", "ac-419");
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac419", {
-    /* Bases are suite-saturated (ports.spec gates every residue), so reuse
-       literals ac-132 already owns — identical bases dedupe and two spec
-       files never share a live worker index. */
-    relay: wport(4700),
-    feed: wport(4701),
-    web: wport(5359),
-  });
+  stack = await bootStack("ac419", await pickPorts());
 });
 test.afterAll(async () => {
   await stack?.stop();

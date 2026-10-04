@@ -159,6 +159,16 @@ function toSessionTurn(s: ConversationSummary, ctx: DmCtx): SessionTurn {
     prompt: s.root.text,
     title: conv.title || s.root.text,
     state,
+    /* #346 AC-4 — sessionLife's rule in this file's one derivation spot:
+       a turn working (or a send still landing) is running; an ask waiting
+       on the user is open — neither idle-closes; otherwise the stored
+       open/closed bit the host writes, unset = open. */
+    life:
+      state === "working"
+        ? "running"
+        : state === "needs-you"
+          ? "open"
+          : (conv.life ?? "open"),
     when: timeLabel(s.last.createdAt, ctx.now),
     ...(convFolderLabel(conv) ? { folder: convFolderLabel(conv) } : {}),
     ...(conv.workspace?.branch ? { branch: conv.workspace.branch } : {}),
@@ -215,6 +225,8 @@ export function toSessionTurns(
         prompt: p.root.text,
         title: p.conversation.title || p.root.text,
         state: "working",
+        /* #346 AC-4: a send in flight is running — toSessionTurn's rule. */
+        life: "running",
         when: timeLabel(p.conversation.createdAt, ctx.now),
         live: "Working…",
         ...(convFolderLabel(p.conversation)

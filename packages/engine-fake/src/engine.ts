@@ -43,6 +43,7 @@ import {
   type SessionState,
   type SessionSteerParams,
   type SessionStopParams,
+  type SessionSuspendParams,
   STEER_CAPABILITY,
   SUBAGENTS_CAPABILITY,
   type Usage,
@@ -114,6 +115,11 @@ const firstLocalUrl = (tail: string) =>
     tail,
   )?.[0];
 
+/* #346 AC-5: the one-time note a resumed turn hears — the same words
+   a real adapter prepends on the same resume path. */
+const RESUMED_NOTICE =
+  "This session was reopened; background processes and browser tabs from before were stopped.";
+
 /** Base64 length -> decoded bytes, without pulling node:buffer into packages. */
 const decodedBytes = (base64: string) => {
   let n = Math.floor((base64.length * 3) / 4);
@@ -179,6 +185,13 @@ interface FakeSession {
   jobs: Map<string, FakeJob>;
   jobCounter: number;
   subCounter: number;
+  /** #346: closed by `session.suspend` — a prompt/steer/replay reopens it
+      (`session.started` + idle again). A `session.stop`-closed session
+      stays dead. */
+  suspended: boolean;
+  /** #346 AC-5: set on resume — the next prompt joins the reopened
+      notice once (adapter parity). */
+  resumed: boolean;
   /** #400: `LILOS_TURN_HOLD` parks the turn past `turn.started` until this
       releases it (interrupt or session stop) — a test asserting the running
       state never races the script's length. */
@@ -334,6 +347,8 @@ export class FakeEngine {
         return this.eventsSince(parsed.data as EventsSinceParams);
       case "session.stop":
         return this.sessionStop(parsed.data as SessionStopParams);
+      case "session.suspend":
+        return this.sessionSuspend(parsed.data as SessionSuspendParams);
       case "session.steer":
         return this.sessionSteer(parsed.data as SessionSteerParams);
       case "session.rewind":
@@ -502,6 +517,8 @@ export class FakeEngine {
       jobCounter: 0,
       pendingSubagentClose: [],
       subCounter: 0,
+      suspended: false,
+      resumed: false,
     };
     this.sessions.set(id, s);
     this.emit(s, "session.started", {
@@ -518,6 +535,9 @@ export class FakeEngine {
 
   private prompt(p: PromptParams) {
     const s = this.require(p.sessionId);
+    /* #346 AC-2: a suspended session reopens on the next prompt — the
+       session.started + idle frames announce it, then the turn runs. */
+    if (s.state === "closed" && s.suspended) this.resumeSession(s);
     if (s.state === "closed")
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
     if (s.turn)
@@ -534,16 +554,21 @@ export class FakeEngine {
         "image blocks require the image_prompt capability",
       );
     }
-    const text = p.content
+    /* #346 AC-5: the first turn after a resume tells the agent once,
+       same notice a real adapter sends. It joins the turn's content (and the
+       remembered transcript); the script still keys on the user's words. */
+    const userText = p.content
       .filter((b): b is { type: "text"; text: string } => b.type === "text")
       .map((b) => b.text)
       .join("\n");
+    const text = s.resumed ? `${RESUMED_NOTICE}\n${userText}` : userText;
+    s.resumed = false;
     const images = imageBlocks.map((b) => ({
       mimeType: b.mimeType,
       sizeBytes: decodedBytes(b.data),
     }));
     s.userTurns.push(text);
-    return this.runTurn(s, text, images, p.ref);
+    return this.runTurn(s, text, images, p.ref, userText);
   }
 
   private interrupt(p: InterruptParams) {
@@ -653,6 +678,9 @@ export class FakeEngine {
 
   private eventsSince(p: EventsSinceParams) {
     const s = this.require(p.sessionId);
+    /* #346 parity with a real adapter: a replay on a suspended session
+       resumes it (the #288 path can't answer without a live session). */
+    if (s.state === "closed" && s.suspended) this.resumeSession(s);
     return {
       events: s.log.filter((e) => e.seq > p.after),
       latestSeq: s.seq,
@@ -695,6 +723,55 @@ export class FakeEngine {
     return { stopped: true };
   }
 
+  /**
+   * `session.suspend` (#346): the same teardown as `session.stop` — asks
+   * cancel, MCP children close, running jobs die — but the session stays
+   * resumable: the next prompt/steer/replay reopens it with memory intact.
+   */
+  private sessionSuspend(p: SessionSuspendParams) {
+    const s = this.require(p.sessionId);
+    if (s.state === "closed") return { suspended: s.suspended };
+    const t = s.turn;
+    if (t) t.interrupted = true;
+    s.holdTurn?.();
+    for (const ask of s.openRequests.values())
+      ask.resolve({ outcome: "cancel" });
+    for (const c of s.mcpClients.values()) c.close();
+    s.mcpClients.clear();
+    for (const job of s.jobs.values()) {
+      if (job.timer) clearInterval(job.timer);
+      if (job.status === "running") {
+        job.status = "stopped";
+        job.exitCode = 15;
+        this.emit(s, "job.exited", {
+          jobId: job.jobId,
+          status: "stopped",
+          exitCode: 15,
+        });
+      }
+    }
+    s.suspended = true;
+    s.state = "closed";
+    this.emit(s, "session.state", { state: "closed", reason: "suspended" });
+    return { suspended: true };
+  }
+
+  /** Reopen a suspended session (#346): memory is untouched — only the
+      live-session marker + the announce frames come back. */
+  private resumeSession(s: FakeSession) {
+    s.suspended = false;
+    s.resumed = true;
+    this.emit(s, "session.started", {
+      agent: s.agent,
+      cwd: s.cwd,
+      model: s.model,
+      provider: s.provider,
+      effort: s.effort,
+      fast: s.fast,
+    });
+    this.setState(s, "idle");
+  }
+
   /** Every attached MCP child across sessions — test cleanup + shutdown. */
   closeAllMcp() {
     for (const s of this.sessions.values()) {
@@ -705,6 +782,9 @@ export class FakeEngine {
 
   private sessionSteer(p: SessionSteerParams) {
     const s = this.require(p.sessionId);
+    /* #346: a steer to a suspended session reopens it; with no turn running
+       it answers not_running so the caller sends the text as prompt. */
+    if (s.state === "closed" && s.suspended) this.resumeSession(s);
     if (s.state === "closed")
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
     if (!s.turn)
@@ -1101,6 +1181,9 @@ export class FakeEngine {
     promptText: string,
     images?: { mimeType: string; sizeBytes: number }[],
     ref?: string,
+    /* #346: what the script sees — the user's words only, never the
+       resume notice prepended into the remembered transcript. */
+    scriptText?: string,
   ) {
     /* #400: a test's follow-up prompt is the release signal for held async
        helpers — their close lands here, while the session is still idle. */
@@ -1130,16 +1213,22 @@ export class FakeEngine {
        routed text still feeds every script key (`slow: leg:…`, `slowleg:
        plan: tasks`). `userTurns` keeps the raw text — the recall leg echoes
        what the user literally sent. */
-    const slow = SLOW_PROMPT.exec(promptText);
+    /* #346: `scriptText` is the user's own words — a resumed turn's
+       `promptText` starts with the reopen notice. Pace prefix and every
+       script key below read the user's text (`slow[:ms]` still strips). */
+    const slow = SLOW_PROMPT.exec(scriptText ?? promptText);
     const pace = slow ? Number(slow[2] ?? SLOW_TICK) : undefined;
     const slowKind = slow?.[1]?.toLowerCase();
     s.turnPace = slow && !slowKind ? pace : undefined;
     s.legPace = slowKind === "leg" ? pace : undefined;
-    const routed = slow ? promptText.slice(slow[0].length).trim() : promptText;
+    /* #346: `scripted` strips the pace prefix off the USER's text — on a
+       resumed turn `promptText` starts with the reopen notice, so the
+       script keys and the title read `scriptText` (main's `routed`). */
+    const scripted = (scriptText ?? promptText).replace(SLOW_PROMPT, "").trim();
     const turnId = `t${++this.turnCounter}`;
     const script = scriptFor(
       s.agent,
-      routed,
+      scripted,
       s.turnCount > 0,
       s.branch,
       this.nextHex,
@@ -1172,12 +1261,12 @@ export class FakeEngine {
        closed session — the turn still mints and cancels on its first
        paced sleep, but the state machine stays closed. */
     if (s.state !== "closed") this.setState(s, "running");
-    this.autoTitle(s, "derived", routed);
+    this.autoTitle(s, "derived", scripted);
     try {
       /* #400: `LILOS_TURN_HOLD` parks the turn while it reads as running —
          an interrupt (or the session stopping) releases it, so an Esc/Stop
          test never races a short script finishing first. */
-      if (/\bLILOS_TURN_HOLD\b/i.test(routed))
+      if (/\bLILOS_TURN_HOLD\b/i.test(scripted))
         await new Promise<void>((resolve) => {
           s.holdTurn = resolve;
         });
@@ -1185,7 +1274,7 @@ export class FakeEngine {
       // the turn as a refusal with an error, so failure surfaces are testable.
       // Reasoning is paced over ~2s like a real turn — an instant failure
       // races clients that suppress notifications for the in-view session.
-      if (/^\s*fail\b/i.test(routed)) {
+      if (/^\s*fail\b/i.test(scripted)) {
         for (const w of words(
           "Reading the workspace to find the right files. Applying the change on the branch. Rebuilding the project and running the checks. Several checks came back red and the build output looks broken. Retrying once, then giving up. ",
         )) {
@@ -1196,7 +1285,7 @@ export class FakeEngine {
             delta: w,
           });
         }
-        const error = `engine-fake: scripted failure for "${routed}"`;
+        const error = `engine-fake: scripted failure for "${scripted}"`;
         this.emit(s, "turn.completed", {
           turnId,
           stopReason: "refusal",
@@ -1212,14 +1301,14 @@ export class FakeEngine {
          ticking `plan.updated` snapshots (kind "tasks", never asks),
          `plan: propose` opens a `plan` request (approve → the steps tick;
          reject → nothing runs; change → the next version asks again). */
-      const planMode = PLAN_PROMPT.exec(routed);
+      const planMode = PLAN_PROMPT.exec(scripted);
       if (planMode) {
         const mode = planMode[1].toLowerCase();
         return await this.runPlanTurn(
           s,
           turnId,
           mode === "propose",
-          routed,
+          scripted,
           mode === "slow",
         );
       }
@@ -1254,7 +1343,7 @@ export class FakeEngine {
             status: outcome === "deny" ? "denied" : "cancelled",
           });
           if (outcome === "cancel") throw new Interrupted();
-          return this.finishTurn(s, turnId, "end_turn", script, routed);
+          return this.finishTurn(s, turnId, "end_turn", script, scripted);
         }
         await this.sleep(s);
         // mcp__<server>__<tool> steps really run: the fake spawns/connects
@@ -1333,7 +1422,7 @@ export class FakeEngine {
         await this.sleep(s);
         this.emit(s, "turn.delta", { turnId, stream: "text", delta: w });
       }
-      return this.finishTurn(s, turnId, "end_turn", script, routed);
+      return this.finishTurn(s, turnId, "end_turn", script, scripted);
     } catch (e) {
       if (!(e instanceof Interrupted)) throw e;
       this.cancelOpen(s);
