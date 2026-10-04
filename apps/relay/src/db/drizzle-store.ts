@@ -81,6 +81,7 @@ const rowToConversation = (row: ConversationRow): Conversation => {
       ? (JSON.parse(row.workspace) as WorkspaceIntent)
       : undefined,
     usage: row.usage ? (JSON.parse(row.usage) as Usage) : undefined,
+    life: row.life ?? undefined,
     /* JSON TurnFailure (#419); absent on rows that never failed. */
     turnFailure: row.turnFailure
       ? (JSON.parse(row.turnFailure) as TurnFailure)

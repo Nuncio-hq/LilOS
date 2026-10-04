@@ -294,6 +294,20 @@ PR does not exist.
   engine-hermes drops it at the adapter. Not: `available` mapped as
   append or replace on `turn.delta` (injects the answer into the
   Reasoning card). — #334 · PR #349
+- **D-#346 Idle-close suspends, it never stops.** `session.suspend` closes
+  the live engine session but keeps what it needs to resume
+  (engine-hermes: `session.close` on the gateway, registry row kept;
+  `session.stop` still means "end for good"); the next prompt/steer
+  reopens the SAME LilOS session through the resume path
+  (`session.resume`/`eager_build`) and the resumed turn hears once that
+  it was reopened. The harness's reaper suspends a session idle past
+  `LILOS_SESSION_IDLE_MINUTES` (default 30, `0` = never, checked every
+  minute) — never mid-turn, mid-ask, or with a subagent running —
+  background jobs do not block it. The conversation carries
+  `life: running|open|closed` derived in one place so web/mobile render
+  the ring from real state. Not: `session.stop` for idle cleanup (kills
+  memory + the INVALID_STATE re-queue loop), a second life derivation
+  outside `sessionLife`, or LilOS-owned session memory. — #346
 
 ## Host
 - **D-#11 Host reads (fs/git about the machine a session runs on) are served by the

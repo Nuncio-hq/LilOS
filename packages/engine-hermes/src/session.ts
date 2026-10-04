@@ -186,6 +186,10 @@ export class Session {
   /** Engine-written title, tracked so the snapshot can carry it (#137). */
   title: string | undefined;
 
+  /** #346 AC-5: set by resumeStored — the next prompt tells the agent once
+      that the session reopened (its old background processes are gone). */
+  resumed = false;
+
   /* #137 AC-1: mirror a persisted engine title into `session.titled`.
      Hermes drops the stage on the wire — `session.title` events carry only
      `{session_id, title}` (prompt_turn.py) and `session.info` carries the
