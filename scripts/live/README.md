@@ -13,3 +13,8 @@ is evidence — it lands in the issue's PR, not in CI.
   `archive/live-scripts-2026-10`, created in #443).
 - `openai-stub.ts` is the shared OpenAI-compatible chat stub live checks
   spawn so `hermes serve` runs for real without a signed-in model.
+- `scripts/live/lib/helpers.ts` is the shared plumbing every leg uses —
+  `freePort`, `launch`, `waitForFile`, `cleanup`, `startStub`. New checks
+  and the harness demo scripts (`apps/harness/scripts/*`) import it by
+  relative path instead of pasting their own copies; it's covered by
+  `bun run typecheck` (`scripts/live/tsconfig.json`).

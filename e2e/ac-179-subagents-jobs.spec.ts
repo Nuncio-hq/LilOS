@@ -148,15 +148,15 @@ execFileSync(
   { cwd: repoDir },
 );
 
-/* A slightly stretched tick so a reload can land mid-turn (AC-1 replay)
-   without making the suite crawl. */
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack(
     "ac179",
     { relay: wport(4812), feed: wport(4813), web: wport(5316) },
-    { ENGINE_FAKE_TICK: "180" },
+    /* #432: no stack-wide tick — the prompts needing a mid-turn window
+       (the delegate turns below) mark themselves `slow:<ms>`; everything
+       else runs flat out. */
   );
 });
 test.afterAll(async () => {
@@ -278,10 +278,12 @@ test("AC-1 a delegate turn shows one live row per helper; opening a row shows br
   await pickSessionFolder(page, repoDir);
   /* `LILOS_DELEGATE_ASYNC_HOLD` (#400): the first helper's close is held
      until the next prompt — a live row is still there whenever this test
-     looks, instead of hoping to catch it mid-turn on a loaded runner. */
+     looks, instead of hoping to catch it mid-turn on a loaded runner.
+     `slow:200` (#432) stretches this turn to ~7 s so the reload below lands
+     mid-turn — the held helper keeps the rows live either way. */
   await send(
     page,
-    "delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
+    "slow:200 delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
   );
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
 
@@ -533,27 +535,28 @@ test("AC-319 the panel's 'N subagents · Open' lands on Focus → Subagents (?ta
   page,
 }) => {
   test.setTimeout(300_000);
-  /* A stretched tick stretches the async helper's close ~1.5s past
-     turn.completed — long enough to watch it still under Running (AC-5)
-     before its real completion moves it to Finished. */
+  /* #400: LILOS_DELEGATE_ASYNC_HOLD holds the async helper's close until
+     the next prompt — the Running row is observable for as long as the
+     test wants, no tick stretching needed (#432 drops ENGINE_FAKE_TICK). */
   const stack319 = await bootStack(
     "ac319",
     /* ports.spec allows only identical bases across files (every residue
        is already taken) — these literals are ac-105's; different worker
        indices keep them apart. */
     { relay: wport(4818), feed: wport(4819), web: wport(5322) },
-    { ENGINE_FAKE_TICK: "1500" },
   );
   try {
     await openDefault(page, stack319);
     await pickSessionFolder(page, repoDir);
-    /* `LILOS_DELEGATE_ASYNC_HOLD` marks the first helper async and holds its
-       subagent.completed until the next prompt (#400): dispatch-receipt
-       delegation on the real engine, but the test controls when the close
-       lands instead of racing a tick window. */
+    /* `slow:250` keeps this turn running (~9 s) through the mid-test
+       reload (#432); `LILOS_DELEGATE_ASYNC_HOLD` marks the first helper
+       async and holds its subagent.completed until the next prompt (#400):
+       dispatch-receipt delegation on the real engine, but the test
+       controls when the close lands — and the rows replay — regardless of
+       where in the turn the reload happens. */
     await send(
       page,
-      "delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
+      "slow:250 delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
     );
     await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
     await expect(page.locator("[data-subagents-link]").last()).toBeVisible({
@@ -652,11 +655,22 @@ test("AC-319 a `?tab=subagents` deep link on a zero-helper session lands on the 
   await send(page, "say hi");
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
   await page.goto(`${page.url()}?tab=subagents`);
-  await expect(tab(page, /Subagents/)).toHaveAttribute(
-    "aria-selected",
-    "true",
-    { timeout: 30_000 },
-  );
+  try {
+    await expect(tab(page, /Subagents/)).toHaveAttribute(
+      "aria-selected",
+      "true",
+      { timeout: 30_000 },
+    );
+  } catch (e) {
+    /* A missing trigger means the tab state never took the deep link —
+       the URL and the rendered tab set say which side lost it. */
+    console.log(
+      `[ac-319] url=${page.url()} tabs=${JSON.stringify(
+        await page.getByRole("tab").allTextContents(),
+      )}`,
+    );
+    throw e;
+  }
   await expect(page.getByText("No subagents in this session yet.")).toBeVisible(
     { timeout: 30_000 },
   );

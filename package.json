@@ -14,6 +14,8 @@
     "@playwright/test": "^1.56.1",
     "@testing-library/dom": "10",
     "@testing-library/react": "16",
+    "@types/bun": "1.4.2",
+    "@types/node": "^26.6.2",
     "happy-dom": "19",
     "typescript": "^7.0.2",
     "vitest": "^3.2.4"
@@ -24,7 +26,7 @@
   "scripts": {
     "verify": "bun run verify:fast && bun run test:e2e",
     "verify:fast": "biome check . && bun run schema:check && bun run typecheck && bun run test:unit && bun run test:nonts && bun run build:prototype && bun run build:harness && bun run check:mobile-bundle",
-    "typecheck": "tsc -b prototype/web packages/contracts packages/ui packages/engine-fake packages/engine-conformance packages/client-runtime packages/engine-hermes packages/host packages/surfaces apps/relay apps/harness apps/lilos apps/web apps/desktop packages/background && tsc --noEmit -p prototype/mobile && tsc --noEmit -p apps/mobile && tsc --noEmit -p packages/ui-native",
+    "typecheck": "tsc -b prototype/web packages/contracts packages/ui packages/engine-fake packages/engine-conformance packages/client-runtime packages/engine-hermes packages/host packages/surfaces apps/relay apps/harness apps/lilos apps/web apps/desktop packages/background && tsc --noEmit -p prototype/mobile && tsc --noEmit -p apps/mobile && tsc --noEmit -p packages/ui-native && tsc --noEmit -p scripts/live",
     "schema:gen": "bun packages/contracts/scripts/gen-schemas.ts",
     "schema:check": "bun packages/contracts/scripts/gen-schemas.ts --check",
     "test:nonts": "bun packages/engine-conformance/scripts/test-nonts.ts",
