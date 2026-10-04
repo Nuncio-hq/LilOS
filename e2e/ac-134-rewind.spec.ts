@@ -67,12 +67,7 @@ test.beforeAll(async () => {
   stackA = await bootStack(
     "rw-a",
     { relay: wport(4643), feed: wport(4647), web: wport(5241) },
-    {
-      LILOS_USER_NAME: "Oscar",
-      /* Slow the fake's steps so the AC-5 "disabled while running" assertion
-         has a window even on a fast VM. */
-      ENGINE_FAKE_TICK: "700",
-    },
+    { LILOS_USER_NAME: "Oscar" },
   );
   stackB = await bootStack(
     "rw-b",
@@ -176,9 +171,16 @@ let empA = "";
 
 /** Message-row text match that excludes the composer textarea — after a
     rewind the draft legitimately echoes the dropped message (AC-4), and
-    getByText matches a textarea's content too. */
+    getByText matches a textarea's content too. Turn-card collapsibles are
+    excluded the same way: a live card's reasoning echoes the prompt
+    verbatim (#266), and while it's open getByText strict-matches both —
+    the #432 fast tick lands asserts inside that open window. */
 const rowText = (scope: Locator, text: string | RegExp) =>
-  scope.getByText(text).and(scope.locator(":not(textarea)"));
+  scope
+    .getByText(text)
+    .and(
+      scope.locator(":not(textarea):not([data-slot='collapsible-content'] *)"),
+    );
 
 function watchConsole(page: Page) {
   const errors: string[] = [];
@@ -280,8 +282,9 @@ test("AC-5 rewind triggers are disabled while a turn runs", async ({
   await expect(page.locator("[data-rewind]").first()).toBeVisible({
     timeout: 30_000,
   });
-  /* ENGINE_FAKE_TICK=700 keeps the turn streaming for a few seconds. */
-  await send(page, "a slow-running turn for the disabled check");
+  /* #432: `slow:50` paces only this turn (~3 s) — enough running window for
+     the disabled assertion, without slowing the stack's other prompts. */
+  await send(page, "slow:50 a slow-running turn for the disabled check");
   await expect(page.locator("[data-rewind]").first()).toBeDisabled({
     timeout: 15_000,
   });
@@ -321,7 +324,11 @@ test("AC-5 a folder shared with another session warns + names it before rewindin
   });
   await thread.locator("[data-rewind]").first().click();
   await expect(thread.getByText(/shared with/)).toBeVisible();
-  await expect(thread.getByText(/session B alpha/)).toBeVisible();
+  /* The name renders the sharer's title or root text — the fake's llm
+     stage Title-Cases it ("Session B Alpha"), so match case-blind. At the
+     old stack tick the dialog usually opened while the derived title
+     still held; the #432 fast tick lands the llm title first. */
+  await expect(thread.getByText(/session b alpha/i)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-5-shared.png` });
   await thread.getByRole("button", { name: "Cancel" }).click();
   /* The row plus the "I remember 1 earlier turn" list item — cancelling
