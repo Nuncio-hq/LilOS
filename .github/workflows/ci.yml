@@ -96,6 +96,17 @@ jobs:
           path: test-results/ac-423/
           if-no-files-found: ignore
           retention-days: 14
+      # #504: the spec writes its required screenshots under
+      # test-results/ac-504/ — upload them so they can be committed to
+      # pr-assets/504/ (the repo can't be written from inside a run).
+      - name: Upload ac-504 screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ac-504-shots-${{ matrix.shard }}
+          path: test-results/ac-504/
+          if-no-files-found: ignore
+          retention-days: 14
 
   verify:
     needs: [scope, checks, e2e]
