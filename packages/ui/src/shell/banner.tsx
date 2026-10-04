@@ -8,11 +8,16 @@ export function StatusBanner({
   tone = "amber",
   icon,
   action,
+  inline,
   children,
 }: {
   tone?: "amber" | "red" | "blue";
   icon?: ReactNode;
   action?: { label: string; onClick: () => void };
+  /* `inline` hugs the content (a bordered card instead of a full-bleed
+     strip) so the action button sits right after the text — for notices
+     that live inside a constrained column (#423). */
+  inline?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -20,7 +25,8 @@ export function StatusBanner({
       data-status-banner
       role="status"
       className={cn(
-        "flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs sm:px-5",
+        "flex shrink-0 items-center gap-2 px-3 py-2 text-xs",
+        inline ? "w-fit max-w-full rounded-md border" : "border-b sm:px-5",
         tone === "amber" && "border-amber-200 bg-amber-50 text-amber-900",
         tone === "red" && "border-red-200 bg-red-50 text-red-900",
         tone === "blue" && "border-blue-200 bg-blue-50 text-blue-900",

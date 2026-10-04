@@ -166,7 +166,9 @@ export function Workbench({
   /** True while the "asks to start work" card is open: it is the single entry point (issue #15). */
   startYields?: boolean;
   onSend?: (t: string) => void;
-  say?: (t: string) => void;
+  /* `{error:true}` marks a failed action — the host toasts it with the
+     destructive accent instead of a neutral note (#423). */
+  say?: (t: string, opts?: { error?: boolean }) => void;
   repoFiles?: string[];
   /** Live host accessors for the session's real cwd (issue #11 fs/git, #37 forge). */
   host?: HostAccessors;
@@ -760,7 +762,9 @@ export function Workbench({
         ? (path: string, app: OsApp, line?: number) => {
             void host
               .osOpen?.(liveCwd, path, app, line)
-              .catch((e) => say?.(`Open failed — ${ghError(e)}`));
+              .catch((e) =>
+                say?.(`Open failed — ${ghError(e)}`, { error: true }),
+              );
           }
         : undefined;
   const prComment =
@@ -771,7 +775,7 @@ export function Workbench({
             await reloadPr();
             say?.("Comment posted via gh");
           } catch (e) {
-            say?.(`Comment failed — ${ghError(e)}`);
+            say?.(`Comment failed — ${ghError(e)}`, { error: true });
           }
         }
       : onPrComment;
@@ -781,13 +785,16 @@ export function Workbench({
           try {
             const pr = await host.prMerge?.(liveCwd, m);
             if (pr) setProbe((p) => (p ? { ...p, pr: { pr } } : p));
-            say?.(
-              pr?.status === "merged"
-                ? `Merged #${pr.number} into ${pr.base} · gh pr merge --${m}`
-                : `gh pr merge returned but the PR is ${pr?.status}`,
-            );
+            if (pr?.status === "merged")
+              say?.(
+                `Merged #${pr.number} into ${pr.base} · gh pr merge --${m}`,
+              );
+            else
+              say?.(`gh pr merge returned but the PR is ${pr?.status}`, {
+                error: true,
+              });
           } catch (e) {
-            say?.(`Merge failed — ${ghError(e)}`);
+            say?.(`Merge failed — ${ghError(e)}`, { error: true });
           }
         }
       : onPrMerge;
