@@ -8,12 +8,13 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 import {
   captureProc,
   killProc,
+  pickPorts,
+  WORKER,
   waitForFeed,
   waitForHttp,
   waitForRelay,
   waitForToken,
 } from "./helpers/stack";
-import { WORKER, wport } from "./ports";
 
 /**
  * Issue #28 — sessions: history after restart, rename/archive, filter,
@@ -70,11 +71,7 @@ const viteCacheDir = `node_modules/.vite-ac28-w${WORKER}`;
 async function boot(tag: string, home?: string): Promise<Procs> {
   const base = home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-28-${tag}-`));
   const leakTag = engineTag(tag);
-  const ports = {
-    relay: wport(4688),
-    feed: wport(4692),
-    web: wport(5329),
-  };
+  const ports = await pickPorts();
   let viteOut = "";
   const procs: Procs["procs"] = {
     relay: undefined,

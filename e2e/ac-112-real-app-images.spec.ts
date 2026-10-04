@@ -2,8 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * AC-112: image attachments in the real app's DM composers — the same path
@@ -120,12 +119,9 @@ async function rpc(
   return out;
 }
 
-const RELAY = wport(4720);
-const FEED = wport(4721);
-const PORT = wport(5342);
-const RELAY2 = wport(4723);
-const FEED2 = wport(4724);
-const PORT2 = wport(5344);
+let RELAY: number;
+let FEED: number;
+let PORT: number;
 
 test.describe.configure({ mode: "serial" });
 test.setTimeout(120_000);
@@ -134,6 +130,7 @@ let stack: Stack;
 let stack2: Stack | undefined;
 
 test.beforeAll(async () => {
+  ({ relay: RELAY, feed: FEED, web: PORT } = await pickPorts());
   stack = await bootStack(
     "ac112",
     { relay: RELAY, feed: FEED, web: PORT },
@@ -186,11 +183,10 @@ test("AC-1 attach button + pick/drop/paste chips in both composers", async ({
 test("AC-1b without image_prompt no attach affordance renders", async ({
   page,
 }) => {
-  stack2 = await bootStack(
-    "ac112b",
-    { relay: RELAY2, feed: FEED2, web: PORT2 },
-    { LILOS_ENGINE: "fake", LILOS_HIDE_CAPS: "image_prompt" },
-  );
+  stack2 = await bootStack("ac112b", await pickPorts(), {
+    LILOS_ENGINE: "fake",
+    LILOS_HIDE_CAPS: "image_prompt",
+  });
   await dmDefault(page, stack2.webUrl);
   await expect(page.locator('[aria-label="Attach files"]')).toHaveCount(0);
   await expect(page.locator('main input[type="file"]')).not.toHaveAttribute(

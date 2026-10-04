@@ -1,8 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #104 — DM composer keys: Esc stops the running turn through the same
@@ -23,11 +22,7 @@ const SHOTS = path.join(repo, "test-results", "ac-104");
 let stackA: Stack; // engine-fake advertising every capability (incl. steer)
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stackA = await bootStack("keys", {
-    relay: wport(4680),
-    feed: wport(4681),
-    web: wport(5339),
-  });
+  stackA = await bootStack("keys", await pickPorts());
 });
 test.afterAll(async () => {
   await stackA?.stop();

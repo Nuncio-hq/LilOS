@@ -1,8 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #137 — sessions name themselves: a placeholder from the first
@@ -15,12 +14,10 @@ const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 const SHOTS = path.join(repo, "test-results", "ac-137");
 
-const PORTS = { relay: wport(4808), feed: wport(4809), web: wport(5311) };
-
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac137", PORTS);
+  stack = await bootStack("ac137", await pickPorts());
 });
 test.afterAll(async () => {
   await stack?.stop();

@@ -2,8 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, killProc } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, freePort, killProc, pickPorts } from "./helpers/stack";
 
 /**
  * #315 tray geometry: the waiting tray must reserve its own height — it can
@@ -73,17 +72,9 @@ test("tray reserves its height: the approval card stays answerable with a waitin
   page,
 }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack(
-    "traygeo",
-    {
-      relay: wport(4643),
-      feed: wport(4647),
-      web: wport(5241),
-    },
-    {
-      LILOS_USER_NAME: "Oscar",
-    },
-  );
+  const stack = await bootStack("traygeo", await pickPorts(), {
+    LILOS_USER_NAME: "Oscar",
+  });
   try {
     await page.setViewportSize({ width: 1288, height: 700 });
     await dmDefault(page, stack.webUrl);
@@ -255,23 +246,12 @@ test("tray text holds WCAG AA in dark and keeps its palette in light (#371)", as
   page,
 }) => {
   test.setTimeout(180_000);
-  /* Ports: reuse literals already in the suite — every distinct wport
-     base must keep a unique residue mod 100 (ports.spec.ts), and all
-     100 residues are taken, so new literals are not an option. */
-  const engine = await bootSteerlessEngine(wport(4653));
-  const stack = await bootStack(
-    "traycontrast",
-    {
-      relay: wport(4643),
-      feed: wport(4647),
-      web: wport(5241),
-    },
-    {
-      LILOS_ENGINE: "url",
-      LILOS_ENGINE_URL: engine.url,
-      LILOS_USER_NAME: "Oscar",
-    },
-  );
+  const engine = await bootSteerlessEngine(await freePort());
+  const stack = await bootStack("traycontrast", await pickPorts(), {
+    LILOS_ENGINE: "url",
+    LILOS_ENGINE_URL: engine.url,
+    LILOS_USER_NAME: "Oscar",
+  });
   try {
     await page.setViewportSize({ width: 1288, height: 700 });
     await page.emulateMedia({ colorScheme: "light" });

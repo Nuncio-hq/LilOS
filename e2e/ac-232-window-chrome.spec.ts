@@ -9,8 +9,7 @@ import {
   test,
 } from "@playwright/test";
 import { TRAFFIC_LIGHTS_END } from "../apps/desktop/src/window-chrome";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #232 — native macOS window chrome. Each acceptance criterion is a
@@ -117,11 +116,7 @@ async function dismissFirstRun(win: Page) {
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac232", {
-    relay: wport(4680),
-    feed: wport(4684),
-    web: wport(5338),
-  });
+  stack = await bootStack("ac232", await pickPorts());
 });
 test.afterAll(async () => {
   await stack?.stop();

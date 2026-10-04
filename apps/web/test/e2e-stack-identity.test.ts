@@ -116,7 +116,9 @@ describe("AC-2 (#273) every stack-booting spec uses the shared helper", () => {
         .map((f) => path.join(d, f)),
     );
     const offenders = files
-      .filter((f) => /\bwport\b|["']\.\/ports["']/.test(readFileSync(f, "utf8")))
+      .filter((f) =>
+        /\bwport\b|["']\.\/ports["']/.test(readFileSync(f, "utf8")),
+      )
       .map((f) => path.basename(f));
     expect(offenders).toEqual([]);
   });

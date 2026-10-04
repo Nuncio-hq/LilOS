@@ -4,8 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #179 — subagents and background work in the real app (apps/web,
@@ -50,7 +49,7 @@ test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack(
     "ac179",
-    { relay: wport(4812), feed: wport(4813), web: wport(5316) },
+    await pickPorts(),
     /* #432: no stack-wide tick — the prompts needing a mid-turn window
        (the delegate turns below) mark themselves `slow:<ms>`; everything
        else runs flat out. */
@@ -400,11 +399,9 @@ test("AC-5 no `background_jobs` capability → no Background tab and no Stop (D-
   page,
 }) => {
   test.setTimeout(180_000);
-  const stackB = await bootStack(
-    "ac179nocaps",
-    { relay: wport(4815), feed: wport(4766), web: wport(5325) },
-    { LILOS_HIDE_CAPS: "background_jobs" },
-  );
+  const stackB = await bootStack("ac179nocaps", await pickPorts(), {
+    LILOS_HIDE_CAPS: "background_jobs",
+  });
   try {
     await openDefault(page, stackB);
 
@@ -435,13 +432,7 @@ test("AC-319 the panel's 'N subagents · Open' lands on Focus → Subagents (?ta
   /* #400: LILOS_DELEGATE_ASYNC_HOLD holds the async helper's close until
      the next prompt — the Running row is observable for as long as the
      test wants, no tick stretching needed (#432 drops ENGINE_FAKE_TICK). */
-  const stack319 = await bootStack(
-    "ac319",
-    /* ports.spec allows only identical bases across files (every residue
-       is already taken) — these literals are ac-105's; different worker
-       indices keep them apart. */
-    { relay: wport(4818), feed: wport(4819), web: wport(5322) },
-  );
+  const stack319 = await bootStack("ac319", await pickPorts());
   try {
     await openDefault(page, stack319);
     await pickSessionFolder(page, repoDir);
