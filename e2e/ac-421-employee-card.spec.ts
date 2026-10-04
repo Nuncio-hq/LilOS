@@ -76,9 +76,17 @@ async function openApp(page: Page) {
   await page.goto(`${stack.webUrl}/`);
   await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
   await page.goto(`${page.url()}?statusPollMs=500`);
+  /* AC-2 leaves a second employee ("Switchy") on this shared stack, so `/`
+     can land on her DM. Always click through the Default sidebar row —
+     AC-1/AC-3 are about Default's card. */
+  const row = page
+    .locator("aside")
+    .getByRole("button", { name: /^Default Default$/ });
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.click();
   await expect(
-    page.locator("aside").getByRole("button", { name: /Default/ }),
-  ).toBeVisible({ timeout: 30_000 });
+    page.getByRole("textbox", { name: /New session with Default/ }),
+  ).toBeVisible();
 }
 
 /** The header's profile card — the shared card in a dialog shell. */
