@@ -90,7 +90,8 @@ export type Todo = {
   status: "pending" | "in_progress" | "completed" | "cancelled";
 };
 /* phase mirrors the Hermes turn events: message.start → submitted, reasoning.delta → thinking,
-   tool.start/complete → tools, message.delta → typing, message.complete → done, session.interrupt → stopped */
+   tool.start/complete → tools, message.delta → typing, message.complete → done, session.interrupt → stopped,
+   message.complete with an error → failed */
 export type Phase =
   | "submitted"
   | "thinking"
@@ -98,7 +99,8 @@ export type Phase =
   | "waiting"
   | "typing"
   | "done"
-  | "stopped";
+  | "stopped"
+  | "failed";
 /**
  * A file the composer attaches to a send (issue #31). `url` carries the
  * image's data URL out of PromptInput — the app decodes the base64 payload
@@ -129,6 +131,9 @@ export type Reply = {
   thought?: number;
   phase?: Phase;
   live?: boolean;
+  /** #419: the engine's `turn.completed.error` on a failed turn — the
+      failure chip reads it so "Failed" says *what* failed. */
+  error?: string;
   /** #308: the engine opened this leg itself — marked "Agent-initiated"
       instead of reading as an answer to a user message. */
   agentInitiated?: boolean;

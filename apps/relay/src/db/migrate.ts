@@ -291,6 +291,13 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `ALTER TABLE conversations ADD COLUMN access TEXT NOT NULL DEFAULT 'ask'`,
     ],
   },
+  {
+    /* #419: the last turn's failure (JSON TurnFailure: kind + text) — the
+       DM session row's alert card, host-written and cleared on the next
+       turn.started. */
+    version: 19,
+    statements: [`ALTER TABLE conversations ADD COLUMN turn_failure TEXT`],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

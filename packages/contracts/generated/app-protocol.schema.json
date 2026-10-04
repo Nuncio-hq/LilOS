@@ -1822,6 +1822,28 @@
             "cache"
           ]
         },
+        "turnFailure": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "model",
+                "sleep",
+                "generic"
+              ]
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "additionalProperties": false
+        },
         "createdAt": {
           "type": "integer",
           "minimum": 0,
@@ -2098,6 +2120,28 @@
                   "reasoning",
                   "cache"
                 ]
+              },
+              "turnFailure": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "model",
+                      "sleep",
+                      "generic"
+                    ]
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "text"
+                ],
+                "additionalProperties": false
               },
               "createdAt": {
                 "type": "integer",
@@ -2431,6 +2475,28 @@
                 "cache"
               ]
             },
+            "turnFailure": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "model",
+                    "sleep",
+                    "generic"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "additionalProperties": false
+            },
             "createdAt": {
               "type": "integer",
               "minimum": 0,
@@ -2684,6 +2750,35 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "turnFailure": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "model",
+                    "sleep",
+                    "generic"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -2868,6 +2963,28 @@
                 "reasoning",
                 "cache"
               ]
+            },
+            "turnFailure": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "model",
+                    "sleep",
+                    "generic"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "additionalProperties": false
             },
             "createdAt": {
               "type": "integer",
@@ -4308,6 +4425,28 @@
                 "cache"
               ]
             },
+            "turnFailure": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "model",
+                    "sleep",
+                    "generic"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "additionalProperties": false
+            },
             "createdAt": {
               "type": "integer",
               "minimum": 0,
@@ -4964,6 +5103,28 @@
                       "reasoning",
                       "cache"
                     ]
+                  },
+                  "turnFailure": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "model",
+                          "sleep",
+                          "generic"
+                        ]
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "text"
+                    ],
+                    "additionalProperties": false
                   },
                   "createdAt": {
                     "type": "integer",
@@ -7262,6 +7423,28 @@
                 "reasoning",
                 "cache"
               ]
+            },
+            "turnFailure": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "model",
+                    "sleep",
+                    "generic"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "additionalProperties": false
             },
             "createdAt": {
               "type": "integer",
