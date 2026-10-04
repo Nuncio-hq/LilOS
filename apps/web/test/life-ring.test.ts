@@ -18,6 +18,7 @@ const conv = (over: Partial<Conversation>): Conversation => ({
   title: "DM",
   titleSource: "auto",
   archived: false,
+  access: "ask",
   deliveredSeq: 1,
   createdAt: 0,
   ...over,
