@@ -34,7 +34,7 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 const SHOTS = path.join(repo, "test-results", "ac-482");
-const BUN = process.env.BUN_BIN ?? "/Users/devin/.bun/bin/bun";
+const BUN = process.env.LILOS_BUN_BIN ?? "bun";
 
 /** `hermes` wrapper → `bun e2e/fake-hermes.ts "$@"`. */
 function fakeHermesBin(dir: string): string {
