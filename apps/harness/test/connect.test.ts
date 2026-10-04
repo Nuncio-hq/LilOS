@@ -170,6 +170,37 @@ describe("AC-1 (#339) approval installs + enables the plugin per profile", () =>
     expect(row.state).toBe("failed");
     expect(row.reason).toContain("plugins enable failed");
   });
+
+  it("a failed tool-search opt-out marks the row failed too (#411)", async () => {
+    /* Without `tools.tool_search.enabled=off` the lilos_* tools register
+       but are deferred behind `tool_search` — the exact symptom this
+       fix ships against, so the row must not report connected. */
+    const f = fixture();
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+    const failing = new HermesConnect({
+      relay: {
+        request: async (method) => {
+          if (method === "settings.get") return { value: { approved: true } };
+          if (method === "employees.list") return { employees: f.employees };
+          throw new Error("unexpected");
+        },
+      },
+      hermesBin: () => "/bin/true",
+      hermesHome: f.hermesHome,
+      pluginSrc: f.pluginSrc,
+      log: createMemoryLogger(),
+      run: (argv) =>
+        argv.includes("config")
+          ? { status: 2, out: "config: unknown key" }
+          : { status: 0, out: "" },
+    });
+    await failing.reconcile();
+    const [row] = failing.report();
+    expect(row.state).toBe("failed");
+    expect(row.reason).toContain("tool search");
+  });
 });
 
 describe("AC-6 (#339) updates replace the plugin without re-asking", () => {

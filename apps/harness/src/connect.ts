@@ -268,7 +268,11 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
       row.reason = `plugins enable failed: ${result.out.slice(-200)}`;
       return;
     }
-    this.toolSearch(profile, "off");
+    if (!this.toolSearch(profile, "off")) {
+      row.state = "failed";
+      row.reason = "couldn't disable Hermes tool search for this profile";
+      return;
+    }
     row.state = "connected";
     row.reason = undefined;
   }
@@ -293,7 +297,7 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
       names the `lilos_*` tools outright — they must be offered, not
       searched for. Profile-scoped `tools.tool_search.enabled` is the only
       off switch upstream provides; restore the default on disconnect. */
-  private toolSearch(profile: string, enabled: "off" | "auto"): void {
+  private toolSearch(profile: string, enabled: "off" | "auto"): boolean {
     const result = this.hermes([
       "-p",
       profile,
@@ -307,7 +311,9 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
         profile,
         out: result.out.slice(-200),
       });
+      return false;
     }
+    return true;
   }
 
   private hermes(argv: string[]): { status: number; out: string } | undefined {
