@@ -22,20 +22,20 @@
  * by scripts/live/106.sh (stub provider when no real model is signed in).
  * Prints PASS/FAIL. Exit 0 only on PASS.
  */
-import { type ChildProcess, execSync, spawn } from "node:child_process";
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { createServer } from "node:net";
+import { execSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // Relative import: scripts/ is not a workspace dir, so @lilos/* does not
 // resolve here — the package resolves its own deps internally.
 import { RelayClient } from "../../packages/client-runtime/src/index";
+import {
+  cleanup,
+  freePort,
+  launch,
+  startStub,
+  waitForFile,
+} from "./lib/helpers";
 
 const arg = (name: string, dflt?: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -44,7 +44,8 @@ const arg = (name: string, dflt?: string) => {
 
 const repoRoot = process.env.LILOS_REPO_ROOT ?? process.cwd();
 const seconds = Number(arg("seconds", "120") ?? "120");
-const engineKind = arg("engine", process.env.LILOS_ENGINE ?? "hermes");
+const engineKind =
+  arg("engine", process.env.LILOS_ENGINE ?? "hermes") ?? "hermes";
 
 const out = (line: string) => console.log(`[live-106] ${line}`);
 let harnessHome = "";
@@ -58,19 +59,12 @@ const fail = (line: string): never => {
   process.exit(1);
 };
 
-const freePort = () =>
-  new Promise<number>((resolve, reject) => {
-    const srv = createServer();
-    srv.once("error", reject);
-    srv.listen(0, "127.0.0.1", () => {
-      const addr = srv.address();
-      srv.close(() =>
-        typeof addr === "object" && addr
-          ? resolve(addr.port)
-          : reject(new Error("no port")),
-      );
-    });
-  });
+/* Stub mode: 106.sh exports LILOS_STUB_PORT — startStub binds it and
+   resolves on the "listening" line (scripted via STUB_SCRIPT). */
+const stub = process.env.LILOS_STUB_PORT
+  ? await startStub(Number(process.env.LILOS_STUB_PORT))
+  : null;
+if (stub) out(`openai-stub listening on :${stub.port}`);
 
 const relayPort = await freePort();
 const feedPort = await freePort();
@@ -86,36 +80,9 @@ execSync(
   { cwd: picked },
 );
 
-const procs: ChildProcess[] = [];
-const launch = (name: string, cmd: string[], env: Record<string, string>) => {
-  const child = spawn(cmd[0] ?? "bun", cmd.slice(1), {
-    cwd: repoRoot,
-    env: { ...process.env, ...env },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  procs.push(child);
-  child.stdout?.on("data", (d) =>
-    String(d)
-      .trimEnd()
-      .split("\n")
-      .forEach((l) => void console.log(`  [${name}] ${l}`)),
-  );
-  child.stderr?.on("data", (d) =>
-    String(d)
-      .trimEnd()
-      .split("\n")
-      .forEach((l) => void console.error(`  [${name}!] ${l}`)),
-  );
-  return child;
-};
-const cleanup = () => {
-  for (const p of procs) p.kill("SIGTERM");
-  rmSync(relayHome, { recursive: true, force: true });
-  rmSync(harnessHome, { recursive: true, force: true });
-  rmSync(picked, { recursive: true, force: true });
-};
+const teardown = () => cleanup(relayHome, harnessHome, picked);
 process.on("SIGINT", () => {
-  cleanup();
+  teardown();
   process.exit(130);
 });
 
@@ -124,19 +91,9 @@ launch("relay", ["bun", "apps/relay/src/index.ts"], {
   LILOS_RELAY_PORT: String(relayPort),
 });
 
-const waitForFile = async (path: string, ms = 10_000): Promise<string> => {
-  const deadline = Date.now() + ms;
-  while (Date.now() < deadline) {
-    try {
-      return readFileSync(path, "utf8").trim();
-    } catch {
-      await new Promise((r) => setTimeout(r, 100));
-    }
-  }
-  return fail(`timed out waiting for ${path}`);
-};
-
-const relayToken = await waitForFile(join(relayHome, "relay-token"));
+const relayToken = await waitForFile(join(relayHome, "relay-token")).catch(
+  (e) => fail(String(e)),
+);
 const relayUrl = `ws://127.0.0.1:${relayPort}/ws`;
 out(`relay ws ${relayUrl}`);
 
@@ -362,6 +319,6 @@ try {
 }
 
 user.close();
-for (const p of procs) p.kill("SIGTERM");
+teardown();
 console.log("[live-106] PASS all legs");
 process.exit(0);

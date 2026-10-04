@@ -36,7 +36,6 @@ else
 fi
 
 STUB_PORT=8424
-STUB_PID=""
 STUB_LOG=$(mktemp -t lilos106-stub-log)
 CONFIG_TOUCHED=""
 kill_stale_engine() {
@@ -47,7 +46,6 @@ kill_stale_engine() {
   true
 }
 cleanup() {
-  [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null
   [ -n "$CONFIG_TOUCHED" ] && cp "$CONFIG_TOUCHED" ~/.hermes/config.yaml
   kill_stale_engine
 }
@@ -77,10 +75,10 @@ EOF
   # dangerous, so the approval gate fires for real under manual mode.
   export STUB_SCRIPT='[{"match":"LILOS_FIRST","name":"terminal","arguments":"{\"command\":\"chmod 777 README.md\"}","times":1},{"match":"LILOS_SECOND","name":"terminal","arguments":"{\"command\":\"chmod 777 README.md\"}","times":1}]'
   export STUB_REQUEST_LOG="$STUB_LOG"
-  pkill -f "openai-stub.ts" 2>/dev/null
-  STUB_REQUEST_LOG="$STUB_LOG" bun scripts/live/openai-stub.ts "$STUB_PORT" >/tmp/openai-stub-106.log 2>&1 &
-  STUB_PID=$!
-  sleep 0.5
+  # 106.ts spawns the stub itself via scripts/live/lib helpers (startStub
+  # waits for the real "listening" line) — hand it the port the provider
+  # config above points at.
+  export LILOS_STUB_PORT="$STUB_PORT"
 fi
 
 export LILOS_ENGINE=hermes
