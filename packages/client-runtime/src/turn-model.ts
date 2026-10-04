@@ -722,36 +722,61 @@ export class SessionReducer {
     const snapshotTurn = this.snapshotStale
       ? undefined
       : snapshot?.turn?.turnId;
+    /* The settle is a PROJECTION onto the emitted turns, never written
+       into the working model: a turn minted while the last-known session
+       state was still idle/closed reads settled at this prefix, but a
+       later apply (the state event landing a frame after turn.started)
+       must revive it — the one-shot reducer self-healed the same way by
+       replaying `turn.started` over the whole log each time. Writing the
+       settle back would make it irrevocable (#430 regression: legs and
+       late-state turns never went live again). */
+    const stopHelpers = (t: TurnModel): TurnModel =>
+      t.subagents.some((sa) => sa.status === "running")
+        ? {
+            ...t,
+            subagents: t.subagents.map((sa) =>
+              sa.status === "running" ? { ...sa, status: "stopped" } : sa,
+            ),
+          }
+        : t;
+    const out: TurnModel[] = new Array(this.order.length);
     for (const [i, t] of this.order.entries()) {
-      if (TERMINAL.has(t.phase)) continue;
+      if (TERMINAL.has(t.phase)) {
+        out[i] = settle === "stopped" ? stopHelpers(t) : t;
+        continue;
+      }
       const superseded =
         i < this.order.length - 1 ||
         (snapshotTurn !== undefined && snapshotTurn !== t.turnId);
       const phase = settle ?? (superseded ? ("done" as const) : undefined);
-      if (!phase) continue;
-      const w = this.wTurn(t.turnId);
-      w.phase = phase;
-      for (const r of w.requests) {
-        if (r.outcome === undefined) r.outcome = "cancel";
+      if (!phase) {
+        out[i] = settle === "stopped" ? stopHelpers(t) : t;
+        continue;
       }
-      for (const s of w.steps) {
-        if (s.status === "running") s.status = "cancelled";
+      const w: TurnModel = {
+        ...t,
+        phase,
+        requests: t.requests.map((r) =>
+          r.outcome === undefined ? { ...r, outcome: "cancel" } : r,
+        ),
+        steps: t.steps.map((s) =>
+          s.status === "running" ? { ...s, status: "cancelled" } : s,
+        ),
+      };
+      if (phase === "stopped") {
+        w.plans = t.plans.map((p) => ({
+          ...p,
+          steps: p.steps.map((s) =>
+            s.status === "pending" || s.status === "in_progress"
+              ? { ...s, status: "cancelled" }
+              : s,
+          ),
+        }));
       }
-      if (phase === "stopped") this.cancelPlanSteps(w);
-    }
-    if (settle === "stopped") {
-      for (const t of this.order) {
-        for (const sa of t.subagents) {
-          if (sa.status === "running") {
-            const w = this.wTurn(t.turnId);
-            const wsa = w.subagents.find((s) => s.subagentId === sa.subagentId);
-            if (wsa) wsa.status = "stopped";
-          }
-        }
-      }
+      out[i] = settle === "stopped" ? stopHelpers(w) : w;
     }
 
-    const live = this.order.find((t) => !TERMINAL.has(t.phase));
+    const live = out.find((t) => !TERMINAL.has(t.phase));
     const openRequests: TurnRequest[] = [];
     /* #309: helpers as job-like rows — a subagent left running past its
        turn lands on the Background tab (web) and the thread's job rows
@@ -763,7 +788,7 @@ export class SessionReducer {
       failed: "failed",
       stopped: "stopped",
     };
-    const subagentJobs: JobModel[] = this.order.flatMap((t) =>
+    const subagentJobs: JobModel[] = out.flatMap((t) =>
       t.subagents.map((sa) => ({
         jobId: `sa:${sa.subagentId}`,
         command: sa.task || sa.name,
@@ -779,7 +804,7 @@ export class SessionReducer {
         subagent: true,
       })),
     );
-    for (const t of this.order) {
+    for (const t of out) {
       for (const r of t.requests) {
         if (r.outcome === undefined) openRequests.push(r);
       }
@@ -791,7 +816,7 @@ export class SessionReducer {
     return {
       sessionId: this.sessionId,
       state,
-      turns: this.order.slice(),
+      turns: out,
       live,
       openRequests,
       jobs: [...this.jobs.values()],

@@ -189,6 +189,36 @@ describe("#430 incremental reduce — only the tail replays", () => {
     expect(m2).toEqual(reduceSessionEvents("sess-1", replay));
   });
 
+  it("a turn minted while state reads idle revives when active lands (#430)", () => {
+    /* The emit-time settle is a projection: the harness can deliver a
+       leg's turn.started a frame BEFORE session.state flips active — the
+       first apply projects it settled under the stale idle, but the next
+       apply must put it live again, exactly as the one-shot reduce of
+       each prefix does. */
+    const idle = [
+      ...t1Done(),
+      ev("session.state", { state: "idle" }),
+    ];
+    const legStarted = [
+      ...idle,
+      ev("turn.started", { turnId: "leg", initiatedBy: "agent" }),
+    ];
+    const live = [
+      ...legStarted,
+      ev("session.state", { state: "active" }),
+      ev("turn.delta", { turnId: "leg", stream: "text", delta: "x" }),
+    ];
+    const r = new SessionReducer("sess-1");
+    const m1 = r.apply(legStarted);
+    expect(m1.turns[1].phase).toBe("done");
+    expect(m1.live).toBeUndefined();
+    const m2 = r.apply(live);
+    expect(m2.live?.turnId).toBe("leg");
+    expect(m2.live?.agentInitiated).toBe(true);
+    expect(m2.turns[1].phase).toBe("text");
+    expect(m2).toEqual(reduceSessionEvents("sess-1", live));
+  });
+
   it("ignores other sessions' tail events identically", () => {
     const base = t1Done();
     const r = new SessionReducer("sess-1");
