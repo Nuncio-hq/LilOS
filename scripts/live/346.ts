@@ -284,7 +284,12 @@ const { conversation } = await user.request<{
   conversation: { id: string };
 }>("conversations.open", {
   channelId: channel.id,
-  text: "remember the codeword ZEBRA_9, start a background sleep, and say done",
+  /* Name the exact command — "start a background sleep" lets a real model
+     pick its own duration and `sleep 371` never exists to kill. access
+     'full' keeps the terminal call off the approval card (#106) — the leg
+     is unsupervised. */
+  text: "run `sleep 371` in the background with the terminal tool, then tell me the codeword ZEBRA_9",
+  access: "full",
   title: `idle-close leg ${Date.now().toString(36)}`,
 });
 out(`conversation ${conversation.id}`);

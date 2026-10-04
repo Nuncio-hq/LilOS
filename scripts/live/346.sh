@@ -50,8 +50,22 @@ fi
 STUB_PORT=8419
 STUB_PID=""
 SCRATCH=$(mktemp -d /tmp/lilos346-home.XXXXXX)
+
+# With HERMES_HOME moved, each `hermes` launch re-mints the INSTALLED
+# launchers (~/.hermes/hermes-agent/.hermes/bin/*) bound to the scratch
+# python — deleted by cleanup, leaving `hermes` broken (exit 126).
+# Snapshot them first and restore on the way out; the tools symlink below
+# also keeps bootstrap from re-provisioning the toolchain into scratch.
+SHIM_BACKUP="$SCRATCH/shim-backup"
+SHIM_DIR="$REAL_HOME/.hermes/hermes-agent/.hermes/bin"
+[ -d "$SHIM_DIR" ] && cp -R "$SHIM_DIR" "$SHIM_BACKUP"
+
 cleanup() {
   [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null
+  if [ -d "$SHIM_BACKUP" ]; then
+    rm -rf "$SHIM_DIR"
+    cp -R "$SHIM_BACKUP" "$SHIM_DIR"
+  fi
   rm -rf "$SCRATCH"
 }
 trap cleanup EXIT
@@ -61,6 +75,15 @@ export HOME="$SCRATCH/home"
 export HERMES_HOME="$SCRATCH/hermes-home"
 export LILOS_HOME="$SCRATCH/lilos-home"
 mkdir -p "$HOME/.hermes" "$HERMES_HOME" "$LILOS_HOME"
+
+# With HERMES_HOME moved, hermes_bootstrap would provision a fresh python
+# toolchain under it — and re-bake the INSTALLED shim's exec line at that
+# scratch path, leaving `hermes` broken (exit 126) once the scratch is
+# deleted. Symlinking the real toolchain in satisfies the probe so the
+# shim is never touched.
+if [ -d "$REAL_HOME/.hermes/tools" ]; then
+  ln -sfn "$REAL_HOME/.hermes/tools" "$HERMES_HOME/tools"
+fi
 
 if [ "$LABEL" = "stub" ]; then
   PROVIDER_BASE_URL="http://127.0.0.1:${STUB_PORT}/v1"
