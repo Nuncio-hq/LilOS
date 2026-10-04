@@ -206,6 +206,10 @@ test("AC-1/2/3 (#482) killed hermes child → typed errors fast, outage shown, s
     HERMES_FAKE_PID_FILE: pidFile,
     HERMES_FAKE_STATE_FILE: stateFile,
     FAKE_SERVE_FAIL_FILE: serveFailFile,
+    /* #521 AC-1: hold the HOLD_TURN `prompt.submit` reply in-flight so the
+       kill lands while the adapter still awaits it — the gateway-close
+       path then notices the death before child `exit` does, every run. */
+    FAKE_SUBMIT_DELAY_MS: "1500",
   });
   const probe = await RelayProbe.connect(stack.relayWs, stack.relayToken);
   try {
