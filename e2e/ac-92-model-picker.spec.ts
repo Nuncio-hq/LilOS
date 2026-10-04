@@ -313,6 +313,10 @@ test("AC-6 + AC-7 Refresh surfaces a new model without restart; Edit models' ONE
     await page.getByRole("option", { name: /Refresh models/ }).click();
     await expect(option(page, "Fake Fresh")).toHaveCount(1);
     await page.screenshot({ path: `${SHOTS}/ac-7-restart.png` });
+    /* #511: leave the app BEFORE the stack dies — while the page still
+       points at a dead relay its reconnect loops log ERR_CONNECTION_REFUSED
+       and watchConsole is still collecting for the assert below. */
+    await page.goto("about:blank");
   } finally {
     await stackB.stop();
   }
@@ -343,6 +347,10 @@ test("AC-3 (#30) no picker when the engine lacks the models capability", async (
     });
     await expect(triggers(page)).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/ac-3-no-picker.png` });
+    /* #511: leave the app BEFORE the stack dies — while the page still
+       points at a dead relay its reconnect loops log ERR_CONNECTION_REFUSED
+       and watchConsole is still collecting for the assert below. */
+    await page.goto("about:blank");
   } finally {
     await stackB.stop();
   }
