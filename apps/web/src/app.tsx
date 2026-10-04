@@ -24,7 +24,6 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { employeeBadges } from "./lib/badges";
 import { buildLabel } from "./lib/build-label";
 import { connectApproved, requestConnect } from "./lib/connect";
 import {
@@ -45,6 +44,7 @@ import {
 import {
   bootError,
   booted,
+  employeeBadgeMap,
   engine,
   engineDefaultModel,
   engineDefaultProvider,
@@ -146,14 +146,10 @@ function AppShell() {
   // #85 AC-4 / #141: the label follows the engine the harness actually runs
   // (system.status engine name), not the build identity.
   const label = buildLabel(statusPoll.result?.engine?.name);
-  // live badges: running turns + open approvals per employee (AC-3, #32)
-  const models = useAtom(sessionModels);
-  const convs = useAtom(relay.conversations);
-  const channels = useAtom(relay.channels);
-  const badges = useMemo(
-    () => employeeBadges(channels, convs, models),
-    [channels, convs, models],
-  );
+  /* Live badges: running turns + open approvals per employee (AC-3, #32).
+     #427: a computed store — the value only changes when a count moves, so
+     the shell no longer re-renders on every streamed word. */
+  const badges = useAtom(employeeBadgeMap());
 
   /* #115 hire flow: the + affordance exists only while the engine declares
      the `agents` capability (D-#19). The model list + default come from

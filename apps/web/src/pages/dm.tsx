@@ -3,7 +3,6 @@ import {
   type SessionFeedState,
   type SessionModel,
   toStatusComponents,
-  waitingMessages,
 } from "@lilos/client-runtime";
 import type {
   AppMessage,
@@ -46,7 +45,6 @@ import type {
   ModelOption,
   ModelPickerExtras,
   Msg,
-  Reply,
   Thread,
   WbTab,
   Work,
@@ -82,6 +80,7 @@ import {
   toAttachedFiles,
 } from "../lib/attachments";
 import { requestConnect } from "../lib/connect";
+import { FoldCache, type FoldInputs } from "../lib/conv-fold";
 import { removeEmployee, saveEmployee } from "../lib/employees";
 import { parseFocusTab } from "../lib/focus-search";
 import {
@@ -94,7 +93,6 @@ import {
   loadDiscovered,
   refreshFolders,
   sameFolder,
-  wsFor,
 } from "../lib/folders";
 import { useAtom } from "../lib/hooks";
 import {
@@ -105,12 +103,9 @@ import {
   type OsEditor,
 } from "../lib/host";
 import {
-  conversationReplies,
+  clock,
   formatUptime,
-  mergeTurns,
-  stripPlans,
   threadUsage,
-  toFeed,
   toJob,
   toUiEmployee,
 } from "../lib/mapping";
@@ -147,6 +142,11 @@ const EMPTY_FEED = atom<SessionFeedState>({
   events: [],
   openRequests: [],
 });
+
+/* #427: shared empties for the fold's per-conv slices — a missing row must
+   keep one stable reference or every render would look like new input. */
+const NO_MSGS: AppMessage[] = [];
+const NO_ASKS: Ask[] = [];
 
 /* #180 AC-4: Change… prefills the composer with this prefix; a send that
    keeps it answers the open plan request instead of posting a message. */
@@ -398,10 +398,7 @@ export function DmPage() {
             rootId: conv?.rootMessageId ?? h.messageId,
             messageId: h.messageId,
             from: h.authorId,
-            time: new Date(h.createdAt).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
+            time: clock(h.createdAt),
             snippet: h.snippet,
             archived: conv?.archived,
           },
@@ -474,24 +471,6 @@ export function DmPage() {
   /* Latest rewind per conversation — the fetched tail is dropped
      client-side as soon as the relay emits `conversation.rewound`. */
   const rewinds = useAtom(relay.rewinds);
-  /* Rewound message ids (+ answer texts) per conversation: the event's
-     removedIds cover any rewound conv (feed previews included); the local
-     sets cover the open one, where texts are known. */
-  const rewoundInfo = useMemo(() => {
-    const map = new Map<
-      string,
-      { refs: ReadonlySet<string>; texts?: ReadonlySet<string> }
-    >();
-    for (const [convId, r] of Object.entries(rewinds)) {
-      map.set(convId, { refs: new Set(r.removedIds) });
-    }
-    if (openConv && (localRewoundIds.size || localRewoundTexts.size)) {
-      const s = new Set(map.get(openConv.id)?.refs ?? []);
-      for (const id of localRewoundIds) s.add(id);
-      map.set(openConv.id, { refs: s, texts: localRewoundTexts });
-    }
-    return map;
-  }, [rewinds, localRewoundIds, localRewoundTexts, openConv]);
 
   /* The open thread needs its whole visible history, not just the channel
      window (#28 AC-2): page messages.list scoped to the conversation. */
@@ -630,14 +609,7 @@ export function DmPage() {
     const e = employees.find((x) => x.id === id);
     return e ? toUiEmployee(e, engineDown) : undefined;
   };
-  /* #179: the engine reports a helper's profile ref; LilOS links speak in
-     employee ids — a subagent for an unknown profile keeps the ref (the
-     avatar falls back gracefully). */
-  const empRefToId = (ref: string) =>
-    employees.find((x) => x.profile === ref)?.id ?? ref;
-
-  const summaryOf = (conv: Conversation) =>
-    summaries.find((s) => s.conversation.id === conv.id);
+  const summaryOf = (conv: Conversation) => summaryByConv.get(conv.id);
 
   /* #134: the relay rewinds files + conversation to just before the picked
      message; the target's text lands in the composer and its images reseed
@@ -732,36 +704,39 @@ export function DmPage() {
     });
   };
 
-  /* Replies for a list row: real messages inside the snapshot window, padded
-     to the summary's count with the answer preview on top when it isn't. */
-  const repliesOf = (conv: Conversation): Reply[] => {
-    const s = summaryOf(conv);
-    const want = s ? s.messageCount - 1 : undefined;
-    const hidden = waitingFor(conv).hiddenIds;
-    const known = conversationReplies(
-      (conv.id === conversationId ? threadPool : messages).filter(
-        (m) =>
-          m.conversationId === conv.id &&
-          m.id !== conv.rootMessageId &&
-          !hidden.has(m.id),
-      ),
-      conv.id,
-    );
-    if (want === undefined || known.length >= want) return known;
-    const out = [...known];
-    if (s?.firstAnswer && !out.some((r) => r.id === s.firstAnswer?.id)) {
-      const [preview] = conversationReplies([s.firstAnswer], conv.id);
-      if (preview) out.unshift(preview);
+  /* #427: the fold's inputs, sliced per conversation once per render. The
+     slices keep element identity — relay rows are replaced immutably — so
+     the cache below re-folds only the conversation a change belongs to. */
+  const summaryByConv = useMemo(
+    () => new Map(summaries.map((s) => [s.conversation.id, s])),
+    [summaries],
+  );
+  const msgById = useMemo(
+    () => new Map(messages.map((m) => [m.id, m])),
+    [messages],
+  );
+  const asksByConv = useMemo(() => {
+    const m = new Map<string, Ask[]>();
+    for (const a of allAsks) {
+      const arr = m.get(a.conversationId);
+      if (arr) arr.push(a);
+      else m.set(a.conversationId, [a]);
     }
-    while (out.length < want)
-      out.push({
-        id: `history-${conv.id}-${out.length}`,
-        from: "user",
-        time: "",
-        text: "",
-      });
-    return out;
-  };
+    return m;
+  }, [allAsks]);
+  const msgsByConv = useMemo(() => {
+    const m = new Map<string, AppMessage[]>();
+    for (const msg of messages) {
+      if (!msg.conversationId) continue;
+      const arr = m.get(msg.conversationId);
+      if (arr) arr.push(msg);
+      else m.set(msg.conversationId, [msg]);
+    }
+    /* The open thread's fold reads the full fetched pool, not the channel
+       window — same rule the per-conv slices used to apply inline. */
+    if (openConvId) m.set(openConvId, threadPool);
+    return m;
+  }, [messages, threadPool, openConvId]);
 
   /* AC-6: pre-select the employee's last session's folder once it and the
      recents are known — but never stomp a pick the user already made. */
@@ -803,44 +778,48 @@ export function DmPage() {
   ): SessionModel | "pending" | undefined =>
     conv.engineRef && !transcriptBound(conv) ? "pending" : modelFor(conv);
 
-  /* #315: mid-turn sends wait in the tray — relay truth (deliveredSeq + the
-     message flags), not component state, so a reload shows the same tray.
-     Waiting rows, landed steers and parked/removed rows never render as
-     reply bubbles. */
-  const waitingFor = (conv: Conversation) =>
-    waitingMessages(
-      (conv.id === conversationId ? threadPool : messages).filter(
-        (m) => m.conversationId === conv.id,
-      ),
-      conv.deliveredSeq,
-      modelFor(conv),
-    );
-
   const convAsks = (conv: Conversation): Ask[] =>
-    allAsks.filter((a) => a.conversationId === conv.id);
+    asksByConv.get(conv.id) ?? NO_ASKS;
 
-  const feed: Msg[] = convs.flatMap((conv) => {
-    const root =
-      summaryOf(conv)?.root ??
-      messages.find((m) => m.id === conv.rootMessageId);
-    if (!root) return [];
-    const feedReplies = mergeTurns(
-      repliesOf(conv),
-      boundModel(conv),
+  /* #427: one fold per conversation (waiting rows, feed replies, thread
+     extras) cached on its inputs — a word streaming into one session
+     recomputes only that conversation instead of re-running
+     waitingMessages/conversationReplies/mergeTurns for all of them. */
+  const folds = useMemo(() => new FoldCache(), []);
+  const foldInputs = (conv: Conversation): FoldInputs => {
+    const summary = summaryByConv.get(conv.id);
+    return {
+      conv,
+      model: modelFor(conv),
+      /* #467: the fold keys on the BOUND model too — without it the cache
+         would keep serving the "pending" fold after the feed attaches and
+         the held-back engine replies would never appear. */
+      bound: boundModel(conv),
+      msgs: msgsByConv.get(conv.id) ?? NO_MSGS,
+      asks: convAsks(conv),
+      rewoundEvent: rewinds[conv.id],
+      /* The open conv's local rewound ids/texts (#134) join the event's
+         removedIds inside the fold — the same merged view rewoundInfo
+         used to hand mergeTurns. */
+      localRewound:
+        conv.id === conversationId
+          ? { ids: localRewoundIds, texts: localRewoundTexts }
+          : undefined,
+      summary,
+      root: summary?.root ?? msgById.get(conv.rootMessageId),
+      employees,
+      cwdInfo: cwdBranches,
       employeeId,
-      convAsks(conv),
-      rewoundInfo.get(conv.id),
-      empRefToId,
-      conv.rootMessageId,
-      conv.state,
-    );
-    /* #320: scope turn keys to the conversation — turnIds are per-session
-       counters (two DMs can both hold "t1"); React keys and the collapse
-       store are keyed on it, so it must be conv-unique. */
-    for (const r of feedReplies)
-      if (r.turnId) r.turnId = `${conv.id}:${r.turnId}`;
-    return [toFeed(root, conv, feedReplies, wsFor(conv.cwd, cwdBranches))];
-  });
+    };
+  };
+
+  folds.reset();
+  const feed: Msg[] = [];
+  for (const conv of convs) {
+    const f = folds.for(foldInputs(conv));
+    if (f.msg) feed.push(f.msg);
+  }
+  folds.sweep();
 
   // "submitted" marker clears once the engine turn is actually running.
   const openModel = openConv?.engineRef
@@ -1039,30 +1018,16 @@ export function DmPage() {
     /* AC-6 (D-#19): plan surfaces only exist when the engine declares `plan`. */
     const planCap = hasCapability("plan");
     /* #315: waiting items (and parked/removed rows) leave the reply pool —
-       they render in the trays above the composer, not as bubbles. */
-    const waiting = waitingFor(conv);
-    const notSentMsgs = threadPool.filter((m) => m.dropped);
-    let replies = mergeTurns(
-      conversationReplies(
-        threadPool.filter(
-          (m) =>
-            m.id !== conv.rootMessageId &&
-            m.id !== root?.id &&
-            !waiting.hiddenIds.has(m.id),
-        ),
-        conv.id,
-      ),
-      boundModel(conv),
-      employeeId,
-      asksHere,
-      rewoundInfo.get(conv.id),
-      empRefToId,
-      conv.rootMessageId,
-      conv.state,
-    );
-    /* #320: same conv-scoped turn keys as the feed path (see above). */
-    for (const r of replies) if (r.turnId) r.turnId = `${conv.id}:${r.turnId}`;
-    if (!planCap) replies = stripPlans(replies);
+       they render in the trays above the composer, not as bubbles. #427:
+       the fold rides the same per-conv cache as the feed — the open
+       thread's entry was already folded above, this only adds its extras. */
+    const folded = folds.thread(foldInputs(conv), {
+      rootId: root?.id,
+      planCap,
+    });
+    const waiting = folded.feed.waiting;
+    const notSentMsgs = folded.thread.notSent;
+    const replies = folded.thread.replies;
     // An open question ask gets a real answer card (asks.respond).
     const openQuestion = asksHere.find(
       (a) => a.state === "open" && a.request.kind === "question",
@@ -1123,7 +1088,7 @@ export function DmPage() {
     };
     /* AC-7: the conversation's folder (+ branch for a repo) in the header;
        sessions without one show nothing extra. */
-    const convWs = wsFor(conv.cwd, cwdBranches);
+    const convWs = folded.feed.ws;
     /* The session's real folder for Focus/Workbench (issue #113/114): absent
        when the session was started without one — no Workbench then (D-#19). */
     const work: Work | null = conv.cwd
@@ -1146,12 +1111,7 @@ export function DmPage() {
           id: j.jobId,
           command: j.command,
           status: j.status,
-          started: j.startedAt
-            ? new Date(j.startedAt).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "",
+          started: j.startedAt ? clock(j.startedAt) : "",
           uptime: j.startedAt
             ? formatUptime(((j.endedAt ?? jobsNow) - j.startedAt) / 1000)
             : "0s",
@@ -1237,11 +1197,7 @@ export function DmPage() {
           say(`Send failed — ${e instanceof Error ? e.message : String(e)}`),
         );
     };
-    /* An accepted-but-unlanded steer already reached the engine — its row
-       still lists in the tray but Edit/Remove aren't offered (#315 AC-4). */
-    const pendingItems = waiting.waiting.map((w) =>
-      w.removable ? w.message.text : { text: w.message.text, removable: false },
-    );
+    const pendingItems = folded.thread.pendingItems;
 
     const thread: Thread = {
       session: engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
@@ -1298,10 +1254,7 @@ export function DmPage() {
           kind: "msg",
           id: root.id,
           from: root.authorId,
-          time: new Date(root.createdAt).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
+          time: clock(root.createdAt),
           text: root.text,
           attachments: toAttachedFiles(root.attachments),
           thread,
