@@ -248,6 +248,9 @@ export const AppMessage = z.object({
    * is delivery intent, and a send this far along can't be retracted from
    * the tray (a `messages.remove` raced in anyway still kills it via the
    * harness's dismissed set). The row renders as its own sent bubble.
+   * Clears when the send comes to rest short of the wire — queued behind
+   * a turn, accepted as a pending steer, re-queued — and on Remove or
+   * un-park (#403): a resting send is waiting again, and removable.
    */
   claimed: z.boolean().default(false),
   /**

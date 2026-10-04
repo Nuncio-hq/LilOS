@@ -125,8 +125,9 @@ interface SessionBinding {
   turnSource: Map<string, string>;
   /** Steers the engine accepted but hasn't landed yet (no `turn.steered`
       seen), keyed by relay message id — a Stop drops these alongside the
-      queue so nothing waiting can auto-run after it (#315). */
-  steerPending: { messageId: string; text: string }[];
+      queue so nothing waiting can auto-run after it (#315). `seq` rides
+      along so the Stop's `afterSeq` scope applies here too (#403). */
+  steerPending: { messageId: string; text: string; seq: number }[];
   /** Grace window for stranded accepted steers (#315): scheduled when a
      turn ends or an accepted steer lands after it — at fire time any
      steerPending left parks in the not-sent tray via `messages.drop`. */
@@ -265,6 +266,25 @@ export class Harness {
       and the bound-but-pre-turn stretch where `promptGates` can't see the
       dispatch yet (an interrupt there acks `interrupted:false` and dies). */
   private readonly pendingInterrupts = new Set<string>();
+  /* #403: the causal line a Stop stamped on its conversation. The relay
+     emits `turn.interruptRequested` on the event bus while the sends it
+     logically follows travel `channelMessages` — the two paths are not
+     ordered against each other, so a pre-Stop send can land AFTER the
+     Stop's drain ran and prompt a fresh turn past it. `afterSeq` is the
+     channel seq the interrupt follows: sends at or below it park in the
+     not-sent tray wherever they surface (queue, steer, a late `deliver`),
+     sends above it postdate the Stop and run. `stopExempt` marks rows the
+     user re-Sent from the tray — same id, same seq, new intent — so the
+     gate can't park a Send twice. The exemption is scoped to the Stop it
+     escaped: `stopGenerations` counts interrupt events per conversation
+     and a Send records the generation it was made under — the next Stop,
+     stamped or not, owns the send like any other row. */
+  private readonly stopSeqs = new Map<string, number>();
+  private readonly stopGenerations = new Map<string, number>();
+  private readonly stopExempt = new Map<
+    string,
+    { conversationId: string; generation: number }
+  >();
   /** Sends per conversation between `deliver`'s claim and the send landing
       in a tracked state (early/queue/consumed/steerPending). The binding
       can exist with empty promptGates in this stretch — e.g. inside
@@ -787,7 +807,19 @@ export class Harness {
       /* #402: the queue this Stop dropped was everything a pre-bind parked
          interrupt could still wait on — the park is moot. */
       this.pendingInterrupts.delete(binding.conversationId);
+      /* #403: the stamp splits "waiting when Stop landed" (park) from
+         "sent after" (re-enters on the rebound session) — a send above
+         `afterSeq`, or a re-Sent row, keeps its place instead of landing
+         in the not-sent tray. */
+      const stopSeq = this.stopSeqs.get(binding.conversationId);
+      const owns = (id: string, seq: number) =>
+        (stopSeq === undefined || seq <= stopSeq) &&
+        !this.exemptFromCurrentStop(binding.conversationId, id);
       for (const message of queued) {
+        if (!owns(message.id, message.seq)) {
+          this.enqueueOrPrompt(rebound, message);
+          continue;
+        }
         binding.consumed.delete(message.id);
         this.relayWrite(`drop queued ${message.id}`, () =>
           this.opts.relay.request("messages.drop", { messageId: message.id }),
@@ -1037,6 +1069,13 @@ export class Harness {
       message.rewound
     )
       return;
+    /* #403: a send the Stop stamped parks wherever it surfaces — even one
+       whose `channelMessages` row landed after the drain already ran and
+       `stopRequested` has long cleared. */
+    if (this.stopOwns(binding.conversationId, message)) {
+      this.dropStopped(binding, message);
+      return;
+    }
     binding.consumed.add(message.id);
     if (binding.runningTurnId) {
       // Capability `steer` (#9): a mid-turn user message steers the running
@@ -1079,7 +1118,14 @@ export class Harness {
                sends the sweep caught; delivering or re-prompting it would
                slip a sent-before-Stop message past the tray. Send clears
                `dismissed` and re-delivers it. */
-            if (binding.stopRequested || binding.stopParked) {
+            if (
+              binding.stopRequested ||
+              binding.stopParked ||
+              /* #403: the stamp reaches sends `stopRequested` can no longer
+                 see — the flag cleared at the next `turn.started` while a
+                 pre-Stop send's steer ack was still in flight. */
+              this.stopOwns(binding.conversationId, message)
+            ) {
               binding.consumed.delete(message.id);
               this.dismissed.add(message.id);
               this.relayWrite(`drop steer ${message.id}`, () =>
@@ -1096,6 +1142,7 @@ export class Harness {
               binding.steerPending.push({
                 messageId: message.id,
                 text: message.text,
+                seq: message.seq,
               });
               /* The steer can resolve after its turn ended: nothing will
                  land it now — start the stranded-steer reconcile (#315). */
@@ -1155,13 +1202,15 @@ export class Harness {
     /* #315 AC-5: while a Stop parks everything waiting, a send the engine
        never accepted (a `not_running` steer settling late) parks the same
        way instead of prompting a fresh turn past the stop. `dismissed`
-       guards the stale-copy paths too; Send clears it (#377). */
-    if (binding.stopRequested) {
-      binding.consumed.delete(message.id);
-      this.dismissed.add(message.id);
-      this.relayWrite(`drop queued ${message.id}`, () =>
-        this.opts.relay.request("messages.drop", { messageId: message.id }),
-      );
+       guards the stale-copy paths too; Send clears it (#377). #403: the
+       stamp outlives `stopRequested` — the flag clears at the next
+       `turn.started` while a pre-Stop send can still be in transit, so
+       the causal line gates here too. */
+    if (
+      binding.stopRequested ||
+      this.stopOwns(binding.conversationId, message)
+    ) {
+      this.dropStopped(binding, message);
       return;
     }
     this.insertQueued(binding, message);
@@ -1196,6 +1245,12 @@ export class Harness {
         next.rewound;
       if (dead) {
         binding.consumed.delete(next.id);
+        continue;
+      }
+      /* #403: a pre-Stop send that slipped into the queue still parks —
+         the stamp decides, not arrival order. */
+      if (this.stopOwns(binding.conversationId, next)) {
+        this.dropStopped(binding, next);
         continue;
       }
       binding.consumed.add(next.id);
@@ -1255,6 +1310,9 @@ export class Harness {
       this.opts.log.warn("prompt requeue: no conn", { messageId: message.id });
       binding.consumed.delete(message.id);
       binding.queue.push(message);
+      /* #403: resting in the queue is waiting again — the tray owns the
+         row until the lane re-claims it. */
+      this.unclaimMessage(message);
       return true;
     }
     // A pick held while the last turn ran lands now, before this prompt —
@@ -1346,11 +1404,14 @@ export class Harness {
         binding.consumed.delete(message.id);
         return false;
       }
-      if (binding.stopRequested) {
-        binding.consumed.delete(message.id);
-        this.relayWrite(`drop queued ${message.id}`, () =>
-          this.opts.relay.request("messages.drop", { messageId: message.id }),
-        );
+      if (
+        binding.stopRequested ||
+        /* #403: a pre-Stop send whose prompt failed parks like everything
+           else the Stop caught — re-queueing it would run it past the
+           Stop even after `stopRequested` cleared. */
+        this.stopOwns(binding.conversationId, message)
+      ) {
+        this.dropStopped(binding, message);
         return false;
       }
       // Going back on the queue releases the in-flight claim — a rebind
@@ -1371,6 +1432,7 @@ export class Harness {
         // dedupes on the same key either way.
         binding.consumed.delete(message.id);
         binding.queue.unshift(message);
+        this.unclaimMessage(message);
         return true;
       }
       if (engineErrorCode(error) === INVALID_STATE) {
@@ -1380,6 +1442,7 @@ export class Harness {
         });
         binding.consumed.delete(message.id);
         this.insertQueued(binding, message);
+        this.unclaimMessage(message);
         return true;
       }
       if (engineErrorCode(error) === SESSION_NOT_FOUND) {
@@ -1388,6 +1451,7 @@ export class Harness {
         });
         binding.consumed.delete(message.id);
         binding.queue.unshift(message);
+        this.unclaimMessage(message);
         await this.rebindConversation(binding);
         return true;
       }
@@ -1730,7 +1794,7 @@ export class Harness {
     const binding = convId ? this.bindings.get(convId) : undefined;
     if (binding && event.seq > binding.lastSeq) binding.lastSeq = event.seq;
     switch (event.type) {
-      case "turn.started":
+      case "turn.started": {
         if (!binding) return;
         binding.runningTurnId = event.payload.turnId;
         binding.textByTurn.set(event.payload.turnId, "");
@@ -1766,8 +1830,28 @@ export class Harness {
         }
         /* #400: a Stop fired while this turn's bind was still in its awaits
            parked on `pendingInterrupts` — fire it now that the turn exists
-           (the engine acks interrupted:true instead of dropping it). */
-        if (convId && this.pendingInterrupts.delete(convId)) {
+           (the engine acks interrupted:true instead of dropping it). #403:
+           the parked Stop's scope is the sends stamped at or before it —
+           fire only on a turn they produced. A send made after the Stop
+           (seq above `afterSeq`, or a re-Sent row in `stopExempt`) outranks
+           it: its turn runs free and the park stays for the send it waits
+           on. A ref-less or undatable turn can't be told apart from the
+           stopped one — interrupt it, as before. */
+        const refSeq = event.payload.ref
+          ? this.seqOfMessage(binding.channelId, event.payload.ref)
+          : undefined;
+        const stopSeq = convId ? this.stopSeqs.get(convId) : undefined;
+        const refExempt =
+          convId && event.payload.ref
+            ? this.exemptFromCurrentStop(convId, event.payload.ref)
+            : false;
+        if (
+          convId &&
+          this.pendingInterrupts.has(convId) &&
+          !refExempt &&
+          (stopSeq === undefined || refSeq === undefined || refSeq <= stopSeq)
+        ) {
+          this.pendingInterrupts.delete(convId);
           this.opts.log.info("interrupt requested", {
             conversationId: convId,
           });
@@ -1824,6 +1908,7 @@ export class Harness {
           state: "active",
         }).catch(() => {});
         break;
+      }
       case "session.titled": {
         /* #137: the engine named its session (derived → llm). Write it as the
            conversation title — a host "auto" write, so the relay drops it
@@ -2138,8 +2223,13 @@ export class Harness {
           this.delivered.delete(message.id);
           this.redeliver.add(message.id);
         } else if (
-          this.dismissed.has(message.id) ||
-          this.redeliver.has(message.id)
+          /* #403: the frame itself says whether `dropped` flipped — a
+             claimed-only change (our own `messages.claim`/unclaim, #377)
+             is lane bookkeeping, never a Send, so it can't re-deliver
+             even when `redeliver`/`dismissed` happen to hold the id. */
+          (parsed.data.flags === undefined ||
+            parsed.data.flags.includes("dropped")) &&
+          (this.dismissed.has(message.id) || this.redeliver.has(message.id))
         ) {
           /* `dropped` cleared (Send): re-deliver like a fresh send. Only a
              row that was parked here (`dismissed`) or seen dropped
@@ -2153,6 +2243,16 @@ export class Harness {
           this.dismissed.delete(message.id);
           this.delivered.delete(message.id);
           this.redeliver.add(message.id);
+          /* #403: a Send is new intent — exempt the row from the Stop
+             generation that parked it or it would park right back. The
+             next interrupt bumps the generation and the exemption
+             lapses: that Stop owns the send like any other row. */
+          if (message.conversationId) {
+            this.stopExempt.set(message.id, {
+              conversationId: message.conversationId,
+              generation: this.stopGenerations.get(message.conversationId) ?? 0,
+            });
+          }
           void this.deliver(message).catch((error) =>
             this.opts.log.warn("message resend failed", {
               error: String(error),
@@ -2196,7 +2296,10 @@ export class Harness {
       case "turn.interruptRequested": {
         const parsed = TurnInterruptRequestedEvent.safeParse(params);
         if (parsed.success) {
-          void this.onInterruptRequested(parsed.data.conversationId);
+          void this.onInterruptRequested(
+            parsed.data.conversationId,
+            parsed.data.afterSeq,
+          );
         }
         break;
       }
@@ -2432,6 +2535,11 @@ export class Harness {
       this.unbind(binding);
       this.early.delete(binding.conversationId);
       this.pendingInterrupts.delete(binding.conversationId);
+      this.stopSeqs.delete(binding.conversationId);
+      this.stopGenerations.delete(binding.conversationId);
+      for (const [id, at] of this.stopExempt)
+        if (at.conversationId === binding.conversationId)
+          this.stopExempt.delete(id);
       for (const key of [...this.askByRequest.keys()]) {
         if (key.startsWith(`${binding.sessionId}:`)) {
           const askId = this.askByRequest.get(key);
@@ -2507,7 +2615,91 @@ export class Harness {
     }
   }
 
-  private async onInterruptRequested(conversationId: string) {
+  /** #403: the send fell back to a resting spot short of the wire — it is
+     waiting again, and removable, so the tray takes it back. Fire-and-forget;
+     a lost write only delays the tray row. */
+  private unclaimMessage(message: AppMessage): void {
+    this.relayWrite(`unclaim ${message.id}`, () =>
+      this.opts.relay.request("messages.claim", {
+        messageId: message.id,
+        claimed: false,
+      }),
+    );
+  }
+
+  /** Whether a re-Sent row still escapes the CURRENT Stop (#403): the
+     exemption lives only for the interrupt generation the Send was made
+     under, so the next Stop — same seq stamp or newer — owns the send
+     like any other row. */
+  private exemptFromCurrentStop(
+    conversationId: string,
+    messageId: string,
+  ): boolean {
+    const at = this.stopExempt.get(messageId);
+    return (
+      at !== undefined &&
+      at.conversationId === conversationId &&
+      at.generation === this.stopGenerations.get(conversationId)
+    );
+  }
+
+  /** Whether a send falls inside the Stop's causal scope (#403). */
+  private stopOwns(conversationId: string, message: AppMessage): boolean {
+    const stopSeq = this.stopSeqs.get(conversationId);
+    return (
+      stopSeq !== undefined &&
+      message.seq <= stopSeq &&
+      !this.exemptFromCurrentStop(conversationId, message.id) &&
+      /* A parked interrupt owns its send's first turn (#400/#402): it fires
+         at `turn.started`, which needs the send to prompt — dropping it
+         here would starve the very turn the Stop waits on. Only once the
+         park has fired (or was cleared) does the seq gate apply. */
+      !this.pendingInterrupts.has(conversationId)
+    );
+  }
+
+  /** Park a stopped send in the not-sent tray — same as the Stop sweep:
+     the id joins `dismissed` so a stale copy can't re-prompt it; Send
+     clears both (#377). */
+  private dropStopped(binding: SessionBinding, message: AppMessage) {
+    binding.consumed.delete(message.id);
+    this.dismissed.add(message.id);
+    this.relayWrite(`drop stopped ${message.id}`, () =>
+      this.opts.relay.request("messages.drop", { messageId: message.id }),
+    );
+  }
+
+  /** Channel seq of a relay message — the row the store last delivered. */
+  private seqOfMessage(
+    channelId: string,
+    messageId: string,
+  ): number | undefined {
+    return this.opts.relay
+      .channelMessages(channelId)
+      .get()
+      .messages.find((m) => m.id === messageId)?.seq;
+  }
+
+  private async onInterruptRequested(
+    conversationId: string,
+    afterSeq?: number,
+  ) {
+    /* #403: a new Stop is a new scope even when the seq stamp doesn't
+       move — bump the generation so Send exemptions taken under the
+       previous Stop lapse (a re-Sent send belongs to this Stop), and
+       prune the dead entries. */
+    const generation = (this.stopGenerations.get(conversationId) ?? 0) + 1;
+    this.stopGenerations.set(conversationId, generation);
+    for (const [id, at] of this.stopExempt)
+      if (at.conversationId === conversationId && at.generation !== generation)
+        this.stopExempt.delete(id);
+    /* #403: arm the Stop's causal line before the park/fire decision —
+       whichever path it takes, sends at or below `afterSeq` park wherever
+       they surface. */
+    if (afterSeq !== undefined) {
+      const prev = this.stopSeqs.get(conversationId) ?? 0;
+      if (afterSeq > prev) this.stopSeqs.set(conversationId, afterSeq);
+    }
     const binding = this.bindings.get(conversationId);
     if (
       !binding ||
@@ -2825,7 +3017,19 @@ export class Harness {
         /* #402: every send a pre-bind parked interrupt could still wait on
            just dropped to the tray — the park is moot. */
         this.pendingInterrupts.delete(binding.conversationId);
+        /* #403: the stamp splits "waiting when Stop landed" (park) from
+           "sent after" (kept): a send above `afterSeq`, or a re-Sent row,
+           stays queued for the drain below. */
+        const stopSeq = this.stopSeqs.get(binding.conversationId);
+        const owns = (id: string, seq: number) =>
+          (stopSeq === undefined || seq <= stopSeq) &&
+          !this.exemptFromCurrentStop(binding.conversationId, id);
+        const keptSteers: SessionBinding["steerPending"] = [];
         for (const pending of binding.steerPending.splice(0)) {
+          if (!owns(pending.messageId, pending.seq)) {
+            keptSteers.push(pending);
+            continue;
+          }
           binding.consumed.delete(pending.messageId);
           this.dismissed.add(pending.messageId);
           this.relayWrite(`drop steer ${pending.messageId}`, () =>
@@ -2834,13 +3038,22 @@ export class Harness {
             }),
           );
         }
+        binding.steerPending.push(...keptSteers);
         for (const queued of binding.queue.splice(0)) {
+          if (!owns(queued.id, queued.seq)) {
+            binding.queue.push(queued);
+            continue;
+          }
           binding.consumed.delete(queued.id);
           this.dismissed.add(queued.id);
           this.relayWrite(`drop queued ${queued.id}`, () =>
             this.opts.relay.request("messages.drop", { messageId: queued.id }),
           );
         }
+        /* Sends that postdate the Stop drain like a normal turn end —
+           only now that the sweep ran inside this conversation's delivery
+           order. */
+        this.drainQueue(binding);
       });
       return;
     }

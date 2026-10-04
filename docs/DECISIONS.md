@@ -73,6 +73,12 @@ PR does not exist.
   `dropped`, and a send committed to dispatch gets `claimed` so the tray's
   Remove boundary is claim, not delivery (#377). Not: tray state kept in
   component memory (a reload must show the same tray). — #315 · PR #358
+- **D-#403 A Stop's scope is causal, not temporal: `turn.interruptRequested`
+  carries `afterSeq` (the channel seq it follows) and the harness parks any
+  send at or below it wherever it surfaces.** The event bus and
+  `channelMessages` are unordered paths, so a pre-Stop send can land after
+  the drain. Not: ordering the bus against the store, or snapshotting which
+  rows were visible at Stop time. — #403
 
 ## Web
 - **D-#3 Web: React 19 + Vite + Tailwind v4 + shadcn (base-nova) + AI
