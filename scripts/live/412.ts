@@ -290,6 +290,11 @@ const seen = [...probe.matchAll(/^(LILOS_[A-Z0-9_]+)=.*$/gm)]
 const offList = seen.filter((n) => !ALLOW_LIST.includes(n));
 if (offList.length)
   fail(`agent shell sees non-allow-listed LILOS_*: ${offList.join(",")}`);
+/* Like leg1, the granted pair must actually LAND in the agent shell —
+   ⊆ alone would pass vacuously on an empty env and miss a scrub that
+   silently under-inherits (the lilos_* plugin needs both names). */
+for (const want of ALLOW_LIST)
+  if (!seen.includes(want)) fail(`agent shell is missing the granted ${want}`);
 out(
   `PASS leg2: agent shell env shows only the allow-list ` +
     `(${seen.join(",") || "none"})`,

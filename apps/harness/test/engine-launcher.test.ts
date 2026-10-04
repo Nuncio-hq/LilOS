@@ -9,6 +9,7 @@ import {
   isFatalEngineStart,
 } from "../src/engine/launcher";
 import { createMemoryLogger } from "../src/log";
+import { ptySpawnEnv } from "../src/surfaces/pty";
 
 /**
  * Issue #95 — engine start failures read plainly.
@@ -212,6 +213,27 @@ describe("AC-1 (#412) the engine env is allow-listed — no LilOS internals", ()
     } finally {
       if (prev === undefined) delete process.env.LILOS_RELAY_TOKEN;
       else process.env.LILOS_RELAY_TOKEN = prev;
+    }
+  });
+
+  it("ptySpawnEnv carries the same allow-list — the agent-facing terminal is scrubbed too", () => {
+    const prevToken = process.env.LILOS_RELAY_TOKEN;
+    const prevSurfaces = process.env.LILOS_SURFACES_URL;
+    process.env.LILOS_RELAY_TOKEN = "pty-secret";
+    process.env.LILOS_SURFACES_URL = "http://127.0.0.1:9/gw";
+    try {
+      const env = ptySpawnEnv();
+      // The surfaces/browser + PTY spawns share the engine's allow-list:
+      // the relay token and harness internals must not be `ps eww`-readable.
+      expect(env.LILOS_RELAY_TOKEN).toBeUndefined();
+      expect(env.LILOS_SURFACES_URL).toBe("http://127.0.0.1:9/gw");
+      expect(env.TERM).toBe("xterm-256color");
+      expect(env.COLORTERM).toBe("truecolor");
+    } finally {
+      if (prevToken === undefined) delete process.env.LILOS_RELAY_TOKEN;
+      else process.env.LILOS_RELAY_TOKEN = prevToken;
+      if (prevSurfaces === undefined) delete process.env.LILOS_SURFACES_URL;
+      else process.env.LILOS_SURFACES_URL = prevSurfaces;
     }
   });
 });

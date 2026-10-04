@@ -8,6 +8,14 @@ import { scrubEngineEnv } from "../engine/launcher";
  * Agents reach it through the `lilos_terminal_*` tools, so #412 hands it
  * the same allow-listed env the engine gets — never the harness's own.
  */
+export function ptySpawnEnv(): Record<string, string> {
+  return {
+    ...scrubEngineEnv(process.env),
+    TERM: "xterm-256color",
+    COLORTERM: "truecolor",
+  };
+}
+
 export function bunPtySpawner(
   opts: PtySpawnOptions,
   onData: (chunk: Uint8Array) => void,
@@ -22,11 +30,7 @@ export function bunPtySpawner(
       data: (_t, chunk) => onData(chunk),
     },
     cwd: opts.cwd ?? process.env.HOME ?? process.cwd(),
-    env: {
-      ...scrubEngineEnv(process.env),
-      TERM: "xterm-256color",
-      COLORTERM: "truecolor",
-    } as Record<string, string>,
+    env: ptySpawnEnv(),
   });
   void proc.exited.then((code) => onExit(code));
   const term = proc.terminal;
