@@ -864,6 +864,16 @@ body:has(.lilos-float)::before {
     filter: none;
   }
 }
+@keyframes lilos-fade {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
+}
 .lilos-rise {
   animation: lilos-rise 0.5s cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
 }
@@ -1131,8 +1141,16 @@ form:has(textarea:not(:placeholder-shown), [aria-label="Stop (Esc)"])
 .dark .lilos-desktop [data-slot="input-group"]:has(textarea) {
   background: rgb(255 255 255 / 0.06);
 }
-/* Changing view is a soft cross-fade, not a jump. */
+/* Changing view is a soft cross-fade, not a jump — and the header never
+   rides it. The header is window chrome: its controls must sit at their
+   final spot the instant the view mounts, because a click already on its
+   way (the ⇄ Focus toggle's in-place second click) lands before a rise
+   would settle and dies on the .lilos-drag strip (#404). `main` only
+   fades; the body below the header still rises in. */
 .lilos-desktop main {
+  animation: lilos-fade 0.45s cubic-bezier(0.2, 0.9, 0.25, 1.1) both;
+}
+.lilos-desktop main > :not(header) {
   animation: lilos-rise 0.45s cubic-bezier(0.2, 0.9, 0.25, 1.1) both;
 }
 /* The selected sidebar item reads as lit, not boxed. */
