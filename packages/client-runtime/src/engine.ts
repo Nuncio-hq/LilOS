@@ -471,7 +471,9 @@ export class EngineClient {
           atSeq: res.latestSeq,
         } as SessionSnapshot,
         error: undefined,
-        historyTrimmed: res.truncated,
+        /* Sticky: a clean resync mustn't clear it — the trimmed head is
+           still missing even though this window answered untruncated. */
+        historyTrimmed: cur.historyTrimmed || res.truncated,
       });
       const pending = this.resyncRetries.get(feed);
       if (pending?.timer) clearTimeout(pending.timer);

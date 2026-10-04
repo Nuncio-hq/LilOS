@@ -870,7 +870,8 @@ export class RelayClient {
          a current snapshot from a stale one. */
       snapshot: { ...res.snapshot, atSeq: res.latestSeq } as SessionSnapshot,
       error: undefined,
-      historyTrimmed: res.truncated,
+      /* Sticky — see SessionFeedState.historyTrimmed in engine.ts. */
+      historyTrimmed: cur.historyTrimmed || res.truncated,
     });
   }
 
