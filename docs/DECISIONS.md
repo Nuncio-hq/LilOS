@@ -234,7 +234,7 @@ PR does not exist.
   Not: snapshot+tail (the snapshot exists; the fat was the middle),
   unbounded per-session logs (the ~17 MB/400-turn replay this kills), or a
   fresh `seq` for the recap (reusing the anchor's is what lets a
-  partial-live fold dedupe it). — #431 · PR #TBD
+  partial-live fold dedupe it). — #431 · PR #509
 - **D-#56 The terminal has one holder: a Workbench keystroke hands it to
   the user; `terminal_run`/`terminal_write` then fail `user_control` (HTTP
   409), in-flight runs too.** Hand-back is explicit (`term.release`) or
