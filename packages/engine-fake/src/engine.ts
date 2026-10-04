@@ -1119,7 +1119,10 @@ export class FakeEngine {
       fast: s.fast,
       ...(ref ? { ref } : {}),
     });
-    this.setState(s, "running");
+    /* A stop landing inside the `slowstart` wait must not resurrect a
+       closed session — the turn still mints and cancels on its first
+       paced sleep, but the state machine stays closed. */
+    if (s.state !== "closed") this.setState(s, "running");
     this.autoTitle(s, "derived", routed);
     try {
       /* #400: `LILOS_TURN_HOLD` parks the turn while it reads as running —
