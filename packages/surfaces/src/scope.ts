@@ -475,7 +475,12 @@ export class SessionSurfaces implements ViewerScope {
         messages = messages.filter((m) => m.seq < (p.before as number));
       const limit = p.limit ?? 200;
       if (messages.length > limit) messages = messages.slice(-limit);
-      return { thread: { id: conv.id, title: conv.title }, messages };
+      /* #106: the thread's access level — an agent reads whether it will
+         be asked before risky actions (never grants it itself). */
+      return {
+        thread: { id: conv.id, title: conv.title, access: conv.access },
+        messages,
+      };
     });
   }
   threadList() {
@@ -494,6 +499,7 @@ export class SessionSurfaces implements ViewerScope {
           title: c.title,
           state: c.state,
           archived: c.archived,
+          access: c.access,
           lastActivity: lastById.get(c.id),
           /* A forge probe can fail (not a repo, gh missing) — the thread
              row still lists, just without PRs. */
@@ -570,9 +576,15 @@ export class SessionSurfaces implements ViewerScope {
               id: conv.id,
               title: conv.title,
               state: conv.state,
+              access: conv.access,
               ...(conv.model ? { model: conv.model } : {}),
             }
-          : { id: b?.conversationId ?? "", title: "", state: "idle" as const },
+          : {
+              id: b?.conversationId ?? "",
+              title: "",
+              state: "idle" as const,
+              access: "ask" as const,
+            },
         ...(conv?.cwd
           ? {
               folder: {

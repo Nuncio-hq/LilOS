@@ -11,7 +11,8 @@ import { wport } from "./ports";
  * Issue #132 — Settings (⌘,): one place for profile, editors, models,
  * status, updates. AC-1 ⌘, opens Settings and Service Status stays its own
  * menu item; AC-2 the prototype's SettingsView renders General, Editors,
- * Models, Status and About with real data (Approvals stays hidden until
+ * Models, Approvals, Status and About with real data (#106 landed the
+ * Approvals section: Smart/Manual/Off policy + the default access).
  * #106); AC-3 edits apply live across open windows; AC-4 About shows real
  * versions and the update control only exists on the desktop build;
  * AC-5 the sidebar's gear entry point opens the same screen.
@@ -142,7 +143,7 @@ const openSettings = async (page: Page) => {
 
 test.describe.configure({ mode: "serial" });
 
-test("AC-1+AC-5 Settings opens via ⌘, and the sidebar gear; Approvals stays hidden", async ({
+test("AC-1+AC-5 Settings opens via ⌘, and the sidebar gear; Approvals listed", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -170,11 +171,18 @@ test("AC-1+AC-5 Settings opens via ⌘, and the sidebar gear; Approvals stays hi
     await page.keyboard.press("Control+,");
     await expect(settingsDialog(page)).toBeVisible();
 
-    // Every section with real data is listed; Approvals is not (#106).
-    for (const name of ["General", "Editors", "Models", "Status", "About"]) {
+    // Every section with real data is listed — Approvals too since #106
+    // (the fake engine declares approval_policy).
+    for (const name of [
+      "General",
+      "Approvals",
+      "Editors",
+      "Models",
+      "Status",
+      "About",
+    ]) {
       await expect(tab(page, name)).toBeVisible();
     }
-    await expect(tab(page, "Approvals")).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/ac-1-sections.png` });
   } finally {
     await stack.stop();

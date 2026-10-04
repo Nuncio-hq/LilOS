@@ -29,6 +29,7 @@ const conv = (
   state: "active",
   title: "",
   titleSource: "user",
+  access: "ask",
   archived: false,
   deliveredSeq: 0,
   createdAt: 0,

@@ -16,6 +16,7 @@ import {
   UserIcon,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { AccessPill } from "../chat/access-pill";
 import { Composer } from "../chat/composer";
 import { choiceFor, ModelPicker } from "../chat/model-picker";
 import {
@@ -56,6 +57,7 @@ import { HermesAvatar } from "../shell/avatars";
 import type {
   AttachedFile,
   ConnectionState,
+  ConversationAccess,
   EmpFn,
   Employee,
   EngineProfile,
@@ -224,6 +226,8 @@ export function EmployeeHome({
   onSearchMessages,
   onOpenHit,
   connection,
+  access,
+  onAccess,
   draft: composerDraft,
   onDraftChange,
   scheduled,
@@ -275,6 +279,11 @@ export function EmployeeHome({
   modelChoice?: ModelChoice;
   onModel?: (c: ModelChoice) => void;
   picker?: ModelPickerExtras;
+  /* #106: the access level the new conversation opens with — the pill on
+     the composer defaults to Settings' default; a switch applies to the
+     session being composed, not the setting (both or neither, D-#19). */
+  access?: ConversationAccess;
+  onAccess?: (a: ConversationAccess) => void;
   /* Plain reason the engine is unavailable ("Hermes not found at …", #85);
      renders above the composer so a dead engine never looks sendable. */
   composerNote?: ReactNode;
@@ -735,6 +744,9 @@ export function EmployeeHome({
                 onChoice={onModel}
                 {...picker}
               />
+            ) : null}
+            {access !== undefined && onAccess ? (
+              <AccessPill access={access} onAccess={onAccess} />
             ) : null}
           </>
         }

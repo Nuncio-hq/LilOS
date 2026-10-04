@@ -35,6 +35,7 @@ import {
 import {
   type AgentDescriptor,
   type ContentBlock,
+  type ConversationAccess,
   type DescribeResult,
   type EngineEvent,
   type EngineRequest,
@@ -145,6 +146,10 @@ interface SessionBinding {
   /** The conversation's pick before `heldPick`'s intent was written —
       restored when the held apply fails so a dead pick can't linger. */
   heldPickPrev?: ConversationPickPatch;
+  /** #106: the conversation's access level at last seen — `full` routes
+      every `approval` request.opened through autoApprove instead of the
+      card path; `conversation.updated` refreshes it mid-turn. */
+  access: ConversationAccess;
 }
 
 /** A pick as the app sends it (#92): `{provider?, id}` plus its legs. */
@@ -1613,6 +1618,7 @@ export class Harness {
           sessionId: conv.engineRef,
           ref: conv.engineRef,
           cwd: expandPath(conv.cwd ?? this.opts.workdir, this.home),
+          access: conv.access,
           lastSeq: 0,
           queue: [],
           promptGates: new Set(),
@@ -1669,6 +1675,7 @@ export class Harness {
       sessionId: "",
       ref: "",
       cwd: expandPath(conv.cwd ?? this.opts.workdir, this.home),
+      access: conv?.access ?? "ask",
       lastSeq: 0,
       queue: [],
       promptGates: new Set(),
@@ -1867,14 +1874,34 @@ export class Harness {
       // the turn are the single rendering (issue #71, AC-1).
       case "request.opened":
         if (binding) {
-          void this.openAsk(
-            binding,
-            event.payload.turnId,
-            event.payload.requestId,
-            event.payload.request,
-          ).catch((error) =>
-            this.opts.log.error("asks.open failed", { error: String(error) }),
-          );
+          /* #106 AC-2: Full access is enforced here, engine-neutral — the
+             harness answers `approval` requests itself (`once`) and the
+             card never reaches the user; other kinds still surface. */
+          if (
+            binding.access === "full" &&
+            event.payload.request.kind === "approval"
+          ) {
+            void this.autoApprove(
+              binding,
+              event.payload.requestId,
+              event.payload.request,
+            ).catch((error) =>
+              this.opts.log.warn("auto-approve failed", {
+                error: String(error),
+              }),
+            );
+          } else {
+            void this.openAsk(
+              binding,
+              event.payload.turnId,
+              event.payload.requestId,
+              event.payload.request,
+            ).catch((error) =>
+              this.opts.log.error("asks.open failed", {
+                error: String(error),
+              }),
+            );
+          }
         }
         break;
       case "request.resolved":
@@ -1962,6 +1989,45 @@ export class Harness {
       // request_id unique key makes a replayed open idempotent).
       this.relayWrite(`asks.open ${requestId}`, open);
     }
+  }
+
+  /**
+   * #106 — Full access: answer an `approval` request ourselves with
+   * `once` (the narrowest grant — no silent widening), never touching the
+   * asks seam: no card, no push, no badge. The grant lands on the turn
+   * feed as a system note so the action still reads as approved, not
+   * vanished (AC-2). Deny-only cards (hardline blocks) answer their only
+   * option — Full access can't bypass what the engine refuses to offer.
+   */
+  private async autoApprove(
+    binding: SessionBinding,
+    requestId: string,
+    request: EngineRequest,
+  ): Promise<void> {
+    const conn = this.engine;
+    if (!conn || request.kind !== "approval") return;
+    const options = request.options;
+    const outcome = options.includes("once") ? "once" : (options[0] ?? "once");
+    try {
+      await conn.request("request.respond", {
+        sessionId: binding.sessionId,
+        requestId,
+        outcome,
+      });
+    } catch (error) {
+      /* A cancel raced the auto-answer — the engine already closed it. */
+      if (engineErrorCode(error) === REQUEST_NOT_FOUND) return;
+      throw error;
+    }
+    const label =
+      request.command && request.command !== "command"
+        ? ` \`${request.command.slice(0, 120)}\``
+        : "";
+    await this.postSystem(
+      binding,
+      `Auto-approved${label} — Full access`,
+      `sys:auto:${requestId}`,
+    );
   }
 
   /**
@@ -2069,6 +2135,25 @@ export class Harness {
         const conv = parsed.data.conversation;
         const seen = this.metaSeen.get(conv.id);
         const binding = this.bindings.get(conv.id);
+        /* #106 AC-1: a pill switch lands mid-turn — the very next
+           request.opened routes on the fresh level, and the live session
+           gets the hint when the engine declares approval_policy. */
+        if (binding && conv.access !== binding.access) {
+          binding.access = conv.access;
+          const conn = this.engine;
+          if (conn && this.hasCapability("approval_policy")) {
+            void conn
+              .request("session.setAccess", {
+                sessionId: binding.sessionId,
+                access: conv.access,
+              })
+              .catch((error) =>
+                this.opts.log.warn("session.setAccess failed", {
+                  error: String(error),
+                }),
+              );
+          }
+        }
         if (!binding) {
           // No session yet — record the baseline so a later event diffs right.
           if (!seen) {
@@ -3035,6 +3120,9 @@ export class Harness {
       ...(effort ? { effort } : {}),
       ...(fast !== undefined ? { fast } : {}),
       cwd,
+      /* #106: the conversation's access level rides session.start — the
+         engine may take it as a native hint (WS yolo / ACP set_mode). */
+      ...(conv?.access ? { access: conv.access } : {}),
       ...(mcpServer ? { mcpServers: [mcpServer] } : {}),
     };
   }

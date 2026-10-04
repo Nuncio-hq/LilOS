@@ -13,6 +13,7 @@ export {
 export { BrowserPanel, type BrowserPanelProps } from "./browser/browser-panel";
 export * from "./browser/browser-types";
 export { LoginSuggestions } from "./browser/login-suggestions";
+export { AccessPill } from "./chat/access-pill";
 // shared agent-chat pieces (steer rows, not-sent tray, composer running state)
 export * from "./chat/agent-chat";
 export { Composer } from "./chat/composer";

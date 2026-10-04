@@ -337,7 +337,7 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
   });
   await expect(page.getByText("Approval needed").first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-2-click-through.png` });
-  await page.getByRole("button", { name: "Allow once" }).first().click();
+  await page.getByRole("button", { name: "Once", exact: true }).first().click();
 
   // ── conv C: finishes out of view → done notification + running badge ─
   await page.goto(`${stack.webUrl}/dm/${convA.employeeId}`);

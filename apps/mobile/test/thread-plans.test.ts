@@ -59,6 +59,7 @@ const conv = (over: Partial<Conversation> = {}): Conversation => ({
   state: "idle",
   title: "reconnect the client",
   titleSource: "auto",
+  access: "ask",
   archived: false,
   deliveredSeq: 1,
   createdAt: T0 - 60_000,

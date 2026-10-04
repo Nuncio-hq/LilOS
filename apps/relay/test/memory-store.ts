@@ -283,6 +283,7 @@ export function createMemoryStore(): RelayStore {
         ...openTitle(input),
         archived: false,
         deliveredSeq: 0,
+        access: input.access ?? "ask",
         createdAt: now(),
         ...(input.model !== undefined ? { model: input.model } : {}),
         ...(input.provider !== undefined ? { provider: input.provider } : {}),
