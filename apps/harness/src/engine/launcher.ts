@@ -158,6 +158,29 @@ export function commandLauncher(
         };
         let out = "";
         let err = "";
+        let readyMatched = false;
+        /* #521: the child's output mirrors into the harness log — the
+           adapter's `hermes backend down:`/`up` diagnostics live only on
+           this stream, so without forwarding they never reach
+           harness.log. `out` itself stops growing once ready matched. */
+        let outLine = "";
+        let errLine = "";
+        const mirrorLine = (line: string, into: "out" | "err") => {
+          const text = line.replace(ANSI_RE, "").trimEnd();
+          if (!text) return;
+          const clipped = text.length > 500 ? `${text.slice(0, 500)}…` : text;
+          if (into === "out")
+            options.log.info(`engine ${options.name}: ${clipped}`);
+          else options.log.warn(`engine ${options.name} stderr: ${clipped}`);
+        };
+        const mirrorChunk = (text: string, into: "out" | "err") => {
+          let buf = (into === "out" ? outLine : errLine) + text;
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          if (into === "out") outLine = buf;
+          else errLine = buf;
+          for (const line of lines) mirrorLine(line, into);
+        };
         const timer = setTimeout(() => {
           proc.kill();
           reject(
@@ -168,10 +191,18 @@ export function commandLauncher(
         }, timeout);
         const onLine = (chunk: Buffer, into: "out" | "err") => {
           const text = chunk.toString();
-          if (into === "out") out += text;
-          else err += text;
+          mirrorChunk(text, into);
+          if (into !== "out") {
+            err += text;
+            // The exit tail needs only the last few lines — bound the buffer.
+            if (err.length > 32_000) err = err.slice(-16_000);
+            return;
+          }
+          if (readyMatched) return;
+          out += text;
           const match = options.readyPattern.exec(out);
           if (match) {
+            readyMatched = true;
             clearTimeout(timer);
             const url = match[1] ?? options.url;
             if (!url) {
@@ -187,15 +218,16 @@ export function commandLauncher(
           }
         };
         child.stdout?.on("data", (c) => onLine(c as Buffer, "out"));
-        child.stderr?.on("data", (c) => {
-          err += c.toString();
-        });
+        child.stderr?.on("data", (c) => onLine(c as Buffer, "err"));
         child.once("error", (error) => {
           clearTimeout(timer);
           reject(new Error(`engine ${options.name} spawn failed: ${error}`));
         });
         child.once("exit", (code, signal) => {
           clearTimeout(timer);
+          // Flush the trailing partial line — a killed child ends mid-line.
+          if (outLine) mirrorLine(outLine, "out");
+          if (errLine) mirrorLine(errLine, "err");
           const why = exitReason(code, signal);
           const tail = err
             .replace(ANSI_RE, "") // keep color junk out of status text
