@@ -677,6 +677,27 @@ describe("thread-model — #157 AC mapping", () => {
       "turn-t2",
     ]);
   });
+
+  it("#514 historyTrimmed lands as the transcript note; unset, no note", () => {
+    /* Web rule (apps/web dm.tsx): events.since answering `truncated`
+       marks the feed historyTrimmed and the transcript says so — the
+       retained tail is all that exists, not a render gap. */
+    const detail = (historyTrimmed?: boolean) =>
+      toThreadDetail({
+        conversation: conv(),
+        employee: ada,
+        messages: [msg({ id: "m1", seq: 1, text: "first" })],
+        asks: [],
+        pending: new Set(),
+        now: T0 + 60_000,
+        ...(historyTrimmed === undefined ? {} : { historyTrimmed }),
+      });
+    expect(detail(true).transcriptNote).toBe(
+      "Earlier history was trimmed — this session's event log is capped.",
+    );
+    expect(detail(false).transcriptNote).toBeUndefined();
+    expect(detail().transcriptNote).toBeUndefined();
+  });
 });
 
 describe("#264 blocked-on-ask — one waiting state across turn surfaces", () => {

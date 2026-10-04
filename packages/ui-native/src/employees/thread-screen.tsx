@@ -16,6 +16,7 @@ import { ContextRing } from "./context-meter";
 import type { PlanAction } from "./plan-card";
 import { PrBadge, prHeadline } from "./pr-badges";
 import { threadBottomInset } from "./thread-layout";
+import { transcriptItems } from "./transcript-items";
 import type {
   ContextUsage,
   PullRequestRef,
@@ -125,9 +126,34 @@ export function ThreadScreen({
             gap: 24,
           }}
         >
-          {t.entries.map((e) => (
+          {transcriptItems(t).map((e) => (
             <Rise key={e.id}>
-              {e.kind === "user" ? (
+              {/* #514: a transcript state note heads the scroll — the
+                  trimmed note describes history missing ABOVE the first
+                  entry, so it renders first, a centered divider (not the
+                  bottom box web uses for the #28 'unavailable' note).
+                  The text shrinks + wraps to 2 lines inside the thread
+                  gutter; the hairlines keep ≥24px so the divider reads at
+                  any Dynamic Type size. */}
+              {e.kind === "transcript-note" ? (
+                <View className="flex-row items-center gap-3">
+                  <View
+                    className="h-px flex-1 bg-border"
+                    style={{ minWidth: 24 }}
+                  />
+                  <AppText
+                    tone="muted"
+                    numberOfLines={2}
+                    className="shrink text-center text-[12px] leading-[16px]"
+                  >
+                    {e.text}
+                  </AppText>
+                  <View
+                    className="h-px flex-1 bg-border"
+                    style={{ minWidth: 24 }}
+                  />
+                </View>
+              ) : e.kind === "user" ? (
                 <UserBubble
                   text={e.text}
                   time={
