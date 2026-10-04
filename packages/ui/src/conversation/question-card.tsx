@@ -4,7 +4,7 @@ import {
   SendIcon,
   XIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import {
   Confirmation,
   ConfirmationAccepted,
@@ -12,6 +12,7 @@ import {
   ConfirmationRequest,
   ConfirmationTitle,
 } from "../components/ai-elements/confirmation";
+import { MessageResponse } from "../components/ai-elements/message";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { cn } from "../lib/utils";
@@ -21,16 +22,25 @@ import type { QuestionAsk } from "../types";
    with the typed string; `label` is the human wording the receipt shows. */
 export type QuestionAnswer = { value: string; label: string };
 
+/* Question text + option copy render through the same streamdown pass as
+   message bodies — `release/0.1` is code, not literal backticks (FIX #515).
+   Inside an option <button> a block <p> is invalid nesting, so paragraphs
+   degrade to spans there. */
+const INLINE_COMPONENTS = {
+  p: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
+};
+
 /* #420: the engine's `question` ask under a reply — the question text, its
-   options as buttons, a free-text field when allowed, and a Cancel. While
+   options as buttons, a free-text field when allowed, and a Skip. While
    open the turn sits in phase "waiting" (amber, "needs you"); answering or
-   cancelling folds the card to a one-line receipt, the same resolved-map
+   skipping folds the card to a one-line receipt, the same resolved-map
    pattern the approval card uses (resolved[q.id] carries the wording).
    Props in, callbacks out: `setResolved` writes the receipt text,
    `onAnswer`/`onCancel` let the app continue the turn. */
 export function QuestionCard({
   q,
   viewer,
+  agent,
   done,
   resolved,
   setResolved,
@@ -40,6 +50,9 @@ export function QuestionCard({
   q: QuestionAsk;
   /** Display name of the signed-in human ("you" fallback). */
   viewer: string;
+  /** Display name of the asking employee — the Skip button names who
+      decides when the viewer passes ("the agent" fallback). */
+  agent?: string;
   /** Receipt text once resolved — `Answered "…"` reads accepted, `Cancelled…` rejected. */
   done?: string;
   resolved: Record<string, string>;
@@ -55,12 +68,21 @@ export function QuestionCard({
   /* The answer is on its way to the engine — the controls lock until the
      resolved write flips the card to its receipt. */
   const [pending, setPending] = useState<string | null>(null);
+  /* The options cap fades its edges only when the list actually overflows
+     — a three-option card never shows a clipped "peek" (FIX #515). */
+  const listRef = useRef<HTMLDivElement>(null);
+  const [scrollable, setScrollable] = useState(false);
   const cancelled = !!done?.startsWith("Cancelled");
   const options = q.options ?? [];
   /* Wire rule (requests.ts): free text beside the options only when
      `freeText`; no options at all → the answer IS free text. */
   const freeText = q.freeText === true || options.length === 0;
   const interactive = !!setResolved && !done;
+  const who = agent ?? "the agent";
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (el) setScrollable(el.scrollHeight > el.clientHeight + 4);
+  }, [options.length]);
 
   const pick = (a: QuestionAnswer) => {
     if (!interactive || pending) return;
@@ -98,7 +120,9 @@ export function QuestionCard({
       <ConfirmationTitle className="flex flex-wrap items-center gap-1.5 pr-2 font-medium text-foreground">
         <ConfirmationRequest>
           <MessageCircleQuestionIcon className="size-3.5 text-primary" />
-          Question · only {viewer} can answer
+          {interactive
+            ? "Question for you"
+            : `Question · only ${viewer} can answer`}
         </ConfirmationRequest>
         <ConfirmationAccepted>
           <CheckIcon className="size-3.5 text-emerald-600" />
@@ -111,74 +135,95 @@ export function QuestionCard({
       </ConfirmationTitle>
       <ConfirmationRequest>
         <div className="space-y-2.5">
-          <p className="whitespace-pre-wrap text-foreground text-sm leading-snug">
+          <MessageResponse className="lilos-prose text-foreground text-sm leading-snug">
             {q.question}
-          </p>
+          </MessageResponse>
           {options.length > 0 && (
-            /* Many options cap and scroll instead of growing the thread. */
-            <div className="flex max-h-44 flex-col gap-1.5 overflow-y-auto pr-0.5">
+            /* Many options cap and scroll: whole rows plus a fading peek
+               instead of growing the thread; the inner scrollbar stays off
+               the tiles (FIX #515). */
+            <div
+              ref={listRef}
+              className={cn(
+                "flex max-h-72 flex-col gap-1.5 overflow-y-auto scroll-py-1.5 py-1.5 pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+                scrollable &&
+                  "[mask-image:linear-gradient(to_bottom,transparent,black_6px,black_calc(100%-30px),rgb(0_0_0/0.15))]",
+              )}
+            >
               {options.map((o) => (
                 <Button
                   key={o.id}
                   variant="outline"
                   size="sm"
                   disabled={!interactive || !!pending}
-                  title={o.description}
                   className="h-auto justify-start px-3 py-2 text-left whitespace-normal"
                   onClick={() => pick({ value: o.id, label: o.label })}
                 >
                   <span className="flex min-w-0 flex-col gap-0.5">
-                    <span>{o.label}</span>
+                    <MessageResponse
+                      className="lilos-prose text-sm"
+                      components={INLINE_COMPONENTS}
+                    >
+                      {o.label}
+                    </MessageResponse>
                     {o.description && (
-                      <span className="font-normal text-muted-foreground text-xs">
+                      <MessageResponse
+                        className="lilos-prose font-normal text-muted-foreground text-xs"
+                        components={INLINE_COMPONENTS}
+                      >
                         {o.description}
-                      </span>
+                      </MessageResponse>
                     )}
                   </span>
                 </Button>
               ))}
             </div>
           )}
-          {interactive && freeText && (
-            <form
-              className="flex items-center gap-1.5"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const text = draft.trim();
-                if (text) pick({ value: text, label: text });
-              }}
-            >
-              <Input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                disabled={!!pending}
-                placeholder={
-                  options.length
-                    ? "Or type your own answer…"
-                    : "Type your answer…"
-                }
-                aria-label="Your answer"
-              />
-              <Button
-                type="submit"
-                size="sm"
-                disabled={!!pending || !draft.trim()}
-              >
-                <SendIcon className="size-3.5" />
-                Answer
-              </Button>
-            </form>
-          )}
           {interactive && (
             <div className="flex items-center gap-2">
+              {freeText ? (
+                <form
+                  className="flex min-w-0 flex-1 items-center gap-1.5"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const text = draft.trim();
+                    if (text) pick({ value: text, label: text });
+                  }}
+                >
+                  <Input
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    disabled={!!pending}
+                    placeholder={
+                      options.length ? "Or type your own…" : "Type your answer…"
+                    }
+                    aria-label="Your answer"
+                  />
+                  {/* Field-height (h-8), clearly inert while empty, solid
+                      accent once there's text (FIX #515). */}
+                  <Button
+                    type="submit"
+                    variant={draft.trim() ? "default" : "outline"}
+                    disabled={!!pending || !draft.trim()}
+                  >
+                    <SendIcon className="size-3.5" />
+                    Answer
+                  </Button>
+                </form>
+              ) : (
+                <span className="min-w-0 flex-1" />
+              )}
+              {/* Skip is secondary, pinned to the content edge — it says what
+                  it does: the asking agent decides instead. */}
               <Button
-                variant="ghost"
+                variant="secondary"
                 size="sm"
+                className="shrink-0"
                 disabled={!!pending}
-                title="Cancel — the agent sees the refusal"
+                title={`Skip — ${who} decides for you`}
                 onClick={cancel}
               >
-                Cancel
+                Skip — let {who} decide
               </Button>
               {pending && (
                 <span className="text-muted-foreground text-xs">Sending…</span>

@@ -453,6 +453,33 @@ const DM_FEEDS: Record<string, Msg[]> = {
         ],
       },
     },
+    {
+      /* #420 evidence: the open card WITHOUT the scroll cap — a second
+         session parked on a 3-option question (options + free text + Skip
+         all visible at once). */
+      kind: "msg", id: "v4", from: "oscar", time: "11:12", text: "One more call before lunch — which model runs tonight's soak?",
+      thread: {
+        session: "ses_5c17", usage: { input: 9400, output: 610, reasoning: 120, cache: 5200, context: 14600 },
+        replies: [
+          { id: "v4r1", from: "reviewer", time: "11:13", thought: 2, live: true, phase: "waiting", waitingOn: "question",
+            reasoning: "Soak is six hours — Opus is the safe default, but the cheap tier covers the replay path we actually changed.",
+            steps: [
+              { tool: "terminal", input: { command: "cat soak/tonight.yaml" }, output: "suite: replay-gap\nwindow: 6h\nmodels: [opus-5.5, fast-tier]" },
+            ],
+            text: "Tonight's soak is ready to arm. It's a six-hour window on `replay-gap` — pick the model and I'll schedule it.",
+            question: {
+              id: "q-soak",
+              question: "Which model should run tonight's `replay-gap` soak?",
+              options: [
+                { id: "opus", label: "Opus 5.5", description: "The safe default — full ladder, best recall." },
+                { id: "fast", label: "Fast tier", description: "Covers the replay path we changed, ~4× cheaper." },
+                { id: "both", label: "Race both", description: "Two three-hour legs, compare in the morning." },
+              ],
+              freeText: true,
+            } },
+        ],
+      },
+    },
   ],
 }
 

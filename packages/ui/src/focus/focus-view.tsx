@@ -26,6 +26,7 @@ import {
   type QueuedTrayItem,
   queuedItemText,
   runningComposer,
+  waitingComposer,
 } from "../chat/agent-chat";
 import { useEscapeKey } from "../chat/composer-keys";
 import { FocusComposer } from "../chat/focus-composer";
@@ -350,10 +351,16 @@ export function FocusView({
   );
   const live = thread.replies.find((r) => r.live);
   const lastStep = live?.steps?.[live.steps.length - 1];
+  /* #420: parked on an open ask = WAITING, not working — the composer says
+     "waiting for your answer" and shows Send, not Stop (Hermes FIX #515).
+     Same phase the header's "needs you" reads. */
+  const waiting = running && live?.phase === "waiting";
   const status: ChatStatus = running
-    ? live?.phase === "submitted"
-      ? "submitted"
-      : "streaming"
+    ? waiting
+      ? "ready"
+      : live?.phase === "submitted"
+        ? "submitted"
+        : "streaming"
     : "ready";
   // The latest approved plan / task list (issue #175), else the engine's session todos.
   const fromPlan = planTodos(thread);
@@ -836,7 +843,7 @@ export function FocusView({
               onRemove={onUnqueue}
             />
             <FocusComposer
-              running={running}
+              running={running && !waiting}
               status={status}
               choice={
                 models?.length
@@ -866,20 +873,24 @@ export function FocusView({
                 surfaces?.termControl === "user"
                   ? `${lead?.name ?? "The agent"} is paused while you use the terminal`
                   : running
-                    ? runningComposer(
-                        lead?.name ?? "Employee",
-                        steer,
-                        agentWorking,
-                      ).placeholder
+                    ? waiting
+                      ? waitingComposer(lead?.name ?? "Employee").placeholder
+                      : runningComposer(
+                          lead?.name ?? "Employee",
+                          steer,
+                          agentWorking,
+                        ).placeholder
                     : `Continue session ${thread.session} with ${lead?.name ?? "the employee"}…`
               }
               hint={
                 running
-                  ? runningComposer(
-                      lead?.name ?? "Employee",
-                      steer,
-                      agentWorking,
-                    ).hint
+                  ? waiting
+                    ? waitingComposer(lead?.name ?? "Employee").hint
+                    : runningComposer(
+                        lead?.name ?? "Employee",
+                        steer,
+                        agentWorking,
+                      ).hint
                   : pr?.status === "merged"
                     ? `#${pr.number} merged, ⎇ ${pr.head} deleted · next edit starts a new branch from main`
                     : work?.branch

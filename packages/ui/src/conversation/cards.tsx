@@ -279,6 +279,7 @@ export function ReplyCards({
         <QuestionCard
           q={r.question}
           viewer={viewer}
+          agent={emp(r.from)?.name}
           done={resolved[r.question.id]}
           resolved={resolved}
           setResolved={setResolved}

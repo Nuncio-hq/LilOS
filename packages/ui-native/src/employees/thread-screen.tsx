@@ -86,6 +86,9 @@ export function ThreadScreen({
   const [composerHeight, setComposerHeight] = useState(96);
   const [pillHeight, setPillHeight] = useState(0);
   const running = t.state === "working";
+  /* #420: parked on an open ask — the composer says waiting, no steer
+     copy and no stop (Hermes FIX #515). */
+  const waiting = t.state === "needs-you";
   // The background pill floats above the composer; keep the last turn clear of it.
   const pill =
     !!onOpenBackground && !!t.jobs?.some((j) => j.status === "running");
@@ -179,7 +182,9 @@ export function ThreadScreen({
                   t.agentWorking
                   ? `Queue for ${t.employee.name}`
                   : `Steer ${t.employee.name}`
-                : `Reply to ${t.employee.name}`
+                : waiting
+                  ? `${t.employee.name} is waiting for your answer`
+                  : `Reply to ${t.employee.name}`
             }
             {...(model !== undefined ? { model } : {})}
             modelLogo={modelLogo}
@@ -230,7 +235,9 @@ export function ThreadHeaderTitle({
       </AppText>
       <View className="flex-row items-center gap-1.5">
         <StateChip state={state} />
-        {context && <ContextRing c={context} />}
+        {/* Waiting is not working — no progress ring next to "Needs you"
+            (Hermes FIX #515). */}
+        {context && state !== "needs-you" && <ContextRing c={context} />}
         {!!prs?.length && (
           <>
             <AppText tone="muted" className="text-[13px]">

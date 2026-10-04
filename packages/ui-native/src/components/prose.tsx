@@ -51,7 +51,13 @@ export function Prose({
   );
 }
 
-function Inline({ text, className }: { text: string; className: string }) {
+export function Inline({
+  text,
+  className,
+}: {
+  text: string;
+  className: string;
+}) {
   const accent = useThemeColor("accent-text");
   const foreground = useThemeColor("foreground");
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);

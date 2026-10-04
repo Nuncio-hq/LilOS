@@ -3,6 +3,7 @@ import { Pressable, TextInput, View } from "react-native";
 import { AppText } from "../components/app-text";
 import { Card, Pill } from "../components/bits";
 import { Icon, useThemeColor } from "../components/icon";
+import { Inline, Prose } from "../components/prose";
 import type { Approval } from "./types";
 
 /* What the card hands back: options answer with their wire id, free text
@@ -61,9 +62,9 @@ export function QuestionCard({
             Question for you
           </AppText>
         </View>
-        <AppText size="sm" className="leading-5">
-          {a.reason}
-        </AppText>
+        {/* Question + option copy ride the same markdown pass as message
+            bodies — `release/0.1` is code, not backticks (FIX #515). */}
+        <Prose text={a.reason} size="sm" />
         {options.length > 0 && (
           <View className="mt-2.5 gap-2">
             {options.map((o) => (
@@ -75,13 +76,17 @@ export function QuestionCard({
                 onPress={() => pick({ value: o.id, label: o.label })}
                 className={`rounded-xl bg-fill px-3 py-2.5 ${inert ? "opacity-40" : "active:opacity-70"}`}
               >
-                <AppText size="sm" weight="semibold">
-                  {o.label}
-                </AppText>
+                <Inline
+                  text={o.label}
+                  className="text-[15px] font-semibold leading-5"
+                />
                 {!!o.description && (
-                  <AppText size="xs" tone="muted" className="mt-0.5 leading-4">
-                    {o.description}
-                  </AppText>
+                  /* Subtitles keep ≥4.5:1 on the tile — Inline colors plain
+                     segments foreground (FIX #515). */
+                  <Inline
+                    text={o.description}
+                    className="mt-0.5 text-[13px] leading-4"
+                  />
                 )}
               </Pressable>
             ))}
@@ -127,22 +132,24 @@ export function QuestionCard({
             </Pressable>
           </View>
         )}
-        <View className="mt-3 flex-row items-center gap-2">
+        {/* Skip is secondary, pinned to the content edge — it names what
+            it does: the asking agent decides instead (FIX #515). */}
+        <View className="mt-3 flex-row items-center justify-end gap-2">
+          {pending && (
+            <AppText size="xs" tone="muted">
+              Sending…
+            </AppText>
+          )}
           {onCancel && (
             <Pill
-              label="Cancel"
-              variant="ghost"
+              label={`Skip — let ${a.employee || "the agent"} decide`}
+              variant="soft"
               onPress={() => {
                 if (pending) return;
                 setPending(true);
                 onCancel(a.id);
               }}
             />
-          )}
-          {pending && (
-            <AppText size="xs" tone="muted">
-              Sending…
-            </AppText>
           )}
         </View>
       </Card>

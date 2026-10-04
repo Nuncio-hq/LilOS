@@ -126,7 +126,7 @@ export function ApprovalsSheet({
               )}
               {onDeny && (
                 <Pill
-                  label={isAnswerableQuestion(a) ? "Cancel" : "Deny"}
+                  label={isAnswerableQuestion(a) ? "Skip" : "Deny"}
                   variant="soft"
                   onPress={() => onDeny(a.id)}
                 />

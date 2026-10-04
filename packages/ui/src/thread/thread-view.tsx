@@ -9,6 +9,7 @@ import {
   type QueuedTrayItem,
   queuedItemText,
   runningComposer,
+  waitingComposer,
 } from "../chat/agent-chat";
 import { Composer } from "../chat/composer";
 import { useEscapeKey } from "../chat/composer-keys";
@@ -247,10 +248,17 @@ export function ThreadView({
     const t = setTimeout(() => setFlash(null), 1800);
     return () => clearTimeout(t);
   }, [flash]);
+  /* #420: a live reply parked on an open ask is WAITING, not working —
+     the composer says "waiting for your answer" and shows Send, not Stop
+     (Hermes FIX #515). Same phase the header's "needs you" reads. */
+  const waiting =
+    running && thread.replies.some((r) => r.live && r.phase === "waiting");
   const status: ChatStatus = running
-    ? thread.replies.some((r) => r.live && r.phase === "submitted")
-      ? "submitted"
-      : "streaming"
+    ? waiting
+      ? "ready"
+      : thread.replies.some((r) => r.live && r.phase === "submitted")
+        ? "submitted"
+        : "streaming"
     : "ready";
   /* #419: the Retry lives on the last TURN — system notes (a failed turn's
      error row) sit below it and don't count. */
@@ -370,7 +378,10 @@ export function ThreadView({
         </div>
       </div>
       <Conversation className="min-h-0">
-        <ConversationContent className="gap-0 p-0 py-2">
+        {/* Bottom padding ≈ the composer height so the newest turn — a
+            question card's Skip row included — scrolls fully clear of the
+            composer instead of landing under it (Hermes FIX #515). */}
+        <ConversationContent className="gap-0 p-0 pt-2 pb-28">
           {onRewind && root.id && human(root.from) && (
             <RewindCheckpoint
               running={running}
@@ -483,16 +494,26 @@ export function ThreadView({
       <Composer
         placeholder={
           running
-            ? runningComposer(leadEmp?.name ?? "Employee", steer, agentWorking)
-                .placeholder
+            ? waiting
+              ? waitingComposer(leadEmp?.name ?? "Employee").placeholder
+              : runningComposer(
+                  leadEmp?.name ?? "Employee",
+                  steer,
+                  agentWorking,
+                ).placeholder
             : `Reply to ${leadEmp?.name ?? "the thread"} in this session…`
         }
         employees={mentionables ?? []}
         onSearchFiles={onSearchFiles}
         hint={
           running
-            ? runningComposer(leadEmp?.name ?? "Employee", steer, agentWorking)
-                .hint
+            ? waiting
+              ? waitingComposer(leadEmp?.name ?? "Employee").hint
+              : runningComposer(
+                  leadEmp?.name ?? "Employee",
+                  steer,
+                  agentWorking,
+                ).hint
             : work?.branch
               ? `Edits go to ⎇ ${work.branch}`
               : work
