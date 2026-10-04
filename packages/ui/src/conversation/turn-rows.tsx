@@ -124,10 +124,17 @@ export function RewindCheckpoint({
 }
 
 /* The settled marker AgentTurn's footer carries — a held stub repeats it
-   so `waitSettled` keeps working on an off-screen settled turn. */
+   so `waitSettled` keeps working on an off-screen settled turn. Strict
+   terminal phases only: a mid-turn row can already carry text/steps while
+   `live`/`streaming` are momentarily off, and must never fake "done".
+   Feed rows map to `phase: "done"` (messageReply), so this covers them. */
+const TERMINAL: ReadonlySet<Reply["phase"]> = new Set([
+  "done",
+  "stopped",
+  "failed",
+]);
 const isSettled = (r: Reply) =>
-  !r.live &&
-  !r.streaming &&
+  TERMINAL.has(r.phase) &&
   !!(
     r.text ||
     r.steps?.length ||
@@ -295,7 +302,11 @@ function TurnRowImpl({
         msgId={r.id}
         className={cls}
         lazy={lazy}
-        keep={!!r.live || !!r.streaming || scrollTarget}
+        /* A turn row whose phase isn't terminal is still being written:
+           `streaming` only covers the text phase, and `live` drops when the
+           conversation isn't active — so a non-terminal turn must never
+           hold (a stub would freeze partial height and fake the marker). */
+        keep={scrollTarget || (!!r.turnId && !TERMINAL.has(r.phase))}
         kind="agent"
         settled={isSettled(r)}
       >

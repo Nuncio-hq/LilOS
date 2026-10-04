@@ -58,6 +58,19 @@ const arg = (name: string, dflt: string) => {
 const RUNS = Math.max(1, Number(arg("runs", "3")) || 3);
 const TURNS = Math.max(1, Number(arg("turns", "100")) || 100);
 const SHOTS = arg("shots", ""); // dir → screenshot the 50-turn thread
+/* --mix: cycle prompt kinds so the 50-turn thread carries plans,
+   subagents, steps, markdown and a queued steer — the AC-2 "long threads
+   (steps, subagents, plans, queued)" coverage lives in the element shots
+   this mode adds to --shots. */
+const MIXED = process.argv.includes("--mix");
+const MIX_PROMPTS = [
+  "plan: tasks",
+  "delegate subagents",
+  "md: blocks",
+  "walk me through the last diff",
+];
+const promptFor = (i: number) =>
+  MIXED ? MIX_PROMPTS[(i - 1) % MIX_PROMPTS.length] : PROMPT;
 
 interface Window {
   taskMs: number;
@@ -181,9 +194,9 @@ async function dmDefault(webUrl: string, page: Page) {
   await expect(page).toHaveURL(/\/dm\//);
 }
 
-const send = async (page: Page) => {
+const send = async (page: Page, text = PROMPT) => {
   const box = page.locator("textarea").last();
-  await box.fill(PROMPT);
+  await box.fill(text);
   await box.press("Enter");
 };
 
@@ -246,7 +259,7 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
 
         const focus = page.locator("[data-thread]");
         let m0 = await snap(cdp, page);
-        await send(page);
+        await send(page, promptFor(1));
         await waitSettled(focus, 1);
         await quiet(page);
         out.set(1, between(m0, await snap(cdp, page)));
@@ -262,8 +275,51 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
         for (let i = 2; i <= TURNS; i++) {
           const checkpoint = CHECKPOINTS.includes(i);
           if (checkpoint) m0 = await snap(cdp, page);
-          await send(page);
-          await waitSettled(panel, i);
+          /* --mix queue probe: turn 6 runs slow, then an attachment send
+             queues as the next prompt (attachments can't steer) — the
+             `data-queued` tray stays up for the rest of the turn. The
+             queued message becomes turn 7, so sends after i=6 land on
+             card i+1; the extra card is waited on before shots. */
+          if (MIXED && shotsDir && i === 6) {
+            await send(page, "slow:100 md: blocks");
+            const png = path.join(
+              process.env.TMPDIR ?? "/tmp",
+              "lilos-bench-queue.png",
+            );
+            await Bun.write(
+              png,
+              Buffer.from(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+                "base64",
+              ),
+            );
+            await page
+              .locator("[data-thread-panel]")
+              .locator('input[type="file"]')
+              .last()
+              .setInputFiles(png);
+            await send(page, "queued next prompt");
+            const q = page.locator("[data-queued]").first();
+            await expect(q).toBeAttached({ timeout: 15_000 });
+            await quiet(page);
+            await q.screenshot({
+              path: path.join(shotsDir, "queued-light.png"),
+            });
+            await page.emulateMedia({ colorScheme: "dark" });
+            await quiet(page);
+            await q.screenshot({
+              path: path.join(shotsDir, "queued-dark.png"),
+            });
+            await page.emulateMedia({ colorScheme: "light" });
+          } else {
+            await send(page, promptFor(i));
+          }
+          /* --mix: after the queued send, card index = send index + 1 —
+             wait for the CURRENT send's card, not the one already done. */
+          await waitSettled(panel, i + (MIXED && shotsDir && i > 6 ? 1 : 0));
+          /* The i=6 queued send runs as its own turn (card 7) right behind
+             turn 6 — let it finish so send 7 doesn't steer into it. */
+          if (MIXED && shotsDir && i === 6) await waitSettled(panel, 7);
           await quiet(page);
           if (checkpoint) {
             const w = between(m0, await snap(cdp, page));
@@ -280,7 +336,10 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
           }
           if (shotsDir && i === 50 && !shot50) {
             shot50 = true;
-            await takeShots(page, shotsDir);
+            /* --mix added one turn (the queued prompt) — the last send's
+               card is TURNS+1; wait for it before capturing. */
+            if (MIXED) await waitSettled(panel, TURNS + 1);
+            await takeShots(page, shotsDir, MIXED);
           }
         }
         if (shotsDir && !shot50) await takeShots(page, shotsDir);
@@ -297,8 +356,11 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
   return out;
 }
 
-/** 1288×900 50-turn shots, light + dark — cursor parked: hover styles off. */
-async function takeShots(page: Page, dir: string) {
+/** 1288×900 50-turn shots, light + dark — cursor parked: hover styles off.
+   `mix` adds element-scoped shots of the plan/subagents/steps blocks on
+   mid-thread cards (they ride held stubs — scrolling them into view
+   exercises the remount path the AC cares about). */
+async function takeShots(page: Page, dir: string, mix = false) {
   mkdirSync(dir, { recursive: true });
   await page.mouse.move(0, 0);
   const scrollBottom = () =>
@@ -321,6 +383,17 @@ async function takeShots(page: Page, dir: string) {
     );
   await scrollBottom();
   await twoFrames();
+  /* The feed can keep delivering a turn's deltas after its settled marker
+     fires (the idle sweep phases it done before the last deltas land, or
+     the wire just lags): the capture must also wait for the last card's
+     text to stop growing, else the shot catches a mid-stream render. */
+  const lastCard = page.locator("[data-thread-panel] [data-agentturn]").last();
+  for (let n = 0, last = -1, stable = 0; n < 80 && stable < 3; n++) {
+    const len = (await lastCard.textContent())?.length ?? 0;
+    stable = len > 0 && len === last ? stable + 1 : 0;
+    last = len;
+    await page.waitForTimeout(150);
+  }
   /* #430 diagnostics: held stubs + scroller extent vs the sum of row
      heights — a mismatch means held rows hold stale measurements. */
   const pane = () =>
@@ -339,6 +412,18 @@ async function takeShots(page: Page, dir: string) {
         ),
         msgs: rows.length,
         held,
+        tail: rows.slice(-4).map((el) => ({
+          k: el.hasAttribute("data-agentturn")
+            ? "agent"
+            : el.hasAttribute("data-userturn")
+              ? "user"
+              : "?",
+          h: Math.round(el.getBoundingClientRect().height),
+          stub:
+            !!el.querySelector("[data-held-stub]") ||
+            el.hasAttribute("data-held-stub"),
+          t: (el.textContent ?? "").replace(/\s+/g, " ").slice(-60),
+        })),
       };
     });
   console.log("    pane:", await pane());
@@ -364,25 +449,75 @@ async function takeShots(page: Page, dir: string) {
       },
       { timeout: 15_000 },
     );
-  await page.evaluate(() => {
-    const rows = [...document.querySelectorAll("[data-msg]")];
-    rows[rows.length - 1]?.scrollIntoView({ block: "end" });
-  });
+  const anchorEnd = () =>
+    page.evaluate(() => {
+      const rows = [...document.querySelectorAll("[data-msg]")];
+      rows[rows.length - 1]?.scrollIntoView({ block: "end" });
+    });
+  await anchorEnd();
+  await settleVisible().catch(() => {});
+  /* Remounted rows hold real heights now — the extent shifted, so the
+     anchor slid; align again, then settle once more. */
+  await anchorEnd();
   await settleVisible().catch(() => {});
   await twoFrames();
   console.log("    pane:", await pane());
   await page.screenshot({ path: path.join(dir, "thread-50-light.png") });
   await page.emulateMedia({ colorScheme: "dark" });
   await quiet(page);
-  await page.evaluate(() => {
-    const rows = [...document.querySelectorAll("[data-msg]")];
-    rows[rows.length - 1]?.scrollIntoView({ block: "end" });
-  });
+  await anchorEnd();
+  await settleVisible().catch(() => {});
+  await anchorEnd();
   await settleVisible().catch(() => {});
   await twoFrames();
   await page.screenshot({ path: path.join(dir, "thread-50-dark.png") });
   await page.emulateMedia({ colorScheme: "light" });
   console.log(`    shots → ${dir}/thread-50-{light,dark}.png`);
+
+  if (mix) {
+    /* Element-scoped shots — deterministic surfaces: scoped to the block,
+       immune to scroll drift. The last instance of each kind lives in the
+       last few turns (mix cycle); rows above the viewport hold as stubs,
+       so walk the scroller up in nudges until a mounted instance shows. */
+    const targets: { sel: string; name: string; expand?: boolean }[] = [
+      { sel: "[data-plan]", name: "plan" },
+      /* With a Workbench the card carries a link to its Subagents tab —
+         that line is the on-thread subagents surface (#317). */
+      { sel: "[data-subagents-link]", name: "subagents" },
+      { sel: "[data-tasksteps]", name: "steps", expand: true },
+    ];
+    for (const { sel, name, expand } of targets) {
+      const el = page.locator(`[data-thread-panel] ${sel}`).last();
+      for (let n = 0; n < 12 && !(await el.count()); n++) {
+        await page.evaluate(() => {
+          const sc = [
+            ...document.querySelectorAll("[data-thread-panel] *"),
+          ].find((x) => x.scrollHeight > x.clientHeight + 4);
+          sc?.scrollBy({ top: -400 });
+        });
+        await twoFrames();
+      }
+      await el.scrollIntoViewIfNeeded();
+      await twoFrames();
+      /* Expand the collapsible Task block (its trigger row) so the shot
+         covers contents, not just the header. */
+      if (expand)
+        await el
+          .locator("[class*=cursor-pointer]")
+          .first()
+          .click()
+          .catch(() => {});
+      await twoFrames();
+      await el.scrollIntoViewIfNeeded();
+      await el.screenshot({ path: path.join(dir, `${name}-light.png`) });
+      await page.emulateMedia({ colorScheme: "dark" });
+      await el.screenshot({ path: path.join(dir, `${name}-dark.png`) });
+      await page.emulateMedia({ colorScheme: "light" });
+    }
+    console.log(
+      `    shots → ${dir}/{plan,subagents,steps,queued}-{light,dark}.png`,
+    );
+  }
 }
 
 async function main() {
