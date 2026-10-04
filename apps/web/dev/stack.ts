@@ -145,8 +145,8 @@ relayProc.exited.then((code) => {
         (relayUp
           ? ""
           : ` before port ${RELAY_PORT} was ours` +
-              (foreign !== undefined ? ` — /healthz answers ${foreign}` : "") +
-              ` (ours ${relayInstance ?? "never logged"})`),
+            (foreign !== undefined ? ` — /healthz answers ${foreign}` : "") +
+            ` (ours ${relayInstance ?? "never logged"})`),
     );
     void shutdown(1);
   }
