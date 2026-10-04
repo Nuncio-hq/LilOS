@@ -8,7 +8,7 @@
 # Default (this VM): no signed-in LLM — hermes is pointed at a deterministic
 # OpenAI-compatible stub (scripts/live/openai-stub.ts) and the run is labeled
 # "stub". STUB_SCRIPT scripts one real `terminal` tool call
-# (`env | grep '^LILOS_' | sort; echo LILOS412_PWD=$PWD`) — its output is the
+# (`env | grep LILOS_ | sort; echo LILOS412_PWD=$PWD`) — its output is the
 # agent-shell env under test. To rerun against a real model on Oscar's Mac:
 #
 #   HERMES_PROVIDER=<named provider slug> \
