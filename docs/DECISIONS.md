@@ -207,6 +207,21 @@ PR does not exist.
   token, via `packages/engine-hermes`), crash restart with bounded backoff,
   conversation↔session binding, final-answer posts, and ask relaying.
   Not: the app or relay calling an engine directly. — #26 · PR #48
+- **D-#482 The Hermes adapter owns its `hermes serve` child's lifetime;
+  the harness watches the adapter, never the child.** The adapter's backend
+  supervisor watches both the child exit and the gateway socket; either
+  loss fails every in-flight and new engine call fast with typed
+  `BACKEND_DOWN` (-32006 → app `engine_unavailable`), then relaunches with
+  capped backoff and swaps in the new gateway — stored sessions lazily
+  `session.resume` on next touch (a completed dead turn first emits
+  `turn.completed{refusal}`; a turn the restarted backend finishes
+  server-side completes as a leg under D-#308). `describe()` carries
+  `backend.{state,detail}` with a short post-flap exposure so a sub-second
+  restart still registers. The harness side only probes `describe` (2s /
+  1.5s): a coded answer keeps the adapter alive on reported state, dead
+  air twice restarts the adapter process. Not: the harness watching the
+  hermes child itself, requests queueing on a dead socket, or per-request
+  waits bounded by nothing. — #482
 - **D-#36 The agent gateway is the one agent surface.** Every engine
   session gets a gateway scope bound to its employee/thread; its tool
   calls reach LilOS through one endpoint and the scope resolves the
