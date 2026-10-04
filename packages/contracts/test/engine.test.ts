@@ -46,6 +46,8 @@ describe("engine wire contract", () => {
       "session.rewind",
       "jobs.list",
       "jobs.stop",
+      "approvals.setPolicy",
+      "session.setAccess",
     ]);
     for (const [name, m] of Object.entries(ENGINE_METHODS)) {
       expect(m.doc.length, name).toBeGreaterThan(0);
@@ -62,6 +64,12 @@ describe("engine wire contract", () => {
     expect(ENGINE_METHODS["session.setHidden"].capability).toBe("session_meta");
     expect(ENGINE_METHODS["jobs.list"].capability).toBe("background_jobs");
     expect(ENGINE_METHODS["jobs.stop"].capability).toBe("background_jobs");
+    expect(ENGINE_METHODS["approvals.setPolicy"].capability).toBe(
+      "approval_policy",
+    );
+    expect(ENGINE_METHODS["session.setAccess"].capability).toBe(
+      "approval_policy",
+    );
   });
 
   test("AC-4 the protocol has no profile-delete method", () => {

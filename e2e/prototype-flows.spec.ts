@@ -115,7 +115,7 @@ test("Approval card: Allow once resolves the confirmation in the thread", async 
   await expect(
     panel.getByText("Approval needed · only Oscar can answer"),
   ).toBeVisible();
-  await panel.getByRole("button", { name: "Allow once" }).click();
+  await panel.getByRole("button", { name: "Once", exact: true }).click();
   await expect(panel.getByText("Allowed once by Oscar")).toBeVisible();
   expect(errors).toEqual([]);
 });

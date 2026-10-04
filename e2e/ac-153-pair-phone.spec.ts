@@ -1,11 +1,9 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
-import { createServer } from "node:net";
-import os, { tmpdir } from "node:os";
+import { mkdirSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { bootStack, pickPorts } from "./helpers/stack";
 
 /**
  * Issue #153 — Pair phone in the real app (relay + harness + vite,
@@ -19,23 +17,8 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "..");
-const webDir = path.join(repo, "apps", "web");
 const SHOTS = path.join(repo, "test-results", "ac153");
 mkdirSync(SHOTS, { recursive: true });
-
-const freePort = () =>
-  new Promise<number>((resolve, reject) => {
-    const s = createServer();
-    s.once("error", reject);
-    s.listen(0, "127.0.0.1", () => {
-      const addr = s.address();
-      s.close(() =>
-        typeof addr === "object" && addr
-          ? resolve(addr.port)
-          : reject(new Error("no port")),
-      );
-    });
-  });
 
 /** Physical-interface IPv4 first: tunnel/virtual ifaces (utun, awdl, llw,
     bridge) on a dev Mac can blackhole connects instead of refusing. */
@@ -49,104 +32,6 @@ function lanAddress(): string | undefined {
     }
   }
   return physical[0] ?? other[0];
-}
-
-async function waitForHttp(url: string, tries = 300) {
-  for (let i = 0; i < tries; i++) {
-    const ok = await fetch(url, { signal: AbortSignal.timeout(1_000) })
-      .then((r) => r.status > 0)
-      .catch(() => false);
-    if (ok) return;
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error(`${url} never came up`);
-}
-
-function killProc(proc: ChildProcess): Promise<void> {
-  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
-    try {
-      if (proc.pid) process.kill(-proc.pid, sig);
-    } catch {
-      try {
-        proc.kill(sig);
-      } catch {}
-    }
-  };
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      killGroup("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    killGroup("SIGTERM");
-  });
-}
-
-interface Stack {
-  home: string;
-  webUrl: string;
-  relayWs: string;
-  relayToken: string;
-  stop: () => Promise<void>;
-}
-
-async function bootStack(
-  tag: string,
-  extraEnv: Record<string, string> = {},
-): Promise<Stack> {
-  const [relay, feed, web] = await Promise.all([
-    freePort(),
-    freePort(),
-    freePort(),
-  ]);
-  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
-  const leakTag = engineTag(tag);
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: webDir,
-    detached: true,
-    env: {
-      ...process.env,
-      LILOS_HOME: home,
-      LILOS_ENGINE_TAG: leakTag,
-      LILOS_RELAY_PORT: String(relay),
-      LILOS_FEED_PORT: String(feed),
-      LILOS_WEB_PORT: String(web),
-      ...extraEnv,
-    },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  const webUrl = `http://127.0.0.1:${web}`;
-  try {
-    await waitForHttp(webUrl);
-    await waitForHttp(`http://127.0.0.1:${relay}/`);
-    await waitForHttp(`http://127.0.0.1:${feed}/`);
-    const tokenPath = path.join(home, "relay-token");
-    let relayToken = "";
-    for (let i = 0; i < 300 && !relayToken; i++) {
-      try {
-        relayToken = readFileSync(tokenPath, "utf8").trim();
-      } catch {}
-      if (!relayToken) await new Promise((r) => setTimeout(r, 100));
-    }
-    if (!relayToken)
-      throw new Error(`relay token never appeared at ${tokenPath}`);
-    return {
-      home,
-      webUrl,
-      relayWs: `ws://127.0.0.1:${relay}/ws`,
-      relayToken,
-      stop: async () => {
-        await killProc(proc);
-        await expectNoEngineLeak(leakTag);
-      },
-    };
-  } catch (e) {
-    proc.kill("SIGKILL");
-    throw e;
-  }
 }
 
 function watchConsole(page: Page) {
@@ -178,7 +63,7 @@ test("AC-1/AC-6 Tailscale down → Pair phone says so, no QR", async ({
   page,
 }) => {
   // No tailscaled: the honest "not installed" probe failure.
-  const stack = await bootStack("153down", {
+  const stack = await bootStack("153down", await pickPorts(), {
     LILOS_TAILSCALE_BIN: "/nonexistent-tailscale-bin",
   });
   try {
@@ -200,7 +85,7 @@ test("AC-2/AC-4/AC-6 grant shows a QR, exchange pairs, revoke drops it", async (
 }) => {
   const lan = lanAddress();
   test.skip(!lan, "no LAN address for the tailnet-bind stand-in");
-  const stack = await bootStack("153up", {
+  const stack = await bootStack("153up", await pickPorts(), {
     LILOS_RELAY_TAILSCALE_IP: lan,
     LILOS_RELAY_TAILSCALE_NAME: "mac.tailnet.test",
   });
@@ -263,7 +148,7 @@ test("AC-2/AC-4/AC-6 grant shows a QR, exchange pairs, revoke drops it", async (
 test("AC-2 dialog refreshes the code after expiry", async ({ page }) => {
   const lan = lanAddress();
   test.skip(!lan, "no LAN address for the tailnet-bind stand-in");
-  const stack = await bootStack("153ttl", {
+  const stack = await bootStack("153ttl", await pickPorts(), {
     LILOS_RELAY_TAILSCALE_IP: lan,
     LILOS_RELAY_TAILSCALE_NAME: "mac.tailnet.test",
     LILOS_PAIRING_TTL_MS: "2500",

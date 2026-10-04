@@ -281,6 +281,121 @@ describe("workspace harness", () => {
     conn.close();
   });
 
+  it("AC-2 Full access: the harness auto-answers approvals engine-neutrally, no card (#106)", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+        access: "full",
+      });
+
+      // The scripted turn asks patch + write_file + git commit — under Full
+      // access every one is answered `once` by the harness itself.
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+      }, "auto-approved answer");
+
+      // No approval card ever opened for the user.
+      const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+        conversationId: conversation.id,
+      });
+      expect(asks).toHaveLength(0);
+
+      const responds = w.engineCalls.filter(
+        (c) => c.method === "request.respond",
+      );
+      expect(responds.length).toBeGreaterThanOrEqual(3);
+      expect(
+        responds.every(
+          (c) => (c.params as { outcome: string }).outcome === "once",
+        ),
+      ).toBe(true);
+
+      // ...and each auto-answer is logged in the turn as a system note.
+      const { messages } = await listConvMessages(w.user, channel.id);
+      expect(
+        messages.some(
+          (m) => m.authorKind === "system" && /Auto-approved/.test(m.text),
+        ),
+      ).toBe(true);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("AC-1 a mid-turn switch to Full access applies from the next approval (#106)", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+      });
+      const ask = await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks.find((a) => a.request.kind === "approval");
+      }, "first approval ask");
+
+      // Flip the pill while the turn is parked on the card — the relay row
+      // writes and `conversation.updated` refreshes the live binding.
+      const { conversation: updated } = await w.user.request<{
+        conversation: { id: string; access: string };
+      }>("conversations.setAccess", {
+        conversationId: conversation.id,
+        access: "full",
+      });
+      expect(updated.access).toBe("full");
+
+      // Answer the already-open card; the turn's NEXT approval must route
+      // through autoApprove — no second card ever opens.
+      await w.user.request("asks.respond", { askId: ask.id, outcome: "once" });
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+      }, "answer after mid-turn switch");
+
+      const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+        conversationId: conversation.id,
+      });
+      expect(asks).toHaveLength(1);
+      const { messages } = await listConvMessages(w.user, channel.id);
+      expect(
+        messages.some(
+          (m) => m.authorKind === "system" && /Auto-approved/.test(m.text),
+        ),
+      ).toBe(true);
+
+      // The declared approval_policy capability got the live-session hint.
+      await waitFor(
+        () =>
+          w.engineCalls.find(
+            (c) =>
+              c.method === "session.setAccess" &&
+              (c.params as { access: string }).access === "full",
+          ),
+        "session.setAccess hint",
+      );
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("AC-5 rebinds the conversation when the engine rotates the session ref", async () => {
     const w = await setupWorld();
     try {

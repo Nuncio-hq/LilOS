@@ -1,16 +1,10 @@
-import { type ChildProcess, execSync, spawn } from "node:child_process";
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { execSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { bootStack, type Stack } from "./helpers/stack";
 import { wport } from "./ports";
 
 /**
@@ -24,100 +18,6 @@ import { wport } from "./ports";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
-const webDir = path.join(repo, "apps", "web");
-
-interface Stack {
-  home: string;
-  webUrl: string;
-  /* Whether this stack's recents already hold the fixture repo — lives on
-     the stack so it stays true however beforeAll/repeats are scheduled. */
-  repoAdded: boolean;
-  stop: () => Promise<void>;
-}
-
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    const ok = await fetch(url)
-      .then((r) => r.ok || r.status === 404)
-      .catch(() => false);
-    if (ok) return;
-    if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
-function killProc(proc: ChildProcess): Promise<void> {
-  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
-    try {
-      if (proc.pid) process.kill(-proc.pid, sig);
-    } catch {
-      try {
-        proc.kill(sig);
-      } catch {}
-    }
-  };
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      killGroup("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    killGroup("SIGTERM");
-  });
-}
-
-async function bootStack(
-  tag: string,
-  ports: { relay: number; feed: number; web: number },
-): Promise<Stack> {
-  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
-  const leakTag = engineTag(tag);
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: webDir,
-    detached: true,
-    env: {
-      ...process.env,
-      LILOS_HOME: home,
-      LILOS_ENGINE_TAG: leakTag,
-      LILOS_RELAY_PORT: String(ports.relay),
-      LILOS_FEED_PORT: String(ports.feed),
-      LILOS_WEB_PORT: String(ports.web),
-    },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  const webUrl = `http://127.0.0.1:${ports.web}`;
-  try {
-    await waitForHttp(webUrl);
-    await waitForHttp(`http://127.0.0.1:${ports.relay}/`);
-    await waitForHttp(`http://127.0.0.1:${ports.feed}/`);
-    const tokenPath = path.join(home, "relay-token");
-    for (let i = 0; i < 300; i++) {
-      try {
-        readFileSync(tokenPath, "utf8");
-        break;
-      } catch {
-        await new Promise((r) => setTimeout(r, 100));
-      }
-    }
-    return {
-      home,
-      webUrl,
-      repoAdded: false,
-      stop: async () => {
-        await killProc(proc);
-        await expectNoEngineLeak(leakTag);
-      },
-    };
-  } catch (e) {
-    proc.kill("SIGKILL");
-    throw e;
-  }
-}
 
 const SHOTS = path.join(repo, "test-results", "ac-105");
 
@@ -149,14 +49,17 @@ writeFileSync(path.join(repoDir, "untracked.ts"), "export {}\n");
 writeFileSync(path.join(repoDir, "secret.env"), "TOKEN=x\n");
 writeFileSync(path.join(repoDir, "logs", "debug.log"), "log\n");
 
-let stack: Stack;
+let stack: Stack & { repoAdded: boolean };
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac105", {
-    relay: wport(4818),
-    feed: wport(4819),
-    web: wport(5322),
-  });
+  stack = {
+    ...(await bootStack("ac105", {
+      relay: wport(4818),
+      feed: wport(4819),
+      web: wport(5322),
+    })),
+    repoAdded: false,
+  };
 });
 test.afterAll(async () => {
   await stack?.stop();

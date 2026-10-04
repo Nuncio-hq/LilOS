@@ -6,6 +6,7 @@ import {
   WorkbenchOpenTarget,
 } from "../app/domain.js";
 import { MessageSearchHit, StatusComponent } from "../app/wire.js";
+import { ConversationAccess } from "../engine/approvals.js";
 import { ForgePrListItem } from "../host/forge.js";
 
 /**
@@ -187,6 +188,9 @@ export const ContextResult = z.object({
     state: ConversationState,
     /** The pinned model when the conversation carries one. */
     model: z.string().optional(),
+    /** The thread's access level (#106) — `ask` = risky actions raise an
+        approval card to the user; `full` = the harness auto-approves. */
+    access: ConversationAccess,
   }),
   /** The session's working folder; `branch` when it is a workstream. */
   folder: z
@@ -282,7 +286,12 @@ export const ThreadReadParams = z.strictObject({
 export type ThreadReadParams = z.infer<typeof ThreadReadParams>;
 export const ThreadReadResult = z.object({
   /** The thread that was read — the session's own unless `thread` named one. */
-  thread: z.object({ id: z.string().min(1), title: z.string() }),
+  thread: z.object({
+    id: z.string().min(1),
+    title: z.string(),
+    /** The thread's access level (#106) — `ask` = approvals reach the user. */
+    access: ConversationAccess,
+  }),
   messages: z.array(AppMessage),
 });
 export type ThreadReadResult = z.infer<typeof ThreadReadResult>;
@@ -294,6 +303,8 @@ export const ThreadListItem = z.object({
   title: z.string(),
   state: ConversationState,
   archived: z.boolean(),
+  /** The thread's access level (#106). */
+  access: ConversationAccess,
   /** Epoch ms of the newest message, when the thread has one. */
   lastActivity: z.int().min(0).optional(),
   /** Pull requests linked to the thread (conversations.prs). */

@@ -1,17 +1,16 @@
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, expect, type Page, test } from "@playwright/test";
-import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { bootStack } from "./helpers/stack";
 import { wport } from "./ports";
 
 /**
  * Issue #132 — Settings (⌘,): one place for profile, editors, models,
  * status, updates. AC-1 ⌘, opens Settings and Service Status stays its own
  * menu item; AC-2 the prototype's SettingsView renders General, Editors,
- * Models, Status and About with real data (Approvals stays hidden until
+ * Models, Approvals, Status and About with real data (#106 landed the
+ * Approvals section: Smart/Manual/Off policy + the default access).
  * #106); AC-3 edits apply live across open windows; AC-4 About shows real
  * versions and the update control only exists on the desktop build;
  * AC-5 the sidebar's gear entry point opens the same screen.
@@ -19,98 +18,18 @@ import { wport } from "./ports";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
-const webDir = path.join(repo, "apps", "web");
 const desktopDir = path.join(repo, "apps", "desktop");
 const FAKE_OS = path.join(here, "os-fake");
 const BUN = process.env.LILOS_BUN_BIN ?? "bun";
 
+/* Shared stack env (#118 pins the signed-in name; os.editors sees the
+   committed fake Cursor/Zed bundles for the Editors section). */
+const SETTINGS_ENV = {
+  LILOS_USER_NAME: "Test User",
+  LILOS_APP_DIRS: path.join(FAKE_OS, "Applications"),
+};
+
 const SHOTS = path.join(repo, "test-results", "ac-132");
-
-interface Stack {
-  home: string;
-  webUrl: string;
-  relayPort: number;
-  feedPort: number;
-  stop: () => Promise<void>;
-}
-
-async function waitForHttp(url: string, ms = 30_000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    const ok = await fetch(url)
-      .then((r) => r.ok || r.status === 404)
-      .catch(() => false);
-    if (ok) return;
-    if (Date.now() - start > ms)
-      throw new Error(`timed out waiting for ${url}`);
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
-
-function killProc(proc: ChildProcess): Promise<void> {
-  const killGroup = (sig: "SIGTERM" | "SIGKILL") => {
-    try {
-      if (proc.pid) process.kill(-proc.pid, sig);
-    } catch {
-      try {
-        proc.kill(sig);
-      } catch {}
-    }
-  };
-  return new Promise((resolve) => {
-    const t = setTimeout(() => {
-      killGroup("SIGKILL");
-      resolve();
-    }, 8_000);
-    proc.once("exit", () => {
-      clearTimeout(t);
-      resolve();
-    });
-    killGroup("SIGTERM");
-  });
-}
-
-async function bootStack(
-  tag: string,
-  ports: { relay: number; feed: number; web: number },
-): Promise<Stack> {
-  const home = mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
-  const leakTag = engineTag(tag);
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: webDir,
-    detached: true,
-    env: {
-      ...process.env,
-      LILOS_HOME: home,
-      LILOS_ENGINE_TAG: leakTag,
-      LILOS_RELAY_PORT: String(ports.relay),
-      LILOS_FEED_PORT: String(ports.feed),
-      LILOS_WEB_PORT: String(ports.web),
-      LILOS_USER_NAME: "Test User",
-      // os.editors sees the committed fake Cursor/Zed bundles (AC-2 Editors).
-      LILOS_APP_DIRS: path.join(FAKE_OS, "Applications"),
-    },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  const webUrl = `http://127.0.0.1:${ports.web}`;
-  try {
-    await waitForHttp(webUrl);
-    await waitForHttp(`http://127.0.0.1:${ports.relay}`);
-    return {
-      home,
-      webUrl,
-      relayPort: ports.relay,
-      feedPort: ports.feed,
-      stop: async () => {
-        await killProc(proc);
-        await expectNoEngineLeak(leakTag);
-      },
-    };
-  } catch (e) {
-    proc.kill("SIGKILL");
-    throw e;
-  }
-}
 
 /** The relay's LilOS-owned settings KV, straight from sqlite. */
 function storedSetting(home: string, key: string): unknown {
@@ -142,15 +61,19 @@ const openSettings = async (page: Page) => {
 
 test.describe.configure({ mode: "serial" });
 
-test("AC-1+AC-5 Settings opens via ⌘, and the sidebar gear; Approvals stays hidden", async ({
+test("AC-1+AC-5 Settings opens via ⌘, and the sidebar gear; Approvals listed", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  const stack = await bootStack("ac132a", {
-    relay: wport(4690),
-    feed: wport(4691),
-    web: wport(5372),
-  });
+  const stack = await bootStack(
+    "ac132a",
+    {
+      relay: wport(4690),
+      feed: wport(4691),
+      web: wport(5372),
+    },
+    SETTINGS_ENV,
+  );
   try {
     await page.addInitScript(() =>
       localStorage.setItem("lilos-onboarded", "1"),
@@ -170,11 +93,18 @@ test("AC-1+AC-5 Settings opens via ⌘, and the sidebar gear; Approvals stays hi
     await page.keyboard.press("Control+,");
     await expect(settingsDialog(page)).toBeVisible();
 
-    // Every section with real data is listed; Approvals is not (#106).
-    for (const name of ["General", "Editors", "Models", "Status", "About"]) {
+    // Every section with real data is listed — Approvals too since #106
+    // (the fake engine declares approval_policy).
+    for (const name of [
+      "General",
+      "Approvals",
+      "Editors",
+      "Models",
+      "Status",
+      "About",
+    ]) {
       await expect(tab(page, name)).toBeVisible();
     }
-    await expect(tab(page, "Approvals")).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/ac-1-sections.png` });
   } finally {
     await stack.stop();
@@ -183,11 +113,15 @@ test("AC-1+AC-5 Settings opens via ⌘, and the sidebar gear; Approvals stays hi
 
 test("AC-2 every section renders real data", async ({ page }) => {
   test.setTimeout(120_000);
-  const stack = await bootStack("ac132b", {
-    relay: wport(4692),
-    feed: wport(4693),
-    web: wport(5348),
-  });
+  const stack = await bootStack(
+    "ac132b",
+    {
+      relay: wport(4692),
+      feed: wport(4693),
+      web: wport(5348),
+    },
+    SETTINGS_ENV,
+  );
   try {
     await page.addInitScript(() =>
       localStorage.setItem("lilos-onboarded", "1"),
@@ -245,11 +179,15 @@ test("AC-3 edits in one window land live in another", async ({
   context,
 }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack("ac132c", {
-    relay: wport(4694),
-    feed: wport(4695),
-    web: wport(5349),
-  });
+  const stack = await bootStack(
+    "ac132c",
+    {
+      relay: wport(4694),
+      feed: wport(4695),
+      web: wport(5349),
+    },
+    SETTINGS_ENV,
+  );
   try {
     await context.addInitScript(() =>
       localStorage.setItem("lilos-onboarded", "1"),
@@ -300,11 +238,15 @@ test("screenshots: the AC matrix (light + dark, 1288 / 900 / 1440)", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  const stack = await bootStack("ac132shots", {
-    relay: wport(4700),
-    feed: wport(4701),
-    web: wport(5359),
-  });
+  const stack = await bootStack(
+    "ac132shots",
+    {
+      relay: wport(4700),
+      feed: wport(4701),
+      web: wport(5359),
+    },
+    SETTINGS_ENV,
+  );
   try {
     await page.setViewportSize({ width: 1288, height: 700 });
     await page.addInitScript(() =>
@@ -339,11 +281,15 @@ test("AC-4 on plain web the update control does not render", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  const stack = await bootStack("ac132d", {
-    relay: wport(4696),
-    feed: wport(4697),
-    web: wport(5350),
-  });
+  const stack = await bootStack(
+    "ac132d",
+    {
+      relay: wport(4696),
+      feed: wport(4697),
+      web: wport(5350),
+    },
+    SETTINGS_ENV,
+  );
   try {
     await page.addInitScript(() =>
       localStorage.setItem("lilos-onboarded", "1"),
@@ -364,11 +310,15 @@ test("AC-4 on plain web the update control does not render", async ({
 
 test("AC-1 the desktop menu opens Settings on ⌘, and Service Status stays", async () => {
   test.setTimeout(180_000);
-  const stack = await bootStack("ac132e", {
-    relay: wport(4698),
-    feed: wport(4817),
-    web: wport(5352),
-  });
+  const stack = await bootStack(
+    "ac132e",
+    {
+      relay: wport(4698),
+      feed: wport(4817),
+      web: wport(5352),
+    },
+    SETTINGS_ENV,
+  );
   let app: Awaited<ReturnType<typeof _electron.launch>> | undefined;
   try {
     const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
@@ -389,8 +339,8 @@ test("AC-1 the desktop menu opens Settings on ⌘, and Service Status stays", as
       env: {
         ...process.env,
         LILOS_RELAY_HOME: stack.home,
-        LILOS_RELAY_PORT: String(stack.relayPort),
-        LILOS_FEED_PORT: String(stack.feedPort),
+        LILOS_RELAY_PORT: String(stack.ports.relay),
+        LILOS_FEED_PORT: String(stack.ports.feed),
         LILOS_WEB_URL: stack.webUrl,
       },
     });

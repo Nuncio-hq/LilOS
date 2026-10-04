@@ -207,6 +207,9 @@ export function liveTurnReply(
           note:
             shown.request.description ??
             "The employee is asking before it runs this.",
+          /* #106 AC-4: the card's buttons follow the options the engine
+             offered, not a fixed set. */
+          options: shown.request.options,
         }
       : undefined;
   return {

@@ -6,10 +6,14 @@ import {
   type SessionModel,
 } from "@lilos/client-runtime";
 import type { Ask, WorkbenchOpenTarget } from "@lilos/contracts/app";
-import type { ModelOption, ModelProvider } from "@lilos/contracts/engine";
+import type {
+  ConversationAccess,
+  ModelOption,
+  ModelProvider,
+} from "@lilos/contracts/engine";
 import type { ModelVisibility } from "@lilos/ui";
 import { atom, computed, type ReadableAtom } from "nanostores";
-import { defaultEditor } from "../settings/state";
+import { defaultAccess, defaultEditor } from "../settings/state";
 import type { LilosConfig } from "./config";
 import { initConnect } from "./connect";
 import { hostUser, initHost } from "./host";
@@ -88,6 +92,14 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
       if (typeof r.value === "string") defaultEditor.set(r.value);
     })
     .catch(() => {});
+  /* #106 AC-3: the access level new conversations open on — LilOS KV,
+     seeded + followed like defaultEditor. */
+  void relay
+    .request<{ value: unknown }>("settings.get", { key: "defaultAccess" })
+    .then((r) => {
+      if (r.value === "ask" || r.value === "full") defaultAccess.set(r.value);
+    })
+    .catch(() => {});
   relay.onEvent((method, params) => {
     if (method !== "settings.changed") return;
     const { key, value } = params as { key?: string; value?: unknown };
@@ -98,6 +110,11 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
     }
     if (key === "defaultEditor") {
       defaultEditor.set(typeof value === "string" ? value : null);
+    }
+    if (key === "defaultAccess") {
+      defaultAccess.set(
+        (value as ConversationAccess | undefined) === "full" ? "full" : "ask",
+      );
     }
   });
   // #339: the Connect approval flag + its settings.changed follow-up.

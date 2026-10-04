@@ -125,8 +125,11 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
   test("AC-1 always -> allow_always, once -> allow_once (never the session-scope option)", async () => {
     const r = rig();
     const pending = r.permission(HERMES_FULL);
+    // #106: the session grant is a real protocol outcome — `allow_session`
+    // offers "session" by optionId (its kind alone would still misread).
     expect(approvalRequest(r.ask().request).options).toEqual([
       "once",
+      "session",
       "always",
       "deny",
     ]);
@@ -137,6 +140,13 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
     const pending2 = r2.permission(HERMES_FULL);
     r2.respond("once");
     expect(selected(await pending2)).toBe("allow_once");
+  });
+
+  test("#106 AC-4 'session' answers the session-scope option id", async () => {
+    const r = rig();
+    const pending = r.permission(HERMES_FULL);
+    r.respond("session");
+    expect(selected(await pending)).toBe("allow_session");
   });
 
   test("AC-2 deny prefers the plain `deny` id over deny_always", async () => {
@@ -150,7 +160,9 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
     const r = rig();
     const pending = r.permission(HERMES_NO_PERMANENT);
     const request = approvalRequest(r.ask().request);
-    expect(request.options).toEqual(["once", "deny"]);
+    /* The session grant is still offerable — Hermes withholds the
+       PERMANENT allow only. */
+    expect(request.options).toEqual(["once", "session", "deny"]);
     // A client that answers "always" anyway is rejected, not downgraded.
     expect(
       resolveOutcomeValid(
@@ -195,7 +207,11 @@ describe("engine-hermes ACP permission mapping (#133)", () => {
       opt("allow_session", "allow_always", "Allow for session"),
       opt("deny", "reject_once", "Deny"),
     ]);
-    expect(approvalRequest(r.ask().request).options).toEqual(["once", "deny"]);
+    expect(approvalRequest(r.ask().request).options).toEqual([
+      "once",
+      "session",
+      "deny",
+    ]);
     r.respond("always"); // invalid for the offered set; the pick must not land on it
     // (a real client can't send this — resolveOutcomeValid rejects it — but
     // the pick must still fail closed if it somehow did).
