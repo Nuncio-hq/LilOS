@@ -349,6 +349,15 @@ export class EngineSupervisor {
     conn.onClose?.((reason) => {
       if (this.stopping) return;
       this.opts.log.warn("engine socket dropped", { reason });
+      /* Retire the dead socket + its probe before the recovery arms — a
+         probe that keeps ticking on a conn that can't answer accumulates
+         dead-air misses and kills a healthy adapter mid-reconnect. A
+         stale conn's drop touches nothing (a newer conn already owns
+         state.conn and its probe). */
+      if (this.state.conn === conn) {
+        this.state.conn = undefined;
+        this.stopProbe();
+      }
       if (this.procAlive && this.launched?.url) {
         void this.reconnect(this.launched.url);
       } else if (!this.starting) {

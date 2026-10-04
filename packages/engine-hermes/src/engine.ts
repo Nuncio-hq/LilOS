@@ -248,13 +248,16 @@ export class HermesEngine {
     );
     for (const s of this.sessions.values()) {
       if (s.driver !== "ws") continue;
+      /* Hoisted above the settle: nothing inside the try may strand the
+         caller's `done` — the reject lands in `finally` no matter which
+         step threw, or the hang #482 exists to break comes back. */
+      const turn = s.turn;
       /* One session's settle must never abort the rest — a throw here
          would strand every later session's `done` (the hang #482 exists
          to fix) and skip the supervisor's relaunch arming. */
       try {
         s.backendDead = true;
         cancelAllAsks(s);
-        const turn = s.turn;
         s.turn = undefined;
         s.legTurnId = undefined;
         s.steeredQueue = [];
@@ -268,24 +271,31 @@ export class HermesEngine {
         for (const job of s.jobs.values()) this.emitJobExited(s, job, "failed");
         if (turn) {
           /* Same event order as a normal turn end: turn.completed (refusal +
-             the typed error text) lands BEFORE the prompt() `done` rejects —
-             but a throwing listener must never skip the reject, or the very
-             hang this settle exists to break comes back. */
-          try {
-            s.emit("turn.completed", {
-              turnId: turn.turnId,
-              stopReason: "refusal",
-              error: down.message,
-            });
-            if (s.state !== "closed") s.setState("error");
-          } finally {
-            turn.reject(down);
-          }
+             the typed error text) lands BEFORE the prompt() `done` rejects. */
+          s.emit("turn.completed", {
+            turnId: turn.turnId,
+            stopReason: "refusal",
+            error: down.message,
+          });
+          if (s.state !== "closed") s.setState("error");
         }
       } catch (e) {
         this.opts.onLog?.(
           `markBackendDown: session ${s.id} settle threw (${e instanceof Error ? e.message : String(e)})`,
         );
+      } finally {
+        /* A settle throw above can have skipped the error state or the
+           refusal emit — the state flip and the caller's reject still land. */
+        if (turn && s.state !== "closed" && s.state !== "error") {
+          try {
+            s.setState("error");
+          } catch (e) {
+            this.opts.onLog?.(
+              `markBackendDown: session ${s.id} error-state emit threw (${e instanceof Error ? e.message : String(e)})`,
+            );
+          }
+        }
+        turn?.reject(down);
       }
     }
   }

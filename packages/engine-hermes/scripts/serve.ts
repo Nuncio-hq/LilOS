@@ -64,6 +64,7 @@ try {
     ...(arg("model") ? { model: arg("model") } : {}),
     ...(arg("sessions-file") ? { sessionsFile: arg("sessions-file") } : {}),
     onBackendNeeded: () => backend.kick(),
+    onLog: (line) => console.log(line),
     acp: {
       bin: arg("hermes-bin", process.env.HERMES_BIN ?? "hermes"),
       ...(acpArgs ? { args: acpArgs.split(" ").filter(Boolean) } : {}),

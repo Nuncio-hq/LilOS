@@ -78,6 +78,8 @@ function world(
     probeMissesBeforeRestart?: number;
     /** Per-conn responder overrides, in connect() order. */
     responders?: Array<(() => Promise<unknown>) | undefined>;
+    /** Per-conn gates connect() must await first, in connect() order. */
+    connectGates?: Array<Promise<void> | undefined>;
   } = {},
 ): World {
   const procs: ReturnType<typeof fakeProc>[] = [];
@@ -98,12 +100,14 @@ function world(
   };
   const supervisor = new EngineSupervisor({
     launcher,
-    connect: () => {
+    connect: async () => {
+      const gate = extra.connectGates?.[conns.length];
+      if (gate) await gate;
       const c = fakeConn();
       const responder = extra.responders?.[conns.length];
       if (responder) c.responder = responder;
       conns.push(c);
-      return Promise.resolve(c);
+      return c;
     },
     onConnection: (conn, reconnect) => connections.push({ conn, reconnect }),
     onState: (state, detail) => {
@@ -404,6 +408,44 @@ describe("#482 engine liveness probe", () => {
     for (let i = 0; i < 10 && w.procs.length < 2; i++) await tick();
     expect(w.procs).toHaveLength(2);
     expect(w.connections.at(-1)?.reconnect).toBe(false);
+    await w.supervisor.stop();
+  });
+
+  it("a socket drop retires the conn and stops the probe during reconnect", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const w = world({
+      probeIntervalMs: 5,
+      probeTimeoutMs: 20,
+      probeMissesBeforeRestart: 2,
+      responders: [() => Promise.resolve({}), () => Promise.resolve({})],
+      connectGates: [undefined, gate],
+    });
+    await w.supervisor.start();
+    await tick();
+    const calls = w.conns[0]?.requestCalls;
+    expect(calls).toBeGreaterThan(0); // probe ticking while running
+
+    /* The conn's own socket drops with reconnect's connect() held on the
+       gate. A probe still armed on the dead socket would miss twice and
+       kill the healthy adapter mid-reconnect — the drop must stop it. */
+    const c0 = w.conns[0];
+    if (!c0) throw new Error("conn missing");
+    c0.responder = () => Promise.reject(new Error("dead air"));
+    c0.drop("net drop");
+    await tick();
+    await tick();
+
+    expect(c0.requestCalls).toBe(calls);
+    expect(w.procs).toHaveLength(1); // adapter never killed for a socket drop
+
+    release();
+    for (let i = 0; i < 10 && w.conns.length < 2; i++) await tick();
+    expect(w.procs).toHaveLength(1);
+    expect(w.connections.at(-1)?.reconnect).toBe(true);
+    expect(w.states.at(-1)).toBe("running");
     await w.supervisor.stop();
   });
 

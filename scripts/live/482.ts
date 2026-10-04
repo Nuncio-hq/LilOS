@@ -234,10 +234,21 @@ try {
   await sleep(750);
   const pid = Number(await waitForFile(pidFile, 15_000));
   /* Never SIGKILL a pid we can't identity-check: a stale pid file plus pid
-     reuse would hit an unrelated process (on Oscar's Mac real engines run). */
-  const cmd = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
-    encoding: "utf8",
-  }).trim();
+     reuse would hit an unrelated process (on Oscar's Mac real engines run).
+     `ps` itself throws when the pid is already gone — that's a FAIL, not a
+     crash. */
+  let cmd = "";
+  try {
+    cmd = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
+      encoding: "utf8",
+    }).trim();
+  } catch (e) {
+    check(
+      false,
+      `pid ${pid} still running`,
+      `ps -p ${pid} failed — spawned hermes child already gone (${e instanceof Error ? e.message : String(e)})`,
+    );
+  }
   check(
     /hermes|bun/.test(cmd),
     `pid ${pid} is a hermes/bun child (command: ${cmd})`,

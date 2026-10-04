@@ -2037,18 +2037,44 @@ describe("engine-hermes #482: settle + heal invariants", () => {
   test("markBackendDown fails every in-flight turn typed even when a listener throws", async () => {
     const { gw, engine, h } = setup();
     const a = await start(h);
+    /* A running job on a — the settle's emitJobExited fires a job.exited
+       event the throwing listener will kill mid-settle, BEFORE a's own
+       refusal emit. The turn's reject must still land (finally). */
+    const proc = gw.pushProcess(gw.lastSid, {
+      command: "sleep 99",
+      tail: "",
+    });
+    /* The engine only learns the registry row when a frame names it — an
+       output chunk mints the tracked job before the kill. */
+    gw.emit(gw.lastSid, "agent.terminal.output", {
+      process_id: proc.id,
+      chunk: "x\n",
+    });
     const b = await start(h);
     const pa = promptAsync(h, a.sessionId, "hi");
     const pb = promptAsync(h, b.sessionId, "hi");
-    /* A listener that throws on a's refusal emit must not strand a's own
-       reject (it runs in `finally`) nor skip b's settle entirely. */
     engine.onEvent((e) => {
-      if (e.sessionId === a.sessionId && e.type === "turn.completed")
+      if (
+        e.sessionId === a.sessionId &&
+        (e.type === "turn.completed" || e.type === "job.exited")
+      )
         throw new Error("listener bug");
     });
     engine.markBackendDown("test kill");
     await expect(pa).rejects.toMatchObject({ code: -32006 });
     await expect(pb).rejects.toMatchObject({ code: -32006 });
+    /* a's own refusal emit was skipped by the early throw — the caller's
+       reject and the error state still landed from `finally`. The job row
+       was marked failed before its event emit threw, proving the loop ran. */
+    expect(
+      h.events.filter(
+        (e) => e.type === "turn.completed" && e.sessionId === a.sessionId,
+      ),
+    ).toHaveLength(0);
+    expect(engine.sessionFor(a.sessionId)?.jobs.get(proc.id)?.status).toBe(
+      "failed",
+    );
+    expect(engine.sessionFor(a.sessionId)?.state).toBe("error");
     const bRefusal = h.events.filter(
       (e) => e.type === "turn.completed" && e.sessionId === b.sessionId,
     );
