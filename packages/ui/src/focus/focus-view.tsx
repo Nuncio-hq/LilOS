@@ -351,10 +351,11 @@ export function FocusView({
   );
   const live = thread.replies.find((r) => r.live);
   const lastStep = live?.steps?.[live.steps.length - 1];
-  /* #420: parked on an open ask = WAITING, not working — the composer says
-     "waiting for your answer" and shows Send, not Stop (Hermes FIX #515).
-     Same phase the header's "needs you" reads. */
-  const waiting = running && live?.phase === "waiting";
+  /* #420: parked on an open QUESTION ask = WAITING, not working — the
+     composer says "waiting for your answer" and shows Send, not Stop
+     (Hermes FIX #515). Scoped to r.question, which only the question card
+     sets: approval/plan asks keep the steer composer. */
+  const waiting = running && live?.phase === "waiting" && !!live?.question;
   const status: ChatStatus = running
     ? waiting
       ? "ready"

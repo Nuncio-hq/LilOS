@@ -86,9 +86,13 @@ export function ThreadScreen({
   const [composerHeight, setComposerHeight] = useState(96);
   const [pillHeight, setPillHeight] = useState(0);
   const running = t.state === "working";
-  /* #420: parked on an open ask — the composer says waiting, no steer
-     copy and no stop (Hermes FIX #515). */
-  const waiting = t.state === "needs-you";
+  /* #420: parked on an open QUESTION ask — the composer says waiting, no
+     steer copy and no stop (Hermes FIX #515). Approval asks keep their
+     own flow (the sheet); scoped the same way the real model derives
+     entry.waiting — a live entry carrying a question ask. */
+  const waiting = t.entries.some(
+    (e) => e.kind === "agent" && e.live && e.approval?.kind === "question",
+  );
   // The background pill floats above the composer; keep the last turn clear of it.
   const pill =
     !!onOpenBackground && !!t.jobs?.some((j) => j.status === "running");

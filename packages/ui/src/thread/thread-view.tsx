@@ -248,11 +248,13 @@ export function ThreadView({
     const t = setTimeout(() => setFlash(null), 1800);
     return () => clearTimeout(t);
   }, [flash]);
-  /* #420: a live reply parked on an open ask is WAITING, not working —
-     the composer says "waiting for your answer" and shows Send, not Stop
-     (Hermes FIX #515). Same phase the header's "needs you" reads. */
+  /* #420: a live reply parked on an open QUESTION ask is WAITING, not
+     working — the composer says "waiting for your answer" and shows Send,
+     not Stop (Hermes FIX #515). Scoped to r.question, which only the
+     question card sets: approval/plan asks keep the steer composer. */
   const waiting =
-    running && thread.replies.some((r) => r.live && r.phase === "waiting");
+    running &&
+    thread.replies.some((r) => r.live && r.phase === "waiting" && r.question);
   const status: ChatStatus = running
     ? waiting
       ? "ready"
