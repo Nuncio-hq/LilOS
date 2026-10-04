@@ -11,20 +11,29 @@
 # fires a real `terminal` tool call (`sleep 371` in the background), and the
 # run is labeled "stub". To rerun against a real model on Oscar's Mac:
 #
-#   HERMES_PROVIDER=<named provider in hermes config> \
+#   HERMES_PROVIDER=<named provider slug> \
 #   HERMES_MODEL=<model> \
+#   [HERMES_BASE_URL=<provider base_url>] [HERMES_API_KEY=<key>] \
+#   [HERMES_API_MODE=<api_mode>] \
 #   bash scripts/live/346.sh
 #
+# HOME is isolated for the run (scratch dir): hermes config/state and every
+# LilOS write land there, never the real ~/.hermes or ~/.lilos. The provider
+# entry is written into the scratch config — HERMES_BASE_URL defaults to
+# the local HPC endpoint when unset. Nothing outside the spawned children
+# is signalled: the run's `hermes serve` is 346.ts's own child, so an
+# installed LilOS app's engine is left alone.
+#
 # What it does:
-#   1. registers the stub provider when no real provider is configured and
-#      scripts the model leg (terminal background call + a memory answer)
+#   1. registers the provider in the SCRATCH hermes config
 #   2. runs scripts/live/346.ts: real relay + real harness + real `hermes
 #      serve` at LILOS_SESSION_IDLE_MINUTES=0.25, then asserts suspend/life/
 #      process-death/RSS/resume-with-memory end to end
 #   3. PASS/FAIL summary on stdout
 set -u
 cd "$(dirname "$0")/../.."
-export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
+REAL_HOME=$HOME
+export PATH="$REAL_HOME/.bun/bin:$REAL_HOME/.local/bin:$PATH"
 
 LABEL=stub
 if [ -n "${HERMES_PROVIDER:-}" ] && [ -n "${HERMES_MODEL:-}" ]; then
@@ -40,29 +49,37 @@ fi
 
 STUB_PORT=8419
 STUB_PID=""
-CONFIG_TOUCHED=""
-kill_stale_engine() {
-  pkill -f "apps/harness/src/index.ts" 2>/dev/null
-  pkill -f "apps/relay/src/index.ts" 2>/dev/null
-  pkill -f "packages/engine-hermes/scripts/serve.ts" 2>/dev/null
-  pkill -f "hermes_bootstrap.*serve --host" 2>/dev/null
-  true
-}
+SCRATCH=$(mktemp -d /tmp/lilos346-home.XXXXXX)
 cleanup() {
   [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null
-  [ -n "$CONFIG_TOUCHED" ] && cp "$CONFIG_TOUCHED" ~/.hermes/config.yaml
-  kill_stale_engine
+  rm -rf "$SCRATCH"
 }
 trap cleanup EXIT
 
-if pgrep -f "serve --host 127.0.0.1 --port" >/dev/null 2>&1; then
-  echo "note: a 'hermes serve' backend is already running; hermes refuses a second one — stopping it."
-  kill_stale_engine
-  sleep 1
-fi
+# ── isolated HOME: everything the run writes lives under the scratch dir ──
+export HOME="$SCRATCH/home"
+export HERMES_HOME="$SCRATCH/hermes-home"
+export LILOS_HOME="$SCRATCH/lilos-home"
+mkdir -p "$HOME/.hermes" "$HERMES_HOME" "$LILOS_HOME"
 
-export STUB_REQUEST_LOG=/tmp/live-346-requests.log
-: > "$STUB_REQUEST_LOG"
+if [ "$LABEL" = "stub" ]; then
+  PROVIDER_BASE_URL="http://127.0.0.1:${STUB_PORT}/v1"
+else
+  # The local HPC endpoint the orchestrator's live runs use; override with
+  # HERMES_BASE_URL for any other provider.
+  PROVIDER_BASE_URL="${HERMES_BASE_URL:-http://127.0.0.1:8000/v1}"
+fi
+for cfg in "$HOME/.hermes/config.yaml" "$HERMES_HOME/config.yaml"; do
+  cat > "$cfg" <<EOF
+providers:
+  ${HERMES_PROVIDER}:
+    base_url: "${PROVIDER_BASE_URL}"
+    api_mode: ${HERMES_API_MODE:-chat_completions}
+    api_key: "${HERMES_API_KEY:-stub}"
+EOF
+done
+
+export STUB_REQUEST_LOG="$SCRATCH/live-346-requests.log"
 # The scripted first call runs a REAL background `sleep 371` through the
 # terminal tool — the process sits under hermes's supervision so a real
 # session.close can kill it.
@@ -73,25 +90,15 @@ export STUB_SCRIPT='[
 ]'
 
 if [ "$LABEL" = "stub" ]; then
-  bun scripts/live/openai-stub.ts "$STUB_PORT" >/tmp/openai-stub-346.log 2>&1 &
+  bun scripts/live/openai-stub.ts "$STUB_PORT" >"$SCRATCH/openai-stub-346.log" 2>&1 &
   STUB_PID=$!
   sleep 0.5
-  cp ~/.hermes/config.yaml /tmp/hermes-config-backup-346.$$ && CONFIG_TOUCHED=/tmp/hermes-config-backup-346.$$
-  if ! grep -q "lilos-stub:" ~/.hermes/config.yaml; then
-    cat >> ~/.hermes/config.yaml <<EOF
-providers:
-  lilos-stub:
-    base_url: "http://127.0.0.1:${STUB_PORT}/v1"
-    api_mode: chat_completions
-    api_key: "stub"
-EOF
-  fi
 fi
 
 export LILOS_ENGINE=hermes
 export LILOS_REPO_ROOT="$PWD"
 
-echo "== issue-346 live leg: engine=hermes label=${LABEL} =="
+echo "== issue-346 live leg: engine=hermes label=${LABEL} (isolated HOME=${HOME}) =="
 if bun scripts/live/346.ts --engine hermes; then
   echo "RESULT: PASS (engine=hermes, label=${LABEL})"
 else
