@@ -149,6 +149,26 @@ describe("AC-1: threads come from conversations.summaries for the DM channel, gr
     ]);
   });
 
+  it("#424 an archived session leaves the list; unarchiving brings it back", () => {
+    /* The runtime fetches includeArchived so it KNOWS the flag — the list's
+       job is hiding it (the Mac keeps its own Archived disclosure; the phone
+       drops the row outright). conversation.updated carries the flip in one
+       update both ways. */
+    const turns = toSessionTurns(
+      [summary("live"), summary("arch", { archived: true })],
+      CTX,
+    );
+    expect(turns.map((t) => t.id)).toEqual(["live"]);
+    const back = toSessionTurns(
+      [
+        summary("live"),
+        summary("arch", { archived: false }, { last: { createdAt: T0 - 1 } }),
+      ],
+      CTX,
+    );
+    expect(back.map((t) => t.id)).toEqual(["arch", "live"]);
+  });
+
   it("AC-1 shows a freshly opened conversation as Working before its summary lands", () => {
     const opened = conv("c-new", { engineRef: null });
     const root = msg("c-new-root", {
