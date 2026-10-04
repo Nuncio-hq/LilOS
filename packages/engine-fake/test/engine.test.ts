@@ -752,6 +752,124 @@ describe("engine-fake #294: reports the session's context window", () => {
   });
 });
 
+describe("engine-fake #524: an interrupt inside the subagent-close drain leaks no rejection", () => {
+  /* `finishTurn` schedules `void this.drainSubagentCloses(s)` with no
+     `.catch`; the drain's first statement is `await this.sleep(s)`, and
+     `sleep` throws `Interrupted` when `s.turn?.interrupted`. `finishTurn`
+     clears `s.turn` before scheduling, but a prompt landing inside the
+     drain's single sleep window mints a NEW turn — interrupting (or
+     stopping) it inside the window throws out of the drain and escapes
+     the `void`'d call as an unhandled rejection. The listener below must
+     stay empty. */
+  const trackUnhandled = () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    return {
+      unhandled,
+      off: () => process.off("unhandledRejection", onUnhandled),
+    };
+  };
+
+  /* Arms an async delegate on a `slow:` turn — the first helper's close
+     queues in `pendingSubagentClose` and `finishTurn` opens the drain's
+     one-tick sleep (~60 ms). The returned `next` prompt lands inside that
+     window: `slow:100` mints its turn and parks it in a 100 ms first
+     boundary, so it is still minted — and newly interrupted — when the
+     drain wakes. */
+  const armDrain = async (c: ReturnType<typeof conn>) => {
+    const events: { type: string; payload: Record<string, unknown> }[] = [];
+    c.onEvent((e) => events.push(e as never));
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+    })) as { sessionId: string };
+    await promptText(
+      c,
+      sessionId,
+      "slow:60 LILOS_DELEGATE_ASYNC delegate the scan to a helper",
+    );
+    const next = promptText(c, sessionId, "slow:100 the follow-up turn");
+    return { sessionId, events, next };
+  };
+
+  const snapshot = async (c: ReturnType<typeof conn>, sessionId: string) =>
+    (
+      (await c.request("events.since", { sessionId, after: 0 })) as {
+        snapshot: { state: string; turn?: unknown };
+      }
+    ).snapshot;
+
+  test("AC-1 interrupt inside the drain's sleep: the queued close still lands, the new turn settles cancelled, the session answers — no unhandled rejection", async () => {
+    const { unhandled, off } = trackUnhandled();
+    const c = conn(2);
+    try {
+      const { sessionId, events, next } = await armDrain(c);
+      const ack = (await c.request("interrupt", { sessionId })) as {
+        interrupted: boolean;
+      };
+      expect(ack.interrupted).toBe(true);
+      /* The interrupted follow-up settles itself on its first boundary —
+         nothing wedges. */
+      expect((await next).stopReason).toBe("cancelled");
+      /* The drain owns no turn — the interrupt belonged to the follow-up,
+         so the queued close (sa-1) must still be delivered. */
+      expect(
+        events.some(
+          (e) =>
+            e.type === "subagent.completed" &&
+            e.payload.subagentId === "sa-1",
+        ),
+      ).toBe(true);
+      const snap = await snapshot(c, sessionId);
+      expect(snap.state).toBe("idle");
+      expect(snap.turn).toBeUndefined();
+      const res = await promptText(c, sessionId, "follow-up after the stop");
+      expect(res.stopReason).toBe("end_turn");
+      /* An escaped rejection fires on its own microtask turn — give it a
+         flush window before asserting none landed. */
+      await new Promise((r) => setTimeout(r, 20));
+      expect(unhandled).toEqual([]);
+    } finally {
+      off();
+      c.close();
+    }
+  });
+
+  test("AC-2 session.stop inside the drain's sleep: the queued close drops with the closed session — no unhandled rejection", async () => {
+    const { unhandled, off } = trackUnhandled();
+    const c = conn(2);
+    try {
+      const { sessionId, events, next } = await armDrain(c);
+      const ack = (await c.request("session.stop", { sessionId })) as {
+        stopped: boolean;
+      };
+      expect(ack.stopped).toBe(true);
+      /* The stopped turn settles itself inside the closed session. */
+      expect((await next).stopReason).toBe("cancelled");
+      /* A closed session drops pending closes like the tick drain and
+         flushHeldCloses do — sa-1 never completes. */
+      expect(
+        events.some(
+          (e) =>
+            e.type === "subagent.completed" &&
+            e.payload.subagentId === "sa-1",
+        ),
+      ).toBe(false);
+      const snap = await snapshot(c, sessionId);
+      expect(snap.state).toBe("closed");
+      expect(snap.turn).toBeUndefined();
+      await new Promise((r) => setTimeout(r, 20));
+      expect(unhandled).toEqual([]);
+    } finally {
+      off();
+      c.close();
+    }
+  });
+});
+
 describe("engine-fake #431: compact replay + bounded log", () => {
   test("a finished turn's deltas replay as one turn.recap", async () => {
     const c = conn();
