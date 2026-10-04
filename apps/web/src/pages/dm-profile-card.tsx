@@ -56,30 +56,28 @@ export function DmProfileCard({
             Loading profile…
           </div>
         ) : (
-          <>
-            <EmployeeCard
-              e={e}
-              profiles={profiles}
-              engineName={engineName}
-              ownerName={ownerName}
-              models={models}
-              onDM={onClose}
-              onEdit={onEdit}
-              onSwitchProfile={onSwitchProfile}
-            />
-            {/* #504: the visible close — a real button hung on the card's
-                top-right corner, like the prototype panel's ✕. */}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Close"
-              onClick={onClose}
-              className="absolute -top-0.5 -right-0.5 rounded-full border bg-background shadow-md"
-            >
-              <XIcon />
-            </Button>
-          </>
+          <EmployeeCard
+            e={e}
+            profiles={profiles}
+            engineName={engineName}
+            ownerName={ownerName}
+            models={models}
+            onDM={onClose}
+            onEdit={onEdit}
+            onSwitchProfile={onSwitchProfile}
+          />
         )}
+        {/* #504: the visible close — a real button hung on the dialog's
+            top-right corner, like the prototype panel's ✕. */}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Close"
+          onClick={onClose}
+          className="absolute -top-0.5 -right-0.5 rounded-full border bg-background shadow-md"
+        >
+          <XIcon />
+        </Button>
       </div>
     </div>
   );

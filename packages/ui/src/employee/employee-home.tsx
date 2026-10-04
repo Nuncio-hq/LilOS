@@ -849,8 +849,8 @@ export function EmployeeCard({
             {e.now ? (
               e.now
             ) : (
-              /* #504: an empty row reads broken — idle says so in muted
-                 text, the same word the DM header/mobile use. */
+              /* #504: an empty row reads broken — say it in muted text,
+                 reusing #422's "Idle" wording. */
               <span className="text-muted-foreground">Idle</span>
             )}
           </dd>
