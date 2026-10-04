@@ -150,26 +150,30 @@ function Chip({
         ? { accessibilityHint: "Double-tap to retry loading models" }
         : {})}
       onPress={onPress}
-      className={`h-[30px] max-w-[170px] flex-row items-center gap-1.5 rounded-full bg-fill pr-2.5 pl-2.5 active:opacity-60 ${unavailable ? "opacity-50" : ""}`}
+      /* Unavailable: no max-width cap (the fixed label is short) and no
+         opacity-50 — an all-grey error reads as inactive. Amber content +
+         a brighter retry glyph carry the warning; the whole chip still
+         taps to retry. */
+      className={`h-[30px] ${unavailable ? "" : "max-w-[170px]"} flex-row items-center gap-1.5 rounded-full bg-fill pr-2.5 pl-2.5 active:opacity-60`}
     >
       {lead || (
         <Icon
           name={unavailable ? "exclamationmark.triangle" : icon}
           size={12}
-          tone="subtle-foreground"
+          tone={unavailable ? "warning" : "subtle-foreground"}
           weight="medium"
         />
       )}
       <Text
         numberOfLines={1}
-        className="shrink font-medium text-[13px] text-subtle-foreground"
+        className={`shrink font-medium text-[13px] ${unavailable ? "text-warning" : "text-subtle-foreground"}`}
       >
         {label}
       </Text>
       <Icon
         name={unavailable ? "arrow.clockwise" : "chevron.up.chevron.down"}
         size={9}
-        tone="muted-foreground"
+        tone={unavailable ? "subtle-foreground" : "muted-foreground"}
         weight="semibold"
       />
     </Pressable>
