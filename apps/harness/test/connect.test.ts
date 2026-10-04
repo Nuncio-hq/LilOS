@@ -91,6 +91,14 @@ function fixture(version = "0.1.0", onChange?: () => void) {
           c.argv.join(" ") ===
           ["-p", p, "plugins", "disable", "lilos"].join(" "),
       ).length,
+    toolSearchCalls: (p: string, enabled: string) =>
+      calls.filter(
+        (c) =>
+          c.argv.join(" ") ===
+          ["-p", p, "config", "set", "tools.tool_search.enabled", enabled].join(
+            " ",
+          ),
+      ).length,
   };
 }
 
@@ -110,6 +118,10 @@ describe("AC-1 (#339) approval installs + enables the plugin per profile", () =>
     expect(f.installedYaml("grace")).toContain('version: "0.1.0"');
     expect(f.enableCalls("ada")).toBe(1);
     expect(f.enableCalls("grace")).toBe(1);
+    /* #411: lilos_* must be offered directly — Hermes tool search defers
+       every plugin tool behind `tool_search`, so the profile opts out. */
+    expect(f.toolSearchCalls("ada", "off")).toBe(1);
+    expect(f.toolSearchCalls("grace", "off")).toBe(1);
     expect(f.connect.report()).toEqual([
       { profile: "ada", employee: "Ada", state: "connected" },
       { profile: "grace", employee: "Grace", state: "connected" },
@@ -268,6 +280,8 @@ describe("AC-1 (#339) removal disables the plugin, never deletes the profile", (
 
     f.connect.employeeRemoved("e1");
     expect(f.disableCalls("ada")).toBe(1);
+    // The tool-search opt-out connect wrote is restored on the way out.
+    expect(f.toolSearchCalls("ada", "auto")).toBe(1);
     expect(f.connect.report()).toEqual([]);
     // The profile itself is untouched — only the plugin was disabled.
     expect(existsSync(join(f.hermesHome, "profiles", "ada"))).toBe(true);
