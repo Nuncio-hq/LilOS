@@ -726,6 +726,12 @@
   background: var(--glass);
   backdrop-filter: blur(24px) saturate(1.6);
   -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  /* The fill snaps to the theme token instead of fading: mid-fade between
+     the near-opaque light glass and the near-clear dark one the capsule
+     reads as a light block over the dark field (#508). */
+  transition-property:
+    color, border-color, outline-color, text-decoration-color, fill, stroke,
+    --tw-gradient-from, --tw-gradient-via, --tw-gradient-to;
   box-shadow:
     0 1px 2px rgb(0 0 0 / 4%),
     0 8px 28px -12px rgb(0 0 0 / 18%);
@@ -876,6 +882,11 @@ body:has(.lilos-float)::before {
 }
 .lilos-rise {
   animation: lilos-rise 0.5s cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
+}
+/* #430: a virtualized row re-mounts when it scrolls back into view — its
+   rise animation must not replay (the row is not new, just re-shown). */
+[data-remount] .lilos-rise {
+  animation: none !important;
 }
 .lilos-lift {
   transition:

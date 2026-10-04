@@ -87,7 +87,13 @@ const editDialog = (page: Page) =>
 
 async function openEdit(page: Page) {
   await page.getByRole("button", { name: /Profile/ }).click();
-  await page.getByRole("button", { name: "Edit" }).click();
+  // #504: Default has no SOUL.md yet, so the card shows two "Edit" entries —
+  // the header pencil and the empty-state link — both opening the same dialog.
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Edit" })
+    .first()
+    .click();
   const dlg = editDialog(page);
   await expect(dlg).toBeVisible();
   return dlg;
@@ -185,7 +191,8 @@ test("AC-2 saving a new persona + model writes the engine profile (agents.update
   await expect(card.getByText("You are Default v2.")).toBeVisible();
   // #194: the card shows the model's display name, not the id.
   await expect(card.getByText("Fake Small")).toBeVisible();
-  await card.getByRole("button", { name: "Close" }).click();
+  // #421: the shared card's Message button is the close — no Close button.
+  await card.getByRole("button", { name: "Message" }).click();
 });
 
 test("AC-4 a running session keeps its model; the next new session uses the updated default", async ({
@@ -216,9 +223,10 @@ test("AC-4 a running session keeps its model; the next new session uses the upda
   const agent = await describeAgent(stackA, "default");
   expect(agent.model).toBe("fake-reasoning");
   // The profile card stays open behind the dialog — dismiss it.
+  // #421: the shared card's Message button is the close — no Close button.
   await page
     .getByRole("dialog", { name: /Default profile/ })
-    .getByRole("button", { name: "Close" })
+    .getByRole("button", { name: "Message" })
     .click();
 
   // A reply in the SAME conversation still runs on the start-time model.

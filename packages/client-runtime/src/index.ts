@@ -51,8 +51,10 @@ export {
 } from "./supervisor";
 export {
   type JobModel,
+  type ReduceSnapshot,
   reduceSessionEvents,
   type SessionModel,
+  SessionReducer,
   type SubagentModel,
   type TurnModel,
   type TurnPhase,

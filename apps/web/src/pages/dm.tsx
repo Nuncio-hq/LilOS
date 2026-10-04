@@ -39,10 +39,10 @@ import type {
   AttachedFile,
   BackgroundJob,
   Channel,
+  EngineProfile,
   FileMention,
   MessageHit,
   ModelChoice,
-  ModelOption,
   ModelPickerExtras,
   Msg,
   Thread,
@@ -61,8 +61,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   archiveConversation,
   clearPending,
+  describeActionError,
   hasCapability,
   interruptSession,
+  loadThreadHistory,
   openDmChannel,
   pendingStart,
   refreshModels,
@@ -72,6 +74,7 @@ import {
   setConversationAccess,
   setConversationModel,
   setModelVisibility,
+  toastOnFail,
 } from "../lib/actions";
 import {
   attachmentUrls,
@@ -81,7 +84,11 @@ import {
 } from "../lib/attachments";
 import { requestConnect } from "../lib/connect";
 import { FoldCache, type FoldInputs } from "../lib/conv-fold";
-import { removeEmployee, saveEmployee } from "../lib/employees";
+import {
+  listHirableProfiles,
+  removeEmployee,
+  saveEmployee,
+} from "../lib/employees";
 import { parseFocusTab } from "../lib/focus-search";
 import {
   addFolder,
@@ -124,8 +131,9 @@ import {
   sessionModels,
   workbenchRequests,
 } from "../lib/runtime";
-import { say } from "../lib/toast";
+import { say, sayError, sayNotice } from "../lib/toast";
 import { defaultAccess } from "../settings/state";
+import { DmProfileCard } from "./dm-profile-card";
 
 const EMPTY_MESSAGES = atom<ChannelMessagesState>({
   channelId: "",
@@ -237,7 +245,30 @@ export function DmPage() {
   const statusPoll = useAtom(relay.status);
   const fatal = useAtom(relay.fatal);
   const [profileOpen, setProfileOpen] = useState(false);
+  /* #421: the header card lists the engine's profiles for the
+     missing-profile switch — fetched per open so a profile created
+     elsewhere shows; stays undefined until first load (an empty list
+     would paint a false "Profile missing"). */
+  const [cardProfiles, setCardProfiles] = useState<EngineProfile[] | null>(
+    null,
+  );
   const [editOpen, setEditOpen] = useState(false);
+  useEffect(() => {
+    if (!profileOpen) return;
+    let dead = false;
+    void listHirableProfiles()
+      .then((list) => {
+        if (!dead) setCardProfiles(list);
+      })
+      .catch(() => {
+        /* No profiles → no Switch: renders like a profile-less card, still
+           matching the "missing" copy row (D-#19). */
+        if (!dead) setCardProfiles((prev) => prev ?? []);
+      });
+    return () => {
+      dead = true;
+    };
+  }, [profileOpen]);
   const [editError, setEditError] = useState<string | null>(null);
   /* The picker's pick for a session that doesn't exist yet (#92 AC-5): held
      per employee, stamped on `conversations.open`, cleared once sent. */
@@ -261,8 +292,21 @@ export function DmPage() {
         ? providers.map((p) => ({ id: p.id, name: p.name ?? p.id }))
         : undefined,
       visibility,
-      onVisibility: (v) => void setModelVisibility(v),
-      ...(detail?.refreshable === true ? { onRefresh: refreshModels } : {}),
+      onVisibility: (v) =>
+        toastOnFail("Couldn't update the model list", setModelVisibility(v)),
+      ...(detail?.refreshable === true
+        ? {
+            /* Toast AND rethrow — the picker must still see the failure so
+               its "refreshed" marker stays honest (#423 AC-1). */
+            onRefresh: () =>
+              refreshModels().catch((e) => {
+                sayError(
+                  describeActionError("Couldn't refresh the model list", e),
+                );
+                throw e;
+              }),
+          }
+        : {}),
     };
   }, [catalog, providers, visibility, description]);
 
@@ -278,7 +322,7 @@ export function DmPage() {
   const [wsPicks, setWsPicks] = useState<Record<string, WsPick>>({});
   const [addFolderOpen, setAddFolderOpen] = useState(false);
   useEffect(() => {
-    void refreshFolders().catch(() => {});
+    toastOnFail("Couldn't load folders", refreshFolders());
   }, []);
 
   /* Image attachments (#112): the composers offer pick/drop/paste only when
@@ -386,24 +430,31 @@ export function DmPage() {
   const searchMessages = useCallback(
     async (query: string): Promise<MessageHit[]> => {
       if (!channel?.id) return [];
-      const res = await relay.request<{ hits: MessageSearchHit[] }>(
-        "messages.search",
-        { query, channelId: channel.id, includeArchived: true, limit: 50 },
-      );
-      return res.hits.flatMap((h) => {
-        const conv = convs.find((c) => c.id === h.conversationId);
-        if (h.conversationId && !conv) return [];
-        return [
-          {
-            rootId: conv?.rootMessageId ?? h.messageId,
-            messageId: h.messageId,
-            from: h.authorId,
-            time: clock(h.createdAt),
-            snippet: h.snippet,
-            archived: conv?.archived,
-          },
-        ];
-      });
+      try {
+        const res = await relay.request<{ hits: MessageSearchHit[] }>(
+          "messages.search",
+          { query, channelId: channel.id, includeArchived: true, limit: 50 },
+        );
+        return res.hits.flatMap((h) => {
+          const conv = convs.find((c) => c.id === h.conversationId);
+          if (h.conversationId && !conv) return [];
+          return [
+            {
+              rootId: conv?.rootMessageId ?? h.messageId,
+              messageId: h.messageId,
+              from: h.authorId,
+              time: clock(h.createdAt),
+              snippet: h.snippet,
+              archived: conv?.archived,
+            },
+          ];
+        });
+      } catch (e) {
+        /* The feed swallows the rejection — the toast is the only signal
+           the search failed rather than finding nothing (#423). */
+        sayError(describeActionError("Couldn't search messages", e));
+        throw e;
+      }
     },
     [channel?.id, convs],
   );
@@ -418,9 +469,13 @@ export function DmPage() {
     let off = false;
     setEditors(null);
     if (openCwd)
-      void hostEditors().then((e) => {
-        if (!off) setEditors(e);
-      });
+      void hostEditors()
+        .then((e) => {
+          if (!off) setEditors(e);
+        })
+        /* A failed probe only hides the badge's editor menu (D-#19) — no
+           toast: nothing the user asked for failed. */
+        .catch(() => {});
     return () => {
       off = true;
     };
@@ -473,49 +528,40 @@ export function DmPage() {
   const rewinds = useAtom(relay.rewinds);
 
   /* The open thread needs its whole visible history, not just the channel
-     window (#28 AC-2): page messages.list scoped to the conversation. */
+     window (#28 AC-2): page messages.list scoped to the conversation. A
+     failed fetch used to swallow silently and the thread just looked
+     shorter — #423 AC-2 surfaces a retryable notice instead. */
   const channelId = channel?.id;
   const [threadMsgs, setThreadMsgs] = useState<AppMessage[]>([]);
+  const [historyFailed, setHistoryFailed] = useState(false);
+  /* Retry bumps this counter — the effect re-runs the same fetch. */
+  const [historyAttempt, setHistoryAttempt] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: historyAttempt re-runs the fetch on Retry (#423 AC-2).
   useEffect(() => {
     setThreadMsgs([]);
     setLocalRewoundIds(new Set());
     setLocalRewoundTexts(new Set());
+    setHistoryFailed(false);
     if (!conversationId || !channelId) return;
     let dead = false;
-    void (async () => {
-      const all: AppMessage[] = [];
-      for (;;) {
-        const page = await relay.request<{
-          messages: AppMessage[];
-        }>("messages.list", {
-          channelId,
-          conversationId,
-          afterSeq: all.at(-1)?.seq ?? 0,
-          limit: 200,
-          includeRewound: true,
-          /* #315: parked not-sent rows ride the fetch so the tray survives a
-             reload (relay truth, not component state). */
-          includeDropped: true,
-        });
-        all.push(...page.messages);
-        if (page.messages.length < 200) break;
-      }
-      if (dead) return;
-      setThreadMsgs(all.filter((m) => !m.rewound));
-      const rewound = all.filter((m) => m.rewound);
-      setLocalRewoundIds(new Set(rewound.map((m) => m.id)));
-      setLocalRewoundTexts(
-        new Set(
-          rewound
-            .filter((m) => m.authorKind === "employee")
-            .map((m) => m.text.trim()),
-        ),
-      );
-    })().catch(() => {});
+    void loadThreadHistory(
+      (method, params) => relay.request(method, params),
+      channelId,
+      conversationId,
+    )
+      .then((r) => {
+        if (dead) return;
+        setThreadMsgs(r.messages);
+        setLocalRewoundIds(r.rewoundIds);
+        setLocalRewoundTexts(r.rewoundTexts);
+      })
+      .catch(() => {
+        if (!dead) setHistoryFailed(true);
+      });
     return () => {
       dead = true;
     };
-  }, [conversationId, channelId]);
+  }, [conversationId, channelId, historyAttempt]);
 
   /* Fetched history + live arrivals, deduped by id. Everything at/after the
      latest rewind point is dropped — the live atoms already lost it, this
@@ -568,7 +614,11 @@ export function DmPage() {
       .then((r) => {
         if (!dead) setListedJobs((prev) => ({ ...prev, [openSid]: r.jobs }));
       })
-      .catch(() => {});
+      /* #423 AC-1: a failed list used to leave the Background tab quietly
+         empty — the rows the event stream can't carry just vanished. */
+      .catch((e) =>
+        sayError(describeActionError("Couldn't load background jobs", e)),
+      );
     return () => {
       dead = true;
     };
@@ -605,10 +655,15 @@ export function DmPage() {
   }, [messages, threadMsgs, summaries]);
 
   const uiEmp = employee ? toUiEmployee(employee, engineDown) : undefined;
-  const empFn = (id: string) => {
-    const e = employees.find((x) => x.id === id);
-    return e ? toUiEmployee(e, engineDown) : undefined;
-  };
+  /* #430: stable across renders — the memoized turn rows compare `emp` by
+     identity, so a fresh closure each render would defeat the memo. */
+  const empFn = useCallback(
+    (id: string) => {
+      const e = employees.find((x) => x.id === id);
+      return e ? toUiEmployee(e, engineDown) : undefined;
+    },
+    [employees, engineDown],
+  );
   const summaryOf = (conv: Conversation) => summaryByConv.get(conv.id);
 
   /* #134: the relay rewinds files + conversation to just before the picked
@@ -654,7 +709,7 @@ export function DmPage() {
               },
         );
       } catch (e) {
-        say(`Rewind failed — ${e instanceof Error ? e.message : String(e)}`);
+        sayError(describeActionError("Couldn't rewind the turn", e));
       }
     })();
   };
@@ -945,17 +1000,20 @@ export function DmPage() {
      the packaged desktop app alike; no OS open panel anywhere. */
   const onAddFolder = () => {
     setAddFolderOpen(true);
-    void loadDiscovered().catch(() => {});
+    toastOnFail("Couldn't scan for repos", loadDiscovered());
   };
   const onDialogAdd = (path: string) => {
-    void addFolder(path).then((f) => {
-      if (f)
-        setPick({
-          folder: f.id,
-          base: f.branches[0] ?? "",
-          mode: "direct",
-        });
-    });
+    toastOnFail(
+      "Couldn't add the folder",
+      addFolder(path).then((f) => {
+        if (f)
+          setPick({
+            folder: f.id,
+            base: f.branches[0] ?? "",
+            mode: "direct",
+          });
+      }),
+    );
     setAddFolderOpen(false);
   };
 
@@ -1034,7 +1092,12 @@ export function DmPage() {
               ? "the engine feed is disconnected (harness down or restarting)"
               : "still syncing")
           }`
-        : undefined;
+        : /* #431: a capped engine log means the transcript's retained tail
+             is all that exists — say so rather than letting the missing
+             head read as a render gap. */
+          conv.engineRef && openFeed.historyTrimmed
+          ? "Earlier history was trimmed — this session's event log is capped."
+          : undefined;
 
     const resolved: Record<string, string> = {};
     for (const a of asksHere) {
@@ -1093,7 +1156,9 @@ export function DmPage() {
         return;
       }
       void awaitPlanAsk(planId).then((ask) => {
-        if (ask) void respondToRequest(ask.id, a);
+        /* respondToRequest toasts its own failure line — the catch only
+           keeps the rethrow from going unhandled. */
+        if (ask) void respondToRequest(ask.id, a).catch(() => {});
       });
     };
     /* The thread composer send: a send that keeps the "Change the plan: "
@@ -1188,7 +1253,7 @@ export function DmPage() {
           jobId,
         })
         .catch((e) =>
-          say(`Stop failed — ${e instanceof Error ? e.message : String(e)}`),
+          sayError(describeActionError("Couldn't stop the job", e)),
         );
     };
 
@@ -1203,7 +1268,7 @@ export function DmPage() {
       void relay
         .request("messages.remove", { messageId: target.id })
         .catch((e) =>
-          say(`Remove failed — ${e instanceof Error ? e.message : String(e)}`),
+          sayError(describeActionError("Couldn't remove the message", e)),
         );
     };
     const onUnqueue = (i: number) => {
@@ -1212,7 +1277,7 @@ export function DmPage() {
       void relay
         .request("messages.remove", { messageId: target.id })
         .catch((e) =>
-          say(`Remove failed — ${e instanceof Error ? e.message : String(e)}`),
+          sayError(describeActionError("Couldn't remove the message", e)),
         );
     };
     const onSendQueued = (i: number) => {
@@ -1221,7 +1286,7 @@ export function DmPage() {
       void relay
         .request("messages.send", { messageId: target.id })
         .catch((e) =>
-          say(`Send failed — ${e instanceof Error ? e.message : String(e)}`),
+          sayError(describeActionError("Couldn't send the message", e)),
         );
     };
     const pendingItems = folded.thread.pendingItems;
@@ -1276,6 +1341,22 @@ export function DmPage() {
       undefined,
     )?.text;
     const steer = hasCapability("steer");
+    /* #423 AC-2: a failed history fetch says so with a retry instead of
+       silently showing a shorter thread — the red band #419 introduced,
+       inline so it sits in the message column with Retry right after the
+       text in both the panel and Focus. */
+    const historyNotice = historyFailed ? (
+      <StatusBanner
+        tone="red"
+        inline
+        action={{
+          label: "Retry",
+          onClick: () => setHistoryAttempt((n) => n + 1),
+        }}
+      >
+        Couldn't load this session's history — earlier messages may be missing.
+      </StatusBanner>
+    ) : undefined;
     const rootMsg: Msg = root
       ? {
           kind: "msg",
@@ -1306,7 +1387,9 @@ export function DmPage() {
           setResolved={(r) => {
             const diff = Object.entries(r).find(([k, v]) => resolved[k] !== v);
             if (diff) {
-              void respondToRequest(diff[0], outcomeFromLabel(diff[1]));
+              void respondToRequest(diff[0], outcomeFromLabel(diff[1])).catch(
+                () => {},
+              );
             }
           }}
           work={work}
@@ -1322,7 +1405,15 @@ export function DmPage() {
           running={running}
           onSend={sendInThread}
           onPlan={planCap ? onPlan : undefined}
-          onStop={running ? () => void interruptSession(conv.id) : undefined}
+          onStop={
+            running
+              ? () =>
+                  toastOnFail(
+                    "Couldn't stop the turn",
+                    interruptSession(conv.id),
+                  )
+              : undefined
+          }
           lastSent={lastSent}
           /* #419: hover Retry on the last turn re-sends the last user
              message into this same session. */
@@ -1331,7 +1422,13 @@ export function DmPage() {
           rewindWarning={rewindWarning}
           seedFiles={seedFiles}
           onSeededFiles={() => setSeedFiles(undefined)}
-          onModel={(c) => void setConversationModel(conv.id, c)}
+          onModel={(c) =>
+            toastOnFail(
+              "Couldn't switch the model",
+              setConversationModel(conv.id, c),
+            )
+          }
+          banner={historyNotice}
           models={catalog.length ? catalog : undefined}
           /* Focus is a picker surface too — the same Refresh / Edit models…
              extras as the thread panel (#140: the not-in-list row's hint
@@ -1340,11 +1437,16 @@ export function DmPage() {
           defaultModel={defaultModel}
           defaultProvider={defaultProvider}
           access={conv.access}
-          onAccess={(a) => void setConversationAccess(conv.id, a)}
+          onAccess={(a) =>
+            toastOnFail(
+              "Couldn't change the access level",
+              setConversationAccess(conv.id, a),
+            )
+          }
           accept={canAttachImages ? "image/*" : undefined}
           maxFileSize={MAX_ATTACHMENT_BYTES}
-          onAttachError={say}
-          say={say}
+          onAttachError={sayError}
+          say={sayNotice}
           host={conv.cwd ? hostAccessors : undefined}
           transcriptNote={transcriptNote}
           scrollTo={scrollTo ?? undefined}
@@ -1376,9 +1478,7 @@ export function DmPage() {
             openCwd && editors !== null
               ? (path, app, line) => {
                   void hostOsOpen(openCwd, path, app, line).catch((e) =>
-                    say(
-                      `Open failed — ${e instanceof Error ? e.message : String(e)}`,
-                    ),
+                    sayError(describeActionError("Couldn't open the file", e)),
                   );
                 }
               : null
@@ -1404,9 +1504,13 @@ export function DmPage() {
             <QuestionCard
               ask={openQuestion}
               onAnswer={(answer) =>
-                void respondToRequest(openQuestion.id, "answer", answer)
+                void respondToRequest(openQuestion.id, "answer", answer).catch(
+                  () => {},
+                )
               }
-              onCancel={() => void respondToRequest(openQuestion.id, "cancel")}
+              onCancel={() =>
+                void respondToRequest(openQuestion.id, "cancel").catch(() => {})
+              }
             />
           )}
         </FocusView>
@@ -1418,6 +1522,9 @@ export function DmPage() {
         data-thread-panel
         className="flex min-h-0 w-[420px] shrink-0 flex-col border-l xl:w-[460px]"
       >
+        {historyNotice && (
+          <div className="px-3 pt-2 sm:px-5">{historyNotice}</div>
+        )}
         {filesOnly?.conversationId === conv.id && (
           <StatusBanner
             tone="amber"
@@ -1444,7 +1551,9 @@ export function DmPage() {
             // reply cards report {askId: label}; map label -> outcome
             const diff = Object.entries(r).find(([k, v]) => resolved[k] !== v);
             if (diff) {
-              void respondToRequest(diff[0], outcomeFromLabel(diff[1]));
+              void respondToRequest(diff[0], outcomeFromLabel(diff[1])).catch(
+                () => {},
+              );
             }
           }}
           running={running}
@@ -1464,12 +1573,21 @@ export function DmPage() {
           models={catalog.length ? catalog : undefined}
           onModel={
             catalog.length
-              ? (c) => void setConversationModel(conv.id, c)
+              ? (c) =>
+                  toastOnFail(
+                    "Couldn't switch the model",
+                    setConversationModel(conv.id, c),
+                  )
               : undefined
           }
           picker={picker}
           access={conv.access}
-          onAccess={(a) => void setConversationAccess(conv.id, a)}
+          onAccess={(a) =>
+            toastOnFail(
+              "Couldn't change the access level",
+              setConversationAccess(conv.id, a),
+            )
+          }
           defaultModel={defaultModel}
           defaultProvider={defaultProvider}
           onSend={sendInThread}
@@ -1483,8 +1601,16 @@ export function DmPage() {
           accept={canAttachImages ? "image/*" : undefined}
           maxFileSize={MAX_ATTACHMENT_BYTES}
           maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
-          onAttachError={say}
-          onStop={running ? () => void interruptSession(conv.id) : undefined}
+          onAttachError={sayError}
+          onStop={
+            running
+              ? () =>
+                  toastOnFail(
+                    "Couldn't stop the turn",
+                    interruptSession(conv.id),
+                  )
+              : undefined
+          }
           lastSent={lastSent}
           /* #419: hover Retry on the last turn re-sends the last user
              message into this same session. */
@@ -1521,9 +1647,7 @@ export function DmPage() {
             openCwd && editors !== null
               ? (path, app, line) => {
                   void hostOsOpen(openCwd, path, app, line).catch((e) =>
-                    say(
-                      `Open failed — ${e instanceof Error ? e.message : String(e)}`,
-                    ),
+                    sayError(describeActionError("Couldn't open the file", e)),
                   );
                 }
               : undefined
@@ -1533,9 +1657,13 @@ export function DmPage() {
           <QuestionCard
             ask={openQuestion}
             onAnswer={(answer) =>
-              void respondToRequest(openQuestion.id, "answer", answer)
+              void respondToRequest(openQuestion.id, "answer", answer).catch(
+                () => {},
+              )
             }
-            onCancel={() => void respondToRequest(openQuestion.id, "cancel")}
+            onCancel={() =>
+              void respondToRequest(openQuestion.id, "cancel").catch(() => {})
+            }
           />
         )}
       </div>
@@ -1559,7 +1687,7 @@ export function DmPage() {
         accept={canAttachImages ? "image/*" : undefined}
         maxFileSize={MAX_ATTACHMENT_BYTES}
         maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
-        onAttachError={say}
+        onAttachError={sayError}
         lastSent={lastSentTop}
         panelOpen={!!openConv}
         onPanel={() => {
@@ -1587,7 +1715,8 @@ export function DmPage() {
             ? {
                 state: employeeRow.state,
                 ...(employeeRow.reason ? { reason: employeeRow.reason } : {}),
-                onConnect: () => void requestConnect(),
+                onConnect: () =>
+                  toastOnFail("Couldn't turn on Connect", requestConnect()),
               }
             : undefined
         }
@@ -1611,11 +1740,21 @@ export function DmPage() {
         picker={picker}
         onRename={(id, title) => {
           const conv = convs.find((c) => c.rootMessageId === id);
-          if (conv) void renameConversation(conv.id, title);
+          if (conv)
+            toastOnFail(
+              "Couldn't rename the session",
+              renameConversation(conv.id, title),
+            );
         }}
         onArchive={(id, archived) => {
           const conv = convs.find((c) => c.rootMessageId === id);
-          if (conv) void archiveConversation(conv.id, archived);
+          if (conv)
+            toastOnFail(
+              archived
+                ? "Couldn't archive the session"
+                : "Couldn't unarchive the session",
+              archiveConversation(conv.id, archived),
+            );
         }}
         /* #419: the session row's failure card retries the whole session —
            same re-send as the turn's hover Retry. */
@@ -1636,12 +1775,14 @@ export function DmPage() {
         />
       )}
       {profileOpen && !editOpen && (
-        <EmployeeProfileCard
-          name={uiEmp.name}
-          profile={uiEmp.profile}
-          model={uiEmp.model}
+        <DmProfileCard
+          /* A record with no pinned model shows the engine default, same as
+             the picker's effective model — never a blank Model row. */
+          e={{ ...uiEmp, model: uiEmp.model || defaultModel || "" }}
+          profiles={cardProfiles ?? undefined}
+          engineName={statusPoll.result?.engine?.name}
+          ownerName={currentName()}
           models={catalog.length ? catalog : undefined}
-          instructions={uiEmp.instructions}
           onEdit={() => {
             setEditError(null);
             setEditAgent(undefined);
@@ -1653,6 +1794,16 @@ export function DmPage() {
               .catch(() => setEditAgent(null))
               .finally(() => setEditOpen(true));
           }}
+          /* #421 AC-2: the switch works end to end — employees.update
+             re-points the record and the harness resolves the new
+             profile on the next session.start, so it renders (D-#19). */
+          onSwitchProfile={(p) =>
+            void relay
+              .updateEmployee(employee.id, { profile: p })
+              .catch((err) =>
+                say(err instanceof Error ? err.message : String(err)),
+              )
+          }
           onClose={() => setProfileOpen(false)}
         />
       )}
@@ -1756,73 +1907,6 @@ function QuestionCard({
         >
           Cancel
         </button>
-      </div>
-    </div>
-  );
-}
-
-function EmployeeProfileCard({
-  name,
-  profile,
-  model,
-  models,
-  instructions,
-  onEdit,
-  onClose,
-}: {
-  name: string;
-  profile: string;
-  model: string;
-  models?: ModelOption[];
-  instructions: string;
-  onEdit: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-background/60 p-6">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${name} profile`}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") onClose();
-        }}
-        className="w-full max-w-sm rounded-xl border bg-background p-5 shadow-2xl"
-      >
-        <div className="font-semibold">{name}</div>
-        <dl className="mt-3 space-y-1.5 text-xs">
-          <div className="flex gap-2">
-            <dt className="w-20 text-muted-foreground">Profile</dt>
-            <dd className="font-mono">{profile}</dd>
-          </div>
-          <div className="flex gap-2">
-            <dt className="w-20 text-muted-foreground">Model</dt>
-            <dd className="font-mono">
-              {models?.find((m) => m.id === model)?.name ??
-                (model || "engine default")}
-            </dd>
-          </div>
-          <div className="flex gap-2">
-            <dt className="w-20 text-muted-foreground">Soul</dt>
-            <dd className="min-w-0 flex-1">{instructions || "—"}</dd>
-          </div>
-        </dl>
-        <div className="mt-4 flex gap-2">
-          <button
-            type="button"
-            className="flex-1 rounded-md bg-primary px-2 py-1.5 text-primary-foreground text-sm"
-            onClick={onEdit}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            className="flex-1 rounded-md border px-2 py-1.5 text-sm hover:bg-muted"
-            onClick={onClose}
-          >
-            Close
-          </button>
-        </div>
       </div>
     </div>
   );

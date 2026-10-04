@@ -6,7 +6,7 @@ import {
   RelayError,
   type SupervisedConnection,
 } from "@lilos/client-runtime";
-import type { WelcomeResult } from "@lilos/contracts/app";
+import { HostChangedEvent, type WelcomeResult } from "@lilos/contracts/app";
 import type { MacLink } from "@lilos/ui-native";
 import NetInfo from "@react-native-community/netinfo";
 import { atom } from "nanostores";
@@ -66,6 +66,35 @@ export function startLink(mac: PairedMac, cached?: CachedDirectory): void {
   });
   if (cached) client.hydrate(cached);
   $client.set(client);
+
+  /* #482: engine-state flips must reach the Mac sheet live — the relay
+     broadcasts `host.changed {connected, engine:{state,detail}}` on every
+     harness.report state flip; patch `welcome.engineHost` so the sheet
+     shows restarting/failed during an outage instead of the state frozen
+     at link time. */
+  client.onEvent((method, params) => {
+    if (method !== "host.changed") return;
+    const event = HostChangedEvent.safeParse(params);
+    if (!event.success) return;
+    const w = $welcome.get();
+    const eh = w?.engineHost;
+    if (!w || !eh) return;
+    $welcome.set({
+      ...w,
+      engineHost: {
+        ...eh,
+        connected: event.data.connected,
+        ...(event.data.engine
+          ? {
+              state: event.data.engine.state,
+              /* detail clears with the state — a recovered "running" row
+                 must not keep wearing the last outage's reason. */
+              detail: event.data.engine.detail,
+            }
+          : {}),
+      },
+    });
+  });
 
   const sv = new ConnectionSupervisor({
     connect: async (signal) => {
