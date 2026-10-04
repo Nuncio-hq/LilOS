@@ -210,6 +210,17 @@ export async function serveSurfaces(
           { name: SURFACES_ENV.baseUrl, value: httpUrl },
           { name: SURFACES_ENV.token, value: token },
           { name: SURFACES_ENV.session, value: session },
+          /* #412: the engine env is allow-listed, so the spawn-marker
+             knob live checks use must be granted explicitly to reach
+             `lilos mcp`. */
+          ...(process.env.LILOS_MCP_SPAWN_LOG
+            ? [
+                {
+                  name: "LILOS_MCP_SPAWN_LOG",
+                  value: process.env.LILOS_MCP_SPAWN_LOG,
+                },
+              ]
+            : []),
         ],
       },
       mcpServerHttp: {

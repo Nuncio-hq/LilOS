@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { launcherFor, resolveHarnessConfig } from "../src/config";
@@ -38,6 +38,21 @@ const mkRepo = (...adapters: ("engine-hermes" | "engine-fake")[]) => {
   }
   return root;
 };
+
+describe("#412 no-folder sessions work in the user's home", () => {
+  it("workdir defaults to the home folder, never inside LilOS state", () => {
+    const cfg = resolveHarnessConfig(env());
+    expect(cfg.workdir).toBe(homedir());
+    // AC-2: the default sits beside harness state, never under it — an
+    // agent's pwd is `~`, not `$LILOS_HOME/harness/work`.
+    expect(cfg.workdir.startsWith(cfg.homeDir)).toBe(false);
+  });
+
+  it("LILOS_WORKDIR still pins an explicit default", () => {
+    const cfg = resolveHarnessConfig(env({ LILOS_WORKDIR: "/pinned/work" }));
+    expect(cfg.workdir).toBe("/pinned/work");
+  });
+});
 
 describe("AC-1 (#85) release builds default to the real engine", () => {
   it("engine defaults to hermes when LILOS_ENGINE is unset", () => {
