@@ -199,6 +199,16 @@ export function employeeBadgeMap(): ReadableAtom<Record<string, EmpBadge>> {
   return empBadges;
 }
 
+/**
+ * sessionId -> "has the feed stamped its attach watermark" (#467): latched
+ * true once the first `events.since` replay lands (`synced`), stays true
+ * across later reconnects (`coverageSeq > 0` means the replayed log is still
+ * in the feed — mergeTurns can keep anchoring the stale-but-bound model),
+ * and also latches on a terminal replay error so the #28 degraded view keeps
+ * showing raw relay rows instead of holding them forever.
+ */
+export const sessionFeedAttached = atom<Record<string, boolean>>({});
+
 const feedSubs = new Map<string, () => void>();
 
 /** Call once after boot: keeps `sessionModels` in sync with conversations. */
@@ -207,13 +217,22 @@ export function watchSessionFeeds(): void {
     for (const c of convs) {
       const sid = c.engineRef;
       if (!sid || feedSubs.has(sid)) continue;
-      feedSubs.set(
-        sid,
-        sessionModel(sid).subscribe((m) => {
-          if (sessionModels.get()[sid] !== m)
-            sessionModels.set({ ...sessionModels.get(), [sid]: m });
-        }),
-      );
+      const unModel = sessionModel(sid).subscribe((m) => {
+        if (sessionModels.get()[sid] !== m)
+          sessionModels.set({ ...sessionModels.get(), [sid]: m });
+      });
+      const unAttach = engine.sessionFeed(sid).subscribe((f) => {
+        const attached = f.synced || f.error !== undefined || f.coverageSeq > 0;
+        if (sessionFeedAttached.get()[sid] !== attached)
+          sessionFeedAttached.set({
+            ...sessionFeedAttached.get(),
+            [sid]: attached,
+          });
+      });
+      feedSubs.set(sid, () => {
+        unModel();
+        unAttach();
+      });
     }
   });
 }

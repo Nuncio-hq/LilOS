@@ -349,10 +349,19 @@ export function conversationReplies(
  * `rootMessageId` is the thread's root question — callers strip it out of
  * `replies` (it renders as the thread header instead), so a turn it
  * prompted anchors at the TOP of the reply list, directly under the header.
+ *
+ * `model` = "pending" (#467) marks an engine-backed conversation whose feed
+ * has not stamped its attach watermark yet (first `events.since` replay still
+ * in flight). Without the replay the anchor pass can't place anything — raw
+ * relay rows would paint every employee post after the newest user row for a
+ * frame, the inverse of the #308 invariant once the model binds. Employee
+ * posts are held until attach instead; user rows (and the transcript note)
+ * still render. A non-engine conversation passes `undefined` — there is no
+ * model to wait for, so its relay rows pass through unchanged.
  */
 export function mergeTurns(
   replies: Reply[],
-  model: SessionModel | undefined,
+  model: SessionModel | "pending" | undefined,
   employeeId: string,
   asks: Ask[] = [],
   rewound?: { refs?: ReadonlySet<string>; texts?: ReadonlySet<string> },
@@ -361,6 +370,7 @@ export function mergeTurns(
   conversationState?: Conversation["state"],
 ): Reply[] {
   if (!model) return replies;
+  if (model === "pending") return replies.filter((r) => r.from !== employeeId);
   /* #327: the relay conversation's own word on whether a turn can run —
      a degraded feed that skipped its session.state events can't keep a
      card live behind the relay's idle/closed (mobile's liveTurn parity). */

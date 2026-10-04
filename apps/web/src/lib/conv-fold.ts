@@ -46,8 +46,14 @@ const same = (a: Inputs, b: Inputs): boolean =>
 
 export interface FoldInputs {
   conv: Conversation;
-  /** This conv's reduced engine model — a delta rebuilds only its own. */
+  /** This conv's reduced engine model — a delta rebuilds only its own.
+      `waitingMessages` reads the raw model (steer pairing doesn't wait on
+      the feed's attach watermark, #467). */
   model: SessionModel | undefined;
+  /** mergeTurns' model (#467): "pending" while the session feed hasn't
+      attached — engine-post rows stay held. Keyed on the fold: "pending" →
+      the bound model MUST re-fold or the held replies never appear. */
+  bound: SessionModel | "pending" | undefined;
   /** Conv-scoped message rows (the open thread's pool, else channel rows). */
   msgs: AppMessage[];
   /** Conv-scoped asks. */
@@ -97,6 +103,7 @@ interface Entry {
 const inputKey = (i: FoldInputs): Inputs => [
   i.conv,
   i.model,
+  i.bound,
   i.msgs,
   i.asks,
   i.rewoundEvent,
@@ -156,7 +163,7 @@ function computeFeed(i: FoldInputs): FeedFold {
   }
   const replies = mergeTurns(
     out,
-    i.model,
+    i.bound,
     i.employeeId,
     i.asks,
     rewoundOf(i),
@@ -189,7 +196,7 @@ function computeThread(
       ),
       i.conv.id,
     ),
-    i.model,
+    i.bound,
     i.employeeId,
     i.asks,
     rewoundOf(i),

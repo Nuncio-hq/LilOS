@@ -120,6 +120,7 @@ import {
   modelVisibility,
   navOpen,
   relay,
+  sessionFeedAttached,
   sessionModels,
   workbenchRequests,
 } from "../lib/runtime";
@@ -758,8 +759,24 @@ export function DmPage() {
     );
   }, [employeeId, convs, folderRows, wsPicks]);
 
+  const feedAttached = useAtom(sessionFeedAttached);
+
   const modelFor = (conv: Conversation): SessionModel | undefined =>
     conv.engineRef ? models[conv.engineRef] : undefined;
+
+  /* #467: an engine-backed conversation can anchor replies only once its
+     feed's attach watermark is stamped — before that, engine-post rows would
+     paint unanchored below newer user rows for a frame. "pending" holds them
+     (and the partial model live frames alone would mint) until the first
+     replay lands; a terminal replay error latches attached too so the #28
+     degraded thread keeps the raw relay view. Non-engine conversations are
+     always bound — there is no feed to wait on. */
+  const transcriptBound = (conv: Conversation): boolean =>
+    !conv.engineRef || feedAttached[conv.engineRef] === true;
+  const boundModel = (
+    conv: Conversation,
+  ): SessionModel | "pending" | undefined =>
+    conv.engineRef && !transcriptBound(conv) ? "pending" : modelFor(conv);
 
   const convAsks = (conv: Conversation): Ask[] =>
     asksByConv.get(conv.id) ?? NO_ASKS;
@@ -774,6 +791,10 @@ export function DmPage() {
     return {
       conv,
       model: modelFor(conv),
+      /* #467: the fold keys on the BOUND model too — without it the cache
+         would keep serving the "pending" fold after the feed attaches and
+         the held-back engine replies would never appear. */
+      bound: boundModel(conv),
       msgs: msgsByConv.get(conv.id) ?? NO_MSGS,
       asks: convAsks(conv),
       rewoundEvent: rewinds[conv.id],

@@ -82,6 +82,7 @@ const inputs = (
 ): FoldInputs => ({
   conv: c,
   model: undefined,
+  bound: undefined,
   msgs: [],
   asks: [],
   rewoundEvent: undefined,
@@ -193,6 +194,39 @@ describe("AC-427 FoldCache", () => {
     cache.reset();
     expect(cache.for(inputs(c1))).toBe(a1);
     expect(cache.for(inputs(c2))).not.toBe(a2);
+  });
+
+  test("bound 'pending' holds engine posts until the attached model refolds (#467)", () => {
+    const cache = new FoldCache();
+    const c = { ...conv("c1"), deliveredSeq: 10 };
+    const usr = msg({ id: "m-usr", authorId: "me", text: "yo", seq: 1 });
+    const emp = msg({
+      id: "m-emp",
+      authorKind: "employee",
+      authorId: "e1",
+      text: "hi",
+      seq: 2,
+    });
+    /* The session model is already reduced (waitingMessages pairs against
+       it) but the feed's attach watermark hasn't landed: mergeTurns must
+       hold the employee row, and the cache must key on THAT — else the
+       "pending" fold would keep serving after attach. */
+    const m = model({ state: "running" });
+    const pending = cache.for(
+      inputs(c, { model: m, bound: "pending", msgs: [usr, emp] }),
+    );
+    expect(pending.replies.map((r) => r.id)).toEqual(["m-usr"]);
+    /* Same inputs, feed now attached: the held row appears — a re-fold, not
+       the stale pending entry. */
+    const attached = cache.for(
+      inputs(c, { model: m, bound: m, msgs: [usr, emp] }),
+    );
+    expect(attached).not.toBe(pending);
+    expect(attached.replies.map((r) => r.id)).toEqual(["m-usr", "m-emp"]);
+    /* And it stays folded: the attached fold caches on its own key. */
+    expect(cache.for(inputs(c, { model: m, bound: m, msgs: [usr, emp] }))).toBe(
+      attached,
+    );
   });
 
   test("the feed row keeps summary padding + scoped turn keys", () => {
