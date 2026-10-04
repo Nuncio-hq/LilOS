@@ -1,12 +1,22 @@
+import { cn } from "../lib/utils";
 import type { TranscriptNote } from "../types";
 
 /* #532: one note visual per kind, shared so Focus and ThreadView can't
    drift. The VIEW picks the position — "trimmed" heads the transcript (it
    describes history missing above the first entry), "unavailable" keeps
-   the dashed tail box (#28 is about the live tail). The divider mirrors
-   the "N replies" separator: hairline — centered muted text — hairline,
-   with ≥24px guaranteed hairlines so the text can't swallow them. */
-export function TranscriptNoteRow({ note }: { note: TranscriptNote }) {
+   the dashed tail box (#28 is about the live tail). The trimmed divider is
+   centered low-emphasis — muted text between hairlines, the same
+   vocabulary the transcript's separators use — with ≥24px hairlines so
+   the text can't swallow them. `className` merges into the unavailable
+   box: the views' content columns differ (ThreadView pads nothing, Focus
+   pads px-5), so each keeps its own outer insets. */
+export function TranscriptNoteRow({
+  note,
+  className,
+}: {
+  note: TranscriptNote;
+  className?: string;
+}) {
   if (note.kind === "trimmed") {
     return (
       <div
@@ -24,7 +34,10 @@ export function TranscriptNoteRow({ note }: { note: TranscriptNote }) {
     <div
       data-transcript-note
       data-kind="unavailable"
-      className="mx-3 my-2 rounded-lg border border-dashed px-3 py-2 text-muted-foreground text-xs sm:mx-5"
+      className={cn(
+        "rounded-lg border border-dashed px-3 py-2 text-muted-foreground text-xs",
+        className,
+      )}
     >
       {note.text}
     </div>

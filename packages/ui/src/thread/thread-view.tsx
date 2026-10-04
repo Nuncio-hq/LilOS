@@ -427,7 +427,12 @@ export function ThreadView({
             />
           ))}
           {transcriptNote?.kind === "unavailable" && (
-            <TranscriptNoteRow note={transcriptNote} />
+            /* Same outer insets as the #28 note this replaces — the panel's
+               content column carries no horizontal padding. */
+            <TranscriptNoteRow
+              note={transcriptNote}
+              className="mx-3 my-2 sm:mx-5"
+            />
           )}
           {work?.by && (
             <div className="mx-3 my-2 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 text-xs sm:mx-5">
