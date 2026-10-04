@@ -26,8 +26,7 @@ import { bootStack, freePort, type Stack } from "./helpers/stack";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
-/* Kernel-assigned ports — the shared `wport(base + WORKER*100)` scheme
-   collides across spec files (base differences < worker stride). */
+/* Kernel-assigned ports: bound-and-probed free ports per stack (#484). */
 
 const SHOTS = path.join(repo, "test-results", "ac-110");
 

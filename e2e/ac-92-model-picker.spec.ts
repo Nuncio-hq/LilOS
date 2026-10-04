@@ -1,8 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #92 — model picker v2 in the REAL app (apps/web over relay + harness
@@ -23,11 +22,7 @@ const SHOTS = path.join(repo, "test-results", "ac-92");
 let stackA: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stackA = await bootStack("picker", {
-    relay: wport(4786),
-    feed: wport(4787),
-    web: wport(5389),
-  });
+  stackA = await bootStack("picker", await pickPorts());
 });
 test.afterAll(async () => {
   await stackA?.stop();
@@ -306,7 +301,7 @@ test("AC-6 + AC-7 Refresh surfaces a new model without restart; Edit models' ONE
   // stack restart on the same LILOS_HOME.
   const stackB = await bootStack(
     "picker-restart",
-    { relay: wport(4802), feed: wport(4803), web: wport(5304) },
+    await pickPorts(),
     {},
     { home: stackA.home },
   );
@@ -333,16 +328,9 @@ test("AC-3 (#30) no picker when the engine lacks the models capability", async (
 }) => {
   test.setTimeout(240_000);
   const errors = watchConsole(page);
-  /* Bases identical to ac-112's second stack on purpose: every residue
-     mod 100 is already owned, and ports.spec's dedupe blesses literal reuse
-     — two spec files never share a live worker index, so the real ports
-     can't collide. This file is serial, so the bases also can't clash with
-     stackA or the restart stack on the same worker. */
-  const stackB = await bootStack(
-    "picker-nomodels",
-    { relay: wport(4723), feed: wport(4724), web: wport(5344) },
-    { LILOS_HIDE_CAPS: "models" },
-  );
+  const stackB = await bootStack("picker-nomodels", await pickPorts(), {
+    LILOS_HIDE_CAPS: "models",
+  });
   try {
     await dmDefault(stackB, page);
     // The new-session composer is rendered but carries no picker trigger.

@@ -3,8 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #180 — plans & task lists from the real engine, in the real app.
@@ -26,11 +25,7 @@ const wbDir = mkdtempSync(path.join(tmpdir(), "lilos-ac180-wb-"));
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac180", {
-    relay: wport(4660),
-    feed: wport(4661),
-    web: wport(5333),
-  });
+  stack = await bootStack("ac180", await pickPorts());
 });
 test.afterAll(async () => {
   await stack?.stop();

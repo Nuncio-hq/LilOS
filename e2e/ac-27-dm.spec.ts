@@ -6,8 +6,13 @@ import { fileURLToPath } from "node:url";
 import { _electron, expect, type Page, test } from "@playwright/test";
 import { allowAll, allowAllWhile, expectSettled } from "./helpers/approvals";
 import { electronScreenshot, ensureDesktopPayload } from "./helpers/electron";
-import { bootStack, type Stack, waitForHttp } from "./helpers/stack";
-import { wport } from "./ports";
+import {
+  bootStack,
+  freePort,
+  pickPorts,
+  type Stack,
+  waitForHttp,
+} from "./helpers/stack";
 
 /**
  * Issue #27 — desktop DM end to end. Each acceptance criterion is a named
@@ -32,11 +37,7 @@ test.beforeAll(async () => {
   test.setTimeout(120_000);
   stackA = await bootStack(
     "main",
-    {
-      relay: wport(4643),
-      feed: wport(4647),
-      web: wport(5241),
-    },
+    await pickPorts(),
     // #118: the signed-in name is the OS user's — pin it so the approval
     // label assertions below stay deterministic on any machine.
     { LILOS_USER_NAME: "Oscar" },
@@ -210,11 +211,9 @@ test("AC-5b without the `steer` capability, mid-turn typing queues", async ({
   page,
 }) => {
   test.setTimeout(180_000);
-  const stackB = await bootStack(
-    "nosteer",
-    { relay: wport(4653), feed: wport(4654), web: wport(5245) },
-    { LILOS_HIDE_CAPS: "steer" },
-  );
+  const stackB = await bootStack("nosteer", await pickPorts(), {
+    LILOS_HIDE_CAPS: "steer",
+  });
   try {
     await dmDefault(stackB, page);
     await send(page, "Add a release note to the readme");
@@ -370,14 +369,9 @@ test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it",
   page,
 }) => {
   test.setTimeout(240_000);
-  const stackB = await bootStack(
-    "nosteer-315",
-    /* Bases are suite-saturated (all 100 residues are taken — ports.spec
-       gates it), so reuse literals other spec files already own: identical
-       bases are safe since two specs never share a worker index. */
-    { relay: wport(4680), feed: wport(4681), web: wport(5385) },
-    { LILOS_HIDE_CAPS: "steer" },
-  );
+  const stackB = await bootStack("nosteer-315", await pickPorts(), {
+    LILOS_HIDE_CAPS: "steer",
+  });
   try {
     // Remove first: the queued send leaves the tray and never reaches the
     // conversation or the engine.
@@ -500,7 +494,7 @@ test("AC-7 real-app build: every visible control has a working handler", async (
       c === 0 ? resolve() : reject(new Error(`vite build exit ${c}`)),
     );
   });
-  const port = wport(5246);
+  const port = await freePort();
   const preview = spawn(
     vite,
     [

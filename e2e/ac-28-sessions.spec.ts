@@ -8,12 +8,14 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 import {
   captureProc,
   killProc,
+  pickPorts,
+  type StackPorts,
+  WORKER,
   waitForFeed,
   waitForHttp,
   waitForRelay,
   waitForToken,
 } from "./helpers/stack";
-import { WORKER, wport } from "./ports";
 
 /**
  * Issue #28 — sessions: history after restart, rename/archive, filter,
@@ -66,15 +68,14 @@ async function spawnRelay(home: string, port: number): Promise<ChildProcess> {
  * offset per worker — otherwise 4 relays race the same port and die (#84).
  */
 const viteCacheDir = `node_modules/.vite-ac28-w${WORKER}`;
+/* Picked once per spec run — a restart re-boots onto the same ports so
+   conversation URLs stay valid across kill→boot (#484). */
+let PORTS: StackPorts;
 
 async function boot(tag: string, home?: string): Promise<Procs> {
   const base = home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-28-${tag}-`));
   const leakTag = engineTag(tag);
-  const ports = {
-    relay: wport(4688),
-    feed: wport(4692),
-    web: wport(5329),
-  };
+  const ports = PORTS;
   let viteOut = "";
   const procs: Procs["procs"] = {
     relay: undefined,
@@ -252,6 +253,7 @@ test.beforeAll(async () => {
     recursive: true,
     force: true,
   });
+  PORTS = await pickPorts();
   stack = await boot("main");
 });
 test.afterAll(async () => {

@@ -2,8 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #467 — post-reload, the thread must never paint the unanchored frame:
@@ -28,17 +27,13 @@ const SHOTS = path.join(repo, "test-results", "ac-467");
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(180_000);
-  stack = await bootStack(
-    "preattach",
-    { relay: wport(5348), feed: wport(5349), web: wport(5342) },
-    {
-      LILOS_USER_NAME: "Oscar",
-      /* Same shape as ac-308: no steer → mid-run sends queue and drain as
+  stack = await bootStack("preattach", await pickPorts(), {
+    LILOS_USER_NAME: "Oscar",
+    /* Same shape as ac-308: no steer → mid-run sends queue and drain as
          ref'd turns, which is what puts relay posts AFTER later user rows. */
-      LILOS_HIDE_CAPS: "steer",
-      ENGINE_FAKE_TICK: "300",
-    },
-  );
+    LILOS_HIDE_CAPS: "steer",
+    ENGINE_FAKE_TICK: "300",
+  });
 });
 test.afterAll(async () => {
   await stack?.stop();

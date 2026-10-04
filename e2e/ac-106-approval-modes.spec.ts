@@ -1,8 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #106 — approval modes per conversation, real app (apps/web over
@@ -63,11 +62,7 @@ test("AC-1+AC-2+AC-4+AC-3 the pill drives the mode; cards offer the four options
   page,
 }) => {
   test.setTimeout(300_000);
-  const stack = await bootStack("ac106", {
-    relay: wport(4690),
-    feed: wport(4691),
-    web: wport(4692),
-  });
+  const stack = await bootStack("ac106", await pickPorts());
   try {
     /* ── New conversation starts on Ask (the factory default) ── */
     await dmHome(stack, page);
@@ -128,11 +123,7 @@ test("AC-3+AC-9 Settings Approvals: policy pick, honest copy, and the default se
   page,
 }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack("ac106s", {
-    relay: wport(4693),
-    feed: wport(4694),
-    web: wport(4695),
-  });
+  const stack = await bootStack("ac106s", await pickPorts());
   try {
     await dmHome(stack, page);
     await page
