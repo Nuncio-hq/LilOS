@@ -681,6 +681,10 @@ export function toThreadDetail(opts: {
   /** `workbench.opened` events for this thread (#340 AC-2b) — the phone's
      tappable "look at this" cards, appended after the conversation. */
   wbCards?: readonly { at: number; target: WbCardTarget }[];
+  /** #514: the feed's `historyTrimmed` (#431) — the engine's capped log
+     dropped this session's head, so the transcript says so instead of
+     letting the missing prefix read as a render gap (web: transcriptNote). */
+  historyTrimmed?: boolean;
 }): ThreadDetail {
   const { conversation: conv } = opts;
   const employee = opts.employee;
@@ -831,6 +835,12 @@ export function toThreadDetail(opts: {
       : {}),
     jobs,
     ...(opts.prs?.length ? { prs: [...opts.prs] } : {}),
+    ...(opts.historyTrimmed
+      ? {
+          transcriptNote:
+            "Earlier history was trimmed — this session's event log is capped.",
+        }
+      : {}),
     entries: [
       ...entries,
       /* #340 AC-2b: a `workbench_open` is the agent's "look at this" —

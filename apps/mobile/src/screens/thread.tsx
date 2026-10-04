@@ -285,6 +285,9 @@ function useThread(conversationId: string) {
             prs: prsMap[conversationId],
             thoughts,
             wbCards: wbCards[conversationId],
+            /* #514: session.events answered `truncated` — the transcript's
+               head is gone for good, the note says so (web: transcriptNote). */
+            historyTrimmed: feed.historyTrimmed,
             rewound: {
               refs: new Set(rewind?.removedIds ?? []),
               texts: new Set(
@@ -315,6 +318,7 @@ function useThread(conversationId: string) {
       conversationId,
       rewind,
       rewoundMessages,
+      feed.historyTrimmed,
     ],
   );
 

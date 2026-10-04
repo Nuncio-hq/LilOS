@@ -159,6 +159,19 @@ export function ThreadScreen({
               )}
             </Rise>
           ))}
+          {/* #514: the transcript's own note (web: the dashed transcriptNote
+             box after the replies) — e.g. the engine's capped log dropped
+             this session's head (#431). */}
+          {!!t.transcriptNote && (
+            <View
+              className="rounded-lg border border-border px-3 py-2"
+              style={{ borderStyle: "dashed" }}
+            >
+              <AppText tone="muted" className="text-[13px] leading-[18px]">
+                {t.transcriptNote}
+              </AppText>
+            </View>
+          )}
         </ScrollView>
 
         <View className="absolute inset-x-0 bottom-0 gap-2">

@@ -291,6 +291,10 @@ export type ThreadDetail = {
   context?: ContextUsage;
   /** Background processes of this session, newest last. */
   jobs?: BackgroundJobRow[];
+  /** #514: a note on the transcript's state, rendered after the entries
+     (web: transcriptNote) — e.g. "Earlier history was trimmed" when the
+     engine's capped log dropped this session's head (#431). */
+  transcriptNote?: string;
   entries: ThreadEntry[];
 };
 
