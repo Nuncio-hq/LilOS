@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -134,5 +134,84 @@ describe("AC-1 (#95) a too-old Hermes is fatal — no retry loop", () => {
     const err = await launcher.start().catch((e) => e);
     expect(isFatalEngineStart(err)).toBe(false);
     expect(String(err)).toMatch(/not part of this build/);
+  });
+});
+
+describe("AC-1 (#412) the engine env is allow-listed — no LilOS internals", () => {
+  it("the child sees only the documented LILOS_* names; options.env grants survive", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "lilos-env-"));
+    const out = join(dir, "env.txt");
+    const poison = [
+      "LILOS_RELAY_TOKEN",
+      "LILOS_RELAY_HOME",
+      "LILOS_HARNESS_HOME",
+      "LILOS_WORKDIR",
+      "LILOS_INTERNAL_MARKER",
+    ];
+    const prev = Object.fromEntries(poison.map((k) => [k, process.env[k]]));
+    process.env.LILOS_RELAY_TOKEN = "relay-secret";
+    process.env.LILOS_RELAY_HOME = "/lilos/relay";
+    process.env.LILOS_HARNESS_HOME = "/lilos/harness";
+    process.env.LILOS_WORKDIR = "/lilos/harness/work";
+    process.env.LILOS_INTERNAL_MARKER = "not-for-agents";
+    try {
+      const launcher = commandLauncher({
+        name: "envtest",
+        command: ["sh", "-c", `env > "${out}"; echo LISTENING ws://x`],
+        readyPattern: /LISTENING (ws:\/\/\S+)/,
+        env: {
+          LILOS_SURFACES_URL: "http://127.0.0.1:9/gw",
+          LILOS_ENGINE_TOKEN: "eng-token",
+        },
+        log: log(),
+      });
+      await launcher.start();
+      const childEnv = readFileSync(out, "utf8");
+      const lilos = childEnv
+        .split("\n")
+        .filter((l) => l.startsWith("LILOS_"))
+        .sort();
+      // The whole harness LILOS_* set — relay token, homes, workdir, any
+      // future internal marker — never reaches the engine; only the
+      // documented pair (granted via options.env) does.
+      expect(lilos).toEqual([
+        "LILOS_ENGINE_TOKEN=eng-token",
+        "LILOS_SURFACES_URL=http://127.0.0.1:9/gw",
+      ]);
+      // Non-LILOS_* env is the process environment, not LilOS state — it
+      // passes through so providers/PATH keep working.
+      expect(childEnv).toContain("PATH=");
+    } finally {
+      for (const [k, v] of Object.entries(prev)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it("a LILOS_* name in options.env is an explicit grant, not a leak", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "lilos-env-"));
+    const out = join(dir, "env.txt");
+    const prev = process.env.LILOS_RELAY_TOKEN;
+    process.env.LILOS_RELAY_TOKEN = "still-secret";
+    try {
+      await commandLauncher({
+        name: "envtest",
+        command: ["sh", "-c", `env > "${out}"; echo LISTENING ws://x`],
+        readyPattern: /LISTENING (ws:\/\/\S+)/,
+        // A caller that deliberately forwards a LILOS_* var (the gateway
+        // creds today, any future engine-facing knob) keeps it.
+        env: { LILOS_FUTURE_KNOB: "granted" },
+        log: log(),
+      }).start();
+      const lilos = readFileSync(out, "utf8")
+        .split("\n")
+        .filter((l) => l.startsWith("LILOS_"))
+        .sort();
+      expect(lilos).toEqual(["LILOS_FUTURE_KNOB=granted"]);
+    } finally {
+      if (prev === undefined) delete process.env.LILOS_RELAY_TOKEN;
+      else process.env.LILOS_RELAY_TOKEN = prev;
+    }
   });
 });

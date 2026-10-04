@@ -45,6 +45,8 @@ interface World {
   sleep: ReturnType<typeof createFakeSleepGuard>;
   user: RelayClient;
   log: ReturnType<typeof createMemoryLogger>;
+  /** The harness's configured no-folder workdir — also a usable folder cwd. */
+  workdir: string;
   cleanup: () => Promise<void>;
 }
 
@@ -1461,7 +1463,9 @@ describe("auto titles (#137)", () => {
 describe("interrupt ordering (#274)", () => {
   it("#274 AC-1 a Stop fired inside the checkpoint window lands behind its prompt", async () => {
     // Hold the checkpoint snapshot: sendPrompt parks inside stampCheckpoint
-    // exactly where a real snapshot costs tens-hundreds of ms.
+    // exactly where a real snapshot costs tens-hundreds of ms. The window
+    // exists only for a folder session — #412 stamps nothing for
+    // folder-less conversations, so this send opens with a cwd.
     let releaseSnapshot!: () => void;
     let snapshotEntered = false;
     const held = new Promise<void>((r) => (releaseSnapshot = r));
@@ -1483,6 +1487,7 @@ describe("interrupt ordering (#274)", () => {
       }>("conversations.open", {
         channelId: channel.id,
         text: "Add a footer to the page",
+        cwd: w.workdir,
       });
       await waitFor(
         () => (snapshotEntered ? true : undefined),
@@ -2334,6 +2339,9 @@ describe("the prompt lane + claimed boundary (#403)", () => {
       }>("conversations.open", {
         channelId: channel.id,
         text: "Add a footer to the page",
+        /* The checkpoint window exists only for a folder session — #412
+           stamps nothing folder-less. */
+        cwd: w.workdir,
       });
       /* The first send's dispatch is parked inside stampCheckpoint —
          exactly where a real snapshot costs time. On the unfixed lane a
@@ -2424,6 +2432,9 @@ describe("the prompt lane + claimed boundary (#403)", () => {
       }>("conversations.open", {
         channelId: channel.id,
         text: "Add a footer to the page",
+        // Folder session — the #403 window lives inside the checkpoint
+        // stamp #412 now skips for folder-less conversations.
+        cwd: w.workdir,
       });
       await waitFor(() => gate.entered() || undefined, "checkpoint window");
       await w.user.request("messages.remove", {

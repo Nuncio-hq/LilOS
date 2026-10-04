@@ -158,7 +158,8 @@ const harnessEnv: Record<string, string> = {
   LILOS_RELAY_TOKEN: token,
   LILOS_HARNESS_HOME: HARNESS_HOME,
   LILOS_REPO_ROOT: repo,
-  LILOS_WORKDIR: path.join(HARNESS_HOME, "work"),
+  /* No LILOS_WORKDIR: #412 defaults no-folder sessions to the user's home —
+     the shipped behavior. e2e pins its own scratch workdir instead. */
   LILOS_FEED_PORT: String(FEED_PORT),
 };
 if (!process.env.LILOS_ENGINE) harnessEnv.LILOS_ENGINE = "fake";

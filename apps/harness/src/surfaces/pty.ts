@@ -1,9 +1,12 @@
 import type { PtyHandle, PtySpawnOptions } from "@lilos/surfaces";
+import { scrubEngineEnv } from "../engine/launcher";
 
 /**
  * The harness-owned PTY (issue #36, AC-1): a login shell on Bun's native
  * `terminal` spawn option — survives viewers disconnecting; `SessionSurfaces`
  * respawns it on exit. Bun-only, so it lives at the app entry (AGENTS.md).
+ * Agents reach it through the `lilos_terminal_*` tools, so #412 hands it
+ * the same allow-listed env the engine gets — never the harness's own.
  */
 export function bunPtySpawner(
   opts: PtySpawnOptions,
@@ -20,7 +23,7 @@ export function bunPtySpawner(
     },
     cwd: opts.cwd ?? process.env.HOME ?? process.cwd(),
     env: {
-      ...process.env,
+      ...scrubEngineEnv(process.env),
       TERM: "xterm-256color",
       COLORTERM: "truecolor",
     } as Record<string, string>,
