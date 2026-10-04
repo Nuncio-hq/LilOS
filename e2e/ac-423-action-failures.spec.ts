@@ -36,8 +36,8 @@ const VIEW = { width: 1288, height: 900 };
 const ERR = "the engine host is gone";
 
 let stack: Stack;
+test.setTimeout(180_000);
 test.beforeAll(async () => {
-  test.setTimeout(180_000);
   stack = await bootStack("ac423", await pickPorts(), {
     LILOS_USER_NAME: "Oscar",
   });
@@ -114,10 +114,12 @@ async function wireFailures(page: Page) {
   };
 }
 
-/** Open the app, land on Default's DM home (dismissing the first-run card). */
+/** Open the app, land on Default's DM home (dismissing the first-run card).
+    `statusPollMs=500` shortens the catalog-seed poll so the AC-3 reload leg
+    doesn't wait the production 15s for the heartbeat-carried fallback. */
 async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
+  await page.goto(`${stack.webUrl}/?statusPollMs=500`);
+  const aside = page.locator("aside").first();
   await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
     timeout: 30_000,
   });
@@ -172,13 +174,16 @@ test("AC-3 the model catalog survives failed models.list calls", async ({
   });
   await dmDefault(page);
   await expect(page.locator(PICKER).first()).toBeVisible({ timeout: 30_000 });
-  /* (b) The host fully gone: every models.list rejects, yet the relay's
-     cached hello-time catalog still seeds the picker. */
+  /* (b) The host fully gone for the app's fetches: every models.list
+     rejects, yet the relay's host-status cache still seeds the picker —
+     a hello that predates the first models-carrying report catches up on
+     the next status poll (statusPollMs=500 above). */
   fail.heal();
   fail.reject(method("models.list"));
   await page.reload();
   await dmDefault(page);
   await expect(page.locator(PICKER).first()).toBeVisible({ timeout: 30_000 });
+  await shot(page, "ac3-catalog-seeded");
 });
 
 test("AC-2 a failed history load shows a retryable notice", async ({
@@ -207,6 +212,17 @@ test("AC-2 a failed history load shows a retryable notice", async ({
   await expect(
     page.getByText("history that must survive a reload").first(),
   ).toBeVisible({ timeout: 15_000 });
+
+  /* The panel thread (off /focus) carries the same notice — the AC says
+     "in the thread", and dm.tsx renders it on both views. A reload forces
+     the remount (focus→panel is a nested route, no guaranteed refetch). */
+  fail.reject(method("messages.list"));
+  await page.goto(page.url().replace(/\/focus$/, ""));
+  await page.reload();
+  await expect(page.locator(BANNER).first()).toContainText(
+    "Couldn't load this session's history",
+    { timeout: 30_000 },
+  );
 });
 
 test("AC-1 a failed Stop shows its reason", async ({ page }) => {
@@ -319,11 +335,12 @@ test("AC-1 a failed background-jobs list shows its reason", async ({
 }) => {
   await page.setViewportSize(VIEW);
   const fail = await wireFailures(page);
-  /* Armed before the session opens: jobs.list fires the moment the session
-     feed stamps its attach watermark. */
-  fail.reject(method("jobs.list"));
   await dmDefault(page);
   await openSession(page, "a session whose jobs list fails");
+  /* Arm, then remount: the jobs effect refires the moment the feed is
+     synced, so the toast is fresh when the assertion starts polling. */
+  fail.reject(method("jobs.list"));
+  await page.reload();
   await expect(page.locator(TOAST)).toContainText(
     "Couldn't load background jobs",
     { timeout: 30_000 },

@@ -667,7 +667,7 @@ export function DmPage() {
               },
         );
       } catch (e) {
-        say(`Rewind failed — ${e instanceof Error ? e.message : String(e)}`);
+        say(describeActionError("Couldn't rewind the turn", e));
       }
     })();
   };
@@ -1205,9 +1205,7 @@ export function DmPage() {
           sessionId: conv.engineRef,
           jobId,
         })
-        .catch((e) =>
-          say(`Stop failed — ${e instanceof Error ? e.message : String(e)}`),
-        );
+        .catch((e) => say(describeActionError("Couldn't stop the job", e)));
     };
 
     /* #315 tray actions. The relay owns the row: Remove marks it `removed`
@@ -1221,7 +1219,7 @@ export function DmPage() {
       void relay
         .request("messages.remove", { messageId: target.id })
         .catch((e) =>
-          say(`Remove failed — ${e instanceof Error ? e.message : String(e)}`),
+          say(describeActionError("Couldn't remove the message", e)),
         );
     };
     const onUnqueue = (i: number) => {
@@ -1230,7 +1228,7 @@ export function DmPage() {
       void relay
         .request("messages.remove", { messageId: target.id })
         .catch((e) =>
-          say(`Remove failed — ${e instanceof Error ? e.message : String(e)}`),
+          say(describeActionError("Couldn't remove the message", e)),
         );
     };
     const onSendQueued = (i: number) => {
@@ -1238,9 +1236,7 @@ export function DmPage() {
       if (!target) return;
       void relay
         .request("messages.send", { messageId: target.id })
-        .catch((e) =>
-          say(`Send failed — ${e instanceof Error ? e.message : String(e)}`),
-        );
+        .catch((e) => say(describeActionError("Couldn't send the message", e)));
     };
     const pendingItems = folded.thread.pendingItems;
 
@@ -1429,9 +1425,7 @@ export function DmPage() {
             openCwd && editors !== null
               ? (path, app, line) => {
                   void hostOsOpen(openCwd, path, app, line).catch((e) =>
-                    say(
-                      `Open failed — ${e instanceof Error ? e.message : String(e)}`,
-                    ),
+                    say(describeActionError("Couldn't open the file", e)),
                   );
                 }
               : null
@@ -1598,9 +1592,7 @@ export function DmPage() {
             openCwd && editors !== null
               ? (path, app, line) => {
                   void hostOsOpen(openCwd, path, app, line).catch((e) =>
-                    say(
-                      `Open failed — ${e instanceof Error ? e.message : String(e)}`,
-                    ),
+                    say(describeActionError("Couldn't open the file", e)),
                   );
                 }
               : undefined

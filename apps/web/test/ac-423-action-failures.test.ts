@@ -18,6 +18,7 @@ import {
   engineModels,
   engineProviders,
   loadModelCatalog,
+  mergeCatalogSeed,
 } from "../src/lib/runtime";
 import { toast } from "../src/lib/toast";
 
@@ -254,5 +255,28 @@ describe("AC-3 loadModelCatalog", () => {
     );
     expect(ok).toBe(false);
     expect(engineModels.get()).toEqual([]);
+  });
+
+  test("a status poll after an empty hello refreshes the seed (CI: the picker stayed dead until reload)", () => {
+    /* The hello-time engineHost predates the first models-carrying
+       heartbeat — the status poll is what keeps the seed honest. */
+    const seed = mergeCatalogSeed(host([]), {
+      capabilities: [{ id: "models", name: "Models" }],
+      models: [{ id: "late" }],
+      defaultModel: "late",
+    });
+    expect(seed?.models?.map((m) => m.id)).toEqual(["late"]);
+    expect(seed?.defaultModel).toBe("late");
+  });
+
+  test("a status block without a field never blanks the seed it had", () => {
+    const seed = mergeCatalogSeed(host([{ id: "kept" }]), {
+      capabilities: [{ id: "steer", name: "Steer" }],
+    });
+    expect(seed?.models?.map((m) => m.id)).toEqual(["kept"]);
+    /* And a poll without an engine block leaves the seed alone. */
+    expect(
+      mergeCatalogSeed(host([{ id: "kept" }]), undefined)?.models?.[0]?.id,
+    ).toBe("kept");
   });
 });

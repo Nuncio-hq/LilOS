@@ -8,6 +8,7 @@ import {
 import type {
   Ask,
   EngineHostStatus,
+  SystemStatusResult,
   WelcomeResult,
   WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
@@ -77,6 +78,14 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
      through the host's boot gap, and `host.changed` / a reconnect re-ask
      while the catalog stays empty (#483's fix, same seam). */
   catalogSeed = welcome.engineHost;
+  /* A hello sent before the host's first models-carrying report keeps an
+     empty seed — every status poll carries the same fields, so keep it
+     fresh and re-ask while the catalog is still empty (#423 AC-3). */
+  relay.status.listen((s) => {
+    catalogSeed = mergeCatalogSeed(catalogSeed, s?.result?.engine);
+    if (catalogCapable() && !engineModels.get().length)
+      void loadCatalog({ retries: CATALOG_RETRIES });
+  });
   const un = engine.description.listen((d) => {
     if (!d?.capabilities.some((c) => c.id === "models")) return;
     un();
@@ -236,14 +245,39 @@ export async function loadModelCatalog(
       });
     }
     try {
+      /* A live answer — even an empty one — ends the poll. A rejection
+         re-asks through the budget: rows already on screen may be the
+         seed's while the host is still booting (#483's race). */
       applyModelCatalog(await listModels({ refresh: opts?.refresh }));
+      return engineModels.get().length > 0;
     } catch {
-      /* A failed call leaves the seeded rows as the catalog until a live
-         answer lands — keep polling through the attempts budget. */
+      /* keep polling */
     }
-    if (engineModels.get().length) return true;
   }
   return engineModels.get().length > 0;
+}
+
+/**
+ * Fold a `system.status` engine block into the catalog seed (#423 AC-3):
+ * an early hello predates the host's first models-carrying report, so each
+ * poll refreshes the fallback — a block without a field never blanks what
+ * the seed already holds.
+ */
+export function mergeCatalogSeed(
+  seed: EngineHostStatus | undefined,
+  engine: SystemStatusResult["engine"],
+): EngineHostStatus | undefined {
+  if (!engine) return seed;
+  return {
+    connected: true,
+    state: seed?.state,
+    detail: seed?.detail,
+    capabilities: engine.capabilities ?? seed?.capabilities,
+    models: engine.models ?? seed?.models,
+    providers: seed?.providers,
+    defaultModel: engine.defaultModel ?? seed?.defaultModel,
+    defaultProvider: engine.defaultProvider ?? seed?.defaultProvider,
+  };
 }
 
 /** Models capability from either source: the engine feed's `describe`, or
@@ -257,16 +291,25 @@ function catalogCapable(): boolean {
 
 /** The boot-bound loader: the live call through `relay`, the seed captured
     at hello. `refresh: true` is the host-return path — the engine re-probes
-    instead of answering its cache. */
-function loadCatalog(opts?: {
+    instead of answering its cache. Triggers overlap by design (describe,
+    host.changed, reconnect, every status poll while empty), so one run at
+    a time: a caller that arrives mid-flight rides the run already asking. */
+let catalogInFlight = false;
+async function loadCatalog(opts?: {
   refresh?: boolean;
   retries?: number;
 }): Promise<boolean> {
-  return loadModelCatalog(
-    (params) => relay.listModels(params),
-    catalogSeed,
-    opts,
-  );
+  if (catalogInFlight) return engineModels.get().length > 0;
+  catalogInFlight = true;
+  try {
+    return await loadModelCatalog(
+      (params) => relay.listModels(params),
+      catalogSeed,
+      opts,
+    );
+  } finally {
+    catalogInFlight = false;
+  }
 }
 
 const modelCache = new Map<string, ReadableAtom<SessionModel>>();
