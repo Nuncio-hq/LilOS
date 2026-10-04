@@ -731,7 +731,7 @@ describe("workspace harness", () => {
     }
   });
 
-  it("AC-4 ends a turn lost across sleep as interrupted with a Retry note, never a spinner", async () => {
+  it("AC-4 ends a turn lost across sleep as interrupted — session card gets the Retry, never a spinner", async () => {
     const w = await setupWorld();
     try {
       const { channel } = await openDmConversation(w.user);
@@ -778,15 +778,75 @@ describe("workspace harness", () => {
         );
         return messages.find((m) => m.text.includes("interrupted"));
       }, "interrupted note");
-      expect(note.text).toContain("Retry");
-      await waitFor(async () => {
+      /* #419 AC-4: the note reports the interrupt; the Retry now lives on
+         the session card the conversation carries — `turnFailure`, not a
+         "Retry." tail on plain text. */
+      expect(note.text).not.toContain("Retry");
+      const failed = await waitFor(async () => {
         const { conversations } = await w.user.request<{
-          conversations: { id: string; state: string }[];
+          conversations: {
+            id: string;
+            state: string;
+            turnFailure?: { kind: string; text: string };
+          }[];
         }>("conversations.list", {});
         const c = conversations.find((x) => x.id === conversation.id);
         return c?.state === "idle" ? c : undefined;
       }, "conversation back to idle");
+      expect(failed.turnFailure?.kind).toBe("sleep");
+      expect(failed.turnFailure?.text).toContain("slept");
       expect(w.sleep.held).toBe(false);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("#419 a turn.completed.error stamps turnFailure on the conversation; the next turn clears it", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "fail the migration check", // engine-fake's scripted failure
+      });
+      const convWith = async () => {
+        const { conversations } = await w.user.request<{
+          conversations: {
+            id: string;
+            state: string;
+            turnFailure?: { kind: string; text: string };
+          }[];
+        }>("conversations.list", {});
+        return conversations.find((x) => x.id === conversation.id);
+      };
+      const failed = await waitFor(
+        async () => (await convWith())?.turnFailure,
+        "turnFailure stamped",
+      );
+      expect(failed?.kind).toBe("model");
+      expect(failed?.text).toContain("engine-fake: scripted failure");
+      // The error also lands as the thread's system note (its in-thread trace).
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.text.startsWith("Error: engine-fake"));
+      }, "error note");
+
+      // Retry's re-send: a fresh user message starts a turn — the card clears
+      // on turn.started and the new answer lands under the failed turn.
+      await postMessage(w.user, channel.id, conversation.id, "Try again");
+      const cleared = await waitFor(async () => {
+        const c = await convWith();
+        return c && c.turnFailure === undefined ? c : undefined;
+      }, "turnFailure cleared");
+      expect(cleared.state).not.toBe("closed");
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find(
+          (m) => m.authorKind === "employee" && m.text.includes("Try again"),
+        );
+      }, "retry answer");
     } finally {
       await w.cleanup();
     }

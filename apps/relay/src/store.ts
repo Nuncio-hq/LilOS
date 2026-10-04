@@ -19,6 +19,7 @@ import type {
   PushPrefs,
   RecentFolder,
   RespondTo,
+  TurnFailure,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
 import type {
@@ -71,6 +72,9 @@ export interface ConversationPatch {
   deliveredSeq?: number;
   /** The composer pill's level (#106) — `conversations.setAccess`. */
   access?: ConversationAccess;
+  /** Host-only (#419): stamp the last turn's failure for the DM alert
+      card; `null` clears it (next `turn.started`). */
+  turnFailure?: TurnFailure | null;
 }
 
 export interface OpenConversationInput {
