@@ -949,13 +949,14 @@ export function createRelay(options: RelayOptions): Relay {
             "effort",
             "fast",
             "deliveredSeq",
+            "life",
             "turnFailure",
           ] as const;
           if (HOST_KEYS.some((k) => k in parsed.data) && !isHost(peer)) {
             throw new RpcError(
               JsonRpcCode.forbidden,
               "forbidden",
-              "only the registered engine host may write engineRef/state/model/provider/effort/fast/deliveredSeq/turnFailure",
+              "only the registered engine host may write engineRef/state/model/provider/effort/fast/deliveredSeq/life/turnFailure",
             );
           }
           const { conversationId, ...rest } = parsed.data;
