@@ -33,7 +33,7 @@ const webDir = path.join(ROOT, "apps", "web");
 const SHOTS = path.join(ROOT, "test-results", "ac-130");
 let PORTS: StackPorts;
 
-const TOAST = "div.fixed.bottom-5";
+const TOAST = "[data-toast]";
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVQI12P8z/CfAQMwMCooKOgDAu2zC+h6pBe+AAAAAElFTkSuQmCC",
   "base64",
