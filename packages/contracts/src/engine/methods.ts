@@ -188,6 +188,20 @@ export type SessionStopParams = z.infer<typeof SessionStopParams>;
 export const SessionStopResult = z.object({ stopped: z.boolean() });
 export type SessionStopResult = z.infer<typeof SessionStopResult>;
 
+// ── session.suspend (#346) ───────────────────────────────────────────────────
+/**
+ * Suspend the session: close the live engine session (background processes,
+ * open asks and the connection die exactly like `session.stop`) but keep
+ * whatever the engine needs to resume it — a following `prompt` (or
+ * `session.steer`) reopens the session under the SAME session id and runs
+ * the turn; `events.since` resumes it for a replay. `session.stop` keeps
+ * meaning "end for good": its session can never be resumed or prompted.
+ */
+export const SessionSuspendParams = z.strictObject({ sessionId: SessionId });
+export type SessionSuspendParams = z.infer<typeof SessionSuspendParams>;
+export const SessionSuspendResult = z.object({ suspended: z.boolean() });
+export type SessionSuspendResult = z.infer<typeof SessionSuspendResult>;
+
 // ── session.steer (capability: steer) ───────────────────────────────────────
 export const SessionSteerParams = z.strictObject({
   sessionId: SessionId,
@@ -331,6 +345,11 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
     params: SessionStopParams,
     result: SessionStopResult,
     doc: "Close the session; its event log stays replayable.",
+  },
+  "session.suspend": {
+    params: SessionSuspendParams,
+    result: SessionSuspendResult,
+    doc: "Close the live session but keep what resume needs: a later prompt/steer reopens it under the same session id (#346).",
   },
   "session.steer": {
     params: SessionSteerParams,

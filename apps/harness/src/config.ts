@@ -43,6 +43,8 @@ export interface HarnessConfig {
   feedPort: number;
   /** Capability ids hidden from clients and disabled in the harness driver. */
   hideCaps: string[];
+  /** #346 AC-3: suspend an engine session idle this long (ms). `0` = never. */
+  sessionIdleMs: number;
 }
 
 const DEFAULT_RELAY_URL = "ws://127.0.0.1:4577/ws";
@@ -108,6 +110,8 @@ export function resolveHarnessConfig(
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
+    /* #346 AC-3: minutes on the env knob (`0` = never), ms inside. */
+    sessionIdleMs: Number(env.LILOS_SESSION_IDLE_MINUTES ?? 30) * 60_000,
   };
 }
 
