@@ -243,6 +243,8 @@ const harness = new Harness({
   /* #346 AC-3: idle-close — suspend a session quiet past the timeout so
      the next message resumes it; `0` keeps every session live. */
   sessionIdleMs: config.sessionIdleMs,
+  /* #459: e2e bind-delay probe — see config.ts. */
+  bindDelayMs: config.bindDelayMs,
 });
 
 const supervisor = new EngineSupervisor({

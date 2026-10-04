@@ -371,6 +371,12 @@ test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it",
   test.setTimeout(240_000);
   const stackB = await bootStack("nosteer-315", await pickPorts(), {
     LILOS_HIDE_CAPS: "steer",
+    /* #459: hold the conversation bind well past the seq1→seq2 send gap —
+       the window the loaded run measured (~910ms seq→`surface session
+       created`) was about as long as the UI takes to post the next send.
+       3s puts BOTH sends pre-bind (the `early` path the flake hit), and the
+       `release note` guard below proves the hold is really open. */
+    LILOS_BIND_DELAY_MS: "3000",
   });
   try {
     // Remove first: the queued send leaves the tray and never reaches the
@@ -386,6 +392,11 @@ test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it",
     await expect(tray.getByText(/never mind that/)).toBeVisible({
       timeout: 30_000,
     });
+    /* #459 guard: the bind hold is really open — seq1's own send is still
+       an unclaimed tray row (a bind that outran the hold would have claimed
+       it into the first turn and hidden it). The window this test means to
+       exercise can't silently shrink to nothing. */
+    await expect(tray.getByText(/release note/i)).toBeVisible();
     await expect(
       page.locator("[data-userturn]", { hasText: /never mind/i }),
     ).toHaveCount(0);
