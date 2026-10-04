@@ -273,8 +273,10 @@ function supersededPlanReplies(turn: TurnModel, employeeId: string): Reply[] {
   });
 }
 
-/** The live reply plus any superseded plan versions folded ahead of it. */
-function liveReplies(
+/** The live reply plus any superseded plan versions folded ahead of it.
+    Exported for conv-fold's per-turn cache (#430) — callers should prefer
+    `mergeTurns`' `liveFor` hook over calling this directly. */
+export function liveReplies(
   turn: TurnModel,
   employeeId: string,
   asks: Ask[],
@@ -288,10 +290,22 @@ function liveReplies(
 }
 
 /* AC-6 (D-#19): plan surfaces render only when the engine declares `plan` —
-   drop plan cards and the empty synthetic rows that carried them. */
-export function stripPlans(replies: Reply[]): Reply[] {
+   drop plan cards and the empty synthetic rows that carried them.
+   `cache` (#430): the strip clones a plan-carrying row — without it every
+   re-fold breaks the row's identity for the memoized renderer. */
+export function stripPlans(
+  replies: Reply[],
+  cache?: WeakMap<Reply, Reply>,
+): Reply[] {
   return replies
-    .map((r) => (r.plan ? { ...r, plan: undefined } : r))
+    .map((r) => {
+      if (!r.plan) return r;
+      const hit = cache?.get(r);
+      if (hit) return hit;
+      const stripped = { ...r, plan: undefined };
+      cache?.set(r, stripped);
+      return stripped;
+    })
     .filter(
       (r) =>
         !!(
@@ -306,10 +320,28 @@ export function stripPlans(replies: Reply[]): Reply[] {
     );
 }
 
-/** Relay channel messages for one conversation -> ui Reply[]. */
+/* One relay row -> one Reply. conv-fold caches these per message row so
+   rows untouched by a delta keep their identity for the memoized
+   renderer (#430). */
+const messageReply = (m: AppMessage): Reply => ({
+  id: m.id,
+  from: m.authorKind === "system" ? "" : m.authorId,
+  time: clock(m.createdAt),
+  text: m.authorKind === "system" ? `⚠ ${m.text}` : m.text,
+  model: m.model,
+  effort: m.effort,
+  fast: m.fast,
+  phase: m.authorKind === "employee" ? "done" : undefined,
+  attachments: toAttachedFiles(m.attachments),
+});
+
+/** Relay channel messages for one conversation -> ui Reply[].
+    `cache` (#430): pass a WeakMap keyed on the message row to keep Reply
+    identity stable across re-folds. */
 export function conversationReplies(
   messages: AppMessage[],
   conversationId: string,
+  cache?: WeakMap<AppMessage, Reply>,
 ): Reply[] {
   return (
     messages
@@ -317,17 +349,14 @@ export function conversationReplies(
       // Older DBs may hold pre-#71 `⚙ …` tool-event system rows; the tool
       // cards inside the turn are the single rendering, so drop them (AC-1).
       .filter((m) => m.authorKind !== "system" || !m.text.startsWith("⚙"))
-      .map((m) => ({
-        id: m.id,
-        from: m.authorKind === "system" ? "" : m.authorId,
-        time: clock(m.createdAt),
-        text: m.authorKind === "system" ? `⚠ ${m.text}` : m.text,
-        model: m.model,
-        effort: m.effort,
-        fast: m.fast,
-        phase: m.authorKind === "employee" ? "done" : undefined,
-        attachments: toAttachedFiles(m.attachments),
-      }))
+      .map((m) => {
+        if (!cache) return messageReply(m);
+        const hit = cache.get(m);
+        if (hit) return hit;
+        const r = messageReply(m);
+        cache.set(m, r);
+        return r;
+      })
   );
 }
 
@@ -364,6 +393,12 @@ export function conversationReplies(
  * posts are held until attach instead; user rows (and the transcript note)
  * still render. A non-engine conversation passes `undefined` — there is no
  * model to wait for, so its relay rows pass through unchanged.
+ *
+ * `liveFor` (#430) builds one turn's reply block — `(turn, liveNow,
+ * claimId)` where `claimId` is the relay row id the block must end on
+ * (the claim passes). The default below is the plain `liveReplies` +
+ * id-patch; conv-fold swaps in a per-turn memo so an incremental delta
+ * keeps Reply identity for every turn the tail didn't touch.
  */
 export function mergeTurns(
   replies: Reply[],
@@ -374,9 +409,18 @@ export function mergeTurns(
   resolveEmployee: (employeeRef: string) => string = (r) => r,
   rootMessageId?: string,
   conversationState?: Conversation["state"],
+  liveFor?: (turn: TurnModel, liveNow: boolean, claimId?: string) => Reply[],
 ): Reply[] {
   if (!model) return replies;
   if (model === "pending") return replies.filter((r) => r.from !== employeeId);
+  const blockFor =
+    liveFor ??
+    ((t: TurnModel, liveNow: boolean, claimId?: string) => {
+      const rs = liveReplies(t, employeeId, asks, resolveEmployee, liveNow);
+      if (claimId !== undefined)
+        rs[rs.length - 1] = { ...rs[rs.length - 1], id: claimId };
+      return rs;
+    });
   /* #327: the relay conversation's own word on whether a turn can run —
      a degraded feed that skipped its session.state events can't keep a
      card live behind the relay's idle/closed (mobile's liveTurn parity). */
@@ -415,14 +459,7 @@ export function mergeTurns(
     }
     used.add(t);
     // Keep the relay message id — it's the search-hit scroll anchor (#138).
-    const live = liveReplies(
-      t,
-      employeeId,
-      asks,
-      resolveEmployee,
-      t === liveTurn,
-    );
-    live[live.length - 1] = { ...live[live.length - 1], id: r.id };
+    const live = blockFor(t, t === liveTurn, r.id);
     blocks.push(live);
     owned.add(live);
     turnBlock.set(t, live);
@@ -463,14 +500,7 @@ export function mergeTurns(
     if (ri < 0) continue;
     used.add(t);
     legClaimed = ri;
-    const live = liveReplies(
-      t,
-      employeeId,
-      asks,
-      resolveEmployee,
-      t === liveTurn,
-    );
-    live[live.length - 1] = { ...live[live.length - 1], id: replies[ri].id };
+    const live = blockFor(t, t === liveTurn, replies[ri].id);
     blocks[ri] = live;
     owned.add(live);
     turnBlock.set(t, live);
@@ -571,13 +601,7 @@ export function mergeTurns(
       t !== liveTurn
     )
       continue;
-    const rs = liveReplies(
-      t,
-      employeeId,
-      asks,
-      resolveEmployee,
-      t === liveTurn,
-    );
+    const rs = blockFor(t, t === liveTurn);
     /* #288: a finished turn anchored to a message that renders nowhere is
        an orphan — e.g. a rebound engine session re-answering a question
        that no reply row carries (the root renders as the thread header,

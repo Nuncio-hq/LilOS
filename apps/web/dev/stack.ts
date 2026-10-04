@@ -115,7 +115,7 @@ function run(
   return p;
 }
 
-const relay = run("relay", ["bun", "run", "apps/relay/src/index.ts"], {
+const _relay = run("relay", ["bun", "run", "apps/relay/src/index.ts"], {
   LILOS_RELAY_HOME: HOME,
   LILOS_RELAY_PORT: String(RELAY_PORT),
   LILOS_RELAY_HOST: "127.0.0.1",
