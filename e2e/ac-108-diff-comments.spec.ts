@@ -27,6 +27,7 @@ const SHOTS = path.join(repo, "test-results", "ac-108");
 const ROOT = mkdtempSync(path.join(tmpdir(), "lilos-108-"));
 const repoDir = path.join(ROOT, "lilos-repo-a");
 const ghFakeDir = path.join(ROOT, "gh-fake");
+const ghLogFile = path.join(ghFakeDir, "gh.log");
 mkdirSync(repoDir, { recursive: true });
 mkdirSync(ghFakeDir, { recursive: true });
 const git = (args: string[], cwd = repoDir) =>
