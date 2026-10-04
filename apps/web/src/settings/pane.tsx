@@ -29,7 +29,7 @@ import {
   modelVisibility,
   relay,
 } from "../lib/runtime";
-import { say } from "../lib/toast";
+import { say, sayError } from "../lib/toast";
 import {
   aboutLines,
   defaultAccess,
@@ -224,7 +224,7 @@ export function SettingsPane({ onClose }: { onClose: () => void }) {
               onPolicy: (p: ApprovalPolicy) => {
                 setPolicyLocal(p);
                 void setApprovalPolicy(p).catch(() =>
-                  say("Couldn't update the approval policy"),
+                  sayError("Couldn't update the approval policy"),
                 );
               },
             }
