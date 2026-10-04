@@ -8,8 +8,7 @@ import {
   type Page,
   test,
 } from "@playwright/test";
-import { bootStack, type Stack } from "./helpers/stack";
-import { wport } from "./ports";
+import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #301 — the Focus expand/collapse button lands dead on first click:
@@ -89,11 +88,11 @@ const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac301", {
-    relay: wport(4700),
-    feed: wport(4778),
-    web: wport(5379),
-  });
+  /* pickPorts (bound-and-probed), not wport: --repeat-each N marches
+     TEST_WORKER_INDEX and a base+index·100 slot can land on a port the
+     machine already owns (index 10 → web :6379, this fleet's redis), where
+     --strictPort vite exits the stack before the first click. */
+  stack = await bootStack("ac301", await pickPorts());
 });
 test.afterAll(async () => {
   await stack?.stop();
