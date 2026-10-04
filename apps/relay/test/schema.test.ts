@@ -53,6 +53,7 @@ describe("AC-5 relay stores no engine transcript", () => {
       "authorId",
       "authorKind",
       "channelId",
+      "claimed",
       "conversationId",
       "createdAt",
       "dropped",

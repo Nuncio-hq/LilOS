@@ -478,6 +478,10 @@
               "default": false,
               "type": "boolean"
             },
+            "claimed": {
+              "default": false,
+              "type": "boolean"
+            },
             "checkpoint": {
               "type": "string"
             }
@@ -645,6 +649,10 @@
                 "type": "boolean"
               },
               "removed": {
+                "default": false,
+                "type": "boolean"
+              },
+              "claimed": {
                 "default": false,
                 "type": "boolean"
               },

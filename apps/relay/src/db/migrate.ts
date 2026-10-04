@@ -272,6 +272,16 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `ALTER TABLE messages ADD COLUMN removed INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    /* #377: `claimed` marks a send whose prompt committed to dispatch — it
+       leaves the waiting tray (Remove boundary moves from "delivered" to
+       "claimed") but stays owed in `listPendingTurns` until deliveredSeq
+       covers it. */
+    version: 17,
+    statements: [
+      `ALTER TABLE messages ADD COLUMN claimed INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 export function applyMigrations(db: Database): void {

@@ -41,6 +41,7 @@ import {
   type JsonRpcRequest,
   MAX_ATTACHMENT_BYTES,
   type MessageAttachment,
+  MessagesClaimParams,
   MessagesDropParams,
   MessagesListParams,
   MessagesPostParams,
@@ -1206,6 +1207,33 @@ export function createRelay(options: RelayOptions): Relay {
           });
           emitMessageChanged(message.channelId, dropped ?? message);
           respond(peer, id, { message: dropped ?? message });
+          return;
+        }
+        case "messages.claim": {
+          const parsed = MessagesClaimParams.safeParse(params);
+          if (!parsed.success) throw badParams(parsed.error.issues);
+          /* Host-only (#377): the harness marks a send once its prompt
+             commits to dispatch — the row leaves the waiting tray before
+             `deliveredSeq` can cover it, so Remove is only ever offered
+             on truly queued sends. Idempotent (reclaim on redelivery). */
+          requireHost(peer);
+          const message = await store.getMessage(parsed.data.messageId);
+          if (message?.authorKind !== "user") {
+            throw new RpcError(
+              JsonRpcCode.notFound,
+              "not_found",
+              "message not found",
+            );
+          }
+          if (message.claimed) {
+            respond(peer, id, { message });
+            return;
+          }
+          const claimed = await store.setMessageFlags(message.id, {
+            claimed: true,
+          });
+          emitMessageChanged(message.channelId, claimed ?? message);
+          respond(peer, id, { message: claimed ?? message });
           return;
         }
         case "messages.send": {

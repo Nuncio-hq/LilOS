@@ -241,6 +241,16 @@ export const AppMessage = z.object({
    */
   removed: z.boolean().default(false),
   /**
+   * The harness committed this send to the engine pipeline (#377): its
+   * prompt is dispatching — checkpoint stamped, frame on the wire or about
+   * to be — but the turn hasn't started yet, so `deliveredSeq` still sits
+   * below it. Claimed rows are NOT "waiting": the tray's Remove boundary
+   * is delivery intent, and a send this far along can't be retracted from
+   * the tray (a `messages.remove` raced in anyway still kills it via the
+   * harness's dismissed set). The row renders as its own sent bubble.
+   */
+  claimed: z.boolean().default(false),
+  /**
    * Pre-turn folder checkpoint id stamped by the harness (#134): the point
    * `conversations.rewind` restores the session folder to. Only user
    * messages that ran a turn carry one.

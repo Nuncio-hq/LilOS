@@ -308,12 +308,13 @@ export interface RelayStore {
     checkpoint: string,
   ): Promise<AppMessage | null>;
   /**
-   * Flip a message's `dropped`/`removed` delivery flags (#315). Returns the
-   * updated row for the `message.changed` broadcast, null when missing.
+   * Flip a message's `dropped`/`removed`/`claimed` delivery flags (#315,
+   * #377). Returns the updated row for the `message.changed` broadcast,
+   * null when missing.
    */
   setMessageFlags(
     messageId: string,
-    flags: { dropped?: boolean; removed?: boolean },
+    flags: { dropped?: boolean; removed?: boolean; claimed?: boolean },
   ): Promise<AppMessage | null>;
   /**
    * Mark every message on the conversation with `seq >= fromSeq` as rewound

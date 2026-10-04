@@ -91,6 +91,12 @@ export function waitingMessages(
       continue;
     }
     if (hiddenIds.has(m.id) || consumed.has(m.id)) continue;
+    /* Claimed (#377): the harness committed this send to the engine
+       pipeline — its prompt is dispatching. It is not "waiting": Remove
+       must never be offered on a send that can no longer be reordered, so
+       the tray only lists genuinely queued sends. The row renders as its
+       own sent bubble until `turn.started` consumes it. */
+    if (m.claimed) continue;
     const pending = m.seq > deliveredSeq;
     const acceptedSteer =
       !pending && liveAnchor !== undefined && m.seq > liveAnchor;

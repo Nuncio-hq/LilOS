@@ -507,7 +507,12 @@ test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it",
       page.locator("[data-userturn]", { hasText: /never mind/i }),
     ).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/ac-315-waiting-next.png` });
-    await page.locator('[data-queued-remove="0"]').click();
+    /* Remove by row, not index: a send that lands pre-bind renders queued
+       too, and index 0 may be that straggler (#459). */
+    await tray
+      .locator("li", { hasText: /never mind that/ })
+      .locator("[data-queued-remove]")
+      .click();
     await expect(page.locator("[data-queued]")).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/ac-315-removed.png` });
 
@@ -519,7 +524,10 @@ test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it",
     await expect(tray.getByText(/bananas are yellow/)).toBeVisible({
       timeout: 30_000,
     });
-    await page.locator('[data-queued-edit="0"]').click();
+    await tray
+      .locator("li", { hasText: /bananas are yellow/ })
+      .locator("[data-queued-edit]")
+      .click();
     await expect(page.locator("[data-queued]")).toHaveCount(0);
     const box = page.locator("textarea").last();
     await expect(box).toHaveValue(/bananas are yellow/);
