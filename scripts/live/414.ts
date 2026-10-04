@@ -26,7 +26,7 @@
  *   - each interim's text occurs EXACTLY ONCE in the folded turn text;
  *   - the turn completed.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // Relative imports: scripts/ is not a workspace dir, so @lilos/* does not
@@ -40,6 +40,7 @@ import {
 } from "../../packages/engine-hermes/src/gateway";
 import { startHermesServe } from "../../packages/engine-hermes/src/serve";
 import { connectInMemory } from "../../packages/engine-hermes/src/transport";
+import { cleanup, startStub } from "./lib/helpers";
 
 const arg = (name: string, dflt?: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -57,18 +58,26 @@ const out = (line: string) =>
 
 /* ------------------------------- boot --------------------------------- */
 
+/* Stub mode: 414.sh exported LILOS_STUB_PORT — the port the provider
+   config already points at. startStub binds it and resolves on the
+   "listening" line (a busy port is a clear error, no fixed sleep). */
+const stub = process.env.LILOS_STUB_PORT
+  ? await startStub(Number(process.env.LILOS_STUB_PORT))
+  : null;
+if (stub) out(`openai-stub listening on :${stub.port}`);
+
 const hermes = await startHermesServe({
   bin: process.env.HERMES_BIN ?? "hermes",
   timeoutMs: 240_000,
 });
 out(`hermes serve ready at ${hermes.url}`);
 
-const cleanup = async () => {
+const shutdown = async () => {
   await hermes.close();
-  rmSync(workdir, { recursive: true, force: true });
+  cleanup(workdir);
 };
 process.on("SIGINT", () => {
-  void cleanup().then(() => process.exit(130));
+  void shutdown().then(() => process.exit(130));
 });
 
 interface Rec {
@@ -258,6 +267,6 @@ for (const [i, it] of nonempty.entries()) {
 
 await conn.request("session.stop", { sessionId }).catch(() => {});
 gateway.close();
-await cleanup();
+await shutdown();
 out(`RESULT: ${ok ? "PASS" : "FAIL (interim text duplicated in folded text)"}`);
 process.exit(ok ? 0 : 1);

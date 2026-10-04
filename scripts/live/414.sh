@@ -24,11 +24,11 @@
 #
 # What it does:
 #   1. registers the provider in the SCRATCH hermes config
-#   2. runs scripts/live/414.ts: real `hermes serve` + gateway + engine —
-#      records wire frames and engine frames side by side, auto-answers
-#      approval asks, folds the engine log with reduceSessionEvents, then
-#      asserts every `message.interim` text occurs EXACTLY ONCE in the
-#      folded turn text
+#   2. runs scripts/live/414.ts: stub provider via lib startStub, then a
+#      real `hermes serve` + gateway + engine — records wire frames and
+#      engine frames side by side, auto-answers approval asks, folds the
+#      engine log with reduceSessionEvents, then asserts every
+#      `message.interim` text occurs EXACTLY ONCE in the folded turn text
 #   3. PASS/FAIL summary on stdout (plus a dual wire->engine timeline)
 set -u
 cd "$(dirname "$0")/../.."
@@ -48,7 +48,6 @@ else
 fi
 
 STUB_PORT=8425
-STUB_PID=""
 SCRATCH=$(mktemp -d /tmp/lilos414-home.XXXXXX)
 kill_stale_engine() {
   pkill -f "packages/engine-hermes/scripts/serve.ts" 2>/dev/null
@@ -56,7 +55,6 @@ kill_stale_engine() {
   true
 }
 cleanup() {
-  [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null
   kill_stale_engine
   rm -rf "$SCRATCH"
 }
@@ -100,10 +98,11 @@ export STUB_SCRIPT='[
 ]'
 
 if [ "$LABEL" = "stub" ]; then
-  STUB_REQUEST_LOG=/tmp/openai-stub-414-requests.log \
-    bun scripts/live/openai-stub.ts "$STUB_PORT" >/tmp/openai-stub-414.log 2>&1 &
-  STUB_PID=$!
-  sleep 0.5
+  # 414.ts spawns the stub itself via scripts/live/lib helpers (startStub
+  # waits for the real "listening" line) — here we only hand it the port
+  # the provider config above points at, plus the request log path.
+  export LILOS_STUB_PORT="$STUB_PORT"
+  export STUB_REQUEST_LOG=/tmp/openai-stub-414-requests.log
 fi
 
 export LILOS_ENGINE=hermes

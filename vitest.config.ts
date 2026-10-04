@@ -13,6 +13,7 @@ export default defineConfig({
     include: [
       "packages/**/test/**/*.test.{ts,tsx}",
       "apps/**/test/**/*.test.{ts,tsx}",
+      "scripts/**/test/**/*.test.{ts,tsx}",
     ],
     exclude: ["**/node_modules/**", "e2e/**"],
     poolOptions: {
