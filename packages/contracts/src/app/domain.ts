@@ -66,6 +66,17 @@ export const ConversationState = z.enum(["idle", "active", "closed"]);
 export type ConversationState = z.infer<typeof ConversationState>;
 
 /**
+ * The engine session's life behind a conversation (#346): `open` = the
+ * session exists (loaded, idle or mid-turn), `closed` = suspended — it
+ * reopens on the next message. `running` is deliberately absent: that is a
+ * derived state (a turn or any subagent live), computed in one place
+ * client-side (`sessionLife` / `toSessionTurn`), never stored — the same
+ * rule the prototype's life ring uses (#344/#348).
+ */
+export const ConversationLife = z.enum(["open", "closed"]);
+export type ConversationLife = z.infer<typeof ConversationLife>;
+
+/**
  * How a conversation's `cwd` came to be (#156 workstream modes, prototype
  * semantics): `new` = the harness materialized `cwd` as a fresh git
  * worktree of `repoPath` (`git worktree add <cwd> -b <branch> <base>`)
@@ -93,6 +104,23 @@ export const WorkspaceIntent = z.discriminatedUnion("mode", [
   }),
 ]);
 export type WorkspaceIntent = z.infer<typeof WorkspaceIntent>;
+
+/**
+ * Why the conversation's last turn failed (#419). Host-written, persisted
+ * on the row: an interrupted turn orphans with the dead session's event
+ * log (a rebind swaps `engineRef`), so the failure card can't ride the
+ * turn itself — it lives here until the next `turn.started` clears it.
+ * `kind` mirrors the ui `SessionAlert` kinds: "sleep" = the Mac slept or
+ * the engine restarted (amber), "model"/"generic" = the turn ended on
+ * `turn.completed.error` / the prompt never dispatched (red).
+ */
+export const TurnFailure = z.strictObject({
+  kind: z.enum(["model", "sleep", "generic"]),
+  /** The user-facing failure line (the engine's error text or the
+      interrupt reason). */
+  text: z.string().min(1),
+});
+export type TurnFailure = z.infer<typeof TurnFailure>;
 
 export const Conversation = z.object({
   id: z.string().min(1),
@@ -144,6 +172,14 @@ export const Conversation = z.object({
    */
   deliveredSeq: z.int().min(0).default(0),
   /**
+   * The engine session's life (#346, AC-4): the host writes `open`/`closed`
+   * — a suspended session is `closed` and reopens on the next message.
+   * Absent on rows that predate the field = treated as `open`. `running`
+   * never crosses the wire — it's derived in one place (the same rule as
+   * the prototype's `sessionLife`).
+   */
+  life: ConversationLife.optional(),
+  /**
    * The newest turn.completed's usage the relay saw (#300) — the meter's
    * lifetime input/output/cache counts + engine-reported `context` (current
    * occupancy, #415) and `contextWindow`. Relay-persisted so the meter
@@ -152,6 +188,11 @@ export const Conversation = z.object({
    * row still carries the last numbers.
    */
   usage: Usage.optional(),
+  /**
+   * The last turn's failure (#419) — the DM session row's alert card.
+   * Absent once a turn started fresh or no turn has failed yet.
+   */
+  turnFailure: TurnFailure.optional(),
   createdAt: Timestamp,
 });
 export type Conversation = z.infer<typeof Conversation>;

@@ -139,6 +139,16 @@ export function AgentTurn({
           </AppText>
         </View>
       )}
+      {/* #419: the turn died on an engine error — the failure line carries
+          its text like web's "Failed · <error>" chip. */}
+      {e.failed !== undefined && (
+        <View className="flex-row items-center gap-1.5">
+          <View className="size-2.5 rounded-[2px] bg-destructive" />
+          <AppText size="xs" tone="destructive" weight="medium">
+            Turn failed{e.failed ? ` · ${e.failed}` : ""}
+          </AppText>
+        </View>
+      )}
       {e.agentInitiated && (
         <View className="flex-row items-center gap-1.5">
           <View className="size-2.5 rounded-[2px] bg-muted-foreground" />

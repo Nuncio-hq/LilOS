@@ -324,6 +324,17 @@ export function AgentTurn({
           Stopped · session.interrupt
         </div>
       )}
+      {/* #419: a turn that ended on `turn.completed.error` — the chip
+          carries the engine's error text so "Failed" says what failed
+          (same red the DM session alert uses). */}
+      {r.phase === "failed" && (
+        <div
+          data-turn-failed
+          className="w-fit max-w-full rounded bg-red-50 px-1.5 py-0.5 text-red-900 text-xs"
+        >
+          Failed{r.error ? ` · ${r.error}` : ""}
+        </div>
+      )}
       {r.agentInitiated && (
         <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
           Agent-initiated
@@ -342,9 +353,11 @@ export function AgentTurn({
         (r.text ||
           steps.length > 0 ||
           !!r.subagents?.length ||
-          /* A turn stopped before it produced anything still needs the
-             end-anchor — otherwise there is no wire signal the turn ended. */
-          r.phase === "stopped") && (
+          /* A turn stopped or failed before it produced anything still
+             needs the end-anchor — otherwise there is no wire signal the
+             turn ended (and no hover Retry, #419). */
+          r.phase === "stopped" ||
+          r.phase === "failed") && (
           /* data-turnsettled: the footer only renders once the turn has ended —
            the stable "turn is over" anchor for specs (text lands earlier). */
           <div

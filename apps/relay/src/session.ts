@@ -935,11 +935,12 @@ export function createRelay(options: RelayOptions): Relay {
         case "conversations.update": {
           const parsed = ConversationsUpdateParams.safeParse(params);
           if (!parsed.success) throw badParams(parsed.error.issues);
-          // engineRef/state/model(+provider/effort/fast)/deliveredSeq are
-          // owned by the engine host (the pick lands once the engine acks
-          // `session.setModel`); title/archive are user-facing fields any
-          // client may set. Key presence (`in`) is the write intent — an
-          // explicit `null` clear follows the same host-only rule as a value.
+          // engineRef/state/model(+provider/effort/fast)/deliveredSeq/
+          // turnFailure are owned by the engine host (the pick lands once
+          // the engine acks `session.setModel`); title/archive are
+          // user-facing fields any client may set. Key presence (`in`) is
+          // the write intent — an explicit `null` clear follows the same
+          // host-only rule as a value.
           const HOST_KEYS = [
             "engineRef",
             "state",
@@ -948,12 +949,14 @@ export function createRelay(options: RelayOptions): Relay {
             "effort",
             "fast",
             "deliveredSeq",
+            "life",
+            "turnFailure",
           ] as const;
           if (HOST_KEYS.some((k) => k in parsed.data) && !isHost(peer)) {
             throw new RpcError(
               JsonRpcCode.forbidden,
               "forbidden",
-              "only the registered engine host may write engineRef/state/model/provider/effort/fast/deliveredSeq",
+              "only the registered engine host may write engineRef/state/model/provider/effort/fast/deliveredSeq/life/turnFailure",
             );
           }
           const { conversationId, ...rest } = parsed.data;

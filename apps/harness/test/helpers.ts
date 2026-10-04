@@ -10,7 +10,7 @@ import { createPairingService } from "../../relay/src/pairing";
 import { createRelay } from "../../relay/src/session";
 import { createMemoryStore } from "../../relay/test/memory-store";
 import type { EngineConnection } from "../src/engine/client";
-import { Harness } from "../src/harness";
+import { Harness, type HarnessOptions } from "../src/harness";
 import { createMemoryLogger } from "../src/log";
 import { createFakeSleepGuard } from "../src/sleep";
 
@@ -140,6 +140,8 @@ export interface WorldOptions {
   captureSockets?: boolean;
   /** Passed to the harness RelayClient; absent = the client's own default. */
   reconnectMinDelayMs?: number;
+  /** Extra Harness options spread last (e.g. the #346 reaper knobs). */
+  harnessExtra?: Partial<HarnessOptions>;
 }
 
 /** One in-memory relay + harness (+ fake engine) world. */
@@ -199,6 +201,7 @@ export async function setupWorld(opts: WorldOptions = {}): Promise<World> {
     ...(opts.hideCaps ? { hideCaps: opts.hideCaps } : {}),
     ...(opts.checkpoints ? { checkpoints: opts.checkpoints } : {}),
     ...(opts.homeDir ? { homeDir: opts.homeDir } : {}),
+    ...opts.harnessExtra,
   });
   if (engineConn && opts.attachEngine !== false) {
     harness.attachEngine(engineConn);

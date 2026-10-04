@@ -298,6 +298,12 @@ export function ThreadView({
       ? "submitted"
       : "streaming"
     : "ready";
+  /* #419: the Retry lives on the last TURN — system notes (a failed turn's
+     error row) sit below it and don't count. */
+  const lastTurnIdx = thread.replies.reduce(
+    (a, r, i) => (emp(r.from) ? i : a),
+    -1,
+  );
   return (
     <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col">
       <div className="lilos-drag flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
@@ -444,7 +450,7 @@ export function ThreadView({
                     r={r}
                     emp={emp}
                     human={human}
-                    last={i === thread.replies.length - 1}
+                    last={i === lastTurnIdx}
                     onRetry={onRetry}
                     models={models}
                     onOpenSession={onOpenSession}
