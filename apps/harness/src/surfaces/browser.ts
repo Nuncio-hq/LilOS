@@ -6,6 +6,7 @@ import {
   chromium,
   type Page,
 } from "playwright";
+import { scrubEngineEnv } from "../engine/launcher";
 
 /**
  * The harness-owned browser (issue #36, AC-1/AC-4): one headless Chromium
@@ -66,6 +67,11 @@ export class ChromiumBrowser implements BrowserDriver {
       this.browser = await chromium.launch({
         headless: true,
         args: this.options.args,
+        /* #412: the surface browser is a long-lived, agent-drivable
+           process — it gets the same allow-listed env as the engine and
+           PTY, not the harness's (LILOS_RELAY_TOKEN in env is `ps eww`
+           -readable by any agent shell). */
+        env: scrubEngineEnv(process.env) as Record<string, string>,
       });
       this.context = await this.browser.newContext({
         viewport: this.vp,

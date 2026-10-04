@@ -7,6 +7,7 @@ import {
   isHermesVersionSupported,
   parseHermesVersion,
 } from "@lilos/engine-hermes";
+import { SURFACES_ENV } from "@lilos/surfaces";
 import type { Logger } from "../log";
 import { resolveHermesBin } from "./discover";
 
@@ -63,6 +64,32 @@ export interface EngineLauncher {
   start(): Promise<LaunchedEngine>;
 }
 
+/**
+ * #412: the LILOS_* names an engine — and every agent shell under it — may
+ * see. Everything else in the LILOS_ namespace is LilOS-internal
+ * (`LILOS_RELAY_TOKEN`, harness/relay home dirs, `LILOS_WORKDIR`, ...) and
+ * never crosses the launcher seam: an agent running `env | grep LILOS`
+ * should not be handed the relay token or pointers into ~/.lilos. Entries
+ * a session legitimately needs (the gateway URL + engine token the lilos
+ * plugin reads) ride `options.env` — merged AFTER this scrub, so an
+ * explicit grant always wins. Non-LILOS_* env (PATH, HOME, proxies,
+ * provider keys) passes through untouched: that's the process
+ * environment, not LilOS state.
+ */
+export const ENGINE_ENV_ALLOW_LIST: readonly string[] = [
+  SURFACES_ENV.baseUrl, // LILOS_SURFACES_URL
+  SURFACES_ENV.engineToken, // LILOS_ENGINE_TOKEN
+];
+
+/** `env` minus every LILOS_* outside the allow-list above. */
+export const scrubEngineEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
+  const keep = new Set<string>(ENGINE_ENV_ALLOW_LIST);
+  const out: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env))
+    if (!key.startsWith("LILOS_") || keep.has(key)) out[key] = value;
+  return out;
+};
+
 export interface CommandLauncherOptions {
   name: string;
   command: string[];
@@ -106,7 +133,10 @@ export function commandLauncher(
         });
         const child = spawn(bin, args, {
           cwd: options.cwd,
-          env: { ...process.env, ...options.env } as NodeJS.ProcessEnv,
+          env: {
+            ...scrubEngineEnv(process.env),
+            ...options.env,
+          } as NodeJS.ProcessEnv,
           // stdin stays an open pipe: engines that watch it (serve.ts
           // --watch-stdin) see EOF the moment this process dies — even via
           // SIGKILL, which skips every shutdown handler (#84).

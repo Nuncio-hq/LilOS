@@ -115,25 +115,64 @@ function run(
   return p;
 }
 
-const _relay = run("relay", ["bun", "run", "apps/relay/src/index.ts"], {
-  LILOS_RELAY_HOME: HOME,
-  LILOS_RELAY_PORT: String(RELAY_PORT),
-  LILOS_RELAY_HOST: "127.0.0.1",
+/* The relay's stdout is piped, not inherited: an identity-checked readiness
+   needs the instanceId the relay logs pre-bind (`[relay] instanceId:`), and
+   "inherit" gives no access to the stream. Every line is still forwarded so
+   the outer boot probe sees the same output. */
+const relayProc = spawn(["bun", "run", "apps/relay/src/index.ts"], {
+  cwd: repo,
+  env: {
+    ...process.env,
+    LILOS_RELAY_HOME: HOME,
+    LILOS_RELAY_PORT: String(RELAY_PORT),
+    LILOS_RELAY_HOST: "127.0.0.1",
+  },
+  stdout: "pipe",
+  stderr: "inherit",
 });
+kids.push(relayProc);
+console.log(`[stack] relay: bun run apps/relay/src/index.ts`);
+relayProc.exited.then((code) => {
+  if (!shuttingDown) {
+    console.error(`[stack] relay exited (code ${code})`);
+    void shutdown(1);
+  }
+});
+
+let relayInstance: string | undefined;
+const INSTANCE_LINE = /instanceId: ([0-9a-fA-F-]{36})/;
+void (async () => {
+  const dec = new TextDecoder();
+  const stream = relayProc.stdout as ReadableStream<Uint8Array>;
+  for await (const chunk of stream) {
+    const text = dec.decode(chunk, { stream: true });
+    relayInstance ??= INSTANCE_LINE.exec(text)?.[1];
+    process.stdout.write(text);
+  }
+})();
 
 // wait for the relay token file AND the socket — the token lands first
 const tokenPath = path.join(HOME, "relay-token");
 for (let i = 0; i < 100 && !existsSync(tokenPath); i++) {
   await Bun.sleep(50);
 }
-// Bound each poll: a half-dead predecessor can hold the port bound but
-// unanswering, and an unbounded fetch would hang this boot forever (#84).
+/* Identity-checked readiness (#273, same rule as e2e/helpers/stack.ts): a
+   bare `fetch /` accepts whatever already holds the port — a foreign relay's
+   stand-in answers it too, and the harness then dies on a WebSocket upgrade
+   to a plain-HTTP endpoint. Require /healthz to serve OUR relay's own
+   instanceId. Bound each poll: a half-dead predecessor can hold the port
+   bound but unanswering, and an unbounded fetch hangs this boot (#84). */
 let relayUp = false;
 for (let i = 0; i < 200 && !relayUp; i++) {
-  relayUp = await fetch(`http://127.0.0.1:${RELAY_PORT}/`, {
+  relayUp = await fetch(`http://127.0.0.1:${RELAY_PORT}/healthz`, {
     signal: AbortSignal.timeout(1_000),
   })
-    .then((r) => r.status > 0)
+    .then((r) => r.json())
+    .then(
+      (j) =>
+        typeof (j as { instanceId?: unknown }).instanceId === "string" &&
+        (j as { instanceId: string }).instanceId === relayInstance,
+    )
     .catch(() => false);
   if (!relayUp) await Bun.sleep(100);
 }
@@ -158,7 +197,8 @@ const harnessEnv: Record<string, string> = {
   LILOS_RELAY_TOKEN: token,
   LILOS_HARNESS_HOME: HARNESS_HOME,
   LILOS_REPO_ROOT: repo,
-  LILOS_WORKDIR: path.join(HARNESS_HOME, "work"),
+  /* No LILOS_WORKDIR: #412 defaults no-folder sessions to the user's home —
+     the shipped behavior. e2e pins its own scratch workdir instead. */
   LILOS_FEED_PORT: String(FEED_PORT),
 };
 if (!process.env.LILOS_ENGINE) harnessEnv.LILOS_ENGINE = "fake";
