@@ -437,15 +437,15 @@ const DM_FEEDS: Record<string, Msg[]> = {
             steps: [
               { tool: "terminal", input: { command: "git merge --squash origin/pr/96" }, output: "Squash commit — not updating HEAD\n 2 files changed, +104 −11" },
             ],
-            text: "Merged to `main` as 9c41d0e. Now the timing call is yours — this changes what the release notes need.",
+            text: "Merged to `main` as `9c41d0e`. Now the timing call is yours — this changes what the release notes need.",
             question: {
               id: "q-rel",
               question: "The release cut is Thursday. Do you want the replay fix on `release/0.1` too, or does it wait for the next train?",
               options: [
                 { id: "cherry-pick", label: "Cherry-pick to release/0.1", description: "Opens a second PR against the release branch." },
                 { id: "next-train", label: "Keep it on main", description: "Ships with the next regular train, not the release." },
-                { id: "hold", label: "Hold until after the cut", description: "Leaves it unmerged while the freeze is on." },
-                { id: "draft", label: "Mark #96 a draft for now", description: "Keeps it open but unmergable until Thursday." },
+                { id: "hold", label: "Hold the cherry-pick until after the cut", description: "Leaves `release/0.1` alone while the freeze is on." },
+                { id: "draft", label: "Mark #96 a draft for now", description: "Keeps it open but unmergeable until Thursday." },
                 { id: "spinoff", label: "Open a separate release PR", description: "Cherry-picks onto release/0.1 under its own PR." },
               ],
               freeText: true,
@@ -704,7 +704,7 @@ function scriptFor(empId: string, prompt: string, followUp = false, branch?: str
         options: [
           { id: "cherry-pick", label: "Cherry-pick to release/0.1", description: "Opens a second PR against the release branch." },
           { id: "next-train", label: "Keep it on main", description: "Ships with the next regular train, not the release." },
-          { id: "hold", label: "Hold until after the cut", description: "Leaves it unmerged while the freeze is on." },
+          { id: "hold", label: "Hold the cherry-pick until after the cut", description: "Leaves `release/0.1` alone while the freeze is on." },
         ],
         freeText: true,
       },

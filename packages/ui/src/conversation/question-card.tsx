@@ -4,7 +4,13 @@ import {
   SendIcon,
   XIcon,
 } from "lucide-react";
-import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Confirmation,
   ConfirmationAccepted,
@@ -37,6 +43,17 @@ const INLINE_COMPONENTS = {
    pattern the approval card uses (resolved[q.id] carries the wording).
    Props in, callbacks out: `setResolved` writes the receipt text,
    `onAnswer`/`onCancel` let the app continue the turn. */
+
+/* The nearest ancestor that actually scrolls — the thread's
+   stick-to-bottom scrollport — or null outside one (the cap then falls
+   back to the window). */
+const scrollPortOf = (el: HTMLElement | null) => {
+  for (let p = el?.parentElement; p; p = p.parentElement) {
+    const s = getComputedStyle(p);
+    if (/(auto|scroll)/.test(s.overflowY)) return p;
+  }
+  return null;
+};
 export function QuestionCard({
   q,
   viewer,
@@ -79,10 +96,96 @@ export function QuestionCard({
   const freeText = q.freeText === true || options.length === 0;
   const interactive = !!setResolved && !done;
   const who = agent ?? "the agent";
+  const cardRef = useRef<HTMLDivElement>(null);
+  /* The options list caps to the SPACE THE SCROLLPORT LEAVES IT, not a
+     fixed height (Hermes FIX #515 r3): everything else on the card keeps
+     its natural height, the list takes what remains under the floating
+     composer, and a "+N more" row counts the options still hidden. */
+  const [cap, setCap] = useState<number>();
+  const [hidden, setHidden] = useState(0);
   useLayoutEffect(() => {
-    const el = listRef.current;
-    if (el) setScrollable(el.scrollHeight > el.clientHeight + 4);
+    const list = listRef.current;
+    const card = cardRef.current;
+    if (!list || !card) return;
+    const port = scrollPortOf(list);
+    const measure = () => {
+      const natural = list.scrollHeight;
+      /* The list gets the scrollport height minus everything else on the
+         card and a margin — the pb-28 scroll slack below the last item
+         is the card's own room, not lost space (the mount align lifts
+         the card's top into view, so it may occupy it). */
+      const others = card.scrollHeight - list.clientHeight;
+      const portH = port ? port.clientHeight : window.innerHeight;
+      const capPx = Math.max(96, portH - 16 - others);
+      const over = natural > capPx + 4;
+      /* Snap the cap to a whole-row boundary plus a peek of the next tile
+         (no half-glyph rows), and count what's left hidden — measured
+         against the list's own top edge, not an offsetParent. */
+      const rows = [...list.children] as HTMLElement[];
+      const listTop = list.getBoundingClientRect().top;
+      const visible = rows.filter(
+        (r) => r.getBoundingClientRect().bottom - listTop <= capPx - 4,
+      ).length;
+      const lastVisible = rows[visible - 1];
+      const snapped = over
+        ? Math.min(
+            capPx,
+            Math.max(
+              96,
+              lastVisible
+                ? lastVisible.getBoundingClientRect().bottom - listTop + 30
+                : capPx,
+            ),
+          )
+        : undefined;
+      setCap(snapped);
+      setScrollable(over);
+      setHidden(over ? Math.max(1, rows.length - visible) : 0);
+    };
+    measure();
+    const ro = port ? new ResizeObserver(measure) : undefined;
+    if (port && ro) ro.observe(port);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
   }, [options.length]);
+
+  /* A new question lifts its card until the top edge clears the
+     scrollport — the head sits under the session header instead of
+     behind it (Hermes FIX #515 r3). Keep-bottom re-pins the port while
+     the turn streams, so a one-shot scroll loses the race: re-align on a
+     short arrival window (scrolling up only — never drag the card down),
+     and stop the moment the user scrolls. */
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || !interactive) return;
+    const port = scrollPortOf(el);
+    if (!port) return;
+    const align = () => {
+      const deficit =
+        port.getBoundingClientRect().top + 8 - el.getBoundingClientRect().top;
+      if (deficit > 1) port.scrollTop -= deficit;
+    };
+    const kick = setTimeout(align, 450);
+    const ride = setInterval(align, 350);
+    const end = setTimeout(() => clearInterval(ride), 3500);
+    const cancel = () => {
+      clearInterval(ride);
+      clearTimeout(end);
+    };
+    port.addEventListener("wheel", cancel, { passive: true });
+    port.addEventListener("touchstart", cancel, { passive: true });
+    port.addEventListener("keydown", cancel);
+    return () => {
+      clearTimeout(kick);
+      cancel();
+      port.removeEventListener("wheel", cancel);
+      port.removeEventListener("touchstart", cancel);
+      port.removeEventListener("keydown", cancel);
+    };
+  }, [interactive]);
 
   const pick = (a: QuestionAnswer) => {
     if (!interactive || pending) return;
@@ -102,8 +205,9 @@ export function QuestionCard({
   };
   return (
     <Confirmation
+      ref={cardRef}
       className={cn(
-        "mt-1",
+        "mt-1 scroll-mt-2",
         done
           ? cancelled
             ? "border-red-200"
@@ -144,8 +248,9 @@ export function QuestionCard({
                the tiles (FIX #515). */
             <div
               ref={listRef}
+              style={cap ? { maxHeight: cap } : undefined}
               className={cn(
-                "flex max-h-72 flex-col gap-1.5 overflow-y-auto scroll-py-1.5 py-1.5 pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+                "flex flex-col gap-1.5 overflow-y-auto scroll-py-1.5 py-1.5 pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
                 scrollable &&
                   "[mask-image:linear-gradient(to_bottom,transparent,black_6px,black_calc(100%-30px),rgb(0_0_0/0.15))]",
               )}
@@ -179,11 +284,21 @@ export function QuestionCard({
               ))}
             </div>
           )}
+          {hidden > 0 && (
+            /* Options the cap hid — the count tells you the list scrolls
+               (Hermes FIX #515 r3). */
+            <div className="px-1 text-muted-foreground text-xs">
+              +{hidden} more
+            </div>
+          )}
           {interactive && (
-            <div className="flex items-center gap-2">
-              {freeText ? (
+            /* Two rows, one height (h-8): the free-text field rides full
+               width with Answer at its end; Skip is a secondary button on
+               the row below, right-aligned like the phone (FIX #515 r3). */
+            <div className="flex flex-col gap-2">
+              {freeText && (
                 <form
-                  className="flex min-w-0 flex-1 items-center gap-1.5"
+                  className="flex items-center gap-1.5"
                   onSubmit={(e) => {
                     e.preventDefault();
                     const text = draft.trim();
@@ -198,6 +313,7 @@ export function QuestionCard({
                       options.length ? "Or type your own…" : "Type your answer…"
                     }
                     aria-label="Your answer"
+                    className="min-w-0 flex-1"
                   />
                   {/* Field-height (h-8), clearly inert while empty, solid
                       accent once there's text (FIX #515). */}
@@ -205,29 +321,31 @@ export function QuestionCard({
                     type="submit"
                     variant={draft.trim() ? "default" : "outline"}
                     disabled={!!pending || !draft.trim()}
+                    className="shrink-0"
                   >
                     <SendIcon className="size-3.5" />
                     Answer
                   </Button>
                 </form>
-              ) : (
-                <span className="min-w-0 flex-1" />
               )}
-              {/* Skip is secondary, pinned to the content edge — it says what
-                  it does: the asking agent decides instead. */}
-              <Button
-                variant="secondary"
-                size="sm"
-                className="shrink-0"
-                disabled={!!pending}
-                title={`Skip — ${who} decides for you`}
-                onClick={cancel}
-              >
-                Skip — let {who} decide
-              </Button>
-              {pending && (
-                <span className="text-muted-foreground text-xs">Sending…</span>
-              )}
+              <div className="flex items-center justify-end gap-2">
+                {pending && (
+                  <span className="text-muted-foreground text-xs">
+                    Sending…
+                  </span>
+                )}
+                {/* Skip is secondary — it says what it does: the asking
+                    agent decides instead. */}
+                <Button
+                  variant="secondary"
+                  className="shrink-0"
+                  disabled={!!pending}
+                  title={`Skip — ${who} decides for you`}
+                  onClick={cancel}
+                >
+                  Skip — let {who} decide
+                </Button>
+              </div>
             </div>
           )}
         </div>
