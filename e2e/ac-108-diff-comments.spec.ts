@@ -394,3 +394,41 @@ test("AC-3 send mid-turn rides session.steer — the message lands as a steered 
   await expect(pending(page)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-3-steered.png` });
 });
+
+test("AC-3b a send landing mid-turn steers — the landing wait resolves the turn it joined (#474)", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await dmDefault(page);
+  await pickSessionFolder(page, repoDir);
+  /* #474: `slow:` paces the seeded turn's body (~20s at 300ms/tick), so the
+     next send always lands mid-turn — claimed=0, `session.steer`, the
+     message pairs into `turn.steers` and lands as an "Oscar steered …"
+     row inside the running turn. The wild flake hit exactly this when
+     `sendTurn`'s count guard read the session as idle while the seeded
+     turn was still dispatching. */
+  await send(page, "slow:300 check in");
+  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await send(page, "Add a changelog note while it runs");
+
+  /* The wait the spec performs on every send: a sent bubble, then a new
+     agent turn following it. On a steered send neither ever mounts — the
+     message lives inside the turn it joined — so this hangs until it
+     times out, exactly like the wild failure. */
+  const mine = page
+    .locator("main [data-msg]")
+    .filter({ hasText: "Add a changelog note while it runs" })
+    .filter({ hasNot: page.locator("[data-agentturn]") })
+    .last();
+  await expect(mine).toBeVisible({ timeout: 30_000 });
+  const turn = mine.locator(
+    "xpath=following-sibling::*[.//*[@data-agentturn]][1]//*[@data-agentturn]",
+  );
+  await expect(turn).toBeVisible({ timeout: 30_000 });
+  await expect(
+    turn.locator("[data-steerstate='landed']").filter({
+      hasText: "Add a changelog note while it runs",
+    }),
+  ).toHaveCount(1);
+  await expectSettled(turn);
+});
