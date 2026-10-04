@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
+import { allowAllWhile, expectSettled } from "./helpers/approvals";
 import { wport } from "./ports";
 
 /**
@@ -168,28 +169,6 @@ const send = async (page: Page, text: string) => {
 const mainText = async (page: Page) =>
   page.locator("[data-thread]").innerText();
 
-const allowAll = async (page: Page) => {
-  /* Gated steps can arrive seconds apart — only give up after two quiet
-     rounds, not the first moment no card is on screen. */
-  const b = page.getByRole("button", { name: "Allow once" });
-  let quiet = 0;
-  for (let i = 0; i < 30 && quiet < 2; i++) {
-    if (
-      await b
-        .first()
-        .isVisible()
-        .catch(() => false)
-    ) {
-      quiet = 0;
-      await b.first().click();
-      await page.waitForTimeout(300);
-    } else {
-      quiet++;
-      await page.waitForTimeout(1_000);
-    }
-  }
-};
-
 test("AC-2/AC-3 an engine leg keeps its own card above newer rows; its post is claimed, not duplicated", async ({
   page,
 }) => {
@@ -273,11 +252,15 @@ test("AC-1/AC-5 queued replies anchor under their own prompt — even after relo
   await expect(
     page.locator("[data-queued]").getByText("second queued apple").first(),
   ).toBeVisible({ timeout: 15_000 });
-  await allowAll(page);
+  const turns = page.locator("[data-agentturn]");
+  /* The edit script raises several gated asks seconds apart — answer each
+     as it opens until the first turn actually settles; exiting on a quiet
+     window parks the turn mid-approvals and the queued sends never drain
+     (#451). */
+  await allowAllWhile(page, expectSettled(turns.first()));
   await expect(page.getByText("Allowed once by Oscar").first()).toBeVisible({
     timeout: 30_000,
   });
-  const turns = page.locator("[data-agentturn]");
   // Turn 1 finishes first — the queue drains only on turn.completed.
   await expect(turns.first()).toContainText(/Done on|Review it/, {
     timeout: 120_000,
@@ -294,17 +277,23 @@ test("AC-1/AC-5 queued replies anchor under their own prompt — even after relo
     timeout: 120_000,
   });
   const assertOrder = async () => {
-    const text = await mainText(page);
-    const a = text.indexOf("first queued zebra");
-    const aAnswer = text.indexOf("First queued zebra");
-    const b = text.indexOf("second queued apple");
-    const bAnswer = text.indexOf("Second queued apple");
-    expect(a).toBeGreaterThanOrEqual(0);
-    // A's drained reply anchors under A — a newer user row never renders
-    // above an older message's answer.
-    expect(a).toBeLessThan(aAnswer);
-    expect(aAnswer).toBeLessThan(b);
-    expect(b).toBeLessThan(bAnswer);
+    /* Rows hydrate from `messages.list`/the channel snapshot while turn
+       cards replay from the engine feed — after a reload either can land
+       first under load, so poll until the composed thread holds the order
+       rather than sampling one frame (#451). */
+    await expect(async () => {
+      const text = await mainText(page);
+      const a = text.indexOf("first queued zebra");
+      const aAnswer = text.indexOf("First queued zebra");
+      const b = text.indexOf("second queued apple");
+      const bAnswer = text.indexOf("Second queued apple");
+      expect(a).toBeGreaterThanOrEqual(0);
+      // A's drained reply anchors under A — a newer user row never renders
+      // above an older message's answer.
+      expect(a).toBeLessThan(aAnswer);
+      expect(aAnswer).toBeLessThan(b);
+      expect(b).toBeLessThan(bAnswer);
+    }).toPass({ timeout: 30_000 });
   };
   await assertOrder();
   await page.screenshot({ path: `${SHOTS}/ac-1-queued-order.png` });
