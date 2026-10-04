@@ -236,7 +236,7 @@ export async function waitForInstance(
          stdout can still be in flight), then probe /healthz one final
          time. A port answering with a different id is the primary error;
          "process exited" is only the fallback when nothing answers. */
-      await Promise.race([once(proc, "close"), sleep(300)]);
+      await Promise.race([once(proc, "close").catch(() => {}), sleep(300)]);
       ours ??= oursLogged();
       const them = (await healthzId(port)) ?? foreign;
       if (them !== undefined && them !== ours)
