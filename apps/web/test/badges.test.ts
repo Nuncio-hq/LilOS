@@ -139,7 +139,12 @@ describe("AC-427 badgeStore", () => {
     const models = atom<Record<string, SessionModel>>({
       s1: model({ live: true }),
     });
-    return { channels, convs, models, store: badgeStore(channels, convs, models) };
+    return {
+      channels,
+      convs,
+      models,
+      store: badgeStore(channels, convs, models),
+    };
   };
 
   it("returns the same record when sources change but counts do not", () => {
