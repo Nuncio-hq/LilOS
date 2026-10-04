@@ -294,6 +294,72 @@ describe("thread-model — #157 AC mapping", () => {
     expect(card.text).toBe("working—");
   });
 
+  it("#425 a removed message disappears from the thread — even mid-queue", () => {
+    /* messages.remove flips `removed` (and clears `dropped`) via
+       message.changed: the row leaves the phone like it left the Mac's
+       waiting tray — no sent bubble, no stranded "Queued · runs next". */
+    const entries = mergeThreadEntries(
+      [
+        msg({ id: "m1", seq: 1, text: "first" }),
+        msg({ id: "m2", seq: 3, text: "take this back", removed: true }),
+      ],
+      undefined,
+      { ...OPTS, deliveredSeq: 1 },
+    );
+    expect(entries.map((e) => e.id)).toEqual(["m1"]);
+  });
+
+  it("#425 a ■-parked send never renders — not as sent, not as queued", () => {
+    /* messages.drop parks the row in the Mac's not-sent tray; the phone has
+       no tray, so the drop flag keeps it out of the transcript entirely. */
+    const entries = mergeThreadEntries(
+      [
+        msg({ id: "m1", seq: 1, text: "first" }),
+        msg({ id: "m2", seq: 3, text: "parked", dropped: true }),
+      ],
+      undefined,
+      { ...OPTS, deliveredSeq: 1 },
+    );
+    expect(entries.map((e) => e.id)).toEqual(["m1"]);
+  });
+
+  it("#425 a claimed send keeps its bubble but loses 'Queued · runs next'", () => {
+    /* messages.claim marks the send once its prompt commits to dispatch —
+       the Mac renders it as a plain sent bubble until turn.started consumes
+       it (never trayable). The phone: same bubble, no caption. */
+    const entries = mergeThreadEntries(
+      [
+        msg({ id: "m1", seq: 1, text: "first" }),
+        msg({ id: "m2", seq: 3, text: "committed", claimed: true }),
+      ],
+      undefined,
+      { ...OPTS, deliveredSeq: 1 },
+    );
+    const bubble = entries.find((e) => e.id === "m2");
+    if (bubble?.kind !== "user") throw new Error("expected user entry");
+    expect(bubble.queued).toBeUndefined();
+    expect(bubble.waiting).toBeUndefined();
+  });
+
+  it("#425 toThreadDetail drops a tombstoned tail row the live merge carried", () => {
+    /* chanState keeps removed/dropped rows live (message.changed replaces
+       in place; channel.snapshot carries them as tombstones) — the detail
+       projection must not leak them through. */
+    const detail = toThreadDetail({
+      conversation: conv(),
+      employee: ada,
+      messages: [
+        msg({ id: "m1", seq: 1, text: "first" }),
+        msg({ id: "m2", seq: 2, text: "gone", removed: true }),
+        msg({ id: "m3", seq: 3, text: "parked", dropped: true }),
+      ],
+      asks: [],
+      pending: new Set(),
+      now: T0 + 60_000,
+    });
+    expect(detail.entries.map((e) => e.id)).toEqual(["m1"]);
+  });
+
   it("an open ask hangs off its turn (read-only card for #158)", () => {
     const model = reduceSessionEvents("sess-1", [
       ev("turn.started", { turnId: "t1", model: "fake-small" }),
