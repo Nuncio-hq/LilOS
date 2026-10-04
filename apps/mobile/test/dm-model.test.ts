@@ -149,6 +149,26 @@ describe("AC-1: threads come from conversations.summaries for the DM channel, gr
     ]);
   });
 
+  it("#424 an archived session leaves the list; unarchiving brings it back", () => {
+    /* The runtime fetches includeArchived so it KNOWS the flag — the list's
+       job is hiding it (the Mac keeps its own Archived disclosure; the phone
+       drops the row outright). conversation.updated carries the flip in one
+       update both ways. */
+    const turns = toSessionTurns(
+      [summary("live"), summary("arch", { archived: true })],
+      CTX,
+    );
+    expect(turns.map((t) => t.id)).toEqual(["live"]);
+    const back = toSessionTurns(
+      [
+        summary("live"),
+        summary("arch", { archived: false }, { last: { createdAt: T0 - 1 } }),
+      ],
+      CTX,
+    );
+    expect(back.map((t) => t.id)).toEqual(["arch", "live"]);
+  });
+
   it("AC-1 shows a freshly opened conversation as Working before its summary lands", () => {
     const opened = conv("c-new", { engineRef: null });
     const root = msg("c-new-root", {
@@ -163,6 +183,19 @@ describe("AC-1: threads come from conversations.summaries for the DM channel, gr
     expect(turns[0]?.id).toBe("c-new");
     expect(turns[0]?.state).toBe("working");
     expect(turns[0]?.title).toBe("hello");
+  });
+
+  it("#424 a stale pending open stays hidden once the Mac archived it", () => {
+    const opened = conv("c-arch", { archived: true });
+    const root = msg("c-arch-root", {
+      conversationId: "c-arch",
+      text: "hello",
+    });
+    const turns = toSessionTurns([], {
+      ...CTX,
+      pending: new Map([["c-arch", { conversation: opened, root }]]),
+    });
+    expect(turns).toHaveLength(0);
   });
 
   it("AC-1 carries title, last words, folder and reply count on the row", () => {
