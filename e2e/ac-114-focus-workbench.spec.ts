@@ -478,7 +478,11 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
     page.getByText("Sign in to GitHub to see this PR", { exact: false }),
   ).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("gh auth login")).toBeVisible();
-  const retry = page.getByRole("button", { name: "Retry" });
+  /* #419 wired the last turn's own hover Retry — scope this one to the PR
+     panel or the name resolves to both. */
+  const retry = page
+    .getByRole("tabpanel", { name: "PR" })
+    .getByRole("button", { name: "Retry" });
   await expect(retry).toBeVisible();
   await expect(page.getByText(/gh failed:/)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-5-gh-auth.png` });
