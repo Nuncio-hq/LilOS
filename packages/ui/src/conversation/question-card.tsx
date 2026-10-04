@@ -57,6 +57,20 @@ const scrollPortOf = (el: HTMLElement | null) => {
   }
   return null;
 };
+
+/* The list cap in one rule (tested in question-card.test.tsx): the
+   options list gets whatever the scrollport leaves after the card's own
+   chrome — header, question, actions — minus the arrival-align margins,
+   so a card can never be taller than its port (FIX #515 r5). The 96px
+   floor keeps one row + a peek even when chrome eats the port. */
+export const questionOptionCap = (
+  natural: number,
+  others: number,
+  portH: number,
+) => {
+  const cap = Math.max(96, portH - 16 - others);
+  return { cap, over: natural > cap + 4 };
+};
 export function QuestionCard({
   q,
   viewer,
@@ -119,8 +133,7 @@ export function QuestionCard({
          the card's top into view, so it may occupy it). */
       const others = card.scrollHeight - list.clientHeight;
       const portH = port ? port.clientHeight : window.innerHeight;
-      const capPx = Math.max(96, portH - 16 - others);
-      const over = natural > capPx + 4;
+      const { cap: capPx, over } = questionOptionCap(natural, others, portH);
       /* Snap the cap to a whole-row boundary plus a peek of the next tile
          (no half-glyph rows), and count what's left hidden — measured
          against the list's own top edge, not an offsetParent. */
@@ -273,6 +286,7 @@ export function QuestionCard({
                the tiles (FIX #515). */
             <div
               ref={listRef}
+              data-question-options
               style={cap ? { maxHeight: cap } : undefined}
               className={cn(
                 "flex flex-col gap-1.5 overflow-y-auto scroll-py-1.5 py-1.5 pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
@@ -319,8 +333,10 @@ export function QuestionCard({
           {interactive && (
             /* Two rows, one height (h-8): the free-text field rides full
                width with Answer at its end; Skip is a secondary button on
-               the row below, right-aligned like the phone (FIX #515 r3). */
-            <div className="flex flex-col gap-2">
+               the row below, right-aligned like the phone (FIX #515 r3).
+               data-question-actions: the "input and Skip stay visible"
+               anchor the arrival-align is tested against (FIX r5). */
+            <div data-question-actions className="flex flex-col gap-2">
               {freeText && (
                 <form
                   className="flex items-center gap-1.5"
