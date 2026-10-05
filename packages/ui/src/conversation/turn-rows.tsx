@@ -205,8 +205,13 @@ function LazyShell({
             setHeld(false);
           } else {
             /* Only a laid-out row may hold — a 0-height stub would let the
-               scroll extent collapse. */
-            const h = el.offsetHeight;
+               scroll extent collapse. #537: keep the stub's height EXACT —
+               offsetHeight rounds to whole pixels while real rows land
+               fractionally (~±0.3 px each); across ~120 rows the rounding
+               sums to a real scrollHeight delta whose resize re-arms
+               stick-to-bottom's bottom pin and slides the reader's place
+               by ~a row when the find window lapses. */
+            const h = el.getBoundingClientRect().height;
             if (h) {
               heightRef.current = h;
               wasHeldRef.current = true;

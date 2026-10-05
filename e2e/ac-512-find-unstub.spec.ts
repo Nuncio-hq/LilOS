@@ -170,6 +170,39 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
       }
       return bad;
     });
+  /* The bottom pin's spring can still be crawling toward the port's end
+     when we get here — it writes scrollTop every frame it runs, so a
+     baseline read mid-flight makes the position assert nondeterministic
+     (#537: the pinned scroller observed writing ~0.3 px/frame seconds
+     after the last turn settled). Wait until scrollTop holds for 10
+     frames — i.e. the spring terminated — before recording `before`. */
+  const settledTop = () =>
+    page.evaluate(
+      () =>
+        new Promise<number>((resolve) => {
+          const first = document.querySelector(
+            "[data-thread-panel] [data-msg]",
+          );
+          let port = first?.parentElement ?? null;
+          while (
+            port &&
+            !/(auto|scroll)/.test(getComputedStyle(port).overflowY)
+          )
+            port = port.parentElement;
+          if (!port) return resolve(-1);
+          const a = port.scrollTop;
+          let n = 0;
+          const tick = () => {
+            if (++n < 10) {
+              requestAnimationFrame(tick);
+              return;
+            }
+            resolve(port.scrollTop === a ? a : -1);
+          };
+          requestAnimationFrame(tick);
+        }),
+    );
+  await expect.poll(settledTop, { timeout: 30_000 }).not.toBe(-1);
   const beforeTop = await portScrollTop();
   expect(beforeTop).toBeGreaterThan(NUDGE_PX);
   const nodesBefore = await page.evaluate(
@@ -190,8 +223,7 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
   );
 
   /* The window lapses (test-hooked to ~2.5 s) → off-screen rows re-stub
-     and the DOM re-bounds to the geometric invariant, wherever the
-     injected drift left the boundary. */
+     and the DOM re-bounds to the geometric invariant. */
   await expect.poll(badBoxRows, { timeout: 15_000 }).toBe(0);
   const nodesClosed = await page.evaluate(
     () => document.querySelectorAll("*").length,
@@ -201,12 +233,12 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
      rows the moved boundary keeps mounted. */
   expect(nodesClosed).toBeLessThanOrEqual(nodesBefore + 1500);
 
-  /* The reader's place survives the cycle: the only legitimate
-     displacement is the injected nudge — anything else is a hidden
-     scroll mover (#537's product bug). */
-  const expectedTop = beforeTop - NUDGE_PX;
+  /* The reader's place survives the cycle whole: scrollTop is unchanged
+     to ±2 px. The injected nudge is a mid-window displacement the find
+     anchor must UNDO at the lapse — without it the port lands wherever
+     the churn left it (#537's product bug). */
   await expect
-    .poll(async () => Math.abs((await portScrollTop()) - expectedTop), {
+    .poll(async () => Math.abs((await portScrollTop()) - beforeTop), {
       timeout: 15_000,
     })
     .toBeLessThanOrEqual(2);

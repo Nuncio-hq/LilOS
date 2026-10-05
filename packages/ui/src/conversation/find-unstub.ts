@@ -1,4 +1,9 @@
-import { useEffect, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 
 /**
@@ -121,5 +126,91 @@ export function FindUnstubNudge(): null {
     });
     return () => cancelAnimationFrame(id);
   }, [open, state]);
+  return null;
+}
+
+/** #537: renders inside <Conversation>. A find window mounts every held
+    row and re-stubs them when it lapses — the mass DOM swap can move the
+    scrollport: the bottom pin's spring re-fires on any content resize
+    (and a spring in flight keeps crawling through the window), and the
+    browser's own scroll anchor wanders when its tracked node is swapped.
+    On the open edge — a layout effect, so it lands before the commit's
+    paint and before the next spring tick — the row under the port's top
+    edge and its offset are captured and both movers suspended; on the
+    lapse the anchor is re-applied every frame until the re-stub settles,
+    then the pin re-arms. Cmd+F then waiting never moves the reader's
+    place. */
+export function FindUnstubAnchor({ lazy }: { lazy: boolean }): null {
+  const { scrollRef, state } = useStickToBottomContext();
+  const open = useFindUnstub(lazy);
+  const pinned = useRef(false);
+  const anchor = useRef<{
+    el: Element | null;
+    offset: number;
+    top: number;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    const port = scrollRef.current;
+    if (!open || !port) return;
+    pinned.current = state.isAtBottom;
+    state.isAtBottom = false;
+    port.style.overflowAnchor = "none";
+    const pt = port.getBoundingClientRect();
+    const top = state.scrollTop;
+    anchor.current = { el: null, offset: 0, top };
+    for (const row of port.querySelectorAll("[data-msg]")) {
+      const r = row.getBoundingClientRect();
+      if (r.bottom > pt.top) {
+        anchor.current = { el: row, offset: r.top - pt.top, top };
+        break;
+      }
+    }
+  }, [open, scrollRef, state]);
+
+  useEffect(() => {
+    if (open) return;
+    const a = anchor.current;
+    const port = scrollRef.current;
+    if (!a || !port) return;
+    anchor.current = null;
+    let calm = 0;
+    let frames = 0;
+    let cancelled = false;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      port.style.overflowAnchor = "";
+      if (pinned.current && !state.escapedFromLock) state.isAtBottom = true;
+      pinned.current = false;
+    };
+    const fix = () => {
+      if (cancelled) return;
+      if (frames++ > 120 || calm > 5) {
+        finish();
+        return;
+      }
+      const delta =
+        a.el && a.el.isConnected
+          ? a.el.getBoundingClientRect().top -
+            port.getBoundingClientRect().top -
+            a.offset
+          : a.top - state.scrollTop;
+      if (Math.abs(delta) > 0.5) {
+        state.scrollTop = state.scrollTop + delta;
+        calm = 0;
+      } else {
+        calm += 1;
+      }
+      requestAnimationFrame(fix);
+    };
+    const id = requestAnimationFrame(fix);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id);
+      finish();
+    };
+  }, [open, scrollRef, state]);
   return null;
 }

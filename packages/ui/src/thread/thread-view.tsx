@@ -20,7 +20,7 @@ import {
 } from "../components/ai-elements/conversation";
 import { Button } from "../components/ui/button";
 import { openStartRequest } from "../conversation/cards";
-import { FindUnstubNudge } from "../conversation/find-unstub";
+import { FindUnstubAnchor, FindUnstubNudge } from "../conversation/find-unstub";
 import type { PlanAction } from "../conversation/plan-card";
 import {
   type QuestionAnswer,
@@ -499,6 +499,7 @@ export function ThreadView({
             it while an open card intersects the port (FIX #515 r4). */}
         <QuestionAwareScrollButton />
         <FindUnstubNudge />
+        <FindUnstubAnchor lazy={lazyRows} />
         {/* The not-sent tray and pending-steer chips grow the composer area below; re-stick so the
            stopped turn + tray are both fully visible (issue #15). Inside <Conversation> so it can
            use the stick-to-bottom context. */}
