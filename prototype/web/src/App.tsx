@@ -2011,7 +2011,10 @@ export default function App() {
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1">
       {focus && openThread?.thread ? (
         <FocusView
-          root={openThread} thread={openThread.thread} channel={channel} project={project} emp={emp} human={human}
+          /* Same positional reply ids as the panel thread — data-msg is the
+             shared scroll/flash anchor (#138); Focus rows need it too. */
+          thread={{ ...openThread.thread, replies: openThread.thread.replies.map((r, i) => ({ ...r, id: r.id ?? `p-${i}` })) }}
+          root={openThread} channel={channel} project={project} emp={emp} human={human}
           lead={emp(view.kind === "dm" ? view.id : openThread.thread.replies.find((r) => emp(r.from))?.from ?? mentionIn(openThread.text)?.id ?? "")}
           resolved={resolved} setResolved={setResolved} work={workOf(openThread)}
           onBack={() => setFocus(false)} onNav={() => setNavOpen(true)} onStart={() => setStartFor(openThread.id)}
