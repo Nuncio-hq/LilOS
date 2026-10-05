@@ -26,6 +26,7 @@ import {
   type QueuedTrayItem,
   queuedItemText,
   runningComposer,
+  waitingComposer,
 } from "../chat/agent-chat";
 import { useEscapeKey } from "../chat/composer-keys";
 import { FocusComposer } from "../chat/focus-composer";
@@ -33,7 +34,6 @@ import { sessionChoice } from "../chat/model-picker";
 import {
   Conversation,
   ConversationContent,
-  ConversationScrollButton,
 } from "../components/ai-elements/conversation";
 import {
   Queue,
@@ -49,6 +49,10 @@ import {
 import { Button } from "../components/ui/button";
 import { openStartRequest } from "../conversation/cards";
 import type { PlanAction } from "../conversation/plan-card";
+import {
+  type QuestionAnswer,
+  QuestionAwareScrollButton,
+} from "../conversation/question-card";
 import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
   RewindCheckpoint,
@@ -77,6 +81,7 @@ import type {
   OsApp,
   OsEditor,
   Project,
+  QuestionAsk,
   ShipBar,
   ShipHandlers,
   Thread,
@@ -147,6 +152,8 @@ export function FocusView({
   onOpenSession,
   onStopJob,
   onPlan,
+  onAnswer,
+  onCancel,
   browser,
   initialTab,
   onTab,
@@ -249,6 +256,10 @@ export function FocusView({
   onStopJob?: (id: string) => void;
   /* Plan card decisions (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
+  /* #420: question-ask answer/cancel — passed, the handler owns the
+     resolved write (the card locks as "Sending…" until it lands). */
+  onAnswer?: (q: QuestionAsk, a: QuestionAnswer) => void;
+  onCancel?: (q: QuestionAsk) => void;
   /* #106: the thread's access level + toggle → the composer pill
      (both or neither; D-#19). */
   access?: ConversationAccess;
@@ -346,10 +357,17 @@ export function FocusView({
   );
   const live = thread.replies.find((r) => r.live);
   const lastStep = live?.steps?.[live.steps.length - 1];
+  /* #420: parked on an open QUESTION ask = WAITING, not working — the
+     composer says "waiting for your answer" and shows Send, not Stop
+     (Hermes FIX #515). Scoped to r.question, which only the question card
+     sets: approval/plan asks keep the steer composer. */
+  const waiting = running && live?.phase === "waiting" && !!live?.question;
   const status: ChatStatus = running
-    ? live?.phase === "submitted"
-      ? "submitted"
-      : "streaming"
+    ? waiting
+      ? "ready"
+      : live?.phase === "submitted"
+        ? "submitted"
+        : "streaming"
     : "ready";
   // The latest approved plan / task list (issue #175), else the engine's session todos.
   const fromPlan = planTodos(thread);
@@ -431,6 +449,8 @@ export function FocusView({
     onRewind,
     setResolved,
     onStart,
+    onAnswer,
+    onCancel,
   };
   const lazyRows = thread.replies.length > TURN_LAZY_AFTER;
   /* #340 AC-2b: `workbench_open` brings the panel forward on the target's
@@ -738,7 +758,9 @@ export function FocusView({
                 <TranscriptNoteRow note={transcriptNote} />
               )}
             </ConversationContent>
-            <ConversationScrollButton />
+            {/* Same guard as the thread panel — the ↓ never overlaps a
+                pending question card (FIX #515 r4). */}
+            <QuestionAwareScrollButton />
             {/* Not-sent tray / plan tray / steer chips grow the area below the conversation;
                 re-stick so everything stays visible without scrolling (issue #15). */}
             <ConversationKeepBottom
@@ -828,7 +850,7 @@ export function FocusView({
               onRemove={onUnqueue}
             />
             <FocusComposer
-              running={running}
+              running={running && !waiting}
               status={status}
               choice={
                 models?.length
@@ -858,20 +880,24 @@ export function FocusView({
                 surfaces?.termControl === "user"
                   ? `${lead?.name ?? "The agent"} is paused while you use the terminal`
                   : running
-                    ? runningComposer(
-                        lead?.name ?? "Employee",
-                        steer,
-                        agentWorking,
-                      ).placeholder
+                    ? waiting
+                      ? waitingComposer(lead?.name ?? "Employee").placeholder
+                      : runningComposer(
+                          lead?.name ?? "Employee",
+                          steer,
+                          agentWorking,
+                        ).placeholder
                     : `Continue session ${thread.session} with ${lead?.name ?? "the employee"}…`
               }
               hint={
                 running
-                  ? runningComposer(
-                      lead?.name ?? "Employee",
-                      steer,
-                      agentWorking,
-                    ).hint
+                  ? waiting
+                    ? waitingComposer(lead?.name ?? "Employee").hint
+                    : runningComposer(
+                        lead?.name ?? "Employee",
+                        steer,
+                        agentWorking,
+                      ).hint
                   : pr?.status === "merged"
                     ? `#${pr.number} merged, ⎇ ${pr.head} deleted · next edit starts a new branch from main`
                     : work?.branch

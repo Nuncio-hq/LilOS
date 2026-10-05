@@ -8,6 +8,8 @@ import { Prose, Pulse } from "../components/prose";
 import { approvalSentence } from "./approval-copy";
 import { type PlanAction, PlanCard } from "./plan-card";
 import { PrCard } from "./pr-badges";
+import { type QuestionAnswer, QuestionCard } from "./question-card";
+import { isAnswerableQuestion } from "./question-gate";
 import { StepRow, tool } from "./step-row";
 import { SubagentsCard, SubagentsLink } from "./subagents";
 import type { AgentEntry, Approval, SubagentRow, ToolStep } from "./types";
@@ -50,6 +52,7 @@ export function AgentTurn({
   tone,
   onApprove,
   onDeny,
+  onAnswer,
   onOpenSubagent,
   onOpenSubagents,
   onPlan,
@@ -60,6 +63,9 @@ export function AgentTurn({
   tone: OrbTone;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
+  /** #420: a question ask's answer (options send their wire id, free text
+      the typed string); a question's Cancel rides `onDeny`. */
+  onAnswer?: (id: string, answer: QuestionAnswer) => void;
   /** Opens a subagent's sheet (issue #170); absent = rows don't open. */
   onOpenSubagent?: (a: SubagentRow) => void;
   /** #319: the session's Subagents sheet exists — the turn shows only the
@@ -157,9 +163,12 @@ export function AgentTurn({
           </AppText>
         </View>
       )}
-      {e.approval && (
-        <ApprovalCard a={e.approval} onApprove={onApprove} onDeny={onDeny} />
-      )}
+      {e.approval &&
+        (isAnswerableQuestion(e.approval) ? (
+          <QuestionCard a={e.approval} onAnswer={onAnswer} onCancel={onDeny} />
+        ) : (
+          <ApprovalCard a={e.approval} onApprove={onApprove} onDeny={onDeny} />
+        ))}
       {e.footer && !e.live && !e.stopped && <Footer f={e.footer} />}
     </View>
   );
@@ -430,7 +439,13 @@ function Receipt({ d }: { d: NonNullable<AgentEntry["decided"]> }) {
       />
       <Text className="shrink text-[13px] text-subtle-foreground">
         <Text className="font-medium text-foreground">
-          {d.approved ? "You approved: " : "You denied: "}
+          {d.question
+            ? d.approved
+              ? "You answered: "
+              : "You cancelled: "
+            : d.approved
+              ? "You approved: "
+              : "You denied: "}
         </Text>
         <Text className="font-mono text-[12px]">{nonBreaking(d.what)}</Text>
       </Text>

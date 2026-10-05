@@ -33,6 +33,14 @@ export type ProjectGroup = {
   channels: ChannelRow[];
 };
 
+/* #420: a question option as the wire carries it — `id` is what the client
+   returns as the answer (contracts: QuestionOption). */
+export type QuestionOption = {
+  id: string;
+  label: string;
+  description?: string;
+};
+
 /** Something an employee is blocked on until you choose. */
 export type Approval = {
   id: string;
@@ -40,15 +48,20 @@ export type Approval = {
   employee: string;
   tone: OrbTone;
   session: string;
-  /** The wire ask's kind; a question can't be approved (it needs free text)
-      so surfaces hide its Approve pill. Absent = approval (prototype rows). */
+  /** The wire ask's kind; a question can't be approved (it needs an answer,
+      not an OK) so surfaces hide its Approve pill. Absent = approval
+      (prototype rows). */
   kind?: "approval" | "plan" | "question";
-  /** Why, in one sentence. */
+  /** Why, in one sentence — on a question ask this IS the question. */
   reason: string;
   /** A shell command it wants to run… */
   command?: string;
   /** …or a file it wants to post. */
   file?: { name: string; detail: string };
+  /** #420: question options as buttons (id → the answer sent back). */
+  options?: QuestionOption[];
+  /** #420: the ask allows a typed answer besides the listed options. */
+  freeText?: boolean;
   /** "2m" */
   age: string;
 };
@@ -214,8 +227,10 @@ export type AgentEntry = {
   agentInitiated?: boolean;
   /** The reply is streaming (steps are over for now). */
   writing?: boolean;
-  /** What you decided on this turn's approval — kept as a receipt. */
-  decided?: { approved: boolean; what: string };
+  /** What you decided on this turn's approval — kept as a receipt.
+      `question` (#420) marks an answered/cancelled question ask: the
+      receipt reads "You answered:" / "You cancelled:". */
+  decided?: { approved: boolean; what: string; question?: boolean };
   approval?: Approval;
   /** The plan this turn proposed (issue #175; web: Plan). */
   plan?: PlanRow;

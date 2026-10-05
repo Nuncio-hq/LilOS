@@ -9,6 +9,7 @@ import {
   type QueuedTrayItem,
   queuedItemText,
   runningComposer,
+  waitingComposer,
 } from "../chat/agent-chat";
 import { Composer } from "../chat/composer";
 import { useEscapeKey } from "../chat/composer-keys";
@@ -16,11 +17,14 @@ import { ModelPicker, sessionChoice } from "../chat/model-picker";
 import {
   Conversation,
   ConversationContent,
-  ConversationScrollButton,
 } from "../components/ai-elements/conversation";
 import { Button } from "../components/ui/button";
 import { openStartRequest } from "../conversation/cards";
 import type { PlanAction } from "../conversation/plan-card";
+import {
+  type QuestionAnswer,
+  QuestionAwareScrollButton,
+} from "../conversation/question-card";
 import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
   RewindCheckpoint,
@@ -47,6 +51,7 @@ import type {
   Msg,
   OsApp,
   OsEditor,
+  QuestionAsk,
   Thread,
   TranscriptNote,
   WbTab,
@@ -109,6 +114,8 @@ export function ThreadView({
   onSeededFiles,
   onOpenSession,
   onPlan,
+  onAnswer,
+  onCancel,
   access,
   onAccess,
 }: {
@@ -203,6 +210,10 @@ export function ThreadView({
   onOpenSession?: (employeeId: string, session: string) => void;
   /* Plan card decisions (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
+  /* #420: question-ask answer/cancel — passed, the handler owns the
+     resolved write (the card locks as "Sending…" until it lands). */
+  onAnswer?: (q: QuestionAsk, a: QuestionAnswer) => void;
+  onCancel?: (q: QuestionAsk) => void;
   /* #106: the thread's access level + toggle → the composer pill.
      Both or neither (D-#19: no access record, no control). */
   access?: ConversationAccess;
@@ -243,10 +254,19 @@ export function ThreadView({
     const t = setTimeout(() => setFlash(null), 1800);
     return () => clearTimeout(t);
   }, [flash]);
+  /* #420: a live reply parked on an open QUESTION ask is WAITING, not
+     working — the composer says "waiting for your answer" and shows Send,
+     not Stop (Hermes FIX #515). Scoped to r.question, which only the
+     question card sets: approval/plan asks keep the steer composer. */
+  const waiting =
+    running &&
+    thread.replies.some((r) => r.live && r.phase === "waiting" && r.question);
   const status: ChatStatus = running
-    ? thread.replies.some((r) => r.live && r.phase === "submitted")
-      ? "submitted"
-      : "streaming"
+    ? waiting
+      ? "ready"
+      : thread.replies.some((r) => r.live && r.phase === "submitted")
+        ? "submitted"
+        : "streaming"
     : "ready";
   /* #419: the Retry lives on the last TURN — system notes (a failed turn's
      error row) sit below it and don't count. */
@@ -266,6 +286,8 @@ export function ThreadView({
     onRewind,
     setResolved,
     onStart,
+    onAnswer,
+    onCancel,
   };
   const lazyRows = thread.replies.length > TURN_LAZY_AFTER;
   return (
@@ -364,7 +386,10 @@ export function ThreadView({
         </div>
       </div>
       <Conversation className="min-h-0">
-        <ConversationContent className="gap-0 p-0 py-2">
+        {/* Bottom padding ≈ the composer height so the newest turn — a
+            question card's Skip row included — scrolls fully clear of the
+            composer instead of landing under it (Hermes FIX #515). */}
+        <ConversationContent className="gap-0 p-0 pt-2 pb-28">
           {transcriptNote?.kind === "trimmed" && (
             <TranscriptNoteRow note={transcriptNote} />
           )}
@@ -469,7 +494,9 @@ export function ThreadView({
             </div>
           )}
         </ConversationContent>
-        <ConversationScrollButton />
+        {/* The ↓ never overlaps a pending question card — the guard hides
+            it while an open card intersects the port (FIX #515 r4). */}
+        <QuestionAwareScrollButton />
         {/* The not-sent tray and pending-steer chips grow the composer area below; re-stick so the
            stopped turn + tray are both fully visible (issue #15). Inside <Conversation> so it can
            use the stick-to-bottom context. */}
@@ -480,16 +507,26 @@ export function ThreadView({
       <Composer
         placeholder={
           running
-            ? runningComposer(leadEmp?.name ?? "Employee", steer, agentWorking)
-                .placeholder
+            ? waiting
+              ? waitingComposer(leadEmp?.name ?? "Employee").placeholder
+              : runningComposer(
+                  leadEmp?.name ?? "Employee",
+                  steer,
+                  agentWorking,
+                ).placeholder
             : `Reply to ${leadEmp?.name ?? "the thread"} in this session…`
         }
         employees={mentionables ?? []}
         onSearchFiles={onSearchFiles}
         hint={
           running
-            ? runningComposer(leadEmp?.name ?? "Employee", steer, agentWorking)
-                .hint
+            ? waiting
+              ? waitingComposer(leadEmp?.name ?? "Employee").hint
+              : runningComposer(
+                  leadEmp?.name ?? "Employee",
+                  steer,
+                  agentWorking,
+                ).hint
             : work?.branch
               ? `Edits go to ⎇ ${work.branch}`
               : work

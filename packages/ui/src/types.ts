@@ -111,6 +111,21 @@ export type AttachedFile = {
   mediaType: string;
   url?: string;
 };
+/* #420: the engine's `question` ask, as the card shows it (wire shape:
+   packages/contracts/src/engine/requests.ts — options carry the id the
+   client returns as the answer; `freeText` allows a typed answer besides
+   the listed options). */
+export type QuestionOption = {
+  id: string;
+  label: string;
+  description?: string;
+};
+export type QuestionAsk = {
+  id: string;
+  question: string;
+  options?: QuestionOption[];
+  freeText?: boolean;
+};
 export type Reply = {
   from: string;
   time: string;
@@ -126,6 +141,9 @@ export type Reply = {
       (e.g. ["once","session","always","deny"]) — the buttons follow it;
       absent on old stored asks → the default once/always/deny set. */
   approval?: { id: string; command: string; note: string; options?: string[] };
+  /** #420: the turn's open `question` ask — the card under the reply
+      collects the answer (option id or free text). */
+  question?: QuestionAsk;
   startProposal?: { title: string };
   reasoning?: string;
   thought?: number;

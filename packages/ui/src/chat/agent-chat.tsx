@@ -312,3 +312,11 @@ export const runningComposer = (
       : `${name} is working. Enter queues it for when the turn ends…`,
   hint: steer && !agentWork ? "Enter steers · ■ stop" : "Enter queues · ■ stop",
 });
+
+/* #420: a turn parked on an open ask (question/approval/plan) is WAITING, not
+   working — the composer says so instead of inviting steers, and there's no
+   stop-as-primary because nothing is running (Hermes FIX #515). */
+export const waitingComposer = (name: string) => ({
+  placeholder: `${name} is waiting for your answer…`,
+  hint: "Answer the card in the thread — the turn continues on its own.",
+});
