@@ -9,9 +9,13 @@ import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
 
 export type ConversationProps = ComponentProps<typeof StickToBottom>;
 
+/* pb-14 reserves the ↓ button's height as a real gutter below the scroller:
+   bottom padding on the port shrinks its content box, and the scroller's
+   height:100% resolves against that — so message rows can never reach the
+   strip the button floats in, at any scroll offset (issue #535). */
 export const Conversation = ({ className, ...props }: ConversationProps) => (
   <StickToBottom
-    className={cn("relative flex-1 overflow-y-hidden", className)}
+    className={cn("relative flex-1 overflow-y-hidden pb-14", className)}
     initial="smooth"
     resize="smooth"
     role="log"
@@ -84,7 +88,7 @@ export const ConversationScrollButton = ({
     !isAtBottom && (
       <Button
         className={cn(
-          "absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full",
+          "absolute bottom-3 left-[50%] translate-x-[-50%] rounded-full",
           className
         )}
         onClick={handleScrollToBottom}
