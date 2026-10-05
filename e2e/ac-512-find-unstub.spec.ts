@@ -6,12 +6,13 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  * browser find-in-page can't match inside them. A find chord opens a ~10 s
  * window that mounts every held row; the window lapses and rows re-stub.
  *
- * Issue #537 — the re-stub contract is geometric, not a count: which rows
- * hold depends on where the scrollport's clip boundary sits when the
- * window lapses, and that boundary moves if anything shifts scrollTop.
- * `?findUnstubNudge=` injects a deterministic mid-window drift so the
- * spec proves the cycle preserves the reader's place instead of trusting
- * a fixed stub count.
+ * Issue #537 — each mass swap is anchored at ITS OWN edge: the open mount
+ * holds the row under the port's top edge until it settles; the lapse
+ * re-captures the row under the top edge wherever the reader is NOW and
+ * holds it until the re-stub settles. `?findUnstubNudge=` injects a
+ * deterministic mid-window jump — what the browser's find bar does when
+ * it hops to a match — and it is the reader's: nothing may undo it, and
+ * the lapse re-pins to the bottom only if the port is still there.
  *
  * One 60-turn engine-fake thread (ENGINE_FAKE_TICK=2 keeps 60 sends cheap).
  * The window is driven by the `?findUnstubMs=` test hook — the spec never
@@ -30,8 +31,9 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-/* The named drift knob (#537): mid-window the scrollport shifts up by
-   this many px, one solid row. */
+/* The named jump knob (#537): once the open mount settles, the scrollport
+   shifts up by this many px — modelling the browser find bar hopping to a
+   match mid-window. */
 const NUDGE_PX = 150;
 
 /* First-run → land on Default's DM. `?findUnstubMs=2500` must ride the
@@ -136,9 +138,7 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
      boundary sits — the row observer's implicit root means its 1600px
      rootMargin widens only the window bounds while the port's clip
      decides intersection, so a lazy row holds iff its box clears the
-     port. The `?findUnstubNudge=` knob displaces the port mid-window, so
-     the lapse's verdict is evaluated against a MOVED boundary — the
-     regression a fixed `stubs >= heldBefore` count could not express. */
+     port. */
   const portScrollTop = () =>
     page.evaluate(() => {
       const first = document.querySelector("[data-thread-panel] [data-msg]");
@@ -211,19 +211,66 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
   /* Going in, the held set is already geometrically consistent. */
   await expect.poll(badBoxRows, { timeout: 15_000 }).toBe(0);
 
+  /* (a) — the open mount must not move the view. An in-page rAF watcher
+     resolves the first frame the stubs are gone AND scrollTop holds still
+     across two frames: the moment the mount settles, read before the
+     injected mid-window jump lands. */
+  const openSettled = page.evaluate(
+    () =>
+      new Promise<number>((resolve, reject) => {
+        const first = document.querySelector("[data-thread-panel] [data-msg]");
+        let port = first?.parentElement ?? null;
+        while (port && !/(auto|scroll)/.test(getComputedStyle(port).overflowY))
+          port = port.parentElement;
+        if (!port) return reject(new Error("no scroll port"));
+        let last = -1;
+        let still = 0;
+        let n = 0;
+        const tick = () => {
+          if (++n > 1200) return reject(new Error("stubs never cleared"));
+          if (port.querySelector("[data-held-stub]"))
+            return void requestAnimationFrame(tick);
+          const t = port.scrollTop;
+          still = t === last ? still + 1 : 0;
+          last = t;
+          if (still >= 1) return resolve(t);
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+  );
+
   /* Ctrl+F — the find chord: every held row mounts; the probe phrase is
      DOM text a find-in-page could match. */
   await page.keyboard.press("Control+f");
-  await expect.poll(() => stubs.count(), { timeout: 15_000 }).toBe(0);
+  const afterOpenTop = await openSettled;
   await expect(panel.getByText("findprobe-alpha-turn2").first()).toBeAttached({
     timeout: 15_000,
   });
   const nodesOpen = await page.evaluate(
     () => document.querySelectorAll("*").length,
   );
+  /* (a) before the chord vs right after the open mount settles. */
+  expect(Math.abs(afterOpenTop - beforeTop)).toBeLessThanOrEqual(2);
+
+  /* The `?findUnstubNudge=` knob now models the find bar JUMPING to a
+     match: it lands once the open mount has settled, through a real
+     scrollTop write — the scroll-event path that escapes the bottom pin,
+     so the floating ↓ appears. The jump is the reader's: the window must
+     never undo it. */
+  await expect
+    .poll(
+      async () => Math.abs((await portScrollTop()) - (beforeTop - NUDGE_PX)),
+      { timeout: 15_000 },
+    )
+    .toBeLessThanOrEqual(2);
+  const nudgedTop = await portScrollTop();
+  const jumpButton = panel.locator("[role='log'] > button");
+  await expect(jumpButton).toBeVisible({ timeout: 15_000 });
 
   /* The window lapses (test-hooked to ~2.5 s) → off-screen rows re-stub
-     and the DOM re-bounds to the geometric invariant. */
+     and the DOM re-bounds to the geometric invariant — evaluated at the
+     MOVED boundary the jump left behind. */
   await expect.poll(badBoxRows, { timeout: 15_000 }).toBe(0);
   const nodesClosed = await page.evaluate(
     () => document.querySelectorAll("*").length,
@@ -233,13 +280,15 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
      rows the moved boundary keeps mounted. */
   expect(nodesClosed).toBeLessThanOrEqual(nodesBefore + 1500);
 
-  /* The reader's place survives the cycle whole: scrollTop is unchanged
-     to ±2 px. The injected nudge is a mid-window displacement the find
-     anchor must UNDO at the lapse — without it the port lands wherever
-     the churn left it (#537's product bug). */
+  /* (b) the lapse keeps the reader's place: scrollTop stays at the
+     JUMPED position ±2 px — anchoring the open-edge row here would snap
+     the port back to where it was before Cmd+F (#537's product bug).
+     (c) the port was pinned at open but is NOT re-pinned at the lapse —
+     it is no longer at the bottom, so the ↓ stays mounted. */
   await expect
-    .poll(async () => Math.abs((await portScrollTop()) - beforeTop), {
+    .poll(async () => Math.abs((await portScrollTop()) - nudgedTop), {
       timeout: 15_000,
     })
     .toBeLessThanOrEqual(2);
+  await expect(jumpButton).toBeVisible({ timeout: 15_000 });
 });
