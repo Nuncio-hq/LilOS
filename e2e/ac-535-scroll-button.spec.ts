@@ -66,15 +66,35 @@ const scrollerStats = (page: Page, portSelector: string) =>
   }, portSelector);
 
 /** Rows keep mounting after first paint (cards, trays) — wait for the
-    scroll extent to stop growing before measuring anything. */
+    scroll extent AND scrollTop to settle at the bottom. Two reasons a
+    single programmatic write is otherwise swallowed: use-stick-to-bottom
+    drops scroll events that land while its resizeDifference is set, and
+    its resize="smooth" animation keeps re-writing scrollTop to the
+    bottom until the content stops growing. */
 async function settlePort(page: Page, portSelector: string) {
-  let prev = -1;
+  let prev: { h: number; top: number; ch: number } | null = null;
   await expect
     .poll(async () => {
-      const { h } = await scrollerStats(page, portSelector);
-      const stable = h === prev && h > 0;
-      prev = h;
-      return stable;
+      const cur = await page.evaluate((sel) => {
+        const sc = document.querySelector(sel)
+          ?.firstElementChild as HTMLElement | null;
+        if (!sc) throw new Error(`no scroller under ${sel}`);
+        return {
+          h: sc.scrollHeight,
+          top: sc.scrollTop,
+          ch: sc.clientHeight,
+        };
+      }, portSelector);
+      const settled =
+        cur.h > 0 &&
+        prev !== null &&
+        cur.h === prev.h &&
+        cur.top === prev.top &&
+        /* The library's lock target is scrollHeight - 1 - clientHeight
+           and scrollTop is fractional — "at the bottom" is within 2px. */
+        cur.top >= cur.h - cur.ch - 2;
+      prev = cur;
+      return settled;
     })
     .toBe(true);
 }
@@ -83,30 +103,51 @@ async function expectClear(page: Page, portSelector: string) {
   await settlePort(page, portSelector);
   const { max } = await scrollerStats(page, portSelector);
   expect(max, "port must be scrollable for this invariant").toBeGreaterThan(0);
-  /* Positions: just off the bottom (last row under the button — the reported
-     case), mid-scroll, and the top. Re-scroll inside the poll: the library's
-     smooth bottom-lock animation can still be in flight on the first try. */
-  for (const top of [Math.max(0, max - 120), Math.max(0, max - 40), 0]) {
+  const button = page.locator(portSelector).locator(":scope > button");
+  /* Positions: 120px and 80px above the bottom (the reported case: last
+     row under the button), and the absolute top. Offsets must clear 70px:
+     use-stick-to-bottom exposes isAtBottom || isNearBottom and
+     isNearBottom holds within STICK_TO_BOTTOM_OFFSET_PX=70 of the bottom,
+     so the ↓ can never mount nearer than that — a "40px above bottom"
+     position asserts something the library forbids (CI flake #536 r1).
+     Offsets are computed from the CURRENT bottom inside each write —
+     scrollHeight keeps churning while lazy rows remeasure, and a stale
+     absolute top can land below the shrunken extent, which clamps the
+     write back to the bottom and the ↓ never mounts. Two separate waits
+     per position: first the ↓ must be mounted (it unmounts at the
+     bottom — "not mounted yet" is not "overlap"), then hits must stay
+     empty. */
+  const positions: Array<number | "top"> = [120, 80, "top"];
+  const scrollTo = (sel: string, t: number | "top") =>
+    page.evaluate(
+      ([s, p]) => {
+        const sc = document.querySelector(s)
+          ?.firstElementChild as HTMLElement | null;
+        if (!sc) throw new Error(`no scroller under ${s}`);
+        sc.scrollTop = p === "top" ? 0 : sc.scrollHeight - sc.clientHeight - p;
+      },
+      [sel, t] as const,
+    );
+  for (const pos of positions) {
+    await scrollTo(portSelector, pos);
+    await expect(button).toBeVisible({ timeout: 15_000 });
+    /* Re-scroll inside the poll: the library's smooth bottom-lock
+       animation can still be in flight on the first try, and a snap back
+       to the bottom unmounts the button (returned as "unmounted",
+       never []). */
     await expect
       .poll(
         async () => {
-          await page.evaluate(
-            ([sel, t]) => {
-              const sc = document.querySelector(sel)
-                ?.firstElementChild as HTMLElement | null;
-              if (!sc) throw new Error(`no scroller under ${sel}`);
-              sc.scrollTop = t;
-            },
-            [portSelector, top] as const,
-          );
-          return overlaps(page, portSelector);
+          await scrollTo(portSelector, pos);
+          const res = await overlaps(page, portSelector);
+          return "hits" in res ? res.hits : "unmounted";
         },
         {
           timeout: 10_000,
-          message: `↓ overlaps a message row at scrollTop=${top}`,
+          message: `↓ overlaps a message row ${pos === "top" ? "at the top" : `${pos}px above the bottom`}`,
         },
       )
-      .toEqual({ button: true, hits: [] });
+      .toEqual([]);
   }
 }
 

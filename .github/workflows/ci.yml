@@ -110,6 +110,24 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # TEMP (#536 review): one-off flake probe — the ac-535 spec 20× on the
+  # real runner. Reverted in the follow-up commit; not part of verify.
+  ac535-repeat:
+    needs: scope
+    if: needs.scope.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
+      - name: AC-535 spec ×20
+        run: bunx playwright test e2e/ac-535-scroll-button.spec.ts --repeat-each 20
+
   verify:
     needs: [scope, checks, e2e]
     if: always() # reports on every path: draft, docs-only, failure, cancel
