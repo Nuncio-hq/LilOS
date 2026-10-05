@@ -4,7 +4,10 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { useStickToBottomContext } from "use-stick-to-bottom";
+import {
+  type StickToBottomState,
+  useStickToBottomContext,
+} from "use-stick-to-bottom";
 
 /**
  * #512: a held (stubbed) turn row carries no text nodes (#430), so browser
@@ -33,10 +36,10 @@ const windowMs = (() => {
   return Number.isFinite(v) && v > 0 ? v : FIND_UNSTUB_MS;
 })();
 
-/* e2e/dev knob — `?findUnstubNudge=<px>` displaces the scrollport's
-   scrollTop up by <px> while a find window is open, modelling the
-   scroll-anchor drift a mount/re-stub cycle can produce (#537). Read
-   once at module load. */
+/* e2e/dev knob — `?findUnstubNudge=<px>` shifts the scrollport's
+   scrollTop up by <px> once the open mount has settled, modelling the
+   browser find bar hopping to a match mid-window (#537). Read once at
+   module load. */
 export const FIND_UNSTUB_NUDGE_PX = (() => {
   if (typeof window === "undefined") return 0;
   const v = Number(
@@ -110,107 +113,198 @@ export function useFindUnstub(engaged: boolean): boolean {
   );
 }
 
-/** #537: renders inside <Conversation>. With `?findUnstubNudge=<px>` set,
-    each opened find window displaces the port's scrollTop up by <px> —
-    through stick-to-bottom's own state setter, so the write rides the
-    ignoreScrollToTop path and reads as neither a user escape nor a
-    resize. The spec then proves the lapse leaves the port wherever the
-    drift put it: the cycle itself must never move the reader's place. */
+/* The row under the port's top edge and its offset below that edge —
+   enough to put it back pixel-exact after a mass swap. The outer
+   [data-msg] div persists across a stub↔content swap, so the captured
+   element stays valid through it. */
+interface EdgeAnchor {
+  el: Element | null;
+  offset: number;
+  top: number;
+}
+
+const captureTopEdge = (port: HTMLElement): EdgeAnchor => {
+  const pt = port.getBoundingClientRect();
+  const top = port.scrollTop;
+  for (const row of port.querySelectorAll("[data-msg]")) {
+    const r = row.getBoundingClientRect();
+    if (r.bottom > pt.top) return { el: row, offset: r.top - pt.top, top };
+  }
+  return { el: null, offset: 0, top };
+};
+
+/* Per-Conversation handshake between the anchor's open-edge hold and the
+   nudge knob — keyed on the stick-to-bottom `state` object, which is
+   stable for the instance. A find-bar jump can only land once the mount
+   it triggered has settled: the nudge waits on `holding`, and falls back
+   to next frame when no hold is running (a non-lazy port never opens
+   one). */
+interface HoldGate {
+  holding: boolean;
+  waiters: Set<() => void>;
+}
+const holdGates = new WeakMap<object, HoldGate>();
+const holdGate = (state: object): HoldGate => {
+  let g = holdGates.get(state);
+  if (!g) {
+    g = { holding: false, waiters: new Set() };
+    holdGates.set(state, g);
+  }
+  return g;
+};
+
+/* Re-apply a captured edge anchor every frame until the swap it belongs
+   to has landed and gone calm: `settled(frames)` reports the swap (the
+   mount's stubs clearing, the lapse's first stub re-appearing) or gives
+   up waiting, then five consecutive |delta| ≤ 0.5 frames release the
+   hold. Corrections ride stick-to-bottom's scrollTop setter so they use
+   the ignoreScrollToTop path — never a reader escape. Returns a cancel
+   that also releases. */
+function holdTopEdge(
+  port: HTMLElement,
+  state: StickToBottomState,
+  anchor: EdgeAnchor,
+  settled: (frames: number) => boolean,
+  onRelease: () => void,
+): () => void {
+  let calm = 0;
+  let frames = 0;
+  let cancelled = false;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    onRelease();
+  };
+  const fix = () => {
+    if (cancelled) return;
+    frames += 1;
+    const delta = anchor.el?.isConnected
+      ? anchor.el.getBoundingClientRect().top -
+        port.getBoundingClientRect().top -
+        anchor.offset
+      : anchor.top - port.scrollTop;
+    if (Math.abs(delta) > 0.5) {
+      state.scrollTop = state.scrollTop + delta;
+      calm = 0;
+    } else if (settled(frames)) {
+      calm += 1;
+    }
+    if (frames > 180 || calm > 5) {
+      release();
+      return;
+    }
+    requestAnimationFrame(fix);
+  };
+  const id = requestAnimationFrame(fix);
+  return () => {
+    cancelled = true;
+    cancelAnimationFrame(id);
+    release();
+  };
+}
+
+/** #537 e2e/dev knob — renders inside <Conversation>. With
+    `?findUnstubNudge=<px>` set, each opened find window shifts the port's
+    scrollTop up by <px> once the open-edge hold releases: the browser
+    find bar can't jump to a match before the mount that un-stubbed it.
+    The write is the RAW scrollTop — like the find bar's own scroll it
+    rides the real scroll-event path, escaping the bottom pin (the ↓
+    button mounts). The spec then proves the lapse leaves the port at the
+    JUMPED position: a mid-window scroll is the reader's and stands. */
 export function FindUnstubNudge(): null {
-  const { state } = useStickToBottomContext();
+  const { scrollRef, state } = useStickToBottomContext();
   const open = useFindUnstub(FIND_UNSTUB_NUDGE_PX > 0);
   useEffect(() => {
     if (!open) return;
-    const id = requestAnimationFrame(() => {
-      state.scrollTop = Math.max(0, state.scrollTop - FIND_UNSTUB_NUDGE_PX);
-    });
+    let done = false;
+    const fire = () => {
+      if (done) return;
+      done = true;
+      const port = scrollRef.current;
+      if (port)
+        port.scrollTop = Math.max(0, port.scrollTop - FIND_UNSTUB_NUDGE_PX);
+    };
+    const gate = holdGate(state);
+    if (gate.holding) {
+      gate.waiters.add(fire);
+      return () => gate.waiters.delete(fire);
+    }
+    const id = requestAnimationFrame(fire);
     return () => cancelAnimationFrame(id);
-  }, [open, state]);
+  }, [open, scrollRef, state]);
   return null;
 }
 
 /** #537: renders inside <Conversation>. A find window mounts every held
-    row and re-stubs them when it lapses — the mass DOM swap can move the
-    scrollport: the bottom pin's spring re-fires on any content resize
-    (and a spring in flight keeps crawling through the window), and the
-    browser's own scroll anchor wanders when its tracked node is swapped.
-    On the open edge — a layout effect, so it lands before the commit's
-    paint and before the next spring tick — the row under the port's top
-    edge and its offset are captured and both movers suspended; on the
-    lapse the anchor is re-applied every frame until the re-stub settles,
-    then the pin re-arms. Cmd+F then waiting never moves the reader's
-    place. */
+    row and re-stubs them when it lapses — two mass DOM swaps that can
+    move the scrollport (the bottom pin's spring re-fires on content
+    resize, a spring in flight keeps crawling, and the browser's own
+    scroll anchor wanders when its tracked node is swapped). Each swap is
+    anchored at ITS OWN edge:
+
+    - open: the row under the port's top edge is captured in a layout
+      effect — before the mount commit can paint — and held until the
+      mount settles. Opening the window must not move the view.
+    - while the window is open nothing here writes scrollTop: a find-bar
+      jump or wheel scroll is the reader's and stands.
+    - lapse: the row under the top edge is captured again — wherever the
+      reader is NOW — and held until the re-stub settles. The lapse must
+      not move the view either.
+    - the bottom pin is suspended for the whole window and re-arms only
+      if the port is at the bottom at lapse time; what it was at open is
+      irrelevant once the reader has jumped. */
 export function FindUnstubAnchor({ lazy }: { lazy: boolean }): null {
   const { scrollRef, state } = useStickToBottomContext();
   const open = useFindUnstub(lazy);
-  const pinned = useRef(false);
-  const anchor = useRef<{
-    el: Element | null;
-    offset: number;
-    top: number;
-  } | null>(null);
+  const wasOpen = useRef(false);
 
   useLayoutEffect(() => {
     const port = scrollRef.current;
-    if (!open || !port) return;
-    pinned.current = state.isAtBottom;
-    state.isAtBottom = false;
-    port.style.overflowAnchor = "none";
-    const pt = port.getBoundingClientRect();
-    const top = state.scrollTop;
-    anchor.current = { el: null, offset: 0, top };
-    for (const row of port.querySelectorAll("[data-msg]")) {
-      const r = row.getBoundingClientRect();
-      if (r.bottom > pt.top) {
-        anchor.current = { el: row, offset: r.top - pt.top, top };
-        break;
-      }
+    if (!port) return;
+    if (open) {
+      /* OPEN edge — the stubs are still in place in this commit's DOM
+         (the mount lands in the next one), so the captured row/offset is
+         the reader's exact pre-mount view. */
+      state.isAtBottom = false;
+      port.style.overflowAnchor = "none";
+      wasOpen.current = true;
+      const gate = holdGate(state);
+      gate.holding = true;
+      return holdTopEdge(
+        port,
+        state,
+        captureTopEdge(port),
+        (frames) => frames > 30 || !port.querySelector("[data-held-stub]"),
+        () => {
+          gate.holding = false;
+          for (const f of gate.waiters) f();
+          gate.waiters.clear();
+        },
+      );
     }
-  }, [open, scrollRef, state]);
-
-  useEffect(() => {
-    if (open) return;
-    const a = anchor.current;
-    const port = scrollRef.current;
-    if (!a || !port) return;
-    anchor.current = null;
-    let calm = 0;
-    let frames = 0;
-    let cancelled = false;
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      port.style.overflowAnchor = "";
-      if (pinned.current && !state.escapedFromLock) state.isAtBottom = true;
-      pinned.current = false;
-    };
-    const fix = () => {
-      if (cancelled) return;
-      if (frames++ > 120 || calm > 5) {
-        finish();
-        return;
-      }
-      const delta =
-        a.el && a.el.isConnected
-          ? a.el.getBoundingClientRect().top -
-            port.getBoundingClientRect().top -
-            a.offset
-          : a.top - state.scrollTop;
-      if (Math.abs(delta) > 0.5) {
-        state.scrollTop = state.scrollTop + delta;
-        calm = 0;
-      } else {
-        calm += 1;
-      }
-      requestAnimationFrame(fix);
-    };
-    const id = requestAnimationFrame(fix);
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(id);
-      finish();
-    };
+    if (!wasOpen.current) return;
+    wasOpen.current = false;
+    /* LAPSE edge — capture where the reader is NOW, the moment the
+       window lapses, then hold through the re-stub swap. */
+    return holdTopEdge(
+      port,
+      state,
+      captureTopEdge(port),
+      (frames) => frames > 30 || !!port.querySelector("[data-held-stub]"),
+      () => {
+        port.style.overflowAnchor = "";
+        /* Re-pin only if the port is at the bottom at lapse time — the
+           library's lock target is scrollHeight − 1 − clientHeight and
+           "at the bottom" is within 2 px (same convention as ac-535). */
+        const atBottom =
+          port.scrollHeight - port.scrollTop - port.clientHeight <= 2;
+        if (atBottom) {
+          state.escapedFromLock = false;
+          state.isAtBottom = true;
+        }
+      },
+    );
   }, [open, scrollRef, state]);
   return null;
 }
