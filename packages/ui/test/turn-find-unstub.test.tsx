@@ -26,12 +26,21 @@ if (typeof Element.prototype.scrollIntoView === "undefined") {
   Element.prototype.scrollIntoView = () => {};
 }
 
-/* LazyShell only stubs a laid-out row (`el.offsetHeight` must be non-zero);
+/* LazyShell only stubs a laid-out row (#537: the stub keeps the row's
+   exact `getBoundingClientRect().height`, so it must read non-zero);
    happy-dom reports 0 everywhere, so pin a height. */
-Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
-  configurable: true,
-  get: () => 120,
-});
+HTMLElement.prototype.getBoundingClientRect = () =>
+  ({
+    x: 0,
+    y: 0,
+    top: 0,
+    left: 0,
+    bottom: 120,
+    right: 0,
+    width: 0,
+    height: 120,
+    toJSON: () => ({}),
+  }) as DOMRect;
 
 /* Controllable IntersectionObserver — the test drives entries by hand. */
 class FakeIO {
