@@ -48,6 +48,7 @@ import {
 } from "../components/ai-elements/queue";
 import { Button } from "../components/ui/button";
 import { openStartRequest } from "../conversation/cards";
+import { FindUnstubNudge } from "../conversation/find-unstub";
 import type { PlanAction } from "../conversation/plan-card";
 import {
   type QuestionAnswer,
@@ -761,6 +762,7 @@ export function FocusView({
             {/* Same guard as the thread panel — the ↓ never overlaps a
                 pending question card (FIX #515 r4). */}
             <QuestionAwareScrollButton />
+            <FindUnstubNudge />
             {/* Not-sent tray / plan tray / steer chips grow the area below the conversation;
                 re-stick so everything stays visible without scrolling (issue #15). */}
             <ConversationKeepBottom

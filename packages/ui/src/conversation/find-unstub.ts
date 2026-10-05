@@ -1,4 +1,5 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+import { useStickToBottomContext } from "use-stick-to-bottom";
 
 /**
  * #512: a held (stubbed) turn row carries no text nodes (#430), so browser
@@ -25,6 +26,18 @@ const windowMs = (() => {
     new URLSearchParams(window.location.search).get("findUnstubMs"),
   );
   return Number.isFinite(v) && v > 0 ? v : FIND_UNSTUB_MS;
+})();
+
+/* e2e/dev knob — `?findUnstubNudge=<px>` displaces the scrollport's
+   scrollTop up by <px> while a find window is open, modelling the
+   scroll-anchor drift a mount/re-stub cycle can produce (#537). Read
+   once at module load. */
+export const FIND_UNSTUB_NUDGE_PX = (() => {
+  if (typeof window === "undefined") return 0;
+  const v = Number(
+    new URLSearchParams(window.location.search).get("findUnstubNudge"),
+  );
+  return Number.isFinite(v) && v > 0 ? v : 0;
 })();
 
 const listeners = new Set<() => void>();
@@ -90,4 +103,23 @@ export function useFindUnstub(engaged: boolean): boolean {
     () => active,
     () => false,
   );
+}
+
+/** #537: renders inside <Conversation>. With `?findUnstubNudge=<px>` set,
+    each opened find window displaces the port's scrollTop up by <px> —
+    through stick-to-bottom's own state setter, so the write rides the
+    ignoreScrollToTop path and reads as neither a user escape nor a
+    resize. The spec then proves the lapse leaves the port wherever the
+    drift put it: the cycle itself must never move the reader's place. */
+export function FindUnstubNudge(): null {
+  const { state } = useStickToBottomContext();
+  const open = useFindUnstub(FIND_UNSTUB_NUDGE_PX > 0);
+  useEffect(() => {
+    if (!open) return;
+    const id = requestAnimationFrame(() => {
+      state.scrollTop = Math.max(0, state.scrollTop - FIND_UNSTUB_NUDGE_PX);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [open, state]);
+  return null;
 }

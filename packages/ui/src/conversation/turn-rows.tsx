@@ -227,6 +227,7 @@ function LazyShell({
       data-msg={msgId}
       className={className}
       data-remount={remounted || undefined}
+      data-lazy={(lazy && !keep) || undefined}
     >
       {held ? (
         <div style={{ height: heightRef.current }} aria-hidden data-held-stub>

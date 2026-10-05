@@ -6,6 +6,13 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  * browser find-in-page can't match inside them. A find chord opens a ~10 s
  * window that mounts every held row; the window lapses and rows re-stub.
  *
+ * Issue #537 — the re-stub contract is geometric, not a count: which rows
+ * hold depends on where the scrollport's clip boundary sits when the
+ * window lapses, and that boundary moves if anything shifts scrollTop.
+ * `?findUnstubNudge=` injects a deterministic mid-window drift so the
+ * spec proves the cycle preserves the reader's place instead of trusting
+ * a fixed stub count.
+ *
  * One 60-turn engine-fake thread (ENGINE_FAKE_TICK=2 keeps 60 sends cheap).
  * The window is driven by the `?findUnstubMs=` test hook — the spec never
  * sleeps: stubs returning is polled, not timed.
@@ -23,12 +30,19 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
+/* The named drift knob (#537): mid-window the scrollport shifts up by
+   this many px, one solid row. */
+const NUDGE_PX = 150;
+
 /* First-run → land on Default's DM. `?findUnstubMs=2500` must ride the
    FIRST load — the store reads it once at module eval, so client-side
    route changes keep it. 2.5 s is long enough that slow CI polls can't
-   race the lapse, short enough the re-stub leg still lands fast. */
+   race the lapse, short enough the re-stub leg still lands fast.
+   `?findUnstubNudge=` rides too — it arms the #537 drift hook. */
 async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/?findUnstubMs=2500`);
+  await page.goto(
+    `${stack.webUrl}/?findUnstubMs=2500&findUnstubNudge=${NUDGE_PX}`,
+  );
   const aside = page.locator("aside");
   await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
     timeout: 30_000,
@@ -91,7 +105,7 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
     `${page
       .url()
       .replace(/\/focus.*$/, "")
-      .replace(/\?.*$/, "")}?findUnstubMs=2500`,
+      .replace(/\?.*$/, "")}?findUnstubMs=2500&findUnstubNudge=${NUDGE_PX}`,
   );
   const panel = page.locator("[data-thread-panel]");
   await expect(panel).toBeVisible({ timeout: 60_000 });
@@ -112,12 +126,57 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
   await expect
     .poll(() => stubs.count(), { timeout: 30_000 })
     .toBeGreaterThan(0);
-  const heldBefore = await stubs.count();
   await expect
     .poll(() => panel.getByText("findprobe-alpha-turn2").count(), {
       timeout: 30_000,
     })
     .toBe(0);
+
+  /* #537: which rows hold is a function of where the scrollport's clip
+     boundary sits — the row observer's implicit root means its 1600px
+     rootMargin widens only the window bounds while the port's clip
+     decides intersection, so a lazy row holds iff its box clears the
+     port. The `?findUnstubNudge=` knob displaces the port mid-window, so
+     the lapse's verdict is evaluated against a MOVED boundary — the
+     regression a fixed `stubs >= heldBefore` count could not express. */
+  const portScrollTop = () =>
+    page.evaluate(() => {
+      const first = document.querySelector("[data-thread-panel] [data-msg]");
+      let port = first?.parentElement ?? null;
+      while (port && !/(auto|scroll)/.test(getComputedStyle(port).overflowY)) {
+        port = port.parentElement;
+      }
+      return port?.scrollTop ?? -1;
+    });
+  /* Lazy rows whose held flag contradicts their box vs the port rect
+     (±1 px edge rows are IO-tie territory and don't count). */
+  const badBoxRows = () =>
+    page.evaluate(() => {
+      const panelEl = document.querySelector("[data-thread-panel]");
+      const first = panelEl?.querySelector("[data-msg]");
+      let port = first?.parentElement ?? null;
+      while (port && !/(auto|scroll)/.test(getComputedStyle(port).overflowY)) {
+        port = port.parentElement;
+      }
+      if (!panelEl || !port) return -1;
+      const pt = port.getBoundingClientRect();
+      let bad = 0;
+      for (const el of panelEl.querySelectorAll("[data-msg][data-lazy]")) {
+        const r = el.getBoundingClientRect();
+        const held = !!el.querySelector("[data-held-stub]");
+        const inside = r.bottom > pt.top + 1 && r.top < pt.bottom - 1;
+        const outside = r.bottom < pt.top - 1 || r.top > pt.bottom + 1;
+        if ((inside && held) || (outside && !held)) bad += 1;
+      }
+      return bad;
+    });
+  const beforeTop = await portScrollTop();
+  expect(beforeTop).toBeGreaterThan(NUDGE_PX);
+  const nodesBefore = await page.evaluate(
+    () => document.querySelectorAll("*").length,
+  );
+  /* Going in, the held set is already geometrically consistent. */
+  await expect.poll(badBoxRows, { timeout: 15_000 }).toBe(0);
 
   /* Ctrl+F — the find chord: every held row mounts; the probe phrase is
      DOM text a find-in-page could match. */
@@ -131,12 +190,24 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
   );
 
   /* The window lapses (test-hooked to ~2.5 s) → off-screen rows re-stub
-     and the DOM re-bounds. */
-  await expect
-    .poll(() => stubs.count(), { timeout: 15_000 })
-    .toBeGreaterThanOrEqual(heldBefore);
+     and the DOM re-bounds to the geometric invariant, wherever the
+     injected drift left the boundary. */
+  await expect.poll(badBoxRows, { timeout: 15_000 }).toBe(0);
   const nodesClosed = await page.evaluate(
     () => document.querySelectorAll("*").length,
   );
   expect(nodesClosed).toBeLessThan(nodesOpen / 2);
+  /* …and bounded by the pre-chord DOM plus a small constant for the few
+     rows the moved boundary keeps mounted. */
+  expect(nodesClosed).toBeLessThanOrEqual(nodesBefore + 1500);
+
+  /* The reader's place survives the cycle: the only legitimate
+     displacement is the injected nudge — anything else is a hidden
+     scroll mover (#537's product bug). */
+  const expectedTop = beforeTop - NUDGE_PX;
+  await expect
+    .poll(async () => Math.abs((await portScrollTop()) - expectedTop), {
+      timeout: 15_000,
+    })
+    .toBeLessThanOrEqual(2);
 });
