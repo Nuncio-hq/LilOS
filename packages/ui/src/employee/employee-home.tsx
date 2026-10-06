@@ -495,7 +495,8 @@ export function EmployeeHome({
                   state.word === "needs you" && "text-amber-600",
                   state.word === "running" && "text-work",
                   state.word === "failed" && "text-red-600",
-                  state.word === "stopped" && "text-muted-foreground",
+                  state.word === "stopped" &&
+                    "text-muted-foreground dark:text-foreground/80",
                 )}
               >
                 {state.word}

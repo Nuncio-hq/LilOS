@@ -24,10 +24,12 @@ const initials = (s: string) =>
     .toUpperCase() || "L";
 
 /* One first-run check, driven by the caller from `system.status` (#589 AC-1)
-   — never a timer. `reason` is the plain failure the row shows. */
+   — never a timer. `plain` is the one-line headline a failed row shows —
+   plain language the caller writes; the raw reason (paths, env vars) lives
+   behind "See status" only. */
 export type FirstRunCheck = {
   state: "pending" | "ok" | "failed";
-  reason?: string;
+  plain?: string;
 };
 
 /* First run: open the app → connect to the local relay → `default` is already the first
@@ -142,42 +144,50 @@ export function FirstRun({
         </div>
         <div className="mt-5 space-y-3">
           {rows.map((r, i) => {
-            const { state, reason } = r.check;
+            const { state, plain } = r.check;
             return (
               <div
                 key={r.label}
                 data-first-run-step
                 data-state={state}
-                className="flex items-center gap-2.5 text-sm"
+                className="flex items-start gap-2.5 text-sm"
               >
                 {state === "ok" ? (
-                  <CheckCircle2Icon className="size-4 shrink-0 text-emerald-600" />
+                  <CheckCircle2Icon className="mt-0.5 size-4 shrink-0 text-emerald-600" />
                 ) : state === "failed" ? (
-                  <XCircleIcon className="size-4 shrink-0 text-red-600" />
+                  <XCircleIcon className="mt-0.5 size-4 shrink-0 text-red-600" />
                 ) : (
-                  <Loader2Icon className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                  <Loader2Icon className="mt-0.5 size-4 shrink-0 animate-spin text-muted-foreground" />
                 )}
-                <span className={cn(state !== "ok" && "text-muted-foreground")}>
-                  {state === "ok" ? r.done : r.label}
-                </span>
-                {i === 1 && state === "ok" && (
-                  <HermesAvatar status="online" className="size-5" />
-                )}
-                {/* #589 AC-1: a failed leg shows its plain reason + See status. */}
-                {state === "failed" && (
-                  <span className="min-w-0 text-red-600 text-xs">
-                    {reason && <span className="block">{reason}</span>}
-                    {onSeeStatus && (
-                      <button
-                        type="button"
-                        onClick={onSeeStatus}
-                        className="underline underline-offset-2 hover:text-red-800"
-                      >
-                        See status
-                      </button>
+                <span className="min-w-0 flex-1">
+                  <span
+                    className={cn(
+                      "flex items-center gap-1.5",
+                      state !== "ok" && "text-muted-foreground",
+                    )}
+                  >
+                    {state === "ok" ? r.done : r.label}
+                    {i === 1 && state === "ok" && (
+                      <HermesAvatar status="online" className="size-5" />
                     )}
                   </span>
-                )}
+                  {/* #589 AC-1: a failed leg shows the caller's plain headline
+                      + See status at full width — never the raw reason. */}
+                  {state === "failed" && (
+                    <span className="mt-0.5 block text-red-600 text-xs">
+                      {plain && <span className="block">{plain}</span>}
+                      {onSeeStatus && (
+                        <button
+                          type="button"
+                          onClick={onSeeStatus}
+                          className="underline underline-offset-2 hover:text-red-800"
+                        >
+                          See status
+                        </button>
+                      )}
+                    </span>
+                  )}
+                </span>
               </div>
             );
           })}

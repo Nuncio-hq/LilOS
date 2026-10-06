@@ -572,7 +572,17 @@ const STATUS: Record<PreviewScenario, StatusComponent[]> = {
 }
 
 /* A status row → a first-run check (#589): ok ticks, waiting legs spin,
-   down/degraded legs fail with their plain reason. */
+   down/degraded legs fail with a plain headline — the raw reason stays
+   behind "See status" only (same copy the real app writes). */
+const FIRST_RUN_PLAIN: Record<StatusComponent["id"], (r: string) => string> = {
+  relay: () => "Couldn't connect — LilOS can't reach its relay on this Mac.",
+  engine: (r) =>
+    /Hermes not found/i.test(r)
+      ? "Couldn't start your first employee — LilOS can't find Hermes on this Mac."
+      : "Couldn't start your first employee — the engine didn't start.",
+  harness: () => "Couldn't start your first employee — the engine didn't start.",
+  model: () => "Couldn't start your first employee — the engine didn't start.",
+}
 const firstRunCheck = (
   rows: StatusComponent[],
   id: StatusComponent["id"],
@@ -581,7 +591,7 @@ const firstRunCheck = (
   if (!row || row.state === "ok") return { state: "ok" }
   if (row.state === "connecting" || row.state === "blocked")
     return { state: "pending" }
-  return { state: "failed", reason: row.reason }
+  return { state: "failed", plain: FIRST_RUN_PLAIN[id](row.reason) }
 }
 
 /* Session-level failure states (on the DM session row, with Retry where a retry makes sense). */

@@ -14,6 +14,7 @@ import {
 } from "../components/ai-elements/checkpoint";
 import { Button } from "../components/ui/button";
 import { Body, Row, Who } from "../feed/row";
+import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
 import type {
   EmpFn,
@@ -333,7 +334,9 @@ function TurnRowImpl({
         <div data-sysnote className="flex items-center gap-2 px-3 py-1 sm:px-5">
           <span className="h-px flex-1 bg-border" />
           <span className="text-center text-muted-foreground text-xs">
-            {r.text}
+            {/* #585: `tool …` spans render as code chips, like the
+                assistant's text — never literal backticks. */}
+            <InlineCodeText text={r.text} />
           </span>
           <span className="h-px flex-1 bg-border" />
         </div>

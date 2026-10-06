@@ -155,10 +155,16 @@ for (const theme of ["light", "dark"] as const) {
       /* #585 centred system note: Full access → Auto-approved posts. */
       await setAccess(page, "full");
       await send(page, "Add a footer to the page");
-      await expect(
-        page.locator("[data-sysnote]", { hasText: /Auto-approved/ }).first(),
-      ).toBeVisible({ timeout: 60_000 });
-      await shot(page, "585", "sysnote-auto-approved", theme);
+      const sysnote = page
+        .locator("[data-sysnote]", { hasText: /Auto-approved/ })
+        .first();
+      await expect(sysnote).toBeVisible({ timeout: 60_000 });
+      await sysnote.scrollIntoViewIfNeeded();
+      await shot(page, "585", "sysnote-auto-approved-1288x900", theme);
+      await page.setViewportSize(S1288x700);
+      await sysnote.scrollIntoViewIfNeeded();
+      await shot(page, "585", "sysnote-auto-approved-1288x700", theme);
+      await page.setViewportSize(S1288x900);
       await expect(settled(page)).toBeVisible({ timeout: 90_000 });
 
       /* #585 denied approval keeps turn + card. Back to Ask first. */
@@ -168,14 +174,22 @@ for (const theme of ["light", "dark"] as const) {
       const denyCard = openCard(page).first();
       await expect(denyCard).toBeVisible({ timeout: 60_000 });
       await denyCard.getByRole("button", { name: "Deny", exact: true }).click();
-      await expect(
-        page
-          .locator('[data-ask-id][data-ask-state="resolved"]', {
-            hasText: /Denied/,
-          })
-          .first(),
-      ).toBeVisible({ timeout: 30_000 });
-      await shot(page, "585", "denied-card-kept", theme);
+      /* The turn must have settled and the resolved card be on screen —
+         the row is virtualized, so pull it into view before shooting. */
+      await expect(settled(page)).toBeVisible({ timeout: 90_000 });
+      const resolved = page
+        .locator('[data-ask-id][data-ask-state="resolved"]', {
+          hasText: /Denied/,
+        })
+        .first();
+      await expect(resolved).toBeVisible({ timeout: 30_000 });
+      await resolved.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(400);
+      await shot(page, "585", "denied-card-kept-1288x900", theme);
+      await page.setViewportSize(S1288x700);
+      await resolved.scrollIntoViewIfNeeded();
+      await shot(page, "585", "denied-card-kept-1288x700", theme);
+      await page.setViewportSize(S1288x900);
       await dmHome(stack, page);
 
       /* #588 — Hire dialog. */

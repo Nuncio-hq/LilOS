@@ -70,6 +70,11 @@ test("AC-2 a dead engine shows its plain reason + See status, never a green tick
     });
     const failed = steps(page).nth(1);
     await expect(failed).not.toHaveText(/ready/i);
+    /* The visible text is plain language Oscar can act on — no `/` path,
+       no env var (`HERMES_…`); the raw reason lives behind See status. */
+    const legText = await failed.innerText();
+    expect(legText).not.toMatch(/\//);
+    expect(legText).not.toMatch(/HERMES_/);
     /* The reason is plain words, and "See status" opens the dialog. */
     const seeStatus = failed.getByRole("button", { name: "See status" });
     await expect(seeStatus).toBeVisible();

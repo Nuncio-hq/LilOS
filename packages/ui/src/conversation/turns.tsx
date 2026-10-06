@@ -320,7 +320,7 @@ export function AgentTurn({
       ) : null}
       <SteerRows steers={r.steers} by={human?.(VIEWER_ID)?.name ?? "You"} />
       {r.phase === "stopped" && (
-        <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
+        <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs dark:text-foreground/80">
           Stopped
         </div>
       )}

@@ -16,15 +16,30 @@ import { relay } from "../lib/runtime";
 
 const ONBOARDED_KEY = "lilos-onboarded";
 
+/* #589: the card's failed leg gets a plain headline + a step the user can
+   take — raw wire reasons (paths, env vars) stay behind "See status". */
+const RELAY_HEADLINE =
+  "Couldn't connect — LilOS can't reach its relay on this Mac.";
+const engineHeadline = (row: { reason: string } | undefined): string => {
+  const r = row?.reason ?? "";
+  if (/Hermes not found/i.test(r))
+    return "Couldn't start your first employee — LilOS can't find Hermes on this Mac.";
+  if (/too old/i.test(r))
+    return "Couldn't start your first employee — Hermes is too old; update it, then reopen LilOS.";
+  return "Couldn't start your first employee — the engine didn't start.";
+};
+
 /* A `system.status` leg → a first-run check (#589 AC-1): ok ticks, a
-   still-waiting leg spins, a down/degraded leg fails with its plain reason. */
+   still-waiting leg spins, a down/degraded leg fails with the caller's
+   plain headline. */
 const toCheck = (
   row: { state: string; reason: string } | undefined,
+  plain: string,
 ): FirstRunCheck => {
   if (!row || row.state === "ok") return { state: "ok" };
   if (row.state === "connecting" || row.state === "blocked")
     return { state: "pending" };
-  return { state: "failed", reason: row.reason || "It isn't running." };
+  return { state: "failed", plain };
 };
 
 /**
@@ -93,11 +108,11 @@ export function IndexPage() {
      relay is down — and reads the engine row once the relay answers. */
   const relayRow = comps.find((c) => c.id === "relay");
   const engineRow = comps.find((c) => c.id === "engine");
-  const relayCheck = toCheck(relayRow);
+  const relayCheck = toCheck(relayRow, RELAY_HEADLINE);
   const engineCheck =
     engineRow === undefined
       ? { state: "pending" as const }
-      : toCheck(engineRow);
+      : toCheck(engineRow, engineHeadline(engineRow));
   const employeeCheck: FirstRunCheck =
     relayCheck.state !== "ok"
       ? { state: "pending" }
