@@ -127,7 +127,11 @@ const stubEngine = () => {
   };
 };
 
-const setup = (convs: Conversation[], asks: Ask[] = []) => {
+const setup = (
+  convs: Conversation[],
+  asks: Ask[] = [],
+  opts: { previouslyRunning?: ReadonlySet<string> } = {},
+) => {
   const engine = stubEngine();
   const conversations = atom<Conversation[]>(convs);
   const asksAtom = atom<Ask[]>(asks);
@@ -145,9 +149,27 @@ const setup = (convs: Conversation[], asks: Ask[] = []) => {
     watched,
     models: modelsAtom,
     attached: attachedAtom,
+    previouslyRunning: opts.previouslyRunning,
   });
   watch.start();
   return { engine, conversations, asksAtom, open, watch, signals };
+};
+
+/** Mark a stub feed answered: synced with the given model state. */
+const settleFeed = (
+  engine: ReturnType<typeof stubEngine>,
+  sid: string,
+  m: SessionModel,
+) => {
+  engine.setModel(sid, m);
+  engine.feeds.get(sid)?.set({
+    sessionId: sid,
+    synced: true,
+    latestSeq: 5,
+    coverageSeq: 5,
+    events: [],
+    openRequests: [],
+  });
 };
 
 const attached = (engine: ReturnType<typeof stubEngine>) =>
@@ -232,16 +254,71 @@ describe("#572 AC-1 feeds attach only for the open, running, or asking", () => {
     const c = conv("c1", "s1", { state: "active" });
     const { engine } = setup([c]);
     expect(attached(engine)).toEqual(["s1"]);
-    engine.setModel("s1", model({ sessionId: "s1", live: undefined }));
+    settleFeed(engine, "s1", model({ sessionId: "s1", live: undefined }));
+    expect(attached(engine)).toEqual([]);
+  });
+
+  it("AC-2 a session running at last mount gets a one-shot attach for its missed completion", () => {
+    /* Reload mid-turn: the fresh row already reads idle, so nothing else
+       would attach — but the turn.completed in the gap still owes a done
+       notification, which needs the synced feed (#400 recovery path). */
+    const convs = [
+      conv("idle", "s-idle"),
+      conv("gap", "s-gap"),
+      conv("closed", "s-closed", { state: "closed" }),
+    ];
+    const { engine } = setup(convs, [], {
+      previouslyRunning: new Set(["s-gap", "s-closed"]),
+    });
+    expect(attached(engine)).toEqual(["s-closed", "s-gap"]);
+    /* Both answer idle — the turn finished in the gap; release them. */
+    settleFeed(engine, "s-gap", model({ sessionId: "s-gap" }));
+    settleFeed(engine, "s-closed", model({ sessionId: "s-closed" }));
+    expect(attached(engine)).toEqual([]);
+    expect(engine.released).toEqual(["s-gap", "s-closed"]);
+  });
+
+  it("AC-2 a still-running previouslyRunning session stays watched after sync", () => {
+    const { engine } = setup([conv("c1", "s1")], [], {
+      previouslyRunning: new Set(["s1"]),
+    });
+    expect(attached(engine)).toEqual(["s1"]);
+    settleFeed(
+      engine,
+      "s1",
+      model({
+        sessionId: "s1",
+        live: {
+          turnId: "t1",
+          phase: "tools",
+          reasoning: "",
+          text: "",
+          steps: [],
+          steers: [],
+          requests: [],
+          plans: [],
+          subagents: [],
+        },
+      }),
+    );
+    expect(attached(engine)).toEqual(["s1"]);
+  });
+
+  it("AC-2 a terminal feed error consumes the one-shot (no pin, no retry)", () => {
+    const { engine } = setup([conv("c1", "s1")], [], {
+      previouslyRunning: new Set(["s1"]),
+    });
     engine.feeds.get("s1")?.set({
       sessionId: "s1",
-      synced: true,
-      latestSeq: 5,
-      coverageSeq: 5,
+      synced: false,
+      latestSeq: 0,
+      coverageSeq: 0,
       events: [],
       openRequests: [],
+      error: "session forgotten",
     });
     expect(attached(engine)).toEqual([]);
+    expect(engine.released).toEqual(["s1"]);
   });
 });
 

@@ -384,6 +384,24 @@ export const sessionFeedAttached = atom<Record<string, boolean>>({});
 
 let sessionWatchStarted = false;
 
+/* #572 AC-2: a turn that finishes inside a reload gap still owes its done
+   notification — but on the fresh mount the row already reads idle, so the
+   session isn't watch-eligible and its completion never surfaces. The
+   previous mount's running set gives the watch a one-shot attach list for
+   exactly those sessions. sessionStorage scope matches the notify
+   completion store (per-tab, cleared with the session). */
+const RUNNING_SESSIONS_KEY = "lilos:runningSessions";
+
+function readRunningSessions(): ReadonlySet<string> {
+  try {
+    const raw = sessionStorage.getItem(RUNNING_SESSIONS_KEY);
+    const ids = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(ids) ? ids : []);
+  } catch {
+    return new Set();
+  }
+}
+
 /**
  * #572: scope the feeds to the threads that matter — the open conversation
  * plus sessions that are running or asking — instead of replaying every
@@ -393,6 +411,9 @@ let sessionWatchStarted = false;
 export function watchSessionFeeds(): void {
   if (sessionWatchStarted) return;
   sessionWatchStarted = true;
+  /* Read BEFORE subscribing the persister — subscribe fires immediately
+     with the current (empty) set and would clobber the stored list. */
+  const prevRunning = readRunningSessions();
   new SessionWatch({
     conversations: relay.conversations,
     asks: relay.asks,
@@ -408,7 +429,16 @@ export function watchSessionFeeds(): void {
     watched: sessionWatched,
     models: sessionModels,
     attached: sessionFeedAttached,
+    previouslyRunning: prevRunning,
   }).start();
+  sessionSignals.subscribe((sigs) => {
+    try {
+      sessionStorage.setItem(
+        RUNNING_SESSIONS_KEY,
+        JSON.stringify(Object.keys(sigs).filter((sid) => sigs[sid].running)),
+      );
+    } catch {}
+  });
 }
 
 /* ------------------------------ workbench opens --------------------------- */

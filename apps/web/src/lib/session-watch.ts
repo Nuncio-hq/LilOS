@@ -103,6 +103,15 @@ export interface SessionWatchDeps {
   watched: WritableAtom<Record<string, boolean>>;
   models: WritableAtom<Record<string, SessionModel>>;
   attached: WritableAtom<Record<string, boolean>>;
+  /**
+   * Sessions running when this client last saw them (persisted across
+   * reloads by the caller). A turn that completed in the reload gap owes a
+   * "done" notification, but the signal fold only saw the gap's far side —
+   * the row already reads idle. Each member earns a one-shot attach: the
+   * replay surfaces the missed completion, then the reconcile releases the
+   * feed. Consumed the moment the feed answers (synced or terminal error).
+   */
+  previouslyRunning?: ReadonlySet<string>;
 }
 
 interface Entry {
@@ -140,8 +149,13 @@ export class SessionWatch {
     { feed?: SessionFeedState; model?: SessionModel }
   >();
   private stopFns: Array<() => void> = [];
+  /* `previouslyRunning` not yet answered by a feed — membership in the
+     watch set until the attach reports back. */
+  private readonly staleCheck: Set<string>;
 
-  constructor(private readonly deps: SessionWatchDeps) {}
+  constructor(private readonly deps: SessionWatchDeps) {
+    this.staleCheck = new Set(deps.previouslyRunning ?? []);
+  }
 
   start(): () => void {
     /* Atoms notify their current value on subscribe — the boot pass runs
@@ -304,10 +318,21 @@ export class SessionWatch {
         want.add(sid);
         continue;
       }
-      if (c.archived || c.state === "closed") continue;
+      if (c.archived) continue;
       const e = this.entries.get(sid);
-      if ((e?.life ?? c.life) === "closed") continue;
-      if (e?.running || (e && e.askRequests.size + e.feedRequests.size > 0))
+      const wantsStale = this.staleCheck.has(sid);
+      /* A closed conversation bows out — unless it owes one last look at
+         what its running turn finished with (the reload-gap case). */
+      if (
+        (c.state === "closed" || (e?.life ?? c.life) === "closed") &&
+        !wantsStale
+      )
+        continue;
+      if (
+        e?.running ||
+        (e && e.askRequests.size + e.feedRequests.size > 0) ||
+        wantsStale
+      )
         want.add(sid);
     }
     return want;
@@ -353,6 +378,11 @@ export class SessionWatch {
           [sid]: attached,
         });
       this.reconcile(sid);
+      /* First answer settles the one-shot — after reconcile, so a synced
+         model's truth (still running) lands before the re-evaluation;
+         error → the log is gone, stop asking. */
+      if ((f.synced || f.error !== undefined) && this.staleCheck.delete(sid))
+        this.evaluate();
     });
     this.feedSubs.set(sid, () => {
       unModel();
