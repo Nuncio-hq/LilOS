@@ -28,6 +28,91 @@ export interface HermesServeHandle {
 const READY_RE = /HERMES_BACKEND_READY port=(\d+)/;
 const HEALTH_TIMEOUT_MS = 4000;
 
+/* #548: since the host-backend multiplex rework, one `hermes serve` per OS
+ * user owns the machine-level backend; another `serve` on the same user
+ * attaches to it and exits 0 printing this marker (or refuses with
+ * `Refusing to start:` and exit 78 when the endpoint conflicts). LilOS must
+ * own its backend, so the adapter passes `--isolated` when the binary
+ * advertises it and names the owner when a build still attaches. */
+const HOST_ATTACH_RE =
+  /Hermes \w+ already running on this host: PID (\d+), port (\d+)/;
+const HOST_REFUSE_RE =
+  /Refusing to start: this host is already served by ([^\n]+)/;
+
+/** `hermes serve` attached to — or was refused by — a backend that already
+    owns this host. Not a crash: retrying can't help while the owner lives. */
+export class HermesHostConflict extends Error {
+  constructor(
+    message: string,
+    readonly owner: { pid?: number; port?: number },
+  ) {
+    super(message);
+    this.name = "HermesHostConflict";
+  }
+}
+
+/** Logs say this `serve` exit was the multiplex attach/refusal, not a crash. */
+function hostConflict(logs: string): HermesHostConflict | undefined {
+  const attach = HOST_ATTACH_RE.exec(logs);
+  if (attach) {
+    const [pid, port] = [Number(attach[1]), Number(attach[2])];
+    return new HermesHostConflict(
+      `another Hermes backend is already running on this Mac (PID ${pid}, port ${port}) — \`hermes serve\` attached to it instead of starting LilOS's own engine. Quit Hermes Desktop or the other \`hermes serve\`/LilOS, then try again`,
+      { pid, port },
+    );
+  }
+  const refused = HOST_REFUSE_RE.exec(logs);
+  if (refused) {
+    return new HermesHostConflict(
+      `another Hermes backend already owns this host (${refused[1]?.trim()}) and refused LilOS's own backend. Quit Hermes Desktop or the other \`hermes serve\`/LilOS, then try again`,
+      {},
+    );
+  }
+  return undefined;
+}
+
+const isolatedSupport = new Map<string, Promise<boolean>>();
+
+/* `serve --help` is the feature probe: multiplex landed mid-line on
+   v0.21.5+builds, so no version string can answer it. Cached per binary —
+   a supervisor relaunch must not re-probe. */
+function probeIsolated(bin: string, env: Record<string, string>) {
+  return new Promise<boolean>((resolve) => {
+    const child = spawn(bin, ["serve", "--help"], {
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let out = "";
+    const cap = (d: Buffer | string) => {
+      out += String(d);
+    };
+    child.stdout?.on("data", cap);
+    child.stderr?.on("data", cap);
+    const done = (ok: boolean) => {
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      done(false);
+    }, 10_000);
+    child.on("exit", () => done(/--isolated\b/.test(out)));
+    child.on("error", () => done(false));
+  });
+}
+
+function supportsIsolated(
+  bin: string,
+  env: Record<string, string>,
+): Promise<boolean> {
+  let probe = isolatedSupport.get(bin);
+  if (!probe) {
+    probe = probeIsolated(bin, env).catch(() => false);
+    isolatedSupport.set(bin, probe);
+  }
+  return probe;
+}
+
 /**
  * Harness-managed `hermes serve` lifecycle: spawn on 127.0.0.1 with a
  * generated `HERMES_DASHBOARD_SESSION_TOKEN`, wait for `HERMES_BACKEND_READY`,
@@ -44,6 +129,11 @@ export async function startHermesServe(
     ...opts.env,
     HERMES_DASHBOARD_SESSION_TOKEN: token,
   };
+  // #548: dedicated backend for this app — without it a Hermes with the
+  // host-backend multiplex attaches to whoever owns the host and exits 0.
+  const isolated =
+    !(opts.args ?? []).includes("--isolated") &&
+    (await supportsIsolated(opts.bin, env));
   const child = spawn(
     opts.bin,
     [
@@ -52,6 +142,7 @@ export async function startHermesServe(
       "127.0.0.1",
       ...portFlag,
       "--skip-build",
+      ...(isolated ? ["--isolated"] : []),
       ...(opts.args ?? []),
     ],
     { env, cwd: opts.cwd, stdio: ["ignore", "pipe", "pipe"] },
@@ -89,6 +180,13 @@ export async function startHermesServe(
     };
     const onExit = (code: number | null, signal: string | null) => {
       cleanup();
+      // #548: an attach/refusal names its owner and is never a restartable
+      // crash — reject typed so callers can fail fatal, not retry.
+      const conflict = hostConflict(logs);
+      if (conflict) {
+        reject(conflict);
+        return;
+      }
       // #95: a signal kill names the signal — the harness surfaces this
       // verbatim, and "code null" says nothing about a device policy.
       const why = signal ? `killed by ${signal}` : `code ${code}`;
