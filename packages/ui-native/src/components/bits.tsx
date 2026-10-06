@@ -112,10 +112,27 @@ const CHIP = {
     text: "text-muted-foreground",
     label: "Last seen working",
   },
+  /* #592: a sleep interrupt is a failed turn with a different story —
+     the Mac went to sleep, so it reads amber, not the red error chip. */
+  slept: {
+    icon: "moon.zzz.fill",
+    tone: "warning",
+    text: "text-warning",
+    label: "Mac went to sleep",
+  },
 } as const;
 
-export function StateChip({ state }: { state: keyof typeof CHIP }) {
-  const c = CHIP[state];
+export function StateChip({
+  state,
+  failureKind,
+}: {
+  state: keyof typeof CHIP;
+  /** #592: the wire's turnFailure.kind — "sleep" swaps the red Failed chip
+      for the amber slept one. */
+  failureKind?: "model" | "sleep" | "generic";
+}) {
+  const c =
+    state === "failed" && failureKind === "sleep" ? CHIP.slept : CHIP[state];
   return (
     <View className="flex-row items-center gap-1">
       <Icon name={c.icon} size={13} tone={c.tone} weight="semibold" />
