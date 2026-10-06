@@ -779,6 +779,9 @@ export function toThreadDetail(opts: {
       openAsks: [...opts.asks],
       pending: opts.pending,
     }),
+    /* #592: the header chip reads amber "Mac slept mid-turn" for sleep
+       interrupts, red "Failed" for model/generic errors. */
+    ...(conv.turnFailure ? { failure: conv.turnFailure } : {}),
     ...(sessionModel?.live?.agentInitiated ? { agentWorking: true } : {}),
     employee: { id: empId, name: employeeName, tone: toneOf(empId) },
     when: last ? timeLabel(last.createdAt, opts.now) : "now",

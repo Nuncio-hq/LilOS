@@ -591,9 +591,12 @@ describe("dm-model helpers", () => {
         openAsks: [ask("a", { conversationId: "c1" })],
       }),
     ).toBe("needs-you");
-    expect(conversationState(conv("c1", { state: "active", turnFailure: failedModel.turnFailure }), none)).toBe(
-      "working",
-    );
+    expect(
+      conversationState(
+        conv("c1", { state: "active", turnFailure: failedModel.turnFailure }),
+        none,
+      ),
+    ).toBe("working");
     expect(
       conversationState(failedModel, {
         ...none,

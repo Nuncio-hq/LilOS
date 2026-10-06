@@ -156,11 +156,20 @@ function ThreadRow({
   onPress: () => void;
 }) {
   const needs = t.state === "needs-you";
-  const body = needs
-    ? (t.approval?.reason ?? plain(t.preview ?? ""))
-    : t.state === "working"
-      ? (t.live ?? plain(t.preview ?? ""))
-      : plain(t.preview ?? t.prompt);
+  const failed = t.state === "failed";
+  /* #592: a failed turn's body is its reason — "Mac slept mid-turn" in
+     amber for a sleep interrupt, the error text in red otherwise — never
+     the last preview pretending all is well. */
+  const slept = failed && t.failure?.kind === "sleep";
+  const body = failed
+    ? slept
+      ? "Mac slept mid-turn"
+      : (t.failure?.text ?? "Turn failed")
+    : needs
+      ? (t.approval?.reason ?? plain(t.preview ?? ""))
+      : t.state === "working"
+        ? (t.live ?? plain(t.preview ?? ""))
+        : plain(t.preview ?? t.prompt);
   return (
     <Pressable
       accessibilityRole="button"
@@ -169,7 +178,11 @@ function ThreadRow({
       className="flex-row pl-4 active:bg-fill"
     >
       <View className="w-5 items-start pt-[19px]">
-        <StateMark state={t.state} ringed={!!t.replies && !!t.life} />
+        <StateMark
+          state={t.state}
+          ringed={!!t.replies && !!t.life}
+          slept={slept}
+        />
       </View>
       <View className="min-w-0 flex-1 gap-0.5 py-3 pr-4">
         <View className="flex-row items-center gap-2">
@@ -193,7 +206,15 @@ function ThreadRow({
         {!!body && (
           <Text
             numberOfLines={2}
-            className={`text-[15px] leading-5 ${needs ? "text-foreground" : "text-muted-foreground"}`}
+            className={`text-[15px] leading-5 ${
+              needs
+                ? "text-foreground"
+                : slept
+                  ? "text-warning"
+                  : failed
+                    ? "text-destructive"
+                    : "text-muted-foreground"
+            }`}
           >
             {body}
           </Text>
@@ -245,9 +266,12 @@ function ThreadRow({
 function StateMark({
   state,
   ringed,
+  slept,
 }: {
   state: SessionState;
   ringed?: boolean;
+  /** #592: the failure was a sleep interrupt — the ⚠ goes amber. */
+  slept?: boolean;
 }) {
   if (state === "needs-you")
     return (
@@ -266,7 +290,11 @@ function StateMark({
     );
   if (state === "failed")
     return (
-      <Icon name="exclamationmark.triangle.fill" size={11} tone="destructive" />
+      <Icon
+        name="exclamationmark.triangle.fill"
+        size={11}
+        tone={slept ? "warning" : "destructive"}
+      />
     );
   return null;
 }
