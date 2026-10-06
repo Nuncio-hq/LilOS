@@ -156,6 +156,8 @@ export function fakeAppOps(
     prs?: Record<string, ForgePrListItem[]>;
     /** `"user"` makes `thread_set_title` answer `user_title` (#137). */
     titleSource?: "auto" | "user";
+    /** Seed `Conversation.usage` on the bound thread (#559). */
+    usage?: Conversation["usage"];
     status?: SystemStatusResult;
     profile?: ProfileSettings;
   } = {},
@@ -182,6 +184,7 @@ export function fakeAppOps(
     archived: false,
     deliveredSeq: 0,
     createdAt: 1,
+    ...(opts.usage ? { usage: opts.usage } : {}),
   };
   const convs: Conversation[] = [bound, ...(opts.conversations ?? [])];
   const employees: Employee[] = opts.employees ?? [
@@ -324,6 +327,8 @@ export async function serveGateway(opts: {
     token?: string;
     engineSessionId?: string;
   }>;
+  /** Engine-scoped bearer (#339) — exercises resolveCaller's engine leg. */
+  engineToken?: string;
 }) {
   const { SessionRegistry, gatewayHandler } = await import("../src/index.js");
   const registry = new SessionRegistry();
@@ -333,7 +338,7 @@ export async function serveGateway(opts: {
       engineSessionId: s.engineSessionId,
     });
   }
-  const handler = gatewayHandler(registry);
+  const handler = gatewayHandler(registry, { engineToken: opts.engineToken });
   const server: Server = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);

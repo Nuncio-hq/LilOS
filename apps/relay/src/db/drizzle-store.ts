@@ -14,6 +14,7 @@ import type {
   TurnFailure,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
+import { equalSecret } from "@lilos/contracts/auth";
 import {
   ApprovalOutcome,
   EngineRequest,
@@ -37,7 +38,6 @@ import {
   sql,
 } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
-import { equalSecret } from "../auth";
 import type {
   AppendMessageInput,
   ConversationPatch,
