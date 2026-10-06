@@ -42,9 +42,11 @@ pairing) and is the only thing holding the per-install token
   timing can't reveal a matching prefix.
 - **WebSocket Origin gate.** `/ws` upgrades carrying an `Origin` header
   are refused unless the origin is loopback (`localhost`/`*.localhost`,
-  127.0.0.0/8, `[::1]`, any port), `file://`, `null` (packaged Electron),
-  or the request's own `Host`. Non-browser clients send no `Origin` and
-  pass. This is defense-in-depth: the token still does the real auth.
+  127.0.0.0/8, `[::1]`, any port), `file://`, `null` under an Electron
+  `User-Agent` (the packaged desktop app — a bare `null` is what a foreign
+  page's sandboxed iframe sends, so it's refused), or the request's own
+  `Host`. Non-browser clients send no `Origin` and pass. This is
+  defense-in-depth: the token still does the real auth.
 - **Pairing exchange throttle.** `POST /pair/exchange` spends one-time,
   5-minute grants. After **5 consecutive `unknown` codes** the endpoint
   answers **`429 {error:"throttled"}` for 60 seconds** — every exchange,

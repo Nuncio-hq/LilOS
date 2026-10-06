@@ -976,7 +976,12 @@ export function createDrizzleStore(db: Db): RelayStore {
       const updated = db
         .update(schema.pairedDevices)
         .set({ lastSeenAt: seenAt })
-        .where(eq(schema.pairedDevices.id, deviceId))
+        .where(
+          and(
+            eq(schema.pairedDevices.id, deviceId),
+            isNull(schema.pairedDevices.revokedAt),
+          ),
+        )
         .returning()
         .get();
       return updated ? rowToDevice(updated) : rowToDevice(row);

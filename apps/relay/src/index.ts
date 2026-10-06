@@ -67,6 +67,7 @@ const listenOnce = (bindHost: string) =>
           !wsUpgradeOriginAllowed(
             request.headers.get("origin"),
             request.headers.get("host"),
+            request.headers.get("user-agent"),
           )
         ) {
           return new Response("websocket upgrade refused", { status: 403 });

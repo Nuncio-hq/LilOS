@@ -66,7 +66,8 @@ export interface PairingService {
     name?: string;
   }): Promise<
     | { device: PairedDevice; credential: string }
-    | { error: "unknown" | "expired" | "used" | "throttled" }
+    | { error: "unknown" | "expired" | "used" }
+    | { error: "throttled"; retryAfterMs: number }
   >;
   /**
    * `session.hello` auth for phones: hash-match an unrevoked device and bump
@@ -125,7 +126,9 @@ export function createPairingService(options: {
     async exchangeGrant({ code, name }) {
       /* #568: while the lock runs every exchange is refused — even a valid
          code, so the lock actually costs an attacker the whole window. */
-      if (now() < throttledUntil) return { error: "throttled" };
+      if (now() < throttledUntil) {
+        return { error: "throttled", retryAfterMs: throttledUntil - now() };
+      }
       const credential = `devcred_${randomBytes(32).toString("hex")}`;
       const at = now();
       /* Consume + device insert are one store transaction — a failure can't

@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { APP_PROTOCOL_VERSION } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import WebSocket from "ws";
@@ -7,9 +8,11 @@ import { wsUpgradeOriginAllowed } from "../src/origin";
 import { createPairingService, PAIRING_GRANT_TTL_MS } from "../src/pairing";
 import { createRelay } from "../src/session";
 import {
+  BUN,
   connectPeer,
   errorData,
   lastId,
+  RELAY_DIR,
   req,
   resultOf,
   startRelay,
@@ -84,47 +87,102 @@ describe("AC-1 constant-time secret compares", () => {
     );
     expect(errorData(stranger.frames, lastId())).toBe("unauthenticated");
   });
+
+  it("the drizzle store compares the credential hash in-process (real sqlite)", () => {
+    const script = `
+      import { Database } from "bun:sqlite";
+      import { drizzle } from "drizzle-orm/bun-sqlite";
+      import { applyMigrations } from "./src/db/migrate.ts";
+      import * as schema from "./src/db/schema.ts";
+      import { createDrizzleStore } from "./src/db/drizzle-store.ts";
+      import { createPairingService } from "./src/pairing.ts";
+      const db = new Database(":memory:");
+      applyMigrations(db);
+      const store = createDrizzleStore(drizzle(db, { schema }));
+      const pairing = createPairingService({ store });
+      const grant = await pairing.mintGrant();
+      const ex = await pairing.exchangeGrant({ code: grant.code });
+      const wrong = await pairing.authenticateDevice(
+        ex.device.id, "devcred_" + "0".repeat(64));
+      const right = await pairing.authenticateDevice(
+        ex.device.id, ex.credential);
+      console.log(JSON.stringify({ wrong, rightId: right?.id,
+        lastSeen: right?.lastSeenAt }));
+    `;
+    const res = spawnSync(BUN, ["-e", script], {
+      cwd: RELAY_DIR,
+      encoding: "utf8",
+    });
+    expect(res.status, res.stderr).toBe(0);
+    const out = JSON.parse(res.stdout.trim().split("\n").at(-1) ?? "null");
+    expect(out.wrong).toBeNull();
+    expect(out.rightId).toBeTruthy();
+    expect(out.lastSeen).toBeGreaterThan(0);
+  });
 });
 
 describe("AC-2 Origin gate on the /ws upgrade", () => {
   it("allows non-browser and loopback origins, refuses foreign ones", () => {
     const host = "127.0.0.1:4577";
 
+    const electron = "Mozilla/5.0 LilOS/0.1.0 Chrome/130 Electron/33.0.0";
+
     // Non-browser clients (harness ws client, React Native, scripts) send
     // no Origin header at all.
-    expect(wsUpgradeOriginAllowed(null, host)).toBe(true);
-    expect(wsUpgradeOriginAllowed(undefined, host)).toBe(true);
-    // Packaged Electron loads the UI via loadFile → file origin / "null".
-    expect(wsUpgradeOriginAllowed("file://", host)).toBe(true);
-    expect(wsUpgradeOriginAllowed("null", host)).toBe(true);
+    expect(wsUpgradeOriginAllowed(null, host, null)).toBe(true);
+    expect(wsUpgradeOriginAllowed(undefined, host, undefined)).toBe(true);
+    // Packaged Electron loads the UI via loadFile → file origin, or "null"
+    // under an Electron UA. A bare "null" is what a foreign page's
+    // sandboxed iframe sends — refused.
+    expect(wsUpgradeOriginAllowed("file://", host, null)).toBe(true);
+    expect(wsUpgradeOriginAllowed("null", host, electron)).toBe(true);
+    expect(wsUpgradeOriginAllowed("null", host, null)).toBe(false);
+    expect(wsUpgradeOriginAllowed("null", host, "Mozilla/5.0 Chrome/131")).toBe(
+      false,
+    );
     // The dev stack: vite/preview pages on any loopback port.
-    expect(wsUpgradeOriginAllowed("http://localhost:5200", host)).toBe(true);
-    expect(wsUpgradeOriginAllowed("http://127.0.0.1:5199", host)).toBe(true);
-    expect(wsUpgradeOriginAllowed("https://localhost:4173", host)).toBe(true);
-    expect(wsUpgradeOriginAllowed("http://[::1]:5200", host)).toBe(true);
+    expect(wsUpgradeOriginAllowed("http://localhost:5200", host, null)).toBe(
+      true,
+    );
+    expect(wsUpgradeOriginAllowed("http://127.0.0.1:5199", host, null)).toBe(
+      true,
+    );
+    expect(wsUpgradeOriginAllowed("https://localhost:4173", host, null)).toBe(
+      true,
+    );
+    expect(wsUpgradeOriginAllowed("http://[::1]:5200", host, null)).toBe(true);
     // A page served by the relay itself is same-origin by definition.
     expect(
-      wsUpgradeOriginAllowed("http://100.64.1.2:4577", "100.64.1.2:4577"),
+      wsUpgradeOriginAllowed("http://100.64.1.2:4577", "100.64.1.2:4577", null),
     ).toBe(true);
 
     // Browser pages on any other origin never reach session.hello.
-    expect(wsUpgradeOriginAllowed("https://evil.example", host)).toBe(false);
-    expect(wsUpgradeOriginAllowed("http://192.168.1.5:8080", host)).toBe(false);
-    expect(wsUpgradeOriginAllowed("http://127.0.0.1.evil.example", host)).toBe(
+    expect(wsUpgradeOriginAllowed("https://evil.example", host, null)).toBe(
       false,
     );
-    expect(wsUpgradeOriginAllowed("chrome-extension://abc", host)).toBe(false);
-    expect(wsUpgradeOriginAllowed("not a url", host)).toBe(false);
+    expect(wsUpgradeOriginAllowed("http://192.168.1.5:8080", host, null)).toBe(
+      false,
+    );
+    expect(
+      wsUpgradeOriginAllowed("http://127.0.0.1.evil.example", host, null),
+    ).toBe(false);
+    expect(wsUpgradeOriginAllowed("chrome-extension://abc", host, null)).toBe(
+      false,
+    );
+    expect(wsUpgradeOriginAllowed("not a url", host, null)).toBe(false);
   });
 
   it("a spawned relay answers 403 to foreign origins and upgrades allowed ones", async () => {
     const relay = await startRelay();
     /** Resolve 101 on upgrade, the HTTP status on refusal, -1 on error. */
-    const attempt = (origin?: string) =>
+    const attempt = (origin?: string, userAgent?: string) =>
       new Promise<number>((resolve) => {
+        const headers: Record<string, string> = {};
+        if (origin !== undefined) headers.origin = origin;
+        if (userAgent !== undefined) headers["user-agent"] = userAgent;
         const ws = new WebSocket(
           relay.url,
-          origin === undefined ? undefined : { headers: { origin } },
+          Object.keys(headers).length ? { headers } : undefined,
         );
         ws.once("open", () => {
           ws.close();
@@ -140,6 +198,9 @@ describe("AC-2 Origin gate on the /ws upgrade", () => {
 
     expect(await attempt("https://evil.example")).toBe(403);
     expect(await attempt("http://192.168.1.20:8000")).toBe(403);
+    // Sandboxed-iframe shape: opaque origin, ordinary browser UA.
+    expect(await attempt("null", "Mozilla/5.0 Chrome/131")).toBe(403);
+    expect(await attempt("null", "LilOS/0.1.0 Electron/33.0.0")).toBe(101);
     expect(await attempt("http://localhost:5200")).toBe(101);
     expect(await attempt("file://")).toBe(101);
     expect(await attempt()).toBe(101);
@@ -170,6 +231,7 @@ describe("AC-3 /pair/exchange throttle", () => {
     const grant = await pairing.mintGrant();
     expect(await pairing.exchangeGrant({ code: grant.code })).toEqual({
       error: "throttled",
+      retryAfterMs: 60_000,
     });
 
     // The documented cooldown (SECURITY.md: 60s) lifts the lock.
@@ -240,5 +302,6 @@ describe("AC-3 /pair/exchange throttle", () => {
     const refused = await post(app, "NOPE-NOPE-NOPE");
     expect(refused.status).toBe(429);
     expect(await refused.json()).toEqual({ error: "throttled" });
+    expect(refused.headers.get("Retry-After")).toBe("60");
   });
 });

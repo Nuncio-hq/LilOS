@@ -41,7 +41,9 @@ export function createApp(info: {
         /* 429 while the throttle lock runs (#568); 410 Gone for a grant
            that can never be (re)used — unknown, spent, or dead. */
         if (outcome.error === "throttled") {
-          return c.json({ error: "throttled" }, 429);
+          return c.json({ error: "throttled" }, 429, {
+            "Retry-After": String(Math.ceil(outcome.retryAfterMs / 1000)),
+          });
         }
         return c.json({ error: outcome.error }, 410);
       }
