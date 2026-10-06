@@ -99,6 +99,20 @@ function fixture(version = "0.1.0", onChange?: () => void) {
             " ",
           ),
       ).length,
+    disabledSetCalls: (p: string) =>
+      calls.filter((c) =>
+        c.argv
+          .join(" ")
+          .startsWith(
+            ["-p", p, "config", "set", "agent.disabled_toolsets"].join(" "),
+          ),
+      ),
+    disabledUnsetCalls: (p: string) =>
+      calls.filter(
+        (c) =>
+          c.argv.join(" ") ===
+          ["-p", p, "config", "unset", "agent.disabled_toolsets"].join(" "),
+      ).length,
   };
 }
 
@@ -169,6 +183,98 @@ describe("AC-1 (#339) approval installs + enables the plugin per profile", () =>
     const [row] = failing.report();
     expect(row.state).toBe("failed");
     expect(row.reason).toContain("plugins enable failed");
+  });
+
+  it("#549: connect adds 'browser' to agent.disabled_toolsets; disconnect restores", async () => {
+    const f = fixture();
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+    await f.connect.reconcile();
+
+    /* The offer-time suppression the live leg asserts: `browser_exec` and
+       `browser_vault_*` never reach the tool list. */
+    const set = f.disabledSetCalls("ada");
+    expect(set).toHaveLength(1);
+    expect(JSON.parse(set[0].argv[set[0].argv.length - 1])).toEqual([
+      "browser",
+    ]);
+
+    f.connect.employeeRemoved("e1");
+    expect(f.disabledUnsetCalls("ada")).toBe(1);
+  });
+
+  it("#549: an existing disabled_toolsets list is merged, and only our entry is removed", async () => {
+    const f = fixture();
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+    /* `config get` answers with the user's own list — the write must
+       append, not clobber. */
+    const merged = new HermesConnect({
+      relay: {
+        request: async (method) => {
+          if (method === "settings.get") return { value: { approved: true } };
+          if (method === "employees.list") return { employees: f.employees };
+          throw new Error("unexpected");
+        },
+      },
+      hermesBin: () => "/bin/true",
+      hermesHome: f.hermesHome,
+      pluginSrc: f.pluginSrc,
+      log: createMemoryLogger(),
+      /* `config get/set/unset` round-trips a list like the real CLI. */
+      run: (() => {
+        let disabled = ["kanban"];
+        return (argv: string[]) => {
+          const a = argv.join(" ");
+          if (
+            a.includes("config get") ||
+            (a.includes("config") && a.includes("get"))
+          )
+            return {
+              status: 0,
+              out: `${disabled.map((d) => `  - ${d}`).join("\n")}\n`,
+            };
+          if (
+            a.includes("config") &&
+            a.includes("set") &&
+            a.includes("agent.disabled_toolsets")
+          ) {
+            disabled = JSON.parse(argv[argv.length - 1]) as string[];
+            f.calls.push({ argv });
+            return { status: 0, out: "" };
+          }
+          if (a.includes("config") && a.includes("unset")) {
+            disabled = [];
+            f.calls.push({ argv });
+            return { status: 0, out: "" };
+          }
+          f.calls.push({ argv });
+          return { status: 0, out: "" };
+        };
+      })(),
+    });
+    await merged.reconcile();
+    const set = f.calls.filter((c) =>
+      c.argv.join(" ").includes("agent.disabled_toolsets"),
+    );
+    expect(set).toHaveLength(1);
+    expect(JSON.parse(set[0].argv[set[0].argv.length - 1])).toEqual([
+      "kanban",
+      "browser",
+    ]);
+
+    merged.employeeRemoved("e1");
+    const restore = f.calls.filter(
+      (c) =>
+        c.argv.join(" ").includes("config") &&
+        c.argv.join(" ").includes("agent.disabled_toolsets"),
+    );
+    expect(restore).toHaveLength(2);
+    expect(JSON.parse(restore[1].argv[restore[1].argv.length - 1])).toEqual([
+      "kanban",
+    ]);
   });
 
   it("a failed tool-search opt-out marks the row failed too (#411)", async () => {
