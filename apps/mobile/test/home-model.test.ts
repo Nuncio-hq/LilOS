@@ -439,12 +439,11 @@ describe("#652 — the needs-you card reads last-known and human while offline (
       w(true),
       NOW,
     );
-    /* Old line was the bare `patch {…}` JSON — the accessory now says the
-       same sentence the thread card leads with, the command after it. */
-    expect(accessoryWhat(a)).toBe(
-      'Emp e1 wants to run · patch {"path":"README.md"}',
-    );
-    expect(accessoryWhat(a).startsWith("patch {")).toBe(false);
+    /* Old line was the bare `patch {…}` JSON — the accessory says the
+       same human sentence the thread card leads with (#652 AC-2). */
+    expect(accessoryWhat(a)).toBe("Emp e1 wants to edit README.md");
+    expect(accessoryWhat(a)).not.toContain("{");
+    expect(accessoryWhat(a)).not.toContain('"path"');
   });
 
   it("offline, the marker is FIRST — truncation can't cut it away", () => {
@@ -488,11 +487,11 @@ describe("#652 — the needs-you card reads last-known and human while offline (
       w(true),
       NOW,
     );
-    /* What the sheet's body line renders — the same sentence·command
-       the accessory shows, without the `$ ` terminal box. */
-    expect(whatLine(a)).toBe(
-      'Emp e1 wants to run · patch {"path":"README.md"}',
-    );
+    /* What the sheet's body line renders — the same human sentence the
+       accessory shows, without the `$ ` terminal box (#652 AC-2). */
+    expect(whatLine(a)).toBe("Emp e1 wants to edit README.md");
+    expect(whatLine(a)).not.toContain("{");
+    expect(whatLine(a)).not.toContain('"path"');
     expect(whatLine(a)).not.toContain("$");
   });
 });
