@@ -70,6 +70,27 @@ dead backend behind a live adapter shows as not-running instead of lying
 server-side; its events mint a leg turn (D-#308), so `prompt` during that
 leg legitimately answers `-32003` until the leg's `turn.completed` lands.
 
+## Host-backend multiplex (#548)
+
+Hermes runs one machine-level backend per OS user: since the multiplex
+rework, a `hermes serve` without `--isolated` attaches to whatever owns the
+host (Hermes Desktop, a `hermes` dashboard, another LilOS) and exits 0 —
+the adapter used to read that as a crash and retry. An isolated `serve`
+still binds its own port and keeps plugins, sessions and `session.resume`;
+only the rendezvous record goes unpublished ("observe-only"), which matters
+only to *other* Hermes processes looking for it.
+
+The adapter probes `serve --help` once per binary and passes `--isolated`
+when advertised. A build that still attaches (exit 0 with
+`... already running on this host: PID …, port …`) or refuses the endpoint
+(exit 78, `Refusing to start:`) rejects the spawn as `HermesHostConflict`
+naming the owner; `scripts/serve.ts` exits
+`HERMES_HOST_CONFLICT_EXIT_CODE` (87) so the harness launcher marks the
+start fatal — the same slot as the too-old verdict — instead of counting
+five restartable crashes. A mid-flight relaunch hitting the conflict marks
+the backend `failed` immediately, and `kick()` re-arms it on demand once
+the owner is gone.
+
 ## Live conformance run
 
 ```

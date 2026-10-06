@@ -37,6 +37,12 @@ export class EngineError extends Error {
 export interface EngineClientOptions {
   /** ws:// or wss:// endpoint speaking the engine protocol (harness, engine-fake, …). */
   url: string;
+  /**
+   * Feed credential (#564): appended to `url` as `?token=` on every
+   * (re)connect — the harness feed refuses the upgrade without it. Omit for
+   * unauthenticated endpoints (a raw engine-fake socket in tests).
+   */
+  token?: string;
   socketFactory?: SocketFactory;
   autoReconnect?: boolean;
   reconnectMinDelayMs?: number;
@@ -242,7 +248,7 @@ export class EngineClient {
   private openSocket(): Promise<void> {
     this.state.set(this.description.get() ? "reconnecting" : "connecting");
     const socket = (this.options.socketFactory ?? defaultSocketFactory)(
-      this.options.url,
+      feedSocketUrl(this.options.url, this.options.token),
     );
     this.socket = socket;
     this.attachSocketListeners(socket);
@@ -552,6 +558,13 @@ export class EngineClient {
     }, delay);
   }
 }
+
+/** The install token rides the socket URL — a browser WebSocket can't set
+    an Authorization header (#564). */
+const feedSocketUrl = (url: string, token?: string): string =>
+  token
+    ? `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`
+    : url;
 
 /** #179: a gone session's replay error is terminal; anything else retries. */
 function isTransientFeedError(error: unknown): boolean {
