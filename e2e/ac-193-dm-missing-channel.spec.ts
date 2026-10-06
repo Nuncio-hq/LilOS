@@ -25,7 +25,7 @@ async function relayRpc<T>(
 ): Promise<T> {
   return (await page.evaluate(
     async ({ ws, token, method, params }) => {
-      const sock = new WebSocket(ws);
+      const sock = new WebSocket(`${ws}?token=${encodeURIComponent(token)}`);
       const rpc = (id: number, m: string, p: Record<string, unknown>) =>
         sock.send(JSON.stringify({ jsonrpc: "2.0", id, method: m, params: p }));
       return await new Promise((resolve, reject) => {

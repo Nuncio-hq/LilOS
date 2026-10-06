@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { RelayClient } from "../src/client";
 import { DEVICE_CACHE_SCHEMA_VERSION } from "../src/device-cache";
 import type { RelaySocket } from "../src/socket";
@@ -1392,5 +1392,85 @@ describe("#571 incremental conversation summaries", () => {
     });
     await flush();
     expect(client.conversationSummaries.get()[0].last.text).toBe("fresh");
+  });
+});
+
+describe("ws upgrade credential (#625)", () => {
+  /* The relay authenticates the upgrade itself — a browser WebSocket can't
+     set headers, so the credential rides the socket URL (`?token=` or
+     `?deviceId=&credential=`), the same carrier the #564 feed gate uses. */
+  it("the install token or device credential is appended to the socket URL", () => {
+    const urls: string[] = [];
+    const socket = new FakeSocket();
+    const capture = (url: string) => {
+      urls.push(url);
+      return socket;
+    };
+    const tokenClient = new RelayClient({
+      url: "ws://relay/ws",
+      token: "tok",
+      socketFactory: capture,
+      connectTimeoutMs: 50,
+      autoReconnect: false,
+    });
+    void tokenClient.connect().catch(() => {});
+    const deviceClient = new RelayClient({
+      url: "ws://relay/ws",
+      device: { deviceId: "dev_1", credential: "cred x/y" },
+      socketFactory: capture,
+      connectTimeoutMs: 50,
+      autoReconnect: false,
+    });
+    void deviceClient.connect().catch(() => {});
+    expect(urls).toEqual([
+      "ws://relay/ws?token=tok",
+      "ws://relay/ws?deviceId=dev_1&credential=cred%20x%2Fy",
+    ]);
+    tokenClient.close();
+    deviceClient.close();
+  });
+
+  /* The gate refuses with HTTP 401 — a socket-level error with no status
+     reaches the client, so RelayClient probes /healthz once: reachable ⇒
+     the credential was refused ⇒ `unauthenticated` (fatal, e.g. the
+     revoked-phone re-pair flow); unreachable ⇒ transient connect_failed. */
+  it("a refused upgrade reads unauthenticated when the relay's HTTP answers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("ok")),
+    );
+    try {
+      const { socket, client } = makeClient();
+      const p = client.connect();
+      socket.emitClose(1006, "");
+      await expect(p).rejects.toMatchObject({ code: "unauthenticated" });
+      expect(fetch).toHaveBeenCalledWith(
+        "http://fake/healthz",
+        expect.anything(),
+      );
+      expect(client.fatal.get()?.code).toBe("unauthenticated");
+      client.close();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("a refused upgrade stays connect_failed when the relay is down", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("connection refused");
+      }),
+    );
+    try {
+      const { socket, client } = makeClient();
+      const p = client.connect();
+      socket.emitClose(1006, "");
+      await expect(p).rejects.toMatchObject({ code: "connect_failed" });
+      expect(client.fatal.get()).toBeUndefined();
+      client.close();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

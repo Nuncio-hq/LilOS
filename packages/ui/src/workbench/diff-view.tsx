@@ -6,6 +6,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useUiLayer } from "../chat/ui-layers";
 import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
 import { cn } from "../lib/utils";
@@ -127,6 +128,10 @@ function CommentEditor({
   onClose: () => void;
 }) {
   const [text, setText] = useState(initial?.text ?? "");
+  /* Esc must close only this editor, not the Focus/panel layer beneath —
+     register on the layer stack so dispatch stops here (#576). The
+     textarea's own Esc → onClose stays as a harmless duplicate. */
+  useUiLayer({ onEscape: onClose });
   const a = initial ?? anchorFor(rows, lo, hi);
   const range =
     a.start === a.end ? `line ${a.start}` : `lines ${a.start}–${a.end}`;

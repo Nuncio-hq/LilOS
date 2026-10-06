@@ -95,7 +95,9 @@ async function rpc(
   calls: { method: string; params: Record<string, unknown> }[],
 ): Promise<Record<string, unknown>[]> {
   const token = readFileSync(path.join(home, "relay-token"), "utf8").trim();
-  const ws = new WebSocket(`ws://127.0.0.1:${relayPort}/ws`);
+  const ws = new WebSocket(
+    `ws://127.0.0.1:${relayPort}/ws?token=${encodeURIComponent(token)}`,
+  );
   await new Promise<void>((res, rej) => {
     ws.onopen = () => res();
     ws.onerror = () => rej(new Error("ws connect failed"));
@@ -482,7 +484,7 @@ test("AC-5b a mid-turn image queues as the next prompt instead of steering", asy
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
-  await expect(page.getByText("Enter steers · ■ stop")).toBeVisible({
+  await expect(page.getByText("Enter steers · ⌘. stop")).toBeVisible({
     timeout: 30_000,
   });
 
