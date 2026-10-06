@@ -333,6 +333,9 @@ ${tail}`,
             output: "",
           });
           break;
+        case "context":
+          steps.push({ tool: tool("context"), input: {}, output: "" });
+          break;
       }
     }
     return {
