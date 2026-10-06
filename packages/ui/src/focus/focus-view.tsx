@@ -477,13 +477,38 @@ export function FocusView({
      cache-seeded tab mid-turn (#547 AC-1). A pick made mid-turn still
      re-arms on the NEXT turn (live.id changes) exactly as before (#396). */
   const seenLive = useRef(live?.id);
+  /* #606: a pick while a turn is in flight holds follow for THAT turn —
+     its `live` row can land after the pick (`turn.started` rides the feed),
+     and `seenLive` alone can't tell the late row from a new turn's. The
+     stamp lifts on the first quiet beat (nothing live or running — the
+     pick-time turn ended) or when a different live turn shows up, so the
+     next turn still re-engages follow (#396). "in-flight" = running but
+     the row hasn't rendered yet. */
+  const pickedDuringTurn = useRef<string | null>(null);
   useEffect(() => {
     const id = live?.id;
     if (id === seenLive.current) return;
     seenLive.current = id;
-    if (!deepLinkHold.current && live && live.postAttach !== false)
+    /* The first live row after a mid-turn pick IS the pick-time turn —
+       keep holding; a different id is a new turn and lifts the hold. */
+    if (id && pickedDuringTurn.current != null) {
+      pickedDuringTurn.current =
+        pickedDuringTurn.current === "in-flight" ||
+        pickedDuringTurn.current === id
+          ? id
+          : null;
+    }
+    if (
+      !deepLinkHold.current &&
+      pickedDuringTurn.current == null &&
+      live &&
+      live.postAttach !== false
+    )
       followRef.current = true;
   }, [live?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!running && !live) pickedDuringTurn.current = null;
+  }, [running, live]);
   // Turn finished with edits → land on Changes, like Codex's review pane.
   const lastDone = [...thread.replies]
     .reverse()
@@ -517,9 +542,19 @@ export function FocusView({
   useEffect(() => {
     if (followRef.current && liveHelpers) setTab("subagents");
   }, [liveHelpers]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* Latest in-flight turn, read at pick time — riding a ref keeps the
+     memoized `pickTab` stable across step churn (the actsRef pattern). */
+  const inFlightTurn = useRef<{ id?: string } | null>(null);
+  inFlightTurn.current = live ?? (running ? {} : null);
   const pickTab = useCallback(
     (t: WbTab) => {
       setTab(t);
+      /* The pick belongs to the turn currently in flight — hold follow for
+         it specifically (#606): a live row arriving after the pick is that
+         same turn, not a new one. */
+      pickedDuringTurn.current = inFlightTurn.current
+        ? (inFlightTurn.current.id ?? "in-flight")
+        : null;
       seededTab.current = true; // a manual pick counts as the seed (#547)
       followRef.current = false;
       /* A pick lifts the deep-link hold (new turns re-arm follow) and its
