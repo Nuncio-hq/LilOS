@@ -25,19 +25,84 @@ describe("AC-1 authorizeFeedUpgrade refuses a socket without the credential or w
     ["missing token", "", {}, 401],
     ["empty token", "?token=", {}, 401],
     ["wrong token", "?token=nope", {}, 401],
-    ["install token, no Origin (scripts/Bun clients)", `?token=${TOKEN}`, {}, undefined],
-    ["dev server origin", `?token=${TOKEN}`, { origin: "http://127.0.0.1:5200" }, undefined],
-    ["localhost on any port", `?token=${TOKEN}`, { origin: "http://localhost:9999" }, undefined],
-    ["https loopback", `?token=${TOKEN}`, { origin: "https://[::1]:8080" }, undefined],
-    ["Electron file:// window", `?token=${TOKEN}`, { origin: "file://" }, undefined],
-    ["opaque origin (sandboxed/file pages)", `?token=${TOKEN}`, { origin: "null" }, undefined],
-    ["a subdomain of localhost", `?token=${TOKEN}`, { origin: "http://app.localhost:5200" }, undefined],
-    ["foreign https origin", `?token=${TOKEN}`, { origin: "https://evil.example" }, 403],
-    ["foreign http origin", `?token=${TOKEN}`, { origin: "http://evil.example" }, 403],
-    ["loopback-lookalike host", `?token=${TOKEN}`, { origin: "http://127.0.0.1.evil.example" }, 403],
-    ["non-http scheme", `?token=${TOKEN}`, { origin: "chrome-extension://abc" }, 403],
-    ["foreign origin with NO token still refuses", "", { origin: "https://evil.example" }, 401],
-    ["foreign origin with a WRONG token still refuses", "?token=nope", { origin: "https://evil.example" }, 401],
+    [
+      "install token, no Origin (scripts/Bun clients)",
+      `?token=${TOKEN}`,
+      {},
+      undefined,
+    ],
+    [
+      "dev server origin",
+      `?token=${TOKEN}`,
+      { origin: "http://127.0.0.1:5200" },
+      undefined,
+    ],
+    [
+      "localhost on any port",
+      `?token=${TOKEN}`,
+      { origin: "http://localhost:9999" },
+      undefined,
+    ],
+    [
+      "https loopback",
+      `?token=${TOKEN}`,
+      { origin: "https://[::1]:8080" },
+      undefined,
+    ],
+    [
+      "Electron file:// window",
+      `?token=${TOKEN}`,
+      { origin: "file://" },
+      undefined,
+    ],
+    [
+      "opaque origin (sandboxed/file pages)",
+      `?token=${TOKEN}`,
+      { origin: "null" },
+      undefined,
+    ],
+    [
+      "a subdomain of localhost",
+      `?token=${TOKEN}`,
+      { origin: "http://app.localhost:5200" },
+      undefined,
+    ],
+    [
+      "foreign https origin",
+      `?token=${TOKEN}`,
+      { origin: "https://evil.example" },
+      403,
+    ],
+    [
+      "foreign http origin",
+      `?token=${TOKEN}`,
+      { origin: "http://evil.example" },
+      403,
+    ],
+    [
+      "loopback-lookalike host",
+      `?token=${TOKEN}`,
+      { origin: "http://127.0.0.1.evil.example" },
+      403,
+    ],
+    [
+      "non-http scheme",
+      `?token=${TOKEN}`,
+      { origin: "chrome-extension://abc" },
+      403,
+    ],
+    [
+      "foreign origin with NO token still refuses",
+      "",
+      { origin: "https://evil.example" },
+      401,
+    ],
+    [
+      "foreign origin with a WRONG token still refuses",
+      "?token=nope",
+      { origin: "https://evil.example" },
+      401,
+    ],
   ])("%s → %s", (_name, query, headers, status) => {
     const res = authorizeFeedUpgrade(req(query, headers), TOKEN);
     if (status === undefined) expect(res).toBeUndefined();
@@ -86,9 +151,7 @@ async function gatedFeed(token: string): Promise<GatedFeed> {
       ws.send(HELD_FRAME); // the attach-time held-frame flush
     });
   });
-  await new Promise<void>((resolve) =>
-    server.listen(0, "127.0.0.1", resolve),
-  );
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
   return {
     url: `ws://127.0.0.1:${port}/ws`,
@@ -143,10 +206,7 @@ describe("AC-1 the real upgrade handshake refuses before any event is sent", () 
 
   it("a socket with a foreign Origin fails even with the credential", async () => {
     feed = await gatedFeed(TOKEN);
-    const r = await open(
-      `${feed.url}?token=${TOKEN}`,
-      "https://evil.example",
-    );
+    const r = await open(`${feed.url}?token=${TOKEN}`, "https://evil.example");
     expect(r.status).toBe(403);
     expect(r.frames).toEqual([]);
     expect(feed.attachedCount()).toBe(0);
