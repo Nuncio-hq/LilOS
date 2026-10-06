@@ -156,6 +156,7 @@ export function NeedsYouAccessory({
   approvals,
   placement,
   onApprove,
+  onReview,
   onOpen,
 }: {
   approvals: Approval[];

@@ -16,6 +16,7 @@ export function ApprovalsSheet({
   onApprove,
   onDeny,
   onOpen,
+  onReview,
   onClose,
   unreachable,
 }: {
