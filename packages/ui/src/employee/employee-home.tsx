@@ -208,6 +208,7 @@ export function EmployeeHome({
   lastSent,
   panelOpen,
   onPanel,
+  onPanelClose,
   folders,
   pick,
   setPick,
@@ -261,6 +262,10 @@ export function EmployeeHome({
   lastSent?: string;
   panelOpen: boolean;
   onPanel: () => void;
+  /* #577 AC-2: the panel icon is a labelled toggle — this closes the
+     open panel (back to the plain DM list). Absent, the toggle keeps
+     calling onPanel (which opens the latest session). */
+  onPanelClose?: () => void;
   folders: Folder[];
   pick: WsPick;
   setPick: (p: WsPick) => void;
@@ -498,6 +503,8 @@ export function EmployeeHome({
           size="icon-sm"
           className="lg:hidden"
           onClick={onNav}
+          title="Sidebar"
+          aria-label="Sidebar"
         >
           <MenuIcon />
         </Button>
@@ -588,11 +595,25 @@ export function EmployeeHome({
           >
             <UserIcon />
           </Button>
-          {!panelOpen && (
-            <Button variant="ghost" size="icon-sm" onClick={onPanel}>
-              <PanelRightIcon />
-            </Button>
-          )}
+          {/* #577 AC-2: a labelled toggle — shows/hides the thread
+              panel; says what it does instead of a bare icon. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={panelOpen ? (onPanelClose ?? onPanel) : onPanel}
+            title={
+              panelOpen ? "Hide the thread panel" : "Show the latest thread"
+            }
+            aria-label={
+              panelOpen ? "Hide the thread panel" : "Show the latest thread"
+            }
+            aria-pressed={panelOpen}
+            className="gap-1 px-2"
+            data-panel-toggle
+          >
+            <PanelRightIcon />
+            <span className="max-sm:sr-only">Panel</span>
+          </Button>
         </div>
       </header>
       {connection && connection.state !== "connected" && (

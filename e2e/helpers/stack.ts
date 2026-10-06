@@ -17,6 +17,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as playwright from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "../engine-leak";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/helpers
@@ -355,4 +356,23 @@ export async function bootStack(
     await killProc(proc);
     throw e;
   }
+}
+
+/**
+ * #577 navigation helper: a send lands on the DM list with the thread open
+ * in the side panel (`/dm/:e/:c`); Focus opens only from the panel's ↗
+ * button. Specs that need Focus after a send call this — it waits for the
+ * panel URL, clicks Focus, and waits for the Focus URL.
+ */
+export async function panelIntoFocus(
+  page: import("@playwright/test").Page,
+  focusUrl: RegExp = /\/dm\/[^/]+\/[^/]+\/focus$/,
+): Promise<void> {
+  const { expect } = playwright;
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 30_000 });
+  await page
+    .locator("[data-thread-panel]")
+    .getByTitle("Focus", { exact: true })
+    .click({ timeout: 15_000 });
+  await expect(page).toHaveURL(focusUrl, { timeout: 30_000 });
 }

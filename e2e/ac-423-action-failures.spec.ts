@@ -1,7 +1,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #423 — a failed DM action says so instead of landing nowhere:
@@ -147,10 +152,11 @@ const send = async (page: Page, text: string) => {
   await box.press("Enter");
 };
 
-/** Send from the DM home and land on the new session's Focus view. */
+/** Send from the DM home and open the new session in Focus (via the
+   panel's ↗ button — a send lands on the panel now, #577). */
 const openSession = async (page: Page, text: string) => {
   await send(page, text);
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/, { timeout: 30_000 });
+  await panelIntoFocus(page);
 };
 
 /** The issue's screenshot shape: one PNG per theme at the spec's viewport. */

@@ -11,7 +11,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #107 — Workbench → Changes commits, pushes and opens a PR without
@@ -235,7 +240,8 @@ test("AC-1 checkboxes pick the staged set; Commit commits only the checked files
   await dmDefault(page);
   await pickSessionFolder(page, repoDir);
   await send(page, SHIP_SESSION);
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
 
   await tab(page, /Changes/).click();
   await expect(page.getByText(/Clean working tree/)).toBeVisible({
@@ -474,7 +480,8 @@ test("AC-3 Push sets upstream and lands the branch; rejected, no-remote and auth
     .click();
   await pickSessionFolder(page, nonremoteDir);
   await send(page, "no remote session");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await tab(page, /Changes/).click();
   writeFileSync(path.join(nonremoteDir, "n2.txt"), "more\n");
   const nrTurn = await sendTurn(page, "Add a note");
@@ -503,7 +510,8 @@ test("AC-3 Push sets upstream and lands the branch; rejected, no-remote and auth
     .click();
   await pickSessionFolder(page, authDir);
   await send(page, "auth remote session");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await tab(page, /Changes/).click();
   writeFileSync(path.join(authDir, "s2.txt"), "more\n");
   const aTurn = await sendTurn(page, "Add a note");
@@ -605,7 +613,8 @@ test("AC-6 a folder that is not a git repo shows no ship bar and no Changes/PR t
   await dmDefault(page);
   await pickSessionFolder(page, plainDir);
   await send(page, "plain folder session");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await expect(page.getByTitle("Workbench", { exact: true })).toBeVisible({
     timeout: 30_000,
   });

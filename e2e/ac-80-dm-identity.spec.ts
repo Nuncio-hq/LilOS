@@ -134,10 +134,10 @@ test("AC-2 markdown renders while the reply streams, then settles unchanged", as
   try {
     await dmDefault(page, stack.webUrl);
     await send(page, STREAM_PROMPT);
-    // Send lands in Focus (#114); the peek panel (conv URL minus /focus)
-    // keeps this test covering the thread-panel markdown path.
-    await page.waitForURL(/\/focus$/);
-    await page.goto(page.url().replace(/\/focus$/, ""));
+    /* #577: a send lands on the DM list with the thread in the panel
+       (conv URL) — exactly the thread-panel markdown path this test
+       covers; no goto needed anymore. */
+    await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 30_000 });
     const turn = page.locator("[data-agentturn]").first();
     const streaming = turn.locator("[data-streaming]");
     await expect(streaming).toBeVisible({ timeout: 60_000 });

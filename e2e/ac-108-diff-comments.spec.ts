@@ -5,7 +5,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #108 — comment on a diff line and the agent gets it: in Focus →
@@ -166,7 +171,6 @@ const sendTurn = async (page: Page, text: string) => {
   return awaitSendLanding(page, text);
 };
 
-const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
 
@@ -224,7 +228,8 @@ async function freshSession(page: Page) {
   await dmDefault(page);
   await pickSessionFolder(page, repoDir);
   await send(page, "check in");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   /* #474/#496: hand each test an idle session. While the seeded turn is
      still dispatching, a send can slip in mid-turn (steer) and a
      `turns.last()` read can latch the seeded turn while the real one is
@@ -451,7 +456,8 @@ test("AC-3b a send landing mid-turn steers — the landing wait resolves the tur
      this when `sendTurn`'s count guard read the session as idle while the
      seeded turn was still dispatching. */
   await send(page, "slow:150 Add a readme note");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   /* The card mounts only after the harness has processed turn.started
      (runningTurnId set) — a send past this point provably steers. Send
      earlier and it queues behind the minting turn, draining as the next

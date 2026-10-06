@@ -1,7 +1,7 @@
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import type { ChatStatus } from "ai";
 import { PaperclipIcon, SquareIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   PromptInput,
   PromptInputAttachment,
@@ -100,6 +100,19 @@ export function FocusComposer({
      flight is a new draft and survives (#103 AC-5). */
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  /* #590 AC-1: an external prefill (draft goes empty → text — plan
+     "Change…") focuses the composer and lands the caret at the end,
+     after any prefix. Same rule as Composer. */
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const prevDraftRef = useRef(draft);
+  useLayoutEffect(() => {
+    const prefilled = prevDraftRef.current === "" && draft !== "";
+    prevDraftRef.current = draft;
+    if (!prefilled) return;
+    const el = wrapRef.current?.querySelector("textarea");
+    el?.focus();
+    el?.setSelectionRange(el.value.length, el.value.length);
+  });
   /* Same in-flight guard as Composer (#130 AC-3): `sendRef` dedupes submits
      while a promise send is pending, `sending` disables the button. */
   const [sending, setSending] = useState(false);
@@ -107,7 +120,7 @@ export function FocusComposer({
   return (
     // While the employee works, Enter steers the turn (session.steer — the default and only behavior;
     // the running-state placeholder/hint come from the shared runningComposer in agent-chat.tsx).
-    <div>
+    <div ref={wrapRef}>
       <PromptInput
         accept={accept}
         multiple
@@ -168,7 +181,8 @@ export function FocusComposer({
           />
         </PromptInputBody>
         <PromptInputFooter>
-          <PromptInputTools className="min-w-0">
+          {/* #590 AC-2: one row of controls — the hint truncates first. */}
+          <PromptInputTools className="min-w-0 overflow-hidden">
             {accept && <FocusAttachButton />}
             {onModel && models?.length ? (
               <ModelPicker

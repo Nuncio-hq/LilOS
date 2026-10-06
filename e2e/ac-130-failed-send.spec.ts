@@ -305,9 +305,10 @@ test("AC-1 a refused send in the home composer keeps the text and image chips", 
   await sendUntil(
     page,
     "home",
-    async () => /\/dm\/[^/]+\/[^/]+\/focus$/.test(page.url()), // sessions open in Focus (#114)
+    async () => /\/dm\/[^/]+\/[^/]+$/.test(page.url()), // #577: sessions open in the thread panel
   );
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/, { timeout: 30_000 });
+  /* #577: a send lands on the DM list with the thread open beside it. */
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac1-retry-sent.png` });
 });
 
@@ -321,7 +322,8 @@ test("AC-2 a refused reply in the thread composer keeps the text and image chips
   await formOf(page, "home").evaluate((f: HTMLFormElement) =>
     f.requestSubmit(),
   );
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  /* #577: a send lands on the DM list with the thread open beside it. */
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
   await expect(formOf(page, "thread")).toBeVisible();
 
   await boxOf(page, "thread").fill("reply kept through a refused send");
@@ -365,7 +367,8 @@ test("AC-3 a successful send clears the composer and Enter-Enter sends once", as
   await formOf(page, "home").evaluate((f: HTMLFormElement) =>
     f.requestSubmit(),
   );
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  /* #577: a send lands on the DM list with the thread open beside it. */
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
 
   // Reply via a real Enter-Enter: one send, composer cleared.
   const text = "double-enter sends once";

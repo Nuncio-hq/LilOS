@@ -11,7 +11,6 @@ import {
   GitPullRequestIcon,
   ListTodoIcon,
   MenuIcon,
-  Minimize2Icon,
   PanelRightCloseIcon,
   PanelRightOpenIcon,
   PlayIcon,
@@ -748,7 +747,8 @@ export function FocusView({
             variant="ghost"
             size="icon-sm"
             onClick={onNav}
-            title="Workspace"
+            title="Sidebar"
+            aria-label="Sidebar"
           >
             <MenuIcon />
           </Button>
@@ -788,6 +788,12 @@ export function FocusView({
             className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs"
             title={`${where} / ${chLabel} · ${lead?.name ?? ""} · ${thread.session}`}
           >
+            {/* #590 AC-2: the header names the employee at every width —
+                a bare avatar + title read anonymous at 1024px. */}
+            <span className="shrink-0">
+              {isDM ? "DM" : chLabel}
+              {lead ? ` · ${lead.name}` : ""}
+            </span>
             {/* The session's folder + branch — same badge the thread panel
                 shows (#113); Focus is the session's main view (#114).
                 A folder-less DM session is a plain chat — no repo exists to
@@ -906,16 +912,6 @@ export function FocusView({
               onClick={() => wbFlip(!wbOpenWanted.current)}
             >
               {wbOpen ? <PanelRightCloseIcon /> : <PanelRightOpenIcon />}
-            </Button>
-          )}
-          {onBack && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              title="Exit focus"
-              onClick={onBack}
-            >
-              <Minimize2Icon />
             </Button>
           )}
         </div>

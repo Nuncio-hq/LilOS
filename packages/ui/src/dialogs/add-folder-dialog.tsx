@@ -12,7 +12,7 @@ import { Fragment, useEffect, useState } from "react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { baseName, parentOf, plural, slugOf } from "../lib/helpers";
+import { baseName, parentOf, plural } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import type { Folder, FsDir } from "../types";
 
@@ -44,7 +44,10 @@ export function AddFolderDialog({
      dialog renders purely off `fs` (mock). */
   onNeedDir?: (path: string) => void;
 }) {
-  const [path, setPath] = useState("~/Desktop");
+  /* #581 AC-3: open with NOTHING picked (home listing, Add disabled until
+     a real dir resolves) — a default like ~/Desktop reads as a selection
+     Oscar never made. */
+  const [path, setPath] = useState("");
   const [target, setTarget] = useState<string>(defaultProject ?? "__new");
   const [newName, setNewName] = useState("");
   const clean = path.trim().replace(/\/+$/, "") || "~";
@@ -260,14 +263,10 @@ export function AddFolderDialog({
                     )}
                     :{" "}
                     <span className="font-mono">{git.branches.join(", ")}</span>
-                    . Sessions can open a workstream (worktree) or edit a branch
-                    directly.
+                    . Sessions edit files here directly.
                   </div>
                 ) : (
-                  <div>
-                    Not a git repo. Sessions edit files here directly; no
-                    branches, worktrees or PRs.
-                  </div>
+                  <div>Not a git repo. Sessions edit files here directly.</div>
                 )}
               </div>
             </div>
@@ -327,15 +326,13 @@ export function AddFolderDialog({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t px-5 py-3">
+          {/* #581 AC-3: the footer names the folder being added, never the
+              wire call — no `folders.add {…}` JSON-RPC on screen. */}
           <span
             className="min-w-0 flex-1 basis-60 truncate font-mono text-[11px] text-muted-foreground"
-            title="Hermes call"
+            title={clean !== "~" ? clean : undefined}
           >
-            {projects === undefined
-              ? `folders.add { path: "${clean}" }`
-              : target === "__new"
-                ? `projects.create { name: "${projName}", folders: ["${clean}"] }`
-                : `projects.add_folder { id: "${slugOf(projName)}", path: "${clean}" }`}
+            {clean !== "~" ? clean : ""}
           </span>
           <Button
             variant="outline"

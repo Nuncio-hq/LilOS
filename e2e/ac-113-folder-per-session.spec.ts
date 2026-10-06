@@ -256,11 +256,12 @@ test("AC-6 the employee pre-selects its last folder; a no-folder session is a pl
   const menu = await openPicker(page);
   await menu.getByText("No folder · just chat").click();
   await send(page, "no folder please", "first");
-  // A new session opens straight into Focus (#114 AC-1) — assert there
-  // first: the turn settles (an employee turn renders) and nothing
-  // announces the missing folder: no system note, no header chip, a
-  // neutral hint (#196 — supersedes the #113 AC-6 notice).
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/);
+  /* #577: a new send stays on the DM list with the thread open beside it —
+     Focus opens only from the panel's ↗. Assert the panel state first:
+     the turn settles (an employee turn renders) and nothing announces the
+     missing folder: no system note, no header chip, a neutral hint (#196 —
+     supersedes the #113 AC-6 notice). */
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/);
   await expect(page.locator("[data-agentturn]").first()).toBeVisible({
     timeout: 30_000,
   });
@@ -270,12 +271,22 @@ test("AC-6 the employee pre-selects its last folder; a no-folder session is a pl
   await expect(page.locator("[data-wsbadge]")).toHaveCount(0);
   await expect(page.getByText(/read-only/i)).toHaveCount(0);
   // Composer hints reveal once there's a draft — calm at rest (#246), so
-  // type a character first. The composer is named "Continue session…" on
-  // Focus and "Reply to … in this session" on the panel (which mounts
-  // once the thread hydrates and sits outside `main`).
-  const focusBox = page.getByRole("textbox", { name: /Continue session/ });
-  await focusBox.pressSequentially("x");
+  // type a character first. On the panel the composer is "Reply to … in
+  // this session".
+  const replyBox0 = page.getByRole("textbox", { name: /Reply to/ });
+  await replyBox0.pressSequentially("x");
   await expect(page.getByText(/Reply to .*…/).first()).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ac-6-no-folder-panel.png` });
+  // Focus shows the same no-folder session (↗ on the panel).
+  await page
+    .locator("[data-thread-panel]")
+    .getByTitle("Focus", { exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/);
+  const focusBox = page.getByRole("textbox", { name: /Continue session/ });
+  await expect(focusBox).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("[data-wsbadge]")).toHaveCount(0);
+  await expect(page.getByText(/read-only/i)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-6-no-folder-focus.png` });
   // The session panel is the same: no chip, no "discussion" label,
   // neutral hint.

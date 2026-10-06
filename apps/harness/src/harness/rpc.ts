@@ -8,6 +8,9 @@
 
 export const INVALID_STATE = -32003;
 export const REQUEST_NOT_FOUND = -32002;
+/** The engine forgot the session id (restart, retired row) — #581's move
+    treats it as "no live session to re-home". */
+export const SESSION_NOT_FOUND = -32001;
 /** Tells the relay to answer the caller `engine_unavailable` (not error). */
 export const ENGINE_UNAVAILABLE = -32005;
 /** The engine's backend died under the call — restart surface, not a

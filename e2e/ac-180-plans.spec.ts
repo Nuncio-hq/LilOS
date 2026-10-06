@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #180 — plans & task lists from the real engine, in the real app.
@@ -119,7 +124,10 @@ async function openSession(
     .click();
   if (folder) await pickFolder(page, folder);
   await send(page, text);
-  await expect(page).toHaveURL(/\/focus/, { timeout: 30_000 });
+  /* #577: a send lands on the DM list with the thread in the panel; these
+     helpers assert Focus-era affordances, so step in via the panel's
+     button (the only way in). */
+  await panelIntoFocus(page);
   const card = lastCard(page);
   await expect(card).toBeVisible({ timeout: 60_000 });
   return card;
@@ -162,8 +170,10 @@ test("AC-2 stop mid-turn cancels the in-flight items", async ({ page }) => {
   await expect(
     card.locator('[data-planstep="in_progress"]').first(),
   ).toBeVisible({ timeout: 30_000 });
-  // Esc in the composer interrupts the running turn.
-  const box = page.locator("main textarea").last();
+  /* Esc in the session's composer interrupts the running turn. The send
+     landed on the panel (#577): the home composer's Esc is a no-op, the
+     panel thread composer is the one wired to stop. */
+  const box = page.locator("[data-thread-panel] textarea").last();
   await box.click();
   await page.keyboard.press("Escape");
   await expect(card).toHaveAttribute("data-planphase", "stopped", {
@@ -262,7 +272,7 @@ async function openPlain(page: Page, text: string, folder?: string) {
     .click();
   if (folder) await pickFolder(page, folder);
   await send(page, text);
-  await expect(page).toHaveURL(/\/focus/, { timeout: 30_000 });
+  await panelIntoFocus(page);
   await expect(page.getByText(/Short answer/)).toBeVisible({
     timeout: 60_000,
   });

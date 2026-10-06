@@ -5,7 +5,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #609 — dark-mode Workbench ink read dark-on-dark:
@@ -52,8 +57,6 @@ test.afterAll(async () => {
 });
 
 test.describe.configure({ mode: "serial" });
-
-const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus/;
 
 async function openDefault(page: Page, s: Stack = stack) {
   await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
@@ -348,7 +351,8 @@ test("AC-1/AC-3 folderless session: every Workbench tab label holds AA at the fl
   await openDefault(page);
   await pickNoFolder(page);
   await send(page, "slow:100 delegate the relay scan to subagents");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await turnSettled(page);
   await openWorkbench(page, "Subagents");
   await expect(tab(page, "Background")).toBeVisible();
@@ -386,7 +390,8 @@ test("AC-1/AC-2/AC-3 folder session: tab strip + file-view ink hold AA at the fl
   await openDefault(page);
   await pickSessionFolder(page, repoDir);
   await send(page, "slow:100 delegate the relay scan to subagents");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await turnSettled(page);
   await openWorkbench(page, "Changes");
   await expect(tab(page, "Files")).toBeVisible();
@@ -447,7 +452,8 @@ test("AC-4 shot matrix: 1288x700 + 1440x900 × light/dark × folder/folderless",
   await openDefault(page);
   await pickSessionFolder(page, repoDir);
   await send(page, "slow:100 delegate the relay scan to subagents");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await turnSettled(page);
   await openWorkbench(page, "Changes");
   await tab(page, "Files").click();
@@ -485,7 +491,8 @@ test("AC-4 shot matrix: 1288x700 + 1440x900 × light/dark × folder/folderless",
   await openDefault(page);
   await pickNoFolder(page);
   await send(page, "leave the dev server running in the background");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await turnSettled(page);
   await send(page, "delegate the relay scan to subagents");
   await turnSettled(page);

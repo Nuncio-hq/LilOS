@@ -1537,6 +1537,10 @@ export default function App() {
   const planAction = (m: Extract<Msg, { kind: "msg" }>, a: PlanAction, planId: string) => {
     const plan = m.thread?.replies.find((r) => r.plan?.id === planId)?.plan
     if (!plan) return
+    /* #590 AC-1: Approve/Reject clears a prefix the user never typed into. */
+    if (a === "approve" || a === "reject") {
+      if (threadDraft === "Change the plan: ") setThreadDraft("")
+    }
     if (a === "approve") {
       stops.current[m.id] = false
       approvePlan(plan, (fn) => mapRoot(feedKey, m.id, fn), () => !!stops.current[m.id])
@@ -1563,6 +1567,9 @@ export default function App() {
   const [wsPicks, setWsPicks] = useState<Record<string, WsPick>>({})
   const [newProjects, setNewProjects] = useState<Project[]>([])
   const [addFolderOpen, setAddFolderOpen] = useState(false)
+  /* #581 AC-2: "Add a folder" on a folder-less thread moves the session
+     there — same dialog, different action (a MOVE, not a new-folder add). */
+  const [moveFolderOpen, setMoveFolderOpen] = useState(false)
   // Folder listing served by the host dev middleware (/api/host → packages/host): mock FS seeds
   // the known Oscar dirs, real listings merge in as the picker asks for them.
   const [fsMap, setFsMap] = useState<Record<string, FsDir>>(FS)
@@ -1593,6 +1600,21 @@ export default function App() {
     if (view.kind === "dm") setWsPicks((w) => ({ ...w, [view.id]: { folder: id, base: f.branches[0] ?? "", mode: f.branches.length ? "new" : "direct" } }))
     setAddFolderOpen(false)
     say(project.existing ? `projects.add_folder → ${project.name}: ${path}` : `projects.create "${project.name}" with ${path}`)
+  }
+  /* #581 AC-2: mock of conversations.moveFolder — the open thread's session
+     re-homes to the picked folder (same thread, same memory). */
+  const moveThreadFolder = async (path: string) => {
+    if (!openThread) return
+    let f = folders.find((x) => x.path === path)
+    if (!f) {
+      const d = (await hostPick(path).catch(() => null)) ?? fsMap[path]
+      f = { id: `f-${slugOf(path) || "folder"}`, project: "", path, repo: d?.git?.remote, branches: d?.git?.branches ?? [], workstreams: [] }
+      setFolders((fs) => [...fs, f!])
+    }
+    const ws: Workspace = { folder: f.id, project: f.project, repo: f.repo, mode: "direct", base: f.branches[0] ?? "", branch: f.branches[0] ?? "", cwd: f.path }
+    mapRoot(feedKey, openThread.id, (t) => ({ ...t, ws }))
+    setMoveFolderOpen(false)
+    say(`Moved this thread to ${path} — the next turn works there.`)
   }
   // Composer pick → the session's cwd. Real app: (git worktree add) then session.create { cwd }.
   const resolveWs = (pick: WsPick | undefined, text: string): Workspace | undefined => {
@@ -1974,6 +1996,9 @@ export default function App() {
       onFocus={() => { setFocusTab(undefined); setFocus(!focus) }}
       onOpenTab={(t) => { setFocusTab(t); setFocus(true) }}
       work={workOf(openThread)} repo={channel.repo} onStart={() => setStartFor(openThread.id)}
+      onAddFolder={() => setMoveFolderOpen(true)}
+      /* #577 AC-2: the panel's ✕ returns to the plain DM list. */
+      onClose={() => { setThreadId(null); setPanelOpen(false) }}
       running={threadRunning(openThread)} onSend={(t, files) => sendInThread(openThread, t, files)} onStop={() => stopTurn(openThread.id)}
       draft={threadDraft} onDraftChange={setThreadDraft}
       onRewind={(id) => rewindTo(openThread, id)}
@@ -2075,7 +2100,7 @@ export default function App() {
               connection={connOf(emp(view.id)?.profile)}
               scheduled={{ count: tasks.filter((t) => t.employee === view.id).length, onOpen: () => showTasks(), onOpenTask: showTasks }}
               onNav={() => setNavOpen(true)} onProfile={() => showEmp(view.id)} onOpen={showThread}
-              onSend={sendTop} lastSent={lastSentTop} panelOpen={panelOpen} onPanel={() => setPanelOpen(true)} folders={folders}
+              onSend={sendTop} lastSent={lastSentTop} panelOpen={panelOpen} onPanel={() => setPanelOpen(true)} onPanelClose={() => { setThreadId(null); setPanelOpen(false) }} folders={folders}
               pick={wsPicks[view.id] ?? NO_WS} setPick={(p) => setWsPicks((w) => ({ ...w, [view.id]: p }))} onAddFolder={() => setAddFolderOpen(true)}
               onWorktree={(p) => setWsPicks((w) => ({ ...w, [view.id]: p }))}
               loading={scenario === "loading"}
@@ -2179,6 +2204,13 @@ export default function App() {
           defaultProject={view.kind === "channel" ? project?.name : undefined}
           fs={fsMap} discovered={discovered} onNeedDir={needDir}
           onClose={() => setAddFolderOpen(false)} onAdd={addFolder}
+        />
+      )}
+      {moveFolderOpen && openThread && (
+        <AddFolderDialog
+          folders={folders}
+          fs={fsMap} discovered={discovered} onNeedDir={needDir}
+          onClose={() => setMoveFolderOpen(false)} onAdd={moveThreadFolder}
         />
       )}
       {hireOpen && (

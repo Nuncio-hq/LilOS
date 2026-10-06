@@ -147,6 +147,10 @@ export const AppMethod = z.enum([
   "conversations.update",
   /* Rewind a conversation to just before one of its user messages (#134). */
   "conversations.rewind",
+  /* Move a thread's working folder (#581): the relay forwards to the
+     harness, which re-homes the engine session when one is bound and
+     stamps `cwd` on the row — same thread, same memory. */
+  "conversations.moveFolder",
   "messages.list",
   "messages.post",
   /* Host-only: stamp the pre-turn folder checkpoint onto a user message. */
@@ -512,6 +516,10 @@ export const ConversationsUpdateParams = z.object({
   effort: z.string().nullable().optional(),
   fast: z.boolean().nullable().optional(),
   deliveredSeq: z.int().min(0).optional(),
+  /** Host-only (#581): the thread's working folder — `conversations.moveFolder`
+      lands here once the engine session has been re-homed (or immediately
+      when no engine session is bound yet). `null` clears it. */
+  cwd: z.string().min(1).nullable().optional(),
   /** Host-only (#346): the engine session's life — `closed` once suspended,
       back to `open` when it reopens. `running` is derived client-side. */
   life: ConversationLife.optional(),
@@ -1117,6 +1125,61 @@ export const ConversationsRewindHostResult = z
   .strict();
 export type ConversationsRewindHostResult = z.infer<
   typeof ConversationsRewindHostResult
+>;
+
+/**
+ * Move a thread's working folder (issue #581): the "Add a folder" affordance
+ * on a folderless thread — and later a folder change — re-homes the session
+ * in place when the bound engine session declares `workspace_move`, and
+ * stamps `cwd` on the conversation row either way (a thread with no engine
+ * session yet just takes the folder as its pick). Same thread, same memory:
+ * nothing about the conversation or its engine session is recreated.
+ */
+export const ConversationsMoveFolderParams = z
+  .object({
+    conversationId: z.string().min(1),
+    /** Folder to move the session into (`~/x` allowed — the host expands). */
+    path: z.string().min(1),
+  })
+  .strict();
+export type ConversationsMoveFolderParams = z.infer<
+  typeof ConversationsMoveFolderParams
+>;
+
+export const ConversationsMoveFolderResult = z.object({
+  /** The conversation with its new `cwd`. */
+  conversation: Conversation,
+});
+
+/**
+ * The relay→host `conversations.moveFolder` call (issue #581): the harness
+ * resolves the path under the home folder, re-homes the bound engine session
+ * (`session.moveWorkspace`) when one exists and the engine declares
+ * `workspace_move`, then writes `conversations.update {cwd}`.
+ */
+export const ConversationsMoveFolderHostParams = z
+  .object({
+    conversationId: z.string().min(1),
+    /** The conversation's engine session id, when one was bound. */
+    engineRef: z.string().nullable(),
+    /** Folder to move the session into (`~/x` allowed — the host expands). */
+    path: z.string().min(1),
+  })
+  .strict();
+export type ConversationsMoveFolderHostParams = z.infer<
+  typeof ConversationsMoveFolderHostParams
+>;
+
+export const ConversationsMoveFolderHostResult = z
+  .object({
+    /** The folder the session now works in (absolute host path). */
+    cwd: z.string().min(1),
+    /** The bound engine session was re-homed too (workspace_move). */
+    engineMoved: z.boolean(),
+  })
+  .strict();
+export type ConversationsMoveFolderHostResult = z.infer<
+  typeof ConversationsMoveFolderHostResult
 >;
 
 /**

@@ -81,12 +81,20 @@ test("DM page: with no session open the feed fills the window (no empty right co
     await expect(mainPane(page)).toBeVisible();
     expect(await rightGapSettled(page)).toBeLessThanOrEqual(3);
 
-    // With a session open, Focus takes over and fills the window (#114) —
+    // With a session open, the send lands on the thread panel (#577) —
+    // the ↗ opens Focus, which takes over and fills the window (#114) —
     // still no reserved-but-empty column. (This session has no folder, so
     // the Workbench stays hidden; AC-114 covers the Workbench layout.)
     const box = page.locator("textarea").last();
     await box.fill(PROMPT);
     await box.press("Enter");
+    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/, {
+      timeout: 30_000,
+    });
+    await page
+      .locator("[data-thread-panel]")
+      .getByTitle("Focus", { exact: true })
+      .click();
     await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/, {
       timeout: 30_000,
     });

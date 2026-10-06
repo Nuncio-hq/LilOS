@@ -3,6 +3,8 @@ import type {
   Ask,
   Conversation,
   ConversationLife,
+  ConversationsMoveFolderHostParams,
+  ConversationsMoveFolderHostResult,
   ConversationsRewindHostParams,
   ConversationsRewindHostResult,
   Employee,
@@ -249,6 +251,9 @@ export interface HarnessCtx {
   rewindConversation(
     params: ConversationsRewindHostParams,
   ): Promise<ConversationsRewindHostResult>;
+  moveConversationFolder(
+    params: ConversationsMoveFolderHostParams,
+  ): Promise<ConversationsMoveFolderHostResult>;
   markDelivered(binding: SessionBinding, message: AppMessage): void;
   writeLife(conversationId: string, life: ConversationLife): void;
   reaperCandidates(): ReaperCandidate[];
@@ -379,6 +384,9 @@ export interface HarnessCtx {
       /** #419: stamp the last turn's failure (DM alert card); `null`
           clears it. */
       turnFailure?: TurnFailure | null;
+      /** #581: the thread's working folder — `conversations.moveFolder`
+          writes it after re-homing the session; `null` clears it. */
+      cwd?: string | null;
     },
   ): Promise<void>;
   postSystem(

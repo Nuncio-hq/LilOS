@@ -11,7 +11,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #134 — "Rewind to here" on every user message: the relay marks the
@@ -197,7 +202,8 @@ test("AC-2/4 + AC-1 files: rewind drops the tail, restores the folder, refills t
   await pickFolder(page, repoDir);
   await expect(page.locator('[data-ws="folder"]')).toContainText("lilos-repo");
   await send(page, "alpha marker one");
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   convA = decodeURIComponent(page.url().split("/dm/")[1].split("/")[1]);
   empA = empId(page);
   await expect(
@@ -304,7 +310,8 @@ test("AC-5 a folder shared with another session warns + names it before rewindin
   await page.goto(`${stackA.webUrl}/dm/${empA}?roots=${ROOT}`);
   await pickFolder(page, repoDir);
   await send(page, "session B alpha");
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   const convB = page.url().split("/dm/")[1].split("/")[1];
   expect(convB).not.toBe(convA);
   await expect(
@@ -347,7 +354,8 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new sess
   await dmDefault(stackB, page, ROOT);
   await pickFolder(page, repoDir);
   await send(page, "alpha in the no-rewind session");
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   const convC = page.url().split("/dm/")[1].split("/")[1];
   await expect(
     page.locator("[data-thread]").getByText("If you want me to change code"),
@@ -381,10 +389,12 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new sess
   /* Already sitting on convC's /focus URL — wait until it changes. */
   await page.waitForURL(
     (u) =>
-      /\/dm\/[^/]+\/[^/]+\/focus$/.test(u.pathname) &&
-      !u.pathname.includes(convC),
+      /\/dm\/[^/]+\/[^/]+$/.test(u.pathname) && !u.pathname.includes(convC),
     { timeout: 30_000 },
   );
+  /* #577: the fresh session landed on its panel — step into Focus where
+     [data-thread] renders. */
+  await panelIntoFocus(page);
   const convD = page.url().split("/dm/")[1].split("/")[1];
   expect(convD).not.toBe(convC);
   /* The fresh session's root carries the surviving transcript as quoted

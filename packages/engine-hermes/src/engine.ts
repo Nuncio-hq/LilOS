@@ -28,6 +28,7 @@ import {
   type RequestRespondParams,
   RPC_ERRORS,
   type SessionAskParams,
+  type SessionMoveWorkspaceParams,
   type SessionRewindParams,
   type SessionSetAccessParams,
   type SessionSetHiddenParams,
@@ -41,6 +42,7 @@ import {
   type StopReason,
   SUBAGENTS_CAPABILITY,
   type Usage,
+  WORKSPACE_MOVE_CAPABILITY,
 } from "@lilos/contracts/engine";
 import { AcpDriver, type AcpOptions } from "./acp.js";
 import type { BackendEndpoint } from "./backend.js";
@@ -592,6 +594,11 @@ export class HermesEngine {
         return this.sessionSteer(parsed.data as SessionSteerParams);
       case "session.rewind":
         return this.sessionRewind(parsed.data as SessionRewindParams);
+      /* #581 */
+      case "session.moveWorkspace":
+        return this.sessionMoveWorkspace(
+          parsed.data as SessionMoveWorkspaceParams,
+        );
       case "session.ask":
         return this.sessionAsk(parsed.data as SessionAskParams);
       case "agents.list":
@@ -708,6 +715,10 @@ export class HermesEngine {
         description:
           "session.rewind maps to hermes `session.undo` on WS sessions (soft-deletes the tail on disk, looped N times). ACP sessions expose no history undo — they answer METHOD_NOT_FOUND.",
       },
+      /* #581: WS-only like rewind — `session.workspace.move` re-homes the
+         stored session AND the live agent follows; ACP has no re-home, so
+         the capability stays off on that driver. */
+      ...(this.opts.acp ? [] : [WORKSPACE_MOVE_CAPABILITY]),
     ];
     if (this.opts.acp) {
       capabilities.push({
@@ -1433,6 +1444,62 @@ export class HermesEngine {
     s.userTurns = Math.min(p.toTurn, s.userTurns);
     this.persistSession(s);
     return { removed: drop };
+  }
+
+  /**
+   * `session.moveWorkspace {cwd}` (#581) — re-home the session's working
+   * folder, same transcript and memory. Maps to the WS gateway's
+   * `session.workspace.move` (tui_gateway/methods_session.py): it writes
+   * the stored row's cwd by `session_key` (`s.ref` — survives compression
+   * via `session.ref.changed`) and a live agent follows even mid-turn.
+   * A suspended session is only a registry row here — workspace.move still
+   * re-homes its stored row and the registry cwd follows, so the next
+   * `session.resume` opens in the new folder. ACP sessions expose no
+   * re-home — they answer METHOD_NOT_FOUND so the app applies the folder
+   * as a pick on the next session instead.
+   */
+  private async sessionMoveWorkspace(p: SessionMoveWorkspaceParams) {
+    const s = this.sessions.get(p.sessionId);
+    const rec = s ? undefined : this.sessionRegistry?.get(p.sessionId);
+    /* Unknown on both tracks means the engine truly has no such session —
+       SESSION_NOT_FOUND lets the harness stamp the folder for the next
+       session instead of faking a move. */
+    if (!s && !rec)
+      throw new RpcError(
+        RPC_ERRORS.SESSION_NOT_FOUND,
+        `no session ${p.sessionId}`,
+      );
+    if (s) {
+      if (s.state === "closed")
+        throw new RpcError(
+          RPC_ERRORS.INVALID_STATE,
+          `session ${s.id} is closed`,
+        );
+      if (s.driver !== "ws")
+        throw new RpcError(
+          RPC_ERRORS.METHOD_NOT_FOUND,
+          "session.moveWorkspace needs the WS transport — ACP exposes no workspace re-home",
+        );
+      /* The stored row the move writes belongs to this backend — a dead
+         one fails the call typed rather than splitting registry vs
+         stored-row truth. */
+      if (s.backendDead) await this.ensureLive(s);
+    }
+    const sessionKey = s?.ref ?? rec?.ref ?? "";
+    const r = (await this.gw("session.workspace.move", {
+      session_key: sessionKey,
+      cwd: p.cwd,
+    })) as { cwd?: unknown };
+    const cwd = typeof r?.cwd === "string" && r.cwd ? r.cwd : p.cwd;
+    /* The adapter's own record follows — resume + registry persist the
+       new home so a restart binds the moved session, not the old cwd. */
+    if (s) {
+      s.cwd = cwd;
+      this.persistSession(s);
+    } else if (rec) {
+      this.sessionRegistry?.put(p.sessionId, { ...rec, cwd });
+    }
+    return { cwd };
   }
 
   /* #584: `session.ask` — a one-shot side question answered by a HIDDEN

@@ -5,7 +5,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #543 — the Workbench exists for EVERY session (apps/web, relay +
@@ -284,7 +289,8 @@ test("AC-4 a folder session is unchanged: every tab renders in the same order", 
   /* New DM → fresh composer; pick the repo folder this time. */
   await pickSessionFolder(page, repoDir);
   await send(page, "slow:100 delegate the relay scan to subagents");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
   /* Changes + Files answer (real fs/git), Background from the capability,
      Subagents once helpers land — PR needs `gh`, absent on this PATH, so it
@@ -306,7 +312,8 @@ test("screenshots: folderless Focus on Subagents + Background, light + dark (128
   await openDefault(page);
   await pickNoFolder(page);
   await send(page, "delegate the relay scan to subagents");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await turnSettled(page);
   /* Second turn once settled: a long-running job that outlives it — the
      Background tab's running row is the screenshot's subject. */
@@ -349,7 +356,8 @@ test("AC-5 a session with no tab to show hides the toggle (D-#19)", async ({
     await openDefault(page, stackB);
     await pickNoFolder(page);
     await send(page, "just chat — no folder, no work");
-    await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+    /* #577: a send lands on the panel; Focus opens via its ↗. */
+    await panelIntoFocus(page);
     await turnSettled(page);
     await expect(workbenchToggle(page)).toHaveCount(0);
     await expect(

@@ -193,9 +193,6 @@ export function StatusDialog({
           <StatusList components={components} />
         </ScrollArea>
         <div className="flex items-center gap-2 border-t bg-muted/30 p-3">
-          <code className="hidden min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs sm:block">
-            lilos status --verbose
-          </code>
           <Button
             variant="outline"
             size="sm"

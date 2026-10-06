@@ -159,7 +159,9 @@ export class Session {
   constructor(
     readonly id: string,
     readonly agent: string,
-    readonly cwd: string,
+    /** Working folder — `session.moveWorkspace` (#581) rewrites it once
+        Hermes re-homed the stored row. */
+    public cwd: string,
     /** Current model pin (session.setModel rewrites it). */
     public model: string | undefined,
     readonly mcpServers: McpServer[],

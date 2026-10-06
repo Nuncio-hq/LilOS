@@ -1,5 +1,11 @@
 import type { ChatStatus } from "ai";
-import { CheckIcon, Maximize2Icon, PlayIcon } from "lucide-react";
+import {
+  CheckIcon,
+  FolderPlusIcon,
+  Maximize2Icon,
+  PlayIcon,
+  XIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AccessPill } from "../chat/access-pill";
 import {
@@ -114,6 +120,7 @@ export function ThreadView({
   seedFiles,
   onSeededFiles,
   onOpenSession,
+  onAddFolder,
   onPlan,
   onAnswer,
   onCancel,
@@ -209,6 +216,9 @@ export function ThreadView({
   onSeededFiles?: () => void;
   /* A subagent row that is another employee links to their session (issue #170). */
   onOpenSession?: (employeeId: string, session: string) => void;
+  /* #581: a folder-less DM thread can pick a real folder — the host moves
+     the session there (the pick is only offered where the engine can move). */
+  onAddFolder?: () => void;
   /* Plan card decisions (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
   /* #420: question-ask answer/cancel — passed, the handler owns the
@@ -328,7 +338,21 @@ export function ThreadView({
                   : undefined
               }
             />
-          ) : isDM && !work && !repo ? null : (
+          ) : isDM && !work && !repo ? (
+            onAddFolder ? (
+              /* #581 AC-2: a folder-less DM session gets a real "Add a
+                 folder" affordance — picking one moves the session there. */
+              <button
+                type="button"
+                onClick={onAddFolder}
+                data-add-folder
+                className="flex items-center gap-1 rounded text-muted-foreground hover:text-foreground"
+              >
+                <FolderPlusIcon className="size-3" />
+                Add a folder
+              </button>
+            ) : null
+          ) : (
             <WorkspaceBadge work={work} repo={repo} />
           )}
         </div>
@@ -382,6 +406,20 @@ export function ThreadView({
               onClick={onFocus}
             >
               <Maximize2Icon />
+            </Button>
+          )}
+          {/* #577 AC-2: a visible ✕ — the way back to the DM list beside
+              Esc (which the same onClose owns). */}
+          {onClose && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="ml-0.5"
+              title="Close"
+              aria-label="Close thread panel"
+              onClick={onClose}
+            >
+              <XIcon />
             </Button>
           )}
         </div>

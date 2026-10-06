@@ -40,7 +40,8 @@ test.describe.configure({ mode: "serial" });
 
 const homeComposer = (page: Page) => page.getByPlaceholder(/New session with/);
 /* The session composer: "Reply to … in this session" in the peek panel,
-   "Continue session …" in Focus — opening a session lands in Focus (#114). */
+   "Continue session …" in Focus — a send opens the session on the panel
+   (#577). */
 const threadComposer = (page: Page) =>
   page.getByPlaceholder(/Reply to .* in this session|Continue session/);
 
@@ -173,8 +174,9 @@ test("AC-2 home composer keeps its own draft, separate from thread drafts", asyn
   await dmDefault(page);
   await homeComposer(page).fill("home draft");
   await homeComposer(page).press("Enter");
-  // The send lands in Focus (#114) — the home composer is back at the DM.
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/);
+  /* #577: the send stays on the DM list with the thread open beside it —
+     the home composer is back at the DM once the panel closes. */
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/);
 
   await threadComposer(page).fill("thread draft");
   await openDm(page, /default/i);
