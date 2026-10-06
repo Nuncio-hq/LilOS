@@ -168,7 +168,7 @@ function LazyShell({
   /** Rows that must never unmount: live/streaming turns and the scrollTo
       target (its content has to exist the moment it lands, #138). */
   keep: boolean;
-  kind: "agent" | "user";
+  kind: "agent" | "user" | "note";
   settled: boolean;
   children: ReactNode;
 }) {
@@ -238,6 +238,8 @@ function LazyShell({
         <div style={{ height: heightRef.current }} aria-hidden data-held-stub>
           {kind === "agent" ? (
             <div data-agentturn>{settled && <div data-turnsettled />}</div>
+          ) : kind === "note" ? (
+            <div data-sysnote />
           ) : (
             <div data-userturn />
           )}
@@ -418,7 +420,7 @@ function TurnRowImpl({
       className={cls}
       lazy={lazy}
       keep={scrollTarget}
-      kind="user"
+      kind={r.from === "" ? "note" : "user"}
       settled={false}
     >
       {frame === "panel" ? (
@@ -430,6 +432,16 @@ function TurnRowImpl({
             {r.attachments && <AttachmentChips files={r.attachments} />}
           </Row>
         </>
+      ) : r.from === "" ? (
+        /* #550: `from === ""` is the relay's system-note author
+           (`authorKind: "system"` maps to it in mapping.ts) — a muted
+           note line, never a user-style bubble. */
+        <div
+          data-sysnote
+          className="w-fit max-w-full rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs"
+        >
+          {r.text}
+        </div>
       ) : (
         <UserTurn
           from={r.from}
