@@ -135,6 +135,22 @@ const workbenchToggle = (page: Page) =>
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
 
+/* The selection underline is each trigger's ::after (inset-x-0 — its
+   x-range IS its tab's box). Exactly the aria-selected tab may show it:
+   a fading-out underline under the previous tab reads as a stale
+   indicator (the #545 merge-review screenshot caught one mid-fade).
+   Returns the tab labels whose underline disagrees with selection —
+   one-shot, right after a switch, while the mid-fade window is open. */
+const underlineDrift = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[role="tab"]')]
+      .filter((t) => {
+        const lit = parseFloat(getComputedStyle(t, "::after").opacity) > 0.5;
+        return lit !== (t.getAttribute("aria-selected") === "true");
+      })
+      .map((t) => t.textContent ?? "?"),
+  );
+
 test("AC-1..3 folderless session: ↗ + toggle; only Subagents + Background; helper detail; Stop ends the job; the link lands on Subagents", async ({
   page,
 }) => {
@@ -202,6 +218,12 @@ test("AC-1..3 folderless session: ↗ + toggle; only Subagents + Background; hel
   await send(page, "leave the dev server running in the background");
   await expect(turns(page).last()).toBeVisible({ timeout: 60_000 });
   await tab(page, "Background").click();
+  await expect(tab(page, "Background")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  // The underline sits under the active tab only — no drift on switch.
+  expect(await underlineDrift(page)).toEqual([]);
   const job = page.locator('[data-job][data-status="running"]').first();
   await expect(job).toBeVisible({ timeout: 30_000 });
   await expect(job).toContainText("bun run dev");
@@ -218,6 +240,8 @@ test("AC-1..3 folderless session: ↗ + toggle; only Subagents + Background; hel
      ended (rows live under their own tab). */
   await tab(page, "Subagents").click();
   await expect(page.locator("[data-subagent]")).toHaveCount(3);
+  await expect(tab(page, "Subagents")).toHaveAttribute("aria-selected", "true");
+  expect(await underlineDrift(page)).toEqual([]);
 
   /* AC-3: back in the thread panel, the turn's "N subagents · Open" opens
      Focus straight on the Subagents tab. Focus has no sidebar (#246) —
@@ -229,7 +253,21 @@ test("AC-1..3 folderless session: ↗ + toggle; only Subagents + Background; hel
   await expect(tab(page, "Subagents")).toBeVisible({ timeout: 15_000 });
   await expect(tab(page, "Subagents")).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("[data-subagent]")).toHaveCount(3);
+  expect(await underlineDrift(page)).toEqual([]);
   await page.screenshot({ path: `${SHOTS}/ac-3-link-to-subagents.png` });
+
+  /* Same on the engine deep-links: `?tab=background` on the folderless
+     session — underline on the named tab, nowhere else. */
+  await page.goto(`${page.url().split("?")[0]}?tab=background`);
+  await expect(page).toHaveURL(/focus\?.*tab=background/, {
+    timeout: 30_000,
+  });
+  await expect(tab(page, "Background")).toHaveAttribute(
+    "aria-selected",
+    "true",
+    { timeout: 15_000 },
+  );
+  expect(await underlineDrift(page)).toEqual([]);
 });
 
 test("AC-4 a folder session is unchanged: every tab renders in the same order", async ({
