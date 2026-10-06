@@ -11,7 +11,11 @@ import {
 } from "../engine/approvals";
 import { Capability } from "../engine/capabilities";
 import { EngineEvent } from "../engine/events";
-import { JobsListParams, JobsStopParams } from "../engine/methods";
+import {
+  JobsListParams,
+  JobsStopParams,
+  SessionAskParams,
+} from "../engine/methods";
 import { ModelOption, ModelProvider, ModelsListParams } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
 import { ForgePrListItem } from "../host/forge";
@@ -220,6 +224,9 @@ export const AppMethod = z.enum([
   /* The engine's global approval policy (#106) — Settings writes it through
      the same passthrough the model catalog uses. */
   "approvals.setPolicy",
+  /* One-shot side ask (#584): the Workbench's commit-message "Suggest" —
+     forwarded to the engine's session.ask. */
+  "session.ask",
   /* Phone pairing (#153): minting a grant is the opt-in that also binds the
      Tailscale listener; devices.list/revoke manage what the grant exchange
      created. `pairing.disable` turns phone access off again. */
@@ -263,6 +270,7 @@ export const ENGINE_PASSTHROUGH_METHODS = [
   "jobs.list",
   "jobs.stop",
   "approvals.setPolicy",
+  "session.ask",
 ] as const;
 export type EnginePassthroughMethod =
   (typeof ENGINE_PASSTHROUGH_METHODS)[number];
@@ -277,6 +285,7 @@ export const ENGINE_PASSTHROUGH_PARAMS = {
   "jobs.list": JobsListParams,
   "jobs.stop": JobsStopParams,
   "approvals.setPolicy": ApprovalsSetPolicyParams,
+  "session.ask": SessionAskParams,
 } as const satisfies Record<EnginePassthroughMethod, z.ZodType>;
 
 const HelloClient = z

@@ -2548,3 +2548,73 @@ describe("engine-hermes #549: lilos toolset self-heal + tool-offer log", () => {
     await engine.close();
   });
 });
+
+/* #584 + #573: the session.ask throwaway is a real live-map entry while it
+   runs — under stop=forget it must leave the maps the same way once the
+   answer lands, whether or not the session it was asked from is still
+   open. */
+describe("engine-hermes #584: the session.ask throwaway evicts like a stopped session", () => {
+  const until = async (f: () => boolean) => {
+    for (let i = 0; i < 300; i++) {
+      if (f()) return;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error("until() timed out");
+  };
+  const driveAsk = async (gw: FakeGateway, askSid: string, text: string) => {
+    gw.emit(askSid, "message.start", {});
+    gw.emit(askSid, "message.delta", { text });
+    gw.complete(askSid);
+  };
+
+  test("the answer evicts the hidden session — both live maps drop it and the gateway session is closed", async () => {
+    const { gw, engine, h } = setup();
+    const { sessionId } = await start(h);
+    const realSid = engine.sessionFor(sessionId)?.runtimeSid;
+    const ask = h.request("session.ask", {
+      sessionId,
+      text: "Write a commit message for src/app.ts",
+    }) as Promise<{ answer: string }>;
+    /* The throwaway joined the live maps under its own runtime sid. */
+    await until(() => engine.sessionCount === 2);
+    const askSid = gw.lastSid;
+    expect(askSid).not.toBe(realSid);
+    expect(engine.sessionIdFor(askSid)).toMatch(/^ask-/);
+
+    await driveAsk(gw, askSid, "feat: update app.ts");
+    await expect(ask).resolves.toEqual({ answer: "feat: update app.ts" });
+    await until(() => engine.sessionCount === 1);
+    expect(engine.sessionIdFor(askSid)).toBeUndefined();
+    expect(gw.closedSessions).toContain(askSid);
+    /* The real session is untouched. */
+    expect(engine.sessionFor(sessionId)).toBeDefined();
+  });
+
+  test("stopping the real session mid-ask (#573 forget) still evicts the throwaway once it answers", async () => {
+    const { gw, engine, h } = setup();
+    const { sessionId } = await start(h);
+    const ask = h.request("session.ask", {
+      sessionId,
+      text: "Write a commit message for src/app.ts",
+    }) as Promise<{ answer: string }>;
+    await until(() => engine.sessionCount === 2);
+    const askSid = gw.lastSid;
+
+    /* #573 stop=forget on the session the ask was issued from. */
+    await expect(
+      h.request("session.stop", { sessionId }),
+    ).resolves.toMatchObject({ stopped: true });
+    expect(engine.sessionFor(sessionId)).toBeUndefined();
+    /* Only the throwaway remains live. */
+    expect(engine.sessionCount).toBe(1);
+    expect(engine.sessionIdFor(askSid)).toMatch(/^ask-/);
+
+    /* Its gateway turn is independent — the answer still lands, then the
+       finally drops the last map entry. */
+    await driveAsk(gw, askSid, "feat: update app.ts");
+    await expect(ask).resolves.toEqual({ answer: "feat: update app.ts" });
+    await until(() => engine.sessionCount === 0);
+    expect(engine.sessionIdFor(askSid)).toBeUndefined();
+    expect(gw.closedSessions).toContain(askSid);
+  });
+});

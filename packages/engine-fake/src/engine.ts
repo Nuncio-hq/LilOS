@@ -37,6 +37,7 @@ import {
   type RequestRespondParams,
   RPC_ERRORS,
   SESSION_META_CAPABILITY,
+  type SessionAskParams,
   type SessionRewindParams,
   type SessionSetAccessParams,
   type SessionSetHiddenParams,
@@ -47,6 +48,7 @@ import {
   type SessionSteerParams,
   type SessionStopParams,
   type SessionSuspendParams,
+  SIDE_PROMPT_CAPABILITY,
   STEER_CAPABILITY,
   SUBAGENTS_CAPABILITY,
   type Usage,
@@ -374,6 +376,8 @@ export class FakeEngine {
         return this.sessionSteer(parsed.data as SessionSteerParams);
       case "session.rewind":
         return this.sessionRewind(parsed.data as SessionRewindParams);
+      case "session.ask":
+        return this.sessionAsk(parsed.data as SessionAskParams);
       case "agents.list":
         return this.agentsList();
       case "agents.describe":
@@ -456,6 +460,7 @@ export class FakeEngine {
       /* ── #179: declared only while the switch is on (AC-5). ── */
       ...(this.capOn("subagents") ? [SUBAGENTS_CAPABILITY] : []),
       ...(this.capOn("background_jobs") ? [BACKGROUND_JOBS_CAPABILITY] : []),
+      ...(this.capOn("side_prompt") ? [SIDE_PROMPT_CAPABILITY] : []),
       /* #106: the policy the Settings Approvals section writes via
          approvals.setPolicy — `current` reports the live value. */
       ...(this.capOn("approval_policy")
@@ -833,6 +838,21 @@ export class FakeEngine {
        drops it like a prompt (#134). */
     s.userTurns.push(p.text);
     return { status: "steered" as const };
+  }
+
+  /* #584: a one-shot side question — no transcript, no context, no events.
+     Deterministic answer so tests can assert the suggestion that lands:
+     the first path-like token's basename drives `feat: update <name>`. */
+  private sessionAsk(params: SessionAskParams) {
+    this.require(params.sessionId);
+    const file = params.text
+      .split(/\s+/)
+      .find((t) => t.includes("/") || t.includes("."))
+      ?.replace(/["',;:()[\]{}<>]/g, "");
+    const base = file?.split("/").pop();
+    return {
+      answer: base ? `feat: update ${base}` : "chore: apply pending changes",
+    };
   }
 
   /**

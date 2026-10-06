@@ -46,7 +46,6 @@ const model = (turns: TurnModel[], live?: TurnModel): SessionModel => ({
   live,
   openRequests: [],
   jobs: [],
-  subagentJobs: [],
 });
 
 /* A user message renders as the reply row whose id IS the message id; a

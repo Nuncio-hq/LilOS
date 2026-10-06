@@ -2070,6 +2070,16 @@ export default function App() {
           initialTab={focusTab}
           pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
           ship={shipFor(openThread)}
+          /* The built-in engine declares all three workbench caps (#587):
+             fixed tab membership, empty tabs greyed. */
+          caps={{ plan: true, subagents: true, background: true }}
+          /* #584: Suggest answers inline — a side ask, never a transcript
+             send. The fake suggests off the checked file list. */
+          onSuggest={(files) =>
+            Promise.resolve(
+              `feat: update ${files[0]?.split("/").pop() ?? "files"}`,
+            )
+          }
         />
       ) : (
         <div className={cn("grid min-h-0 min-w-0 grid-cols-1 lg:gap-[10px]", panelOpen && "xl:grid-cols-[minmax(0,1fr)_420px]")}>

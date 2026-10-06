@@ -1,3 +1,4 @@
+import { equalSecret } from "@lilos/contracts/auth";
 import { handleHostFrame } from "@lilos/host";
 
 /**
@@ -24,7 +25,14 @@ export function createHostHandler(opts: { token: string }) {
     if (req.method !== "POST") {
       return new Response("method not allowed\n", { status: 405 });
     }
-    if (req.headers.get("authorization") !== `Bearer ${opts.token}`) {
+    /* #611: constant-time compare over the whole `Bearer <token>` header —
+       `!==` early-exits on the first differing byte, a timing oracle. */
+    if (
+      !equalSecret(
+        req.headers.get("authorization") ?? "",
+        `Bearer ${opts.token}`,
+      )
+    ) {
       return new Response("unauthorized\n", { status: 401 });
     }
     const frame = await handleHostFrame(await req.text());

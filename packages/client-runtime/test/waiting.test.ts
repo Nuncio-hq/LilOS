@@ -48,7 +48,6 @@ const model = (turns: TurnModel[], live?: TurnModel): SessionModel => ({
   live,
   openRequests: [],
   jobs: [],
-  subagentJobs: [],
 });
 
 describe("#315 waitingMessages", () => {

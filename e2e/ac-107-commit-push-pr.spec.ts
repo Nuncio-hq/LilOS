@@ -284,29 +284,62 @@ test("AC-1 checkboxes pick the staged set; Commit commits only the checked files
   await page.screenshot({ path: `${SHOTS}/ac-1-committed.png` });
 });
 
-test("AC-2 Suggest posts a normal user message; the answer's first line fills the box; Suggest hides while the turn runs", async ({
+test("AC-2 (#584) Suggest is a side request: no user message, no turn; fills the box while a turn runs", async ({
   page,
 }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   await dmDefault(page);
   await openFocus(page, SHIP_SESSION);
   await tab(page, /Changes/).click();
   await expect(page.locator("[data-shipbar]")).toBeVisible({ timeout: 30_000 });
 
+  /* First with the thread idle: the ask answers off-transcript — nothing
+     posts to the thread, no agent turn opens. */
+  const msgsBefore = await page.locator("main [data-msg]").count();
   await page.locator("[data-shipsuggest]").click();
-  // A normal user message went out naming the checked files.
-  await expect(
-    page
-      .locator("main")
-      .getByText(/one-line git commit message/)
-      .last(),
-  ).toBeVisible({ timeout: 30_000 });
-  // While the answer's turn runs, Suggest is hidden.
-  await expect(page.locator("[data-shipsuggest]")).toHaveCount(0);
-  // The reply's first non-empty line fills the box.
   await expect(page.locator("[data-shipmessage]")).toHaveValue(
-    "feat: add the staged widget changes",
+    "feat: update a.txt",
     { timeout: 60_000 },
+  );
+  expect(await page.locator("main [data-msg]").count()).toBe(msgsBefore);
+  await expect(
+    page.locator("main").getByText(/one-line git commit message/),
+  ).toHaveCount(0);
+
+  /* AC-2 (#584): still works mid-turn — LILOS_TURN_HOLD keeps the fake's
+     turn running until the interrupt lands, so the ask provably overlaps it
+     (no pacing race). */
+  const turn = await sendTurn(
+    page,
+    "LILOS_TURN_HOLD add a note while the bar is busy",
+  );
+  await page.locator("[data-shipmessage]").fill("");
+  await expect(page.locator("[data-shipsuggest]")).toBeEnabled();
+  await page.locator("[data-shipsuggest]").click();
+  await expect(page.locator("[data-shipmessage]")).toHaveValue(
+    "feat: update a.txt",
+    { timeout: 60_000 },
+  );
+  /* The ask landed while the turn was provably still running (data-turnsettled
+     not yet rendered). Release it via the composer Stop → interrupt. */
+  await expect(turn.locator("[data-turnsettled]")).toHaveCount(0);
+  await page.getByTitle("Stop (Esc)").click();
+  await expectSettled(turn);
+  /* And it survives a reload (the draft is persisted): reload mid-session,
+     the box still shows the suggestion. */
+  await page.reload();
+  const changesThere = await expect(tab(page, /Changes/))
+    .toBeVisible({ timeout: 45_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!changesThere) {
+    await page.getByTitle("Workbench", { exact: true }).click();
+    await expect(tab(page, /Changes/)).toBeVisible({ timeout: 30_000 });
+  }
+  await tab(page, /Changes/).click();
+  await expect(page.locator("[data-shipmessage]")).toHaveValue(
+    "feat: update a.txt",
+    { timeout: 30_000 },
   );
   await page.screenshot({ path: `${SHOTS}/ac-2-suggested.png` });
 
@@ -338,9 +371,11 @@ test("AC-3 Push sets upstream and lands the branch; rejected, no-remote and auth
       encoding: "utf8",
     });
   await page.locator("[data-shippush]").click();
+  // The pushed tip is AC-2's commit ("feat: update a.txt" — the session.ask
+  // suggestion that landed on a.txt).
   await expect
     .poll(remoteLog, { timeout: 30_000 })
-    .toContain("feat: add the staged widget changes");
+    .toContain("feat: update a.txt");
   await expect(page.locator("[data-shiperror]")).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-3-pushed.png` });
 
@@ -450,8 +485,10 @@ test("AC-3 Push sets upstream and lands the branch; rejected, no-remote and auth
   await page.locator("[data-shipmessage]").fill("local only");
   await page.locator("[data-shipcommit]").click();
   await page.locator("[data-shippush]").click();
+  /* #579 AC-2: the error names a next step Oscar can take — ask the
+     employee, never type a git command. */
   await expect(page.locator("[data-shiperror]")).toContainText(
-    /no remote named/i,
+    /isn't on GitHub yet\. Ask .* to publish it/i,
     { timeout: 30_000 },
   );
   await page.screenshot({ path: `${SHOTS}/ac-3-no-remote.png` });
@@ -475,9 +512,10 @@ test("AC-3 Push sets upstream and lands the branch; rejected, no-remote and auth
   await page.locator("[data-shipcommit]").click();
   await page.locator("[data-shippush]").click();
   const authErr = page.locator("[data-shiperror]");
-  await expect(authErr).toContainText(/couldn't sign in/i, {
-    timeout: 30_000,
-  });
+  await expect(authErr).toContainText(
+    /couldn't sign in.*Ask .* to fix the sign-in/i,
+    { timeout: 30_000 },
+  );
   await page.screenshot({ path: `${SHOTS}/ac-3-auth.png` });
 });
 

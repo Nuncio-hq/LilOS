@@ -428,6 +428,7 @@
         "jobs.list",
         "jobs.stop",
         "approvals.setPolicy",
+        "session.ask",
         "pairing.offer",
         "pairing.disable",
         "devices.list",
