@@ -88,6 +88,18 @@ export function enqueueOrPrompt(
             this.promptOrQueue(live, message);
             return;
           }
+          /* #550: the landing outran this ack — `turn.steered` recorded
+             the text in `steerLanded` before the response resolved, so a
+             matched steer is already inside the turn: delivered, never a
+             wait the Stop-drop below can park. */
+          const landedIdx = binding.steerLanded.findIndex(
+            (t) => t === message.text,
+          );
+          if (landedIdx >= 0) {
+            binding.steerLanded.splice(landedIdx, 1);
+            this.markDelivered(binding, message);
+            return;
+          }
           /* #377: a steer resolving after its turn's Stop — even after the
              park sweep ran (`stopParked`) — parks in the tray like the
              sends the sweep caught; delivering or re-prompting it would
@@ -139,6 +151,19 @@ export function enqueueOrPrompt(
           /* #487: same rebind window as the ack — the failure fallback
              re-prompts on the live lane. */
           const live = this.liveBinding(binding);
+          /* #550: a landing that outran the failed ack (the conn died
+             after `turn.steered` but before the response) means the
+             engine already applied it — deliver, don't re-prompt. */
+          if (live === binding) {
+            const landedIdx = binding.steerLanded.findIndex(
+              (t) => t === message.text,
+            );
+            if (landedIdx >= 0) {
+              binding.steerLanded.splice(landedIdx, 1);
+              this.markDelivered(binding, message);
+              return;
+            }
+          }
           live.consumed.delete(message.id);
           this.promptOrQueue(live, message);
         });

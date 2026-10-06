@@ -12,13 +12,14 @@ import {
   waitingComposer,
 } from "../chat/agent-chat";
 import { Composer } from "../chat/composer";
-import { useEscapeKey } from "../chat/composer-keys";
 import { ModelPicker, sessionChoice } from "../chat/model-picker";
+import { useUiLayer } from "../chat/ui-layers";
 import {
   Conversation,
   ConversationContent,
 } from "../components/ai-elements/conversation";
 import { Button } from "../components/ui/button";
+import { askKeyDown, pendingAsk } from "../conversation/ask-keys";
 import { openStartRequest } from "../conversation/cards";
 import { FindUnstubAnchor, FindUnstubNudge } from "../conversation/find-unstub";
 import type { PlanAction } from "../conversation/plan-card";
@@ -28,7 +29,7 @@ import {
 } from "../conversation/question-card";
 import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
-  RewindCheckpoint,
+  RewindHover,
   TURN_LAZY_AFTER,
   type TurnActs,
   TurnRow,
@@ -58,6 +59,7 @@ import type {
   WbTab,
   Work,
 } from "../types";
+import { VIEWER_ID } from "../types";
 import { WorkspaceBadge, WsBadge } from "../workbench/ws-badges";
 
 /* #134/#430: the "Rewind to here" checkpoint lives in
@@ -223,9 +225,32 @@ export function ThreadView({
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
   const isDM = !!channel.dm;
-  /* Esc closes the peek — same ownership rules as Focus's Esc→back (issue
-     #195 AC-1): a field's Esc and an open overlay's Esc stay theirs. */
-  useEscapeKey(onClose);
+  /* The panel is one UI layer: Esc closes it only while it is the top-most
+     surface (an open dialog or menu above it keeps Esc, #576), and while
+     top-most it owns the surface keys — ⌘. stops a running turn, ↵/⌫
+     answer the newest pending approval/plan card (#558). */
+  const keyAsk = pendingAsk(thread.replies, resolved, !!onPlan);
+  const viewer = human(VIEWER_ID)?.name ?? "you";
+  useUiLayer({
+    onEscape: onClose,
+    onKey: (e) =>
+      askKeyDown(e, {
+        ask: keyAsk,
+        viewer,
+        resolved,
+        setResolved,
+        onPlan,
+        running,
+        onStop,
+      }),
+  });
+  /* The id the hint lives under — approval cards match on ask id, plan
+     cards on plan id. */
+  const keyTarget = keyAsk
+    ? keyAsk.kind === "approval"
+      ? keyAsk.reply.approval?.id
+      : keyAsk.reply.plan?.id
+    : undefined;
   const channelLabel = isDM ? `DM · ${channel.name}` : `#${channel.name}`;
   const startCardOpen = openStartRequest(thread, resolved);
   /* #138 AC-3: jump-to-hit — scroll the message into view, flash it, hand
@@ -395,13 +420,6 @@ export function ThreadView({
           {transcriptNote?.kind === "trimmed" && (
             <TranscriptNoteRow note={transcriptNote} />
           )}
-          {onRewind && root.id && human(root.from) && (
-            <RewindCheckpoint
-              running={running}
-              warning={rewindWarning}
-              onRewind={() => onRewind(root.id ?? "")}
-            />
-          )}
           <div
             data-msg={root.id}
             className={cn(
@@ -417,6 +435,13 @@ export function ThreadView({
                 opened session{" "}
                 <code className="rounded bg-muted px-1">{thread.session}</code>
               </div>
+              {onRewind && root.id && human(root.from) && (
+                <RewindHover
+                  running={running}
+                  warning={rewindWarning}
+                  onRewind={() => onRewind(root.id ?? "")}
+                />
+              )}
             </Row>
           </div>
           <div className="my-1 flex items-center gap-2 px-3 text-muted-foreground text-xs sm:px-5">
@@ -450,6 +475,7 @@ export function ThreadView({
               repo={repo}
               models={models}
               rewindWarning={rewindWarning}
+              keyTarget={keyTarget}
               acts={actsRef}
             />
           ))}

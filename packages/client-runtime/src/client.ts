@@ -31,6 +31,7 @@ import {
   type RequestId,
   type RpcError,
   SystemStatusResult,
+  toSummaryPreview,
   type WelcomeResult,
   WS_CLOSE_DEVICE_REVOKED,
 } from "@lilos/contracts/app";
@@ -76,6 +77,33 @@ export class RelayError extends Error {
     this.data = data;
   }
 }
+
+/**
+ * #625: the relay gates the `/ws` upgrade on a credential before the socket
+ * exists, and a browser WebSocket can't set headers — so the same credential
+ * `session.hello` will present rides the URL's query (the #564 feed-gate
+ * pattern): `?token=` for the install token, `?deviceId=&credential=` for a
+ * paired phone. Computed per-connect so a reconnect carries it too.
+ */
+const relaySocketUrl = (
+  url: string,
+  opts: {
+    token?: string;
+    device?: { deviceId: string; credential: string };
+  },
+): string => {
+  const sep = url.includes("?") ? "&" : "?";
+  if (opts.device) {
+    return (
+      `${url}${sep}deviceId=${encodeURIComponent(opts.device.deviceId)}` +
+      `&credential=${encodeURIComponent(opts.device.credential)}`
+    );
+  }
+  if (opts.token) {
+    return `${url}${sep}token=${encodeURIComponent(opts.token)}`;
+  }
+  return url;
+};
 
 export interface ChannelMessagesState {
   channelId: string;
@@ -672,11 +700,30 @@ export class RelayClient {
     this.state.set(this.everConnected ? "reconnecting" : "connecting");
     this.lastSocketError = undefined;
     const socket = (this.options.socketFactory ?? defaultSocketFactory)(
-      this.options.url,
+      relaySocketUrl(this.options.url, this.options),
     );
     this.socket = socket;
     this.attachSocketListeners(socket);
-    await this.waitForOpen(socket);
+    try {
+      await this.waitForOpen(socket);
+    } catch (error) {
+      /* #625: the relay refuses bad credentials at the upgrade — a refused
+         handshake reaches the WebSocket API as a bare error/close with no
+         HTTP status, indistinguishable from "relay down". If the relay's
+         HTTP surface still answers, the refusal was our credential:
+         surface `unauthenticated` so the fatal path (re-pair, fix the
+         token) runs instead of an endless reconnect loop. A socket that
+         opened never reaches this catch — a mid-handshake 4408 stays a
+         retryable drop. */
+      if (
+        error instanceof RelayError &&
+        error.code === "connect_failed" &&
+        (await this.relayHttpUp())
+      ) {
+        throw new RelayError("relay refused the credential", "unauthenticated");
+      }
+      throw error;
+    }
     try {
       const auth = this.options.device
         ? {
@@ -709,6 +756,34 @@ export class RelayClient {
         // already closed
       }
       throw error;
+    }
+  }
+
+  /**
+   * #625: does the relay's HTTP surface answer? ws/wss → http/https, `/ws`
+   * → `/healthz`. True means a refused upgrade was the credential gate;
+   * false means the relay is down and the failure stays transient.
+   */
+  private async relayHttpUp(): Promise<boolean> {
+    const http = this.options.url
+      .replace(/^ws(s?):/, "http$1:")
+      .replace(/^(https?:\/\/[^/?#]+).*$/, "$1/healthz");
+    /* AbortController/fetch exist in every runtime we ship, but a hung
+       probe must never stall the failure path — race a bare timer too. */
+    const controller =
+      typeof AbortController === "function" ? new AbortController() : null;
+    const timer = setTimeout(() => controller?.abort(), 3_000);
+    try {
+      return await Promise.race([
+        fetch(http, controller ? { signal: controller.signal } : {})
+          .then(() => true)
+          .catch(() => false),
+        new Promise<boolean>((resolve) =>
+          setTimeout(() => resolve(false), 3_000),
+        ),
+      ]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -915,6 +990,9 @@ export class RelayClient {
       this.employees.set(employees.employees);
       this.channels.set(channels.channels);
       this.conversations.set(conversations.conversations);
+      /* The directory is the authority — any scoped refresh still in
+         flight carries an older snapshot and must not apply (#571). */
+      this.summaryTickets.clear();
       this.conversationSummaries.set(summaries.summaries);
       this.profile.set(settings.profile);
       if (devices) this.devices.set(devices.devices);
@@ -1155,23 +1233,18 @@ export class RelayClient {
           return;
         }
         this.applyMessageChanged(event.channelId, event.message);
-        const summaries = this.conversationSummaries.get();
+        /* A visibility flip (dropped/removed/rewound) changes which row
+           headlines the summary AND the visible count — the old in-place
+           `last` swap could keep a dropped row as the preview. Refetch the
+           one row (#571); `claimed`-only flips don't touch a summary. */
         if (
           event.message.conversationId &&
-          summaries.some(
-            (s) =>
-              s.conversation.id === event.message.conversationId &&
-              s.last?.id === event.message.id,
-          )
-        ) {
-          this.conversationSummaries.set(
-            summaries.map((s) =>
-              s.last?.id === event.message.id
-                ? { ...s, last: event.message }
-                : s,
-            ),
-          );
-        }
+          (event.flags === undefined ||
+            event.flags.some(
+              (f) => f === "dropped" || f === "removed" || f === "rewound",
+            ))
+        )
+          void this.refreshSummary(event.message.conversationId);
         return;
       }
       case "channel.snapshot": {
@@ -1211,6 +1284,15 @@ export class RelayClient {
         for (const message of parkedFlips) {
           this.applyMessageChanged(event.channelId, message);
         }
+        /* #571: parked frames ran while the directory's summaries were
+           already stale for their convs — one scoped refetch per conv
+           instead of a full re-list (and none per message). */
+        const staleConvs = new Set(
+          [...parked, ...parkedFlips]
+            .map((m) => m.conversationId)
+            .filter((id): id is string => id !== null),
+        );
+        for (const convId of staleConvs) void this.refreshSummary(convId);
         const wm = this.watermarks.get(event.channelId) ?? 0;
         if (event.lastSeq > wm)
           this.watermarks.set(event.channelId, event.lastSeq);
@@ -1258,7 +1340,9 @@ export class RelayClient {
             ],
           },
         });
-        void this.refreshSummaries();
+        /* A rewind flips a tail of rows to hidden: last/count/firstAnswer
+           all shift on just this conversation (#571). */
+        void this.refreshSummary(event.conversationId);
         return;
       }
       case "engine.event": {
@@ -1343,10 +1427,10 @@ export class RelayClient {
           (s) => s.conversation.id === event.conversation.id,
         );
         if (sIdx === -1) {
-          // A conversation this client has never summarized — refresh so the
-          // DM list gains the row (root + preview) without waiting for a
-          // restart.
-          void this.refreshSummaries();
+          /* A conversation this client has never summarized — fetch just
+             its row (#571) so the DM list gains it (root + preview)
+             without re-listing every summary. */
+          void this.refreshSummary(event.conversation.id);
         } else {
           this.conversationSummaries.set(
             summaries.map((s) =>
@@ -1398,33 +1482,77 @@ export class RelayClient {
     const summaries = this.conversationSummaries.get();
     const idx = summaries.findIndex((s) => s.conversation.id === convId);
     if (idx === -1) {
-      void this.refreshSummaries();
+      /* #571: a conversation we haven't summarized yet (opened elsewhere,
+         or its root landed before our directory sync) — fetch that ONE
+         row, not the whole list. This ran once per message before. */
+      void this.refreshSummary(convId);
       return;
     }
+    /* Do NOT invalidate a scoped fetch in flight for this conv: its
+       snapshot is taken after the relay emitted this very frame, so the
+       response already contains this message — and carries flags a patch
+       can't (`root.rewound` after a rewind-to-root, the true count).
+       Cancelling it would strand that state (#134 AC-5). */
     const isAnswer = message.authorKind !== "user";
     this.conversationSummaries.set(
       summaries.map((s) =>
-        s.conversation.id === convId
+        s.conversation.id === convId && s.last.seq < message.seq
           ? {
               ...s,
-              last: message,
+              last: toSummaryPreview(message),
               messageCount: s.messageCount + 1,
-              firstAnswer: s.firstAnswer ?? (isAnswer ? message : undefined),
+              firstAnswer:
+                s.firstAnswer ??
+                (isAnswer ? toSummaryPreview(message) : undefined),
             }
           : s,
       ),
     );
   }
 
-  private async refreshSummaries(): Promise<void> {
+  /* #571: per-conversation refresh tickets — when two scoped fetches for
+     the same conversation overlap (relay handlers interleave at awaits),
+     the older response must not overwrite the newer. Local patches never
+     cancel a ticket: the response always post-dates their cause on a
+     single ordered socket. The directory's full re-list clears them all:
+     its snapshot is the authority. */
+  private summaryTickets = new Map<string, number>();
+  private summaryTicketSeq = 0;
+
+  /** Refetch one conversation's summary row and upsert it in place. */
+  private async refreshSummary(conversationId: string): Promise<void> {
+    const ticket = ++this.summaryTicketSeq;
+    this.summaryTickets.set(conversationId, ticket);
     try {
       const res = await this.request<{ summaries: ConversationSummary[] }>(
         "conversations.summaries",
-        { includeArchived: true },
+        { conversationId, includeArchived: true },
       );
-      this.conversationSummaries.set(res.summaries);
+      if (this.summaryTickets.get(conversationId) !== ticket) return;
+      this.summaryTickets.delete(conversationId);
+      const row = res.summaries[0];
+      const list = this.conversationSummaries.get();
+      const idx = list.findIndex((s) => s.conversation.id === conversationId);
+      if (!row) {
+        /* The conversation's rows no longer qualify for a summary (or the
+           conv is gone) — drop our copy rather than keep a stale one. */
+        if (idx !== -1)
+          this.conversationSummaries.set(
+            list.filter((s) => s.conversation.id !== conversationId),
+          );
+        return;
+      }
+      this.conversationSummaries.set(
+        idx === -1
+          ? [...list, row].sort(
+              (a, b) => a.conversation.createdAt - b.conversation.createdAt,
+            )
+          : list.map((s) => (s.conversation.id === conversationId ? row : s)),
+      );
     } catch {
-      /* best-effort — the full refresh runs on the next (re)connect */
+      /* best-effort — live events keep patching; the next (re)connect's
+         directory sync re-lists everything anyway. */
+      this.summaryTickets.delete(conversationId);
     }
   }
 

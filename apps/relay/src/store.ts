@@ -201,6 +201,8 @@ export function markSnippet(text: string, terms: string[]): string {
 export interface ListConversationsQuery {
   channelId?: string;
   includeArchived: boolean;
+  /** Scope to one conversation (#571's incremental summary refresh). */
+  conversationId?: string;
 }
 
 export interface NewAsk {

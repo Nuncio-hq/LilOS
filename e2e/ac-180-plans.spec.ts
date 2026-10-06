@@ -155,17 +155,17 @@ test("AC-2 stop mid-turn cancels the in-flight items", async ({ page }) => {
   await dmDefault(page);
   /* `plan: slow` paces the same list with a ~1.5s hold per item — the
      interrupt lands mid-list deterministically (a fast `plan: tasks` can
-     finish between the in_progress render and Escape on a loaded runner). */
+     finish between the in_progress render and ⌘. on a loaded runner). */
   await send(page, "plan: slow — a list to interrupt");
   const card = lastCard(page);
   await expect(card).toBeVisible({ timeout: 60_000 });
   await expect(
     card.locator('[data-planstep="in_progress"]').first(),
   ).toBeVisible({ timeout: 30_000 });
-  // Esc in the composer interrupts the running turn.
+  // ⌘. in the composer interrupts the running turn (#576: Esc is close-only).
   const box = page.locator("main textarea").last();
   await box.click();
-  await page.keyboard.press("Escape");
+  await page.keyboard.press("Meta+Period");
   await expect(card).toHaveAttribute("data-planphase", "stopped", {
     timeout: 30_000,
   });

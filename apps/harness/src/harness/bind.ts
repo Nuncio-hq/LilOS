@@ -192,6 +192,7 @@ export async function bindConversation(
         consumed: new Set(),
         turnSource: new Map(),
         steerPending: [],
+        steerLanded: [],
         stopRequested: false,
         nowWaits: new Map(),
         nowAt: 0,
@@ -202,6 +203,10 @@ export async function bindConversation(
       this.bindings.set(conv.id, binding);
       this.conversationBySession.set(conv.engineRef, conv.id);
       this.applyReplay(binding, replay);
+      /* #550: replayed `turn.steered` events land in `steerLanded`, but
+         the steer RPCs they would claim already resolved on the old conn
+         — drop the history so a later same-text steer can't inherit it. */
+      binding.steerLanded.length = 0;
       this.rebuildHeldPick(binding, conv, replay.snapshot);
       /* Reattach carries no `engineSessionId` — the stored key was never
          stored on the conversation. Create the gateway session anyway;
@@ -256,6 +261,7 @@ export async function bindConversation(
     consumed: new Set(),
     turnSource: new Map(),
     steerPending: [],
+    steerLanded: [],
     stopRequested: false,
     nowWaits: new Map(),
     nowAt: 0,

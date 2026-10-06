@@ -186,7 +186,9 @@ export async function markTurnInterrupted(
       state: "idle",
       turnFailure: {
         kind: "sleep",
-        text: "Interrupted — the Mac slept or the engine restarted.",
+        /* #592: user-facing copy — the phone's amber chip says "Mac went
+           to sleep"; the note says why and how to resume. */
+        text: "Stopped partway — your Mac went to sleep. Send a message to pick up where it left off.",
       },
     });
     /* The turn vanished mid-run — pending steers can't land anymore. */
@@ -196,7 +198,7 @@ export async function markTurnInterrupted(
      session card + turn, not in text nobody can click. */
   await this.postSystem(
     binding,
-    "Turn interrupted — the Mac slept or the engine restarted.",
+    "Stopped partway — your Mac went to sleep. Send a message to pick up where it left off.",
   );
 }
 
@@ -215,12 +217,12 @@ export async function surfaceBackendDown(
     state: "idle",
     turnFailure: {
       kind: "sleep",
-      text: "Interrupted — the Mac slept or the engine restarted.",
+      text: "Stopped partway — your Mac went to sleep. Send a message to pick up where it left off.",
     },
   });
   await this.postSystem(
     binding,
-    "Turn interrupted — the Mac slept or the engine restarted.",
+    "Stopped partway — your Mac went to sleep. Send a message to pick up where it left off.",
     `sys:${binding.conversationId}:${sourceId}:engine-restart`,
   );
 }

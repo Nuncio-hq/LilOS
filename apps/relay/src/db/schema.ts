@@ -153,7 +153,10 @@ export const messages = sqliteTable(
   (t) => [
     uniqueIndex("messages_channel_seq").on(t.channelId, t.seq),
     uniqueIndex("messages_dedupe_key").on(t.channelId, t.dedupeKey),
-    index("messages_conversation").on(t.conversationId),
+    /* #571: conv-scoped reads order by seq — the composite serves both the
+       equality seek and the range/order (the old conversation_id-only index
+       is a strict prefix of this one). */
+    index("messages_conversation_seq").on(t.conversationId, t.seq),
   ],
 );
 

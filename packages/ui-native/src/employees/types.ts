@@ -56,6 +56,11 @@ export type Approval = {
       not an OK) so surfaces hide its Approve pill. Absent = approval
       (prototype rows). */
   kind?: "approval" | "plan" | "question";
+  /** #595: the primary pill a surface may show — "review" for plans (the
+      pill opens the plan's thread; a plan is never approved unseen),
+      "approve" for command approvals; questions have none. Absent =
+      "approve" (prototype rows). */
+  primary?: "approve" | "review";
   /** Why, in one sentence — on a question ask this IS the question. */
   reason: string;
   /** A shell command it wants to run… */
@@ -79,6 +84,14 @@ export type SessionState =
   | "working"
   | "failed"
   | "stopped";
+
+/** #592: the last turn's failure — the wire's `Conversation.turnFailure`.
+    `sleep` interrupts read amber ("Mac went to sleep"); `model`/`generic`
+    errors read red. */
+export type TurnFailure = {
+  kind: "model" | "sleep" | "generic";
+  text: string;
+};
 
 /** #344 (web: SessionLife): whether the engine session holds the Mac. */
 export type SessionLife = "running" | "open" | "closed";
@@ -118,6 +131,9 @@ export type SessionTurn = {
   model?: string;
   approval?: Approval;
   prs?: PullRequestRef[];
+  /** #592: set when the last turn failed — the row's body is the reason,
+      not the preview. */
+  failure?: TurnFailure;
 };
 
 /** A helper a turn spun off (web: Subagent): its own subagent, with its
@@ -294,6 +310,9 @@ export type ThreadDetail = {
   id: string;
   title: string;
   state: SessionState;
+  /** #592: the last turn's failure — the header chip reads amber
+      "Mac went to sleep" for sleep interrupts. */
+  failure?: TurnFailure;
   /** #308: the running turn is engine-initiated (a leg) — the composer
       offers "Queue" instead of "Steer" (web: runningComposer agentWork). */
   agentWorking?: boolean;
