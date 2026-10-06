@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { expectSettled } from "./helpers/approvals";
 import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
