@@ -17,7 +17,14 @@ import {
   SendIcon,
   SquareTerminalIcon,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Commit,
   CommitActions,
@@ -79,6 +86,7 @@ import {
   type WbViewFile,
 } from "../lib/wb-probe-cache";
 import type {
+  Diff,
   EmpFn,
   Employee,
   GitCommit,
@@ -97,7 +105,12 @@ import type {
   Work,
 } from "../types";
 import type { TreeNode } from "./artifacts";
-import { buildTree, sessionArtifacts } from "./artifacts";
+import {
+  buildTree,
+  countTreeRows,
+  sessionArtifacts,
+  windowedTreePaths,
+} from "./artifacts";
 import { BackgroundPanel } from "./background-panel";
 import { CommitBar } from "./commit-bar";
 import { DiffView } from "./diff-view";
@@ -114,6 +127,8 @@ import { SubagentsPanel, sessionSubagents } from "./subagents-panel";
    the situational tabs (Background, Subagents, Plan, PR) before the working set
    (Files, Preview, Terminal, Changes). The active tab always keeps its label;
    only when even icons overflow does the strip scroll (issue #326). */
+const NO_DIFFS: Diff[] = [];
+
 const COMPACT_ORDER: WbTab[] = [
   "background",
   "subagents",
@@ -223,7 +238,7 @@ export function Workbench({
      is built from the host's git.* + forge.* accessors instead. */
   ship?: Partial<ShipBar> & ShipHandlers;
 }) {
-  const a = sessionArtifacts(thread);
+  const a = useMemo(() => sessionArtifacts(thread), [thread]);
   const jobs = thread.jobs ?? [];
   const jobsRunning = jobs.filter((j) => j.status === "running").length;
   const helpers = sessionSubagents(thread);
@@ -316,11 +331,22 @@ export function Workbench({
   const updateProbe = useRef<(() => Promise<void>) | null>(null);
   const prPoll = useRef<PrPoll | null>(null);
   /* A different folder under the same mount drops folder-scoped state
-     (open file view, selected change). */
+     (open file view, selected change). #547 AC-4: the reset must NOT
+     reach the NEW folder's cache entry — the write-back would push the
+     outgoing selection (then the reset nulls) into it, erasing its own
+     cached selection. `skipFolderWrites` counts the commits to skip: this
+     one plus, when there was state to reset, the one the reset queues. */
   const prevCwd = useRef(liveCwd);
+  const selRef = useRef(sel);
+  selRef.current = sel;
+  const viewFileRef = useRef(viewFile);
+  viewFileRef.current = viewFile;
+  const skipFolderWrites = useRef(0);
   useEffect(() => {
     if (prevCwd.current === liveCwd) return;
     prevCwd.current = liveCwd;
+    skipFolderWrites.current =
+      selRef.current != null || viewFileRef.current != null ? 2 : 1;
     setViewFile(null);
     setSel(null);
   }, [liveCwd]);
@@ -405,14 +431,29 @@ export function Workbench({
       if (gitPoll) clearInterval(gitPoll);
     };
   }, [liveMode, liveCwd, running, host, restored]);
-  /* The open file view + selected change are folder state — write them
-     back so a panel close/reopen restores them (AC-4). */
+  /* The open file view + selected change + picked tab are folder state —
+     write them back so a panel close/reopen (or a Focus remount, #547
+     AC-1) restores them (AC-4). Skipped while a folder switch resets
+     them (#547 AC-4). */
   useEffect(() => {
     if (!liveMode || !host || !liveCwd) return;
-    patchWbCache(host, liveCwd, (e) => ({ ...e, sel, viewFile }));
-  }, [sel, viewFile, liveMode, liveCwd, host]);
-  const diffs = liveMode ? (probe?.diffs ?? []) : a.diffs;
-  const changed = new Map(diffs.map((d) => [d.path, d]));
+    if (skipFolderWrites.current > 0) {
+      skipFolderWrites.current -= 1;
+      return;
+    }
+    patchWbCache(host, liveCwd, (e) => ({ ...e, sel, viewFile, tab }));
+  }, [sel, viewFile, tab, liveMode, liveCwd, host]);
+  /* Memoized so the file tree's memo boundary sees stable props between
+     feed-event renders — a per-render Map/array would reconcile all rows
+     (#547 AC-5). */
+  const diffs = useMemo(
+    () => (liveMode ? (probe?.diffs ?? NO_DIFFS) : a.diffs),
+    [liveMode, probe?.diffs, a],
+  );
+  const changed = useMemo(
+    () => new Map(diffs.map((d) => [d.path, d])),
+    [diffs],
+  );
 
   /* ── Ship bar state (issue #107/#359) — the app owns it; the bar is
      presentational. `unchecked` keys on Diff.path: all checked by default. */
@@ -700,9 +741,40 @@ export function Workbench({
     }
     setTab(t.pr === true ? "pr" : "preview");
   }, [spotAt]); // eslint-disable-line react-hooks/exhaustive-deps
-  const tree = buildTree([
-    ...new Set([...(probe?.files ?? repoFiles ?? []), ...changed.keys()]),
-  ]);
+  const fileList = useMemo(
+    () => [
+      ...new Set([...(probe?.files ?? repoFiles ?? []), ...changed.keys()]),
+    ],
+    [probe?.files, repoFiles, changed],
+  );
+  const tree = useMemo(() => buildTree(fileList), [fileList]);
+  /* #547 AC-5: a big repo's tree mounts in slices — the first ~160 rows
+     paint on the first frame (reopen→row <50 ms on repos like LilOS
+     itself, measured 114 ms before), the rest lands over the next frames
+     instead of one ~100 ms commit. -1 = fully revealed. */
+  const [treeWin, setTreeWin] = useState(160);
+  const treeRows = countTreeRows(tree);
+  /* The window is a pure Set of paths — computed per render, checked by
+     membership — because a mutable counter in render is drained twice by
+     StrictMode's double-invoke and the tree comes out empty (#547). */
+  const treeIncluded = useMemo(
+    () => windowedTreePaths(tree, treeWin),
+    [tree, treeWin],
+  );
+  useLayoutEffect(() => {
+    if (treeWin < 0 || treeWin >= treeRows) return;
+    const id = window.requestAnimationFrame(() =>
+      setTreeWin((n) => (n + 500 >= treeRows ? -1 : n + 500)),
+    );
+    return () => cancelAnimationFrame(id);
+  }, [treeWin, treeRows]);
+  /* #547 AC-2: per-tab scroll offsets ride the cache entry — restored
+     in a layout effect below (before paint) and re-applied while the
+     tree window still grows, since rows mount under the scrollport. */
+  const scrollsRef = useRef<Partial<Record<WbTab, number>>>(
+    restored?.scrolls ?? {},
+  );
+  const wbRootRef = useRef<HTMLDivElement>(null);
   const folders = new Set<string>();
   diffs.forEach((d) => {
     d.path
@@ -713,15 +785,46 @@ export function Workbench({
       });
   });
   // Folder names expand the tree, file names read the file (or open its diff).
-  const dirs = new Set<string>();
-  const walkDirs = (n: TreeNode) => {
-    for (const c of n.children.values())
-      if (c.children.size > 0) {
-        dirs.add(c.path);
-        walkDirs(c);
-      }
-  };
-  walkDirs(tree);
+  const dirs = useMemo(() => {
+    const out = new Set<string>();
+    const walk = (n: TreeNode) => {
+      for (const c of n.children.values())
+        if (c.children.size > 0) {
+          out.add(c.path);
+          walk(c);
+        }
+    };
+    walk(tree);
+    return out;
+  }, [tree]);
+  /* Stable row-select — the FileTree context value memoizes on it, so a
+     fresh closure per render would re-render every row consumer (#547). */
+  const onTreeSelect = useCallback(
+    (p: string) => {
+      if (dirs.has(p)) {
+        setExpanded((e) => {
+          const n = new Set(e);
+          if (n.has(p)) n.delete(p);
+          else n.add(p);
+          return n;
+        });
+      } else if (changed.has(p)) {
+        setSel(p);
+        setTab("changes");
+      } else if (host && liveCwd) {
+        void host
+          .read(liveCwd, p)
+          .then((r) =>
+            setViewFile(
+              r
+                ? { path: p, ...r }
+                : { path: p, content: "", binary: true, truncated: false },
+            ),
+          );
+      } else say?.(`${p} · unchanged in this session`);
+    },
+    [dirs, changed, host, liveCwd, say],
+  );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const expandedSeed = new Set(["packages", "apps", ...folders]);
   /* Newly seen folders expand — keyed on the seed's contents, not the probe
@@ -814,6 +917,28 @@ export function Workbench({
           "plan",
         ] as WbTab[]
       ).find((t) => allowed[t]);
+  useLayoutEffect(() => {
+    if (!liveMode || !host || !liveCwd || !shownTab) return;
+    const holder = wbRootRef.current?.querySelector(
+      `[data-wb-scroll="${shownTab}"]`,
+    );
+    const vp = holder?.querySelector<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]',
+    );
+    if (!vp) return;
+    const saved = scrollsRef.current[shownTab];
+    if (saved) vp.scrollTop = saved;
+    const t = shownTab;
+    const onScroll = () => {
+      scrollsRef.current[t] = vp.scrollTop;
+      patchWbCache(host, liveCwd, (e) => ({
+        ...e,
+        scrolls: { ...e.scrolls, [t]: vp.scrollTop },
+      }));
+    };
+    vp.addEventListener("scroll", onScroll, { passive: true });
+    return () => vp.removeEventListener("scroll", onScroll);
+  }, [shownTab, liveMode, liveCwd, host, treeWin]);
   /* #429 AC-2: landing on the PR tab signals a fresh forge read — the
      scheduler coalesces repeat visits (and the OS-window-focus signal)
      into one `gh` call. */
@@ -824,22 +949,35 @@ export function Workbench({
     wasPrTab.current = prTabShown;
     if (became) prPoll.current?.signal();
   }, [prTabShown]);
+
   const ghError = (e: unknown) =>
     (e instanceof Error ? e.message : String(e)).slice(0, 160);
   /* One bound "open this path" for every workbench surface: `line` opens at
      the diff row's new-file line when the editor takes one; "finder" reveals. */
-  const openPath =
-    onOpenPath && liveCwd
-      ? (path: string, app: OsApp, line?: number) => onOpenPath(path, app, line)
-      : onOpenPath === undefined && host?.osOpen && liveCwd
-        ? (path: string, app: OsApp, line?: number) => {
-            void host
-              .osOpen?.(liveCwd, path, app, line)
-              .catch((e) =>
-                say?.(`Open failed — ${ghError(e)}`, { error: true }),
-              );
-          }
-        : undefined;
+  const openPath = useMemo(
+    () =>
+      onOpenPath && liveCwd
+        ? (path: string, app: OsApp, line?: number) =>
+            onOpenPath(path, app, line)
+        : onOpenPath === undefined && host?.osOpen && liveCwd
+          ? (path: string, app: OsApp, line?: number) => {
+              void host
+                .osOpen?.(liveCwd, path, app, line)
+                .catch((e) =>
+                  say?.(`Open failed — ${ghError(e)}`, { error: true }),
+                );
+            }
+          : undefined,
+    [onOpenPath, liveCwd, host, say],
+  );
+  const treeOpenPath = useMemo(
+    () =>
+      openPath
+        ? { editors, onOpen: (p: string, app: OsApp) => openPath(p, app) }
+        : undefined,
+    [openPath, editors],
+  );
+
   const prComment =
     liveForge && host?.prComment && liveCwd
       ? async (t: string) => {
@@ -1074,6 +1212,7 @@ export function Workbench({
 
   return (
     <Tabs
+      ref={wbRootRef}
       value={shownTab ?? "changes"}
       onValueChange={(v) => setTab(v as WbTab)}
       className="flex min-h-0 flex-1 flex-col gap-0"
@@ -1208,7 +1347,7 @@ export function Workbench({
         {/* #393 AC-9: a fade where the list scrolls under the sticky ship
             bar — no hard cut on the commit list. */}
         <div className="relative min-h-0 flex-1">
-          <ScrollArea className="h-full">
+          <ScrollArea className="h-full" data-wb-scroll="changes">
             {diffs.length === 0 ? (
               <div className="flex flex-col items-center gap-2 p-8 text-center text-muted-foreground text-xs">
                 <EyeIcon className="size-5" />
@@ -1408,7 +1547,7 @@ export function Workbench({
       </TabsContent>
 
       <TabsContent value="files" className="min-h-0 flex-1">
-        <ScrollArea className="h-full">
+        <ScrollArea className="h-full" data-wb-scroll="files">
           <div className="p-3">
             <div className="mb-2 flex items-center gap-1.5 text-muted-foreground text-xs">
               <FolderGit2Icon className="size-3.5" />
@@ -1502,42 +1641,15 @@ export function Workbench({
                 expanded={expanded}
                 onExpandedChange={setExpanded}
                 selectedPath={sel ?? undefined}
-                onSelect={(p) => {
-                  if (dirs.has(p)) {
-                    setExpanded((e) => {
-                      const n = new Set(e);
-                      if (n.has(p)) n.delete(p);
-                      else n.add(p);
-                      return n;
-                    });
-                  } else if (changed.has(p)) {
-                    setSel(p);
-                    setTab("changes");
-                  } else if (host && liveCwd) {
-                    void host.read(liveCwd, p).then((r) =>
-                      setViewFile(
-                        r
-                          ? { path: p, ...r }
-                          : {
-                              path: p,
-                              content: "",
-                              binary: true,
-                              truncated: false,
-                            },
-                      ),
-                    );
-                  } else say?.(`${p} · unchanged in this session`);
-                }}
+                onSelect={onTreeSelect}
                 className="border-0 text-xs"
               >
                 <TreeNodes
                   node={tree}
                   changed={changed}
-                  openPath={
-                    openPath
-                      ? { editors, onOpen: (p, app) => openPath(p, app) }
-                      : undefined
-                  }
+                  openPath={treeOpenPath}
+                  included={treeIncluded}
+                  expanded={expanded}
                 />
               </FileTree>
             )}

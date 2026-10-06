@@ -13,6 +13,7 @@ import type {
   HostAccessors,
   PrError,
   PullRequest,
+  WbTab,
 } from "../types";
 
 /* The Workbench's probe answer set — `null` per field means "the host
@@ -48,6 +49,10 @@ export type WbCacheEntry = {
   /** Changes tab's selected file + the open file view (AC-4). */
   sel: string | null;
   viewFile: WbViewFile | null;
+  /** The picked tab — survives a Focus remount too (#547 AC-1). */
+  tab: WbTab | null;
+  /** Scroll offset per tab (Files/Changes…) — restored on reopen (#547 AC-2). */
+  scrolls: Partial<Record<WbTab, number>>;
   updatedAt: number;
 };
 
@@ -64,6 +69,8 @@ const EMPTY_ENTRY: WbCacheEntry = {
   probe: EMPTY_WB_PROBE,
   sel: null,
   viewFile: null,
+  tab: null,
+  scrolls: {},
   updatedAt: 0,
 };
 
@@ -79,17 +86,20 @@ const forHost = (host: HostAccessors): Map<string, WbCacheEntry> => {
   return m;
 };
 
-/** Last-known entry for the folder — bumps its recency on a hit. */
+/** Last-known entry for the folder — bumps its recency on a hit.
+    #547 AC-3: only a REAL answer set counts — an entry whose probe
+    never landed (`files` still null, e.g. written by the sel/viewFile
+    write-back before any read answered) is a miss: the remount must
+    take the "Reading…" cold path, not paint an empty tab strip. */
 export function readWbCache(
   host: HostAccessors,
   cwd: string,
 ): WbCacheEntry | undefined {
   const m = stores.get(host);
   const e = m?.get(cwd);
-  if (m && e) {
-    m.delete(cwd);
-    m.set(cwd, e);
-  }
+  if (!m || !e || e.probe.files == null) return undefined;
+  m.delete(cwd);
+  m.set(cwd, e);
   return e;
 }
 
