@@ -279,7 +279,12 @@ test("AC-2 the reply count on the row matches the thread divider", async ({
   const divider = page
     .locator("[data-thread-panel]")
     .getByText(/^\d+ repl(?:y|ies)$/);
-  await expect(divider.first()).toBeVisible({ timeout: 30_000 });
+  /* The count renders "0 replies" while the opened thread's history is
+     still replaying — wait for the settled non-zero value, not just
+     visibility. */
+  await expect(divider.first()).toHaveText(/^[1-9]\d* repl/, {
+    timeout: 30_000,
+  });
   const dividerCount = Number(
     (await divider.first().innerText()).match(/(\d+)/)?.[1],
   );

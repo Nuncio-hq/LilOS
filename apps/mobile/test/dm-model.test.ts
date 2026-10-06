@@ -567,6 +567,66 @@ describe("dm-model helpers", () => {
     expect(conversationState(conv("c1", { state: "idle" }), none)).toBe("done");
   });
 
+  it("#592 AC-1/AC-2: a turnFailure marks the conversation failed", () => {
+    const none = { openAsks: [] as Ask[], pending: new Set<string>() };
+    const failedModel = conv("c1", {
+      state: "idle",
+      turnFailure: { kind: "model", text: "engine blew up" },
+    });
+    const failedSleep = conv("c2", {
+      state: "idle",
+      turnFailure: { kind: "sleep", text: "the Mac slept mid-turn" },
+    });
+    const failedGeneric = conv("c3", {
+      state: "idle",
+      turnFailure: { kind: "generic", text: "prompt never dispatched" },
+    });
+    for (const c of [failedModel, failedSleep, failedGeneric]) {
+      expect(conversationState(c, none)).toBe("failed");
+    }
+    // precedence: an open ask still wins; a running turn still wins
+    expect(
+      conversationState(failedModel, {
+        ...none,
+        openAsks: [ask("a", { conversationId: "c1" })],
+      }),
+    ).toBe("needs-you");
+    expect(
+      conversationState(
+        conv("c1", { state: "active", turnFailure: failedModel.turnFailure }),
+        none,
+      ),
+    ).toBe("working");
+    expect(
+      conversationState(failedModel, {
+        ...none,
+        pending: new Set(["c1"]),
+      }),
+    ).toBe("working");
+  });
+
+  it("#592 AC-1: the DM row carries the failure kind + reason", () => {
+    const turns = toSessionTurns(
+      [
+        summary("c1", {
+          turnFailure: { kind: "model", text: "engine blew up" },
+        }),
+        summary("c2", {
+          turnFailure: { kind: "sleep", text: "the Mac slept mid-turn" },
+        }),
+      ],
+      CTX,
+    );
+    expect(turns[0].state).toBe("failed");
+    expect(turns[0].failure).toEqual({
+      kind: "model",
+      text: "engine blew up",
+    });
+    expect(turns[1].failure?.kind).toBe("sleep");
+    // no failure → no flag
+    expect(toSessionTurns([summary("c3")], CTX)[0].failure).toBeUndefined();
+  });
+
   it("askApproval renders an approval ask as the row's reason", () => {
     const approval = askApproval(ask("a1"), {
       employeeId: "builder",
@@ -722,5 +782,32 @@ describe("#346 AC-4: the ring reads real session life", () => {
     ]);
     const turns = toSessionTurns([], { ...CTX, pending });
     expect(turns[0].life).toBe("running");
+  });
+});
+
+/* #592 reviewer fix — a failed or stopped thread is not Done: the DM
+   groups them under "Didn't finish" above Done, and a sleep interrupt
+   reads "Mac went to sleep" (amber, same copy as the harness's post). */
+import {
+  DM_GROUPS,
+  dmSectionFor,
+} from "../../../packages/ui-native/src/employees/dm-groups";
+
+describe("DM section grouping (#592 fix)", () => {
+  it("failed and stopped threads group under 'Didn't finish', never Done", () => {
+    expect(dmSectionFor("failed")).toBe("Didn't finish");
+    expect(dmSectionFor("stopped")).toBe("Didn't finish");
+    expect(dmSectionFor("done")).toBe("Done");
+    expect(dmSectionFor("working")).toBe("Working");
+    expect(dmSectionFor("needs-you")).toBe("Needs you");
+  });
+
+  it("'Didn't finish' sits above Done; Needs you and Working keep their order", () => {
+    expect(DM_GROUPS.map((g) => g.title)).toEqual([
+      "Needs you",
+      "Working",
+      "Didn't finish",
+      "Done",
+    ]);
   });
 });

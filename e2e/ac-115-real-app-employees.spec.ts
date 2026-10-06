@@ -21,7 +21,7 @@ async function rpc(
   token: string,
   calls: { method: string; params: Record<string, unknown> }[],
 ): Promise<Record<string, unknown>[]> {
-  const ws = new WebSocket(relayWs);
+  const ws = new WebSocket(`${relayWs}?token=${encodeURIComponent(token)}`);
   await new Promise<void>((res, rej) => {
     ws.onopen = () => res();
     ws.onerror = () => rej(new Error("ws connect failed"));

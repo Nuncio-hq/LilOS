@@ -1,3 +1,4 @@
+import type { Database } from "bun:sqlite";
 import type {
   AppChannel,
   AppMessage,
@@ -14,6 +15,7 @@ import type {
   TurnFailure,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
+import { toSummaryMessage, toSummaryPreview } from "@lilos/contracts/app";
 import { equalSecret } from "@lilos/contracts/auth";
 import {
   ApprovalOutcome,
@@ -55,13 +57,18 @@ import type {
 import {
   NO_FOLDER_DEDUPE_LIKE,
   newId,
+  noFolderDedupeKey,
   openTitle,
   searchTerms,
   titlePatch,
 } from "../store";
 import * as schema from "./schema";
 
-type Db = BunSQLiteDatabase<typeof schema>;
+/* The drizzle handle keeps a typed `$client` back-reference to the raw
+   bun:sqlite Database — #571's summary path needs its multi-statement SQL
+   (grouped aggregates + row-value seeks) which the query builder can't
+   express. */
+type Db = BunSQLiteDatabase<typeof schema> & { $client: Database };
 
 type ConversationRow = typeof schema.conversations.$inferSelect;
 /* SQLite columns are NULL when unset; the contract field is optional, not
@@ -375,10 +382,13 @@ export function createDrizzleStore(db: Db): RelayStore {
     async listConversations({
       channelId,
       includeArchived,
+      conversationId,
     }: ListConversationsQuery) {
       const conditions = [];
       if (channelId)
         conditions.push(eq(schema.conversations.channelId, channelId));
+      if (conversationId)
+        conditions.push(eq(schema.conversations.id, conversationId));
       if (!includeArchived)
         conditions.push(eq(schema.conversations.archived, false));
       const base = db.select().from(schema.conversations);
@@ -401,31 +411,164 @@ export function createDrizzleStore(db: Db): RelayStore {
     async listConversationSummaries({
       channelId,
       includeArchived,
+      conversationId,
     }: ListConversationsQuery) {
-      const convs = await this.listConversations({
-        channelId,
-        includeArchived,
-      });
+      /* #571: this is the hot list read — at 1,658 conversations the
+         drizzle select layer's per-row mapping was ~2/3 of the budget, so
+         every pass below runs raw through $client with explicit snake→
+         camel aliases (flags arrive 0/1 and are coerced) and the row→
+         domain mappers stay shared. Four passes total, all indexed:
+         conversations (channel/id/archive filter, createdAt order), one
+         grouped aggregate over each conv's (conversation_id, seq) range
+         yielding the boundary seqs + visible count, then two seeks for
+         exactly those rows — no per-conversation query, no full-thread
+         materialization.
+         Filters mirror `messageVisible()` + the rewound/dropped/removed
+         flags: the root is looked up by id (a dedupe-visible no-folder
+         opener keeps its conv out of the list, as before), `last` falls
+         back to the newest dedupe-visible row so a rewind-to-root keeps
+         headline text, and `messageCount` counts only visible rows. */
+      const sqlite = db.$client;
+      const convCols = `id, channel_id AS channelId,
+        root_message_id AS rootMessageId, engine_ref AS engineRef, state,
+        model, provider, effort, fast, cwd, workspace, access, title,
+        title_source AS titleSource, archived, delivered_seq AS deliveredSeq,
+        usage, usage_session_id AS usageSessionId, usage_seq AS usageSeq,
+        life, turn_failure AS turnFailure,
+        turn_stopped AS turnStopped, bg_jobs AS bgJobs,
+        created_at AS createdAt`;
+      const convWhere: string[] = [];
+      const convParams: (string | number)[] = [];
+      if (channelId) {
+        convWhere.push("channel_id = ?");
+        convParams.push(channelId);
+      }
+      if (conversationId) {
+        convWhere.push("id = ?");
+        convParams.push(conversationId);
+      }
+      if (!includeArchived) convWhere.push("archived = 0");
+      const convs = (
+        sqlite
+          .query(
+            `SELECT ${convCols} FROM conversations
+             ${convWhere.length ? `WHERE ${convWhere.join(" AND ")}` : ""}
+             ORDER BY created_at`,
+          )
+          .all(...convParams) as Record<string, unknown>[]
+      ).map((r) =>
+        rowToConversation({
+          ...r,
+          archived: !!r.archived,
+          fast: r.fast === null ? null : !!r.fast,
+          /* #583: raw SQL returns the 0/1 integer — coerce like `fast` so
+             the boolean schema doesn't see a number. */
+          turnStopped: r.turnStopped == null ? null : !!r.turnStopped,
+        } as ConversationRow),
+      );
+      if (convs.length === 0) return [];
+      const msgCols = `id, channel_id AS channelId,
+        conversation_id AS conversationId, author_id AS authorId,
+        author_kind AS authorKind, text, attachments, model, provider,
+        effort, fast, seq, dedupe_key AS dedupeKey, rewound, dropped,
+        removed, claimed, checkpoint, created_at AS createdAt`;
+      const msgRows = (
+        tail: string,
+        params: (string | number)[],
+      ): MessageRow[] =>
+        (
+          sqlite
+            .query(`SELECT ${msgCols} FROM messages ${tail}`)
+            .all(...params) as Record<string, unknown>[]
+        ).map(
+          (r) =>
+            ({
+              ...r,
+              fast: r.fast === null ? null : !!r.fast,
+              rewound: !!r.rewound,
+              dropped: !!r.dropped,
+              removed: !!r.removed,
+              claimed: !!r.claimed,
+            }) as MessageRow,
+        );
+      const convIds = convs.map((c) => c.id);
+      const marks = convIds.map(() => "?").join(",");
+      const dedupeVisible = `(dedupe_key IS NULL OR dedupe_key NOT LIKE '${NO_FOLDER_DEDUPE_LIKE}')`;
+      const visible = `(rewound = 0 AND dropped = 0 AND removed = 0 AND ${dedupeVisible})`;
+      interface AggRow {
+        convId: string;
+        visibleCount: number;
+        firstAnswerSeq: number | null;
+        lastVisibleSeq: number | null;
+        lastAnySeq: number | null;
+      }
+      const aggs = new Map(
+        (
+          sqlite
+            .query(
+              `SELECT conversation_id AS convId,
+                      SUM(CASE WHEN ${visible} THEN 1 ELSE 0 END) AS visibleCount,
+                      MIN(CASE WHEN ${visible} AND author_kind <> 'user' THEN seq END) AS firstAnswerSeq,
+                      MAX(CASE WHEN ${visible} THEN seq END) AS lastVisibleSeq,
+                      MAX(CASE WHEN ${dedupeVisible} THEN seq END) AS lastAnySeq
+               FROM messages
+               WHERE conversation_id IN (${marks})
+               GROUP BY conversation_id`,
+            )
+            .all(...convIds) as AggRow[]
+        ).map((a) => [a.convId, a]),
+      );
+      /* Row-value seeks for each conv's last row (and first answer when it
+         isn't the same row) — stay inside (conversation_id, seq). The root
+         lookup goes by id (the conv's stored pointer): no seq is known for
+         it, and id is the primary key. */
+      const pairs: [string, number][] = [];
+      for (const c of convs) {
+        const a = aggs.get(c.id);
+        if (!a) continue;
+        if (a.firstAnswerSeq !== null) pairs.push([c.id, a.firstAnswerSeq]);
+        const lastSeq = a.lastVisibleSeq ?? a.lastAnySeq;
+        if (lastSeq !== null) pairs.push([c.id, lastSeq]);
+      }
+      const pairMarks = pairs.map(() => "(?, ?)").join(", ");
+      const boundaryRows = pairs.length
+        ? msgRows(
+            `WHERE (conversation_id, seq) IN (VALUES ${pairMarks})`,
+            pairs.flat(),
+          )
+        : [];
+      const byPair = new Map(
+        boundaryRows.map((r) => [`${r.conversationId}|${r.seq}`, r]),
+      );
+      const rootIds = convs.map((c) => c.rootMessageId);
+      const rootsById = new Map(
+        msgRows(`WHERE id IN (${marks})`, rootIds).map((r) => [r.id, r]),
+      );
       const summaries: ConversationSummary[] = [];
       for (const conversation of convs) {
-        const all = conversationMessages(conversation.id).map(rowToMessage);
-        /* Rewound/dropped/removed rows are hidden (#134, #315); a rewind to
-           the root message leaves none, and the list row still renders the
-           root for context. */
-        const convMessages = all.filter(
-          (m) => !m.rewound && !m.dropped && !m.removed,
-        );
-        const root =
-          convMessages.find((m) => m.id === conversation.rootMessageId) ??
-          all.find((m) => m.id === conversation.rootMessageId);
-        const last = convMessages.at(-1) ?? all.at(-1);
-        if (!root || !last) continue;
+        const a = aggs.get(conversation.id);
+        const rootRow = rootsById.get(conversation.rootMessageId);
+        if (!a || !rootRow || noFolderDedupeKey(rootRow.dedupeKey)) continue;
+        const lastSeq = a.lastVisibleSeq ?? a.lastAnySeq;
+        const lastRow =
+          lastSeq === null
+            ? undefined
+            : byPair.get(`${conversation.id}|${lastSeq}`);
+        if (!lastRow) continue;
+        const answerRow =
+          a.firstAnswerSeq === null
+            ? undefined
+            : byPair.get(`${conversation.id}|${a.firstAnswerSeq}`);
         summaries.push({
           conversation,
-          root,
-          firstAnswer: convMessages.find((m) => m.authorKind !== "user"),
-          last,
-          messageCount: convMessages.length,
+          /* The desktop feed renders the root card's full text — only the
+             answer/last previews take the cap. */
+          root: toSummaryMessage(rowToMessage(rootRow)),
+          firstAnswer: answerRow
+            ? toSummaryPreview(rowToMessage(answerRow))
+            : undefined,
+          last: toSummaryPreview(rowToMessage(lastRow)),
+          messageCount: Number(a.visibleCount),
         });
       }
       return summaries;

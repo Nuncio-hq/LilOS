@@ -48,7 +48,9 @@ async function rpc(
   calls: { method: string; params: Record<string, unknown> }[],
 ): Promise<Record<string, unknown>[]> {
   const token = readFileSync(path.join(home, "relay-token"), "utf8").trim();
-  const ws = new WebSocket(`ws://127.0.0.1:${relayPort}/ws`);
+  const ws = new WebSocket(
+    `ws://127.0.0.1:${relayPort}/ws?token=${encodeURIComponent(token)}`,
+  );
   await new Promise<void>((res, rej) => {
     ws.onopen = () => res();
     ws.onerror = () => rej(new Error("ws connect failed"));

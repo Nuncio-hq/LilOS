@@ -25,10 +25,11 @@ describe("relay migrations", () => {
       const colsAt7 = db.query("PRAGMA table_info(conversations)").all().map((c) => c.name);
       const msgCols = db.query("PRAGMA table_info(messages)").all().map((c) => c.name);
       const tables = db.query("SELECT name FROM sqlite_master WHERE type='table'").all().map((t) => t.name);
+      const msgIdx = db.query("PRAGMA index_list(messages)").all().map((x) => x.name);
       console.log(JSON.stringify({
         versionBefore,
         version: db.query("PRAGMA user_version").get().user_version,
-        colsAt6, colsAt7, msgCols, tables, tablesAt6,
+        colsAt6, colsAt7, msgCols, tables, tablesAt6, msgIdx,
       }));
     `;
     const res = spawnSync(BUN, ["-e", script], {
@@ -54,9 +55,11 @@ describe("relay migrations", () => {
     // #300's persisted turn usage on conversations; v16 adds #315's
     // dropped/removed flags on messages; v17 adds #377's claimed flag; v18
     // adds #106's access level on conversations; v19 adds #419's
-    // turn_failure card on conversations; v20 adds #346's life column; v21
-    // adds #583's turn_stopped word; v22 adds #583's bg_jobs count.
-    expect(out.version).toBe(22);
+    // turn_failure card on conversations; v20 adds #346's life column;
+    // v21 adds #571's (conversation_id, seq) index and retires the
+    // conversation_id-only one it's a strict prefix of; v22 adds #583's
+    // turn_stopped word; v23 adds #583's bg_jobs count.
+    expect(out.version).toBe(23);
     expect(out.msgCols).toContain("dropped");
     expect(out.msgCols).toContain("removed");
     expect(out.msgCols).toContain("claimed");
@@ -79,6 +82,8 @@ describe("relay migrations", () => {
     expect(out.tables).toContain("paired_devices");
     expect(out.tables).toContain("device_push");
     expect(out.tables).toContain("engine_event_marks");
+    expect(out.msgIdx).toContain("messages_conversation_seq");
+    expect(out.msgIdx).not.toContain("messages_conversation");
     // …and keeps everything v6 shipped.
     expect(out.colsAt7).toContain("cwd");
     expect(out.tables).toContain("recent_folders");
