@@ -475,10 +475,16 @@ PR does not exist.
   ~10) — a reopen paints the cached answer on the first frame while a
   fresh round revalidates behind (stale-while-revalidate, "updating…"
   cue). Reads land independently; `forge.pr` stays on the #429 funnel so
-  `gh` never gates the folder tabs. Open file view and selection ride in
-  the same entry.** Not: component state (dies on unmount), persisted
-  storage (stale forever), one blocking `Promise.all` incl. `gh`. —
-  #544
+  `gh` never gates the folder tabs. The entry also holds the picked tab,
+  selection, open file view and per-tab scrollTop, and counts as a hit
+  only once `probe.files` answered. A panel toggle hides the mounted
+  aside (`display:none`, DOM class first, React state a frame later);
+  the tree renders content-visibility chunks of ~50 rows so un-hiding
+  skips off-screen layout — reopen→row ~5 ms on a 2,400-file folder
+  (#547).** Not: component state (dies on unmount), persisted storage
+  (stale forever), one blocking `Promise.all` incl. `gh`, unmounting
+  the panel per toggle (~220 ms remount), row-level virtualization. —
+  #544 · #547
 - **D-#320 Turn-block collapse state is user-owned, keyed by
   `${conv.id}:${turnId}:${block}` in `packages/ui/src/lib/block-state.ts`.**
   Auto-open is only a default while a turn runs. The live→relay-row id swap
