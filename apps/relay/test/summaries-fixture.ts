@@ -156,17 +156,40 @@ out(
 const store = createDrizzleStore(drizzle(sqlite, { schema }));
 
 /* AC-1 leg 1: the full summary list at the audit's 1,658-conversation
-   scale. Warm once (page cache), then the reported run is the steady
-   state a relay serves every refresh. */
+   scale. CI boxes vary and share CPU, so the reported figure is the
+   median of three warm runs — and the test compares it against a
+   baseline measured in the SAME process: the pre-#571 shape (one
+   per-conversation read materializing every row). */
+const median = (xs: number[]) =>
+  [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 await store.listConversationSummaries({ includeArchived: true });
-const s0 = performance.now();
-const summaries = await store.listConversationSummaries({
+const summaryRuns: number[] = [];
+let summaries = await store.listConversationSummaries({
   includeArchived: true,
 });
-const summariesMs = performance.now() - s0;
+for (let i = 0; i < 3; i++) {
+  const s0 = performance.now();
+  summaries = await store.listConversationSummaries({
+    includeArchived: true,
+  });
+  summaryRuns.push(performance.now() - s0);
+}
+const convIds = summaries.map((s) => s.conversation.id);
+const msgScan = sqlite.prepare(
+  "SELECT * FROM messages WHERE conversation_id = ?",
+);
+const baselineRuns: number[] = [];
+for (let i = 0; i < 3; i++) {
+  const b0 = performance.now();
+  for (const c of convIds) msgScan.all(c);
+  baselineRuns.push(performance.now() - b0);
+}
+const baselineMs = median(baselineRuns);
 const frame = JSON.stringify({ summaries });
 out("summaries", {
-  ms: summariesMs,
+  ms: median(summaryRuns),
+  runs: summaryRuns.map((ms) => Math.round(ms * 10) / 10),
+  baselineMs,
   rows: summaries.length,
   rawKb: Math.round(frame.length / 1024),
   deflateKb: Math.round(deflateSync(frame).length / 1024),
@@ -175,14 +198,36 @@ out("summaries", {
   firstCount: summaries[0]?.messageCount,
 });
 
-/* AC-1 leg 2: the sparse thread read inside the 100k-message channel. */
+/* AC-1 leg 2: the sparse thread read inside the 100k-message channel.
+   The plan assertion is the deterministic half — the composite index is
+   what AC-1 actually asks for; the ms bound is only a sanity floor. */
 await store.listMessages("ch-big", { conversationId: SPARSE_CONV });
-const l0 = performance.now();
-const page = await store.listMessages("ch-big", {
+const listRuns: number[] = [];
+let page = await store.listMessages("ch-big", {
   conversationId: SPARSE_CONV,
 });
-const listMs = performance.now() - l0;
-out("list-sparse", { ms: listMs, rows: page.messages.length });
+for (let i = 0; i < 5; i++) {
+  const l0 = performance.now();
+  page = await store.listMessages("ch-big", {
+    conversationId: SPARSE_CONV,
+  });
+  listRuns.push(performance.now() - l0);
+}
+out("list-sparse", { ms: median(listRuns), rows: page.messages.length });
+out(
+  "sparse-plan",
+  sqlite
+    .query(
+      `EXPLAIN QUERY PLAN
+       SELECT * FROM messages
+       WHERE channel_id = 'ch-big' AND conversation_id = '${SPARSE_CONV}'
+         AND (dedupe_key IS NULL OR dedupe_key NOT LIKE 'sys:%:no-folder')
+         AND removed = 0 AND dropped = 0 AND rewound = 0
+       ORDER BY seq DESC`,
+    )
+    .all()
+    .map((r) => (r as { detail?: string }).detail ?? JSON.stringify(r)),
+);
 
 /* Nothing to undo: no backup for an in-memory handle, a fresh v0 file, or
    a DB already at the latest version. */

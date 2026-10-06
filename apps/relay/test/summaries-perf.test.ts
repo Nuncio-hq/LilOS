@@ -60,6 +60,8 @@ describe("conversations.summaries scale + v21 migration (bun fixture)", () => {
     expect(res.status).toBe(0);
     const s = steps.get("summaries") as {
       ms: number;
+      runs: number[];
+      baselineMs: number;
       rows: number;
       rawKb: number;
       deflateKb: number;
@@ -69,10 +71,12 @@ describe("conversations.summaries scale + v21 migration (bun fixture)", () => {
     };
     expect(s.rows).toBe(1659);
     /* The AC's <30 ms is measured on the dev machine and reported in the
-       PR; CI boxes vary, so the guard pins the order of magnitude — the
-       old per-message build took ~70 ms here and a regression to full-row
-       scans lands orders higher. */
-    expect(s.ms).toBeLessThan(100);
+       PR; CI boxes share CPU so the guard is self-calibrating instead of
+       wall-clock: the SQL build must beat the pre-#571 shape (one read
+       per conversation, ~20k rows materialized) measured in the SAME
+       process — median-of-3 for the hot path — plus a sanity ceiling. */
+    expect(s.ms).toBeLessThan(s.baselineMs);
+    expect(s.ms).toBeLessThan(300);
     /* <500 kB is a wire figure — perMessageDeflate is what carries it;
        the raw frame stays multi-MB because roots keep full text for the
        desktop feed. */
@@ -86,10 +90,13 @@ describe("conversations.summaries scale + v21 migration (bun fixture)", () => {
     expect(res.status).toBe(0);
     const l = steps.get("list-sparse") as { ms: number; rows: number };
     expect(l.rows).toBe(13);
-    /* AC is <2 ms (~0.3 ms measured). The pre-index conv-only scan took
-       ~33 ms at this shape — 10 ms keeps the guard below any index-less
-       regression while leaving slow-CI headroom. */
-    expect(l.ms).toBeLessThan(10);
+    /* AC is <2 ms (~0.3 ms measured). Two layers of guard: the query plan
+       must route the conv-scoped read through messages_conversation_seq
+       (deterministic — it's what AC-1 actually installs), and the
+       median-of-5 stays under a sanity ceiling for slow CI. */
+    const plan = steps.get("sparse-plan") as string[];
+    expect(plan.join(" | ")).toContain("messages_conversation_seq");
+    expect(l.ms).toBeLessThan(50);
   });
 
   it("AC-2 no backup when nothing would be lost (memory/fresh/current)", () => {
