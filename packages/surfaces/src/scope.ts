@@ -594,8 +594,7 @@ export class SessionSurfaces implements ViewerScope {
           ? {
               usage: {
                 used:
-                  conv.usage.context ??
-                  conv.usage.input + conv.usage.output,
+                  conv.usage.context ?? conv.usage.input + conv.usage.output,
                 ...(conv.usage.contextWindow
                   ? { window: conv.usage.contextWindow }
                   : {}),
