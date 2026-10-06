@@ -5,7 +5,7 @@ import { Card, CommandLine, nonBreaking, Pill } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb, type OrbTone } from "../components/orb";
 import { Prose, Pulse } from "../components/prose";
-import { approvalSentence } from "./approval-copy";
+import { cardLine, describeAsk } from "./approval-copy";
 import { type PlanAction, PlanCard } from "./plan-card";
 import { PrCard } from "./pr-badges";
 import { type QuestionAnswer, QuestionCard } from "./question-card";
@@ -381,6 +381,12 @@ function ApprovalCard({
   answerHint?: string;
 }) {
   const Box = flat ? FlatBox : Card;
+  /* #652 AC-2: the ask's human description once — file tools get a
+     path detail line, shell commands keep the `$` box, unknown tools'
+     args hide behind the Args tap. */
+  const d = describeAsk(a.command);
+  const isFileAsk = !!d?.detail && !d.detail.startsWith("{");
+  const [showArgs, setShowArgs] = useState(false);
   return (
     // Its own responder, so a tap on the card never opens the row under it.
     <View onStartShouldSetResponder={() => true}>
@@ -398,13 +404,33 @@ function ApprovalCard({
             </AppText>
           </View>
         )}
-        {/* #264: one sentence + the command box — never the command twice. */}
+        {/* #264/#652: one human sentence — a file tool reads
+            "wants to edit <file>" with its full path under it, a real
+            shell command keeps the `$` box, an unknown tool's args sit
+            behind an Args tap. Never the raw `{…}` line. */}
         <AppText size="sm" className="leading-5">
-          {approvalSentence(a)}
+          {cardLine(a)}
         </AppText>
-        {a.command && (
+        {d?.detail && isFileAsk && (
+          <AppText size="xs" tone="muted" className="mt-1 font-mono">
+            {d.detail}
+          </AppText>
+        )}
+        {d?.detail && !isFileAsk && (
+          <Pressable onPress={() => setShowArgs((v) => !v)} className="mt-1">
+            <AppText size="xs" tone="muted">
+              {showArgs ? "Hide args" : "Args…"}
+            </AppText>
+          </Pressable>
+        )}
+        {d?.detail && !isFileAsk && showArgs && (
+          <View className="mt-2">
+            <CommandLine command={d.detail} />
+          </View>
+        )}
+        {d?.boxed && (
           <View className="mt-2.5">
-            <CommandLine command={a.command} />
+            <CommandLine command={d.boxed} />
           </View>
         )}
         {a.file && (

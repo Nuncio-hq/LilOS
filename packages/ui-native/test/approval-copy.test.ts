@@ -109,6 +109,20 @@ describe("describeAsk — one human line per ask", () => {
     expect(whatLine(a)).not.toContain("$ ");
   });
 
+  it("a one-line row keeps the full path — 'wants to write <path>'", () => {
+    const a = {
+      employee: "Ada",
+      reason:
+        'Ada wants to run: write_file {"path":"docs/decisions/0002-notes.md"}',
+      command: 'write_file {"path":"docs/decisions/0002-notes.md"}',
+    };
+    expect(whatLine(a)).toBe(
+      "Ada wants to write docs/decisions/0002-notes.md",
+    );
+    expect(whatLine(a)).not.toContain("{");
+    expect(whatLine(a)).not.toContain('"path"');
+  });
+
   it("a shell command still flows through whatLine with keepFlags", () => {
     const a = {
       employee: "Ada",
