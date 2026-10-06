@@ -159,16 +159,21 @@ function createFeed(deps: FeedDeps) {
  *
  * `Origin`: a browser always sends it; script/native clients (Bun
  * `WebSocket`, `ws`, curl) don't — its absence means "not a browser", not
- * a failure. When present it must be the app's own: `file://` or the
- * serialized opaque `null` for the packaged Electron window, else a
- * loopback http(s) origin — the dev server, `vite preview`, and e2e pages
- * all pick their own ports, so the check is scheme+host, not port.
+ * a failure. When present it must be the app's own: a loopback http(s)
+ * host (the dev server, `vite preview`, and e2e pages pick their own
+ * ports, so the check is scheme+host, not port), `file://`, or `null` —
+ * Blink serializes a file: document's origin as `null` unless
+ * `--allow-file-access-from-files` is set, so the packaged Electron
+ * window can arrive as either. `null` also covers other opaque origins
+ * (sandboxed iframes, data:); the token remains the credential — this
+ * check only filters serialized foreign origins.
  */
 export function authorizeFeedUpgrade(
   req: Request,
   token: string,
 ): Response | undefined {
-  if (new URL(req.url).searchParams.get("token") !== token) {
+  // Fail closed: an empty configured credential must never authenticate.
+  if (!token || new URL(req.url).searchParams.get("token") !== token) {
     return new Response("unauthorized\n", { status: 401 });
   }
   const origin = req.headers.get("origin");

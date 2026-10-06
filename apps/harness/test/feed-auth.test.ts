@@ -108,6 +108,11 @@ describe("AC-1 authorizeFeedUpgrade refuses a socket without the credential or w
     if (status === undefined) expect(res).toBeUndefined();
     else expect(res?.status).toBe(status);
   });
+
+  it("an empty configured credential authenticates nothing — fails closed", () => {
+    expect(authorizeFeedUpgrade(req("?token="), "")?.status).toBe(401);
+    expect(authorizeFeedUpgrade(req(), "")?.status).toBe(401);
+  });
 });
 
 /* A refused upgrade never reaches feed.attach, so no held or live frame can
