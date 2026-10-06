@@ -11,9 +11,11 @@
         "@testing-library/react": "16",
         "@types/bun": "1.4.2",
         "@types/node": "^26.6.2",
+        "@types/ws": "8.18.1",
         "happy-dom": "^20.8.9",
         "typescript": "^7.0.2",
         "vitest": "^4.1.11",
+        "ws": "8.21.3",
       },
     },
     "apps/desktop": {
