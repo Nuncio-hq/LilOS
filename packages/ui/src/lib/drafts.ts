@@ -15,31 +15,70 @@ const PREFIX = "lilos:composer-draft:";
 export const draftKey = {
   thread: (conversationId: string) => `conv:${conversationId}`,
   dm: (employeeId: string) => `dm:${employeeId}`,
+  /* #584: the Workbench's commit-message box — a Suggest answer (or typed
+     text) survives a reload exactly like a composer draft (AC-2). */
+  commit: (sessionId: string) => `wb-commit:${sessionId}`,
 };
 
 const storageKey = (key: string) => `${PREFIX}${key}`;
 
+/** What a key holds: the draft text plus the send's exactly-once key
+ *  (#552) — minted on the first send, kept while the text is unchanged so
+ *  a failed send's resend repeats it, and cleared with the draft. Drafts
+ *  written before the envelope stored the bare text — they read as
+ *  `{ t: raw, k: null }`. */
+interface DraftRecord {
+  t: string;
+  k: string | null;
+}
+
+const parseRecord = (raw: string | null): DraftRecord | undefined => {
+  if (raw === null) return undefined;
+  if (raw.startsWith("{")) {
+    try {
+      const rec = JSON.parse(raw) as { t?: unknown; k?: unknown };
+      if (typeof rec.t === "string") {
+        return { t: rec.t, k: typeof rec.k === "string" ? rec.k : null };
+      }
+    } catch {
+      // not an envelope — a typed `{`-leading draft keeps its text below
+    }
+  }
+  return { t: raw, k: null };
+};
+
+const read = (key: string): DraftRecord | undefined => {
+  try {
+    return parseRecord(localStorage.getItem(storageKey(key)));
+  } catch {
+    return undefined;
+  }
+};
+
+const write = (key: string, rec: DraftRecord | undefined): void => {
+  try {
+    if (!rec || rec.t === "") localStorage.removeItem(storageKey(key));
+    else localStorage.setItem(storageKey(key), JSON.stringify(rec));
+  } catch {
+    // blocked storage → drafts are simply off for this device
+  }
+};
+
 /** Stored draft for `key`, or "" — never throws. */
 export function getDraft(key: string): string {
-  try {
-    return localStorage.getItem(storageKey(key)) ?? "";
-  } catch {
-    return "";
-  }
+  return read(key)?.t ?? "";
 }
 
 /** Write `value` for `key`; empty text removes the entry (no empty pile-up). */
 export function setDraft(key: string, value: string): void {
-  try {
-    if (value) localStorage.setItem(storageKey(key), value);
-    else localStorage.removeItem(storageKey(key));
-  } catch {
-    // blocked storage → drafts are simply off for this device
-  }
+  /* Unchanged text is a no-op so a minted send key survives the resend;
+     edited text mints fresh on the next send. */
+  if (value === read(key)?.t) return;
+  write(key, { t: value, k: null });
 }
 
 export function clearDraft(key: string): void {
-  setDraft(key, "");
+  write(key, undefined);
 }
 
 /** Drop several drafts at once — session archived, employee removed (AC-6). */
@@ -79,4 +118,22 @@ export function useDraft(
     [key],
   );
   return [value, set];
+}
+
+/**
+ * The exactly-once key this draft's send must carry (#552): minted on the
+ * first send and stored WITH the draft, so the "Couldn't send" → resend
+ * path repeats it across taps — and across reloads, since the draft
+ * itself survives — and the relay's `(channelId, dedupeKey)` slot answers
+ * a stored-but-unanswered first attempt instead of double-posting. A
+ * cleared/edited draft has no key, so the next send mints fresh.
+ */
+export function draftSendKey(key: string): string {
+  const rec = read(key);
+  if (rec?.k) return rec.k;
+  const k = `u-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+  write(key, { t: rec?.t ?? "", k });
+  return k;
 }

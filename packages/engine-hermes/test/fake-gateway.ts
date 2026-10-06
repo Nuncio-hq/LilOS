@@ -231,6 +231,11 @@ export class FakeGateway implements GatewayLike {
       lets a test hold completeTurn's post-turn rotation poll mid-flight. */
   titleGate?: Promise<void>;
 
+  /** #573: when set, session.resume answers only after this promise
+      resolves — a test can land session.stop inside the resume window and
+      prove the forgotten session isn't resurrected when the answer lands. */
+  resumeGate?: Promise<void>;
+
   private refs = new Map<string, string>();
   /** stored_session_id -> the durable row session.resume reattaches to. */
   private storedByRef = new Map<string, { message_count: number }>();
@@ -240,6 +245,13 @@ export class FakeGateway implements GatewayLike {
       session.resume still 4040s). */
   burnRefs(n: number) {
     for (let i = 0; i < n; i++) this.refs.set(`pre-${i}`, `pre-${i}`);
+  }
+
+  /** #573: seed a durable stored row — a backend whose state.db kept the
+      row across restart resolves session.resume where a row-less fresh
+      backend 4040s into the create fallback. */
+  seedStored(ref: string) {
+    this.storedByRef.set(ref, { message_count: 0 });
   }
   private sreqId = 0;
   private sreqPending = new Map<
@@ -319,17 +331,22 @@ export class FakeGateway implements GatewayLike {
           return Promise.reject(
             new RpcError(4040, `session not found: ${key}`),
           );
-        const sid = `sid-${this.refs.size + 1}`;
-        this.refs.set(sid, ref);
-        this.lastSid = sid;
-        return Promise.resolve({
-          session_id: sid,
-          stored_session_id: ref,
-          message_count: stored.message_count,
-          messages: [],
-          messages_omitted: true,
-          info: { version: "v0.21.5+test", release_date: "2026.9.24" },
-        });
+        const reply = () => {
+          const sid = `sid-${this.refs.size + 1}`;
+          this.refs.set(sid, ref);
+          this.lastSid = sid;
+          return {
+            session_id: sid,
+            stored_session_id: ref,
+            message_count: stored.message_count,
+            messages: [],
+            messages_omitted: true,
+            info: { version: "v0.21.5+test", release_date: "2026.9.24" },
+          };
+        };
+        return this.resumeGate
+          ? this.resumeGate.then(reply)
+          : Promise.resolve(reply());
       }
       case "prompt.submit": {
         this.lastPrompt = p;

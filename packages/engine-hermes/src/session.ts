@@ -141,6 +141,12 @@ export class Session {
       yolo hint, so ensureLive re-applies it after resume/fallback. */
   access?: "ask" | "full";
 
+  /** #584: the `session.ask` throwaway — never persisted to the registry,
+      never broadcast (its emitFn is a private collector), never titled.
+      Flagged so machinery that walks real sessions (registry writes,
+      gateway asks) treats it accordingly. */
+  ephemeral?: boolean;
+
   /** Stable LilOS subagentId for a wire-level child key. */
   subagentId(key: string): string {
     let id = this.subIds.get(key);
