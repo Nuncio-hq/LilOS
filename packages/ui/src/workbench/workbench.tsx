@@ -730,11 +730,13 @@ export function Workbench({
   const liveForge = liveMode && prShown != null && liveCwd != null;
   /* Tabs render only when their host method answered (#114 AC-6) — and the
      folder-bound ones only when the session has a folder (#543). Terminal /
-     Preview exist only where live surfaces are wired (slice B, #119). */
+     Preview are surface-bound, not folder-bound: they render wherever live
+     surfaces (or the LilOS Browser) are wired (slice B, #119) — a live
+     attach means a real host exists even when `work` doesn't. */
   const changesOn = liveMode ? probe?.diffs != null : !folderless;
   const filesOn = liveMode ? probe?.files != null : !folderless;
   const surfacesOn = live != null || (!liveMode && !folderless);
-  const previewOn = (surfacesOn || !!browser) && !folderless;
+  const previewOn = surfacesOn || !!browser;
   const prOn = liveMode ? probe?.pr != null : !folderless && prShown != null;
   /* Background (issue #170): no host method — shows in the prototype, when
      the session carries jobs, or (folderless, #543) whenever the engine
