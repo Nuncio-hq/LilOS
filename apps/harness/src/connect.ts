@@ -74,6 +74,30 @@ const pluginVersion = (dir: string): string | undefined => {
   }
 };
 
+/** `hermes config get <list-key>` prints YAML-ish rows (`- name`) or a
+   scalar; `config set` may also echo a JSON list. Tolerant parse for the
+   merge step in `browserToolset` (#549). */
+const parseConfigStringList = (out: string): string[] => {
+  const items = out
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith("- "))
+    .map((l) => l.slice(2).trim());
+  if (items.length) return items;
+  const bare = out.trim();
+  if (!bare || bare.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(bare);
+      return Array.isArray(parsed)
+        ? parsed.filter((x): x is string => typeof x === "string")
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  return [bare];
+};
+
 /** Order-insensitive signature of the report rows — `onChange` fires only
     when this changes (#413), so a reordered or identical roster never
     re-pushes. */
@@ -274,6 +298,11 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
       row.reason = "couldn't disable Hermes tool search for this profile";
       return;
     }
+    if (!this.browserToolset(profile, true)) {
+      row.state = "failed";
+      row.reason = "couldn't disable Hermes' browser toolset for this profile";
+      return;
+    }
     row.state = "connected";
     row.reason = undefined;
   }
@@ -288,16 +317,90 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
       });
     }
     this.toolSearch(profile, "auto");
+    this.browserToolset(profile, false);
+  }
+
+  /** Profiles where `browser` was already disabled before LilOS connected
+      (leave it alone on disconnect) vs profiles where CONNECT added the
+      entry (only those get it removed). */
+  private browserAlreadyDisabled = new Set<string>();
+  private browserDisabledByUs = new Set<string>();
+
+  /** #549: keep Hermes' own `browser` toolset (browser_exec,
+      browser_vault_*) OUT of a LilOS profile's offer list. The plugin's
+      pre_tool_call block is the call-time gate; `agent.disabled_toolsets`
+      is Hermes' strict subtract-last suppression of the OFFER itself
+      (toolsets.py + model_tools._select_tool_names) — so the model can
+      never see, let alone call, the engine's browser. The wire's
+      `config.set` has a closed key table that can't reach it, so the CLI
+      writes it, merged with whatever the user already disabled (and
+      restored on disconnect, like tool_search). */
+  private browserToolset(profile: string, connected: boolean): boolean {
+    const get = this.hermes([
+      "-p",
+      profile,
+      "config",
+      "get",
+      "agent.disabled_toolsets",
+    ]);
+    const current =
+      get !== undefined && get.status === 0
+        ? parseConfigStringList(get.out)
+        : [];
+    const argv = (list: string[]) =>
+      list.length
+        ? [
+            "-p",
+            profile,
+            "config",
+            "set",
+            "agent.disabled_toolsets",
+            JSON.stringify(list),
+          ]
+        : ["-p", profile, "config", "unset", "agent.disabled_toolsets"];
+    if (connected) {
+      if (current.includes("browser")) {
+        this.browserAlreadyDisabled.add(profile);
+        this.browserDisabledByUs.delete(profile);
+        return true;
+      }
+      this.browserAlreadyDisabled.delete(profile);
+      const result = this.hermes(argv([...current, "browser"]));
+      if (result !== undefined && result.status !== 0) {
+        this.deps.log.warn("config set agent.disabled_toolsets failed", {
+          profile,
+          out: result.out.slice(-200),
+        });
+        return false;
+      }
+      this.browserDisabledByUs.add(profile);
+      return true;
+    }
+    if (this.browserAlreadyDisabled.delete(profile)) return true;
+    if (!this.browserDisabledByUs.delete(profile)) return true;
+    /* Remove only our own entry — a `config get` can't be trusted to echo
+       the connect-time write (it may answer [] while the list lives),
+       so ownership is tracked in `browserDisabledByUs`, and whatever the
+       user added since is preserved by writing the remainder back. */
+    const result = this.hermes(argv(current.filter((t) => t !== "browser")));
+    if (result !== undefined && result.status !== 0) {
+      this.deps.log.warn("config unset agent.disabled_toolsets failed", {
+        profile,
+        out: result.out.slice(-200),
+      });
+      return false;
+    }
+    return true;
   }
 
   /** LilOS plugin tools must reach the model's tool list directly: Hermes'
-      tool search defers every plugin-registered tool behind `tool_search`
-      (`tools/tool_search.py` — plugin toolsets are never in its
-      `_DIRECT_SURFACE_TOOLSETS`), so a LilOS profile with tool search on
-      offers `tool_search` instead of `lilos_context` (#411). The host policy
-      names the `lilos_*` tools outright — they must be offered, not
-      searched for. Profile-scoped `tools.tool_search.enabled` is the only
-      off switch upstream provides; restore the default on disconnect. */
+     tool search defers every plugin-registered tool behind `tool_search`
+     (`tools/tool_search.py` — plugin toolsets are never in its
+     `_DIRECT_SURFACE_TOOLSETS`), so a LilOS profile with tool search on
+     offers `tool_search` instead of `lilos_context` (#411). The host policy
+     names the `lilos_*` tools outright — they must be offered, not
+     searched for. Profile-scoped `tools.tool_search.enabled` is the only
+     off switch upstream provides; restore the default on disconnect. */
   private toolSearch(profile: string, enabled: "off" | "auto"): boolean {
     const result = this.hermes([
       "-p",
