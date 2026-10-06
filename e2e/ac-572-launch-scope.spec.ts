@@ -283,21 +283,34 @@ test("AC-1/AC-2: cold boot replays nothing; background sessions still badge, rin
     new Set([convA.engineRef, convB.engineRef, convC.engineRef]),
   );
 
-  // ── AC-2: resolving the ask out of band clears the badge and the turn
+  // ── AC-2: resolving the asks out of band clears the badge and the turn
   //    ending posts a done notification — background lifecycle end-to-end ──
-  const { asks } = await seeder.request<{ asks: Ask[] }>("asks.list", {});
-  const openAsk = asks.find(
-    (a) => a.conversationId === convB.id && a.state === "open",
-  );
-  if (!openAsk) throw new Error("no open ask for convB");
-  await seeder.request("asks.respond", {
-    askId: openAsk.id,
-    outcome: "once",
-  });
+  /* The fake's edit script gates three steps (patch → write_file → git
+     commit, ac-71's note) — each "once" frees the next ask a tick later, so
+     keep draining until the turn's `done` posts. A waiting turn cannot
+     complete, which makes `done` the deterministic drain signal. */
+  let stopDraining = false;
+  const drainer = (async () => {
+    while (!stopDraining) {
+      const { asks } = await seeder.request<{ asks: Ask[] }>("asks.list", {});
+      for (const a of asks) {
+        if (a.conversationId !== convB.id || a.state !== "open") continue;
+        await seeder
+          .request("asks.respond", { askId: a.id, outcome: "once" })
+          .catch(() => {});
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  })();
+  try {
+    await expect
+      .poll(() => postKeys(page), { timeout: 90_000 })
+      .toContain(`${convB.id}:done`);
+  } finally {
+    stopDraining = true;
+    await drainer;
+  }
   await expect(approvals).toHaveCount(0, { timeout: 60_000 });
-  await expect
-    .poll(() => postKeys(page), { timeout: 60_000 })
-    .toContain(`${convB.id}:done`);
 
   // ── AC-2: the slow background turn completes → done notification + the
   //    running badge and the feed release follow the turn's end ──
