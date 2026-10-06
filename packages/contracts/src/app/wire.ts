@@ -383,7 +383,11 @@ export const ChannelResult = z.object({ channel: AppChannel });
 
 /* --------------------------- attachments (#31) --------------------------- */
 
-/** Largest single attachment the relay stores, in decoded bytes. */
+/**
+ * Largest single attachment the relay stores, in decoded bytes. Raising
+ * these caps must raise `MAX_FRAME_BYTES` (`../engine/envelope.ts`) too —
+ * the transport ceiling exists to fit this maximal send (#551).
+ */
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 /** Most attachments one message can carry. */
 export const MAX_ATTACHMENTS_PER_MESSAGE = 10;

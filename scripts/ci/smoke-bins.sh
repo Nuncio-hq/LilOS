@@ -170,18 +170,121 @@ if have lilos-relay; then
   else
     bad "lilos-relay did not boot"; dump "$RLOG"
   fi
+
+  # #551 AC-3: the packaged relay must answer a ws frame past Bun's old
+  # 16 MiB default, not drop the socket. hello → messages.post with two
+  # 9 MiB images (~25 MB base64) → ping; an answered post + ping proves
+  # maxPayloadLength held on the embedded Bun.
+  if [ -n "$RPORT" ] && [ -f "$TMP/relay-home/relay-token" ]; then
+    cat >"$TMP/big-frame.ts" <<'TS'
+const [port, token] = process.argv.slice(2);
+const timer = setTimeout(() => {
+  console.error("timeout waiting for the big-frame answer");
+  process.exit(1);
+}, 30_000);
+const fail = (m: string): never => {
+  clearTimeout(timer);
+  console.error(m);
+  process.exit(1);
+};
+const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+ws.addEventListener("close", (e) => fail(`socket closed ${e.code}`));
+ws.addEventListener("error", () => fail("socket error"));
+const send = (id: string, method: string, params: unknown) =>
+  ws.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
+const image = (n: number) => Buffer.alloc(n, 0x89).toString("base64");
+ws.addEventListener("open", () =>
+  send("h", "session.hello", { protocolVersion: 1, token }),
+);
+ws.addEventListener("message", (ev) => {
+  const f = JSON.parse(String(ev.data)) as { id?: string; error?: unknown };
+  if (f.error) fail(`${f.id}: ${JSON.stringify(f.error)}`);
+  if (f.id === "h") {
+    send("c", "employees.create", { name: "Smoke", role: "smoke" });
+  } else if (f.id === "c") {
+    const r = f as unknown as { result: { employee: { id: string } } };
+    send("d", "channels.openDm", { employeeId: r.result.employee.id });
+  } else if (f.id === "d") {
+    const r = f as unknown as { result: { channel: { id: string } } };
+    send("m", "messages.post", {
+      channelId: r.result.channel.id,
+      text: "two big screenshots",
+      attachments: [
+        { name: "a.png", mimeType: "image/png", dataBase64: image(9 * 1024 * 1024) },
+        { name: "b.png", mimeType: "image/png", dataBase64: image(9 * 1024 * 1024) },
+      ],
+    });
+  } else if (f.id === "m") {
+    send("p", "session.ping", {});
+  } else if (f.id === "p") {
+    clearTimeout(timer);
+    console.log(">16 MiB frame answered, socket alive");
+    process.exit(0);
+  }
+});
+TS
+    if (cd "$TMP" && bun "$TMP/big-frame.ts" "$RPORT" "$(cat "$TMP/relay-home/relay-token")"); then
+      ok "lilos-relay answered a >16 MiB ws frame"
+    else
+      bad "lilos-relay dropped a >16 MiB ws frame"
+    fi
+  fi
 fi
 
 # lilos-engine-fake: an engine socket the smoke's own harness may also boot.
 if have lilos-engine-fake; then
   FLOG="$TMP/engine-fake.log"
-  ( cd "$TMP" && "$RUN/lilos-engine-fake" --port "$(port)" \
+  FPORT="$(port)"
+  ( cd "$TMP" && "$RUN/lilos-engine-fake" --port "$FPORT" \
       >"$FLOG" 2>&1 ) &
   FPID=$!; PIDS="$PIDS $FPID"
   if wait_for "$FLOG" "LISTENING" "$FPID" lilos-engine-fake 20; then
     ok "lilos-engine-fake booted (LISTENING)"
   else
     bad "lilos-engine-fake did not boot"; dump "$FLOG"
+  fi
+
+  # #551 AC-2/3 on the engine hop: prompt frames inline the same image
+  # blocks, so the packaged engine socket must hold the raised cap too. A
+  # >16 MiB frame whose call answers with ANY JSON-RPC frame (an unknown
+  # method → -32601) proves the transport accepted it — a transport drop
+  # closes the socket instead.
+  if [ -n "$FPORT" ]; then
+    cat >"$TMP/big-frame-engine.ts" <<'TS'
+const [port] = process.argv.slice(2);
+const timer = setTimeout(() => {
+  console.error("timeout waiting for the engine's answer");
+  process.exit(1);
+}, 30_000);
+const fail = (m: string): never => {
+  clearTimeout(timer);
+  console.error(m);
+  process.exit(1);
+};
+const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+ws.addEventListener("close", (e) => fail(`socket closed ${e.code}`));
+ws.addEventListener("error", () => fail("socket error"));
+ws.addEventListener("open", () => {
+  // ~23 MB on the wire — past the old 16 MiB default.
+  const pad = Buffer.alloc(17 * 1024 * 1024, 0x41).toString("base64");
+  ws.send(
+    JSON.stringify({ jsonrpc: "2.0", id: "big", method: "no.such.method", params: { pad } }),
+  );
+});
+ws.addEventListener("message", (ev) => {
+  const f = JSON.parse(String(ev.data)) as { id?: string };
+  if (f.id === "big") {
+    clearTimeout(timer);
+    console.log(">16 MiB frame answered by lilos-engine-fake");
+    process.exit(0);
+  }
+});
+TS
+    if (cd "$TMP" && bun "$TMP/big-frame-engine.ts" "$FPORT"); then
+      ok "lilos-engine-fake answered a >16 MiB ws frame"
+    else
+      bad "lilos-engine-fake dropped a >16 MiB ws frame"
+    fi
   fi
 fi
 
