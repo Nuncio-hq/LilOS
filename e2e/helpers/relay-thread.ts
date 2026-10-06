@@ -29,7 +29,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * Post `prompts` as sequential turns on `employeeName`'s DM (default the
  * seeded "Default" employee — the one the specs' dm buttons open).
  * `prompts[0]` becomes the thread root; each send waits for its own
- * turn to complete so the thread is fully settled when this returns.
+ * `turn.completed` so the thread is fully settled when this returns.
+ * Prompts must mint exactly one turn — a `leg:` prompt's extra
+ * agent-initiated completion would resolve the NEXT send's wait early.
  */
 export async function growDmThread(
   stack: Stack,
@@ -63,9 +65,15 @@ export async function growDmThread(
       throw new Error("relay directory never loaded");
     }
 
-    const employee = relay.employees
-      .get()
-      .find((e) => (opts.employeeName ?? /^default$/i).test(e.name));
+    /* The seeded "Default" hire lands async (the harness's first-run hire
+       broadcasts `employee.upserted` once it lands) — poll the atom like
+       the page's sidebar poll does, never one-shot the snapshot. */
+    const nameRe = opts.employeeName ?? /^default$/i;
+    let employee: { id: string } | undefined;
+    for (let i = 0; i < 300 && !employee; i++) {
+      employee = relay.employees.get().find((e) => nameRe.test(e.name));
+      if (!employee) await sleep(100);
+    }
     if (!employee) throw new Error("no matching employee in the seeded stack");
     /* `channels.openDm` is idempotent — the same call the page makes when
        the DM route finds no channel. */
@@ -78,13 +86,19 @@ export async function growDmThread(
       const done = new Promise<void>((resolve) =>
         completed.set(conversationId, resolve),
       );
-      await Promise.race([
-        done,
-        sleep(60_000).then(() => {
-          throw new Error(`turn never completed for ${conversationId}`);
-        }),
-      ]);
-      completed.delete(conversationId);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`turn never completed for ${conversationId}`)),
+          60_000,
+        );
+      });
+      try {
+        await Promise.race([done, timeout]);
+      } finally {
+        clearTimeout(timer);
+        completed.delete(conversationId);
+      }
     };
 
     let conversationId = "";
