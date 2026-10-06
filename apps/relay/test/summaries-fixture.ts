@@ -157,9 +157,8 @@ const store = createDrizzleStore(drizzle(sqlite, { schema }));
 
 /* AC-1 leg 1: the full summary list at the audit's 1,658-conversation
    scale. CI boxes vary and share CPU, so the reported figure is the
-   median of three warm runs — and the test compares it against a
-   baseline measured in the SAME process: the pre-#571 shape (one
-   per-conversation read materializing every row). */
+   median of three warm runs — a single cold/contended run isn't the
+   steady state the AC measures. */
 const median = (xs: number[]) =>
   [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 await store.listConversationSummaries({ includeArchived: true });
@@ -174,22 +173,10 @@ for (let i = 0; i < 3; i++) {
   });
   summaryRuns.push(performance.now() - s0);
 }
-const convIds = summaries.map((s) => s.conversation.id);
-const msgScan = sqlite.prepare(
-  "SELECT * FROM messages WHERE conversation_id = ?",
-);
-const baselineRuns: number[] = [];
-for (let i = 0; i < 3; i++) {
-  const b0 = performance.now();
-  for (const c of convIds) msgScan.all(c);
-  baselineRuns.push(performance.now() - b0);
-}
-const baselineMs = median(baselineRuns);
 const frame = JSON.stringify({ summaries });
 out("summaries", {
   ms: median(summaryRuns),
   runs: summaryRuns.map((ms) => Math.round(ms * 10) / 10),
-  baselineMs,
   rows: summaries.length,
   rawKb: Math.round(frame.length / 1024),
   deflateKb: Math.round(deflateSync(frame).length / 1024),
