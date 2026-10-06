@@ -222,7 +222,9 @@ test("AC-6 the Stop button's label names the real shortcut — ⌘.", async ({
   test.setTimeout(120_000);
   await dmDefault(stackA, page);
   await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
-  const stop = page.getByRole("button", { name: /stop/i });
+  /* #583: rows whose word is "stopped" also match /stop/i — name the
+     button by its exact aria-label instead. */
+  const stop = page.getByRole("button", { name: /^stop \(⌘\.\)$/i });
   await expect(stop).toBeVisible({ timeout: 30_000 });
   await expect(stop).toHaveAttribute("aria-label", /⌘\./);
   await expect(stop).toHaveAttribute("title", /⌘\./);

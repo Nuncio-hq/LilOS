@@ -191,7 +191,9 @@ test('AC-2 a stopped turn says "stopped"', async ({ page }) => {
   test.setTimeout(120_000);
   await openApp(stack, page);
   await send(page, "slow:150 hold this turn while I stop it");
-  const stop = page.getByRole("button", { name: /stop/i });
+  /* DM rows whose word is "stopped" also match /stop/i — name the
+     button by its exact aria-label. */
+  const stop = page.getByRole("button", { name: /^stop \(⌘\.\)$/i });
   await expect(stop).toBeVisible({ timeout: 30_000 });
   await stop.click();
   await expect(page.locator("[data-turnsettled]").last()).toBeVisible({

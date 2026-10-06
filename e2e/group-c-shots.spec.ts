@@ -109,7 +109,9 @@ for (const theme of ["light", "dark"] as const) {
 
       /* #583 stopped row: a slow turn we interrupt. */
       await send(page, "slow:300 hold this turn for the stop shot");
-      const stop = page.getByRole("button", { name: /stop/i });
+      /* DM rows whose word is "stopped" also match /stop/i — name the
+         button by its exact aria-label. */
+      const stop = page.getByRole("button", { name: /^stop \(⌘\.\)$/i });
       await expect(stop).toBeVisible({ timeout: 30_000 });
       await stop.click();
       await expect(settled(page)).toBeVisible({ timeout: 60_000 });
