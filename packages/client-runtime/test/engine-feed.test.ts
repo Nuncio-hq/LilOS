@@ -23,6 +23,12 @@ class FakeSocket implements RelaySocket {
     this.closed = true;
   }
 
+  /** Server-side drop: fires `close` so the client's reconnect path runs. */
+  closeSocket(): void {
+    this.readyState = 3;
+    this.fire("close");
+  }
+
   openSocket(): void {
     this.readyState = 1;
     this.fire("open");
@@ -581,5 +587,122 @@ describe("EngineClient session feed (#431 truncated replay)", () => {
     });
     await vi.waitFor(() => expect(feed.get().synced).toBe(true));
     expect(feed.get().historyTrimmed).toBe(false);
+  });
+});
+
+describe("#572 releaseSession — scoped feeds can leave the watch set", () => {
+  const SYNC_EMPTY = {
+    events: [] as unknown[],
+    latestSeq: 0,
+    openRequests: [] as unknown[],
+    snapshot: SNAPSHOT,
+    truncated: false,
+  };
+
+  it("feedState is a non-creating read — never mints a feed", () => {
+    const { client } = makeClient();
+    expect(client.feedState("s9")).toBeUndefined();
+    /* …and a later sessionFeed still mints a fresh atom for it. */
+    const feed = client.sessionFeed("s9");
+    expect(client.feedState("s9")).toBe(feed.get());
+    client.close();
+  });
+
+  it("a released feed stops applying live frames; onEvent still hears them", async () => {
+    const { socket, client } = makeClient();
+    await connectClient(client, socket);
+    const feed = client.sessionFeed("s1");
+    await vi.waitFor(() =>
+      expect(socket.sawRequest("events.since")).toBe(true),
+    );
+    socket.respondTo("events.since", SYNC_EMPTY);
+    await vi.waitFor(() => expect(feed.get().synced).toBe(true));
+
+    const seen: number[] = [];
+    const un = client.onEvent((e) => {
+      if (e.sessionId === "s1") seen.push(e.seq);
+    });
+    client.releaseSession("s1");
+    expect(client.feedState("s1")).toBeUndefined();
+
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "event",
+      params: {
+        seq: 1,
+        sessionId: "s1",
+        type: "session.state",
+        payload: { state: "idle" },
+      },
+    });
+    /* The broadcast still reaches watchers (#572 signals fold off it)… */
+    expect(seen).toEqual([1]);
+    /* …but the released feed's log is untouched and unrecreated. */
+    expect(feed.get().events).toEqual([]);
+    expect(client.feedState("s1")).toBeUndefined();
+    un();
+    client.close();
+  });
+
+  it("a release mid-replay discards the answer instead of resurrecting the feed", async () => {
+    const { socket, client } = makeClient();
+    await connectClient(client, socket);
+    const feed = client.sessionFeed("s1");
+    await vi.waitFor(() =>
+      expect(socket.sawRequest("events.since")).toBe(true),
+    );
+    client.releaseSession("s1");
+    socket.respondTo("events.since", {
+      ...SYNC_EMPTY,
+      events: [
+        {
+          seq: 1,
+          sessionId: "s1",
+          type: "turn.completed",
+          payload: { turnId: "t1", stopReason: "end_turn" },
+        },
+      ],
+      latestSeq: 1,
+    });
+    /* Give the in-flight resync a beat to (not) write. */
+    await new Promise((r) => setTimeout(r, 0));
+    expect(client.feedState("s1")).toBeUndefined();
+    expect(feed.get().synced).toBe(false);
+    client.close();
+  });
+
+  it("a released session doesn't replay on reconnect", async () => {
+    const socket = new FakeSocket();
+    const client = new EngineClient({
+      url: "ws://fake",
+      socketFactory: () => socket,
+      autoReconnect: true,
+      reconnectMinDelayMs: 1,
+      reconnectMaxDelayMs: 5,
+      requestTimeoutMs: 1_000,
+      connectTimeoutMs: 1_000,
+    });
+    await connectClient(client, socket);
+    const feed = client.sessionFeed("s1");
+    await vi.waitFor(() =>
+      expect(socket.sawRequest("events.since")).toBe(true),
+    );
+    socket.respondTo("events.since", SYNC_EMPTY);
+    await vi.waitFor(() => expect(feed.get().synced).toBe(true));
+    client.releaseSession("s1");
+
+    /* Reconnect: describe re-runs and resyncFeeds iterates the feeds map —
+       s1 is out of it, so no events.since goes out. */
+    socket.sent.length = 0;
+    socket.closeSocket();
+    /* The reconnect timer (1ms) drives connect() → waitForOpen; the fake
+       socket stands in for the server accepting the redial. */
+    await new Promise((r) => setTimeout(r, 10));
+    socket.openSocket();
+    await vi.waitFor(() => expect(socket.sawRequest("describe")).toBe(true));
+    socket.respondTo("describe", DESCRIBE);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(socket.sawRequest("events.since")).toBe(false);
+    client.close();
   });
 });

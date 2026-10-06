@@ -130,6 +130,7 @@ import {
   relay,
   sessionFeedAttached,
   sessionModels,
+  sessionWatched,
   workbenchRequests,
 } from "../lib/runtime";
 import { say, sayError, sayNotice } from "../lib/toast";
@@ -816,6 +817,7 @@ export function DmPage() {
   }, [employeeId, convs, folderRows, wsPicks]);
 
   const feedAttached = useAtom(sessionFeedAttached);
+  const watched = useAtom(sessionWatched);
 
   const modelFor = (conv: Conversation): SessionModel | undefined =>
     conv.engineRef ? models[conv.engineRef] : undefined;
@@ -826,9 +828,13 @@ export function DmPage() {
      (and the partial model live frames alone would mint) until the first
      replay lands; a terminal replay error latches attached too so the #28
      degraded thread keeps the raw relay view. Non-engine conversations are
-     always bound — there is no feed to wait on. */
+     always bound — there is no feed to wait on. #572: neither are sessions
+     the watch doesn't feed — an unwatched conversation has no replay coming,
+     so its relay rows render as-is instead of being held back. */
   const transcriptBound = (conv: Conversation): boolean =>
-    !conv.engineRef || feedAttached[conv.engineRef] === true;
+    !conv.engineRef ||
+    feedAttached[conv.engineRef] === true ||
+    watched[conv.engineRef] !== true;
   const boundModel = (
     conv: Conversation,
   ): SessionModel | "pending" | undefined =>

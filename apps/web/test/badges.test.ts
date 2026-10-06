@@ -9,6 +9,7 @@ import type { AppChannel, Conversation } from "@lilos/contracts/app";
 import { atom } from "nanostores";
 import { describe, expect, it } from "vitest";
 import { badgeStore, employeeBadges } from "../src/lib/badges";
+import type { SessionSignal } from "../src/lib/session-watch";
 
 const dm = (id: string, employeeId: string): AppChannel => ({
   id,
@@ -18,6 +19,9 @@ const dm = (id: string, employeeId: string): AppChannel => ({
   createdAt: 0,
 });
 
+/* #572: the row's `state` is now a badge source for unwatched sessions —
+   the factory defaults to "idle"; mark "active" explicitly where the test
+   means a running session. */
 const conv = (
   id: string,
   channelId: string,
@@ -27,7 +31,7 @@ const conv = (
   channelId,
   rootMessageId: `m-${id}`,
   engineRef,
-  state: "active",
+  state: "idle",
   title: "",
   titleSource: "user",
   access: "ask",
@@ -86,23 +90,30 @@ describe("AC-3 employeeBadges", () => {
         s2: model({ live: true }),
         s3: model({ live: false }),
       },
+      {},
     );
     expect(badges).toEqual({ e1: { running: 2, approvals: undefined } });
   });
 
   it("counts open approvals (the waiting count) per employee", () => {
     const ch1 = dm("ch1", "e1");
-    const badges = employeeBadges([ch1], [conv("c1", "ch1", "s1")], {
-      s1: model({ live: true, openRequests: 2 }),
-    });
+    const badges = employeeBadges(
+      [ch1],
+      [conv("c1", "ch1", "s1")],
+      { s1: model({ live: true, openRequests: 2 }) },
+      {},
+    );
     expect(badges.e1).toEqual({ running: 1, approvals: 2 });
   });
 
   it("AC-4 (#71): a waiting turn is `needs you`, not `running`", () => {
     const ch1 = dm("ch1", "e1");
-    const badges = employeeBadges([ch1], [conv("c1", "ch1", "s1")], {
-      s1: model({ live: true, phase: "waiting", openRequests: 1 }),
-    });
+    const badges = employeeBadges(
+      [ch1],
+      [conv("c1", "ch1", "s1")],
+      { s1: model({ live: true, phase: "waiting", openRequests: 1 }) },
+      {},
+    );
     expect(badges.e1).toEqual({ running: undefined, approvals: 1 });
   });
 
@@ -116,16 +127,81 @@ describe("AC-3 employeeBadges", () => {
         conv("c3", "ch1", null),
       ],
       { s1: model({ openRequests: 1 }) },
+      {},
     );
     expect(badges.e1).toEqual({ running: undefined, approvals: 1 });
   });
 
   it("no badge when nothing is running or waiting", () => {
     const ch1 = dm("ch1", "e1");
-    const badges = employeeBadges([ch1], [conv("c1", "ch1", "s1")], {
-      s1: model({}),
-    });
+    const badges = employeeBadges(
+      [ch1],
+      [conv("c1", "ch1", "s1")],
+      { s1: model({}) },
+      {},
+    );
     expect(badges.e1).toBeUndefined();
+  });
+});
+
+/* #572 AC-2: an unwatched session has no replayed model — the badge map
+   falls back to the broadcast-folded signal, then the relay row. */
+describe("AC-572 badges off signals for unwatched sessions", () => {
+  const ch1 = dm("ch1", "e1");
+  const signal = (over: Partial<SessionSignal> = {}): SessionSignal => ({
+    running: false,
+    openRequests: new Map(),
+    ...over,
+  });
+
+  it("a signal-flagged running session badges without any model", () => {
+    const badges = employeeBadges(
+      [ch1],
+      [conv("c1", "ch1", "s1"), conv("c2", "ch1", "s2")],
+      {},
+      { s2: signal({ running: true }) },
+    );
+    expect(badges.e1).toEqual({ running: 1, approvals: undefined });
+  });
+
+  it("a signal open-request counts as an approval, not running", () => {
+    const badges = employeeBadges(
+      [ch1],
+      [conv("c1", "ch1", "s1")],
+      {},
+      {
+        s1: signal({
+          running: true,
+          openRequests: new Map([
+            ["r1", { kind: "approval", command: "x", options: ["once"] }],
+          ]),
+        }),
+      },
+    );
+    expect(badges.e1).toEqual({ running: undefined, approvals: 1 });
+  });
+
+  it("no signal at all falls back to the conversation row's state", () => {
+    const badges = employeeBadges(
+      [ch1],
+      [
+        { ...conv("c1", "ch1", "s1"), state: "active" },
+        conv("c2", "ch1", "s2"),
+      ],
+      {},
+      {},
+    );
+    expect(badges.e1).toEqual({ running: 1, approvals: undefined });
+  });
+
+  it("a synced model wins over both signal and row", () => {
+    const badges = employeeBadges(
+      [ch1],
+      [conv("c1", "ch1", "s1")],
+      { s1: model({ live: true }) },
+      { s1: signal({ running: false }) },
+    );
+    expect(badges.e1).toEqual({ running: 1, approvals: undefined });
   });
 });
 
@@ -143,7 +219,7 @@ describe("AC-427 badgeStore", () => {
       channels,
       convs,
       models,
-      store: badgeStore(channels, convs, models),
+      store: badgeStore(channels, convs, models, atom({})),
     };
   };
 
