@@ -143,7 +143,7 @@ function LazyShell({
   /** Rows that must never unmount: live/streaming turns and the scrollTo
       target (its content has to exist the moment it lands, #138). */
   keep: boolean;
-  kind: "agent" | "user";
+  kind: "agent" | "user" | "note";
   settled: boolean;
   children: ReactNode;
 }) {
@@ -213,6 +213,8 @@ function LazyShell({
         <div style={{ height: heightRef.current }} aria-hidden data-held-stub>
           {kind === "agent" ? (
             <div data-agentturn>{settled && <div data-turnsettled />}</div>
+          ) : kind === "note" ? (
+            <div data-sysnote />
           ) : (
             <div data-userturn />
           )}
@@ -411,6 +413,22 @@ function TurnRowImpl({
         onRewind={() => onRewind(r.id ?? "")}
       />
     ) : null;
+  /* #550: `from === ""` is the relay's system-note author
+     (`authorKind: "system"` maps to it in mapping.ts) — a muted note
+     line in both frames, never a user-style bubble and never an
+     empty-name message row. */
+  const sysNote =
+    r.from === "" ? (
+      <div
+        data-sysnote
+        className={cn(
+          "w-fit max-w-full rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs",
+          frame === "panel" && "mx-3 my-0.5 sm:mx-5",
+        )}
+      >
+        {r.text}
+      </div>
+    ) : null;
   return (
     <LazyShell
       msgId={r.id}
@@ -419,28 +437,30 @@ function TurnRowImpl({
       className={cn(cls, frame === "focus" && rewind && "group relative")}
       lazy={lazy}
       keep={scrollTarget}
-      kind="user"
+      kind={r.from === "" ? "note" : "user"}
       settled={false}
     >
-      {frame === "panel" ? (
-        <Row from={r.from} emp={emp} human={human}>
-          <Who id={r.from} time={r.time} emp={emp} human={human} />
-          <Body text={r.text} />
-          {r.attachments && <AttachmentChips files={r.attachments} />}
-          {rewind}
-        </Row>
-      ) : (
-        <>
-          <UserTurn
-            from={r.from}
-            time={r.time}
-            text={r.text}
-            human={human}
-            attachments={r.attachments}
-          />
-          {rewind}
-        </>
-      )}
+      {frame === "panel"
+        ? (sysNote ?? (
+            <Row from={r.from} emp={emp} human={human}>
+              <Who id={r.from} time={r.time} emp={emp} human={human} />
+              <Body text={r.text} />
+              {r.attachments && <AttachmentChips files={r.attachments} />}
+              {rewind}
+            </Row>
+          ))
+        : (sysNote ?? (
+            <>
+              <UserTurn
+                from={r.from}
+                time={r.time}
+                text={r.text}
+                human={human}
+                attachments={r.attachments}
+              />
+              {rewind}
+            </>
+          ))}
     </LazyShell>
   );
 }
@@ -472,7 +492,7 @@ const sameRow = (a: TurnRowProps, b: TurnRowProps): boolean =>
   a.flashed === b.flashed &&
   a.lazy === b.lazy &&
   a.scrollTarget === b.scrollTarget &&
-  /* `running` only feeds the RewindCheckpoint on user rows — an employee
+  /* `running` only feeds the RewindHover on user rows — an employee
      turn must not re-render when the composer flips running. */
   (a.emp(a.r.from) !== undefined || a.running === b.running) &&
   a.emp === b.emp &&

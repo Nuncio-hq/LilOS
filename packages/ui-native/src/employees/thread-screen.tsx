@@ -8,6 +8,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "../components/app-text";
 import { StateChip } from "../components/bits";
+import { Icon } from "../components/icon";
 import { Rise } from "../components/rise";
 import { AgentTurn, UserBubble } from "./agent-turn";
 import { BackgroundPill } from "./background-sheet";
@@ -53,6 +54,8 @@ export function ThreadScreen({
   onOpenPlan,
   onOpenWorkbench,
   prefill,
+  unreachableNote,
+  stale,
 }: {
   t: ThreadDetail;
   /** Omit when the engine reports no models — the composer's chip hides. */
@@ -82,12 +85,21 @@ export function ThreadScreen({
   onOpenWorkbench?: (e: WbCardEntry) => void;
   /** Composer text to put in and focus (plan "Change…"). */
   prefill?: { text: string };
+  /** #591: a thin line directly above the composer while the Mac is
+      unreachable ("Can't reach <Mac>") — the cached thread stays
+      readable, the hint explains why nothing new lands. */
+  unreachableNote?: string;
+  /** #591: the Mac is unreachable and this thread claims a live turn —
+     the header degrades to "Last seen working" and Stop renders disabled
+     (a press can't be delivered until the Mac is back). */
+  stale?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const scroller = useRef<ScrollView>(null);
   const [composerHeight, setComposerHeight] = useState(96);
   const [pillHeight, setPillHeight] = useState(0);
-  const running = t.state === "working";
+  const [noteHeight, setNoteHeight] = useState(0);
+  const running = t.state === "working" && !stale;
   /* #420: parked on an open QUESTION ask the card can answer — the
      composer says waiting, no steer copy and no stop (Hermes FIX #515).
      `waitingOnQuestion` also requires options/freeText, so a real-app
@@ -125,7 +137,11 @@ export function ThreadScreen({
              while a background pill shows, the pill and its stack gap.
              Composer-only leaves the newest line under the pill. */
           contentInset={{
-            bottom: threadBottomInset(composerHeight, pill ? pillHeight : 0),
+            bottom: threadBottomInset(
+              composerHeight,
+              pill ? pillHeight : 0,
+              unreachableNote ? noteHeight : 0,
+            ),
           }}
           keyboardDismissMode="interactive"
           contentContainerStyle={{
@@ -205,6 +221,25 @@ export function ThreadScreen({
               <BackgroundPill jobs={t.jobs ?? []} onPress={onOpenBackground} />
             </View>
           )}
+          {unreachableNote && (
+            <View
+              className="flex-row items-center justify-center gap-1.5"
+              onLayout={(e) => setNoteHeight(e.nativeEvent.layout.height)}
+            >
+              <Icon
+                name="wifi.exclamationmark"
+                size={12}
+                tone="muted-foreground"
+                weight="medium"
+              />
+              <AppText size="xs" tone="muted">
+                {/* #591: the note names the disabled Stop when the cached
+                    thread still claims a turn — the one control that
+                    looks live but can't be delivered. */}
+                {`${unreachableNote}${stale ? " · Stop works once the Mac is back" : ""}`}
+              </AppText>
+            </View>
+          )}
           <Composer
             placeholder={
               running
@@ -221,7 +256,10 @@ export function ThreadScreen({
             modelUnavailable={modelUnavailable}
             insetBottom={insets.bottom}
             onSend={onSend}
-            onStop={running ? onStop : undefined}
+            /* #591: stale keeps the ■ visible but disabled — hiding it
+               would pretend the thread was never mid-turn. */
+            onStop={t.state === "working" ? onStop : undefined}
+            stopHint={stale ? "Stop works once the Mac is back" : undefined}
             {...(onPickModel ? { onPickModel } : {})}
             onLayoutHeight={setComposerHeight}
             prefill={prefill}
@@ -240,6 +278,7 @@ export function ThreadHeaderTitle({
   prs,
   context,
   waiting,
+  stale,
   onPress,
 }: {
   title: string;
@@ -251,6 +290,9 @@ export function ThreadHeaderTitle({
       — waiting is not working, so the ring hides. Omitted (the real app)
       the ring renders on needs-you exactly as before. */
   waiting?: boolean;
+  /** #591: the Mac is unreachable — a live "working" chip degrades to
+     neutral "Last seen working". Terminal states stay as-is. */
+  stale?: boolean;
   onPress: () => void;
 }) {
   const one = prs?.length === 1 ? prs[0] : undefined;
@@ -269,7 +311,7 @@ export function ThreadHeaderTitle({
         {title}
       </AppText>
       <View className="flex-row items-center gap-1.5">
-        <StateChip state={state} />
+        <StateChip state={stale && state === "working" ? "last-seen" : state} />
         {/* Waiting is not working — no progress ring next to "Needs you"
             while a question the card can answer is open (Hermes FIX #515).
             Other needs-you asks keep the ring: they ARE still working. */}
