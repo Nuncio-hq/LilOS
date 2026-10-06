@@ -23,6 +23,14 @@ import {
   startHermesServe,
 } from "./serve.js";
 
+/** How to reach the backend this supervisor owns — the engine needs it to
+    hit token-gated HTTP endpoints (`/api/dashboard/agent-plugins/activate`,
+    #549) the JSON-RPC gateway has no verb for. */
+export interface BackendEndpoint {
+  url: string;
+  token: string;
+}
+
 export interface HermesBackendOptions {
   /** Path to the `hermes` binary. */
   bin: string;
@@ -49,7 +57,9 @@ export interface HermesBackendOptions {
 /** The slice of `HermesEngine` the supervisor drives — kept as an interface
     so the watcher file never imports the whole engine. */
 export interface BackendReactor {
-  setGateway(gw: GatewayLike): void;
+  /** The live gateway, plus the backend's own endpoint (absent in tests
+      that stub the supervisor — activation is best-effort anyway). */
+  setGateway(gw: GatewayLike, backend?: BackendEndpoint): void;
   markBackendDown(detail: string, state?: "restarting" | "failed"): void;
   markBackendFailed(detail: string): void;
 }
@@ -106,7 +116,10 @@ export class HermesBackendSupervisor {
     this.reactor = r;
     if (this.down !== undefined)
       r.markBackendDown(this.down, this.failed() ? "failed" : "restarting");
-    else r.setGateway(this.mustLive().gw);
+    else {
+      const { gw, handle } = this.mustLive();
+      r.setGateway(gw, { url: handle.url, token: handle.token });
+    }
   }
 
   /** Re-arm a spent budget on demand — `HermesEngine` calls this when a
@@ -239,7 +252,10 @@ export class HermesBackendSupervisor {
         this.attachLive(gw, handle);
         this.armStable();
         this.log(`hermes backend up at ${handle.url}`);
-        this.reactor?.setGateway(gw);
+        this.reactor?.setGateway(gw, {
+          url: handle.url,
+          token: handle.token,
+        });
       } catch (e) {
         this.failures += 1;
         const msg = e instanceof Error ? e.message.split("\n")[0] : String(e);

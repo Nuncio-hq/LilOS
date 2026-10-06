@@ -173,6 +173,38 @@ export class FakeGateway implements GatewayLike {
   steerStatus: "queued" | "rejected" = "queued";
   /** When set, session.steer rejects with this error code (e.g. 4010 build window). */
   steerError?: number;
+  /** #549: `tools.list` rows, mirroring `_toolset_rows` ({name, description,
+     tool_count, enabled, tools}). Default = a healthy backend with the
+     lilos plugin live; the defect fixture clears the lilos row. */
+  toolsets: {
+    name: string;
+    description: string;
+    tool_count: number;
+    enabled: boolean;
+    tools: string[];
+  }[] = [
+    {
+      name: "core",
+      description: "core tools",
+      tool_count: 3,
+      enabled: true,
+      tools: ["terminal", "read_file", "web_search"],
+    },
+    {
+      name: "lilos",
+      description: "LilOS app surfaces",
+      tool_count: 2,
+      enabled: true,
+      tools: ["lilos_context", "lilos_team_list"],
+    },
+  ];
+  /** #549: `plugins.list` rows — the backend plugin manager's loaded set.
+     Default = a backend that already has lilos live (its enable nudge
+     landed, or a session on the owner profile activated it); the defect
+     fixture clears the row. */
+  plugins: { name: string; version?: string; enabled?: boolean }[] = [
+    { name: "lilos", version: "0.1.0", enabled: true },
+  ];
   /** #521: when set, prompt.submit rejects with it — a typed backend-death
       wire error landing inside prompt()'s submit await. */
   submitError?: RpcError;
@@ -640,6 +672,10 @@ export class FakeGateway implements GatewayLike {
         }
         return Promise.resolve({ key, value });
       }
+      case "tools.list":
+        return Promise.resolve({ toolsets: this.toolsets });
+      case "plugins.list":
+        return Promise.resolve({ plugins: this.plugins });
       case "config.get": {
         const key = String(p.key ?? "");
         if (key === "approvals.mode")

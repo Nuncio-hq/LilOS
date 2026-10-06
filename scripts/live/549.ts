@@ -1,19 +1,18 @@
 /**
- * Issue #548 live leg — the host-backend collision: another `hermes serve`
- * (Hermes Desktop, a dashboard, a second LilOS) already owns this OS user's
- * machine-level backend when LilOS's engine starts. LilOS must still reach
- * `running` on its own `--isolated` backend, a DM turn must answer, and the
- * lilos plugin must load (AC-1, AC-2).
+ * Issue #549 live leg — a LilOS session's model-facing tool list must
+ * contain `lilos_*` and NOT Hermes' `browser_exec`/`browser_vault_*`, even
+ * while another `hermes serve` owns the host record (the setup that lost
+ * the plugin-activation nudge and produced "For 'lilos': NONE" on
+ * Hermes bd0affe5).
  *
- *   bun scripts/live/548.ts [--seconds N]
+ *   bun scripts/live/549.ts [--seconds N]
  *
- * The "other app" is a PLAIN `hermes serve` (no --isolated) spawned first —
- * exactly the owner an installed LilOS.app / Hermes Desktop is. Then the
- * engine goes up through `startHermesServe` like the adapter does: pre-fix
- * it attaches to the owner and exits 0 ("exited early"), post-fix it binds
- * its own port and logs the observe-only line.
+ * Same two-backend shape as 548.ts (the bug's real environment): a PLAIN
+ * `hermes serve` owns the host record so `plugins enable`'s activate nudge
+ * lands on the WRONG backend; LilOS's `--isolated` backend must self-heal
+ * via POST /api/dashboard/agent-plugins/activate on its own server.
  *
- * HOME/HERMES_HOME isolation is the caller's job (548.sh); nothing here
+ * HOME/HERMES_HOME isolation is the caller's job (549.sh); nothing here
  * kills or touches anything it did not spawn.
  */
 
@@ -24,7 +23,6 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,7 +54,7 @@ const arg = (name: string, dflt?: string) => {
 const provider = process.env.HERMES_PROVIDER ?? "lilos-stub";
 const model = process.env.HERMES_MODEL ?? "stub-model";
 const seconds = Number(arg("seconds", "90") ?? "90");
-const workdir = mkdtempSync(join(tmpdir(), "lilos548-"));
+const workdir = mkdtempSync(join(tmpdir(), "lilos549-"));
 const HERMES_HOME = process.env.HERMES_HOME ?? join(workdir, "hermes-home");
 const repoRoot =
   process.env.LILOS_REPO_ROOT ??
@@ -66,7 +64,7 @@ const HERMES_BIN = process.env.HERMES_BIN ?? "hermes";
 
 const t0 = Date.now();
 const out = (line: string) =>
-  console.log(`[live-548 +${String(Date.now() - t0).padStart(5)}ms] ${line}`);
+  console.log(`[live-549 +${String(Date.now() - t0).padStart(5)}ms] ${line}`);
 
 /* ------------------------------- boot --------------------------------- */
 
@@ -141,7 +139,7 @@ const appOps: AppOps = {
       { id: "engine", label: "engine", state: "ok", reason: "" },
       { id: "model", label: "model", state: "ok", reason: "" },
     ],
-    versions: { relay: "live-548", relayProtocol: 1 },
+    versions: { relay: "live-549", relayProtocol: 1 },
   }),
   profile: async () => ({ userName: "Oscar", companyName: "LilOS" }),
   openWorkbench: async () => {},
@@ -162,8 +160,9 @@ const surfaces = await serveSurfaces(0, {
 out(`surfaces gateway at ${surfaces.url}`);
 
 /* The "other app": a plain `hermes serve` — NO --isolated — the way Hermes
-   Desktop or an old LilOS owns the host. It claims the host lock and
-   publishes the rendezvous record our engine's serve would attach to. */
+   Desktop or an old LilOS owns the host. It claims the host lock and,
+   critically for #549, owns the rendezvous record that `plugins enable`'s
+   activate nudge is routed through. */
 async function spawnHostBackend() {
   const token = `lilos-host-${randomBytes(16).toString("hex")}`;
   const child = spawn(
@@ -221,11 +220,11 @@ async function spawnHostBackend() {
 
 const host = await spawnHostBackend();
 out(
-  `host backend ready at http://127.0.0.1:${host.port} (the "other app" — no --isolated)`,
+  `host backend ready at http://127.0.0.1:${host.port} (the "other app" — owns the activate-nudge record)`,
 );
 
 /* LilOS's engine backend — the same startHermesServe the adapter's backend
-   supervisor calls. On the bug it attaches to `host` and exits 0. */
+   supervisor calls (--isolated; observe-only). */
 const hermesEnv: Record<string, string> = {
   HOME: process.env.HOME ?? "",
   HERMES_HOME,
@@ -274,14 +273,19 @@ gateway.onEvent((e: GatewayEvent) => {
 });
 out("gateway connected");
 
+const engineLog: string[] = [];
 const engine = new HermesEngine({
   gateway,
   hermesHome: HERMES_HOME,
-  onLog: (line) => out(`engine ${line}`),
+  onLog: (line) => {
+    engineLog.push(line);
+    out(`engine ${line}`);
+  },
 });
 /* The backend's own HTTP endpoint — what the production supervisor hands
    over; the #549 self-heal POSTs agent-plugins/activate there. */
 engine.setGateway(gateway, { url: hermes.url, token: hermes.token });
+
 const conn = connectInMemory(engine);
 const engineTools: string[] = [];
 conn.onEvent((e) => {
@@ -311,10 +315,10 @@ let { agents } = (await conn.request("agents.list")) as {
   agents: { id: string }[];
 };
 if (!agents[0]?.id) {
-  out("no hermes profile under the isolated home — creating 'lilos548'");
+  out("no hermes profile under the isolated home — creating 'lilos549'");
   await conn.request("agents.create", {
-    name: "lilos548",
-    description: "live-548 check profile",
+    name: "lilos549",
+    description: "live-549 check profile",
     model,
     provider,
   });
@@ -362,6 +366,20 @@ out(
   `config set tool_search=off exited ${ts.code} — ${ts.out.trim().split("\n").pop() ?? ""}`,
 );
 
+/* What connect.ts now writes for every LilOS profile — strips the whole
+   browser toolset (browser_exec + browser_vault_*) out of the OFFER. */
+const dt = await hermesCli([
+  "-p",
+  agent,
+  "config",
+  "set",
+  "agent.disabled_toolsets",
+  '["browser"]',
+]);
+out(
+  `config set disabled_toolsets=[browser] exited ${dt.code} — ${dt.out.trim().split("\n").pop() ?? ""}`,
+);
+
 const handle = surfaces.create({ cwd: workdir, binding: BINDING });
 const { sessionId, engineSessionId } = (await conn.request("session.start", {
   agent,
@@ -376,7 +394,7 @@ out(
 );
 
 const prompt =
-  "Use your LilOS tools: call lilos_context and lilos_team_list, then tell me who you are and who is on the team.";
+  "Who are you, where are you working, and who is on the team? Use your LilOS tools — call lilos_context and lilos_team_list — then answer.";
 out(`prompt: ${JSON.stringify(prompt)}`);
 const res = (await conn.request("prompt", {
   sessionId,
@@ -394,62 +412,35 @@ const check = (pass: boolean, label: string) => {
   if (!pass) ok = false;
 };
 
-/* AC-1: the engine bound its OWN backend alongside the owner's — it did
-   not attach and exit 0 (the start above would have thrown the typed
-   conflict), and the port proves it is a distinct server. */
+/* AC-3: the engine logged the session's offered tool list at start —
+   and the self-heal had to activate lilos on OUR backend (the enable
+   nudge went to the host owner's record, so lilos was missing). */
+const offeredLine = engineLog.find((l) => /offered \d+ tools/.test(l));
 check(
-  hermes.port !== host.port,
-  `engine bound its own backend (lilos :${hermes.port} vs owner :${host.port})`,
+  offeredLine !== undefined && /lilos_\w+/.test(offeredLine),
+  `session-start log lists the offered tools incl. lilos_* (${offeredLine ?? "no line"})`,
+);
+const healLine = engineLog.find((l) => l.includes("activated on our backend"));
+out(
+  `  self-heal: ${healLine ?? engineLog.find((l) => l.includes("lilos")) ?? "no lilos line"}`,
 );
 
-/* Same fact from the hermes side: the isolated backend logs the
-   "bound anyway (observe-only)" line — only the host rendezvous record is
-   unpublished; plugins/sessions/resume all work. `_log.warning` lands in
-   the serve child's output on some builds and in log files under
-   HERMES_HOME on others — read BOTH, fail only if neither has it. */
-const observeLines: string[] = [...hermes.logTail().split("\n")].filter(
-  (l) => l.includes("observe-only") || l.includes("already owns this host"),
-);
-const logFiles: string[] = [];
-const walkLogs = (dir: string) => {
-  if (!existsSync(dir)) return;
-  for (const ent of readdirSync(dir, { withFileTypes: true })) {
-    const p = join(dir, ent.name);
-    if (ent.isDirectory()) walkLogs(p);
-    else if (ent.name.endsWith(".log")) logFiles.push(p);
-  }
-};
-for (const dir of [HERMES_HOME, profileHome]) walkLogs(dir);
-for (const p of logFiles) {
-  try {
-    observeLines.push(
-      ...readFileSync(p, "utf8")
-        .split("\n")
-        .filter(
-          (l) =>
-            l.includes("observe-only") || l.includes("already owns this host"),
-        ),
-    );
-  } catch {
-    /* unreadable file */
-  }
-}
-check(
-  observeLines.length > 0,
-  `engine backend went observe-only in hermes output (${observeLines.length} lines)`,
-);
-for (const l of observeLines.slice(0, 3)) out(`  observe-line: ${l}`);
-
-/* AC-2: the session's tool list — wire `tools.list` scoped to this session. */
-let offered: string[] = [];
+/* The session's tool list — wire `tools.list` scoped to this session. */
+const offered: string[] = [];
+const toolsetNames: string[] = [];
 try {
   const r = (await gateway.request("tools.list", {
     session_id: sessionId,
-  })) as { toolsets?: { name: string; tools?: string[]; enabled?: boolean }[] };
+  })) as {
+    toolsets?: { name: string; tools?: string[]; enabled?: boolean }[];
+  };
+  for (const t of r.toolsets ?? []) {
+    toolsetNames.push(t.name);
+    if (t.enabled !== false) offered.push(...(t.tools ?? []));
+  }
   const lilos = (r.toolsets ?? []).find((t) => t.name === "lilos");
-  offered = lilos?.tools ?? [];
   out(
-    `tools.list lilos toolset: ${offered.length} tools, enabled=${lilos?.enabled}`,
+    `tools.list: ${r.toolsets?.length ?? 0} toolsets (${toolsetNames.join(",")}), lilos enabled=${lilos?.enabled} tools=${lilos?.tools?.length ?? 0}`,
   );
 } catch (e) {
   out(`tools.list failed: ${String(e)}`);
@@ -458,30 +449,23 @@ check(
   offered.includes("lilos_context"),
   "turn tool list contains lilos_context",
 );
-
-/* A lilos_* tool call actually ran — wire tool.* frames or the engine's
-   tool.started. */
-const ranLilos =
-  toolCalls.some((c) => c.tool.startsWith("lilos_")) ||
-  engineTools.some((t) => t.startsWith("lilos_"));
 check(
-  ranLilos,
-  `a lilos_* tool call ran (wire: ${toolCalls.map((c) => c.tool).join(",") || "none"}; engine: ${engineTools.join(",") || "none"})`,
-);
-const lilosResults = toolCalls.filter(
-  (c) => c.tool.startsWith("lilos_") && c.result !== undefined,
-);
-const lilosOk = lilosResults.some(
-  (c) =>
-    !/failed|unauthorized|unavailable|only runs inside/i.test(c.result ?? ""),
-);
-check(
-  lilosOk,
-  `a lilos_* call returned real data (${lilosResults.map((c) => (c.result ?? "").slice(0, 80)).join(" | ") || "no results"})`,
+  toolsetNames.includes("lilos"),
+  "a 'lilos' toolset is registered on our backend",
 );
 
-/* The model-facing tool list — under the stub this is exactly the tools[]
-   array on the provider request. */
+/* #549's core assertion: no Hermes browser tool reaches a LilOS session —
+   not in the session's offered list… */
+const browserInList = offered.filter(
+  (t) => t.startsWith("browser_") && !t.startsWith("lilos_"),
+);
+check(
+  browserInList.length === 0,
+  `no hermes browser_* in the offered list (${browserInList.join(",") || "none"})`,
+);
+
+/* …nor on the wire to the model — under the stub this is exactly the
+   tools[] array on the provider request. */
 if (process.env.STUB_REQUEST_LOG && existsSync(process.env.STUB_REQUEST_LOG)) {
   const offeredToModel = new Set<string>();
   for (const line of readFileSync(process.env.STUB_REQUEST_LOG, "utf8").split(
@@ -500,7 +484,36 @@ if (process.env.STUB_REQUEST_LOG && existsSync(process.env.STUB_REQUEST_LOG)) {
     offeredToModel.has("lilos_context"),
     `model-facing tool list contains lilos_context (${[...offeredToModel].filter((t) => t.startsWith("lilos_")).length} lilos_* offered)`,
   );
+  const browserToModel = [...offeredToModel].filter(
+    (t) => t.startsWith("browser_") && !t.startsWith("lilos_"),
+  );
+  check(
+    browserToModel.length === 0,
+    `model-facing tool list has NO browser_exec/browser_vault_* (${browserToModel.join(",") || "none"})`,
+  );
 }
+
+/* AC-1: the identity turn answers through lilos_* calls with real data —
+   no ~/.lilos file reads anywhere (the tool list is the evidence: it has
+   no file-read path into LILOS_HOME). */
+const ranLilos =
+  toolCalls.some((c) => c.tool.startsWith("lilos_")) ||
+  engineTools.some((t) => t.startsWith("lilos_"));
+check(
+  ranLilos,
+  `a lilos_* tool call ran (wire: ${toolCalls.map((c) => c.tool).join(",") || "none"}; engine: ${engineTools.join(",") || "none"})`,
+);
+const lilosResults = toolCalls.filter(
+  (c) => c.tool.startsWith("lilos_") && c.result !== undefined,
+);
+const lilosOk = lilosResults.some(
+  (c) =>
+    !/failed|unauthorized|unavailable|only runs inside/i.test(c.result ?? ""),
+);
+check(
+  lilosOk,
+  `a lilos_* call returned real data (${lilosResults.map((c) => (c.result ?? "").slice(0, 80)).join(" | ") || "no results"})`,
+);
 
 check(res.stopReason === "end_turn", `turn completed (${res.stopReason})`);
 
