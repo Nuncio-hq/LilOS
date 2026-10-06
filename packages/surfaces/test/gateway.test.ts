@@ -1,4 +1,5 @@
 import type { Conversation } from "@lilos/contracts/app";
+import { HOST_POLICY_VERSION } from "@lilos/contracts/harness";
 import { describe, expect, it, vi } from "vitest";
 import {
   SESSION_HEADER,
@@ -77,9 +78,13 @@ describe("AC-2 MCP over streamable HTTP", () => {
       expect(msg.result.protocolVersion).toBe("2025-06-18");
       expect(msg.result.capabilities.tools).toBeDefined();
       // The host policy rides in `instructions` — and knows this session's areas.
-      expect(msg.result.instructions).toContain("[LilOS host policy v2]");
+      expect(msg.result.instructions).toContain(
+        `[LilOS host policy v${HOST_POLICY_VERSION}]`,
+      );
       expect(msg.result.instructions).toContain("browser_*");
       expect(msg.result.instructions).toContain("thread_*");
+      // #549 AC-3: the policy names the ~/.lilos off-limits rule.
+      expect(msg.result.instructions).toContain("~/.lilos");
     } finally {
       api.server.close();
     }
@@ -566,7 +571,7 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
       expect(
         (r.mac as { components: unknown[] }).components.length,
       ).toBeGreaterThan(0);
-      expect(r.hostPolicyVersion).toBe(2);
+      expect(r.hostPolicyVersion).toBe(HOST_POLICY_VERSION);
       expect(r.areas).toEqual(
         expect.arrayContaining(["root", "thread", "team", "workbench"]),
       );

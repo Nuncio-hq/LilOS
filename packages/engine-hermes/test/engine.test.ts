@@ -2263,3 +2263,105 @@ describe("engine-hermes #482: settle + heal invariants", () => {
     await engine.close();
   });
 });
+
+describe("engine-hermes #549: lilos toolset self-heal + tool-offer log", () => {
+  const BACKEND = { url: "http://127.0.0.1:55000", token: "tok-backend" };
+
+  test("AC-3: session.start logs the tools the model would get", async () => {
+    const gw = new FakeGateway();
+    const logs: string[] = [];
+    const engine = new HermesEngine({
+      gateway: gw,
+      onLog: (l) => logs.push(l),
+    });
+    const conn = connectInMemory(engine);
+    const h = new Harness(conn);
+    await start(h);
+    const line = logs.find((l) => l.includes("offered"));
+    expect(line).toBeTruthy();
+    expect(line).toContain("lilos_context");
+    expect(line).toContain(gw.lastSid);
+    /* A backend that already has the plugin loaded skips the POST. */
+    expect(logs.some((l) => l.includes("active on our backend"))).toBe(true);
+    await engine.close();
+  });
+
+  test("lilos toolset missing on a record-less backend → activate on OUR backend before create, then offered", async () => {
+    const gw = new FakeGateway();
+    /* The enable nudge landed on the host owner's record — OUR backend's
+       plugin manager never loaded lilos, and its toolsets lack it. */
+    gw.plugins = [];
+    gw.toolsets = gw.toolsets.filter((t) => t.name !== "lilos");
+    const posts: { url: string; init?: RequestInit }[] = [];
+    const logs: string[] = [];
+    const fetchFn = async (url: string | URL | Request, init?: RequestInit) => {
+      posts.push({ url: String(url), init });
+      // The real endpoint flips the backend's registry before returning:
+      // plugins.list then reports it and the next tools.list resolves its
+      // tools for a session created after activation.
+      gw.plugins = [{ name: "lilos", enabled: true }];
+      gw.toolsets = [
+        ...gw.toolsets,
+        {
+          name: "lilos",
+          description: "LilOS app surfaces",
+          tool_count: 2,
+          enabled: true,
+          tools: ["lilos_context", "lilos_team_list"],
+        },
+      ];
+      return new Response("{}", { status: 200 });
+    };
+    const engine = new HermesEngine({
+      gateway: gw,
+      onLog: (l) => logs.push(l),
+      hermesHome: "/tmp/hh",
+      fetchFn,
+    });
+    const conn = connectInMemory(engine);
+    const h = new Harness(conn);
+    // The supervisor reports the backend endpoint on gateway attach.
+    engine.setGateway(gw, BACKEND);
+    await start(h);
+    /* The POST ran BEFORE session.create — the new agent's pinned list
+       was built with the plugin already registered. */
+    const pluginsList = gw.callLog.indexOf("plugins.list");
+    const create = gw.callLog.indexOf("session.create");
+    expect(pluginsList).toBeGreaterThanOrEqual(0);
+    expect(create).toBeGreaterThan(pluginsList);
+    expect(posts).toHaveLength(1);
+    const [post] = posts;
+    expect(post.url).toBe(
+      `${BACKEND.url}/api/dashboard/agent-plugins/activate`,
+    );
+    expect(JSON.parse(String(post.init?.body))).toEqual({
+      name: "lilos",
+      home: "/tmp/hh/profiles/builder",
+    });
+    expect(
+      (post.init?.headers as Record<string, string>)["X-Hermes-Session-Token"],
+    ).toBe("tok-backend");
+    expect(logs.some((l) => l.includes("activated on our backend"))).toBe(true);
+    await engine.close();
+  });
+
+  test("missing lilos with no endpoint → logs the gap, session still starts", async () => {
+    const gw = new FakeGateway();
+    gw.plugins = [];
+    gw.toolsets = gw.toolsets.filter((t) => t.name !== "lilos");
+    const logs: string[] = [];
+    const engine = new HermesEngine({
+      gateway: gw,
+      onLog: (l) => logs.push(l),
+      hermesHome: "/tmp/hh",
+    });
+    const conn = connectInMemory(engine);
+    const h = new Harness(conn);
+    const { sessionId } = await start(h);
+    expect(sessionId).toBeTruthy();
+    expect(logs.some((l) => l.includes("no backend endpoint"))).toBe(true);
+    /* And the post-create verify names what the session is missing. */
+    expect(logs.some((l) => l.includes("no lilos_* tools offered"))).toBe(true);
+    await engine.close();
+  });
+});

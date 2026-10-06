@@ -34,4 +34,14 @@ spec.loader.exec_module(mod)
 ctx = _Ctx()
 t0 = time.monotonic()
 mod.register(ctx)
-print(json.dumps({"seconds": time.monotonic() - t0, "tools": ctx.tools}))
+report = {"seconds": time.monotonic() - t0, "tools": ctx.tools}
+
+# #549 AC-2: with a LilOS-source session (env stamp is the acp path's mark),
+# every hermes browser_* tool must be refused truthfully — lilos_browser_*
+# named where one exists, "no alternative" where none does.
+if "--gate" in sys.argv:
+    for tool in ("browser_exec", "browser_vault_fill", "lilos_context"):
+        verdict = mod._pre_tool_call(tool, {}, "sid-probe")
+        report[tool] = None if verdict is None else verdict.get("message", "")
+
+print(json.dumps(report))
