@@ -43,7 +43,6 @@ const session = (turns: TurnModel[], live?: TurnModel) => ({
   live,
   openRequests: [],
   jobs: [],
-  subagentJobs: [],
 });
 
 describe("issue #585 system notes", () => {

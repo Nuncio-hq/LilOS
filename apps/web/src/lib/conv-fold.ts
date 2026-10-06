@@ -262,10 +262,9 @@ function computeFeed(i: FoldInputs): FeedFold {
       r.turnId = `${i.conv.id}:${r.turnId}`;
   const ws = wsFor(i.conv.cwd, i.cwdInfo);
   /* #583 AC-3: a live background job lands on the DM row — same jobs the
-     thread panel's Background tab lists. */
-  const jobs = i.model
-    ? [...i.model.jobs, ...i.model.subagentJobs].map((j) => toJob(j))
-    : undefined;
+     thread panel's Background tab lists (#587: helpers are Subagents-tab
+     only, never job rows). */
+  const jobs = i.model ? i.model.jobs.map((j) => toJob(j)) : undefined;
   return {
     waiting,
     replies,
