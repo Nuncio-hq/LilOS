@@ -367,6 +367,18 @@ export class HermesEngine {
           HermesEngine.GW_RESUME_TIMEOUT_MS,
         )) as { session_id?: unknown; stored_session_id?: unknown };
         if (typeof r.session_id === "string" && r.session_id) {
+          /* #573: the resume awaited the gateway — a session.stop in that
+             window evicted the session for good; drop the runtime session
+             the resume just minted instead of resurrecting the maps. */
+          if (this.sessions.get(s.id) !== s) {
+            void this.current
+              .request("session.close", { session_id: r.session_id })
+              .catch(() => {});
+            throw new RpcError(
+              RPC_ERRORS.SESSION_NOT_FOUND,
+              `no session ${s.id}`,
+            );
+          }
           this.byRuntimeSid.delete(s.runtimeSid);
           s.runtimeSid = r.session_id;
           this.byRuntimeSid.set(s.runtimeSid, s);
@@ -410,7 +422,12 @@ export class HermesEngine {
           s.backendDead = false;
           return;
         }
-      } catch {
+      } catch (e) {
+        /* #573: the stop-guard above throws SESSION_NOT_FOUND — final, not
+           a dead-row signal; don't fall through to a create that would
+           mint another orphan. */
+        if (e instanceof RpcError && e.code === RPC_ERRORS.SESSION_NOT_FOUND)
+          throw e;
         /* The stored row names a session Hermes no longer has (or the
            resume raced another restart) — fall through to a fresh create. */
       }
@@ -431,6 +448,14 @@ export class HermesEngine {
           RPC_ERRORS.INTERNAL_ERROR,
           "session.create returned no session_id",
         );
+      /* Same #573 race as the resume path: stop evicted the session while
+         the fallback create was in flight — don't re-register it. */
+      if (this.sessions.get(s.id) !== s) {
+        void this.current
+          .request("session.close", { session_id: created.session_id })
+          .catch(() => {});
+        throw new RpcError(RPC_ERRORS.SESSION_NOT_FOUND, `no session ${s.id}`);
+      }
       this.byRuntimeSid.delete(s.runtimeSid);
       s.runtimeSid = created.session_id;
       this.byRuntimeSid.set(s.runtimeSid, s);
@@ -1064,6 +1089,15 @@ export class HermesEngine {
       )) as { session_id?: unknown; stored_session_id?: unknown };
       if (typeof r.session_id !== "string" || !r.session_id)
         throw new Error("session.resume returned no session_id");
+      /* #573: a session.stop landed while the resume was in flight — the
+         registry row is gone and the session is forgotten; close the
+         runtime session we just minted rather than resurrect it. */
+      if (!this.sessionRegistry?.get(sessionId)) {
+        void this.current
+          .request("session.close", { session_id: r.session_id })
+          .catch(() => {});
+        return undefined;
+      }
       const ref =
         typeof r.stored_session_id === "string" && r.stored_session_id
           ? r.stored_session_id

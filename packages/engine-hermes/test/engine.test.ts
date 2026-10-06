@@ -2342,4 +2342,103 @@ describe("engine-hermes #573: session.stop forgets the session", () => {
     ).rejects.toMatchObject({ code: -32001 });
     expect(gw.resumeCalls).toHaveLength(0); // never resurrected
   });
+
+  /* The resume paths await the gateway before writing the maps back — a
+     session.stop landing inside that window must not be undone when the
+     resume answer arrives: the minted runtime session is closed server-
+     side and the forgotten id stays forgotten. */
+  test("AC-1 stop while a suspended session's resume is in flight doesn't resurrect it", async () => {
+    const sessionsFile = join(
+      mkdtempSync(join(tmpdir(), "lilos-hermes-sessions-")),
+      "engine-sessions.json",
+    );
+    const gw = new FakeGateway();
+    const engine = new HermesEngine({ gateway: gw, sessionsFile });
+    const h = new Harness(connectInMemory(engine));
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId, "hi");
+    gw.complete(gw.lastSid);
+    await p;
+    await h.request("session.suspend", { sessionId });
+    expect(engine.sessionCount).toBe(0);
+
+    let release!: () => void;
+    gw.resumeGate = new Promise<void>((r) => {
+      release = r;
+    });
+    /* events.since parks inside resumeStored's session.resume. */
+    const replay = h.request("events.since", { sessionId, after: 0 });
+    await new Promise<void>((resolve, reject) => {
+      const deadline = Date.now() + 5_000;
+      const tick = () => {
+        if (gw.resumeCalls.length) return resolve();
+        if (Date.now() > deadline)
+          return reject(new Error("session.resume never fired"));
+        setTimeout(tick, 5);
+      };
+      tick();
+    });
+
+    const stopped = (await h.request("session.stop", {
+      sessionId,
+    })) as { stopped: boolean };
+    expect(stopped.stopped).toBe(true);
+
+    release();
+    await expect(replay).rejects.toMatchObject({ code: -32001 });
+    expect(engine.sessionFor(sessionId)).toBeUndefined();
+    /* The resume minted sid-2 — the engine closed the orphan rather than
+       registering it (sid-1 is suspend's close). */
+    expect(gw.closedSessions).toEqual(["sid-1", "sid-2"]);
+  });
+
+  test("AC-1 stop while a backendDead resume is in flight doesn't resurrect it", async () => {
+    const sessionsFile = join(
+      mkdtempSync(join(tmpdir(), "lilos-hermes-sessions-")),
+      "engine-sessions.json",
+    );
+    const gw1 = new FakeGateway();
+    const engine = new HermesEngine({ gateway: gw1, sessionsFile });
+    const h = new Harness(connectInMemory(engine));
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId, "hi");
+    gw1.complete(gw1.lastSid);
+    await p;
+
+    engine.markBackendDown("kill");
+    const gw2 = new FakeGateway();
+    /* Burn a ref so the minted sid is provably distinct from sid-1. */
+    gw2.burnRefs(1);
+    let release!: () => void;
+    gw2.resumeGate = new Promise<void>((r) => {
+      release = r;
+    });
+    engine.setGateway(gw2);
+
+    /* The prompt parks inside ensureLive's session.resume on gw2. */
+    const prompt = promptAsync(h, sessionId, "hi");
+    await new Promise<void>((resolve, reject) => {
+      const deadline = Date.now() + 5_000;
+      const tick = () => {
+        if (gw2.resumeCalls.length) return resolve();
+        if (Date.now() > deadline)
+          return reject(new Error("session.resume never fired"));
+        setTimeout(tick, 5);
+      };
+      tick();
+    });
+
+    const stopped = (await h.request("session.stop", {
+      sessionId,
+    })) as { stopped: boolean };
+    expect(stopped.stopped).toBe(true);
+    expect(engine.sessionFor(sessionId)).toBeUndefined();
+
+    release();
+    await expect(prompt).rejects.toMatchObject({ code: -32001 });
+    /* gw2 saw stop's session.close on the stale sid plus the engine's
+       close of the minted orphan — nothing re-registered. */
+    expect(gw2.closedSessions).toEqual(["sid-1", "sid-2"]);
+    expect(engine.sessionIdFor("sid-2")).toBeUndefined();
+  });
 });
