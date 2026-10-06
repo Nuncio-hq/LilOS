@@ -2741,9 +2741,9 @@ export const WORKSPACE_MOVE_SCENARIOS: Scenario[] = [
         ),
       );
       await h.request("prompt", textPrompt(sessionId, "hi"));
-      const resumed = h.events.filter(
-        (e) => e.type === "session.started" && e.sessionId === sessionId,
-      );
+      const resumed = h.events
+        .filter((e) => e.type === "session.started")
+        .filter((e) => e.sessionId === sessionId);
       assert(
         resumed.length === 2,
         `resume re-announces session.started, got ${resumed.length}`,
