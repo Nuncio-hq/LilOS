@@ -28,10 +28,7 @@ export function pendingAsk(
 }
 
 /** What the hint line under a pending card shows — only the keys it offers. */
-export function askHint(
-  reply: Reply,
-  kind: PendingAsk["kind"],
-): string | null {
+export function askHint(reply: Reply, kind: PendingAsk["kind"]): string | null {
   if (kind === "plan") return "↵ Approve · ⌫ Reject";
   const options = reply.approval?.options?.length
     ? reply.approval.options

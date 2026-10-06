@@ -89,7 +89,7 @@ describe("issue #558 pending ask selection", () => {
 
 describe("issue #558 key routing", () => {
   const ctx = (over: Partial<Parameters<typeof askKeyDown>[1]> = {}) => ({
-    viewer: "Oscar",
+    viewer: "Riley",
     resolved: {},
     running: false,
     ...over,
@@ -104,7 +104,7 @@ describe("issue #558 key routing", () => {
     );
     expect(handled).toBe(true);
     expect(setResolved).toHaveBeenCalledWith({
-      a1: "Allowed once by Oscar",
+      a1: "Allowed once by Riley",
     });
   });
 
@@ -114,7 +114,7 @@ describe("issue #558 key routing", () => {
     expect(
       askKeyDown(ev("Backspace"), ctx({ ask: { kind: "approval", reply: r }, setResolved })),
     ).toBe(true);
-    expect(setResolved).toHaveBeenCalledWith({ a1: "Denied by Oscar" });
+    expect(setResolved).toHaveBeenCalledWith({ a1: "Denied by Riley" });
     setResolved.mockClear();
     // Esc is close-only (#576) — it must never answer a card.
     expect(

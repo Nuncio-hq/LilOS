@@ -293,10 +293,7 @@ export function PlanCard({
             </div>
           ) : null}
           {phase === "waiting" && keyHint && (
-            <div
-              data-ask-keyhint
-              className="text-[11px] text-muted-foreground"
-            >
+            <div data-ask-keyhint className="text-[11px] text-muted-foreground">
               Answer from the keyboard: ↵ Approve · ⌫ Reject
             </div>
           )}

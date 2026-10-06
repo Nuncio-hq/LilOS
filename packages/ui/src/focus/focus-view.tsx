@@ -37,8 +37,8 @@ import {
   waitingComposer,
 } from "../chat/agent-chat";
 import { FocusComposer } from "../chat/focus-composer";
-import { useUiLayer } from "../chat/ui-layers";
 import { sessionChoice } from "../chat/model-picker";
+import { useUiLayer } from "../chat/ui-layers";
 import {
   Conversation,
   ConversationContent,

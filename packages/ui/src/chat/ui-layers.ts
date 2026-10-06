@@ -1,9 +1,4 @@
-import {
-  type RefObject,
-  useCallback,
-  useEffect,
-  useRef,
-} from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { OPEN_OVERLAY } from "./composer-keys";
 
 /* Mount-ordered stack of UI surfaces that own keyboard input (issue #576).
@@ -32,7 +27,14 @@ let listening = false;
  *  handle Esc internally; the stack must not eat their key. */
 function foreignOverlayOpen(): boolean {
   for (const el of document.querySelectorAll(OPEN_OVERLAY))
-    if (!stack.some((l) => l.el === el)) return true;
+    /* Only a visible, unowned overlay is foreign — Base UI keeps closed
+       menus/popovers mounted while they animate out, and counting them
+       would swallow Esc meant for the layer underneath. */
+    if (
+      (el as HTMLElement).checkVisibility({ checkVisibilityCSS: true }) &&
+      !stack.some((l) => l.el === el)
+    )
+      return true;
   return false;
 }
 
@@ -67,10 +69,14 @@ function remove(layer: Layer) {
   if (i >= 0) stack.splice(i, 1);
 }
 
-/** Keep the registered record pointing at this render's handlers. */
-function useLatest(layer: RefObject<Layer | null>, h: UiLayerHandlers) {
+/* Keep the registered record pointing at this render's handlers. It must
+   assign onto the stable layer object itself, not ref.current: StrictMode's
+   effect remount runs the push cleanup (which once nulled the ref) before
+   the re-assign, so a ref read could hit null or a stale replacement and
+   leave the pushed layer handler-less. */
+function useLatest(layer: Layer, h: UiLayerHandlers) {
   useEffect(() => {
-    if (layer.current) Object.assign(layer.current, h);
+    Object.assign(layer, h);
   });
 }
 
@@ -85,13 +91,10 @@ export function useUiLayer(handlers: UiLayerHandlers): void {
   const ref = useRef<Layer | null>(null);
   if (ref.current === null) ref.current = {};
   const layer = ref.current;
-  useLatest(ref, handlers);
+  useLatest(layer, handlers);
   useEffect(() => {
     push(layer);
-    return () => {
-      remove(layer);
-      ref.current = null;
-    };
+    return () => remove(layer);
   }, [layer]);
 }
 
@@ -110,13 +113,10 @@ export function useUiLayerEl<T extends HTMLElement = HTMLElement>(
   const ref = useRef<Layer | null>(null);
   if (ref.current === null) ref.current = {};
   const layer = ref.current;
-  useLatest(ref, handlers);
+  useLatest(layer, handlers);
   useEffect(() => {
     push(layer);
-    return () => {
-      remove(layer);
-      ref.current = null;
-    };
+    return () => remove(layer);
   }, [layer]);
   return useCallback(
     (el: T | null) => {

@@ -278,17 +278,34 @@ function TurnRowImpl({
   keyTarget,
   acts,
 }: TurnRowProps) {
-  const {
-    onRetry,
-    onOpen,
-    onOpenSession,
-    onPlan,
-    onRewind,
-    setResolved,
-    onStart,
-    onAnswer,
-    onCancel,
-  } = acts.current;
+  /* Handlers call through `acts.current` at EVENT time — the ref
+     indirection only delivers the latest closures when reads are lazy.
+     Destructured here they bind whatever the view's render held when this
+     row last rendered (a draft typed just before a rewind reached
+     rewindTo as "" — #578). */
+  const onRetry =
+    acts.current.onRetry && ((id: string) => acts.current.onRetry?.(id));
+  const onOpen =
+    acts.current.onOpen && ((t: WbTab) => acts.current.onOpen?.(t));
+  const onOpenSession =
+    acts.current.onOpenSession &&
+    ((employeeId: string, session: string) =>
+      acts.current.onOpenSession?.(employeeId, session));
+  const onPlan =
+    acts.current.onPlan &&
+    ((a: PlanAction, planId: string) => acts.current.onPlan?.(a, planId));
+  const onRewind =
+    acts.current.onRewind && ((id: string) => acts.current.onRewind?.(id));
+  const setResolved =
+    acts.current.setResolved &&
+    ((r: Record<string, string>) => acts.current.setResolved?.(r));
+  const onStart = acts.current.onStart && (() => acts.current.onStart?.());
+  const onAnswer =
+    acts.current.onAnswer &&
+    ((q: QuestionAsk, a: QuestionAnswer) => acts.current.onAnswer?.(q, a));
+  const onCancel =
+    acts.current.onCancel &&
+    ((q: QuestionAsk) => acts.current.onCancel?.(q));
   const cls = cn(
     "transition-colors duration-500",
     frame === "focus" && "rounded-lg",

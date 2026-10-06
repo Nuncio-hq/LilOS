@@ -2264,7 +2264,7 @@ export default function App() {
           onRemove={() => removeEmployee(editEmp)}
         />
       )}
-      {toast && <div className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-background text-sm shadow-lg">{toast.text}{toast.action && <button type="button" className="font-medium underline underline-offset-2" onClick={toast.action.run}>{toast.action.label}</button>}</div>}
+      {toast && <div data-toast className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-background text-sm shadow-lg">{toast.text}{toast.action && <button type="button" data-toast-action className="font-medium underline underline-offset-2" onClick={toast.action.run}>{toast.action.label}</button>}</div>}
     </div>
   )
 }

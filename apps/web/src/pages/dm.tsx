@@ -1114,7 +1114,16 @@ export function DmPage() {
     let root = threadPool.find((m) => m.id === conv.rootMessageId);
     if (!root) {
       const listed = summaryOf(conv)?.root;
-      root = listed && !listed.rewound ? listed : threadPool[0];
+      /* #578: a PENDING (visual, uncommitted) rewind hides the root from
+         threadPool but leaves `listed.rewound` unset until the window
+         closes — the header must honor the drop's ids too or the root
+         keeps rendering as the thread header through the Undo window. */
+      const dropped = (id: string | undefined) =>
+        !!id && !!drops[conv.id]?.ids.has(id);
+      root =
+        listed && !listed.rewound && !dropped(listed.id)
+          ? listed
+          : threadPool[0];
     }
     const modelLive = model?.live;
     const asksHere = convAsks(conv);
