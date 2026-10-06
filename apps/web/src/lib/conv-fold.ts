@@ -37,6 +37,7 @@ import {
   mergeTurns,
   stripPlans,
   toFeed,
+  toJob,
 } from "./mapping";
 
 type Inputs = readonly unknown[];
@@ -260,10 +261,15 @@ function computeFeed(i: FoldInputs): FeedFold {
     if (r.turnId && !r.turnId.startsWith(`${i.conv.id}:`))
       r.turnId = `${i.conv.id}:${r.turnId}`;
   const ws = wsFor(i.conv.cwd, i.cwdInfo);
+  /* #583 AC-3: a live background job lands on the DM row — same jobs the
+     thread panel's Background tab lists. */
+  const jobs = i.model
+    ? [...i.model.jobs, ...i.model.subagentJobs].map((j) => toJob(j))
+    : undefined;
   return {
     waiting,
     replies,
-    msg: i.root ? toFeed(i.root, i.conv, replies, ws) : null,
+    msg: i.root ? toFeed(i.root, i.conv, replies, ws, jobs) : null,
     ws,
   };
 }

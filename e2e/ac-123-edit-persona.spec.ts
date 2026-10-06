@@ -112,7 +112,7 @@ async function openConvRow(page: Page, rootText: string) {
  *  The composer navigates into the thread on send; if that navigate is still
  *  pending (a feed re-render can swallow it), open the new row by its text. */
 async function sendDm(page: Page, text: string) {
-  const composer = page.getByPlaceholder(/New session with/);
+  const composer = page.getByPlaceholder(/New thread with/);
   await composer.fill(text);
   await composer.press("Enter");
   await expect(page)
@@ -123,9 +123,9 @@ async function sendDm(page: Page, text: string) {
 /** Reply inside the open conversation — same session, a fresh turn. */
 async function replyInSession(page: Page, text: string) {
   /* Opening a session lands in Focus (#114): its composer reads
-     "Continue session … with …"; the peek panel keeps "Reply to …". */
+     "Reply to …" on both the Focus view and the peek panel. */
   const box = page.getByPlaceholder(
-    /Reply to .* in this session|Continue session .* with/,
+    /Reply to/,
   );
   await box.fill(text);
   await box.press("Enter");

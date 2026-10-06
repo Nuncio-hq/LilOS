@@ -194,10 +194,10 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
 
   /* engine-fake steers mid-turn sends into the running turn — a follow-up
      only gets its own reply once the composer is back to its idle
-     placeholder ("Reply to Default…" in the peek panel, "Continue session
-     … with Default…" in Focus, where a send lands since #114). */
+     placeholder ("Reply to Default…" on both the peek panel and
+     Focus, where a send lands since #114). */
   const idleComposer = page.getByPlaceholder(
-    /Reply to Default|Continue session .* with Default/,
+    /Reply to Default/,
   );
 
   // Session A: open, wait for the fake reply, then send a follow-up holding
@@ -245,16 +245,16 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
   await expect(page.getByText(ROOT_B).first()).toBeVisible({
     timeout: 30_000,
   });
-  const menuBtns = page.getByRole("button", { name: "Session actions" });
+  const menuBtns = page.getByRole("button", { name: "Thread actions" });
   await expect(menuBtns.first()).toBeVisible();
   // Session order: created ascending — B is the second of two.
   await menuBtns.nth(1).click();
-  await page.getByRole("menuitem", { name: "Archive session" }).click();
+  await page.getByRole("menuitem", { name: "Archive thread" }).click();
   await expect(page.getByText(/Archived/)).toBeVisible({ timeout: 10_000 });
 
   // AC-2: the filter now shows a Messages group; B's hit carries the
   // archived marker, the term is wrapped in <mark>.
-  const filter = page.getByPlaceholder("Filter sessions");
+  const filter = page.getByPlaceholder("Filter threads");
   await filter.fill("quaggmire");
   const hitsPanel = page.locator("[data-message-hits]");
   await expect(hitsPanel).toBeVisible({ timeout: 10_000 });

@@ -306,7 +306,7 @@ test.describe
       // Agent holds: green `live` badge, ordinary composer placeholder.
       await expect(pane.getByText("live", { exact: true })).toBeVisible();
       await expect(
-        page.getByPlaceholder(/Continue session .* with Builder/),
+        page.getByPlaceholder(/Reply to Builder/),
       ).toBeVisible();
       void term;
 
@@ -326,7 +326,7 @@ test.describe
       await page.getByRole("button", { name: /Return control/i }).click();
       await expect(pane.getByText("live", { exact: true })).toBeVisible();
       await expect(
-        page.getByPlaceholder(/Continue session .* with Builder/),
+        page.getByPlaceholder(/Reply to Builder/),
       ).toBeVisible();
     });
   });

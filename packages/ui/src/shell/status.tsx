@@ -177,7 +177,7 @@ export function StatusDialog({
           <div className="flex-1">
             <div className="font-semibold">System status</div>
             <div className="text-muted-foreground text-xs">
-              relay → harness → engine → model — what a session needs to run
+              relay → harness → engine → model — what a thread needs to run
             </div>
           </div>
           <Button

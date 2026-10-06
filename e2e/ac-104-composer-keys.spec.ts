@@ -62,7 +62,7 @@ const send = async (page: Page, text: string) => {
 const employeeIdFromUrl = (page: Page) =>
   decodeURIComponent(page.url().split("/dm/")[1].split("/")[0]);
 
-const STOPPED = "Stopped · session.interrupt";
+const STOPPED = "Stopped";
 const RUNNING_HINT = "Enter steers · ■ stop";
 
 test("AC-1 Esc in the thread composer stops the running turn — same as Stop", async ({
@@ -96,7 +96,7 @@ test("AC-2 Esc with no turn running does nothing (no Stop → no Esc stop)", asy
   // A finished turn: running is false → dm.tsx passes no onStop → Esc inert.
   await send(page, "Say hello then list files");
   await expect(
-    page.getByPlaceholder(/in this session|Continue session/),
+    page.getByPlaceholder(/Reply to /),
   ).toBeVisible({
     timeout: 90_000,
   });
@@ -220,7 +220,7 @@ async function sendProtoDM(page: Page, text: string) {
     .first()
     .getByRole("button", { name: /Builder/ })
     .click();
-  const box = page.getByPlaceholder(/New session with Builder/);
+  const box = page.getByPlaceholder(/New thread with Builder/);
   await box.fill(text);
   await box.press("Enter");
 }

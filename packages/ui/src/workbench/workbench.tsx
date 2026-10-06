@@ -821,7 +821,7 @@ export function Workbench({
                 : { path: p, content: "", binary: true, truncated: false },
             ),
           );
-      } else say?.(`${p} · unchanged in this session`);
+      } else say?.(`${p} · unchanged in this thread`);
     },
     [dirs, changed, host, liveCwd, say],
   );
@@ -1363,7 +1363,7 @@ export function Workbench({
                   </p>
                 ) : isDM ? (
                   <p>
-                    Read-only session. {lead?.name ?? "The employee"} reads code
+                    Read-only thread. {lead?.name ?? "The employee"} reads code
                     but can't edit here.
                     <br />
                     Edits happen on a ticket in a channel with a repo.
@@ -1562,7 +1562,7 @@ export function Workbench({
               {diffs.length > 0 && (
                 <span>
                   · {plural(diffs.length, "file")}{" "}
-                  {liveMode ? "changed" : "touched by this session"}
+                  {liveMode ? "changed" : "touched by this thread"}
                 </span>
               )}
             </div>
@@ -1663,7 +1663,7 @@ export function Workbench({
         ) : (
           <Terminal
             output={
-              a.termOut || "\u001b[90mNo commands yet in this session.\u001b[0m"
+              a.termOut || "\u001b[90mNo commands yet in this thread.\u001b[0m"
             }
             isStreaming={a.termRunning}
             className="min-h-0 flex-1 rounded-none border-0"
@@ -1768,7 +1768,6 @@ export function Workbench({
               diffs={diffs}
               commits={a.commits}
               lead={lead}
-              session={thread.session}
               human={human}
               onComment={prComment}
               onMerge={prMerge}

@@ -112,7 +112,7 @@ describe("SubagentsPanel grouping (#319 AC-3)", () => {
     const { container, getByRole } = render(
       <SubagentsPanel thread={withHelper} emp={emp} onOpenSession={() => {}} />,
     );
-    const btn = getByRole("button", { name: /Open session/ });
+    const btn = getByRole("button", { name: /Open thread/ });
     expect(btn).toBeTruthy();
     expect(container.textContent).toContain("Reviewer · Agent a9");
   });

@@ -135,6 +135,10 @@ export type Reply = {
   effort?: string;
   fast?: boolean;
   text: string;
+  /** #585: the row is a LilOS system note (denied approval, engine end,
+      sleep interrupt) — renders as a centred note, never a user/agent
+      bubble, and drops when the turn already shows the same status. */
+  system?: boolean;
   steps?: Step[];
   streaming?: string;
   /** #106: `options` = the outcome ids the engine offered on the card

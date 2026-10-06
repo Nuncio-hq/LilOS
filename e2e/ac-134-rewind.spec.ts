@@ -340,7 +340,7 @@ test("AC-5 a folder shared with another session warns + names it before rewindin
   await page.screenshot({ path: `${SHOTS}/ac-5-root.png` });
 });
 
-test("AC-3 without rewind: files restore, the plain note shows, Start a new session works", async ({
+test("AC-3 without rewind: files restore, the plain note shows, Start a new thread works", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -369,14 +369,14 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new sess
   /* Both the relay's in-thread system note and the amber banner say it. */
   await expect(page.getByText(/still remembers/)).toHaveCount(2);
   await expect(
-    page.getByRole("button", { name: "Start a new session from here" }),
+    page.getByRole("button", { name: "Start a new thread from here" }),
   ).toBeVisible();
   await expect(rowText(thread, "beta in the no-rewind session")).toHaveCount(0);
   await expect(existsSync(path.join(repoDir, "stackb-marker.txt"))).toBe(false);
   await page.screenshot({ path: `${SHOTS}/ac-3-banner.png` });
 
   await page
-    .getByRole("button", { name: "Start a new session from here" })
+    .getByRole("button", { name: "Start a new thread from here" })
     .click();
   /* Already sitting on convC's /focus URL — wait until it changes. */
   await page.waitForURL(
@@ -396,9 +396,9 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new sess
      bug (#260). */
   const seeded = page
     .locator("[data-thread] [data-userturn]")
-    .filter({ hasText: /Picking up mid-session after a rewind/ })
+    .filter({ hasText: /Picking up mid-thread after a rewind/ })
     .first();
-  await expect(seeded).toContainText(/Picking up mid-session after a rewind/, {
+  await expect(seeded).toContainText(/Picking up mid-thread after a rewind/, {
     timeout: 60_000,
   });
   await expect(seeded).toContainText(/alpha in the no-rewind session/, {
@@ -415,7 +415,7 @@ test("AC-8 prototype shows the action and the result", async ({ page }) => {
     .first()
     .getByRole("button", { name: /Builder/ })
     .click();
-  const box = page.getByPlaceholder(/New session with Builder/);
+  const box = page.getByPlaceholder(/New thread with Builder/);
   await box.fill("prototype alpha");
   await box.press("Enter");
   /* A message sent while a turn runs is folded in as a steer — no new user

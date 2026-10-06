@@ -629,6 +629,10 @@ export const MessageSearchHit = z.object({
   channelId: z.string().min(1),
   /* Who wrote the matching message — the hit row shows it ("anyone said it"). */
   authorId: z.string().min(1),
+  /* The author's kind (#585): system notes label "LilOS" in search, not
+     Oscar — `authorId` alone can't tell, since stored notes may carry the
+     relay's "user" default. Optional: relays before #585 don't send it. */
+  authorKind: AuthorKind.optional(),
   snippet: z.string(),
   createdAt: Timestamp,
 });

@@ -113,11 +113,11 @@ test("AC-3/AC-4 placeholder then engine titles land live in header, list, search
   });
   const row = page.locator("[data-session]", { hasText: STAGE[2] });
   await expect(row).toBeVisible({ timeout: 30_000 });
-  await page.getByPlaceholder("Filter sessions").fill("Detail Please");
+  await page.getByPlaceholder("Filter threads").fill("Detail Please");
   await expect(row).toBeVisible();
-  await page.getByPlaceholder("Filter sessions").fill("zzz-no-match");
+  await page.getByPlaceholder("Filter threads").fill("zzz-no-match");
   await expect(row).toBeHidden();
-  await page.getByPlaceholder("Filter sessions").fill("");
+  await page.getByPlaceholder("Filter threads").fill("");
   await page.screenshot({ path: `${SHOTS}/ac34-list-auto-title.png` });
 });
 
@@ -138,8 +138,8 @@ test("AC-2 a mid-turn rename survives the late llm title", async ({ page }) => {
     hasText: "Add a footer to the page",
   });
   await expect(row).toBeVisible({ timeout: 30_000 });
-  await row.getByRole("button", { name: "Session actions" }).click();
-  await page.getByRole("menuitem", { name: "Rename session" }).click();
+  await row.getByRole("button", { name: "Thread actions" }).click();
+  await page.getByRole("menuitem", { name: "Rename thread" }).click();
   const input = page.getByLabel("Session title");
   await input.fill("My footer session");
   await input.press("Enter");

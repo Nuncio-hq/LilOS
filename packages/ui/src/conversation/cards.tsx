@@ -130,7 +130,7 @@ export function ReplyCards({
                   <div className="font-medium">{r.startProposal.title}</div>
                   <p className="text-muted-foreground text-xs">
                     {repo
-                      ? `New ticket + worktree on ${repo}. This thread and its Hermes session move there.`
+                      ? `New ticket + worktree on ${repo}. This thread moves there.`
                       : "New ticket. No repo on this channel, so no worktree."}
                   </p>
                   {(onStart || setResolved) && (
@@ -164,7 +164,7 @@ export function ReplyCards({
           const answer = (v: string) =>
             setResolved?.({ ...resolved, [a.id]: v });
           /* #106 AC-4: the card offers the options the engine offered
-             (Once / This session / Always / Deny) — asks stored before
+             (Once / This thread / Always / Deny) — asks stored before
              options existed fall back to the original three. */
           const actions = a.options?.length
             ? a.options
@@ -184,10 +184,10 @@ export function ReplyCards({
               resolved: (v) => `Allowed once by ${v}`,
             },
             session: {
-              label: "This session",
+              label: "This thread",
               title: (c) =>
-                `Allow ${c.slice(0, 60)} for the rest of this session`,
-              resolved: (v) => `Allowed this session by ${v}`,
+                `Allow ${c.slice(0, 60)} for the rest of this thread`,
+              resolved: (v) => `Allowed this thread by ${v}`,
             },
             always: {
               label: "Always",

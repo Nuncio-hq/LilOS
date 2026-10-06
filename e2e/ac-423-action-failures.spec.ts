@@ -201,7 +201,7 @@ test("AC-2 a failed history load shows a retryable notice", async ({
   fail.reject(method("messages.list"));
   await page.reload();
   const banner = page.locator(BANNER).first();
-  await expect(banner).toContainText("Couldn't load this session's history", {
+  await expect(banner).toContainText("Couldn't load this thread's history", {
     timeout: 30_000,
   });
   await expect(banner.getByRole("button", { name: "Retry" })).toBeVisible();
@@ -222,7 +222,7 @@ test("AC-2 a failed history load shows a retryable notice", async ({
   await page.goto(page.url().replace(/\/focus$/, ""));
   await page.reload();
   await expect(page.locator(BANNER).first()).toContainText(
-    "Couldn't load this session's history",
+    "Couldn't load this thread's history",
     { timeout: 30_000 },
   );
 });
@@ -291,7 +291,7 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   /* Back on the DM home the new session is the last row's menu. */
   const home = page.url().match(/\/dm\/[^/]+/)?.[0] ?? "/dm/default";
   await page.goto(`${stack.webUrl}${home}`);
-  const menu = page.getByRole("button", { name: "Session actions" }).last();
+  const menu = page.getByRole("button", { name: "Thread actions" }).last();
   await expect(menu).toBeVisible({ timeout: 15_000 });
 
   /* Rename — conversations.update {title}. */
@@ -300,7 +300,7 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
     message: ERR,
   });
   await menu.click();
-  await page.getByRole("menuitem", { name: "Rename session" }).click();
+  await page.getByRole("menuitem", { name: "Rename thread" }).click();
   const title = page.getByRole("textbox", { name: "Session title" });
   await title.fill("a failed rename");
   await title.press("Enter");
@@ -317,7 +317,7 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
     message: ERR,
   });
   await menu.click();
-  await page.getByRole("menuitem", { name: "Archive session" }).click();
+  await page.getByRole("menuitem", { name: "Archive thread" }).click();
   await expect(page.locator(TOAST)).toContainText(
     "Couldn't archive the session",
     { timeout: 15_000 },
@@ -328,11 +328,11 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   /* Unarchive — the row moves under the collapsed Archived section first. */
   fail.heal();
   await menu.click();
-  await page.getByRole("menuitem", { name: "Archive session" }).click();
+  await page.getByRole("menuitem", { name: "Archive thread" }).click();
   await page.getByRole("button", { name: /Archived \(\d+\)/ }).click();
   const archivedMenu = page
     .locator("[data-archived]")
-    .getByRole("button", { name: "Session actions" })
+    .getByRole("button", { name: "Thread actions" })
     .last();
   await expect(archivedMenu).toBeVisible({ timeout: 15_000 });
   fail.reject({
@@ -340,7 +340,7 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
     message: ERR,
   });
   await archivedMenu.click();
-  await page.getByRole("menuitem", { name: "Unarchive session" }).click();
+  await page.getByRole("menuitem", { name: "Unarchive thread" }).click();
   await expect(page.locator(TOAST)).toContainText(
     "Couldn't unarchive the session",
     { timeout: 15_000 },

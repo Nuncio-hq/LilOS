@@ -511,6 +511,15 @@ PR does not exist.
   can remount the card, so the choice also lives outside React state; web
   row keys use `r.turnId` (dm.tsx stamps the conv id in). Not: auto-open as
   a lock, per-component `useState` only. — #320 · PR #352
+- **D-#582 One word per thing in UI copy.** Glossary: a chat with an
+  employee is a **thread** ("session" stays backend/runtime — engine
+  session, `session.*` wire calls — and never appears in user-facing text);
+  a turn parked on an open card is **needs you**; stopping a turn is
+  **stop** ("■ stop", Esc); approval scope buttons are **Once / This
+  thread / Always / Deny**; the folder picker's empty pick is **No
+  folder**; the model list is **Edit models…**. Not: "session", "working"
+  for a waiting turn, wire/method names in strings, record ids (`emp_…`)
+  as @handles. — #582 · #583 · #585 · #586 · #588 · #589
 
 ## Status
 - **D-#33 `system.status` legs carry `{state, reason}`; `blocked` (#53) means
