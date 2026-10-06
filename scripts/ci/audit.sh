@@ -24,8 +24,9 @@
 # ansi-to-react, which still pins ^3 — root package.json `overrides`
 # forces linkify-it@^5.0.2. Drop the override when ansi-to-react bumps.
 # Same pattern for @modelcontextprotocol/sdk (GHSA-6qxp-vccf-f47h, OAuth
-# credentials to an attacker-chosen authorization server): surfaces + web
-# resolve 1.30.x — overrides forces ^1.31.0 (lands 1.32.x).
+# credentials to an attacker-chosen authorization server): surfaces pins
+# 1.32.1 directly (#631), but web>shadcn's ^1.26.0 range would still
+# resolve 1.30.x — overrides forces ^1.31.0 for that path.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
