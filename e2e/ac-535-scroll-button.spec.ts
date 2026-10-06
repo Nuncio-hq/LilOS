@@ -166,14 +166,25 @@ test.describe("AC-2 ↓ scroll-to-latest never overlaps a message row", () => {
 
     test(`Focus ${w}x${h}`, async ({ page }) => {
       await page.setViewportSize({ width: w, height: h });
-      await page.goto("/");
+      await page.goto("/?stickProbe=1"); // TEMP #626 debug knob
       const panel = page.locator("aside").last();
       await panel.getByRole("button", { name: "Focus", exact: true }).click();
       const port = page.locator('main [role="log"]');
       await expect(port.locator("[data-msg]").first()).toBeVisible({
         timeout: 15_000,
       });
-      await expectClear(page, "main [role='log']");
+      try {
+        await expectClear(page, "main [role='log']");
+      } catch (err) {
+        const dump = await page.evaluate(
+          () =>
+            (window as unknown as { __stick?: unknown[] }).__stick?.slice(
+              -800,
+            ) ?? "no probe",
+        );
+        console.log(`STICKPROBE ${JSON.stringify(dump)}`);
+        throw err;
+      }
     });
   }
 });
