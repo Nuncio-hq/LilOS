@@ -64,8 +64,15 @@ export async function authorizeRelayUpgrade(
   const deviceId = url.searchParams.get("deviceId");
   const credential = url.searchParams.get("credential");
   if (deviceId && credential && deps.pairing) {
-    const device = await deps.pairing.authenticateDevice(deviceId, credential);
-    if (device) return undefined;
+    try {
+      const device = await deps.pairing.authenticateDevice(
+        deviceId,
+        credential,
+      );
+      if (device) return undefined;
+    } catch {
+      /* A store error must still fail closed — the uniform 401 below. */
+    }
   }
   return new Response("unauthorized\n", { status: 401 });
 }

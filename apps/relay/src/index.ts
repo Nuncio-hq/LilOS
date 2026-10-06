@@ -221,6 +221,10 @@ const push = createPushFanout({
   log: (message) => logTail.log(message),
 });
 
+/* #625: test knob — how long an upgraded socket may sit silent before it's
+   closed without a session.hello. Number("junk")/""→NaN/0 would close every
+   socket instantly, so only a positive finite value overrides the default. */
+const helloDeadlineEnv = Number(process.env.LILOS_HELLO_DEADLINE_MS);
 const relay = createRelay({
   store,
   token,
@@ -231,11 +235,10 @@ const relay = createRelay({
   phoneAccess,
   logTail,
   push,
-  /* #625: test knob — how long an upgraded socket may sit silent before
-     it's closed without a session.hello. */
-  helloDeadlineMs: process.env.LILOS_HELLO_DEADLINE_MS
-    ? Number(process.env.LILOS_HELLO_DEADLINE_MS)
-    : undefined,
+  helloDeadlineMs:
+    Number.isFinite(helloDeadlineEnv) && helloDeadlineEnv > 0
+      ? helloDeadlineEnv
+      : undefined,
 });
 const app = createApp({
   instanceId: relay.instanceId,

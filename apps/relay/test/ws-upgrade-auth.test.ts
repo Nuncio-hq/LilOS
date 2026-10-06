@@ -70,6 +70,28 @@ describe("AC-1 unauthenticated upgrades are refused before attach", () => {
     expect((await gate("http://r/ws?token="))?.status).toBe(401);
     expect(await gate(`http://r/ws?token=${TOKEN}`)).toBeUndefined();
 
+    // Duplicated params resolve to the FIRST value — a bad first one fails
+    // closed even when a valid credential follows; both credential shapes
+    // may combine (OR semantics — same union session.hello speaks).
+    expect((await gate("http://r/ws?token=bad&token=x"))?.status).toBe(401);
+    expect(await gate(`http://r/ws?token=${TOKEN}&token=bad`)).toBeUndefined();
+    expect(
+      await gate(
+        `http://r/ws?token=bad&${deviceParams(ex.device.id, ex.credential)}`,
+      ),
+    ).toBeUndefined();
+    // No pairing service behind the gate → device params can't authorize.
+    expect(
+      (
+        await authorizeRelayUpgrade(
+          new Request(
+            `http://r/ws?${deviceParams(ex.device.id, ex.credential)}`,
+          ),
+          { token: TOKEN },
+        )
+      )?.status,
+    ).toBe(401);
+
     // Device credential — real pair passes, wrong credential or a revoked
     // device are refused.
     expect(

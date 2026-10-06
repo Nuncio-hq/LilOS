@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { RelayClient } from "../src/client";
 import type { RelaySocket } from "../src/socket";
 
@@ -1135,5 +1135,49 @@ describe("ws upgrade credential (#625)", () => {
     ]);
     tokenClient.close();
     deviceClient.close();
+  });
+
+  /* The gate refuses with HTTP 401 — a socket-level error with no status
+     reaches the client, so RelayClient probes /healthz once: reachable ⇒
+     the credential was refused ⇒ `unauthenticated` (fatal, e.g. the
+     revoked-phone re-pair flow); unreachable ⇒ transient connect_failed. */
+  it("a refused upgrade reads unauthenticated when the relay's HTTP answers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("ok")),
+    );
+    try {
+      const { socket, client } = makeClient();
+      const p = client.connect();
+      socket.emitClose(1006, "");
+      await expect(p).rejects.toMatchObject({ code: "unauthenticated" });
+      expect(fetch).toHaveBeenCalledWith(
+        "http://fake/healthz",
+        expect.anything(),
+      );
+      expect(client.fatal.get()?.code).toBe("unauthenticated");
+      client.close();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("a refused upgrade stays connect_failed when the relay is down", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("connection refused");
+      }),
+    );
+    try {
+      const { socket, client } = makeClient();
+      const p = client.connect();
+      socket.emitClose(1006, "");
+      await expect(p).rejects.toMatchObject({ code: "connect_failed" });
+      expect(client.fatal.get()).toBeUndefined();
+      client.close();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
