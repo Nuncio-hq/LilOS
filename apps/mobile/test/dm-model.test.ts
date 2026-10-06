@@ -784,3 +784,27 @@ describe("#346 AC-4: the ring reads real session life", () => {
     expect(turns[0].life).toBe("running");
   });
 });
+
+/* #592 reviewer fix — a failed or stopped thread is not Done: the DM
+   groups them under "Didn't finish" above Done, and a sleep interrupt
+   reads "Mac went to sleep" (amber, same copy as the harness's post). */
+import { DM_GROUPS, dmSectionFor } from "../../../packages/ui-native/src/employees/dm-screen";
+
+describe("DM section grouping (#592 fix)", () => {
+  it("failed and stopped threads group under 'Didn't finish', never Done", () => {
+    expect(dmSectionFor("failed")).toBe("Didn't finish");
+    expect(dmSectionFor("stopped")).toBe("Didn't finish");
+    expect(dmSectionFor("done")).toBe("Done");
+    expect(dmSectionFor("working")).toBe("Working");
+    expect(dmSectionFor("needs-you")).toBe("Needs you");
+  });
+
+  it("'Didn't finish' sits above Done; Needs you and Working keep their order", () => {
+    expect(DM_GROUPS.map((g) => g.title)).toEqual([
+      "Needs you",
+      "Working",
+      "Didn't finish",
+      "Done",
+    ]);
+  });
+});
