@@ -3,6 +3,7 @@ import {
   SessionPingParams,
   type WelcomeResult,
 } from "@lilos/contracts/app";
+import { equalSecret } from "../auth";
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
 
@@ -47,7 +48,9 @@ export async function handleHandshake(c: RelayCtx): Promise<false | undefined> {
       /** Two auth shapes (#153): the local install token, or a paired
           device's `deviceId` + `credential` exchanged from a grant. */
       if ("token" in hello) {
-        if (hello.token !== options.token) {
+        /* #568: constant-time compare — `!==` early-exits on the first
+           differing byte, a timing oracle for remote token guesses. */
+        if (!equalSecret(hello.token, options.token)) {
           log("session.hello rejected: bad token");
           throw new RpcError(
             JsonRpcCode.unauthenticated,
