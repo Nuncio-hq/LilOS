@@ -71,8 +71,14 @@ import {
   useDiffComments,
 } from "../lib/diff-comments";
 import { plural } from "../lib/helpers";
+import {
+  EMPTY_WB_PROBE,
+  patchWbCache,
+  readWbCache,
+  type WbProbeData,
+  type WbViewFile,
+} from "../lib/wb-probe-cache";
 import type {
-  Diff,
   EmpFn,
   Employee,
   GitCommit,
@@ -81,8 +87,6 @@ import type {
   MergeMethod,
   OsApp,
   OsEditor,
-  PrError,
-  PullRequest,
   ShipBar,
   ShipBusy,
   ShipError,
@@ -226,21 +230,11 @@ export function Workbench({
   const helpersRunning = helpers.filter((h) => h.a.status === "running").length;
   const plans = threadPlans(thread);
   const plan = plans[plans.length - 1];
-  const [sel, setSel] = useState<string | null>(null);
-  const [viewFile, setViewFile] = useState<{
-    path: string;
-    content: string;
-    binary: boolean;
-    truncated: boolean;
-    /** Line a `workbench_open` pointed at — highlighted + scrolled to. */
-    line?: number;
-  } | null>(null);
   const liveCwd = work?.path;
   /* Live mode = host accessors + a real session folder. In it each tab
      renders only when its host method answered (D-#19, #114 AC-6): `null`
      fields mean "didn't answer" — fs unreachable, path not a repo, `gh`
-     missing — never an unlucky mock fallback. `probe` is null until the
-     first round lands. */
+     missing — never an unlucky mock fallback. */
   const liveMode = !!host && liveCwd != null;
   /* #543: the Workbench exists for EVERY session — a DM session started
      with no folder (`work` null) still gets the engine tabs; the
@@ -248,21 +242,29 @@ export function Workbench({
      (D-#19 per tab). A channel thread (`isDM` false, read-only — the app
      never Focuses one) keeps its mock tabs. */
   const folderless = work == null && isDM;
-  const [probe, setProbe] = useState<{
-    files: string[] | null;
-    diffs: Diff[] | null;
-    pr: { pr: PullRequest | null; branch?: string; error?: PrError } | null;
-    /* Ship bar reads (issue #107): status null = not a repo (AC-6 hides the
-       bar); branches carries the remote default for the branch-name ask;
-       log feeds the Commits section + the PR prefill. */
-    status: { branch: string | null; clean: boolean } | null;
-    branches: {
-      current: string | null;
-      remote: string | null;
-      default: string | null;
-    } | null;
-    log: GitCommit[] | null;
-  } | null>(null);
+  /* #544: the per-folder cache (host+cwd) keeps the last-known reads
+     outside this component — a remount after a panel close, an Esc out of
+     Focus or a session switch paints them on the first frame while the
+     mount's fresh round revalidates behind (stale-while-revalidate).
+     `firstSettled` is the probe/report gate ("still probing" = the first
+     full read round hasn't landed; a cache hit counts as a landed set);
+     `revalidating` drives the "updating…" cue — only ever true when
+     cached rows showed before the fresh round settled. */
+  const [restored] = useState(() =>
+    liveMode && host ? readWbCache(host, liveCwd) : undefined,
+  );
+  const [sel, setSel] = useState<string | null>(restored?.sel ?? null);
+  const [viewFile, setViewFile] = useState<WbViewFile | null>(
+    restored?.viewFile ?? null,
+  );
+  /* `probe` fields: files/diffs feed the Files/Changes tabs; status null =
+     not a repo (AC-6 hides the ship bar); branches carries the remote
+     default for the branch-name ask; log feeds Commits + the PR prefill. */
+  const [probe, setProbe] = useState<WbProbeData | null>(
+    restored?.probe ?? null,
+  );
+  const [firstSettled, setFirstSettled] = useState(restored != null);
+  const [revalidating, setRevalidating] = useState(restored != null);
   /* Open-in-editor affordances (issue #110): editors detected on this host
      (os.editors) + one bound os.open call. No os.open → no controls (D-#19);
      no editors → the menus offer Reveal in Finder only. */
@@ -283,7 +285,14 @@ export function Workbench({
   const reloadPr = async () => {
     if (!host?.pr || !liveCwd) return;
     const r = await host.pr(liveCwd).catch(() => null);
-    if (r) setProbe((p) => (p ? { ...p, pr: r } : p));
+    if (r) {
+      patchWbCache(host, liveCwd, (e) => ({
+        ...e,
+        probe: { ...e.probe, pr: r },
+        updatedAt: Date.now(),
+      }));
+      setProbe((p) => (p ? { ...p, pr: r } : p));
+    }
   };
   /* Which host methods exist — the ship bar's controls render only for the
      ones in this set (D-#19, AC-6); null while host.describe hasn't answered. */
@@ -306,75 +315,87 @@ export function Workbench({
   // the effect's re-run on `running` flips lands a fresh read at turn end.
   const updateProbe = useRef<(() => Promise<void>) | null>(null);
   const prPoll = useRef<PrPoll | null>(null);
+  /* A different folder under the same mount drops folder-scoped state
+     (open file view, selected change). */
+  const prevCwd = useRef(liveCwd);
   useEffect(() => {
+    if (prevCwd.current === liveCwd) return;
+    prevCwd.current = liveCwd;
     setViewFile(null);
+    setSel(null);
+  }, [liveCwd]);
+  useEffect(() => {
     if (!liveMode || !host || !liveCwd) {
       setProbe(null);
       return;
     }
     const cwd = liveCwd;
     let off = false;
-    const update = () =>
+    /* #544: reads land independently — every merge also writes the
+       per-folder cache, so a land that resolves after unmount still warms
+       the next mount's first frame. `pr` stays on the #429 funnel below:
+       its ~1s `gh` subprocess never gates the folder tabs (AC-2). */
+    const merge = (patch: Partial<WbProbeData>) => {
+      patchWbCache(host, cwd, (e) => ({
+        ...e,
+        probe: { ...e.probe, ...patch },
+        updatedAt: Date.now(),
+      }));
+      if (!off) setProbe((p) => ({ ...(p ?? EMPTY_WB_PROBE), ...patch }));
+    };
+    const land = <K extends keyof WbProbeData>(
+      key: K,
+      read: Promise<WbProbeData[K] | null> | undefined,
+    ) =>
+      (read ?? Promise.resolve(null))
+        .then((v) => merge({ [key]: v ?? null } as Partial<WbProbeData>))
+        .catch(() => merge({ [key]: null } as Partial<WbProbeData>));
+    const round = () =>
       Promise.all([
-        host.tree(cwd),
-        host.diff(cwd),
-        host.pr?.(cwd),
-        host.status?.(cwd),
-        host.branches?.(cwd),
-        host.log?.(cwd),
-      ]).then(([files, d, pr, status, branches, log]) => {
-        if (off) return;
-        /* `pr ?? p?.pr`: an unanswered `forge.pr` (outer null — unreachable,
-           not "no PR") keeps the last known answer rather than hiding the
-           tab on a transient blip — same keep-last-known merge `updatePr`
-           uses. */
-        setProbe((p) => ({
-          files,
-          diffs: d ?? null,
-          pr: pr ?? p?.pr ?? null,
-          status: status ?? null,
-          branches: branches ?? null,
-          log: log ?? null,
-        }));
-      });
-    /* #429: `forge.pr` is a `gh pr view` subprocess (~1s) — polling it at
-       the git-read cadence was ~40 calls/min per open Workbench (rate
-       limits, constant process spawns). The running poll keeps only the
-       cheap local git reads; PR re-reads run on signals instead — this
-       effect's re-run on each `running` flip covers turn start and turn
-       end (AC-2) via `update()` above, and the scheduler below owns the
-       rest: PR-tab/OS-window focus and a ≤1/min keep-alive while a turn
-       runs (AC-1). */
-    const updateGit = () =>
-      Promise.all([
-        host.tree(cwd),
-        host.diff(cwd),
-        host.status?.(cwd),
-        host.branches?.(cwd),
-        host.log?.(cwd),
-      ]).then(([files, d, status, branches, log]) => {
-        if (off) return;
-        setProbe((p) => ({
-          files,
-          diffs: d ?? null,
-          pr: p?.pr ?? null,
-          status: status ?? null,
-          branches: branches ?? null,
-          log: log ?? null,
-        }));
-      });
+        land("files", host.tree(cwd)),
+        land("diffs", host.diff(cwd)),
+        land("status", host.status?.(cwd)),
+        land("branches", host.branches?.(cwd)),
+        land("log", host.log?.(cwd)),
+      ]);
     const updatePr = () =>
       host.pr?.(cwd)?.then((r) => {
-        if (!off && r) setProbe((p) => (p ? { ...p, pr: r } : p));
+        /* An unanswered `forge.pr` (outer null — unreachable, not "no
+           PR") keeps the last known answer. */
+        if (r) merge({ pr: r });
       });
-    updateProbe.current = update;
     const poll = createPrPoll(() => updatePr());
     prPoll.current = poll;
-    void update();
+    updateProbe.current = () => {
+      poll.signal();
+      return round().then(() => {});
+    };
+    /* The mount round revalidates behind whatever the cache painted;
+       the report (`onAllowed`) holds until this first full round lands. */
+    void round().then(() => {
+      if (off) return;
+      setFirstSettled(true);
+      setRevalidating(false);
+    });
+    poll.signal(); // the initial `forge.pr` read through the same funnel
     poll.setRunning(!!running);
     const onWindowFocus = () => poll.signal();
     window.addEventListener("focus", onWindowFocus);
-    const gitPoll = running ? setInterval(updateGit, 3000) : undefined;
+    const gitPoll = running ? setInterval(round, 3000) : undefined;
+    /* A cached open file view re-reads behind — it stays open on
+       last-known content until the fresh read lands (AC-4). */
+    if (restored?.viewFile) {
+      const p = restored.viewFile.path;
+      void host
+        .read(cwd, p)
+        .then(
+          (r) =>
+            !off &&
+            r &&
+            setViewFile((v) => (v?.path === p ? { path: p, ...r } : v)),
+        )
+        .catch(() => {});
+    }
     return () => {
       updateProbe.current = null;
       prPoll.current = null;
@@ -383,7 +404,13 @@ export function Workbench({
       window.removeEventListener("focus", onWindowFocus);
       if (gitPoll) clearInterval(gitPoll);
     };
-  }, [liveMode, liveCwd, running, host]);
+  }, [liveMode, liveCwd, running, host, restored]);
+  /* The open file view + selected change are folder state — write them
+     back so a panel close/reopen restores them (AC-4). */
+  useEffect(() => {
+    if (!liveMode || !host || !liveCwd) return;
+    patchWbCache(host, liveCwd, (e) => ({ ...e, sel, viewFile }));
+  }, [sel, viewFile, liveMode, liveCwd, host]);
   const diffs = liveMode ? (probe?.diffs ?? []) : a.diffs;
   const changed = new Map(diffs.map((d) => [d.path, d]));
 
@@ -760,8 +787,9 @@ export function Workbench({
     pr: prOn,
   };
   /* Reports the settled tab set so the caller can hide the toggle when
-     there's nothing to show (D-#19, #543 AC-5); null = still probing. */
-  const probing = liveMode && probe === null;
+     there's nothing to show (D-#19, #543 AC-5); null = still probing —
+     the first full read round hasn't landed (a cache hit counts). */
+  const probing = liveMode && !firstSettled;
   const allowedKey = (Object.keys(allowed) as WbTab[])
     .filter((t) => allowed[t])
     .join(",");
@@ -829,7 +857,14 @@ export function Workbench({
       ? async (m: MergeMethod) => {
           try {
             const pr = await host.prMerge?.(liveCwd, m);
-            if (pr) setProbe((p) => (p ? { ...p, pr: { pr } } : p));
+            if (pr) {
+              patchWbCache(host, liveCwd, (e) => ({
+                ...e,
+                probe: { ...e.probe, pr: { pr } },
+                updatedAt: Date.now(),
+              }));
+              setProbe((p) => (p ? { ...p, pr: { pr } } : p));
+            }
             if (pr?.status === "merged")
               say?.(
                 `Merged #${pr.number} into ${pr.base} · gh pr merge --${m}`,
@@ -996,11 +1031,17 @@ export function Workbench({
     </span>
   );
 
-  /* First probe still in flight → hold the aside; a landed probe with no
-     answered method gets one plain line instead of an empty tab strip. */
-  if (liveMode && probe === null) {
+  /* First round still in flight on a cold mount → hold the aside (a
+     cache hit skips this — its rows paint the first frame, #544); a
+     settled round with no answered method gets one plain line instead
+     of an empty tab strip. `pr` is not in the round — `gh` never gates
+     this wait (AC-2). */
+  if (liveMode && !firstSettled) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center gap-1.5 p-6 text-center text-muted-foreground text-xs">
+      <div
+        data-wb-probing
+        className="flex min-h-0 flex-1 items-center justify-center gap-1.5 p-6 text-center text-muted-foreground text-xs"
+      >
         Reading <span className="font-mono">{cwd}</span>…
       </div>
     );
@@ -1144,6 +1185,14 @@ export function Workbench({
             </TabsTrigger>
           )}
         </TabsList>
+        {revalidating && (
+          <span
+            data-wb-revalidating
+            className="shrink-0 pl-2 font-mono text-[10px] text-muted-foreground"
+          >
+            updating…
+          </span>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -1379,7 +1428,10 @@ export function Workbench({
               )}
             </div>
             {liveMode && probe === null ? (
-              <div className="py-6 text-center text-muted-foreground text-xs">
+              <div
+                data-wb-probing
+                className="py-6 text-center text-muted-foreground text-xs"
+              >
                 Reading <span className="font-mono">{cwd}</span>…
               </div>
             ) : viewFile ? (

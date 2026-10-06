@@ -461,6 +461,15 @@ PR does not exist.
   (`@src/app.tsx`), never file contents or engine-specific blocks; one `@`
   menu lists Employees then Files.** Not: content inlining, a second
   popover, a `#` trigger. — #105
+- **D-#544 The Workbench's last-known Files/Changes/Commits/PR live in a
+  per-folder module store (`lib/wb-probe-cache.ts`, key host+cwd, LRU
+  ~10) — a reopen paints the cached answer on the first frame while a
+  fresh round revalidates behind (stale-while-revalidate, "updating…"
+  cue). Reads land independently; `forge.pr` stays on the #429 funnel so
+  `gh` never gates the folder tabs. Open file view and selection ride in
+  the same entry.** Not: component state (dies on unmount), persisted
+  storage (stale forever), one blocking `Promise.all` incl. `gh`. —
+  #544
 - **D-#320 Turn-block collapse state is user-owned, keyed by
   `${conv.id}:${turnId}:${block}` in `packages/ui/src/lib/block-state.ts`.**
   Auto-open is only a default while a turn runs. The live→relay-row id swap
