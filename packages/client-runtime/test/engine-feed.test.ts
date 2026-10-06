@@ -94,6 +94,52 @@ async function connectClient(client: EngineClient, socket: FakeSocket) {
   await pending;
 }
 
+describe("#564 feed credential on the socket URL", () => {
+  it.each<[string, string, string | undefined, string]>([
+    [
+      "appends ?token= to a bare endpoint",
+      "ws://h/ws",
+      "tok",
+      "ws://h/ws?token=tok",
+    ],
+    [
+      "uses & when the endpoint already carries a query",
+      "ws://h/ws?x=1",
+      "tok",
+      "ws://h/ws?x=1&token=tok",
+    ],
+    [
+      "encodes the credential",
+      "ws://h/ws",
+      "a b/c",
+      "ws://h/ws?token=a%20b%2Fc",
+    ],
+    [
+      "omits the param entirely without a token",
+      "ws://h/ws",
+      undefined,
+      "ws://h/ws",
+    ],
+  ])("%s", (_name, url, token, expected) => {
+    let seen = "";
+    const socket = new FakeSocket();
+    const client = new EngineClient({
+      url,
+      token,
+      socketFactory: (u) => {
+        seen = u;
+        return socket;
+      },
+      autoReconnect: false,
+      requestTimeoutMs: 1_000,
+      connectTimeoutMs: 1_000,
+    });
+    void client.connect().catch(() => {});
+    expect(seen).toBe(expected);
+    client.close();
+  });
+});
+
 describe("EngineClient session feed (#84 ac-32 race)", () => {
   it("keeps a live request.opened that lands while events.since is in flight", async () => {
     const { socket, client } = makeClient();
