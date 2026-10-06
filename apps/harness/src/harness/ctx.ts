@@ -19,7 +19,7 @@ import type {
   EngineEvent,
   EngineRequest,
   EventsSinceResult,
-  McpServerStdio,
+  McpServer,
 } from "@lilos/contracts/engine";
 import type { EngineConnection } from "../engine/client";
 import type { EngineHostState } from "../engine/supervisor";
@@ -329,7 +329,7 @@ export interface HarnessCtx {
     binding: SessionBinding,
     conv: Conversation | undefined,
     employee: Employee | undefined,
-  ): { session: string; mcpServer?: McpServerStdio } | undefined;
+  ): { session: string; mcpServer?: McpServer } | undefined;
   aliasSurfaces(
     session: string | undefined,
     engineSessionId: string | undefined,
@@ -342,7 +342,7 @@ export interface HarnessCtx {
     employee: Employee | undefined,
     agentId: string,
     conv?: Conversation,
-    mcpServer?: McpServerStdio,
+    mcpServer?: McpServer,
   ): {
     agent: string;
     model?: string;
@@ -351,7 +351,7 @@ export interface HarnessCtx {
     fast?: boolean;
     cwd: string;
     access?: ConversationAccess;
-    mcpServers?: McpServerStdio[];
+    mcpServers?: McpServer[];
   };
   bindingNow(binding: SessionBinding): string;
   noteNow(binding: SessionBinding): void;

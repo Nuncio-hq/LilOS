@@ -12,7 +12,7 @@ import type {
   DescribeResult,
   EngineEvent,
   EventsSinceResult,
-  McpServerStdio,
+  McpServer,
 } from "@lilos/contracts/engine";
 import type { CheckpointStore } from "@lilos/host";
 import {
@@ -187,7 +187,7 @@ export interface HarnessOptions {
       cwd?: string;
       binding?: import("@lilos/contracts/harness").SessionBinding;
       engineSessionId?: string;
-    }): { session: string; mcpServer: McpServerStdio };
+    }): { session: string; mcpServer: McpServer };
     bindEngineSession(session: string, engineSessionId: string): boolean;
     destroy(session: string): Promise<boolean>;
   };

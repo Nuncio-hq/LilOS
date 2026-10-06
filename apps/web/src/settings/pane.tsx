@@ -110,6 +110,45 @@ export function SettingsPane({ onClose }: { onClose: () => void }) {
       }
     : undefined;
 
+  /* #539 AC-4: a rolled-back update is never silent — the shell shows the
+     dialog once on boot; this About notice mirrors it with Retry/Details
+     until the next update attempt overwrites the status. */
+  const [updateIssue, setUpdateIssue] = useState<
+    | { message: string; onRetry?: () => void; onDetails?: () => void }
+    | undefined
+  >();
+  useEffect(() => {
+    let off = false;
+    void bridge
+      ?.updateStatus?.()
+      .then((st) => {
+        if (off) return;
+        if (st?.phase !== "rolled-back" && st?.phase !== "failed") return;
+        setUpdateIssue({
+          message: `Update to ${st.version ?? "the latest build"} failed — you're still on ${appAbout?.version ?? "the previous build"}.`,
+          onRetry: bridge.retryUpdate
+            ? () => {
+                setUpdateIssue(undefined);
+                setUpdateStatus("Checking…");
+                void bridge
+                  .retryUpdate?.()
+                  .then((o) => setUpdateStatus(updateOutcomeMessage(o)))
+                  .catch(() =>
+                    setUpdateStatus("Update check failed — try again."),
+                  );
+              }
+            : undefined,
+          onDetails: bridge.openStatus
+            ? () => void bridge.openStatus?.()
+            : undefined,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      off = true;
+    };
+  }, [appAbout?.version]);
+
   /* General drafts (AC-3): typing edits local state, a 400 ms debounce posts
      profile.update, and the relay's echo (or another window's edit) clears
      each field once the stored value catches up — the round trip never
@@ -271,6 +310,7 @@ export function SettingsPane({ onClose }: { onClose: () => void }) {
               build,
               onCheckUpdates: checkUpdates,
               updateStatus,
+              updateIssue,
             }
           : undefined
       }

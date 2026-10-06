@@ -52,6 +52,9 @@ contextBridge.exposeInMainWorld("lilos", {
   openStatus: () => ipcRenderer.invoke("lilos:open-status"),
   openApp: () => ipcRenderer.invoke("lilos:open-app"),
   checkUpdate: () => ipcRenderer.invoke("lilos:check-update"),
+  // #539: the rollback notice's status read + Retry path.
+  updateStatus: () => ipcRenderer.invoke("lilos:update-status"),
+  retryUpdate: () => ipcRenderer.invoke("lilos:update-retry"),
   // #132 Settings: the app's version/build for About, and the menu's ⌘, →
   // lilos:open-app-settings event the renderer opens its Settings screen on.
   about: () => ipcRenderer.invoke("lilos:about"),
