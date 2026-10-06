@@ -20,6 +20,7 @@ import { applyMigrations } from "./db/migrate";
 import * as schema from "./db/schema";
 import { createExpoPushSender } from "./expo";
 import { createLogTail } from "./logtail";
+import { wsUpgradeOriginAllowed } from "./origin";
 import { createPairingService } from "./pairing";
 import { createPushFanout } from "./push";
 import { createRelay, type PhoneAccess } from "./session";
@@ -59,6 +60,19 @@ const listenOnce = (bindHost: string) =>
     fetch(request, server) {
       const url = new URL(request.url);
       if (url.pathname === "/ws") {
+        /* #568: refuse browser upgrades from foreign origins before the
+           socket exists — a page on another site can't even reach
+           session.hello to guess the token. Runs on both listeners
+           (loopback + the opt-in tailnet bind share this fetch). */
+        if (
+          !wsUpgradeOriginAllowed(
+            request.headers.get("origin"),
+            request.headers.get("host"),
+            request.headers.get("user-agent"),
+          )
+        ) {
+          return new Response("websocket upgrade refused", { status: 403 });
+        }
         const ok = server.upgrade(request);
         return ok
           ? undefined

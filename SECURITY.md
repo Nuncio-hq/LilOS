@@ -29,3 +29,28 @@ Please include as much of the following as you can:
 LilOS is a prototype: source code, CI workflows, and the public site in
 `site/`. The app runs against engines and machines you operate; findings
 about third-party engines (e.g. Hermes) belong to their own projects.
+
+## Relay hardening notes
+
+The relay binds loopback (plus an opt-in Tailscale listener for phone
+pairing) and is the only thing holding the per-install token
+(`~/.lilos/relay-token`, 0600). Current hardening in force:
+
+- **Constant-time secret compares.** `session.hello`'s install token and
+  the paired-device credential are checked with `timingSafeEqual` over
+  SHA-256 digests (`apps/relay/src/auth.ts` `equalSecret`), so response
+  timing can't reveal a matching prefix.
+- **WebSocket Origin gate.** `/ws` upgrades carrying an `Origin` header
+  are refused unless the origin is loopback (`localhost`/`*.localhost`,
+  127.0.0.0/8, `[::1]`, any port), `file://`, `null` under an Electron
+  `User-Agent` (the packaged desktop app — a bare `null` is what a foreign
+  page's sandboxed iframe sends, so it's refused), or the request's own
+  `Host`. Non-browser clients send no `Origin` and pass. This is
+  defense-in-depth: the token still does the real auth.
+- **Pairing exchange throttle.** `POST /pair/exchange` spends one-time,
+  5-minute grants. After **5 consecutive `unknown` codes** the endpoint
+  answers **`429 {error:"throttled"}` for 60 seconds** — every exchange,
+  valid codes included. `used`/`expired` replies never count against the
+  budget (they prove the caller already held a real code), and a
+  successful exchange resets it. The budget is shared across callers;
+  pairing is rare, so a lockout only delays a real attempt by a minute.
