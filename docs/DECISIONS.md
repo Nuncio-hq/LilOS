@@ -32,6 +32,15 @@ PR does not exist.
 - **D-#25 The relay is its own process, local first** (binds 127.0.0.1,
   per-install token); remote = change the address, not the code.
   Not: embedded in apps/web, or remote-first. — #25 · PR #41
+- **D-#564 Every LilOS listener authenticates — none is "read-only so
+  open".** The harness feed's `/ws` upgrade requires the install token
+  (`?token=`; a browser WebSocket can't set headers) and refuses a
+  browser-sent `Origin` that isn't the app's own (`file://`/`null` or a
+  loopback http(s) host); `/healthz` stays open but answers only the
+  readiness nonce `{ok, instanceId}` (#273). Not: an unauthenticated feed
+  because it "only reads" — live events carry tool output, file contents
+  and diffs — or a relay-minted feed token in `welcome` (the install token
+  already reaches every feed client). — #564
 
 ## Data
 - **D-#25 The relay owns visible messages; the engine owns transcripts**
