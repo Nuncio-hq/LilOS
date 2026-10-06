@@ -8,7 +8,10 @@ import type {
   Employee,
 } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
-import { accessoryWhat } from "../../../packages/ui-native/src/employees/approval-copy";
+import {
+  accessoryWhat,
+  whatLine,
+} from "../../../packages/ui-native/src/employees/approval-copy";
 import {
   askThreadTarget,
   dmChannelFor,
@@ -470,5 +473,26 @@ describe("#652 — the needs-you card reads last-known and human while offline (
       NOW,
     );
     expect(accessoryWhat(a)).toBe("Last known · Plan waiting for your review");
+  });
+
+  it("the Activity card's line is human too — never a `$ patch {…}` box", () => {
+    const a = toApproval(
+      ask("a1", "ch1", "c1", NOW - 60_000, {
+        request: {
+          kind: "approval",
+          command: 'patch {"path":"README.md"}',
+          description: 'Default wants to run: patch {"path":"README.md"}',
+          options: ["once", "deny"],
+        },
+      }),
+      w(true),
+      NOW,
+    );
+    /* What the sheet's body line renders — the same sentence·command
+       the accessory shows, without the `$ ` terminal box. */
+    expect(whatLine(a)).toBe(
+      'Emp e1 wants to run · patch {"path":"README.md"}',
+    );
+    expect(whatLine(a)).not.toContain("$");
   });
 });

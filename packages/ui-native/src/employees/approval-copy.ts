@@ -23,20 +23,29 @@ export function keepFlags(command: string) {
     .replace(/-/g, "‑");
 }
 
-/** #652: the accessory's one-line ask description — the same human
-    sentence the thread card leads with (never a bare `patch {…}` tool
-    call), with the command after it. Offline the "Last known" marker
-    leads so truncation can't cut it away. */
+/** #652: one-line human ask description — the same sentence the thread
+    card leads with (never a `$ patch {…}` terminal box), command or
+    file after it. Shared by the Home accessory and the Activity card. */
+export function whatLine(
+  a: Pick<Approval, "employee" | "reason"> & {
+    command?: string;
+    file?: { name: string };
+  },
+): string {
+  return a.command
+    ? `${approvalSentence(a)} · ${keepFlags(a.command)}`
+    : a.file
+      ? `${approvalSentence(a)} · ${a.file.name}`
+      : approvalSentence(a);
+}
+
+/** The accessory's `what` — the human line above, with "Last known"
+    leading while offline so truncation can't cut the marker away. */
 export function accessoryWhat(
   a: Pick<Approval, "employee" | "reason" | "lastKnown"> & {
     command?: string;
     file?: { name: string };
   },
 ): string {
-  const what = a.command
-    ? `${approvalSentence(a)} · ${keepFlags(a.command)}`
-    : a.file
-      ? `${approvalSentence(a)} · ${a.file.name}`
-      : approvalSentence(a);
-  return `${a.lastKnown ? "Last known · " : ""}${what}`;
+  return `${a.lastKnown ? "Last known · " : ""}${whatLine(a)}`;
 }

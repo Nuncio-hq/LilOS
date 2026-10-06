@@ -1,10 +1,10 @@
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "../components/app-text";
-import { Card, CommandLine, LargeTitle, Pill } from "../components/bits";
+import { Card, LargeTitle, Pill } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb } from "../components/orb";
-import { approvalSentence } from "./approval-copy";
+import { whatLine } from "./approval-copy";
 import { isAnswerableQuestion } from "./question-gate";
 import type { Approval } from "./types";
 
@@ -135,14 +135,12 @@ export function ApprovalsSheet({
                 </AppText>
               </View>
             </View>
+            {/* #652: human description like everywhere else — the same
+                "wants to run · cmd" line as the accessory, no `$ patch {…}`
+                terminal box (the in-thread card keeps the command box). */}
             <AppText size="sm" className="mt-2.5 leading-5">
-              {approvalSentence(a)}
+              {whatLine(a)}
             </AppText>
-            {a.command && (
-              <View className="mt-2.5">
-                <CommandLine command={a.command} />
-              </View>
-            )}
             {a.file && (
               <View className="mt-2.5 flex-row items-center gap-2.5 rounded-xl bg-background px-3 py-2.5">
                 <Icon name="doc.text" size={16} tone="subtle-foreground" />
