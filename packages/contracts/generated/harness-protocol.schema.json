@@ -1314,6 +1314,24 @@
             "components"
           ]
         },
+        "usage": {
+          "type": "object",
+          "properties": {
+            "used": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "window": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "used"
+          ]
+        },
         "areas": {
           "type": "array",
           "items": {
