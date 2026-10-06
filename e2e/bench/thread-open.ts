@@ -29,6 +29,7 @@
  */
 
 import { execFileSync, spawn } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -57,6 +58,7 @@ const arg = (name: string, dflt: string) => {
 };
 const RUNS = Math.max(1, Number(arg("runs", "3")) || 3);
 const TURNS = Math.max(1, Number(arg("turns", "200")) || 200);
+const SHOTS = arg("shots", ""); // dir → screenshot the opened thread
 
 /* A realistic column: every 5th turn the heavy markdown fixture (fences +
    highlight + table — the DOM weight the lazy threshold exists for), the
@@ -221,7 +223,7 @@ async function windowBetween(
   };
 }
 
-async function trial(): Promise<{ open: Window; reload: Window }> {
+async function trial(shotsDir = ""): Promise<{ open: Window; reload: Window }> {
   const stack = await bootStack(
     "bench570",
     { relay: PORTS.relay, feed: PORTS.feed, web: PORTS.web },
@@ -285,6 +287,80 @@ async function trial(): Promise<{ open: Window; reload: Window }> {
           true,
         );
 
+        if (shotsDir) {
+          mkdirSync(shotsDir, { recursive: true });
+          /* Open state: bottom-pinned tail, everything above held. Wait
+             for the instant pin to land so the shot isn't the blank
+             stub field at scrollTop 0. */
+          const portMetrics = () =>
+            page.evaluate(() => {
+              const first = document.querySelector(
+                "[data-thread-panel] [data-msg]",
+              );
+              let p = first?.parentElement ?? null;
+              while (p && !/(auto|scroll)/.test(getComputedStyle(p).overflowY))
+                p = p.parentElement;
+              return p
+                ? {
+                    top: Math.round(p.scrollTop),
+                    h: p.scrollHeight,
+                    ch: p.clientHeight,
+                  }
+                : null;
+            });
+          try {
+            await page.waitForFunction(
+              () => {
+                const first = document.querySelector(
+                  "[data-thread-panel] [data-msg]",
+                );
+                let p = first?.parentElement ?? null;
+                while (
+                  p &&
+                  !/(auto|scroll)/.test(getComputedStyle(p).overflowY)
+                )
+                  p = p.parentElement;
+                return (
+                  !!p && p.scrollTop + p.clientHeight >= p.scrollHeight - 8
+                );
+              },
+              undefined,
+              { timeout: 10_000 },
+            );
+          } catch {
+            console.log("  shots: bottom pin never landed");
+          }
+          console.log("  shots: port at open:", await portMetrics());
+          await page.screenshot({
+            path: path.join(shotsDir, "open-bottom.png"),
+          });
+          /* Scrolled mid-thread: born-stubbed rows mounted in view. */
+          await page.evaluate(() => {
+            const first = document.querySelector(
+              "[data-thread-panel] [data-msg]",
+            );
+            let port = first?.parentElement ?? null;
+            while (
+              port &&
+              !/(auto|scroll)/.test(getComputedStyle(port).overflowY)
+            )
+              port = port.parentElement;
+            if (port) port.scrollTop = Math.floor(port.scrollHeight * 0.45);
+          });
+          /* IO mounts land on the next frames — settle a couple. */
+          await page.evaluate(
+            () =>
+              new Promise<void>((r) =>
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() => setTimeout(r, 80)),
+                ),
+              ),
+          );
+          await page.screenshot({
+            path: path.join(shotsDir, "scrolled-mid.png"),
+          });
+        }
+
         await context.close();
         return { open, reload };
       } finally {
@@ -323,7 +399,7 @@ async function main() {
   const reloads: Window[] = [];
   for (let r = 1; r <= RUNS; r++) {
     console.log(`  run ${r}/${RUNS}`);
-    const w = await trial();
+    const w = await trial(SHOTS && r === 1 ? SHOTS : "");
     opens.push(w.open);
     reloads.push(w.reload);
     console.log(`    open:   ${fmt(w.open)}`);

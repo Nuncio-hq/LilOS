@@ -126,10 +126,10 @@ test("AC-1: opening a lazy thread mounts only the tail — older turns start as 
         }
       : null;
   });
-  expect(extent).not.toBeNull();
-  expect(extent!.h).toBeGreaterThan(extent!.ch * 3);
+  if (!extent) throw new Error("no scroll port in the thread panel");
+  expect(extent.h).toBeGreaterThan(extent.ch * 3);
   /* scrollTop within a row of the bottom — the pin settled on the tail. */
-  expect(extent!.top).toBeGreaterThan(extent!.h - extent!.ch - 400);
+  expect(extent.top).toBeGreaterThan(extent.h - extent.ch - 400);
 });
 
 test("AC-2: scroll, find, and jump-to-message reach held turns on a lazy thread", async ({
