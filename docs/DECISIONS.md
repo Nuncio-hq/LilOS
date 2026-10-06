@@ -144,6 +144,19 @@ PR does not exist.
   is excluded at bundle time, not vendored or imported dynamically.
   Not: installing chromium-bidi for the bundler, or marking playwright
   external (the browser surface must stay bundled). — #388 · PR #389
+- **D-#539 The bundle ships `playwright` + `playwright-core` as real files
+  under `Contents/Resources/app/pw/node_modules`, and the harness loads
+  playwright lazily through `createRequire` on the first browser op.**
+  playwright-core reads its own package.json/browsers.json through computed
+  absolute paths at require time — inside `bun build --compile` those
+  resolve to the CI checkout, which is why every 1.0.33..1.0.40 harness
+  crashed at startup (updates silently rolled back). Real files satisfy the
+  runtime reads; lazy loading means a missing tree fails only the browser
+  call, never the boot. Browser binaries stay in the user's ms-playwright
+  cache. Not: a package.json shim (browsers.json is not an exportable
+  subpath and the driver is ~40 MB of real code), marking playwright
+  external (D-#388 kept it bundled for the same reason), or shipping the
+  browser cache in the DMG (~500 MB). — #539 · PR #540
 - **D-#232 Native chrome: `titleBarStyle: "hiddenInset"` + `vibrancy:
   "sidebar"`; the renderer owns the drag regions** (`lilos-drag` on header
   strips, interactive children `no-drag`) and pushes its theme to

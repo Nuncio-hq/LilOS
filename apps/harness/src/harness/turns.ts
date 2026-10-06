@@ -1,5 +1,5 @@
 import type { Conversation, Employee } from "@lilos/contracts/app";
-import type { EngineEvent, McpServerStdio } from "@lilos/contracts/engine";
+import type { EngineEvent, McpServer } from "@lilos/contracts/engine";
 import type { HarnessCtx, SessionBinding } from "./ctx";
 import { BACKEND_DOWN } from "./rpc";
 
@@ -214,7 +214,7 @@ export function createSurfaces(
   binding: SessionBinding,
   conv: Conversation | undefined,
   employee: Employee | undefined,
-): { session: string; mcpServer?: McpServerStdio } | undefined {
+): { session: string; mcpServer?: McpServer } | undefined {
   const surfaces = this.opts.surfaces;
   if (!surfaces) return undefined;
   if (binding.gatewaySession) {

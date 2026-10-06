@@ -1,5 +1,5 @@
 import type { Conversation, Employee } from "@lilos/contracts/app";
-import type { AgentDescriptor, McpServerStdio } from "@lilos/contracts/engine";
+import type { AgentDescriptor, McpServer } from "@lilos/contracts/engine";
 import { expandPath } from "@lilos/host";
 import type { EngineConnection } from "../engine/client";
 import type { HarnessCtx } from "./ctx";
@@ -81,7 +81,7 @@ export function sessionParams(
   employee: Employee | undefined,
   agentId: string,
   conv?: Conversation,
-  mcpServer?: McpServerStdio,
+  mcpServer?: McpServer,
 ) {
   const base = this.opts.sessionParamsFor?.(employee, agentId) ?? {
     agent: agentId,

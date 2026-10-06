@@ -80,6 +80,13 @@ export type AboutProps = {
   onCheckUpdates?: () => void;
   /* Result line next to the button ("Checking…", "LilOS is up to date."). */
   updateStatus?: string;
+  /* A rolled-back update is never silent (#539): the plain message plus
+     Retry/Details while the shell offers them. */
+  updateIssue?: {
+    message: string;
+    onRetry?: () => void;
+    onDetails?: () => void;
+  };
 };
 
 /* Avatar swatches — Tailwind bg-* classes (same space as Human.color). */
@@ -460,6 +467,33 @@ export function AboutSection({ about }: { about: AboutProps }) {
               {about.updateStatus}
             </span>
           )}
+        </div>
+      )}
+      {about.updateIssue && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2">
+          <div className="text-sm">{about.updateIssue.message}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {about.updateIssue.onRetry && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-11 md:h-7"
+                onClick={about.updateIssue.onRetry}
+              >
+                Retry
+              </Button>
+            )}
+            {about.updateIssue.onDetails && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-11 md:h-7"
+                onClick={about.updateIssue.onDetails}
+              >
+                Details
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </Pane>

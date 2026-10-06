@@ -18,13 +18,16 @@ if (!outfile) {
 }
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 mkdirSync(dirname(outfile), { recursive: true });
+/* The release target is the default; the #539 smoke passes --target=bun to
+   get a host binary it can actually run on the CI runner. */
+const hasTarget = extra.some((a) => a.startsWith("--target"));
 execFileSync(
   "bun",
   [
     "build",
     join(REPO, "apps", "harness", "src", "index.ts"),
     "--compile",
-    "--target=bun-darwin-arm64",
+    ...(hasTarget ? [] : ["--target=bun-darwin-arm64"]),
     /* playwright-core lazily requires chromium-bidi inside init_bidiOverCdp —
        the BiDi transport only; the browser surface drives Chromium over CDP
        and never loads it. chromium-bidi isn't installed, so the bundler can't

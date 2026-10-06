@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
-import type { McpServerHttp, McpServerStdio } from "@lilos/contracts/engine";
+import type { McpServer, McpServerHttp } from "@lilos/contracts/engine";
 import { MCP_PATH, type SessionBinding } from "@lilos/contracts/harness";
 import {
   type AppOps,
@@ -69,8 +70,10 @@ interface SessionHandle {
   session: string;
   token: string;
   binding?: SessionBinding;
-  /** The stdio `mcpServers` entry the host merges into `session.start` (AC-3). */
-  mcpServer: McpServerStdio;
+  /** The `mcpServers` entry the host merges into `session.start` (AC-3) —
+     stdio while the `lilos` CLI exists on disk (repo checkouts); in a
+     packaged bundle it can't, so the HTTP spec rides instead (#539). */
+  mcpServer: McpServer;
   /** The HTTP `mcpServers` entry — engines with the `http` MCP transport use
       this straight on the gateway (AC-2). */
   mcpServerHttp: McpServerHttp;
@@ -93,6 +96,12 @@ export interface SurfacesServer extends SurfaceHost {
 const defaultCli = fileURLToPath(
   new URL("../../../lilos/src/cli.ts", import.meta.url),
 );
+
+/* The stdio spec is a real spawn — it only makes sense while the CLI file
+   exists on disk. Inside `bun build --compile` `defaultCli` resolves under
+   $bunfs and a packaged bundle carries no CLI, so the session then carries
+   the HTTP spec and http-capable engines keep working surfaces (#539). */
+const cliExists = (cli: string): boolean => existsSync(cli);
 
 export async function serveSurfaces(
   port: number,
@@ -202,27 +211,34 @@ export async function serveSurfaces(
       token,
       binding: init.binding,
       viewerUrl: `${wsUrl}${VIEW_PATH}?session=${session}&token=${token}`,
-      mcpServer: {
-        name: "lilos",
-        command: "bun",
-        args: [options.cliPath ?? defaultCli, "mcp"],
-        env: [
-          { name: SURFACES_ENV.baseUrl, value: httpUrl },
-          { name: SURFACES_ENV.token, value: token },
-          { name: SURFACES_ENV.session, value: session },
-          /* #412: the engine env is allow-listed, so the spawn-marker
-             knob live checks use must be granted explicitly to reach
-             `lilos mcp`. */
-          ...(process.env.LILOS_MCP_SPAWN_LOG
-            ? [
-                {
-                  name: "LILOS_MCP_SPAWN_LOG",
-                  value: process.env.LILOS_MCP_SPAWN_LOG,
-                },
-              ]
-            : []),
-        ],
-      },
+      mcpServer: cliExists(options.cliPath ?? defaultCli)
+        ? {
+            name: "lilos",
+            command: "bun",
+            args: [options.cliPath ?? defaultCli, "mcp"],
+            env: [
+              { name: SURFACES_ENV.baseUrl, value: httpUrl },
+              { name: SURFACES_ENV.token, value: token },
+              { name: SURFACES_ENV.session, value: session },
+              /* #412: the engine env is allow-listed, so the spawn-marker
+                 knob live checks use must be granted explicitly to reach
+                 `lilos mcp`. */
+              ...(process.env.LILOS_MCP_SPAWN_LOG
+                ? [
+                    {
+                      name: "LILOS_MCP_SPAWN_LOG",
+                      value: process.env.LILOS_MCP_SPAWN_LOG,
+                    },
+                  ]
+                : []),
+            ],
+          }
+        : {
+            type: "http",
+            name: "lilos",
+            url: `${httpUrl}${MCP_PATH}`,
+            headers: [{ name: "Authorization", value: `Bearer ${token}` }],
+          },
       mcpServerHttp: {
         type: "http",
         name: "lilos",

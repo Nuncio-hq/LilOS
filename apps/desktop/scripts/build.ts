@@ -10,11 +10,13 @@ import {
   openSync,
   readdirSync,
   readSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUNDLE_EXECUTABLES, engineBundlePlan } from "./engines";
 
@@ -280,6 +282,42 @@ if (existsSync(PLUGIN_SRC)) {
   cpSync(PLUGIN_SRC, join(APP, "Contents", "Resources", "app", "plugin"), {
     recursive: true,
   });
+}
+/* #539: the harness loads playwright lazily through createRequire and needs
+   the packages as real files — playwright-core reads its own package.json +
+   browsers.json through computed absolute paths, which a bun-compiled
+   binary resolves to the CI checkout (the 1.0.33..1.0.40 startup crash).
+   Ship both under Resources/app/pw/node_modules; browser binaries stay in
+   the user's ms-playwright cache. */
+if (!skipHarness) {
+  const PW_DEST = join(
+    APP,
+    "Contents",
+    "Resources",
+    "app",
+    "pw",
+    "node_modules",
+  );
+  const harnessRequire = createRequire(
+    join(REPO, "apps", "harness", "package.json"),
+  );
+  const playwrightDir = realpathSync(
+    dirname(harnessRequire.resolve("playwright/package.json")),
+  );
+  const playwrightCoreDir = realpathSync(
+    dirname(
+      createRequire(join(playwrightDir, "package.json")).resolve(
+        "playwright-core/package.json",
+      ),
+    ),
+  );
+  mkdirSync(PW_DEST, { recursive: true });
+  for (const src of [playwrightDir, playwrightCoreDir]) {
+    cpSync(src, join(PW_DEST, basename(src)), {
+      recursive: true,
+      filter: (file) => basename(file) !== "node_modules",
+    });
+  }
 }
 
 mkdirSync(join(APP, "Contents", "Library", "LaunchAgents"), {

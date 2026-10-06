@@ -67,11 +67,14 @@ type UpdatePhase =
   | "failed"
   | "skipped";
 
-interface UpdateStatus {
+export interface UpdateStatus {
   phase: UpdatePhase;
   version?: string;
   build?: number;
   detail?: string;
+  /* #539: set once the shell has shown the rollback dialog, so the message
+     fires once per failed build instead of on every launch. */
+  notified?: boolean;
   at: number;
 }
 
@@ -103,6 +106,17 @@ export function addSkippedBuild(baseDir: string, build: number): void {
   const skipped = new Set(readSkippedBuilds(baseDir));
   skipped.add(build);
   writeJson(paths.skippedFile, [...skipped]);
+}
+
+/* #539: "Retry" on the rollback notice lets the feed offer a rolled-back
+   build again — without this the skip is permanent and Retry could never
+   reach it. */
+export function removeSkippedBuild(baseDir: string, build: number): void {
+  const paths = updatePaths(baseDir);
+  writeJson(
+    paths.skippedFile,
+    readSkippedBuilds(baseDir).filter((b) => b !== build),
+  );
 }
 
 /**

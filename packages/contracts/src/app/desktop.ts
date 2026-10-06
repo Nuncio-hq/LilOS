@@ -47,6 +47,17 @@ export interface DesktopAbout {
   build?: number;
 }
 
+/** The updater's last recorded outcome (status.json, #35/#539): the shell
+ *  keeps it so Settings → About can say a rolled-back update plainly. */
+export interface DesktopUpdateStatus {
+  phase?: string;
+  version?: string;
+  build?: number;
+  detail?: string;
+  notified?: boolean;
+  at?: number;
+}
+
 /** A notification the OS should post; `kind` drives nothing in main — it's
  * for the renderer's bookkeeping and any future styling. */
 export const DesktopNotification = z.strictObject({
@@ -105,4 +116,9 @@ export interface DesktopBridge {
   /** Run the #35 update check now — Settings → About's "Check for
    *  updates" (#132). Absent on plain web, so the control doesn't render. */
   checkUpdate?: () => Promise<DesktopUpdateOutcome>;
+  /** The last outcome the updater recorded (#539): `rolled-back`/`failed`
+   *  is what the About notice renders with Retry/Details. */
+  updateStatus?: () => Promise<DesktopUpdateStatus | undefined>;
+  /** Un-skip a rolled-back build and re-run the update check (#539). */
+  retryUpdate?: () => Promise<DesktopUpdateOutcome>;
 }

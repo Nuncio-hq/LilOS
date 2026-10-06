@@ -61,7 +61,9 @@ try {
   const session = server.create({ cwd: process.env.HOME });
   check(
     "create session returns mcpServers spec",
-    session.mcpServer?.name === "lilos" && session.mcpServer.env.length === 3,
+    session.mcpServer?.name === "lilos" &&
+      "env" in session.mcpServer &&
+      session.mcpServer.env.length === 3,
     JSON.stringify(session.mcpServer),
   );
   check(

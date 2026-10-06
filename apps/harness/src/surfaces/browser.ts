@@ -1,12 +1,10 @@
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { scrubLilosEnv } from "@lilos/contracts/env";
 import type { ViewerBrowserInputEvent } from "@lilos/contracts/harness";
 import type { BrowserDriver } from "@lilos/surfaces";
-import {
-  type Browser,
-  type BrowserContext,
-  chromium,
-  type Page,
-} from "playwright";
+import type { Browser, BrowserContext, Page } from "playwright";
 
 /**
  * The harness-owned browser (issue #36, AC-1/AC-4): one headless Chromium
@@ -16,6 +14,34 @@ import {
  */
 const VIEWPORT = { width: 1280, height: 800 };
 const JPEG_QUALITY = 60;
+
+/* #539: playwright-core resolves its own package.json/browsers.json through
+   computed absolute paths at require time — inside `bun build --compile`
+   those point at the CI checkout, and a static `import "playwright"` made
+   every packaged harness since 1.0.33 crash at startup. The bundle ships
+   playwright as real files under Contents/Resources/app/pw/node_modules
+   (build.ts) and this loads it lazily on the first browser op, so a missing
+   or broken playwright fails only that call — never the harness boot. */
+const playwrightModules = (): string => {
+  const bundled = join(
+    dirname(process.execPath),
+    "..",
+    "Resources",
+    "app",
+    "pw",
+    "node_modules",
+  );
+  if (existsSync(join(bundled, "playwright", "package.json"))) return bundled;
+  /* Repo checkout: execPath is bun — resolve from the harness workspace. */
+  return join(import.meta.dir, "..", "..");
+};
+
+const loadChromium = () =>
+  (
+    createRequire(join(playwrightModules(), "noop.js"))(
+      "playwright",
+    ) as typeof import("playwright")
+  ).chromium;
 
 interface CdpSession {
   send(method: string, params?: unknown): Promise<unknown>;
@@ -64,7 +90,7 @@ export class ChromiumBrowser implements BrowserDriver {
   private async ensure(): Promise<Page> {
     if (this.page && !this.page.isClosed()) return this.page;
     this.starting ??= (async () => {
-      this.browser = await chromium.launch({
+      this.browser = await loadChromium().launch({
         headless: true,
         args: this.options.args,
         /* #412: the surface browser is a long-lived, agent-drivable

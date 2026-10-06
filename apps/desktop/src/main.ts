@@ -19,6 +19,7 @@ import {
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   Notification,
@@ -29,7 +30,14 @@ import { diskVersionStore, helperServiceControl } from "./control";
 import { appMenuTemplate } from "./menu";
 import { postDesktopNotification } from "./notify";
 import { checkForUpdate } from "./update";
-import { settlePendingUpdate } from "./update/state";
+import {
+  addSkippedBuild,
+  removeSkippedBuild,
+  settlePendingUpdate,
+  type UpdateStatus,
+  updatePaths,
+  writeStatus,
+} from "./update/state";
 import { nativeWindowChrome, watchWindowChrome } from "./window-chrome";
 
 /**
@@ -258,13 +266,54 @@ async function statusSnapshot() {
 const updateBaseDir = stateDir;
 const updateStateDir = join(updateBaseDir, "update");
 
-function updateStatus() {
+function updateStatus(): UpdateStatus | undefined {
   try {
     const raw = readFileSync(join(updateStateDir, "status.json"), "utf8");
-    return JSON.parse(raw) as { phase?: string; detail?: string };
+    return JSON.parse(raw) as UpdateStatus;
   } catch {
     return undefined;
   }
+}
+
+/* #539 AC-4: a rolled-back update was silent for eight builds — now the
+   shell says it plainly once per failed build (the status.json `notified`
+   flag keeps the dialog from re-firing on every launch while the Settings
+   → About notice stays until the next update attempt). */
+function markUpdateNotified(status: UpdateStatus): void {
+  const { at: _at, notified: _n, ...rest } = status;
+  writeStatus(updatePaths(updateBaseDir), { ...rest, notified: true });
+}
+
+async function retryUpdate(): Promise<DesktopUpdateOutcome> {
+  const st = updateStatus();
+  if (typeof st?.build === "number") {
+    removeSkippedBuild(updateBaseDir, st.build);
+  }
+  const outcome = await checkAndApply();
+  /* Un-skip only buys one attempt: a busy/failed retry re-skips the build
+     so the periodic check doesn't silently retry a known-bad one. */
+  if (outcome !== "apply-ready" && typeof st?.build === "number") {
+    addSkippedBuild(updateBaseDir, st.build);
+  }
+  return outcome;
+}
+
+function notifyRolledBack(status: UpdateStatus): void {
+  void dialog
+    .showMessageBox({
+      type: "warning",
+      title: "Update failed",
+      message: `Update to ${status.version ?? "the latest build"} failed — you're still on ${app.getVersion()}.`,
+      detail:
+        "LilOS rolled back to the last working build. You can retry the update or open Details to see what the updater saw.",
+      buttons: ["Retry", "Details", "Dismiss"],
+      defaultId: 1,
+      cancelId: 2,
+    })
+    .then(({ response }) => {
+      if (response === 0) void retryUpdate();
+      else if (response === 1) createStatusWindow();
+    });
 }
 
 let updateTimer: ReturnType<typeof setInterval> | undefined;
@@ -515,6 +564,8 @@ ipcMain.handle("lilos:open-settings", openLoginItemsSettings);
 ipcMain.handle("lilos:open-status", createStatusWindow);
 ipcMain.handle("lilos:open-app", createAppWindow);
 ipcMain.handle("lilos:check-update", () => checkAndApply());
+ipcMain.handle("lilos:update-status", () => updateStatus());
+ipcMain.handle("lilos:update-retry", retryUpdate);
 /* #132: Settings → About reads the app's own version/build (the relay's
    version comes from system.status in the renderer). */
 ipcMain.handle("lilos:about", () => ({
@@ -564,6 +615,15 @@ app.whenReady().then(async () => {
     watchApprovalGate();
   } else {
     createAppWindow();
+  }
+
+  // #539 AC-4: a rollback used to be silent — say it once per failed build.
+  if (settle === "rolled-back") {
+    const st = updateStatus();
+    if (st?.phase === "rolled-back" && !st.notified) {
+      markUpdateNotified(st);
+      notifyRolledBack(st);
+    }
   }
 
   // #35 auto-update: packaged builds poll the feed; the interval is long so
