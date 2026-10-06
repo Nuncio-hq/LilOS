@@ -13,7 +13,7 @@ import { describeError } from "./mapping";
    back in the shared atoms so every surface (thread card, Activity sheet,
    Needs-you accessory, DM grouping) folds within one update. */
 
-/* #601: the phone sends the option Oscar tapped — the ask's own
+/* #601: the phone sends the option tapped — the ask's own
    `request.options` list is the boundary, like the Mac card (contracts:
    ApprovalOption). `outcomeAllowed` refuses a respond the ask never
    offered; `primaryOutcome` is the one-tap surfaces' default (the ask's
