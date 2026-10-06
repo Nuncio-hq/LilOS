@@ -160,6 +160,16 @@
   }
 }
 
+/* #609: on <html> for one frame while useTheme flips `.dark` — every transition
+   is suppressed so colors snap to the new theme instead of fading through the
+   old theme's values (a mid-fade `color` reads as dark ink on the dark panel,
+   the "invisible" Workbench labels). */
+.lilos-theme-freeze *,
+.lilos-theme-freeze *::before,
+.lilos-theme-freeze *::after {
+  transition: none !important;
+}
+
 /* Agent transcript prose (focus mode + PR description). Plain CSS so it does not depend on Tailwind
    scanning streamdown's classes in node_modules. Unlayered on purpose: must beat streamdown's utility classes
    (text-sm / bg-muted / list-inside) that Tailwind emits in @layer utilities. Modelled on Claude / Cursor / Devin. */
