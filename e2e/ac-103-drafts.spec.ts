@@ -322,7 +322,7 @@ test("AC-7 prototype shows the same behaviour", async ({ page }) => {
     .getByRole("button", { name: /Builder/ })
     .click();
   const home = page.getByPlaceholder(/New thread with Builder/);
-  const thread = page.getByPlaceholder(/Reply to .* in this session/);
+  const thread = page.getByPlaceholder(/Reply to .*…/);
   await home.fill("prototype session");
   await home.press("Enter");
   await expect(thread).toBeVisible({ timeout: 15_000 });

@@ -89,7 +89,7 @@ test("AC-2 sections carry mock data and controls update mock state", async ({
 
   // Models — the existing visibility dialog opens from here.
   await dialog.getByRole("tab", { name: "Models" }).click();
-  await dialog.getByRole("button", { name: /Manage models/ }).click();
+  await dialog.getByRole("button", { name: /Edit models/ }).click();
   const modelsDialog = page.getByRole("dialog", { name: "Models" });
   await expect(modelsDialog).toBeVisible();
   await modelsDialog

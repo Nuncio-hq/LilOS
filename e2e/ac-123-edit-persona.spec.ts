@@ -139,7 +139,7 @@ test("AC-1 the Edit dialog shows only the fields the engine advertises", async (
   await expect(dlg.getByLabel("Display name")).toBeVisible();
   await expect(dlg.getByLabel("Persona")).toBeVisible();
   await expect(dlg.getByLabel("Description")).toBeVisible();
-  await expect(dlg.getByText(/Applies to new chats/)).toBeVisible(); // AC-4's note
+  await expect(dlg.getByText(/Applies to new threads/)).toBeVisible(); // AC-4's note
   await expect(dlg.getByRole("button", { name: "Fake Small" })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-1-edit-dialog.png` });
   await dlg.getByRole("button", { name: "Cancel" }).click();

@@ -90,7 +90,7 @@ test("AC-1 a 'Stopped.' note drops beside the stopped turn it repeats", async ({
   test.setTimeout(120_000);
   await openApp(stack, page);
   await send(page, "slow: hold this turn while I stop it");
-  const stop = page.getByRole("button", { name: /stop/i }).first();
+  const stop = page.getByRole("button", { name: "Stop (Esc)" });
   await expect(stop).toBeVisible({ timeout: 30_000 });
   await stop.click();
   await expect(page.locator("[data-turnsettled]").last()).toBeVisible({

@@ -140,7 +140,7 @@ test("AC-2 a mid-turn rename survives the late llm title", async ({ page }) => {
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.getByRole("button", { name: "Thread actions" }).click();
   await page.getByRole("menuitem", { name: "Rename thread" }).click();
-  const input = page.getByLabel("Session title");
+  const input = page.getByLabel("Thread title");
   await input.fill("My footer session");
   await input.press("Enter");
   await expect(

@@ -256,18 +256,22 @@ export function ThreadView({
     return () => clearTimeout(t);
   }, [flash]);
   /* #420 + #583 AC-1: a live reply parked on ANY open ask (question,
-     approval, plan) is WAITING, not working — the composer says what it
-     waits on and shows Send, not Stop (Hermes FIX #515). `waitingOn`
+     approval, plan) is WAITING, not working — the composer placeholder
+     says what it waits on. A question ask also parks the composer itself
+     (Send, not Stop — Hermes FIX #515); an approval/plan-parked turn is
+     still interruptible and steerable, so it keeps Stop (Esc), steers and
+     the running hint — only the placeholder names the wait. `waitingOn`
      carries the ask kind so the placeholder names it. */
   const waitingReply = thread.replies.find(
     (r) => r.live && r.phase === "waiting",
   );
   const waiting = running && !!waitingReply;
+  const parkedOnQuestion = waiting && waitingReply?.waitingOn === "question";
   /* #583 AC-3: background processes still running under this thread. */
   const runningJobs =
     thread.jobs?.filter((j) => j.status === "running").length ?? 0;
   const status: ChatStatus = running
-    ? waiting
+    ? parkedOnQuestion
       ? "ready"
       : thread.replies.some((r) => r.live && r.phase === "submitted")
         ? "submitted"
@@ -542,7 +546,7 @@ export function ThreadView({
         onSearchFiles={onSearchFiles}
         hint={
           running
-            ? waiting
+            ? parkedOnQuestion
               ? waitingComposer(
                   leadEmp?.name ?? "Employee",
                   waitingReply?.waitingOn,

@@ -301,11 +301,11 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   });
   await menu.click();
   await page.getByRole("menuitem", { name: "Rename thread" }).click();
-  const title = page.getByRole("textbox", { name: "Session title" });
+  const title = page.getByRole("textbox", { name: "Thread title" });
   await title.fill("a failed rename");
   await title.press("Enter");
   await expect(page.locator(TOAST)).toContainText(
-    "Couldn't rename the session",
+    "Couldn't rename the thread",
     { timeout: 15_000 },
   );
   await expect(page.locator(TOAST)).toContainText(LOST);
@@ -319,7 +319,7 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   await menu.click();
   await page.getByRole("menuitem", { name: "Archive thread" }).click();
   await expect(page.locator(TOAST)).toContainText(
-    "Couldn't archive the session",
+    "Couldn't archive the thread",
     { timeout: 15_000 },
   );
   await expect(page.locator(TOAST)).toContainText(LOST);
@@ -342,7 +342,7 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   await archivedMenu.click();
   await page.getByRole("menuitem", { name: "Unarchive thread" }).click();
   await expect(page.locator(TOAST)).toContainText(
-    "Couldn't unarchive the session",
+    "Couldn't unarchive the thread",
     { timeout: 15_000 },
   );
   await expect(page.locator(TOAST)).toContainText(LOST);

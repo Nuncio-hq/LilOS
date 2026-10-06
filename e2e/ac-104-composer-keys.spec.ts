@@ -63,6 +63,10 @@ const employeeIdFromUrl = (page: Page) =>
   decodeURIComponent(page.url().split("/dm/")[1].split("/")[0]);
 
 const STOPPED = "Stopped";
+/* "Stopped" text also appears on a DM-home row whose last turn was stopped
+   (#583 state word) — negative checks scope to turn elements only. */
+const stoppedChip = (p: import("@playwright/test").Page) =>
+  p.locator("[data-agentturn]").getByText(STOPPED);
 const RUNNING_HINT = "Enter steers · ■ stop";
 
 test("AC-1 Esc in the thread composer stops the running turn — same as Stop", async ({
@@ -91,7 +95,7 @@ test("AC-2 Esc with no turn running does nothing (no Stop → no Esc stop)", asy
   await home.click();
   await page.keyboard.press("Escape");
   await page.waitForTimeout(400);
-  await expect(page.getByText(STOPPED)).toHaveCount(0);
+  await expect(stoppedChip(page)).toHaveCount(0);
 
   // A finished turn: running is false → dm.tsx passes no onStop → Esc inert.
   await send(page, "Say hello then list files");
@@ -102,7 +106,7 @@ test("AC-2 Esc with no turn running does nothing (no Stop → no Esc stop)", asy
   await box.click();
   await page.keyboard.press("Escape");
   await page.waitForTimeout(400);
-  await expect(page.getByText(STOPPED)).toHaveCount(0);
+  await expect(stoppedChip(page)).toHaveCount(0);
   await expect(box).toBeFocused();
 });
 
@@ -124,7 +128,7 @@ test("AC-3 Esc closes an open popover/dialog first — the turn keeps running", 
     page.locator('[data-slot="popover-content"][data-open]'),
   ).toHaveCount(0, { timeout: 15_000 });
   await expect(page.getByText(RUNNING_HINT)).toBeVisible();
-  await expect(page.getByText(STOPPED)).toHaveCount(0);
+  await expect(stoppedChip(page)).toHaveCount(0);
 
   // Status dialog: Esc inside it closes only the dialog. Focus has no
   // sidebar (#246) — the status button lives there, so leave focus first.
@@ -136,7 +140,7 @@ test("AC-3 Esc closes an open popover/dialog first — the turn keeps running", 
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0, { timeout: 15_000 });
   await expect(page.getByText(RUNNING_HINT)).toBeVisible();
-  await expect(page.getByText(STOPPED)).toHaveCount(0);
+  await expect(stoppedChip(page)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-3-overlays.png` });
 });
 
@@ -204,7 +208,7 @@ test("AC-6 the Stop button's label mentions Esc", async ({ page }) => {
   test.setTimeout(120_000);
   await dmDefault(stackA, page);
   await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
-  const stop = page.getByRole("button", { name: /stop/i });
+  const stop = page.getByRole("button", { name: "Stop (Esc)" });
   await expect(stop).toBeVisible({ timeout: 30_000 });
   await expect(stop).toHaveAttribute("aria-label", /Esc/);
   await expect(stop).toHaveAttribute("title", /Esc/);

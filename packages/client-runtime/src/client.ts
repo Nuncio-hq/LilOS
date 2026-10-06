@@ -201,6 +201,10 @@ export class RelayClient {
   readonly status: WritableAtom<StatusPollState> = atom<StatusPollState>({
     connection: "idle",
   });
+  /* Log-tail depth the status poller asked for (#33). Event-driven
+     refreshes (host.changed) reuse it so they don't drop `logs` from the
+     atom and leave Copy diagnostics without the tails until the next tick. */
+  private statusLogLines = 0;
   /** Fatal handshake failure (version mismatch, bad token) once raised. */
   readonly fatal: WritableAtom<RelayError | undefined> = atom(undefined);
   /**
@@ -393,6 +397,7 @@ export class RelayClient {
    * synthesized transport states instead of going blank.
    */
   startStatusPolling(intervalMs = 15_000, logLines = 0): () => void {
+    this.statusLogLines = logLines;
     void this.refreshSystemStatus(logLines);
     const unsub = this.state.listen((state) => {
       if (state === "ready") void this.refreshSystemStatus(logLines);
@@ -1075,8 +1080,10 @@ export class RelayClient {
       }
       case "host.changed": {
         // The engine host registered or disconnected — refresh status now
-        // instead of waiting for the next poll tick (#148).
-        void this.refreshSystemStatus();
+        // instead of waiting for the next poll tick (#148), at the same
+        // log-tail depth as the poller so `logs` isn't dropped (#148
+        // follow-up: bare refresh raced Copy diagnostics empty).
+        void this.refreshSystemStatus(this.statusLogLines);
         return;
       }
       case "connect.changed": {

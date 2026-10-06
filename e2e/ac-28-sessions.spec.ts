@@ -200,9 +200,14 @@ async function dmDefault(stack: Procs, page: Page) {
   await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
     timeout: 60_000, // the first run spawns the engine; suite runs are parallel
   });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
+  /* #589: Open DM stays disabled while first-run checks fail (a dead
+     harness never goes green) — pick the first ENABLED match so "Set up
+     later" wins over the blocked Open DM. */
+  const dmBtn = page
+    .getByRole("button", {
+      name: /open dm|set up later|message/i,
+    })
+    .and(page.locator("button:not([disabled])"));
   if (
     await dmBtn
       .first()
@@ -354,7 +359,7 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   // Rename via the row's session menu -> inline input (only one session).
   await page.getByRole("button", { name: "Thread actions" }).first().click();
   await page.getByRole("menuitem", { name: "Rename thread" }).click();
-  const input = page.getByLabel("Session title");
+  const input = page.getByLabel("Thread title");
   await input.fill("Repo summary thread");
   await input.press("Enter");
   await expect(page.getByText("Repo summary thread").first()).toBeVisible();

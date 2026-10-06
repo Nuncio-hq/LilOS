@@ -440,14 +440,17 @@ export function FocusView({
   const live = thread.replies.find((r) => r.live);
   const lastStep = live?.steps?.[live.steps.length - 1];
   /* #420 + #583 AC-1: parked on ANY open ask (question/approval/plan) =
-     WAITING, not working — the composer names what it waits on and shows
-     Send, not Stop (Hermes FIX #515). */
+     WAITING, not working — the composer placeholder names what it waits
+     on. A question ask also parks the composer (Send, not Stop — Hermes
+     FIX #515); an approval/plan-parked turn is still interruptible and
+     steerable, so it keeps Stop (Esc), steers and the running hint. */
   const waiting = running && live?.phase === "waiting";
+  const parkedOnQuestion = waiting && live?.waitingOn === "question";
   /* #583 AC-3: background processes still running under this thread. */
   const runningJobs =
     thread.jobs?.filter((j) => j.status === "running").length ?? 0;
   const status: ChatStatus = running
-    ? waiting
+    ? parkedOnQuestion
       ? "ready"
       : live?.phase === "submitted"
         ? "submitted"
@@ -1046,7 +1049,7 @@ export function FocusView({
               onRemove={onUnqueue}
             />
             <FocusComposer
-              running={running && !waiting}
+              running={running && !parkedOnQuestion}
               status={status}
               choice={
                 models?.length
@@ -1090,7 +1093,7 @@ export function FocusView({
               }
               hint={
                 running
-                  ? waiting
+                  ? parkedOnQuestion
                     ? waitingComposer(lead?.name ?? "Employee", live?.waitingOn)
                         .hint
                     : runningComposer(

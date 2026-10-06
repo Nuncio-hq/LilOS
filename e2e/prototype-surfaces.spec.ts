@@ -100,7 +100,7 @@ test("AC-3 designed states: empty DM and loading sessions", async ({
 
   // Loading: skeleton rows where the session list will land.
   await openDM(page, "Builder");
-  await pickScenario(page, "Loading sessions");
+  await pickScenario(page, "Loading threads");
   await expect(page.locator("[data-session-skeleton]").first()).toBeVisible();
   expect(await page.locator("[data-session-skeleton]").count()).toBe(3);
   expect(errors).toEqual([]);
@@ -190,8 +190,8 @@ test("AC-4 session management: filter, rename, archive and restore in the DM lis
   const d2 = page.locator('[data-session="d2"]');
   await d2.getByRole("button", { name: "Thread actions" }).click();
   await page.getByRole("menuitem", { name: "Rename thread" }).click();
-  await page.getByLabel("Session title").fill("Monday summary");
-  await page.getByLabel("Session title").press("Enter");
+  await page.getByLabel("Thread title").fill("Monday summary");
+  await page.getByLabel("Thread title").press("Enter");
   await expect(d2).toContainText("Monday summary");
 
   // Filter matches the title too.
@@ -283,8 +283,8 @@ test("AC-4b archive menu item stays clickable while the session list settles (#4
   await page.getByPlaceholder("Filter threads").fill("");
   await d2.getByRole("button", { name: "Thread actions" }).click();
   await page.getByRole("menuitem", { name: "Rename thread" }).click();
-  await page.getByLabel("Session title").fill("Monday summary");
-  await page.getByLabel("Session title").press("Enter");
+  await page.getByLabel("Thread title").fill("Monday summary");
+  await page.getByLabel("Thread title").press("Enter");
   await expect(d2).toContainText("Monday summary");
   await page.getByPlaceholder("Filter threads").fill("monday");
   await expect(page.locator("[data-session]")).toHaveCount(1);
@@ -357,7 +357,7 @@ test("AC-5 employee management: edit name + role, remove keeps profile, missing 
     .first()
     .click();
   await expect(page.locator("[role=alert]")).toContainText(
-    "its sessions, memory, and skills",
+    "its history, memory, and skills",
   );
   await page
     .locator("[role=alert]")
