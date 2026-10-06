@@ -283,9 +283,21 @@ export function FocusView({
   ship?: Partial<ShipBar> & ShipHandlers;
 }) {
   /* A `?tab=` destination shows its tab even under lg, where the panel is
-     an overlay — "open on Subagents" means visibly open (#319 AC-1). */
+     an overlay — "open on Subagents" means visibly open (#319 AC-1).
+     Auto-open at ≥lg only when the panel has something to show on entry: a
+     folder (or a non-DM thread's mock tabs), or live engine work on a
+     folderless session (#543 — auto-opening an empty Background tab on
+     every folderless Focus is noise, and under lg the overlay would sit
+     over the ask card). */
+  const engineContent =
+    (thread.jobs?.length ?? 0) > 0 ||
+    sessionSubagents(thread).length > 0 ||
+    threadPlans(thread).length > 0;
   const [wbOpen, setWbOpen] = useState(
-    () => window.innerWidth >= 1024 || initialTab !== undefined,
+    () =>
+      (window.innerWidth >= 1024 &&
+        (work != null || !channel.dm || engineContent)) ||
+      initialTab !== undefined,
   );
   const [tab, setTab] = useState<WbTab>(
     () =>
@@ -504,11 +516,7 @@ export function FocusView({
   useEffect(() => {
     setWbReported(null);
   }, [thread.session, work?.path]);
-  const engineTabs =
-    (thread.jobs?.length ?? 0) > 0 ||
-    onStopJob != null ||
-    sessionSubagents(thread).length > 0 ||
-    threadPlans(thread).length > 0;
+  const engineTabs = engineContent || onStopJob != null;
   const wbAvailable =
     host != null &&
     (wbReported === null

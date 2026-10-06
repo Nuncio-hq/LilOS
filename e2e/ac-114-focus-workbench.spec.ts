@@ -553,6 +553,15 @@ test("AC-6 tabs render only when their host method answers; a session without a 
   await send(page, "just chat — no folder");
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
   await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
+  /* The panel opens on demand here — auto-open at ≥lg is for a panel that
+     already has content to show (a folder, or live engine work). */
+  if (
+    !(await tab(page, "Background")
+      .isVisible()
+      .catch(() => false))
+  ) {
+    await workbenchToggle(page).click();
+  }
   await expect(tab(page, "Background")).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, /^(Changes|Files|Terminal|Preview|PR)$/)).toHaveCount(
     0,

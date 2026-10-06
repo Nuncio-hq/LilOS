@@ -153,9 +153,18 @@ test("AC-1..3 folderless session: ↗ + toggle; only Subagents + Background; hel
      below via the panel round-trip. */
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
 
-  // AC-1: the toggle renders — no folder needed (the panel auto-opens on
-  // this ≥1024-wide viewport).
+  // AC-1: the toggle renders — no folder needed. A folderless session's
+  // panel opens on demand (the toggle, a `?tab=` link, `workbench.open`) —
+  // it auto-opens at ≥lg only when live engine work already shows, so open
+  // it here if the helpers haven't landed yet.
   await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
+  if (
+    !(await tab(page, "Subagents")
+      .isVisible()
+      .catch(() => false))
+  ) {
+    await workbenchToggle(page).click();
+  }
 
   // Exactly the engine tabs — no empty Changes/Files/PR/Terminal/Preview.
   await expect(tab(page, "Subagents")).toBeVisible({ timeout: 30_000 });
@@ -259,6 +268,15 @@ test("screenshots: folderless Focus on Subagents + Background, light + dark (128
      Background tab's running row is the screenshot's subject. */
   await send(page, "leave the dev server running in the background");
   await turnSettled(page);
+  /* The settled session holds jobs + helpers — entry auto-opens the panel
+     on that content. If it raced, the toggle opens it on demand. */
+  if (
+    !(await tab(page, "Subagents")
+      .isVisible()
+      .catch(() => false))
+  ) {
+    await workbenchToggle(page).click();
+  }
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     await tab(page, "Subagents").click();
