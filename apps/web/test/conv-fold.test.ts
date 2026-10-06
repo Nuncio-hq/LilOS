@@ -4,8 +4,15 @@
    on the inputs it reads so a word streaming into one session recomputes
    only that conversation. */
 import type { SessionModel } from "@lilos/client-runtime";
-import type { AppMessage, Conversation, Employee } from "@lilos/contracts/app";
-import { describe, expect, test } from "vitest";
+import type {
+  AppMessage,
+  Conversation,
+  Employee,
+  MessageAttachment,
+} from "@lilos/contracts/app";
+import type { Msg } from "@lilos/ui/types";
+import { afterEach, describe, expect, test } from "vitest";
+import { attachmentUrls } from "../src/lib/attachments";
 import { FoldCache, type FoldInputs } from "../src/lib/conv-fold";
 
 const msg = (over: Partial<AppMessage>): AppMessage => ({
@@ -95,6 +102,8 @@ const inputs = (
 });
 
 describe("AC-427 FoldCache", () => {
+  /* The url atom is module state — every attachment test resets it. */
+  afterEach(() => attachmentUrls.set({}));
   test("same inputs return the same fold", () => {
     const cache = new FoldCache();
     const c = conv("c1");
@@ -227,6 +236,73 @@ describe("AC-427 FoldCache", () => {
     expect(cache.for(inputs(c, { model: m, bound: m, msgs: [usr, emp] }))).toBe(
       attached,
     );
+  });
+
+  test("an attachment ref resolving refolds the row's chips (#112/#572)", () => {
+    /* The fold bakes `toAttachedFiles` urls at compute time. Before #572
+       every session's feed replay churned inputs enough to hide it; an
+       unwatched session folds once, so the resolved urls must key the
+       fold or the row keeps `url: undefined` forever. */
+    const cache = new FoldCache();
+    const c = conv("c1");
+    const att: MessageAttachment = {
+      id: "att-1",
+      name: "stored.png",
+      mimeType: "image/png",
+      sizeBytes: 4,
+    };
+    const root = msg({
+      id: c.rootMessageId,
+      conversationId: c.id,
+      attachments: [att],
+    });
+    const before = cache.for(
+      inputs(c, { root, msgs: [root], urls: [undefined] }),
+    );
+    const feedMsg = (m: Msg | null | undefined) =>
+      m?.kind === "msg" ? m : undefined;
+    expect(feedMsg(before.msg)?.attachments?.[0]?.url).toBeUndefined();
+    attachmentUrls.set({ "att-1": "data:image/png;base64,AAAA" });
+    const after = cache.for(
+      inputs(c, { root, msgs: [root], urls: ["data:image/png;base64,AAAA"] }),
+    );
+    expect(after).not.toBe(before);
+    expect(feedMsg(after.msg)?.attachments?.[0]?.url).toBe(
+      "data:image/png;base64,AAAA",
+    );
+  });
+
+  test("a reply folded before its ref resolves isn't frozen thumbnail-less", () => {
+    /* msgReplyCache keys replies on the message row — a reply cached with
+       `url: undefined` must recheck on the next fold or the thumbnail
+       never lands (same #572 hole, one level down). */
+    const cache = new FoldCache();
+    const c = { ...conv("c1"), deliveredSeq: 10 };
+    const att: MessageAttachment = {
+      id: "att-2",
+      name: "shot.png",
+      mimeType: "image/png",
+      sizeBytes: 4,
+    };
+    const m = msg({
+      id: "m-img",
+      conversationId: c.id,
+      attachments: [att],
+    });
+    const before = cache.for(inputs(c, { msgs: [m], urls: [undefined] }));
+    const beforeReply = before.replies.find((r) => r.id === "m-img");
+    expect(beforeReply?.attachments?.[0]?.name).toBe("shot.png");
+    expect(beforeReply?.attachments?.[0]?.url).toBeUndefined();
+    attachmentUrls.set({ "att-2": "data:image/png;base64,BBBB" });
+    const after = cache.for(
+      inputs(c, { msgs: [m], urls: ["data:image/png;base64,BBBB"] }),
+    );
+    const reply = after.replies.find((r) => r.id === "m-img");
+    expect(reply?.attachments?.[0]?.url).toBe("data:image/png;base64,BBBB");
+    /* …and once resolved it caches like anything else. */
+    expect(
+      cache.for(inputs(c, { msgs: [m], urls: ["data:image/png;base64,BBBB"] })),
+    ).toBe(after);
   });
 
   test("the feed row keeps summary padding + scoped turn keys", () => {

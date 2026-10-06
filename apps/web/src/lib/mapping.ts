@@ -23,7 +23,7 @@ import type {
   Plan as UiPlan,
   Workspace,
 } from "@lilos/ui/types";
-import { toAttachedFiles } from "./attachments";
+import { attachmentUrls, toAttachedFiles } from "./attachments";
 
 /** relay domain -> ui/domain type mapping (the only place it lives). */
 
@@ -354,7 +354,11 @@ export function conversationReplies(
         const hit = cache.get(m);
         if (hit) return hit;
         const r = messageReply(m);
-        cache.set(m, r);
+        /* #572/#112: a ref whose blob hasn't resolved yet bakes
+           `url: undefined` — recheck on the next fold instead of freezing
+           the thumbnail-less reply for the row's lifetime. */
+        if (!m.attachments?.some((a) => !attachmentUrls.get()[a.id]))
+          cache.set(m, r);
         return r;
       })
   );
