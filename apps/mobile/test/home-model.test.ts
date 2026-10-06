@@ -9,6 +9,7 @@ import type {
 } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import {
+  askThreadTarget,
   dmChannelFor,
   ensureChannelSubscriptions,
   type HomeWire,
@@ -373,5 +374,42 @@ describe("home-model (#155)", () => {
       ch("ch2", "e2"),
     ]);
     expect(subscribed).toEqual(["ch1", "ch2"]);
+  });
+
+  it("#595 AC-1: a plan ask's primary CTA is review, never a blind approve", () => {
+    const plan = ask("a1", "ch1", "c1", NOW - 60_000, {
+      request: { kind: "plan", planId: "p-1" },
+    });
+    const approval = ask("a2", "ch1", "c2", NOW - 60_000);
+    const question = ask("a3", "ch1", "c3", NOW - 60_000, {
+      request: {
+        kind: "question",
+        question: "which one?",
+        options: [
+          { id: "a", label: "A" },
+          { id: "b", label: "B" },
+        ],
+        freeText: true,
+      },
+    });
+    const w = wire({ channels: [ch("ch1", "e1")] });
+    expect(toApproval(plan, w, NOW).primary).toBe("review");
+    // AC-2: command approvals keep their one-tap approve; a question has
+    // no primary pill at all (it needs an answer, not an OK).
+    expect(toApproval(approval, w, NOW).primary).toBe("approve");
+    expect(toApproval(question, w, NOW).primary).toBeUndefined();
+  });
+
+  it("#595 AC-1: a plan ask's Review lands DM-under-Thread", () => {
+    const plan = ask("a1", "ch1", "c1", NOW - 60_000, {
+      request: { kind: "plan", planId: "p-1" },
+    });
+    const w = wire({ channels: [ch("ch1", "e1")] });
+    expect(askThreadTarget(plan, w)).toEqual({
+      employeeId: "e1",
+      conversationId: "c1",
+    });
+    // Channel gone from the wire → no target (the surface falls back).
+    expect(askThreadTarget(plan, wire())).toBeUndefined();
   });
 });
