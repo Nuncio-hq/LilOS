@@ -29,6 +29,7 @@ const fakeHandle = (child: EventEmitter): HermesServeHandle => ({
   token: "t",
   url: "http://127.0.0.1:1",
   child: child as unknown as HermesServeHandle["child"],
+  logTail: () => "",
   close: () => Promise.resolve(),
 });
 

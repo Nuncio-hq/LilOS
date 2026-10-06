@@ -397,8 +397,14 @@ check(
 
 /* Same fact from the hermes side: the isolated backend logs the
    "bound anyway (observe-only)" line — only the host rendezvous record is
-   unpublished; plugins/sessions/resume all work. */
-const observeLines: string[] = [];
+   unpublished; plugins/sessions/resume all work. `_log.warning` lands in
+   the serve child's output on some builds and in log files under
+   HERMES_HOME on others — read BOTH, fail only if neither has it. */
+const observeLines: string[] = [
+  ...hermes.logTail().split("\n"),
+].filter(
+  (l) => l.includes("observe-only") || l.includes("already owns this host"),
+);
 const logFiles: string[] = [];
 const walkLogs = (dir: string) => {
   if (!existsSync(dir)) return;
@@ -408,8 +414,7 @@ const walkLogs = (dir: string) => {
     else if (ent.name.endsWith(".log")) logFiles.push(p);
   }
 };
-for (const dir of [join(HERMES_HOME, "logs"), join(profileHome, "logs")])
-  walkLogs(dir);
+for (const dir of [HERMES_HOME, profileHome]) walkLogs(dir);
 for (const p of logFiles) {
   try {
     observeLines.push(
@@ -426,7 +431,7 @@ for (const p of logFiles) {
 }
 check(
   observeLines.length > 0,
-  `engine backend went observe-only in hermes logs (${observeLines.length} lines)`,
+  `engine backend went observe-only in hermes output (${observeLines.length} lines)`,
 );
 for (const l of observeLines.slice(0, 3)) out(`  observe-line: ${l}`);
 

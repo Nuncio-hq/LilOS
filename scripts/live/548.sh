@@ -68,17 +68,20 @@ SCRATCH=$(mktemp -d /tmp/lilos548-home.XXXXXX)
 # at the HERMES_HOME each invocation ran under — left alone, a scratch-home
 # run would leave the REAL `hermes` pointing at a python under the deleted
 # scratch dir, breaking every engine on the machine. Snapshot the launcher
-# dir and restore it on exit, whatever happens.
+# dir and restore it on exit, whatever happens. cp -R, not cp -a: -a keeps
+# macOS file flags, and launchers locked `chflags uchg` would make the
+# snapshot un-rm-able inside SCRATCH.
 INSTALL_BIN="$REAL_HOME/.hermes/hermes-agent/.hermes/bin"
 LAUNCHER_SNAPSHOT="$SCRATCH/launcher-backup"
 mkdir -p "$LAUNCHER_SNAPSHOT"
 if [ -d "$INSTALL_BIN" ]; then
-  cp -a "$INSTALL_BIN/." "$LAUNCHER_SNAPSHOT/" 2>/dev/null || true
+  cp -R "$INSTALL_BIN/." "$LAUNCHER_SNAPSHOT/" 2>/dev/null || true
 fi
 cleanup() {
   if [ -d "$INSTALL_BIN" ] && [ -n "$(ls -A "$LAUNCHER_SNAPSHOT" 2>/dev/null)" ]; then
-    cp -af "$LAUNCHER_SNAPSHOT/." "$INSTALL_BIN/" 2>/dev/null || true
+    cp -Rf "$LAUNCHER_SNAPSHOT/." "$INSTALL_BIN/" 2>/dev/null || true
   fi
+  chflags -R nouchg "$SCRATCH" 2>/dev/null || true
   rm -rf "$SCRATCH"
 }
 trap cleanup EXIT

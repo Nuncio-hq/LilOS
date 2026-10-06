@@ -22,6 +22,8 @@ export interface HermesServeHandle {
   token: string;
   url: string;
   child: ChildProcess;
+  /** The child's stdout+stderr so far (kept to the last 64KB). */
+  logTail(): string;
   close(): Promise<void>;
 }
 
@@ -213,6 +215,9 @@ export async function startHermesServe(
     token,
     url,
     child,
+    logTail() {
+      return logs;
+    },
     async close() {
       if (child.exitCode !== null || child.killed) return;
       child.kill("SIGTERM");
