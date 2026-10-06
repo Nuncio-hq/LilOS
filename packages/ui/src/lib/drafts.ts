@@ -15,6 +15,9 @@ const PREFIX = "lilos:composer-draft:";
 export const draftKey = {
   thread: (conversationId: string) => `conv:${conversationId}`,
   dm: (employeeId: string) => `dm:${employeeId}`,
+  /* #584: the Workbench's commit-message box — a Suggest answer (or typed
+     text) survives a reload exactly like a composer draft (AC-2). */
+  commit: (sessionId: string) => `wb-commit:${sessionId}`,
 };
 
 const storageKey = (key: string) => `${PREFIX}${key}`;

@@ -64,6 +64,9 @@ export type DiffComment = {
 export type GitCommit = {
   hash: string;
   message: string;
+  /** The commit's real git author — live rows come from `git.log`; mock
+      rows leave it off and the row falls back to the employee name (#587). */
+  author?: string;
   files: { path: string; status: Diff["status"]; add: number; del: number }[];
 };
 /* A step = one Hermes tool call (tool.start → tool.complete). The workbench is derived only from steps:
@@ -233,8 +236,6 @@ export type BackgroundJob = {
   log: string;
   /** Who started it: a subagent's name when not the employee itself. */
   by?: string;
-  /** The row IS a subagent (#309) — no Stop: jobs.stop can't kill one. */
-  subagent?: boolean;
 };
 export type Usage = {
   /* Lifetime token throughput (billing-style sums — they outgrow the
@@ -272,6 +273,10 @@ export type PullRequest = {
   title: string;
   body: string;
   status: "open" | "merged" | "closed";
+  /** The forge's URL for the PR — list rows carry it, detail reads may not. */
+  url?: string;
+  /** An open draft PR reads as its own state, not green "open" (#579). */
+  draft?: boolean;
   /** GitHub mergeability when the forge reports it (issue #37). */
   mergeable?: "mergeable" | "conflicting" | "unknown";
   merged?: { by: string; at: string; sha: string };
@@ -695,7 +700,7 @@ export type ShipError = {
 };
 
 /** Which bar action is in flight — its button reads busy. */
-export type ShipBusy = "commit" | "push" | "pull" | "pr" | null;
+export type ShipBusy = "commit" | "push" | "pull" | "pr" | "suggest" | null;
 
 /** The bar's state — app-owned; async work writes back through the
     handlers, never by mutating this. */
@@ -714,28 +719,36 @@ export type ShipBar = {
   /** Commits on the branch — PR title/body prefill. */
   commits: GitCommit[];
   /** Commit message draft (app-owned: Suggest's answer writes back through
-      `onMessage`). */
+      `onMessage`; persisted as a `lilos:` draft by the app so it survives
+      a reload — #584). */
   message: string;
   /** In-flight action — its button reads busy + the rest disables. */
   busy: ShipBusy;
   /** The last action's failure — cleared by the next one. */
   error: ShipError | null;
-  /** A turn is running → the Suggest affordance hides (AC-2). */
+  /** A turn is running — the bar stays usable; Suggest keeps working
+      because it is a side ask, not a steer (#584). */
   running: boolean;
   /** Upstream after a successful push (`origin/<branch>`) — the bar's ↑
       chip; muted while a push error is on screen (issue #393 AC-6). */
   upstream?: string | null;
   /** Optional chrome slot (the prototype's error-state switch lands here). */
   accessory?: ReactNode;
+  /** The employee's name — error copy names it as the next step's owner
+      ("Ask Default to publish it") so no error asks for a terminal
+      command (#579). */
+  employeeName?: string;
 };
 
 /** ShipBar callbacks — async ones are awaited; a rejection surfaces as the
     bar's error, so the app throws `{ reason?, detail? }`-shaped errors. */
 export type ShipHandlers = {
   onMessage?: (message: string) => void;
-  /** Ask the agent for a one-line commit message — posts a normal user
-      message; the engine's reply fills `message` (AC-2). */
-  onSuggest?: () => void;
+  /** Ask the engine for a one-line commit message — a side request that
+      touches neither transcript nor session context (#584). Resolves with
+      the suggested message; the bar writes it into `message` through
+      `onMessage`. */
+  onSuggest?: () => Promise<string | void> | string | void;
   /** Stage `files` (the checked set) + commit them with `message`. */
   onCommit?: (files: string[], message: string) => Promise<void>;
   /** Push the branch — sets upstream on the first push. */

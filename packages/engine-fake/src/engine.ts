@@ -37,6 +37,7 @@ import {
   type RequestRespondParams,
   RPC_ERRORS,
   SESSION_META_CAPABILITY,
+  type SessionAskParams,
   type SessionRewindParams,
   type SessionSetAccessParams,
   type SessionSetHiddenParams,
@@ -47,6 +48,7 @@ import {
   type SessionSteerParams,
   type SessionStopParams,
   type SessionSuspendParams,
+  SIDE_PROMPT_CAPABILITY,
   STEER_CAPABILITY,
   SUBAGENTS_CAPABILITY,
   type Usage,
@@ -328,6 +330,12 @@ export class FakeEngine {
     return s.ref;
   }
 
+  /** #573 AC-1 probe: sessions still held live — a session stopped for
+      good leaves the map; suspend keeps it for resume. */
+  get sessionCount(): number {
+    return this.sessions.size;
+  }
+
   async dispatch(method: string, params: unknown): Promise<unknown> {
     const contract = ENGINE_METHODS[method];
     if (!contract)
@@ -368,6 +376,8 @@ export class FakeEngine {
         return this.sessionSteer(parsed.data as SessionSteerParams);
       case "session.rewind":
         return this.sessionRewind(parsed.data as SessionRewindParams);
+      case "session.ask":
+        return this.sessionAsk(parsed.data as SessionAskParams);
       case "agents.list":
         return this.agentsList();
       case "agents.describe":
@@ -450,6 +460,7 @@ export class FakeEngine {
       /* ── #179: declared only while the switch is on (AC-5). ── */
       ...(this.capOn("subagents") ? [SUBAGENTS_CAPABILITY] : []),
       ...(this.capOn("background_jobs") ? [BACKGROUND_JOBS_CAPABILITY] : []),
+      ...(this.capOn("side_prompt") ? [SIDE_PROMPT_CAPABILITY] : []),
       /* #106: the policy the Settings Approvals section writes via
          approvals.setPolicy — `current` reports the live value. */
       ...(this.capOn("approval_policy")
@@ -716,7 +727,13 @@ export class FakeEngine {
 
   private sessionStop(p: SessionStopParams) {
     const s = this.require(p.sessionId);
-    if (s.state === "closed") return { stopped: false };
+    /* #573: stop is forget — a closed session still on the map is a
+       suspended one (#346); stopping it ends the resume path too. */
+    if (s.state === "closed") {
+      if (!s.suspended) return { stopped: false };
+      this.sessions.delete(s.id);
+      return { stopped: true };
+    }
     const t = s.turn;
     if (t) t.interrupted = true;
     s.holdTurn?.();
@@ -739,6 +756,11 @@ export class FakeEngine {
     }
     s.state = "closed";
     this.emit(s, "session.state", { state: "closed" });
+    /* #573 AC-1: the session leaves the map for good — its event log goes
+       with it, so engine memory stops tracking every session ever opened.
+       A later call on the id answers SESSION_NOT_FOUND like a never-seen
+       one (the harness degrades that to an empty closed transcript, #300). */
+    this.sessions.delete(s.id);
     return { stopped: true };
   }
 
@@ -816,6 +838,21 @@ export class FakeEngine {
        drops it like a prompt (#134). */
     s.userTurns.push(p.text);
     return { status: "steered" as const };
+  }
+
+  /* #584: a one-shot side question — no transcript, no context, no events.
+     Deterministic answer so tests can assert the suggestion that lands:
+     the first path-like token's basename drives `feat: update <name>`. */
+  private sessionAsk(params: SessionAskParams) {
+    this.require(params.sessionId);
+    const file = params.text
+      .split(/\s+/)
+      .find((t) => t.includes("/") || t.includes("."))
+      ?.replace(/["',;:()[\]{}<>]/g, "");
+    const base = file?.split("/").pop();
+    return {
+      answer: base ? `feat: update ${base}` : "chore: apply pending changes",
+    };
   }
 
   /**
