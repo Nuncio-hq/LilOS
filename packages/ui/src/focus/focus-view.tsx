@@ -923,7 +923,7 @@ export function FocusView({
           <Conversation className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]">
             <ConversationContent
               data-thread
-              className="mx-auto w-full max-w-[46rem] gap-7 px-5 py-8"
+              className="mx-auto w-full max-w-[46rem] gap-7 px-5 pt-8 pb-3"
             >
               {transcriptNote?.kind === "trimmed" && (
                 <TranscriptNoteRow note={transcriptNote} />

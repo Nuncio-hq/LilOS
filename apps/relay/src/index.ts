@@ -8,6 +8,7 @@ import { mkdirSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { systemClock, watchOrphaned } from "@lilos/background";
+import { MAX_FRAME_BYTES } from "@lilos/contracts/engine";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import packageJson from "../package.json";
 import { createApp } from "./app";
@@ -80,6 +81,10 @@ const listenOnce = (bindHost: string) =>
       return app.fetch(request);
     },
     websocket: {
+      /* #551: Bun's 16 MiB default sat under a maximal attachment send
+         (10 × 10 MB base64-inlined ≈ 140 MB) and dropped the socket mid-send.
+         The cap is deliberate — sized so every contract-valid frame fits. */
+      maxPayloadLength: MAX_FRAME_BYTES,
       open(ws) {
         peers.set(
           ws,

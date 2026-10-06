@@ -54,6 +54,10 @@ export async function sendDm(
   conversationId?: string,
   pick?: ModelChoice,
   files?: AttachedFile[],
+  /** #552: the send's exactly-once key — the draft's own, repeated on a
+      resend so a stored-but-unanswered first attempt dedupes on the
+      relay instead of double-posting. */
+  dedupeKey?: string,
   /** Folder the new session works in (#113); ignored on thread replies. */
   cwd?: string,
   /** #106: the access level the fresh conversation opens on — the
@@ -78,6 +82,7 @@ export async function sendDm(
         authorKind: "user",
         text,
         ...(attachments ? { attachments } : {}),
+        ...(dedupeKey ? { dedupeKey } : {}),
       });
       const conv = relay.conversations
         .get()
@@ -92,6 +97,7 @@ export async function sendDm(
       authorId: USER_ID,
       text,
       ...(attachments ? { attachments } : {}),
+      ...(dedupeKey ? { dedupeKey } : {}),
       // The pick the composer showed for this fresh session (#92) rides the
       // open call so `session.start` sees it — never a second message.
       ...(pick?.model !== undefined ? { model: pick.model } : {}),

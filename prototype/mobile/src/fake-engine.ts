@@ -979,6 +979,12 @@ function firstTurn(
   branch: string | undefined,
   ws: WorkspacePick,
 ): Script {
+  if (isLinkSafetyProbe(text))
+    return {
+      reasoning:
+        "Reply-safety check — the remote image and the non-web links are the point.",
+      text: LINK_SAFETY_SAMPLE,
+    };
   const words = text
     .replace(/[^\w\s-]/g, "")
     .split(/\s+/)
@@ -1039,7 +1045,27 @@ function firstTurn(
   };
 }
 
+/* `md: links` — the #566 reply-safety fixture: a remote image and non-web
+   link schemes that the phone must render as inert text. Identical copy in
+   packages/engine-fake/src/markdown-samples.ts. */
+const LINK_SAFETY_SAMPLE = `Here's what I pulled up:
+
+![network map](https://img.example.com/lilos-topology.png?session=abc123)
+
+- Docs: [architecture notes](https://lilos.dev/docs/architecture) — a normal link.
+- Watch-outs: [the payload](javascript:alert(1)), [a local file](file:///etc/passwd) and [the share](smb://files.local/share) must stay text, not links.
+- Or ping [ops](mailto:ops@lilos.dev) if the map looks wrong.`;
+
+const isLinkSafetyProbe = (text: string) =>
+  /^md(?:arkdown)?:\s*links/i.test(text);
+
 function followUp(text: string, t: ThreadDetail): Script {
+  if (isLinkSafetyProbe(text))
+    return {
+      reasoning:
+        "Reply-safety check — the remote image and the non-web links are the point.",
+      text: LINK_SAFETY_SAMPLE,
+    };
   if (!t.folder)
     return {
       reasoning: "A follow-up question; answer it directly.",

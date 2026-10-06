@@ -274,7 +274,14 @@ gateway.onEvent((e: GatewayEvent) => {
 });
 out("gateway connected");
 
-const engine = new HermesEngine({ gateway });
+const engine = new HermesEngine({
+  gateway,
+  hermesHome: HERMES_HOME,
+  onLog: (line) => out(`engine ${line}`),
+});
+/* The backend's own HTTP endpoint — what the production supervisor hands
+   over; the #549 self-heal POSTs agent-plugins/activate there. */
+engine.setGateway(gateway, { url: hermes.url, token: hermes.token });
 const conn = connectInMemory(engine);
 const engineTools: string[] = [];
 conn.onEvent((e) => {

@@ -41,6 +41,7 @@ import {
   type Usage,
 } from "@lilos/contracts/engine";
 import { AcpDriver, type AcpOptions } from "./acp.js";
+import type { BackendEndpoint } from "./backend.js";
 import {
   createAgent,
   describeAgent,
@@ -65,6 +66,7 @@ import {
   parseToolResultJson,
   subagentKey,
 } from "./mapping.js";
+import { ensureLilosBackend, logSessionTools } from "./plugin-tools.js";
 import { SessionRegistry } from "./registry.js";
 import {
   cancelAllAsks,
@@ -130,6 +132,12 @@ export interface HermesEngineOptions {
   /** One-line diagnostics for the adapter's own stdout (serve.ts wires the
      same channel the backend supervisor logs through). */
   onLog?: (line: string) => void;
+  /** HERMES_HOME the backend runs under — where plugin-enabled profile homes
+     live (#549 activation self-heal). */
+  hermesHome?: string;
+  /** Injectable HTTP fetch for the #549 activation POST — tests stub the
+      backend endpoint; default is the global fetch. */
+  fetchFn?: typeof fetch;
 }
 
 /**
@@ -321,14 +329,50 @@ export class HermesEngine {
    * new socket, re-open calls, and let ws sessions lazily `session.resume`
    * their stored ref on the next touch (`ensureLive`).
    */
-  setGateway(gw: GatewayLike) {
+  setGateway(gw: GatewayLike, backend?: BackendEndpoint) {
     const same = gw === this.current;
     this.current = gw;
     this.backendDown = undefined;
     this.backendState = "running";
     /* A same-instance call (e.g. the supervisor's first attach) must not
        double-register the listeners the constructor already wired. */
+    /* The backend's own HTTP endpoint for token-gated verbs the JSON-RPC
+       gateway has no name for (#549's agent-plugins/activate). */
+    this.backendEndpoint = backend;
     if (!same) this.wireGateway(gw);
+  }
+
+  /** The live backend's URL+token — present once the real supervisor
+      reported it; test stubs may leave it out (self-heal then no-ops). */
+  private backendEndpoint?: BackendEndpoint;
+
+  /** #549: BEFORE session.create/resume — the enable nudge is
+      record-routed and lands on whoever owns the host record, so OUR
+      (observe-only) backend must be asked to activate 'lilos' itself.
+      A session pins its model-facing tool list when its agent builds, so
+      this cannot wait for the session to exist. */
+  private ensureLilosBackendReady(agent: string): Promise<void> {
+    return ensureLilosBackend({
+      gw: this.gwView,
+      agent,
+      hermesHome: this.opts.hermesHome ?? "",
+      ...(this.backendEndpoint ? { backend: this.backendEndpoint } : {}),
+      deps: {
+        log: (line) => this.opts.onLog?.(line),
+        ...(this.opts.fetchFn ? { fetchFn: this.opts.fetchFn } : {}),
+      },
+    });
+  }
+
+  /** #549 AC-3, after the session exists: the offered-tool log line plus
+      the verify that lilos_* actually made it in. */
+  private logSessionToolsNow(runtimeSid: string, agent: string): Promise<void> {
+    return logSessionTools({
+      gw: this.gwView,
+      runtimeSid,
+      agent,
+      deps: { log: (line) => this.opts.onLog?.(line) },
+    });
   }
 
   /**
@@ -353,6 +397,10 @@ export class HermesEngine {
     try {
       const rec = this.sessionRegistry?.get(s.id);
       const ref = rec?.ref ?? s.ref;
+      /* #549: a resume REBUILDS the agent (fresh tool resolution) — get
+         the plugin loaded on our backend before the rebuild pins the
+         old, lilos-less list again. */
+      await this.ensureLilosBackendReady(s.agent);
       try {
         const r = (await this.gw(
           "session.resume",
@@ -408,12 +456,16 @@ export class HermesEngine {
           });
           s.setState("idle");
           s.backendDead = false;
+          await this.logSessionToolsNow(s.runtimeSid, s.agent);
           return;
         }
       } catch {
         /* The stored row names a session Hermes no longer has (or the
            resume raced another restart) — fall through to a fresh create. */
       }
+      /* #549: fresh create on the fallback path — same pre-build heal the
+         resume path took above; the new agent pins its tools at create. */
+      await this.ensureLilosBackendReady(s.agent);
       const created = (await this.createSessionCompat({
         profile: s.agent,
         title: `${s.agent} · LilOS`,
@@ -446,6 +498,7 @@ export class HermesEngine {
       this.persistSession(s);
       if (s.access) await this.applyWsAccess(s.runtimeSid, s.access);
       s.backendDead = false;
+      await this.logSessionToolsNow(s.runtimeSid, s.agent);
       s.emit("session.started", {
         agent: s.agent,
         cwd: s.cwd,
@@ -699,6 +752,10 @@ export class HermesEngine {
     const effort = p.effort;
     const fast = p.fast;
     if (mcp.length === 0) {
+      /* #549: ws sessions build on OUR backend — activate 'lilos' there
+         first so the new agent's pinned tool list already includes it.
+         (mcp sessions spawn `hermes acp`, which loads plugins itself.) */
+      await this.ensureLilosBackendReady(p.agent);
       const r = (await this.createSessionCompat({
         profile: p.agent,
         title: `${p.agent} · LilOS`,
@@ -741,6 +798,7 @@ export class HermesEngine {
          itself, so a refused/absent hint changes nothing. */
       s.access = p.access;
       if (p.access === "full") await this.applyWsAccess(s.runtimeSid, "full");
+      await this.logSessionToolsNow(s.runtimeSid, p.agent);
       s.emit("session.started", {
         agent: p.agent,
         cwd: p.cwd,
