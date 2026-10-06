@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import WebSocket from "ws";
 import { RelayClient } from "../packages/client-runtime/src/index";
 import type { Ask, Conversation } from "../packages/contracts/src/app/index";
 import type { EngineEvent } from "../packages/contracts/src/engine/index";
@@ -42,7 +43,13 @@ test.beforeAll(async () => {
     LILOS_USER_NAME: "Oscar",
     ENGINE_FAKE_TICK: "2",
   });
-  seeder = new RelayClient({ url: stack.relayWs, token: stack.relayToken });
+  seeder = new RelayClient({
+    url: stack.relayWs,
+    token: stack.relayToken,
+    /* Spec files run under Node (no guaranteed global WebSocket) — the same
+       ws-package factory e2e/helpers/relay-thread.ts uses. */
+    socketFactory: (url) => new WebSocket(url),
+  });
   /* engine.event frames reach channel subscribers only — the seeder holds
      the dm subscription so it sees turn completions. */
   seeder.onEvent((method, params) => {
