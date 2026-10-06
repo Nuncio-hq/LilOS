@@ -123,7 +123,14 @@ export function SettingsPane({ onClose }: { onClose: () => void }) {
       ?.updateStatus?.()
       .then((st) => {
         if (off) return;
-        if (st?.phase !== "rolled-back" && st?.phase !== "failed") return;
+        /* "failed" without a version is only a failed CHECK (feed unreachable),
+           not a failed update — a transient offline fetch must not pin a
+           permanent "update failed" notice. */
+        if (
+          st?.phase !== "rolled-back" &&
+          !(st?.phase === "failed" && st.version)
+        )
+          return;
         setUpdateIssue({
           message: `Update to ${st.version ?? "the latest build"} failed — you're still on ${appAbout?.version ?? "the previous build"}.`,
           onRetry: bridge.retryUpdate

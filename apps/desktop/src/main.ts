@@ -31,6 +31,7 @@ import { appMenuTemplate } from "./menu";
 import { postDesktopNotification } from "./notify";
 import { checkForUpdate } from "./update";
 import {
+  addSkippedBuild,
   removeSkippedBuild,
   settlePendingUpdate,
   type UpdateStatus,
@@ -288,7 +289,13 @@ async function retryUpdate(): Promise<DesktopUpdateOutcome> {
   if (typeof st?.build === "number") {
     removeSkippedBuild(updateBaseDir, st.build);
   }
-  return checkAndApply();
+  const outcome = await checkAndApply();
+  /* Un-skip only buys one attempt: a busy/failed retry re-skips the build
+     so the periodic check doesn't silently retry a known-bad one. */
+  if (outcome !== "apply-ready" && typeof st?.build === "number") {
+    addSkippedBuild(updateBaseDir, st.build);
+  }
+  return outcome;
 }
 
 function notifyRolledBack(status: UpdateStatus): void {
@@ -300,7 +307,7 @@ function notifyRolledBack(status: UpdateStatus): void {
       detail:
         "LilOS rolled back to the last working build. You can retry the update or open Details to see what the updater saw.",
       buttons: ["Retry", "Details", "Dismiss"],
-      defaultId: 0,
+      defaultId: 1,
       cancelId: 2,
     })
     .then(({ response }) => {

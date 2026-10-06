@@ -53,16 +53,44 @@ case "$BINDIR" in
 esac
 say "staged at $RUN"
 
+# Inside a bundle the Resources/app/pw tree is part of the proof: it is what
+# the harness's lazy browser require resolves. Its absence must fail here,
+# not at a user's first browser call.
+if [ -d "$RUN/../Resources" ]; then
+  if [ -f "$RUN/../Resources/app/pw/node_modules/playwright-core/package.json" ]; then
+    ok "bundled playwright tree present (Resources/app/pw)"
+  else
+    bad "bundled playwright tree missing — packaged browser surface would fail at first call"
+  fi
+fi
+
 # ---- hide the repo; restore on any exit ------------------------------------
 PIDS=""
 cleanup() {
   for p in $PIDS; do kill "$p" 2>/dev/null; done
   wait $PIDS 2>/dev/null
   if [ -d "$REPO.smoke-hidden" ]; then
-    mv "$REPO.smoke-hidden" "$REPO" && say "repo restored"
+    if [ -e "$REPO" ]; then
+      # mv into a live dir would nest the stale tree inside the checkout.
+      say "WARNING: $REPO and $REPO.smoke-hidden both exist — leaving the hidden copy for manual restore"
+    else
+      mv "$REPO.smoke-hidden" "$REPO" && say "repo restored"
+    fi
   fi
+  rm -rf "$TMP"
 }
 trap cleanup EXIT
+# A smoke killed between hide and restore leaves the checkout hidden. The
+# next run must recover or refuse — never move the live repo inside the
+# stale one (mv would nest it, and cleanup would restore the wrong tree).
+if [ -e "$REPO.smoke-hidden" ]; then
+  if [ -e "$REPO" ]; then
+    echo "smoke: $REPO.smoke-hidden already exists — a previous smoke died mid-hide; restore or remove it first" >&2
+    exit 2
+  fi
+  mv "$REPO.smoke-hidden" "$REPO" || exit 2
+  say "restored $REPO left hidden by a killed smoke run"
+fi
 mv "$REPO" "$REPO.smoke-hidden" || { echo "smoke: cannot hide $REPO"; exit 2; }
 say "repo hidden — binaries run without their build-time checkout"
 
@@ -142,8 +170,10 @@ if have lilos-engine-fake; then
   fi
 fi
 
-# lilos-engine-nous: the real engine adapter — hermes is absent on a CI box
-# so it must die on its own error path, never on a bundled-path require.
+# lilos-engine-nous: the real engine adapter — hermes is absent on a CI box.
+# Its own failure path is NOT to die: the supervisor logs the spawn error
+# and keeps retrying with backoff, so a noisy process that stays up is
+# correct; a bundled-path require or a silent clean exit is a crash shape.
 if have lilos-engine-nous; then
   NLOG="$TMP/engine-nous.log"
   ( cd "$TMP" && env HERMES_BIN="$TMP/no-hermes" \
@@ -156,6 +186,8 @@ if have lilos-engine-nous; then
   kill "$NPID" 2>/dev/null
   if crash_sig "$NLOG"; then
     bad "lilos-engine-nous — bundled-path crash"; dump "$NLOG"
+  elif [ ! -s "$NLOG" ]; then
+    bad "lilos-engine-nous exited silently"
   else
     ok "lilos-engine-nous ran its own code (no bundling crash)"
   fi

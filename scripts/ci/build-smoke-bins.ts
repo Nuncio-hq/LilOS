@@ -10,6 +10,13 @@ import { fileURLToPath } from "node:url";
  * check executes on — the smoke then boots these with the repo hidden.
  *
  *   bun scripts/ci/build-smoke-bins.ts [outdir]
+ *
+ * Coverage notes: `lilos-svc` is a swiftc binary, so it exists only inside
+ * the .app — the release-path smoke (scripts/release/sign-local.sh) is the
+ * leg that runs it. `lilos-harness-check`, the artifact `build:harness` is
+ * named for, is a darwin-target binary: it is compiled (so a compile break
+ * still fails here) but intentionally not run on the host — the host-target
+ * `lilos-harness` above stands in for its runtime.
  */
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const OUT = join(
