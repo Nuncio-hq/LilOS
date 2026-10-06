@@ -1143,7 +1143,20 @@ export class HermesEngine {
     forget = true,
     reason?: string,
   ) {
-    const s = this.require(p.sessionId);
+    const s = this.sessions.get(p.sessionId);
+    if (!s) {
+      /* #573: nothing live — but a suspended session's registry row still
+         belongs to this id, and forget must take it too or a later replay
+         would session.resume a session the caller just ended for good. */
+      if (forget && this.sessionRegistry?.get(p.sessionId)) {
+        this.sessionRegistry.delete(p.sessionId);
+        return { stopped: true };
+      }
+      throw new RpcError(
+        RPC_ERRORS.SESSION_NOT_FOUND,
+        `no session ${p.sessionId}`,
+      );
+    }
     if (s.state === "closed") return { stopped: false };
     cancelAllAsks(s);
     const t = s.turn;
@@ -1176,9 +1189,13 @@ export class HermesEngine {
       s.emit("turn.completed", { turnId: t.turnId, stopReason: "cancelled" });
       t.resolve({ turnId: t.turnId, stopReason: "cancelled" });
     }
-    /* An explicit session.stop ends the LilOS conversation — the stored row
-       goes (resume would resurrect a dead session); close()/shutdown and
+    /* #573 AC-1: the stopped session leaves the live maps for good — the
+       #346 suspend path evicts the same way. An explicit session.stop
+       ends the LilOS conversation, so the stored row goes too (resume
+       would resurrect a dead session); close()/shutdown and
        session.suspend keep it so the session can resume (#288/#346). */
+    this.sessions.delete(s.id);
+    this.byRuntimeSid.delete(s.runtimeSid);
     if (forget) this.sessionRegistry?.delete(s.id);
     return { stopped: true };
   }
@@ -1198,11 +1215,9 @@ export class HermesEngine {
       return { suspended: !!this.sessionRegistry?.get(p.sessionId) };
     }
     if (s.state === "closed") return { suspended: false };
+    /* sessionStop already evicts the session from the live maps; keeping
+       the registry row is what makes this a suspend, not a stop. */
     const r = await this.sessionStop(p, false, "suspended");
-    if (r.stopped) {
-      this.sessions.delete(s.id);
-      this.byRuntimeSid.delete(s.runtimeSid);
-    }
     return { suspended: r.stopped };
   }
 
@@ -2332,6 +2347,12 @@ export class HermesEngine {
   /** For the live runner / harness: the session behind a LilOS session id. */
   sessionFor(sessionId: string): Session | undefined {
     return this.sessions.get(sessionId);
+  }
+
+  /** #573 AC-1 probe: sessions still held live — a session stopped for
+      good leaves the map; suspend/shutdown keep the durable row instead. */
+  get sessionCount(): number {
+    return this.sessions.size;
   }
 
   async close() {
