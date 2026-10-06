@@ -394,7 +394,8 @@ function Tabs() {
         component={Activity}
         options={{
           title: "Needs you",
-          tabBarLabel: offline && waiting ? `Activity · ${waiting}` : "Activity",
+          tabBarLabel:
+            offline && waiting ? `Activity · ${waiting}` : "Activity",
           // This tab is the full list; the accessory would repeat it.
           bottomAccessory: undefined,
           tabBarBadge: offline ? undefined : waiting || undefined,
