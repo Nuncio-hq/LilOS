@@ -151,11 +151,14 @@ export function PlanCard({
   plan,
   onAction,
   onOpen,
+  keyHint,
 }: {
   plan: Plan;
   onAction?: (a: PlanAction, planId: string) => void;
   /** Opens the Workbench Plan tab. */
   onOpen?: () => void;
+  /** #558: this waiting card answers from the keyboard — show the keys. */
+  keyHint?: boolean;
 }) {
   const phase = planPhase(plan);
   const tasks = plan.kind === "tasks";
@@ -289,6 +292,14 @@ export function PlanCard({
               )}
             </div>
           ) : null}
+          {phase === "waiting" && keyHint && (
+            <div
+              data-ask-keyhint
+              className="text-[11px] text-muted-foreground"
+            >
+              Answer from the keyboard: ↵ Approve · ⌫ Reject
+            </div>
+          )}
         </div>
       )}
     </div>

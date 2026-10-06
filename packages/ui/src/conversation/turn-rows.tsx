@@ -7,12 +7,6 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  Checkpoint,
-  CheckpointIcon,
-  CheckpointTrigger,
-} from "../components/ai-elements/checkpoint";
-import { Button } from "../components/ui/button";
 import { Body, Row, Who } from "../feed/row";
 import { cn } from "../lib/utils";
 import type {
@@ -71,11 +65,14 @@ export interface TurnActs {
   onCancel?: (q: QuestionAsk) => void;
 }
 
-/* #134: the "Rewind to here" checkpoint above each user message (moved out
-   of thread-view so both frames + this file share it). A shared folder
-   (`warning`) turns the click into an inline confirm; a running turn greys
-   it out (AC-5). */
-export function RewindCheckpoint({
+/* #578: rewind moved off the permanent checkpoint row onto a hover
+   affordance on your own message (both frames, root included) — no line
+   above every message, no confirm dialog. One click applies the rewind
+   visually and opens a 10 s Undo toast that is the real safeguard, so a
+   shared folder (`warning`) only names itself in the tooltip, and a running
+   turn still greys the affordance out (#134 AC-5). The wrapper span carries
+   the tooltip because a disabled button swallows pointer events. */
+export function RewindHover({
   running,
   warning,
   onRewind,
@@ -84,48 +81,26 @@ export function RewindCheckpoint({
   warning?: string;
   onRewind: () => void;
 }) {
-  const [confirming, setConfirming] = useState(false);
-  if (confirming && warning) {
-    return (
-      <div className="mx-3 my-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 sm:mx-5">
-        <div className="mb-1.5 text-amber-700 text-xs dark:text-amber-300">
-          {warning}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="xs" onClick={onRewind} data-rewind-confirm>
-            Rewind anyway
-          </Button>
-          <Button
-            size="xs"
-            variant="ghost"
-            onClick={() => setConfirming(false)}
-          >
-            Cancel
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  const title = running
+    ? "Stop the running turn first"
+    : `Rewind to before this message${warning ? ` — ${warning}` : ""}`;
   return (
-    <Checkpoint className="mx-3 my-0.5 text-xs sm:mx-5">
-      <CheckpointIcon className="size-3.5" />
-      <span title={running ? "Stop the running turn first" : undefined}>
-        <CheckpointTrigger
-          size="xs"
-          disabled={running}
-          tooltip={
-            running
-              ? "Stop the running turn first"
-              : "Undo files + conversation back to before this message"
-          }
-          onClick={() => (warning ? setConfirming(true) : onRewind())}
-          data-rewind
-        >
-          <Undo2Icon className="size-3" />
-          Rewind to here
-        </CheckpointTrigger>
-      </span>
-    </Checkpoint>
+    <span
+      title={title}
+      className="absolute top-1 right-1.5 z-10 opacity-0 transition-opacity group-hover:opacity-100"
+    >
+      <button
+        type="button"
+        data-rewind
+        disabled={running}
+        title={title}
+        onClick={onRewind}
+        className="inline-flex items-center gap-1 rounded-md border bg-background/95 px-1.5 py-0.5 font-medium text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm hover:text-foreground focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <Undo2Icon className="size-3" />
+        Rewind
+      </button>
+    </span>
   );
 }
 
@@ -275,6 +250,9 @@ export interface TurnRowProps {
   pr?: PullRequest | null;
   prAuthor?: string;
   rewindWarning?: string;
+  /** #558: the id of the card the keyboard answers — it carries the
+      ↵/⌫ hint so the shortcut's target is visible. */
+  keyTarget?: string;
   acts: MutableRefObject<TurnActs>;
 }
 
@@ -297,6 +275,7 @@ function TurnRowImpl({
   pr,
   prAuthor,
   rewindWarning,
+  keyTarget,
   acts,
 }: TurnRowProps) {
   const {
@@ -341,6 +320,7 @@ function TurnRowImpl({
               onOpenSession={onOpenSession}
               onPlan={onPlan}
               onOpen={onOpen}
+              keyTarget={keyTarget}
               cards={
                 <ReplyCards
                   r={r}
@@ -355,6 +335,7 @@ function TurnRowImpl({
                   onStart={onStart}
                   onAnswer={onAnswer}
                   onCancel={onCancel}
+                  keyTarget={keyTarget}
                 />
               }
             />
@@ -370,6 +351,7 @@ function TurnRowImpl({
             onOpen={onOpen}
             onOpenSession={onOpenSession}
             onPlan={onPlan}
+            keyTarget={keyTarget}
             cards={
               <>
                 <ReplyCards
@@ -385,6 +367,7 @@ function TurnRowImpl({
                   onStart={onStart}
                   onAnswer={onAnswer}
                   onCancel={onCancel}
+                  keyTarget={keyTarget}
                 />
                 {pr &&
                   !r.live &&
@@ -404,52 +387,45 @@ function TurnRowImpl({
       </LazyShell>
     );
   }
-  const checkpoint =
+  const rewind =
     onRewind && r.id && human(r.from) ? (
-      <RewindCheckpoint
+      <RewindHover
         running={running}
         warning={rewindWarning}
         onRewind={() => onRewind(r.id ?? "")}
       />
     ) : null;
-  const shell = (
+  return (
     <LazyShell
       msgId={r.id}
-      className={cls}
+      /* Focus rows anchor the hover affordance to the whole bubble row —
+         `group`/`relative` live here; the panel's Row already carries both. */
+      className={cn(cls, frame === "focus" && rewind && "group relative")}
       lazy={lazy}
       keep={scrollTarget}
       kind="user"
       settled={false}
     >
       {frame === "panel" ? (
-        <>
-          {checkpoint}
-          <Row from={r.from} emp={emp} human={human}>
-            <Who id={r.from} time={r.time} emp={emp} human={human} />
-            <Body text={r.text} />
-            {r.attachments && <AttachmentChips files={r.attachments} />}
-          </Row>
-        </>
+        <Row from={r.from} emp={emp} human={human}>
+          <Who id={r.from} time={r.time} emp={emp} human={human} />
+          <Body text={r.text} />
+          {r.attachments && <AttachmentChips files={r.attachments} />}
+          {rewind}
+        </Row>
       ) : (
-        <UserTurn
-          from={r.from}
-          time={r.time}
-          text={r.text}
-          human={human}
-          attachments={r.attachments}
-        />
+        <>
+          <UserTurn
+            from={r.from}
+            time={r.time}
+            text={r.text}
+            human={human}
+            attachments={r.attachments}
+          />
+          {rewind}
+        </>
       )}
     </LazyShell>
-  );
-  /* The panel keeps the checkpoint inside the row's data-msg block; Focus
-     renders it as a sibling above it (its own spacing). */
-  return frame === "panel" ? (
-    shell
-  ) : (
-    <>
-      {checkpoint}
-      {shell}
-    </>
   );
 }
 

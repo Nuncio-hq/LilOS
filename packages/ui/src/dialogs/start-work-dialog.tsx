@@ -1,5 +1,6 @@
 import { CheckIcon, GitBranchIcon, PlayIcon, XIcon } from "lucide-react";
 import { useState } from "react";
+import { useUiLayerEl } from "../chat/ui-layers";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
@@ -43,12 +44,18 @@ export function StartWorkDialog({
   ];
   const [lead, setLead] = useState(workers[0] ?? "");
   const dir = `.lilos/wt/${ticket.toLowerCase()}`;
+  /* #576: Esc closes this dialog while it is the top-most layer. */
+  const layerRef = useUiLayerEl<HTMLDivElement>({ onEscape: onClose });
   return (
     <div
       className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-4 sm:p-6"
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Start work"
+        ref={layerRef}
         className="flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
