@@ -156,6 +156,8 @@ export function fakeAppOps(
     prs?: Record<string, ForgePrListItem[]>;
     /** `"user"` makes `thread_set_title` answer `user_title` (#137). */
     titleSource?: "auto" | "user";
+    /** Seed `Conversation.usage` on the bound thread (#559). */
+    usage?: Conversation["usage"];
     status?: SystemStatusResult;
     profile?: ProfileSettings;
   } = {},
@@ -182,6 +184,7 @@ export function fakeAppOps(
     archived: false,
     deliveredSeq: 0,
     createdAt: 1,
+    ...(opts.usage ? { usage: opts.usage } : {}),
   };
   const convs: Conversation[] = [bound, ...(opts.conversations ?? [])];
   const employees: Employee[] = opts.employees ?? [
