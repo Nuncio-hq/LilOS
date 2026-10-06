@@ -141,7 +141,6 @@ export function toJobRow(j: JobModel, now = Date.now()): BackgroundJobRow {
     ...(j.exitCode !== undefined ? { exitCode: j.exitCode } : {}),
     log: j.tail,
     ...(j.by ? { by: j.by } : {}),
-    ...(j.subagent ? { subagent: true } : {}),
   };
 }
 
