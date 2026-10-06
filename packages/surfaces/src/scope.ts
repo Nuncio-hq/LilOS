@@ -585,6 +585,22 @@ export class SessionSurfaces implements ViewerScope {
               state: "idle" as const,
               access: "ask" as const,
             },
+        /* #559: the session's context fullness — relay-persisted
+           turn.completed.usage on the conversation row (#300). `used`
+           mirrors the meter's numerator (#415): engine-reported occupancy
+           else the in+out sum; `window` only rides when the engine
+           reported one. Absent until a first turn completes. */
+        ...(conv?.usage
+          ? {
+              usage: {
+                used:
+                  conv.usage.context ?? conv.usage.input + conv.usage.output,
+                ...(conv.usage.contextWindow
+                  ? { window: conv.usage.contextWindow }
+                  : {}),
+              },
+            }
+          : {}),
         ...(conv?.cwd
           ? {
               folder: {
