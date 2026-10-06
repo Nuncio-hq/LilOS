@@ -1536,3 +1536,33 @@ describe("threadSurface — the live thread degraded by an unreachable Mac (#591
     }
   });
 });
+
+describe("threadSurface — open asks can't be answered while the Mac is unreachable (#652)", () => {
+  it("AC-1 offline stale-marks the ask card on EVERY state, with a hint naming the Mac", () => {
+    for (const state of [
+      "working",
+      "needs-you",
+      "done",
+      "failed",
+      "stopped",
+    ] as const) {
+      const s = threadSurface(state, true, "Mac-local");
+      /* Not `stale` — that one is only for a thread claiming a live turn;
+         an open ask can't be answered offline whatever the state is. */
+      expect(s.asksStale).toBe(true);
+      expect(s.answerHint).toBe("Answer once Mac-local is back");
+    }
+  });
+
+  it("AC-1 online leaves the card live and hint-free", () => {
+    const s = threadSurface("needs-you", false, "Mac-local");
+    expect(s.asksStale).toBe(false);
+    expect(s.answerHint).toBeUndefined();
+  });
+
+  it("AC-1 the hint degrades gracefully when the Mac is unnamed", () => {
+    expect(threadSurface("needs-you", true).answerHint).toBe(
+      "Answer once the Mac is back",
+    );
+  });
+});
