@@ -3043,15 +3043,15 @@ describe("landed steer outlives the Stop (#550)", () => {
       }, "waiting steer parked");
       /* The landed steer is never a tray row: the engine already has
          it, so Send again would deliver the same text twice. */
-      const { messages: dropped } = await listDropped(w.user, channel.id);
-      expect(dropped.find((m) => m.id === landed.id)).toBeUndefined();
+      const { messages: all } = await listDropped(w.user, channel.id);
+      const row = all.find((m) => m.id === landed.id);
+      expect(row).toBeDefined();
+      expect(row?.dropped).toBeFalsy();
       const { messages: visible } = await listConvMessages(
         w.user,
         channel.id,
       );
-      const row = visible.find((m) => m.id === landed.id);
-      expect(row).toBeDefined();
-      expect(row?.dropped).toBeFalsy();
+      expect(visible.find((m) => m.id === landed.id)).toBeDefined();
     } finally {
       await w.cleanup();
     }
