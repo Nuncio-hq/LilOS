@@ -354,14 +354,11 @@ function Tabs() {
   const { wire } = useHomeWire();
   const link = useStore($link);
   const waiting = openAsks(wire.asks).length;
-  /* #652 AC-2: offline the count is last-known — the badge still says N
-     waiting but muted, not the live accent red. */
-  const mutedBg = useThemeColor("muted");
-  const mutedFg = useThemeColor("muted-foreground");
-  const mutedBadge =
-    link === "offline"
-      ? { backgroundColor: mutedBg, color: mutedFg }
-      : undefined;
+  /* #652 AC-2: offline the count is last-known. iOS can't restyle the
+     native tab badge, so offline the count moves into the tab label in
+     the inactive tint — muted by nature — and the red alarm badge goes
+     away. */
+  const offline = link === "offline";
   return (
     <Tab.Navigator
       screenOptions={{
@@ -397,11 +394,10 @@ function Tabs() {
         component={Activity}
         options={{
           title: "Needs you",
-          tabBarLabel: "Activity",
+          tabBarLabel: offline && waiting ? `Activity · ${waiting}` : "Activity",
           // This tab is the full list; the accessory would repeat it.
           bottomAccessory: undefined,
-          tabBarBadge: waiting || undefined,
-          tabBarBadgeStyle: mutedBadge,
+          tabBarBadge: offline ? undefined : waiting || undefined,
           tabBarIcon: ({ focused }) => ({
             type: "sfSymbol",
             name: focused ? "tray.fill" : "tray",
