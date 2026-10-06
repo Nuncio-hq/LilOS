@@ -166,7 +166,13 @@ test.describe("AC-2 ↓ scroll-to-latest never overlaps a message row", () => {
 
     test(`Focus ${w}x${h}`, async ({ page }) => {
       await page.setViewportSize({ width: w, height: h });
-      await page.goto("/?stickProbe=1"); // TEMP #626 debug knob
+      /* #626: `stickDropMs` holds use-stick-to-bottom's post-resize
+         scroll-event drop window open — the exact condition that
+         swallowed the Focus scroll-up's escape and let the bottom-lock
+         spring re-pin the port (the ↓ then never mounted: "element(s)
+         not found"). Without ConversationEscapeGuard this leg fails at
+         the first toBeVisible. `stickProbe` is TEMP diagnostics. */
+      await page.goto("/?stickProbe=1&stickDropMs=20000");
       const panel = page.locator("aside").last();
       await panel.getByRole("button", { name: "Focus", exact: true }).click();
       const port = page.locator('main [role="log"]');
