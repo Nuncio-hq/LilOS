@@ -233,7 +233,7 @@ test("AC-1 a failed Stop shows its reason", async ({ page }) => {
   await dmDefault(page);
   /* `slow:` paces the turn so the Stop button stays up across the click. */
   await openSession(page, "slow:400 a turn to stop");
-  const stop = page.getByRole("button", { name: "Stop (Esc)" });
+  const stop = page.getByRole("button", { name: "Stop (⌘.)" });
   await expect(stop).toBeVisible({ timeout: 30_000 });
   fail.reject(method("turns.interrupt"));
   await stop.click();

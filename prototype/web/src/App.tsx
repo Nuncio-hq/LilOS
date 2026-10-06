@@ -294,6 +294,15 @@ const FEEDS: Record<string, Msg[]> = {
           },
           { from: "oscar", time: "11:10", text: "Agree. Add backoff, cap at 30s." },
           { from: "builder", time: "11:11", text: "Got it. Next step changes code in `apps/harness`, so it needs its own ticket and branch.", startProposal: { title: "Harness reconnect with afterSequence replay" } },
+          { from: "oscar", time: "11:13", text: "While you're in there — what happens to messages the engine wrote during the gap?" },
+          {
+            from: "builder", time: "11:15", text: "They land in the relay's event log before the socket drops, so the same replay covers them: the harness asks for `afterSequence = last seq` and the relay re-sends every event it missed, engine output included. Nothing is polled from the engine itself.",
+            steps: [
+              { tool: "read_file", input: { path: "apps/relay/src/event-log.ts" }, output: "append-only · 204 lines" },
+            ],
+          },
+          { from: "oscar", time: "11:18", text: "Good — that also covers the Mac closing the lid mid-turn." },
+          { from: "builder", time: "11:20", text: "Right, the sleep case is the same replay, just a longer gap. I'll fold that scenario into the ticket's tests." },
         ],
       },
     },
