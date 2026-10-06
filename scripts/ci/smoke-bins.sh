@@ -2,21 +2,30 @@
 # smoke-bins.sh <bins-dir> [repo-dir] — packaged-binary startup smoke (#539).
 #
 # Every compiled binary in <bins-dir> must START, not just compile: each is
-# launched from a temp dir while the repo checkout is moved aside, so a
-# baked build-time path (the playwright-core package.json resolution that
-# silently rolled back every Mac update since 1.0.33) fails here exactly
-# the way it fails on a user's machine. Any startup error fails the smoke.
+# launched from a temp dir, and on CI the repo checkout is also moved aside,
+# so a baked build-time path (the playwright-core package.json resolution
+# that silently rolled back every Mac update since 1.0.33) fails here
+# exactly the way it fails on a user's machine. Any startup error fails
+# the smoke.
 #
 #   scripts/ci/smoke-bins.sh apps/desktop/build/smoke
 #   scripts/ci/smoke-bins.sh apps/desktop/dist/LilOS.app/Contents/MacOS
 #
 # A bins dir inside an .app runs in-bundle (Contents/Resources/app/pw is
 # part of what the smoke proves); anything else is copied to the temp dir.
+#
+# The repo hide is CI-ONLY (CI=true): build:harness is in verify:fast, which
+# devs run in their working checkout — moving that tree out from under
+# editors, dev stacks and other agents is not acceptable, and a killed run
+# would leave it at <repo>.smoke-hidden. A CI runner checkout is disposable,
+# so the full proof (baked-path + resolved-relative-path classes) happens
+# there; locally the binaries still boot from a temp dir outside the repo,
+# which already catches the baked-absolute-path class that caused #539.
 
 if [ "${1:-}" != "--run" ]; then
   # Phase 1 — inside the repo: resolve paths and re-exec from a temp copy.
-  # bash reads this script lazily; once the checkout is moved the file at
-  # its original path is gone.
+  # bash reads this script lazily; on CI the checkout is moved mid-run, so
+  # the file at its original path must not be needed by then.
   BINDIR="$(cd "${1:?usage: smoke-bins.sh <bins-dir> [repo-dir]}" && pwd)" || exit 2
   SELF="$(cd "$(dirname "$0")" && pwd)"
   REPO="$(cd "${2:-"$SELF/../.."}" && pwd)" || exit 2
@@ -91,8 +100,12 @@ if [ -e "$REPO.smoke-hidden" ]; then
   mv "$REPO.smoke-hidden" "$REPO" || exit 2
   say "restored $REPO left hidden by a killed smoke run"
 fi
-mv "$REPO" "$REPO.smoke-hidden" || { echo "smoke: cannot hide $REPO"; exit 2; }
-say "repo hidden — binaries run without their build-time checkout"
+if [ "${CI:-}" = "true" ]; then
+  mv "$REPO" "$REPO.smoke-hidden" || { echo "smoke: cannot hide $REPO"; exit 2; }
+  say "repo hidden — binaries run without their build-time checkout"
+else
+  say "local run — repo left in place (hide is CI-only); binaries still run from $RUN outside the checkout"
+fi
 
 # ---- helpers ---------------------------------------------------------------
 port() {
