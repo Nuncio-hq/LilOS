@@ -71,7 +71,7 @@ class RelayProbe {
 
   static async connect(relayWs: string, token: string): Promise<RelayProbe> {
     const p = new RelayProbe();
-    p.ws = new WebSocket(relayWs);
+    p.ws = new WebSocket(`${relayWs}?token=${encodeURIComponent(token)}`);
     await new Promise<void>((res, rej) => {
       p.ws.onopen = () => res();
       p.ws.onerror = () => rej(new Error("relay ws connect failed"));
@@ -300,7 +300,7 @@ test("AC-1/2/3 (#482) killed hermes child → typed errors fast, outage shown, s
         return (
           m?.authorKind === "system" &&
           typeof m.text === "string" &&
-          m.text.includes("engine restarted")
+          m.text.includes("went to sleep")
         );
       },
       10_000,

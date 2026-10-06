@@ -483,6 +483,7 @@ export function Thread({
         <ThreadHeaderTitle
           title={detail?.title || "Thread"}
           state={detail?.state ?? "working"}
+          {...(detail?.failure ? { failureKind: detail.failure.kind } : {})}
           {...(detail?.prs?.length ? { prs: detail.prs } : {})}
           {...(detail?.context ? { context: detail.context } : {})}
           /* #591: offline a "working" header is last-known, not live. */

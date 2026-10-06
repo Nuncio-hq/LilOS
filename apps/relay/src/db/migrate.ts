@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { rmSync } from "node:fs";
 
 /**
  * Versioned DDL applied at startup (`PRAGMA user_version` tracks position).
@@ -306,7 +307,44 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     version: 20,
     statements: [`ALTER TABLE conversations ADD COLUMN life TEXT`],
   },
+  {
+    /* #571: per-conversation reads (summaries' first/last/count and
+       messages.list's thread scope) all filter conversation_id and order
+       by seq — the composite index serves the seek AND the range, and the
+       old conversation_id-only index is a strict prefix of it. */
+    version: 21,
+    statements: [
+      `CREATE INDEX IF NOT EXISTS messages_conversation_seq
+        ON messages(conversation_id, seq)`,
+      `DROP INDEX IF EXISTS messages_conversation`,
+    ],
+  },
 ];
+
+/**
+ * #571 (AC-2): snapshot the on-disk DB before a pending migration runs —
+ * the file is the install's only copy, so a bad upgrade must be undoable
+ * (`<dbPath>.v<N>.bak`, N = the pre-migration `user_version`). `VACUUM
+ * INTO` emits a consistent standalone file even under WAL. Nothing to
+ * save on a fresh DB (version 0) or an already-current one; an `:memory:`
+ * handle has no file to copy. A stale `.bak` from a crashed earlier
+ * attempt is replaced — it holds the same pre-migration state.
+ */
+export function backupBeforeMigrations(
+  db: Database,
+  dbPath: string,
+): string | null {
+  if (dbPath === ":memory:") return null;
+  const { user_version: current } = db.query("PRAGMA user_version").get() as {
+    user_version: number;
+  };
+  const latest = MIGRATIONS.at(-1)?.version ?? 0;
+  if (current === 0 || current >= latest) return null;
+  const backup = `${dbPath}.v${current}.bak`;
+  rmSync(backup, { force: true });
+  db.exec(`VACUUM INTO '${backup.replaceAll("'", "''")}'`);
+  return backup;
+}
 
 export function applyMigrations(db: Database): void {
   const row = db.query("PRAGMA user_version").get() as { user_version: number };
