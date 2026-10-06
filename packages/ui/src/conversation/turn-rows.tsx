@@ -57,6 +57,65 @@ export const TURN_LAZY_AFTER = 24;
 /* How far outside the viewport a row goes before it is held as a stub. */
 const LAZY_MARGIN = "1600px";
 
+/* #570: a lazy thread's FIRST mount renders only its tail — rows older
+   than an estimated `OPEN_TAIL_PX` of content start as stubs instead of
+   mounting once and stubbing behind the observer (#430's measured path).
+   ~3 ports of tail guarantees nothing in view starts held on any
+   realistic window while the other ~95% of a 200-turn thread stays
+   stubbed. */
+export const OPEN_TAIL_PX = 3200;
+
+/* Wrapped-line count at `cpl` chars/line — empty segments still cost a
+   line box. Only needs to be close: a first-mount stub holds this until
+   the row's real height is measured on its next hold (#537). */
+const estLines = (text: string, cpl: number) =>
+  text
+    .split("\n")
+    .reduce((a, s) => a + Math.max(1, Math.ceil(s.length / cpl)), 0);
+
+/** Estimated px height for a never-mounted row — the #570 first-mount
+    stub's stand-in. Column width decides wrap (`frame`), card kinds add
+    their chrome. Never smaller than a real row; overshoot is safer than
+    collapse (the pin lands at the bottom regardless). */
+export function estTurnHeight(
+  r: Reply,
+  agent: boolean,
+  frame: "panel" | "focus",
+): number {
+  const cpl = frame === "focus" ? 86 : 50;
+  if (!agent) {
+    /* Row/UserTurn: who line + wrapped text + attachment chips. */
+    return (
+      46 + estLines(r.text, cpl) * 20 + (r.attachments?.length ? 34 : 0)
+    );
+  }
+  /* AgentTurn: who row + optional reasoning fold + body + cards + footer. */
+  let h = 60 + estLines(r.text, cpl) * 21;
+  if (r.reasoning) h += 30;
+  if (r.steps?.length) h += 36;
+  if (r.plan) h += 40 + r.plan.steps.length * 22;
+  if (r.approval || r.question) h += 110;
+  if (r.startProposal) h += 56;
+  if (r.subagents?.length) h += 30;
+  if (r.attachments?.length) h += 34;
+  if (r.error) h += 30;
+  return h;
+}
+
+/** First row index that mounts real on open: walk back from the newest
+    reply until `px` of estimated height is covered. */
+export function openTailStart(
+  heights: readonly number[],
+  px = OPEN_TAIL_PX,
+): number {
+  let acc = 0;
+  for (let i = heights.length - 1; i >= 0; i--) {
+    acc += heights[i];
+    if (acc >= px) return i;
+  }
+  return 0;
+}
+
 /** Handlers the row may fire — read via `acts.current`, never compared. */
 export interface TurnActs {
   onRetry?: (empId: string) => void;
@@ -158,6 +217,8 @@ function LazyShell({
   className,
   lazy,
   keep,
+  startHeld = false,
+  estHeight,
   kind,
   settled,
   children,
@@ -168,14 +229,25 @@ function LazyShell({
   /** Rows that must never unmount: live/streaming turns and the scrollTo
       target (its content has to exist the moment it lands, #138). */
   keep: boolean;
+  /** #570: mount directly as a height-estimated stub — rows above the
+      open tail never pay their mount cost on thread open. `keep` wins:
+      live turns and the scroll target still mount real. */
+  startHeld?: boolean;
+  /** The first stub's px height — the never-measured estimate; once the
+      row mounts and re-holds, the stub keeps its real height (#537). */
+  estHeight?: number;
   kind: "agent" | "user";
   settled: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const heightRef = useRef(0);
-  const wasHeldRef = useRef(false);
-  const [held, setHeld] = useState(false);
+  const initialHeld =
+    lazy && !keep && startHeld && (estHeight ?? 0) > 0;
+  const heightRef = useRef(initialHeld && estHeight ? estHeight : 0);
+  /* Mounting out of a stub is a remount — `data-remount` skips the rise
+     replay — and a born-held row counts as held from the start. */
+  const wasHeldRef = useRef(initialHeld);
+  const [held, setHeld] = useState(initialHeld);
   const [remounted, setRemounted] = useState(false);
   /* #512: while a find chord's ~10 s window runs, every held row mounts so
      browser find-in-page can match its text; the window lapsing re-arms
@@ -261,6 +333,11 @@ export interface TurnRowProps {
   flashed: boolean;
   /** Long thread: let far-off-screen rows hold as stubs. */
   lazy: boolean;
+  /** #570: this row sits above the open tail — mount it as an
+      estimated-height stub (`estHeight`) instead of mounting then
+      stubbing. */
+  startHeld?: boolean;
+  estHeight?: number;
   /** This row is the scrollTo target — it must exist when scrolled to. */
   scrollTarget: boolean;
   running: boolean;
@@ -286,6 +363,8 @@ function TurnRowImpl({
   lastRow,
   flashed,
   lazy,
+  startHeld,
+  estHeight,
   scrollTarget,
   running,
   emp,
@@ -326,6 +405,8 @@ function TurnRowImpl({
            conversation isn't active — so a non-terminal turn must never
            hold (a stub would freeze partial height and fake the marker). */
         keep={scrollTarget || (!!r.turnId && !TERMINAL.has(r.phase))}
+        startHeld={startHeld}
+        estHeight={estHeight}
         kind="agent"
         settled={isSettled(r)}
       >
@@ -418,6 +499,8 @@ function TurnRowImpl({
       className={cls}
       lazy={lazy}
       keep={scrollTarget}
+      startHeld={startHeld}
+      estHeight={estHeight}
       kind="user"
       settled={false}
     >
@@ -479,6 +562,8 @@ const sameRow = (a: TurnRowProps, b: TurnRowProps): boolean =>
   a.lastRow === b.lastRow &&
   a.flashed === b.flashed &&
   a.lazy === b.lazy &&
+  a.startHeld === b.startHeld &&
+  a.estHeight === b.estHeight &&
   a.scrollTarget === b.scrollTarget &&
   /* `running` only feeds the RewindCheckpoint on user rows — an employee
      turn must not re-render when the composer flips running. */

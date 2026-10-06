@@ -1,6 +1,6 @@
 import type { ChatStatus } from "ai";
 import { CheckIcon, Maximize2Icon, PlayIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AccessPill } from "../chat/access-pill";
 import {
   ConversationKeepBottom,
@@ -28,6 +28,8 @@ import {
 } from "../conversation/question-card";
 import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
+  estTurnHeight,
+  openTailStart,
   RewindCheckpoint,
   TURN_LAZY_AFTER,
   type TurnActs,
@@ -291,6 +293,17 @@ export function ThreadView({
     onCancel,
   };
   const lazyRows = thread.replies.length > TURN_LAZY_AFTER;
+  /* #570: a lazy thread opens on its tail — rows above `tailStart` never
+     mount on first paint; they start as estimated-height stubs and the
+     observer mounts them at the window edge. */
+  const estHeights = useMemo(
+    () =>
+      lazyRows
+        ? thread.replies.map((r) => estTurnHeight(r, !!emp(r.from), "panel"))
+        : [],
+    [lazyRows, thread.replies, emp],
+  );
+  const tailStart = openTailStart(estHeights);
   return (
     <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col">
       <div className="lilos-drag flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
@@ -386,7 +399,14 @@ export function ThreadView({
           )}
         </div>
       </div>
-      <Conversation className="min-h-0">
+      {/* #570: the first pin on a lazy thread must land instantly — the
+          default smooth sweep would scroll through the whole stub field
+          and mount every row it passes, recreating the open-time freeze.
+          `resize` stays smooth: the streaming chase is unchanged. */}
+      <Conversation
+        className="min-h-0"
+        initial={lazyRows ? "instant" : "smooth"}
+      >
         {/* The composer sits below the scroller in normal flow — nothing
             overlays the last turn, so only a small bottom pad is needed;
             the question card's Skip row stays fully visible on its own row
@@ -441,6 +461,8 @@ export function ThreadView({
               lastRow={i === thread.replies.length - 1}
               flashed={flash === r.id}
               lazy={lazyRows}
+              startHeld={i < tailStart}
+              estHeight={estHeights[i]}
               scrollTarget={scrollTo === r.id}
               running={running}
               emp={emp}

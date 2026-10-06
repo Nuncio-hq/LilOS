@@ -64,6 +64,8 @@ import {
 } from "../conversation/question-card";
 import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
+  estTurnHeight,
+  openTailStart,
   RewindCheckpoint,
   TURN_LAZY_AFTER,
   type TurnActs,
@@ -606,6 +608,17 @@ export function FocusView({
     onCancel,
   };
   const lazyRows = thread.replies.length > TURN_LAZY_AFTER;
+  /* #570: a lazy thread opens on its tail — rows above `tailStart` never
+     mount on first paint; they start as estimated-height stubs and the
+     observer mounts them at the window edge. */
+  const estHeights = useMemo(
+    () =>
+      lazyRows
+        ? thread.replies.map((r) => estTurnHeight(r, !!emp(r.from), "focus"))
+        : [],
+    [lazyRows, thread.replies, emp],
+  );
+  const tailStart = openTailStart(estHeights);
   /* #340 AC-2b: `workbench_open` brings the panel forward on the target's
      tab — the Workbench applies `target`; here the panel opens and follow
      stops (it is the agent's explicit "look at this"). */
@@ -938,7 +951,14 @@ export function FocusView({
               {banner}
             </div>
           )}
-          <Conversation className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]">
+          {/* #570: a lazy thread's first pin lands instantly — a smooth
+              sweep would mount every stub it scrolls past (see
+              thread-view). `resize` stays smooth for the streaming
+              chase. */}
+          <Conversation
+            className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]"
+            initial={lazyRows ? "instant" : "smooth"}
+          >
             <ConversationContent
               data-thread
               className="mx-auto w-full max-w-[46rem] gap-7 px-5 pt-8 pb-3"
@@ -976,6 +996,8 @@ export function FocusView({
                   lastRow={i === thread.replies.length - 1}
                   flashed={flash === r.id}
                   lazy={lazyRows}
+                  startHeld={i < tailStart}
+                  estHeight={estHeights[i]}
                   scrollTarget={scrollTo === r.id}
                   running={running}
                   emp={emp}
