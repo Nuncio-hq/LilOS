@@ -621,6 +621,11 @@ export function FocusView({
     [lazyRows, thread.replies, emp],
   );
   const tailStart = openTailStart(estHeights);
+  /* Same stale-target guard as thread-view: a scrollTo id with no row
+     left in this thread must not keep the open pin suppressed. */
+  const jumpPending =
+    !!scrollTo &&
+    (root.id === scrollTo || thread.replies.some((r) => r.id === scrollTo));
   /* #340 AC-2b: `workbench_open` brings the panel forward on the target's
      tab — the Workbench applies `target`; here the panel opens and follow
      stops (it is the agent's explicit "look at this"). */
@@ -982,7 +987,7 @@ export function FocusView({
               chase. */}
           <Conversation
             className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]"
-            initial={scrollTo ? false : lazyRows ? "instant" : "smooth"}
+            initial={jumpPending ? false : lazyRows ? "instant" : "smooth"}
           >
             <ConversationContent
               data-thread

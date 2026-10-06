@@ -329,6 +329,12 @@ export function ThreadView({
     [lazyRows, thread.replies, emp],
   );
   const tailStart = openTailStart(estHeights);
+  /* A scrollTo open skips the pin — but only while the target row is in
+     this thread's replies. A stale id (hit trimmed or rewound away) must
+     not keep suppressing the pin on every later open. */
+  const jumpPending =
+    !!scrollTo &&
+    (root.id === scrollTo || thread.replies.some((r) => r.id === scrollTo));
   return (
     <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col">
       <div className="lilos-drag flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
@@ -433,7 +439,7 @@ export function ThreadView({
           unchanged. */}
       <Conversation
         className="min-h-0"
-        initial={scrollTo ? false : lazyRows ? "instant" : "smooth"}
+        initial={jumpPending ? false : lazyRows ? "instant" : "smooth"}
       >
         {/* The composer sits below the scroller in normal flow — nothing
             overlays the last turn, so only a small bottom pad is needed;

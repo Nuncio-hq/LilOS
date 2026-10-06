@@ -19,7 +19,7 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  * (#512), and a search-hit click jumps to a held anchor (#138).
  *
  * A 60-turn engine-fake thread grown through relay RPC (#574 — the
- * browser never types them; 121 reply rows » TURN_LAZY_AFTER).
+ * browser never types them; 119 reply rows » TURN_LAZY_AFTER).
  */
 
 let stack: Stack;
@@ -103,7 +103,7 @@ test("AC-1: opening a lazy thread mounts only the tail — older turns start as 
     .toBe(false);
   await expect(panel.getByText(EARLY_PROBE)).toHaveCount(0);
 
-  /* Most of the 121 reply rows hold as stubs immediately — the stub set
+  /* Most of the 119 reply rows hold as stubs immediately — the stub set
      is the first-mount state, not a post-settle sweep. */
   await expect
     .poll(() => panel.locator("[data-held-stub]").count(), {

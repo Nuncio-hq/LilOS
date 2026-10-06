@@ -161,7 +161,7 @@ describe("AC-1: rows above the open tail start as estimated stubs — no mount",
 
   test("keep wins: the scroll target / a live turn never starts held", () => {
     const live = agentDone("m2", "streaming answer");
-    live.phase = "streaming";
+    live.phase = "typing";
     const { container } = render(
       row(live, { startHeld: true, estHeight: 180 }),
     );

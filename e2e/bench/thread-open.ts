@@ -115,8 +115,10 @@ async function servePreview(env: Record<string, string>): Promise<{
       .then((r) => r.ok)
       .catch(() => false);
     if (ok) break;
-    if (Date.now() - start > 30_000)
+    if (Date.now() - start > 30_000) {
+      proc.kill("SIGKILL");
       throw new Error(`timed out waiting for preview ${url}`);
+    }
     await new Promise((r) => setTimeout(r, 200));
   }
   return {
@@ -198,23 +200,19 @@ async function snap(cdp: CDPSession, page: Page) {
 }
 type Snap = Awaited<ReturnType<typeof snap>>;
 
-async function windowBetween(
-  page: Page,
-  a: Snap,
-  b: Snap,
-  /* CDP Performance counters reset at each navigation: a window that
-     starts at document start (the reload leg) reads the post-nav snapshot
-     as absolute, not a delta against the previous document. */
-  sinceNav = false,
-): Promise<Window> {
+async function windowBetween(page: Page, a: Snap, b: Snap): Promise<Window> {
   const dom = await domStats(page);
   return {
-    taskMs: sinceNav ? b.taskMs : b.taskMs - a.taskMs,
-    scriptMs: sinceNav ? b.scriptMs : b.scriptMs - a.scriptMs,
-    layoutMs: sinceNav ? b.layoutMs : b.layoutMs - a.layoutMs,
-    recalcMs: sinceNav ? b.recalcMs : b.recalcMs - a.recalcMs,
-    /* The open leg resets __lt before the click; the reload leg re-arms it
-       at document start — either way b.lt covers just the window. */
+    /* CDP Performance counters reset on navigation (verified: reload
+       zeroes the per-renderer accumulators). A leg that crosses a nav
+       reads the post-nav snapshot as absolute — pass a zeroed `a`. */
+    taskMs: b.taskMs - a.taskMs,
+    scriptMs: b.scriptMs - a.scriptMs,
+    layoutMs: b.layoutMs - a.layoutMs,
+    recalcMs: b.recalcMs - a.recalcMs,
+    /* __lt is an init script — it re-arms per document. The open leg
+       zeroes it before the click; the reload leg's post-nav b.lt covers
+       just that document's window. */
     longestTaskMs: b.lt.max,
     longTasks: b.lt.n,
     wallMs: b.t - a.t,
@@ -267,7 +265,9 @@ async function trial(shotsDir = ""): Promise<{ open: Window; reload: Window }> {
         await quiet(page);
         const open = await windowBetween(page, m0, await snap(cdp, page));
 
-        /* Leg 2 — reload: full document restart on the conv URL. */
+        /* Leg 2 — reload: full document restart on the conv URL. The CDP
+           counters reset at the navigation, so the post-reload snapshot
+           reads as this leg's absolute cost. */
         const t0 = Date.now();
         await page.reload();
         await expect(panel).toBeVisible({ timeout: 60_000 });
@@ -284,7 +284,6 @@ async function trial(shotsDir = ""): Promise<{ open: Window; reload: Window }> {
             t: t0,
           },
           await snap(cdp, page),
-          true,
         );
 
         if (shotsDir) {
