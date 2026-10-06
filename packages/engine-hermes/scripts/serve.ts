@@ -14,11 +14,15 @@
  * calls fast typed and relaunches `hermes serve` with backoff instead of
  * leaving the adapter "running" on a corpse.
  */
+import { homedir } from "node:os";
+import { MAX_FRAME_BYTES } from "@lilos/contracts/engine";
 import { HermesBackendSupervisor } from "../src/backend.js";
 import { HermesEngine } from "../src/engine.js";
 import { RpcError } from "../src/errors.js";
+import { HermesHostConflict } from "../src/serve.js";
 import { eventFrame, handleJsonRpc } from "../src/transport.js";
 import {
+  HERMES_HOST_CONFLICT_EXIT_CODE,
   HERMES_TOO_OLD_EXIT_CODE,
   hermesTooOldMessage,
 } from "../src/version.js";
@@ -65,6 +69,7 @@ try {
     ...(arg("sessions-file") ? { sessionsFile: arg("sessions-file") } : {}),
     onBackendNeeded: () => backend.kick(),
     onLog: (line) => console.log(line),
+    hermesHome: process.env.HERMES_HOME ?? `${homedir()}/.hermes`,
     acp: {
       bin: arg("hermes-bin", process.env.HERMES_BIN ?? "hermes"),
       ...(acpArgs ? { args: acpArgs.split(" ").filter(Boolean) } : {}),
@@ -94,6 +99,12 @@ try {
     console.error(hermesTooOldMessage(undefined));
     process.exit(HERMES_TOO_OLD_EXIT_CODE);
   }
+  // #548: the multiplex attach/refusal names its owner — exit the reserved
+  // code so the launcher marks it fatal instead of retrying 5 times.
+  if (e instanceof HermesHostConflict) {
+    console.error(e.message);
+    process.exit(HERMES_HOST_CONFLICT_EXIT_CODE);
+  }
   die(e);
 }
 
@@ -111,6 +122,9 @@ const server = Bun.serve({
     return new Response("engine-hermes: websocket at /ws", { status: 404 });
   },
   websocket: {
+    /* #551: prompts carry attachments as inline base64 image blocks — a
+       maximal send (~140 MB) must fit or the harness's socket drops. */
+    maxPayloadLength: MAX_FRAME_BYTES,
     open(ws) {
       clients.add(ws);
     },

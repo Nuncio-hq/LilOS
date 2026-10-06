@@ -8,6 +8,7 @@ import { mkdirSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { systemClock, watchOrphaned } from "@lilos/background";
+import { MAX_FRAME_BYTES } from "@lilos/contracts/engine";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import packageJson from "../package.json";
 import { createApp } from "./app";
@@ -19,6 +20,7 @@ import { applyMigrations } from "./db/migrate";
 import * as schema from "./db/schema";
 import { createExpoPushSender } from "./expo";
 import { createLogTail } from "./logtail";
+import { wsUpgradeOriginAllowed } from "./origin";
 import { createPairingService } from "./pairing";
 import { createPushFanout } from "./push";
 import { createRelay, type PhoneAccess } from "./session";
@@ -58,6 +60,19 @@ const listenOnce = (bindHost: string) =>
     fetch(request, server) {
       const url = new URL(request.url);
       if (url.pathname === "/ws") {
+        /* #568: refuse browser upgrades from foreign origins before the
+           socket exists — a page on another site can't even reach
+           session.hello to guess the token. Runs on both listeners
+           (loopback + the opt-in tailnet bind share this fetch). */
+        if (
+          !wsUpgradeOriginAllowed(
+            request.headers.get("origin"),
+            request.headers.get("host"),
+            request.headers.get("user-agent"),
+          )
+        ) {
+          return new Response("websocket upgrade refused", { status: 403 });
+        }
         const ok = server.upgrade(request);
         return ok
           ? undefined
@@ -66,6 +81,10 @@ const listenOnce = (bindHost: string) =>
       return app.fetch(request);
     },
     websocket: {
+      /* #551: Bun's 16 MiB default sat under a maximal attachment send
+         (10 × 10 MB base64-inlined ≈ 140 MB) and dropped the socket mid-send.
+         The cap is deliberate — sized so every contract-valid frame fits. */
+      maxPayloadLength: MAX_FRAME_BYTES,
       open(ws) {
         peers.set(
           ws,

@@ -30,9 +30,10 @@ test.beforeAll(async () => {
   stack = await bootStack("preattach", await pickPorts(), {
     LILOS_USER_NAME: "Oscar",
     /* Same shape as ac-308: no steer → mid-run sends queue and drain as
-         ref'd turns, which is what puts relay posts AFTER later user rows. */
+         ref'd turns, which is what puts relay posts AFTER later user rows.
+         Only the reload leg needs a running window — its `slowleg:900`
+         paces it; the suite-wide tick is gone (#574). */
     LILOS_HIDE_CAPS: "steer",
-    ENGINE_FAKE_TICK: "300",
   });
 });
 test.afterAll(async () => {

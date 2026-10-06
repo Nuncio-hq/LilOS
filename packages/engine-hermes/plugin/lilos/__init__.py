@@ -256,11 +256,21 @@ def _pre_tool_call(tool_name, args=None, session_id="", task_id="", **_kw):
         return None
     if not _source_is_lilos(session_id or task_id):
         return None
+    if name.startswith("browser_vault_"):
+        return {
+            "action": "block",
+            "message": (
+                "Inside LilOS your own browser tools are off — and that "
+                "includes the credential vault: LilOS has no password-vault "
+                "surface today, so there is no lilos_* alternative to "
+                f"{name}; ask the user to do the sign-in step."
+            ),
+        }
     return {
         "action": "block",
         "message": (
             "Inside LilOS your own browser tools are off. Use the lilos_"
-            "browser_* tools (open/click/type/read/scroll/screenshot) — they "
+            "browser_* tools (open/click/type/read/scroll/eval) — they "
             "drive the session's LilOS browser so the work is visible in "
             "the LilOS Workbench. web_search and web_extract remain fine for "
             "reading pages; never use them to act on a page."

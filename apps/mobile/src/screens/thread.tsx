@@ -2,6 +2,8 @@ import {
   type ChannelMessagesState,
   type RelaySessionFeedState,
   reduceSessionEvents,
+  sendKeyDone,
+  sendKeyFor,
 } from "@lilos/client-runtime";
 import type {
   AppChannel,
@@ -407,9 +409,10 @@ export function Thread({
       void answerPlanChange(c, change.askId, change.answer);
       return;
     }
-    const dedupeKey = `u-${Date.now().toString(36)}-${Math.random()
-      .toString(36)
-      .slice(2, 10)}`;
+    /* #552: the key belongs to the draft, not the tap — the failure path
+       refills the composer with the same text, so the resend repeats the
+       key and the relay dedupes a stored-but-unanswered first attempt. */
+    const dedupeKey = sendKeyFor(`conv:${conversationId}`, text);
     void c
       .request("messages.post", {
         channelId,
@@ -417,6 +420,7 @@ export function Thread({
         text,
         dedupeKey,
       })
+      .then(() => sendKeyDone(`conv:${conversationId}`, text))
       .catch((e) => {
         Alert.alert("Couldn't send", describeError(e));
         setPrefill({ text });

@@ -32,6 +32,15 @@ PR does not exist.
 - **D-#25 The relay is its own process, local first** (binds 127.0.0.1,
   per-install token); remote = change the address, not the code.
   Not: embedded in apps/web, or remote-first. — #25 · PR #41
+- **D-#564 Every LilOS listener authenticates — none is "read-only so
+  open".** The harness feed's `/ws` upgrade requires the install token
+  (`?token=`; a browser WebSocket can't set headers) and refuses a
+  browser-sent `Origin` that isn't the app's own (`file://`/`null` or a
+  loopback http(s) host); `/healthz` stays open but answers only the
+  readiness nonce `{ok, instanceId}` (#273). Not: an unauthenticated feed
+  because it "only reads" — live events carry tool output, file contents
+  and diffs — or a relay-minted feed token in `welcome` (the install token
+  already reaches every feed client). — #564
 
 ## Data
 - **D-#25 The relay owns visible messages; the engine owns transcripts**
@@ -243,6 +252,26 @@ PR does not exist.
   "Engine error:". Not: classifying failures by matching error text, or
   asserting on adapter diagnostics the harness only sometimes forwards.
   — #521
+- **D-#548 LilOS's `hermes serve` runs `--isolated`; a host multiplex
+  attach/refusal is a fatal verdict, not a crash.** Hermes runs one
+  machine-level backend per OS user: a `serve` without the flag attaches to
+  the host owner and exits 0. The adapter feature-probes `serve --help` for
+  `--isolated` (no version string answers it), maps the attach/refusal log
+  markers to reserved exit 87 — fatal, no retries — and a relaunch hitting
+  the conflict marks the backend `failed` on the spot (`kick()` re-arms).
+  Not: counting the attach toward the crash budget, or pinning a Hermes
+  version for a mid-line feature. — #548
+- **D-#549 LilOS activates the `lilos` plugin on ITS OWN backend and
+  suppresses Hermes' `browser` toolset at the offer.** `plugins enable`'s
+  live-activation nudge is routed to the host-record owner — an
+  observe-only `--isolated` backend never receives it, so before every
+  `session.create`/`session.resume` the engine checks `plugins.list` and
+  POSTs `agent-plugins/activate` {name, home} on its own backend. And
+  connect writes `agent.disabled_toolsets: [browser]` per profile:
+  `browser_exec`/`browser_vault_*` are stripped from the offer (the
+  plugin's `pre_tool_call` block stays as the call-time gate). Not:
+  relying on the record-routed nudge, or blocking browser tools only at
+  call time while they still appear in the model's list. — #549
 - **D-#36 The agent gateway is the one agent surface.** Every engine
   session gets a gateway scope bound to its employee/thread; its tool
   calls reach LilOS through one endpoint and the scope resolves the

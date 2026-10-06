@@ -2303,6 +2303,11 @@
             "ask",
             "full"
           ]
+        },
+        "dedupeKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
         }
       },
       "required": [
@@ -8507,7 +8512,8 @@
           "enum": [
             "unknown",
             "expired",
-            "used"
+            "used",
+            "throttled"
           ]
         }
       },
