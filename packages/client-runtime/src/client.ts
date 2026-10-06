@@ -1411,9 +1411,11 @@ export class RelayClient {
       void this.refreshSummary(convId);
       return;
     }
-    /* A fresher local patch invalidates any scoped fetch still in flight —
-       its snapshot predates this message and would roll `last` back. */
-    this.summaryTickets.delete(convId);
+    /* Do NOT invalidate a scoped fetch in flight for this conv: its
+       snapshot is taken after the relay emitted this very frame, so the
+       response already contains this message — and carries flags a patch
+       can't (`root.rewound` after a rewind-to-root, the true count).
+       Cancelling it would strand that state (#134 AC-5). */
     const isAnswer = message.authorKind !== "user";
     this.conversationSummaries.set(
       summaries.map((s) =>
@@ -1431,10 +1433,12 @@ export class RelayClient {
     );
   }
 
-  /* #571: per-conversation refresh tickets — a scoped fetch that resolves
-     after a newer patch (or a newer fetch) for the same conversation must
-     not overwrite it. The directory's full re-list clears them all: its
-     snapshot is the authority. */
+  /* #571: per-conversation refresh tickets — when two scoped fetches for
+     the same conversation overlap (relay handlers interleave at awaits),
+     the older response must not overwrite the newer. Local patches never
+     cancel a ticket: the response always post-dates their cause on a
+     single ordered socket. The directory's full re-list clears them all:
+     its snapshot is the authority. */
   private summaryTickets = new Map<string, number>();
   private summaryTicketSeq = 0;
 

@@ -1120,6 +1120,7 @@ describe("#571 incremental conversation summaries", () => {
     convId: string,
     over: Record<string, unknown> = {},
     msgOver: Record<string, unknown> = {},
+    rootOver: Record<string, unknown> = {},
   ) => ({
     conversation: {
       id: convId,
@@ -1133,7 +1134,12 @@ describe("#571 incremental conversation summaries", () => {
       deliveredSeq: 0,
       createdAt: 1,
     },
-    root: mkMsg({ id: `${convId}-root`, conversationId: convId, seq: 1 }),
+    root: mkMsg({
+      id: `${convId}-root`,
+      conversationId: convId,
+      seq: 1,
+      ...rootOver,
+    }),
     last: mkMsg({
       id: `${convId}-last`,
       conversationId: convId,
@@ -1280,46 +1286,109 @@ describe("#571 incremental conversation summaries", () => {
     expect(summaryRequests(socket)).toHaveLength(0);
   });
 
-  it("a stale scoped response can't roll back a newer local patch", async () => {
+  /* #134 AC-5 regression: the relay emits `conversation.rewound`, then
+     posts the "Rewound to before…" note as `message.created` — both before
+     it ever sees the scoped summaries request the first event sent. The
+     note's local patch must not cancel that fetch: the response carries
+     `root.rewound`, the flag that keeps the dead root off the open
+     thread (a stale copy renders it as the row). */
+  it("the rewind note's patch must not cancel the scoped refetch", async () => {
     const { client, socket } = await connectWithSummaries([mkSummary("conv1")]);
-    /* In-flight scoped refresh (from a dropped flip)… */
     socket.emit({
       jsonrpc: "2.0",
-      method: "message.changed",
+      method: "conversation.rewound",
       params: {
         channelId: "ch1",
-        message: mkMsg({
-          id: "m2",
-          conversationId: "conv1",
-          seq: 2,
-          removed: true,
-        }),
-        flags: ["removed"],
+        conversationId: "conv1",
+        fromSeq: 1,
+        messageId: "conv1-root",
+        removedIds: ["conv1-root", "conv1-last"],
+        engineRewound: true,
       },
     });
-    expect(summaryRequests(socket)).toHaveLength(1);
-    /* …then a newer local patch lands before the fetch resolves. */
     socket.emit({
       jsonrpc: "2.0",
       method: "message.created",
       params: {
         channelId: "ch1",
         message: mkMsg({
-          id: "m4",
+          id: "note1",
           conversationId: "conv1",
+          authorKind: "system",
           seq: 4,
-          text: "newest",
+          text: "Rewound to before your message — 2 messages dropped.",
         }),
       },
     });
-    /* The stale fetch resolves with the pre-patch row — must not apply. */
+    expect(summaryRequests(socket)).toHaveLength(1);
+    /* The note's patch is optimistic; the response is the authority. */
     socket.respondTo("conversations.summaries", {
-      summaries: [mkSummary("conv1")],
+      summaries: [
+        mkSummary(
+          "conv1",
+          { messageCount: 1 },
+          {
+            id: "note1",
+            seq: 4,
+            authorKind: "system",
+            text: "Rewound to before your message — 2 messages dropped.",
+          },
+          { rewound: true },
+        ),
+      ],
     });
     await flush();
     const [s] = client.conversationSummaries.get();
-    expect(s.last.text).toBe("newest");
-    expect(s.last.seq).toBe(4);
-    expect(s.messageCount).toBe(3);
+    expect(s.root.rewound).toBe(true);
+    expect(s.last.text).toBe(
+      "Rewound to before your message — 2 messages dropped.",
+    );
+    expect(s.messageCount).toBe(1);
+  });
+
+  /* The one race a ticket does guard: two scoped fetches overlap because
+     relay handlers interleave at awaits — the older response landing last
+     must not roll the row back. */
+  it("an older overlapping scoped response can't roll back a newer one", async () => {
+    const { client, socket } = await connectWithSummaries([mkSummary("conv1")]);
+    const flip = (id: string) =>
+      socket.emit({
+        jsonrpc: "2.0",
+        method: "message.changed",
+        params: {
+          channelId: "ch1",
+          message: mkMsg({
+            id,
+            conversationId: "conv1",
+            seq: 2,
+            removed: true,
+          }),
+          flags: ["removed"],
+        },
+      });
+    flip("m2");
+    flip("m2b");
+    const reqs = summaryRequests(socket).map((f) => (f as { id?: string }).id);
+    expect(reqs).toHaveLength(2);
+    /* Newer request answers first… */
+    socket.emit({
+      jsonrpc: "2.0",
+      id: reqs[1],
+      result: {
+        summaries: [mkSummary("conv1", {}, { text: "fresh", seq: 5 })],
+      },
+    });
+    await flush();
+    expect(client.conversationSummaries.get()[0].last.text).toBe("fresh");
+    /* …then the older response lands — discarded, not applied. */
+    socket.emit({
+      jsonrpc: "2.0",
+      id: reqs[0],
+      result: {
+        summaries: [mkSummary("conv1", {}, { text: "stale", seq: 4 })],
+      },
+    });
+    await flush();
+    expect(client.conversationSummaries.get()[0].last.text).toBe("fresh");
   });
 });
