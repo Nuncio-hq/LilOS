@@ -111,3 +111,51 @@ export function buildTree(paths: string[]): TreeNode {
   }
   return root;
 }
+
+/** Total rows a tree renders (folders + files) — the windowed first
+    frame grows toward it (#547 AC-5). */
+export function countTreeRows(n: TreeNode): number {
+  let c = n.children.size;
+  for (const k of n.children.values()) c += countTreeRows(k);
+  return c;
+}
+
+/* #547 AC-5: dirs first, then lowercase-key order — shared by TreeNodes'
+   render and windowedTreePaths so the window slices the exact order rows
+   mount in. localeCompare is an Intl call (~30µs each); on a 2,400-entry
+   dir it cost ~0.9s, so the key is a precomputed lowercase string. */
+export function sortedTreeKids(n: TreeNode): TreeNode[] {
+  const keyed = [...n.children.values()].map((c) => ({
+    n: c,
+    k: c.name.toLowerCase(),
+  }));
+  keyed.sort(
+    (a, b) =>
+      Number(b.n.children.size > 0) - Number(a.n.children.size > 0) ||
+      (a.k < b.k ? -1 : a.k > b.k ? 1 : 0) ||
+      (a.n.name < b.n.name ? -1 : a.n.name > b.n.name ? 1 : 0),
+  );
+  return keyed.map((e) => e.n);
+}
+
+/* #547 AC-5: the first `limit` paths in TreeNodes' render order (a node's
+   row counts when visited, then its subtree — DFS pre-order). A pure Set
+   the render checks membership against: anything mutable during render is
+   drained twice by StrictMode's double-invoke and leaves an empty tree.
+   Early-exits at `limit`; returns undefined for "all" (-1). */
+export function windowedTreePaths(
+  root: TreeNode,
+  limit: number,
+): Set<string> | undefined {
+  if (limit < 0) return undefined;
+  const out = new Set<string>();
+  const visit = (n: TreeNode) => {
+    for (const k of sortedTreeKids(n)) {
+      if (out.size >= limit) return;
+      out.add(k.path);
+      if (k.children.size > 0) visit(k);
+    }
+  };
+  visit(root);
+  return out;
+}
