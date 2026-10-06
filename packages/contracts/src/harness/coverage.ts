@@ -102,6 +102,8 @@ export const NOT_AGENT_FACING: Record<string, string> = {
     "the composer pill is the user's — an agent must never grant itself Full access (#106)",
   "approvals.setPolicy":
     "the engine's approval policy is the user's global Setting — an agent must never lower its own approval bar (#106)",
+  "session.ask":
+    "the Workbench's 'Suggest' side request is a user control — the agent answers it, it never sends it (#584)",
   "models.list": "the model pick list is the user's",
   /* app wire — user and device admin */
   "settings.get": "user settings, not agent scope",

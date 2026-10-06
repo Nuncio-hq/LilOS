@@ -27,6 +27,7 @@ import {
   REWIND_CAPABILITY,
   type RequestRespondParams,
   RPC_ERRORS,
+  type SessionAskParams,
   type SessionRewindParams,
   type SessionSetAccessParams,
   type SessionSetHiddenParams,
@@ -36,6 +37,7 @@ import {
   type SessionSteerParams,
   type SessionStopParams,
   type SessionSuspendParams,
+  SIDE_PROMPT_CAPABILITY,
   type StopReason,
   SUBAGENTS_CAPABILITY,
   type Usage,
@@ -294,6 +296,15 @@ export class HermesEngine {
             errorCode: down.code,
           });
           if (s.state !== "closed") s.setState("error");
+        } else if (s.ephemeral) {
+          /* #584: a `session.ask` throwaway's `done` waits on this emit —
+             without it the caller rides out the ask timeout (#482 parity). */
+          s.emit("turn.completed", {
+            turnId: "",
+            stopReason: "refusal",
+            error: down.message,
+            errorCode: down.code,
+          });
         }
       } catch (e) {
         this.opts.onLog?.(
@@ -556,6 +567,8 @@ export class HermesEngine {
         return this.sessionSteer(parsed.data as SessionSteerParams);
       case "session.rewind":
         return this.sessionRewind(parsed.data as SessionRewindParams);
+      case "session.ask":
+        return this.sessionAsk(parsed.data as SessionAskParams);
       case "agents.list":
         return listAgents(this.gwView);
       case "agents.describe":
@@ -691,6 +704,9 @@ export class HermesEngine {
        sessions synthesize the same rows from delegate/terminal tool calls
        (jobs.stop is WS-only and refuses per-session like setModel). */
     capabilities.push(SUBAGENTS_CAPABILITY, BACKGROUND_JOBS_CAPABILITY);
+    /* #584: `session.ask` runs a hidden throwaway gateway session —
+       supported wherever `session.create`/`prompt.submit` are (WS). */
+    capabilities.push(SIDE_PROMPT_CAPABILITY);
     /* #106: the global approval policy — `approvals.setPolicy` writes
        `approvals.mode`; `current` reports the live value when a `config.get`
        read or a setPolicy this run knows it (omitted otherwise). */
@@ -1183,7 +1199,9 @@ export class HermesEngine {
 
   /** Write the row a restarted adapter needs to resume this session (#288). */
   private persistSession(s: Session) {
-    if (s.driver !== "ws" || !s.ref) return; // ACP exposes no resume surface
+    /* #584: the `session.ask` throwaway (ephemeral, ref "") is never
+       registry material — it dies with the call that made it. */
+    if (s.ephemeral || s.driver !== "ws" || !s.ref) return; // ACP exposes no resume surface
     this.sessionRegistry?.put(s.id, {
       ref: s.ref,
       agent: s.agent,
@@ -1366,6 +1384,125 @@ export class HermesEngine {
     s.userTurns = Math.min(p.toTurn, s.userTurns);
     this.persistSession(s);
     return { removed: drop };
+  }
+
+  /* #584: `session.ask` — a one-shot side question answered by a HIDDEN
+     throwaway gateway session in the same cwd/profile/pick, so the real
+     session's transcript, context and event stream stay untouched (AC-1).
+     The throwaway's frames feed a private collector (never emitAll);
+     gateway asks on it auto-deny in handleGatewayRequest; it is closed +
+     hidden server-side when the answer lands. Runs alongside a live turn
+     on the real session (AC-2 — prompt.submit is an independent turn). */
+  private async sessionAsk(p: SessionAskParams) {
+    const s = this.require(p.sessionId);
+    if (s.state === "closed")
+      throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    if (s.driver !== "ws")
+      throw new RpcError(
+        RPC_ERRORS.INVALID_STATE,
+        "session.ask needs the WS transport",
+      );
+    const created = (await this.createSessionCompat({
+      profile: s.agent,
+      title: `lilos ask · ${s.id}`,
+      cwd: s.cwd,
+      cwd_explicit: true,
+      source: "lilos",
+      close_on_disconnect: true,
+      ...(s.model ? { model: s.model } : {}),
+      ...(s.provider ? { provider: s.provider } : {}),
+      ...(s.effort ? { reasoning_effort: s.effort } : {}),
+      ...(s.fast !== undefined ? { fast: s.fast } : {}),
+    })) as { session_id?: unknown };
+    const runtimeSid =
+      typeof created.session_id === "string" ? created.session_id : "";
+    if (!runtimeSid)
+      throw new RpcError(
+        RPC_ERRORS.INTERNAL_ERROR,
+        "session.create returned no session_id",
+      );
+    let answer = "";
+    /* Local resolvers — concurrent asks each settle their own promise. */
+    let settleAsk: (() => void) | undefined;
+    let rejectAsk: ((e: unknown) => void) | undefined;
+    const answered = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () =>
+          reject(
+            new RpcError(
+              RPC_ERRORS.INTERNAL_ERROR,
+              "session.ask timed out waiting for the engine's answer",
+            ),
+          ),
+        HermesEngine.GW_RESUME_TIMEOUT_MS,
+      );
+      settleAsk = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      rejectAsk = (e) => {
+        clearTimeout(timer);
+        reject(e);
+      };
+    });
+    const askS = new Session(
+      `ask-${++this.sessionCounter}`,
+      s.agent,
+      s.cwd,
+      s.model,
+      [],
+      s.provider,
+      s.effort,
+      s.fast,
+      "ws",
+      runtimeSid,
+      /* ref "" + ephemeral: never persisted, never a resume surface. */
+      "",
+      (e) => {
+        const pl = e.payload as Record<string, unknown> | undefined;
+        if (
+          e.type === "turn.delta" &&
+          pl?.stream === "text" &&
+          typeof pl.delta === "string"
+        )
+          answer += pl.delta;
+        else if (e.type === "turn.completed") {
+          const err = typeof pl?.error === "string" ? pl.error : undefined;
+          if (err) rejectAsk?.(new RpcError(RPC_ERRORS.INTERNAL_ERROR, err));
+          else settleAsk?.();
+        }
+      },
+      /* The collector session's own log is never replayed — bound it so
+         a long answer can't balloon memory. */
+      64,
+    );
+    askS.ephemeral = true;
+    this.sessions.set(askS.id, askS);
+    this.byRuntimeSid.set(runtimeSid, askS);
+    try {
+      /* A Full-access session's asks run unobserved — mirror the yolo
+         hint or the throwaway's own tools stall on unseen asks. */
+      if (s.access === "full") await this.applyWsAccess(runtimeSid, "full");
+      await this.gw("prompt.submit", {
+        session_id: runtimeSid,
+        text: p.text,
+      });
+      await answered;
+      return { answer };
+    } finally {
+      this.sessions.delete(askS.id);
+      this.byRuntimeSid.delete(runtimeSid);
+      try {
+        await this.gw("session.close", { session_id: runtimeSid });
+        await this.gw("session.set_hidden", {
+          session_id: runtimeSid,
+          hidden: true,
+          profile: s.agent,
+        });
+      } catch {
+        /* already gone server-side */
+      }
+    }
   }
 
   // ── #179: background jobs (Hermes process registry) ───────────────────────
@@ -2249,6 +2386,22 @@ export class HermesEngine {
       return;
     }
     const gw = this.current;
+    /* #584: a `session.ask` throwaway runs unobserved — an approval or
+       clarify hanging on it would stall the one-shot forever, so every
+       gateway-side ask auto-denies. */
+    if (s.ephemeral) {
+      if (r.method === "approval")
+        gw.respond(r.id, { result: { choice: "deny" } });
+      else if (r.method === "clarify") gw.respond(r.id, { result: {} });
+      else
+        gw.respond(r.id, {
+          error: {
+            code: RPC_ERRORS.METHOD_NOT_FOUND,
+            message: "unsupported on an ephemeral session",
+          },
+        });
+      return;
+    }
     if (r.method === "approval") {
       const request = mapApprovalParams(r.params);
       if (!request) {

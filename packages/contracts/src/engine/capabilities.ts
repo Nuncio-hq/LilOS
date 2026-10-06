@@ -39,6 +39,7 @@ export const KNOWN_CAPABILITIES = [
   "subagents",
   "background_jobs",
   "approval_policy",
+  "side_prompt",
 ] as const;
 export type KnownCapability = (typeof KNOWN_CAPABILITIES)[number];
 
@@ -168,4 +169,20 @@ export const APPROVAL_POLICY_CAPABILITY: Capability = {
     "approvals.setPolicy writes the engine's global approval policy; session.setAccess hints a session's access level.",
   methods: ["approvals.setPolicy", "session.setAccess"],
   detail: { options: ["smart", "manual", "off"] },
+};
+
+/**
+ * The canonical `side_prompt` descriptor (issue #584): `session.ask`
+ * answers a one-shot question for the session — a side request that adds
+ * nothing to the session's transcript, context or event stream and runs
+ * alongside a live turn (the Workbench's commit-message "Suggest" rides
+ * it). Clients never send `prompt` for these: that would write a user
+ * message into the transcript.
+ */
+export const SIDE_PROMPT_CAPABILITY: Capability = {
+  id: "side_prompt",
+  name: "Side prompts",
+  description:
+    "session.ask answers a one-shot question for the session without touching its transcript, context or event stream.",
+  methods: ["session.ask"],
 };

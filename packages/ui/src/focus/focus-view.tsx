@@ -91,6 +91,7 @@ import type {
   OsApp,
   OsEditor,
   Project,
+  PullRequest,
   QuestionAsk,
   ShipBar,
   ShipHandlers,
@@ -172,6 +173,9 @@ export function FocusView({
   ship,
   access,
   onAccess,
+  caps,
+  onSuggest,
+  onPr,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -290,6 +294,16 @@ export function FocusView({
   /* The Workbench ship bar's mock seam (issue #107/#359) — forwarded to
      Workbench.ship; live mode builds the same bar from `host` instead. */
   ship?: Partial<ShipBar> & ShipHandlers;
+  /* Engine-declared capabilities forwarded to the Workbench (#587 AC-1):
+     its Plan/Background/Subagents tabs gate on these flags so the strip's
+     membership is fixed for the session — empty tabs grey, never pop in. */
+  caps?: { plan?: boolean; subagents?: boolean; background?: boolean };
+  /* #584: the ship bar's Suggest — the app's `session.ask` side request,
+      returning the engine's answer text. Nothing is sent to the session. */
+  onSuggest?: (files: string[]) => Promise<string | void> | string | void;
+  /* #579 AC-1: the Workbench's live forge read reports the session's PR
+     upward — a just-created/merged PR reaches the header chip instantly. */
+  onPr?: (pr: PullRequest | null) => void;
 }) {
   /* A `?tab=` destination shows its tab even under lg, where the panel is
      an overlay — "open on Subagents" means visibly open (#319 AC-1).
@@ -498,12 +512,21 @@ export function FocusView({
     if (followRef.current && !live && lastDone?.steps?.some((s) => s.diff))
       setTab("changes");
   }, [lastDone?.id, !!live]); // eslint-disable-line react-hooks/exhaustive-deps
-  // A PR appearing on the session opens its tab (Devin opens a PR tab per PR).
+  // A PR NEWLY appearing on the session opens its tab (Devin opens a PR tab
+  // per PR) — a change only: re-opening a conversation that already has one
+  // must not flip the panel open on its own (#579).
+  const seenPr = useRef<number | undefined>(undefined);
   useEffect(() => {
-    if (thread.pr) {
+    const n = thread.pr?.number;
+    if (seenPr.current === undefined) {
+      seenPr.current = n;
+      return;
+    }
+    if (n !== undefined && n !== seenPr.current) {
       setTab("pr");
       wbFlip(true);
     }
+    seenPr.current = n;
   }, [thread.pr?.number]); // eslint-disable-line react-hooks/exhaustive-deps
   const pr = thread.pr;
   const prPending = pr?.checks.some((c) => c.status === "pending");
@@ -644,6 +667,9 @@ export function FocusView({
         browser={browser}
         spot={wbSpot}
         ship={ship}
+        caps={caps}
+        onSuggest={onSuggest}
+        onPr={onPr}
         onAllowed={setWbReported}
       />
     ),
@@ -809,7 +835,9 @@ export function FocusView({
               </Button>
             </span>
           )}
-          {pr ? (
+          {/* #579: no "Open PR" button — asking the employee IS the way to
+             open one. A session that already has a PR shows its link chip. */}
+          {pr && (
             <Button
               variant="outline"
               size="sm"
@@ -827,23 +855,13 @@ export function FocusView({
                 #{pr.number}{" "}
                 {pr.status === "merged"
                   ? "merged"
-                  : prPending
-                    ? "checks"
-                    : "ready"}
+                  : pr.draft
+                    ? "draft"
+                    : prPending
+                      ? "checks"
+                      : "ready"}
               </span>
             </Button>
-          ) : (
-            work?.branch && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={running}
-                onClick={() => onSend("Open a PR for this branch")}
-              >
-                <GitPullRequestIcon />
-                <span className="hidden sm:inline">Open PR</span>
-              </Button>
-            )
           )}
           {wbAvailable && (
             <Button

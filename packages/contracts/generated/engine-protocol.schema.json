@@ -2809,6 +2809,42 @@
         "additionalProperties": false
       }
     },
+    "session.ask": {
+      "doc": "One-shot question the engine answers for the session (issue #584): nothing is added to the session's transcript, context or event stream — the Workbench's 'Suggest' asks go through here. Runs alongside a live turn.",
+      "capability": "side_prompt",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "sessionId",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer"
+        ],
+        "additionalProperties": false
+      }
+    },
     "jobs.list": {
       "doc": "List the engine-owned background processes of a session — the truth list a client re-reads after reconnect (job.* events are the live stream).",
       "capability": "background_jobs",
