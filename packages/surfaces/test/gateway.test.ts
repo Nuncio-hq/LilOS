@@ -869,6 +869,10 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
         { diff: true, path: "src/app.ts" },
         { pr: true },
         { url: "http://localhost:5173" },
+        /* #543: an engine tab — the only target shape a folderless
+           session accepts. */
+        { tab: "subagents" },
+        { tab: "background" },
       ]) {
         const r = dmPayload(
           await dmCall(api.baseUrl, "t-wb", "workbench_open", target),
@@ -880,6 +884,8 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
         { diff: true, path: "src/app.ts" },
         { pr: true },
         { url: "http://localhost:5173" },
+        { tab: "subagents" },
+        { tab: "background" },
       ]);
 
       // The {url} target also navigates the session's browser — the app's
@@ -914,7 +920,7 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
       };
       expect(body.error?.code).toBe("invalid_params");
       expect(body.error?.message).toContain(
-        "exactly one of `file`, `diff`, `pr`, `url`",
+        "exactly one of `file`, `diff`, `pr`, `url`, `tab`",
       );
     } finally {
       api.server.close();

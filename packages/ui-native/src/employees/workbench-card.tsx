@@ -21,7 +21,13 @@ const LABEL: {
         ? "See the changes"
         : t.pr === true
           ? "See the pull request"
-          : "Open this page",
+          : t.tab === "subagents"
+            ? "See the subagents"
+            : t.tab === "background"
+              ? "See the background jobs"
+              : t.tab === "plan"
+                ? "See the plan"
+                : "Open this page",
   detail: (t) =>
     t.file !== undefined
       ? t.file + (t.line !== undefined ? `:${t.line}` : "")

@@ -441,12 +441,16 @@ PR does not exist.
   markdown libs (no tables, highlighting, or streaming states). — #259 · PR #316
 
 ## UX
-- **D-#114 The Workbench lives only in Focus mode, and opening a session
-  goes to the thread panel first — the panel's ↗ is the way into Focus**
-  (`/dm/$employeeId/$conversationId`, then `…/focus`; the 420px peek stays
-  beside the feed). Changes = uncommitted files vs `HEAD` (`git.diff` with
-  no `base`; untracked included). Not: straight to Focus (was #114);
-  Workbench in the thread panel. — #114 · PR #149, #195
+- **D-#114 The Workbench exists for every session and lives only in Focus
+  mode; opening a session goes to the thread panel first — the panel's ↗
+  is the way into Focus** (`/dm/$employeeId/$conversationId`, then
+  `…/focus`; the 420px peek stays beside the feed). Each tab gates on its
+  capability or the folder: Changes/Files/PR/Terminal/Preview render only
+  with a folder (D-#19 per tab); Subagents/Background/Plan come from the
+  engine and render folder or not. Changes = uncommitted files vs `HEAD`
+  (`git.diff` with no `base`; untracked included). Not: straight to Focus
+  (was #114); Workbench only where a folder exists (was #114, rewritten
+  #543); Workbench in the thread panel. — #114 · PR #149, #195, #543
 - **D-#19 A control renders only when its handler is passed; the app shows
   only working surfaces (no placeholder buttons).** Conversation UI = shared
   pieces (`AgentTurn`, `UserTurn`, cards, composers) + thin frames

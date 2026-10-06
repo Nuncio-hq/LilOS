@@ -153,6 +153,7 @@ export function Workbench({
   emp,
   onOpenSession,
   spot,
+  onAllowed,
   ship,
 }: {
   thread: Thread;
@@ -204,9 +205,14 @@ export function Workbench({
   onOpenSession?: (employeeId: string, session: string) => void;
   /** The session's `workbench_open` request (issue #340): the panel opens on
       the target's tab — a changed file's diff or a file view at its line,
-      the changes view, the PR tab, or the preview (a URL the caller
-      navigates its Browser surface to). */
+      the changes view, the PR tab, the preview (a URL the caller navigates
+      its Browser surface to), or an engine tab (#543's `tab` targets — the
+      only kind a folderless session accepts). */
   spot?: WbSpot;
+  /** Reports the settled tab set — null while the first probe is still in
+      flight — so the caller can hide the toggle when there's nothing to
+      show (D-#19, #543 AC-5). */
+  onAllowed?: (tabs: WbTab[] | null) => void;
   /** The commit → push → Create PR bar's mock seam (issue #107/#359): the
      prototype/app supplies state overrides + the action handlers here; a
      missing handler hides its control (D-#19). In live mode the same bar
@@ -236,6 +242,12 @@ export function Workbench({
      missing — never an unlucky mock fallback. `probe` is null until the
      first round lands. */
   const liveMode = !!host && liveCwd != null;
+  /* #543: the Workbench exists for EVERY session — a DM session started
+     with no folder (`work` null) still gets the engine tabs; the
+     folder-bound ones (Changes/Files/Terminal/Preview/PR) stay hidden
+     (D-#19 per tab). A channel thread (`isDM` false, read-only — the app
+     never Focuses one) keeps its mock tabs. */
+  const folderless = work == null && isDM;
   const [probe, setProbe] = useState<{
     files: string[] | null;
     diffs: Diff[] | null;
@@ -634,6 +646,12 @@ export function Workbench({
   useEffect(() => {
     if (!spot) return;
     const t = spot.target;
+    if (t.tab !== undefined) {
+      /* An engine tab (#543) — Subagents/Background/Plan exist with or
+         without a folder. */
+      setTab(t.tab);
+      return;
+    }
     if (t.file !== undefined) {
       const file = t.file;
       if (changed.has(file)) {
@@ -710,15 +728,22 @@ export function Workbench({
   const prShown = liveMode ? (probe?.pr?.pr ?? null) : thread.pr;
   const prError = liveMode ? probe?.pr?.error : undefined;
   const liveForge = liveMode && prShown != null && liveCwd != null;
-  /* Tabs render only when their host method answered (#114 AC-6). Terminal /
-     Preview exist only where live surfaces are wired (slice B, #119). */
-  const changesOn = !liveMode || probe?.diffs != null;
-  const filesOn = !liveMode || probe?.files != null;
-  const surfacesOn = !liveMode || live != null;
-  const prOn = !liveMode ? prShown != null : probe?.pr != null;
-  /* Background (issue #170): no host method yet — shows in the prototype, or
-     when the session carries jobs. */
-  const bgOn = !liveMode || jobs.length > 0;
+  /* Tabs render only when their host method answered (#114 AC-6) — and the
+     folder-bound ones only when the session has a folder (#543). Terminal /
+     Preview are surface-bound, not folder-bound: they render wherever live
+     surfaces (or the LilOS Browser) are wired (slice B, #119) — a live
+     attach means a real host exists even when `work` doesn't. */
+  const changesOn = liveMode ? probe?.diffs != null : !folderless;
+  const filesOn = liveMode ? probe?.files != null : !folderless;
+  const surfacesOn = live != null || (!liveMode && !folderless);
+  const previewOn = surfacesOn || !!browser;
+  const prOn = liveMode ? probe?.pr != null : !folderless && prShown != null;
+  /* Background (issue #170): no host method — shows in the prototype, when
+     the session carries jobs, or (folderless, #543) whenever the engine
+     declares `background_jobs` — the caller passes `onStopJob` only then. */
+  const bgOn = liveMode
+    ? jobs.length > 0
+    : !folderless || jobs.length > 0 || onStopJob != null;
   /* Subagents (#317): read off the session's own turns, no host method — shows once any turn
      spun off a helper. A `?tab=subagents` deep link still opens the tab on a
      zero-helper session so its empty state answers instead of a silent
@@ -728,19 +753,39 @@ export function Workbench({
     changes: changesOn,
     files: filesOn,
     terminal: surfacesOn,
-    preview: surfacesOn || !!browser,
+    preview: previewOn,
     background: bgOn,
     subagents: subOn,
     plan: plans.length > 0,
     pr: prOn,
   };
+  /* Reports the settled tab set so the caller can hide the toggle when
+     there's nothing to show (D-#19, #543 AC-5); null = still probing. */
+  const probing = liveMode && probe === null;
+  const allowedKey = (Object.keys(allowed) as WbTab[])
+    .filter((t) => allowed[t])
+    .join(",");
+  useEffect(() => {
+    onAllowed?.(
+      probing ? null : (allowedKey.split(",").filter(Boolean) as WbTab[]),
+    );
+  }, [allowedKey, probing, onAllowed]);
   /* The caller's tab choice yields to availability: when its method never
      answers the first allowed tab shows instead. */
   const shownTab = allowed[tab]
     ? tab
-    : (["changes", "files", "pr", "terminal", "preview"] as WbTab[]).find(
-        (t) => allowed[t],
-      );
+    : (
+        [
+          "changes",
+          "files",
+          "pr",
+          "terminal",
+          "preview",
+          "subagents",
+          "background",
+          "plan",
+        ] as WbTab[]
+      ).find((t) => allowed[t]);
   /* #429 AC-2: landing on the PR tab signals a fresh forge read — the
      scheduler coalesces repeat visits (and the OS-window-focus signal)
      into one `gh` call. */
@@ -961,10 +1006,9 @@ export function Workbench({
     );
   }
   if (
-    liveMode &&
     !changesOn &&
     !filesOn &&
-    !surfacesOn &&
+    !previewOn &&
     !prOn &&
     !bgOn &&
     !subOn &&
@@ -972,10 +1016,17 @@ export function Workbench({
   ) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-muted-foreground text-xs">
-        <p>
-          Nothing to show — the host has no answer for{" "}
-          <span className="font-mono">{cwd}</span>.
-        </p>
+        {folderless ? (
+          <p>
+            Nothing to show — a process, helper or plan lists here once the
+            session has one.
+          </p>
+        ) : (
+          <p>
+            Nothing to show — the host has no answer for{" "}
+            <span className="font-mono">{cwd}</span>.
+          </p>
+        )}
       </div>
     );
   }
@@ -1016,7 +1067,7 @@ export function Workbench({
               )}
             </TabsTrigger>
           )}
-          {(surfacesOn || browser) && (
+          {previewOn && (
             <TabsTrigger
               value="preview"
               data-wb-browser={!!browser || undefined}

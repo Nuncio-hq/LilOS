@@ -512,7 +512,7 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
   rmSync(failPath);
 });
 
-test("AC-6 tabs render only when their host method answers; a session without a folder shows no Workbench", async ({
+test("AC-6 tabs render only when their host method answers; a session without a folder shows only the engine tabs", async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -531,8 +531,11 @@ test("AC-6 tabs render only when their host method answers; a session without a 
   await expect(tab(page, /Preview/)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-6-plain-folder.png` });
 
-  // A session without a folder: no Workbench at all. Focus has no sidebar
-  // by design (#246) — Esc back to the panel, then use it.
+  /* #543 rewrote this leg: a session without a folder still gets the
+     Workbench — only its engine tabs render (Background, since the engine
+     declares the capability even with no jobs yet; Subagents once a turn
+     has helpers), never the folder-bound tabs. Focus has no sidebar by
+     design (#246) — Esc back to the panel, then use it. */
   await page.keyboard.press("Escape");
   await expect(page).toHaveURL(PANEL_URL);
   await page
@@ -549,8 +552,22 @@ test("AC-6 tabs render only when their host method answers; a session without a 
     .click();
   await send(page, "just chat — no folder");
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
-  await expect(workbenchToggle(page)).toHaveCount(0);
-  await expect(tab(page, /Files|Changes|PR|Terminal|Preview/)).toHaveCount(0);
+  await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
+  /* The panel opens on demand here — auto-open at ≥lg is for a panel that
+     already has content to show (a folder, or live engine work). */
+  if (
+    !(await tab(page, "Background")
+      .isVisible()
+      .catch(() => false))
+  ) {
+    await workbenchToggle(page).click();
+  }
+  await expect(tab(page, "Background")).toBeVisible({ timeout: 30_000 });
+  await expect(tab(page, /^(Changes|Files|Terminal|Preview|PR)$/)).toHaveCount(
+    0,
+  );
+  // No helpers this turn → no Subagents tab (it renders once rows exist).
+  await expect(tab(page, "Subagents")).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-6-no-folder.png` });
 });
 

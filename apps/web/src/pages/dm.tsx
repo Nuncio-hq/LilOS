@@ -1457,7 +1457,11 @@ export function DmPage() {
           maxFileSize={MAX_ATTACHMENT_BYTES}
           onAttachError={sayError}
           say={sayNotice}
-          host={conv.cwd ? hostAccessors : undefined}
+          /* #543: the Workbench exists for every session — the accessors
+             are folder-independent (each call takes the cwd), so `host`
+             rides unconditionally; the Workbench gates its folder-bound
+             tabs on `work?.path` itself. */
+          host={hostAccessors}
           transcriptNote={transcriptNote}
           scrollTo={scrollTo ?? undefined}
           onScrolled={() => setScrollTo(null)}

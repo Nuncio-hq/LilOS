@@ -453,8 +453,10 @@ export type PushPrefs = z.infer<typeof PushPrefs>;
  * `anyOf` (no `type:"object"`/`properties`), so function-calling clients
  * advertised the tool with NO arguments and models had to guess them
  * (found in the real-provider live leg of #340). Exactly one of
- * `file`/`diff`/`pr`/`url` must be given; `line` only with `file`, `path`
- * only with `diff`.
+ * `file`/`diff`/`pr`/`url`/`tab` must be given; `line` only with `file`,
+ * `path` only with `diff`. `file`/`diff`/`pr`/`url` need a session folder;
+ * `tab` names an engine tab — the only kind a session with no folder
+ * accepts (#543).
  */
 export const WorkbenchOpenTarget = z
   .strictObject({
@@ -489,15 +491,25 @@ export const WorkbenchOpenTarget = z
       .min(1)
       .optional()
       .describe("Preview URL to open on the Preview tab"),
+    /** An engine tab to open — the only kind that works for a session
+       with no folder (#543). */
+    tab: z
+      .enum(["subagents", "background", "plan"])
+      .optional()
+      .describe(
+        "Engine tab to open (the only kind a folderless session accepts)",
+      ),
   })
   .check((ctx) => {
     const v = ctx.value;
     if (
-      [v.file, v.diff, v.pr, v.url].filter((x) => x !== undefined).length !== 1
+      [v.file, v.diff, v.pr, v.url, v.tab].filter((x) => x !== undefined)
+        .length !== 1
     )
       ctx.issues.push({
         code: "custom",
-        message: "exactly one of `file`, `diff`, `pr`, `url` must be set",
+        message:
+          "exactly one of `file`, `diff`, `pr`, `url`, `tab` must be set",
         input: v,
       });
     if (v.line !== undefined && v.file === undefined)

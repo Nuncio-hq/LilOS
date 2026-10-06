@@ -125,6 +125,44 @@ export const SUBAGENT_DMS: Record<string, Msg[]> = {
         ],
       },
     },
+    {
+      kind: "msg", id: "d-nofolder", from: "oscar", time: "11:15",
+      text: "No folder for this one — fan out two helpers on the relay docs and leave a test watcher running in the background.",
+      thread: {
+        /* #543: a session with NO picked folder — the Workbench still
+           shows the engine tabs (Subagents + Background), and only them. */
+        session: "ses_f0ld", title: "Folderless: helpers + a watcher",
+        jobs: [
+          { id: "j-nof-watch", command: "bun test --watch apps/relay", status: "running", started: "11:16", uptime: "4m", log: WATCH_LOG },
+          { id: "j-nof-build", command: "bun run build", status: "exited", exitCode: 0, started: "11:17", uptime: "12s", log: "[90m$ [0mbun run build\n[32mDone[0m in 12s" },
+        ],
+        replies: [
+          {
+            from: "builder", time: "11:16", thought: 3, dur: 46,
+            reasoning: "Two separable reads — helpers in parallel; the watcher stays up after they report.",
+            steps: [{ tool: "terminal", input: { command: "bun test --watch apps/relay" }, output: "Started in background" }],
+            subagents: [
+              {
+                id: "sc-relay", name: "Scan relay replay", status: "done", dur: 31,
+                task: "Read apps/relay's docs and list how events replay after a reconnect.",
+                steps: [
+                  { tool: "search_files", input: { pattern: "replay", path: "apps/relay" }, output: "6 matches" },
+                  { tool: "read_file", input: { path: "apps/relay/README.md" }, output: "88 lines" },
+                ],
+                result: "Replay is a snapshot plus live tail keyed on `seq` — the helper reads hold up without a folder.",
+              },
+              {
+                id: "sc-watch", name: "Pick the watch target", status: "done", dur: 18,
+                task: "Choose which suite to leave watching while the session has no folder.",
+                steps: [{ tool: "search_files", input: { pattern: "test --watch", path: "." }, output: "2 candidates" }],
+                result: "`bun test --watch apps/relay` — the lightest long-runner; it is the Background row now.",
+              },
+            ],
+            text: "Both helpers reported — relay replay is seq-keyed. The test watcher is still running in the background (no folder needed).",
+          },
+        ],
+      },
+    },
   ],
   "dm-reviewer": [
     {

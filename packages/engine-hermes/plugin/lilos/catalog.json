@@ -407,7 +407,7 @@
     },
     {
       "name": "workbench_open",
-      "description": "Show the user something in this session's Workbench: `{file, line?}`, `{diff, path?}`, `{pr}` or `{url}` — the panel opens on that tab. It never opens an editor on the Mac.",
+      "description": "Show the user something in this session's Workbench: `{file, line?}`, `{diff, path?}`, `{pr}`, `{url}` or `{tab:'subagents'|'background'|'plan'}` — the panel opens on that tab. A session with no folder accepts `tab` targets only (the rest error). It never opens an editor on the Mac.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -442,6 +442,15 @@
             "description": "Preview URL to open on the Preview tab",
             "type": "string",
             "minLength": 1
+          },
+          "tab": {
+            "description": "Engine tab to open (the only kind a folderless session accepts)",
+            "type": "string",
+            "enum": [
+              "subagents",
+              "background",
+              "plan"
+            ]
           }
         },
         "additionalProperties": false
