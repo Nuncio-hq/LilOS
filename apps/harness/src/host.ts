@@ -6,8 +6,8 @@ import { handleHostFrame } from "@lilos/host";
  * One JSON-RPC frame per request, exactly what `handleHostFrame` speaks.
  *
  * Auth: the per-install relay token as `Authorization: Bearer <token>` — the
- * same credential the app already holds for the relay socket (the read-only
- * `/ws` feed stays unauthenticated by design; host calls touch the machine).
+ * same credential the app already holds for the relay socket and the `/ws`
+ * feed authenticates on upgrade (#564); host calls touch the machine.
  */
 export function createHostHandler(opts: { token: string }) {
   // The app origin (localhost dev / Electron window) differs from the

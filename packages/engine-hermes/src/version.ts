@@ -19,6 +19,13 @@ export const MIN_HERMES_VERSION = "0.21.5";
  */
 export const HERMES_TOO_OLD_EXIT_CODE = 86;
 
+/**
+ * Reserved adapter exit code: another Hermes backend owns this host and this
+ * build couldn't claim an isolated slot (#548). Fatal the same way —
+ * relaunches keep attaching to the owner until someone stops it.
+ */
+export const HERMES_HOST_CONFLICT_EXIT_CODE = 87;
+
 /** First x.y.z in the string — tolerates `Hermes Agent v0.21.5+build (date)`. */
 export function parseHermesVersion(output: string): string | undefined {
   // No \b — it fails after a letter prefix (v0.21.5). Delimit on digits/dots
