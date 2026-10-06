@@ -17,8 +17,10 @@
 import { HermesBackendSupervisor } from "../src/backend.js";
 import { HermesEngine } from "../src/engine.js";
 import { RpcError } from "../src/errors.js";
+import { HermesHostConflict } from "../src/serve.js";
 import { eventFrame, handleJsonRpc } from "../src/transport.js";
 import {
+  HERMES_HOST_CONFLICT_EXIT_CODE,
   HERMES_TOO_OLD_EXIT_CODE,
   hermesTooOldMessage,
 } from "../src/version.js";
@@ -93,6 +95,12 @@ try {
   if (e instanceof RpcError && e.code === -32601) {
     console.error(hermesTooOldMessage(undefined));
     process.exit(HERMES_TOO_OLD_EXIT_CODE);
+  }
+  // #548: the multiplex attach/refusal names its owner — exit the reserved
+  // code so the launcher marks it fatal instead of retrying 5 times.
+  if (e instanceof HermesHostConflict) {
+    console.error(e.message);
+    process.exit(HERMES_HOST_CONFLICT_EXIT_CODE);
   }
   die(e);
 }

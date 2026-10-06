@@ -17,7 +17,11 @@
  */
 import { unlinkSync, writeFileSync } from "node:fs";
 import { type GatewayLike, HermesGateway } from "./gateway.js";
-import { type HermesServeHandle, startHermesServe } from "./serve.js";
+import {
+  HermesHostConflict,
+  type HermesServeHandle,
+  startHermesServe,
+} from "./serve.js";
 
 export interface HermesBackendOptions {
   /** Path to the `hermes` binary. */
@@ -124,7 +128,9 @@ export class HermesBackendSupervisor {
     return this.live;
   }
 
-  private async spawnOnce(): Promise<{
+  /** The one spawn+connect unit — protected so tests can drive the watcher
+      without a real `hermes serve`/gateway behind it. */
+  protected async spawnOnce(): Promise<{
     gw: GatewayLike;
     handle: HermesServeHandle;
   }> {
@@ -238,6 +244,11 @@ export class HermesBackendSupervisor {
         this.failures += 1;
         const msg = e instanceof Error ? e.message.split("\n")[0] : String(e);
         this.log(`hermes backend relaunch failed (${msg ?? e})`);
+        /* #548: a host-owner conflict is a verdict, not a crash — the other
+           backend keeps owning this host until someone stops it, so fail
+           now instead of burning the budget. It still counts as spent so
+           `kick()` can re-arm once the owner is gone. */
+        if (e instanceof HermesHostConflict) this.failures = this.maxAttempts;
         if (this.failed()) {
           try {
             this.reactor?.markBackendFailed(
