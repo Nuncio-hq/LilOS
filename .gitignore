@@ -6,9 +6,9 @@ test-results/
 playwright-report/
 apps/desktop/build/
 .DS_Store
-__pycache__/
 *.tsbuildinfo
 tsconfig.*.tsbuildinfo
+__pycache__/
 e2e/.gh-fake/
 e2e/.os-fake/
 .*.bun-build

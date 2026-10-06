@@ -15,6 +15,10 @@ on:
     # ready_for_review: a draft skips E2E, so un-drafting must run it.
     types: [opened, synchronize, reopened, ready_for_review]
 
+# #567: least privilege — every job only reads the checkout.
+permissions:
+  contents: read
+
 # A new push to a PR cancels that PR's older run; main runs every commit.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
@@ -59,6 +63,9 @@ jobs:
           bun-version-file: .bun-version
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      # #567: fail on new high/critical advisories before burning the slow steps
+      - name: Dependency audit
+        run: bash scripts/ci/audit.sh
       - name: Install Playwright browsers # unit tests drive real Chromium too
         run: bunx playwright install --with-deps chromium
       - name: Fast checks (biome, schema, typecheck, unit tests, prototype build, mobile bundle check)
