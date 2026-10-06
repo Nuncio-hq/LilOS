@@ -154,6 +154,27 @@ try {
   });
   await relay.connect();
   const rl = relay;
+  /* The feed's `connect()` sends `describe`, which the harness proxies to
+     the engine — on a real Mac `hermes serve --isolated` in a fresh
+     HERMES_HOME re-provisions its tools for 30–60 s first, so a connect
+     issued at "stack up" dies on the describe timeout. Wait for the
+     engine itself (the same `system.status` gate 412.ts uses, on 584's
+     240 s budget), not a bigger request timeout. */
+  const engineBootAt = Date.now();
+  await waitFor(
+    async () => {
+      const { components } = await rl.request<{
+        components: { id: string; state: string }[];
+      }>("system.status", { logLines: 0 });
+      return components.find((c) => c.id === "engine")?.state === "ok"
+        ? true
+        : undefined;
+    },
+    "engine running (system.status)",
+    240_000,
+  );
+  out(`engine running after ${String(Date.now() - engineBootAt)}ms`);
+
   /* #564: the feed upgrade gate 401s an untokened socket — the install
      token rides `?token=` (EngineClient appends it). Same credential as
      the relay socket above. */
