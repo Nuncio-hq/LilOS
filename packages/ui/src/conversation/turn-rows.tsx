@@ -168,7 +168,7 @@ function LazyShell({
   /** Rows that must never unmount: live/streaming turns and the scrollTo
       target (its content has to exist the moment it lands, #138). */
   keep: boolean;
-  kind: "agent" | "user";
+  kind: "agent" | "user" | "note";
   settled: boolean;
   children: ReactNode;
 }) {
@@ -238,6 +238,8 @@ function LazyShell({
         <div style={{ height: heightRef.current }} aria-hidden data-held-stub>
           {kind === "agent" ? (
             <div data-agentturn>{settled && <div data-turnsettled />}</div>
+          ) : kind === "note" ? (
+            <div data-sysnote />
           ) : (
             <div data-userturn />
           )}
@@ -412,33 +414,51 @@ function TurnRowImpl({
         onRewind={() => onRewind(r.id ?? "")}
       />
     ) : null;
+  /* #550: `from === ""` is the relay's system-note author
+     (`authorKind: "system"` maps to it in mapping.ts) — a muted note
+     line in both frames, never a user-style bubble and never an
+     empty-name message row. */
+  const sysNote =
+    r.from === "" ? (
+      <div
+        data-sysnote
+        className={cn(
+          "w-fit max-w-full rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs",
+          frame === "panel" && "mx-3 my-0.5 sm:mx-5",
+        )}
+      >
+        {r.text}
+      </div>
+    ) : null;
   const shell = (
     <LazyShell
       msgId={r.id}
       className={cls}
       lazy={lazy}
       keep={scrollTarget}
-      kind="user"
+      kind={r.from === "" ? "note" : "user"}
       settled={false}
     >
-      {frame === "panel" ? (
-        <>
-          {checkpoint}
-          <Row from={r.from} emp={emp} human={human}>
-            <Who id={r.from} time={r.time} emp={emp} human={human} />
-            <Body text={r.text} />
-            {r.attachments && <AttachmentChips files={r.attachments} />}
-          </Row>
-        </>
-      ) : (
-        <UserTurn
-          from={r.from}
-          time={r.time}
-          text={r.text}
-          human={human}
-          attachments={r.attachments}
-        />
-      )}
+      {frame === "panel"
+        ? (sysNote ?? (
+            <>
+              {checkpoint}
+              <Row from={r.from} emp={emp} human={human}>
+                <Who id={r.from} time={r.time} emp={emp} human={human} />
+                <Body text={r.text} />
+                {r.attachments && <AttachmentChips files={r.attachments} />}
+              </Row>
+            </>
+          ))
+        : (sysNote ?? (
+            <UserTurn
+              from={r.from}
+              time={r.time}
+              text={r.text}
+              human={human}
+              attachments={r.attachments}
+            />
+          ))}
     </LazyShell>
   );
   /* The panel keeps the checkpoint inside the row's data-msg block; Focus
