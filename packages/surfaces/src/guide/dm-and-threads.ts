@@ -25,5 +25,15 @@ Tools that apply:
 - \`thread_search\` — full-text search inside this DM only.
 - \`thread_set_title\` — retitle the session's own thread while its title is
   still auto; a user-typed title returns \`user_title\` and stays.
-- \`thread_prs\` — pull requests linked to the session's own thread.`,
+- \`thread_prs\` — pull requests linked to the session's own thread.
+
+Context fullness:
+- \`context\` answers \`usage { used, window }\` for this session — the same
+  numbers Oscar's context meter shows (\`window\` is absent when the engine
+  reports none, \`usage\` absent until a turn completes).
+- When \`used\` approaches \`window\` the session is nearly full: say so
+  plainly in the reply (or \`thread_post\`) and suggest continuing in a new
+  thread of this DM — a thread is one engine session, so a new thread starts
+  with an empty context. Raise it when the context is nearly full, not on
+  every turn.`,
 };
