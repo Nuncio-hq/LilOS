@@ -311,9 +311,9 @@ describe("home-model (#155)", () => {
     // Activity's ask row is marked...
     expect(toApproval(w.asks[0] as Ask, w, NOW).lastKnown).toBe(true);
     // ...and so are the live-looking employee states.
-    expect(toEmployeeRow(emp("e1"), w, NOW).now).toBe(
-      "Waiting on you · Patch README · last known",
-    );
+    const row = toEmployeeRow(emp("e1"), w, NOW);
+    expect(row.now).toBe("Last known · Waiting on you · Patch README");
+    expect(row.lastKnown).toBe(true);
     // Online, the same wire carries no mark.
     const live = wire({ ...w, online: true });
     expect(toApproval(live.asks[0] as Ask, live, NOW).lastKnown).toBe(
@@ -332,10 +332,35 @@ describe("home-model (#155)", () => {
         conv("c1", "ch1", { state: "active", title: "Mid-turn task" }),
       ],
     });
-    expect(toEmployeeRow(emp("e1"), w, NOW).now).toBe(
-      "Mid-turn task · last known",
-    );
-    expect(toEmployeeRow(emp("e2"), w, NOW).now).toBe("Idle");
+    const e1 = toEmployeeRow(emp("e1"), w, NOW);
+    expect(e1.now).toBe("Last known · Mid-turn task");
+    expect(e1.lastKnown).toBe(true);
+    const e2 = toEmployeeRow(emp("e2"), w, NOW);
+    expect(e2.now).toBe("Idle");
+    expect(e2.lastKnown).toBeUndefined();
+  });
+
+  it("AC-2 a long session label offline can never truncate the marker away (#591)", () => {
+    const long = "x".repeat(200);
+    const w = wire({
+      online: false,
+      channels: [ch("ch1", "e1")],
+      conversations: [
+        conv("c1", "ch1", { state: "active", title: `Refactor ${long}` }),
+      ],
+      asks: [ask("a1", "ch1", "c2", NOW - 60_000)],
+    });
+    /* The row renders `now` on one truncating line — the marker must be
+       FIRST, so a label of any length still reads stale. */
+    for (const row of [
+      /* the ask path: "Waiting on you · <long label>" */
+      toEmployeeRow(emp("e1"), w, NOW),
+      /* the working path: "<long label>" */
+      toEmployeeRow(emp("e1"), { ...w, asks: [] }, NOW),
+    ]) {
+      expect(row.now.startsWith("Last known · ")).toBe(true);
+      expect(row.lastKnown).toBe(true);
+    }
   });
 
   it("AC-1 every DM channel gets a subscription so asks and turns arrive live", () => {

@@ -104,6 +104,14 @@ const CHIP = {
     text: "text-muted-foreground",
     label: "Stopped",
   },
+  /* #591: not a SessionState — a live "working" header degraded by an
+     unreachable Mac. Neutral: the turn may have finished hours ago. */
+  "last-seen": {
+    icon: "clock",
+    tone: "muted-foreground",
+    text: "text-muted-foreground",
+    label: "Last seen working",
+  },
 } as const;
 
 export function StateChip({ state }: { state: keyof typeof CHIP }) {

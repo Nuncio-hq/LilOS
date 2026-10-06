@@ -56,7 +56,12 @@ import { describeError } from "../mapping";
 import { $connections } from "../paired-macs";
 import { $prs, refreshConversationPrs } from "../prs";
 import type { DmRoutes } from "../routes";
-import { collectDiffs, dropRewound, toThreadDetail } from "../thread-model";
+import {
+  collectDiffs,
+  dropRewound,
+  threadSurface,
+  toThreadDetail,
+} from "../thread-model";
 
 /* #157 — the live thread: messages.list + channel.subscribe resume (AC-1),
    engine turns projected live through sessionFeed -> reduceSessionEvents ->
@@ -480,6 +485,10 @@ export function Thread({
           state={detail?.state ?? "working"}
           {...(detail?.prs?.length ? { prs: detail.prs } : {})}
           {...(detail?.context ? { context: detail.context } : {})}
+          /* #591: offline a "working" header is last-known, not live. */
+          stale={
+            threadSurface(detail?.state ?? "working", link === "offline").stale
+          }
           onPress={() =>
             conv &&
             navigation.navigate("ThreadInfo", { conversationId: conv.id })
@@ -487,7 +496,7 @@ export function Thread({
         />
       ),
     });
-  }, [navigation, detail, conv]);
+  }, [navigation, detail, conv, link]);
 
   if (!detail) return <View className="flex-1 bg-background" />;
   return (
@@ -507,6 +516,9 @@ export function Thread({
       unreachableNote={
         link === "offline" && mac ? `Can't reach ${mac.name}` : undefined
       }
+      /* #591: offline + a cached "working" thread — disabled Stop with a
+         hint; the header chip degrades via threadSurface's rule. */
+      stale={threadSurface(detail.state, link === "offline").stale}
       {...(catalog.models.length
         ? {
             onPickModel: () =>

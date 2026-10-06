@@ -254,7 +254,10 @@ function EmployeeItem({
   last: boolean;
   onPress: () => void;
 }) {
-  const waiting = e.state === "needs-you";
+  /* #591: a last-known row keeps the state's shape but loses the live
+     tint — muted line, no accent, no working dots, no state ring. */
+  const stale = e.lastKnown === true;
+  const waiting = e.state === "needs-you" && !stale;
   return (
     <Pressable
       accessibilityRole="button"
@@ -262,7 +265,7 @@ function EmployeeItem({
       onPress={onPress}
       className="flex-row items-center gap-3 pl-3 active:bg-fill"
     >
-      <Orb tone={e.tone} state={e.state} />
+      <Orb tone={e.tone} state={stale ? "idle" : e.state} />
       <View className="min-w-0 flex-1 flex-row items-center py-3 pr-4">
         <View className="min-w-0 flex-1">
           <View className="flex-row items-baseline gap-1.5">
@@ -289,7 +292,7 @@ function EmployeeItem({
             >
               {e.now}
             </Text>
-            {e.state === "working" && <Dots />}
+            {e.state === "working" && !stale && <Dots />}
           </View>
         </View>
         <View className="mb-5 flex-row items-center gap-1.5 self-center pl-2">

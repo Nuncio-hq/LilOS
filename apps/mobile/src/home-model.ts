@@ -108,29 +108,34 @@ export function toEmployeeRow(
     (c) => c.state === "active" && !c.archived && c.channelId === channel?.id,
   );
   const base = { id: e.id, name: e.name, role: e.role, tone: toneOf(e.id) };
-  /* #591 AC-2: live-looking states get a "· last known" tail while the Mac
-     is unreachable — a mid-turn employee must not read as still working
-     when the state could be hours old. The idle fallback needs no mark:
-     "Idle" never looks live. */
-  const lastKnown = wire.online ? "" : " · last known";
+  /* #591 AC-2: live-looking states read "Last known · …" — the marker
+     FIRST, so truncation can never cut it off — and the row carries
+     `lastKnown` so the screen dims the live tint (no teal line, no
+     working dots, no state ring on the orb). The idle fallback needs no
+     mark: "Idle" never looks live. */
+  const stale = !wire.online;
+  const staleNote = stale ? "Last known · " : "";
   const oldest = pending[0];
   if (oldest !== undefined) {
     return {
       ...base,
       state: "needs-you",
       now:
+        staleNote +
         (pending.length === 1
           ? `Waiting on you · ${sessionLabel(oldest.conversationId, wire)}`
-          : `${pending.length} need you`) + lastKnown,
+          : `${pending.length} need you`),
       when: ageLabel(oldest.createdAt, nowMs),
+      ...(stale ? { lastKnown: true as const } : {}),
     };
   }
   if (live !== undefined) {
     return {
       ...base,
       state: "working",
-      now: sessionLabel(live.id, wire) + lastKnown,
+      now: staleNote + sessionLabel(live.id, wire),
       when: "now",
+      ...(stale ? { lastKnown: true as const } : {}),
     };
   }
   return {
