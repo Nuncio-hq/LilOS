@@ -778,7 +778,7 @@ describe("workspace harness", () => {
           "messages.list",
           { channelId: channel.id, limit: 50 },
         );
-        return messages.find((m) => m.text.includes("interrupted"));
+        return messages.find((m) => m.text.includes("went to sleep"));
       }, "interrupted note");
       /* #419 AC-4: the note reports the interrupt; the Retry now lives on
          the session card the conversation carries — `turnFailure`, not a
@@ -796,7 +796,7 @@ describe("workspace harness", () => {
         return c?.state === "idle" ? c : undefined;
       }, "conversation back to idle");
       expect(failed.turnFailure?.kind).toBe("sleep");
-      expect(failed.turnFailure?.text).toContain("slept");
+      expect(failed.turnFailure?.text).toContain("went to sleep");
       expect(w.sleep.held).toBe(false);
     } finally {
       await w.cleanup();
@@ -900,11 +900,10 @@ describe("workspace harness", () => {
       const note = await waitFor(async () => {
         const { messages } = await listConvMessages(w.user, channel.id);
         return messages.find(
-          (m) =>
-            m.authorKind === "system" && m.text.includes("engine restarted"),
+          (m) => m.authorKind === "system" && m.text.includes("went to sleep"),
         );
       }, "restart note");
-      expect(note.text).toContain("interrupted");
+      expect(note.text).toContain("went to sleep");
 
       const failed = await waitFor(async () => {
         const { conversations } = await w.user.request<{
@@ -916,7 +915,7 @@ describe("workspace harness", () => {
         return conversations.find((x) => x.id === conversation.id)?.turnFailure;
       }, "turnFailure stamped");
       expect(failed?.kind).toBe("sleep");
-      expect(failed?.text).toContain("slept");
+      expect(failed?.text).toContain("went to sleep");
 
       /* The generic failure path must not ride the same rejection — one
          typed surface, no "Engine error:" duplicate. */
@@ -957,7 +956,7 @@ describe("workspace harness", () => {
         "messages.list",
         { channelId: channel.id, limit: 50 },
       );
-      expect(messages.filter((m) => m.text.includes("interrupted"))).toEqual(
+      expect(messages.filter((m) => m.text.includes("went to sleep"))).toEqual(
         [],
       );
     } finally {
@@ -2655,7 +2654,7 @@ describe("the prompt lane + claimed boundary (#403)", () => {
         "messages.list",
         { channelId: channel.id, limit: 50 },
       );
-      expect(messages.filter((m) => m.text.includes("interrupted"))).toEqual(
+      expect(messages.filter((m) => m.text.includes("went to sleep"))).toEqual(
         [],
       );
       const { conversations } = await w.user.request<{

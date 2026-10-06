@@ -3,7 +3,7 @@ import {
   SessionPingParams,
   type WelcomeResult,
 } from "@lilos/contracts/app";
-import { equalSecret } from "../auth";
+import { equalSecret } from "@lilos/contracts/auth";
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
 

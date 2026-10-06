@@ -13,22 +13,17 @@ import { Icon } from "../components/icon";
 import { Orb, type OrbState, type OrbTone } from "../components/orb";
 import { Pulse, plain } from "../components/prose";
 import { Composer } from "./composer";
+import { DM_GROUPS } from "./dm-groups";
 import { LifePill } from "./life-pill";
 import { PrLine } from "./pr-badges";
 import type { SessionState, SessionTurn } from "./types";
 
 /* A DM with one employee, as a Mail-style list of its threads: each message
    you send opens a thread, and the threads group by what they need from
-   you — Needs you, Working, Done — newest first inside each group. Tap a
-   thread to open it (approve there, with the context in view). The floating
-   glass composer starts a new thread. The header is the native nav bar
-   (see DmHeaderTitle). */
-
-const GROUPS: { title: string; states: SessionState[] }[] = [
-  { title: "Needs you", states: ["needs-you"] },
-  { title: "Working", states: ["working"] },
-  { title: "Done", states: ["done", "failed", "stopped"] },
-];
+   you — Needs you, Working, Didn't finish, Done — newest first inside each
+   group. Tap a thread to open it (approve there, with the context in view).
+   The floating glass composer starts a new thread. The header is the native
+   nav bar (see DmHeaderTitle). */
 
 export function EmployeeDmScreen({
   name,
@@ -91,7 +86,7 @@ export function EmployeeDmScreen({
               </AppText>
             </View>
           )}
-          {GROUPS.map((g) => {
+          {DM_GROUPS.map((g) => {
             const rows = newest.filter((t) => g.states.includes(t.state));
             if (!rows.length) return null;
             return (
@@ -157,14 +152,12 @@ function ThreadRow({
 }) {
   const needs = t.state === "needs-you";
   const failed = t.state === "failed";
-  /* #592: a failed turn's body is its reason — "Mac slept mid-turn" in
-     amber for a sleep interrupt, the error text in red otherwise — never
-     the last preview pretending all is well. */
+  /* #592: a failed turn's body is its reason — the harness's "your Mac
+     went to sleep" line in amber for a sleep interrupt, the error text
+     in red otherwise — never the last preview pretending all is well. */
   const slept = failed && t.failure?.kind === "sleep";
   const body = failed
-    ? slept
-      ? "Mac slept mid-turn"
-      : (t.failure?.text ?? "Turn failed")
+    ? (t.failure?.text ?? "Turn failed")
     : needs
       ? (t.approval?.reason ?? plain(t.preview ?? ""))
       : t.state === "working"
