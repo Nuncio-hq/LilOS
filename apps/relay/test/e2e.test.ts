@@ -63,13 +63,18 @@ interface HelloFrame {
   error?: { message: string; data?: { code?: string } };
 }
 
-/** Raw ws device hello — the phone leg the RelayClient can't speak (#153). */
+/** Raw ws device hello — the phone leg the RelayClient can't speak (#153).
+ *  #625: the device credential must also ride the upgrade URL or the gate
+ *  refuses the handshake before the socket exists. */
 async function deviceHelloRaw(
   url: string,
   deviceId: string,
   credential: string,
 ): Promise<{ ws: WebSocket; frame: HelloFrame }> {
-  const ws = new WebSocket(url);
+  const authed =
+    `${url}?deviceId=${encodeURIComponent(deviceId)}` +
+    `&credential=${encodeURIComponent(credential)}`;
+  const ws = new WebSocket(authed);
   await new Promise<void>((resolve, reject) => {
     ws.once("open", () => resolve());
     ws.once("error", reject);
@@ -89,6 +94,23 @@ async function deviceHelloRaw(
     );
   });
   return { ws, frame };
+}
+
+/** #625: resolve 101 on upgrade, the HTTP status on refusal, -1 on error. */
+function upgradeStatus(url: string): Promise<number> {
+  return new Promise<number>((resolve) => {
+    const ws = new WebSocket(url);
+    ws.once("open", () => {
+      ws.close();
+      resolve(101);
+    });
+    ws.once("unexpected-response", (_req, res) => {
+      const code = res.statusCode ?? 0;
+      res.socket.destroy();
+      resolve(code);
+    });
+    ws.once("error", () => resolve(-1));
+  });
 }
 
 /** Device hello that asserts the welcome, returning the live socket. */
@@ -420,12 +442,15 @@ describe("relay e2e (real Bun process + bun:sqlite)", () => {
     ]);
     await mac.request("devices.revoke", { deviceId: exchanged.deviceId });
     expect((await phoneClosed).code).toBe(4403);
-    const zombie = await deviceHelloRaw(
-      `ws://${lan}:${tsPort}/ws`,
-      exchanged.deviceId,
-      exchanged.credential,
-    );
-    expect(zombie.frame.error?.data?.code).toBe("unauthenticated");
+    /* #625: a dead credential never even attaches — the upgrade gate
+       refuses it (401) before a socket exists, rather than letting it
+       reach session.hello for the old `unauthenticated` reply. */
+    expect(
+      await upgradeStatus(
+        `ws://${lan}:${tsPort}/ws?deviceId=${encodeURIComponent(exchanged.deviceId)}` +
+          `&credential=${encodeURIComponent(exchanged.credential)}`,
+      ),
+    ).toBe(401);
 
     // The choice survives a restart: a fresh process on the same home
     // rebinds the tailnet address at startup — before any pairing.offer.
