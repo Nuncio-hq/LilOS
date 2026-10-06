@@ -25,6 +25,17 @@ async function openApp(stack: Stack, page: Page) {
   ).toBeVisible({ timeout: 30_000 });
 }
 
+const empId = (page: Page) =>
+  decodeURIComponent(page.url().split("/dm/")[1].split("/")[0]);
+
+/** Back to the DM home (sends land in Focus); its filter box lives there. */
+async function dmHome(stack: Stack, page: Page) {
+  await page.goto(`${stack.webUrl}/dm/${empId(page)}`);
+  await expect(page.getByPlaceholder(/Filter/)).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
 const send = async (page: Page, text: string) => {
   const box = page.locator("textarea").last();
   await box.fill(text);
@@ -129,7 +140,9 @@ test("AC-3 message search labels a system note \"LilOS\"", async ({
     timeout: 90_000,
   });
 
-  /* Search inside the DM for the note's own word. */
+  /* Search inside the DM for the note's own word — the filter box is on
+     the DM home; sends land in Focus, so navigate back first. */
+  await dmHome(stack, page);
   const filter = page.getByPlaceholder(/Filter/);
   await filter.fill("Auto-approved");
   const hit = page.locator("[data-message-hit]", {
