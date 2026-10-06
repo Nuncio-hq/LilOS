@@ -191,8 +191,10 @@ const sendTurn = async (page: Page, text: string) => {
     await expectSettled(turns(page).last(), 60_000);
   }
   await send(page, text);
+  /* #577: the send lands on the thread panel, which lives outside <main> —
+     match data-msg on either surface. */
   const mine = page
-    .locator("main [data-msg]")
+    .locator("[data-msg]")
     .filter({ hasText: text })
     .filter({ hasNot: page.locator("[data-agentturn]") })
     .last();

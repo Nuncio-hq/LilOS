@@ -1,11 +1,5 @@
 import type { ChatStatus } from "ai";
-import {
-  CheckIcon,
-  FolderPlusIcon,
-  Maximize2Icon,
-  PlayIcon,
-  XIcon,
-} from "lucide-react";
+import { CheckIcon, Maximize2Icon, PlayIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AccessPill } from "../chat/access-pill";
 import {
@@ -348,6 +342,22 @@ export function ThreadView({
           >
             {channelLabel}
             {leadEmp && !isDM && ` · ${leadEmp.name}`}
+            {isDM && !work && !repo && onAddFolder && (
+              /* #581 AC-2: a folder-less DM session gets a real "Add a
+                 folder" affordance — picking one moves the session there.
+                 Inline so the header keeps its two-row height (#602). */
+              <>
+                {" · "}
+                <button
+                  type="button"
+                  onClick={onAddFolder}
+                  data-add-folder
+                  className="font-medium text-foreground/80 underline decoration-dotted underline-offset-2 hover:text-foreground"
+                >
+                  Add a folder
+                </button>
+              </>
+            )}
           </div>
           {/* A folder-less DM session is a plain chat — no folder label
               at all (#196). */}
@@ -363,21 +373,7 @@ export function ThreadView({
                   : undefined
               }
             />
-          ) : isDM && !work && !repo ? (
-            onAddFolder ? (
-              /* #581 AC-2: a folder-less DM session gets a real "Add a
-                 folder" affordance — picking one moves the session there. */
-              <button
-                type="button"
-                onClick={onAddFolder}
-                data-add-folder
-                className="flex items-center gap-1 rounded text-muted-foreground hover:text-foreground"
-              >
-                <FolderPlusIcon className="size-3" />
-                Add a folder
-              </button>
-            ) : null
-          ) : (
+          ) : isDM && !work && !repo ? null : (
             <WorkspaceBadge work={work} repo={repo} />
           )}
         </div>

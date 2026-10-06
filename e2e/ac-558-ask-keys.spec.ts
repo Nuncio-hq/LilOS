@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import WebSocket from "ws";
 import { RelayClient } from "../packages/client-runtime/src/index";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import { bootStack, panelIntoFocus, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #558 — answer approval/plan cards from the keyboard. ↵ allows once
@@ -105,6 +105,10 @@ test("AC-558-1 a waiting approval card shows the hint and ↵ allows once", asyn
   const card = openCard(page);
   await expect(card).toBeVisible({ timeout: 60_000 });
   const askId = await card.getAttribute("data-ask-id");
+  /* #577: the Esc leg below needs a close target that keeps the card's
+     surface mounted — on the panel Esc closes the panel itself. Focus's
+     Esc pops back onto the panel, card still on screen. */
+  await panelIntoFocus(page);
 
   // The focused (only pending) card shows the shortcut hint.
   const hint = card.locator("[data-ask-keyhint]");

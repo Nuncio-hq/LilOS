@@ -170,9 +170,9 @@ test("AC-1..3 folderless session: ↗ + toggle; only Subagents + Background; hel
     page,
     "slow:250 delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
   );
-  /* The send lands in Focus already (folder or not) — AC-1's ↗ is covered
-     below via the panel round-trip. */
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: the send lands on the thread panel (folder or not) — AC-1's ↗
+     round-trip happens below; hop into Focus for the workbench legs. */
+  await panelIntoFocus(page);
 
   // AC-1: the toggle renders — no folder needed. A folderless session's
   // panel opens on demand (the toggle, a `?tab=` link, `workbench.open`) —

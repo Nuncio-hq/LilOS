@@ -74,10 +74,9 @@ test("AC-1/AC-3: role at idle, 'now: <tool> <target>' on the scripted step, clea
 
   // slow:1200 paces every turn boundary at 1.2s — the scripted
   // `terminal history --turns` step is observable well past CI jitter.
-  // Sending lands the app in Focus mode; the DM header lives on the home
-  // route — step back while the turn keeps running.
+  // #577: the send stays on the DM home (thread in the panel) — the header
+  // is already rendered while the turn keeps running.
   await send(page, "slow:1200 recall: earlier turns");
-  await page.getByRole("button", { name: /back to dm/i }).click();
   await expect(quietLine(page)).toContainText("now: thinking", {
     timeout: 30_000,
   });

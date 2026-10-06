@@ -387,7 +387,7 @@ test("#295 Focus header reserves the lights strip while the sidebar is hidden", 
 
     // Dark AC shot: the sidebar opens as an overlay in Focus — the header
     // hamburger is itself one of the controls the strip now clears.
-    await header.getByTitle("Workspace", { exact: true }).click();
+    await header.getByTitle("Sidebar", { exact: true }).click();
     await win.locator('[data-theme-opt="dark"]').click();
     await win.getByRole("button", { name: "Close sidebar" }).last().click();
     await waitForNativeFrame(app, win);

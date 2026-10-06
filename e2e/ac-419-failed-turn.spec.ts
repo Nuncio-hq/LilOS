@@ -130,6 +130,11 @@ test("AC-2 the turn's hover Retry re-sends the last user message in the same ses
   await openSession(page);
   await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
   const convUrl = page.url();
+  // Count turns only once the thread has painted — otherwise `before`
+  // races to 0 and the retry's index points at the old turn.
+  await expect(page.locator("[data-agentturn]").first()).toBeVisible({
+    timeout: 30_000,
+  });
   const before = await page.locator("[data-agentturn]").count();
 
   // Retry is the hover action on the last turn (prototype shape, AC-3).

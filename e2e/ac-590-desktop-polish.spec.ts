@@ -174,7 +174,12 @@ test("AC-2 at 1024px the header names the employee, the composer stays one row, 
   const wbTabs = page.locator("[data-wb-tab]");
   const wbToggle = page.locator("main header").getByTitle("Workbench");
   await expect(wbToggle).toBeVisible({ timeout: 30_000 });
-  if ((await wbTabs.count()) === 0) await wbToggle.click();
+  /* The seeded-open check can race the mount — a first click lands before
+     wbOpen seeds and toggles it back off. Click until the strip shows. */
+  for (let i = 0; i < 4 && !(await wbTabs.first().isVisible()); i++) {
+    await wbToggle.click();
+    await page.waitForTimeout(1500);
+  }
   await expect(wbTabs.first()).toBeVisible({ timeout: 45_000 });
   const folded = page.locator("[data-wb-tab].wb-fold");
   await expect(folded.first()).toBeVisible({ timeout: 15_000 });

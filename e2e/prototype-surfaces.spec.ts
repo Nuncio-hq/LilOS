@@ -136,7 +136,10 @@ test("AC-3 designed states: reconnecting / harness down / engine down / version 
   await expect(
     page.getByRole("dialog", { name: "System status" }),
   ).toContainText(/Protocol v2 required/i);
-  await page.getByRole("button", { name: "Close" }).click();
+  await page
+    .getByRole("dialog", { name: "System status" })
+    .getByRole("button", { name: "Close" })
+    .click();
   expect(errors).toEqual([]);
 });
 

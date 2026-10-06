@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import { bootStack, panelIntoFocus, pickPorts, type Stack } from "./helpers/stack";
 
 /**
  * Issue #104 — DM composer keys, updated for #576: Esc now only ever CLOSES
@@ -76,6 +76,10 @@ test("AC-1 Esc never stops the running turn — ⌘. stops it (same as ■)", as
      Esc must NOT be what ends it; ⌘. is (#576). */
   await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
   await expect(page.getByText(RUNNING_HINT)).toBeVisible({ timeout: 30_000 });
+  /* #577: the send lands on the thread panel — hop into Focus so Esc's only
+     close target is the Focus surface itself (Esc on the panel would close
+     the panel — correct too, but this AC is about the turn, not the layer). */
+  await panelIntoFocus(page);
   const box = page.locator("textarea").last();
   await box.click();
   await page.keyboard.press("Escape");
@@ -107,6 +111,8 @@ test("AC-2 Esc with no turn running does nothing (no Stop → nothing)", async (
   ).toBeVisible({
     timeout: 90_000,
   });
+  // #577: hop to Focus so Esc closes it and lands back on the panel.
+  await panelIntoFocus(page);
   await page.locator("textarea").last().click();
   await page.keyboard.press("Escape");
   await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
@@ -122,6 +128,8 @@ test("AC-3 Esc closes an open popover/dialog first — the turn keeps running", 
   await dmDefault(stackA, page);
   await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
   await expect(page.getByText(RUNNING_HINT)).toBeVisible({ timeout: 30_000 });
+  // #577: the "Back to DM" step below is Focus's back control — hop there.
+  await panelIntoFocus(page);
 
   // Model-picker popover: Esc closes it without touching the turn.
   await page.locator('[data-slot="model-picker-trigger"]').last().click();
@@ -156,6 +164,9 @@ test("AC-4 ⌘. with a steer draft typed still stops the turn and keeps the text
   await dmDefault(stackA, page);
   await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
   await expect(page.getByText(RUNNING_HINT)).toBeVisible({ timeout: 30_000 });
+  // #577: hop to Focus — Esc mid-draft closes it, landing back on the panel
+  // (the draft persists through the surface swap, same store).
+  await panelIntoFocus(page);
   const box = page.locator("textarea").last();
   await box.fill("also mention bananas");
   // Esc is inert mid-draft — the turn keeps running, the draft stays.

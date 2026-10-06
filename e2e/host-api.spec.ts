@@ -82,6 +82,9 @@ test("AC-1..4 picker + session cwd + Workbench Files/Changes over host API", asy
   await expect(page.locator("[data-folderinfo]")).toContainText("Git repo");
   await expect(page.locator("[data-folderinfo]")).toContainText("main");
   await page.locator("[data-addbtn]").click();
+  /* folders.add fires a toast that overlays the composer footer for a few
+     seconds — it swallows the branch picker's click. Wait for it to go. */
+  await page.locator("[data-toast]").waitFor({ state: "detached", timeout: 15_000 });
 
   // The new folder is picked for this DM; switch it to direct mode (edit in place).
   await page.locator("[data-ws='branch']").click();

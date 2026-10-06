@@ -84,6 +84,9 @@ test("AC-2/AC-3 workbench: open file, open file at line, reveal — real os.open
   });
   await dialog.locator("[data-addbtn]").click();
   await expect(dialog).toHaveCount(0);
+  /* folders.add fires a toast that overlays the composer footer for a few
+     seconds — it swallows the branch picker's click. Wait for it to go. */
+  await page.locator("[data-toast]").waitFor({ state: "detached", timeout: 15_000 });
   // git repos default to a new workstream — switch to direct so cwd=repoDir.
   await page.locator('[data-ws="branch"]').click();
   await menu(page)

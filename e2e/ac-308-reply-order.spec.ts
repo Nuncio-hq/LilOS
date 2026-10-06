@@ -144,6 +144,8 @@ test("AC-1/AC-5 queued replies anchor under their own prompt — even after relo
   await dmDefault(page);
   // Hold the session open on an approval so both sends queue behind it.
   await send(page, "Add a release note to the readme");
+  // #577: a send lands on the thread panel; [data-thread] lives in Focus.
+  await panelIntoFocus(page);
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 120_000,
   });

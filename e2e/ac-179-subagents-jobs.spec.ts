@@ -366,6 +366,9 @@ test("AC-4 a background process lists in Background with command/status/uptime/U
   await turnSettled(page);
 
   await send(page, "leave the dev server running in the background");
+  /* #577: the send landed on the panel — the Background tab lives in the
+     Focus workbench. */
+  await panelIntoFocus(page);
   const bg = tab(page, /Background/);
   /* #309: delegated subagents list here too (`sa:` ids) — scope to the
      dev-server job row, not just the first. */
