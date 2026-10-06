@@ -3047,10 +3047,7 @@ describe("landed steer outlives the Stop (#550)", () => {
       const row = all.find((m) => m.id === landed.id);
       expect(row).toBeDefined();
       expect(row?.dropped).toBeFalsy();
-      const { messages: visible } = await listConvMessages(
-        w.user,
-        channel.id,
-      );
+      const { messages: visible } = await listConvMessages(w.user, channel.id);
       expect(visible.find((m) => m.id === landed.id)).toBeDefined();
     } finally {
       await w.cleanup();

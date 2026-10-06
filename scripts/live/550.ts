@@ -371,11 +371,9 @@ try {
       const page = await browser.newPage({
         viewport: { width: 1440, height: 900 },
       });
-      await page.addInitScript(() => {
-        try {
-          window.localStorage.setItem("lilos-onboarded", "1");
-        } catch {}
-      });
+      await page.addInitScript(
+        "try { localStorage.setItem('lilos-onboarded', '1'); } catch {}",
+      );
       await page.goto(
         `${stack.webUrl}/dm/${encodeURIComponent(employee.id)}/${encodeURIComponent(conversation.id)}`,
       );
@@ -475,7 +473,7 @@ try {
       console.log("  wire messages:");
       for (const m of messages.slice(-10))
         console.log(
-          `    seq=${m.seq} kind=${m.authorKind} dropped=${m.dropped ?? false} ${JSON.stringify(m.text.slice(0, 60))}`,
+          `    seq=${m.seq} kind=${m.authorKind} dropped=${m.dropped ?? false} ${JSON.stringify((m.text ?? "").slice(0, 60))}`,
         );
     } catch {}
   }
