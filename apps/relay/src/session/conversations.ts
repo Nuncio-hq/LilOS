@@ -322,7 +322,7 @@ export async function handleConversations(
         );
       }
       /* A plain note (like rewind's): what the thread's folder is now and
-         whether the running session followed — Oscar reads it as proof
+         whether the running session followed — the user reads it as proof
          the move really happened, not just a label change. */
       const note = hostResult?.engineMoved
         ? `Moved this thread to \`${moved.cwd}\` — the running session moved too; same thread, same memory.`

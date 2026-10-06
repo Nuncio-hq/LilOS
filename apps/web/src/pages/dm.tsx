@@ -1144,7 +1144,7 @@ export function DmPage() {
       setDraftAccess(({ [employeeId]: _drop, ...rest }) => rest);
       /* #577 (decided 2026-10-07): a new send STAYS on the DM list with
          the thread open in the side panel, like the prototype — Focus
-         opens only when Oscar asks for it. */
+         opens only when the user asks for it. */
       return navigate({
         to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: conv.id },

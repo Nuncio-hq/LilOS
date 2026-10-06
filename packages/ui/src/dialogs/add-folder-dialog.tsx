@@ -47,7 +47,7 @@ export function AddFolderDialog({
 }) {
   /* #581 AC-3: open with NOTHING picked (home listing, Add disabled until
      a real dir resolves) — a default like ~/Desktop reads as a selection
-     Oscar never made. */
+     the user never made. */
   const [path, setPath] = useState("");
   const [target, setTarget] = useState<string>(defaultProject ?? "__new");
   const [newName, setNewName] = useState("");

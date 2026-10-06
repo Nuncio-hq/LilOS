@@ -224,7 +224,7 @@ export function Composer({
   useLayoutEffect(() => {
     /* #590 AC-1: an external prefill (draft goes empty → text — plan
        "Change…", a seeded rewind) focuses the composer and lands the caret
-       at the end, after any prefix, so Oscar types the answer straight
+       at the end, after any prefix, so the user types the answer straight
        away. Pick/deletes take precedence via caretRef. */
     const at =
       caretRef.current ??

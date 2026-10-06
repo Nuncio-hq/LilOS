@@ -895,7 +895,7 @@ export class FakeEngine {
    */
   private sessionMoveWorkspace(p: SessionMoveWorkspaceParams) {
     const s = this.require(p.sessionId);
-    /* A suspended session is still re-homable (Hermes moves the stored
+    /* A suspended session is still re-homable (the engine moves the stored
        row); a truly closed one is not. */
     if (s.state === "closed" && !s.suspended)
       throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);

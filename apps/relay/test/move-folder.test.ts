@@ -122,7 +122,7 @@ describe("conversations.moveFolder (#581)", () => {
     const user = await helloed(relay);
     const host = await fakeHost(relay);
     const { channel, conversation } = await setupConversation(user);
-    /* The harness binds the session before Oscar could ask for a folder —
+    /* The harness binds the session before the user could ask for a folder —
        stamp engineRef the way session.start's write does. */
     await hostUpdate(host, {
       conversationId: conversation.id,
