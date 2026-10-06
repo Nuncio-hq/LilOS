@@ -400,9 +400,7 @@ check(
    unpublished; plugins/sessions/resume all work. `_log.warning` lands in
    the serve child's output on some builds and in log files under
    HERMES_HOME on others — read BOTH, fail only if neither has it. */
-const observeLines: string[] = [
-  ...hermes.logTail().split("\n"),
-].filter(
+const observeLines: string[] = [...hermes.logTail().split("\n")].filter(
   (l) => l.includes("observe-only") || l.includes("already owns this host"),
 );
 const logFiles: string[] = [];
