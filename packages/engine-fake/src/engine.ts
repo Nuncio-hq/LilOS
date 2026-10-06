@@ -330,6 +330,12 @@ export class FakeEngine {
     return s.ref;
   }
 
+  /** #573 AC-1 probe: sessions still held live — a session stopped for
+      good leaves the map; suspend keeps it for resume. */
+  get sessionCount(): number {
+    return this.sessions.size;
+  }
+
   async dispatch(method: string, params: unknown): Promise<unknown> {
     const contract = ENGINE_METHODS[method];
     if (!contract)
@@ -721,7 +727,13 @@ export class FakeEngine {
 
   private sessionStop(p: SessionStopParams) {
     const s = this.require(p.sessionId);
-    if (s.state === "closed") return { stopped: false };
+    /* #573: stop is forget — a closed session still on the map is a
+       suspended one (#346); stopping it ends the resume path too. */
+    if (s.state === "closed") {
+      if (!s.suspended) return { stopped: false };
+      this.sessions.delete(s.id);
+      return { stopped: true };
+    }
     const t = s.turn;
     if (t) t.interrupted = true;
     s.holdTurn?.();
@@ -744,6 +756,11 @@ export class FakeEngine {
     }
     s.state = "closed";
     this.emit(s, "session.state", { state: "closed" });
+    /* #573 AC-1: the session leaves the map for good — its event log goes
+       with it, so engine memory stops tracking every session ever opened.
+       A later call on the id answers SESSION_NOT_FOUND like a never-seen
+       one (the harness degrades that to an empty closed transcript, #300). */
+    this.sessions.delete(s.id);
     return { stopped: true };
   }
 

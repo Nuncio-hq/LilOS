@@ -359,7 +359,7 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
   "session.stop": {
     params: SessionStopParams,
     result: SessionStopResult,
-    doc: "Close the session; its event log stays replayable.",
+    doc: "End the session for good: the engine forgets it — later calls answer SESSION_NOT_FOUND (#573).",
   },
   "session.suspend": {
     params: SessionSuspendParams,
