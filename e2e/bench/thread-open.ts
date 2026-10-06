@@ -258,7 +258,7 @@ async function trial(): Promise<{ open: Window; reload: Window }> {
             max: 0,
           };
         });
-        let m0 = await snap(cdp, page);
+        const m0 = await snap(cdp, page);
         await chip.click();
         await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
         await waitSettled(panel, TURNS);
@@ -273,7 +273,14 @@ async function trial(): Promise<{ open: Window; reload: Window }> {
         await quiet(page);
         const reload = await windowBetween(
           page,
-          { taskMs: 0, scriptMs: 0, layoutMs: 0, recalcMs: 0, lt: { n: 0, max: 0 }, t: t0 },
+          {
+            taskMs: 0,
+            scriptMs: 0,
+            layoutMs: 0,
+            recalcMs: 0,
+            lt: { n: 0, max: 0 },
+            t: t0,
+          },
           await snap(cdp, page),
           true,
         );

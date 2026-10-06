@@ -977,11 +977,12 @@ export function FocusView({
           )}
           {/* #570: a lazy thread's first pin lands instantly — a smooth
               sweep would mount every stub it scrolls past (see
-              thread-view). `resize` stays smooth for the streaming
+              thread-view); a scrollTo open skips the pin so the jump
+              lands first. `resize` stays smooth for the streaming
               chase. */}
           <Conversation
             className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]"
-            initial={lazyRows ? "instant" : "smooth"}
+            initial={scrollTo ? false : lazyRows ? "instant" : "smooth"}
           >
             <ConversationContent
               data-thread

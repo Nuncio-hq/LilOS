@@ -79,9 +79,7 @@ export function estTurnHeight(
   const cpl = frame === "focus" ? 86 : 50;
   if (!agent) {
     /* Row/UserTurn: who line + wrapped text + attachment chips. */
-    return (
-      46 + estLines(r.text, cpl) * 20 + (r.attachments?.length ? 34 : 0)
-    );
+    return 46 + estLines(r.text, cpl) * 20 + (r.attachments?.length ? 34 : 0);
   }
   /* AgentTurn: who row + optional reasoning fold + body + cards + footer. */
   let h = 60 + estLines(r.text, cpl) * 21;
@@ -216,8 +214,7 @@ function LazyShell({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const initialHeld =
-    lazy && !keep && startHeld && (estHeight ?? 0) > 0;
+  const initialHeld = lazy && !keep && startHeld && (estHeight ?? 0) > 0;
   const heightRef = useRef(initialHeld && estHeight ? estHeight : 0);
   /* Mounting out of a stub is a remount — `data-remount` skips the rise
      replay — and a born-held row counts as held from the start. */

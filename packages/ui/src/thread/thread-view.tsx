@@ -427,10 +427,13 @@ export function ThreadView({
       {/* #570: the first pin on a lazy thread must land instantly — the
           default smooth sweep would scroll through the whole stub field
           and mount every row it passes, recreating the open-time freeze.
-          `resize` stays smooth: the streaming chase is unchanged. */}
+          A scrollTo open skips the pin outright (initial=false): the jump
+          would otherwise race the pin's first write before the escape
+          check lands. `resize` stays smooth: the streaming chase is
+          unchanged. */}
       <Conversation
         className="min-h-0"
-        initial={lazyRows ? "instant" : "smooth"}
+        initial={scrollTo ? false : lazyRows ? "instant" : "smooth"}
       >
         {/* The composer sits below the scroller in normal flow — nothing
             overlays the last turn, so only a small bottom pad is needed;
