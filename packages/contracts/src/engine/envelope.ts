@@ -47,6 +47,19 @@ export type JsonRpcResponse = z.infer<typeof JsonRpcResponse>;
 export const ClientFrame = z.union([JsonRpcRequest, JsonRpcNotification]);
 export type ClientFrame = z.infer<typeof ClientFrame>;
 
+/**
+ * Largest WebSocket message any LilOS socket accepts — `maxPayloadLength` on
+ * every Bun.serve websocket server (#551). Sized so a maximal attachment send
+ * always fits: `MAX_ATTACHMENTS_PER_MESSAGE` images at `MAX_ATTACHMENT_BYTES`
+ * each travel as inline base64 (~140 MB on the wire) both on the app's
+ * `messages.post`/`conversations.open` and on the engine's `prompt` image
+ * blocks. Bun's 16 MiB default sat under that and dropped the socket on big
+ * screenshot sends — the app could only read it as "reconnecting". A frame
+ * past this cap still dies at the transport; the schema caps
+ * (`attachment_too_large`, `invalid_params`) are the readable bounds.
+ */
+export const MAX_FRAME_BYTES = 160 * 1024 * 1024;
+
 /** Standard JSON-RPC codes plus engine-domain codes in the -320xx range. */
 export const RPC_ERRORS = {
   PARSE_ERROR: -32700,

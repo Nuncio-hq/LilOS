@@ -434,13 +434,13 @@ type NameStatusEntry = { status: string; path: string };
 
 function parseNameStatus(raw: string): Map<string, NameStatusEntry[]> {
   const commits = new Map<string, NameStatusEntry[]>();
-  // A record: "\x1e<full sha>\0<short>\0<subject>\0\n<A>\0<path>\0…"
+  // A record: "\x1e<full sha>\0<short>\0<subject>\0<author>\0\n<A>\0<path>\0…"
   for (const rec of raw.split("\x1e")) {
     if (!rec.trim()) continue;
     const tokens = rec.split("\0");
     const sha = tokens[0].trim();
     const files: NameStatusEntry[] = [];
-    for (let i = 3; i < tokens.length; i++) {
+    for (let i = 4; i < tokens.length; i++) {
       const status = tokens[i].replace(/^\n+/, "").trim();
       if (!status) continue;
       let path = tokens[++i];
@@ -502,7 +502,7 @@ export async function gitLog(params: {
   const limit = params.limit ?? 20;
   const range = base ? `${base}..HEAD` : "HEAD";
   const capped = base ? [] : ["-n", String(limit)];
-  const format = "%x1e%H%x00%h%x00%s";
+  const format = "%x1e%H%x00%h%x00%s%x00%an";
   const [nsRaw, stRaw] = await Promise.all([
     gitOr(root, [
       "log",
@@ -537,6 +537,7 @@ export async function gitLog(params: {
     commits.push({
       sha: head[1] ?? full.slice(0, 7),
       subject: head[2]?.replace(/\n+$/, "") ?? "",
+      author: head[3]?.trim() ?? "",
       files,
     });
   }

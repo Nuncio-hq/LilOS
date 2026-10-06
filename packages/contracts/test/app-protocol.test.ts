@@ -214,6 +214,7 @@ describe("#29 employee lifecycle + engine passthrough contracts", () => {
       "jobs.list",
       "jobs.stop",
       "approvals.setPolicy",
+      "session.ask",
     ]);
   });
 
