@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
+import { equalSecret } from "@lilos/contracts/auth";
 import type { McpServer, McpServerHttp } from "@lilos/contracts/engine";
 import { MCP_PATH, type SessionBinding } from "@lilos/contracts/harness";
 import {
@@ -9,6 +10,7 @@ import {
   attachViewer,
   type BrowserDriver,
   gatewayHandler,
+  type PtySpawner,
   SESSION_HEADER,
   SessionRegistry,
   SessionSurfaces,
@@ -49,6 +51,8 @@ interface CreateSessionInit {
 export interface SurfacesServerOptions {
   /** Creates the browser driver; defaults to headless Chromium. */
   createBrowser?: () => Promise<BrowserDriver>;
+  /** PTY spawner for each session (default: the Bun terminal spawn). */
+  spawnPty?: PtySpawner;
   /** Terminal cols/rows every scope starts with. */
   cols?: number;
   rows?: number;
@@ -164,7 +168,8 @@ export async function serveSurfaces(
     const session = url.searchParams.get("session") ?? "";
     const token = url.searchParams.get("token") ?? "";
     const entry = registry.resolve(session);
-    if (!entry || entry.token !== token) {
+    /* #611: the session bearer is a secret — constant-time compare. */
+    if (!entry || !equalSecret(entry.token, token)) {
       socket.destroy();
       return;
     }
@@ -197,7 +202,7 @@ export async function serveSurfaces(
       rows: options.rows,
       createBrowser:
         options.createBrowser ?? (() => Promise.resolve(new ChromiumBrowser())),
-      spawnPty: bunPtySpawner,
+      spawnPty: options.spawnPty ?? bunPtySpawner,
       appOps: options.appOps?.(session, init.binding),
       binding: init.binding,
     });

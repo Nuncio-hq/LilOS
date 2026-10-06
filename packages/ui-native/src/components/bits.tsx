@@ -113,12 +113,12 @@ const CHIP = {
     label: "Last seen working",
   },
   /* #592: a sleep interrupt is a failed turn with a different story —
-     the Mac slept mid-turn, so it reads amber, not the red error chip. */
+     the Mac went to sleep, so it reads amber, not the red error chip. */
   slept: {
     icon: "moon.zzz.fill",
     tone: "warning",
     text: "text-warning",
-    label: "Mac slept mid-turn",
+    label: "Mac went to sleep",
   },
 } as const;
 

@@ -36,10 +36,12 @@ The relay binds loopback (plus an opt-in Tailscale listener for phone
 pairing) and is the only thing holding the per-install token
 (`~/.lilos/relay-token`, 0600). Current hardening in force:
 
-- **Constant-time secret compares.** `session.hello`'s install token and
-  the paired-device credential are checked with `timingSafeEqual` over
-  SHA-256 digests (`apps/relay/src/auth.ts` `equalSecret`), so response
-  timing can't reveal a matching prefix.
+- **Constant-time secret compares.** `session.hello`'s install token, the
+  paired-device credential, the harness `/host` bearer, the feed `/ws`
+  upgrade, the surfaces `/view` socket and the agent gateway's
+  session/engine bearers are checked with `timingSafeEqual` over SHA-256
+  digests (`@lilos/contracts/auth` `equalSecret`), so response timing
+  can't reveal a matching prefix.
 - **WebSocket Origin gate.** `/ws` upgrades carrying an `Origin` header
   are refused unless the origin is loopback (`localhost`/`*.localhost`,
   127.0.0.0/8, `[::1]`, any port), `file://`, `null` under an Electron
