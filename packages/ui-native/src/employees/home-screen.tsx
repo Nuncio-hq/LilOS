@@ -156,12 +156,16 @@ export function NeedsYouAccessory({
   approvals,
   placement,
   onApprove,
+  onReview,
   onOpen,
 }: {
   approvals: Approval[];
   placement: "regular" | "inline";
   /** Approve pill — absent while approval lands in a later slice (#158). */
   onApprove?: (id: string) => void;
+  /** #595: a plan ask's **Review** pill — opens the plan in its thread.
+      Falls back to onOpen when absent (prototype rows). */
+  onReview?: (id: string) => void;
   onOpen: () => void;
 }) {
   const top = approvals[0];
@@ -221,11 +225,14 @@ export function NeedsYouAccessory({
         </AppText>
       </View>
       {/* #591: last-known asks offer no dead Approve while offline. */}
-      {onApprove && !top.lastKnown && top.kind !== "question" && (
+      {/* #595: a plan's pill is **Review** — it opens the plan in its
+          thread; nothing approves a plan sight-unseen. Command approvals
+          keep the one-tap Approve (AC-2). */}
+      {!top.lastKnown && top.primary === "review" && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Approve ${top.employee}`}
-          onPress={() => onApprove(top.id)}
+          accessibilityLabel={`Review ${top.employee}'s plan`}
+          onPress={() => (onReview ?? onOpen)(top.id)}
           hitSlop={6}
           className="h-8 items-center justify-center rounded-full bg-primary px-3.5 active:opacity-70"
         >
@@ -235,10 +242,31 @@ export function NeedsYouAccessory({
             tone="inverse"
             className="text-[14px]"
           >
-            Approve
+            Review
           </AppText>
         </Pressable>
       )}
+      {onApprove &&
+        !top.lastKnown &&
+        (top.primary ?? "approve") === "approve" &&
+        top.kind !== "question" && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Approve ${top.employee}`}
+            onPress={() => onApprove(top.id)}
+            hitSlop={6}
+            className="h-8 items-center justify-center rounded-full bg-primary px-3.5 active:opacity-70"
+          >
+            <AppText
+              size="sm"
+              weight="semibold"
+              tone="inverse"
+              className="text-[14px]"
+            >
+              Approve
+            </AppText>
+          </Pressable>
+        )}
     </Pressable>
   );
 }
