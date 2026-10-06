@@ -363,7 +363,8 @@ export class SessionWatch {
   private attach(sid: string): void {
     const latest: { feed?: SessionFeedState; model?: SessionModel } = {};
     this.latest.set(sid, latest);
-    const unModel = this.deps.sessionModel(sid).subscribe((m) => {
+    const model = this.deps.sessionModel(sid);
+    const unModel = model.subscribe((m) => {
       latest.model = m;
       if (this.deps.models.get()[sid] !== m)
         this.deps.models.set({ ...this.deps.models.get(), [sid]: m });
@@ -371,6 +372,15 @@ export class SessionWatch {
     });
     const unFeed = this.deps.sessionFeed(sid).subscribe((f) => {
       latest.feed = f;
+      /* The model computed emits one listener-queue slot AFTER this
+         callback (feed listeners run `run` → unFeed → unModel), so
+         `latest.model` written by unModel is one emission stale. Live
+         ticks hide it — the stale model still says running — but a boot
+         replay folds the whole log into a single feed.set and the stale
+         model is the virgin fold (no turns, no requests): reconcile
+         would release the feed while the waiting model sits in queue.
+         `get()` returns the value consistent with THIS feed state. */
+      latest.model = model.get();
       const attached = f.synced || f.error !== undefined || f.coverageSeq > 0;
       if (this.deps.attached.get()[sid] !== attached)
         this.deps.attached.set({

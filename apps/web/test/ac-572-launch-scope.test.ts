@@ -11,7 +11,12 @@
 import type { SessionFeedState, SessionModel } from "@lilos/client-runtime";
 import type { Ask, Conversation } from "@lilos/contracts/app";
 import type { EngineEvent } from "@lilos/contracts/engine";
-import { atom, type WritableAtom } from "nanostores";
+import {
+  atom,
+  computed,
+  type ReadableAtom,
+  type WritableAtom,
+} from "nanostores";
 import { describe, expect, it } from "vitest";
 import {
   foldSessionSignal,
@@ -72,9 +77,10 @@ const model = (over: Partial<SessionModel> = {}): SessionModel => ({
 });
 
 /** A stubbed EngineClient surface: feeds are atoms the test mutates. */
-const stubEngine = () => {
+const stubEngine = (opts: { computedModels?: boolean } = {}) => {
   const feeds = new Map<string, WritableAtom<SessionFeedState>>();
   const models = new Map<string, WritableAtom<SessionModel>>();
+  const computedModels = new Map<string, ReadableAtom<SessionModel>>();
   const listeners = new Set<(e: EngineEvent) => void>();
   const released: string[] = [];
   const feed = (sid: string) => {
@@ -108,6 +114,36 @@ const stubEngine = () => {
     deps: {
       sessionFeed: feed,
       sessionModel: (sid: string) => {
+        /* `computedModels` mirrors production: the model is a computed over
+           the feed atom, so its emissions land one listener-queue slot
+           after feed subscribers (run → unFeed → unModel). The plain-atom
+           path can't reproduce that lag. */
+        if (opts.computedModels) {
+          let c = computedModels.get(sid);
+          if (!c) {
+            c = computed(feed(sid), (f) =>
+              model({
+                sessionId: sid,
+                live:
+                  f.snapshot?.state === "waiting"
+                    ? {
+                        turnId: "t1",
+                        phase: "waiting",
+                        reasoning: "",
+                        text: "",
+                        steps: [],
+                        steers: [],
+                        requests: [],
+                        plans: [],
+                        subagents: [],
+                      }
+                    : undefined,
+              }),
+            );
+            computedModels.set(sid, c);
+          }
+          return c;
+        }
         let s = models.get(sid);
         if (!s) {
           s = atom(model({ sessionId: sid }));
@@ -130,9 +166,12 @@ const stubEngine = () => {
 const setup = (
   convs: Conversation[],
   asks: Ask[] = [],
-  opts: { previouslyRunning?: ReadonlySet<string> } = {},
+  opts: {
+    previouslyRunning?: ReadonlySet<string>;
+    computedModels?: boolean;
+  } = {},
 ) => {
-  const engine = stubEngine();
+  const engine = stubEngine(opts);
   const conversations = atom<Conversation[]>(convs);
   const asksAtom = atom<Ask[]>(asks);
   const open = atom<string | undefined>(undefined);
@@ -256,6 +295,29 @@ describe("#572 AC-1 feeds attach only for the open, running, or asking", () => {
     expect(attached(engine)).toEqual(["s1"]);
     settleFeed(engine, "s1", model({ sessionId: "s1", live: undefined }));
     expect(attached(engine)).toEqual([]);
+  });
+
+  it("AC-1 a single-set boot replay keeps a waiting session watched", () => {
+    /* #572 regression (ac-27/ac-71): the model computed emits one
+       listener-queue slot after the feed callback (run → unFeed →
+       unModel), so a replay landing in a single feed.set used to
+       reconcile against the virgin model — running:false, no requests —
+       and release the feed the same tick the waiting model arrived. */
+    const c = conv("c1", "s1", { state: "active" });
+    const { engine, signals } = setup([c], [], { computedModels: true });
+    expect(attached(engine)).toEqual(["s1"]);
+    engine.feeds.get("s1")?.set({
+      sessionId: "s1",
+      synced: true,
+      latestSeq: 35,
+      coverageSeq: 35,
+      events: [],
+      openRequests: [],
+      snapshot: { sessionId: "s1", state: "waiting" } as never,
+    });
+    expect(attached(engine)).toEqual(["s1"]);
+    expect(engine.released).toEqual([]);
+    expect(signals.get().s1?.running).toBe(true);
   });
 
   it("AC-2 a session running at last mount gets a one-shot attach for its missed completion", () => {
