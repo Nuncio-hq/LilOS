@@ -193,6 +193,10 @@ describe("AC-3 the app pages carry a CSP", () => {
     const connect = directive(csp, "connect-src");
     for (const src of [
       "'self'",
+      // The attachment pipeline fetches its own blob:/data: URLs back to
+      // bytes (prompt-input's blob→data conversion, composer seed restore).
+      "data:",
+      "blob:",
       "ws://127.0.0.1:*",
       "ws://localhost:*",
       "http://127.0.0.1:*",

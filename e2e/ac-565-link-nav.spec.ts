@@ -49,13 +49,15 @@ async function launchDesktop(): Promise<ElectronApplication> {
       LILOS_WEB_URL: stack.webUrl,
     },
   });
+  /* Record instead of delegating: a real openExternal would spawn xdg-open
+     under xvfb, whose grandchild inherits Electron's stdio pipes — the app
+     then never exits and app.close() hangs the whole worker (#565 CI). */
   await app.evaluate(({ shell }) => {
     const g = globalThis as { __openedExternal?: string[] };
     g.__openedExternal = [];
-    const orig = shell.openExternal;
     shell.openExternal = (u: string) => {
       g.__openedExternal?.push(u);
-      return orig.call(shell, u).catch(() => undefined);
+      return Promise.resolve();
     };
   });
   return app;
