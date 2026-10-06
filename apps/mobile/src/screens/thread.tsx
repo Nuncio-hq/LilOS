@@ -1,5 +1,6 @@
 import {
   type ChannelMessagesState,
+  RelayError,
   type RelaySessionFeedState,
   reduceSessionEvents,
   sendKeyDone,
@@ -38,6 +39,8 @@ import {
   PLAN_CHANGE_PREFIX,
   planChangeSend,
 } from "../asks";
+import { messageCache } from "../cache";
+import { $demo, DEMO_MAC } from "../demo/lifecycle";
 import { defaultModelPick } from "../dm-model";
 import {
   $asks,
@@ -48,11 +51,17 @@ import {
   refreshModelCatalog,
   watchDm,
 } from "../dm-store";
-import { $client, $welcome } from "../link";
+import { $client, $link, $welcome } from "../link";
 import { describeError } from "../mapping";
+import { $connections } from "../paired-macs";
 import { $prs, refreshConversationPrs } from "../prs";
 import type { DmRoutes } from "../routes";
-import { collectDiffs, dropRewound, toThreadDetail } from "../thread-model";
+import {
+  collectDiffs,
+  dropRewound,
+  threadSurface,
+  toThreadDetail,
+} from "../thread-model";
 
 /* #157 — the live thread: messages.list + channel.subscribe resume (AC-1),
    engine turns projected live through sessionFeed -> reduceSessionEvents ->
@@ -210,12 +219,17 @@ function useThread(conversationId: string) {
     : undefined;
 
   /* AC-1: full history once via messages.list (the channel snapshot is a
-     window); live frames keep appending on the subscription. */
+     window); live frames keep appending on the subscription. #591 AC-3:
+     seed from the on-device transcript first so the thread still reads
+     while the socket is down — the live pull replaces it once it lands. */
   const [history, setHistory] = useState<AppMessage[]>([]);
   useEffect(() => {
     if (!client || !channelId) return;
     watchDm(client, $welcome);
     let alive = true;
+    void messageCache.get(conversationId).then((cached) => {
+      if (alive && cached) setHistory((cur) => (cur.length ? cur : cached));
+    });
     const pull = () => {
       void client
         .request<{ messages: AppMessage[] }>("messages.list", {
@@ -223,9 +237,15 @@ function useThread(conversationId: string) {
           conversationId,
         })
         .then((res) => {
-          if (alive) setHistory(res.messages);
+          if (!alive) return;
+          setHistory(res.messages);
+          void messageCache.set(conversationId, res.messages);
         })
         .catch((e) => {
+          /* #591: the socket being down is not a dialog — the "Can't reach"
+             line above the composer already says it. A timeout on an open
+             socket is still a real failure: keep the alert. */
+          if (e instanceof RelayError && e.code === "not_connected") return;
           if (alive) Alert.alert("Couldn't load the thread", describeError(e));
         });
     };
@@ -361,6 +381,10 @@ export function Thread({
     jobsCapable,
   } = useThread(conversationId);
   const welcome = useStore($welcome);
+  const link = useStore($link);
+  const demo = useStore($demo);
+  const paired = useStore($connections)[0];
+  const mac = demo ? DEMO_MAC : paired;
   const [prefill, setPrefill] = useState<{ text: string }>();
 
   /* Composer chip = the thread's pick (pinned conv.model wins), or the
@@ -461,6 +485,10 @@ export function Thread({
           state={detail?.state ?? "working"}
           {...(detail?.prs?.length ? { prs: detail.prs } : {})}
           {...(detail?.context ? { context: detail.context } : {})}
+          /* #591: offline a "working" header is last-known, not live. */
+          stale={
+            threadSurface(detail?.state ?? "working", link === "offline").stale
+          }
           onPress={() =>
             conv &&
             navigation.navigate("ThreadInfo", { conversationId: conv.id })
@@ -468,7 +496,7 @@ export function Thread({
         />
       ),
     });
-  }, [navigation, detail, conv]);
+  }, [navigation, detail, conv, link]);
 
   if (!detail) return <View className="flex-1 bg-background" />;
   return (
@@ -485,6 +513,12 @@ export function Thread({
       }}
       onSend={send}
       onStop={stop}
+      unreachableNote={
+        link === "offline" && mac ? `Can't reach ${mac.name}` : undefined
+      }
+      /* #591: offline + a cached "working" thread — disabled Stop with a
+         hint; the header chip degrades via threadSurface's rule. */
+      stale={threadSurface(detail.state, link === "offline").stale}
       {...(catalog.models.length
         ? {
             onPickModel: () =>

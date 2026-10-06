@@ -17,6 +17,7 @@ export function Composer({
   insetBottom,
   onSend,
   onStop,
+  stopHint,
   onPickFolder,
   onPickModel,
   onLayoutHeight,
@@ -37,6 +38,10 @@ export function Composer({
   onSend: (text: string) => void;
   /** Set while the employee is mid-turn: an empty composer shows ■ Stop. */
   onStop?: () => void;
+  /** #591: set with `onStop` when the press can't be delivered (Mac
+     unreachable) — the ■ stays visible, dimmed and inert, and this text
+     is its accessibility hint (the note above the composer says why). */
+  stopHint?: string;
   onPickFolder?: () => void;
   onPickModel?: () => void;
   /** Floating callers pad their scroll content by this. */
@@ -100,10 +105,14 @@ export function Composer({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Stop"
+              {...(stopHint ? { accessibilityHint: stopHint } : {})}
+              disabled={!!stopHint}
               onPress={onStop}
-              className="size-8 items-center justify-center rounded-full bg-foreground active:opacity-70"
+              className={`size-8 items-center justify-center rounded-full ${stopHint ? "bg-muted" : "bg-foreground active:opacity-70"}`}
             >
-              <View className="size-2.5 rounded-[2.5px] bg-background" />
+              <View
+                className={`size-2.5 rounded-[2.5px] ${stopHint ? "bg-muted-foreground" : "bg-background"}`}
+              />
             </Pressable>
           ) : (
             <Pressable
