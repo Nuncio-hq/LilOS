@@ -327,7 +327,8 @@ export const MessageResponse = memo(
       }
       lineNumbers={lineNumbers ?? false}
       plugins={{ code: lilosCodePlugin, ...plugins }}
-      rehypePlugins={rehypePlugins ?? safeMessageRehypePlugins}
+      /* Caller plugins extend the pipe; the safety legs can't be opted out. */
+      rehypePlugins={[...safeMessageRehypePlugins, ...(rehypePlugins ?? [])]}
       {...props}
     />
   ),

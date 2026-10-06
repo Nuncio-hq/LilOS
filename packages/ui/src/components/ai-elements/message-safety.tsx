@@ -128,7 +128,12 @@ export const SafeImage = ({
   ...props
 }: SafeImageProps) => {
   const [loaded, setLoaded] = useState(false);
-  if (!src || typeof src !== "string") return null;
+  if (!src || typeof src !== "string")
+    return (
+      <span className="text-muted-foreground text-xs italic">
+        {alt ? `[image: ${alt}]` : "[image]"}
+      </span>
+    );
   if (isRemoteSrc(src)) {
     if (loaded) {
       return (
