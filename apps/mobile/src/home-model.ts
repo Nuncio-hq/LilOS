@@ -62,6 +62,21 @@ function ageLabel(createdAt: number, nowMs: number): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
+/** #595: where a plan ask's **Review** lands — the employee's DM pushed
+    under the asking thread (Back returns to the DM). Undefined when the
+    ask's channel is gone from the wire — the surface falls back to
+    Activity instead of a dead end. */
+export function askThreadTarget(
+  ask: Pick<Ask, "channelId" | "conversationId">,
+  wire: Pick<HomeWire, "channels">,
+): { employeeId: string; conversationId: string } | undefined {
+  const employeeId = wire.channels.find(
+    (c) => c.id === ask.channelId,
+  )?.employeeId;
+  if (!employeeId) return undefined;
+  return { employeeId, conversationId: ask.conversationId };
+}
+
 /** An open ask as an Activity/accessory row. */
 export function toApproval(ask: Ask, wire: HomeWire, nowMs: number): Approval {
   const channel = wire.channels.find((c) => c.id === ask.channelId);
@@ -74,6 +89,16 @@ export function toApproval(ask: Ask, wire: HomeWire, nowMs: number): Approval {
     tone: employee ? toneOf(employee.id) : "stone",
     session: sessionLabel(ask.conversationId, wire),
     kind: request.kind,
+    /* #595: a plan's primary pill is **Review** — it opens the plan in its
+       thread; no surface approves a plan sight-unseen. Command approvals
+       keep the one-tap **Approve** (AC-2); a question has no primary pill
+       (it needs an answer, not an OK). */
+    primary:
+      request.kind === "plan"
+        ? "review"
+        : request.kind === "approval"
+          ? "approve"
+          : undefined,
     /* #264: like askReason — the reason is the command; the row's sentence
        ("<employee> wants to run") is composed on the surface. */
     reason:
