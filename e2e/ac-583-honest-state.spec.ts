@@ -57,10 +57,7 @@ async function answerOpenAsks(page: Page, name: string) {
   for (let i = 0; i < 8; i++) {
     const open = openCard(page);
     if ((await open.count()) === 0) return;
-    await open
-      .first()
-      .getByRole("button", { name, exact: true })
-      .click();
+    await open.first().getByRole("button", { name, exact: true }).click();
     await page.waitForTimeout(400);
   }
 }
@@ -132,7 +129,7 @@ test("AC-1 a waiting plan says the same", async ({ page }) => {
   });
 });
 
-test("AC-2 a DM row waiting on an approval says \"needs you\"", async ({
+test('AC-2 a DM row waiting on an approval says "needs you"', async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -190,7 +187,7 @@ test("AC-2 a running turn and a failed turn each say so", async ({ page }) => {
   await page.screenshot({ path: `${SHOTS}/ac-2-row-failed.png` });
 });
 
-test("AC-2 a stopped turn says \"stopped\"", async ({ page }) => {
+test('AC-2 a stopped turn says "stopped"', async ({ page }) => {
   test.setTimeout(120_000);
   await openApp(stack, page);
   await send(page, "slow:150 hold this turn while I stop it");

@@ -196,9 +196,7 @@ test("AC-2/3/4 message hits: grouped, highlighted, click scrolls, archived marke
      only gets its own reply once the composer is back to its idle
      placeholder ("Reply to Default…" on both the peek panel and
      Focus, where a send lands since #114). */
-  const idleComposer = page.getByPlaceholder(
-    /Reply to Default/,
-  );
+  const idleComposer = page.getByPlaceholder(/Reply to Default/);
 
   // Session A: open, wait for the fake reply, then send a follow-up holding
   // the term — a message that is NOT the title or first message.

@@ -993,6 +993,14 @@
                 "type": "string",
                 "minLength": 1
               },
+              "authorKind": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "employee",
+                  "system"
+                ]
+              },
               "snippet": {
                 "type": "string"
               },

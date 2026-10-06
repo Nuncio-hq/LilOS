@@ -305,9 +305,7 @@ test.describe
         .first();
       // Agent holds: green `live` badge, ordinary composer placeholder.
       await expect(pane.getByText("live", { exact: true })).toBeVisible();
-      await expect(
-        page.getByPlaceholder(/Reply to Builder/),
-      ).toBeVisible();
+      await expect(page.getByPlaceholder(/Reply to Builder/)).toBeVisible();
       void term;
 
       // Human types → takeover shows across the whole pane, not just the banner.
@@ -325,8 +323,6 @@ test.describe
       await page.keyboard.press("Backspace");
       await page.getByRole("button", { name: /Return control/i }).click();
       await expect(pane.getByText("live", { exact: true })).toBeVisible();
-      await expect(
-        page.getByPlaceholder(/Reply to Builder/),
-      ).toBeVisible();
+      await expect(page.getByPlaceholder(/Reply to Builder/)).toBeVisible();
     });
   });

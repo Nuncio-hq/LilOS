@@ -117,6 +117,12 @@ describe("issue #585 system notes", () => {
           request: {
             kind: "approval" as const,
             command: "git push origin main",
+            options: ["once", "session", "always", "deny"] as (
+              | "once"
+              | "session"
+              | "always"
+              | "deny"
+            )[],
           },
           outcome: "deny" as const,
         },
@@ -134,6 +140,12 @@ describe("issue #585 system notes", () => {
         request: {
           kind: "approval" as const,
           command: "git push origin main",
+          options: ["once", "session", "always", "deny"] as (
+            | "once"
+            | "session"
+            | "always"
+            | "deny"
+          )[],
         },
         createdAt: 0,
       },

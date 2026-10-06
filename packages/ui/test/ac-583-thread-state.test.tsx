@@ -72,16 +72,14 @@ describe("issue #583 threadState", () => {
     expect(threadState(t)?.word).toBe("needs you");
   });
   test("AC-2 live work reads 'running'", () => {
-    expect(
-      threadState(thread({ replies: [turn({ live: true })] }))?.word,
-    ).toBe("running");
+    expect(threadState(thread({ replies: [turn({ live: true })] }))?.word).toBe(
+      "running",
+    );
     // A running delegated helper counts too.
     expect(
       threadState(
         thread({
-          replies: [
-            turn({ subagents: [{ status: "running" } as never] }),
-          ],
+          replies: [turn({ subagents: [{ status: "running" } as never] })],
         }),
       )?.word,
     ).toBe("running");
@@ -103,9 +101,7 @@ describe("issue #583 threadState", () => {
     ).toBe("failed");
   });
   test("AC-2 a quiet finished thread says nothing", () => {
-    expect(
-      threadState(thread({ replies: [turn({})] })),
-    ).toBeUndefined();
+    expect(threadState(thread({ replies: [turn({})] }))).toBeUndefined();
   });
 });
 

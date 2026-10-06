@@ -41,8 +41,7 @@ test.describe.configure({ mode: "serial" });
 const homeComposer = (page: Page) => page.getByPlaceholder(/New thread with/);
 /* The thread composer reads "Reply to …" on the panel and in Focus
    (#114 lands a send in Focus). */
-const threadComposer = (page: Page) =>
-  page.getByPlaceholder(/Reply to /);
+const threadComposer = (page: Page) => page.getByPlaceholder(/Reply to /);
 
 /** Open the app, land on Default's DM (dismissing the first-run card). */
 async function dmDefault(page: Page) {

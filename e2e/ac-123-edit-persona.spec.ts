@@ -124,9 +124,7 @@ async function sendDm(page: Page, text: string) {
 async function replyInSession(page: Page, text: string) {
   /* Opening a session lands in Focus (#114): its composer reads
      "Reply to …" on both the Focus view and the peek panel. */
-  const box = page.getByPlaceholder(
-    /Reply to/,
-  );
+  const box = page.getByPlaceholder(/Reply to/);
   await box.fill(text);
   await box.press("Enter");
 }

@@ -165,9 +165,7 @@ test("Issue #15: stop+tray — the stopped turn and the tray are both fully visi
       const log = logParent.querySelector("div") as HTMLElement;
       const rect = log.getBoundingClientRect();
       const pill = Array.from(document.querySelectorAll("aside div")).find(
-        (d) =>
-          d.childElementCount === 0 &&
-          d.textContent?.trim() === "Stopped",
+        (d) => d.childElementCount === 0 && d.textContent?.trim() === "Stopped",
       );
       if (!pill) throw new Error("interrupt pill missing");
       const p = pill.getBoundingClientRect();

@@ -104,9 +104,7 @@ test("AC-1 a 'Stopped.' note drops beside the stopped turn it repeats", async ({
   await page.screenshot({ path: `${SHOTS}/ac-1-stopped-dedupe.png` });
 });
 
-test("AC-2 a denied approval keeps the turn and its card", async ({
-  page,
-}) => {
+test("AC-2 a denied approval keeps the turn and its card", async ({ page }) => {
   test.setTimeout(180_000);
   await openApp(stack, page);
   await send(page, "Change the header color");
@@ -126,9 +124,7 @@ test("AC-2 a denied approval keeps the turn and its card", async ({
   await page.screenshot({ path: `${SHOTS}/ac-2-denied-kept.png` });
 });
 
-test("AC-3 message search labels a system note \"LilOS\"", async ({
-  page,
-}) => {
+test('AC-3 message search labels a system note "LilOS"', async ({ page }) => {
   test.setTimeout(180_000);
   await openApp(stack, page);
   /* Make a LilOS note searchable: Full access → "Auto-approved …" posts. */

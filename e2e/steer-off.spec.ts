@@ -74,9 +74,9 @@ test("AC-2 steer absent: a queued message can be removed before it sends", async
   await expect(tray).toHaveCount(0);
   // The removed item never appears as a message, even once the turn has ended
   // (had it not been removed it would have auto-sent as the next prompt).
-  await expect(
-    page.getByPlaceholder(/Reply to Builder/),
-  ).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByPlaceholder(/Reply to Builder/)).toBeVisible({
+    timeout: 60_000,
+  });
   await expect(
     page.getByText("actually never mind that", { exact: true }),
   ).toHaveCount(0);
