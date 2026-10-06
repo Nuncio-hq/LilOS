@@ -194,7 +194,10 @@ test("AC-576-3 Esc closes every named dialog — Hire, Add folder, Pair phone, S
   await page.getByRole("button", { name: "Profile", exact: true }).click();
   const card = page.getByRole("dialog", { name: /profile$/i });
   await expect(card).toBeVisible({ timeout: 15_000 });
-  await card.getByRole("button", { name: /^Edit$/ }).first().click();
+  await card
+    .getByRole("button", { name: /^Edit$/ })
+    .first()
+    .click();
   const edit = page.getByRole("dialog", { name: "Edit employee" });
   await expect(edit).toBeVisible({ timeout: 15_000 });
   await page.screenshot({ path: `${SHOTS}/ac-3-edit-open.png` });

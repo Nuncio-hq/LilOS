@@ -8,7 +8,6 @@ import type {
   AppMessage,
   Ask,
   Conversation,
-  ConversationsRewindResult,
   MessageSearchHit,
 } from "@lilos/contracts/app";
 import {
@@ -111,13 +110,6 @@ import {
   type OsEditor,
 } from "../lib/host";
 import {
-  beginRewind,
-  filesOnlyBanner,
-  flushRewind,
-  rewindDrops,
-  rewindUndone,
-} from "../lib/rewind";
-import {
   clock,
   formatUptime,
   threadUsage,
@@ -125,6 +117,13 @@ import {
   toUiEmployee,
 } from "../lib/mapping";
 import { currentName, humanFor, osFullName, osHome, profile } from "../lib/me";
+import {
+  beginRewind,
+  filesOnlyBanner,
+  flushRewind,
+  rewindDrops,
+  rewindUndone,
+} from "../lib/rewind";
 import {
   asks as asksAtom,
   engine,

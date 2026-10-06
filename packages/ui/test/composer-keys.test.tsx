@@ -68,7 +68,11 @@ describe("issue #576 composer keys — Esc never stops", () => {
     fireEvent.keyDown(box(c.container), { key: ".", ctrlKey: true });
     expect(onStop).toHaveBeenCalledTimes(2);
     /* `code` covers layouts where the key value isn't ".". */
-    fireEvent.keyDown(box(c.container), { key: ">", code: "Period", metaKey: true });
+    fireEvent.keyDown(box(c.container), {
+      key: ">",
+      code: "Period",
+      metaKey: true,
+    });
     expect(onStop).toHaveBeenCalledTimes(3);
   });
 
@@ -87,7 +91,12 @@ describe("issue #576 composer keys — Esc never stops", () => {
     expect(onStop).not.toHaveBeenCalled();
 
     const d = render(
-      <Composer placeholder="Reply…" employees={[]} hint="" status="streaming" />,
+      <Composer
+        placeholder="Reply…"
+        employees={[]}
+        hint=""
+        status="streaming"
+      />,
     );
     fireEvent.keyDown(box(d.container), { key: ".", metaKey: true });
     expect(onStop).not.toHaveBeenCalled();

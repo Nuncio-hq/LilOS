@@ -26,10 +26,10 @@ let listening = false;
  *  `@` menu, a Base UI popover/select, a vendored dialog. Those components
  *  handle Esc internally; the stack must not eat their key. */
 function foreignOverlayOpen(): boolean {
-  for (const el of document.querySelectorAll(OPEN_OVERLAY))
-    /* Only a visible, unowned overlay is foreign — Base UI keeps closed
+  /* Only a visible, unowned overlay is foreign — Base UI keeps closed
        menus/popovers mounted while they animate out, and counting them
        would swallow Esc meant for the layer underneath. */
+  for (const el of document.querySelectorAll(OPEN_OVERLAY))
     if (
       (el as HTMLElement).checkVisibility({ checkVisibilityCSS: true }) &&
       !stack.some((l) => l.el === el)

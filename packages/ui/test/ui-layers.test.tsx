@@ -2,7 +2,7 @@
 /* AC tests for issue #576 — Esc closes things, it never stops an employee's
    work. A mount-ordered UI-layer stack decides which surface owns the press
    (menu → dialog → panel → Focus); ■ / ⌘. is the real stop shortcut. */
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { composerKeyDown } from "../src/chat/composer-keys";
 import { useUiLayer, useUiLayerEl } from "../src/chat/ui-layers";

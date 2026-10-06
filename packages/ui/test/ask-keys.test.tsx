@@ -10,7 +10,10 @@ import type { Reply } from "../src/types";
 
 afterEach(cleanup);
 
-const approvalReply = (id: string, options = ["once", "session", "deny"]): Reply => ({
+const approvalReply = (
+  id: string,
+  options = ["once", "session", "deny"],
+): Reply => ({
   id: `r-${id}`,
   from: "builder",
   time: "",
@@ -78,12 +81,8 @@ describe("issue #558 pending ask selection", () => {
   });
 
   test("AC-558-4 approved/rejected plans and questions are not pending", () => {
-    expect(
-      pendingAsk([planReply("p1", "approved")], {}, true),
-    ).toBeNull();
-    expect(
-      pendingAsk([planReply("p1", "rejected")], {}, true),
-    ).toBeNull();
+    expect(pendingAsk([planReply("p1", "approved")], {}, true)).toBeNull();
+    expect(pendingAsk([planReply("p1", "rejected")], {}, true)).toBeNull();
   });
 });
 
@@ -112,13 +111,19 @@ describe("issue #558 key routing", () => {
     const r = approvalReply("a1");
     const setResolved = vi.fn();
     expect(
-      askKeyDown(ev("Backspace"), ctx({ ask: { kind: "approval", reply: r }, setResolved })),
+      askKeyDown(
+        ev("Backspace"),
+        ctx({ ask: { kind: "approval", reply: r }, setResolved }),
+      ),
     ).toBe(true);
     expect(setResolved).toHaveBeenCalledWith({ a1: "Denied by Riley" });
     setResolved.mockClear();
     // Esc is close-only (#576) — it must never answer a card.
     expect(
-      askKeyDown(ev("Escape"), ctx({ ask: { kind: "approval", reply: r }, setResolved })),
+      askKeyDown(
+        ev("Escape"),
+        ctx({ ask: { kind: "approval", reply: r }, setResolved }),
+      ),
     ).toBe(false);
     expect(setResolved).not.toHaveBeenCalled();
   });
@@ -131,7 +136,10 @@ describe("issue #558 key routing", () => {
     ).toBe(true);
     expect(onPlan).toHaveBeenCalledWith("approve", "p1");
     expect(
-      askKeyDown(ev("Backspace"), ctx({ ask: { kind: "plan", reply: r }, onPlan })),
+      askKeyDown(
+        ev("Backspace"),
+        ctx({ ask: { kind: "plan", reply: r }, onPlan }),
+      ),
     ).toBe(true);
     expect(onPlan).toHaveBeenCalledWith("reject", "p1");
   });
@@ -144,11 +152,16 @@ describe("issue #558 key routing", () => {
     const ta = document.createElement("textarea");
     const btn = document.createElement("button");
     expect(askKeyDown(ev("Enter", ta), ctx({ ask, setResolved }))).toBe(false);
-    expect(askKeyDown(ev("Backspace", ta), ctx({ ask, setResolved }))).toBe(false);
+    expect(askKeyDown(ev("Backspace", ta), ctx({ ask, setResolved }))).toBe(
+      false,
+    );
     expect(askKeyDown(ev("Enter", btn), ctx({ ask, setResolved }))).toBe(false);
     // A modifier-held Enter is never a card answer.
     expect(
-      askKeyDown(ev("Enter", document.body, { meta: true }), ctx({ ask, setResolved })),
+      askKeyDown(
+        ev("Enter", document.body, { meta: true }),
+        ctx({ ask, setResolved }),
+      ),
     ).toBe(false);
     expect(setResolved).not.toHaveBeenCalled();
     expect(onPlan).not.toHaveBeenCalled();
@@ -162,7 +175,9 @@ describe("issue #558 key routing", () => {
     ).toBe(true);
     expect(onStop).toHaveBeenCalledTimes(1);
     // Nothing running → nothing to stop → not handled.
-    expect(askKeyDown(ev(".", ta, { meta: true }), ctx({ onStop }))).toBe(false);
+    expect(askKeyDown(ev(".", ta, { meta: true }), ctx({ onStop }))).toBe(
+      false,
+    );
   });
 });
 

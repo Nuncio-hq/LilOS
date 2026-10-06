@@ -304,8 +304,7 @@ function TurnRowImpl({
     acts.current.onAnswer &&
     ((q: QuestionAsk, a: QuestionAnswer) => acts.current.onAnswer?.(q, a));
   const onCancel =
-    acts.current.onCancel &&
-    ((q: QuestionAsk) => acts.current.onCancel?.(q));
+    acts.current.onCancel && ((q: QuestionAsk) => acts.current.onCancel?.(q));
   const cls = cn(
     "transition-colors duration-500",
     frame === "focus" && "rounded-lg",
