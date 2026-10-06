@@ -12,6 +12,10 @@ import { BrainIcon, ChevronDownIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { createContext, memo, useCallback, useContext, useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
+import {
+  safeMessageComponents,
+  safeMessageRehypePlugins,
+} from "./message-safety";
 import { Shimmer } from "./shimmer";
 
 type ReasoningContextValue = {
@@ -212,8 +216,14 @@ export const ReasoningContent = memo(
       )}
       {...props}
     >
-      {/* props belong to CollapsibleContent; Streamdown's `dir` type is narrower */}
-      <Streamdown>{children}</Streamdown>
+      {/* props belong to CollapsibleContent; Streamdown's `dir` type is narrower.
+          Reasoning is agent-written markdown too — same reply safety (#566). */}
+      <Streamdown
+        components={safeMessageComponents}
+        rehypePlugins={safeMessageRehypePlugins}
+      >
+        {children}
+      </Streamdown>
     </CollapsibleContent>
   )
 );

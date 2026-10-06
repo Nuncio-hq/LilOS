@@ -4,7 +4,10 @@
  * blocks leg (ts, python, bash, a long unbroken JSON line, markdown-looking
  * text inside a fence, an unlabelled indented block, a diff) and the #306
  * GFM table leg. Scripted replies key off `md: <name>` in script.ts; the
- * mobile prototype embeds the same literals in its mock thread.
+ * mobile prototype embeds the same literals in its mock thread. `md: links`
+ * (#566) is the reply-safety leg: a remote image (must render as a
+ * click-to-load placeholder on desktop, literal text on the phone) plus
+ * javascript:/file:/smb: links that must render as plain text.
  */
 
 export const MARKDOWN_BLOCKS_SAMPLE = `Here's the change set — seven blocks, each its own kind:
@@ -92,3 +95,11 @@ Alignment matters too — right, center, left:
 | 123 | Desktop | 76.345 |
 
 Everything outside the tables renders as normal prose.`;
+
+export const MARKDOWN_LINKS_SAMPLE = `Here's what I pulled up:
+
+![network map](https://img.example.com/lilos-topology.png?session=abc123)
+
+- Docs: [architecture notes](https://lilos.dev/docs/architecture) — a normal link.
+- Watch-outs: [the payload](javascript:alert(1)), [a local file](file:///etc/passwd) and [the share](smb://files.local/share) must stay text, not links.
+- Or ping [ops](mailto:ops@lilos.dev) if the map looks wrong.`;
