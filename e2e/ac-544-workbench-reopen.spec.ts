@@ -15,6 +15,9 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  * close/reopen. Assertions that prove "first frame" are one-shot `.count()`
  * reads right after the reopen click — a cached mount already has rows in
  * the DOM before any fresh read could possibly land.
+ * #547 adds: the picked tab surviving a Focus remount (AC-1), per-tab
+ * scroll offsets restored on reopen (AC-2), and the <50 ms first-row
+ * budget on a ≥2,000-file repo (AC-5, windowed first frame).
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -39,6 +42,22 @@ git(["add", "."]);
 git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init"]);
 /* An uncommitted change so Changes has a row to reselect. */
 writeFileSync(path.join(repoDir, "a.txt"), "alpha\nchanged\n");
+
+/* #547 AC-5: a large repo — ≥ 2,000 tracked files so the Files tree's
+   mount cost dominates the reopen measurement (LilOS itself measured
+   114 ms before the windowed first frame). */
+const bigDir = path.join(ROOT, "big-repo");
+mkdirSync(bigDir, { recursive: true });
+const gitBig = (args: string[]) =>
+  execFileSync("git", args, { cwd: bigDir, encoding: "utf8" });
+gitBig(["init", "-b", "trunk"]);
+/* Flat on purpose: dirs without changed files start collapsed, so nested
+   files would never mount as rows and the window would go unexercised. */
+for (let f = 0; f < 2400; f++)
+  writeFileSync(path.join(bigDir, `f${String(f).padStart(4, "0")}.txt`), "x\n");
+gitBig(["add", "."]);
+gitBig(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init"]);
+const BIG_ROWS = 2400;
 
 /* `gh pr view --json` fixture — one OPEN PR so the PR tab exists. */
 writeFileSync(
@@ -155,7 +174,9 @@ const rows = (page: Page) => page.getByRole("treeitem");
    not have produced them yet. Returns the measured reopen→rows ms. */
 async function reopenTimed(page: Page) {
   await workbenchToggle(page).click();
-  await expect(rows(page).first()).toHaveCount(0);
+  /* #547 AC-5: the panel hides (display:none) rather than unmounting —
+     "closed" = the shell hidden; its rows stay in the DOM. */
+  await expect(page.locator("[data-wb-shell]")).toBeHidden();
   /* Reopen + measure in-page: t0 = the click itself, t1 = first treeitem
      in the DOM — the number AC-6 compares before/after (target <50ms).
      `first` = rows present with NO "Reading" hold frame in between — the
@@ -169,9 +190,20 @@ async function reopenTimed(page: Page) {
         let sawHold = false;
         const tick = () => {
           if (document.querySelector("[data-wb-probing]")) sawHold = true;
-          const n = document.querySelectorAll('[role="treeitem"]').length;
+          /* Rows stay mounted while the panel is hidden (#547 keep-mounted
+             reopen) — count them only once the shell is actually shown. */
+          const shell = document.querySelector("[data-wb-shell]");
+          const vis = shell
+            ? getComputedStyle(shell).display !== "none"
+            : false;
+          const n = vis
+            ? document.querySelectorAll('[role="treeitem"]').length
+            : 0;
           if (n > 0)
-            return res({ first: sawHold ? 0 : n, ms: performance.now() - t0 });
+            return res({
+              first: sawHold ? 0 : n,
+              ms: performance.now() - t0,
+            });
           if (performance.now() - t0 > 10_000) return res({ first: 0, ms: -1 });
           requestAnimationFrame(tick);
         };
@@ -222,7 +254,7 @@ test("AC-1/2/4: reopen shows last-known rows on the first frame, no Reading hold
   /* Reopen #2 — the open file view comes back on its cached content on the
      first frame (the tree is replaced by the editor, so no row count). */
   await workbenchToggle(page).click();
-  await expect(tab(page, "Files")).toHaveCount(0);
+  await expect(page.locator("[data-wb-shell]")).toBeHidden();
   await workbenchToggle(page).click();
   await page.evaluate(
     () => new Promise((r) => requestAnimationFrame(() => r(null))),
@@ -235,7 +267,9 @@ test("AC-1/2/4: reopen shows last-known rows on the first frame, no Reading hold
   await page.screenshot({ path: `${SHOTS}/ac-4-fileview-dark.png` });
   await page.emulateMedia({ colorScheme: "light" });
 
-  /* Esc out of Focus and back — the remount shows cached data too. */
+  /* Esc out of Focus and back — the remount shows cached data too, and
+     #547 AC-1: the picked tab (Files) survives the Focus remount, not
+     only a panel toggle. */
   await page.keyboard.press("Escape");
   await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
   await page
@@ -244,7 +278,59 @@ test("AC-1/2/4: reopen shows last-known rows on the first frame, no Reading hold
     .click();
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
   expect(page.locator("[data-wb-probing]")).toHaveCount(0);
+  await expect(tab(page, "Files")).toHaveAttribute("aria-selected", "true");
   await page.screenshot({ path: `${SHOTS}/ac-1-refocus.png` });
+});
+
+test("AC-5/AC-2 on a 2,400-file repo: reopen → first row in the first frame under 50 ms, scroll offset restored", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1288, height: 700 });
+  await dmDefault(page);
+  await pickSessionFolder(page, bigDir);
+  await send(page, "check the folder");
+  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
+  await tab(page, "Files").click();
+  await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
+  /* The windowed first frame grows to the full tree over the next
+     frames — all 2,440 rows must land, none lost to the window. */
+  await expect(rows(page)).toHaveCount(BIG_ROWS, { timeout: 60_000 });
+
+  /* AC-2: park the Files list at a scrolled position so the reopen has
+     an offset to restore. */
+  const vp = page.locator(
+    '[data-wb-scroll="files"] [data-slot="scroll-area-viewport"]',
+  );
+  await expect(vp).toHaveCount(1);
+  await vp.evaluate((el) => {
+    el.scrollTop = 600;
+    el.dispatchEvent(new Event("scroll"));
+  });
+
+  /* AC-5: three reopens — the number AC-5 budgets is the best
+     reopen→first-row time; every run also proves rows render in the
+     first frame (`n` counts them with no Reading hold in between). */
+  const msLog: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    const { n, ms } = await reopenTimed(page);
+    msLog.push(ms);
+    expect(n).toBeGreaterThan(0);
+    expect(page.locator("[data-wb-probing]")).toHaveCount(0);
+  }
+  console.log(
+    `[ac-544] big-repo reopen → first-frame rows, ms=[${msLog.join(",")}]`,
+  );
+  expect(Math.min(...msLog)).toBeLessThan(50);
+  /* AC-2: the scroll offset survived the close/reopen — the restored
+     viewport is where it was left (rows keep mounting under it). */
+  const st = await vp.evaluate((el) => el.scrollTop);
+  expect(Math.abs(600 - st)).toBeLessThanOrEqual(8);
+  await page.screenshot({ path: `${SHOTS}/ac-5-big-repo-reopen.png` });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: `${SHOTS}/ac-5-big-repo-dark.png` });
+  await page.emulateMedia({ colorScheme: "light" });
 });
 
 test("AC-6 on LilOS itself: Workbench reopen → Files visible, measured", async ({

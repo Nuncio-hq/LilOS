@@ -16,7 +16,15 @@ import {
   PanelRightOpenIcon,
   PlayIcon,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AccessPill } from "../chat/access-pill";
 import {
   ConversationKeepBottom,
@@ -65,6 +73,7 @@ import { UserTurn } from "../conversation/turns";
 import { sessionModelId } from "../lib/context-window";
 import { PHASE_LABEL } from "../lib/helpers";
 import { cn } from "../lib/utils";
+import { readWbCache } from "../lib/wb-probe-cache";
 import { HermesAvatar } from "../shell/avatars";
 import type {
   AttachedFile,
@@ -299,16 +308,74 @@ export function FocusView({
         (work != null || !channel.dm || engineContent)) ||
       initialTab !== undefined,
   );
+  /* #547 AC-5: closing the panel hides the aside (display:none) instead of
+     unmounting it. On a big repo the remount is the whole reopen cost
+     (~220 ms shell + ~0.3 ms/row) — keeping the DOM makes reopen a class
+     flip. `wbEverOpened` mounts on first open only, and the element below
+     is memoized so a wbOpen toggle doesn't re-render the tree (its props
+     are unchanged). Focus remounts still unmount — the wb-probe-cache
+     covers those. */
+  const wbEverOpened = useRef(wbOpen);
+  if (wbOpen) wbEverOpened.current = true;
+  /* The visibility flip lands synchronously: the React re-render that
+     re-asserts the same `hidden` class costs ~100 ms on a big repo, and
+     the user shouldn't wait for it to see the panel (#547 AC-5). Every
+     setWbOpen call site goes through this so state and DOM agree. The
+     state update itself rides a transition so it renders off the click's
+     critical path — the imperative class flip paints first. */
+  const wbOpenWanted = useRef(wbOpen);
+  const wbFlip = useCallback((open: boolean) => {
+    /* `wbOpen` inside a handler can be stale while a transition is still
+       rendering — the ref tracks the wanted value at click time so rapid
+       close→open clicks never toggle the wrong way (#547). The DOM class
+       flips synchronously (the user's frame); the state update waits a
+       frame so the ~65 ms FocusView re-render can't delay first paint. */
+    wbOpenWanted.current = open;
+    /* Converge to the LATEST wanted value at fire time — a rapid
+       close→open→close leaves several timers queued and only the final
+       wanted state is correct. */
+    setTimeout(() => setWbOpen(wbOpenWanted.current), 0);
+    document
+      .querySelector("[data-wb-shell]")
+      ?.classList.toggle("hidden", !open);
+  }, []);
+  const wbClose = useCallback(() => wbFlip(false), [wbFlip]);
+  const wbSend = useCallback((t: string) => onSend(t), [onSend]);
+  /* #547 AC-1: a Focus remount (Esc out/in, session switch and back)
+     reseeds the picked tab from the folder's cache entry — only a panel
+     toggle was covered before. A `?tab=` deep link still wins. A
+     cache-seeded pick counts as a pick, so follow must start disarmed —
+     otherwise the lastDone/liveKey effects below re-apply "changes" on
+     mount and stomp it before the first paint. */
+  const cachedTab =
+    work?.path && host ? readWbCache(host, work.path)?.tab : undefined;
   const [tab, setTab] = useState<WbTab>(
     () =>
       initialTab ??
+      cachedTab ??
       (sessionArtifacts(thread).diffs.length ? "changes" : "terminal"),
   );
   /* Follow lives in a ref, not state: a `?tab=` deep link applying in the
      same commit as a turn's step/settle event would let the later effects
      below read the stale pre-deep-link `follow` and steal the tab it just
      applied (their setState queues after, so the steal would win). */
-  const followRef = useRef(!initialTab);
+  const followRef = useRef(!initialTab && cachedTab == null);
+  /* #547 AC-1 (cont.): `work` can arrive a render after mount (conv still
+     loading) — then the mount seed above missed and the tab picked the
+     heuristic ("terminal"→falls back to Changes). Seed once more when
+     host+path first become available, in a layout effect so the restore
+     lands before the next paint. `seededTab` also flips on any user pick
+     or `?tab=` apply so a late seed never stomps a real choice. */
+  const seededTab = useRef(initialTab !== undefined);
+  useLayoutEffect(() => {
+    if (seededTab.current || !work?.path || !host) return;
+    seededTab.current = true;
+    const saved = readWbCache(host, work.path)?.tab;
+    if (saved != null) {
+      followRef.current = false;
+      setTab(saved);
+    }
+  }, [work?.path, host, initialTab]);
   /* Why follow is disarmed matters for the re-arm below: a `?tab=` deep
      link holds the named tab even while a still-starting turn streams in
      (#319); a manual pick or a `workbench_open` spot does not — a turn
@@ -323,10 +390,11 @@ export function FocusView({
   useEffect(() => {
     if (!initialTab || initialTab === appliedTab.current) return;
     appliedTab.current = initialTab;
+    seededTab.current = true; // a `?tab=` apply counts as the seed (#547)
     deepLinkHold.current = true;
     setTab(initialTab);
     followRef.current = false;
-    setWbOpen(true);
+    wbFlip(true);
   }, [initialTab]);
   /* #138 AC-3: a search hit opens the session in Focus (#114) scrolled to
      that message with a short flash — mirrors ThreadView's jump-to-hit.
@@ -403,7 +471,16 @@ export function FocusView({
      not yet picked away) a still-starting turn must NOT re-arm — its
      `turn.started` landing post-attach would let `liveKey` steal the
      deep-linked tab on the next step (#319). */
+  /* Re-arm only when a NEW turn appears while mounted: the mount-run must
+     not fire for a turn already streaming when the view attached — on a
+     Focus remount that would re-engage follow and let liveKey steal the
+     cache-seeded tab mid-turn (#547 AC-1). A pick made mid-turn still
+     re-arms on the NEXT turn (live.id changes) exactly as before (#396). */
+  const seenLive = useRef(live?.id);
   useEffect(() => {
+    const id = live?.id;
+    if (id === seenLive.current) return;
+    seenLive.current = id;
     if (!deepLinkHold.current && live && live.postAttach !== false)
       followRef.current = true;
   }, [live?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -425,7 +502,7 @@ export function FocusView({
   useEffect(() => {
     if (thread.pr) {
       setTab("pr");
-      setWbOpen(true);
+      wbFlip(true);
     }
   }, [thread.pr?.number]); // eslint-disable-line react-hooks/exhaustive-deps
   const pr = thread.pr;
@@ -440,17 +517,21 @@ export function FocusView({
   useEffect(() => {
     if (followRef.current && liveHelpers) setTab("subagents");
   }, [liveHelpers]); // eslint-disable-line react-hooks/exhaustive-deps
-  const pickTab = (t: WbTab) => {
-    setTab(t);
-    followRef.current = false;
-    /* A pick lifts the deep-link hold (new turns re-arm follow) and its
-       `?tab=` echo must not re-mark the hold — record it as applied so
-       the effect above treats the echo as a no-op. */
-    deepLinkHold.current = false;
-    appliedTab.current = t;
-    setWbOpen(true);
-    onTab?.(t);
-  };
+  const pickTab = useCallback(
+    (t: WbTab) => {
+      setTab(t);
+      seededTab.current = true; // a manual pick counts as the seed (#547)
+      followRef.current = false;
+      /* A pick lifts the deep-link hold (new turns re-arm follow) and its
+         `?tab=` echo must not re-mark the hold — record it as applied so
+         the effect above treats the echo as a no-op. */
+      deepLinkHold.current = false;
+      appliedTab.current = t;
+      wbFlip(true);
+      onTab?.(t);
+    },
+    [onTab, wbFlip],
+  );
   /* #430: row handlers ride a ref rewritten each render — the memoized
      TurnRow never sees a fresh callback identity (pickTab is one), and
      its reads are always the latest closures. */
@@ -473,7 +554,7 @@ export function FocusView({
   const wbSpotAt = wbSpot?.at;
   useEffect(() => {
     if (!wbSpot) return;
-    setWbOpen(true);
+    wbFlip(true);
     followRef.current = false;
     deepLinkHold.current = false;
   }, [wbSpotAt]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -528,6 +609,75 @@ export function FocusView({
      and Esc pressed inside a field stays there (#114 AC-1, same rules as
      issue #104). */
   useEscapeKey(onBack);
+
+  /* The memoized element keeps the whole Workbench subtree out of the
+     render when only `wbOpen` flips — otherwise a 2,000-row file tree
+     reconciles on every open/close (#547 AC-5). */
+  const wbEl = useMemo(
+    () => (
+      <Workbench
+        thread={thread}
+        work={work}
+        isDM={isDM}
+        lead={lead}
+        tab={tab}
+        setTab={pickTab}
+        onClose={wbClose}
+        onStart={onStart}
+        startYields={startCardOpen}
+        onSend={wbSend}
+        say={say}
+        repoFiles={repoFiles}
+        host={host}
+        human={human}
+        onPrComment={onPrComment}
+        onPrMerge={onPrMerge}
+        live={surfaces}
+        onStopJob={onStopJob}
+        emp={emp}
+        onOpenSession={onOpenSession}
+        running={running}
+        sendPending={pendingSteers.length > 0}
+        steer={steer}
+        editors={editorsProp}
+        onOpenPath={onOpenPath}
+        browser={browser}
+        spot={wbSpot}
+        ship={ship}
+        onAllowed={setWbReported}
+      />
+    ),
+    [
+      thread,
+      work,
+      isDM,
+      lead,
+      tab,
+      pickTab,
+      wbClose,
+      onStart,
+      startCardOpen,
+      wbSend,
+      say,
+      repoFiles,
+      host,
+      human,
+      onPrComment,
+      onPrMerge,
+      surfaces,
+      onStopJob,
+      emp,
+      onOpenSession,
+      running,
+      pendingSteers.length,
+      steer,
+      editorsProp,
+      onOpenPath,
+      browser,
+      wbSpot,
+      ship,
+    ],
+  );
 
   return (
     <main className="lilos-glass flex min-h-0 min-w-0 flex-1 flex-col">
@@ -700,7 +850,7 @@ export function FocusView({
               variant={wbOpen ? "secondary" : "ghost"}
               size="icon-sm"
               title="Workbench"
-              onClick={() => setWbOpen(!wbOpen)}
+              onClick={() => wbFlip(!wbOpenWanted.current)}
             >
               {wbOpen ? <PanelRightCloseIcon /> : <PanelRightOpenIcon />}
             </Button>
@@ -721,9 +871,10 @@ export function FocusView({
       <div
         className={cn(
           "grid min-h-0 flex-1 grid-cols-1",
+          /* The 2-col layout follows the shell's own class, not wbOpen —
+             it flips in the same frame the panel does (#547 AC-5). */
           wbAvailable &&
-            wbOpen &&
-            "lg:grid-cols-[minmax(0,1fr)_minmax(400px,46%)]",
+            "has-[[data-wb-shell]:not(.hidden)]:lg:grid-cols-[minmax(0,1fr)_minmax(400px,46%)]",
         )}
       >
         <section ref={turnsRef} className="flex min-h-0 min-w-0 flex-col">
@@ -957,44 +1108,25 @@ export function FocusView({
           {children}
         </section>
 
-        {wbAvailable && wbOpen && (
+        {wbAvailable && wbEverOpened.current && (
           <>
-            <div
-              className="fixed inset-0 z-20 bg-black/20 lg:hidden"
-              onClick={() => setWbOpen(false)}
-            />
-            <aside className="lilos-glass flex min-h-0 flex-col border-l bg-background lg:my-2 lg:mr-2 max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:w-[min(560px,100vw)] max-lg:shadow-2xl">
-              <Workbench
-                thread={thread}
-                work={work}
-                isDM={isDM}
-                lead={lead}
-                tab={tab}
-                setTab={pickTab}
-                onClose={() => setWbOpen(false)}
-                onStart={onStart}
-                startYields={startCardOpen}
-                onSend={(t) => onSend(t)}
-                say={say}
-                repoFiles={repoFiles}
-                host={host}
-                human={human}
-                onPrComment={onPrComment}
-                onPrMerge={onPrMerge}
-                live={surfaces}
-                onStopJob={onStopJob}
-                emp={emp}
-                onOpenSession={onOpenSession}
-                running={running}
-                sendPending={pendingSteers.length > 0}
-                steer={steer}
-                editors={editorsProp}
-                onOpenPath={onOpenPath}
-                browser={browser}
-                spot={wbSpot}
-                ship={ship}
-                onAllowed={setWbReported}
+            {wbOpen && (
+              <div
+                className="fixed inset-0 z-20 bg-black/20 lg:hidden"
+                onClick={wbClose}
               />
+            )}
+            <aside
+              className={cn(
+                "lilos-glass flex min-h-0 flex-col border-l bg-background lg:my-2 lg:mr-2 max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:w-[min(560px,100vw)] max-lg:shadow-2xl",
+                /* Reads the wanted value: an unrelated render landing while
+                   a deferred setWbOpen is still pending must not re-hide a
+                   panel wbFlip just opened (#547). */
+                !wbOpenWanted.current && "hidden",
+              )}
+              data-wb-shell
+            >
+              {wbEl}
             </aside>
           </>
         )}
