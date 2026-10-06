@@ -92,6 +92,8 @@ export function FirstRun({
     },
   ];
   const ready = rows.every((r) => r.check.state === "ok");
+  /* #589: once a leg fails, "Setting itself up…" is a lie — drop it. */
+  const failed = rows.some((r) => r.check.state === "failed");
   const finish = () => onOpenDM({ name: name.trim(), company: company.trim() });
   if (page === "connect" && connect)
     return (
@@ -118,7 +120,9 @@ export function FirstRun({
         </div>
         <h1 className="font-semibold text-xl">Welcome to LilOS</h1>
         <p className="mt-1 text-muted-foreground text-sm">
-          One chat for your AI employees. Setting itself up…
+          {failed
+            ? "One chat for your AI employees."
+            : "One chat for your AI employees. Setting itself up…"}
         </p>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <Field label="Your name">

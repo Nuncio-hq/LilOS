@@ -75,6 +75,11 @@ test("AC-2 a dead engine shows its plain reason + See status, never a green tick
     const legText = await failed.innerText();
     expect(legText).not.toMatch(/\//);
     expect(legText).not.toMatch(/HERMES_/);
+    /* Once a leg has failed, the subtitle can't claim it is still
+       "Setting itself up…". */
+    await expect(page.locator("[data-first-run]")).not.toContainText(
+      "Setting itself up",
+    );
     /* The reason is plain words, and "See status" opens the dialog. */
     const seeStatus = failed.getByRole("button", { name: "See status" });
     await expect(seeStatus).toBeVisible();

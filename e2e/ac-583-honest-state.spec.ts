@@ -239,3 +239,49 @@ test("AC-3 a live background job says so on the row and in the thread", async ({
   ).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-3-background-job.png` });
 });
+
+test("AC-2 the reply count on the row matches the thread divider", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await openApp(stack, page);
+  /* Full access → the turn carries a LilOS note ("Auto-approved …") beside
+     the agent's reply — the row and the thread divider must report the
+     same reply count, skipping the note. */
+  const pill = page.locator('[data-slot="access-pill"]');
+  await expect(pill).toBeVisible({ timeout: 30_000 });
+  await pill.click();
+  await expect(pill).toHaveAttribute("data-access", "full");
+  await send(page, "Add a footer to the page");
+  /* The settle anchor lives inside the agent turn's footer — scope it so
+     no stubbed/older anchor can satisfy the wait early. */
+  await expect(
+    page.locator("[data-agentturn]").last().locator("[data-turnsettled]"),
+  ).toBeVisible({ timeout: 90_000 });
+
+  await dmHome(stack, page);
+  /* Grab OUR row by its title — an earlier test's row can sit last while
+     this session's summary is still filling in. */
+  const row = page
+    .locator("[data-session]")
+    .filter({ hasText: "Add a footer to the page" })
+    .last();
+  await expect(row).toContainText(/\d+ repl/, { timeout: 30_000 });
+  const cardText = await row.innerText();
+  const cardCount = Number(cardText.match(/(\d+) repl(?:y|ies)/)?.[1]);
+  expect(cardCount).toBeGreaterThan(0);
+  await row.locator("button").last().click();
+
+  /* The open thread holds system notes — parity must skip them. */
+  await expect(
+    page.locator("[data-thread-panel] [data-sysnote]").first(),
+  ).toBeVisible({ timeout: 30_000 });
+  const divider = page
+    .locator("[data-thread-panel]")
+    .getByText(/^\d+ repl(?:y|ies)$/);
+  await expect(divider.first()).toBeVisible({ timeout: 30_000 });
+  const dividerCount = Number(
+    (await divider.first().innerText()).match(/(\d+)/)?.[1],
+  );
+  expect(dividerCount).toBe(cardCount);
+});
