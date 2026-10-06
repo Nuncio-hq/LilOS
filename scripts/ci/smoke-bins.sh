@@ -187,7 +187,9 @@ const fail = (m: string): never => {
   console.error(m);
   process.exit(1);
 };
-const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+const ws = new WebSocket(
+  `ws://127.0.0.1:${port}/ws?token=${encodeURIComponent(token)}`,
+);
 ws.addEventListener("close", (e) => fail(`socket closed ${e.code}`));
 ws.addEventListener("error", () => fail("socket error"));
 const send = (id: string, method: string, params: unknown) =>
