@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { RelayClient } from "@lilos/client-runtime";
 import {
@@ -7,7 +9,7 @@ import {
   WS_CLOSE_HELLO_TIMEOUT,
 } from "@lilos/contracts/app";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import WebSocket from "ws";
+import WebSocket, { WebSocketServer } from "ws";
 import { authorizeRelayUpgrade } from "../src/auth";
 import { createPairingService } from "../src/pairing";
 import { createRelay } from "../src/session";
@@ -268,5 +270,94 @@ describe("AC-3 a socket that never completes session.hello is closed", () => {
     await expect(silentClosed).resolves.toBe(WS_CLOSE_HELLO_TIMEOUT);
     await expect(live.ping()).resolves.toBeUndefined();
     live.close();
+  }, 30_000);
+});
+
+describe("rollout compat: a NEW client still connects to an OLD relay", () => {
+  /* Phones update on the TestFlight schedule, not the Mac's — so a client
+     that puts its credential on the socket URL must still connect to a
+     relay whose upgrade ignores the query entirely (the pre-#625 shape:
+     pathname check only, auth at session.hello). This rig rebuilds that
+     shape over the same `createRelay` ws layer: `handleUpgrade` never
+     looks at the query string. */
+  async function startQueryBlindRelay(): Promise<{
+    url: string;
+    close: () => void;
+    pairing: ReturnType<typeof createPairingService>;
+  }> {
+    const store = createMemoryStore();
+    const pairing = createPairingService({ store });
+    const relay = createRelay({ store, token: TOKEN, pairing });
+    const server = createServer((_req, res) => {
+      res.writeHead(404).end();
+    });
+    const wss = new WebSocketServer({ noServer: true });
+    server.on("upgrade", (message, socket, head) => {
+      /* The OLD upgrade gate: pathname only — a credential on the query is
+         ignored (a ws-package client sends no Origin, so #568's gate is
+         inert here exactly as it was for non-browser peers). */
+      if (new URL(message.url ?? "/", "http://x").pathname !== "/ws") {
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(message, socket, head, (ws) => {
+        const conn = relay.connect({
+          send: (frame) => ws.send(frame),
+          close: (code, reason) => ws.close(code, reason),
+        });
+        ws.on("message", (data) => void conn.receive(data.toString()));
+        ws.on("close", () => conn.closed());
+      });
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    return {
+      url: `ws://127.0.0.1:${port}/ws`,
+      close: () => {
+        wss.close();
+        server.close();
+      },
+      pairing,
+    };
+  }
+
+  it("credential-on-URL clients complete session.hello on a query-blind relay", async () => {
+    const old = await startQueryBlindRelay();
+    try {
+      /* Mac/web leg: `?token=` is ignored at the upgrade; the same token
+         then authenticates session.hello exactly as before #625. */
+      const mac = new RelayClient({
+        url: old.url,
+        token: TOKEN,
+        socketFactory: wsFactory().factory,
+        autoReconnect: false,
+        client: { name: "e2e-625-old-relay-mac" },
+      });
+      await expect(mac.connect()).resolves.toMatchObject({
+        protocolVersion: APP_PROTOCOL_VERSION,
+      });
+
+      /* Phone leg: `?deviceId=&credential=` ignored at the upgrade; hello
+         authenticates the paired device (pairing predates #625 — #153). */
+      const grant = await old.pairing.mintGrant();
+      const ex = await old.pairing.exchangeGrant({ code: grant.code });
+      if (!("device" in ex)) throw new Error("exchange failed");
+      const phone = new RelayClient({
+        url: old.url,
+        device: { deviceId: ex.device.id, credential: ex.credential },
+        socketFactory: wsFactory().factory,
+        autoReconnect: false,
+        client: { name: "e2e-625-old-relay-phone" },
+      });
+      await expect(phone.connect()).resolves.toMatchObject({
+        protocolVersion: APP_PROTOCOL_VERSION,
+      });
+      phone.close();
+      mac.close();
+    } finally {
+      old.close();
+    }
   }, 30_000);
 });
