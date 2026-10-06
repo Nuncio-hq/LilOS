@@ -17,7 +17,7 @@
  * kills or touches anything it did not spawn.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
   cpSync,
@@ -45,6 +45,11 @@ import {
 } from "../../packages/engine-hermes/src/gateway";
 import { startHermesServe } from "../../packages/engine-hermes/src/serve";
 import { connectInMemory } from "../../packages/engine-hermes/src/transport";
+import {
+  isHermesVersionSupported,
+  MIN_HERMES_VERSION,
+  parseHermesVersion,
+} from "../../packages/engine-hermes/src/version";
 import type { AppOps } from "../../packages/surfaces/src/drivers";
 import { cleanup, startStub } from "./lib/helpers";
 
@@ -404,9 +409,26 @@ check(
 
 /* Same fact from the hermes side: the isolated backend logs the
    "bound anyway (observe-only)" line — only the host rendezvous record is
-   unpublished; plugins/sessions/resume all work. `_log.warning` lands in
-   the serve child's output on some builds and in log files under
-   HERMES_HOME on others — read BOTH, fail only if neither has it. */
+   unpublished; plugins/sessions/resume all work. The warning ships with
+   the multiplex code (hermes-agent 9eb90b0a), i.e. >= MIN_HERMES_VERSION;
+   an older build has no such line to emit, so gate the assertion on the
+   probed version and SKIP loudly (never a silent PASS) below it.
+   `_log.warning` lands in the serve child's output on some builds and in
+   log files under HERMES_HOME on others — read BOTH, fail only if neither
+   has it. */
+const hermesVersion = (() => {
+  try {
+    const r = spawnSync(HERMES_BIN, ["--version"], {
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+    return parseHermesVersion(`${r.stdout ?? ""}\n${r.stderr ?? ""}`);
+  } catch {
+    return undefined;
+  }
+})();
+const emitsObserveOnly =
+  hermesVersion !== undefined && isHermesVersionSupported(hermesVersion);
 const observeLines: string[] = [...hermes.logTail().split("\n")].filter(
   (l) => l.includes("observe-only") || l.includes("already owns this host"),
 );
@@ -434,11 +456,17 @@ for (const p of logFiles) {
     /* unreadable file */
   }
 }
-check(
-  observeLines.length > 0,
-  `engine backend went observe-only in hermes output (${observeLines.length} lines)`,
-);
-for (const l of observeLines.slice(0, 3)) out(`  observe-line: ${l}`);
+if (emitsObserveOnly) {
+  check(
+    observeLines.length > 0,
+    `engine backend went observe-only in hermes output (${observeLines.length} lines)`,
+  );
+  for (const l of observeLines.slice(0, 3)) out(`  observe-line: ${l}`);
+} else {
+  out(
+    `SKIP engine backend observe-only line — hermes ${hermesVersion ?? "(unrecognized version)"} < ${MIN_HERMES_VERSION} does not emit it`,
+  );
+}
 
 /* AC-2: the session's tool list — wire `tools.list` scoped to this session. */
 let offered: string[] = [];
