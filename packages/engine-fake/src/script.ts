@@ -8,6 +8,7 @@
  */
 import {
   MARKDOWN_BLOCKS_SAMPLE,
+  MARKDOWN_LINKS_SAMPLE,
   MARKDOWN_TABLE_SAMPLE,
 } from "./markdown-samples.js";
 
@@ -188,17 +189,21 @@ export function scriptFor(
     };
   }
 
-  /* `md: blocks` / `md: table` — Oscar's markdown sample replies verbatim
-     (#259/#306 legs: what the mobile Prose does with them is the point). */
-  const md = /^md(?:arkdown)?:\s*(blocks|table)/i.exec(q);
+  /* `md: blocks` / `md: table` / `md: links` — Oscar's markdown sample
+     replies verbatim (#259/#306/#566 legs: what the renderer does with
+     them is the point). */
+  const md = /^md(?:arkdown)?:\s*(blocks|table|links)/i.exec(q);
   if (md) {
+    const which = md[1].toLowerCase();
     return {
-      reasoning: `The ${md[1].toLowerCase()} markdown sample, verbatim — its rendering is what gets judged.`,
+      reasoning: `The ${which} markdown sample, verbatim — its rendering is what gets judged.`,
       steps: [],
       text:
-        md[1].toLowerCase() === "table"
+        which === "table"
           ? MARKDOWN_TABLE_SAMPLE
-          : MARKDOWN_BLOCKS_SAMPLE,
+          : which === "links"
+            ? MARKDOWN_LINKS_SAMPLE
+            : MARKDOWN_BLOCKS_SAMPLE,
     };
   }
 
