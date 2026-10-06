@@ -10,6 +10,7 @@ import type {
   Ask,
   Conversation,
   Employee,
+  SummaryMessage,
 } from "@lilos/contracts/app";
 import type {
   BackgroundJob,
@@ -319,10 +320,14 @@ export function stripPlans(
     );
 }
 
+/** #571: summary rows carry the preview subset of a message — these
+    mappers read only fields both shapes share. */
+type ReplySource = AppMessage | SummaryMessage;
+
 /* One relay row -> one Reply. conv-fold caches these per message row so
    rows untouched by a delta keep their identity for the memoized
    renderer (#430). */
-const messageReply = (m: AppMessage): Reply => ({
+const messageReply = (m: ReplySource): Reply => ({
   id: m.id,
   from: m.authorKind === "system" ? "" : m.authorId,
   time: clock(m.createdAt),
@@ -338,9 +343,9 @@ const messageReply = (m: AppMessage): Reply => ({
     `cache` (#430): pass a WeakMap keyed on the message row to keep Reply
     identity stable across re-folds. */
 export function conversationReplies(
-  messages: AppMessage[],
+  messages: ReplySource[],
   conversationId: string,
-  cache?: WeakMap<AppMessage, Reply>,
+  cache?: WeakMap<ReplySource, Reply>,
 ): Reply[] {
   return (
     messages
@@ -673,7 +678,7 @@ export function threadUsage(
  * `mergeTurns` output as `replies` so engine turns show as rich cards.
  */
 export function toFeed(
-  root: AppMessage,
+  root: ReplySource,
   conv: Conversation,
   replies: Reply[],
   /** Folder the session works in (#113) — feeds the row + header badges. */

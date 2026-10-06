@@ -496,8 +496,8 @@ describe("sessions history (#28)", () => {
             state: string;
           };
           root: { id: string; text: string };
-          firstAnswer?: { text: string };
-          last: { text: string };
+          firstAnswer?: { text: string; truncated?: boolean };
+          last: { text: string; truncated?: boolean };
           messageCount: number;
         }[];
       }
@@ -572,6 +572,100 @@ describe("sessions history (#28)", () => {
     });
     expect(all).toHaveLength(1);
     expect(all[0].conversation.archived).toBe(true);
+  });
+
+  it("AC-571a summaries scoped by conversationId return only that thread", async () => {
+    const relay = newRelay();
+    const { frames, connection } = await helloed(relay);
+    const { channel } = await setupChannel(frames, connection);
+    await connection.receive(
+      req("conversations.open", { channelId: channel.id, text: "first" }),
+    );
+    const convA = (
+      resultOf(frames, `t${nextId - 1}`).result as {
+        conversation: { id: string };
+      }
+    ).conversation;
+    await connection.receive(
+      req("conversations.open", { channelId: channel.id, text: "second" }),
+    );
+    const convB = (
+      resultOf(frames, `t${nextId - 1}`).result as {
+        conversation: { id: string };
+      }
+    ).conversation;
+
+    const scoped = await summariesOf(connection, frames, {
+      conversationId: convB.id,
+    });
+    expect(scoped).toHaveLength(1);
+    expect(scoped[0].conversation.id).toBe(convB.id);
+    expect(scoped[0].root.text).toBe("second");
+
+    const both = await summariesOf(connection, frames);
+    expect(both.map((s) => s.conversation.id)).toEqual([convA.id, convB.id]);
+  });
+
+  it("AC-571b summaries cap answer/last previews at 500 chars; root stays full", async () => {
+    const relay = newRelay();
+    const { frames, connection } = await helloed(relay);
+    const { channel } = await setupChannel(frames, connection);
+    const longRoot = `R${"x".repeat(600)}`;
+    await connection.receive(
+      req("conversations.open", { channelId: channel.id, text: longRoot }),
+    );
+    const { conversation } = resultOf(frames, `t${nextId - 1}`).result as {
+      conversation: { id: string };
+    };
+    const host = await hostOf(relay);
+    const longAnswer = `A${"y".repeat(600)}`;
+    await postAs(
+      host.connection,
+      channel.id,
+      conversation.id,
+      longAnswer,
+      "employee",
+    );
+
+    const [s] = await summariesOf(connection, frames);
+    expect(s.root.text).toBe(longRoot);
+    expect(s.firstAnswer?.text).toHaveLength(500);
+    expect(s.firstAnswer?.truncated).toBe(true);
+    expect(s.last.text).toHaveLength(500);
+    expect(s.last.truncated).toBe(true);
+    expect(s.messageCount).toBe(2);
+  });
+
+  it("AC-571c summaries exclude dropped/removed rows from count and last", async () => {
+    const relay = newRelay();
+    const { frames, connection } = await helloed(relay);
+    const { channel } = await setupChannel(frames, connection);
+    const host = await hostOf(relay);
+    await connection.receive(
+      req("conversations.open", { channelId: channel.id, text: "hi" }),
+    );
+    const { conversation } = resultOf(frames, `t${nextId - 1}`).result as {
+      conversation: { id: string };
+    };
+    await postAs(
+      host.connection,
+      channel.id,
+      conversation.id,
+      "answer",
+      "employee",
+    );
+    await postAs(connection, channel.id, conversation.id, "queued", "user");
+    const queued = (
+      resultOf(frames, `t${nextId - 1}`).result as {
+        message: { id: string };
+      }
+    ).message;
+    await connection.receive(req("messages.remove", { messageId: queued.id }));
+
+    const [s] = await summariesOf(connection, frames);
+    expect(s.messageCount).toBe(2);
+    expect(s.last.text).toBe("answer");
+    expect(s.firstAnswer?.text).toBe("answer");
   });
 
   it("AC-2 messages.list with conversationId returns that thread's full history", async () => {

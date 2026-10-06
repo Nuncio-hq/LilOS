@@ -174,6 +174,9 @@ describe("AC-2 Origin gate on the /ws upgrade", () => {
 
   it("a spawned relay answers 403 to foreign origins and upgrades allowed ones", async () => {
     const relay = await startRelay();
+    /* #625: past the origin gate the credential gate still runs — allowed
+       attempts carry the install token so they exercise origin, not auth. */
+    const url = `${relay.url}?token=${encodeURIComponent(relay.token)}`;
     /** Resolve 101 on upgrade, the HTTP status on refusal, -1 on error. */
     const attempt = (origin?: string, userAgent?: string) =>
       new Promise<number>((resolve) => {
@@ -181,7 +184,7 @@ describe("AC-2 Origin gate on the /ws upgrade", () => {
         if (origin !== undefined) headers.origin = origin;
         if (userAgent !== undefined) headers["user-agent"] = userAgent;
         const ws = new WebSocket(
-          relay.url,
+          url,
           Object.keys(headers).length ? { headers } : undefined,
         );
         ws.once("open", () => {
