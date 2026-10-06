@@ -23,6 +23,9 @@
 # (GHSA-22p9-wv53-3rq4, GHSA-v245-v573-v5vm) renders agent output via
 # ansi-to-react, which still pins ^3 — root package.json `overrides`
 # forces linkify-it@^5.0.2. Drop the override when ansi-to-react bumps.
+# Same pattern for @modelcontextprotocol/sdk (GHSA-6qxp-vccf-f47h, OAuth
+# credentials to an attacker-chosen authorization server): surfaces + web
+# resolve 1.30.x — overrides forces ^1.31.0 (lands 1.32.x).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
