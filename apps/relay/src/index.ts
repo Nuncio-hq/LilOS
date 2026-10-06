@@ -13,7 +13,7 @@ import { drizzle } from "drizzle-orm/bun-sqlite";
 import packageJson from "../package.json";
 import { createApp } from "./app";
 import { createFileAttachmentStore } from "./attachments";
-import { loadOrCreateInstallToken } from "./auth";
+import { authorizeRelayUpgrade, loadOrCreateInstallToken } from "./auth";
 import { resolveRelayConfig } from "./config";
 import { createDrizzleStore } from "./db/drizzle-store";
 import { applyMigrations } from "./db/migrate";
@@ -57,7 +57,7 @@ const listenOnce = (bindHost: string) =>
   Bun.serve({
     hostname: bindHost,
     port: config.port,
-    fetch(request, server) {
+    async fetch(request, server) {
       const url = new URL(request.url);
       if (url.pathname === "/ws") {
         /* #568: refuse browser upgrades from foreign origins before the
@@ -73,6 +73,17 @@ const listenOnce = (bindHost: string) =>
         ) {
           return new Response("websocket upgrade refused", { status: 403 });
         }
+        /* #625: the credential check runs before `server.upgrade` too —
+           Bun buffers a whole ws frame before dispatch, so an
+           unauthenticated socket could otherwise pin up to
+           MAX_FRAME_BYTES per connection without ever reaching
+           session.hello (the #564 feed-gate pattern). Async is safe:
+           Bun resolves the upgrade when fetch's promise settles. */
+        const denied = await authorizeRelayUpgrade(request, {
+          token,
+          pairing,
+        });
+        if (denied) return denied;
         const ok = server.upgrade(request);
         return ok
           ? undefined
@@ -220,6 +231,11 @@ const relay = createRelay({
   phoneAccess,
   logTail,
   push,
+  /* #625: test knob — how long an upgraded socket may sit silent before
+     it's closed without a session.hello. */
+  helloDeadlineMs: process.env.LILOS_HELLO_DEADLINE_MS
+    ? Number(process.env.LILOS_HELLO_DEADLINE_MS)
+    : undefined,
 });
 const app = createApp({
   instanceId: relay.instanceId,

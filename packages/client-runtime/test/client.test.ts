@@ -1101,3 +1101,39 @@ describe("directory refresh for a paired phone", () => {
     expect(client.directoryReady.get()).toBe(true);
   });
 });
+
+describe("ws upgrade credential (#625)", () => {
+  /* The relay authenticates the upgrade itself — a browser WebSocket can't
+     set headers, so the credential rides the socket URL (`?token=` or
+     `?deviceId=&credential=`), the same carrier the #564 feed gate uses. */
+  it("the install token or device credential is appended to the socket URL", () => {
+    const urls: string[] = [];
+    const socket = new FakeSocket();
+    const capture = (url: string) => {
+      urls.push(url);
+      return socket;
+    };
+    const tokenClient = new RelayClient({
+      url: "ws://relay/ws",
+      token: "tok",
+      socketFactory: capture,
+      connectTimeoutMs: 50,
+      autoReconnect: false,
+    });
+    void tokenClient.connect().catch(() => {});
+    const deviceClient = new RelayClient({
+      url: "ws://relay/ws",
+      device: { deviceId: "dev_1", credential: "cred x/y" },
+      socketFactory: capture,
+      connectTimeoutMs: 50,
+      autoReconnect: false,
+    });
+    void deviceClient.connect().catch(() => {});
+    expect(urls).toEqual([
+      "ws://relay/ws?token=tok",
+      "ws://relay/ws?deviceId=dev_1&credential=cred%20x%2Fy",
+    ]);
+    tokenClient.close();
+    deviceClient.close();
+  });
+});

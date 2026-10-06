@@ -80,6 +80,14 @@ export type JsonRpcNotification = z.infer<typeof JsonRpcNotification>;
  */
 export const WS_CLOSE_DEVICE_REVOKED = 4403;
 
+/**
+ * #625: an upgraded socket that never completes `session.hello` is closed
+ * with this code once the hello deadline passes — a silent peer can't sit
+ * pre-auth buffering frames. Clients need no special handling: the drop
+ * reads as an ordinary transport loss and reconnects.
+ */
+export const WS_CLOSE_HELLO_TIMEOUT = 4408;
+
 /** Codes carried in `error.data.code` (JSON-RPC `error.code` stays numeric). */
 export const AppErrorCode = z.enum([
   "unauthenticated",

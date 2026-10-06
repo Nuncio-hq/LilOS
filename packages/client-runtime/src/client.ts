@@ -77,6 +77,33 @@ export class RelayError extends Error {
   }
 }
 
+/**
+ * #625: the relay gates the `/ws` upgrade on a credential before the socket
+ * exists, and a browser WebSocket can't set headers — so the same credential
+ * `session.hello` will present rides the URL's query (the #564 feed-gate
+ * pattern): `?token=` for the install token, `?deviceId=&credential=` for a
+ * paired phone. Computed per-connect so a reconnect carries it too.
+ */
+const relaySocketUrl = (
+  url: string,
+  opts: {
+    token?: string;
+    device?: { deviceId: string; credential: string };
+  },
+): string => {
+  const sep = url.includes("?") ? "&" : "?";
+  if (opts.device) {
+    return (
+      `${url}${sep}deviceId=${encodeURIComponent(opts.device.deviceId)}` +
+      `&credential=${encodeURIComponent(opts.device.credential)}`
+    );
+  }
+  if (opts.token) {
+    return `${url}${sep}token=${encodeURIComponent(opts.token)}`;
+  }
+  return url;
+};
+
 export interface ChannelMessagesState {
   channelId: string;
   /** True once the replay/snapshot window closed (`channel.synced`). */
@@ -669,7 +696,7 @@ export class RelayClient {
     this.state.set(this.everConnected ? "reconnecting" : "connecting");
     this.lastSocketError = undefined;
     const socket = (this.options.socketFactory ?? defaultSocketFactory)(
-      this.options.url,
+      relaySocketUrl(this.options.url, this.options),
     );
     this.socket = socket;
     this.attachSocketListeners(socket);
