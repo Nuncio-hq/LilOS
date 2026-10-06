@@ -439,28 +439,26 @@ function TurnRowImpl({
       kind={r.from === "" ? "note" : "user"}
       settled={false}
     >
-      {frame === "panel" ? (
-        sysNote ?? (
-          <>
-            {checkpoint}
-            <Row from={r.from} emp={emp} human={human}>
-              <Who id={r.from} time={r.time} emp={emp} human={human} />
-              <Body text={r.text} />
-              {r.attachments && <AttachmentChips files={r.attachments} />}
-            </Row>
-          </>
-        )
-      ) : (
-        sysNote ?? (
-          <UserTurn
-            from={r.from}
-            time={r.time}
-            text={r.text}
-            human={human}
-            attachments={r.attachments}
-          />
-        )
-      )}
+      {frame === "panel"
+        ? (sysNote ?? (
+            <>
+              {checkpoint}
+              <Row from={r.from} emp={emp} human={human}>
+                <Who id={r.from} time={r.time} emp={emp} human={human} />
+                <Body text={r.text} />
+                {r.attachments && <AttachmentChips files={r.attachments} />}
+              </Row>
+            </>
+          ))
+        : (sysNote ?? (
+            <UserTurn
+              from={r.from}
+              time={r.time}
+              text={r.text}
+              human={human}
+              attachments={r.attachments}
+            />
+          ))}
     </LazyShell>
   );
   /* The panel keeps the checkpoint inside the row's data-msg block; Focus

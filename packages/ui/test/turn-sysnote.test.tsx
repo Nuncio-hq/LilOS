@@ -48,7 +48,7 @@ const row = (frame: "panel" | "focus", r: Reply) => (
 const note: Reply = { id: "n1", from: "", time: "", text: "⚠ Stopped." };
 
 describe("system-note rows (#550)", () => {
-  test("AC-3: a `from === \"\"` note is a muted line in Focus, never a user bubble", () => {
+  test('AC-3: a `from === ""` note is a muted line in Focus, never a user bubble', () => {
     const { container } = render(row("focus", note));
     const sysnote = container.querySelector("[data-sysnote]");
     expect(sysnote).toBeTruthy();

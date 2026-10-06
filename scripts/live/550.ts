@@ -37,11 +37,7 @@
  */
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import {
-  bootStack,
-  pickPorts,
-  type Stack,
-} from "../../e2e/helpers/stack";
+import { bootStack, pickPorts, type Stack } from "../../e2e/helpers/stack";
 import { RelayClient } from "../../packages/client-runtime/src/client";
 import { EngineClient } from "../../packages/client-runtime/src/engine";
 import { cleanup, startStub } from "./lib/helpers";
@@ -67,10 +63,6 @@ const STEER = "Actually make it about the ocean instead.";
 const t0 = Date.now();
 const out = (line: string) =>
   console.log(`[live-550 +${String(Date.now() - t0).padStart(5)}ms] ${line}`);
-const fail = (why: string): never => {
-  console.log(`RESULT: FAIL — ${why}`);
-  process.exit(1);
-};
 
 const checks: string[] = [];
 const check = (ok: boolean, name: string, detail = "") => {
@@ -118,9 +110,7 @@ if (stub) out(`openai-stub listening on :${stub.port}`);
 let stack: Stack | undefined;
 let relay: RelayClient | undefined;
 let feedClient: EngineClient | undefined;
-let sessionFeed:
-  | ReturnType<EngineClient["sessionFeed"]>
-  | undefined;
+let sessionFeed: ReturnType<EngineClient["sessionFeed"]> | undefined;
 let channelId: string | undefined;
 
 interface MsgRow {
@@ -153,7 +143,9 @@ try {
     { LILOS_ENGINE: "hermes", LILOS_USER_NAME: "Oscar" },
     { home: process.env.LILOS_HOME },
   );
-  out(`stack up — relay ${stack.relayWs} feed ${stack.feedWs} web ${stack.webUrl}`);
+  out(
+    `stack up — relay ${stack.relayWs} feed ${stack.feedWs} web ${stack.webUrl}`,
+  );
 
   relay = new RelayClient({
     url: stack.relayWs,
@@ -161,6 +153,7 @@ try {
     client: { name: "live-550" },
   });
   await relay.connect();
+  const rl = relay;
   feedClient = new EngineClient({ url: stack.feedWs });
   await feedClient.connect();
 
@@ -183,14 +176,11 @@ try {
 
   const listConv = async () =>
     (
-      await relay!.request<{ conversations: ConvRow[] }>(
-        "conversations.list",
-        {},
-      )
+      await rl.request<{ conversations: ConvRow[] }>("conversations.list", {})
     ).conversations.find((c) => c.id === conversation.id);
   const listMsgs = async (includeDropped = false) =>
     (
-      await relay!.request<{ messages: MsgRow[] }>("messages.list", {
+      await rl.request<{ messages: MsgRow[] }>("messages.list", {
         channelId: channel.id,
         limit: 200,
         ...(includeDropped ? { includeDropped: true } : {}),
@@ -207,7 +197,7 @@ try {
   const bound = await waitFor(
     async () => {
       const c = await listConv();
-      return c && c.engineRef ? c : undefined;
+      return c?.engineRef ? c : undefined;
     },
     "engine session bound",
     120_000,
@@ -364,9 +354,9 @@ try {
 
   /* ── UI leg: the rendered thread + screenshot ───────────────────────── */
 
-  let browser: Awaited<
-    ReturnType<typeof import("@playwright/test").chromium.launch>
-  > | undefined;
+  let browser:
+    | Awaited<ReturnType<typeof import("@playwright/test").chromium.launch>>
+    | undefined;
   try {
     const { chromium } = await import("@playwright/test");
     browser = await chromium.launch();
@@ -391,7 +381,10 @@ try {
       );
 
       const uiWait = async (sel: string, label: string, ms = 60_000) =>
-        page.locator(sel).first().waitFor({ state: "visible", timeout: ms })
+        page
+          .locator(sel)
+          .first()
+          .waitFor({ state: "visible", timeout: ms })
           .then(() => undefined)
           .catch(() => {
             throw new Error(`timed out waiting for ${label}`);
@@ -400,8 +393,11 @@ try {
       /* The turn renders settled with the landed steer chip inside it —
          "Oscar steered — …" — and the "Stopped · session.interrupt" end
          chip. Give vite a beat for first compile + the feed attach. */
-      const turn = page.locator("[data-agentturn]").last();
-      await uiWait("[data-agentturn] [data-turnsettled]", "settled turn", 120_000);
+      await uiWait(
+        "[data-agentturn] [data-turnsettled]",
+        "settled turn",
+        120_000,
+      );
       const landed = page.locator('[data-steerstate="landed"]', {
         hasText: /ocean/i,
       });
@@ -432,7 +428,7 @@ try {
         (await page
           .locator("[data-userturn]", { hasText: /Stopped|⚠/ })
           .count()) === 0,
-        "UI: no user-style \"Stopped.\" bubble",
+        'UI: no user-style "Stopped." bubble',
       );
       if (stopNote) {
         const sysnote = page.locator("[data-sysnote]", {
@@ -453,11 +449,7 @@ try {
       });
       out(`screenshot ${join(SHOTS, "550-after-stop.png")}`);
     } catch (e) {
-      check(
-        false,
-        "UI leg",
-        e instanceof Error ? e.message : String(e),
-      );
+      check(false, "UI leg", e instanceof Error ? e.message : String(e));
     } finally {
       await browser.close().catch(() => {});
     }
