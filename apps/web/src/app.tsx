@@ -50,8 +50,10 @@ import {
   engineDefaultProvider,
   engineModels,
   navOpen,
+  openConversation,
   relay,
   sessionModels,
+  sessionSignals,
 } from "./lib/runtime";
 import { say, sayError, toast } from "./lib/toast";
 import { ToastView } from "./lib/toast-view";
@@ -117,6 +119,11 @@ function AppShell() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const toastMsg = useAtom(toast);
+  /* #572: the session watch's scope head — the conversation whose thread
+     is on screen earns an engine feed; navigating away releases it. */
+  useEffect(() => {
+    openConversation.set(openConversationFromPath(pathname) ?? undefined);
+  }, [pathname]);
   const dmMatch = /^\/dm\/([^/]+)/.exec(pathname);
   const view: { kind: "channel" | "dm"; id: string } = dmMatch
     ? { kind: "dm", id: decodeURIComponent(dmMatch[1]) }
@@ -254,35 +261,57 @@ function AppShell() {
             channels: relay.channels.get(),
             employees: relay.employees.get(),
           }),
+          /* #572: asks read the broadcast-folded signals — seeded by
+             relay asks, live request.* frames, and reconciled from synced
+             models — so an unwatched session's approval still notifies. */
           isRequestOpen: (requestId) =>
-            Object.values(sessionModels.get()).some((m) =>
-              m.openRequests.some((r) => r.requestId === requestId),
+            Object.values(sessionSignals.get()).some((s) =>
+              s.openRequests.has(requestId),
             ),
           openAsks: () =>
-            Object.entries(sessionModels.get()).flatMap(([sessionId, m]) =>
-              m.openRequests.map((r) => ({
+            Object.entries(sessionSignals.get()).flatMap(([sessionId, s]) =>
+              [...s.openRequests].map(([requestId, request]) => ({
                 sessionId,
-                requestId: r.requestId,
-                request: r.request,
+                requestId,
+                request,
               })),
             ),
-          onOpenAsksChange: (fn) => sessionModels.subscribe(fn),
+          onOpenAsksChange: (fn) => {
+            /* Signals move on broadcast frames; models move on feed syncs —
+               a replay can change the ask/completion set, so both re-run
+               the state-driven check. */
+            const unSignals = sessionSignals.subscribe(fn);
+            const unModels = sessionModels.subscribe(fn);
+            return () => {
+              unSignals();
+              unModels();
+            };
+          },
           /* #400: done/failed the live frame dropped — re-evaluated from
              the feeds themselves on every model or view change, so a
              completion that landed in the zero-peer window of a page
-             reload still surfaces. */
+             reload still surfaces.
+             #572: `feedState` is a non-creating read — only feeds the
+             watch attached AND synced report. Minting a feed per
+             conversation here used to replay every session's log at boot;
+             and first sight must see the replayed log, or history would
+             post as "new" completions. */
           completionEvents: () =>
             relay.conversations.get().flatMap((c) => {
               if (!c.engineRef) return [];
-              const events = engine
-                .sessionFeed(c.engineRef)
-                .get()
-                .events.filter(
-                  (e) =>
-                    e.type === "turn.completed" ||
-                    (e.type === "session.state" && e.payload.state === "error"),
-                );
-              return [{ sessionId: c.engineRef, events }];
+              const feed = engine.feedState(c.engineRef);
+              if (!feed?.synced) return [];
+              return [
+                {
+                  sessionId: c.engineRef,
+                  events: feed.events.filter(
+                    (e) =>
+                      e.type === "turn.completed" ||
+                      (e.type === "session.state" &&
+                        e.payload.state === "error"),
+                  ),
+                },
+              ];
             }),
           openConversationId: () =>
             openConversationFromPath(router.state.location.pathname),

@@ -71,6 +71,16 @@ export function ToastView({ toast }: { toast: Toast }) {
         <CircleAlertIcon className="size-4 shrink-0 text-destructive" />
       )}
       <span className="min-w-0 break-words">{toast.text}</span>
+      {toast.action && (
+        <button
+          type="button"
+          data-toast-action
+          onClick={toast.action.run}
+          className="shrink-0 font-medium text-primary underline-offset-2 hover:underline"
+        >
+          {toast.action.label}
+        </button>
+      )}
     </div>,
     document.body,
   );
