@@ -1094,7 +1094,7 @@ export function FocusView({
             )}
             {/* Mid-turn sends still waiting to be read (issue #9) and the not-sent tray —
                 same markup as the thread panel, above the composer there too. queue holds ONLY
-                messages ■ stopped before they landed. */}
+                messages the Stop button stopped before they landed. */}
             <QueuedTray
               items={pendingSteers}
               steer={steer}
