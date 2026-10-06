@@ -567,6 +567,63 @@ describe("dm-model helpers", () => {
     expect(conversationState(conv("c1", { state: "idle" }), none)).toBe("done");
   });
 
+  it("#592 AC-1/AC-2: a turnFailure marks the conversation failed", () => {
+    const none = { openAsks: [] as Ask[], pending: new Set<string>() };
+    const failedModel = conv("c1", {
+      state: "idle",
+      turnFailure: { kind: "model", text: "engine blew up" },
+    });
+    const failedSleep = conv("c2", {
+      state: "idle",
+      turnFailure: { kind: "sleep", text: "the Mac slept mid-turn" },
+    });
+    const failedGeneric = conv("c3", {
+      state: "idle",
+      turnFailure: { kind: "generic", text: "prompt never dispatched" },
+    });
+    for (const c of [failedModel, failedSleep, failedGeneric]) {
+      expect(conversationState(c, none)).toBe("failed");
+    }
+    // precedence: an open ask still wins; a running turn still wins
+    expect(
+      conversationState(failedModel, {
+        ...none,
+        openAsks: [ask("a", { conversationId: "c1" })],
+      }),
+    ).toBe("needs-you");
+    expect(conversationState(conv("c1", { state: "active", turnFailure: failedModel.turnFailure }), none)).toBe(
+      "working",
+    );
+    expect(
+      conversationState(failedModel, {
+        ...none,
+        pending: new Set(["c1"]),
+      }),
+    ).toBe("working");
+  });
+
+  it("#592 AC-1: the DM row carries the failure kind + reason", () => {
+    const turns = toSessionTurns(
+      [
+        summary("c1", {
+          turnFailure: { kind: "model", text: "engine blew up" },
+        }),
+        summary("c2", {
+          turnFailure: { kind: "sleep", text: "the Mac slept mid-turn" },
+        }),
+      ],
+      CTX,
+    );
+    expect(turns[0].state).toBe("failed");
+    expect(turns[0].failure).toEqual({
+      kind: "model",
+      text: "engine blew up",
+    });
+    expect(turns[1].failure?.kind).toBe("sleep");
+    // no failure → no flag
+    expect(toSessionTurns([summary("c3")], CTX)[0].failure).toBeUndefined();
+  });
+
   it("askApproval renders an approval ask as the row's reason", () => {
     const approval = askApproval(ask("a1"), {
       employeeId: "builder",
