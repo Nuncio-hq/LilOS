@@ -261,6 +261,17 @@ PR does not exist.
   the conflict marks the backend `failed` on the spot (`kick()` re-arms).
   Not: counting the attach toward the crash budget, or pinning a Hermes
   version for a mid-line feature. — #548
+- **D-#549 LilOS activates the `lilos` plugin on ITS OWN backend and
+  suppresses Hermes' `browser` toolset at the offer.** `plugins enable`'s
+  live-activation nudge is routed to the host-record owner — an
+  observe-only `--isolated` backend never receives it, so before every
+  `session.create`/`session.resume` the engine checks `plugins.list` and
+  POSTs `agent-plugins/activate` {name, home} on its own backend. And
+  connect writes `agent.disabled_toolsets: [browser]` per profile:
+  `browser_exec`/`browser_vault_*` are stripped from the offer (the
+  plugin's `pre_tool_call` block stays as the call-time gate). Not:
+  relying on the record-routed nudge, or blocking browser tools only at
+  call time while they still appear in the model's list. — #549
 - **D-#36 The agent gateway is the one agent surface.** Every engine
   session gets a gateway scope bound to its employee/thread; its tool
   calls reach LilOS through one endpoint and the scope resolves the
@@ -373,6 +384,12 @@ PR does not exist.
   the ring from real state. Not: `session.stop` for idle cleanup (kills
   memory + the INVALID_STATE re-queue loop), a second life derivation
   outside `sessionLife`, or LilOS-owned session memory. — #346
+- **D-#573 `session.stop` forgets.** Stop evicts the session from the
+  adapter's live maps (event log included) — every later call answers
+  SESSION_NOT_FOUND, and a suspended session's registry row dies with it;
+  the harness still renders the thread closed off its own messages +
+  the not-found degradation. Not: tombstones, a stopped-ids list, or a
+  replayable dead log (the per-session memory that grew forever). — #573
 - **D-#411 A Hermes plugin's `register()` must never do network I/O —
   it runs under a ~10 s plugin-load deadline that the harness's own
   event loop can starve (spawnSync), and an abandoned load drops every

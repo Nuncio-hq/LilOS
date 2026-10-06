@@ -16,6 +16,7 @@ import {
 } from "@lilos/contracts/engine";
 import type { ForgePrsResult } from "@lilos/contracts/host";
 import type { ConversationPatch } from "../store";
+import { noFolderDedupeKey } from "../store";
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
 
@@ -87,16 +88,25 @@ export async function handleConversations(
         parsed.data.access ??
         (storedDefault.success ? storedDefault.data : "ask");
       try {
-        const { conversation, rootMessage } = await store.openConversation({
-          ...parsed.data,
-          access,
-          attachments,
-          /* #137: a title given at open is user-chosen from a client,
-             engine-owned ("auto") from the host; empty → placeholder. */
-          titleSource: isHost(peer) ? "auto" : "user",
-        });
-        emitMessage(conversation.channelId, rootMessage);
-        emitConversation(conversation.channelId, conversation);
+        const { conversation, rootMessage, created } =
+          await store.openConversation({
+            ...parsed.data,
+            access,
+            attachments,
+            /* #137: a title given at open is user-chosen from a client,
+               engine-owned ("auto") from the host; empty → placeholder. */
+            titleSource: isHost(peer) ? "auto" : "user",
+          });
+        /* #552: a dedupe hit answers the stored thread and announces
+           nothing again — the retry's attachment blobs are dropped
+           unreferenced, like a deduped messages.post. Same for a retired
+           no-folder key: stored but never emitted. */
+        if (created && !noFolderDedupeKey(parsed.data.dedupeKey)) {
+          emitMessage(conversation.channelId, rootMessage);
+          emitConversation(conversation.channelId, conversation);
+        } else {
+          dropAttachments(attachments);
+        }
         respond(peer, id, { conversation, rootMessage });
       } catch (error) {
         dropAttachments(attachments);

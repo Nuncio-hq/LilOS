@@ -1,3 +1,4 @@
+import { sendKeyDone, sendKeyFor } from "@lilos/client-runtime";
 import type {
   AppChannel,
   AppMessage,
@@ -291,6 +292,10 @@ export function Dm({
   const send = (text: string) => {
     const c = client;
     if (!c) return;
+    /* #552: the open's key belongs to the draft — the failure path
+       refills the composer with the same text, so the resend repeats the
+       key and the relay answers the thread it already stored. */
+    const dedupeKey = sendKeyFor(`dm:${employeeId}`, text);
     void (async () => {
       try {
         const ch =
@@ -306,6 +311,7 @@ export function Dm({
         }>("conversations.open", {
           channelId: ch.id,
           text,
+          dedupeKey,
           ...openConversationParams({
             workspace: wsPick,
             folders: folderOptions,
@@ -314,6 +320,7 @@ export function Dm({
             text,
           }),
         });
+        sendKeyDone(`dm:${employeeId}`, text);
         markPending(res.conversation, res.rootMessage);
         navigation.navigate("Thread", {
           conversationId: res.conversation.id,

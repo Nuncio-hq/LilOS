@@ -85,6 +85,7 @@ export {
   clearDraft,
   clearDraftIfSent,
   draftKey,
+  draftSendKey,
   dropDrafts,
   getDraft,
   setDraft,

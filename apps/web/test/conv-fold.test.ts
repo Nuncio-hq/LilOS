@@ -64,7 +64,6 @@ const model = (over: Partial<SessionModel> = {}): SessionModel => ({
   turns: [],
   openRequests: [],
   jobs: [],
-  subagentJobs: [],
   ...over,
 });
 

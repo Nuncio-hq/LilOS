@@ -53,7 +53,6 @@ const model = (opts: {
   state: opts.live ? "running" : "idle",
   turns: [],
   jobs: [],
-  subagentJobs: [],
   live: opts.live
     ? {
         turnId: "t",

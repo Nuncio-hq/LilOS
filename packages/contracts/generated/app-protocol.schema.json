@@ -428,6 +428,7 @@
         "jobs.list",
         "jobs.stop",
         "approvals.setPolicy",
+        "session.ask",
         "pairing.offer",
         "pairing.disable",
         "devices.list",
@@ -2303,6 +2304,11 @@
             "ask",
             "full"
           ]
+        },
+        "dedupeKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
         }
       },
       "required": [

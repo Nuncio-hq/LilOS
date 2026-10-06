@@ -2,6 +2,8 @@ import {
   type ChannelMessagesState,
   type SessionFeedState,
   type SessionModel,
+  sendKeyDone,
+  sendKeyFor,
   toStatusComponents,
 } from "@lilos/client-runtime";
 import type {
@@ -45,6 +47,7 @@ import type {
   ModelChoice,
   ModelPickerExtras,
   Msg,
+  PullRequest,
   Thread,
   TranscriptNote,
   WbTab,
@@ -118,6 +121,7 @@ import {
   toUiEmployee,
 } from "../lib/mapping";
 import { currentName, humanFor, osFullName, osHome, profile } from "../lib/me";
+import { $prs, refreshConversationPrs, watchPrs } from "../lib/prs";
 import {
   asks as asksAtom,
   engine,
@@ -133,6 +137,7 @@ import {
   sessionWatched,
   workbenchRequests,
 } from "../lib/runtime";
+import { sendKeyDoneForSend, sendKeyForSend } from "../lib/send-key";
 import { say, sayError, sayNotice } from "../lib/toast";
 import { defaultAccess } from "../settings/state";
 import { DmProfileCard } from "./dm-profile-card";
@@ -626,6 +631,21 @@ export function DmPage() {
     };
   }, [jobsCapable, openSid, openFeed.synced]);
 
+  /* #579 AC-1: the open conversation's PRs — one fetch on open +
+     `turn.completed` (watchPrs); the Workbench probe's read then wins via
+     `probePr` (undefined = it hasn't answered, list fills in). */
+  const prsByConv = useAtom($prs);
+  const listedPr = openConvId ? prsByConv[openConvId]?.[0] : undefined;
+  const [probePr, setProbePr] = useState<PullRequest | null | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    setProbePr(undefined);
+    if (!openConvId) return;
+    watchPrs();
+    void refreshConversationPrs(openConvId);
+  }, [openConvId]);
+
   /* A running job ticks its uptime every second. */
   const [, setJobsTick] = useState(0);
   const hasRunningJob =
@@ -736,6 +756,7 @@ export function DmPage() {
       "Picking up mid-session after a rewind — earlier transcript:\n\n" +
       `${quote}\n\n—\n\n` +
       (threadDraft.trim() || target.text);
+    const key = sendKeyFor(`sfresh:${conv.id}`, text);
     void sendDm(
       employeeId,
       text,
@@ -749,9 +770,11 @@ export function DmPage() {
           }
         : undefined,
       seedFiles,
+      key,
       conv.cwd,
     ).then((c) => {
       if (!c) return;
+      sendKeyDone(`sfresh:${conv.id}`, text);
       setFilesOnly(null);
       /* Sessions land on Focus (#149) — the seeded session does too. */
       void navigate({
@@ -867,7 +890,16 @@ export function DmPage() {
       say("Nothing to retry — the session has no sent message.");
       return;
     }
-    void sendDm(employeeId, text, conv.id);
+    /* #552: one key per (conv, retried text) — a second click after the
+       first attempt's answer died with the socket repeats it, so the
+       stored retry dedupes instead of posting again. The binding frees
+       on resolve, so retrying a landed turn is still a real retry. */
+    const key = sendKeyFor(`retry:${conv.id}`, text);
+    void sendDm(employeeId, text, conv.id, undefined, undefined, key).then(
+      (c) => {
+        if (c) sendKeyDone(`retry:${conv.id}`, text);
+      },
+    );
   };
 
   /* #427: one fold per conversation (waiting rows, feed replies, thread
@@ -1051,10 +1083,14 @@ export function DmPage() {
       undefined,
       modelPick,
       files,
+      /* #552 AC-1: the draft's own key — a failed send keeps the draft,
+         so the resend repeats the key and dedupes on the relay. */
+      sendKeyForSend(`dm:${employeeId}`, draftKey.dm(employeeId), text, files),
       folder?.path,
       draftAccess[employeeId],
     ).then((conv) => {
       if (!conv) throw new Error("send failed");
+      sendKeyDoneForSend(`dm:${employeeId}`, text, files);
       clearDraftIfSent(draftKey.dm(employeeId), text);
       setDraftPick(({ [employeeId]: _drop, ...rest }) => rest);
       setDraftAccess(({ [employeeId]: _drop, ...rest }) => rest);
@@ -1199,8 +1235,24 @@ export function DmPage() {
           return conv;
         });
       }
-      return sendDm(employeeId, text, conv.id, undefined, files).then((c) => {
+      return sendDm(
+        employeeId,
+        text,
+        conv.id,
+        undefined,
+        files,
+        /* #552 AC-1: the draft's own key when the draft itself goes out —
+           a Workbench/programmatic send rides a session binding instead,
+           so it can't borrow the key a stored draft send is waiting on. */
+        sendKeyForSend(
+          `conv:${conv.id}`,
+          draftKey.thread(conv.id),
+          text,
+          files,
+        ),
+      ).then((c) => {
         if (!c) throw new Error("send failed");
+        sendKeyDoneForSend(`conv:${conv.id}`, text, files);
         clearDraftIfSent(draftKey.thread(conv.id), text);
         return c;
       });
@@ -1242,11 +1294,8 @@ export function DmPage() {
       for (const j of model?.jobs ?? [])
         jobsById.set(j.jobId, toJob(j, jobsNow));
     }
-    /* #309: helpers the session delegated to list on the Background tab
-       too — under `subagents`, not `background_jobs`, so they merge
-       outside the capability gate. */
-    for (const j of model?.subagentJobs ?? [])
-      jobsById.set(j.jobId, toJob(j, jobsNow));
+    /* #587 AC-2: helpers list ONLY on the Subagents tab — no merge into
+       the Background jobs rows. */
     const uiJobs = [...jobsById.values()].sort(
       (a, b) => a.started.localeCompare(b.started) || a.id.localeCompare(b.id),
     );
@@ -1339,6 +1388,16 @@ export function DmPage() {
          engine declared `background_jobs` (uiJobs is empty otherwise — and
          the tab hides itself when it is). */
       ...(uiJobs.length ? { jobs: uiJobs } : {}),
+      /* #579 AC-1: the header's "PR #N" chip — the Workbench probe's live
+         read wins once it reports; the conversations.prs list fills in
+         before it does (undefined probe = not answered yet). */
+      ...(probePr !== undefined
+        ? probePr
+          ? { pr: probePr }
+          : {}
+        : listedPr
+          ? { pr: listedPr }
+          : {}),
     };
     const running = !!modelLive || pending[conv.id] === true;
     /* #134 AC-5: another live session on the same folder -> the click asks
@@ -1515,6 +1574,31 @@ export function DmPage() {
               : null
           }
           wbSpot={wbSpot}
+          /* #587 AC-1: the Workbench's engine-owned tabs gate on the
+             declared capabilities — the strip's membership is fixed. */
+          caps={{
+            plan: planCap,
+            subagents: hasCapability("subagents"),
+            background: jobsCapable,
+          }}
+          /* #584: Suggest rides `session.ask` — a side request that adds
+             nothing to the transcript. Only where the engine declares it. */
+          onSuggest={
+            hasCapability("side_prompt") && conv.engineRef
+              ? (files) =>
+                  relay
+                    .request<{ answer: string }>("session.ask", {
+                      sessionId: conv.engineRef,
+                      text: `Write a one-line git commit message for these changed files: ${
+                        files.join(", ") || "the listed files"
+                      }`,
+                    })
+                    .then((r) => r.answer)
+              : undefined
+          }
+          /* #579 AC-1: the probe's live forge read updates the header
+             chip the moment it answers (a PR the session just opened). */
+          onPr={setProbePr}
         >
           {filesOnly?.conversationId === conv.id && (
             <StatusBanner

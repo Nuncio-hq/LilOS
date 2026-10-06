@@ -42,6 +42,19 @@ describe("AC-1 harness serves the host API behind the feed's auth", () => {
     expect(res.status).toBe(401);
   });
 
+  it("#611 rejects near-miss and wrong-length bearer tokens", async () => {
+    /* Same length with the last char different, plus shorter and longer
+       guesses — the shapes a timing oracle feeds on. */
+    for (const bad of [
+      `Bearer ${TOKEN.slice(0, -1)}X`,
+      `Bearer ${TOKEN.slice(0, -1)}`,
+      `Bearer ${TOKEN}x`,
+    ]) {
+      const res = await post(handler, { headers: { authorization: bad } });
+      expect(res.status, bad).toBe(401);
+    }
+  });
+
   it("answers host.describe with the token", async () => {
     const res = await handler(
       new Request("http://127.0.0.1:4581/host", {
