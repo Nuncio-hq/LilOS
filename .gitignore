@@ -8,6 +8,7 @@ apps/desktop/build/
 .DS_Store
 *.tsbuildinfo
 tsconfig.*.tsbuildinfo
+__pycache__/
 e2e/.gh-fake/
 e2e/.os-fake/
 .*.bun-build

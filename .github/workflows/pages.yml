@@ -13,6 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  contents: read # checkout
   pages: write
   id-token: write
 
