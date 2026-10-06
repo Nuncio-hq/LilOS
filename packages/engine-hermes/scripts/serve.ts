@@ -14,6 +14,7 @@
  * calls fast typed and relaunches `hermes serve` with backoff instead of
  * leaving the adapter "running" on a corpse.
  */
+import { homedir } from "node:os";
 import { HermesBackendSupervisor } from "../src/backend.js";
 import { HermesEngine } from "../src/engine.js";
 import { RpcError } from "../src/errors.js";
@@ -67,6 +68,7 @@ try {
     ...(arg("sessions-file") ? { sessionsFile: arg("sessions-file") } : {}),
     onBackendNeeded: () => backend.kick(),
     onLog: (line) => console.log(line),
+    hermesHome: process.env.HERMES_HOME ?? `${homedir()}/.hermes`,
     acp: {
       bin: arg("hermes-bin", process.env.HERMES_BIN ?? "hermes"),
       ...(acpArgs ? { args: acpArgs.split(" ").filter(Boolean) } : {}),

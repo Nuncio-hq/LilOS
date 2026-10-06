@@ -25,6 +25,7 @@ export {
   exchangePairingGrant,
   PairingExchangeFailed,
 } from "./pairing";
+export { sendKeyDone, sendKeyFor } from "./send-keys";
 export {
   defaultSocketFactory,
   type RelaySocket,

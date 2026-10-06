@@ -107,6 +107,10 @@ export interface OpenConversationInput {
   /** The access level stamped at open (#106) — the relay resolves
       `params.access ?? Settings' defaultAccess ?? "ask"` before landing. */
   access?: ConversationAccess;
+  /** Exactly-once key for retried opens (#552): stamped on the root
+      message's (channelId, key) slot — the same index `appendMessage`
+      dedupes on — so a resend answers the stored thread. */
+  dedupeKey?: string;
 }
 
 export interface AppendMessageInput {
@@ -270,10 +274,16 @@ export interface RelayStore {
     query: ListConversationsQuery,
   ): Promise<ConversationSummary[]>;
   getConversation(id: string): Promise<Conversation | null>;
-  /** Root message + conversation in one transaction. */
-  openConversation(
-    input: OpenConversationInput,
-  ): Promise<{ conversation: Conversation; rootMessage: AppMessage }>;
+  /**
+   * Root message + conversation in one transaction. `dedupeKey` makes the
+   * write idempotent (#552): `created: false` answers the stored pair for
+   * a key the channel already recorded.
+   */
+  openConversation(input: OpenConversationInput): Promise<{
+    conversation: Conversation;
+    rootMessage: AppMessage;
+    created: boolean;
+  }>;
   updateConversation(
     id: string,
     patch: ConversationPatch,

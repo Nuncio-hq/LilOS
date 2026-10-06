@@ -931,6 +931,31 @@ Alignment matters too — right, center, left:
 Everything outside the tables renders as normal prose.`,
         footer: { dur: 11, model: "Sonnet 5", effort: "Medium" },
       },
+      {
+        kind: "user",
+        id: "u3",
+        time: "10:14",
+        text: "md: links",
+      },
+      {
+        kind: "agent",
+        id: "g3",
+        time: "10:15",
+        thought: 1,
+        reasoning:
+          "Reply-safety check — the remote image and the non-web links are the point.",
+        /* The #566 sample verbatim — the phone draws no images and makes no
+           links, so every piece must come out as inert text. Identical copy
+           in packages/engine-fake/src/markdown-samples.ts. */
+        text: `Here's what I pulled up:
+
+![network map](https://img.example.com/lilos-topology.png?session=abc123)
+
+- Docs: [architecture notes](https://lilos.dev/docs/architecture) — a normal link.
+- Watch-outs: [the payload](javascript:alert(1)), [a local file](file:///etc/passwd) and [the share](smb://files.local/share) must stay text, not links.
+- Or ping [ops](mailto:ops@lilos.dev) if the map looks wrong.`,
+        footer: { dur: 4, model: "Sonnet 5", effort: "Medium" },
+      },
     ],
   },
 ];

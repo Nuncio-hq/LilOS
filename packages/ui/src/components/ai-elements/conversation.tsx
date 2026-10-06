@@ -98,17 +98,23 @@ const ConversationEscapeGuard = (): null => {
   return null;
 };
 
-/* pb-14 reserves the ↓ button's height as a real gutter below the scroller:
-   bottom padding on the port shrinks its content box, and the scroller's
-   height:100% resolves against that — so message rows can never reach the
-   strip the button floats in, at any scroll offset (issue #535). */
+/* The ↓ button floats in a 56px gutter below the scroller — padding on the
+   port shrinks its content box, and the scroller's height:100% resolves
+   against that, so rows can never reach the strip the button sits in at any
+   scroll offset (issue #535). The gutter exists only while the button is
+   mounted (`has-[.lilos-scroll-btn]`): the ↓ unmounts at the bottom, so a
+   permanent strip left a dead band between the last row and the composer
+   (issue #602). */
 export const Conversation = ({
   className,
   children,
   ...props
 }: ConversationProps) => (
   <StickToBottom
-    className={cn("relative flex-1 overflow-y-hidden pb-14", className)}
+    className={cn(
+      "relative flex-1 overflow-y-hidden has-[.lilos-scroll-btn]:pb-14",
+      className,
+    )}
     initial="smooth"
     resize="smooth"
     role="log"
@@ -187,7 +193,7 @@ export const ConversationScrollButton = ({
     !isAtBottom && (
       <Button
         className={cn(
-          "absolute bottom-3 left-[50%] translate-x-[-50%] rounded-full",
+          "lilos-scroll-btn absolute bottom-3 left-[50%] translate-x-[-50%] rounded-full",
           className
         )}
         onClick={handleScrollToBottom}
