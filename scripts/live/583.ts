@@ -177,15 +177,17 @@ const status = await waitFor("engine up via system.status", async () => {
 });
 if (!status.components.find((c) => c.id === "relay"))
   fail("system.status has no relay component — first-run leg 1 reads it");
-if (!status.logs?.relay?.length || !status.logs?.harness?.length)
+const relayTail = status.logs?.relay?.length ?? 0;
+const harnessTail = status.logs?.harness?.length ?? 0;
+if (!relayTail || !harnessTail)
   fail(
     `system.status {logLines:5} returned no log tails ` +
-      `(relay=${status.logs?.relay?.length ?? 0}, harness=${status.logs?.harness?.length ?? 0}) — ` +
+      `(relay=${relayTail}, harness=${harnessTail}) — ` +
       `Copy diagnostics reads these`,
   );
 out(
   `PASS leg0: system.status ok (engine + relay), log tails ` +
-    `relay=${status.logs.relay.length} harness=${status.logs.harness.length}`,
+    `relay=${relayTail} harness=${harnessTail}`,
 );
 
 /* ── ask under manual approvals, like the app's default Ask access ── */
