@@ -80,6 +80,13 @@ fi
 banner "build LilOS.app $VERSION"
 "${BUN:-bun}" apps/desktop/scripts/build.ts "$BUILD" "${IDENTITY:--}"
 
+# --- packaged smoke (#539) --------------------------------------------------
+# Every compiled binary must actually START with the repo hidden — the
+# 1.0.33..1.0.40 builds compiled fine and then crashed at startup, and CI
+# stayed green because nothing ever ran the artifact.
+banner "packaged smoke"
+bash scripts/ci/smoke-bins.sh "$APP/Contents/MacOS"
+
 # --- update payload (always produced; unsigned zips feed dev update tests) --
 banner "pack update payload"
 rm -f "$ZIP"
