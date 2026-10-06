@@ -56,6 +56,11 @@ export type Approval = {
       not an OK) so surfaces hide its Approve pill. Absent = approval
       (prototype rows). */
   kind?: "approval" | "plan" | "question";
+  /** #595: the primary pill a surface may show — "review" for plans (the
+      pill opens the plan's thread; a plan is never approved unseen),
+      "approve" for command approvals; questions have none. Absent =
+      "approve" (prototype rows). */
+  primary?: "approve" | "review";
   /** Why, in one sentence — on a question ask this IS the question. */
   reason: string;
   /** A shell command it wants to run… */

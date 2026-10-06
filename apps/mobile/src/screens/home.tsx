@@ -18,6 +18,7 @@ import { Alert } from "react-native";
 import { decide } from "../asks";
 import { $demo, DEMO_MAC } from "../demo/lifecycle";
 import {
+  askThreadTarget,
   ensureChannelSubscriptions,
   type HomeWire,
   openAsks,
@@ -145,6 +146,18 @@ export function NeedsYouSlot({
     () => openAsks(wire.asks).map((a) => toApproval(a, wire, nowMs)),
     [wire, nowMs],
   );
+  /* #595: a plan ask's Review opens the plan where it lives — the
+     asking thread, with the DM underneath so Back returns to it. */
+  const openPlanThread = (askId: string) => {
+    const ask = wire.asks.find((a) => a.id === askId);
+    const target = ask && askThreadTarget(ask, wire);
+    if (!target) {
+      nav.navigate("Tabs", { screen: "Activity" });
+      return;
+    }
+    nav.navigate("Dm", { employeeId: target.employeeId });
+    nav.navigate("Thread", { conversationId: target.conversationId });
+  };
   return (
     <NeedsYouAccessory
       approvals={approvals}
@@ -152,6 +165,7 @@ export function NeedsYouSlot({
       onApprove={(id) => {
         if (client) void decide(client, id, true);
       }}
+      onReview={openPlanThread}
       onOpen={() => nav.navigate("Tabs", { screen: "Activity" })}
     />
   );
@@ -167,6 +181,15 @@ export function Activity() {
     () => openAsks(wire.asks).map((a) => toApproval(a, wire, nowMs)),
     [wire, nowMs],
   );
+  /* #595: same landing as the accessory's Review — the asking thread
+     pushed over its DM. */
+  const openPlanThread = (askId: string) => {
+    const ask = wire.asks.find((a) => a.id === askId);
+    const target = ask && askThreadTarget(ask, wire);
+    if (!target) return;
+    nav.navigate("Dm", { employeeId: target.employeeId });
+    nav.navigate("Thread", { conversationId: target.conversationId });
+  };
   return (
     <ApprovalsSheet
       approvals={approvals}
@@ -189,6 +212,7 @@ export function Activity() {
         if (channel?.employeeId)
           nav.navigate("Dm", { employeeId: channel.employeeId });
       }}
+      onReview={openPlanThread}
     />
   );
 }
