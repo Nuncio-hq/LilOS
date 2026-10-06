@@ -15,7 +15,7 @@ import { createFileAttachmentStore } from "./attachments";
 import { loadOrCreateInstallToken } from "./auth";
 import { resolveRelayConfig } from "./config";
 import { createDrizzleStore } from "./db/drizzle-store";
-import { applyMigrations } from "./db/migrate";
+import { applyMigrations, backupBeforeMigrations } from "./db/migrate";
 import * as schema from "./db/schema";
 import { createExpoPushSender } from "./expo";
 import { createLogTail } from "./logtail";
@@ -35,6 +35,11 @@ const token = loadOrCreateInstallToken(config.tokenPath);
 const sqlite = new Database(config.dbPath);
 sqlite.exec("PRAGMA journal_mode = WAL");
 sqlite.exec("PRAGMA foreign_keys = ON");
+/* #571 (AC-2): the file is the install's only copy — snapshot it before a
+   pending migration so a bad upgrade rolls back. A failed backup aborts
+   startup rather than running an undoable migration. */
+const backupPath = backupBeforeMigrations(sqlite, config.dbPath);
+if (backupPath) console.log(`[relay] db backup written to ${backupPath}`);
 applyMigrations(sqlite);
 
 const store = createDrizzleStore(drizzle(sqlite, { schema }));
@@ -80,11 +85,18 @@ const listenOnce = (bindHost: string) =>
       return app.fetch(request);
     },
     websocket: {
+      /* #571: the summaries payload is dominated by repetitive message
+         text — per-message deflate folds ~2.5MB raw into ~0.1MB on the
+         wire for clients that negotiate it (inert for those that don't).
+         The compress flag opts in only past 8kB — compressing every small
+         event frame (token deltas stream constantly) burns CPU for bytes
+         that were never the problem. */
+      perMessageDeflate: true,
       open(ws) {
         peers.set(
           ws,
           relay.connect({
-            send: (frame) => ws.send(frame),
+            send: (frame) => ws.send(frame, frame.length > 8192),
             close: (code, reason) => ws.close(code, reason),
           }),
         );

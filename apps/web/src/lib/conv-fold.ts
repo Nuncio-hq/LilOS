@@ -27,6 +27,7 @@ import type {
   Conversation,
   ConversationSummary,
   Employee,
+  SummaryMessage,
 } from "@lilos/contracts/app";
 import type { QueuedTrayItem } from "@lilos/ui";
 import type { Msg, Reply, Workspace } from "@lilos/ui/types";
@@ -70,8 +71,9 @@ export interface FoldInputs {
   /** Open conv only: locally-known rewound ids + dropped answer texts. */
   localRewound?: { ids: ReadonlySet<string>; texts: ReadonlySet<string> };
   summary: ConversationSummary | undefined;
-  /** The feed row's root message (summary.root or its channel row). */
-  root: AppMessage | undefined;
+  /** The feed row's root message (summary.root or its channel row) —
+      #571: the summary's is a preview subset, not a full row. */
+  root: AppMessage | SummaryMessage | undefined;
   employees: Employee[];
   cwdInfo: Record<string, { branch: string } | null>;
   employeeId: string;
@@ -128,8 +130,8 @@ const inputKey = (i: FoldInputs): Inputs => [
    through the fold so the memoized rows see the SAME `Reply` objects.
    Keyed on the source objects, so nothing is retained past GC. */
 
-/** AppMessage row -> its Reply (conversationReplies cache). */
-const msgReplyCache = new WeakMap<AppMessage, Reply>();
+/** Message row -> its Reply (conversationReplies cache). */
+const msgReplyCache = new WeakMap<AppMessage | SummaryMessage, Reply>();
 
 /** Reply -> its plan-stripped clone (stripPlans cache). */
 const strippedCache = new WeakMap<Reply, Reply>();

@@ -31,6 +31,7 @@ import {
   type RequestId,
   type RpcError,
   SystemStatusResult,
+  toSummaryPreview,
   type WelcomeResult,
   WS_CLOSE_DEVICE_REVOKED,
 } from "@lilos/contracts/app";
@@ -912,6 +913,9 @@ export class RelayClient {
       this.employees.set(employees.employees);
       this.channels.set(channels.channels);
       this.conversations.set(conversations.conversations);
+      /* The directory is the authority — any scoped refresh still in
+         flight carries an older snapshot and must not apply (#571). */
+      this.summaryTickets.clear();
       this.conversationSummaries.set(summaries.summaries);
       this.profile.set(settings.profile);
       if (devices) this.devices.set(devices.devices);
@@ -1152,23 +1156,18 @@ export class RelayClient {
           return;
         }
         this.applyMessageChanged(event.channelId, event.message);
-        const summaries = this.conversationSummaries.get();
+        /* A visibility flip (dropped/removed/rewound) changes which row
+           headlines the summary AND the visible count — the old in-place
+           `last` swap could keep a dropped row as the preview. Refetch the
+           one row (#571); `claimed`-only flips don't touch a summary. */
         if (
           event.message.conversationId &&
-          summaries.some(
-            (s) =>
-              s.conversation.id === event.message.conversationId &&
-              s.last?.id === event.message.id,
-          )
-        ) {
-          this.conversationSummaries.set(
-            summaries.map((s) =>
-              s.last?.id === event.message.id
-                ? { ...s, last: event.message }
-                : s,
-            ),
-          );
-        }
+          (event.flags === undefined ||
+            event.flags.some(
+              (f) => f === "dropped" || f === "removed" || f === "rewound",
+            ))
+        )
+          void this.refreshSummary(event.message.conversationId);
         return;
       }
       case "channel.snapshot": {
@@ -1208,6 +1207,15 @@ export class RelayClient {
         for (const message of parkedFlips) {
           this.applyMessageChanged(event.channelId, message);
         }
+        /* #571: parked frames ran while the directory's summaries were
+           already stale for their convs — one scoped refetch per conv
+           instead of a full re-list (and none per message). */
+        const staleConvs = new Set(
+          [...parked, ...parkedFlips]
+            .map((m) => m.conversationId)
+            .filter((id): id is string => id !== null),
+        );
+        for (const convId of staleConvs) void this.refreshSummary(convId);
         const wm = this.watermarks.get(event.channelId) ?? 0;
         if (event.lastSeq > wm)
           this.watermarks.set(event.channelId, event.lastSeq);
@@ -1255,7 +1263,9 @@ export class RelayClient {
             ],
           },
         });
-        void this.refreshSummaries();
+        /* A rewind flips a tail of rows to hidden: last/count/firstAnswer
+           all shift on just this conversation (#571). */
+        void this.refreshSummary(event.conversationId);
         return;
       }
       case "engine.event": {
@@ -1340,10 +1350,10 @@ export class RelayClient {
           (s) => s.conversation.id === event.conversation.id,
         );
         if (sIdx === -1) {
-          // A conversation this client has never summarized — refresh so the
-          // DM list gains the row (root + preview) without waiting for a
-          // restart.
-          void this.refreshSummaries();
+          /* A conversation this client has never summarized — fetch just
+             its row (#571) so the DM list gains it (root + preview)
+             without re-listing every summary. */
+          void this.refreshSummary(event.conversation.id);
         } else {
           this.conversationSummaries.set(
             summaries.map((s) =>
@@ -1395,33 +1405,73 @@ export class RelayClient {
     const summaries = this.conversationSummaries.get();
     const idx = summaries.findIndex((s) => s.conversation.id === convId);
     if (idx === -1) {
-      void this.refreshSummaries();
+      /* #571: a conversation we haven't summarized yet (opened elsewhere,
+         or its root landed before our directory sync) — fetch that ONE
+         row, not the whole list. This ran once per message before. */
+      void this.refreshSummary(convId);
       return;
     }
+    /* A fresher local patch invalidates any scoped fetch still in flight —
+       its snapshot predates this message and would roll `last` back. */
+    this.summaryTickets.delete(convId);
     const isAnswer = message.authorKind !== "user";
     this.conversationSummaries.set(
       summaries.map((s) =>
-        s.conversation.id === convId
+        s.conversation.id === convId && s.last.seq < message.seq
           ? {
               ...s,
-              last: message,
+              last: toSummaryPreview(message),
               messageCount: s.messageCount + 1,
-              firstAnswer: s.firstAnswer ?? (isAnswer ? message : undefined),
+              firstAnswer:
+                s.firstAnswer ??
+                (isAnswer ? toSummaryPreview(message) : undefined),
             }
           : s,
       ),
     );
   }
 
-  private async refreshSummaries(): Promise<void> {
+  /* #571: per-conversation refresh tickets — a scoped fetch that resolves
+     after a newer patch (or a newer fetch) for the same conversation must
+     not overwrite it. The directory's full re-list clears them all: its
+     snapshot is the authority. */
+  private summaryTickets = new Map<string, number>();
+  private summaryTicketSeq = 0;
+
+  /** Refetch one conversation's summary row and upsert it in place. */
+  private async refreshSummary(conversationId: string): Promise<void> {
+    const ticket = ++this.summaryTicketSeq;
+    this.summaryTickets.set(conversationId, ticket);
     try {
       const res = await this.request<{ summaries: ConversationSummary[] }>(
         "conversations.summaries",
-        { includeArchived: true },
+        { conversationId, includeArchived: true },
       );
-      this.conversationSummaries.set(res.summaries);
+      if (this.summaryTickets.get(conversationId) !== ticket) return;
+      this.summaryTickets.delete(conversationId);
+      const row = res.summaries[0];
+      const list = this.conversationSummaries.get();
+      const idx = list.findIndex((s) => s.conversation.id === conversationId);
+      if (!row) {
+        /* The conversation's rows no longer qualify for a summary (or the
+           conv is gone) — drop our copy rather than keep a stale one. */
+        if (idx !== -1)
+          this.conversationSummaries.set(
+            list.filter((s) => s.conversation.id !== conversationId),
+          );
+        return;
+      }
+      this.conversationSummaries.set(
+        idx === -1
+          ? [...list, row].sort(
+              (a, b) => a.conversation.createdAt - b.conversation.createdAt,
+            )
+          : list.map((s) => (s.conversation.id === conversationId ? row : s)),
+      );
     } catch {
-      /* best-effort — the full refresh runs on the next (re)connect */
+      /* best-effort — live events keep patching; the next (re)connect's
+         directory sync re-lists everything anyway. */
+      this.summaryTickets.delete(conversationId);
     }
   }
 

@@ -12,6 +12,7 @@ import type {
   Conversation,
   ConversationsRewindResult,
   MessageSearchHit,
+  SummaryMessage,
 } from "@lilos/contracts/app";
 import {
   MAX_ATTACHMENT_BYTES,
@@ -651,7 +652,7 @@ export function DmPage() {
       ...threadMsgs,
       ...summaries.flatMap((s) =>
         [s.root, s.firstAnswer, s.last].filter(
-          (m): m is AppMessage => m !== undefined,
+          (m): m is SummaryMessage => m !== undefined,
         ),
       ),
     ].flatMap((m) => m.attachments ?? []);
@@ -1095,7 +1096,9 @@ export function DmPage() {
        the summary for list context — but the open thread must not show a
        message it just dropped. Fall back to the first surviving message
        (the "⚠ Files restored" note) instead. */
-    let root = threadPool.find((m) => m.id === conv.rootMessageId);
+    let root: AppMessage | SummaryMessage | undefined = threadPool.find(
+      (m) => m.id === conv.rootMessageId,
+    );
     if (!root) {
       const listed = summaryOf(conv)?.root;
       root = listed && !listed.rewound ? listed : threadPool[0];
