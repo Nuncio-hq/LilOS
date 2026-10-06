@@ -470,6 +470,35 @@ export function createDrizzleStore(db: Db): RelayStore {
     },
     async openConversation(input: OpenConversationInput) {
       return db.transaction((tx) => {
+        /* #552: the open's key rides the root message's (channelId,
+           dedupeKey) index — the same slot appendMessage dedupes on — so
+           a stored-but-unanswered resend returns the stored thread. */
+        if (input.dedupeKey) {
+          const stored = tx
+            .select()
+            .from(schema.messages)
+            .where(
+              and(
+                eq(schema.messages.channelId, input.channelId),
+                eq(schema.messages.dedupeKey, input.dedupeKey),
+              ),
+            )
+            .get();
+          const conversation = stored?.conversationId
+            ? tx
+                .select()
+                .from(schema.conversations)
+                .where(eq(schema.conversations.id, stored.conversationId))
+                .get()
+            : undefined;
+          if (stored && conversation) {
+            return {
+              conversation: rowToConversation(conversation),
+              rootMessage: rowToMessage(stored),
+              created: false,
+            };
+          }
+        }
         const conversationId = newId("conv");
         const bumped = tx
           .update(schema.channels)
@@ -497,7 +526,11 @@ export function createDrizzleStore(db: Db): RelayStore {
         // dependent FKs: insert the message unattributed, then the
         // conversation, then point the message at it — one transaction.
         tx.insert(schema.messages)
-          .values({ ...messageToRow(rootMessage), conversationId: null })
+          .values({
+            ...messageToRow(rootMessage),
+            conversationId: null,
+            dedupeKey: input.dedupeKey ?? null,
+          })
           .run();
         const conversation: Conversation = {
           id: conversationId,
@@ -552,7 +585,7 @@ export function createDrizzleStore(db: Db): RelayStore {
           .set({ conversationId })
           .where(eq(schema.messages.id, rootMessage.id))
           .run();
-        return { conversation, rootMessage };
+        return { conversation, rootMessage, created: true };
       });
     },
     async updateConversation(id, patch: ConversationPatch) {
