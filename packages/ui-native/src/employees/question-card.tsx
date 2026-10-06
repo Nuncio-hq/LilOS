@@ -133,12 +133,13 @@ export function QuestionCard({
         )}
         {/* Skip is secondary, pinned to the content edge — it names what
             it does: the asking agent decides instead (FIX #515). */}
+        {stale && answerHint && (
+          <AppText size="xs" tone="muted" className="mt-2">
+            {answerHint}
+          </AppText>
+        )}
         <View className="mt-3 flex-row items-center justify-end gap-2">
-          {stale && answerHint ? (
-            <AppText size="xs" tone="muted" className="flex-1">
-              {answerHint}
-            </AppText>
-          ) : pending ? (
+          {pending ? (
             <AppText size="xs" tone="muted">
               Sending…
             </AppText>

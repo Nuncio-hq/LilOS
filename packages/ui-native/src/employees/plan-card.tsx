@@ -251,12 +251,12 @@ export function PlanCard({
                 disabled={stale}
                 onPress={() => onAction("reject", plan.id)}
               />
-              {stale && answerHint && (
-                <AppText size="xs" tone="muted" className="flex-1">
-                  {answerHint}
-                </AppText>
-              )}
             </View>
+          )}
+          {stale && answerHint && (
+            <AppText size="xs" tone="muted" className="mt-1.5">
+              {answerHint}
+            </AppText>
           )}
         </>
       )}
