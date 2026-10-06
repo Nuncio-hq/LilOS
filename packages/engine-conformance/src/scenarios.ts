@@ -613,7 +613,13 @@ export const CORE_SCENARIOS: Scenario[] = [
     },
   },
   {
-    id: "session.stop closes the session but keeps the log",
+    /* #573: stop is forget — the session leaves the adapter's maps, so
+       every later call on the id answers SESSION_NOT_FOUND like a
+       never-seen one. The product surface that needs the closed state —
+       the harness's transcript resync — already degrades SESSION_NOT_FOUND
+       to an empty closed snapshot (D-#300); keeping per-session logs in
+       engine memory forever is the leak this scenario now forbids. */
+    id: "session.stop ends the session for good — the engine forgets it",
     async run(h) {
       const { sessionId } = (await h.request("session.start", {
         agent: "builder",
@@ -625,18 +631,17 @@ export const CORE_SCENARIOS: Scenario[] = [
       assert(stopped.stopped === true, "stop reports stopped:true");
       assert(
         (await errorCode(h, "prompt", textPrompt(sessionId, READ_PROMPT))) ===
-          -32003,
-        "prompt on closed session -> -32003",
+          -32001,
+        "prompt on a forgotten session -> SESSION_NOT_FOUND",
       );
-      const since = (await h.request("events.since", {
-        sessionId,
-        after: 0,
-      })) as SinceResult;
       assert(
-        since.events.some(
-          (e) => e.type === "session.state" && e.payload.state === "closed",
-        ),
-        "closed state is replayable",
+        (await errorCode(h, "events.since", { sessionId, after: 0 })) ===
+          -32001,
+        "events.since on a forgotten session -> SESSION_NOT_FOUND",
+      );
+      assert(
+        (await errorCode(h, "session.stop", { sessionId })) === -32001,
+        "a second session.stop -> SESSION_NOT_FOUND",
       );
     },
   },
@@ -702,12 +707,13 @@ export const CORE_SCENARIOS: Scenario[] = [
           `turn 1 is still remembered after resume, got: ${recalled.slice(0, 200)}`,
         );
       }
-      /* session.stop keeps meaning end-for-good — even on a reopened session. */
+      /* session.stop keeps meaning end-for-good — even on a reopened
+         session the engine forgets it entirely (#573). */
       await h.request("session.stop", { sessionId });
       assert(
         (await errorCode(h, "prompt", textPrompt(sessionId, READ_PROMPT))) ===
-          -32003,
-        "prompt on a stopped session -> -32003",
+          -32001,
+        "prompt on a stopped session -> SESSION_NOT_FOUND",
       );
     },
   },
@@ -1094,8 +1100,8 @@ export const STEER_SCENARIOS: Scenario[] = [
         (await errorCode(h, "session.steer", {
           sessionId,
           text: "too late",
-        })) === -32003,
-        "steer on a closed session -> INVALID_STATE",
+        })) === -32001,
+        "steer on a stopped session -> SESSION_NOT_FOUND (#573: forgotten)",
       );
     },
   },
@@ -1640,8 +1646,8 @@ export const MODELS_SCENARIOS: Scenario[] = [
         (await errorCode(h, "session.setModel", {
           sessionId,
           model: models[0].id,
-        })) === -32003,
-        "closed session -> INVALID_STATE (-32003)",
+        })) === -32001,
+        "stopped session -> SESSION_NOT_FOUND (#573: forgotten)",
       );
     },
   },
