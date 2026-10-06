@@ -142,8 +142,10 @@ have() { [ -x "$RUN/$1" ]; }
 
 # ---- per-binary checks -----------------------------------------------------
 # lilos-svc: argv parser proves the binary ran its own code (macOS only).
+# A dummy plistName carries it past the argc usage guard into the command
+# dispatch, whose default arm prints "unknown command".
 if have lilos-svc; then
-  out="$(cd "$TMP" && "$RUN/lilos-svc" __smoke__ 2>&1)"
+  out="$(cd "$TMP" && "$RUN/lilos-svc" __smoke__ __smoke__.plist 2>&1)"
   if crash_sig <(echo "$out"); then
     bad "lilos-svc — bundled-path crash"; echo "$out" | dump /dev/stdin
   elif echo "$out" | grep -q "unknown command"; then
