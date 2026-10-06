@@ -284,7 +284,7 @@ export function ThreadHeaderTitle({
 }: {
   title: string;
   state: SessionState;
-  /** #592: "sleep" failures read amber "Mac slept mid-turn" in the chip. */
+  /** #592: "sleep" failures read amber "Mac went to sleep" in the chip. */
   failureKind?: "model" | "sleep" | "generic";
   prs?: PullRequestRef[];
   /** Adds the context gauge beside the state. */

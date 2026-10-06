@@ -788,7 +788,10 @@ describe("#346 AC-4: the ring reads real session life", () => {
 /* #592 reviewer fix — a failed or stopped thread is not Done: the DM
    groups them under "Didn't finish" above Done, and a sleep interrupt
    reads "Mac went to sleep" (amber, same copy as the harness's post). */
-import { DM_GROUPS, dmSectionFor } from "../../../packages/ui-native/src/employees/dm-screen";
+import {
+  DM_GROUPS,
+  dmSectionFor,
+} from "../../../packages/ui-native/src/employees/dm-groups";
 
 describe("DM section grouping (#592 fix)", () => {
   it("failed and stopped threads group under 'Didn't finish', never Done", () => {

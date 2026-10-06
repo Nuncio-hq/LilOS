@@ -81,7 +81,7 @@ export type SessionState =
   | "stopped";
 
 /** #592: the last turn's failure — the wire's `Conversation.turnFailure`.
-    `sleep` interrupts read amber ("Mac slept mid-turn"); `model`/`generic`
+    `sleep` interrupts read amber ("Mac went to sleep"); `model`/`generic`
     errors read red. */
 export type TurnFailure = {
   kind: "model" | "sleep" | "generic";
@@ -306,7 +306,7 @@ export type ThreadDetail = {
   title: string;
   state: SessionState;
   /** #592: the last turn's failure — the header chip reads amber
-      "Mac slept mid-turn" for sleep interrupts. */
+      "Mac went to sleep" for sleep interrupts. */
   failure?: TurnFailure;
   /** #308: the running turn is engine-initiated (a leg) — the composer
       offers "Queue" instead of "Steer" (web: runningComposer agentWork). */
