@@ -272,11 +272,13 @@ test("AC-5 the Workbench Plan tab shows the current plan and earlier versions; h
   page,
 }) => {
   test.setTimeout(180_000);
-  // A folder-bound session with no plan shows its workbench but no Plan tab.
+  /* #587 AC-1: the strip is a fixed membership — a folder-bound session
+     with no plan still shows Plan, greyed-empty (data-wb-empty), instead
+     of appearing only once a plan exists. */
   await openPlain(page, "Say hello once", wbDir);
-  await expect(page.getByRole("tab", { name: /^Plan/ })).toHaveCount(0, {
-    timeout: 15_000,
-  });
+  const emptyPlan = page.getByRole("tab", { name: /^Plan/ });
+  await expect(emptyPlan).toBeVisible({ timeout: 15_000 });
+  await expect(emptyPlan).toHaveAttribute("data-wb-empty", "true");
   await page.screenshot({ path: `${SHOTS}/ac-5-no-plan-tab.png` });
 
   // A change→v2 session lists v1 in the panel's earlier versions.

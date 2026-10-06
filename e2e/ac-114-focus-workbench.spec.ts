@@ -470,15 +470,21 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
   await page.screenshot({ path: `${SHOTS}/ac-5-no-pr.png` });
 
   // `gh` signed out (its real "gh auth login" stderr + exit 4) → the sign-in
-  // copy with a copyable chip and Retry — never raw stderr, never "gh failed:".
+  // copy names the next step the user can take (#579 AC-2: ask the employee,
+  // then Retry) — never a command to type, never raw stderr, never "gh failed:".
   writeFileSync(failPath, "auth\n");
   await page.reload();
   await expect(tab(page, /^PR$/)).toBeVisible({ timeout: 30_000 });
   await tab(page, /^PR$/).click();
   await expect(
-    page.getByText("Sign in to GitHub to see this PR", { exact: false }),
+    page.getByText("GitHub isn't signed in on this machine", { exact: false }),
   ).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText("gh auth login")).toBeVisible();
+  await expect(
+    page.getByText(/Ask Default to sign in, then Retry/, { exact: false }),
+  ).toBeVisible();
+  // No copyable command chip anywhere (#579): a grep over the panel finds
+  // nothing that looks like a typed command.
+  await expect(page.getByText("gh auth login")).toHaveCount(0);
   /* #419 wired the last turn's own hover Retry — scope this one to the PR
      panel or the name resolves to both. */
   const retry = page
@@ -567,8 +573,12 @@ test("AC-6 tabs render only when their host method answers; a session without a 
   await expect(tab(page, /^(Changes|Files|Terminal|Preview|PR)$/)).toHaveCount(
     0,
   );
-  // No helpers this turn → no Subagents tab (it renders once rows exist).
-  await expect(tab(page, "Subagents")).toHaveCount(0);
+  /* #587 AC-1 rewrote the empty-tab policy: engine-declared tabs render
+     greyed-empty (data-wb-empty) instead of appearing on first content —
+     Subagents + Plan are here from the start on a capable engine. */
+  await expect(tab(page, "Subagents")).toBeVisible();
+  await expect(tab(page, "Subagents")).toHaveAttribute("data-wb-empty", "true");
+  await expect(tab(page, "Plan")).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-6-no-folder.png` });
 });
 

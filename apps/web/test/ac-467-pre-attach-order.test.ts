@@ -47,7 +47,6 @@ const session = (turns: TurnModel[], live?: TurnModel) => ({
   live,
   openRequests: [],
   jobs: [],
-  subagentJobs: [],
 });
 
 const u = (id: string, seq: number, text: string) => msg({ id, seq, text });

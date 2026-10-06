@@ -217,6 +217,9 @@ export const GitLogCommit = z.object({
   /** Short sha. */
   sha: z.string(),
   subject: z.string(),
+  /** The commit's real git author name (`%an`) — the Workbench shows it on
+      the row instead of crediting every commit to the employee (#587). */
+  author: z.string(),
   files: z.array(
     z.object({
       path: z.string(),
