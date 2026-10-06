@@ -294,6 +294,15 @@ const FEEDS: Record<string, Msg[]> = {
           },
           { from: "oscar", time: "11:10", text: "Agree. Add backoff, cap at 30s." },
           { from: "builder", time: "11:11", text: "Got it. Next step changes code in `apps/harness`, so it needs its own ticket and branch.", startProposal: { title: "Harness reconnect with afterSequence replay" } },
+          { from: "oscar", time: "11:13", text: "While you're in there — what happens to messages the engine wrote during the gap?" },
+          {
+            from: "builder", time: "11:15", text: "They land in the relay's event log before the socket drops, so the same replay covers them: the harness asks for `afterSequence = last seq` and the relay re-sends every event it missed, engine output included. Nothing is polled from the engine itself.",
+            steps: [
+              { tool: "read_file", input: { path: "apps/relay/src/event-log.ts" }, output: "append-only · 204 lines" },
+            ],
+          },
+          { from: "oscar", time: "11:18", text: "Good — that also covers the Mac closing the lid mid-turn." },
+          { from: "builder", time: "11:20", text: "Right, the sleep case is the same replay, just a longer gap. I'll fold that scenario into the ticket's tests." },
         ],
       },
     },
@@ -883,7 +892,7 @@ export default function App() {
   })
   const [hireOpen, setHireOpen] = useState<HireDraft | null>(null)
   const [theme, setTheme] = useTheme()
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ text: string; action?: { label: string; run: () => void } } | null>(null)
   const [started, setStarted] = useState<Record<string, Work>>({})
   const startedRef = useRef(started)
   startedRef.current = started
@@ -902,6 +911,16 @@ export default function App() {
     return base
   })
   const stops = useRef<Record<string, boolean>>({})
+  /* #578: the rewind inside its 10 s Undo window — the dropped replies and
+     the draft they replace stay here until Undo or the commit timer. */
+  const rewindPending = useRef<{
+    idx: number
+    removed: Reply[]
+    rootMsg?: Extract<Msg, { kind: "msg" }>
+    draftBefore: string
+    commit: () => void
+  } | null>(null)
+  const rewindTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   /* #420: open question asks → the turn that raised them (answer/cancel
      continues it). The seeded open question registers here too. */
   const questionsRef = useRef(
@@ -1105,7 +1124,15 @@ export default function App() {
     setUpdateMsg("Checking…")
     setTimeout(() => setUpdateMsg("LilOS is up to date"), 900)
   }
-  const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 2200) }
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const showToast = (v: { text: string; action?: { label: string; run: () => void } }, ms: number) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    setToast(v)
+    toastTimer.current = setTimeout(() => setToast(null), ms)
+  }
+  const say = (t: string) => showToast({ text: t }, 2200)
+  /* #578: a notice with one action — the rewind Undo toast. */
+  const sayAction = (text: string, action: { label: string; run: () => void }, ms: number) => showToast({ text, action }, ms)
   /* LilOS Browser (issue #214): ⌘⇧B toggles it; a panel beside the chat that
      pops out into its own window. Fake pages + a fake agent tab in fake-browser. */
   const [browserOpen, setBrowserOpen] = useState(() => new URLSearchParams(location.search).has("browser"))
@@ -1722,15 +1749,23 @@ export default function App() {
     if (idx < 0) return
     const target = idx === 0 ? root.text : t.replies[idx]?.text
     const n = t.replies.length - idx
-    if (idx === 0) {
-      /* Rewinding to the root drops every message — the whole thread goes. */
-      setFeeds((fs) => ({ ...fs, [feedKey]: (fs[feedKey] ?? []).filter((m) => m.id !== root.id) }))
-      setPanelOpen(false)
-    } else {
+    /* A second rewind commits the one still in its Undo window first. */
+    if (rewindPending.current) {
+      clearTimeout(rewindTimer.current)
+      rewindPending.current.commit()
+    }
+    const draftBefore = threadDraft
+    const removed = t.replies.slice(idx)
+    /* #578: the rows drop at once and a 10 s Undo toast runs; the final
+       step — the "⚠ Rewound" note and the file/session rollback this
+       mock stands in for — happens only when the window closes. */
+    const commit = () => {
+      rewindPending.current = null
+      if (idx === 0) return /* the root message is already out of the feed */
       mapRoot(feedKey, root.id, (tt) => ({
         ...tt,
         replies: [
-          ...tt.replies.slice(0, idx),
+          ...tt.replies,
           {
             from: "",
             time: "",
@@ -1739,8 +1774,29 @@ export default function App() {
         ],
       }))
     }
+    const undo = () => {
+      const p = rewindPending.current
+      if (!p) return
+      clearTimeout(rewindTimer.current)
+      rewindPending.current = null
+      if (p.idx === 0)
+        setFeeds((fs) => ({ ...fs, [feedKey]: [...(fs[feedKey] ?? []), p.rootMsg as Extract<Msg, { kind: "msg" }>] }))
+      else
+        mapRoot(feedKey, root.id, (tt) => ({ ...tt, replies: [...tt.replies.slice(0, p.idx), ...p.removed] }))
+      setThreadDraft(p.draftBefore)
+      say("Rewind undone — the thread is back where it was.")
+    }
+    rewindPending.current = { idx, removed, rootMsg: idx === 0 ? root : undefined, draftBefore, commit }
+    if (idx === 0) {
+      /* Rewinding to the root drops every message — the whole thread goes. */
+      setFeeds((fs) => ({ ...fs, [feedKey]: (fs[feedKey] ?? []).filter((m) => m.id !== root.id) }))
+      setPanelOpen(false)
+    } else {
+      mapRoot(feedKey, root.id, (tt) => ({ ...tt, replies: tt.replies.slice(0, idx) }))
+    }
     if (target !== undefined) setThreadDraft(target)
-    say(`Rewound session ${t.session} · files + ${n} message${n === 1 ? "" : "s"}`)
+    sayAction(`Rewound session ${t.session} · files + ${n} message${n === 1 ? "" : "s"}`, { label: "Undo", run: undo }, 10_000)
+    rewindTimer.current = setTimeout(commit, 10_000)
   }
   // conversations.setModel: the pick pins the conversation's model; the next
   // turn's reply carries it back as `turn.started.model` (AC-2).
@@ -2278,7 +2334,7 @@ export default function App() {
           onRemove={() => removeEmployee(editEmp)}
         />
       )}
-      {toast && <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-foreground px-4 py-2 text-background text-sm shadow-lg">{toast}</div>}
+      {toast && <div data-toast className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-background text-sm shadow-lg">{toast.text}{toast.action && <button type="button" data-toast-action className="font-medium underline underline-offset-2" onClick={toast.action.run}>{toast.action.label}</button>}</div>}
     </div>
   )
 }

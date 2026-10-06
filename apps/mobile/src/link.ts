@@ -5,6 +5,7 @@ import {
   RelayClient,
   RelayError,
   type SupervisedConnection,
+  type SupervisorState,
 } from "@lilos/client-runtime";
 import { HostChangedEvent, type WelcomeResult } from "@lilos/contracts/app";
 import type { MacLink } from "@lilos/ui-native";
@@ -50,6 +51,20 @@ const wsUrl = (host: string) => `ws://${host}/ws`;
 
 export function currentSupervisor(): ConnectionSupervisor | undefined {
   return supervisor;
+}
+
+/** supervisor phase -> the UI's three words. `backoff`/`offline`/`blocked`
+   all read "Can't reach <Mac>" — and so does a retry `connecting` once a
+   failure has landed (`lastError` set): the banner appears with the first
+   failure and holds through every retry instead of blinking off per
+   attempt (#591 AC-1). `reconnecting` stays reserved for a never-failed
+   attempt — a cold launch or a healthy-session reconnect — so the banner
+   never flickers before anything has actually gone wrong. */
+export function macLinkFor(s: SupervisorState): MacLink {
+  if (s.phase === "connected") return "online";
+  if (s.phase === "connecting" && s.lastError === undefined)
+    return "reconnecting";
+  return "offline";
 }
 
 /** Cold launch + every later launch: cache hydrate first, then dial. */
@@ -141,19 +156,10 @@ export function startLink(mac: PairedMac, cached?: CachedDirectory): void {
   });
   supervisor = sv;
 
-  // supervisor phase -> the UI's three words. backoff/offline/blocked all
-  // read "Can't reach <Mac>" on Home — reconnecting is reserved for an open
-  // attempt so the banner never flickers during a healthy reconnect.
   const unsubLink = sv.state.listen((s) => {
     $linkError.set(s.lastError);
-    if (s.phase === "connected") {
-      $link.set("online");
-      void touchMac(mac.id);
-    } else if (s.phase === "connecting") {
-      $link.set("reconnecting");
-    } else {
-      $link.set("offline");
-    }
+    $link.set(macLinkFor(s));
+    if (s.phase === "connected") void touchMac(mac.id);
   });
 
   // Foreground wake: probe-or-replace lives in the supervisor; we only owe
@@ -190,6 +196,7 @@ export function startLink(mac: PairedMac, cached?: CachedDirectory): void {
     client.conversations.listen(persist),
     client.conversationSummaries.listen(persist),
     client.profile.listen(persist),
+    client.asks.listen(persist),
     unsubLink,
   ];
 

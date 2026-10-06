@@ -487,3 +487,26 @@ test("AC-3b a send landing mid-turn steers — the landing wait resolves the tur
     }),
   ).toHaveCount(1);
 });
+
+/* #576 review: the editor is its own UI layer — one Esc closes it, the
+   next Esc closes Focus. Before the fix a single press did both. */
+test("Esc in the comment editor closes only the editor, then Focus", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  seedChanges();
+  await freshSession(page);
+  await openChanges(page);
+  await expect(diff(page, "a.txt")).toBeVisible({ timeout: 30_000 });
+
+  await diff(page, "a.txt").locator('[data-diff-line="2"] td').nth(2).click();
+  await expect(commentEditor(page)).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(commentEditor(page)).toHaveCount(0);
+  await expect(page).toHaveURL(FOCUS_URL);
+  await expect(diff(page, "a.txt")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+});

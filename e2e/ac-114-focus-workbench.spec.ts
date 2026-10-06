@@ -346,14 +346,15 @@ test("AC-2 Focus is the same live conversation: streaming, steps, approvals, mod
     { timeout: 60_000 },
   );
 
-  // Esc inside the composer is still the turn's Stop — Focus stays open.
+  // ⌘. inside the composer is still the turn's Stop — Focus stays open.
   const stopped = await sendTurn(page, "Add another note to the readme");
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
   const box = page.locator("main textarea");
   await box.click();
-  await page.keyboard.press("Escape");
+  /* ⌘. is the stop shortcut — Esc only closes surfaces now (#576). */
+  await page.keyboard.press("Meta+Period");
   // Wait the turn-ended wire condition before asserting the footer chip
   // (turn.completed -> data-turnsettled), not a wall-clock guess (#257).
   await expectSettled(stopped);

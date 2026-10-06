@@ -1,5 +1,6 @@
 import { CalendarClockIcon, ShieldIcon, XIcon } from "lucide-react";
 import { useState } from "react";
+import { useUiLayerEl } from "../chat/ui-layers";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
@@ -86,6 +87,9 @@ export function TaskDialog({
       access,
     });
 
+  /* #576: Esc closes this dialog while it is the top-most layer. */
+  const layerRef = useUiLayerEl<HTMLDivElement>({ onEscape: onClose });
+
   return (
     <div
       className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-4 sm:p-6"
@@ -93,7 +97,9 @@ export function TaskDialog({
     >
       <div
         role="dialog"
+        aria-modal="true"
         aria-label={task ? "Edit scheduled task" : "New scheduled task"}
+        ref={layerRef}
         data-task-dialog
         className="flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}

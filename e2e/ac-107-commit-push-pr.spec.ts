@@ -329,7 +329,9 @@ test("AC-2 (#584) Suggest is a side request: no user message, no turn; fills the
   /* The ask landed while the turn was provably still running (data-turnsettled
      not yet rendered). Release it via the composer Stop → interrupt. */
   await expect(turn.locator("[data-turnsettled]")).toHaveCount(0);
-  await page.getByTitle("Stop (Esc)").click();
+  /* #576 renamed the tooltip to "Stop (⌘.)" — match the role name so a
+     future copy change can't break this again. */
+  await page.getByRole("button", { name: /stop/i }).click();
   await expectSettled(turn);
   /* And it survives a reload (the draft is persisted): reload mid-session,
      the box still shows the suggestion. */

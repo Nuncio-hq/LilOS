@@ -493,7 +493,7 @@ test("AC-5b a mid-turn image queues as the next prompt instead of steering", asy
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
-  await expect(page.getByText("Enter steers · ■ stop")).toBeVisible({
+  await expect(page.getByText("Enter steers · ⌘. stop")).toBeVisible({
     timeout: 30_000,
   });
 

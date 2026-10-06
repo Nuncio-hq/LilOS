@@ -203,8 +203,8 @@ export function FocusComposer({
                 status={status}
                 type="button"
                 onClick={onStop}
-                title="Stop (Esc)"
-                aria-label="Stop (Esc)"
+                title="Stop (⌘.)"
+                aria-label="Stop (⌘.)"
               >
                 <SquareIcon className="size-3.5 fill-current" />
               </PromptInputSubmit>

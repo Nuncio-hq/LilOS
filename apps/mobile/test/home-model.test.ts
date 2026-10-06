@@ -1,3 +1,4 @@
+import { DEVICE_CACHE_SCHEMA_VERSION } from "@lilos/client-runtime";
 import type {
   AppChannel,
   AppMessage,
@@ -122,6 +123,7 @@ const wire = (over: Partial<HomeWire> = {}): HomeWire => ({
   conversations: [],
   summaries: [],
   asks: [],
+  online: true,
   ...over,
 });
 
@@ -268,7 +270,7 @@ describe("home-model (#155)", () => {
       autoReconnect: false,
     });
     client.hydrate({
-      schemaVersion: 1,
+      schemaVersion: DEVICE_CACHE_SCHEMA_VERSION,
       savedAt: 1,
       employees: [emp("e1")],
       channels: [ch("ch1", "e1")],
@@ -277,6 +279,7 @@ describe("home-model (#155)", () => {
       ],
       conversationSummaries: [],
       profile: {},
+      asks: [],
       watermarks: {},
     });
     const w = wire({
@@ -292,6 +295,72 @@ describe("home-model (#155)", () => {
       state: "working",
       now: "Cached task",
     });
+  });
+
+  it("AC-2 offline rows say last known: ask rows and live-looking now-lines (#591)", () => {
+    const w = wire({
+      online: false,
+      employees: [emp("e1")],
+      channels: [ch("ch1", "e1")],
+      conversations: [
+        conv("c1", "ch1", { title: "Patch README" }),
+        conv("c2", "ch1", { state: "active", title: "Mid-turn task" }),
+      ],
+      asks: [ask("a1", "ch1", "c1", NOW - 120_000)],
+    });
+    // Activity's ask row is marked...
+    expect(toApproval(w.asks[0] as Ask, w, NOW).lastKnown).toBe(true);
+    // ...and so are the live-looking employee states.
+    const row = toEmployeeRow(emp("e1"), w, NOW);
+    expect(row.now).toBe("Last known · Waiting on you · Patch README");
+    expect(row.lastKnown).toBe(true);
+    // Online, the same wire carries no mark.
+    const live = wire({ ...w, online: true });
+    expect(toApproval(live.asks[0] as Ask, live, NOW).lastKnown).toBe(
+      undefined,
+    );
+    expect(toEmployeeRow(emp("e1"), live, NOW).now).toBe(
+      "Waiting on you · Patch README",
+    );
+  });
+
+  it("AC-2 a working row offline reads last known; an idle row stays plain (#591)", () => {
+    const w = wire({
+      online: false,
+      channels: [ch("ch1", "e1"), ch("ch2", "e2")],
+      conversations: [
+        conv("c1", "ch1", { state: "active", title: "Mid-turn task" }),
+      ],
+    });
+    const e1 = toEmployeeRow(emp("e1"), w, NOW);
+    expect(e1.now).toBe("Last known · Mid-turn task");
+    expect(e1.lastKnown).toBe(true);
+    const e2 = toEmployeeRow(emp("e2"), w, NOW);
+    expect(e2.now).toBe("Idle");
+    expect(e2.lastKnown).toBeUndefined();
+  });
+
+  it("AC-2 a long session label offline can never truncate the marker away (#591)", () => {
+    const long = "x".repeat(200);
+    const w = wire({
+      online: false,
+      channels: [ch("ch1", "e1")],
+      conversations: [
+        conv("c1", "ch1", { state: "active", title: `Refactor ${long}` }),
+      ],
+      asks: [ask("a1", "ch1", "c2", NOW - 60_000)],
+    });
+    /* The row renders `now` on one truncating line — the marker must be
+       FIRST, so a label of any length still reads stale. */
+    for (const row of [
+      /* the ask path: "Waiting on you · <long label>" */
+      toEmployeeRow(emp("e1"), w, NOW),
+      /* the working path: "<long label>" */
+      toEmployeeRow(emp("e1"), { ...w, asks: [] }, NOW),
+    ]) {
+      expect(row.now.startsWith("Last known · ")).toBe(true);
+      expect(row.lastKnown).toBe(true);
+    }
   });
 
   it("AC-1 every DM channel gets a subscription so asks and turns arrive live", () => {
