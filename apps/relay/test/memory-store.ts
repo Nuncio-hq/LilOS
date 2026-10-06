@@ -12,7 +12,7 @@ import type {
   RecentFolder,
 } from "@lilos/contracts/app";
 import { toSummaryMessage, toSummaryPreview } from "@lilos/contracts/app";
-import { equalSecret } from "../src/auth";
+import { equalSecret } from "@lilos/contracts/auth";
 import type {
   AppendMessageInput,
   DevicePush,
