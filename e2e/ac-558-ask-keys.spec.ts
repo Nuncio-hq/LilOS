@@ -97,8 +97,11 @@ test("AC-558-1 a waiting approval card shows the hint and ↵ allows once", asyn
   test.setTimeout(180_000);
   await dmDefault(stackA, page);
   /* `slow:` keeps the turn live after the answer lands — the resolved
-     card's "Allowed once" label lives only while its turn does. */
-  await send(page, "slow:150 update the readme with a release note");
+     card's "Allowed once" label lives only while its turn does. The
+     post-ask tail is only ~3 steps + the closing text, so the pace must
+     be generous enough (~30 s window) that the label survives CI input
+     latency long enough to assert it. */
+  await send(page, "slow:1500 update the readme with a release note");
   const card = openCard(page);
   await expect(card).toBeVisible({ timeout: 60_000 });
   const askId = await card.getAttribute("data-ask-id");

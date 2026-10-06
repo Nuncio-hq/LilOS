@@ -87,7 +87,7 @@ export function RewindHover({
   return (
     <span
       title={title}
-      className="absolute top-1 right-1.5 z-10 opacity-0 transition-opacity group-hover:opacity-100"
+      className="absolute top-1 right-1.5 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
     >
       <button
         type="button"
@@ -484,6 +484,7 @@ const sameRow = (a: TurnRowProps, b: TurnRowProps): boolean =>
   a.pr === b.pr &&
   a.prAuthor === b.prAuthor &&
   a.rewindWarning === b.rewindWarning &&
+  a.keyTarget === b.keyTarget &&
   a.acts === b.acts;
 
 export const TurnRow = memo(TurnRowImpl, sameRow);

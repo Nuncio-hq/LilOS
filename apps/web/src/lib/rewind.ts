@@ -24,6 +24,9 @@ export interface RewoundDrop {
   fromSeq: number;
   ids: ReadonlySet<string>;
   texts: ReadonlySet<string>;
+  /** Individual drops merged into this record — kept so undropping one
+     restores the right fromSeq for what remains hidden. Internal. */
+  parts?: RewoundDrop[];
 }
 
 /** Pending + committed drops per conversation. A committed rewind keeps its
@@ -75,6 +78,7 @@ function dropFor(conversationId: string, drop: RewoundDrop): void {
       fromSeq: Math.min(prev?.fromSeq ?? drop.fromSeq, drop.fromSeq),
       ids: new Set([...(prev?.ids ?? []), ...drop.ids]),
       texts: new Set([...(prev?.texts ?? []), ...drop.texts]),
+      parts: [...(prev?.parts ?? (prev ? [prev] : [])), drop],
     },
   });
 }
@@ -84,11 +88,22 @@ function undropFor(conversationId: string, drop: RewoundDrop): void {
   if (!prev) return;
   const ids = new Set([...prev.ids].filter((id) => !drop.ids.has(id)));
   const texts = new Set([...prev.texts].filter((t) => !drop.texts.has(t)));
+  /* fromSeq must follow the drops that REMAIN — undoing a second rewind
+     inside the first's window must not keep rows between the two cut
+     points hidden. */
+  const parts = (prev.parts ?? [prev]).filter((p) => p !== drop);
   const map = { ...rewindDrops.get() };
-  /* fromSeq is the MIN over drops — the entry goes only when nothing else
-     remains hidden. */
   if (!ids.size && !texts.size) delete map[conversationId];
-  else map[conversationId] = { ...prev, ids, texts };
+  else
+    map[conversationId] = {
+      ...prev,
+      fromSeq: parts.length
+        ? Math.min(...parts.map((p) => p.fromSeq))
+        : prev.fromSeq,
+      ids,
+      texts,
+      parts,
+    };
   rewindDrops.set(map);
 }
 

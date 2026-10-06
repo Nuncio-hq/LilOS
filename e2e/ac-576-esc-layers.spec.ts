@@ -70,7 +70,8 @@ test("AC-576-1 Esc during a running turn never stops it — ⌘. does", async ({
   await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
   await expect(page.getByText(RUNNING_HINT)).toBeVisible({ timeout: 30_000 });
 
-  // Esc while typing in the composer: closes nothing here, stops nothing.
+  /* Esc while typing in the composer pops the top layer (Focus → thread
+     view) but stops nothing — the running hint is visible on both. */
   const box = page.locator("textarea").last();
   await box.click();
   await page.keyboard.press("Escape");
