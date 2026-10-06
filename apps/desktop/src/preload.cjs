@@ -78,4 +78,21 @@ contextBridge.exposeInMainWorld("lilos", {
     return () =>
       ipcRenderer.removeListener("lilos:open-conversation", listener);
   },
+  /* #554 find-in-thread: the Edit menu's Find items arrive over
+     lilos:find; the renderer's find bar runs webContents.findInPage via
+     lilos:find-query / lilos:find-stop, and Chromium's found-in-page
+     answers (match count + active ordinal) come back on
+     lilos:found-in-page. */
+  onFind: (cb) => {
+    const listener = (_e, action) => cb(action);
+    ipcRenderer.on("lilos:find", listener);
+    return () => ipcRenderer.removeListener("lilos:find", listener);
+  },
+  findInPage: (query) => ipcRenderer.send("lilos:find-query", query),
+  stopFindInPage: () => ipcRenderer.send("lilos:find-stop"),
+  onFindResult: (cb) => {
+    const listener = (_e, result) => cb(result);
+    ipcRenderer.on("lilos:found-in-page", listener);
+    return () => ipcRenderer.removeListener("lilos:found-in-page", listener);
+  },
 });

@@ -10,10 +10,16 @@ import {
 } from "@lilos/background";
 import { RelayClient } from "@lilos/client-runtime";
 import {
+  DESKTOP_FIND_CHANNEL,
+  DESKTOP_FIND_QUERY_CHANNEL,
+  DESKTOP_FIND_STOP_CHANNEL,
+  DESKTOP_FOUND_CHANNEL,
   DESKTOP_NOTIFY_CHANNEL,
   DESKTOP_OPEN_CONVERSATION_CHANNEL,
   DESKTOP_OPEN_SETTINGS_CHANNEL,
   DESKTOP_THEME_CHANNEL,
+  type DesktopFindAction,
+  type DesktopFindQuery,
   type DesktopUpdateOutcome,
 } from "@lilos/contracts/app";
 import {
@@ -428,6 +434,38 @@ function openAppSettings(): void {
   }
 }
 
+/* #554: the Edit menu's Find items forward to the app window, whose find
+   bar drives webContents.findInPage from the renderer. With no app window
+   the items are inert — same convention as TextEdit's Find menu. */
+function sendFind(action: DesktopFindAction): void {
+  mainWindow?.webContents.send(DESKTOP_FIND_CHANNEL, action);
+}
+
+/* The find bar's queries land on whichever webContents sent them —
+   `found-in-page` answers carry the match count back over lilos:found-in-page
+   so the bar can show N of M. */
+function wireFind(): void {
+  ipcMain.on(DESKTOP_FIND_QUERY_CHANNEL, (event, raw: unknown) => {
+    if (event.sender !== mainWindow?.webContents) return;
+    const q = raw as DesktopFindQuery;
+    if (typeof q?.text !== "string" || q.text.length === 0) return;
+    /* A first request must go out with no options — Chromium drops a
+       findNext:false request when no find session exists yet, silently
+       (no found-in-page ever fires). Stepping uses findNext:true. */
+    if (q.step === "next") {
+      event.sender.findInPage(q.text, { forward: true, findNext: true });
+    } else if (q.step === "prev") {
+      event.sender.findInPage(q.text, { forward: false, findNext: true });
+    } else {
+      event.sender.findInPage(q.text);
+    }
+  });
+  ipcMain.on(DESKTOP_FIND_STOP_CHANNEL, (event) => {
+    if (event.sender !== mainWindow?.webContents) return;
+    event.sender.stopFindInPage("clearSelection");
+  });
+}
+
 function openConversation(conversationId: string): void {
   const win = mainWindow;
   if (!win) return;
@@ -483,6 +521,12 @@ function createAppWindow(): void {
   mainWindow = win;
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = undefined;
+  });
+  // #554: Chromium's find results feed the bar's match readout.
+  win.webContents.on("found-in-page", (_e, result) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send(DESKTOP_FOUND_CHANNEL, result);
+    }
   });
   // Never open a new window; external links go to the browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -601,10 +645,11 @@ app.whenReady().then(async () => {
   // status window stays one click away on its own item, no accelerator.
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
-      appMenuTemplate(openAppSettings, createStatusWindow),
+      appMenuTemplate(openAppSettings, createStatusWindow, sendFind),
     ),
   );
   wireNotifications();
+  wireFind();
 
   const snap = await statusWithLiveAgents();
   const needsApproval = snap.agents.some(

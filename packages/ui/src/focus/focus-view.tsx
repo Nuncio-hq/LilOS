@@ -178,6 +178,7 @@ export function FocusView({
   caps,
   onSuggest,
   onPr,
+  findBar,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -306,6 +307,9 @@ export function FocusView({
   /* #579 AC-1: the Workbench's live forge read reports the session's PR
      upward — a just-created/merged PR reaches the header chip instantly. */
   onPr?: (pr: PullRequest | null) => void;
+  /* #554: the host's wired find bar, rendered as an overlay inside the
+     conversation scrollport (desktop ⌘F); absent = no find UI. */
+  findBar?: ReactNode;
 }) {
   /* A `?tab=` destination shows its tab even under lg, where the panel is
      an overlay — "open on Subagents" means visibly open (#319 AC-1).
@@ -1030,6 +1034,7 @@ export function FocusView({
             <QuestionAwareScrollButton />
             <FindUnstubNudge />
             <FindUnstubAnchor lazy={lazyRows} />
+            {findBar}
             {/* Not-sent tray / plan tray / steer chips grow the area below the conversation;
                 re-stick so everything stays visible without scrolling (issue #15). */}
             <ConversationKeepBottom

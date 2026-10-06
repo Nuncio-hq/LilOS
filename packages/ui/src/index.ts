@@ -38,6 +38,8 @@ export { ConnectStep } from "./connect/connect-step";
 export { NotConnectedNotice } from "./connect/not-connected-notice";
 // conversation (shared by the thread panel and Focus — issue #19)
 export { ReplyCards } from "./conversation/cards";
+export { FindBar } from "./conversation/find-bar";
+export { setFindSessionOpen } from "./conversation/find-unstub";
 export { type PlanAction, PlanCard } from "./conversation/plan-card";
 export {
   type QuestionAnswer,

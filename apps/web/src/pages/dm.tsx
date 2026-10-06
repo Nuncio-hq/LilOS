@@ -87,6 +87,7 @@ import {
 } from "../lib/attachments";
 import { requestConnect } from "../lib/connect";
 import { FoldCache, type FoldInputs } from "../lib/conv-fold";
+import { DesktopFindBar } from "../lib/desktop-find";
 import {
   listHirableProfiles,
   removeEmployee,
@@ -1605,6 +1606,8 @@ export function DmPage() {
               replace: true,
             })
           }
+          /* #554: ⌘F over the conversation (desktop bridge; absent on web). */
+          findBar={<DesktopFindBar />}
           pending={pendingItems}
           onRemovePending={onRemovePending}
           onUnqueue={onUnqueue}
@@ -1817,6 +1820,8 @@ export function DmPage() {
                 }
               : undefined
           }
+          /* #554: ⌘F over the conversation (desktop bridge; absent on web). */
+          findBar={<DesktopFindBar />}
         />
         {openQuestion && (
           <QuestionCard

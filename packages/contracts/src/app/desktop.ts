@@ -25,6 +25,40 @@ export const DESKTOP_THEME_CHANNEL = "lilos:theme-source" as const;
  * which opens macOS Login Items. */
 export const DESKTOP_OPEN_SETTINGS_CHANNEL = "lilos:open-app-settings" as const;
 
+/** IPC channel: main → renderer, a Find-menu action the renderer's find
+ * bar executes (issue #554): "open" shows/focuses the bar, "next"/"prev"
+ * advance the active match. */
+export const DESKTOP_FIND_CHANNEL = "lilos:find" as const;
+/** IPC channel: renderer → main — runs `webContents.findInPage`. */
+export const DESKTOP_FIND_QUERY_CHANNEL = "lilos:find-query" as const;
+/** IPC channel: renderer → main — ends the find session, clearing
+ *  highlights (`webContents.stopFindInPage`). */
+export const DESKTOP_FIND_STOP_CHANNEL = "lilos:find-stop" as const;
+/** IPC channel: main → renderer — Chromium's `found-in-page` result so the
+ * bar can show the N-of-M readout (issue #554). */
+export const DESKTOP_FOUND_CHANNEL = "lilos:found-in-page" as const;
+
+/** What the Edit menu's Find items ask the renderer to do (#554). */
+export type DesktopFindAction = "open" | "next" | "prev";
+
+/** One `webContents.findInPage` call (#554). Omitted `step` starts a fresh
+ *  find session for `text` (main issues the request with no options —
+ *  Chromium silently drops a follow-up request when no session exists);
+ *  "next"/"prev" walk the active match down/up the page. */
+export interface DesktopFindQuery {
+  text: string;
+  step?: "next" | "prev";
+}
+
+/** The piece of Chromium's `found-in-page` result the find bar renders
+ *  (Electron forwards the rest unused). */
+export interface DesktopFoundResult {
+  /** Total matches for the current find session; 0 = "No results". */
+  matches: number;
+  /** 1-based ordinal of the highlighted match. */
+  activeMatchOrdinal: number;
+}
+
 /** The app's stored theme — the window's appearance must match it or the
  * sidebar vibrancy material turns unreadable (dark text on dark vibrancy). */
 export type ThemeSource = "light" | "dark" | "system";
@@ -121,4 +155,15 @@ export interface DesktopBridge {
   updateStatus?: () => Promise<DesktopUpdateStatus | undefined>;
   /** Un-skip a rolled-back build and re-run the update check (#539). */
   retryUpdate?: () => Promise<DesktopUpdateOutcome>;
+  /** Subscribe to Edit-menu Find actions — ⌘F / ⌘G / ⇧⌘G (#554). Absent on
+   *  plain web, where the browser's own find bar owns the chord. Returns
+   *  an unsubscribe function. */
+  onFind?: (cb: (action: DesktopFindAction) => void) => () => void;
+  /** Run one `webContents.findInPage` (desktop only, #554). */
+  findInPage?: (query: DesktopFindQuery) => void;
+  /** Clear the find session's highlights (desktop only, #554). */
+  stopFindInPage?: () => void;
+  /** Subscribe to `found-in-page` results for the match readout (#554).
+   *  Returns an unsubscribe function. */
+  onFindResult?: (cb: (result: DesktopFoundResult) => void) => () => void;
 }
