@@ -466,6 +466,14 @@ export const ConversationsOpenParams = z
     /** The new conversation's access level (#106); absent = Settings'
         default (`defaultAccess`, fallback `"ask"`). */
     access: ConversationAccess.optional(),
+    /**
+     * Exactly-once key for retried opens (#552): a re-open with a key the
+     * channel already recorded returns the original conversation + root
+     * message instead of minting a second thread (no `message.created` /
+     * `conversation.updated` re-emitted either). Same (channelId, key)
+     * slot `messages.post` dedupes on.
+     */
+    dedupeKey: z.string().min(1).max(200).optional(),
   })
   .refine(
     (p) => p.text.length > 0 || (p.attachments?.length ?? 0) > 0,

@@ -10,6 +10,7 @@ import {
   clearDraft,
   clearDraftIfSent,
   draftKey,
+  draftSendKey,
   dropDrafts,
   getDraft,
   setDraft,
@@ -229,5 +230,57 @@ describe("Composer controlled draft", () => {
     await submit(box);
     expect(onSend).toHaveBeenCalledWith("ephemeral", []);
     expect(box.value).toBe("");
+  });
+});
+
+describe("draft send key (#552)", () => {
+  test("AC-1 a resend of the same draft reuses its key — the key belongs to the draft, not the tap", () => {
+    const key = draftKey.thread("conv-a");
+    setDraft(key, "did that land?");
+    const first = draftSendKey(key);
+    expect(first).toMatch(/^u-/);
+    /* The failed send kept the draft — the resend must repeat the key or
+       the relay can't dedupe the stored-but-unanswered first attempt. */
+    expect(draftSendKey(key)).toBe(first);
+  });
+
+  test("AC-1 editing the draft mints a fresh key; clearing drops it", () => {
+    const key = draftKey.dm("emp-1");
+    setDraft(key, "first wording");
+    const first = draftSendKey(key);
+    /* Edited text is a new send — never a dedupe hit on the old one. */
+    setDraft(key, "first wording, edited");
+    expect(draftSendKey(key)).not.toBe(first);
+    /* A cleared draft loses its key; re-typing the same words is a new
+       send (deliberate re-posts are allowed). */
+    const second = draftSendKey(key);
+    clearDraft(key);
+    setDraft(key, "first wording, edited");
+    expect(draftSendKey(key)).not.toBe(second);
+  });
+
+  test("AC-1 a draft saved before #552 (plain text) still reads, then carries a key", () => {
+    const key = draftKey.thread("conv-legacy");
+    localStorage.setItem(`lilos:composer-draft:${key}`, "pre-envelope draft");
+    expect(getDraft(key)).toBe("pre-envelope draft");
+    const k = draftSendKey(key);
+    expect(draftSendKey(key)).toBe(k);
+    expect(getDraft(key)).toBe("pre-envelope draft");
+  });
+
+  test("AC-1 a draft that starts with '{' is text, not an envelope", () => {
+    const key = draftKey.thread("conv-brace");
+    /* Typed JSON or a malformed envelope must read back as the draft,
+       never parse-eat it (and draftSendKey mustn't wipe it). */
+    setDraft(key, '{"cmd":"build"}');
+    expect(getDraft(key)).toBe('{"cmd":"build"}');
+    const k = draftSendKey(key);
+    expect(draftSendKey(key)).toBe(k);
+    expect(getDraft(key)).toBe('{"cmd":"build"}');
+    localStorage.setItem(`lilos:composer-draft:${key}`, "{not json");
+    expect(getDraft(key)).toBe("{not json");
+    /* Valid JSON that isn't an envelope reads back as the draft too. */
+    localStorage.setItem(`lilos:composer-draft:${key}`, '{"a":1}');
+    expect(getDraft(key)).toBe('{"a":1}');
   });
 });

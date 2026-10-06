@@ -676,6 +676,15 @@ And the patch shape — red and green line backgrounds:
 \`\`\`
 `
 
+/* #566 fixture — identical copy in packages/engine-fake/src/markdown-samples.ts. */
+const LINK_SAFETY_SAMPLE = `Here's what I pulled up:
+
+![network map](https://img.example.com/lilos-topology.png?session=abc123)
+
+- Docs: [architecture notes](https://lilos.dev/docs/architecture) — a normal link.
+- Watch-outs: [the payload](javascript:alert(1)), [a local file](file:///etc/passwd) and [the share](smb://files.local/share) must stay text, not links.
+- Or ping [ops](mailto:ops@lilos.dev) if the map looks wrong.`
+
 function scriptFor(empId: string, prompt: string, followUp = false, branch?: string, repo = "Nuncio-hq/LilOS", cwd?: string, images?: AttachedFile[]): Script {
   const q = prompt.replace(/\*\*/g, "").replace(/@\w+\s*/g, "").trim().replace(/[?.!]+$/, "")
   const tail = cwd && branch ? `I'm in \`${cwd}\` on ⎇ \`${branch}\`. Tell me what to change and I'll edit there.` : "Still read-only on `main`; nothing edited yet."
@@ -687,6 +696,16 @@ function scriptFor(empId: string, prompt: string, followUp = false, branch?: str
       reasoning: `Code-block rendering check — answer with the 7-block sample: a typed fence, python, bash, a long unbroken JSON line, markdown-looking text in a fence, an unlabelled indented block and a diff.`,
       steps: [],
       text: CODEBLOCKS_SAMPLE,
+    }
+  }
+  /* `md: links` — the #566 reply-safety fixture: a remote image (placeholder
+     until clicked) and non-web link schemes that render as plain text.
+     Identical copy in packages/engine-fake/src/markdown-samples.ts. */
+  if (/^md(?:arkdown)?:\s*links/i.test(q)) {
+    return {
+      reasoning: `Reply-safety check — the remote image and the non-web links are the point.`,
+      steps: [],
+      text: LINK_SAFETY_SAMPLE,
     }
   }
   /* #420: "…and ask me …" → the employee ends the turn on a `question`
