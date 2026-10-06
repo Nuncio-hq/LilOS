@@ -252,6 +252,26 @@ PR does not exist.
   "Engine error:". Not: classifying failures by matching error text, or
   asserting on adapter diagnostics the harness only sometimes forwards.
   — #521
+- **D-#548 LilOS's `hermes serve` runs `--isolated`; a host multiplex
+  attach/refusal is a fatal verdict, not a crash.** Hermes runs one
+  machine-level backend per OS user: a `serve` without the flag attaches to
+  the host owner and exits 0. The adapter feature-probes `serve --help` for
+  `--isolated` (no version string answers it), maps the attach/refusal log
+  markers to reserved exit 87 — fatal, no retries — and a relaunch hitting
+  the conflict marks the backend `failed` on the spot (`kick()` re-arms).
+  Not: counting the attach toward the crash budget, or pinning a Hermes
+  version for a mid-line feature. — #548
+- **D-#549 LilOS activates the `lilos` plugin on ITS OWN backend and
+  suppresses Hermes' `browser` toolset at the offer.** `plugins enable`'s
+  live-activation nudge is routed to the host-record owner — an
+  observe-only `--isolated` backend never receives it, so before every
+  `session.create`/`session.resume` the engine checks `plugins.list` and
+  POSTs `agent-plugins/activate` {name, home} on its own backend. And
+  connect writes `agent.disabled_toolsets: [browser]` per profile:
+  `browser_exec`/`browser_vault_*` are stripped from the offer (the
+  plugin's `pre_tool_call` block stays as the call-time gate). Not:
+  relying on the record-routed nudge, or blocking browser tools only at
+  call time while they still appear in the model's list. — #549
 - **D-#36 The agent gateway is the one agent surface.** Every engine
   session gets a gateway scope bound to its employee/thread; its tool
   calls reach LilOS through one endpoint and the scope resolves the

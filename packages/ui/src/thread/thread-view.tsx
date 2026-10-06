@@ -412,10 +412,11 @@ export function ThreadView({
         </div>
       </div>
       <Conversation className="min-h-0">
-        {/* Bottom padding ≈ the composer height so the newest turn — a
-            question card's Skip row included — scrolls fully clear of the
-            composer instead of landing under it (Hermes FIX #515). */}
-        <ConversationContent className="gap-0 p-0 pt-2 pb-28">
+        {/* The composer sits below the scroller in normal flow — nothing
+            overlays the last turn, so only a small bottom pad is needed;
+            the question card's Skip row stays fully visible on its own row
+            (#515, #602). */}
+        <ConversationContent className="gap-0 p-0 pt-2 pb-3">
           {transcriptNote?.kind === "trimmed" && (
             <TranscriptNoteRow note={transcriptNote} />
           )}

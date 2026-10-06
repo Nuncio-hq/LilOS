@@ -140,6 +140,26 @@ describe("AC-1 (#95) a too-old Hermes is fatal — no retry loop", () => {
   });
 });
 
+describe("AC-3 (#548) a host-owner conflict is fatal — no retry loop", () => {
+  it("a child exiting on the reserved conflict code fails fatally with its stderr line", async () => {
+    const launcher = commandLauncher({
+      name: "hermes",
+      command: [
+        "sh",
+        "-c",
+        "echo 'another Hermes backend is already running on this Mac (PID 96194, port 55066)' >&2; exit 87",
+      ],
+      readyPattern: /NEVER/,
+      fatalExitCodes: [87],
+      log: log(),
+    });
+    const err = await launcher.start().catch((e) => e);
+    expect(isFatalEngineStart(err)).toBe(true);
+    expect(err).toBeInstanceOf(FatalEngineStart);
+    expect(String(err)).toContain("another Hermes backend is already running");
+  });
+});
+
 describe("#521 engine output mirrors into the harness log", () => {
   it("stdout lines keep landing in the logger after ready (#521)", async () => {
     const logger = log();

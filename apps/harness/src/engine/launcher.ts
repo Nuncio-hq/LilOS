@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { scrubLilosEnv } from "@lilos/contracts/env";
 import {
+  HERMES_HOST_CONFLICT_EXIT_CODE,
   HERMES_TOO_OLD_EXIT_CODE,
   hermesTooOldMessage,
   isHermesVersionSupported,
@@ -385,7 +386,10 @@ export function hermesEngineLauncher(options: {
         command,
         readyPattern: /LISTENING (ws:\/\/\S+)/,
         startupTimeoutMs: 300_000, // hermes serve cold-starts ACP tooling
-        fatalExitCodes: [HERMES_TOO_OLD_EXIT_CODE],
+        fatalExitCodes: [
+          HERMES_TOO_OLD_EXIT_CODE,
+          HERMES_HOST_CONFLICT_EXIT_CODE,
+        ],
         env: options.env,
         log: options.log,
       }).start();

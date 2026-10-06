@@ -11,6 +11,7 @@ import type {
   ProfileSettings,
   RecentFolder,
 } from "@lilos/contracts/app";
+import { equalSecret } from "../src/auth";
 import type {
   AppendMessageInput,
   DevicePush,
@@ -527,7 +528,8 @@ export function createMemoryStore(): RelayStore {
     async authenticateDevice({ deviceId, credentialHash, seenAt }) {
       const device = devices.get(deviceId);
       if (!device || device.revokedAt !== undefined) return null;
-      if (device.credentialHash !== credentialHash) return null;
+      // #568: same constant-time compare as the drizzle store.
+      if (!equalSecret(device.credentialHash, credentialHash)) return null;
       device.lastSeenAt = seenAt;
       return rowToDevice(device);
     },

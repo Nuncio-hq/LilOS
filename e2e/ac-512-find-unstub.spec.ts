@@ -1,4 +1,5 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Locator, test } from "@playwright/test";
+import { growDmThread } from "./helpers/relay-thread";
 import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
@@ -14,9 +15,10 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  * it hops to a match — and it is the reader's: nothing may undo it, and
  * the lapse re-pins to the bottom only if the port is still there.
  *
- * One 60-turn engine-fake thread (ENGINE_FAKE_TICK=2 keeps 60 sends cheap).
- * The window is driven by the `?findUnstubMs=` test hook — the spec never
- * sleeps: stubs returning is polled, not timed.
+ * One 60-turn engine-fake thread grown through relay RPC (ENGINE_FAKE_TICK=2
+ * keeps 60 turns cheap; #574 — the browser never types them). The window is
+ * driven by the `?findUnstubMs=` test hook — the spec never sleeps: stubs
+ * returning is polled, not timed.
  */
 
 let stack: Stack;
@@ -36,41 +38,6 @@ test.afterAll(async () => {
    match mid-window. */
 const NUDGE_PX = 150;
 
-/* First-run → land on Default's DM. `?findUnstubMs=2500` must ride the
-   FIRST load — the store reads it once at module eval, so client-side
-   route changes keep it. 2.5 s is long enough that slow CI polls can't
-   race the lapse, short enough the re-stub leg still lands fast.
-   `?findUnstubNudge=` rides too — it arms the #537 drift hook. */
-async function dmDefault(page: Page) {
-  await page.goto(
-    `${stack.webUrl}/?findUnstubMs=2500&findUnstubNudge=${NUDGE_PX}`,
-  );
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
-
-const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
-  await box.fill(text);
-  await box.press("Enter");
-};
-
 /** Turn `i`'s card inside `scope` ended (held stubs keep the markers). */
 async function waitSettled(scope: Locator, i: number) {
   const turns = scope.locator("[data-agentturn]");
@@ -86,40 +53,29 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
   page,
 }) => {
   test.setTimeout(240_000);
-  await dmDefault(page);
 
-  /* Turn 1 (lands in Focus) opens the conversation — its message becomes
-     the thread ROOT, which the panel renders in a permanently-mounted row
-     (never a lazy turn row), so the probe phrase must NOT ride it. It
-     rides user turn 2 instead: a held reply row off-screen. */
-  await send(
-    page,
+  /* The 60-turn thread grows through relay RPC (#574) — turn 1 opens the
+     conversation so its message becomes the thread ROOT, which the panel
+     renders in a permanently-mounted row (never a lazy turn row); the
+     probe phrase must NOT ride it. It rides user turn 2 instead: a held
+     reply row off-screen. The browser still asserts the identical
+     persisted thread. */
+  const grown = await growDmThread(stack, [
     "where does the relay keep session state and how does recovery work?",
-  );
-  const focus = page.locator("[data-thread]");
-  await waitSettled(focus, 1);
+    "status check pass 2 findprobe-alpha-turn2",
+    ...Array.from({ length: 58 }, (_, i) => `status check pass ${i + 3}`),
+  ]);
 
-  /* The same thread peeked open in the panel — the frame the issue
-     profiled. Turns 2..60 run there. `page.goto` is a real reload — the
-     store re-reads `?findUnstubMs=` on module eval, so the hook must
-     ride this URL too (any prior query is stripped first). */
+  /* Straight to the panel route of the grown thread — `?findUnstubMs=`
+     rides this FIRST load since the store reads it once at module eval;
+     `?findUnstubNudge=` arms the #537 drift hook the same way. */
   await page.goto(
-    `${page
-      .url()
-      .replace(/\/focus.*$/, "")
-      .replace(/\?.*$/, "")}?findUnstubMs=2500&findUnstubNudge=${NUDGE_PX}`,
+    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}` +
+      `?findUnstubMs=2500&findUnstubNudge=${NUDGE_PX}`,
   );
   const panel = page.locator("[data-thread-panel]");
   await expect(panel).toBeVisible({ timeout: 60_000 });
-  for (let i = 2; i <= 60; i++) {
-    await send(
-      page,
-      i === 2
-        ? "status check pass 2 findprobe-alpha-turn2"
-        : `status check pass ${i}`,
-    );
-    await waitSettled(panel, i);
-  }
+  await waitSettled(panel, 60);
 
   /* 121 reply rows » TURN_LAZY_AFTER — far-off-screen rows hold as stubs.
      The phrase poll is the proof the probe's own row held: it exists
