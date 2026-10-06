@@ -135,6 +135,7 @@ import {
   relay,
   sessionFeedAttached,
   sessionModels,
+  sessionWatched,
   workbenchRequests,
 } from "../lib/runtime";
 import { sendKeyDoneForSend, sendKeyForSend } from "../lib/send-key";
@@ -353,7 +354,7 @@ export function DmPage() {
   const [editAgent, setEditAgent] = useState<
     AgentDescriptor | null | undefined
   >(undefined);
-  useAtom(attachmentUrls);
+  const attachUrls = useAtom(attachmentUrls);
 
   /* AC-2 (#85): an engine that's down (Hermes missing, crashed out) shows
      its plain reason above the composer — never silently sendable. */
@@ -840,6 +841,7 @@ export function DmPage() {
   }, [employeeId, convs, folderRows, wsPicks]);
 
   const feedAttached = useAtom(sessionFeedAttached);
+  const watched = useAtom(sessionWatched);
 
   const modelFor = (conv: Conversation): SessionModel | undefined =>
     conv.engineRef ? models[conv.engineRef] : undefined;
@@ -850,9 +852,13 @@ export function DmPage() {
      (and the partial model live frames alone would mint) until the first
      replay lands; a terminal replay error latches attached too so the #28
      degraded thread keeps the raw relay view. Non-engine conversations are
-     always bound — there is no feed to wait on. */
+     always bound — there is no feed to wait on. #572: neither are sessions
+     the watch doesn't feed — an unwatched conversation has no replay coming,
+     so its relay rows render as-is instead of being held back. */
   const transcriptBound = (conv: Conversation): boolean =>
-    !conv.engineRef || feedAttached[conv.engineRef] === true;
+    !conv.engineRef ||
+    feedAttached[conv.engineRef] === true ||
+    watched[conv.engineRef] !== true;
   const boundModel = (
     conv: Conversation,
   ): SessionModel | "pending" | undefined =>
@@ -904,6 +910,16 @@ export function DmPage() {
   const folds = useMemo(() => new FoldCache(), []);
   const foldInputs = (conv: Conversation): FoldInputs => {
     const summary = summaryByConv.get(conv.id);
+    const msgs = msgsByConv.get(conv.id) ?? NO_MSGS;
+    const root = summary?.root ?? msgById.get(conv.rootMessageId);
+    /* #572: the resolved attachment URLs key the fold — a watched
+       session's replay churn used to hide that the chips' urls bake at
+       fold time; an unwatched one folds once and needs the explicit
+       input or thumbnails never appear (ac-112). */
+    const refs = [
+      ...(root?.attachments ?? []),
+      ...msgs.flatMap((m) => m.attachments ?? []),
+    ];
     return {
       conv,
       model: modelFor(conv),
@@ -911,7 +927,7 @@ export function DmPage() {
          would keep serving the "pending" fold after the feed attaches and
          the held-back engine replies would never appear. */
       bound: boundModel(conv),
-      msgs: msgsByConv.get(conv.id) ?? NO_MSGS,
+      msgs,
       asks: convAsks(conv),
       rewoundEvent: rewinds[conv.id],
       /* The open conv's local rewound ids/texts (#134) join the event's
@@ -922,7 +938,8 @@ export function DmPage() {
           ? { ids: localRewoundIds, texts: localRewoundTexts }
           : undefined,
       summary,
-      root: summary?.root ?? msgById.get(conv.rootMessageId),
+      root,
+      urls: refs.length ? refs.map((r) => attachUrls[r.id]) : undefined,
       employees,
       cwdInfo: cwdBranches,
       employeeId,

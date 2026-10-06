@@ -1,6 +1,5 @@
 import {
   type DescribeResult,
-  ENGINE_EVENT_TYPES,
   EngineEvent,
   EVENT_METHOD,
   type EventsSinceResult,
@@ -243,7 +242,36 @@ export class EngineClient {
     return feed;
   }
 
+  /**
+   * #572: stop watching a session — drop its feed atom and cancel pending
+   * resync work. The atom object survives for anyone still holding it, but
+   * no live event, replay, or retry touches it again; nothing recreates it
+   * unless `sessionFeed()` is called. Lets the engine-side log GC.
+   */
+  releaseSession(sessionId: string): void {
+    const feed = this.feeds.get(sessionId);
+    if (!feed) return;
+    this.feeds.delete(sessionId);
+    this.resyncInFlight.delete(feed);
+    const retry = this.resyncRetries.get(feed);
+    if (retry?.timer) clearTimeout(retry.timer);
+    this.resyncRetries.delete(feed);
+  }
+
+  /** Non-creating read — unlike `sessionFeed()` this never mints a feed. */
+  feedState(sessionId: string): SessionFeedState | undefined {
+    return this.feeds.get(sessionId)?.get();
+  }
+
   /* ------------------------------ internals ----------------------------- */
+
+  /** The atom can outlive its watch — a released feed mustn't be written. */
+  private feedLive(
+    sessionId: string,
+    feed: WritableAtom<SessionFeedState>,
+  ): boolean {
+    return this.feeds.get(sessionId) === feed;
+  }
 
   private openSocket(): Promise<void> {
     this.state.set(this.description.get() ? "reconnecting" : "connecting");
@@ -417,6 +445,9 @@ export class EngineClient {
     feed: WritableAtom<SessionFeedState>,
   ): Promise<void> {
     const state = feed.get();
+    /* #572: the watch can release mid-flight — don't replay for a feed
+       nobody owns. */
+    if (!this.feedLive(state.sessionId, feed)) return;
     try {
       /* A feed that never synced replays from 0, not from the live
          watermark: coverageSeq only advances in order, so mid-turn events
@@ -436,6 +467,9 @@ export class EngineClient {
           after: 0,
         });
       }
+      /* Released mid-replay: the atom is orphaned — writing merged state
+         would look like work on a feed the watch dropped. */
+      if (!this.feedLive(state.sessionId, feed)) return;
       // Re-read: live events can land while the replay is in flight. The
       // replay is authoritative only through `res.latestSeq` — merging onto
       // the fresh state (not the pre-await snapshot) keeps those live events
@@ -485,6 +519,9 @@ export class EngineClient {
       if (pending?.timer) clearTimeout(pending.timer);
       this.resyncRetries.delete(feed);
     } catch (error) {
+      /* #572: released while the request was in flight — don't resurrect
+         the atom or schedule a retry for it. */
+      if (!this.feedLive(state.sessionId, feed)) return;
       feed.set({
         ...feed.get(),
         error: feedErrorText(error),

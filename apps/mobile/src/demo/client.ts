@@ -4,7 +4,11 @@ import type {
   RelaySessionFeedState,
   StatusPollState,
 } from "@lilos/client-runtime";
-import { type CachedDirectory, RelayError } from "@lilos/client-runtime";
+import {
+  type CachedDirectory,
+  DEVICE_CACHE_SCHEMA_VERSION,
+  RelayError,
+} from "@lilos/client-runtime";
 import type {
   AppChannel,
   AppMessage,
@@ -214,13 +218,14 @@ export class DemoClient {
 
   snapshot(): CachedDirectory {
     return {
-      schemaVersion: 1,
+      schemaVersion: DEVICE_CACHE_SCHEMA_VERSION,
       savedAt: Date.now(),
       employees: this.employees.get(),
       channels: this.channels.get(),
       conversations: this.conversations.get(),
       conversationSummaries: this.conversationSummaries.get(),
       profile: this.profile.get(),
+      asks: this.asks.get(),
       watermarks: {},
     };
   }

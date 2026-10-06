@@ -3,16 +3,22 @@
  * session models. Approvals waiting on the user and running turns are counted
  * per employee across that employee's DM conversations; the sidebar renders
  * approvals first (amber, priority) then running (blue).
+ *
+ * #572: unwatched sessions have no model — the broadcast-folded signal (or
+ * the relay row's `state`) answers instead, so a background badge survives
+ * the scoped replay.
  */
 import type { SessionModel } from "@lilos/client-runtime";
 import type { AppChannel, Conversation } from "@lilos/contracts/app";
 import type { EmpBadge } from "@lilos/ui/types";
 import { computed, type ReadableAtom } from "nanostores";
+import type { SessionSignal } from "./session-watch";
 
 export function employeeBadges(
   channels: readonly AppChannel[],
   conversations: readonly Conversation[],
   models: Record<string, SessionModel>,
+  signals: Record<string, SessionSignal>,
 ): Record<string, EmpBadge> {
   const out: Record<string, EmpBadge> = {};
   for (const ch of channels) {
@@ -22,11 +28,25 @@ export function employeeBadges(
     for (const c of conversations) {
       if (c.channelId !== ch.id || !c.engineRef) continue;
       const m = models[c.engineRef];
-      if (!m) continue;
+      const sig = signals[c.engineRef];
+      /* The broadcast-folded signal is always authoritative-or-equal:
+         unwatched sessions get running/asks from it (or the row's `state`
+         before the first seed), watched sessions get it reconciled off
+         the synced model — so an attach/sync window never blinks a badge
+         off. The model's live turn still wins when it says "waiting". */
+      const asks = Math.max(
+        m?.openRequests.length ?? 0,
+        sig?.openRequests.size ?? 0,
+      );
       // A turn parked on an open request reads "needs you", not "running"
       // (issue #71, AC-4).
-      if (m.live && m.live.phase !== "waiting") running += 1;
-      approvals += m.openRequests.length;
+      const run =
+        (m?.live !== undefined && m.live.phase !== "waiting") ||
+        (m?.live === undefined &&
+          (sig?.running ?? c.state === "active") &&
+          asks === 0);
+      if (run) running += 1;
+      approvals += asks;
     }
     if (running || approvals) {
       out[ch.employeeId] = {
@@ -70,12 +90,16 @@ export function badgeStore(
   channels: ReadableAtom<readonly AppChannel[]>,
   conversations: ReadableAtom<readonly Conversation[]>,
   models: ReadableAtom<Record<string, SessionModel>>,
+  signals: ReadableAtom<Record<string, SessionSignal>>,
 ): ReadableAtom<Record<string, EmpBadge>> {
   let prev: Record<string, EmpBadge> = {};
-  return computed([channels, conversations, models], (ch, cv, m) => {
-    const next = employeeBadges(ch, cv, m);
-    if (sameBadges(prev, next)) return prev;
-    prev = next;
-    return next;
-  });
+  return computed(
+    [channels, conversations, models, signals],
+    (ch, cv, m, sig) => {
+      const next = employeeBadges(ch, cv, m, sig);
+      if (sameBadges(prev, next)) return prev;
+      prev = next;
+      return next;
+    },
+  );
 }

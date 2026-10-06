@@ -43,6 +43,7 @@ export function EmployeeDmScreen({
   onPickFolder,
   onPickModel,
   prefill,
+  unreachableNote,
 }: {
   name: string;
   tone: OrbTone;
@@ -60,6 +61,9 @@ export function EmployeeDmScreen({
   onPickModel?: () => void;
   /** Composer text to put in and focus (e.g. a draft a failed send kept). */
   prefill?: { text: string };
+  /** #591: a thin line above the composer while the Mac is unreachable
+      ("Can't reach <Mac>"). */
+  unreachableNote?: string;
 }) {
   const insets = useSafeAreaInsets();
   const [composerHeight, setComposerHeight] = useState(96);
@@ -106,7 +110,20 @@ export function EmployeeDmScreen({
           })}
         </ScrollView>
 
-        <View className="absolute inset-x-0 bottom-0">
+        <View className="absolute inset-x-0 bottom-0 gap-2">
+          {unreachableNote && (
+            <View className="flex-row items-center justify-center gap-1.5">
+              <Icon
+                name="wifi.exclamationmark"
+                size={12}
+                tone="muted-foreground"
+                weight="medium"
+              />
+              <AppText size="xs" tone="muted">
+                {unreachableNote}
+              </AppText>
+            </View>
+          )}
           <Composer
             placeholder={`New thread with ${name}`}
             folder={folder}

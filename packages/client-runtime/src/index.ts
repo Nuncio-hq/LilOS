@@ -10,9 +10,13 @@ export {
 export {
   CachedDirectory,
   type CachedDirectory as CachedDirectoryType,
+  CachedMessages,
+  type CachedMessages as CachedMessagesType,
   DEVICE_CACHE_SCHEMA_VERSION,
   DeviceCache,
   type DeviceCacheKV,
+  MESSAGES_CACHE_SCHEMA_VERSION,
+  MessageCache,
 } from "./device-cache";
 export {
   EngineClient,
