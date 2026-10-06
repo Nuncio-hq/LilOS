@@ -66,24 +66,37 @@ mkdir -p "$HOME/.hermes" "$HERMES_HOME" "$LILOS_HOME"
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$REAL_HOME/Library/Caches/ms-playwright}"
 
 # Isolated HERMES_HOME makes hermes bootstrap re-provision its tools into
-# the scratch dir AND rewrite the real launcher shims
+# the scratch dir AND re-mint the real install-local launchers
 # (~/.hermes/hermes-agent/.hermes/bin/*) to exec that scratch python —
-# which dies with this dir. Snapshot the real shims now; restore them on
-# exit so the real install survives the leg.
-SHIM_BACKUP="$SCRATCH/shim-backup"
-mkdir -p "$SHIM_BACKUP"
-for f in "$REAL_HOME/.hermes/hermes-agent/.hermes/bin/"*; do
-  [ -f "$f" ] && cp -p "$f" "$SHIM_BACKUP/$(basename "$f")"
-done
+# which dies with this dir. Snapshot the launcher dir now; restore it on
+# exit, whatever happens. cp -R, not cp -p/-a: flag-preserving copies keep
+# macOS file flags, and launchers locked `chflags uchg` (Hermes locks them
+# during live legs) would make the snapshot un-rm-able inside SCRATCH.
+# Same corrected pattern as scripts/live/548.sh.
+INSTALL_BIN="$REAL_HOME/.hermes/hermes-agent/.hermes/bin"
+LAUNCHER_SNAPSHOT="$SCRATCH/launcher-backup"
+mkdir -p "$LAUNCHER_SNAPSHOT"
+if [ -d "$INSTALL_BIN" ]; then
+  cp -R "$INSTALL_BIN/." "$LAUNCHER_SNAPSHOT/" 2>/dev/null || true
+fi
 
 # Kill only what THIS script owns: the children spawned inside 550.ts die
 # with it (helpers' exit hook + the detached group kill), and the harness's
 # own shutdown closes its `hermes serve` child through the normal path.
 # No pkill anywhere — other people's engines stay untouched.
 cleanup() {
-  for f in "$SHIM_BACKUP/"*; do
-    [ -f "$f" ] && cp -p "$f" "$REAL_HOME/.hermes/hermes-agent/.hermes/bin/$(basename "$f")"
-  done
+  if [ -d "$INSTALL_BIN" ] && [ -n "$(ls -A "$LAUNCHER_SNAPSHOT" 2>/dev/null)" ]; then
+    for f in "$LAUNCHER_SNAPSHOT/"*; do
+      [ -f "$f" ] || continue
+      dst="$INSTALL_BIN/$(basename "$f")"
+      # A uchg-locked launcher can't be overwritten — and an identical one
+      # needs no restore, so skip it before ever touching the flag.
+      cmp -s "$f" "$dst" 2>/dev/null && continue
+      chflags nouchg "$dst" 2>/dev/null || true
+      cp -f "$f" "$dst" 2>/dev/null || true
+    done
+  fi
+  chflags -R nouchg "$SCRATCH" 2>/dev/null || true
   rm -rf "$SCRATCH"
 }
 trap cleanup EXIT

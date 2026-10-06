@@ -154,7 +154,10 @@ try {
   });
   await relay.connect();
   const rl = relay;
-  feedClient = new EngineClient({ url: stack.feedWs });
+  /* #564: the feed upgrade gate 401s an untokened socket — the install
+     token rides `?token=` (EngineClient appends it). Same credential as
+     the relay socket above. */
+  feedClient = new EngineClient({ url: stack.feedWs, token: stack.relayToken });
   await feedClient.connect();
 
   /* ── scenario: task → steer mid-turn → Stop ─────────────────────────── */
@@ -441,11 +444,43 @@ try {
         check(true, "UI: no stop note posted — nothing to render");
       }
       await page.locator("[data-agentturn]").last().scrollIntoViewIfNeeded();
+      /* pr-assets carries the after-Stop render in both themes — this
+         page runs under the default (light) prefers-color-scheme. */
       await page.screenshot({
-        path: join(SHOTS, "550-after-stop.png"),
+        path: join(SHOTS, "550-after-stop-light.png"),
         fullPage: false,
       });
-      out(`screenshot ${join(SHOTS, "550-after-stop.png")}`);
+      out(`screenshot ${join(SHOTS, "550-after-stop-light.png")}`);
+
+      /* The dark pass: a fresh context with an emulated dark
+         prefers-color-scheme — `lilos-theme` unset means "system", so
+         the shell follows the media query. Evidence only; the DOM
+         asserts above are theme-independent. */
+      const darkCtx = await browser.newContext({
+        viewport: { width: 1440, height: 900 },
+        colorScheme: "dark",
+      });
+      try {
+        const dp = await darkCtx.newPage();
+        await dp.addInitScript(
+          "try { localStorage.setItem('lilos-onboarded', '1'); } catch {}",
+        );
+        await dp.goto(
+          `${stack.webUrl}/dm/${encodeURIComponent(employee.id)}/${encodeURIComponent(conversation.id)}`,
+        );
+        await dp
+          .locator("[data-agentturn] [data-turnsettled]")
+          .first()
+          .waitFor({ state: "visible", timeout: 60_000 });
+        await dp.locator("[data-agentturn]").last().scrollIntoViewIfNeeded();
+        await dp.screenshot({
+          path: join(SHOTS, "550-after-stop-dark.png"),
+          fullPage: false,
+        });
+        out(`screenshot ${join(SHOTS, "550-after-stop-dark.png")}`);
+      } finally {
+        await darkCtx.close().catch(() => {});
+      }
     } catch (e) {
       check(false, "UI leg", e instanceof Error ? e.message : String(e));
     } finally {
