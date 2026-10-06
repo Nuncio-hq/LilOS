@@ -133,6 +133,17 @@ async function pickSessionFolder(page: Page, dir: string) {
       .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
       .last();
   })();
+  /* Recents populate async — `folders.list` plus a per-folder host probe —
+     so a one-shot check can miss a row that lands right after; the dialog
+     path then dead-ends because an already-attached folder's Add button
+     stays disabled forever (#606). Wait for any recent row first: `folders`
+     sets all rows in one atom write, so the first row means the list has
+     settled. An empty list (first-ever pick) just costs the timeout. */
+  await expect(menu.locator("[data-wsfolder]").first())
+    .toBeVisible({
+      timeout: 15_000,
+    })
+    .catch(() => {});
   const recent = menu.locator(`[data-wsfolder="${dir}"]`);
   if (
     await recent
@@ -354,4 +365,31 @@ test("AC-6 on LilOS itself: Workbench reopen → Files visible, measured", async
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({ path: `${SHOTS}/ac-6-lilos-reopen-dark.png` });
   await page.emulateMedia({ colorScheme: "light" });
+});
+
+/* #606: the AC-6 flake was a tab-follow race, not an empty probe — the
+   Files pick landed while the turn's first `live` row was still in the
+   feed, the late row re-armed "follow", and the streaming steps stole the
+   tab (lastStep `terminal` → the changes fallback). `slowstart:` holds
+   `turn.started` so the pick reliably lands first — the same window a
+   loaded CI runner opens. */
+test("AC-6 #606 pick-hold: a Files pick while the turn starts survives its first live row", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1288, height: 700 });
+  await dmDefault(page, path.dirname(repo));
+  await pickSessionFolder(page, repo);
+  await send(page, "slowstart:5000 check the folder");
+  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
+  await tab(page, "Files").click();
+  await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
+  /* The turn's live row + steps land ~5 s in — long after the pick. The
+     reply text ("Short answer") marks turn end; the pick must still hold. */
+  await expect(page.getByText("Short answer").first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(tab(page, "Files")).toHaveAttribute("aria-selected", "true");
+  await expect(rows(page).first()).toBeVisible();
 });

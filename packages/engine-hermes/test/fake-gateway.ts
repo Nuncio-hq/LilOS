@@ -173,6 +173,38 @@ export class FakeGateway implements GatewayLike {
   steerStatus: "queued" | "rejected" = "queued";
   /** When set, session.steer rejects with this error code (e.g. 4010 build window). */
   steerError?: number;
+  /** #549: `tools.list` rows, mirroring `_toolset_rows` ({name, description,
+     tool_count, enabled, tools}). Default = a healthy backend with the
+     lilos plugin live; the defect fixture clears the lilos row. */
+  toolsets: {
+    name: string;
+    description: string;
+    tool_count: number;
+    enabled: boolean;
+    tools: string[];
+  }[] = [
+    {
+      name: "core",
+      description: "core tools",
+      tool_count: 3,
+      enabled: true,
+      tools: ["terminal", "read_file", "web_search"],
+    },
+    {
+      name: "lilos",
+      description: "LilOS app surfaces",
+      tool_count: 2,
+      enabled: true,
+      tools: ["lilos_context", "lilos_team_list"],
+    },
+  ];
+  /** #549: `plugins.list` rows — the backend plugin manager's loaded set.
+     Default = a backend that already has lilos live (its enable nudge
+     landed, or a session on the owner profile activated it); the defect
+     fixture clears the row. */
+  plugins: { name: string; version?: string; enabled?: boolean }[] = [
+    { name: "lilos", version: "0.1.0", enabled: true },
+  ];
   /** #521: when set, prompt.submit rejects with it — a typed backend-death
       wire error landing inside prompt()'s submit await. */
   submitError?: RpcError;
@@ -199,6 +231,11 @@ export class FakeGateway implements GatewayLike {
       lets a test hold completeTurn's post-turn rotation poll mid-flight. */
   titleGate?: Promise<void>;
 
+  /** #573: when set, session.resume answers only after this promise
+      resolves — a test can land session.stop inside the resume window and
+      prove the forgotten session isn't resurrected when the answer lands. */
+  resumeGate?: Promise<void>;
+
   private refs = new Map<string, string>();
   /** stored_session_id -> the durable row session.resume reattaches to. */
   private storedByRef = new Map<string, { message_count: number }>();
@@ -208,6 +245,13 @@ export class FakeGateway implements GatewayLike {
       session.resume still 4040s). */
   burnRefs(n: number) {
     for (let i = 0; i < n; i++) this.refs.set(`pre-${i}`, `pre-${i}`);
+  }
+
+  /** #573: seed a durable stored row — a backend whose state.db kept the
+      row across restart resolves session.resume where a row-less fresh
+      backend 4040s into the create fallback. */
+  seedStored(ref: string) {
+    this.storedByRef.set(ref, { message_count: 0 });
   }
   private sreqId = 0;
   private sreqPending = new Map<
@@ -287,17 +331,22 @@ export class FakeGateway implements GatewayLike {
           return Promise.reject(
             new RpcError(4040, `session not found: ${key}`),
           );
-        const sid = `sid-${this.refs.size + 1}`;
-        this.refs.set(sid, ref);
-        this.lastSid = sid;
-        return Promise.resolve({
-          session_id: sid,
-          stored_session_id: ref,
-          message_count: stored.message_count,
-          messages: [],
-          messages_omitted: true,
-          info: { version: "v0.21.5+test", release_date: "2026.9.24" },
-        });
+        const reply = () => {
+          const sid = `sid-${this.refs.size + 1}`;
+          this.refs.set(sid, ref);
+          this.lastSid = sid;
+          return {
+            session_id: sid,
+            stored_session_id: ref,
+            message_count: stored.message_count,
+            messages: [],
+            messages_omitted: true,
+            info: { version: "v0.21.5+test", release_date: "2026.9.24" },
+          };
+        };
+        return this.resumeGate
+          ? this.resumeGate.then(reply)
+          : Promise.resolve(reply());
       }
       case "prompt.submit": {
         this.lastPrompt = p;
@@ -640,6 +689,10 @@ export class FakeGateway implements GatewayLike {
         }
         return Promise.resolve({ key, value });
       }
+      case "tools.list":
+        return Promise.resolve({ toolsets: this.toolsets });
+      case "plugins.list":
+        return Promise.resolve({ plugins: this.plugins });
       case "config.get": {
         const key = String(p.key ?? "");
         if (key === "approvals.mode")

@@ -87,6 +87,7 @@ describe("engine-fake", () => {
       "plan",
       "subagents",
       "background_jobs",
+      "side_prompt",
       "approval_policy",
     ]);
     c.close();
@@ -115,7 +116,7 @@ describe("engine-fake", () => {
     });
     await c.request("session.stop", { sessionId });
     await expect(promptText(c, sessionId, "look")).rejects.toMatchObject({
-      code: -32003,
+      code: -32001, // #573: a stopped session is forgotten entirely
     });
     c.close();
   });
@@ -856,9 +857,10 @@ describe("engine-fake #524: an interrupt inside the subagent-close drain leaks n
             e.type === "subagent.completed" && e.payload.subagentId === "sa-1",
         ),
       ).toBe(false);
-      const snap = await snapshot(c, sessionId);
-      expect(snap.state).toBe("closed");
-      expect(snap.turn).toBeUndefined();
+      /* #573: the stopped session is forgotten — even its snapshot is gone. */
+      await expect(
+        c.request("events.since", { sessionId, after: 0 }),
+      ).rejects.toMatchObject({ code: -32001 });
       await new Promise((r) => setTimeout(r, 20));
       expect(unhandled).toEqual([]);
     } finally {
@@ -1061,13 +1063,140 @@ describe("engine-fake #458: an interrupted leg settles instead of wedging the se
       expect(legCompleted(events, turnId)?.payload.stopReason).toBe(
         "cancelled",
       );
-      const snap = await snapshot(c, sessionId);
-      expect(snap.state).toBe("closed");
-      expect(snap.turn).toBeUndefined();
+      /* #573: the stopped session is forgotten — even its snapshot is gone. */
+      await expect(
+        c.request("events.since", { sessionId, after: 0 }),
+      ).rejects.toMatchObject({ code: -32001 });
       await new Promise((r) => setTimeout(r, 20));
       expect(unhandled).toEqual([]);
     } finally {
       off();
+      c.close();
+    }
+  });
+});
+describe("engine-fake #584: session.ask answers off-transcript", () => {
+  test("AC-1 the ask resolves an answer and logs no turn/events for it", async () => {
+    const c = conn();
+    const events: string[] = [];
+    c.onEvent((e) => events.push(e.type));
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/tmp/lilos-fake",
+    })) as { sessionId: string };
+    events.length = 0;
+    const r = (await c.request("session.ask", {
+      sessionId,
+      text: "Write a one-line git commit message for src/app.ts",
+    })) as { answer: string };
+    expect(r.answer).toBe("feat: update app.ts");
+    /* No frames at all — the session's transcript and event log only grow
+       through real turns. */
+    expect(events).toEqual([]);
+    /* The next prompt still opens the FIRST turn — the ask created none. */
+    const p = await promptText(c, sessionId, "hi");
+    expect(p.turnId).toBe("t1");
+    c.close();
+  });
+
+  test("AC-2 the ask answers while a turn is running", async () => {
+    const c = conn(30);
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+    })) as { sessionId: string };
+    /* `slow` paces the turn so the ask overlaps a live turn. */
+    const pending = promptText(c, sessionId, "slow do the thing");
+    const r = (await c.request("session.ask", {
+      sessionId,
+      text: "Write a commit message for packages/ui/x.tsx",
+    })) as { answer: string };
+    expect(r.answer).toBe("feat: update x.tsx");
+    await pending;
+    c.close();
+  });
+
+  test("the side_prompt capability gates session.ask", async () => {
+    const c = connectFake(
+      new FakeEngine({ capabilities: { side_prompt: false } }),
+    );
+    const r = (await c.request("describe")) as {
+      capabilities: { id: string }[];
+    };
+    expect(r.capabilities.map((x) => x.id)).not.toContain("side_prompt");
+    await expect(
+      c.request("session.ask", { sessionId: "s1", text: "hi" }),
+    ).rejects.toMatchObject({ code: -32601 });
+    c.close();
+  });
+});
+
+describe("engine-fake #573: session.stop forgets the session", () => {
+  test("AC-1 session.stop evicts the session — the map size drops and the id answers SESSION_NOT_FOUND", async () => {
+    const engine = new FakeEngine({ tick: 1 });
+    const c = connectFake(engine);
+    try {
+      const start = async () =>
+        (
+          (await c.request("session.start", {
+            agent: "builder",
+            cwd: "/t",
+          })) as { sessionId: string }
+        ).sessionId;
+      const a = await start();
+      const b = await start();
+      expect(engine.sessionCount).toBe(2);
+      const stopped = (await c.request("session.stop", {
+        sessionId: a,
+      })) as { stopped: boolean };
+      expect(stopped.stopped).toBe(true);
+      /* The leak this issue fixes: the stopped session's map entry — event
+         log included — leaves with it. */
+      expect(engine.sessionCount).toBe(1);
+      /* A forgotten id answers like a never-seen one: nothing to prompt,
+         replay, or stop twice. */
+      await expect(promptText(c, a, "still there?")).rejects.toMatchObject({
+        code: -32001,
+      });
+      await expect(
+        c.request("events.since", { sessionId: a, after: 0 }),
+      ).rejects.toMatchObject({ code: -32001 });
+      await expect(
+        c.request("session.stop", { sessionId: a }),
+      ).rejects.toMatchObject({ code: -32001 });
+      /* The surviving session is untouched. */
+      await expect(promptText(c, b, "ping")).resolves.toMatchObject({
+        stopReason: "end_turn",
+      });
+    } finally {
+      c.close();
+    }
+  });
+
+  test("AC-1 suspend keeps the map entry for resume; stopping the suspended session drops it", async () => {
+    const engine = new FakeEngine({ tick: 1 });
+    const c = connectFake(engine);
+    try {
+      const { sessionId } = (await c.request("session.start", {
+        agent: "builder",
+        cwd: "/t",
+      })) as { sessionId: string };
+      await c.request("session.suspend", { sessionId });
+      /* #346: a suspended session stays mapped so the next touch resumes
+         it — stop is the only forget. */
+      expect(engine.sessionCount).toBe(1);
+      const stopped = (await c.request("session.stop", {
+        sessionId,
+      })) as { stopped: boolean };
+      expect(stopped.stopped).toBe(true);
+      expect(engine.sessionCount).toBe(0);
+      await expect(
+        c.request("session.suspend", { sessionId }),
+      ).rejects.toMatchObject({ code: -32001 });
+      await expect(promptText(c, sessionId, "ping")).rejects.toMatchObject({
+        code: -32001,
+      });
+    } finally {
       c.close();
     }
   });

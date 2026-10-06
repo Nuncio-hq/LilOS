@@ -1052,3 +1052,142 @@ describe("auto titles + provenance (#137)", () => {
     expect(after).toMatchObject({ title: "Typed first", titleSource: "user" });
   });
 });
+
+describe("send dedupe (#552)", () => {
+  /* AC-2's exact scenario: the relay stored the send but its answer died
+     with the socket, so the client resends the same draft under the same
+     key on a fresh socket — one stored row, no second `message.created`,
+     and the host's owed list carries the send once (one turn). */
+  it("AC-2 messages.post resent after the socket dropped returns the stored message — one row, one turn", async () => {
+    const relay = newRelay();
+    const first = await helloed(relay);
+    const { channel } = await setupChannel(first.frames, first.connection);
+    await first.connection.receive(
+      req("conversations.open", { channelId: channel.id, text: "hi" }),
+    );
+    const { conversation } = resultOf(first.frames, `t${nextId - 1}`)
+      .result as { conversation: { id: string } };
+
+    await first.connection.receive(
+      req("messages.post", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        text: "did that land?",
+        dedupeKey: "u-draft-1",
+      }),
+    );
+    const posted = resultOf(first.frames, `t${nextId - 1}`).result as {
+      message: { id: string };
+    };
+    /* The response is the part the drop eats — the send already committed. */
+    first.connection.closed();
+
+    const retry = await helloed(relay);
+    await retry.connection.receive(
+      req("channel.subscribe", { channelId: channel.id }),
+    );
+    await retry.connection.receive(
+      req("messages.post", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        text: "did that land?",
+        dedupeKey: "u-draft-1",
+      }),
+    );
+    const resent = resultOf(retry.frames, `t${nextId - 1}`).result as {
+      message: { id: string };
+    };
+    expect(resent.message.id).toBe(posted.message.id);
+    expect(eventsNamed(retry.frames, "message.created")).toHaveLength(0);
+
+    await retry.connection.receive(
+      req("messages.list", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+      }),
+    );
+    const { messages } = resultOf(retry.frames, `t${nextId - 1}`).result as {
+      messages: { text: string }[];
+    };
+    expect(messages.map((m) => m.text)).toEqual(["hi", "did that land?"]);
+
+    /* One owed turn for the engine — the stored send appears in it once. */
+    const host = await helloed(relay);
+    await host.connection.receive(
+      req("harness.register", { protocolVersion: 1, version: "t" }),
+    );
+    const { pending } = resultOf(host.frames, `t${nextId - 1}`).result as {
+      pending: {
+        conversation: { id: string };
+        messages: { text: string }[];
+      }[];
+    };
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.conversation.id).toBe(conversation.id);
+    expect(pending[0]?.messages.map((m) => m.text)).toEqual([
+      "hi",
+      "did that land?",
+    ]);
+  });
+
+  /* AC-3: the open call carries the draft's key too — a retried open on a
+     fresh socket answers the stored thread instead of minting a second. */
+  it("AC-3 conversations.open resent after the socket dropped answers the stored thread", async () => {
+    const relay = newRelay();
+    const first = await helloed(relay);
+    const { channel } = await setupChannel(first.frames, first.connection);
+    await first.connection.receive(
+      req("conversations.open", {
+        channelId: channel.id,
+        text: "on a train — weak network",
+        dedupeKey: "u-draft-2",
+      }),
+    );
+    const opened = resultOf(first.frames, `t${nextId - 1}`).result as {
+      conversation: { id: string };
+      rootMessage: { id: string };
+    };
+    first.connection.closed();
+
+    const retry = await helloed(relay);
+    await retry.connection.receive(
+      req("channel.subscribe", { channelId: channel.id }),
+    );
+    await retry.connection.receive(
+      req("conversations.open", {
+        channelId: channel.id,
+        text: "on a train — weak network",
+        dedupeKey: "u-draft-2",
+      }),
+    );
+    const resent = resultOf(retry.frames, `t${nextId - 1}`).result as {
+      conversation: { id: string };
+      rootMessage: { id: string };
+    };
+    expect(resent.conversation.id).toBe(opened.conversation.id);
+    expect(resent.rootMessage.id).toBe(opened.rootMessage.id);
+    /* A dedupe hit re-announces nothing to the channel. */
+    expect(eventsNamed(retry.frames, "message.created")).toHaveLength(0);
+    expect(eventsNamed(retry.frames, "conversation.updated")).toHaveLength(0);
+
+    await retry.connection.receive(
+      req("conversations.list", { channelId: channel.id }),
+    );
+    const { conversations } = resultOf(retry.frames, `t${nextId - 1}`)
+      .result as { conversations: { id: string }[] };
+    expect(conversations).toHaveLength(1);
+
+    /* A fresh key is a new send — a second thread does open. */
+    await retry.connection.receive(
+      req("conversations.open", {
+        channelId: channel.id,
+        text: "a genuinely new session",
+        dedupeKey: "u-draft-3",
+      }),
+    );
+    const next = resultOf(retry.frames, `t${nextId - 1}`).result as {
+      conversation: { id: string };
+    };
+    expect(next.conversation.id).not.toBe(opened.conversation.id);
+  });
+});

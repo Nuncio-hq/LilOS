@@ -1,4 +1,5 @@
 import type { Conversation } from "@lilos/contracts/app";
+import { HOST_POLICY_VERSION } from "@lilos/contracts/harness";
 import { describe, expect, it, vi } from "vitest";
 import {
   SESSION_HEADER,
@@ -77,9 +78,13 @@ describe("AC-2 MCP over streamable HTTP", () => {
       expect(msg.result.protocolVersion).toBe("2025-06-18");
       expect(msg.result.capabilities.tools).toBeDefined();
       // The host policy rides in `instructions` — and knows this session's areas.
-      expect(msg.result.instructions).toContain("[LilOS host policy v2]");
+      expect(msg.result.instructions).toContain(
+        `[LilOS host policy v${HOST_POLICY_VERSION}]`,
+      );
       expect(msg.result.instructions).toContain("browser_*");
       expect(msg.result.instructions).toContain("thread_*");
+      // #549 AC-3: the policy names the ~/.lilos off-limits rule.
+      expect(msg.result.instructions).toContain("~/.lilos");
     } finally {
       api.server.close();
     }
@@ -455,6 +460,95 @@ describe("AC-3 aliases + catalog hardening (review)", () => {
 });
 
 /* ------------------------------------------------------------------ */
+/* Issue #611 — every gateway bearer compare is the shared constant-time  */
+/* `equalSecret`: a near-miss (same length, last char different) or a     */
+/* wrong-length token must be refused at each compare site.             */
+/* ------------------------------------------------------------------ */
+
+describe("#611 constant-time bearer compares", () => {
+  it("resolveToken (bearer-only) refuses near-miss and wrong-length tokens", async () => {
+    const { scope } = makeScope("s-miss");
+    const api = await serveGateway({
+      sessions: [{ scope, token: "tok-abcdef" }],
+    });
+    try {
+      for (const bad of ["tok-abcdeX", "tok-abcde", "tok-abcdef-x"]) {
+        const res = await fetch(`${api.baseUrl}/tools`, {
+          headers: { authorization: `Bearer ${bad}` },
+        });
+        expect(res.status, bad).toBe(401);
+      }
+      const ok = await fetch(`${api.baseUrl}/tools`, {
+        headers: { authorization: "Bearer tok-abcdef" },
+      });
+      expect(ok.status).toBe(200);
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("named-session path refuses a near-miss bearer even when the session is right", async () => {
+    const { scope } = makeScope("s-named");
+    const api = await serveGateway({
+      sessions: [{ scope, token: "tok-named" }],
+    });
+    try {
+      for (const bad of ["tok-namex", "tok-nam", "tok-named-longer"]) {
+        const res = await fetch(`${api.baseUrl}/tools`, {
+          headers: {
+            authorization: `Bearer ${bad}`,
+            [SESSION_HEADER]: "s-named",
+          },
+        });
+        expect(res.status, bad).toBe(401);
+      }
+      const ok = await fetch(`${api.baseUrl}/tools`, {
+        headers: {
+          authorization: "Bearer tok-named",
+          [SESSION_HEADER]: "s-named",
+        },
+      });
+      expect(ok.status).toBe(200);
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("engine-scoped token refuses near-miss and wrong-length guesses", async () => {
+    const { scope } = makeScope("s-eng");
+    const api = await serveGateway({
+      sessions: [{ scope, token: "tok-eng" }],
+      engineToken: "engine-secret-123",
+    });
+    try {
+      for (const bad of [
+        "engine-secret-12X",
+        "engine-secret",
+        "engine-secret-123-x",
+      ]) {
+        const res = await fetch(`${api.baseUrl}/tools`, {
+          headers: {
+            authorization: `Bearer ${bad}`,
+            [SESSION_HEADER]: "s-eng",
+          },
+        });
+        expect(res.status, bad).toBe(401);
+      }
+      // The real engine token + a named session resolves the caller.
+      const ok = await fetch(`${api.baseUrl}/tools`, {
+        headers: {
+          authorization: "Bearer engine-secret-123",
+          [SESSION_HEADER]: "s-eng",
+        },
+      });
+      expect(ok.status).toBe(200);
+    } finally {
+      api.server.close();
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /* Issue #340 AC-1 — the DM tools over the real gateway (engine-fake     */
 /* session): every tool's happy path plus the scope limit.               */
 /* ------------------------------------------------------------------ */
@@ -566,7 +660,7 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
       expect(
         (r.mac as { components: unknown[] }).components.length,
       ).toBeGreaterThan(0);
-      expect(r.hostPolicyVersion).toBe(2);
+      expect(r.hostPolicyVersion).toBe(HOST_POLICY_VERSION);
       expect(r.areas).toEqual(
         expect.arrayContaining(["root", "thread", "team", "workbench"]),
       );

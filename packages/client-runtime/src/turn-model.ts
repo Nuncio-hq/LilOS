@@ -84,9 +84,6 @@ export interface JobModel {
   by?: string;
   /** Rolling output tail (job.output replaces, never appends). */
   tail: string;
-  /** Synthesized subagent row (#309 `subagentJobs`) — jobs.stop can't kill
-      it, so surfaces hide the Stop affordance. */
-  subagent?: boolean;
 }
 
 export type TurnPhase =
@@ -153,10 +150,6 @@ export interface SessionModel {
   openRequests: TurnRequest[];
   /** Background processes of this session (job.* / jobs.list, #179). */
   jobs: JobModel[];
-  /** Helpers the session delegated to, as job-like rows (`sa:` jobIds) so
-      the Background tab lists a subagent still working past its turn
-      (#309). */
-  subagentJobs: JobModel[];
   model?: string;
   provider?: string;
   effort?: string;
@@ -798,32 +791,8 @@ export class SessionReducer {
 
     const live = out.find((t) => !TERMINAL.has(t.phase));
     const openRequests: TurnRequest[] = [];
-    /* #309: helpers as job-like rows — a subagent left running past its
-       turn lands on the Background tab (web) and the thread's job rows
-       (mobile) through the same feed, next to real jobs (which can also
-       carry by: <subagent name>). */
-    const SUBAGENT_JOB_STATUS: Record<SubagentModel["status"], JobStatus> = {
-      running: "running",
-      done: "exited",
-      failed: "failed",
-      stopped: "stopped",
-    };
-    const subagentJobs: JobModel[] = out.flatMap((t) =>
-      t.subagents.map((sa) => ({
-        jobId: `sa:${sa.subagentId}`,
-        command: sa.task || sa.name,
-        status: SUBAGENT_JOB_STATUS[sa.status],
-        /* Real times, not "up 0s": dispatch epoch while it runs; the
-           engine's reported duration freezes the finished row. */
-        ...(sa.startedAt !== undefined ? { startedAt: sa.startedAt } : {}),
-        ...(sa.status !== "running" && sa.startedAt !== undefined
-          ? { endedAt: sa.startedAt + (sa.durationMs ?? 0) }
-          : {}),
-        by: sa.name,
-        tail: sa.result ?? "",
-        subagent: true,
-      })),
-    );
+    /* #587 AC-2: helpers list ONLY on the Subagents tab (turn.subagents) —
+       the Background/jobs row merge #309 added was the duplication bug. */
     for (const t of out) {
       for (const r of t.requests) {
         if (r.outcome === undefined) openRequests.push(r);
@@ -840,7 +809,6 @@ export class SessionReducer {
       live,
       openRequests,
       jobs: [...this.jobs.values()],
-      subagentJobs,
       model: this.model,
       provider: this.provider,
       effort: this.effort,

@@ -11,7 +11,11 @@ import {
 } from "../engine/approvals";
 import { Capability } from "../engine/capabilities";
 import { EngineEvent } from "../engine/events";
-import { JobsListParams, JobsStopParams } from "../engine/methods";
+import {
+  JobsListParams,
+  JobsStopParams,
+  SessionAskParams,
+} from "../engine/methods";
 import { ModelOption, ModelProvider, ModelsListParams } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
 import { ForgePrListItem } from "../host/forge";
@@ -220,6 +224,9 @@ export const AppMethod = z.enum([
   /* The engine's global approval policy (#106) — Settings writes it through
      the same passthrough the model catalog uses. */
   "approvals.setPolicy",
+  /* One-shot side ask (#584): the Workbench's commit-message "Suggest" —
+     forwarded to the engine's session.ask. */
+  "session.ask",
   /* Phone pairing (#153): minting a grant is the opt-in that also binds the
      Tailscale listener; devices.list/revoke manage what the grant exchange
      created. `pairing.disable` turns phone access off again. */
@@ -263,6 +270,7 @@ export const ENGINE_PASSTHROUGH_METHODS = [
   "jobs.list",
   "jobs.stop",
   "approvals.setPolicy",
+  "session.ask",
 ] as const;
 export type EnginePassthroughMethod =
   (typeof ENGINE_PASSTHROUGH_METHODS)[number];
@@ -277,6 +285,7 @@ export const ENGINE_PASSTHROUGH_PARAMS = {
   "jobs.list": JobsListParams,
   "jobs.stop": JobsStopParams,
   "approvals.setPolicy": ApprovalsSetPolicyParams,
+  "session.ask": SessionAskParams,
 } as const satisfies Record<EnginePassthroughMethod, z.ZodType>;
 
 const HelloClient = z
@@ -383,7 +392,11 @@ export const ChannelResult = z.object({ channel: AppChannel });
 
 /* --------------------------- attachments (#31) --------------------------- */
 
-/** Largest single attachment the relay stores, in decoded bytes. */
+/**
+ * Largest single attachment the relay stores, in decoded bytes. Raising
+ * these caps must raise `MAX_FRAME_BYTES` (`../engine/envelope.ts`) too —
+ * the transport ceiling exists to fit this maximal send (#551).
+ */
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 /** Most attachments one message can carry. */
 export const MAX_ATTACHMENTS_PER_MESSAGE = 10;
@@ -462,6 +475,14 @@ export const ConversationsOpenParams = z
     /** The new conversation's access level (#106); absent = Settings'
         default (`defaultAccess`, fallback `"ask"`). */
     access: ConversationAccess.optional(),
+    /**
+     * Exactly-once key for retried opens (#552): a re-open with a key the
+     * channel already recorded returns the original conversation + root
+     * message instead of minting a second thread (no `message.created` /
+     * `conversation.updated` re-emitted either). Same (channelId, key)
+     * slot `messages.post` dedupes on.
+     */
+    dedupeKey: z.string().min(1).max(200).optional(),
   })
   .refine(
     (p) => p.text.length > 0 || (p.attachments?.length ?? 0) > 0,
