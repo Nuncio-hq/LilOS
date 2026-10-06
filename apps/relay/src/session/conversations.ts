@@ -138,12 +138,14 @@ export async function handleConversations(
         "deliveredSeq",
         "life",
         "turnFailure",
+        "turnStopped",
+        "bgJobs",
       ] as const;
       if (HOST_KEYS.some((k) => k in parsed.data) && !isHost(peer)) {
         throw new RpcError(
           JsonRpcCode.forbidden,
           "forbidden",
-          "only the registered engine host may write engineRef/state/model/provider/effort/fast/deliveredSeq/life/turnFailure",
+          "only the registered engine host may write engineRef/state/model/provider/effort/fast/deliveredSeq/life/turnFailure/turnStopped/bgJobs",
         );
       }
       const { conversationId, ...rest } = parsed.data;

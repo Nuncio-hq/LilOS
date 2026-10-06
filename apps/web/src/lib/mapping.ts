@@ -756,6 +756,12 @@ export function toFeed(
       ...(conv.turnFailure
         ? { alert: { ...conv.turnFailure, retry: true } }
         : {}),
+      /* #583: a stopped turn's word — relay-persisted like `turnFailure`
+         so a released session's summary-only row still says "stopped". */
+      ...(conv.turnStopped ? { stopped: true } : {}),
+      /* #583 AC-3: the relay-stamped running-job count — the row's badge
+         renders before the session feed lands. */
+      ...(conv.bgJobs ? { bgJobs: conv.bgJobs } : {}),
       ...(ws ? { ws } : {}),
       ...(jobs?.length ? { jobs } : {}),
     },

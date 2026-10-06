@@ -323,6 +323,14 @@ export type Thread = {
   /* Archived sessions hide from the DM list until the Archived disclosure is opened. */
   archived?: boolean;
   alert?: SessionAlert;
+  /* The last turn ended stopped (#583): stamped on the conversation so the
+     row's "stopped" word survives a released/replayed session with no live
+     turn model. */
+  stopped?: boolean;
+  /* Running background-job count (#583): the relay-stamped seed for the
+     row's "N in background" badge — the live `jobs` list wins once the
+     session feed lands. */
+  bgJobs?: number;
   /* Set on a session a scheduled task started (#136): the DM marks it and
      the chip opens the task. */
   scheduled?: { task: string; name: string };

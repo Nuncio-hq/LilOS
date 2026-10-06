@@ -169,6 +169,8 @@ export const threadState = (
     return { word: "running" };
   const lastTurn = [...t.replies].reverse().find((r) => r.turnId);
   if (t.alert || lastTurn?.phase === "failed") return { word: "failed" };
-  if (lastTurn?.phase === "stopped") return { word: "stopped" };
+  /* `t.stopped` is the row's own stamp (#583): a released session's replies
+     carry no turnId, so the live-turn check alone would lose the word. */
+  if (t.stopped || lastTurn?.phase === "stopped") return { word: "stopped" };
   return undefined;
 };

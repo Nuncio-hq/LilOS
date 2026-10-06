@@ -106,6 +106,12 @@ export const conversations = sqliteTable(
         the DM session row's alert card; host-written, cleared on the
         next `turn.started`. */
     turnFailure: text("turn_failure"),
+    /** The last turn ended stopped (#583): the DM session row's "stopped"
+        word; same host-written lifecycle as `turn_failure`. */
+    turnStopped: integer("turn_stopped", { mode: "boolean" }),
+    /** Running background-job count (#583): the DM session row's
+        "N in background" badge; same host-written lifecycle. */
+    bgJobs: integer("bg_jobs"),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [index("conversations_channel").on(t.channelId)],

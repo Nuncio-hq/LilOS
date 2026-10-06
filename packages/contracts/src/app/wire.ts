@@ -518,6 +518,12 @@ export const ConversationsUpdateParams = z.object({
   /** Host-only (#419): the last turn's failure the DM card shows —
       `null` clears it (the next `turn.started` erases the card). */
   turnFailure: TurnFailure.nullable().optional(),
+  /** Host-only (#583): the last turn ended stopped — `null` clears it
+      (the next `turn.started` erases the word). */
+  turnStopped: z.boolean().nullable().optional(),
+  /** Host-only (#583): running background-job count — the row's badge
+      and the session-watch seed. */
+  bgJobs: z.number().int().nonnegative().nullable().optional(),
 });
 export type ConversationsUpdateParams = z.infer<
   typeof ConversationsUpdateParams

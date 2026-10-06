@@ -25,7 +25,12 @@ export function ThreadSummary({
      aren't replies. */
   const replyCount = thread.replies.filter((r) => !r.system).length;
   const state = threadState(thread);
-  const bgJobs = thread.jobs?.filter((j) => j.status === "running").length ?? 0;
+  /* The live `jobs` list wins once the feed lands; the relay-stamped
+     `bgJobs` count (#583) covers the pre-attach/released window. */
+  const bgJobs =
+    thread.jobs?.filter((j) => j.status === "running").length ??
+    thread.bgJobs ??
+    0;
   return (
     <button
       onClick={onOpen}

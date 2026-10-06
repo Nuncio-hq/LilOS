@@ -1852,6 +1852,14 @@
           ],
           "additionalProperties": false
         },
+        "turnStopped": {
+          "type": "boolean"
+        },
+        "bgJobs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
         "createdAt": {
           "type": "integer",
           "minimum": 0,
@@ -2157,6 +2165,14 @@
                   "text"
                 ],
                 "additionalProperties": false
+              },
+              "turnStopped": {
+                "type": "boolean"
+              },
+              "bgJobs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "createdAt": {
                 "type": "integer",
@@ -2524,6 +2540,14 @@
               ],
               "additionalProperties": false
             },
+            "turnStopped": {
+              "type": "boolean"
+            },
+            "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
             "createdAt": {
               "type": "integer",
               "minimum": 0,
@@ -2813,6 +2837,24 @@
               "type": "null"
             }
           ]
+        },
+        "turnStopped": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "bgJobs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -3026,6 +3068,14 @@
                 "text"
               ],
               "additionalProperties": false
+            },
+            "turnStopped": {
+              "type": "boolean"
+            },
+            "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "createdAt": {
               "type": "integer",
@@ -4511,6 +4561,14 @@
               ],
               "additionalProperties": false
             },
+            "turnStopped": {
+              "type": "boolean"
+            },
+            "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
             "createdAt": {
               "type": "integer",
               "minimum": 0,
@@ -5196,6 +5254,14 @@
                       "text"
                     ],
                     "additionalProperties": false
+                  },
+                  "turnStopped": {
+                    "type": "boolean"
+                  },
+                  "bgJobs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "createdAt": {
                     "type": "integer",
@@ -7544,6 +7610,14 @@
                 "text"
               ],
               "additionalProperties": false
+            },
+            "turnStopped": {
+              "type": "boolean"
+            },
+            "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "createdAt": {
               "type": "integer",

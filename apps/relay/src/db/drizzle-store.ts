@@ -87,6 +87,8 @@ const rowToConversation = (row: ConversationRow): Conversation => {
     turnFailure: row.turnFailure
       ? (JSON.parse(row.turnFailure) as TurnFailure)
       : undefined,
+    turnStopped: row.turnStopped ?? undefined,
+    bgJobs: row.bgJobs ?? undefined,
   };
 };
 
