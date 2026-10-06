@@ -94,6 +94,13 @@ export interface SessionBinding {
       queue so nothing waiting can auto-run after it (#315). `seq` rides
       along so the Stop's `afterSeq` scope applies here too (#403). */
   steerPending: { messageId: string; text: string; seq: number }[];
+  /* #550: `turn.steered` landings still waiting on their `session.steer`
+     ack — engine-hermes emits the event inside the steer handler, so it
+     arrives BEFORE the response resolves on the in-order conn and can't
+     pair a steerPending entry yet. Texts (the payload's only key) sit
+     here until the ack claims them; a landed steer is delivered, never
+     a wait a Stop can park. */
+  steerLanded: string[];
   /** Grace window for stranded accepted steers (#315): scheduled when a
      turn ends or an accepted steer lands after it — at fire time any
      steerPending left parks in the not-sent tray via `messages.drop`. */
