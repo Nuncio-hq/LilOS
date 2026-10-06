@@ -14,6 +14,14 @@ import { newId, type RelayStore } from "./store";
 /** Grants live 5 minutes and die on first spend. */
 export const PAIRING_GRANT_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * Exchange throttle (#568): this many consecutive `unknown` misses lock
+ * `exchangeGrant` for the cooldown. Both numbers are the documented budget
+ * in SECURITY.md — online guessing at a 60-bit code must stay pointless.
+ */
+export const PAIRING_EXCHANGE_MAX_FAILURES = 5;
+export const PAIRING_EXCHANGE_COOLDOWN_MS = 60_000;
+
 /** 12 chars from T3's unambiguous alphabet — no 0/1/I/O confusion. */
 const PAIRING_CODE_LENGTH = 12;
 const PAIRING_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -50,13 +58,15 @@ export interface PairingService {
   /**
    * Spend a grant for a device credential. Success carries the device plus
    * the raw credential — the only place that value ever exists server-side.
+   * `throttled` (#568): too many consecutive `unknown` guesses — retry
+   * after the cooldown.
    */
   exchangeGrant(input: {
     code: string;
     name?: string;
   }): Promise<
     | { device: PairedDevice; credential: string }
-    | { error: "unknown" | "expired" | "used" }
+    | { error: "unknown" | "expired" | "used" | "throttled" }
   >;
   /**
    * `session.hello` auth for phones: hash-match an unrevoked device and bump
@@ -79,12 +89,23 @@ export function createPairingService(options: {
   now?: () => number;
   /** Grant TTL override (e2e expiry runs); default 5 min. */
   grantTtlMs?: number;
+  /** Exchange throttle knobs (#568); defaults in SECURITY.md. */
+  exchangeMaxFailures?: number;
+  exchangeCooldownMs?: number;
 }): PairingService {
   const { store } = options;
   const now = options.now ?? (() => Date.now());
   const grantTtlMs = options.grantTtlMs ?? PAIRING_GRANT_TTL_MS;
+  const maxFailures =
+    options.exchangeMaxFailures ?? PAIRING_EXCHANGE_MAX_FAILURES;
+  const cooldownMs = options.exchangeCooldownMs ?? PAIRING_EXCHANGE_COOLDOWN_MS;
   let onDevicesChanged: (() => void) | undefined;
   const changed = () => onDevicesChanged?.();
+  /* Shared miss budget + lock: pairing is a rare flow, so a per-source
+     limiter isn't worth the plumbing — while locked, every exchange waits
+     out the same cooldown. */
+  let misses = 0;
+  let throttledUntil = 0;
 
   return {
     async mintGrant() {
@@ -102,6 +123,9 @@ export function createPairingService(options: {
     },
 
     async exchangeGrant({ code, name }) {
+      /* #568: while the lock runs every exchange is refused — even a valid
+         code, so the lock actually costs an attacker the whole window. */
+      if (now() < throttledUntil) return { error: "throttled" };
       const credential = `devcred_${randomBytes(32).toString("hex")}`;
       const at = now();
       /* Consume + device insert are one store transaction — a failure can't
@@ -117,7 +141,20 @@ export function createPairingService(options: {
         },
         at,
       });
-      if ("error" in spent) return { error: spent.error };
+      if ("error" in spent) {
+        /* Only `unknown` counts against the budget: `used`/`expired` prove
+           the caller held a real code, so replaying a dead grant can never
+           lock the owner's own phone out. A success resets the counter. */
+        if (spent.error === "unknown") {
+          misses += 1;
+          if (misses >= maxFailures) {
+            throttledUntil = now() + cooldownMs;
+            misses = 0;
+          }
+        }
+        return { error: spent.error };
+      }
+      misses = 0;
       changed();
       return { device: spent.device, credential };
     },

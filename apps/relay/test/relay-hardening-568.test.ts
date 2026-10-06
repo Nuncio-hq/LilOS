@@ -2,10 +2,9 @@ import { APP_PROTOCOL_VERSION } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { createApp } from "../src/app";
-import {
-  createPairingService,
-  PAIRING_GRANT_TTL_MS,
-} from "../src/pairing";
+import { equalSecret } from "../src/auth";
+import { wsUpgradeOriginAllowed } from "../src/origin";
+import { createPairingService, PAIRING_GRANT_TTL_MS } from "../src/pairing";
 import { createRelay } from "../src/session";
 import {
   connectPeer,
@@ -21,13 +20,10 @@ import { createMemoryStore } from "./memory-store";
 /**
  * Issue #568 — relay hardening: constant-time secret compares, an Origin
  * gate on the `/ws` upgrade, and a throttle on `/pair/exchange` guesses.
- * New symbols (`equalSecret`, `wsUpgradeOriginAllowed`) are imported inside
- * the test bodies so a missing export fails one test, not the whole file.
  */
 
 describe("AC-1 constant-time secret compares", () => {
-  it("equalSecret answers equal/unequal regardless of input length", async () => {
-    const { equalSecret } = await import("../src/auth");
+  it("equalSecret answers equal/unequal regardless of input length", () => {
     expect(equalSecret("a", "a")).toBe(true);
     expect(equalSecret("", "")).toBe(true);
     expect(equalSecret("a", "b")).toBe(false);
@@ -71,9 +67,7 @@ describe("AC-1 constant-time secret compares", () => {
 
     // Same shape, different secret → null (hash compared in-process).
     const tampered = `devcred_${"0".repeat(64)}`;
-    expect(
-      await pairing.authenticateDevice(ex.device.id, tampered),
-    ).toBeNull();
+    expect(await pairing.authenticateDevice(ex.device.id, tampered)).toBeNull();
     expect(
       await pairing.authenticateDevice(ex.device.id, ex.credential),
     ).toMatchObject({ id: ex.device.id });
@@ -93,8 +87,7 @@ describe("AC-1 constant-time secret compares", () => {
 });
 
 describe("AC-2 Origin gate on the /ws upgrade", () => {
-  it("allows non-browser and loopback origins, refuses foreign ones", async () => {
-    const { wsUpgradeOriginAllowed } = await import("../src/origin");
+  it("allows non-browser and loopback origins, refuses foreign ones", () => {
     const host = "127.0.0.1:4577";
 
     // Non-browser clients (harness ws client, React Native, scripts) send
@@ -116,15 +109,11 @@ describe("AC-2 Origin gate on the /ws upgrade", () => {
 
     // Browser pages on any other origin never reach session.hello.
     expect(wsUpgradeOriginAllowed("https://evil.example", host)).toBe(false);
-    expect(wsUpgradeOriginAllowed("http://192.168.1.5:8080", host)).toBe(
+    expect(wsUpgradeOriginAllowed("http://192.168.1.5:8080", host)).toBe(false);
+    expect(wsUpgradeOriginAllowed("http://127.0.0.1.evil.example", host)).toBe(
       false,
     );
-    expect(
-      wsUpgradeOriginAllowed("http://127.0.0.1.evil.example", host),
-    ).toBe(false);
-    expect(wsUpgradeOriginAllowed("chrome-extension://abc", host)).toBe(
-      false,
-    );
+    expect(wsUpgradeOriginAllowed("chrome-extension://abc", host)).toBe(false);
     expect(wsUpgradeOriginAllowed("not a url", host)).toBe(false);
   });
 

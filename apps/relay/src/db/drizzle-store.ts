@@ -37,6 +37,7 @@ import {
   sql,
 } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
+import { equalSecret } from "../auth";
 import type {
   AppendMessageInput,
   ConversationPatch,
@@ -956,19 +957,29 @@ export function createDrizzleStore(db: Db): RelayStore {
       credentialHash: string;
       seenAt: number;
     }) {
+      /* #568: fetch by id, then compare the credential hash in-process
+         with equalSecret — a `WHERE credential_hash = ?` clause hands the
+         compare to SQLite's early-exit, which a remote caller can time. */
       const row = db
-        .update(schema.pairedDevices)
-        .set({ lastSeenAt: seenAt })
+        .select()
+        .from(schema.pairedDevices)
         .where(
           and(
             eq(schema.pairedDevices.id, deviceId),
-            eq(schema.pairedDevices.credentialHash, credentialHash),
             isNull(schema.pairedDevices.revokedAt),
           ),
         )
+        .get();
+      if (!row || !equalSecret(row.credentialHash, credentialHash)) {
+        return null;
+      }
+      const updated = db
+        .update(schema.pairedDevices)
+        .set({ lastSeenAt: seenAt })
+        .where(eq(schema.pairedDevices.id, deviceId))
         .returning()
         .get();
-      return row ? rowToDevice(row) : null;
+      return updated ? rowToDevice(updated) : rowToDevice(row);
     },
     async listPairedDevices() {
       const rows = db
