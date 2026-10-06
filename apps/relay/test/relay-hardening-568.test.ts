@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { APP_PROTOCOL_VERSION } from "@lilos/contracts/app";
+import { equalSecret } from "@lilos/contracts/auth";
 import { describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { createApp } from "../src/app";
-import { equalSecret } from "../src/auth";
 import { wsUpgradeOriginAllowed } from "../src/origin";
 import { createPairingService, PAIRING_GRANT_TTL_MS } from "../src/pairing";
 import { createRelay } from "../src/session";

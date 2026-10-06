@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -7,6 +7,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import { equalSecret } from "@lilos/contracts/auth";
 import type { PairingService } from "./pairing";
 
 /**
@@ -24,20 +25,6 @@ export function loadOrCreateInstallToken(tokenPath: string): string {
   writeFileSync(tokenPath, token, { mode: 0o600 });
   chmodSync(tokenPath, 0o600);
   return token;
-}
-
-/**
- * Constant-time secret compare (#568): hash both sides, then
- * `timingSafeEqual` over the fixed-size digests. A plain `!==`/`===`
- * early-exits on the first differing byte, so a remote caller that can
- * time `session.hello` round-trips could read off the longest matching
- * prefix. Digests keep the compare fixed-cost for any input length.
- */
-export function equalSecret(a: string, b: string): boolean {
-  return timingSafeEqual(
-    createHash("sha256").update(a).digest(),
-    createHash("sha256").update(b).digest(),
-  );
 }
 
 /**

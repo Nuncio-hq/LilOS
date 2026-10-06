@@ -354,9 +354,9 @@ describe("thread subagents & background jobs — #181", () => {
       model: reduceSessionEvents("sess-1", events),
       jobsCapable: true,
     });
-    /* j1 + the still-running helper's synthesized sa: row (#309 — an
-       unclosed subagent stays running past turn.completed). */
-    expect(detail.jobs?.map((j) => j.id)).toEqual(["j1", "sa:sa-1"]);
+    /* #587 AC-2: only the real job lists — helpers never appear as job
+       rows (the #309 `sa:` merge was the duplication bug). */
+    expect(detail.jobs?.map((j) => j.id)).toEqual(["j1"]);
     const card = detail.entries.at(-1);
     if (card?.kind !== "agent") throw new Error("expected agent card");
     expect(card.subagents).toHaveLength(1);
