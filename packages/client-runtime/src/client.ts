@@ -77,6 +77,33 @@ export class RelayError extends Error {
   }
 }
 
+/**
+ * #625: the relay gates the `/ws` upgrade on a credential before the socket
+ * exists, and a browser WebSocket can't set headers — so the same credential
+ * `session.hello` will present rides the URL's query (the #564 feed-gate
+ * pattern): `?token=` for the install token, `?deviceId=&credential=` for a
+ * paired phone. Computed per-connect so a reconnect carries it too.
+ */
+const relaySocketUrl = (
+  url: string,
+  opts: {
+    token?: string;
+    device?: { deviceId: string; credential: string };
+  },
+): string => {
+  const sep = url.includes("?") ? "&" : "?";
+  if (opts.device) {
+    return (
+      `${url}${sep}deviceId=${encodeURIComponent(opts.device.deviceId)}` +
+      `&credential=${encodeURIComponent(opts.device.credential)}`
+    );
+  }
+  if (opts.token) {
+    return `${url}${sep}token=${encodeURIComponent(opts.token)}`;
+  }
+  return url;
+};
+
 export interface ChannelMessagesState {
   channelId: string;
   /** True once the replay/snapshot window closed (`channel.synced`). */
@@ -672,11 +699,30 @@ export class RelayClient {
     this.state.set(this.everConnected ? "reconnecting" : "connecting");
     this.lastSocketError = undefined;
     const socket = (this.options.socketFactory ?? defaultSocketFactory)(
-      this.options.url,
+      relaySocketUrl(this.options.url, this.options),
     );
     this.socket = socket;
     this.attachSocketListeners(socket);
-    await this.waitForOpen(socket);
+    try {
+      await this.waitForOpen(socket);
+    } catch (error) {
+      /* #625: the relay refuses bad credentials at the upgrade — a refused
+         handshake reaches the WebSocket API as a bare error/close with no
+         HTTP status, indistinguishable from "relay down". If the relay's
+         HTTP surface still answers, the refusal was our credential:
+         surface `unauthenticated` so the fatal path (re-pair, fix the
+         token) runs instead of an endless reconnect loop. A socket that
+         opened never reaches this catch — a mid-handshake 4408 stays a
+         retryable drop. */
+      if (
+        error instanceof RelayError &&
+        error.code === "connect_failed" &&
+        (await this.relayHttpUp())
+      ) {
+        throw new RelayError("relay refused the credential", "unauthenticated");
+      }
+      throw error;
+    }
     try {
       const auth = this.options.device
         ? {
@@ -709,6 +755,34 @@ export class RelayClient {
         // already closed
       }
       throw error;
+    }
+  }
+
+  /**
+   * #625: does the relay's HTTP surface answer? ws/wss → http/https, `/ws`
+   * → `/healthz`. True means a refused upgrade was the credential gate;
+   * false means the relay is down and the failure stays transient.
+   */
+  private async relayHttpUp(): Promise<boolean> {
+    const http = this.options.url
+      .replace(/^ws(s?):/, "http$1:")
+      .replace(/^(https?:\/\/[^/?#]+).*$/, "$1/healthz");
+    /* AbortController/fetch exist in every runtime we ship, but a hung
+       probe must never stall the failure path — race a bare timer too. */
+    const controller =
+      typeof AbortController === "function" ? new AbortController() : null;
+    const timer = setTimeout(() => controller?.abort(), 3_000);
+    try {
+      return await Promise.race([
+        fetch(http, controller ? { signal: controller.signal } : {})
+          .then(() => true)
+          .catch(() => false),
+        new Promise<boolean>((resolve) =>
+          setTimeout(() => resolve(false), 3_000),
+        ),
+      ]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 

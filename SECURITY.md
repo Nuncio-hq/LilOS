@@ -56,3 +56,15 @@ pairing) and is the only thing holding the per-install token
   budget (they prove the caller already held a real code), and a
   successful exchange resets it. The budget is shared across callers;
   pairing is rare, so a lockout only delays a real attempt by a minute.
+- **Pre-upgrade credential check + hello deadline.** `/ws` upgrades carry
+  a credential in the query — `?token=` for install-token clients,
+  `?deviceId=&credential=` for paired phones — checked **before**
+  `server.upgrade` (`apps/relay/src/auth.ts` `authorizeRelayUpgrade`, the
+  #564 feed-gate pattern; the token compare stays constant-time via
+  `equalSecret`). A refused handshake answers `401` and never attaches, so
+  an unauthenticated peer can't hold a socket whose frame buffer may reach
+  `MAX_FRAME_BYTES` (160 MiB). An attached socket that hasn't completed
+  `session.hello` within **10 s** (`HELLO_DEADLINE_MS`) is closed
+  `4408`, so a stalled peer can't linger pre-auth either. `session.hello`
+  still authenticates the same credential on the socket — the gate bounds
+  what runs before it, it doesn't replace it.
