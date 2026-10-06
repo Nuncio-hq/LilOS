@@ -72,7 +72,7 @@ export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$REAL_HOME/Library/
 # exit, whatever happens. cp -R, not cp -p/-a: flag-preserving copies keep
 # macOS file flags, and launchers locked `chflags uchg` (Hermes locks them
 # during live legs) would make the snapshot un-rm-able inside SCRATCH.
-# Same corrected pattern as scripts/live/548.sh.
+# Same corrected pattern as scripts/live/548.sh uses.
 INSTALL_BIN="$REAL_HOME/.hermes/hermes-agent/.hermes/bin"
 LAUNCHER_SNAPSHOT="$SCRATCH/launcher-backup"
 mkdir -p "$LAUNCHER_SNAPSHOT"
