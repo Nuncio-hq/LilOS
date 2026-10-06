@@ -71,7 +71,6 @@ const model = (over: Partial<SessionModel> = {}): SessionModel => ({
   state: "idle",
   turns: [],
   jobs: [],
-  subagentJobs: [],
   openRequests: [],
   ...over,
 });
