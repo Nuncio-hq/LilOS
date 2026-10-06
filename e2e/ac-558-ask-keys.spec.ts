@@ -1,6 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import WebSocket from "ws";
+import { RelayClient } from "../packages/client-runtime/src/index";
 import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
@@ -31,36 +33,26 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-/** Bare JSON-RPC client (e2e runs under Node without workspace deps). */
+/** Relay-truth probe: the ask's outcome as the relay recorded it — the
+    same client-runtime path helpers/relay-thread.ts takes. */
 async function askOutcome(
   stack: Stack,
   askId: string,
 ): Promise<string | undefined> {
-  const ws = new WebSocket(stack.relayWs);
-  await new Promise<void>((res, rej) => {
-    ws.onopen = () => res();
-    ws.onerror = () => rej(new Error("ws connect failed"));
+  const relay = new RelayClient({
+    url: stack.relayWs,
+    token: stack.relayToken,
+    socketFactory: (url) => new WebSocket(url),
   });
-  const pending = new Map<string, (r: Record<string, unknown>) => void>();
-  ws.onmessage = (e) => {
-    const f = JSON.parse(e.data as string) as Record<string, unknown>;
-    if (typeof f.id === "string") pending.get(f.id)?.(f);
-  };
-  const send = (id: string, method: string, params: object) =>
-    new Promise<Record<string, unknown>>((res, rej) => {
-      pending.set(id, (f) =>
-        f.error
-          ? rej(new Error(`${method} -> ${JSON.stringify(f.error)}`))
-          : res(f),
-      );
-      ws.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
-    });
-  await send("h", "session.hello", { protocolVersion: 1, token: stack.relayToken });
-  const res = await send("0", "asks.list", {});
-  ws.close();
-  const asks = (res.result as { asks: { id: string; outcome?: string }[] })
-    .asks;
-  return asks.find((a) => a.id === askId)?.outcome;
+  try {
+    await relay.connect();
+    const r = await relay.request<{
+      asks: { id: string; outcome?: string }[];
+    }>("asks.list", {});
+    return r.asks.find((a) => a.id === askId)?.outcome;
+  } finally {
+    relay.close();
+  }
 }
 
 async function dmDefault(stack: Stack, page: Page) {
