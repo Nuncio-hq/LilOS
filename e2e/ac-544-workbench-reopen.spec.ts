@@ -391,3 +391,30 @@ test("AC-6 on LilOS itself: Workbench reopen → Files visible, measured", async
   await page.screenshot({ path: `${SHOTS}/ac-6-lilos-reopen-dark.png` });
   await page.emulateMedia({ colorScheme: "light" });
 });
+
+/* #606: the AC-6 flake was a tab-follow race, not an empty probe — the
+   Files pick landed while the turn's first `live` row was still in the
+   feed, the late row re-armed "follow", and the streaming steps stole the
+   tab (lastStep `terminal` → the changes fallback). `slowstart:` holds
+   `turn.started` so the pick reliably lands first — the same window a
+   loaded CI runner opens. */
+test("AC-6 #606 pick-hold: a Files pick while the turn starts survives its first live row", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1288, height: 700 });
+  await dmDefault(page, path.dirname(repo));
+  await pickSessionFolder(page, repo);
+  await send(page, "slowstart:5000 check the folder");
+  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
+  await tab(page, "Files").click();
+  await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
+  /* The turn's live row + steps land ~5 s in — long after the pick. The
+     reply text ("Short answer") marks turn end; the pick must still hold. */
+  await expect(page.getByText("Short answer").first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(tab(page, "Files")).toHaveAttribute("aria-selected", "true");
+  await expect(rows(page).first()).toBeVisible();
+});
