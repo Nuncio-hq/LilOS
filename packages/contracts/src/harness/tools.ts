@@ -431,7 +431,7 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
   workbench_open: {
     params: WorkbenchOpenTarget,
     result: WorkbenchOpenResult,
-    doc: "Show the user something in this session's Workbench: `{file, line?}`, `{diff, path?}`, `{pr}` or `{url}` — the panel opens on that tab. It never opens an editor on the Mac.",
+    doc: "Show the user something in this session's Workbench: `{file, line?}`, `{diff, path?}`, `{pr}`, `{url}` or `{tab:'subagents'|'background'|'plan'}` — the panel opens on that tab. A session with no folder accepts `tab` targets only (the rest error). It never opens an editor on the Mac.",
     area: "workbench",
     access: "write",
   },

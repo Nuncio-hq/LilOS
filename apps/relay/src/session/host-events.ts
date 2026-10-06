@@ -123,6 +123,16 @@ export async function handleHostEvents(
           "conversation not found",
         );
       }
+      /* #543 AC-7: `file`/`diff`/`pr`/`url` targets need the session's
+         folder — a folderless conversation (no cwd) accepts engine tabs
+         only, and the error says which shape to send instead. */
+      if (conversation.cwd == null && parsed.data.target.tab === undefined) {
+        throw new RpcError(
+          JsonRpcCode.conflict,
+          "conflict",
+          "this session has no folder — `file`, `diff`, `pr` and `url` targets need one; open an engine tab instead: {tab:'subagents'|'background'|'plan'}",
+        );
+      }
       const { host } = c;
       emit(
         conversation.channelId,

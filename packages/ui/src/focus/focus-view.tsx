@@ -93,7 +93,8 @@ import type {
 } from "../types";
 import { sessionArtifacts } from "../workbench/artifacts";
 import type { LiveSurfaces } from "../workbench/live";
-import { planTodos } from "../workbench/plan-panel";
+import { planTodos, threadPlans } from "../workbench/plan-panel";
+import { sessionSubagents } from "../workbench/subagents-panel";
 import { Workbench } from "../workbench/workbench";
 import { WsBadge } from "../workbench/ws-badges";
 import { SessionUsage } from "./session-usage";
@@ -487,10 +488,32 @@ export function FocusView({
   const editors = editorsProp ?? hostEditors;
   const where = isDM ? "Direct" : (project?.name ?? "Company");
   const chLabel = isDM ? channel.name : `#${channel.name}`;
-  /* The Workbench exists only where there is a real folder to read (D-#19):
-     the app passes `host` only for sessions with one — a folder-less session
-     (or a pure-mock surface) gets no Workbench and no toggle (#114 AC-6). */
-  const wbAvailable = host != null;
+  /* #543: the Workbench exists for EVERY session — the app passes `host`
+     unconditionally now (the accessors are folder-independent; every call
+     takes the cwd). Folder-bound tabs still need a real folder — that's
+     per-tab inside the Workbench. The toggle renders only when a tab could
+     show (D-#19): a folder session can always ask the host; a folderless
+     session needs an engine tab (a declared background_jobs capability via
+     `onStopJob`, jobs, helpers, a plan — or the `?tab=subagents` deep
+     link); a channel thread keeps its mock tabs. Once opened, the
+     Workbench reports its settled tab set — a folder session whose host
+     answered nothing and has no engine work reports empty, which hides the
+     toggle (AC-5) — except while the panel is already open, where its
+     "Nothing to show" line answers instead of a vanishing aside. */
+  const [wbReported, setWbReported] = useState<WbTab[] | null>(null);
+  useEffect(() => {
+    setWbReported(null);
+  }, [thread.session, work?.path]);
+  const engineTabs =
+    (thread.jobs?.length ?? 0) > 0 ||
+    onStopJob != null ||
+    sessionSubagents(thread).length > 0 ||
+    threadPlans(thread).length > 0;
+  const wbAvailable =
+    host != null &&
+    (wbReported === null
+      ? work != null || !isDM || engineTabs || tab === "subagents"
+      : wbReported.length > 0 || engineTabs || tab === "subagents" || wbOpen);
 
   /* Esc leaves Focus — but only when nothing else owns the key: the composer
      takes it to stop a running turn, an open popup/menu takes it to close,
@@ -962,6 +985,7 @@ export function FocusView({
                 browser={browser}
                 spot={wbSpot}
                 ship={ship}
+                onAllowed={setWbReported}
               />
             </aside>
           </>

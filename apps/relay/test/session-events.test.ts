@@ -360,4 +360,39 @@ describe("session.events / engine.event — device-scope live feed (#157)", () =
       2000,
     );
   });
+
+  it("#543 AC-7 workbench.open on a folderless conversation: engine tabs fan out, folder targets conflict", async () => {
+    /* conversations.open never sets a cwd — this conversation IS the
+       folderless case (the app adds one when the user picks a folder). */
+    const { relay } = newWorld();
+    const host = await registeredHost(relay);
+    const { conversation } = await setupConversation(host);
+
+    // An engine tab is the one target a folderless session accepts.
+    await host.connection.receive(
+      req("workbench.open", {
+        conversationId: conversation.id,
+        target: { tab: "subagents" },
+      }),
+    );
+    expect(resultOf(host.frames, lastId()).result).toEqual({ ok: true });
+
+    // Every folder-bound target fails with a clear "open an engine tab".
+    for (const target of [
+      { file: "src/app.ts" },
+      { diff: true },
+      { pr: true },
+      { url: "http://localhost:5173" },
+    ]) {
+      await host.connection.receive(
+        req("workbench.open", { conversationId: conversation.id, target }),
+      );
+      expect(errorData(host.frames, lastId())).toBe("conflict");
+      const err = host.frames.find(
+        (f) => (f as { id?: unknown }).id === lastId(),
+      ) as { error?: { message?: string } };
+      expect(err.error?.message).toContain("no folder");
+      expect(err.error?.message).toContain("{tab:");
+    }
+  });
 });

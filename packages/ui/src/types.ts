@@ -836,9 +836,10 @@ export type HostAccessors = {
 
 /* A `workbench_open` target as the Workbench's spot request (issue #340):
    the agent's "look at this" — a file (optionally at a line), the changes
-   view (optionally one file), the PR tab, or a URL for the preview tab.
+   view (optionally one file), the PR tab, a URL for the preview tab, or an
+   engine tab (#543 — the only kind a folderless session accepts).
    Structural mirror of `WorkbenchOpenTarget` in contracts (ui keeps no
-   contracts dep) — a flat object: exactly one of file/diff/pr/url set.
+   contracts dep) — a flat object: exactly one of file/diff/pr/url/tab set.
    `at` makes a repeated open of the same target re-fire. */
 export type WbSpot = {
   at: number;
@@ -849,5 +850,6 @@ export type WbSpot = {
     path?: string;
     pr?: true;
     url?: string;
+    tab?: "subagents" | "background" | "plan";
   };
 };

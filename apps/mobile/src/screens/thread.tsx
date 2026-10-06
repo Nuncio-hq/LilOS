@@ -532,6 +532,19 @@ export function Thread({
           navigation.navigate("ThreadInfo", { conversationId });
           return;
         }
+        /* #543: an engine tab — the only target a folderless session
+           accepts; each lands on the phone's matching sheet. */
+        if (t.tab !== undefined) {
+          navigation.navigate(
+            t.tab === "subagents"
+              ? "Subagents"
+              : t.tab === "background"
+                ? "Background"
+                : "Plan",
+            { conversationId },
+          );
+          return;
+        }
         navigation.navigate("WbDiff", {
           conversationId,
           ...(t.file !== undefined

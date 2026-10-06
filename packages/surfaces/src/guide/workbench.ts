@@ -19,7 +19,9 @@ Tools that apply:
   (scanned terminal output + PREVIEW: markers).
 - \`workbench_open\` — put the panel on a target: \`{file, line?}\` opens the
   file, \`{diff, path?}\` opens Changes filtered to the path, \`{pr}\` opens
-  the PR tab, \`{url}\` opens Preview and points the session browser at it.
-  It shows inside the app — it never opens an editor on the Mac.
+  the PR tab, \`{url}\` opens Preview and points the session browser at it,
+  \`{tab:'subagents'|'background'|'plan'}\` opens that engine tab — the only
+  kind a session with no folder accepts (the rest error). It shows inside
+  the app — it never opens an editor on the Mac.
 - \`terminal_*\` and \`browser_*\` drive the same surfaces Oscar watches.`,
 };
