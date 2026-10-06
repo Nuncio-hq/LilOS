@@ -57,8 +57,10 @@ async function settleAtBottom(
 /* The gap the user sees: the composer's top edge minus the bottom edge of
    the last rendered row, clipped to the scroller. The composer is the
    [data-composer] inside the port's own column (its margin-top counts as
-   empty band — that's exactly what Oscar flagged). Also returns the port's
-   own padding-bottom: with the button unmounted at rest it must be 0. */
+   empty band — that's exactly what Oscar flagged). Returns enough state to
+   decide convergence AND to diagnose a miss from the assertion message:
+   the ↓ button's mount state (it drives the port gutter), the scroll
+   target, and what the measured "last row" actually is. */
 function measureGap(page: Page, portSelector: string) {
   return page.evaluate((sel) => {
     const port = document.querySelector(sel);
@@ -72,19 +74,99 @@ function measureGap(page: Page, portSelector: string) {
       (el) =>
         el instanceof HTMLElement && el.getBoundingClientRect().height > 0,
     );
-    const last = rows[rows.length - 1];
+    const last = rows[rows.length - 1] as HTMLElement | undefined;
     if (!last) return { error: "no rows" } as const;
-    const lastBottom = Math.min(
-      last.getBoundingClientRect().bottom,
-      scR.bottom,
-    );
+    const lastR = last.getBoundingClientRect();
+    const lastBottom = Math.min(lastR.bottom, scR.bottom);
     const comp = port.parentElement?.querySelector("[data-composer]");
     if (!comp) return { error: "no composer under the port's column" } as const;
+    const sib = content.children[content.children.length - 1];
+    const sibR = sib?.getBoundingClientRect();
+    /* Everything physically between the port's bottom edge and the
+       composer's top: siblings rendered in the same column, each with its
+       rect — the ARIA tree hides inert boxes, so a stray spacer/overlay
+       only shows up here. */
+    const between: string[] = [];
+    const par = port.parentElement;
+    if (par) {
+      for (const kid of par.children) {
+        if (!(kid instanceof HTMLElement)) continue;
+        const r = kid.getBoundingClientRect();
+        if (
+          r.top >= port.getBoundingClientRect().bottom - 0.5 &&
+          r.top < comp.getBoundingClientRect().top
+        ) {
+          between.push(
+            `${kid.tagName.toLowerCase()}.${[...kid.classList].slice(0, 2).join(".")} ${r.top.toFixed(1)}-${r.bottom.toFixed(1)} h${r.height.toFixed(1)} ${getComputedStyle(kid).display}`,
+          );
+        }
+      }
+    }
+    const mainAfter = par ? getComputedStyle(par, "::after") : null;
+    const kids = par
+      ? [...par.children].map((k) => {
+          const r = k.getBoundingClientRect();
+          return `${k.tagName.toLowerCase()}.${[...k.classList].slice(0, 2).join(".")} ${r.top.toFixed(1)}-${r.bottom.toFixed(1)}`;
+        })
+      : [];
+    const compCS = getComputedStyle(comp);
+    const portCS = getComputedStyle(port);
+    const parCS = par ? getComputedStyle(par) : null;
+    /* lilos-desktop plays lilos-rise (translateY+scale) on every non-header
+       child of main at mount; until Chromium starts the animation the
+       fill:both from-frame sits on the element and skews every rect. The
+       poll below must see it finished, not just stable-but-warped rects. */
+    const animState = (el: Element) =>
+      (el as HTMLElement)
+        .getAnimations?.()
+        .map((a) => `${a.playState}@${Math.round(a.currentTime ?? -1)}`)
+        .join(",") ?? "none";
+    /* Done = no visual distortion: the computed transform is `none`, the
+       identity matrix (finished fill-forwards animation serializes as
+       `matrix(1, 0, 0, 1, 0, 0)`), or a zero translate alone. */
+    const tfDone = (tf: string, tr: string) =>
+      (tf === "none" || tf === "matrix(1, 0, 0, 1, 0, 0)") &&
+      (tr === "none" || tr === "0px 0px" || tr === "0px 0px 0px");
     return {
+      between,
+      kids,
+      portMB: portCS.marginBottom,
+      portTf: `${portCS.transform}|${portCS.translate}`,
+      portTfDone: tfDone(portCS.transform, portCS.translate),
+      portAnim: animState(port),
+      compTf: `${compCS.transform}|${compCS.translate}|top:${compCS.top}`,
+      compTfDone: tfDone(compCS.transform, compCS.translate),
+      compAnim: animState(comp),
+      parGap: parCS
+        ? `${parCS.rowGap}/${parCS.columnGap}/${parCS.justifyContent}`
+        : "?",
+      parAfter:
+        mainAfter && mainAfter.content !== "none"
+          ? `${mainAfter.content} h${mainAfter.height} disp${mainAfter.display}`
+          : "none",
+      compPar: comp.parentElement?.tagName.toLowerCase() ?? "?",
       gap: comp.getBoundingClientRect().top - lastBottom,
       portPad: parseFloat(getComputedStyle(port).paddingBottom),
       scrollable: sc.scrollHeight - sc.clientHeight > 8,
-      scrollTop: sc.scrollTop,
+      atBottom: sc.scrollTop >= sc.scrollHeight - sc.clientHeight - 2,
+      btnMounted: !!port.querySelector(".lilos-scroll-btn"),
+      h: sc.scrollHeight,
+      ch: sc.clientHeight,
+      top: sc.scrollTop,
+      scBottom: scR.bottom,
+      portBottom: port.getBoundingClientRect().bottom,
+      compTop: comp.getBoundingClientRect().top,
+      compMT: getComputedStyle(comp).marginTop,
+      lastBottom: lastR.bottom,
+      lastTop: lastR.top,
+      sibBottom: sibR?.bottom,
+      sibPos: sib ? getComputedStyle(sib).position : "",
+      contentPadB: parseFloat(getComputedStyle(content).paddingBottom),
+      lastRow: `${last.tagName.toLowerCase()}.${[...last.classList]
+        .slice(0, 3)
+        .join(".")} [${rows.length - 1}/${content.children.length}]`,
+      lastText: (last.textContent ?? "").slice(0, 60),
+      trailing: content.children.length - rows.length,
     };
   }, portSelector);
 }
@@ -99,17 +181,55 @@ async function ensurePanelOpen(page: Page) {
   await page.locator("main header button").last().click();
 }
 
+/* One convergent measurement, not settle-then-sample: the port must hold
+   the same state twice in a row with the ↓ unmounted, the gutter released
+   and (unless the card parked it) the scroll at the bottom — a racing ↓
+   unmount or a still-growing row can satisfy a settle loop between polls,
+   but it cannot fake two identical converged samples back to back. On
+   failure the last sample's full dump is in the assertion message. */
 async function expectGap(page: Page, portSelector: string, atBottom = true) {
-  await settleAtBottom(page, portSelector, atBottom);
-  const m = await measureGap(page, portSelector);
-  if ("error" in m) throw new Error(m.error);
+  type M = Awaited<ReturnType<typeof measureGap>>;
+  let prev: M | null = null;
+  let last: M | null = null;
+  try {
+    await expect
+      .poll(async () => {
+        const m = await measureGap(page, portSelector);
+        last = m;
+        const ok =
+          !("error" in m) &&
+          !m.btnMounted &&
+          m.portPad === 0 &&
+          /* the lilos-rise mount animation must have finished on both the
+             port and the composer: fill:both leaves translateY+scale on
+             them until it ticks, and the scale warps rects the same way
+             every sample — stable ≠ done. */
+          m.portTfDone &&
+          m.compTfDone &&
+          (!atBottom || m.atBottom) &&
+          prev !== null &&
+          !("error" in prev) &&
+          m.gap === prev.gap &&
+          m.h === prev.h &&
+          m.top === prev.top;
+        prev = m;
+        return ok;
+      })
+      .toBe(true);
+  } catch (e) {
+    throw new Error(
+      `port never reached the settled bottom state — last sample ${portSelector} ${JSON.stringify(last)}\n${e}`,
+    );
+  }
+  const m = last as Extract<M, { gap: number }>;
+  const dump = `${portSelector} ${JSON.stringify(m)}`;
   expect(
     m.gap,
-    `${portSelector}: gap between last row and composer at the bottom`,
+    `gap between last row and composer at the bottom — ${dump}`,
   ).toBeLessThanOrEqual(GAP_LIMIT);
   expect(
     m.portPad,
-    `${portSelector}: ↓ gutter must not be reserved while the button is hidden`,
+    `↓ gutter must not be reserved while the button is hidden — ${dump}`,
   ).toBe(0);
 }
 
@@ -198,26 +318,54 @@ test.describe("AC-3 an open question card stays fully visible", () => {
       const card = port.locator('[data-question-card][data-ask-state="open"]');
       await expect(card).toBeVisible({ timeout: 15_000 });
       await settleAtBottom(page, "aside [role='log']", false);
-      const m = await page.evaluate(() => {
-        const port = document.querySelector("aside [role='log']");
-        if (!port) return { error: "no port" } as const;
-        const sc = port.firstElementChild as HTMLElement;
-        const card = port.querySelector<HTMLElement>(
-          '[data-question-card][data-ask-state="open"]',
-        );
-        if (!card) return { error: "no open card" } as const;
-        const skip = card.querySelector<HTMLElement>('button[title^="Skip"]');
-        if (!skip) return { error: "no skip button" } as const;
-        const comp = port.parentElement?.querySelector("[data-composer]");
-        if (!comp) return { error: "no composer" } as const;
-        return {
-          scBottom: sc.getBoundingClientRect().bottom,
-          cardBottom: card.getBoundingClientRect().bottom,
-          skipBottom: skip.getBoundingClientRect().bottom,
-          compTop: comp.getBoundingClientRect().top,
-        };
-      });
-      if ("error" in m) throw new Error(m.error);
+      /* Same convergence rule as expectGap: two identical samples with the
+         ↓ unmounted and the gutter released — the open card's
+         scroll-into-view parks short of true bottom on purpose, so only
+         stability is required, not atBottom. */
+      const measure = () =>
+        page.evaluate(() => {
+          const port = document.querySelector("aside [role='log']");
+          if (!port) return { error: "no port" } as const;
+          const sc = port.firstElementChild as HTMLElement;
+          const card = port.querySelector<HTMLElement>(
+            '[data-question-card][data-ask-state="open"]',
+          );
+          if (!card) return { error: "no open card" } as const;
+          const skip = card.querySelector<HTMLElement>('button[title^="Skip"]');
+          if (!skip) return { error: "no skip button" } as const;
+          const comp = port.parentElement?.querySelector("[data-composer]");
+          if (!comp) return { error: "no composer" } as const;
+          return {
+            scBottom: sc.getBoundingClientRect().bottom,
+            cardBottom: card.getBoundingClientRect().bottom,
+            skipBottom: skip.getBoundingClientRect().bottom,
+            compTop: comp.getBoundingClientRect().top,
+            portPad: parseFloat(getComputedStyle(port).paddingBottom),
+            btnMounted: !!port.querySelector(".lilos-scroll-btn"),
+            top: sc.scrollTop,
+          };
+        });
+      let prev: Awaited<ReturnType<typeof measure>> | null = null;
+      let m: Awaited<ReturnType<typeof measure>> | null = null;
+      await expect
+        .poll(async () => {
+          const cur = await measure();
+          m = cur;
+          const ok =
+            !("error" in cur) &&
+            !cur.btnMounted &&
+            cur.portPad === 0 &&
+            prev !== null &&
+            !("error" in prev) &&
+            cur.cardBottom === prev.cardBottom &&
+            cur.scBottom === prev.scBottom &&
+            cur.compTop === prev.compTop &&
+            cur.top === prev.top;
+          prev = cur;
+          return ok;
+        })
+        .toBe(true);
+      if (m === null || "error" in m) throw new Error("no sample");
       expect(
         m.cardBottom,
         "question card must end inside the scroller (not clipped)",
