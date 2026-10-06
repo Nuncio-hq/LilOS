@@ -63,6 +63,8 @@ describe("relay large frames (#551)", () => {
     const channel = await dmChannel(client);
 
     // 2 × 9 MiB decoded → ~25 MB of base64 in one messages.post frame.
+    const frameBytes = 2 * 4 * Math.ceil((9 * MiB) / 3);
+    expect(frameBytes).toBeGreaterThan(OLD_DEFAULT);
     const { message } = await client.request<{
       message: { id: string; attachments?: { sizeBytes: number }[] };
     }>(

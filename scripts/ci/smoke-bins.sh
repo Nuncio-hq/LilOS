@@ -234,13 +234,57 @@ fi
 # lilos-engine-fake: an engine socket the smoke's own harness may also boot.
 if have lilos-engine-fake; then
   FLOG="$TMP/engine-fake.log"
-  ( cd "$TMP" && "$RUN/lilos-engine-fake" --port "$(port)" \
+  FPORT="$(port)"
+  ( cd "$TMP" && "$RUN/lilos-engine-fake" --port "$FPORT" \
       >"$FLOG" 2>&1 ) &
   FPID=$!; PIDS="$PIDS $FPID"
   if wait_for "$FLOG" "LISTENING" "$FPID" lilos-engine-fake 20; then
     ok "lilos-engine-fake booted (LISTENING)"
   else
     bad "lilos-engine-fake did not boot"; dump "$FLOG"
+  fi
+
+  # #551 AC-2/3 on the engine hop: prompt frames inline the same image
+  # blocks, so the packaged engine socket must hold the raised cap too. A
+  # >16 MiB frame whose call answers with ANY JSON-RPC frame (an unknown
+  # method → -32601) proves the transport accepted it — a transport drop
+  # closes the socket instead.
+  if [ -n "$FPORT" ]; then
+    cat >"$TMP/big-frame-engine.ts" <<'TS'
+const [port] = process.argv.slice(2);
+const timer = setTimeout(() => {
+  console.error("timeout waiting for the engine's answer");
+  process.exit(1);
+}, 30_000);
+const fail = (m: string): never => {
+  clearTimeout(timer);
+  console.error(m);
+  process.exit(1);
+};
+const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+ws.addEventListener("close", (e) => fail(`socket closed ${e.code}`));
+ws.addEventListener("error", () => fail("socket error"));
+ws.addEventListener("open", () => {
+  // ~23 MB on the wire — past the old 16 MiB default.
+  const pad = Buffer.alloc(17 * 1024 * 1024, 0x41).toString("base64");
+  ws.send(
+    JSON.stringify({ jsonrpc: "2.0", id: "big", method: "no.such.method", params: { pad } }),
+  );
+});
+ws.addEventListener("message", (ev) => {
+  const f = JSON.parse(String(ev.data)) as { id?: string };
+  if (f.id === "big") {
+    clearTimeout(timer);
+    console.log(">16 MiB frame answered by lilos-engine-fake");
+    process.exit(0);
+  }
+});
+TS
+    if (cd "$TMP" && bun "$TMP/big-frame-engine.ts" "$FPORT"); then
+      ok "lilos-engine-fake answered a >16 MiB ws frame"
+    else
+      bad "lilos-engine-fake dropped a >16 MiB ws frame"
+    fi
   fi
 fi
 
