@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 /* AC tests for issue #550: a system note (`from === ""` — how the relay's
    `authorKind: "system"` maps into replies, mapping.ts) renders as a muted
-   note line in the Focus frame, never a right-aligned user bubble. The
-   panel frame already showed it as an avatar-less left row. */
+   note line in BOTH frames, never a right-aligned user bubble and never an
+   empty-name message row. */
 import { cleanup, render } from "@testing-library/react";
 import type { MutableRefObject } from "react";
 import { afterEach, describe, expect, test } from "vitest";
@@ -64,9 +64,11 @@ describe("system-note rows (#550)", () => {
     expect(container.querySelector("[data-sysnote]")).toBeFalsy();
   });
 
-  test("the panel keeps its avatar-less left row for the same note", () => {
+  test("the panel renders the same muted line, not an empty-name row", () => {
     const { container } = render(row("panel", note));
+    const sysnote = container.querySelector("[data-sysnote]");
+    expect(sysnote).toBeTruthy();
+    expect(sysnote?.textContent).toContain("⚠ Stopped.");
     expect(container.querySelector("[data-userturn]")).toBeFalsy();
-    expect(container.textContent).toContain("⚠ Stopped.");
   });
 });

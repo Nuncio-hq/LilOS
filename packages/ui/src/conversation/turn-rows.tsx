@@ -414,6 +414,22 @@ function TurnRowImpl({
         onRewind={() => onRewind(r.id ?? "")}
       />
     ) : null;
+  /* #550: `from === ""` is the relay's system-note author
+     (`authorKind: "system"` maps to it in mapping.ts) — a muted note
+     line in both frames, never a user-style bubble and never an
+     empty-name message row. */
+  const sysNote =
+    r.from === "" ? (
+      <div
+        data-sysnote
+        className={cn(
+          "w-fit max-w-full rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs",
+          frame === "panel" && "mx-3 my-0.5 sm:mx-5",
+        )}
+      >
+        {r.text}
+      </div>
+    ) : null;
   const shell = (
     <LazyShell
       msgId={r.id}
@@ -424,32 +440,26 @@ function TurnRowImpl({
       settled={false}
     >
       {frame === "panel" ? (
-        <>
-          {checkpoint}
-          <Row from={r.from} emp={emp} human={human}>
-            <Who id={r.from} time={r.time} emp={emp} human={human} />
-            <Body text={r.text} />
-            {r.attachments && <AttachmentChips files={r.attachments} />}
-          </Row>
-        </>
-      ) : r.from === "" ? (
-        /* #550: `from === ""` is the relay's system-note author
-           (`authorKind: "system"` maps to it in mapping.ts) — a muted
-           note line, never a user-style bubble. */
-        <div
-          data-sysnote
-          className="w-fit max-w-full rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs"
-        >
-          {r.text}
-        </div>
+        sysNote ?? (
+          <>
+            {checkpoint}
+            <Row from={r.from} emp={emp} human={human}>
+              <Who id={r.from} time={r.time} emp={emp} human={human} />
+              <Body text={r.text} />
+              {r.attachments && <AttachmentChips files={r.attachments} />}
+            </Row>
+          </>
+        )
       ) : (
-        <UserTurn
-          from={r.from}
-          time={r.time}
-          text={r.text}
-          human={human}
-          attachments={r.attachments}
-        />
+        sysNote ?? (
+          <UserTurn
+            from={r.from}
+            time={r.time}
+            text={r.text}
+            human={human}
+            attachments={r.attachments}
+          />
+        )
       )}
     </LazyShell>
   );
