@@ -1,3 +1,4 @@
+import { DEVICE_CACHE_SCHEMA_VERSION } from "@lilos/client-runtime";
 import type {
   AppChannel,
   AppMessage,
@@ -269,7 +270,7 @@ describe("home-model (#155)", () => {
       autoReconnect: false,
     });
     client.hydrate({
-      schemaVersion: 1,
+      schemaVersion: DEVICE_CACHE_SCHEMA_VERSION,
       savedAt: 1,
       employees: [emp("e1")],
       channels: [ch("ch1", "e1")],
@@ -278,6 +279,7 @@ describe("home-model (#155)", () => {
       ],
       conversationSummaries: [],
       profile: {},
+      asks: [],
       watermarks: {},
     });
     const w = wire({

@@ -64,6 +64,9 @@ export type Approval = {
   freeText?: boolean;
   /** "2m" */
   age: string;
+  /** #591: this row is last-known (the Mac is unreachable) — surfaces say
+      so and never offer a dead Approve/Deny. */
+  lastKnown?: boolean;
 };
 
 export type SessionState =

@@ -8,6 +8,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "../components/app-text";
 import { StateChip } from "../components/bits";
+import { Icon } from "../components/icon";
 import { Rise } from "../components/rise";
 import { AgentTurn, UserBubble } from "./agent-turn";
 import { BackgroundPill } from "./background-sheet";
@@ -53,6 +54,7 @@ export function ThreadScreen({
   onOpenPlan,
   onOpenWorkbench,
   prefill,
+  unreachableNote,
 }: {
   t: ThreadDetail;
   /** Omit when the engine reports no models — the composer's chip hides. */
@@ -82,11 +84,16 @@ export function ThreadScreen({
   onOpenWorkbench?: (e: WbCardEntry) => void;
   /** Composer text to put in and focus (plan "Change…"). */
   prefill?: { text: string };
+  /** #591: a thin line directly above the composer while the Mac is
+      unreachable ("Can't reach <Mac>") — the cached thread stays
+      readable, the hint explains why nothing new lands. */
+  unreachableNote?: string;
 }) {
   const insets = useSafeAreaInsets();
   const scroller = useRef<ScrollView>(null);
   const [composerHeight, setComposerHeight] = useState(96);
   const [pillHeight, setPillHeight] = useState(0);
+  const [noteHeight, setNoteHeight] = useState(0);
   const running = t.state === "working";
   /* #420: parked on an open QUESTION ask the card can answer — the
      composer says waiting, no steer copy and no stop (Hermes FIX #515).
@@ -125,7 +132,11 @@ export function ThreadScreen({
              while a background pill shows, the pill and its stack gap.
              Composer-only leaves the newest line under the pill. */
           contentInset={{
-            bottom: threadBottomInset(composerHeight, pill ? pillHeight : 0),
+            bottom: threadBottomInset(
+              composerHeight,
+              pill ? pillHeight : 0,
+              unreachableNote ? noteHeight : 0,
+            ),
           }}
           keyboardDismissMode="interactive"
           contentContainerStyle={{
@@ -203,6 +214,22 @@ export function ThreadScreen({
           {onOpenBackground && pill && (
             <View onLayout={(e) => setPillHeight(e.nativeEvent.layout.height)}>
               <BackgroundPill jobs={t.jobs ?? []} onPress={onOpenBackground} />
+            </View>
+          )}
+          {unreachableNote && (
+            <View
+              className="flex-row items-center justify-center gap-1.5"
+              onLayout={(e) => setNoteHeight(e.nativeEvent.layout.height)}
+            >
+              <Icon
+                name="wifi.exclamationmark"
+                size={12}
+                tone="muted-foreground"
+                weight="medium"
+              />
+              <AppText size="xs" tone="muted">
+                {unreachableNote}
+              </AppText>
             </View>
           )}
           <Composer

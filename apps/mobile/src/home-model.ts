@@ -21,6 +21,9 @@ export type HomeWire = {
   conversations: Conversation[];
   summaries: ConversationSummary[];
   asks: Ask[];
+  /* #591: false = everything below is last-known (cached) state — rows
+     must say so instead of looking live. */
+  online: boolean;
 };
 
 /** Every open ask, oldest first — the order Activity lists them. */
@@ -81,6 +84,9 @@ export function toApproval(ask: Ask, wire: HomeWire, nowMs: number): Approval {
           : request.command,
     command: request.kind === "approval" ? request.command : undefined,
     age: ageLabel(ask.createdAt, nowMs),
+    /* #591 AC-2: an offline Activity keeps its rows — each says "last
+       known" instead of pretending they were just fetched. */
+    ...(wire.online ? {} : { lastKnown: true as const }),
   };
 }
 
@@ -102,15 +108,20 @@ export function toEmployeeRow(
     (c) => c.state === "active" && !c.archived && c.channelId === channel?.id,
   );
   const base = { id: e.id, name: e.name, role: e.role, tone: toneOf(e.id) };
+  /* #591 AC-2: live-looking states get a "· last known" tail while the Mac
+     is unreachable — a mid-turn employee must not read as still working
+     when the state could be hours old. The idle fallback needs no mark:
+     "Idle" never looks live. */
+  const lastKnown = wire.online ? "" : " · last known";
   const oldest = pending[0];
   if (oldest !== undefined) {
     return {
       ...base,
       state: "needs-you",
       now:
-        pending.length === 1
+        (pending.length === 1
           ? `Waiting on you · ${sessionLabel(oldest.conversationId, wire)}`
-          : `${pending.length} need you`,
+          : `${pending.length} need you`) + lastKnown,
       when: ageLabel(oldest.createdAt, nowMs),
     };
   }
@@ -118,7 +129,7 @@ export function toEmployeeRow(
     return {
       ...base,
       state: "working",
-      now: sessionLabel(live.id, wire),
+      now: sessionLabel(live.id, wire) + lastKnown,
       when: "now",
     };
   }

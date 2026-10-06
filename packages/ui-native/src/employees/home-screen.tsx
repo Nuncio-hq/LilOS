@@ -30,6 +30,7 @@ export function EmployeesHomeScreen({
   onOpenMac,
   onOpenEmployee,
   onOpenChannel,
+  offlineDetail,
 }: {
   workspace: string;
   macName: string;
@@ -40,6 +41,9 @@ export function EmployeesHomeScreen({
   onOpenMac: () => void;
   onOpenEmployee: (id: string) => void;
   onOpenChannel: (id: string) => void;
+  /** #591: second line under "Can't reach" — the last-known disclosure
+      ("Showing last known · 2 min ago"). */
+  offlineDetail?: string;
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -63,9 +67,14 @@ export function EmployeesHomeScreen({
             tone="destructive"
             weight="medium"
           />
-          <AppText size="sm" className="flex-1">
-            {`Can't reach ${macName}`}
-          </AppText>
+          <View className="flex-1">
+            <AppText size="sm">{`Can't reach ${macName}`}</AppText>
+            {offlineDetail && (
+              <AppText size="xs" tone="muted">
+                {offlineDetail}
+              </AppText>
+            )}
+          </View>
           <AppText size="sm" tone="none" className="text-primary">
             Details
           </AppText>
@@ -211,7 +220,8 @@ export function NeedsYouAccessory({
           {what}
         </AppText>
       </View>
-      {onApprove && top.kind !== "question" && (
+      {/* #591: last-known asks offer no dead Approve while offline. */}
+      {onApprove && !top.lastKnown && top.kind !== "question" && (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Approve ${top.employee}`}
