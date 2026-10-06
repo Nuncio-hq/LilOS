@@ -11,14 +11,20 @@ export function Pill({
   onPress,
   variant = "primary",
   size = "md",
+  disabled,
 }: {
   label: string;
   onPress: () => void;
   variant?: "primary" | "soft" | "ghost";
   size?: "sm" | "md";
+  /** #652: renders the pill visibly inert — muted fill + muted label,
+      no press (e.g. an ask that can't be answered while the Mac is
+      unreachable). */
+  disabled?: boolean;
 }) {
-  const box =
-    variant === "primary"
+  const box = disabled
+    ? "bg-muted"
+    : variant === "primary"
       ? "bg-primary"
       : variant === "soft"
         ? "bg-fill"
@@ -27,14 +33,18 @@ export function Pill({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
       onPress={onPress}
       hitSlop={6}
-      className={`${size === "sm" ? "h-9 px-4" : "h-10 px-[18px]"} items-center justify-center rounded-full active:opacity-70 ${box}`}
+      className={`${size === "sm" ? "h-9 px-4" : "h-10 px-[18px]"} items-center justify-center rounded-full ${disabled ? "" : "active:opacity-70"} ${box}`}
     >
       <AppText
         size="sm"
         weight="semibold"
-        tone={variant === "primary" ? "inverse" : "default"}
+        tone={
+          disabled ? "muted" : variant === "primary" ? "inverse" : "default"
+        }
       >
         {label}
       </AppText>

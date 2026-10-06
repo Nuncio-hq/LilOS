@@ -352,7 +352,16 @@ function Settings() {
 function Tabs() {
   const tint = useThemeColor("primary");
   const { wire } = useHomeWire();
+  const link = useStore($link);
   const waiting = openAsks(wire.asks).length;
+  /* #652 AC-2: offline the count is last-known — the badge still says N
+     waiting but muted, not the live accent red. */
+  const mutedBg = useThemeColor("muted");
+  const mutedFg = useThemeColor("muted-foreground");
+  const mutedBadge =
+    link === "offline"
+      ? { backgroundColor: mutedBg, color: mutedFg }
+      : undefined;
   return (
     <Tab.Navigator
       screenOptions={{
@@ -392,6 +401,7 @@ function Tabs() {
           // This tab is the full list; the accessory would repeat it.
           bottomAccessory: undefined,
           tabBarBadge: waiting || undefined,
+          tabBarBadgeStyle: mutedBadge,
           tabBarIcon: ({ focused }) => ({
             type: "sfSymbol",
             name: focused ? "tray.fill" : "tray",

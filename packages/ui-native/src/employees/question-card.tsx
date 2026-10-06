@@ -20,10 +20,16 @@ export function QuestionCard({
   a,
   onAnswer,
   onCancel,
+  stale,
+  answerHint,
 }: {
   a: Approval;
   onAnswer?: (id: string, answer: QuestionAnswer) => void;
   onCancel?: (id: string) => void;
+  /** #652: the Mac is unreachable — options/answer/Skip render inert and
+      the hint says when answering works again (nothing is sent or queued). */
+  stale?: boolean;
+  answerHint?: string;
 }) {
   const muted = useThemeColor("muted-foreground");
   const [draft, setDraft] = useState("");
@@ -34,7 +40,7 @@ export function QuestionCard({
   /* Wire rule (requests.ts): free text beside the options only when
      `freeText`; no options at all → the answer IS free text. */
   const freeText = a.freeText === true || options.length === 0;
-  const inert = pending || (!onAnswer && !onCancel);
+  const inert = pending || stale || (!onAnswer && !onCancel);
   const pick = (answer: QuestionAnswer) => {
     if (!onAnswer || pending) return;
     setPending(true);
@@ -128,15 +134,20 @@ export function QuestionCard({
         {/* Skip is secondary, pinned to the content edge — it names what
             it does: the asking agent decides instead (FIX #515). */}
         <View className="mt-3 flex-row items-center justify-end gap-2">
-          {pending && (
+          {stale && answerHint ? (
+            <AppText size="xs" tone="muted" className="flex-1">
+              {answerHint}
+            </AppText>
+          ) : pending ? (
             <AppText size="xs" tone="muted">
               Sending…
             </AppText>
-          )}
+          ) : null}
           {onCancel && (
             <Pill
               label={`Skip — let ${a.employee || "the agent"} decide`}
               variant="soft"
+              disabled={stale}
               onPress={() => {
                 if (pending) return;
                 setPending(true);

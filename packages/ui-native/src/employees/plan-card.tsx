@@ -140,11 +140,17 @@ export function PlanCard({
   plan,
   onAction,
   onOpen,
+  stale,
+  answerHint,
 }: {
   plan: PlanRow;
   onAction?: (a: PlanAction, planId: string) => void;
   /** Opens PlanSheet. */
   onOpen?: () => void;
+  /** #652: the Mac is unreachable — Approve/Change/Reject render
+      disabled; the hint says when answering works again. */
+  stale?: boolean;
+  answerHint?: string;
 }) {
   const phase = phaseOf(plan);
   const finished = phase === "done";
@@ -226,22 +232,30 @@ export function PlanCard({
             // Its own responder, so a button tap never opens the sheet.
             <View
               onStartShouldSetResponder={() => true}
-              className="flex-row gap-2"
+              className="flex-row items-center gap-2"
             >
               <Pill
                 label="Approve"
+                disabled={stale}
                 onPress={() => onAction("approve", plan.id)}
               />
               <Pill
                 label="Change…"
                 variant="soft"
+                disabled={stale}
                 onPress={() => onAction("change", plan.id)}
               />
               <Pill
                 label="Reject"
                 variant="ghost"
+                disabled={stale}
                 onPress={() => onAction("reject", plan.id)}
               />
+              {stale && answerHint && (
+                <AppText size="xs" tone="muted" className="flex-1">
+                  {answerHint}
+                </AppText>
+              )}
             </View>
           )}
         </>

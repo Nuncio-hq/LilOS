@@ -14,3 +14,29 @@ export function approvalSentence(
     return `${a.employee} wants to run`;
   return a.reason;
 }
+
+/* Lines break only between arguments, and a flag stays with its value
+   ("--env dev"): non-breaking hyphens + a no-break space after a flag. */
+export function keepFlags(command: string) {
+  return command
+    .replace(/(^|\s)(-{1,2}[\w-]+) (?=[^-\s])/g, "$1$2 ")
+    .replace(/-/g, "‑");
+}
+
+/** #652: the accessory's one-line ask description — the same human
+    sentence the thread card leads with (never a bare `patch {…}` tool
+    call), with the command after it. Offline the "Last known" marker
+    leads so truncation can't cut it away. */
+export function accessoryWhat(
+  a: Pick<Approval, "employee" | "reason" | "lastKnown"> & {
+    command?: string;
+    file?: { name: string };
+  },
+): string {
+  const what = a.command
+    ? `${approvalSentence(a)} · ${keepFlags(a.command)}`
+    : a.file
+      ? `${approvalSentence(a)} · ${a.file.name}`
+      : approvalSentence(a);
+  return `${a.lastKnown ? "Last known · " : ""}${what}`;
+}

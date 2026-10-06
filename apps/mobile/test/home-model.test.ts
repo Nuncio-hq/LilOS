@@ -415,7 +415,6 @@ describe("home-model (#155)", () => {
   });
 });
 
-
 describe("#652 — the needs-you card reads last-known and human while offline (AC-2)", () => {
   const w = (online: boolean) =>
     wire({
@@ -447,20 +446,14 @@ describe("#652 — the needs-you card reads last-known and human while offline (
 
   it("offline, the marker is FIRST — truncation can't cut it away", () => {
     const a = toApproval(
-      ask(
-        "a1",
-        "ch1",
-        "c1",
-        NOW - 60_000,
-        {
-          request: {
-            kind: "approval",
-            command: `patch ${"x".repeat(400)}`,
-            description: "wants to run",
-            options: ["once", "deny"],
-          },
+      ask("a1", "ch1", "c1", NOW - 60_000, {
+        request: {
+          kind: "approval",
+          command: `patch ${"x".repeat(400)}`,
+          description: "wants to run",
+          options: ["once", "deny"],
         },
-      ),
+      }),
       w(false),
       NOW,
     );
