@@ -87,6 +87,7 @@ describe("engine-fake", () => {
       "plan",
       "subagents",
       "background_jobs",
+      "side_prompt",
       "approval_policy",
     ]);
     c.close();
@@ -1070,5 +1071,61 @@ describe("engine-fake #458: an interrupted leg settles instead of wedging the se
       off();
       c.close();
     }
+  });
+});
+
+describe("engine-fake #584: session.ask answers off-transcript", () => {
+  test("AC-1 the ask resolves an answer and logs no turn/events for it", async () => {
+    const c = conn();
+    const events: string[] = [];
+    c.onEvent((e) => events.push(e.type));
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/tmp/lilos-fake",
+    })) as { sessionId: string };
+    events.length = 0;
+    const r = (await c.request("session.ask", {
+      sessionId,
+      text: "Write a one-line git commit message for src/app.ts",
+    })) as { answer: string };
+    expect(r.answer).toBe("feat: update app.ts");
+    /* No frames at all — the session's transcript and event log only grow
+       through real turns. */
+    expect(events).toEqual([]);
+    /* The next prompt still opens the FIRST turn — the ask created none. */
+    const p = await promptText(c, sessionId, "hi");
+    expect(p.turnId).toBe("t1");
+    c.close();
+  });
+
+  test("AC-2 the ask answers while a turn is running", async () => {
+    const c = conn(30);
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+    })) as { sessionId: string };
+    /* `slow` paces the turn so the ask overlaps a live turn. */
+    const pending = promptText(c, sessionId, "slow do the thing");
+    const r = (await c.request("session.ask", {
+      sessionId,
+      text: "Write a commit message for packages/ui/x.tsx",
+    })) as { answer: string };
+    expect(r.answer).toBe("feat: update x.tsx");
+    await pending;
+    c.close();
+  });
+
+  test("the side_prompt capability gates session.ask", async () => {
+    const c = connectFake(
+      new FakeEngine({ capabilities: { side_prompt: false } }),
+    );
+    const r = (await c.request("describe")) as {
+      capabilities: { id: string }[];
+    };
+    expect(r.capabilities.map((x) => x.id)).not.toContain("side_prompt");
+    await expect(
+      c.request("session.ask", { sessionId: "s1", text: "hi" }),
+    ).rejects.toMatchObject({ code: -32601 });
+    c.close();
   });
 });

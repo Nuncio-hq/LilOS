@@ -185,9 +185,15 @@ test("AC-1..3 folderless session: ↗ + toggle; only Subagents + Background; hel
   // Exactly the engine tabs — no empty Changes/Files/PR/Terminal/Preview.
   await expect(tab(page, "Subagents")).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, "Background")).toBeVisible();
-  await expect(
-    tab(page, /^(Changes|Files|Terminal|Preview|Plan|PR)$/),
-  ).toHaveCount(0);
+  /* #587 AC-1 changed the empty-tab policy: engine-owned tabs a capable
+     engine declared (Plan included) render greyed-empty instead of popping
+     in on first content — the strip is a fixed membership. What stays
+     absent is the folder-bound set (and PR, which probes off a folder). */
+  await expect(tab(page, /^(Changes|Files|Terminal|Preview|PR)$/)).toHaveCount(
+    0,
+  );
+  await expect(tab(page, "Plan")).toBeVisible();
+  await expect(tab(page, "Plan")).toHaveAttribute("data-wb-empty", "true");
 
   // AC-2: helper rows render live (the held one still Running).
   await tab(page, "Subagents").click();
