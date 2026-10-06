@@ -1,5 +1,6 @@
 import { Trash2Icon, UserIcon, XIcon } from "lucide-react";
 import { useState } from "react";
+import { useUiLayerEl } from "../chat/ui-layers";
 import {
   Confirmation,
   ConfirmationAction,
@@ -89,12 +90,19 @@ export function EditEmployeeDialog({
     }
   };
 
+  /* #576: Esc closes this dialog while it is the top-most layer. */
+  const layerRef = useUiLayerEl<HTMLDivElement>({ onEscape: onClose });
+
   return (
     <div
       className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-6"
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit employee"
+        ref={layerRef}
         className="flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl"
         onClick={(ev) => ev.stopPropagation()}
       >

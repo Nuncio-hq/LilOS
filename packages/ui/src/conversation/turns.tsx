@@ -210,6 +210,7 @@ export function AgentTurn({
   models,
   onOpenSession,
   onPlan,
+  keyTarget,
 }: {
   r: Reply;
   emp: EmpFn;
@@ -229,6 +230,9 @@ export function AgentTurn({
   onOpenSession?: (employeeId: string, session: string) => void;
   /** Approve / Change / Reject on the plan this turn proposed (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
+  /** #558: id of the card the keyboard answers — a waiting plan carries
+      the ↵/⌫ hint when it matches. */
+  keyTarget?: string;
 }) {
   const e = emp(r.from);
   const steps = r.steps ?? [];
@@ -345,6 +349,7 @@ export function AgentTurn({
           plan={r.plan}
           onAction={onPlan}
           onOpen={onOpen ? () => onOpen("plan") : undefined}
+          keyHint={r.plan.id === keyTarget}
         />
       )}
       {cards}

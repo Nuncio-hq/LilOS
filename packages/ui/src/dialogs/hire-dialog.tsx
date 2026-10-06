@@ -1,5 +1,6 @@
 import { PlusIcon, SparklesIcon, UserPlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
+import { useUiLayerEl } from "../chat/ui-layers";
 import { Button } from "../components/ui/button";
 import { Checkbox } from "../components/ui/checkbox";
 import { Input } from "../components/ui/input";
@@ -64,12 +65,19 @@ export function HireDialog({
   const [chs, setChs] = useState<string[]>(["engineering"]);
   const drafted = !templates.some((t) => t.name === initial.name);
   const slug = d.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "employee";
+  /* #576: Esc closes this dialog while it is the top-most layer — a menu
+     open inside it keeps Esc, and it never reaches the turn underneath. */
+  const layerRef = useUiLayerEl<HTMLDivElement>({ onEscape: onClose });
   return (
     <div
       className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-6"
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Hire an employee"
+        ref={layerRef}
         className="grid max-h-[90dvh] w-full max-w-3xl grid-cols-1 overflow-hidden rounded-2xl border bg-background shadow-2xl md:grid-cols-[220px_minmax(0,1fr)]"
         onClick={(e) => e.stopPropagation()}
       >
