@@ -444,6 +444,9 @@ export const ConversationsListResult = z.object({
  */
 export const ConversationsSummariesParams = z.object({
   channelId: z.string().min(1).optional(),
+  /** One conversation only (#571): the client's live-patch path refetches
+      a single row instead of re-listing every summary. */
+  conversationId: z.string().min(1).optional(),
   includeArchived: z.boolean().default(false),
 });
 export type ConversationsSummariesParams = z.infer<

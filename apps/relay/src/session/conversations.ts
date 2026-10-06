@@ -61,6 +61,7 @@ export async function handleConversations(
       respond(peer, id, {
         summaries: await store.listConversationSummaries({
           channelId: parsed.data.channelId,
+          conversationId: parsed.data.conversationId,
           includeArchived: parsed.data.includeArchived,
         }),
       });

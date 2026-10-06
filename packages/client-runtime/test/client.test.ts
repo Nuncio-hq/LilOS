@@ -1104,6 +1104,297 @@ describe("directory refresh for a paired phone", () => {
   });
 });
 
+describe("#571 incremental conversation summaries", () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  const mkMsg = (over: Record<string, unknown> = {}) => ({
+    id: "m-x",
+    channelId: "ch1",
+    conversationId: "conv1",
+    authorId: "me",
+    authorKind: "user",
+    text: "hi",
+    seq: 3,
+    createdAt: 3,
+    ...over,
+  });
+  const mkSummary = (
+    convId: string,
+    over: Record<string, unknown> = {},
+    msgOver: Record<string, unknown> = {},
+    rootOver: Record<string, unknown> = {},
+  ) => ({
+    conversation: {
+      id: convId,
+      channelId: "ch1",
+      rootMessageId: `${convId}-root`,
+      engineRef: null,
+      state: "idle",
+      title: convId,
+      titleSource: "auto",
+      archived: false,
+      deliveredSeq: 0,
+      createdAt: 1,
+    },
+    root: mkMsg({
+      id: `${convId}-root`,
+      conversationId: convId,
+      seq: 1,
+      ...rootOver,
+    }),
+    last: mkMsg({
+      id: `${convId}-last`,
+      conversationId: convId,
+      seq: 2,
+      ...msgOver,
+    }),
+    messageCount: 2,
+    ...over,
+  });
+
+  /** Connects and answers every directory read with `summaries` seeded. */
+  async function connectWithSummaries(summaries: unknown[]) {
+    const { client, socket } = makeClient();
+    const pending = client.connect();
+    await Promise.resolve();
+    socket.openSocket();
+    await Promise.resolve();
+    socket.respondTo("session.hello", WELCOME);
+    await pending;
+    socket.respondTo("employees.list", { employees: [] });
+    socket.respondTo("channels.list", { channels: [] });
+    socket.respondTo("conversations.list", { conversations: [] });
+    socket.respondTo("conversations.summaries", { summaries });
+    socket.respondTo("profile.get", { profile: {} });
+    socket.respondTo("asks.list", { asks: [] });
+    socket.respondTo("devices.list", { devices: [] });
+    await flush();
+    socket.sent.length = 0;
+    return { client, socket };
+  }
+  const summaryRequests = (socket: FakeSocket) =>
+    socket.sent
+      .map((raw) => JSON.parse(raw) as { method?: string; params?: unknown })
+      .filter((f) => f.method === "conversations.summaries");
+
+  it("a new message patches last/count in place — no fetch", async () => {
+    const { client, socket } = await connectWithSummaries([mkSummary("conv1")]);
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "message.created",
+      params: {
+        channelId: "ch1",
+        message: mkMsg({ id: "m3", seq: 3, text: "newest" }),
+      },
+    });
+    const [s] = client.conversationSummaries.get();
+    expect(s.last.text).toBe("newest");
+    expect(s.last.seq).toBe(3);
+    expect(s.messageCount).toBe(3);
+    expect(summaryRequests(socket)).toHaveLength(0);
+  });
+
+  it("a long incoming message gets the 500-char preview cap locally", async () => {
+    const { client, socket } = await connectWithSummaries([mkSummary("conv1")]);
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "message.created",
+      params: {
+        channelId: "ch1",
+        message: mkMsg({
+          id: "m3",
+          seq: 3,
+          authorKind: "employee",
+          text: `A${"y".repeat(600)}`,
+        }),
+      },
+    });
+    const [s] = client.conversationSummaries.get();
+    expect(s.last.text).toHaveLength(500);
+    expect(s.last.truncated).toBe(true);
+    /* First non-user reply initializes firstAnswer too. */
+    expect(s.firstAnswer?.text).toHaveLength(500);
+    expect(summaryRequests(socket)).toHaveLength(0);
+  });
+
+  it("a message for an unknown conversation fetches one scoped summary", async () => {
+    const { client, socket } = await connectWithSummaries([mkSummary("conv1")]);
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "message.created",
+      params: {
+        channelId: "ch1",
+        message: mkMsg({ id: "m1", conversationId: "conv2", seq: 9 }),
+      },
+    });
+    const reqs = summaryRequests(socket);
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0].params).toEqual({
+      conversationId: "conv2",
+      includeArchived: true,
+    });
+    socket.respondTo("conversations.summaries", {
+      summaries: [mkSummary("conv2", {}, { id: "m1", seq: 9 })],
+    });
+    await flush();
+    expect(
+      client.conversationSummaries.get().map((s) => s.conversation.id),
+    ).toEqual(["conv1", "conv2"]);
+  });
+
+  it("a dropped/removed flag flip refetches only that conversation", async () => {
+    const { socket } = await connectWithSummaries([
+      mkSummary("conv1"),
+      mkSummary("conv2"),
+    ]);
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "message.changed",
+      params: {
+        channelId: "ch1",
+        message: mkMsg({
+          id: "m2",
+          conversationId: "conv2",
+          seq: 2,
+          dropped: true,
+        }),
+        flags: ["dropped"],
+      },
+    });
+    const reqs = summaryRequests(socket);
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0].params).toEqual({
+      conversationId: "conv2",
+      includeArchived: true,
+    });
+  });
+
+  it("a claimed-only flag flip does not refetch the summary", async () => {
+    const { socket } = await connectWithSummaries([mkSummary("conv1")]);
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "message.changed",
+      params: {
+        channelId: "ch1",
+        message: mkMsg({
+          id: "m2",
+          conversationId: "conv1",
+          seq: 2,
+          claimed: true,
+        }),
+        flags: ["claimed"],
+      },
+    });
+    expect(summaryRequests(socket)).toHaveLength(0);
+  });
+
+  /* #134 AC-5 regression: the relay emits `conversation.rewound`, then
+     posts the "Rewound to before…" note as `message.created` — both before
+     it ever sees the scoped summaries request the first event sent. The
+     note's local patch must not cancel that fetch: the response carries
+     `root.rewound`, the flag that keeps the dead root off the open
+     thread (a stale copy renders it as the row). */
+  it("the rewind note's patch must not cancel the scoped refetch", async () => {
+    const { client, socket } = await connectWithSummaries([mkSummary("conv1")]);
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "conversation.rewound",
+      params: {
+        channelId: "ch1",
+        conversationId: "conv1",
+        fromSeq: 1,
+        messageId: "conv1-root",
+        removedIds: ["conv1-root", "conv1-last"],
+        engineRewound: true,
+      },
+    });
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "message.created",
+      params: {
+        channelId: "ch1",
+        message: mkMsg({
+          id: "note1",
+          conversationId: "conv1",
+          authorKind: "system",
+          seq: 4,
+          text: "Rewound to before your message — 2 messages dropped.",
+        }),
+      },
+    });
+    expect(summaryRequests(socket)).toHaveLength(1);
+    /* The note's patch is optimistic; the response is the authority. */
+    socket.respondTo("conversations.summaries", {
+      summaries: [
+        mkSummary(
+          "conv1",
+          { messageCount: 1 },
+          {
+            id: "note1",
+            seq: 4,
+            authorKind: "system",
+            text: "Rewound to before your message — 2 messages dropped.",
+          },
+          { rewound: true },
+        ),
+      ],
+    });
+    await flush();
+    const [s] = client.conversationSummaries.get();
+    expect(s.root.rewound).toBe(true);
+    expect(s.last.text).toBe(
+      "Rewound to before your message — 2 messages dropped.",
+    );
+    expect(s.messageCount).toBe(1);
+  });
+
+  /* The one race a ticket does guard: two scoped fetches overlap because
+     relay handlers interleave at awaits — the older response landing last
+     must not roll the row back. */
+  it("an older overlapping scoped response can't roll back a newer one", async () => {
+    const { client, socket } = await connectWithSummaries([mkSummary("conv1")]);
+    const flip = (id: string) =>
+      socket.emit({
+        jsonrpc: "2.0",
+        method: "message.changed",
+        params: {
+          channelId: "ch1",
+          message: mkMsg({
+            id,
+            conversationId: "conv1",
+            seq: 2,
+            removed: true,
+          }),
+          flags: ["removed"],
+        },
+      });
+    flip("m2");
+    flip("m2b");
+    const reqs = summaryRequests(socket).map((f) => (f as { id?: string }).id);
+    expect(reqs).toHaveLength(2);
+    /* Newer request answers first… */
+    socket.emit({
+      jsonrpc: "2.0",
+      id: reqs[1],
+      result: {
+        summaries: [mkSummary("conv1", {}, { text: "fresh", seq: 5 })],
+      },
+    });
+    await flush();
+    expect(client.conversationSummaries.get()[0].last.text).toBe("fresh");
+    /* …then the older response lands — discarded, not applied. */
+    socket.emit({
+      jsonrpc: "2.0",
+      id: reqs[0],
+      result: {
+        summaries: [mkSummary("conv1", {}, { text: "stale", seq: 4 })],
+      },
+    });
+    await flush();
+    expect(client.conversationSummaries.get()[0].last.text).toBe("fresh");
+  });
+});
+
 describe("ws upgrade credential (#625)", () => {
   /* The relay authenticates the upgrade itself — a browser WebSocket can't
      set headers, so the credential rides the socket URL (`?token=` or
