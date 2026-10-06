@@ -15,6 +15,7 @@
  * leaving the adapter "running" on a corpse.
  */
 import { homedir } from "node:os";
+import { MAX_FRAME_BYTES } from "@lilos/contracts/engine";
 import { HermesBackendSupervisor } from "../src/backend.js";
 import { HermesEngine } from "../src/engine.js";
 import { RpcError } from "../src/errors.js";
@@ -121,6 +122,9 @@ const server = Bun.serve({
     return new Response("engine-hermes: websocket at /ws", { status: 404 });
   },
   websocket: {
+    /* #551: prompts carry attachments as inline base64 image blocks — a
+       maximal send (~140 MB) must fit or the harness's socket drops. */
+    maxPayloadLength: MAX_FRAME_BYTES,
     open(ws) {
       clients.add(ws);
     },
