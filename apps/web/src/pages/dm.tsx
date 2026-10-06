@@ -2,6 +2,8 @@ import {
   type ChannelMessagesState,
   type SessionFeedState,
   type SessionModel,
+  sendKeyDone,
+  sendKeyFor,
   toStatusComponents,
 } from "@lilos/client-runtime";
 import type {
@@ -138,6 +140,7 @@ import {
   sessionModels,
   workbenchRequests,
 } from "../lib/runtime";
+import { sendKeyDoneForSend, sendKeyForSend } from "../lib/send-key";
 import { say, sayError, sayNotice } from "../lib/toast";
 import { defaultAccess } from "../settings/state";
 import { DmProfileCard } from "./dm-profile-card";
@@ -750,6 +753,7 @@ export function DmPage() {
       "Picking up mid-session after a rewind — earlier transcript:\n\n" +
       `${quote}\n\n—\n\n` +
       (threadDraft.trim() || target.text);
+    const key = sendKeyFor(`sfresh:${conv.id}`, text);
     void sendDm(
       employeeId,
       text,
@@ -763,9 +767,11 @@ export function DmPage() {
           }
         : undefined,
       seedFiles,
+      key,
       conv.cwd,
     ).then((c) => {
       if (!c) return;
+      sendKeyDone(`sfresh:${conv.id}`, text);
       filesOnlyBanner.set(null);
       /* Sessions land on Focus (#149) — the seeded session does too. */
       void navigate({
@@ -890,9 +896,18 @@ export function DmPage() {
       say("Nothing to retry — the session has no sent message.");
       return;
     }
+    /* #552: one key per (conv, retried text) — a second click after the
+       first attempt's answer died with the socket repeats it, so the
+       stored retry dedupes instead of posting again. The binding frees
+       on resolve, so retrying a landed turn is still a real retry. */
+    const key = sendKeyFor(`retry:${conv.id}`, text);
     /* #578: Retry sends into the real post-rewind session — a pending
        rewind in this conversation commits first. */
-    void flushRewind(conv.id).then(() => sendDm(employeeId, text, conv.id));
+    void flushRewind(conv.id)
+      .then(() => sendDm(employeeId, text, conv.id, undefined, undefined, key))
+      .then((c) => {
+        if (c) sendKeyDone(`retry:${conv.id}`, text);
+      });
   };
 
   /* #427: one fold per conversation (waiting rows, feed replies, thread
@@ -1068,10 +1083,14 @@ export function DmPage() {
       undefined,
       modelPick,
       files,
+      /* #552 AC-1: the draft's own key — a failed send keeps the draft,
+         so the resend repeats the key and dedupes on the relay. */
+      sendKeyForSend(`dm:${employeeId}`, draftKey.dm(employeeId), text, files),
       folder?.path,
       draftAccess[employeeId],
     ).then((conv) => {
       if (!conv) throw new Error("send failed");
+      sendKeyDoneForSend(`dm:${employeeId}`, text, files);
       clearDraftIfSent(draftKey.dm(employeeId), text);
       setDraftPick(({ [employeeId]: _drop, ...rest }) => rest);
       setDraftAccess(({ [employeeId]: _drop, ...rest }) => rest);
@@ -1228,9 +1247,28 @@ export function DmPage() {
       /* #578: a send sees the real post-rewind session — a pending rewind
          in this conversation commits now, not at its own timer. */
       return flushRewind(conv.id)
-        .then(() => sendDm(employeeId, text, conv.id, undefined, files))
+        .then(() =>
+          sendDm(
+            employeeId,
+            text,
+            conv.id,
+            undefined,
+            files,
+            /* #552 AC-1: the draft's own key when the draft itself goes
+               out — a Workbench/programmatic send rides a session binding
+               instead, so it can't borrow the key a stored draft send is
+               waiting on. */
+            sendKeyForSend(
+              `conv:${conv.id}`,
+              draftKey.thread(conv.id),
+              text,
+              files,
+            ),
+          ),
+        )
         .then((c) => {
           if (!c) throw new Error("send failed");
+          sendKeyDoneForSend(`conv:${conv.id}`, text, files);
           clearDraftIfSent(draftKey.thread(conv.id), text);
           return c;
         });

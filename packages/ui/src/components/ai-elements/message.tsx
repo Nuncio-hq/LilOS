@@ -23,6 +23,10 @@ import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
 import { createContext, memo, useContext, useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
 import { lilosCodePlugin } from "./code-highlight-plugin";
+import {
+  safeMessageComponents,
+  safeMessageRehypePlugins,
+} from "./message-safety";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -309,12 +313,13 @@ export const MessageBranchPage = ({
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 export const MessageResponse = memo(
-  ({ className, controls, lineNumbers, plugins, ...props }: MessageResponseProps) => (
+  ({ className, controls, lineNumbers, plugins, rehypePlugins, components, ...props }: MessageResponseProps) => (
     <Streamdown
       className={cn(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className
       )}
+      components={{ ...safeMessageComponents, ...components }}
       controls={
         typeof controls === "object" || controls === undefined
           ? { code: { copy: true, download: false }, ...controls }
@@ -322,6 +327,8 @@ export const MessageResponse = memo(
       }
       lineNumbers={lineNumbers ?? false}
       plugins={{ code: lilosCodePlugin, ...plugins }}
+      /* Caller plugins extend the pipe; the safety legs can't be opted out. */
+      rehypePlugins={[...safeMessageRehypePlugins, ...(rehypePlugins ?? [])]}
       {...props}
     />
   ),
