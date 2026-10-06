@@ -91,6 +91,9 @@ test.beforeAll(async () => {
   stack = await bootStack("ac544", await pickPorts(), {
     PATH: `${fakeGh}:${process.env.PATH}`,
     GH_FAKE_DIR: ghFakeDir,
+    /* #606 TEMP — per-probe START/OK timings in the harness /host handler
+       (removed with the instrumentation before READY). */
+    LILOS_HOST_PROBE_LOG: "1",
   });
 });
 test.afterAll(async () => {
@@ -344,7 +347,40 @@ test("AC-6 on LilOS itself: Workbench reopen → Files visible, measured", async
   await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await tab(page, "Files").click();
-  await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
+  try {
+    await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
+  } catch (e) {
+    /* #606 TEMP — on a first-populate miss, dump the Workbench's DOM facts
+       and the host probe lines so the log says whether the round stalled,
+       answered empty, or the tree never mounted. Removed before READY. */
+    const dom = await page
+      .evaluate(() => ({
+        url: location.href,
+        shell: document.querySelector("[data-wb-shell]")
+          ? getComputedStyle(
+              document.querySelector("[data-wb-shell]") as HTMLElement,
+            ).display
+          : "absent",
+        probing: document.querySelectorAll("[data-wb-probing]").length,
+        treeitems: document.querySelectorAll('[role="treeitem"]').length,
+        selected: [
+          ...document.querySelectorAll('[role="tab"][aria-selected="true"]'),
+        ].map((t) => t.textContent?.trim()),
+        fileview: document.querySelectorAll("[data-fileview]").length,
+        text: (
+          document.querySelector("[data-wb-shell]")?.textContent ?? ""
+        ).slice(0, 300),
+      }))
+      .catch((err) => `dump failed: ${err}`);
+    console.log(`[ac-606] AC-6 first-populate miss: ${JSON.stringify(dom)}`);
+    const probes = stack
+      .log()
+      .split("\n")
+      .filter((l) => l.includes("[host-probe]"))
+      .slice(-60);
+    console.log(`[ac-606] host probes:\n${probes.join("\n")}`);
+    throw e;
+  }
 
   const { n, ms } = await reopenTimed(page);
   console.log(`[ac-544] lilos reopen → first-frame rows=${n} in ${ms}ms`);
