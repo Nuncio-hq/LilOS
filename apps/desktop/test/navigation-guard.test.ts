@@ -85,14 +85,19 @@ describe("AC-2 navigation stays on the app's own origin", () => {
 });
 
 describe("AC-2 the wired window guard", () => {
-  /** A webContents-shaped fake: records handlers, replays events. */
+  /** A webContents-shaped fake: records handlers + loads, replays events. */
   function fakeContents() {
     let openHandler: ((d: { url: string }) => { action: "deny" }) | undefined;
     const navHandlers = new Map<
       string,
       (e: { preventDefault(): void }, url: string) => void
     >();
+    const loads: string[] = [];
     return {
+      loads,
+      loadURL(url: string) {
+        loads.push(url);
+      },
       setWindowOpenHandler(h: typeof openHandler) {
         openHandler = h;
       },
@@ -105,7 +110,10 @@ describe("AC-2 the wired window guard", () => {
       windowOpen(url: string) {
         return openHandler?.({ url });
       },
-      navigate(event: "will-navigate" | "will-redirect", url: string) {
+      navigate(
+        event: "will-navigate" | "will-redirect" | "did-navigate",
+        url: string,
+      ) {
         const e = {
           prevented: false,
           preventDefault() {
@@ -166,6 +174,30 @@ describe("AC-2 the wired window guard", () => {
     expect(
       contents.navigate("will-redirect", "http://localhost:5200/login"),
     ).toBe(false);
+  });
+
+  it("did-navigate snaps back commits that slip past will-navigate", () => {
+    const contents = fakeContents();
+    const opened: string[] = [];
+    guardWindow(contents, "http://localhost:5200", (u) => opened.push(u));
+    // about:blank commits with no will-navigate; a renderer-blocked file:
+    // nav can still land an error page. Both must restore the app document.
+    contents.navigate("did-navigate", "about:blank");
+    expect(contents.loads).toEqual(["http://localhost:5200"]);
+    contents.navigate("did-navigate", "file:///etc/passwd");
+    expect(contents.loads).toEqual([
+      "http://localhost:5200",
+      "http://localhost:5200",
+    ]);
+    expect(opened).toHaveLength(0);
+  });
+
+  it("did-navigate leaves same-document and own-origin commits alone", () => {
+    const contents = fakeContents();
+    guardWindow(contents, "http://localhost:5200", () => {});
+    contents.navigate("did-navigate", "http://localhost:5200/dm/x");
+    contents.navigate("did-navigate", "http://localhost:5200/");
+    expect(contents.loads).toHaveLength(0);
   });
 });
 

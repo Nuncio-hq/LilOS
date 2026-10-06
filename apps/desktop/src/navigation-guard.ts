@@ -24,9 +24,10 @@ export interface GuardableContents {
     handler: (details: { url: string }) => { action: "deny" },
   ): void;
   on(
-    event: "will-navigate" | "will-redirect",
+    event: "will-navigate" | "will-redirect" | "did-navigate",
     listener: (event: NavEvent, url: string) => void,
   ): void;
+  loadURL(url: string): unknown;
 }
 
 /** Schemes a page may hand to the OS. Everything else is refused. */
@@ -83,4 +84,11 @@ export function guardWindow(
   };
   contents.on("will-navigate", denyForeign);
   contents.on("will-redirect", denyForeign);
+  /* The snap-back net: will-navigate never fires for some commits —
+     about:blank lands silently, and a renderer-blocked file:/data: nav can
+     still commit a chrome-error page (seen on Linux CI). Anything that
+     lands off the app document reloads the app instead of staying there. */
+  contents.on("did-navigate", (_event, url) => {
+    if (!isAppNavigation(appUrl, url)) void contents.loadURL(appUrl);
+  });
 }

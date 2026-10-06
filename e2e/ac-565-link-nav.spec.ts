@@ -109,11 +109,19 @@ test("AC-1+AC-2 links can't open windows or take over the app window", async () 
       .poll(() => openedExternal(app))
       .toEqual(["https://example.com/", "https://example.com/x"]);
     expect(win.url()).toBe(appUrl);
-    await win.evaluate(() => {
-      window.location.href = "file:///etc/passwd";
-    });
-    await expect(win.locator("aside")).toBeVisible();
-    expect(win.url()).toBe(appUrl);
+
+    /* file: and about:blank take paths will-navigate never sees — the
+       renderer blocks file: (often committing a chrome-error page) and
+       about:blank commits silently. The did-navigate net snaps the window
+       back to the app document; assert the return, not the side trip —
+       which leg Chromium took varies by platform. */
+    for (const target of ["file:///etc/passwd", "about:blank"]) {
+      await win.evaluate((u) => {
+        window.location.href = u;
+      }, target);
+      await expect.poll(() => win.url(), { timeout: 60_000 }).toBe(appUrl);
+      await expect(win.locator("aside")).toBeVisible({ timeout: 60_000 });
+    }
     await expect.poll(() => openedExternal(app)).toHaveLength(2);
 
     await electronScreenshot(app, win, `${SHOTS}/ac-1-2-stay-put.png`);
