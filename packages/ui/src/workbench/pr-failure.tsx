@@ -1,10 +1,4 @@
-import {
-  CheckIcon,
-  ChevronRightIcon,
-  CircleAlertIcon,
-  CopyIcon,
-} from "lucide-react";
-import { useState } from "react";
+import { ChevronRightIcon, CircleAlertIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
 import {
   Collapsible,
@@ -13,55 +7,32 @@ import {
 } from "../components/ui/collapsible";
 import type { PrError } from "../types";
 
-/* A shell command rendered as a copyable code chip (#114 AC-5). */
-function CmdChip({ cmd }: { cmd: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      title={`Copy: ${cmd}`}
-      onClick={() => {
-        void navigator.clipboard
-          ?.writeText(cmd)
-          .then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1200);
-          })
-          .catch(() => {});
-      }}
-      className="mx-0.5 inline-flex items-center gap-1 rounded border bg-muted/60 px-1.5 py-px font-mono text-[11px] text-foreground"
-    >
-      {cmd}
-      {copied ? (
-        <CheckIcon className="size-3 text-emerald-600" />
-      ) : (
-        <CopyIcon className="size-3" />
-      )}
-    </button>
-  );
-}
-
 /* The PR tab's `gh`-failed state: plain copy per reason + one next step, the
-   raw stderr only behind Details — never the headline (#114 AC-5). */
+   raw stderr only behind Details — never the headline (#114 AC-5).
+   #579 AC-2: no copy may ask for a typed command — each names a step the
+   user can take (ask the employee, then Retry). */
 export function PrFailure({
   error,
   onRetry,
+  employeeName = "the employee",
 }: {
   error: PrError;
   onRetry?: () => void;
+  /** Named in the ask-the-employee next step (#579). */
+  employeeName?: string;
 }) {
   return (
     <>
       <CircleAlertIcon className="size-5" />
       {error.reason === "missing" ? (
         <p>
-          GitHub CLI isn't installed. Install it with{" "}
-          <CmdChip cmd="brew install gh" />, then reopen this tab.
+          GitHub CLI isn't installed on this machine. Ask {employeeName} to
+          install it, then Retry.
         </p>
       ) : error.reason === "unauthenticated" ? (
         <p>
-          Sign in to GitHub to see this PR: run <CmdChip cmd="gh auth login" />{" "}
-          in Terminal.
+          GitHub isn't signed in on this machine. Ask {employeeName} to sign in,
+          then Retry.
         </p>
       ) : (
         <p>Couldn't load the PR.</p>

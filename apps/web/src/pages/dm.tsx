@@ -47,6 +47,7 @@ import type {
   ModelChoice,
   ModelPickerExtras,
   Msg,
+  PullRequest,
   Thread,
   TranscriptNote,
   WbTab,
@@ -120,6 +121,7 @@ import {
   toUiEmployee,
 } from "../lib/mapping";
 import { currentName, humanFor, osFullName, osHome, profile } from "../lib/me";
+import { $prs, refreshConversationPrs, watchPrs } from "../lib/prs";
 import {
   asks as asksAtom,
   engine,
@@ -627,6 +629,21 @@ export function DmPage() {
       dead = true;
     };
   }, [jobsCapable, openSid, openFeed.synced]);
+
+  /* #579 AC-1: the open conversation's PRs — one fetch on open +
+     `turn.completed` (watchPrs); the Workbench probe's read then wins via
+     `probePr` (undefined = it hasn't answered, list fills in). */
+  const prsByConv = useAtom($prs);
+  const listedPr = openConvId ? prsByConv[openConvId]?.[0] : undefined;
+  const [probePr, setProbePr] = useState<PullRequest | null | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    setProbePr(undefined);
+    if (!openConvId) return;
+    watchPrs();
+    void refreshConversationPrs(openConvId);
+  }, [openConvId]);
 
   /* A running job ticks its uptime every second. */
   const [, setJobsTick] = useState(0);
@@ -1260,11 +1277,8 @@ export function DmPage() {
       for (const j of model?.jobs ?? [])
         jobsById.set(j.jobId, toJob(j, jobsNow));
     }
-    /* #309: helpers the session delegated to list on the Background tab
-       too — under `subagents`, not `background_jobs`, so they merge
-       outside the capability gate. */
-    for (const j of model?.subagentJobs ?? [])
-      jobsById.set(j.jobId, toJob(j, jobsNow));
+    /* #587 AC-2: helpers list ONLY on the Subagents tab — no merge into
+       the Background jobs rows. */
     const uiJobs = [...jobsById.values()].sort(
       (a, b) => a.started.localeCompare(b.started) || a.id.localeCompare(b.id),
     );
@@ -1357,6 +1371,16 @@ export function DmPage() {
          engine declared `background_jobs` (uiJobs is empty otherwise — and
          the tab hides itself when it is). */
       ...(uiJobs.length ? { jobs: uiJobs } : {}),
+      /* #579 AC-1: the header's "PR #N" chip — the Workbench probe's live
+         read wins once it reports; the conversations.prs list fills in
+         before it does (undefined probe = not answered yet). */
+      ...(probePr !== undefined
+        ? probePr
+          ? { pr: probePr }
+          : {}
+        : listedPr
+          ? { pr: listedPr }
+          : {}),
     };
     const running = !!modelLive || pending[conv.id] === true;
     /* #134 AC-5: another live session on the same folder -> the click asks
@@ -1533,6 +1557,31 @@ export function DmPage() {
               : null
           }
           wbSpot={wbSpot}
+          /* #587 AC-1: the Workbench's engine-owned tabs gate on the
+             declared capabilities — the strip's membership is fixed. */
+          caps={{
+            plan: planCap,
+            subagents: hasCapability("subagents"),
+            background: jobsCapable,
+          }}
+          /* #584: Suggest rides `session.ask` — a side request that adds
+             nothing to the transcript. Only where the engine declares it. */
+          onSuggest={
+            hasCapability("side_prompt") && conv.engineRef
+              ? (files) =>
+                  relay
+                    .request<{ answer: string }>("session.ask", {
+                      sessionId: conv.engineRef,
+                      text: `Write a one-line git commit message for these changed files: ${
+                        files.join(", ") || "the listed files"
+                      }`,
+                    })
+                    .then((r) => r.answer)
+              : undefined
+          }
+          /* #579 AC-1: the probe's live forge read updates the header
+             chip the moment it answers (a PR the session just opened). */
+          onPr={setProbePr}
         >
           {filesOnly?.conversationId === conv.id && (
             <StatusBanner

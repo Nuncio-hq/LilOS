@@ -1,3 +1,4 @@
+import { equalSecret } from "@lilos/contracts/auth";
 import {
   catalogRows,
   LILOS_TOOLS,
@@ -95,7 +96,7 @@ export class SessionRegistry {
   /** Bearer-only lookup — the token itself names the session. */
   resolveToken(token: string): GatewayEntry | null {
     for (const entry of this.entries.values()) {
-      if (entry.token === token) return entry;
+      if (equalSecret(entry.token, token)) return entry;
     }
     return null;
   }
@@ -147,7 +148,7 @@ export function resolveCaller(
   const auth = request.headers.get("authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
   if (!token) return null;
-  if (engineToken && token === engineToken) {
+  if (engineToken && equalSecret(token, engineToken)) {
     const named = request.headers.get(SESSION_HEADER);
     if (!named) return { entry: null, engine: true };
     const entry = registry.resolve(named);
@@ -156,7 +157,9 @@ export function resolveCaller(
   const named = request.headers.get(SESSION_HEADER);
   if (named) {
     const entry = registry.resolve(named);
-    return entry && entry.token === token ? { entry, engine: false } : null;
+    return entry && equalSecret(entry.token, token)
+      ? { entry, engine: false }
+      : null;
   }
   const entry = registry.resolveToken(token);
   return entry ? { entry, engine: false } : null;

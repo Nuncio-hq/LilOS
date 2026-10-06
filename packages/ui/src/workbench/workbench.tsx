@@ -77,6 +77,7 @@ import {
   diffSendRoute,
   useDiffComments,
 } from "../lib/diff-comments";
+import { draftKey, useDraft } from "../lib/drafts";
 import { plural } from "../lib/helpers";
 import {
   EMPTY_WB_PROBE,
@@ -95,6 +96,7 @@ import type {
   MergeMethod,
   OsApp,
   OsEditor,
+  PullRequest,
   ShipBar,
   ShipBusy,
   ShipError,
@@ -174,6 +176,9 @@ export function Workbench({
   spot,
   onAllowed,
   ship,
+  caps,
+  onSuggest,
+  onPr,
 }: {
   thread: Thread;
   work: Work | null;
@@ -232,6 +237,20 @@ export function Workbench({
       flight — so the caller can hide the toggle when there's nothing to
       show (D-#19, #543 AC-5). */
   onAllowed?: (tabs: WbTab[] | null) => void;
+  /** Engine capability flags for the engine-owned tabs (#587 AC-1): the
+      caller reads them off `describe` — `true` makes the tab a fixed
+      member of the strip (greyed while empty), so content arriving only
+      unmutes it, never moves it. Absent = content/emp fallback (mock). */
+  caps?: { plan?: boolean; subagents?: boolean; background?: boolean };
+  /** The commit-message Suggest (#584): a side ask the app forwards to
+      the engine's `session.ask` — no transcript entry. Gets the checked
+      file paths; resolves with the suggested message, which the bar
+      writes into `message` through `onMessage`. */
+  onSuggest?: (files: string[]) => Promise<string | void> | string | void;
+  /** Live `forge.pr` truth reported upward (#579): the header's "PR #N"
+      chip reads it, so a just-created or merged PR shows without waiting
+      for the next `conversations.prs` refresh. */
+  onPr?: (pr: PullRequest | null) => void;
   /** The commit → push → Create PR bar's mock seam (issue #107/#359): the
      prototype/app supplies state overrides + the action handlers here; a
      missing handler hides its control (D-#19). In live mode the same bar
@@ -458,33 +477,17 @@ export function Workbench({
   /* ── Ship bar state (issue #107/#359) — the app owns it; the bar is
      presentational. `unchecked` keys on Diff.path: all checked by default. */
   const [unchecked, setUnchecked] = useState<ReadonlySet<string>>(new Set());
-  const [commitMsg, setCommitMsg] = useState("");
+  /* The commit-message box is a `lilos:` draft keyed on the session (#584
+     AC-2): a Suggest answer (or typed text) survives a reload exactly like
+     a composer draft. */
+  const [commitMsg, setCommitMsg] = useDraft(
+    thread.session ? draftKey.commit(thread.session) : undefined,
+  );
   const [shipBusy, setShipBusy] = useState<ShipBusy>(null);
   const [shipError, setShipError] = useState<ShipError | null>(null);
   /* Upstream a push in this view landed on — the bar's ↑ chip (issue #393
      AC-6; a fresh mount leaves the chip off until the next push). */
   const [pushedUp, setPushedUp] = useState<string | null>(null);
-  /* Suggest posts a normal user message — the engine's next reply fills the
-     box with its first non-empty line (AC-2). `suggestAt` marks where replies
-     stood when the ask went out. */
-  const [suggestAt, setSuggestAt] = useState<number | null>(null);
-  const replies = thread.replies;
-  useEffect(() => {
-    if (suggestAt === null) return;
-    /* A reply mid-stream is skipped — grabbing a partial first line would
-       land "feat:" in the box instead of the whole message (AC-2). */
-    const r = replies.slice(suggestAt).find((r) => !human(r.from) && !r.live);
-    /* First real line, minus markdown dressing (a reply like
-       "> feat: foo" or "`feat: foo`" must land in the box usable). */
-    const line = r?.text
-      .split("\n")
-      .map((s) => s.trim().replace(/^>\s*/, "").replace(/^`|`$/g, "").trim())
-      .find(Boolean);
-    if (line) {
-      setCommitMsg(line);
-      setSuggestAt(null);
-    }
-  }, [replies, suggestAt, human]);
   const checkedPaths = diffs
     .map((d) => d.path)
     .filter((p) => !unchecked.has(p));
@@ -506,13 +509,18 @@ export function Workbench({
     };
   };
   /* Runs a ship action: busy + error state, then a probe refresh so the list
-     / Commits / PR tab reflect the write without waiting for a turn flip. */
-  const shipCall = async (stage: ShipBusy, fn: () => Promise<unknown>) => {
+     / Commits / PR tab reflect the write without waiting for a turn flip.
+     The action's own value (e.g. a Suggest answer) is returned to the bar. */
+  const shipCall = async <T,>(
+    stage: ShipBusy,
+    fn: () => Promise<T>,
+  ): Promise<T> => {
     setShipBusy(stage);
     setShipError(null);
     try {
-      await fn();
+      const v = await fn();
       await updateProbe.current?.();
+      return v;
     } catch (e) {
       setShipError(shipErrorOf(e));
       throw e;
@@ -520,16 +528,13 @@ export function Workbench({
       setShipBusy(null);
     }
   };
-  const onSuggest =
-    onSend != null
-      ? () => {
-          setSuggestAt(replies.length);
-          onSend(
-            `Write a one-line git commit message for these changed files: ${
-              checkedPaths.join(", ") || "the listed files"
-            }`,
-          );
-        }
+  /* #584: Suggest is a side ask, not a send — the app forwards it to the
+     engine's `session.ask`; shipCall's funnel gives it the same busy/error
+     surface as the other actions. */
+  const suggest =
+    onSuggest != null
+      ? () =>
+          shipCall("suggest", () => Promise.resolve(onSuggest(checkedPaths)))
       : undefined;
 
   /* Live-mode ship handlers — one per host method that answered (D-#19). */
@@ -563,6 +568,7 @@ export function Workbench({
           `The push was rejected — the remote has newer commits on ${probe?.status?.branch ?? "this branch"}. Please update the branch with the remote's latest commits, then push again.`,
         );
     }
+    if (suggest != null) liveShip.onSuggest = suggest;
     if (shipHas("forge.create") && host.prCreate) {
       liveShip.onCreatePr = (p) =>
         shipCall("pr", async () => {
@@ -622,8 +628,9 @@ export function Workbench({
         error: shipError,
         running: !!running || !!sendPending,
         upstream: pushedUp,
+        employeeName: lead?.name,
         onMessage: setCommitMsg,
-        onSuggest,
+        onSuggest: suggest,
         ...liveShip,
       };
     }
@@ -644,8 +651,13 @@ export function Workbench({
       running: !!running || !!sendPending,
       upstream: ship.upstream ?? null,
       accessory: ship.accessory,
+      employeeName: ship.employeeName ?? lead?.name,
       onMessage: setCommitMsg,
-      onSuggest: ship.onSuggest ?? onSuggest,
+      onSuggest:
+        (ship.onSuggest &&
+          (() =>
+            shipCall("suggest", () => Promise.resolve(ship.onSuggest!())))) ??
+        suggest,
       onCommit: ship.onCommit
         ? (files, message) =>
             shipCall("commit", async () => {
@@ -858,27 +870,41 @@ export function Workbench({
   const prShown = liveMode ? (probe?.pr?.pr ?? null) : thread.pr;
   const prError = liveMode ? probe?.pr?.error : undefined;
   const liveForge = liveMode && prShown != null && liveCwd != null;
+  /* #579 AC-1: the live forge read is the header's "PR #N" truth — report
+     it upward once the probe answers so a just-created/merged PR reaches
+     the chip without a reload. An unanswered probe reports nothing. */
+  const probePr = probe?.pr;
+  useEffect(() => {
+    if (!liveMode || !probePr) return;
+    onPr?.(probePr.pr ?? null);
+  }, [probePr, liveMode, onPr]);
   /* Tabs render only when their host method answered (#114 AC-6) — and the
      folder-bound ones only when the session has a folder (#543). Terminal /
      Preview are surface-bound, not folder-bound: they render wherever live
      surfaces (or the LilOS Browser) are wired (slice B, #119) — a live
-     attach means a real host exists even when `work` doesn't. */
+     attach means a real host exists even when `work` doesn't.
+     #587 AC-1 — the strip is a FIXED membership: the engine-owned tabs
+     (Plan/Background/Subagents) gate on their declared capability (the
+     caller's `caps`), never on content arriving; a capable-but-empty tab
+     renders greyed (data-wb-empty) instead of popping in mid-session.
+     Content still forces a tab on (a job/plan/helper that arrived on an
+     engine which never declared it is shown rather than lost), and the
+     folder tabs keep their answered-probe / has-folder gating. */
   const changesOn = liveMode ? probe?.diffs != null : !folderless;
   const filesOn = liveMode ? probe?.files != null : !folderless;
   const surfacesOn = live != null || (!liveMode && !folderless);
   const previewOn = surfacesOn || !!browser;
-  const prOn = liveMode ? probe?.pr != null : !folderless && prShown != null;
-  /* Background (issue #170): no host method — shows in the prototype, when
-     the session carries jobs, or (folderless, #543) whenever the engine
-     declares `background_jobs` — the caller passes `onStopJob` only then. */
-  const bgOn = liveMode
-    ? jobs.length > 0
-    : !folderless || jobs.length > 0 || onStopJob != null;
-  /* Subagents (#317): read off the session's own turns, no host method — shows once any turn
-     spun off a helper. A `?tab=subagents` deep link still opens the tab on a
-     zero-helper session so its empty state answers instead of a silent
-     fallback (#319). */
-  const subOn = !!emp && (helpers.length > 0 || tab === "subagents");
+  const prOn = liveMode ? probe?.pr != null : !folderless;
+  const bgOn =
+    (caps ? !!caps.background : !folderless || !!emp || onStopJob != null) ||
+    jobs.length > 0;
+  /* A `?tab=subagents` deep link lands on the tab's empty state on a
+     capable session (#319) — covered by the capability flag itself. */
+  const subOn = (caps ? !!caps.subagents : !!emp) || helpers.length > 0;
+  const planOn = (caps ? !!caps.plan : isDM && !!emp) || plans.length > 0;
+  /* Greyed-while-empty markers (#587 AC-1): the tab stays put and clickable
+     — its empty state is the "nothing yet" answer (the `data-wb-empty`
+     triggers below). */
   const allowed: Record<WbTab, boolean> = {
     changes: changesOn,
     files: filesOn,
@@ -886,7 +912,7 @@ export function Workbench({
     preview: previewOn,
     background: bgOn,
     subagents: subOn,
-    plan: plans.length > 0,
+    plan: planOn,
     pr: prOn,
   };
   /* Reports the settled tab set so the caller can hide the toggle when
@@ -1191,7 +1217,7 @@ export function Workbench({
     !prOn &&
     !bgOn &&
     !subOn &&
-    !plan
+    !planOn
   ) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-muted-foreground text-xs">
@@ -1257,14 +1283,19 @@ export function Workbench({
               {wbLabel(browser ? "Browser" : "Preview")}
             </TabsTrigger>
           )}
-          {plan && (
-            <TabsTrigger value="plan" {...wbTab("plan", "Plan")}>
+          {planOn && (
+            <TabsTrigger
+              value="plan"
+              data-wb-empty={plans.length === 0 || undefined}
+              className={plans.length === 0 ? "opacity-40" : undefined}
+              {...wbTab("plan", "Plan")}
+            >
               <ListChecksIcon />
               {wbLabel("Plan")}
-              {plan.status === "proposed" ? (
+              {plan?.status === "proposed" ? (
                 <span className="size-1.5 animate-pulse rounded-full bg-work" />
               ) : (
-                plan.status === "approved" && (
+                plan?.status === "approved" && (
                   <span className="font-mono text-[11px] text-muted-foreground">
                     {plan.steps.filter((s) => s.status === "completed").length}/
                     {plan.steps.length}
@@ -1276,6 +1307,8 @@ export function Workbench({
           {bgOn && (
             <TabsTrigger
               value="background"
+              data-wb-empty={jobs.length === 0 || undefined}
+              className={jobs.length === 0 ? "opacity-40" : undefined}
               {...wbTab("background", "Background")}
             >
               <CpuIcon />
@@ -1292,7 +1325,12 @@ export function Workbench({
             </TabsTrigger>
           )}
           {subOn && (
-            <TabsTrigger value="subagents" {...wbTab("subagents", "Subagents")}>
+            <TabsTrigger
+              value="subagents"
+              data-wb-empty={helpers.length === 0 || undefined}
+              className={helpers.length === 0 ? "opacity-40" : undefined}
+              {...wbTab("subagents", "Subagents")}
+            >
               <NetworkIcon />
               {wbLabel("Subagents")}
               {helpersRunning > 0 && (
@@ -1309,6 +1347,8 @@ export function Workbench({
           {prOn && (
             <TabsTrigger
               value="pr"
+              data-wb-empty={prShown == null || undefined}
+              className={prShown == null ? "opacity-40" : undefined}
               {...wbTab("pr", prShown ? `PR #${prShown.number}` : "PR")}
             >
               <GitPullRequestIcon
@@ -1507,7 +1547,9 @@ export function Workbench({
                         <CommitMetadata>
                           <CommitHash>{c.hash}</CommitHash>
                           <CommitSeparator />
-                          {lead?.name}
+                          {/* #587 AC-3: the real git author — mock rows
+                             (no `author`) keep the employee fallback. */}
+                          {c.author || lead?.name}
                           <CommitSeparator />
                           {plural(c.files.length, "file")}
                         </CommitMetadata>
@@ -1549,9 +1591,17 @@ export function Workbench({
       <TabsContent value="files" className="min-h-0 flex-1">
         <ScrollArea className="h-full" data-wb-scroll="files">
           <div className="p-3">
+            {/* #587: the path truncates on the left so the folder's TAIL
+               stays visible; the file count never wraps to a second line. */}
             <div className="mb-2 flex items-center gap-1.5 text-muted-foreground text-xs">
-              <FolderGit2Icon className="size-3.5" />
-              <span className="font-mono">{cwd}</span>
+              <FolderGit2Icon className="size-3.5 shrink-0" />
+              <span
+                className="min-w-0 truncate font-mono"
+                dir="rtl"
+                title={cwd}
+              >
+                {cwd}
+              </span>
               {openPath && (
                 <OpenPathButton
                   editors={editors}
@@ -1560,7 +1610,7 @@ export function Workbench({
                 />
               )}
               {diffs.length > 0 && (
-                <span>
+                <span className="shrink-0 whitespace-nowrap">
                   · {plural(diffs.length, "file")}{" "}
                   {liveMode ? "changed" : "touched by this session"}
                 </span>
@@ -1583,8 +1633,30 @@ export function Workbench({
                   >
                     ← Files
                   </Button>
-                  <span className="min-w-0 truncate font-mono text-muted-foreground">
-                    {viewFile.path}
+                  {/* #587: middle ellipsis — the dirname truncates on the
+                     left, the file NAME (the bit that matters) stays put. */}
+                  <span
+                    className="flex min-w-0 font-mono text-muted-foreground"
+                    title={viewFile.path}
+                  >
+                    {(() => {
+                      const i = viewFile.path.lastIndexOf("/");
+                      const dir = i >= 0 ? viewFile.path.slice(0, i) : "";
+                      const base =
+                        i >= 0 ? viewFile.path.slice(i) : viewFile.path;
+                      return (
+                        <>
+                          {dir !== "" && (
+                            <span className="min-w-0 truncate" dir="rtl">
+                              {dir}
+                            </span>
+                          )}
+                          <span className="shrink-0 font-medium text-foreground">
+                            {dir !== "" ? base : viewFile.path}
+                          </span>
+                        </>
+                      );
+                    })()}
                   </span>
                   {openPath && (
                     <OpenPathButton
@@ -1779,7 +1851,11 @@ export function Workbench({
                with one next step; raw stderr stays behind Details (#114 AC-5). */
             <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground text-xs">
               {prError ? (
-                <PrFailure error={prError} onRetry={reloadPr} />
+                <PrFailure
+                  error={prError}
+                  onRetry={reloadPr}
+                  employeeName={lead?.name}
+                />
               ) : (
                 <>
                   <EyeIcon className="size-5" />

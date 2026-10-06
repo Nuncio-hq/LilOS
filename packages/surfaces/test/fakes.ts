@@ -327,6 +327,8 @@ export async function serveGateway(opts: {
     token?: string;
     engineSessionId?: string;
   }>;
+  /** Engine-scoped bearer (#339) — exercises resolveCaller's engine leg. */
+  engineToken?: string;
 }) {
   const { SessionRegistry, gatewayHandler } = await import("../src/index.js");
   const registry = new SessionRegistry();
@@ -336,7 +338,7 @@ export async function serveGateway(opts: {
       engineSessionId: s.engineSessionId,
     });
   }
-  const handler = gatewayHandler(registry);
+  const handler = gatewayHandler(registry, { engineToken: opts.engineToken });
   const server: Server = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);

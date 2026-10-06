@@ -91,6 +91,7 @@ import type {
   OsApp,
   OsEditor,
   Project,
+  PullRequest,
   QuestionAsk,
   ShipBar,
   ShipHandlers,
@@ -172,6 +173,9 @@ export function FocusView({
   ship,
   access,
   onAccess,
+  caps,
+  onSuggest,
+  onPr,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -290,6 +294,16 @@ export function FocusView({
   /* The Workbench ship bar's mock seam (issue #107/#359) — forwarded to
      Workbench.ship; live mode builds the same bar from `host` instead. */
   ship?: Partial<ShipBar> & ShipHandlers;
+  /* Engine-declared capabilities forwarded to the Workbench (#587 AC-1):
+     its Plan/Background/Subagents tabs gate on these flags so the strip's
+     membership is fixed for the session — empty tabs grey, never pop in. */
+  caps?: { plan?: boolean; subagents?: boolean; background?: boolean };
+  /* #584: the ship bar's Suggest — the app's `session.ask` side request,
+      returning the engine's answer text. Nothing is sent to the session. */
+  onSuggest?: (files: string[]) => Promise<string | void> | string | void;
+  /* #579 AC-1: the Workbench's live forge read reports the session's PR
+     upward — a just-created/merged PR reaches the header chip instantly. */
+  onPr?: (pr: PullRequest | null) => void;
 }) {
   /* A `?tab=` destination shows its tab even under lg, where the panel is
      an overlay — "open on Subagents" means visibly open (#319 AC-1).
@@ -477,13 +491,38 @@ export function FocusView({
      cache-seeded tab mid-turn (#547 AC-1). A pick made mid-turn still
      re-arms on the NEXT turn (live.id changes) exactly as before (#396). */
   const seenLive = useRef(live?.id);
+  /* #606: a pick while a turn is in flight holds follow for THAT turn —
+     its `live` row can land after the pick (`turn.started` rides the feed),
+     and `seenLive` alone can't tell the late row from a new turn's. The
+     stamp lifts on the first quiet beat (nothing live or running — the
+     pick-time turn ended) or when a different live turn shows up, so the
+     next turn still re-engages follow (#396). "in-flight" = running but
+     the row hasn't rendered yet. */
+  const pickedDuringTurn = useRef<string | null>(null);
   useEffect(() => {
     const id = live?.id;
     if (id === seenLive.current) return;
     seenLive.current = id;
-    if (!deepLinkHold.current && live && live.postAttach !== false)
+    /* The first live row after a mid-turn pick IS the pick-time turn —
+       keep holding; a different id is a new turn and lifts the hold. */
+    if (id && pickedDuringTurn.current != null) {
+      pickedDuringTurn.current =
+        pickedDuringTurn.current === "in-flight" ||
+        pickedDuringTurn.current === id
+          ? id
+          : null;
+    }
+    if (
+      !deepLinkHold.current &&
+      pickedDuringTurn.current == null &&
+      live &&
+      live.postAttach !== false
+    )
       followRef.current = true;
   }, [live?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!running && !live) pickedDuringTurn.current = null;
+  }, [running, live]);
   // Turn finished with edits → land on Changes, like Codex's review pane.
   const lastDone = [...thread.replies]
     .reverse()
@@ -498,12 +537,21 @@ export function FocusView({
     if (followRef.current && !live && lastDone?.steps?.some((s) => s.diff))
       setTab("changes");
   }, [lastDone?.id, !!live]); // eslint-disable-line react-hooks/exhaustive-deps
-  // A PR appearing on the session opens its tab (Devin opens a PR tab per PR).
+  // A PR NEWLY appearing on the session opens its tab (Devin opens a PR tab
+  // per PR) — a change only: re-opening a conversation that already has one
+  // must not flip the panel open on its own (#579).
+  const seenPr = useRef<number | undefined>(undefined);
   useEffect(() => {
-    if (thread.pr) {
+    const n = thread.pr?.number;
+    if (seenPr.current === undefined) {
+      seenPr.current = n;
+      return;
+    }
+    if (n !== undefined && n !== seenPr.current) {
       setTab("pr");
       wbFlip(true);
     }
+    seenPr.current = n;
   }, [thread.pr?.number]); // eslint-disable-line react-hooks/exhaustive-deps
   const pr = thread.pr;
   const prPending = pr?.checks.some((c) => c.status === "pending");
@@ -517,9 +565,19 @@ export function FocusView({
   useEffect(() => {
     if (followRef.current && liveHelpers) setTab("subagents");
   }, [liveHelpers]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* Latest in-flight turn, read at pick time — riding a ref keeps the
+     memoized `pickTab` stable across step churn (the actsRef pattern). */
+  const inFlightTurn = useRef<{ id?: string } | null>(null);
+  inFlightTurn.current = live ?? (running ? {} : null);
   const pickTab = useCallback(
     (t: WbTab) => {
       setTab(t);
+      /* The pick belongs to the turn currently in flight — hold follow for
+         it specifically (#606): a live row arriving after the pick is that
+         same turn, not a new one. */
+      pickedDuringTurn.current = inFlightTurn.current
+        ? (inFlightTurn.current.id ?? "in-flight")
+        : null;
       seededTab.current = true; // a manual pick counts as the seed (#547)
       followRef.current = false;
       /* A pick lifts the deep-link hold (new turns re-arm follow) and its
@@ -644,6 +702,9 @@ export function FocusView({
         browser={browser}
         spot={wbSpot}
         ship={ship}
+        caps={caps}
+        onSuggest={onSuggest}
+        onPr={onPr}
         onAllowed={setWbReported}
       />
     ),
@@ -809,7 +870,9 @@ export function FocusView({
               </Button>
             </span>
           )}
-          {pr ? (
+          {/* #579: no "Open PR" button — asking the employee IS the way to
+             open one. A session that already has a PR shows its link chip. */}
+          {pr && (
             <Button
               variant="outline"
               size="sm"
@@ -827,23 +890,13 @@ export function FocusView({
                 #{pr.number}{" "}
                 {pr.status === "merged"
                   ? "merged"
-                  : prPending
-                    ? "checks"
-                    : "ready"}
+                  : pr.draft
+                    ? "draft"
+                    : prPending
+                      ? "checks"
+                      : "ready"}
               </span>
             </Button>
-          ) : (
-            work?.branch && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={running}
-                onClick={() => onSend("Open a PR for this branch")}
-              >
-                <GitPullRequestIcon />
-                <span className="hidden sm:inline">Open PR</span>
-              </Button>
-            )
           )}
           {wbAvailable && (
             <Button
