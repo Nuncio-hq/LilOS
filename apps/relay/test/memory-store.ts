@@ -270,6 +270,19 @@ export function createMemoryStore(): RelayStore {
       return summaries;
     },
     async openConversation(input) {
+      /* #552: the open's key rides the root message's (channelId,
+         dedupeKey) slot — a stored-but-unanswered resend answers the
+         stored thread. */
+      if (input.dedupeKey) {
+        const storedId = dedupe.get(`${input.channelId}|${input.dedupeKey}`);
+        const stored = storedId ? messages.get(storedId) : undefined;
+        const conv = stored?.conversationId
+          ? conversations.get(stored.conversationId)
+          : undefined;
+        if (stored && conv) {
+          return { conversation: conv, rootMessage: stored, created: false };
+        }
+      }
       const conversation: Conversation = {
         id: newId("conv"),
         channelId: input.channelId,
@@ -302,9 +315,10 @@ export function createMemoryStore(): RelayStore {
         authorKind: "user",
         text: input.text,
         attachments: input.attachments,
+        dedupeKey: input.dedupeKey,
       });
       conversation.rootMessageId = rootMessage.id;
-      return { conversation, rootMessage };
+      return { conversation, rootMessage, created: true };
     },
     async updateConversation(id, patch) {
       const conversation = conversations.get(id);
