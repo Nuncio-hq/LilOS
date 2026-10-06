@@ -61,8 +61,11 @@ export function resolveHarnessConfig(
   env: Record<string, string | undefined> = process.env,
 ): HarnessConfig {
   const relayHome = env.LILOS_RELAY_HOME ?? join(homedir(), ".lilos");
+  /* `||` not `??` (#564): an empty env value must NOT become the credential —
+     "" would satisfy `?token=`/`Bearer ` on the feed and /host. Fall through
+     to the file (which throws on missing/empty) so auth fails closed. */
   const relayToken =
-    env.LILOS_RELAY_TOKEN ?? readToken(join(relayHome, "relay-token"));
+    env.LILOS_RELAY_TOKEN || readToken(join(relayHome, "relay-token"));
   const homeDir =
     env.LILOS_HARNESS_HOME ?? join(homedir(), ".lilos", "harness");
   mkdirSync(homeDir, { recursive: true, mode: 0o700 });

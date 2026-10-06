@@ -208,7 +208,10 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
 
   // ── conv C: finishes out of view → done notification + running badge ─
   await page.goto(`${stack.webUrl}/dm/${convA.employeeId}`);
-  await send(page, "Say hi to Carol");
+  /* `slow:500` (#432) paces this turn (~35 s) so it is still running after
+     the navigate-back below — otherwise a fast reply can finish inside the
+     `page.goto` window and the running badge is never there to see. */
+  await send(page, "slow:500 Say hi to Carol");
   const convC = await convFromUrl(page);
   await page.goto(convUrl(convA.employeeId, convA.conversationId));
   // While it runs the blue running badge shows.

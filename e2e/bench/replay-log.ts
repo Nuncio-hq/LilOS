@@ -81,10 +81,12 @@ function stackRss(groupPid: number): RssRow[] {
 /** Raw JSON-RPC over the harness feed — the client's resync call verbatim. */
 async function feedEventsSince(
   feedWs: string,
+  token: string,
   sessionId: string,
   after: number,
 ): Promise<{ result: unknown; bytes: number; ms: number }> {
-  const ws = new WebSocket(feedWs);
+  // #564: the feed upgrade authenticates — install token on the URL.
+  const ws = new WebSocket(`${feedWs}?token=${encodeURIComponent(token)}`);
   const t0 = Date.now();
   const result = await new Promise<unknown>((resolve, reject) => {
     const timer = setTimeout(
@@ -204,7 +206,12 @@ async function main() {
     }
     if (!engineRef) throw new Error("conversation has no engineRef");
 
-    const since = await feedEventsSince(stack.feedWs, engineRef, 0);
+    const since = await feedEventsSince(
+      stack.feedWs,
+      stack.relayToken,
+      engineRef,
+      0,
+    );
     const events = (since.result as { events?: unknown[] }).events ?? [];
 
     const rss = stack.proc.pid ? stackRss(stack.proc.pid) : [];

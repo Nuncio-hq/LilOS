@@ -28,7 +28,7 @@ import { FakeConnect, HermesConnect } from "./connect";
 import { connectEngineWs } from "./engine/client";
 import { resolveHermesBin } from "./engine/discover";
 import { EngineSupervisor } from "./engine/supervisor";
-import { createFeedHandler } from "./feed";
+import { authorizeFeedUpgrade, createFeedHandler } from "./feed";
 import { Harness } from "./harness";
 import { createHostHandler } from "./host";
 import { createFileLogger } from "./log";
@@ -310,7 +310,8 @@ const wakeWatch = watchWake({
 // never talks to the engine itself — describe/events.since + live events).
 const feed = createFeedHandler(harness);
 // Host API on the same loopback port (issue #113): POST /host, Bearer = the
-// install token. The /ws feed stays open — it only reads engine events.
+// install token. The /ws feed authenticates the same credential (#564) —
+// read-only still broadcasts live agent output, so nothing here is open.
 const host = createHostHandler({ token: config.relayToken });
 type FeedData = { send: (frame: string) => void };
 const feedServer = Bun.serve<FeedData>({
@@ -321,11 +322,15 @@ const feedServer = Bun.serve<FeedData>({
     if (pathname === "/host") return host(req);
     // Identity for e2e readiness probes (#273) — mirrors the relay's /healthz.
     if (pathname === "/healthz") return Response.json({ ok: true, instanceId });
-    if (
-      pathname === "/ws" &&
-      server.upgrade(req, { data: { send: () => {} } })
-    ) {
-      return undefined;
+    if (pathname === "/ws") {
+      /* #564 AC-1: credential + app-origin gate BEFORE the socket upgrades —
+         a refused request never attaches, so no held/live frame reaches it. */
+      const denied = authorizeFeedUpgrade(req, config.relayToken);
+      if (denied) return denied;
+      if (server.upgrade(req, { data: { send: () => {} } })) {
+        return undefined;
+      }
+      return new Response("websocket upgrade failed\n", { status: 400 });
     }
     return new Response("lilos harness feed\n", { status: 200 });
   },
