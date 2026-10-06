@@ -1,7 +1,7 @@
 import type { PtySpawner } from "@lilos/surfaces";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
-import { serveSurfaces, type SurfacesServer } from "../src/surfaces/server";
+import { type SurfacesServer, serveSurfaces } from "../src/surfaces/server";
 
 /**
  * Issue #611: the `/view` viewer socket's bearer compare (`server.ts`
@@ -48,9 +48,9 @@ describe("AC /view upgrade refuses near-miss and wrong-length session tokens", (
 
     // Same length, last char different — and both wrong lengths.
     expect(await upgraded(url(session.session, nearMiss))).toBe(false);
-    expect(await upgraded(url(session.session, session.token.slice(0, -1)))).toBe(
-      false,
-    );
+    expect(
+      await upgraded(url(session.session, session.token.slice(0, -1))),
+    ).toBe(false);
     expect(await upgraded(url(session.session, `${session.token}x`))).toBe(
       false,
     );

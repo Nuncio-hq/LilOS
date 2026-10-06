@@ -34,9 +34,7 @@ const suspects = (file: string) =>
   read(file)
     .split("\n")
     .map((line, i) => `${file}:${i + 1}: ${line.trim()}`)
-    .filter(
-      (line) => /===|!==/.test(line) && SECRET_OPERAND.test(line),
-    );
+    .filter((line) => /===|!==/.test(line) && SECRET_OPERAND.test(line));
 
 describe("AC-1 one shared constant-time compare", () => {
   it("equalSecret lives once, exported as @lilos/contracts/auth", () => {

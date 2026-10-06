@@ -31,7 +31,12 @@ describe("AC-1 authorizeFeedUpgrade refuses a socket without the credential or w
       {},
       401,
     ],
-    ["prefix of the token (wrong length)", `?token=${TOKEN.slice(0, -1)}`, {}, 401],
+    [
+      "prefix of the token (wrong length)",
+      `?token=${TOKEN.slice(0, -1)}`,
+      {},
+      401,
+    ],
     ["extended token (wrong length)", `?token=${TOKEN}x`, {}, 401],
     [
       "install token, no Origin (scripts/Bun clients)",
