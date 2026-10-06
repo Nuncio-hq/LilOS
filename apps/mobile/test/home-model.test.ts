@@ -122,6 +122,7 @@ const wire = (over: Partial<HomeWire> = {}): HomeWire => ({
   conversations: [],
   summaries: [],
   asks: [],
+  online: true,
   ...over,
 });
 
@@ -292,6 +293,47 @@ describe("home-model (#155)", () => {
       state: "working",
       now: "Cached task",
     });
+  });
+
+  it("AC-2 offline rows say last known: ask rows and live-looking now-lines (#591)", () => {
+    const w = wire({
+      online: false,
+      employees: [emp("e1")],
+      channels: [ch("ch1", "e1")],
+      conversations: [
+        conv("c1", "ch1", { title: "Patch README" }),
+        conv("c2", "ch1", { state: "active", title: "Mid-turn task" }),
+      ],
+      asks: [ask("a1", "ch1", "c1", NOW - 120_000)],
+    });
+    // Activity's ask row is marked...
+    expect(toApproval(w.asks[0] as Ask, w, NOW).lastKnown).toBe(true);
+    // ...and so are the live-looking employee states.
+    expect(toEmployeeRow(emp("e1"), w, NOW).now).toBe(
+      "Waiting on you · Patch README · last known",
+    );
+    // Online, the same wire carries no mark.
+    const live = wire({ ...w, online: true });
+    expect(toApproval(live.asks[0] as Ask, live, NOW).lastKnown).toBe(
+      undefined,
+    );
+    expect(toEmployeeRow(emp("e1"), live, NOW).now).toBe(
+      "Waiting on you · Patch README",
+    );
+  });
+
+  it("AC-2 a working row offline reads last known; an idle row stays plain (#591)", () => {
+    const w = wire({
+      online: false,
+      channels: [ch("ch1", "e1"), ch("ch2", "e2")],
+      conversations: [
+        conv("c1", "ch1", { state: "active", title: "Mid-turn task" }),
+      ],
+    });
+    expect(toEmployeeRow(emp("e1"), w, NOW).now).toBe(
+      "Mid-turn task · last known",
+    );
+    expect(toEmployeeRow(emp("e2"), w, NOW).now).toBe("Idle");
   });
 
   it("AC-1 every DM channel gets a subscription so asks and turns arrive live", () => {

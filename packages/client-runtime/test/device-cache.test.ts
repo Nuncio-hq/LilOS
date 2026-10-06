@@ -76,6 +76,28 @@ describe("DeviceCache (#154)", () => {
     expect(await cache.load()).toBeNull();
   });
 
+  it("AC-2 asks ride the snapshot so Activity keeps the last-known list offline (#591)", async () => {
+    const kv = memoryKV();
+    const cache = new DeviceCache(kv);
+    const ask = {
+      id: "ask_1",
+      channelId: "ch_1",
+      conversationId: "conv_1",
+      turnId: "t_1",
+      requestId: "r_1",
+      request: {
+        kind: "approval" as const,
+        command: "patch README.md",
+        options: ["once", "session", "always", "deny"] as const,
+      },
+      state: "open" as const,
+      createdAt: 1_700_000_000_000,
+    };
+    await cache.save({ ...SNAPSHOT, asks: [ask] } as CachedDirectory);
+    const loaded = (await cache.load()) as unknown as { asks?: unknown[] };
+    expect(loaded?.asks).toEqual([ask]);
+  });
+
   it("AC-6 clear removes the snapshot", async () => {
     const kv = memoryKV();
     const cache = new DeviceCache(kv);
