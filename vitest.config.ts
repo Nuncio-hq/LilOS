@@ -16,10 +16,7 @@ export default defineConfig({
       "scripts/**/test/**/*.test.{ts,tsx}",
     ],
     exclude: ["**/node_modules/**", "e2e/**"],
-    poolOptions: {
-      forks: {
-        execArgv: nodeHasWebStorage ? ["--no-experimental-webstorage"] : [],
-      },
-    },
+    // vitest 4 moved poolOptions.* to top-level test options
+    execArgv: nodeHasWebStorage ? ["--no-experimental-webstorage"] : [],
   },
 });

@@ -1,7 +1,7 @@
 import { RelayError } from "@lilos/client-runtime";
 import type { Ask } from "@lilos/contracts/app";
 import { atom } from "nanostores";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
 /* #158: approve / deny from the phone. `decide` answers a pending ask through
    asks.respond (AC-1), the resolved ask lands back in the shared atoms so the
@@ -60,7 +60,9 @@ const resolved = (ask: Ask, outcome: string): Ask =>
 
 type FakeClient = {
   asks: ReturnType<typeof atom<Ask[]>>;
-  request: ReturnType<typeof vi.fn>;
+  // vitest 4: ReturnType<typeof vi.fn> unions Constructable into the mock and
+  // no longer satisfies DecideClient.request — bare Mock<> is a procedure mock.
+  request: Mock;
 };
 
 const clientOf = (impl: FakeClient["request"]): FakeClient => ({
