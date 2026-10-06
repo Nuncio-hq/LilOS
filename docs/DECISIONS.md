@@ -384,6 +384,12 @@ PR does not exist.
   the ring from real state. Not: `session.stop` for idle cleanup (kills
   memory + the INVALID_STATE re-queue loop), a second life derivation
   outside `sessionLife`, or LilOS-owned session memory. — #346
+- **D-#573 `session.stop` forgets.** Stop evicts the session from the
+  adapter's live maps (event log included) — every later call answers
+  SESSION_NOT_FOUND, and a suspended session's registry row dies with it;
+  the harness still renders the thread closed off its own messages +
+  the not-found degradation. Not: tombstones, a stopped-ids list, or a
+  replayable dead log (the per-session memory that grew forever). — #573
 - **D-#411 A Hermes plugin's `register()` must never do network I/O —
   it runs under a ~10 s plugin-load deadline that the harness's own
   event loop can starve (spawnSync), and an abandoned load drops every
