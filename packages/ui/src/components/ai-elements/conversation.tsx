@@ -54,23 +54,67 @@ const StickDropWindow = (): null => {
    re-engaging the lock, a dropped near-flag refresh). scrollToBottom
    callers keep escapedFromLock set, so intended pins aren't caught. */
 const ConversationEscapeGuard = (): null => {
-  const { scrollRef, contentRef, state, stopScroll } =
+  const { scrollRef, contentRef, state, stopScroll, scrollToBottom } =
     useStickToBottomContext();
   useEffect(() => {
     const sc = scrollRef.current;
     if (!sc) return;
     let last = sc.scrollTop;
+    let lastHeight = sc.clientHeight;
     /* The reader's escape stands while they hold a position outside the
        near-bottom band; being inside the band (their own scroll, a
        shrink, a settle) re-arms the lock normally. */
     let readerEscape = false;
+    let heal: ReturnType<typeof setTimeout> | undefined;
+    /* The port position the heal was scheduled from — a real gesture
+       that has already moved it must not be undone. */
+    let healTop = 0;
+    const cancelHeal = () => {
+      if (heal !== undefined) {
+        clearTimeout(heal);
+        heal = undefined;
+      }
+    };
+    /* Put the bottom lock back after a layout nudge: the flags were
+       cleared by the library's own 1ms scroll path, so this must run
+       after it — the 2ms timer beats it on the same task queue. The
+       write+scrollToBottom pair is the same one ConversationKeepBottom
+       uses. The wheel escape sets those flags synchronously — before
+       its scroll event exists — so the drift check and the gesture
+       cancels below keep a real scroll-up inside the window from being
+       eaten. */
+    const repin = () => {
+      heal = undefined;
+      if (readerEscape || sc.scrollTop < healTop - 1) return;
+      state.escapedFromLock = false;
+      state.isAtBottom = true;
+      scrollToBottom({ animation: "instant" });
+      sc.scrollTop = sc.scrollHeight;
+    };
+    const wheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) cancelHeal();
+    };
     const guard = () => {
       const top = sc.scrollTop;
       const up = top < last;
+      /* A change in the port's own height (composer/tray growth, the ↓
+         gutter toggling, window resize) moves scrollTop via the
+         browser's scroll anchoring, and a content shrink clamps scrollTop
+         down to the new maximum — an up-scroll that arrives WITH a height
+         change, or lands AT the maximum, is layout, not the reader (the
+         reader cannot scroll up into the maximum; only a clamp lands
+         there). The library escapes on any up-scroll regardless, so
+         without the heal the bottom lock dies mid-stream and the last
+         card parks under the composer (#649). */
+      const clamped = top >= sc.scrollHeight - sc.clientHeight - 2;
+      const shifted = sc.clientHeight !== lastHeight;
       last = top;
-      /* state.isNearBottom reads live scroll geometry — never the
-         droppable flags. */
-      if (state.isNearBottom) {
+      lastHeight = sc.clientHeight;
+      if (up && (shifted || clamped) && !readerEscape) {
+        cancelHeal();
+        healTop = top;
+        heal = setTimeout(repin, 2);
+      } else if (state.isNearBottom) {
         readerEscape = false;
       } else if (up) {
         readerEscape = true;
@@ -84,17 +128,23 @@ const ConversationEscapeGuard = (): null => {
       }
     };
     sc.addEventListener("scroll", guard, { passive: true });
+    sc.addEventListener("wheel", wheel, { passive: true });
+    sc.addEventListener("touchstart", cancelHeal, { passive: true });
     /* Flag-only re-pins fire no scroll event — catch them on the same
        content resize that triggered them (the library's observer runs
-       first, so its re-pin is already visible here). */
-    const content = contentRef.current;
+       first, so its re-pin is already visible here). Observing the port
+       too keeps lastHeight fresh on resizes that fire no scroll event. */
     const ro = new ResizeObserver(guard);
-    if (content) ro.observe(content);
+    if (contentRef.current) ro.observe(contentRef.current);
+    ro.observe(sc);
     return () => {
+      cancelHeal();
       sc.removeEventListener("scroll", guard);
+      sc.removeEventListener("wheel", wheel);
+      sc.removeEventListener("touchstart", cancelHeal);
       ro.disconnect();
     };
-  }, [scrollRef, contentRef, state, stopScroll]);
+  }, [scrollRef, contentRef, state, stopScroll, scrollToBottom]);
   return null;
 };
 
@@ -137,7 +187,17 @@ export const ConversationContent = ({
   ...props
 }: ConversationContentProps) => (
   <StickToBottom.Content
-    className={cn("flex flex-col gap-8 p-4", className)}
+    className={cn(
+      /* #649: a decision card (approval/question ask, plan) ends flush
+         against the composer when it is the last row — the bottom lock
+         parks 1px short of the scroller's end, so the caller's ~12px
+         bottom pad rests at ~11px and the card's border and rounded
+         corners visually tuck under the composer. Only the last row's
+         card state widens the pad, so the plain-message gap (#602) is
+         untouched. */
+      "flex flex-col gap-8 p-4 has-[>:last-child_[data-ask-id],>:last-child_[data-plan]]:pb-5",
+      className,
+    )}
     {...props}
   />
 );
