@@ -16,15 +16,19 @@
     "@testing-library/react": "16",
     "@types/bun": "1.4.2",
     "@types/node": "^26.6.2",
+    "@types/ws": "8.18.1",
     "happy-dom": "^20.8.9",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "ws": "8.21.3"
   },
   "trustedDependencies": [
     "electron"
   ],
   "overrides": {
-    "linkify-it": "^5.0.2"
+    "linkify-it": "^5.0.2",
+    "shell-quote": "^1.12.0",
+    "@modelcontextprotocol/sdk": "^1.31.0"
   },
   "scripts": {
     "verify": "bun run verify:fast && bun run test:e2e",

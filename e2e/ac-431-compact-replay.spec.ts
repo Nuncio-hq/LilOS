@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { growDmThread } from "./helpers/relay-thread";
 import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
@@ -11,9 +12,10 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  * to the live-built one and times the reload.
  *
  * Twelve `md: table` turns ≈ 3.4K live engine events through the thread —
- * the compacted replay it folds back is ~100× smaller. Sequential sends
- * wait for each turn's card so the transcript is 12 settled turns, not a
- * queue drain.
+ * the compacted replay it folds back is ~100× smaller. The thread grows
+ * through relay RPC (#574 — the same calls the composer makes, minus the
+ * per-turn browser round trip); each send waits its own `turn.completed`
+ * so the transcript is 12 settled turns, not a queue drain.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -37,34 +39,6 @@ test.afterAll(async () => {
 });
 test.describe.configure({ mode: "serial" });
 
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
-
-const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
-  await box.fill(text);
-  await box.press("Enter");
-};
-
 /* Row headers carry absolute `HH:MM` stamps — identical content can straddle
    a minute boundary between build and reload, so the compare normalizes
    them; everything else is transcript text. */
@@ -78,17 +52,22 @@ test("AC-2 reload of a long thread renders the identical transcript, faster", as
   page,
 }) => {
   test.setTimeout(240_000);
-  await dmDefault(page);
+  /* Grow all 12 turns through relay RPC (#574) — identical persisted
+     messages to the composer path, without 12 browser round trips. */
+  const grown = await growDmThread(
+    stack,
+    Array.from({ length: TURNS }, (_, i) => `md: table — turn ${i + 1}`),
+  );
+  await page.goto(
+    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}/focus`,
+  );
   const turns = page.locator("[data-agentturn]");
-  for (let i = 1; i <= TURNS; i++) {
-    await send(page, `md: table — turn ${i}`);
-    await expect(turns).toHaveCount(i, { timeout: 60_000 });
-    /* Settle before the next send — a mid-turn send would steer into the
-       running turn instead of minting the next one. */
-    await expect(turns.last()).toContainText(LAST_ANSWER, {
-      timeout: 60_000,
-    });
-  }
+  await expect(turns).toHaveCount(TURNS, { timeout: 60_000 });
+  /* Settled, not mid-flight — the last turn's card shows its answer tail
+     before the transcript is captured. */
+  await expect(turns.last()).toContainText(LAST_ANSWER, {
+    timeout: 60_000,
+  });
 
   const before = await mainText(page);
   await page

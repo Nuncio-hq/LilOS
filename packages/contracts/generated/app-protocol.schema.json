@@ -8512,7 +8512,8 @@
           "enum": [
             "unknown",
             "expired",
-            "used"
+            "used",
+            "throttled"
           ]
         }
       },

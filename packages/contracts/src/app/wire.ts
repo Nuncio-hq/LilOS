@@ -1508,9 +1508,10 @@ export const PairingExchangeResult = z.object({
 });
 export type PairingExchangeResult = z.infer<typeof PairingExchangeResult>;
 
-/** Body of a refused exchange (`used` = replay, `expired` = TTL ran out). */
+/** Body of a refused exchange (`used` = replay, `expired` = TTL ran out,
+    `throttled` = too many `unknown` guesses — #568, retry after 60s). */
 export const PairingExchangeError = z.object({
-  error: z.enum(["unknown", "expired", "used"]),
+  error: z.enum(["unknown", "expired", "used", "throttled"]),
 });
 export type PairingExchangeError = z.infer<typeof PairingExchangeError>;
 
