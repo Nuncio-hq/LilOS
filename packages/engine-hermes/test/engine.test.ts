@@ -2338,9 +2338,9 @@ describe("engine-hermes #549: lilos toolset self-heal + tool-offer log", () => {
       name: "lilos",
       home: "/tmp/hh/profiles/builder",
     });
-    expect(
-      (post.init?.headers as Record<string, string>)["X-Hermes-Session-Token"],
-    ).toBe("tok-backend");
+    expect(post.init?.headers).toMatchObject({
+      "X-Hermes-Session-Token": "tok-backend",
+    });
     expect(logs.some((l) => l.includes("activated on our backend"))).toBe(true);
     await engine.close();
   });
