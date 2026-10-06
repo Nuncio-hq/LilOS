@@ -16,6 +16,7 @@
  * e2e teardown can pgrep for engines a specific boot leaked.
  */
 import { execFileSync } from "node:child_process";
+import { MAX_FRAME_BYTES } from "@lilos/contracts/engine";
 import { FakeEngine } from "../src/engine.js";
 import { eventFrame, handleJsonRpc } from "../src/transport.js";
 
@@ -96,6 +97,9 @@ const server = Bun.serve({
     return new Response("engine-fake: websocket at /ws", { status: 404 });
   },
   websocket: {
+    /* #551: prompts carry attachments as inline base64 image blocks — a
+       maximal send (~140 MB) must fit or the harness's socket drops. */
+    maxPayloadLength: MAX_FRAME_BYTES,
     open(ws) {
       clients.add(ws);
     },
