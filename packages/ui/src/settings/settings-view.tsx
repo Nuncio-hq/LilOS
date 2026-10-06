@@ -10,9 +10,10 @@ import {
   UserIcon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { providerName } from "../chat/model-picker";
 import { ModelVisibilityDialog } from "../chat/model-visibility-dialog";
+import { useUiLayerEl } from "../chat/ui-layers";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import type { SettingsSectionId } from "../types";
@@ -92,16 +93,11 @@ export function SettingsView({
   const [modelsOpen, setModelsOpen] = useState(false);
   const shown = bySection[active] !== undefined ? active : visible[0]?.id;
 
-  /* Esc closes Settings — except while the nested Models dialog is open (it
-     consumes Esc itself; closing the whole screen under it would be a trap). */
-  useEffect(() => {
-    if (modelsOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [modelsOpen, onClose]);
+  /* Esc closes Settings while it is the top-most layer — the nested
+     (vendored) Models dialog reads as a foreign overlay, so Esc reaches it
+     and never this screen; the old `modelsOpen` gate is no longer needed
+     (#576). */
+  const layerRef = useUiLayerEl<HTMLDivElement>({ onEscape: onClose });
 
   return (
     <div
@@ -116,6 +112,7 @@ export function SettingsView({
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
+        ref={layerRef}
         className="flex h-dvh w-full flex-col overflow-hidden bg-background sm:h-auto sm:max-h-[85dvh] sm:max-w-3xl sm:rounded-2xl sm:border sm:shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >

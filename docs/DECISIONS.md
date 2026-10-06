@@ -511,6 +511,17 @@ PR does not exist.
   (stale forever), one blocking `Promise.all` incl. `gh`, unmounting
   the panel per toggle (~220 ms remount), row-level virtualization. —
   #544 · #547
+- **D-#576 Esc only closes things — it never stops a turn and never
+  answers a card.** A mount-ordered UI-layer stack
+  (`packages/ui/src/chat/ui-layers.ts`) owns Esc via one capture listener:
+  the top-most registered layer (menu → dialog → panel → Focus) takes it,
+  and a still-mounted foreign overlay (a vendored popover animating out)
+  is counted only while visible. Stopping is ■ / ⌘. only; approval and
+  plan cards answer on ↵ (allow/approve once) and ⌫ (deny/reject), aimed
+  at the newest pending card and never while typing. Rewind applies
+  visually first and commits only when the 10 s Undo toast expires
+  (#578). Not: Esc → session.interrupt, Esc → Deny, a confirm dialog
+  before rewind. — #576 · #558 · #578
 - **D-#320 Turn-block collapse state is user-owned, keyed by
   `${conv.id}:${turnId}:${block}` in `packages/ui/src/lib/block-state.ts`.**
   Auto-open is only a default while a turn runs. The live→relay-row id swap

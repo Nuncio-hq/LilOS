@@ -1012,12 +1012,12 @@ button:not(:disabled):active,
   }
 }
 /* Composer hints show while there's a draft — and always while a turn is
-   running (the "Enter steers · ■ stop" line is the mid-turn affordance).
+   running (the "Enter steers · ⌘. stop" line is the mid-turn affordance).
    Neither keys off focus, so the row never shifts under a pointer click. */
 .lilos-hint {
   display: none !important;
 }
-form:has(textarea:not(:placeholder-shown), [aria-label="Stop (Esc)"])
+form:has(textarea:not(:placeholder-shown), [aria-label="Stop (⌘.)"])
   .lilos-hint {
   display: inline !important;
   animation: lilos-rise 0.3s ease both;

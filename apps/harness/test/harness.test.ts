@@ -1,6 +1,7 @@
 import type { ChannelMessagesState } from "@lilos/client-runtime";
 import { RelayClient } from "@lilos/client-runtime";
 import type { AppMessage, Ask, WelcomeResult } from "@lilos/contracts/app";
+import type { EngineEvent } from "@lilos/contracts/engine";
 import { connectFake, FakeEngine } from "@lilos/engine-fake";
 import type { CheckpointStore } from "@lilos/host";
 import { describe, expect, it } from "vitest";
@@ -2922,6 +2923,132 @@ describe("rebind vs in-flight prompt (#487)", () => {
             (c.params as { ref?: string }).ref === msg2.id,
         ).length,
       ).toBe(1);
+    } finally {
+      await w.cleanup();
+    }
+  });
+});
+
+/* #550 — engine-hermes emits `turn.steered` inside its `session.steer`
+   handler, so the event reaches the harness BEFORE the RPC response
+   resolves (in-order conn). A steer that already landed must stay
+   delivered through a Stop — never parked in the not-sent tray — while
+   an accepted-but-unlanded steer still parks (AC-1/AC-2). engine-fake
+   acks first and lands the steer at the next tool boundary, which is
+   why the #315/#403 tests never saw this order. */
+describe("landed steer outlives the Stop (#550)", () => {
+  const listDropped = (user: RelayClient, channelId: string) =>
+    user.request<{ messages: AppMessage[] }>("messages.list", {
+      channelId,
+      limit: 200,
+      includeDropped: true,
+    });
+
+  /* Reproduce the hermes event order on the fake conn: `session.steer`
+     emits `turn.steered` to the harness's listeners inside the request
+     resolution — before the `steered` ack reaches the caller. Only the
+     named steer lands early; every other steer goes through untouched
+     (accepted but unlanded). */
+  const steerLandsFirst =
+    (landedText: string) =>
+    (conn: EngineConnection, _engine: FakeEngine): EngineConnection => {
+      const listeners = new Set<(e: EngineEvent) => void>();
+      return {
+        request<T = unknown>(
+          method: string,
+          params?: unknown,
+          timeoutMs?: number,
+        ): Promise<T> {
+          const req = conn.request<T>(method, params, timeoutMs);
+          if (method !== "session.steer") return req;
+          const p = params as { sessionId: string; text: string };
+          if (p.text !== landedText) return req;
+          return req.then((res) => {
+            const event: EngineEvent = {
+              seq: 1,
+              sessionId: p.sessionId,
+              type: "turn.steered",
+              payload: { turnId: "turn-1", text: p.text },
+            };
+            for (const fn of listeners) fn(event);
+            return res;
+          });
+        },
+        onEvent: (fn) => {
+          listeners.add(fn);
+          return conn.onEvent(fn);
+        },
+        close: () => conn.close(),
+      };
+    };
+
+  it("AC-1/AC-2 a steer landed before its ack never parks; an unlanded one still does", {
+    timeout: 20_000,
+  }, async () => {
+    const landedText = "Actually make it about the ocean instead.";
+    const w = (await setupWorldBase({
+      wrap: steerLandsFirst(landedText),
+    })) as World;
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page", // parks mid-turn on its approval
+      });
+      await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks.find((a) => a.request.kind === "approval");
+      }, "open approval ask");
+
+      /* The steer the engine already applied — `turn.steered` lands on
+         the conn ahead of the `steered` ack. */
+      const { message: landed } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        landedText,
+      );
+      /* And one still waiting: `steered` ack, no `turn.steered` (the
+         parked turn's tool boundary never comes). */
+      const { message: waiting } = await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "still waiting on this one",
+      );
+      /* deliveredSeq advancing past both seqs proves each ack's `.then`
+         ran — the assertions below hold in either event order. */
+      await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; deliveredSeq: number }[];
+        }>("conversations.list", {});
+        const c = conversations.find((x) => x.id === conversation.id);
+        return c && c.deliveredSeq >= waiting.seq ? c : undefined;
+      }, "both steers delivered");
+
+      await w.user.request("turns.interrupt", {
+        conversationId: conversation.id,
+      });
+
+      /* The waiting steer parks as today — the tray owns it. */
+      await waitFor(async () => {
+        const { messages } = await listDropped(w.user, channel.id);
+        const drop = messages.find((m) => m.id === waiting.id);
+        return drop?.dropped ? drop : undefined;
+      }, "waiting steer parked");
+      /* The landed steer is never a tray row: the engine already has
+         it, so Send again would deliver the same text twice. */
+      const { messages: all } = await listDropped(w.user, channel.id);
+      const row = all.find((m) => m.id === landed.id);
+      expect(row).toBeDefined();
+      expect(row?.dropped).toBeFalsy();
+      const { messages: visible } = await listConvMessages(w.user, channel.id);
+      expect(visible.find((m) => m.id === landed.id)).toBeDefined();
     } finally {
       await w.cleanup();
     }

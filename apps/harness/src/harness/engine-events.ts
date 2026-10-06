@@ -318,7 +318,12 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
         const idx = binding.steerPending.findIndex(
           (s) => s.text === event.payload.text,
         );
+        /* #550: no pending match means the landing outran its ack —
+           engine-hermes emits this inside `session.steer`, so the event
+           arrives before the response resolves. Record the text for the
+           ack to claim; a landed steer is delivered, never parked. */
         if (idx >= 0) binding.steerPending.splice(idx, 1);
+        else binding.steerLanded.push(event.payload.text);
       }
       break;
     case "turn.completed":

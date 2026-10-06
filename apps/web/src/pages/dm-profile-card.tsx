@@ -1,8 +1,7 @@
-import { EmployeeCard } from "@lilos/ui";
+import { EmployeeCard, useUiLayerEl } from "@lilos/ui";
 import { Button } from "@lilos/ui/components/ui/button";
 import type { Employee, EngineProfile, ModelOption } from "@lilos/ui/types";
 import { XIcon } from "lucide-react";
-import { useEffect } from "react";
 
 /* #421: the DM header's profile card IS the prototype's shared EmployeeCard —
    the app only hosts it in a dialog shell (Esc + backdrop close, like
@@ -28,13 +27,10 @@ export function DmProfileCard({
   onSwitchProfile?: (profileId: string) => void;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  /* #576: Esc closes this dialog while it is the top-most layer — the
+     UI-layer stack replaces the old window keydown so an overlay above it
+     keeps Esc and the turn underneath never sees it. */
+  const layerRef = useUiLayerEl<HTMLDivElement>({ onEscape: onClose });
   return (
     <div className="fixed inset-0 z-40 grid place-items-center p-6">
       <button
@@ -49,6 +45,7 @@ export function DmProfileCard({
         role="dialog"
         aria-modal="true"
         aria-label={`${e.name} profile`}
+        ref={layerRef}
         className="relative w-full max-w-md rounded-2xl shadow-2xl"
       >
         {profiles === undefined ? (
