@@ -13,12 +13,18 @@ on:
     tags: ["mobile-v*"]
   workflow_dispatch:
 
+# #567: least privilege — the job only needs the checkout; the App Store /
+# Expo submission goes through EXPO_TOKEN + ASC_*, not GITHUB_TOKEN.
+permissions:
+  contents: read
+
 jobs:
   ios:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
+      # #567: pinned to commit SHAs — this workflow holds signing secrets.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: bun install --frozen-lockfile
 
       - name: Stage ASC key for eas submit

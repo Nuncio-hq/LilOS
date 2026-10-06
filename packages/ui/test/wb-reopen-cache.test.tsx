@@ -7,6 +7,7 @@
    open file view survives the panel's unmount. */
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
+import { patchWbCache, readWbCache } from "../src/lib/wb-probe-cache";
 import type {
   Diff,
   GitCommit,
@@ -73,21 +74,40 @@ const makeHost = (impls: Partial<HostAccessors> = {}) => {
   return { host, setImpl: (o: Partial<typeof impl>) => Object.assign(impl, o) };
 };
 
-const mount = (host: HostAccessors, tab: WbTab = "files") =>
-  render(
-    <Workbench
-      thread={THREAD}
-      work={WORK}
-      isDM
-      tab={tab}
-      setTab={() => {}}
-      onClose={() => {}}
-      human={() => undefined}
-      host={host}
-    />,
-  );
+const ui = (host: HostAccessors, tab: WbTab, work: Work) => (
+  <Workbench
+    thread={THREAD}
+    work={work}
+    isDM
+    tab={tab}
+    setTab={() => {}}
+    onClose={() => {}}
+    human={() => undefined}
+    host={host}
+  />
+);
+const mount = (host: HostAccessors, tab: WbTab = "files", work: Work = WORK) =>
+  render(ui(host, tab, work));
 const rows = (c: HTMLElement) =>
   [...c.querySelectorAll('[role="treeitem"]')].map((e) => e.textContent);
+const filesVp = (c: HTMLElement) =>
+  c.querySelector<HTMLElement>(
+    '[data-wb-scroll="files"] [data-slot="scroll-area-viewport"]',
+  );
+
+const FAST_IMPLS: Partial<HostAccessors> = {
+  tree: async () => ["a.txt", "src/deep.txt"],
+  diff: async () => [],
+  read: async () => ({ content: "x", binary: false, truncated: false }),
+  status: async () => ({ branch: "trunk", clean: true }),
+  branches: async () => ({
+    current: "trunk",
+    branches: ["trunk"],
+    remote: null,
+  }),
+  log: async () => [],
+  pr: async () => ({ pr: null, branch: "trunk" }),
+};
 
 describe("#544 stale-while-revalidate per-folder cache", () => {
   test("AC-1/3/1: remount renders last-known rows on the first frame with reads held; fresh data updates in place", async () => {
@@ -209,5 +229,89 @@ describe("#544 stale-while-revalidate per-folder cache", () => {
     expect(second.container.querySelector("[data-fileview]")).toBeTruthy();
     expect(second.queryByText("file-body")).toBeTruthy();
     readD.resolve({ content: "file-body", binary: false, truncated: false });
+  });
+});
+
+describe("#547 cache-entry follow-ups", () => {
+  test("AC-1: the picked tab is written to the folder's entry", async () => {
+    const { host } = makeHost(FAST_IMPLS);
+    const r = mount(host, "files");
+    await waitFor(() => expect(rows(r.container).length).toBeGreaterThan(0));
+    /* A pick in the app flips FocusView's tab prop — the write-back must
+       carry it into the entry so the next mount seeds from it. */
+    r.rerender(ui(host, "changes", WORK));
+    await waitFor(() => expect(readWbCache(host, CWD)?.tab).toBe("changes"));
+  });
+
+  test("AC-2: the Files scroll offset is stored per tab and restored on remount", async () => {
+    const { host } = makeHost(FAST_IMPLS);
+    const first = mount(host, "files");
+    await waitFor(() =>
+      expect(rows(first.container).length).toBeGreaterThan(0),
+    );
+    const vp = filesVp(first.container);
+    if (!vp) throw new Error("Files scroll viewport missing");
+    vp.scrollTop = 480;
+    fireEvent.scroll(vp);
+    await waitFor(() =>
+      expect(readWbCache(host, CWD)?.scrolls?.files).toBe(480),
+    );
+    first.unmount();
+
+    const second = mount(host, "files");
+    const vp2 = filesVp(second.container);
+    expect(vp2?.scrollTop).toBe(480);
+  });
+
+  test("AC-3: an entry that never got a real answer is not a hit — the remount shows the Reading hold", async () => {
+    const { host } = makeHost(); // every read held pending
+    const first = mount(host, "files");
+    /* The write-back stored an entry whose probe is all nulls — it must
+       NOT count as a cache hit for the next mount. */
+    first.unmount();
+    const second = mount(host, "files");
+    expect(second.container.querySelector("[data-wb-probing]")).toBeTruthy();
+  });
+
+  test("AC-4: switching folders does not write the reset nulls into the new folder's entry", async () => {
+    const CWD_B = "/tmp/wb-repo-b";
+    const WORK_B: Work = { ticket: "T-544", title: "B", path: CWD_B };
+    const { host } = makeHost(FAST_IMPLS);
+    /* Folder B already has a real cached selection + open view. */
+    patchWbCache(host, CWD_B, (e) => ({
+      ...e,
+      probe: {
+        ...e.probe,
+        files: ["b1.txt"],
+        diffs: [],
+        status: { branch: "trunk", clean: true },
+        branches: null,
+        log: [],
+      },
+      sel: "b1.txt",
+      viewFile: {
+        path: "b1.txt",
+        content: "x",
+        binary: false,
+        truncated: false,
+      },
+    }));
+    const r = render(ui(host, "files", WORK));
+    await waitFor(() => expect(rows(r.container).length).toBeGreaterThan(0));
+    /* Open a file on A so the switch has folder state to reset. */
+    const row = [...r.container.querySelectorAll('[role="treeitem"]')].find(
+      (e) => e.textContent?.includes("a.txt"),
+    ) as HTMLElement;
+    fireEvent.click(row);
+    await waitFor(() =>
+      expect(readWbCache(host, CWD)?.viewFile?.path).toBe("a.txt"),
+    );
+
+    r.rerender(ui(host, "files", WORK_B));
+    await waitFor(() => expect(rows(r.container).length).toBeGreaterThan(0));
+    /* B's cached selection + open view must still be its own — neither
+       A's values nor the reset nulls may land there. */
+    expect(readWbCache(host, CWD_B)?.sel).toBe("b1.txt");
+    expect(readWbCache(host, CWD_B)?.viewFile?.path).toBe("b1.txt");
   });
 });

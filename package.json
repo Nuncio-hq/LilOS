@@ -16,13 +16,17 @@
     "@testing-library/react": "16",
     "@types/bun": "1.4.2",
     "@types/node": "^26.6.2",
-    "happy-dom": "19",
+    "happy-dom": "^20.8.9",
     "typescript": "^7.0.2",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.11"
   },
   "trustedDependencies": [
     "electron"
   ],
+  "overrides": {
+    "linkify-it": "^5.0.2",
+    "shell-quote": "^1.12.0"
+  },
   "scripts": {
     "verify": "bun run verify:fast && bun run test:e2e",
     "verify:fast": "biome check . && bun run schema:check && bun run typecheck && bun run test:unit && bun run test:nonts && bun run build:prototype && bun run build:harness && bun run check:mobile-bundle",
