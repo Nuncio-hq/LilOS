@@ -147,7 +147,7 @@ export function beginRewind(
   dropFor(full.conversationId, full.drop);
   pendingRewind.set(full);
   sayAction(
-    "Turn rewound. Files and messages restore when the Undo window closes.",
+    "Turn rewound — Undo brings the messages and file changes back (10 s).",
     { label: "Undo", run: undoRewind },
     REWIND_UNDO_MS,
   );
