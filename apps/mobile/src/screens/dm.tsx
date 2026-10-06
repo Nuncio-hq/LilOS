@@ -25,6 +25,7 @@ import * as Haptics from "expo-haptics";
 import { atom } from "nanostores";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
+import { $demo, DEMO_MAC } from "../demo/lifecycle";
 import {
   defaultModelPick,
   defaultWorkspacePick,
@@ -48,8 +49,9 @@ import {
   refreshModelCatalog,
   watchDm,
 } from "../dm-store";
-import { $client, $welcome } from "../link";
+import { $client, $link, $welcome } from "../link";
 import { describeError, toneOf } from "../mapping";
+import { $connections } from "../paired-macs";
 import { $prs, refreshPrsFor } from "../prs";
 import type { DmRoutes } from "../routes";
 
@@ -92,6 +94,10 @@ export function Dm({
   const summaries = useStore(client?.conversationSummaries ?? $noSummaries);
   const conversations = useStore(client?.conversations ?? $noConversations);
   const clientState = useStore(client?.state ?? $linkIdle);
+  const link = useStore($link);
+  const demo = useStore($demo);
+  const paired = useStore($connections)[0];
+  const mac = demo ? DEMO_MAC : paired;
   const asks = useStore($asks);
   const recents = useStore($folders);
   const details = useStore($folderDetails);
@@ -345,6 +351,9 @@ export function Dm({
         navigation.navigate("Thread", { conversationId: id })
       }
       onSend={send}
+      unreachableNote={
+        link === "offline" && mac ? `Can't reach ${mac.name}` : undefined
+      }
       onPickFolder={() => navigation.navigate("FolderPicker", { employeeId })}
       {...(catalog.models.length
         ? {

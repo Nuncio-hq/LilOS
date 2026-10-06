@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { RelayClient } from "../src/client";
+import { DEVICE_CACHE_SCHEMA_VERSION } from "../src/device-cache";
 import type { RelaySocket } from "../src/socket";
 
 type StoredListener = (event: unknown) => void;
@@ -833,7 +834,7 @@ describe("mobile instant-connect seam (#154)", () => {
   it("AC-2 hydrate seeds the directory and watermarks; subscribe resumes with afterSeq", async () => {
     const { client, socket } = makeClient();
     client.hydrate({
-      schemaVersion: 1,
+      schemaVersion: DEVICE_CACHE_SCHEMA_VERSION,
       savedAt: 1,
       employees: [
         {
@@ -855,6 +856,7 @@ describe("mobile instant-connect seam (#154)", () => {
       conversations: [],
       conversationSummaries: [],
       profile: { userName: "Oscar" },
+      asks: [],
       watermarks: { ch1: 5 },
     });
     // Cache-first: atoms render before the socket even exists.
@@ -905,7 +907,7 @@ describe("mobile instant-connect seam (#154)", () => {
     const { client, socket } = makeClient();
     await connectClient(client, () => socket);
     const snap = client.snapshot();
-    expect(snap.schemaVersion).toBe(1);
+    expect(snap.schemaVersion).toBe(DEVICE_CACHE_SCHEMA_VERSION);
     expect(snap.employees).toEqual([]);
     expect(typeof snap.savedAt).toBe("number");
 

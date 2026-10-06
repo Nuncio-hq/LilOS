@@ -613,6 +613,8 @@ export class RelayClient {
     this.conversations.set(snapshot.conversations);
     this.conversationSummaries.set(snapshot.conversationSummaries);
     this.profile.set(snapshot.profile);
+    /* #591: last-known asks too — Activity shows them marked, offline. */
+    this.asks.set(snapshot.asks);
     this.watermarks.clear();
     for (const [channelId, seq] of Object.entries(snapshot.watermarks)) {
       this.watermarks.set(channelId, seq);
@@ -629,6 +631,7 @@ export class RelayClient {
       conversations: this.conversations.get(),
       conversationSummaries: this.conversationSummaries.get(),
       profile: this.profile.get(),
+      asks: this.asks.get(),
       watermarks: Object.fromEntries(this.watermarks),
     };
   }

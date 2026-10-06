@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   dropRewound,
   mergeThreadEntries,
+  threadSurface,
   toThreadDetail,
 } from "../src/thread-model";
 
@@ -1511,5 +1512,27 @@ describe("#327 finished turns settle — no stuck Thinking…", () => {
     const bubble = entries.find((e) => e.id === "m2");
     if (bubble?.kind !== "user") throw new Error("expected user entry");
     expect(bubble.queued).toBe(true);
+  });
+});
+
+describe("threadSurface — the live thread degraded by an unreachable Mac (#591)", () => {
+  it("AC-3 a working thread offline reads stale: no live Stop, header last-seen", () => {
+    const offline = threadSurface("working", true);
+    // Stop is shown disabled — a press can't be delivered.
+    expect(offline.running).toBe(false);
+    // ...and the header chip degrades to neutral "Last seen working".
+    expect(offline.stale).toBe(true);
+    expect(offline.stopHint).toBe("Stop works once the Mac is back");
+
+    const online = threadSurface("working", false);
+    expect(online.running).toBe(true);
+    expect(online.stale).toBe(false);
+    expect(online.stopHint).toBeUndefined();
+  });
+
+  it("AC-3 terminal states are facts, not lies — no stale mark offline", () => {
+    for (const state of ["done", "failed", "stopped"] as const) {
+      expect(threadSurface(state, true).stale).toBe(false);
+    }
   });
 });

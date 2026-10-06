@@ -11,6 +11,10 @@ export type EmployeeRow = {
   state: OrbState;
   /** What they're doing now, e.g. "Sorting inbox" or "Waiting on you · ac-80 flake". */
   now: string;
+  /** #591: the row shows a state the Mac could no longer update (offline)
+      — the live tint dims (muted line, no working dots, no orb ring) and
+      `now` starts "Last known · …" so the marker survives truncation. */
+  lastKnown?: boolean;
   /** Ticket key shown before `now`, e.g. "LIL-7". */
   ticket?: string;
   /** Right-hand time: "now", "6m", "10:12". */
@@ -64,6 +68,9 @@ export type Approval = {
   freeText?: boolean;
   /** "2m" */
   age: string;
+  /** #591: this row is last-known (the Mac is unreachable) — surfaces say
+      so and never offer a dead Approve/Deny. */
+  lastKnown?: boolean;
 };
 
 export type SessionState =
