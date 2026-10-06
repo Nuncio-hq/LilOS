@@ -47,6 +47,7 @@ async function launchDesktop(): Promise<ElectronApplication> {
       LILOS_RELAY_PORT: portOf(stack.relayWs),
       LILOS_FEED_PORT: portOf(stack.feedWs),
       LILOS_WEB_URL: stack.webUrl,
+      LILOS_DEBUG_NAV: "1",
     },
   });
   /* Record instead of delegating: a real openExternal would spawn xdg-open
@@ -76,6 +77,26 @@ const ready = async (app: ElectronApplication) => {
   ).toBeVisible({ timeout: 60_000 });
   return win;
 };
+
+/* Temporary #565 diagnosis: dump the main-process nav event log +
+   webContents state collected under LILOS_DEBUG_NAV. */
+async function dumpNav(app: ElectronApplication): Promise<void> {
+  try {
+    const state = await app.evaluate(({ BrowserWindow }) => {
+      const g = globalThis as { __navEvents?: string[] };
+      const wc = BrowserWindow.getAllWindows()[0]?.webContents;
+      return {
+        url: wc?.getURL(),
+        loading: wc?.isLoading(),
+        history: wc?.navigationHistory.getAllEntries(),
+        events: g.__navEvents ?? [],
+      };
+    });
+    console.log(`[nav-dump] ${JSON.stringify(state, null, 1)}`);
+  } catch (e) {
+    console.log(`[nav-dump] evaluate failed: ${e}`);
+  }
+}
 
 test("AC-1+AC-2 links can't open windows or take over the app window", async () => {
   test.setTimeout(180_000);
@@ -126,6 +147,7 @@ test("AC-1+AC-2 links can't open windows or take over the app window", async () 
 
     await electronScreenshot(app, win, `${SHOTS}/ac-1-2-stay-put.png`);
   } finally {
+    await dumpNav(app);
     await app.close();
   }
 });

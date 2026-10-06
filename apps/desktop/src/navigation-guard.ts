@@ -30,6 +30,53 @@ export interface GuardableContents {
   loadURL(url: string): unknown;
 }
 
+/* Temporary diagnosis for #565's Linux CI leg — LILOS_DEBUG_NAV=1 records
+   every navigation event (plus getURL()/isLoading() at emit time) into
+   globalThis.__navEvents and stderr so the e2e spec can dump the exact event
+   stream a foreign navigation took. Removed before the PR lands. */
+const DEBUG_NAV = process.env.LILOS_DEBUG_NAV === "1";
+const navLog = (msg: string): void => {
+  const g = globalThis as { __navEvents?: string[] };
+  if (!g.__navEvents) g.__navEvents = [];
+  g.__navEvents.push(msg);
+  console.error(`[nav-debug] ${msg}`);
+};
+const NAV_EVENTS = [
+  "will-navigate",
+  "will-redirect",
+  "did-start-navigation",
+  "did-redirect-navigation",
+  "did-navigate",
+  "did-navigate-in-page",
+  "did-start-loading",
+  "dom-ready",
+  "did-finish-load",
+  "did-fail-load",
+  "did-fail-provisional-load",
+  "did-stop-loading",
+] as const;
+
+/* The probe reaches past GuardableContents (Electron-only getters + the
+   wider event set), so it binds the structural slice itself — the knob is
+   dead code in unit tests and production (env unset). */
+function watchNav(contents: GuardableContents, tag: string): void {
+  const probe = contents as unknown as {
+    on(event: string, listener: (...args: unknown[]) => void): void;
+    getURL?(): string;
+    isLoading?(): boolean;
+  };
+  const state = () =>
+    `getURL=${probe.getURL?.() ?? "?"} loading=${probe.isLoading?.() ?? "?"}`;
+  for (const event of NAV_EVENTS) {
+    probe.on(event, (_e: unknown, ...rest: unknown[]) => {
+      const detail = rest
+        .map((a) => (typeof a === "object" ? "<obj>" : JSON.stringify(a)))
+        .join(" ");
+      navLog(`${tag} ${event} ${detail} ${state()}`);
+    });
+  }
+}
+
 /** Schemes a page may hand to the OS. Everything else is refused. */
 const EXTERNAL_SCHEMES = new Set(["https:", "http:", "mailto:"]);
 
@@ -73,12 +120,15 @@ export function guardWindow(
   appUrl: string,
   openExternal: (url: string) => void,
 ): void {
+  if (DEBUG_NAV) watchNav(contents, `guard(${appUrl})`);
   contents.setWindowOpenHandler(({ url }) => {
+    if (DEBUG_NAV) navLog(`window.open ${url}`);
     if (canOpenExternal(url)) openExternal(url);
     return { action: "deny" };
   });
   const denyForeign = (event: NavEvent, url: string) => {
     if (isAppNavigation(appUrl, url)) return;
+    if (DEBUG_NAV) navLog(`denyForeign prevent ${url}`);
     event.preventDefault();
     if (canOpenExternal(url)) openExternal(url);
   };
@@ -89,6 +139,11 @@ export function guardWindow(
      still commit a chrome-error page (seen on Linux CI). Anything that
      lands off the app document reloads the app instead of staying there. */
   contents.on("did-navigate", (_event, url) => {
-    if (!isAppNavigation(appUrl, url)) void contents.loadURL(appUrl);
+    if (isAppNavigation(appUrl, url)) return;
+    if (DEBUG_NAV) navLog(`snap-back loadURL(${appUrl}) after commit ${url}`);
+    void Promise.resolve(contents.loadURL(appUrl)).then(
+      () => DEBUG_NAV && navLog(`snap-back resolved for ${appUrl}`),
+      (e) => DEBUG_NAV && navLog(`snap-back rejected: ${e}`),
+    );
   });
 }
