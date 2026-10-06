@@ -265,9 +265,9 @@ test("screenshots: folderless Focus on Subagents + Background, light + dark (128
     await expect(page.locator("[data-subagent]")).toHaveCount(3);
     await page.screenshot({ path: `${SHOTS}/subagents-${scheme}.png` });
     await tab(page, "Background").click();
-    await expect(
-      page.locator('[data-job][data-status="running"]'),
-    ).toHaveCount(1);
+    await expect(page.locator('[data-job][data-status="running"]')).toHaveCount(
+      1,
+    );
     await page.screenshot({ path: `${SHOTS}/background-${scheme}.png` });
   }
 });
