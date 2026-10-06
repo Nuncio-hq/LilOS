@@ -231,6 +231,7 @@ export const hostAccessors: HostAccessors = {
       commits: {
         sha: string;
         subject: string;
+        author: string;
         files: {
           path: string;
           status: Diff["status"];
@@ -243,6 +244,7 @@ export const hostAccessors: HostAccessors = {
         r.commits.map((c) => ({
           hash: c.sha,
           message: c.subject,
+          author: c.author,
           files: c.files,
         })),
       )

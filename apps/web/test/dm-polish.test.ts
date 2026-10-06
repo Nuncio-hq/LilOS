@@ -121,7 +121,6 @@ describe("mergeTurns ordering", () => {
     live,
     openRequests: [],
     jobs: [],
-    subagentJobs: [],
   });
   test("a stopped turn stays after the message that prompted it, not below later answers", () => {
     const replies = conversationReplies(
@@ -398,7 +397,6 @@ describe("issue #180 plans", () => {
     live,
     openRequests: [],
     jobs: [],
-    subagentJobs: [],
   });
   const steps = (n: number, status: "pending" | "completed" = "pending") =>
     Array.from({ length: n }, (_, i) => ({ text: `step ${i}`, status }));

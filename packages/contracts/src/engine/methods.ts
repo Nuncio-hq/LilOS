@@ -268,6 +268,19 @@ export const SessionRewindResult = z.object({
 });
 export type SessionRewindResult = z.infer<typeof SessionRewindResult>;
 
+// ── session.ask (capability: side_prompt, #584) ─────────────────────────────
+export const SessionAskParams = z.strictObject({
+  sessionId: SessionId,
+  text: z.string().min(1),
+});
+export type SessionAskParams = z.infer<typeof SessionAskParams>;
+
+export const SessionAskResult = z.object({
+  /** The engine's one-shot answer — plain text. */
+  answer: z.string(),
+});
+export type SessionAskResult = z.infer<typeof SessionAskResult>;
+
 // ── jobs.list / jobs.stop (capability: background_jobs, #179) ───────────────
 /** One row of `jobs.list` — the engine-owned truth a client re-reads after
     a reconnect (job.* events are the live stream, this is the snapshot). */
@@ -346,7 +359,7 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
   "session.stop": {
     params: SessionStopParams,
     result: SessionStopResult,
-    doc: "Close the session; its event log stays replayable.",
+    doc: "End the session for good: the engine forgets it — later calls answer SESSION_NOT_FOUND (#573).",
   },
   "session.suspend": {
     params: SessionSuspendParams,
@@ -412,6 +425,12 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
     result: SessionRewindResult,
     doc: "Drop all user turns after `toTurn` from the session's context (issue #134). Refuses INVALID_STATE while a turn runs. Engines on transports without history rewind (ACP today) don't declare the capability.",
     capability: "rewind",
+  },
+  "session.ask": {
+    params: SessionAskParams,
+    result: SessionAskResult,
+    doc: "One-shot question the engine answers for the session (issue #584): nothing is added to the session's transcript, context or event stream — the Workbench's 'Suggest' asks go through here. Runs alongside a live turn.",
+    capability: "side_prompt",
   },
   "jobs.list": {
     params: JobsListParams,
