@@ -185,6 +185,7 @@ const between = (a: Snap, b: Snap): Window => ({
 interface Bench {
   seedTo: (n: number) => Promise<void>;
   stream: (text: string) => Promise<void>;
+  close: () => void;
   employeeId: string;
   convs: string[];
 }
@@ -268,6 +269,7 @@ async function openBench(stack: {
       await done;
       completed.delete(convId);
     },
+    close: () => relay.close(),
   };
 }
 
@@ -329,6 +331,7 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
         if (shotsDir) await takeShots(page, shotsDir);
         await context.close();
       } finally {
+        bench.close();
         await browser.close();
       }
     } finally {
