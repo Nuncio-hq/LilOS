@@ -47,7 +47,7 @@ const delegateFrames = () => [
   ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
 ];
 
-describe("background subagents past turn end — #309", () => {
+describe("background subagents past turn end — #309, #587", () => {
   it("AC-1 a dispatched subagent stays running past turn.completed until the engine settles it", () => {
     const model = reduceSessionEvents("sess-1", [
       ...delegateFrames(),
@@ -177,27 +177,17 @@ describe("background subagents past turn end — #309", () => {
     expect(model.turns[0].subagents[0].status).toBe("stopped");
   });
 
-  it("session subagent rows feed the Background tab as job-like rows", () => {
-    /* Workbench → Background lists jobs.list ∪ model.jobs; session-scoped
-       subagents surface there too as `sa:<id>` rows so a helper left
-       running past its turn is visible (and still running) in the tab. */
+  it("AC-2 subagents list only under Subagents, never as job rows (#587)", () => {
+    /* #309 merged helpers into the Background feed as `sa:<id>` job rows —
+       the exact duplication #587 AC-2 flags: a helper lives on
+       turn.subagents and nowhere else. */
     const model = reduceSessionEvents("sess-1", delegateFrames());
-    const rows = model.subagentJobs;
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      jobId: "sa:sa1",
-      command: "scan the relay",
+    expect(model.jobs).toHaveLength(0);
+    expect(model.turns[0].subagents[0]).toMatchObject({
+      subagentId: "sa1",
+      task: "scan the relay",
       status: "running",
-      subagent: true,
     });
-    /* Real times, not "up 0s · since (blank)": the emit-time startedAt
-       rides the event — a re-reduce over the same frames must reproduce
-       it exactly, never re-stamp a wall clock. */
-    expect(rows[0].startedAt).toBe(1_700_000_000_000);
-    expect(
-      reduceSessionEvents("sess-1", delegateFrames()).subagentJobs[0]
-        ?.startedAt,
-    ).toBe(1_700_000_000_000);
     const done = reduceSessionEvents("sess-1", [
       ...delegateFrames(),
       ev("subagent.completed", {
@@ -206,7 +196,8 @@ describe("background subagents past turn end — #309", () => {
         result: "child report",
         durationMs: 18_200,
       }),
-    ]).subagentJobs[0];
-    expect(done.endedAt).toBe(done.startedAt! + 18_200);
+    ]);
+    expect(done.jobs).toHaveLength(0);
+    expect(done.turns[0].subagents[0].status).toBe("done");
   });
 });

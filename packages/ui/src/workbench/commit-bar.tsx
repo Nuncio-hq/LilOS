@@ -20,28 +20,48 @@ import type { ShipBar, ShipError, ShipHandlers } from "../types";
    `isRepo:false` renders nothing (AC-6 — a non-repo folder has no bar). */
 
 /* Plain copy per typed reason — raw stderr stays behind Details (#114 AC-5
-   rule). Unknown reason → the thrown text. */
-const COPY: Record<NonNullable<ShipError["reason"]>, string> = {
-  rejected:
+   rule). Unknown reason → the thrown text. #579 AC-2: no copy may ask for
+   a terminal command — each names a next step the user can take (a button
+   on the bar, or asking the employee). */
+const COPY: Record<
+  NonNullable<ShipError["reason"]>,
+  (who: string) => string
+> = {
+  rejected: () =>
     "The remote has newer commits on this branch — Pull to bring them in (or ask the agent to update), then Push again.",
-  diverged:
-    "The branch and its upstream diverged — Pull can't fast-forward. Resolve it in a terminal, or ask the agent to update the branch.",
-  "no-remote":
-    "This folder has no remote named “origin”. Add one — git remote add origin <url> — and try again.",
-  auth: "Git couldn't sign in to the remote. Check your SSH key or credential helper, then push again.",
-  conflict:
-    "The repo has unmerged paths — finish the merge in a terminal first.",
-  nothing: "Nothing to commit — the selected files have no changes.",
-  exists: "A branch with that name already exists — pick another name.",
-  unauthenticated:
-    "GitHub CLI isn't signed in — run `gh auth login`, then try again.",
-  missing: "GitHub CLI isn't installed — install `gh` to create pull requests.",
-  other: "",
+  diverged: (who) =>
+    `The branch and its upstream diverged — Pull can't fast-forward. Ask ${who} to update the branch, then try again.`,
+  "no-remote": (who) =>
+    `This folder isn't on GitHub yet. Ask ${who} to publish it.`,
+  auth: (who) =>
+    `Git couldn't sign in to the remote. Ask ${who} to fix the sign-in, then push again.`,
+  conflict: (who) =>
+    `The repo has unmerged paths. Ask ${who} to finish the merge, then try again.`,
+  nothing: () => "Nothing to commit — the selected files have no changes.",
+  exists: () => "A branch with that name already exists — pick another name.",
+  unauthenticated: (who) =>
+    `GitHub isn't signed in on this machine. Ask ${who} to sign in, then try again.`,
+  missing: (who) =>
+    `GitHub CLI isn't installed on this machine. Ask ${who} to install it, then try again.`,
+  other: () => "",
 };
 
-function shipText(error: ShipError): string {
+function shipText(error: ShipError, employeeName?: string): string {
   const known = error.reason && COPY[error.reason];
-  return known || error.text || "Something went wrong.";
+  const text = known ? known(employeeName ?? "the employee") : "";
+  return text || error.text || "Something went wrong.";
+}
+
+/* #584: a Suggest answer is one full reply — the commit box takes its
+   first real line, minus markdown dressing (a reply like "> feat: foo" or
+   "`feat: foo`" must land usable). */
+function suggestLine(text: string): string {
+  return (
+    text
+      .split("\n")
+      .map((s) => s.trim().replace(/^>\s*/, "").replace(/^`|`$/g, "").trim())
+      .find(Boolean) ?? ""
+  );
 }
 
 function prPrefill(commits: ShipBar["commits"]): {
@@ -74,6 +94,7 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
     accessory,
     onMessage,
     onSuggest,
+    employeeName,
     onCommit,
     onPush,
     onPull,
@@ -123,7 +144,9 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
           ? "Pulling…"
           : busy === "pr"
             ? "Opening PR…"
-            : null;
+            : busy === "suggest"
+              ? "Asking…"
+              : null;
 
   /* #393 AC-8: a disabled control must stay readable in dark mode — the
      bar drops the components' opacity-dim for muted colors instead, and
@@ -167,7 +190,7 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
         >
           <CircleAlertIcon className="mt-px size-3.5 shrink-0" />
           <div className="min-w-0">
-            <p>{shipText(error)}</p>
+            <p>{shipText(error, employeeName)}</p>
             {error.detail && (
               <details className="mt-0.5">
                 <summary className="cursor-pointer text-muted-foreground">
@@ -291,8 +314,9 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
         </div>
       ) : (
         <>
-          {/* message row: Suggest posts a normal user message; the answer
-              fills this box. Hidden while a turn runs (AC-2). */}
+          {/* message row: #584 — Suggest is a side ask (session.ask), not
+              a send: nothing enters the transcript, and it answers while a
+              turn runs (AC-1/AC-2). Its reply fills this box. */}
           <div className="mt-2 flex items-center gap-2">
             <Input
               data-shipmessage
@@ -302,17 +326,30 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
               className="font-mono"
               disabled={busyWith}
             />
-            {onSuggest && !running && (
+            {onSuggest && (
               <Button
                 variant="outline"
                 size="sm"
                 data-shipsuggest
-                onClick={onSuggest}
+                onClick={() =>
+                  void Promise.resolve(onSuggest())
+                    .then((s) => {
+                      const line = typeof s === "string" ? suggestLine(s) : "";
+                      if (line) onMessage?.(line);
+                    })
+                    .catch(() => {
+                      /* the bar's error surface already shows it */
+                    })
+                }
                 disabled={busyWith || checked.length === 0}
                 title="Ask the agent for a one-line commit message"
               >
-                <SparklesIcon />
-                Suggest
+                {busy === "suggest" ? (
+                  <LoaderCircleIcon className="animate-spin" />
+                ) : (
+                  <SparklesIcon />
+                )}
+                {busy === "suggest" ? "Asking…" : "Suggest"}
               </Button>
             )}
           </div>

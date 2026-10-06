@@ -735,6 +735,9 @@
                 "subject": {
                   "type": "string"
                 },
+                "author": {
+                  "type": "string"
+                },
                 "files": {
                   "type": "array",
                   "items": {
@@ -775,6 +778,7 @@
               "required": [
                 "sha",
                 "subject",
+                "author",
                 "files"
               ],
               "additionalProperties": false
