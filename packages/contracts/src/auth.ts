@@ -1,4 +1,12 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+/* Default import on purpose, NOT `import { createHash } from "node:crypto"`:
+   browser bundles reach this file through `@lilos/surfaces` → `gateway.ts`
+   (prototype/web's live tabs import `openViewer` from the index). Bundlers
+   compile named imports of an external module into eager member accesses
+   at module-eval time, and the `browser-external` shim throws on ANY
+   access — which crashed every prototype page load in e2e. The default
+   binding is only dereferenced inside `equalSecret`, which no browser path
+   ever calls, so the module stays inert in browser bundles. */
+import nodeCrypto from "node:crypto";
 
 /**
  * Constant-time secret compare: hash both sides, then `timingSafeEqual`
@@ -15,8 +23,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
  * (Bun + Node), which contracts requires anyway.
  */
 export function equalSecret(a: string, b: string): boolean {
-  return timingSafeEqual(
-    createHash("sha256").update(a).digest(),
-    createHash("sha256").update(b).digest(),
+  return nodeCrypto.timingSafeEqual(
+    nodeCrypto.createHash("sha256").update(a).digest(),
+    nodeCrypto.createHash("sha256").update(b).digest(),
   );
 }
