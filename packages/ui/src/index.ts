@@ -30,6 +30,8 @@ export {
   isHidden,
   ModelVisibilityDialog,
 } from "./chat/model-visibility-dialog";
+// Esc/key ownership by surface — menu → dialog → panel → Focus (#576)
+export { useUiLayer, useUiLayerEl } from "./chat/ui-layers";
 // connect to LilOS (issue #338): first-run step, DM notice, shared state badge
 export { ConnectBadge } from "./connect/connect-badge";
 export { ConnectStep } from "./connect/connect-step";

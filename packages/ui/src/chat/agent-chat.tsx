@@ -188,7 +188,7 @@ export function NotSentTray({
      inside that turn); if the turn ends first it runs next instead — a message is never lost.
    · no steer: they run in order, one prompt each, when the turn ends (issue #9).
    Edit pulls an item back into the composer (it leaves the queue); Remove drops it. Neither is a Send:
-   sending now is impossible mid-turn — ■ stops the turn, and anything still here moves to the not-sent
+   sending now is impossible mid-turn — the Stop button stops the turn, and anything still here moves to the not-sent
    tray. Amber: the "waiting on the turn" family (the landed steer rows share it).
    Rows are bare strings, or `{text, removable}` (#315): the engine already holds an
    accepted-but-unlanded steer (`removable: false`), so its row lists in the tray but
@@ -310,7 +310,8 @@ export const runningComposer = (
     : steer
       ? `${name} is working. Enter steers this turn…`
       : `${name} is working. Enter queues it for when the turn ends…`,
-  hint: steer && !agentWork ? "Enter steers · ■ stop" : "Enter queues · ■ stop",
+  hint:
+    steer && !agentWork ? "Enter steers · ⌘. stop" : "Enter queues · ⌘. stop",
 });
 
 /* #420 + #583 AC-1: a turn parked on an open ask (question/approval/plan) is

@@ -278,7 +278,8 @@ describe("issue #19 — one conversation from shared pieces", () => {
       /gpt-test-1/, // model picker trigger shows the model name
       /Review & start/,
       /^Once$/,
-      /Rewind to here/,
+      /* #578: the affordance is the row's hover "Rewind" button now. */
+      /^Rewind$/,
     ])
       expect(qf.queryByRole("button", { name })).toBeNull();
     expect(qf.queryByText(/Add a comment/)).toBeNull();
@@ -366,10 +367,10 @@ describe("issue #19 — one conversation from shared pieces", () => {
       />,
     );
     const wf = within(wiredFocus.container);
-    /* One "Rewind to here" trigger per user message (#134) — the fixture
-       thread has several, so any-of proves the control renders. */
+    /* One "Rewind" hover trigger per user message (#134, moved to the row
+       by #578) — the fixture thread has several, so any-of proves it. */
     expect(
-      wf.getAllByRole("button", { name: /Rewind to here/ }).length,
+      wf.getAllByRole("button", { name: /^Rewind$/ }).length,
     ).toBeGreaterThan(0);
     expect(wf.getByRole("button", { name: /gpt-test-1/ })).toBeTruthy();
     /* PR tab resolves async off the host probe, then its merge control shows. */

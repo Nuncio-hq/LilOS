@@ -20,6 +20,7 @@ import type {
   Work,
 } from "../types";
 import { VIEWER_ID } from "../types";
+import { askHint } from "./ask-keys";
 import { type QuestionAnswer, QuestionCard } from "./question-card";
 
 /* The one "asks to start work" request that currently owns the start-work action (issue #15).
@@ -54,6 +55,7 @@ export function ReplyCards({
   onAnswer,
   onCancel,
   human,
+  keyTarget,
 }: {
   r: Reply;
   /** Index of this reply in thread.replies (keys the start-work card's answered state). */
@@ -72,6 +74,8 @@ export function ReplyCards({
       write; absent, the card resolves itself. */
   onAnswer?: (q: QuestionAsk, a: QuestionAnswer) => void;
   onCancel?: (q: QuestionAsk) => void;
+  /** #558: id of the card the keyboard answers — it shows the ↵/⌫ hint. */
+  keyTarget?: string;
 }) {
   const done = r.approval && resolved[r.approval.id];
   const viewer = human(VIEWER_ID)?.name ?? "you";
@@ -163,6 +167,10 @@ export function ReplyCards({
           const a = r.approval;
           const answer = (v: string) =>
             setResolved?.({ ...resolved, [a.id]: v });
+          /* #558: the card the ↵/⌫ keys would answer names its shortcuts —
+             only the keys its offered options support (askHint). */
+          const hint =
+            a.id === keyTarget && !done ? askHint(r, "approval") : null;
           /* #106 AC-4: the card offers the options the engine offered
              (Once / This thread / Always / Deny) — asks stored before
              options existed fall back to the original three. */
@@ -271,6 +279,14 @@ export function ReplyCards({
                     );
                   })}
                 </ConfirmationActions>
+              )}
+              {hint && (
+                <div
+                  data-ask-keyhint
+                  className="px-3 pb-2 text-[11px] text-muted-foreground"
+                >
+                  Answer from the keyboard: {hint}
+                </div>
               )}
             </Confirmation>
           );
