@@ -136,6 +136,17 @@ async function pickSessionFolder(page: Page, dir: string) {
       .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
       .last();
   })();
+  /* Recents populate async — `folders.list` plus a per-folder host probe —
+     so a one-shot check can miss a row that lands right after; the dialog
+     path then dead-ends because an already-attached folder's Add button
+     stays disabled forever (#606). Wait for any recent row first: `folders`
+     sets all rows in one atom write, so the first row means the list has
+     settled. An empty list (first-ever pick) just costs the timeout. */
+  await expect(menu.locator("[data-wsfolder]").first())
+    .toBeVisible({
+      timeout: 15_000,
+    })
+    .catch(() => {});
   const recent = menu.locator(`[data-wsfolder="${dir}"]`);
   if (
     await recent
