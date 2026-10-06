@@ -779,6 +779,9 @@ export function toThreadDetail(opts: {
       openAsks: [...opts.asks],
       pending: opts.pending,
     }),
+    /* #592: the header chip reads amber "Mac went to sleep" for sleep
+       interrupts, red "Failed" for model/generic errors. */
+    ...(conv.turnFailure ? { failure: conv.turnFailure } : {}),
     ...(sessionModel?.live?.agentInitiated ? { agentWorking: true } : {}),
     employee: { id: empId, name: employeeName, tone: toneOf(empId) },
     when: last ? timeLabel(last.createdAt, opts.now) : "now",
@@ -885,11 +888,26 @@ const patchPath = (patch: string): string | undefined =>
 export function threadSurface(
   state: SessionState,
   unreachable: boolean,
-): { running: boolean; stale: boolean; stopHint?: string } {
+  macName?: string,
+): {
+  running: boolean;
+  stale: boolean;
+  stopHint?: string;
+  asksStale: boolean;
+  answerHint?: string;
+} {
   const stale = unreachable && state === "working";
   return {
     running: state === "working" && !stale,
     stale,
     ...(stale ? { stopHint: "Stop works once the Mac is back" as const } : {}),
+    /* #652: an open ask can't be answered while the Mac is unreachable —
+       ANY state, not only a thread claiming a live turn (`stale`). The
+       card's pills render disabled and the hint says they wake when the
+       Mac is back; nothing is sent or queued meanwhile. */
+    asksStale: unreachable,
+    ...(unreachable
+      ? { answerHint: `Answer once ${macName ?? "the Mac"} is back` }
+      : {}),
   };
 }

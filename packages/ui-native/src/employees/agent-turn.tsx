@@ -57,6 +57,8 @@ export function AgentTurn({
   onOpenSubagents,
   onPlan,
   onOpenPlan,
+  stale,
+  answerHint,
 }: {
   e: AgentEntry;
   name: string;
@@ -75,6 +77,11 @@ export function AgentTurn({
   /** Approve / Change / Reject on this turn's plan (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
   onOpenPlan?: () => void;
+  /** #652: the Mac is unreachable — open asks render visibly disabled
+      (nothing can be sent or queued) and the card says they wake when
+      the Mac is back. */
+  stale?: boolean;
+  answerHint?: string;
 }) {
   const steps = e.steps ?? [];
   /* #264: an open ask blocks the turn — nothing is still thinking or
@@ -134,7 +141,13 @@ export function AgentTurn({
       )}
       {e.pr && <PrCard pr={e.pr} />}
       {e.plan && (
-        <PlanCard plan={e.plan} onAction={onPlan} onOpen={onOpenPlan} />
+        <PlanCard
+          plan={e.plan}
+          onAction={onPlan}
+          onOpen={onOpenPlan}
+          stale={stale}
+          answerHint={answerHint}
+        />
       )}
       {e.decided && <Receipt d={e.decided} />}
       {e.stopped && (
@@ -165,9 +178,21 @@ export function AgentTurn({
       )}
       {e.approval &&
         (isAnswerableQuestion(e.approval) ? (
-          <QuestionCard a={e.approval} onAnswer={onAnswer} onCancel={onDeny} />
+          <QuestionCard
+            a={e.approval}
+            onAnswer={onAnswer}
+            onCancel={onDeny}
+            stale={stale}
+            answerHint={answerHint}
+          />
         ) : (
-          <ApprovalCard a={e.approval} onApprove={onApprove} onDeny={onDeny} />
+          <ApprovalCard
+            a={e.approval}
+            onApprove={onApprove}
+            onDeny={onDeny}
+            stale={stale}
+            answerHint={answerHint}
+          />
         ))}
       {e.footer && !e.live && !e.stopped && <Footer f={e.footer} />}
     </View>
@@ -342,12 +367,18 @@ function ApprovalCard({
   onApprove,
   onDeny,
   flat,
+  stale,
+  answerHint,
 }: {
   a: Approval;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
   /** Inside a session card: no second border, no label (the chip says it). */
   flat?: boolean;
+  /** #652: the Mac is unreachable — the pills render disabled and the
+      hint says when answering works again. */
+  stale?: boolean;
+  answerHint?: string;
 }) {
   const Box = flat ? FlatBox : Card;
   return (
@@ -389,12 +420,26 @@ function ApprovalCard({
             </View>
           </View>
         )}
-        <View className="mt-3 flex-row gap-2">
+        <View className="mt-3 flex-row items-center gap-2">
           {a.kind !== "question" && (
-            <Pill label="Approve" onPress={() => onApprove(a.id)} />
+            <Pill
+              label="Approve"
+              disabled={stale}
+              onPress={() => onApprove(a.id)}
+            />
           )}
-          <Pill label="Deny" variant="soft" onPress={() => onDeny(a.id)} />
+          <Pill
+            label="Deny"
+            variant="soft"
+            disabled={stale}
+            onPress={() => onDeny(a.id)}
+          />
         </View>
+        {stale && answerHint && (
+          <AppText size="xs" tone="muted" className="mt-1.5">
+            {answerHint}
+          </AppText>
+        )}
       </Box>
     </View>
   );

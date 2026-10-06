@@ -1,10 +1,10 @@
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "../components/app-text";
-import { Card, CommandLine, LargeTitle, Pill } from "../components/bits";
+import { Card, LargeTitle, Pill } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb } from "../components/orb";
-import { approvalSentence } from "./approval-copy";
+import { whatLine } from "./approval-copy";
 import { isAnswerableQuestion } from "./question-gate";
 import type { Approval } from "./types";
 
@@ -16,6 +16,7 @@ export function ApprovalsSheet({
   onApprove,
   onDeny,
   onOpen,
+  onReview,
   onClose,
   unreachable,
 }: {
@@ -25,6 +26,9 @@ export function ApprovalsSheet({
   onApprove?: (id: string) => void;
   onDeny?: (id: string) => void;
   onOpen: (id: string) => void;
+  /** #595: a plan ask's **Review** — opens the plan in its thread. Falls
+      back to onOpen when absent. */
+  onReview?: (id: string) => void;
   /** Omit when shown as a tab under a native large title (no own header). */
   onClose?: () => void;
   /** #591: set while the Mac is unreachable — the list is last-known
@@ -131,14 +135,12 @@ export function ApprovalsSheet({
                 </AppText>
               </View>
             </View>
+            {/* #652: human description like everywhere else — the same
+                "wants to run · cmd" line as the accessory, no `$ patch {…}`
+                terminal box (the in-thread card keeps the command box). */}
             <AppText size="sm" className="mt-2.5 leading-5">
-              {approvalSentence(a)}
+              {whatLine(a)}
             </AppText>
-            {a.command && (
-              <View className="mt-2.5">
-                <CommandLine command={a.command} />
-              </View>
-            )}
             {a.file && (
               <View className="mt-2.5 flex-row items-center gap-2.5 rounded-xl bg-background px-3 py-2.5">
                 <Icon name="doc.text" size={16} tone="subtle-foreground" />
@@ -159,9 +161,21 @@ export function ApprovalsSheet({
               {/* #591: a last-known row offers no dead pills — the tap
                   couldn't reach the Mac anyway. Open still works: it
                   opens the cached thread. */}
-              {!a.lastKnown && onApprove && a.kind !== "question" && (
-                <Pill label="Approve" onPress={() => onApprove(a.id)} />
+              {/* #595: a plan's primary is **Review** — it opens the plan
+                  in its thread; nothing approves a plan sight-unseen.
+                  Command approvals keep the one-tap Approve (AC-2). */}
+              {!a.lastKnown && a.primary === "review" && (
+                <Pill
+                  label="Review"
+                  onPress={() => (onReview ?? onOpen)(a.id)}
+                />
               )}
+              {!a.lastKnown &&
+                onApprove &&
+                (a.primary ?? "approve") === "approve" &&
+                a.kind !== "question" && (
+                  <Pill label="Approve" onPress={() => onApprove(a.id)} />
+                )}
               {!a.lastKnown && onDeny && (
                 <Pill
                   label={isAnswerableQuestion(a) ? "Skip" : "Deny"}
@@ -170,7 +184,14 @@ export function ApprovalsSheet({
                 />
               )}
               <View className="flex-1" />
-              <Pill label="Open" variant="ghost" onPress={() => onOpen(a.id)} />
+              {/* On a plan card Review IS the open — no second route pill. */}
+              {a.primary !== "review" && (
+                <Pill
+                  label="Open"
+                  variant="ghost"
+                  onPress={() => onOpen(a.id)}
+                />
+              )}
             </View>
           </Card>
         ))}

@@ -67,6 +67,9 @@ export function timeLabel(ts: number, now: number): string {
  * `active` means an engine turn is running; `pending` covers the window
  * between `conversations.open` answering and the host binding the session
  * (the row must not flash Done for a turn that just left the phone).
+ * #592: a dead turn is "failed", never quietly Done — the harness stamps
+ * `turnFailure` on model errors and sleep/restart interrupts, and it
+ * clears on the next `turn.started`, so working still wins over it.
  */
 export function conversationState(
   conv: Conversation,
@@ -80,6 +83,7 @@ export function conversationState(
   )
     return "needs-you";
   if (conv.state === "active" || ctx.pending.has(conv.id)) return "working";
+  if (conv.turnFailure) return "failed";
   return "done";
 }
 
@@ -176,6 +180,9 @@ function toSessionTurn(s: ConversationSummary, ctx: DmCtx): SessionTurn {
     ...(s.messageCount > 1 ? { replies: s.messageCount - 1 } : {}),
     ...(preview ? { preview } : {}),
     ...(state === "working" && !preview ? { live: "Working…" } : {}),
+    /* #592: the row body reads the failure reason (amber for a sleep
+       interrupt), not the last preview. */
+    ...(conv.turnFailure ? { failure: conv.turnFailure } : {}),
     ...(ask
       ? {
           approval: askApproval(ask, {

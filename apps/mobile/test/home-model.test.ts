@@ -9,6 +9,11 @@ import type {
 } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import {
+  accessoryWhat,
+  whatLine,
+} from "../../../packages/ui-native/src/employees/approval-copy";
+import {
+  askThreadTarget,
   dmChannelFor,
   ensureChannelSubscriptions,
   type HomeWire,
@@ -373,5 +378,121 @@ describe("home-model (#155)", () => {
       ch("ch2", "e2"),
     ]);
     expect(subscribed).toEqual(["ch1", "ch2"]);
+  });
+
+  it("#595 AC-1: a plan ask's primary CTA is review, never a blind approve", () => {
+    const plan = ask("a1", "ch1", "c1", NOW - 60_000, {
+      request: { kind: "plan", planId: "p-1" },
+    });
+    const approval = ask("a2", "ch1", "c2", NOW - 60_000);
+    const question = ask("a3", "ch1", "c3", NOW - 60_000, {
+      request: {
+        kind: "question",
+        question: "which one?",
+        options: [
+          { id: "a", label: "A" },
+          { id: "b", label: "B" },
+        ],
+        freeText: true,
+      },
+    });
+    const w = wire({ channels: [ch("ch1", "e1")] });
+    expect(toApproval(plan, w, NOW).primary).toBe("review");
+    // AC-2: command approvals keep their one-tap approve; a question has
+    // no primary pill at all (it needs an answer, not an OK).
+    expect(toApproval(approval, w, NOW).primary).toBe("approve");
+    expect(toApproval(question, w, NOW).primary).toBeUndefined();
+  });
+
+  it("#595 AC-1: a plan ask's Review lands DM-under-Thread", () => {
+    const plan = ask("a1", "ch1", "c1", NOW - 60_000, {
+      request: { kind: "plan", planId: "p-1" },
+    });
+    const w = wire({ channels: [ch("ch1", "e1")] });
+    expect(askThreadTarget(plan, w)).toEqual({
+      employeeId: "e1",
+      conversationId: "c1",
+    });
+    // Channel gone from the wire → no target (the surface falls back).
+    expect(askThreadTarget(plan, wire())).toBeUndefined();
+  });
+});
+
+describe("#652 — the needs-you card reads last-known and human while offline (AC-2)", () => {
+  const w = (online: boolean) =>
+    wire({
+      online,
+      employees: [emp("e1")],
+      channels: [ch("ch1", "e1")],
+    });
+
+  it("the line leads with the human sentence, not the raw tool call", () => {
+    const a = toApproval(
+      ask("a1", "ch1", "c1", NOW - 60_000, {
+        request: {
+          kind: "approval",
+          command: 'patch {"path":"README.md"}',
+          description: 'Default wants to run: patch {"path":"README.md"}',
+          options: ["once", "always", "deny"],
+        },
+      }),
+      w(true),
+      NOW,
+    );
+    /* Old line was the bare `patch {…}` JSON — the accessory now says the
+       same sentence the thread card leads with, the command after it. */
+    expect(accessoryWhat(a)).toBe(
+      'Emp e1 wants to run · patch {"path":"README.md"}',
+    );
+    expect(accessoryWhat(a).startsWith("patch {")).toBe(false);
+  });
+
+  it("offline, the marker is FIRST — truncation can't cut it away", () => {
+    const a = toApproval(
+      ask("a1", "ch1", "c1", NOW - 60_000, {
+        request: {
+          kind: "approval",
+          command: `patch ${"x".repeat(400)}`,
+          description: "wants to run",
+          options: ["once", "deny"],
+        },
+      }),
+      w(false),
+      NOW,
+    );
+    expect(accessoryWhat(a).startsWith("Last known · ")).toBe(true);
+    expect(a.lastKnown).toBe(true);
+  });
+
+  it("a plan ask keeps its reason — no sentence bolted on", () => {
+    const a = toApproval(
+      ask("a1", "ch1", "c1", NOW - 60_000, {
+        request: { kind: "plan", planId: "p-1" },
+      }),
+      w(false),
+      NOW,
+    );
+    expect(accessoryWhat(a)).toBe("Last known · Plan waiting for your review");
+  });
+
+  it("the Activity card's line is human too — never a `$ patch {…}` box", () => {
+    const a = toApproval(
+      ask("a1", "ch1", "c1", NOW - 60_000, {
+        request: {
+          kind: "approval",
+          command: 'patch {"path":"README.md"}',
+          description: 'Default wants to run: patch {"path":"README.md"}',
+          options: ["once", "deny"],
+        },
+      }),
+      w(true),
+      NOW,
+    );
+    /* What the sheet's body line renders — the same sentence·command
+       the accessory shows, without the `$ ` terminal box. */
+    expect(whatLine(a)).toBe(
+      'Emp e1 wants to run · patch {"path":"README.md"}',
+    );
+    expect(whatLine(a)).not.toContain("$");
   });
 });

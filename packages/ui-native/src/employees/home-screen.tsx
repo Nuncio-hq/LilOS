@@ -14,6 +14,7 @@ import { SectionTitle } from "../components/bits";
 
 import { Icon } from "../components/icon";
 import { Orb } from "../components/orb";
+import { accessoryWhat } from "./approval-copy";
 import type { Approval, ChannelRow, EmployeeRow, ProjectGroup } from "./types";
 
 /* Home, as an iOS list under a large title: Employees, then Channels
@@ -156,27 +157,37 @@ export function NeedsYouAccessory({
   approvals,
   placement,
   onApprove,
+  onReview,
   onOpen,
 }: {
   approvals: Approval[];
   placement: "regular" | "inline";
   /** Approve pill — absent while approval lands in a later slice (#158). */
   onApprove?: (id: string) => void;
+  /** #595: a plan ask's **Review** pill — opens the plan in its thread.
+      Falls back to onOpen when absent (prototype rows). */
+  onReview?: (id: string) => void;
   onOpen: () => void;
 }) {
   const top = approvals[0];
   if (!top) return null;
-  const what = top.command
-    ? keepFlags(top.command)
-    : top.file
-      ? top.file.name
-      : top.reason;
+  /* #652: the one-line description reads like the thread card — the
+     human sentence first (never the bare `patch {…}` tool call), and a
+     last-known ask leads with "Last known" so truncation can't hide it. */
+  const what = accessoryWhat(top);
+  /* A last-known card's tap opens the ask's own thread read-only — the
+     Approve/Review pill is gone anyway; Activity stays for live asks. */
+  const open = top.lastKnown && onReview ? () => onReview(top.id) : onOpen;
   if (placement === "inline")
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${approvals.length} waiting on you`}
-        onPress={onOpen}
+        accessibilityLabel={
+          top.lastKnown
+            ? `${approvals.length} waiting on you, last known`
+            : `${approvals.length} waiting on you`
+        }
+        onPress={open}
         className="flex-1 flex-row items-center gap-2 px-3"
       >
         <Orb tone={top.tone} size={22} badge={false} />
@@ -195,16 +206,23 @@ export function NeedsYouAccessory({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${top.employee} needs you: ${what}. Open Activity`}
-      onPress={onOpen}
+      accessibilityLabel={
+        top.lastKnown
+          ? `${top.employee} needs you, last known: ${what}. Open thread`
+          : `${top.employee} needs you: ${what}. Open Activity`
+      }
+      onPress={open}
       className="flex-1 flex-row items-center gap-3 pr-2 pl-3"
     >
-      <Orb tone={top.tone} size={28} badge={false} />
+      <View className={top.lastKnown ? "opacity-50" : ""}>
+        <Orb tone={top.tone} size={28} badge={false} />
+      </View>
       <View className="min-w-0 flex-1">
         <AppText
           size="sm"
           weight="semibold"
           numberOfLines={1}
+          tone={top.lastKnown ? "muted" : "default"}
           className="text-[14px] leading-[18px]"
         >
           {approvals.length > 1
@@ -221,11 +239,14 @@ export function NeedsYouAccessory({
         </AppText>
       </View>
       {/* #591: last-known asks offer no dead Approve while offline. */}
-      {onApprove && !top.lastKnown && top.kind !== "question" && (
+      {/* #595: a plan's pill is **Review** — it opens the plan in its
+          thread; nothing approves a plan sight-unseen. Command approvals
+          keep the one-tap Approve (AC-2). */}
+      {!top.lastKnown && top.primary === "review" && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Approve ${top.employee}`}
-          onPress={() => onApprove(top.id)}
+          accessibilityLabel={`Review ${top.employee}'s plan`}
+          onPress={() => (onReview ?? onOpen)(top.id)}
           hitSlop={6}
           className="h-8 items-center justify-center rounded-full bg-primary px-3.5 active:opacity-70"
         >
@@ -235,10 +256,31 @@ export function NeedsYouAccessory({
             tone="inverse"
             className="text-[14px]"
           >
-            Approve
+            Review
           </AppText>
         </Pressable>
       )}
+      {onApprove &&
+        !top.lastKnown &&
+        (top.primary ?? "approve") === "approve" &&
+        top.kind !== "question" && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Approve ${top.employee}`}
+            onPress={() => onApprove(top.id)}
+            hitSlop={6}
+            className="h-8 items-center justify-center rounded-full bg-primary px-3.5 active:opacity-70"
+          >
+            <AppText
+              size="sm"
+              weight="semibold"
+              tone="inverse"
+              className="text-[14px]"
+            >
+              Approve
+            </AppText>
+          </Pressable>
+        )}
     </Pressable>
   );
 }
@@ -265,11 +307,19 @@ function EmployeeItem({
       onPress={onPress}
       className="flex-row items-center gap-3 pl-3 active:bg-fill"
     >
-      <Orb tone={e.tone} state={stale ? "idle" : e.state} />
+      {/* #652: the whole row dims on last-known — orb and title too,
+          not only the now line (#591's reviewer note). */}
+      <View className={stale ? "opacity-50" : ""}>
+        <Orb tone={e.tone} state={stale ? "idle" : e.state} />
+      </View>
       <View className="min-w-0 flex-1 flex-row items-center py-3 pr-4">
         <View className="min-w-0 flex-1">
           <View className="flex-row items-baseline gap-1.5">
-            <AppText weight="semibold" className="text-[17px] leading-[22px]">
+            <AppText
+              weight="semibold"
+              tone={stale ? "muted" : "default"}
+              className="text-[17px] leading-[22px]"
+            >
               {e.name}
             </AppText>
             <AppText
@@ -399,12 +449,4 @@ function Dots() {
       ))}
     </View>
   );
-}
-
-/* Lines break only between arguments, and a flag stays with its value
-   ("--env dev"): non-breaking hyphens + a no-break space after a flag. */
-function keepFlags(command: string) {
-  return command
-    .replace(/(^|\s)(-{1,2}[\w-]+) (?=[^-\s])/g, "$1$2\u00a0")
-    .replace(/-/g, "\u2011");
 }

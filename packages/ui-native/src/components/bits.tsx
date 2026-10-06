@@ -11,14 +11,20 @@ export function Pill({
   onPress,
   variant = "primary",
   size = "md",
+  disabled,
 }: {
   label: string;
   onPress: () => void;
   variant?: "primary" | "soft" | "ghost";
   size?: "sm" | "md";
+  /** #652: renders the pill visibly inert — muted fill + muted label,
+      no press (e.g. an ask that can't be answered while the Mac is
+      unreachable). */
+  disabled?: boolean;
 }) {
-  const box =
-    variant === "primary"
+  const box = disabled
+    ? "bg-muted"
+    : variant === "primary"
       ? "bg-primary"
       : variant === "soft"
         ? "bg-fill"
@@ -27,14 +33,18 @@ export function Pill({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
       onPress={onPress}
       hitSlop={6}
-      className={`${size === "sm" ? "h-9 px-4" : "h-10 px-[18px]"} items-center justify-center rounded-full active:opacity-70 ${box}`}
+      className={`${size === "sm" ? "h-9 px-4" : "h-10 px-[18px]"} items-center justify-center rounded-full ${disabled ? "" : "active:opacity-70"} ${box}`}
     >
       <AppText
         size="sm"
         weight="semibold"
-        tone={variant === "primary" ? "inverse" : "default"}
+        tone={
+          disabled ? "muted" : variant === "primary" ? "inverse" : "default"
+        }
       >
         {label}
       </AppText>
@@ -112,10 +122,27 @@ const CHIP = {
     text: "text-muted-foreground",
     label: "Last seen working",
   },
+  /* #592: a sleep interrupt is a failed turn with a different story —
+     the Mac went to sleep, so it reads amber, not the red error chip. */
+  slept: {
+    icon: "moon.zzz.fill",
+    tone: "warning",
+    text: "text-warning",
+    label: "Mac went to sleep",
+  },
 } as const;
 
-export function StateChip({ state }: { state: keyof typeof CHIP }) {
-  const c = CHIP[state];
+export function StateChip({
+  state,
+  failureKind,
+}: {
+  state: keyof typeof CHIP;
+  /** #592: the wire's turnFailure.kind — "sleep" swaps the red Failed chip
+      for the amber slept one. */
+  failureKind?: "model" | "sleep" | "generic";
+}) {
+  const c =
+    state === "failed" && failureKind === "sleep" ? CHIP.slept : CHIP[state];
   return (
     <View className="flex-row items-center gap-1">
       <Icon name={c.icon} size={13} tone={c.tone} weight="semibold" />

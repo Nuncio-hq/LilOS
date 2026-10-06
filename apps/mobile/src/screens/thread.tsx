@@ -483,6 +483,7 @@ export function Thread({
         <ThreadHeaderTitle
           title={detail?.title || "Thread"}
           state={detail?.state ?? "working"}
+          {...(detail?.failure ? { failureKind: detail.failure.kind } : {})}
           {...(detail?.prs?.length ? { prs: detail.prs } : {})}
           {...(detail?.context ? { context: detail.context } : {})}
           /* #591: offline a "working" header is last-known, not live. */
@@ -519,6 +520,14 @@ export function Thread({
       /* #591: offline + a cached "working" thread — disabled Stop with a
          hint; the header chip degrades via threadSurface's rule. */
       stale={threadSurface(detail.state, link === "offline").stale}
+      /* #652: offline, open ask cards render disabled with "Answer once
+         <Mac> is back" — any thread state, not only a stale working. */
+      asksStale={
+        threadSurface(detail.state, link === "offline", mac?.name).asksStale
+      }
+      answerHint={
+        threadSurface(detail.state, link === "offline", mac?.name).answerHint
+      }
       {...(catalog.models.length
         ? {
             onPickModel: () =>

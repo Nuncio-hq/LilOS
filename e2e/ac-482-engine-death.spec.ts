@@ -300,7 +300,7 @@ test("AC-1/2/3 (#482) killed hermes child → typed errors fast, outage shown, s
         return (
           m?.authorKind === "system" &&
           typeof m.text === "string" &&
-          m.text.includes("engine restarted")
+          m.text.includes("went to sleep")
         );
       },
       10_000,
