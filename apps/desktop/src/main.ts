@@ -11,6 +11,7 @@ import {
 import { RelayClient } from "@lilos/client-runtime";
 import {
   DESKTOP_NOTIFY_CHANNEL,
+  DESKTOP_ONLINE_CHANNEL,
   DESKTOP_OPEN_CONVERSATION_CHANNEL,
   DESKTOP_OPEN_SETTINGS_CHANNEL,
   DESKTOP_THEME_CHANNEL,
@@ -24,12 +25,19 @@ import {
   Menu,
   Notification,
   nativeTheme,
+  powerMonitor,
   shell,
 } from "electron";
 import { diskVersionStore, helperServiceControl } from "./control";
 import { appMenuTemplate } from "./menu";
+import { appDocumentUrl, guardWindow } from "./navigation-guard";
 import { postDesktopNotification } from "./notify";
 import { checkForUpdate } from "./update";
+import {
+  retryDelaysFromEnv,
+  type UpdateScheduler,
+  updateScheduler,
+} from "./update/schedule";
 import {
   addSkippedBuild,
   removeSkippedBuild,
@@ -316,7 +324,7 @@ function notifyRolledBack(status: UpdateStatus): void {
     });
 }
 
-let updateTimer: ReturnType<typeof setInterval> | undefined;
+let updatePoll: UpdateScheduler | undefined;
 let updateCheckInFlight = false;
 
 /** Feed check → stage → detached applier → quit. Dev builds skip.
@@ -406,6 +414,14 @@ function appUrl(): { file: string } | { url: string } | undefined {
 
 let mainWindow: BrowserWindow | undefined;
 
+/* #565: rendered links (agent markdown can carry any scheme) only leave the
+   app through this path — the scheme filter lives in navigation-guard. */
+const openInBrowser = (url: string) => {
+  void shell.openExternal(url).catch((e) => {
+    console.warn(`[lilos] openExternal failed for ${url}:`, e);
+  });
+};
+
 /* #132 AC-1: ⌘, / LilOS → Settings… asks the app window to open its
    Settings screen. When no app window exists yet (the approval gate is up),
    one opens first and the request lands after it finishes loading. */
@@ -484,11 +500,9 @@ function createAppWindow(): void {
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = undefined;
   });
-  // Never open a new window; external links go to the browser.
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
-    return { action: "deny" };
-  });
+  // #565: never open a new window, never navigate off the app's own origin;
+  // https:/http:/mailto: links open in the user's browser instead.
+  guardWindow(win.webContents, appDocumentUrl(target), openInBrowser);
   if ("file" in target) void win.loadFile(target.file);
   else void win.loadURL(target.url);
 }
@@ -501,18 +515,29 @@ function createStatusWindow(): void {
     statusWin.focus();
     return;
   }
+  const statusFile = join(UI_DIR, "index.html");
   statusWin = new BrowserWindow({
     width: 760,
     height: 560,
     title: "LilOS Status",
     ...nativeWindowChrome("status"),
-    webPreferences: { preload: join(UI_DIR, "preload.cjs") },
+    webPreferences: {
+      preload: join(UI_DIR, "preload.cjs"),
+      contextIsolation: true,
+      sandbox: true,
+    },
   });
   watchWindowChrome(statusWin);
   statusWin.on("closed", () => {
     statusWin = undefined;
   });
-  void statusWin.loadFile(join(UI_DIR, "index.html"));
+  // #565: the status page has no links, but it gets the same guard anyway.
+  guardWindow(
+    statusWin.webContents,
+    appDocumentUrl({ file: statusFile }),
+    openInBrowser,
+  );
+  void statusWin.loadFile(statusFile);
 }
 
 /* -------------------------------- app ----------------------------------- */
@@ -581,6 +606,10 @@ ipcMain.on(DESKTOP_THEME_CHANNEL, (_e, raw: unknown) => {
     nativeTheme.themeSource = raw;
 });
 
+// #674 AC-2: the preload forwards the renderer's `online` event — the
+// network came back, so an update check may be due (scheduler rate-limits).
+ipcMain.on(DESKTOP_ONLINE_CHANNEL, () => updatePoll?.poke());
+
 app.whenReady().then(async () => {
   // #35: settle a pending swap before anything else opens. On the freshly
   // swapped build this verifies services + handshake and writes boot-ok (or
@@ -628,17 +657,24 @@ app.whenReady().then(async () => {
 
   // #35 auto-update: packaged builds poll the feed; the interval is long so
   // checks stay cheap, and LILOS_UPDATE_CHECK_MS shortens it for tests.
+  // #674: a failed check retries on the LILOS_UPDATE_RETRY_MS ladder
+  // (1/5/15 min default) instead of waiting a whole interval, and sleep /
+  // network-return triggers poke an early check, rate-limited to 10 min.
   if (bundlePath) {
-    const interval = Number(process.env.LILOS_UPDATE_CHECK_MS ?? 4 * 60 * 60e3);
-    updateTimer = setInterval(() => void checkAndApply(), interval);
-    setTimeout(() => void checkAndApply(), 5_000);
+    updatePoll = updateScheduler({
+      check: checkAndApply,
+      intervalMs: Number(process.env.LILOS_UPDATE_CHECK_MS ?? 4 * 60 * 60e3),
+      retryDelaysMs: retryDelaysFromEnv(process.env),
+    });
+    updatePoll.start();
+    powerMonitor.on("resume", () => updatePoll?.poke());
   }
 });
 
 // Quitting is the AC-2 point: no warning, work continues in the agents.
 app.on("window-all-closed", () => {
   if (connectTimer) clearTimeout(connectTimer);
-  if (updateTimer) clearInterval(updateTimer);
+  updatePoll?.stop();
   relay?.close();
   app.quit();
 });

@@ -235,6 +235,98 @@ describe("workspace harness", () => {
     }
   });
 
+  it("#601 AC-2 'This session' from the phone stops repeat asks for that command in this session", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Update the readme title",
+      });
+
+      // The script's first gated step asks for the patch, offering the
+      // ask's own options — Once / This session / Always / Deny.
+      const patchAsk = await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks.find(
+          (a) =>
+            a.request.kind === "approval" &&
+            a.request.command.startsWith("patch"),
+        );
+      }, "patch approval ask");
+      expect(
+        patchAsk.request.kind === "approval" && patchAsk.request.options,
+      ).toEqual(["once", "session", "always", "deny"]);
+
+      // The phone taps "This session" — the option the ask itself offered.
+      const { ask: granted } = await w.user.request<{ ask: Ask }>(
+        "asks.respond",
+        { askId: patchAsk.id, outcome: "session" },
+      );
+      expect(granted.outcome).toBe("session");
+
+      // Drain turn 1: other commands still ask — the grant covers only the
+      // patched command.
+      await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        for (const a of asks)
+          await w.user.request("asks.respond", {
+            askId: a.id,
+            outcome: "once",
+          });
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+      }, "turn 1 answer");
+
+      // Turn 2 on the same session hits the same patch step — the session
+      // grant answers it before an ask can open; the next open ask is the
+      // un-granted write_file step.
+      await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "Update the readme again",
+      );
+      const nextAsk = await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks.find((a) => a.request.kind === "approval");
+      }, "turn 2's first open ask");
+      expect(
+        nextAsk.request.kind === "approval" &&
+          nextAsk.request.command.startsWith("write_file"),
+      ).toBe(true);
+
+      // Only turn 1's patch ask exists — turn 2's never opened.
+      const { asks: allAsks } = await w.user.request<{ asks: Ask[] }>(
+        "asks.list",
+        { conversationId: conversation.id },
+      );
+      expect(
+        allAsks.filter(
+          (a) =>
+            a.request.kind === "approval" &&
+            a.request.command.startsWith("patch"),
+        ),
+      ).toHaveLength(1);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("AC-4b refuses ask kinds the contract cannot carry (sudo/secret/vault)", async () => {
     // The refuse boundary is the WS edge: a request.opened whose request is
     // not a valid EngineRequest never reaches listeners, so it can never be
