@@ -5,7 +5,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #108 — comment on a diff line and the agent gets it: in Focus →
@@ -27,6 +32,8 @@ const ROOT = mkdtempSync(path.join(tmpdir(), "lilos-108-"));
 const repoDir = path.join(ROOT, "lilos-repo-a");
 const ghFakeDir = path.join(ROOT, "gh-fake");
 const ghLogFile = path.join(ghFakeDir, "gh.log");
+
+const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
 mkdirSync(repoDir, { recursive: true });
 mkdirSync(ghFakeDir, { recursive: true });
 const git = (args: string[], cwd = repoDir) =>
@@ -118,7 +125,7 @@ const send = async (page: Page, text: string) => {
   await box.press("Enter");
 };
 
-const turns = (page: Page) => page.locator("main [data-agentturn]");
+const turns = (page: Page) => page.locator("[data-agentturn]");
 
 /* #474: where a send lands is decided by the session, not the spec. An
    idle send claims its own bubble and a new agent turn answers it; a send
@@ -129,12 +136,12 @@ const turns = (page: Page) => page.locator("main [data-agentturn]");
    substring match, and a stale row would silently satisfy the or-wait. */
 const awaitSendLanding = async (page: Page, text: string) => {
   const mine = page
-    .locator("main [data-msg]")
+    .locator("[data-msg]")
     .filter({ hasText: text })
     .filter({ hasNot: page.locator("[data-agentturn]") })
     .last();
   const steered = page
-    .locator("main [data-agentturn]")
+    .locator("[data-agentturn]")
     .filter({
       has: page.locator("[data-steerstate='landed']").filter({ hasText: text }),
     })
@@ -158,7 +165,7 @@ const awaitSendLanding = async (page: Page, text: string) => {
 const sendTurn = async (page: Page, text: string) => {
   await expect(
     page
-      .locator("main [data-msg]")
+      .locator("[data-msg]")
       .last()
       .locator("[data-agentturn] [data-turnsettled]"),
   ).toBeVisible({ timeout: 60_000 });
@@ -166,7 +173,6 @@ const sendTurn = async (page: Page, text: string) => {
   return awaitSendLanding(page, text);
 };
 
-const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
 
@@ -224,7 +230,8 @@ async function freshSession(page: Page) {
   await dmDefault(page);
   await pickSessionFolder(page, repoDir);
   await send(page, "check in");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   /* #474/#496: hand each test an idle session. While the seeded turn is
      still dispatching, a send can slip in mid-turn (steer) and a
      `turns.last()` read can latch the seeded turn while the real one is
@@ -332,7 +339,7 @@ test("AC-2 + AC-4 Send posts one message quoting path:line + code; sent comments
   // [data-agentturn]: the answering turn echoes the prompt, so it also
   // carries the marker text — only the user message is the sent one.
   const sent = page
-    .locator("main [data-msg]")
+    .locator("[data-msg]")
     .filter({ hasText: "Review comments on the diff" })
     .filter({ hasNot: page.locator("[data-agentturn]") });
   await page.locator("[data-diff-send]").click();
@@ -451,7 +458,8 @@ test("AC-3b a send landing mid-turn steers — the landing wait resolves the tur
      this when `sendTurn`'s count guard read the session as idle while the
      seeded turn was still dispatching. */
   await send(page, "slow:150 Add a readme note");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   /* The card mounts only after the harness has processed turn.started
      (runningTurnId set) — a send past this point provably steers. Send
      earlier and it queues behind the minting turn, draining as the next

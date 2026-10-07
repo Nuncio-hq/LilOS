@@ -3,10 +3,13 @@ import {
   type MutableRefObject,
   memo,
   type ReactNode,
+  useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
+import { ConversationPin } from "../components/ai-elements/conversation";
 import { Body, Row, Who } from "../feed/row";
 import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
@@ -21,7 +24,7 @@ import type {
   Work,
 } from "../types";
 import { ReplyCards } from "./cards";
-import { useFindUnstub } from "./find-unstub";
+import { findAnchorActive, useFindUnstub } from "./find-unstub";
 import type { PlanAction } from "./plan-card";
 import type { QuestionAnswer } from "./question-card";
 import { AgentTurn, AttachmentChips, PrCard, UserTurn } from "./turns";
@@ -51,6 +54,76 @@ export const TURN_LAZY_AFTER = 24;
 
 /* How far outside the viewport a row goes before it is held as a stub. */
 const LAZY_MARGIN = "1600px";
+
+/* e2e/dev knob — `?stubHydrateMs=<ms>` defers a born-stub's un-hold that
+   long after its observer intersects: the CI-slow first hydration, where
+   the mounts land in a quiet port long after the open pin ran and every
+   estimate→real delta is a standalone scroll event (#570's slow-box
+   reproducer). Read once at module load, like `?stickDropMs=`. */
+const STUB_HYDRATE_MS = (() => {
+  if (typeof window === "undefined") return 0;
+  const v = Number(
+    new URLSearchParams(window.location.search).get("stubHydrateMs"),
+  );
+  return Number.isFinite(v) && v > 0 ? v : 0;
+})();
+
+/* #570: a lazy thread's FIRST mount renders only its tail — rows older
+   than an estimated `OPEN_TAIL_PX` of content start as stubs instead of
+   mounting once and stubbing behind the observer (#430's measured path).
+   ~3 ports of tail guarantees nothing in view starts held on any
+   realistic window while the other ~95% of a 200-turn thread stays
+   stubbed. */
+export const OPEN_TAIL_PX = 3200;
+
+/* Wrapped-line count at `cpl` chars/line — empty segments still cost a
+   line box. Only needs to be close: a first-mount stub holds this until
+   the row's real height is measured on its next hold (#537). */
+const estLines = (text: string, cpl: number) =>
+  text
+    .split("\n")
+    .reduce((a, s) => a + Math.max(1, Math.ceil(s.length / cpl)), 0);
+
+/** Estimated px height for a never-mounted row — the #570 first-mount
+    stub's stand-in. Column width decides wrap (`frame`), card kinds add
+    their chrome. Never smaller than a real row; overshoot is safer than
+    collapse (the pin lands at the bottom regardless). */
+export function estTurnHeight(
+  r: Reply,
+  agent: boolean,
+  frame: "panel" | "focus",
+): number {
+  const cpl = frame === "focus" ? 86 : 50;
+  if (!agent) {
+    /* Row/UserTurn: who line + wrapped text + attachment chips. */
+    return 46 + estLines(r.text, cpl) * 20 + (r.attachments?.length ? 34 : 0);
+  }
+  /* AgentTurn: who row + optional reasoning fold + body + cards + footer. */
+  let h = 60 + estLines(r.text, cpl) * 21;
+  if (r.reasoning) h += 30;
+  if (r.steps?.length) h += 36;
+  if (r.plan) h += 40 + r.plan.steps.length * 22;
+  if (r.approval || r.question) h += 110;
+  if (r.startProposal) h += 56;
+  if (r.subagents?.length) h += 30;
+  if (r.attachments?.length) h += 34;
+  if (r.error) h += 30;
+  return h;
+}
+
+/** First row index that mounts real on open: walk back from the newest
+    reply until `px` of estimated height is covered. */
+export function openTailStart(
+  heights: readonly number[],
+  px = OPEN_TAIL_PX,
+): number {
+  let acc = 0;
+  for (let i = heights.length - 1; i >= 0; i--) {
+    acc += heights[i];
+    if (acc >= px) return i;
+  }
+  return 0;
+}
 
 /** Handlers the row may fire — read via `acts.current`, never compared. */
 export interface TurnActs {
@@ -134,6 +207,8 @@ function LazyShell({
   className,
   lazy,
   keep,
+  startHeld = false,
+  estHeight,
   kind,
   settled,
   children,
@@ -144,15 +219,39 @@ function LazyShell({
   /** Rows that must never unmount: live/streaming turns and the scrollTo
       target (its content has to exist the moment it lands, #138). */
   keep: boolean;
+  /** #570: mount directly as a height-estimated stub — rows above the
+      open tail never pay their mount cost on thread open. `keep` wins:
+      live turns and the scroll target still mount real. */
+  startHeld?: boolean;
+  /** The first stub's px height — the never-measured estimate; once the
+      row mounts and re-holds, the stub keeps its real height (#537). */
+  estHeight?: number;
   kind: "agent" | "user" | "note";
   settled: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const heightRef = useRef(0);
-  const wasHeldRef = useRef(false);
-  const [held, setHeld] = useState(false);
+  const initialHeld = lazy && !keep && startHeld && (estHeight ?? 0) > 0;
+  const heightRef = useRef(initialHeld && estHeight ? estHeight : 0);
+  /* Mounting out of a stub is a remount — `data-remount` skips the rise
+     replay — and a born-held row counts as held from the start. */
+  const wasHeldRef = useRef(initialHeld);
+  const [held, setHeld] = useState(initialHeld);
   const [remounted, setRemounted] = useState(false);
+  /* #570: the port's pin — a stub→real commit swaps the estimate for the
+     real height, moving the bottom the pin sits on. `wasStub` tracks the
+     held→real edge for the layout effect below. */
+  const pin = useContext(ConversationPin);
+  const wasStub = useRef(initialHeld);
+  /* First-commit materialization stamps the pin's hydration wake — the
+     mount wave's clamp noise is quarantined the same way a swap's is. */
+  const mountedRef = useRef(false);
+  /* First hydration only: ?stubHydrateMs= models the CI-slow mount a
+     born-stub pays once; measured re-mounts stay instant. */
+  const hydratedRef = useRef(false);
+  const hydrateTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   /* #512: while a find chord's ~10 s window runs, every held row mounts so
      browser find-in-page can match its text; the window lapsing re-arms
      the observer path and off-screen rows re-stub. */
@@ -160,12 +259,16 @@ function LazyShell({
   const lazyOn = lazy && !findOpen;
 
   useEffect(() => {
-    if (!lazyOn || keep || typeof IntersectionObserver === "undefined") {
+    const unhold = () => {
+      hydratedRef.current = true;
       if (wasHeldRef.current) {
         wasHeldRef.current = false;
         setRemounted(true);
       }
       setHeld(false);
+    };
+    if (!lazyOn || keep || typeof IntersectionObserver === "undefined") {
+      unhold();
       return;
     }
     const el = ref.current;
@@ -179,12 +282,22 @@ function LazyShell({
         if (cancelled) return;
         for (const en of entries) {
           if (en.isIntersecting) {
-            if (wasHeldRef.current) {
-              wasHeldRef.current = false;
-              setRemounted(true);
+            /* ?stubHydrateMs= defers a born-stub's FIRST un-hold — the
+               CI-slow hydration the pin fix is proved against. */
+            if (STUB_HYDRATE_MS > 0 && initialHeld && !hydratedRef.current) {
+              if (hydrateTimer.current === undefined)
+                hydrateTimer.current = setTimeout(() => {
+                  hydrateTimer.current = undefined;
+                  unhold();
+                }, STUB_HYDRATE_MS);
+            } else {
+              unhold();
             }
-            setHeld(false);
           } else {
+            if (hydrateTimer.current !== undefined) {
+              clearTimeout(hydrateTimer.current);
+              hydrateTimer.current = undefined;
+            }
             /* Only a laid-out row may hold — a 0-height stub would let the
                scroll extent collapse. #537: keep the stub's height EXACT —
                offsetHeight rounds to whole pixels while real rows land
@@ -201,14 +314,70 @@ function LazyShell({
           }
         }
       },
-      { rootMargin: `${LAZY_MARGIN} 0px` },
+      /* #570: the pre-mount band only reaches through the clip that
+         produces it. With the implicit viewport root the margin expands
+         the window's bounds while the scroller's own clip applies raw,
+         so a row just below the port edge never intersects and never
+         mounts (ac-570's scroll-to-top left the early turns held). Root
+         the observer at the nearest scrollable ancestor — the port
+         itself, which sits INSIDE the role="log" wrapper — and the
+         ±LAZY_MARGIN band works as tuned. */
+      {
+        root: (() => {
+          for (let a = el.parentElement; a; a = a.parentElement) {
+            const oy = getComputedStyle(a).overflowY;
+            if (oy === "auto" || oy === "scroll") return a;
+          }
+          return null;
+        })(),
+        rootMargin: `${LAZY_MARGIN} 0px`,
+      },
     );
     io.observe(el);
     return () => {
       cancelled = true;
       io.disconnect();
+      if (hydrateTimer.current !== undefined) {
+        clearTimeout(hydrateTimer.current);
+        hydrateTimer.current = undefined;
+      }
     };
   }, [lazyOn, keep]);
+
+  /* #570: a stub→real commit swaps the estimate for the measured height —
+   * the bottom edge the pin is glued to just moved. Mark the hydration
+   * wake on the pin (the escape guard quarantines its scroll noise) and,
+   * while the reader hasn't escaped, re-pin to the MEASURED bottom in
+   * this commit (before paint): the library's smooth chase crawls frames
+   * behind a hydration wave, and a mid-chase layout-clamp scroll event
+   * can kill the library pin outright on a slow box, stranding the port
+   * above the real bottom (CI: ac-570's open pin). `escaped` is the
+   * guard's own reader-intent flag — a clamp-tripped `escapedFromLock`
+   * gets cleared here so the lock keeps tracking the measured bottom. */
+  useLayoutEffect(() => {
+    const swapped = wasStub.current && !held;
+    /* A row's first commit is materialization too — the mount wave's
+       clamp noise is the same noise the hydration wake exists to
+       quarantine, and the open pin's measured-bottom re-pin rides the
+       same commits. */
+    const firstCommit = !mountedRef.current;
+    mountedRef.current = true;
+    wasStub.current = held;
+    if ((!swapped && !firstCommit) || !pin) return;
+    /* Record this commit's wake: the hydration clock (un-attributed
+       up-scrolls are quarantined while it runs), the new layout max
+       (the next clamp event's landing is fingerprinted against it),
+       and the guard's re-pin chain. */
+    pin.hydratedAt.v = performance.now();
+    pin.noteMax?.();
+    pin.armReinstate?.();
+    /* The reader (guard-escaped) or a find window (top-edge hold owns
+       the port) stands down the re-pin. A pin the clamp already killed
+       is revived only when the port still sits on a clamp landing —
+       a real scroll position is never touched. */
+    if (pin.escaped.v || findAnchorActive(pin.state)) return;
+    if (pin.state.isAtBottom || pin.isClampTop?.()) pin.repin();
+  });
 
   return (
     <div
@@ -247,6 +416,11 @@ export interface TurnRowProps {
   flashed: boolean;
   /** Long thread: let far-off-screen rows hold as stubs. */
   lazy: boolean;
+  /** #570: this row sits above the open tail — mount it as an
+      estimated-height stub (`estHeight`) instead of mounting then
+      stubbing. */
+  startHeld?: boolean;
+  estHeight?: number;
   /** This row is the scrollTo target — it must exist when scrolled to. */
   scrollTarget: boolean;
   running: boolean;
@@ -275,6 +449,8 @@ function TurnRowImpl({
   lastRow,
   flashed,
   lazy,
+  startHeld,
+  estHeight,
   scrollTarget,
   running,
   emp,
@@ -330,7 +506,7 @@ function TurnRowImpl({
         msgId={r.id}
         className={cls}
         lazy={lazy}
-        keep={scrollTarget}
+        keep={scrollTarget || flashed}
         kind="note"
         settled
       >
@@ -355,8 +531,14 @@ function TurnRowImpl({
         /* A turn row whose phase isn't terminal is still being written:
            `streaming` only covers the text phase, and `live` drops when the
            conversation isn't active — so a non-terminal turn must never
-           hold (a stub would freeze partial height and fake the marker). */
-        keep={scrollTarget || (!!r.turnId && !TERMINAL.has(r.phase))}
+           hold (a stub would freeze partial height and fake the marker).
+           `flashed` keeps the jump target real through the whole flash
+           window: `scrollTo` clears the moment the jump lands, but stubs
+           around it keep hydrating and pushing the row out of view — a
+           re-hold would drop the flashed anchor's content mid-wave. */
+        keep={scrollTarget || flashed || (!!r.turnId && !TERMINAL.has(r.phase))}
+        startHeld={startHeld}
+        estHeight={estHeight}
         kind="agent"
         settled={isSettled(r)}
       >
@@ -470,7 +652,9 @@ function TurnRowImpl({
          `group`/`relative` live here; the panel's Row already carries both. */
       className={cn(cls, frame === "focus" && rewind && "group relative")}
       lazy={lazy}
-      keep={scrollTarget}
+      keep={scrollTarget || flashed}
+      startHeld={startHeld}
+      estHeight={estHeight}
       kind={r.from === "" ? "note" : "user"}
       settled={false}
     >
@@ -525,6 +709,8 @@ const sameRow = (a: TurnRowProps, b: TurnRowProps): boolean =>
   a.lastRow === b.lastRow &&
   a.flashed === b.flashed &&
   a.lazy === b.lazy &&
+  a.startHeld === b.startHeld &&
+  a.estHeight === b.estHeight &&
   a.scrollTarget === b.scrollTarget &&
   /* `running` only feeds the RewindHover on user rows — an employee
      turn must not re-render when the composer flips running. */

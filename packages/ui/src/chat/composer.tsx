@@ -220,10 +220,18 @@ export function Composer({
      the draft commits — an rAF can fire after the next keystroke and yank the
      caret backwards mid-typing (e2e caught `@src/app.tsx ap@`). */
   const caretRef = useRef<number | null>(null);
+  const prevDraftRef = useRef(draft);
   useLayoutEffect(() => {
-    const at = caretRef.current;
-    if (at === null) return;
+    /* #590 AC-1: an external prefill (draft goes empty → text — plan
+       "Change…", a seeded rewind) focuses the composer and lands the caret
+       at the end, after any prefix, so the user types the answer straight
+       away. Pick/deletes take precedence via caretRef. */
+    const at =
+      caretRef.current ??
+      (prevDraftRef.current === "" && draft !== "" ? draft.length : null);
     caretRef.current = null;
+    prevDraftRef.current = draft;
+    if (at === null) return;
     const el = wrapRef.current?.querySelector("textarea");
     el?.focus();
     el?.setSelectionRange(at, at);
@@ -439,7 +447,9 @@ export function Composer({
           />
         </PromptInputBody>
         <PromptInputFooter>
-          <PromptInputTools className="min-w-0 flex-wrap">
+          {/* #590 AC-2: one row of controls at 1024px — no wrap; the hint
+              truncates away before a control ever drops to a second line. */}
+          <PromptInputTools className="min-w-0 overflow-hidden">
             {accept && <AttachButton />}
             {tools}
             <span className="lilos-hint hidden truncate text-muted-foreground text-xs sm:inline">

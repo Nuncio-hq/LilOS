@@ -116,13 +116,19 @@ test("#301 Focus toggle stays clickable across the panel ⇄ Focus header swap",
       .click();
     await expect(win).toHaveURL(/\/dm\//, { timeout: 30_000 });
 
-    // A send lands in Focus (#149); back out to the panel so the Expand
-    // button sits at the spot the next click will land.
+    /* #577: a send lands on the panel — step into Focus and back so the
+       Expand button sits at the spot the next click will land (Focus's
+       one back control is "Back to DM"). */
     const box = win.locator("textarea").last();
     await box.fill("check in");
     await box.press("Enter");
+    await expect(win).toHaveURL(PANEL_URL, { timeout: 30_000 });
+    await win
+      .locator("[data-thread-panel]")
+      .getByTitle("Focus", { exact: true })
+      .click();
     await expect(win).toHaveURL(FOCUS_URL, { timeout: 30_000 });
-    await win.getByTitle("Exit focus", { exact: true }).click();
+    await win.getByTitle("Back to DM", { exact: true }).click();
     await expect(win).toHaveURL(PANEL_URL, { timeout: 30_000 });
 
     const expand = win
@@ -170,7 +176,9 @@ test("#301 Focus toggle stays clickable across the panel ⇄ Focus header swap",
     // Synthetic click #1 at that point, no prior mouse-out — mounts Focus.
     await win.mouse.click(cx, cy);
     await expect(win).toHaveURL(FOCUS_URL, { timeout: 30_000 });
-    const collapse = win.getByTitle("Exit focus", { exact: true });
+    /* #577: the swapped-in control is the one back control, "Back to
+       DM" — same header spot as the old Exit-focus affordance. */
+    const collapse = win.getByTitle("Back to DM", { exact: true });
     await expect(collapse).toBeVisible({ timeout: 30_000 });
 
     // The watcher's recompute ran against the newly mounted header…
@@ -184,14 +192,14 @@ test("#301 Focus toggle stays clickable across the panel ⇄ Focus header swap",
     // …and the fresh button is again a no-drag rect at the same spot.
     await expect.poll(() => appRegion(win, "main > header")).toBe("drag");
     await expect
-      .poll(() => appRegion(win, 'button[title="Exit focus"]'))
+      .poll(() => appRegion(win, 'button[title="Back to DM"]'))
       .toBe("no-drag");
     const box2 = await collapse.boundingBox();
-    if (!box2) throw new Error("exit-focus button has no box");
+    if (!box2) throw new Error("back button has no box");
     const hit2 = await win.evaluate(
       ([x, y]) => {
         const el = document.elementFromPoint(x, y);
-        return el?.closest('button[title="Exit focus"]') ? "button" : "other";
+        return el?.closest('button[title="Back to DM"]') ? "button" : "other";
       },
       [box2.x + box2.width / 2, box2.y + box2.height / 2] as const,
     );

@@ -31,6 +31,7 @@ import {
   EditEmployeeDialog,
   EmployeeHome,
   FocusView,
+  getDraft,
   MainPane,
   NO_WS,
   type PlanAction,
@@ -70,6 +71,7 @@ import {
   hasCapability,
   interruptSession,
   loadThreadHistory,
+  moveConversationFolder,
   openDmChannel,
   pendingStart,
   refreshModels,
@@ -101,6 +103,7 @@ import {
   cwdInfo,
   discovered,
   folders,
+  foldersLoaded,
   fsRows,
   loadDir,
   loadDiscovered,
@@ -345,6 +348,10 @@ export function DmPage() {
   const cwdBranches = useAtom(cwdInfo);
   const [wsPicks, setWsPicks] = useState<Record<string, WsPick>>({});
   const [addFolderOpen, setAddFolderOpen] = useState(false);
+  /* #581 AC-2: "Add a folder" on a folder-less thread opens the same
+     dialog — but picks a MOVE target for that session, not a recents
+     entry for the next send. */
+  const [moveFolderOpen, setMoveFolderOpen] = useState(false);
   useEffect(() => {
     toastOnFail("Couldn't load folders", refreshFolders());
   }, []);
@@ -804,9 +811,10 @@ export function DmPage() {
       if (!c) return;
       sendKeyDone(`sfresh:${conv.id}`, text);
       filesOnlyBanner.set(null);
-      /* Sessions land on Focus (#149) — the seeded session does too. */
+      /* #577: a fresh session lands where a new send does — the DM
+         list with the thread open beside it, not a jump into Focus. */
       void navigate({
-        to: "/dm/$employeeId/$conversationId/focus",
+        to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: c.id },
       });
     });
@@ -860,26 +868,32 @@ export function DmPage() {
     return ids.size || texts.size ? { ids, texts } : undefined;
   }, [localRewoundIds, localRewoundTexts, drops, openConvId]);
 
-  /* AC-6: pre-select the employee's last session's folder once it and the
-     recents are known — but never stomp a pick the user already made. */
+  /* AC-6 + #581 AC-1: pre-select what the LAST session used — a folder
+     pick follows the last session's folder, and a folder-less last
+     session means "No folder" follows too (it was silently reselecting
+     the repo before). Never stomps a pick the user already made — and
+     never stamps "No folder" while the recents probe is still out: a
+     folder-bound last session waits for folderRows before its pick
+     resolves (the stamp is once-only). */
+  const recentsReady = useAtom(foldersLoaded);
   useEffect(() => {
     if (wsPicks[employeeId] !== undefined) return;
-    const lastCwd = [...convs].reverse().find((c) => c.cwd)?.cwd;
-    const f = folderRows.find((x) => x.path === lastCwd && !x.missing);
-    if (!f) return;
+    const last = convs.at(-1);
+    if (!last) return;
+    const pickForLast = (): WsPick | undefined => {
+      if (!last.cwd) return NO_WS;
+      if (!recentsReady) return undefined;
+      const f = folderRows.find((x) => x.path === last.cwd && !x.missing);
+      return f
+        ? { folder: f.id, base: f.branches[0] ?? "", mode: "direct" }
+        : NO_WS;
+    };
+    const pick = pickForLast();
+    if (pick === undefined) return;
     setWsPicks((w) =>
-      w[employeeId] !== undefined
-        ? w
-        : {
-            ...w,
-            [employeeId]: {
-              folder: f.id,
-              base: f.branches[0] ?? "",
-              mode: "direct",
-            },
-          },
+      w[employeeId] !== undefined ? w : { ...w, [employeeId]: pick },
     );
-  }, [employeeId, convs, folderRows, wsPicks]);
+  }, [employeeId, convs, folderRows, recentsReady, wsPicks]);
 
   const feedAttached = useAtom(sessionFeedAttached);
   const watched = useAtom(sessionWatched);
@@ -1141,18 +1155,13 @@ export function DmPage() {
       clearDraftIfSent(draftKey.dm(employeeId), text);
       setDraftPick(({ [employeeId]: _drop, ...rest }) => rest);
       setDraftAccess(({ [employeeId]: _drop, ...rest }) => rest);
-      /* A fresh session still lands in Focus (#195 keeps send-as-today),
-         but through the panel URL first — every way back out of Focus
-         (Back/Esc/browser back) then lands on the same open peek. */
+      /* #577 (decided 2026-10-07): a new send STAYS on the DM list with
+         the thread open in the side panel, like the prototype — Focus
+         opens only when the user asks for it. */
       return navigate({
         to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: conv.id },
-      }).then(() =>
-        navigate({
-          to: "/dm/$employeeId/$conversationId/focus",
-          params: { employeeId, conversationId: conv.id },
-        }),
-      );
+      });
     });
   };
 
@@ -1276,6 +1285,14 @@ export function DmPage() {
         setThreadDraft(PLAN_CHANGE_PREFIX);
         return;
       }
+      /* #590 AC-1: an Approve/Reject decides the plan — a prefix the user
+         never typed into (draft still exactly "Change the plan: ") is
+         cleared, or the composer keeps a dead prompt to edit a decided
+         plan. A draft with content stays. The draft is read live (the
+         store, not the render-scope value): a fast Approve can beat the
+         re-render that would carry the prefix into this closure. */
+      if (getDraft(draftKey.thread(conv.id)) === PLAN_CHANGE_PREFIX)
+        setThreadDraft("");
       void awaitPlanAsk(planId).then((ask) => {
         /* respondToRequest toasts its own failure line — the catch only
            keeps the rethrow from going unhandled. */
@@ -1844,6 +1861,18 @@ export function DmPage() {
               params: { employeeId },
             })
           }
+          /* #581 AC-2: a folder-less DM thread gets "Add a folder" — the
+             pick moves the session there (same thread, same memory). The
+             panel keeps work=null for DM by design, so the gate is the
+             conversation's cwd itself. */
+          onAddFolder={
+            conv.cwd
+              ? undefined
+              : () => {
+                  setMoveFolderOpen(true);
+                  toastOnFail("Couldn't scan for repos", loadDiscovered());
+                }
+          }
           mentionables={mentionables}
           onSearchFiles={fileSearch(conv.cwd)}
           scrollTo={scrollTo ?? undefined}
@@ -1912,6 +1941,12 @@ export function DmPage() {
                 params: { employeeId, conversationId: last.id },
               });
           }}
+          onPanelClose={() =>
+            void navigate({
+              to: "/dm/$employeeId",
+              params: { employeeId },
+            })
+          }
           folders={folderRows}
           pick={pick}
           setPick={setPick}
@@ -1987,6 +2022,22 @@ export function DmPage() {
           onNeedDir={loadDir}
           onClose={() => setAddFolderOpen(false)}
           onAdd={onDialogAdd}
+        />
+      )}
+      {moveFolderOpen && openConv && (
+        <AddFolderDialog
+          folders={folderRows}
+          fs={fsListing}
+          discovered={discoveredRows}
+          onNeedDir={loadDir}
+          onClose={() => setMoveFolderOpen(false)}
+          onAdd={(path) => {
+            setMoveFolderOpen(false);
+            toastOnFail(
+              "Couldn't move the session to that folder",
+              moveConversationFolder(openConv.id, path),
+            );
+          }}
         />
       )}
       {profileOpen && !editOpen && (

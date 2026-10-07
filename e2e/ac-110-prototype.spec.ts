@@ -83,7 +83,20 @@ test("AC-2/AC-3 workbench: open file, open file at line, reveal — real os.open
     timeout: 15_000,
   });
   await dialog.locator("[data-addbtn]").click();
-  await expect(dialog).toHaveCount(0);
+  // folders.add resolves over the relay — under parallel load the dialog
+  // can take longer than the default 5s to close.
+  await expect(dialog).toHaveCount(0, { timeout: 15_000 });
+  /* folders.add fires a toast that overlays the composer footer for a few
+     seconds — it swallows the branch picker's click. Wait for it to go. */
+  /* The "projects.create …" toast pops a beat after the dialog closes and
+       covers the composer controls — wait for it to show, then leave. */
+  await page
+    .locator("[data-toast]")
+    .waitFor({ state: "attached", timeout: 5_000 })
+    .catch(() => {});
+  await page
+    .locator("[data-toast]")
+    .waitFor({ state: "detached", timeout: 15_000 });
   // git repos default to a new workstream — switch to direct so cwd=repoDir.
   await page.locator('[data-ws="branch"]').click();
   await menu(page)

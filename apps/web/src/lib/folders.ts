@@ -17,6 +17,11 @@ import { relay } from "./runtime";
 /** Picker rows, newest first (relay order). `id` is the path itself. */
 export const folders = atom<Folder[]>([]);
 
+/* True once `refreshFolders` has answered at least once (#581 AC-1: the
+   last-session pick must not stamp "No folder" while the recents probe is
+   still in flight). */
+export const foldersLoaded = atom(false);
+
 /** Dir listings the AddFolderDialog browses (keyed by requested path). */
 export const fsRows = atom<Record<string, FsDir>>({});
 
@@ -64,6 +69,7 @@ export async function refreshFolders(): Promise<void> {
     {},
   );
   folders.set(await Promise.all(res.folders.map((f) => probeFolder(f.path))));
+  foldersLoaded.set(true);
 }
 
 /** Add a picked path to the shared recents, then refresh the rows. */

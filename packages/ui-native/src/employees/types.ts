@@ -115,6 +115,8 @@ export type PullRequestRef = {
   status: "draft" | "open" | "merged" | "closed";
   /** CI on an open PR. */
   checks?: "pending" | "passing" | "failing";
+  /** #598: the PR's URL — every row/badge/card taps through to it. */
+  url?: string;
 };
 
 export type SessionTurn = {

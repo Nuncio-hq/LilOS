@@ -27,13 +27,13 @@ const PARSE_ERROR = -32700;
 const METHOD_NOT_FOUND = -32601;
 const ENGINE_DOWN = -32020;
 
-export function createFeedHandler(harness: Harness) {
+export function createFeedHandler(harness: Harness, frameDelayMs = 0) {
   const deps: FeedDeps = {
     describe: () => harness.engineDescribe(),
     eventsSince: (s, a) => harness.eventsSince(s, a),
     subscribeEngineEvents: (fn) => harness.subscribeEngineEvents(fn),
   };
-  return createFeed(deps);
+  return createFeed(deps, frameDelayMs);
 }
 
 /* Frames held while no peer is attached. A page reload (or the beat
@@ -45,8 +45,45 @@ export function createFeedHandler(harness: Harness) {
  * an overflow just falls back to the client's own resync path. */
 const HELD_FRAME_CAP = 1_000;
 
-function createFeed(deps: FeedDeps) {
-  const peers = new Set<(frame: string) => void>();
+/* #659 e2e hook (`LILOS_FEED_DELAY_MS`): pace each attached peer's
+   broadcast frames to one per `frameDelayMs` — the relay's answer row then
+   deterministically lands before the engine stream's tail, the cross-socket
+   race that rendered a reply twice. RPC replies (describe/events.since)
+   bypass it: the knob slows the live stream, not the handshake. `0` sends
+   immediately (production). */
+function pace(
+  send: (frame: string) => void,
+  frameDelayMs: number,
+): { send: (frame: string) => void; stop: () => void } {
+  if (frameDelayMs <= 0) return { send, stop: () => {} };
+  const queue: string[] = [];
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const drain = () => {
+    const frame = queue.shift();
+    if (frame === undefined) {
+      timer = undefined;
+      return;
+    }
+    send(frame);
+    timer = setTimeout(drain, frameDelayMs);
+  };
+  return {
+    send: (frame) => {
+      queue.push(frame);
+      if (timer === undefined) drain();
+    },
+    stop: () => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+      queue.length = 0;
+    },
+  };
+}
+
+function createFeed(deps: FeedDeps, frameDelayMs = 0) {
+  /* raw send -> paced broadcast sink (detach needs the same key the ws
+     close handler passes). */
+  const peers = new Map<(frame: string) => void, ReturnType<typeof pace>>();
   let held: string[] = [];
   const unsubscribe = deps.subscribeEngineEvents((event) => {
     const frame = JSON.stringify({
@@ -59,16 +96,21 @@ function createFeed(deps: FeedDeps) {
       if (held.length > HELD_FRAME_CAP) held.shift();
       return;
     }
-    for (const send of peers) send(frame);
+    for (const peer of peers.values()) peer.send(frame);
   });
 
   const attach = (send: (frame: string) => void) => {
-    peers.add(send);
-    for (const frame of held) send(frame);
+    const peer = pace(send, frameDelayMs);
+    peers.set(send, peer);
+    for (const frame of held) peer.send(frame);
     held = [];
   };
-  const detach = (send: (frame: string) => void) => peers.delete(send);
+  const detach = (send: (frame: string) => void) => {
+    peers.get(send)?.stop();
+    peers.delete(send);
+  };
   const close = () => {
+    for (const peer of peers.values()) peer.stop();
     peers.clear();
     unsubscribe();
   };

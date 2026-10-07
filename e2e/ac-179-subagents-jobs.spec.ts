@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #179 — subagents and background work in the real app (apps/web,
@@ -181,7 +186,8 @@ test("AC-1 a delegate turn shows one live row per helper; opening a row shows br
     page,
     "slow:200 delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
   );
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
 
   /* #317: in Focus the turn shows one "N subagents · Open" link; the rows live
      on Workbench → Subagents, which comes forward while the turn spins them off. */
@@ -406,7 +412,8 @@ test("AC-5 no `background_jobs` capability → no Background tab and no Stop (D-
     await openDefault(page, stackB);
 
     await send(page, "leave the dev server running in the background");
-    await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+    /* #577: a send lands on the panel; Focus opens via its ↗. */
+    await panelIntoFocus(page);
     await expect(turns(page).last().locator("[data-turnsettled]")).toBeVisible({
       timeout: 90_000,
     });
@@ -446,7 +453,8 @@ test("AC-319 the panel's 'N subagents · Open' lands on Focus → Subagents (?ta
       page,
       "slow:250 delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
     );
-    await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+    /* #577: a send lands on the panel; Focus opens via its ↗. */
+    await panelIntoFocus(page);
     await expect(page.locator("[data-subagents-link]").last()).toBeVisible({
       timeout: 60_000,
     });
@@ -547,7 +555,8 @@ test("AC-319 a `?tab=subagents` deep link on a zero-helper session lands on the 
      post-settle re-assert makes the steal unable to hide between the
      first paint and the check. */
   await send(page, "slowstart:2500 say hi");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await page.goto(`${page.url()}?tab=subagents`);
   try {
     await expect(tab(page, /Subagents/)).toHaveAttribute(

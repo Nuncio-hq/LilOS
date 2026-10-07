@@ -5,7 +5,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #543 — the Workbench exists for EVERY session (apps/web, relay +
@@ -54,7 +59,6 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus/;
 const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
 
 async function openDefault(page: Page, s: Stack = stack) {
@@ -165,9 +169,9 @@ test("AC-1..3 folderless session: ↗ + toggle; only Subagents + Background; hel
     page,
     "slow:250 delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
   );
-  /* The send lands in Focus already (folder or not) — AC-1's ↗ is covered
-     below via the panel round-trip. */
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: the send lands on the thread panel (folder or not) — AC-1's ↗
+     round-trip happens below; hop into Focus for the workbench legs. */
+  await panelIntoFocus(page);
 
   // AC-1: the toggle renders — no folder needed. A folderless session's
   // panel opens on demand (the toggle, a `?tab=` link, `workbench.open`) —
@@ -284,7 +288,8 @@ test("AC-4 a folder session is unchanged: every tab renders in the same order", 
   /* New DM → fresh composer; pick the repo folder this time. */
   await pickSessionFolder(page, repoDir);
   await send(page, "slow:100 delegate the relay scan to subagents");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
   /* Changes + Files answer (real fs/git), Background from the capability,
      Subagents once helpers land — PR needs `gh`, absent on this PATH, so it
@@ -306,7 +311,8 @@ test("screenshots: folderless Focus on Subagents + Background, light + dark (128
   await openDefault(page);
   await pickNoFolder(page);
   await send(page, "delegate the relay scan to subagents");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await turnSettled(page);
   /* Second turn once settled: a long-running job that outlives it — the
      Background tab's running row is the screenshot's subject. */
@@ -323,9 +329,13 @@ test("screenshots: folderless Focus on Subagents + Background, light + dark (128
   }
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
+    /* The context-usage hover card sits over the tab row once opened —
+       park the pointer off the header so it closes before clicking. */
+    await page.mouse.move(10, 300);
     await tab(page, "Subagents").click();
     await expect(page.locator("[data-subagent]")).toHaveCount(3);
     await page.screenshot({ path: `${SHOTS}/subagents-${scheme}.png` });
+    await page.mouse.move(10, 300);
     await tab(page, "Background").click();
     await expect(page.locator('[data-job][data-status="running"]')).toHaveCount(
       1,
@@ -349,7 +359,8 @@ test("AC-5 a session with no tab to show hides the toggle (D-#19)", async ({
     await openDefault(page, stackB);
     await pickNoFolder(page);
     await send(page, "just chat — no folder, no work");
-    await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+    /* #577: a send lands on the panel; Focus opens via its ↗. */
+    await panelIntoFocus(page);
     await turnSettled(page);
     await expect(workbenchToggle(page)).toHaveCount(0);
     await expect(

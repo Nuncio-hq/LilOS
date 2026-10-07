@@ -245,10 +245,8 @@ test("AC-4 + AC-5 a pick on the new-session composer lands on the FIRST turn; th
   await page.screenshot({ path: `${SHOTS}/ac-4-first-turn-pick.png` });
 
   // A new-session composer (employee home) is back on the employee default.
-  // The prototype mounted both composers at once; the real app mounts one
-  // view, and Focus has no sidebar (#246) — Back to DM lands on the thread
-  // panel, whose aside carries the employee rows.
-  await page.getByRole("button", { name: "Back to DM" }).click();
+  // #577: the send already landed on the DM feed at /dm/e/c — the aside's
+  // employee rows are right here.
   await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/);
   await page
     .locator("aside")

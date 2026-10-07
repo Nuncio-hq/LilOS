@@ -1,13 +1,21 @@
-import { ScrollView, Text, View } from "react-native";
+import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "../components/app-text";
 import { StateChip } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb } from "../components/orb";
+import { safeExternalUrl } from "../lib/external-url";
 import { ContextMeter } from "./context-meter";
 import { Group, SheetHeader } from "./folder-picker";
 import { PrIcon, PrStatusText, prHeadline, sortPrs } from "./pr-badges";
 import type { ThreadDetail } from "./types";
+
+/* #598: a PR anywhere is a link — Safari / the GitHub app opens it,
+   filtered by the phone's openURL policy (https + loopback http). */
+const openUrl = (url: string | undefined) => {
+  const safe = safeExternalUrl(url);
+  if (safe) void Linking.openURL(safe);
+};
 
 /* A session's facts (web: the thread header's ws badge + session code +
    usage), as an iOS info sheet: who and what up top, then grouped rows. */
@@ -71,12 +79,23 @@ export function ThreadInfoSheet({
           note={t.prs.length > 1 ? prHeadline(t.prs) : undefined}
         >
           {sortPrs(t.prs).map((pr, i) => (
-            <View key={pr.number} className="flex-row items-center gap-3 pl-4">
+            /* #598: a PR row is a link — Safari / the GitHub app. A URL
+               outside the openURL policy shows no arrow and doesn't
+               press (review). */
+            <Pressable
+              key={pr.number}
+              accessibilityRole={safeExternalUrl(pr.url) ? "link" : "text"}
+              accessibilityLabel={`PR ${pr.number}, ${pr.title}`}
+              {...(safeExternalUrl(pr.url)
+                ? { onPress: () => openUrl(pr.url) }
+                : {})}
+              className="flex-row items-center gap-3 pl-4 pr-3 active:opacity-60"
+            >
               <View className="w-5 items-center">
                 <PrIcon pr={pr} size={15} />
               </View>
               <View
-                className={`min-h-[56px] flex-1 justify-center gap-0.5 py-2.5 pr-4 ${i ? "border-border border-t" : ""}`}
+                className={`min-h-[56px] flex-1 justify-center gap-0.5 py-2.5 ${i ? "border-border border-t" : ""}`}
               >
                 <AppText numberOfLines={1} className="text-[16px]">
                   <AppText tone="muted" className="text-[16px]">
@@ -86,7 +105,15 @@ export function ThreadInfoSheet({
                 </AppText>
                 <PrStatusText pr={pr} />
               </View>
-            </View>
+              {safeExternalUrl(pr.url) && (
+                <Icon
+                  name="arrow.up.right"
+                  size={12}
+                  weight="semibold"
+                  tone="muted-foreground"
+                />
+              )}
+            </Pressable>
           ))}
         </Group>
       )}

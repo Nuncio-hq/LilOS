@@ -1,7 +1,9 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   type Conversation,
+  ConversationsMoveFolderHostParams,
+  type ConversationsMoveFolderHostResult,
   ConversationsRewindHostParams,
   type ConversationsRewindHostResult,
   ENGINE_PASSTHROUGH_METHODS,
@@ -32,6 +34,7 @@ import {
   ENGINE_CALL_DEADLINE_MS,
   ENGINE_UNAVAILABLE,
   INVALID_STATE,
+  SESSION_NOT_FOUND,
 } from "./rpc";
 
 /**
@@ -136,6 +139,83 @@ export async function rewindConversation(
 }
 
 /**
+ * `conversations.moveFolder` arrives as a relay-forwarded host call (#581):
+ * re-home the thread's working folder — the bound engine session moves too
+ * (`session.moveWorkspace`, `workspace_move` capability) so the next turn
+ * runs there; a thread with no engine session yet just takes the folder as
+ * its pick. Refuses rather than fakes: an engine session that can't be
+ * re-homed is an error, never a silent label-only write.
+ */
+export async function moveConversationFolder(
+  this: HarnessCtx,
+  params: ConversationsMoveFolderHostParams,
+): Promise<ConversationsMoveFolderHostResult> {
+  const abs = resolveUnderHome(params.path, this.home);
+  if (!abs) {
+    throw new HostError(
+      HOST_ERRORS.OUTSIDE_ROOT,
+      `path is outside the Mac's home folder: ${params.path}`,
+    );
+  }
+  if (!existsSync(abs) || !statSync(abs).isDirectory()) {
+    throw Object.assign(new Error(`folder does not exist: ${params.path}`), {
+      code: -32602,
+    });
+  }
+  /* Same overtaking window as rewind: a move landing inside a send's
+     pre-dispatch window would re-home mid-prompt — wait for in-flight
+     sends to put their prompt on the wire first. */
+  const binding = this.bindings.get(params.conversationId);
+  if (binding?.promptGates.size) await Promise.all(binding.promptGates);
+  const live = binding ? this.liveBinding(binding) : undefined;
+  const sessionId = live?.sessionId ?? params.engineRef ?? undefined;
+  let engineMoved = false;
+  if (sessionId) {
+    const conn = this.engine;
+    if (!conn) {
+      throw Object.assign(new Error("engine not connected"), {
+        code: ENGINE_UNAVAILABLE,
+      });
+    }
+    if (!this.hasCapability("workspace_move")) {
+      throw Object.assign(
+        new Error(
+          "this engine can't move a session's folder — start the next thread in it instead",
+        ),
+        { code: -32009 },
+      );
+    }
+    try {
+      await conn.request("session.moveWorkspace", {
+        sessionId,
+        cwd: abs,
+      });
+      engineMoved = true;
+    } catch (error) {
+      /* A stale engineRef (the engine forgot the session across a
+         restart) means there is nothing to re-home — the folder simply
+         applies when the next session starts. */
+      if (engineErrorCode(error) !== SESSION_NOT_FOUND) throw error;
+    }
+  }
+  const collapsed = collapsePath(abs, this.home);
+  if (live) {
+    live.cwd = abs;
+    live.hasFolder = true;
+  }
+  await this.updateConversation(params.conversationId, { cwd: collapsed });
+  /* Picked folders join the recents list like an open's `cwd` does, so
+     the next new session offers it. */
+  this.opts.relay.request("folders.add", { path: collapsed }).catch((error) =>
+    this.opts.log.warn("folders.add after move failed", {
+      path: collapsed,
+      error: String(error),
+    }),
+  );
+  return { cwd: abs, engineMoved };
+}
+
+/**
  * The relay asks the harness to answer engine calls on its behalf
  * (harness = the only engine talker, D-#26). Only the declared passthrough
  * set is honored; anything else is a JSON-RPC method-not-found.
@@ -150,6 +230,14 @@ export function onRelayRequest(
      when its transport can. */
   if (method === "conversations.rewind") {
     return this.rewindConversation(ConversationsRewindHostParams.parse(params));
+  }
+  /* `conversations.moveFolder` (#581): the harness re-homes the bound
+     engine session and stamps `cwd` on the row — the app's only
+     folder-move path. */
+  if (method === "conversations.moveFolder") {
+    return this.moveConversationFolder(
+      ConversationsMoveFolderHostParams.parse(params),
+    );
   }
   /* `folders.detail` (#156): the relay gates the path to recents and
      forwards here — the only process that can run git on this machine. */

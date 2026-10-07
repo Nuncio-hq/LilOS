@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #544 — the Workbench reopens instantly: closing the panel (or
@@ -232,7 +237,8 @@ test("AC-1/2/4: reopen shows last-known rows on the first frame, no Reading hold
   await dmDefault(page);
   await pickSessionFolder(page, repoDir);
   await send(page, "check the folder");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
 
   // The panel auto-opens on a folder session at ≥lg — Files tab + rows.
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
@@ -301,7 +307,8 @@ test("AC-5/AC-2 on a 2,400-file repo: reopen → first row in the first frame un
   await dmDefault(page);
   await pickSessionFolder(page, bigDir);
   await send(page, "check the folder");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await tab(page, "Files").click();
   await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
@@ -352,7 +359,8 @@ test("AC-6 on LilOS itself: Workbench reopen → Files visible, measured", async
   await dmDefault(page, path.dirname(repo));
   await pickSessionFolder(page, repo);
   await send(page, "check the folder");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await tab(page, "Files").click();
   await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
@@ -381,7 +389,8 @@ test("AC-6 #606 pick-hold: a Files pick while the turn starts survives its first
   await dmDefault(page, path.dirname(repo));
   await pickSessionFolder(page, repo);
   await send(page, "slowstart:5000 check the folder");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await tab(page, "Files").click();
   await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
