@@ -49,6 +49,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import logo from "../assets/logo.png";
 import { directoryCache } from "./cache";
 import { $demo, DEMO_MAC, enterDemo, exitDemo } from "./demo/lifecycle";
+import { loadDrafts } from "./draft-store";
 import { openAsks } from "./home-model";
 import {
   $blockedUpdate,
@@ -69,6 +70,7 @@ import {
   fallbackName,
   forgetMacs,
   hydrateConnections,
+  isOtherMacOffer,
   ROUTE_LABEL,
   routeFor,
   savePairedMac,
@@ -355,7 +357,9 @@ function Settings() {
          the sheet (and its Forget, which deletes the real Keychain) stays
          unreachable. */
       onOpenMac={demo ? undefined : () => nav.navigate("Mac")}
-      onForget={demo ? () => {} : confirmForget}
+      /* #599: no dead Forget in the demo — its Mac is fake and "Exit
+         demo" already lives in the Demo section below. */
+      onForget={demo ? undefined : confirmForget}
     >
       {demo ? (
         <Section title="Demo">
@@ -567,6 +571,33 @@ function useDeepLinks(phase: string) {
     if ($demo.get()) return exitDemo();
     if (phase === "onboarding")
       nav.navigate("Connecting", { offer, entry: "link" });
+    else if (phase === "app" && isOtherMacOffer(offer, $connections.get()[0])) {
+      /* #600: a QR/link for ANOTHER Mac used to do nothing while paired —
+         ask to switch instead. Switch = Forget (same teardown) then the
+         normal Connecting run; the phase flip refires this effect into
+         the onboarding branch, so the offer doesn't need stashing. */
+      const name = offer.name ?? fallbackName(offer.host);
+      const current = $connections.get()[0];
+      Alert.alert(
+        `Switch to ${name}?`,
+        `This phone is paired with ${current?.name ?? "another Mac"} — switching replaces that pairing.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Switch",
+            onPress: () => {
+              void Promise.race([
+                unregisterPush(),
+                new Promise((resolve) => setTimeout(resolve, 1500)),
+              ]).finally(() => {
+                stopLink();
+                void forgetMacs(() => directoryCache.clear());
+              });
+            },
+          },
+        ],
+      );
+    }
   }, [url, phase]);
 }
 
@@ -662,6 +693,8 @@ export default function App() {
       const mac = $connections.get()[0];
       if (mac) {
         const cached = await directoryCache.load();
+        /* #556: composer drafts hydrate with the Home snapshot. */
+        await loadDrafts();
         startLink(mac, cached ?? undefined);
       }
       setBooted(true);
