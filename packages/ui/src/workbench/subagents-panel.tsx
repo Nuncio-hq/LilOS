@@ -29,7 +29,7 @@ export function SubagentsPanel({
   if (!all.length)
     return (
       <div className="grid h-full place-items-center p-8 text-center text-muted-foreground text-xs">
-        No subagents in this session yet.
+        No subagents in this thread yet.
       </div>
     );
   const running = all.filter((p) => p.a.status === "running");

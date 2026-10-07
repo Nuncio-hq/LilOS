@@ -240,9 +240,12 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
   await expect(page.locator("[data-thread-panel]")).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByText(/Error: engine-fake/)).toBeVisible({
-    timeout: 30_000,
-  });
+  // #585: the error lands on the turn's own failure chip; the duplicate
+  // "Error: …" system note is dropped.
+  await expect(page.locator("[data-turn-failed]").last()).toContainText(
+    /Failed · engine-fake/,
+    { timeout: 30_000 },
+  );
   await page.screenshot({ path: `${SHOTS}/ac-32-final.png` });
 });
 

@@ -88,7 +88,7 @@ test("AC-1 first-run hire's DM settles on the empty state, never an endless skel
   await expect(page).toHaveURL(/\/dm\//);
   // The harness opened the DM channel at hire, so after the directory lands
   // the page shows the empty state — the skeleton, if it flashes, is bounded.
-  await expect(page.getByText(/Start a session with/i).first()).toBeVisible({
+  await expect(page.getByText(/Start a thread with/i).first()).toBeVisible({
     timeout: 15_000,
   });
   await expect(skeletons(page)).toHaveCount(0);
@@ -110,7 +110,7 @@ test("AC-4 a relay-created employee with no DM channel settles on the empty stat
   await page.goto(`${stack.webUrl}/dm/${employee.id}`);
   // No skeleton loop: the page opens the missing DM channel itself and the
   // empty state settles.
-  await expect(page.getByText("Start a session with Ghost")).toBeVisible({
+  await expect(page.getByText("Start a thread with Ghost")).toBeVisible({
     timeout: 15_000,
   });
   await expect(skeletons(page)).toHaveCount(0);

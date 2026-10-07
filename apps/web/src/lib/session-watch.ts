@@ -331,6 +331,15 @@ export class SessionWatch {
       if (
         e?.running ||
         (e && e.askRequests.size + e.feedRequests.size > 0) ||
+        /* #583 AC-3: a live background job keeps its feed — the row's
+           "N in background" reads model.jobs, which a released session
+           no longer carries. `bgJobs` is the relay-stamped count (the
+           reload-time seed); the live model covers the pre-patch gap. */
+        (c.bgJobs ?? 0) > 0 ||
+        (this.latest
+          .get(sid)
+          ?.model?.jobs.some((j) => j.status === "running") ??
+          false) ||
         wantsStale
       )
         want.add(sid);

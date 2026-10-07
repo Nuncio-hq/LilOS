@@ -58,7 +58,10 @@ const send = async (page: Page, text: string) => {
   await box.press("Enter");
 };
 
-const STOPPED = "Stopped · session.interrupt";
+/* #585 stripped the wire name from the turn chip — it renders "Stopped"
+   plain now (anchored so the lowercase "stopped" row word and the
+   "Stopped." sysnote don't match). */
+const STOPPED = /^Stopped$/;
 /* #576 renamed the running hint to name the real stop shortcut. */
 const RUNNING_HINT = /Enter (steers|queues) · ⌘\. stop/;
 
@@ -216,7 +219,9 @@ test("AC-576-4 the Stop button's tooltip names ⌘. — not Esc", async ({
   test.setTimeout(120_000);
   await dmDefault(stackA, page);
   await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
-  const stop = page.getByRole("button", { name: /stop/i });
+  /* A DM row whose word is "stopped" also matches /stop/i — name the
+     button by its exact aria-label. */
+  const stop = page.getByRole("button", { name: /^stop \(⌘\.\)$/i });
   await expect(stop).toBeVisible({ timeout: 30_000 });
   await expect(stop).toHaveAttribute("aria-label", /⌘\./);
   await expect(stop).toHaveAttribute("title", /⌘\./);

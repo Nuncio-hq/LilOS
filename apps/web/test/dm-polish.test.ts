@@ -62,7 +62,10 @@ describe("issue #71", () => {
       ],
       "c1",
     );
-    expect(replies.map((r) => r.text)).toEqual(["⚠ Stopped."]);
+    /* #585: the system row keeps its bare text + the `system` flag — the
+       centred note renderer draws it, no "⚠ " prefix. */
+    expect(replies.map((r) => r.text)).toEqual(["Stopped."]);
+    expect(replies[0].system).toBe(true);
   });
 
   test("AC-4 an approval-blocked turn maps to phase waiting, flagged on the request", () => {
@@ -152,7 +155,9 @@ describe("mergeTurns ordering", () => {
       ref: "u2",
     });
     const out = mergeTurns(replies, session([stopped, answered]), "emp");
-    expect(out.map((r) => r.id)).toEqual(["u1", "live-t1", "s1", "u2", "a2"]);
+    /* #585: the bare "Stopped." note (s1) repeats the stopped turn beside it
+       and drops; the stopped card is the single rendering of that state. */
+    expect(out.map((r) => r.id)).toEqual(["u1", "live-t1", "u2", "a2"]);
   });
   test("the live turn still goes last", () => {
     const replies = conversationReplies(

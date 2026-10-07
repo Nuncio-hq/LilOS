@@ -39,7 +39,7 @@ export function ConnectStep({
         <h1 className="font-semibold text-xl">Connect {engine} to LilOS</h1>
         <p className="mt-1 text-muted-foreground text-sm">
           Connected employees see the app — their DMs, folders, tickets and work
-          — and act in it for you; this affects only sessions LilOS opens, so
+          — and act in it for you; this affects only threads LilOS opens, so
           Hermes Desktop and the <code>hermes</code> CLI stay exactly as they
           are.
         </p>

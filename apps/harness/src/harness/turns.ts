@@ -93,6 +93,11 @@ export async function finishTurn(
           },
         }
       : {}),
+    /* #583: a stopped turn's word rides the row the same way — a released
+       or replayed session has no live turn model to say "stopped". */
+    ...(stopReason === "cancelled" && !event.payload.error
+      ? { turnStopped: true }
+      : {}),
   }).catch(() => {});
 
   /* #315 AC-5: ■ Stop parks everything still waiting — queued sends and
