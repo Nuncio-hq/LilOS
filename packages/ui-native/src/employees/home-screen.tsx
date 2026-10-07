@@ -32,6 +32,7 @@ export function EmployeesHomeScreen({
   onOpenEmployee,
   onOpenChannel,
   offlineDetail,
+  blockedDetail,
 }: {
   workspace: string;
   macName: string;
@@ -45,6 +46,8 @@ export function EmployeesHomeScreen({
   /** #591: second line under "Can't reach" — the last-known disclosure
       ("Showing last known · 2 min ago"). */
   offlineDetail?: string;
+  /** #597: second line under "Update needed" — the side to update. */
+  blockedDetail?: string;
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -55,7 +58,7 @@ export function EmployeesHomeScreen({
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={{ paddingBottom: 24 }}
     >
-      {link === "offline" && (
+      {(link === "offline" || link === "blocked") && (
         <Pressable
           accessibilityRole="button"
           onPress={onOpenMac}
@@ -63,17 +66,27 @@ export function EmployeesHomeScreen({
           style={{ borderCurve: "continuous" }}
         >
           <Icon
-            name="wifi.exclamationmark"
+            name={
+              link === "blocked" ? "arrow.down.circle" : "wifi.exclamationmark"
+            }
             size={17}
-            tone="destructive"
+            tone={link === "blocked" ? "warning" : "destructive"}
             weight="medium"
           />
           <View className="flex-1">
-            <AppText size="sm">{`Can't reach ${macName}`}</AppText>
-            {offlineDetail && (
+            <AppText size="sm">
+              {link === "blocked" ? "Update needed" : `Can't reach ${macName}`}
+            </AppText>
+            {link === "blocked" && blockedDetail ? (
               <AppText size="xs" tone="muted">
-                {offlineDetail}
+                {blockedDetail}
               </AppText>
+            ) : (
+              offlineDetail && (
+                <AppText size="xs" tone="muted">
+                  {offlineDetail}
+                </AppText>
+              )
             )}
           </View>
           <AppText size="sm" tone="none" className="text-primary">

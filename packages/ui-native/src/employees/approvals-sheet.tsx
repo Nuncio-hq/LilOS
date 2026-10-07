@@ -39,8 +39,9 @@ export function ApprovalsSheet({
   /** #591: set while the Mac is unreachable — the list is last-known
      (rows carry `lastKnown`), the sheet says so under the title, and the
      empty state never reads "All clear". `asOf` = last-seen age
-     ("2 min ago"). */
-  unreachable?: { mac: string; asOf?: string };
+     ("2 min ago"). #597: `line` overrides the "Can't reach <mac>" lead —
+     a blocked version mismatch is an update prompt, not a reach issue. */
+  unreachable?: { mac: string; asOf?: string; line?: string };
 }) {
   const insets = useSafeAreaInsets();
   return (
@@ -99,7 +100,7 @@ export function ApprovalsSheet({
               weight="medium"
             />
             <AppText size="sm" tone="muted" className="flex-1">
-              {`Can't reach ${unreachable.mac} — showing last known${unreachable.asOf ? ` · ${unreachable.asOf}` : ""}`}
+              {`${unreachable.line ?? `Can't reach ${unreachable.mac}`} — showing last known${unreachable.asOf ? ` · ${unreachable.asOf}` : ""}`}
             </AppText>
           </View>
         )}
@@ -114,7 +115,9 @@ export function ApprovalsSheet({
                   tone="muted-foreground"
                 />
               </View>
-              <AppText tone="muted">{`Can't reach ${unreachable.mac}`}</AppText>
+              <AppText tone="muted">
+                {unreachable.line ?? `Can't reach ${unreachable.mac}`}
+              </AppText>
               <AppText size="sm" tone="muted">
                 {`Last known: nothing waiting${unreachable.asOf ? ` · ${unreachable.asOf}` : ""}`}
               </AppText>
