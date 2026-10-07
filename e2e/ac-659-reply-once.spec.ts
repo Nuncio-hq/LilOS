@@ -73,6 +73,15 @@ test("AC-1/2 a reply renders exactly once while the answer row beats the stream"
      Poll the strict locator across the whole window: any duplicate match
      fails immediately, a single claimed surface stays green. */
   for (let i = 0; i < 30; i++) {
+    const paras = await thread
+      .locator("p, [data-streaming] p")
+      .allTextContents()
+      .catch(() => ["<gone>"]);
+    console.log(
+      `[659dbg] i=${i} answerMatches=${await answer.count()} paras=${JSON.stringify(
+        paras.map((t) => t.slice(0, 45)),
+      )}`,
+    );
     await expect(answer).toBeVisible();
     await page.waitForTimeout(300);
   }
