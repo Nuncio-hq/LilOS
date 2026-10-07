@@ -8,9 +8,9 @@
    work (no observer, no collect); with the bar open, the match count
    tracks rows that stream in mid-session. */
 
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import type { DesktopBridge, DesktopFindAction } from "@lilos/contracts/app";
 import { setFindSessionOpen } from "@lilos/ui";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { DesktopFindBar } from "../src/lib/desktop-find";
 
@@ -54,10 +54,20 @@ const runDebounce = () => {
   });
 };
 
+const must = <T,>(v: T | null | undefined, what: string): T => {
+  if (v == null) throw new Error(`expected ${what} to exist`);
+  return v;
+};
+
 const bar = () => document.querySelector("[data-find-bar]");
 const input = () =>
-  document.querySelector<HTMLInputElement>("[data-find-input]")!;
-const count = () => document.querySelector("[data-find-count]")!.textContent;
+  must(
+    document.querySelector<HTMLInputElement>("[data-find-input]"),
+    "the find input",
+  );
+const count = () =>
+  must(document.querySelector("[data-find-count]"), "the count readout")
+    .textContent;
 const openBar = () => act(() => findListener?.("open"));
 const typeQuery = (v: string) =>
   fireEvent.change(input(), { target: { value: v } });
@@ -88,7 +98,10 @@ describe("AC-1: the observer is scoped to the open session's own surface", () =>
   test("opening the bar creates one observer on the conversation surface — never document.body", async () => {
     const observeSpy = vi.spyOn(MutationObserver.prototype, "observe");
     const { container } = mount();
-    const surface = container.querySelector("[data-surface]")!;
+    const surface = must(
+      container.querySelector("[data-surface]"),
+      "the surface",
+    );
 
     /* While closed: nothing is observed at all. */
     expect(observeSpy).not.toHaveBeenCalled();
@@ -115,7 +128,10 @@ describe("AC-1: the observer is scoped to the open session's own surface", () =>
     const disconnectSpy = vi.spyOn(MutationObserver.prototype, "disconnect");
     const walkerSpy = vi.spyOn(document, "createTreeWalker");
     const { container } = mount();
-    const surface = container.querySelector("[data-surface]")!;
+    const surface = must(
+      container.querySelector("[data-surface]"),
+      "the surface",
+    );
 
     openBar();
     typeQuery("findprobe");
@@ -123,7 +139,9 @@ describe("AC-1: the observer is scoped to the open session's own surface", () =>
     const walkersAfterOpen = walkerSpy.mock.calls.length;
     expect(walkersAfterOpen).toBeGreaterThan(0);
 
-    fireEvent.click(document.querySelector("[data-find-close]")!);
+    fireEvent.click(
+      must(document.querySelector("[data-find-close]"), "the close button"),
+    );
     expect(bar()).toBeNull();
     expect(disconnectSpy).toHaveBeenCalled();
     expect(observeSpy).toHaveBeenCalledTimes(1); // never re-created
@@ -137,7 +155,10 @@ describe("AC-1: the observer is scoped to the open session's own surface", () =>
 
   test("a surface swap while the bar is open re-attaches the observer to the new surface", async () => {
     const { container } = mount();
-    const oldSurface = container.querySelector("[data-surface]")!;
+    const oldSurface = must(
+      container.querySelector("[data-surface]"),
+      "the surface",
+    );
     openBar();
     typeQuery("findprobe");
     expect(count()).toBe("1 of 1");
@@ -145,7 +166,8 @@ describe("AC-1: the observer is scoped to the open session's own surface", () =>
     /* The bar's host div is re-seated on a different surface mid-session
        (a Thread ↔ Focus swap that keeps the bar mounted re-parents it):
        the old surface records the removal and the observer follows. */
-    const hostEl = bar()!.parentElement!;
+    const hostEl = must(bar(), "the find bar").parentElement;
+    if (!hostEl) throw new Error("expected the bar host to have a parent");
     const newSurface = document.createElement("div");
     container.appendChild(newSurface);
     act(() => {
@@ -175,7 +197,10 @@ describe("AC-2: no find work while closed; the count tracks streams while open",
     const observeSpy = vi.spyOn(MutationObserver.prototype, "observe");
     const walkerSpy = vi.spyOn(document, "createTreeWalker");
     const { container } = mount();
-    const surface = container.querySelector("[data-surface]")!;
+    const surface = must(
+      container.querySelector("[data-surface]"),
+      "the surface",
+    );
 
     /* Stream a turn's worth of DOM churn into the surface. */
     addRow(surface, "streamed findprobe token one");
@@ -193,7 +218,10 @@ describe("AC-2: no find work while closed; the count tracks streams while open",
 
   test("with the bar open, the count tracks rows streaming into the surface", async () => {
     const { container } = mount();
-    const surface = container.querySelector("[data-surface]")!;
+    const surface = must(
+      container.querySelector("[data-surface]"),
+      "the surface",
+    );
     openBar();
     typeQuery("findprobe");
     expect(count()).toBe("1 of 1");

@@ -297,7 +297,9 @@ export function DesktopFindBar() {
         matchRanges.current = next;
         /* A match set that emptied mid-session leaves activeIdx at -1 —
            clamp back into range so the first new match is active. */
-        const idx = len ? Math.min(Math.max(activeIdx.current, 0), len - 1) : -1;
+        const idx = len
+          ? Math.min(Math.max(activeIdx.current, 0), len - 1)
+          : -1;
         paint(idx);
         setResult({
           matches: len,
