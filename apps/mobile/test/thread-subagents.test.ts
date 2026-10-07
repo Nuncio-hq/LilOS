@@ -439,12 +439,13 @@ describe("thread subagents & background jobs — #181", () => {
     expect(detail.entries.at(-1)?.id).toBe("turn-t2");
   });
 
-  it("AC-4 a live turn's streamed reply never claims its posted message (no duplicate turn-<id> key)", () => {
-    /* The relay can deliver the reply message a frame before turn.completed
-       — the live turn's streamed text already equals it, so an unconditional
-       claim renders the card at the message AND at the tail under the same
-       `turn-tN` key (the React duplicate-key warning the reviewer caught).
-       Only a settled turn may claim. */
+  it("AC-4 a live turn claims its posted row once — never twice under turn-<id> (#691)", () => {
+    /* The relay delivers the reply message a frame before the turn's
+       settle events — the live turn's streamed text already equals it
+       (#691: or only prefixes it / hasn't streamed). It claims the row
+       into its card; `used` then keeps the tail live-append from
+       rendering the same `turn-tN` key again (the double-render the
+       issue reported). */
     const messages = [
       msg({ id: "m1", seq: 1, text: "go" }),
       msg({ id: "m2", seq: 2, authorKind: "employee", text: "same reply" }),
@@ -456,9 +457,15 @@ describe("thread subagents & background jobs — #181", () => {
     const whileLive = toThreadDetail({ ...BASE, messages, model: live });
     const ids = whileLive.entries.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
-    /* The message stays a plain row until the turn settles; the live card
-       anchors under the message that prompted it (#308). */
-    expect(ids).toEqual(["m1", "turn-t1", "m2"]);
+    /* One surface: the live turn's card claimed the posted row's slot —
+       `live:false` only because the conversation is already `idle` in
+       this window (conv.state wins, #327). */
+    expect(ids).toEqual(["m1", "turn-t1"]);
+    expect(whileLive.entries[1]).toMatchObject({
+      kind: "agent",
+      text: "same reply",
+      live: false,
+    });
     const done = reduceSessionEvents("sess-1", [
       ev("turn.started", { turnId: "t1", model: "fake-small", ref: "m1" }),
       ev("turn.delta", { turnId: "t1", stream: "text", delta: "same reply" }),

@@ -190,7 +190,7 @@ export function ContextMeter({ c, model }: { c: ContextUsage; model: string }) {
           /* Lifetime throughput, labeled as what it is — the sums count
              every tool-loop call, not what sits in the window (#415). */
           <AppText tone="muted" className="text-[13px]">
-            {`This session — ${k(c.input)} in · ${k(c.output + c.reasoning)} out${c.cache ? ` · ${k(c.cache)} cached` : ""}`}
+            {`This thread — ${k(c.input)} in · ${k(c.output + c.reasoning)} out${c.cache ? ` · ${k(c.cache)} cached` : ""}`}
           </AppText>
         )}
         <View className="flex-row justify-between border-border border-t pt-3">

@@ -300,7 +300,7 @@ export const THREADS: ThreadDetail[] = [
     /* #514: the engine's capped log dropped this session's head — the
        transcript note the real feed raises on historyTrimmed (#431). */
     transcriptNote:
-      "Earlier history was trimmed — this session's event log is capped.",
+      "Earlier history was trimmed — this thread's event log is capped.",
     entries: [
       {
         kind: "user",
