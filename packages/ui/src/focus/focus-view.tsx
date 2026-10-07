@@ -76,6 +76,7 @@ import { PHASE_LABEL } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { readWbCache } from "../lib/wb-probe-cache";
 import { HermesAvatar } from "../shell/avatars";
+import { MainPane } from "../shell/main-pane";
 import type {
   AttachedFile,
   Channel,
@@ -179,6 +180,7 @@ export function FocusView({
   caps,
   onSuggest,
   onPr,
+  bare,
   findBar,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
@@ -312,6 +314,9 @@ export function FocusView({
   /* #579 AC-1: the Workbench's live forge read reports the session's PR
      upward — a just-created/merged PR reaches the header chip instantly. */
   onPr?: (pr: PullRequest | null) => void;
+  /* #660: the caller mounts the shared <main> landmark itself (DmPage) so
+     the pane element survives the feed↔Focus swap — omit → own <main>. */
+  bare?: boolean;
   /* #554: the host's wired find bar, rendered as an overlay inside the
      conversation scrollport (desktop ⌘F); absent = no find UI. */
   findBar?: ReactNode;
@@ -779,7 +784,7 @@ export function FocusView({
   );
 
   return (
-    <main className="lilos-glass flex min-h-0 min-w-0 flex-1 flex-col">
+    <MainPane bare={bare}>
       <header className="lilos-drag flex h-14 shrink-0 items-center gap-2 border-b px-2 sm:px-3">
         {onNav && (
           <Button
@@ -1241,6 +1246,6 @@ export function FocusView({
           </>
         )}
       </div>
-    </main>
+    </MainPane>
   );
 }
