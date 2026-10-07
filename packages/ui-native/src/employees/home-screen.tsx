@@ -184,8 +184,8 @@ export function NeedsYouAccessory({
         accessibilityRole="button"
         accessibilityLabel={
           top.lastKnown
-            ? `${approvals.length} waiting on you, last known`
-            : `${approvals.length} waiting on you`
+            ? `${approvals.length} need you, last known`
+            : `${approvals.length} need you`
         }
         onPress={open}
         className="flex-1 flex-row items-center gap-2 px-3"

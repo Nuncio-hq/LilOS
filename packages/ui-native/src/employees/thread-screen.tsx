@@ -319,7 +319,7 @@ export function ThreadHeaderTitle({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${title}, session info`}
+      accessibilityLabel={`${title}, thread info`}
       onPress={onPress}
       className="max-w-[240px] items-center gap-0.5 active:opacity-60"
     >

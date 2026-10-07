@@ -847,7 +847,7 @@ export function toThreadDetail(opts: {
     ...(opts.historyTrimmed
       ? {
           transcriptNote:
-            "Earlier history was trimmed — this session's event log is capped.",
+            "Earlier history was trimmed — this thread's event log is capped.",
         }
       : {}),
     entries: [

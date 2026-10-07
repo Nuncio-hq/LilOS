@@ -413,7 +413,7 @@ function Tabs() {
         name="Activity"
         component={Activity}
         options={{
-          title: "Needs you",
+          title: "Activity",
           tabBarLabel:
             offline && waiting ? `Activity · ${waiting}` : "Activity",
           // This tab is the full list; the accessory would repeat it.

@@ -732,7 +732,7 @@ describe("thread-model — #157 AC mapping", () => {
         ...(historyTrimmed === undefined ? {} : { historyTrimmed }),
       });
     expect(detail(true).transcriptNote).toBe(
-      "Earlier history was trimmed — this session's event log is capped.",
+      "Earlier history was trimmed — this thread's event log is capped.",
     );
     expect(detail(false).transcriptNote).toBeUndefined();
     expect(detail().transcriptNote).toBeUndefined();

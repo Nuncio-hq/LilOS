@@ -127,7 +127,7 @@ export const $employees = computed($threads, (threads): EmployeeRow[] =>
       now: ask
         ? asks.length > 1
           ? `${asks.length} need you`
-          : `Waiting on you · ${ask.session}`
+          : `Needs you · ${ask.session}`
         : live
           ? (liveLine(live) ?? live.title)
           : fresh

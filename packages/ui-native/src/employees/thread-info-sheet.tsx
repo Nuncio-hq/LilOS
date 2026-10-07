@@ -28,7 +28,7 @@ export function ThreadInfoSheet({
       }}
     >
       <View className="-mx-4">
-        <SheetHeader title="Session" onDone={onDone} />
+        <SheetHeader title="Thread" onDone={onDone} />
       </View>
       <View className="items-center gap-2">
         <Orb tone={t.employee.tone} size={56} />
@@ -50,7 +50,7 @@ export function ThreadInfoSheet({
         <Fact
           icon="folder"
           label="Folder"
-          value={t.folder ? t.folder.path : "None · just chat"}
+          value={t.folder ? t.folder.path : "No folder"}
           mono={!!t.folder}
           first
         />
@@ -117,7 +117,7 @@ export function ThreadInfoSheet({
 
       {t.context && <ContextMeter c={t.context} model={t.model} />}
 
-      <Group title="Session">
+      <Group title="Thread">
         <Fact icon="calendar" label="Started" value={t.started} first />
         {!t.context && <Fact icon="sparkle" label="Model" value={t.model} />}
         {t.usage && !t.context && (
