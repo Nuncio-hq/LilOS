@@ -282,6 +282,7 @@ function Manual({ navigation }: Props<"Manual">) {
 function Connecting({ navigation, route }: Props<"Connecting">) {
   const { offer } = route.params;
   const [state, setState] = useState<ConnectingState>("connecting");
+  const [retryAfter, setRetryAfter] = useState<number | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -297,6 +298,7 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
           void Haptics.notificationAsync(
             Haptics.NotificationFeedbackType.Error,
           );
+          setRetryAfter(r.retryAfterSeconds);
           setState(r.reason);
           return;
         }
@@ -323,6 +325,7 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
       state={state}
       macName={offer.name ?? fallbackName(offer.host)}
       host={offer.host}
+      retryAfterSeconds={retryAfter}
       onCancel={() => navigation.goBack()}
       onRetry={() => {
         setState("connecting");
