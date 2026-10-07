@@ -110,24 +110,7 @@ const ConversationEscapeGuard = (): null => {
       const shifted = sc.clientHeight !== lastHeight;
       last = top;
       lastHeight = sc.clientHeight;
-      /* The heal restores a lock that was LIVE when the layout nudge hit —
-         escapedFromLock set at event time means someone deliberately left
-         the bottom (a reader's scroll-up; the library's own 1ms timeout
-         only sets the flag for THIS nudge after the guard runs). And while
-         an OPEN question card renders, the port's rest position belongs to
-         the card's own arrival-align (#515): a repin to the scroller's end
-         would tear its park and re-clip the card head under the sticky
-         header — the align writes scrollTop both ways, so the escape flag
-         alone can't tell its park from a killed lock. The card query runs
-         last: a heal candidate is rare, so the DOM read stays off the
-         common scroll path. */
-      if (
-        up &&
-        (shifted || clamped) &&
-        !readerEscape &&
-        !state.escapedFromLock &&
-        !sc.querySelector('[data-question-card][data-ask-state="open"]')
-      ) {
+      if (up && (shifted || clamped) && !readerEscape) {
         cancelHeal();
         healTop = top;
         heal = setTimeout(repin, 2);

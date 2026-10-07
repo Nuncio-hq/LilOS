@@ -177,12 +177,19 @@ export function QuestionCard({
      short arrival window (scrolling up only — never drag the card down),
      and stop the moment the user scrolls. `resolved` in deps re-arms
      the window when a sibling ask resolves — the question that becomes
-     visible after an answer gets the same lift (FIX r4). */
+     visible after an answer gets the same lift (FIX r4). The port RO
+     re-aligns on resizes too: shrinking the window GROWS the max
+     scrollTop, so no scroll event fires and neither the lock nor the
+     expired arrival ride restores the card — it can sit clipped under
+     the fold forever (#649). The gate keeps the reader in charge: a
+     card scrolled away above the port, or more than a viewport below,
+     is left alone. */
   useEffect(() => {
     const el = cardRef.current;
     if (!el || !interactive) return;
     const port = scrollPortOf(el);
     if (!port) return;
+    let cancelled = false;
     const align = () => {
       const e = el.getBoundingClientRect();
       const p = port.getBoundingClientRect();
@@ -210,12 +217,31 @@ export function QuestionCard({
         if (Math.abs(nudge) > 1) port.scrollTop += nudge;
       }
     };
+    const realign = () => {
+      if (cancelled) return;
+      const e = el.getBoundingClientRect();
+      const p = port.getBoundingClientRect();
+      /* Only re-park a tail the layout pushed under the fold — a card
+         whose head sits above the port top, or that lives more than a
+         viewport below, belongs to the reader's scroll position. */
+      if (
+        e.top < p.top ||
+        e.top - p.bottom > p.height ||
+        e.bottom - (p.bottom - 16) <= 1
+      )
+        return;
+      align();
+    };
     const kick = setTimeout(align, 450);
     const ride = setInterval(align, 350);
     const end = setTimeout(() => clearInterval(ride), 3500);
+    const ro = new ResizeObserver(realign);
+    ro.observe(port);
     const cancel = () => {
+      cancelled = true;
       clearInterval(ride);
       clearTimeout(end);
+      ro.disconnect();
     };
     port.addEventListener("wheel", cancel, { passive: true });
     port.addEventListener("touchstart", cancel, { passive: true });
